@@ -35,6 +35,10 @@ struct CloudLocalRoute: Sendable {
             route = "/v1/places/\(Self.segment(place))/resume/"
             if !assistant.isEmpty { route += Self.segment(assistant) + "/" }
             route += Self.segment(session)
+        case .end(let session, let acceptLoss, let closeabilityVersion):
+            route = "/v1/sessions/\(Self.segment(session))/end"
+            if acceptLoss { object["accept_loss"] = true }
+            if let closeabilityVersion { object["expected_closeability_version"] = closeabilityVersion }
         case .scheduleCreate(let data):
             route = "/v1/orchestrator/schedules"
             encodedBody = data
@@ -96,6 +100,8 @@ struct CloudLocalRoute: Sendable {
         case .pastSessions(_, _, let place, let assistant):
             route = "/v1/places/\(Self.segment(place))/sessions"
             if !assistant.isEmpty { route += "/" + Self.segment(assistant) }
+        case .schedules:
+            route = "/v1/orchestrator/schedules"
         case .schedule(_, _, let id):
             route = "/v1/orchestrator/schedules/\(Self.segment(id))"
         case .pushKey:

@@ -426,6 +426,8 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
     }
 
     let featureBodies = [
+        #"{"type":"end","session":"%306","request":"end-1","accept_loss":true,"expected_closeability_version":"close-v1"}"#,
+        #"{"type":"resume","session":"__clawdline_machine__","request":"resume-1","place":"portfolio","past":"past/session|一","assistant":"codex"}"#,
         #"{"type":"schedule-create","session":"__clawdline_machine__","request":"create-1","schedule":{"title":"Morning"}}"#,
         #"{"type":"schedule-update","session":"__clawdline_machine__","request":"update-1","id":"morning","schedule":{"title":"Later"}}"#,
         #"{"type":"schedule-delete","session":"__clawdline_machine__","request":"delete-1","id":"morning"}"#,
@@ -459,6 +461,11 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
                     && callsAfterSend.last?.command
                         == .send(session: "plain", text: "hello", images: [])
                     && sendPayload?["read"] as? String == "action:send-1"
+                    && featureCommands.contains(.end(session: "%306", acceptLoss: true,
+                                                     closeabilityVersion: "close-v1"))
+                    && featureCommands.contains(.resume(place: "portfolio",
+                                                        session: "past/session|一",
+                                                        assistant: "codex"))
                     && featureCommands.contains(.scheduleDelete(id: "morning"))
                     && featureCommands.contains(.pushUnsubscribe(id: "subscription-1"))
                     && featureCommands.contains(.pushTest(session: "plain"))
@@ -1274,6 +1281,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         "places": #"{"type":"places","session":"__clawdline_machine__","request":"p-1"}"#,
         "project-worktrees": #"{"type":"project-worktrees","session":"__clawdline_machine__","request":"p-2","project":"/code/app"}"#,
         "past-sessions": #"{"type":"past-sessions","session":"__clawdline_machine__","request":"p-3","place":"portfolio","assistant":"claude"}"#,
+        "schedules": #"{"type":"schedules","session":"__clawdline_machine__","request":"p-list"}"#,
         "schedule": #"{"type":"schedule","session":"__clawdline_machine__","request":"p-4","id":"morning"}"#,
         "push-key": #"{"type":"push-key","session":"__clawdline_machine__","request":"p-5"}"#,
     ]
@@ -1299,7 +1307,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(typedNames
                     == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git",
                         "image.img-1", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
-                        "read:p-5"],
+                        "read:p-5", "read:p-list"],
                 "and each parses into the read it names rather than into the switch's last case")
 
     // Strictness, in the same shape the commands already have: an exact key set, a bounded
@@ -1413,8 +1421,29 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     )
     try require(gitRequest.path == "/v1/sessions/plain/git" && gitRequest.query.isEmpty,
                 "and so is the Git panel")
-    try require(gitRequest.method == "GET" && gitRequest.headers["idempotency-key"] == nil,
-                "none of the four mints an idempotency key, because none of them makes anything happen")
+    let scheduleListRequest = RemoteServer.Request(
+        verifiedCloudRead: .schedules(session: CloudAppBridge.machineReplySession,
+                                      request: "fresh"), sender: "viewer"
+    )
+    let closeRequest = RemoteServer.Request(
+        verifiedCloud: .end(session: "%306", acceptLoss: true,
+                            closeabilityVersion: "close-v1"),
+        sender: "viewer", idempotencyKey: "end-key"
+    )
+    let resumeRequest = RemoteServer.Request(
+        verifiedCloud: .resume(place: "project/one", session: "past/session|一",
+                               assistant: "codex"),
+        sender: "viewer", idempotencyKey: "resume-key"
+    )
+    try require(gitRequest.method == "GET" && gitRequest.headers["idempotency-key"] == nil
+                    && scheduleListRequest.path == "/v1/orchestrator/schedules"
+                    && closeRequest.path == "/v1/sessions/%25306/end"
+                    && ((try? JSONSerialization.jsonObject(with: closeRequest.body))
+                        as? [String: Any])?["expected_closeability_version"] as? String == "close-v1"
+                    && resumeRequest.path
+                        == "/v1/places/project%2Fone/resume/codex/past%2Fsession%7C%E4%B8%80",
+                "reads mint no key, while fresh schedules, Session close, and Resume map to "
+                    + "the exact local routes")
 
     // Where they queue, which is the shared queue — and that is not this door's decision, it is
     // the direct path's. Both lane predicates refuse these four paths over HTTP too, so sending

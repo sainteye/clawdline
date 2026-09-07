@@ -63,7 +63,9 @@ function refresh() {
     if (inFlight || !S.arrived || S.locked || S.conn === "locked"
         || !api || typeof api.schedules !== "function") return;
     inFlight = true;
-    api.schedules().then(function (data) {
+    // Cloud treats its retained orchestrator envelope as first paint only; `fresh` asks the Mac
+    // for a named reply. Local and fixture clients ignore the optional argument.
+    api.schedules({ fresh: true }).then(function (data) {
         var schedules = (data && data.schedules) || [];
         var at = data && data.at;
         // Do not make the useful list wait for its supplementary labels. The second render changes

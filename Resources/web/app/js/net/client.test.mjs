@@ -1233,10 +1233,44 @@ await answerRead(controlCloud, controlSocket, {
 });
 assert.equal((await sentPrompt).ok, true, "send resolves only after the Mac accepted the prompt");
 
+const beforeEnd = publishedReads(controlSocket).length;
+const endedSession = controlCloud.end("session-01", true, "closeability-v1");
+await until(function () { return publishedReads(controlSocket).length === beforeEnd + 1; },
+    "the acknowledged Session close to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeEnd]);
+assert.deepEqual({ type: controlRequest.type, session: controlRequest.session,
+    acceptLoss: controlRequest.accept_loss,
+    closeability: controlRequest.expected_closeability_version }, {
+    type: "end", session: "session-01", acceptLoss: true, closeability: "closeability-v1"
+}, "Cloud close carries the same loss decision and closeability proof as the local route");
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 200, body: { ok: true }
+});
+assert.equal((await endedSession).ok, true,
+    "Session close resolves only after the Mac actually ended it");
+
+const beforeFreshSchedules = publishedReads(controlSocket).length;
+const freshSchedules = controlCloud.schedules({ fresh: true });
+await until(function () {
+    return publishedReads(controlSocket).length === beforeFreshSchedules + 1;
+}, "the fresh schedule inventory read to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeFreshSchedules]);
+assert.equal(controlRequest.type, "schedules",
+    "a visible Schedule refresh asks the Mac instead of trusting a retained relay snapshot");
+await answerRead(controlCloud, controlSocket, {
+    read: "read:" + controlRequest.request, status: 200,
+    body: { schedules: [{ id: "morning", title: "Morning fresh" }], at: 1787817602 }
+}, "__clawdline_machine__");
+assert.equal((await freshSchedules).schedules[0].title, "Morning fresh",
+    "the latest Mac inventory replaces the retained schedule row");
+
+const beforeScheduleDetail = publishedReads(controlSocket).length;
 const scheduleDetail = controlCloud.schedule("morning");
-await until(function () { return publishedReads(controlSocket).length === 2; },
+await until(function () {
+    return publishedReads(controlSocket).length === beforeScheduleDetail + 1;
+},
     "the schedule detail read to leave");
-controlRequest = await requestBody(publishedReads(controlSocket)[1]);
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeScheduleDetail]);
 assert.deepEqual({ type: controlRequest.type, id: controlRequest.id },
     { type: "schedule", id: "morning" },
     "a Cloud schedule row asks its owning Mac for the detail that contains project_dir");
@@ -1250,6 +1284,21 @@ const scheduleBody = { title: "Morning", when: { at: "09:00", days: "daily" },
     task: { place_id: "portfolio", instructions: "Publish" } };
 controlCloud.placeRoutes.set("portfolio", { machine: "mac-01", id: "local-portfolio",
     path: "/code/app" });
+const beforeResume = publishedReads(controlSocket).length;
+const resumed = controlCloud.resumePlace("portfolio", "past/session|一", "codex");
+await until(function () { return publishedReads(controlSocket).length === beforeResume + 1; },
+    "the Resume command to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeResume]);
+assert.deepEqual({ type: controlRequest.type, place: controlRequest.place,
+    past: controlRequest.past, assistant: controlRequest.assistant }, {
+    type: "resume", place: "local-portfolio", past: "past/session|一", assistant: "codex"
+}, "Resume translates the Cloud Project id but preserves the chosen conversation and assistant");
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 200,
+    body: { ok: true, id: "new-session" }
+}, "__clawdline_machine__");
+assert.equal((await resumed).id, "new-session",
+    "Resume returns the Mac's newly opened Session receipt");
 for (const operation of [
     ["createSchedule", [scheduleBody], "schedule-create", null],
     ["updateSchedule", ["morning", scheduleBody], "schedule-update", "morning"],

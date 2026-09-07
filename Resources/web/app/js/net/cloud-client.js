@@ -601,6 +601,19 @@ export class CloudClient {
         }, "action");
     }
 
+    /** End the session on the Mac that published it, with the same two close gates as HTTP. */
+    end(value, acceptLoss, closeabilityVersion) {
+        var identity;
+        try { identity = this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
+        var request = requestID();
+        return this._read(identity, "end", {
+            request: request,
+            accept_loss: acceptLoss === true,
+            expected_closeability_version: String(closeabilityVersion || "")
+        }, "action:" + request);
+    }
+
     schedule(id) {
         try {
             var schedule = String(id || "");
@@ -883,7 +896,8 @@ export class CloudClient {
      * it is handed, so resolving `[]` here is the page positively asserting an inventory nobody
      * has read.
      */
-    schedules() {
+    schedules(options) {
+        if (options && options.fresh === true) return this._freshSchedules();
         var answer = this._orchestratorRows("schedules");
         if (!answer.published) {
             return Promise.reject(this.orchestratorSnapshots.size
@@ -893,6 +907,40 @@ export class CloudClient {
                     "no orchestrator snapshot has arrived from this account yet"));
         }
         return Promise.resolve({ schedules: answer.rows, at: answer.at });
+    }
+
+    /**
+     * A retained `orch/` envelope is a fast first paint, not evidence that the list is current.
+     * The visible refresh asks every known Mac and replaces only that Mac's schedule field, so a
+     * reconnect cannot leave a truthful local list hidden behind an old empty relay snapshot.
+     */
+    _freshSchedules() {
+        var machines = this._knownMachines();
+        if (!machines.length) {
+            return Promise.reject(cloudError("cloud_read_unavailable",
+                "no Mac has published an inventory to this account yet"));
+        }
+        var self = this;
+        return Promise.all(machines.map(function (machine) {
+            return self._machineRequest(machine, "schedules", {}, "read").then(function (answer) {
+                var rows = answer && Array.isArray(answer.schedules) ? answer.schedules : [];
+                var at = answer && typeof answer.at === "number" ? answer.at : 0;
+                var previous = self.orchestratorSnapshots.get(machine) || {};
+                self.orchestratorSnapshots.set(machine,
+                    Object.assign({}, previous, { schedules: rows, at: at || previous.at || 0 }));
+                return { machine: machine, rows: rows, at: at };
+            });
+        })).then(function (answers) {
+            var schedules = [];
+            var at = 0;
+            answers.forEach(function (answer) {
+                if (answer.at > at) at = answer.at;
+                answer.rows.forEach(function (row) {
+                    schedules.push(Object.assign({}, row, { machine: answer.machine }));
+                });
+            });
+            return { schedules: schedules, at: at };
+        });
     }
 
     /**
