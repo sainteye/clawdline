@@ -1282,6 +1282,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         "project-worktrees": #"{"type":"project-worktrees","session":"__clawdline_machine__","request":"p-2","project":"/code/app"}"#,
         "past-sessions": #"{"type":"past-sessions","session":"__clawdline_machine__","request":"p-3","place":"portfolio","assistant":"claude"}"#,
         "schedules": #"{"type":"schedules","session":"__clawdline_machine__","request":"p-list"}"#,
+        "snippets": #"{"type":"snippets","session":"__clawdline_machine__","request":"p-snippets"}"#,
         "schedule": #"{"type":"schedule","session":"__clawdline_machine__","request":"p-4","id":"morning"}"#,
         "push-key": #"{"type":"push-key","session":"__clawdline_machine__","request":"p-5"}"#,
     ]
@@ -1307,7 +1308,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(typedNames
                     == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git",
                         "image.img-1", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
-                        "read:p-5", "read:p-list"],
+                        "read:p-5", "read:p-list", "read:p-snippets"],
                 "and each parses into the read it names rather than into the switch's last case")
 
     // Strictness, in the same shape the commands already have: an exact key set, a bounded
@@ -1425,6 +1426,10 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         verifiedCloudRead: .schedules(session: CloudAppBridge.machineReplySession,
                                       request: "fresh"), sender: "viewer"
     )
+    let snippetListRequest = RemoteServer.Request(
+        verifiedCloudRead: .snippets(session: CloudAppBridge.machineReplySession,
+                                     request: "fresh-snippets"), sender: "viewer"
+    )
     let closeRequest = RemoteServer.Request(
         verifiedCloud: .end(session: "%306", acceptLoss: true,
                             closeabilityVersion: "close-v1"),
@@ -1437,12 +1442,13 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     )
     try require(gitRequest.method == "GET" && gitRequest.headers["idempotency-key"] == nil
                     && scheduleListRequest.path == "/v1/orchestrator/schedules"
+                    && snippetListRequest.path == "/v1/snippets"
                     && closeRequest.path == "/v1/sessions/%25306/end"
                     && ((try? JSONSerialization.jsonObject(with: closeRequest.body))
                         as? [String: Any])?["expected_closeability_version"] as? String == "close-v1"
                     && resumeRequest.path
                         == "/v1/places/project%2Fone/resume/codex/past%2Fsession%7C%E4%B8%80",
-                "reads mint no key, while fresh schedules, Session close, and Resume map to "
+                "reads mint no key, while fresh schedules, snippets, Session close, and Resume map to "
                     + "the exact local routes")
 
     // Where they queue, which is the shared queue — and that is not this door's decision, it is

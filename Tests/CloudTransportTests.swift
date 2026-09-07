@@ -713,7 +713,11 @@ private func runCloudTransportURLSessionConnectorTests() async throws -> Int {
     let actualTask = actualSession.webSocketTask(
         with: URL(string: "ws://urlsession-invalidation.invalid/v1/connect")!
     )
-    CloudURLSessionSocket(session: actualSession, task: actualTask).close()
+    let actualSocket = CloudURLSessionSocket(session: actualSession, task: actualTask)
+    let maximumMessageSize = actualTask.maximumMessageSize
+    actualSocket.close()
+    try require(maximumMessageSize == 32 * 1024 * 1024,
+                "the production WebSocket admits every frame the Cloud relay may forward")
     try await waitUntil("owned URLSession invalidates") { invalidationProbe.didInvalidate() }
     try require(invalidationProbe.didInvalidate(),
                 "closing the owned URLSession socket invalidates its private session")

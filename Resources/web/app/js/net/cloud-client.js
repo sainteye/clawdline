@@ -967,6 +967,14 @@ export class CloudClient {
      */
     snippets() {
         var answer = this._orchestratorRows("snippets");
+        var missing = this._knownMachines().filter(function (machine) {
+            var snapshot = this.orchestratorSnapshots.get(machine);
+            return !snapshot || !Array.isArray(snapshot.snippets);
+        }, this);
+        // A reconnect first receives the relay's retained snapshot. That snapshot can predate
+        // the snippets field even when the live Mac supports it, so it is a fast first paint but
+        // not proof that the feature is absent. Ask only the Macs whose retained row is missing.
+        if (missing.length && this.allowWrites) return this._freshSnippets(missing);
         if (!answer.published) {
             return Promise.reject(this.orchestratorSnapshots.size
                 ? cloudError("cloud_snippets_unpublished",
@@ -975,6 +983,22 @@ export class CloudClient {
                     "no orchestrator snapshot has arrived from this account yet"));
         }
         return Promise.resolve({ snippets: answer.rows, at: answer.at });
+    }
+
+    _freshSnippets(machines) {
+        var self = this;
+        return Promise.all(machines.map(function (machine) {
+            return self._machineRequest(machine, "snippets", {}, "read").then(function (answer) {
+                var rows = answer && Array.isArray(answer.snippets) ? answer.snippets : [];
+                var at = answer && typeof answer.at === "number" ? answer.at : 0;
+                var previous = self.orchestratorSnapshots.get(machine) || {};
+                self.orchestratorSnapshots.set(machine,
+                    Object.assign({}, previous, { snippets: rows, at: at || previous.at || 0 }));
+            });
+        })).then(function () {
+            var answer = self._orchestratorRows("snippets");
+            return { snippets: answer.rows, at: answer.at };
+        });
     }
 
     send(value, text, images) {

@@ -6,7 +6,7 @@
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:68,CloudAppBridge:132,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:87'
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:69,CloudAppBridge:132,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:87'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
 # the typed planning graph adds 14, the Cloud bridge lifecycle adds 75, and the Usage mobile,
@@ -382,12 +382,11 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`, and the Cloud receipt itself unchanged because
 # none of the three groups is a Cloud one. The witness below is what the guard named on the same
 # tree before any of it compiled.
-# **10,111 is the measured combined process/status tree, not 10,000 plus a static count.**
+# **10,112 is the measured voice-frame/snippet-realignment tree, not 10,111 plus a static count.**
 # `CLAWDLINE_RESEAL=1 ./test.sh` on the private exact candidate tree
-# `89a40c9b3a1cf86e06e213a0df8252d2c38b55dd` ran all 10,111 checks with all twelve Cloud
-# suites present. Its only two failures were the closed direct-nudge and ordered-group manifests
-# that this same reseal updates; no production behavior assertion failed.
-expected_swift_receipt='10111 checks passed'
+# `0503dae9ac55cc319a837360a180bc72bea4f103` ran all 10,112 checks with all twelve Cloud
+# suites present. The only exit was the expected stale-seal refusal; no behavior assertion failed.
+expected_swift_receipt='10112 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours

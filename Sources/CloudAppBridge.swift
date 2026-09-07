@@ -71,6 +71,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
     case projectWorktrees(session: String, request: String, project: String)
     case pastSessions(session: String, request: String, place: String, assistant: String)
     case schedules(session: String, request: String)
+    case snippets(session: String, request: String)
     case schedule(session: String, request: String, id: String)
     case pushKey(session: String, request: String)
 
@@ -88,6 +89,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .projectWorktrees(let session, _, _): return session
         case .pastSessions(let session, _, _, _): return session
         case .schedules(let session, _): return session
+        case .snippets(let session, _): return session
         case .schedule(let session, _, _): return session
         case .pushKey(let session, _): return session
         }
@@ -122,7 +124,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .image(_, let id): return "image." + id
         case .places(_, let request), .projectWorktrees(_, let request, _),
              .pastSessions(_, let request, _, _), .schedule(_, let request, _),
-             .schedules(_, let request), .pushKey(_, let request): return "read:" + request
+             .schedules(_, let request), .snippets(_, let request),
+             .pushKey(_, let request): return "read:" + request
         }
     }
 }
@@ -758,7 +761,7 @@ actor CloudAppBridge {
     }
 
     /// The reads a viewer may name. A closed set, checked before the write gate, so that adding
-    /// an eighth is a deliberate edit here rather than a spelling that slipped past.
+    /// another one is a deliberate edit here rather than a spelling that slipped past.
     ///
     /// This and the switch in `serveRead` are two lists that have to agree, which is why that
     /// switch ends in a `default` that refuses rather than in the last read: a word admitted here
@@ -767,7 +770,8 @@ actor CloudAppBridge {
     /// member for a well-formed body, so the two cannot come apart quietly.
     static let readTypes: Set<String> = [
         "transcript", "info", "agent", "shell", "skills", "git", "image",
-        "places", "project-worktrees", "past-sessions", "schedules", "schedule", "push-key",
+        "places", "project-worktrees", "past-sessions", "schedules", "snippets", "schedule",
+        "push-key",
     ]
 
     private static func requestName(_ value: Any?) -> String? {
@@ -947,6 +951,16 @@ actor CloudAppBridge {
                 return
             }
             read = .schedules(session: session, request: request)
+        case "snippets":
+            guard Set(body.keys) == ["type", "session", "request"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .snippets(session: session, request: request)
         case "schedule":
             guard Set(body.keys) == ["type", "session", "request", "id"],
                   let session = body["session"] as? String,

@@ -1264,6 +1264,28 @@ await answerRead(controlCloud, controlSocket, {
 assert.equal((await freshSchedules).schedules[0].title, "Morning fresh",
     "the latest Mac inventory replaces the retained schedule row");
 
+const beforeFreshSnippets = publishedReads(controlSocket).length;
+let freshSnippetFailure = null;
+const freshSnippets = controlCloud.snippets().catch(function (error) {
+    freshSnippetFailure = error;
+    return null;
+});
+await until(function () {
+    return publishedReads(controlSocket).length === beforeFreshSnippets + 1;
+}, "the live snippets compatibility read to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeFreshSnippets]);
+assert.equal(controlRequest.type, "snippets",
+    "the compatibility read names snippets rather than guessing from another inventory");
+await answerRead(controlCloud, controlSocket, {
+    read: "read:" + controlRequest.request, status: 200,
+    body: { snippets: [{ id: "deploy", title: "Deploy", scope: "global" }], at: 1787817603 }
+}, "__clawdline_machine__");
+const freshSnippetAnswer = await freshSnippets;
+assert.equal(freshSnippetFailure, null,
+    "the old retained snapshot does not become an immediate unsupported-feature error");
+assert.equal(freshSnippetAnswer.snippets[0].title, "Deploy",
+    "the live Mac's snippets replace the missing retained field");
+
 const beforeScheduleDetail = publishedReads(controlSocket).length;
 const scheduleDetail = controlCloud.schedule("morning");
 await until(function () {

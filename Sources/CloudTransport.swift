@@ -399,6 +399,12 @@ final class CloudWebSocketOpenObserver: NSObject, URLSessionWebSocketDelegate, @
 }
 
 final class CloudURLSessionSocket: CloudStartedTransportSocket, @unchecked Sendable {
+    /// Foundation otherwise stops buffering at 1 MiB. A relay envelope may carry 16 MiB of
+    /// ciphertext, whose base64 and JSON wrapper make the WebSocket text frame about 22.4 MiB.
+    /// Keep this at the relay platform's 32 MiB frame ceiling so the Mac can receive everything
+    /// the relay is allowed to forward, including longer voice recordings.
+    private static let maximumMessageSize = 32 * 1024 * 1024
+
     private let resumeTask: @Sendable () -> Void
     private let sendText: @Sendable (String) async throws -> Void
     private let receiveTextFrame: @Sendable () async throws -> String
@@ -406,6 +412,7 @@ final class CloudURLSessionSocket: CloudStartedTransportSocket, @unchecked Senda
     private let invalidateSession: @Sendable () -> Void
 
     init(session: URLSession, task: URLSessionWebSocketTask) {
+        task.maximumMessageSize = Self.maximumMessageSize
         resumeTask = { task.resume() }
         sendText = { text in try await task.send(.string(text)) }
         receiveTextFrame = {

@@ -102,6 +102,8 @@ struct CloudLocalRoute: Sendable {
             if !assistant.isEmpty { route += "/" + Self.segment(assistant) }
         case .schedules:
             route = "/v1/orchestrator/schedules"
+        case .snippets:
+            route = "/v1/snippets"
         case .schedule(_, _, let id):
             route = "/v1/orchestrator/schedules/\(Self.segment(id))"
         case .pushKey:

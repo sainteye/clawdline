@@ -5769,7 +5769,7 @@ extension RemoteServer {
         /// The read half of the same door, and it has no header spelling either.
         ///
         /// The path and the query are built here from a closed enum rather than sent by the
-        /// viewer, so a paired browser names one of six reads and can never name a route. There
+        /// viewer, so a paired browser names one closed read type and can never name a route. There
         /// is no idempotency key because there is nothing to make happen twice.
         ///
         /// An agent's and a shell's own ids go through `channelSegment`, which escapes exactly
