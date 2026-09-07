@@ -10,7 +10,9 @@
  */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+    appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -150,6 +152,32 @@ try {
     const otherStamp = /window\.__clawdlineCloud = (\{.*?\});/.exec(otherIndex)[1];
     assert.notEqual(JSON.parse(otherStamp).build, stamp,
         "and is stamped differently, so the two cannot be confused in a cache");
+
+    /* ---- changing an immutable asset must change its URL ---------------- */
+
+    const fixture = join(root, "content-stamp-fixture");
+    mkdirSync(join(fixture, "tools"), { recursive: true });
+    mkdirSync(join(fixture, "Resources"), { recursive: true });
+    cpSync("tools/build-web-app.py", join(fixture, "tools", "build-web-app.py"));
+    cpSync("Resources/web", join(fixture, "Resources", "web"), { recursive: true });
+    cpSync("Resources/Clawdline.icns", join(fixture, "Resources", "Clawdline.icns"));
+    const fixtureTool = join(fixture, "tools", "build-web-app.py");
+    const beforeAssetChange = join(root, "before-asset-change");
+    const before = spawnSync("python3", [fixtureTool, "--out", beforeAssetChange],
+        { encoding: "utf8" });
+    assert.equal(before.status, 0, "the isolated control build succeeds");
+    appendFileSync(join(fixture, "Resources", "web", "app", "js", "net", "cloud-client.js"),
+        "\n// content-stamp mutation\n");
+    const afterAssetChange = join(root, "after-asset-change");
+    const after = spawnSync("python3", [fixtureTool, "--out", afterAssetChange],
+        { encoding: "utf8" });
+    assert.equal(after.status, 0, "the isolated mutated build succeeds");
+    const beforeStamp = JSON.parse(readFileSync(
+        join(beforeAssetChange, "BUILD.json"), "utf8")).stamp;
+    const afterStamp = JSON.parse(readFileSync(
+        join(afterAssetChange, "BUILD.json"), "utf8")).stamp;
+    assert.notEqual(afterStamp, beforeStamp,
+        "changing JavaScript changes its immutable URL rather than overwriting cached bytes");
 
     const refused = build(join(root, "four"), ["--app-origin", "http://app.clawdline.com"]);
     assert.notEqual(refused.status, 0, "a plaintext app origin is refused");

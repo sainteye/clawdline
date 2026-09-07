@@ -442,6 +442,43 @@ export class CloudClient {
 
     sessions() { return Promise.resolve(this._sessionResponse(0)); }
 
+    /**
+     * Recover the fleet identity behind the shared UI's row key.
+     *
+     * The local client quite deliberately accepts a bare session id, and the shared view has
+     * always handed that same `s.id` back for transcript, Info, composer and panels.  A Cloud
+     * snapshot carries the missing Mac beside the row, so this transport must join the key back
+     * to that snapshot before it publishes.  Letting the generic helper supply its local
+     * fallback turns a press on `mac-01/session-01` into `ctl/this-mac`; the request is valid,
+     * encrypted and addressed to a machine that does not exist on the relay, which is why the
+     * visible symptom is an endless skeleton instead of an error.
+     *
+     * An explicit identity remains the protocol-level escape hatch used by tests and callers
+     * that already have the pair.  A duplicate bare id is refused rather than guessed: two Macs
+     * with the same terminal id are two sessions, not permission to pick whichever Map visits
+     * first.
+     */
+    _sessionIdentity(value) {
+        if (value && typeof value === "object") return sessionIdentity(value);
+        if (typeof value !== "string" || !value) return sessionIdentity(value);
+        var found = [];
+        this.sessionSnapshots.forEach(function (row) {
+            if (!row || (row.id !== value && row.session !== value)) return;
+            var identity = row.identity || { machine: row.machine, session: row.session };
+            if (!identity || typeof identity.machine !== "string" ||
+                typeof identity.session !== "string") return;
+            if (!found.some(function (seen) {
+                return seen.machine === identity.machine && seen.session === identity.session;
+            })) found.push(identity);
+        });
+        if (found.length === 1) return sessionIdentity(found[0]);
+        if (found.length > 1) {
+            throw cloudError("cloud_session_ambiguous",
+                "more than one Mac published this session id");
+        }
+        throw cloudError("not_found", "this session is not in the Cloud inventory");
+    }
+
     _knownMachines() {
         var found = new Set(this.orchestratorSnapshots.keys());
         this.sessionSnapshots.forEach(function (row) {
@@ -588,7 +625,7 @@ export class CloudClient {
      * together and come back on one channel in whatever order the disk gives them.
      */
     image(value, id) {
-        var identity = sessionIdentity(value);
+        var identity = this._sessionIdentity(value);
         var artifact = String(id == null ? "" : id);
         if (!artifact) return Promise.reject(new TypeError("image() needs an artifact id"));
         var self = this;
@@ -640,7 +677,7 @@ export class CloudClient {
      * transcript coalescing does for the same reason.
      */
     _read(value, type, extra, answer) {
-        var identity = sessionIdentity(value);
+        var identity = this._sessionIdentity(value);
         // The refusal that is deliberate, and it is the relay's rather than this page's: PROTOCOL
         // §12 says publishing to `ctl/` needs `send_prompt`, in either class, and a read has to
         // ask on `ctl/` because that is the only channel a viewer may publish on at all. So a
@@ -812,14 +849,14 @@ export class CloudClient {
     }
 
     send(value, text, images) {
-        var identity = sessionIdentity(value);
+        var identity = this._sessionIdentity(value);
         return this._publishCommand(identity.machine, "send", {
             session: identity.session, text: text || "", images: images || []
         }, "ctl");
     }
 
     answer(value, answer) {
-        var identity = sessionIdentity(value);
+        var identity = this._sessionIdentity(value);
         return this._publishCommand(identity.machine, "answer", {
             session: identity.session, answer: String(answer)
         }, "ctl");
@@ -838,7 +875,7 @@ export class CloudClient {
      * is exactly the kind of literal `tools/check-web-strings.py` exists to keep out.
      */
     title(value) {
-        sessionIdentity(value);
+        this._sessionIdentity(value);
         return Promise.reject(cloudError("unsupported", T.webInfoTitleCloud));
     }
 

@@ -809,7 +809,17 @@ async function answerRead(client, socket, payload, session = "session-01") {
 
 const readingCloud = makeReadingCloud();
 const readingSocket = await becomeReady(readingCloud);
-const transcriptAnswer = readingCloud.transcript({ machine: "mac-01", session: "session-01" });
+// The shared UI keys rows by `session.id` and hands that string back to every transport.  A
+// Cloud transport must recover the owning Mac from the snapshot it supplied; treating the
+// string like a local identity publishes to `ctl/this-mac`, where no Cloud machine can hear it.
+const routedSessionEnvelope = await sealEnvelope({
+    ch: "s/mac-01/session-01", seq: 3999, ts: 1787817600000, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ id: "session-01", label: "cloud session" }), masterKey, signingKey);
+readingSocket.receive({ type: "envelope", envelope: routedSessionEnvelope });
+await readingCloud.messageChain;
+
+const transcriptAnswer = readingCloud.transcript("session-01");
 await until(function () { return publishedReads(readingSocket).length === 1; },
     "the transcript request to leave");
 const subscribed = readingSocket.sent.filter((frame) => frame.type === "subscribe");
@@ -830,8 +840,8 @@ await answerRead(readingCloud, readingSocket,
 assert.deepEqual(await transcriptAnswer, { messages: [{ role: "user", text: "hi" }] },
     "the answer on t/ settles the transcript the direct path would have fetched");
 
-const infoAnswer = readingCloud.info({ machine: "mac-01", session: "session-01" });
-const summaryAnswer = readingCloud.infoSummary({ machine: "mac-01", session: "session-01" });
+const infoAnswer = readingCloud.info("session-01");
+const summaryAnswer = readingCloud.infoSummary("session-01");
 await until(function () { return publishedReads(readingSocket).length === 3; },
     "both Info requests to leave");
 const infoRequests = await Promise.all(publishedReads(readingSocket).slice(1)

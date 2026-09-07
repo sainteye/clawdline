@@ -143,10 +143,10 @@ def build(out, app_origin, api_origin, relay_url):
     for name, body in assets:
         digest.update(name.encode("utf-8"))
         digest.update(b"\0")
+        digest.update(sha256_hex(body).encode("ascii"))
+        digest.update(b"\0")
     for tag, body in string_catalogs:
         digest.update(("strings/" + tag + ".json").encode("utf-8"))
-        digest.update(b"\0")
-        digest.update(sha256_hex(body).encode("ascii"))
         digest.update(b"\0")
         digest.update(sha256_hex(body).encode("ascii"))
         digest.update(b"\0")
