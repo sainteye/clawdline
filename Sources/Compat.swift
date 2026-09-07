@@ -260,6 +260,14 @@ enum Compat {
             since: "not known to have a floor"),
         Dependency(
             program: "Codex",
+            what: "Fast mode in the rollout's newest `thread_settings_applied` event as "
+                + "`thread_settings.service_tier`, and `/fast` toggling it",
+            where_: "SessionInfo.swift, Resources/web/app/js/input/info.js",
+            symptom: "Session info cannot say whether Fast mode is on, or its switch moves in "
+                   + "the wrong direction",
+            since: "0.153.4"),
+        Dependency(
+            program: "Codex",
             what: "`codex app-server`'s JSON-RPC — `initialize`, `model/list`, `thread/list`, "
                 + "`thread/read` and `thread/name/set`. The one dependency here with a real "
                 + "contract: it has "
@@ -308,7 +316,7 @@ enum Compat {
 
     /// Newest first.
     static let releases: [Release] = [
-        Release(clawdline: "0.8.0", claudeCode: "2.1.261", codex: "0.153.2",
+        Release(clawdline: "0.8.0", claudeCode: "2.1.261", codex: "0.153.4",
                 notes: "Telling three tmux failures apart, which makes tmux's own "
                      + "sentences load-bearing: `no server running`, `failed to connect "
                      + "to server`, and the `error connecting to <path>` that carries an "

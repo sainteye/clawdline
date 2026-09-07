@@ -1354,6 +1354,12 @@ protocol Copy {
     var webInfoModelOther: String { get }
     var webInfoModelSent: String { get }
     var webInfoModelBusy: String { get }
+    var webInfoFastMode: String { get }
+    var webInfoFastStandard: String { get }
+    var webInfoFastOn: String { get }
+    var webInfoFastUnreadable: String { get }
+    var webInfoFastSent: String { get }
+    var webInfoFastBusy: String { get }
     var webInfoSwitchPermission: String { get }
     var webInfoPermissionAuto: String { get }
     var webInfoPermissionManual: String { get }

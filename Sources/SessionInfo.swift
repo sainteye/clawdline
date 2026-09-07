@@ -498,6 +498,41 @@ enum SessionInfo {
         return out
     }
 
+    // MARK: - Codex Fast mode
+
+    /// Codex records the effective request tier whenever it applies a thread's settings. Keep
+    /// this three-valued: a rollout from before that event existed, or a future tier this build
+    /// does not understand, says nothing about whether `/fast` would turn the mode on or off.
+    enum FastMode: String, Equatable {
+        case standard
+        case fast
+        case unknown
+    }
+
+    /// The newest complete `thread_settings_applied` event is the current setting. Codex accepts
+    /// `fast` as a request spelling but records the effective OpenAI tier as `priority`; newer
+    /// models may report `ultrafast`, which is still an active accelerated tier. A malformed
+    /// partial final JSONL line is skipped, while a complete setting with a missing or unfamiliar
+    /// tier stops the search at `unknown` instead of borrowing an older value.
+    static func codexFastMode(rollout data: Data) -> FastMode {
+        for line in data.split(separator: 0x0A).reversed() {
+            let text = String(decoding: line, as: UTF8.self)
+            guard text.contains("thread_settings_applied"),
+                  let obj = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+                  obj["type"] as? String == "event_msg",
+                  let payload = obj["payload"] as? [String: Any],
+                  payload["type"] as? String == "thread_settings_applied" else { continue }
+            guard let settings = payload["thread_settings"] as? [String: Any],
+                  let tier = settings["service_tier"] as? String else { return .unknown }
+            switch tier {
+            case "default": return .standard
+            case "fast", "priority", "ultrafast": return .fast
+            default: return .unknown
+            }
+        }
+        return .unknown
+    }
+
     // MARK: - Permission mode
 
     /// The four positions Claude Code visits with Shift-Tab, plus the fact that its screen could
@@ -612,7 +647,8 @@ enum SessionInfo {
                         costOverrideUsd: Double? = nil,
                         limits: Limits, files: Files?,
                         deploy: [[String: Any]], models: [Model] = [],
-                        permission: PermissionMode? = nil) -> [String: Any] {
+                        permission: PermissionMode? = nil,
+                        fastMode: FastMode? = nil) -> [String: Any] {
         var session: [String: Any] = ["id": id]
         if let title, !title.isEmpty { session["title"] = title }
         if let assistant { session["assistant"] = assistant.rawValue }
@@ -635,6 +671,8 @@ enum SessionInfo {
                 "current": (permission ?? .unknown).rawValue,
                 "options": permissionModes.map(\.rawValue),
             ]
+        } else if assistant == .codex {
+            out["fastMode"] = ["current": (fastMode ?? .unknown).rawValue]
         }
 
         if let usage {

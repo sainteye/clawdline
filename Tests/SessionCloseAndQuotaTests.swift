@@ -1467,6 +1467,46 @@ group("the models a session can be moved to, and the word that moves each") {
     expect("and none is an empty list rather than an absent key", (bare["models"] as? [[String: Any]])?.count, 0)
 }
 
+group("Codex Fast mode is read from the rollout and stays three-valued on the wire") {
+    func line(_ tier: Any, at: String) -> String {
+        let obj: [String: Any] = [
+            "timestamp": at, "type": "event_msg",
+            "payload": ["type": "thread_settings_applied",
+                        "thread_settings": ["service_tier": tier]],
+        ]
+        return String(data: try! JSONSerialization.data(withJSONObject: obj), encoding: .utf8)!
+    }
+
+    let standard = line("default", at: "2026-09-07T02:00:00.000Z")
+    let fast = line("priority", at: "2026-09-07T02:01:00.000Z")
+    expect("default is the explicit standard mode",
+           SessionInfo.codexFastMode(rollout: Data(standard.utf8)), .standard)
+    expect("priority is the service tier Codex records for Fast mode",
+           SessionInfo.codexFastMode(rollout: Data(fast.utf8)), .fast)
+    expect("the newest complete setting wins",
+           SessionInfo.codexFastMode(rollout: Data((standard + "\n" + fast + "\n").utf8)), .fast)
+    expect("a partial final line cannot erase the last complete setting",
+           SessionInfo.codexFastMode(rollout: Data((fast + "\n{" ).utf8)), .fast)
+    expect("an unrecognised service tier is unknown rather than standard",
+           SessionInfo.codexFastMode(rollout: Data(line("future-tier", at: "2026-09-07T02:02:00.000Z").utf8)),
+           .unknown)
+    expect("a newer unfamiliar tier cannot borrow an older Fast reading",
+           SessionInfo.codexFastMode(rollout: Data((fast + "\n" +
+               line("future-tier", at: "2026-09-07T02:02:00.000Z")).utf8)), .unknown)
+    expect("a rollout from before the setting existed is also unknown",
+           SessionInfo.codexFastMode(rollout: Data()), .unknown)
+
+    let codex = SessionInfo.payload(
+        id: "X", assistant: .codex, sessionId: nil, model: nil, cwd: nil, startedAt: nil,
+        usage: nil, limits: SessionInfo.Limits(), files: nil, deploy: [], fastMode: .fast)
+    expect("a Codex card receives the current Fast mode",
+           (codex["fastMode"] as? [String: Any])?["current"] as? String, "fast")
+    let claude = SessionInfo.payload(
+        id: "Y", assistant: .claude, sessionId: nil, model: nil, cwd: nil, startedAt: nil,
+        usage: nil, limits: SessionInfo.Limits(), files: nil, deploy: [], fastMode: .fast)
+    check("a Claude card has no Fast mode field", claude["fastMode"] == nil)
+}
+
 group("Claude Code permission modes come from the screen and cycle in wire order") {
     expect("auto mode is read from its exact status phrase",
            SessionInfo.permissionMode(screen:

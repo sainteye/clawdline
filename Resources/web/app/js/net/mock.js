@@ -773,6 +773,7 @@ export var Mock = (function () {
         },
         "44D2-05": {
             models: CODEX_MODELS,
+            fastMode: { current: "fast" },
             session: { id: "44D2-05", title: "turn the field notes into a publishable technical brief",
                        assistant: "codex", model: "gpt-5.3-codex", cwd: "/Users/x/tmp/notes",
                        startedAt: now - 840, seconds: 840 },
@@ -1065,6 +1066,10 @@ export var Mock = (function () {
                     // the real app; a busy session makes the gap conspicuously longer.
                     setTimeout(function () {
                         t.push({ role: "user", text: [carried, text].filter(Boolean).join(" "), tool: null, at: Math.floor(Date.now() / 1000) });
+                        if (text === "/fast" && info[id] && info[id].fastMode) {
+                            info[id].fastMode.current = info[id].fastMode.current === "fast"
+                                ? "standard" : "fast";
+                        }
                         if (s) s.line = "Reading your message…";
                         emit();
                     }, alreadyWorking ? 7000 : 4000);
@@ -1304,6 +1309,7 @@ export var Mock = (function () {
                         limits: { windows: [] },
                         links: (links[id] || []).slice(),
                         models: session.assistant === "codex" ? CODEX_MODELS : CLAUDE_MODELS,
+                        fastMode: session.assistant === "codex" ? { current: "unknown" } : undefined,
                         permission: session.assistant === "claude"
                             ? { current: "manual", options: PERMISSION_MODES } : undefined
                     } });

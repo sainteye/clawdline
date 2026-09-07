@@ -12,6 +12,7 @@ import { byId, closeabilityLines, owedBadgeHTML, projectSessionCloseability, pro
 import { GitPanel } from "./git-panel.js";
 import { SessionFacts, StatusLine } from "./status-line.js";
 import { isOpenableProjectLink, isServedProjectArtifact } from "./project-links.js";
+import { fastModeCommand, nextFastMode, settledFastMode } from "./fast-mode.js";
 
 /**
  * The Session info card — the status line at the bottom of a Claude Code terminal, for somebody
@@ -38,12 +39,14 @@ export var Info = (function () {
     var ticket = 0;      // the answer that is still wanted, so a stale one can be dropped
     var drawn = false;   // the sections have risen once; a redraw should not make them rise again
     var pending = null;  // the word sent after `/model`, until the transcript names that model
+    var fastModePending = null; // the state `/fast` should reach, until the rollout agrees
     var permissionPending = null; // the mode requested, until a fresh screen capture agrees
     var busy = false;    // a model command or permission key sequence on its way to the Mac
     var editingTitle = false;
     var titleDraft = "";
     var stateSeen = "";  // terminal, work and closeability shape at the last draw
     var confirming = 0;  // the timer reading back, waiting for a sent `/model` to turn up
+    var fastModeConfirming = 0;
     var permissionConfirming = 0;
 
     function say(w) { els["info-say"].textContent = w || ""; els["info-say"].hidden = !w; }
@@ -242,6 +245,28 @@ export var Info = (function () {
         return '<div class="models">' + chips + "</div>" + (can ? "" : note(T.webInfoPermissionBusy));
     }
 
+    function fastModeName(mode) {
+        return mode === "fast" ? T.webInfoFastOn : T.webInfoFastStandard;
+    }
+
+    function fastModeHTML(fastMode) {
+        var current = fastMode && fastMode.current || "unknown";
+        if (current !== "standard" && current !== "fast") return note(T.webInfoFastUnreadable);
+        // A read-only pairing still gets the fact it asked for, but no dead controls suggesting
+        // it could change the Mac. This is the same distinction the rest of the card makes.
+        if (!S.write) return note(fastModeName(current));
+        var can = canSwitch() && !fastModePending;
+        var chips = ["standard", "fast"].map(function (mode) {
+            var on = current === mode;
+            var wait = !on && fastModePending === mode;
+            return '<button type="button" class="m" data-fast-mode="' + mode + '"' +
+                (on ? ' data-on="1" aria-current="true"' : "") +
+                (wait ? ' data-pending="1"' : "") +
+                (can && !on ? "" : " disabled") + ">" + esc(fastModeName(mode)) + "</button>";
+        }).join("");
+        return '<div class="models">' + chips + "</div>" + (can ? "" : note(T.webInfoFastBusy));
+    }
+
     /**
      * The list is deliberately a one-line scan and may ellipsise. This is its unabridged home:
      * each independent status remains separate, and the status itself is the disclosure control
@@ -378,7 +403,8 @@ export var Info = (function () {
 
     function html(d) {
         var s = d.session || {}, u = d.usage, l = d.limits || {}, f = d.files,
-            links = d.links || d.deploy || [], models = d.models || [], permission = d.permission;
+            links = d.links || d.deploy || [], models = d.models || [], permission = d.permission,
+            fastMode = d.fastMode;
         // The model is whatever the transcript last named — a reply, or a `/model` nobody has
         // replied to yet, whichever of the two is newer. So a session that switched mid-way shows
         // what it is on now rather than what it began on, a session that has only ever been
@@ -386,11 +412,13 @@ export var Info = (function () {
         // pending the moment the record agrees with it.
         var current = s.model || (u && u.model) || "";
         if (pending && models.some(function (m) { return m.command === pending && onModel(current, m); })) pending = null;
+        if (fastModePending && settledFastMode(fastModePending, fastMode && fastMode.current)) fastModePending = null;
         if (permissionPending && permission && permission.current === permissionPending) permissionPending = null;
         var out = hero(s, u), i = 0;
         out += sec(++i, T.webInfoStatus, "", statusHTML(session() || s));
         // Read-only pairings get no buttons rather than dead ones: there is nothing they could do.
         if (models.length && S.write) out += sec(++i, T.webInfoSwitchModel, "", modelsHTML(models, current));
+        if (fastMode) out += sec(++i, T.webInfoFastMode, "", fastModeHTML(fastMode));
         if (permission && S.write) out += sec(++i, T.webInfoSwitchPermission, "", permissionHTML(permission));
         out += sec(++i, T.webInfoUsage, "", usageHTML(u));
         // When the windows were last known — the status line writes them down every few seconds
@@ -518,6 +546,23 @@ export var Info = (function () {
         }, 500);
     }
 
+    function readFastModeBack(id, tries) {
+        clearTimeout(fastModeConfirming);
+        if (tries <= 0) return;
+        fastModeConfirming = setTimeout(function () {
+            if (forId !== id || els.info.hidden || !fastModePending) return;
+            SessionFacts.drop(id);
+            SessionFacts.get(id, true).then(function (facts) {
+                if (forId !== id || els.info.hidden || !fastModePending || !facts) return;
+                data = facts;
+                StatusLine.receive(id, facts);
+                draw();
+                if (fastModePending) readFastModeBack(id, tries - 1);
+                else said("");
+            }).catch(function () {});
+        }, 800);
+    }
+
     function pause(ms) { return new Promise(function (done) { setTimeout(done, ms); }); }
 
     /** Send each Back-Tab as its own idempotent write, with enough space for Claude Code to
@@ -541,11 +586,13 @@ export var Info = (function () {
             data = SessionFacts.peek(forId);
             drawn = false;
             pending = null;
+            fastModePending = null;
             permissionPending = null;
             busy = false;
             editingTitle = false;
             titleDraft = "";
             clearTimeout(confirming);
+            clearTimeout(fastModeConfirming);
             clearTimeout(permissionConfirming);
             said("");
             els.info.hidden = false;
@@ -567,11 +614,13 @@ export var Info = (function () {
             data = null;
             forId = null;
             pending = null;
+            fastModePending = null;
             permissionPending = null;
             busy = false;
             editingTitle = false;
             titleDraft = "";
             clearTimeout(confirming);
+            clearTimeout(fastModeConfirming);
             clearTimeout(permissionConfirming);
         },
 
@@ -612,6 +661,31 @@ export var Info = (function () {
                 if (forId !== id) return;
                 busy = false;
                 clearTimeout(confirming);
+                said((e && e.message) || T.webInfoFailed);
+                draw();
+            });
+        },
+
+        switchFastMode: function (target) {
+            var id = forId;
+            var current = data && data.fastMode && data.fastMode.current;
+            if (!id || fastModePending || nextFastMode(current) !== target || !canSwitch()) return;
+            busy = true;
+            fastModePending = target;
+            said("");
+            draw();
+            api.send(id, fastModeCommand(), []).then(function () {
+                if (forId !== id) return;
+                busy = false;
+                SessionFacts.drop(id);
+                said(fill(T.webInfoFastSent, { mode: fastModeName(target) }), true);
+                draw();
+                readFastModeBack(id, 5);
+            }).catch(function (e) {
+                if (forId !== id) return;
+                busy = false;
+                fastModePending = null;
+                clearTimeout(fastModeConfirming);
                 said((e && e.message) || T.webInfoFailed);
                 draw();
             });
@@ -713,6 +787,8 @@ els["info-body"].addEventListener("click", function (ev) {
     if (chip) { if (!chip.disabled) Info.switchTo(chip.dataset.model, chip.dataset.name); return; }
     var permission = t.closest ? t.closest("button[data-permission]") : null;
     if (permission) { if (!permission.disabled) Info.switchPermission(permission.dataset.permission); return; }
+    var fastMode = t.closest ? t.closest("button[data-fast-mode]") : null;
+    if (fastMode) { if (!fastMode.disabled) Info.switchFastMode(fastMode.dataset.fastMode); return; }
     var sid = t.closest ? t.closest("button[data-copy]") : null;
     if (sid) { Info.copy(sid.dataset.copy, sid.dataset.copySaid); return; }
     var editTitle = t.closest ? t.closest("button[data-title-edit]") : null;

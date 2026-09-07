@@ -12,8 +12,8 @@ being true.
 ## The short version
 
 - Built and used against Claude Code **2.1.261**.
-- And against Codex **0.153.2**.
-- The oldest that everything here works with is **2.1.224**. 4 rows below name a floor at all; the rest have none known.
+- And against Codex **0.153.4**.
+- The oldest that everything here works with is **2.1.224**. 5 rows below name a floor at all; the rest have none known.
 - Nothing refuses to run on an older one. What you lose is whichever of those rows names
   a floor you are under, and the second table below says which.
 - A **newer** Claude Code is the normal state of the world, and is only mentioned when a
@@ -23,7 +23,7 @@ being true.
 
 | Clawdline | Claude Code | Codex | |
 |---|---|---|---|
-| 0.8.0 | 2.1.261 | 0.153.2 | Telling three tmux failures apart, which makes tmux's own sentences load-bearing: `no server running`, `failed to connect to server`, and the `error connecting to <path>` that carries an errno are three typed answers now rather than one empty pane list, so a rewording upstream turns a named cause back into an unexplained absence. And a dispatch refuses on the quota it reads out of each assistant's own local files: if either changes where or how it records a usage window, this Mac stops being able to say that a tab is opening to die. |
+| 0.8.0 | 2.1.261 | 0.153.4 | Telling three tmux failures apart, which makes tmux's own sentences load-bearing: `no server running`, `failed to connect to server`, and the `error connecting to <path>` that carries an errno are three typed answers now rather than one empty pane list, so a rewording upstream turns a named cause back into an unexplained absence. And a dispatch refuses on the quota it reads out of each assistant's own local files: if either changes where or how it records a usage window, this Mac stops being able to say that a tab is opening to die. |
 | 0.7.0 | 2.1.260 | 0.151.0 | Picking a recorded conversation back up, which depends on `claude --resume` taking a session id and on the names Claude Code writes for the conversations it has already recorded: if either moves, the list a project shows is empty or opens the wrong one. iTerm2 stops being the only terminal — everything else runs through tmux control mode, so a second program's shape now matters as much as an assistant's. And the Web transcript reads Codex's rollout item types directly, which are not the same list as its live events and are the half that changes without a version bump. |
 | 0.6.0 | 2.1.235 | 0.149.0 | Answering a session from a phone, which adds two dependencies of a different kind. The hook contract — nine matcher groups under eight event names, written into ~/.claude/settings.json — replaces reading the screen when it is installed. And answering a multiple-choice question sends the single byte its picker reads, so if that picker stops taking a bare digit the phone can still see the question and can no longer answer it. This is also the first release that can see Codex, which adds five shapes of its own — a rollout file, a live line, a dialog, a process name and the word that ends a session. |
 | 0.5.0 | 2.1.234 | not applicable | Reads every session's screen to say which is working, which has stopped and which is waiting — so it depends on the shape of the spinner line and of the box Claude Code asks a question in. |
@@ -77,6 +77,7 @@ three versions, which needs both halves at once and so cannot become a weekly no
 | Codex | Its dialogs: numbered rows under a caret in column zero, with the composer taken away while one is up | `SessionState.swift` | not known to have a floor | A Codex session that is waiting for an answer looks idle, and cannot be answered from a phone |
 | Codex | `/quit` ending a session, and a bare digit answering a dialog | `Assistant.swift, Targets.swift` | not known to have a floor | "End" closes the tab on a session that is still running; a menu answer does nothing |
 | Codex | The model list its own picker shows, cached in ~/.codex/models_cache.json as `slug`, `visibility` and `display_name` | `SessionInfo.swift` | not known to have a floor | The model button on a phone is empty, or offers a model this Codex no longer has |
+| Codex | Fast mode in the rollout's newest `thread_settings_applied` event as `thread_settings.service_tier`, and `/fast` toggling it | `SessionInfo.swift, Resources/web/app/js/input/info.js` | 0.153.4 | Session info cannot say whether Fast mode is on, or its switch moves in the wrong direction |
 | Codex | `codex app-server`'s JSON-RPC — `initialize`, `model/list`, `thread/list`, `thread/read` and `thread/name/set`. The one dependency here with a real contract: it has a generator, `codex app-server generate-json-schema` | `CodexNaming.swift` | not known to have a floor | A Codex session opened to be handed work never gets its name, or the resume sheet has no Codex history to offer |
 | Codex | Which subcommands are not an interactive session — `exec`, `mcp-server`, `app-server` and the rest of that list | `Assistant.swift` | not known to have a floor | A batch `codex exec` turns up in the list as a session somebody can type into, and the prompt goes nowhere |
 | claude-bestiary | `rate-limits.json` in the status line's cache directory: `at`, `session_id` and a `rate_limits` block of windows | `SessionInfo.swift` | not known to have a floor | The plan's five-hour and weekly windows go blank until a session actually hits a limit and its transcript says so |

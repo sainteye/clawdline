@@ -386,7 +386,11 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `CLAWDLINE_RESEAL=1 ./test.sh` on the private exact candidate tree
 # `0503dae9ac55cc319a837360a180bc72bea4f103` ran all 10,112 checks with all twelve Cloud
 # suites present. The only exit was the expected stale-seal refusal; no behavior assertion failed.
-expected_swift_receipt='10112 checks passed'
+# **10,121 is the Fast-mode tree's measured total, not 10,112 plus a source count.** The private
+# exact working-overlay run with `CLAWDLINE_RESEAL=1` reached all 10,121 checks and all twelve
+# Cloud suites. It exposed the eight locale variants backed by the two Chinese Copy structs still
+# carrying the English heading; those translations were corrected before the sealed candidate run.
+expected_swift_receipt='10121 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -399,7 +403,7 @@ expected_swift_receipt='10112 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8134
+expected_swift_receipt_witness=8143
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -892,6 +896,7 @@ browser_contract_suites=(
   Tests/web-viewport.mjs
   Tests/web-layout-diagnostics.mjs
   Tests/web-session-disposition.mjs
+  Tests/web-fast-mode.mjs
   Tests/web-session-closeability.mjs
   Tests/web-title-transport.mjs
   Tests/web-code-copy.mjs
@@ -904,7 +909,7 @@ browser_contract_suites=(
   Tests/web-pages.mjs
   Tests/web-projects.mjs
 )
-if [ "${#browser_contract_suites[@]}" -ne 20 ]; then
+if [ "${#browser_contract_suites[@]}" -ne 21 ]; then
   echo "browser contract roster changed without updating its sealed count" >&2
   exit 1
 fi

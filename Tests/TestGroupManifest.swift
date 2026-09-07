@@ -400,6 +400,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     + "Codex's credits rule only trusts a depleted record that is actually the newer one",
     "the dispatch gate actually reads the quota it computed, rather than only its helpers",
     "the models a session can be moved to, and the word that moves each",
+    "Codex Fast mode is read from the rollout and stays three-valued on the wire",
     "Claude Code permission modes come from the screen and cycle in wire order",
     "the model a `/model` names, before the reply that proves it",
     "session registry: reading a file a session wrote about itself",

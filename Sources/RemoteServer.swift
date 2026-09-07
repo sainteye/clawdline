@@ -4608,6 +4608,7 @@ final class RemoteServer: @unchecked Sendable {
         var costOverrideUsd: Double?
         var limits = SessionInfo.Limits()
         var model: String?
+        var fastMode: SessionInfo.FastMode?
         // The transcript is read if it can be, and its absence no longer silences everything
         // else. Claude Code's status-line cache answers the context fill and the exact cost on
         // its own, under the same id this record names, so a transcript that is missing, empty
@@ -4633,6 +4634,7 @@ final class RemoteServer: @unchecked Sendable {
                 context = SessionInfo.codexContext(rollout: data)
                 limits = SessionInfo.codexLimits(rollout: data)
                 model = usage?.model
+                fastMode = SessionInfo.codexFastMode(rollout: data)
             }
         }
         if model == nil, let named = usage?.model, !named.hasPrefix("<") { model = named }
@@ -4666,7 +4668,7 @@ final class RemoteServer: @unchecked Sendable {
             usage: usage, context: context, costOverrideUsd: costOverrideUsd, limits: limits,
             files: includeDeferred ? cwd.flatMap { SessionInfo.files(cwd: $0) } : nil,
             deploy: deploy, models: SessionInfo.models(for: session.assistant),
-            permission: permission)
+            permission: permission, fastMode: fastMode)
         if includeDeferred { payload["links"] = links }
         return payload
     }

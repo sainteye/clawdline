@@ -9,6 +9,14 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: Codex Fast mode in Session info
+
+A Codex Session's info card now says whether Fast mode is on and can switch it on or off while
+the Session is idle. Clawdline reads the effective service tier from Codex's own rollout, sends
+Codex's `/fast` command, and keeps the control pending until a later rollout reading confirms the
+new state. Older rollouts and unfamiliar future tiers show **unknown** instead of being mistaken
+for Fast mode off.
+
 ### Fixed: tapping a notification over an open iPhone app never reached its Session
 
 An installed iOS web app could receive and display a push while it was already open, then do
