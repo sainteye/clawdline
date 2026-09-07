@@ -616,11 +616,13 @@ row still ends up whole. That is one complete read per cache TTL per open sessio
 issued before the summary it completes has been drawn.
 
 **This is the expensive one**, and it is answered off the queue every other request is read on:
-gathering it runs `lsof`, reads the whole transcript, asks iTerm2 for the visible screen over an
-Apple event, and shells out to `git status`. Eight of these and `/v1/places` may be in hand at
-once; the ninth is `429 busy`. That number is a patience bound rather than a promise about how
-long the wait is — a single card can sit inside a fifteen-second Apple event timeout, and while
-it does, the eighth in line waits minutes.
+gathering the full form runs `lsof`, reads one newline-aligned tail of the provider record (at most
+8 MiB), asks iTerm2 for the visible screen over an Apple event, and shells out to `git status`.
+The summary and full forms share a signature-keyed parse, so completing a freshly painted summary
+does not reread unchanged bytes. Eight of these and `/v1/places` may be in hand at once; the ninth
+is `429 busy`. That number is a patience bound rather than a promise about how long the wait is —
+a single card can sit inside a fifteen-second Apple event timeout, and while it does, the eighth in
+line waits minutes.
 
 ```console
 $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
@@ -643,7 +645,7 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/info
 | `session` | `id` and `assistant` always; `sessionId` when the current process can be bound to its exact Claude transcript or Codex rollout; `model` when a transcript has named one — the **last** model the transcript names, so a session that switched mid-way shows what it is on now; `cwd`, `startedAt` and `seconds` (its age, as of this answer) when the process could be found |
 | `permission` | Claude Code's current permission mode and the Shift-Tab cycle order. `current` is `auto`, `manual`, `acceptEdits`, `plan`, or `unknown`; `manual` specifically means the screen was readable and showed no mode line, while `unknown` means the screen capture was absent or empty. **Absent for Codex sessions**, which do not have this mode cycle |
 | `fastMode` | Codex Fast mode as `current: "standard"`, `"fast"`, or `"unknown"`. It is read from the newest complete rollout `thread_settings_applied.thread_settings.service_tier`: `default` is standard; `fast`, effective `priority`, and `ultrafast` are active. A missing or unfamiliar tier is unknown rather than off. **Absent for Claude Code sessions.** The Session info control sends Codex's closed `/fast` toggle only from a known state while the session is idle, then reads this field back; the terminal send receipt alone is not confirmation. |
-| `usage` | the transcript's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd`. Claude Code's own `total_cost_usd` replaces the list-price estimate when its session cache has it — **on this route only**: the task records under `/v1/orchestrator/tasks` still publish the estimate, so the same session can be quoted two different figures. **Absent** when no transcript has been found, which is not the same as zero |
+| `usage` | the provider record's token totals — `input`, `output`, `cacheRead`, `cacheWrite`, `total` — with `model` and, for Claude, `costUsd`. Codex's newest counter is cumulative, so it remains exact in the bounded tail. Claude records per-turn deltas: when its record exceeds the 8 MiB read window, `usage` is absent rather than presenting a partial sum as a whole-session total; Claude Code's cached `total_cost_usd` may still supply the cost. That cost replaces the list-price estimate **on this route only**: the task records under `/v1/orchestrator/tasks` still publish the estimate, so the same session can be quoted two different figures. **Absent** is not zero. |
 | `context` | the current conversation against its model window: `usedPercent`, plus `usedTokens`, plus `windowTokens` **only when the window is a stated fact rather than a guess**. Codex records all three together; Claude combines the last parent assistant turn's transcript usage with its cached window, falling back to a model-window table when that cache is absent — and a table row is a guess, so it moves the percentage but never appears as `windowTokens`. **Absent** when no source supplies a window, and when one does but neither the newest parent turn nor the cache supplies a used figure. This is per-turn context, not cumulative `usage` |
 | `limits` | One machine-level snapshot for the assistant account, shared by every Session on this Mac. `windows`: each `name` (`5h`, `7d` — the status line's names), `usedPercent`, `resetsAt`, and `hit` when the provider refused the last request on it; `at` is when the provider record was written, while `readAtMs` orders concurrent Info responses carrying that snapshot. **An empty `windows` means nobody said**, and a client must draw that as unknown rather than as 0% |
 | `files` | the working tree **counted**, not listed: `branch` (empty when detached), `head`, `ahead`, `behind`, `staged`, `unstaged`, `untracked`, `conflict`. A partially added file is under both `staged` and `unstaged`, as `git status` lists it. **Absent** when the directory is not a repository or `git` did not answer in time — and those are the same answer on purpose, because a card that said *clean* about a tree it could not read would be wrong in the direction that matters. The files themselves are `/git` |

@@ -109,8 +109,28 @@ final class FreshReadings<Value> {
     private var readings: [String: Reading] = [:]
     private var inFlight: Set<String> = []
     private var waiters: [String: [(Answer) -> Void]] = [:]
+    private var readingOrder: [String] = []
+    private let capacity: Int
 
-    init() {}
+    init(capacity: Int = 128) {
+        precondition(capacity > 0)
+        self.capacity = capacity
+    }
+
+    private func touch(_ key: String) {
+        readingOrder.removeAll { $0 == key }
+        readingOrder.append(key)
+    }
+
+    private func trim() {
+        while readings.count > capacity {
+            guard let index = readingOrder.firstIndex(where: {
+                !inFlight.contains($0) && waiters[$0] == nil
+            }) else { return }
+            let key = readingOrder.remove(at: index)
+            readings.removeValue(forKey: key)
+        }
+    }
 
     /// Answer `key`, taking the reading only when there is nothing servable.
     ///
@@ -136,6 +156,7 @@ final class FreshReadings<Value> {
         if let reading = readings[key] {
             let age = max(0, now - reading.bornAt)
             if age <= policy.serveFor {
+                touch(key)
                 // Answer first, start the refresh second. The other order works and reads the
                 // same, but it puts the dispatch of a background read — and whatever `execute`
                 // does with it — between the reader and an answer that was already in hand.
@@ -203,11 +224,14 @@ final class FreshReadings<Value> {
         let at = Self.clock()
         if verdict.usable {
             readings[key] = Reading(value: value, bornAt: at, staleReason: nil)
+            touch(key)
+            trim()
         } else if readings[key] != nil {
             // **The refusal ages the reading; it does not replace it.** `bornAt` is left where it
             // was, so a Mac with a dialog on it walks steadily toward `serveFor` instead of
             // resetting its clock every twenty seconds and serving the same stale card forever.
             readings[key]?.staleReason = verdict.reason
+            touch(key)
         }
         guard let parked = waiters.removeValue(forKey: key), !parked.isEmpty else { return }
         // Whoever was waiting gets the value that was just read, even when it was a refusal:
@@ -244,7 +268,7 @@ final class FreshReadings<Value> {
     var storedKeysForTesting: Set<String> { Set(readings.keys) }
     func waiterCountForTesting(_ key: String) -> Int { waiters[key]?.count ?? 0 }
     func forgetForTesting() {
-        readings.removeAll(); inFlight.removeAll(); waiters.removeAll()
+        readings.removeAll(); inFlight.removeAll(); waiters.removeAll(); readingOrder.removeAll()
     }
 }
 

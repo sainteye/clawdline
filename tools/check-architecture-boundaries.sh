@@ -197,7 +197,11 @@ main_lines=$(line_count Tests/main.swift)
 #          take a directory from somebody who may be standing in a worktree, which is why the
 #          reading moved here rather than into `inflightReply`. The resolution itself is
 #          `OrchestratorDraft.mainWorktree(containing:)`, a new function in that file.
-orchestrator_ceiling=10826
+# 10,733 moves the read-only closeability projection and its history index into
+# `Sources/CloseabilityIndex.swift`. The broker retains only mutation tracking, fingerprint
+# settlement and the snapshot door, and no longer writes the same full registry twice per save;
+# the 93-line reduction is measured on this tree, not headroom.
+orchestrator_ceiling=10733
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

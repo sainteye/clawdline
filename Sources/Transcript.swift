@@ -527,6 +527,28 @@ enum Transcript {
     private static let titleLock = NSLock()
     private static var titleCache: [String: (signature: String, title: String?)] = [:]
     private static var customTitleCache: [String: (size: Int, title: String?)] = [:]
+    private static var weakTitleCache: [String: (title: String, weak: Bool)] = [:]
+    private static var titleCacheOrder: [String] = []
+    private static var customTitleCacheOrder: [String] = []
+    private static var weakTitleCacheOrder: [String] = []
+    private static let titleCacheLimit = 512
+
+    private static func touch(_ key: String, order: inout [String]) {
+        order.removeAll { $0 == key }
+        order.append(key)
+    }
+
+    private static func trimTitleCachesLocked() {
+        while titleCacheOrder.count > titleCacheLimit {
+            titleCache.removeValue(forKey: titleCacheOrder.removeFirst())
+        }
+        while customTitleCacheOrder.count > titleCacheLimit {
+            customTitleCache.removeValue(forKey: customTitleCacheOrder.removeFirst())
+        }
+        while weakTitleCacheOrder.count > titleCacheLimit {
+            weakTitleCache.removeValue(forKey: weakTitleCacheOrder.removeFirst())
+        }
+    }
 
     static func title(ofTranscript url: URL, tailBytes: Int = 512_000) -> String? {
         let cacheKey = "\(url.path)\u{0}\(tailBytes)"
@@ -534,10 +556,12 @@ enum Transcript {
         let size = fileSize(url)
         titleLock.lock()
         if let hit = titleCache[cacheKey], hit.signature == sig {
+            touch(cacheKey, order: &titleCacheOrder)
             defer { titleLock.unlock() }
             return hit.title
         }
         let previousCustom = customTitleCache[url.path]
+        if previousCustom != nil { touch(url.path, order: &customTitleCacheOrder) }
         titleLock.unlock()
 
         // A newly appended title is necessarily in the tail while growth stays within the tail
@@ -552,6 +576,9 @@ enum Transcript {
         titleLock.lock()
         titleCache[cacheKey] = (sig, found.title)
         customTitleCache[url.path] = (size, found.customTitle)
+        touch(cacheKey, order: &titleCacheOrder)
+        touch(url.path, order: &customTitleCacheOrder)
+        trimTitleCachesLocked()
         titleLock.unlock()
         return found.title
     }
@@ -565,6 +592,7 @@ enum Transcript {
         _ = title(ofTranscript: url)
         titleLock.lock()
         defer { titleLock.unlock() }
+        if customTitleCache[url.path] != nil { touch(url.path, order: &customTitleCacheOrder) }
         return customTitleCache[url.path]?.title
     }
 
@@ -585,8 +613,6 @@ enum Transcript {
     /// evidence rather than because the title describes anything. Every caller passes the
     /// default today, so nothing collides now; a smaller bound added later would otherwise be
     /// handed an answer somebody else measured.
-    private static var weakTitleCache: [String: (title: String, weak: Bool)] = [:]
-
     static func titleIsWeak(ofTranscript url: URL, title: String?, customTitle: String?,
                             bytes: Int = 2_000_000) -> Bool {
         guard let title = title?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -598,12 +624,15 @@ enum Transcript {
         let cacheKey = "\(url.path)\u{0}\(bytes)"
         titleLock.lock()
         let remembered = weakTitleCache[cacheKey]
+        if remembered != nil { touch(cacheKey, order: &weakTitleCacheOrder) }
         titleLock.unlock()
         if let remembered, remembered.title == title { return remembered.weak }
         let weak = ConversationTitle.isWeak(title: title, customTitle: nil,
                                             opening: firstUserMessage(of: url, bytes: bytes))
         titleLock.lock()
         weakTitleCache[cacheKey] = (title, weak)
+        touch(cacheKey, order: &weakTitleCacheOrder)
+        trimTitleCachesLocked()
         titleLock.unlock()
         return weak
     }
@@ -796,19 +825,41 @@ enum Transcript {
         (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
     }
 
-    /// Transcripts run to tens of megabytes. Only the tail is ever wanted, and reading the
-    /// whole file every second to show twenty messages would be absurd.
-    static func tail(of url: URL, bytes: Int) -> String? {
+    struct TailData {
+        let data: Data
+        /// True only when the read began at byte zero. A caller summing per-turn facts must not
+        /// present a partial tail as a whole-session total.
+        let complete: Bool
+        let fileSize: UInt64
+    }
+
+    /// One bounded, newline-aligned read of an append-only provider record. Keep the completeness
+    /// bit beside the bytes: Codex's newest counters are cumulative and remain exact in a tail,
+    /// while Claude's per-turn counters do not.
+    static func tailData(of url: URL, bytes: Int) -> TailData? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         let size = (try? handle.seekToEnd()) ?? 0
-        let start = size > UInt64(bytes) ? size - UInt64(bytes) : 0
+        let budget = UInt64(max(0, bytes))
+        let start = size > budget ? size - budget : 0
         try? handle.seek(toOffset: start)
-        guard let data = try? handle.readToEnd() else { return nil }
-        var text = String(decoding: data, as: UTF8.self)
+        guard var data = try? handle.readToEnd() else { return nil }
         // The first line is almost certainly cut in half by the seek.
-        if start > 0, let nl = text.firstIndex(of: "\n") { text = String(text[text.index(after: nl)...]) }
-        return text
+        if start > 0 {
+            if let nl = data.firstIndex(of: 0x0A) {
+                data = Data(data[data.index(after: nl)...])
+            } else {
+                data = Data()
+            }
+        }
+        return TailData(data: data, complete: start == 0, fileSize: size)
+    }
+
+    /// Transcripts run to tens of megabytes. Only the tail is ever wanted, and reading the
+    /// whole file every second to show twenty messages would be absurd.
+    static func tail(of url: URL, bytes: Int) -> String? {
+        guard let read = tailData(of: url, bytes: bytes) else { return nil }
+        return String(decoding: read.data, as: UTF8.self)
     }
 
     // MARK: - Laid-out transcripts, kept

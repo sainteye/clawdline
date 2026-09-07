@@ -706,6 +706,46 @@ group("the Session info card is read off the files, and says unknown rather than
     check("a token count without a model window is unknown context",
           SessionInfo.codexContext(rollout: Data((tokenCount + "\n").utf8)) == nil)
 
+    // A live card reads an append-only provider record under a hard byte budget. The newest
+    // Codex event is cumulative, so an incomplete tail is still an exact answer; Claude's
+    // per-turn usage is not cumulative, so the same incomplete tail must not be summed and
+    // presented as a complete session total.
+    let boundedDir = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-bounded-info-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: boundedDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: boundedDir) }
+    let boundedCodex = boundedDir.appendingPathComponent("codex.jsonl")
+    let recentCodex = line([
+        "timestamp": "2026-08-23T16:50:00.000Z", "type": "event_msg",
+        "payload": ["type": "token_count",
+                    "info": ["total_token_usage": ["input_tokens": 123, "output_tokens": 45,
+                                                       "total_tokens": 168],
+                             "last_token_usage": ["total_tokens": 64],
+                             "model_context_window": 256]],
+    ])
+    try! Data((String(repeating: "x", count: 512) + "\n" + recentCodex + "\n").utf8)
+        .write(to: boundedCodex)
+    let boundedCodexFacts = SessionInfo.recordFacts(
+        at: boundedCodex, assistant: .codex, maxBytes: recentCodex.utf8.count + 2)
+    check("a live Codex reading is explicitly an incomplete bounded tail",
+          boundedCodexFacts?.recordComplete == false)
+    expect("the cumulative event in that tail remains an exact total",
+           boundedCodexFacts?.usage?.total, 168)
+    expect("and the same pass supplies current context",
+           boundedCodexFacts?.context?.usedTokens, 64)
+
+    let boundedClaude = boundedDir.appendingPathComponent("claude.jsonl")
+    let recentClaude = line([
+        "type": "assistant", "isSidechain": false,
+        "message": ["model": "claude-fable-5", "usage": ["input_tokens": 7]],
+    ])
+    try! Data((String(repeating: "x", count: 512) + "\n" + recentClaude + "\n").utf8)
+        .write(to: boundedClaude)
+    let boundedClaudeFacts = SessionInfo.recordFacts(
+        at: boundedClaude, assistant: .claude, maxBytes: recentClaude.utf8.count + 2)
+    check("an incomplete Claude tail never masquerades as complete cumulative usage",
+          boundedClaudeFacts?.usage == nil)
+
     // Claude's status-line cache owns the window and Claude Code's own cost, while the
     // transcript owns the freshest current-turn usage. A sidechain is a different conversation
     // and must not replace the parent turn merely because it was written later.

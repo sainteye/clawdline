@@ -859,6 +859,7 @@ link to them.
 | [Notifications](docs/notifications.md) | who hears what, and why depth decides the audience rather than the volume |
 | [Reading a browser-side defect](docs/diagnostics.md) | the fixed file the app writes its own diagnostic to, so nobody has to paste one |
 | [Waiting](docs/waiting.md) | where the work runs, and the two ways waiting for a subprocess has broken this |
+| [Runtime performance](docs/runtime-performance.md) | measured local and Cloud latency, bounded transcript reads, indexed Session projection, and long-run memory limits |
 | [Backgrounded conversations](docs/background-conversations.md) | the tab that stops writing its own file, and what reads it instead |
 | [Whisper](docs/whisper.md) | dictating in more than one language |
 | [Mascot packs](docs/mascots.md) · [gallery](docs/gallery.md) | the format, and where packs get posted |
@@ -869,7 +870,7 @@ link to them.
 Plain AppKit, no dependencies, no build system beyond `swiftc`.
 
 ```sh
-./test.sh     # 10125 checks, minutes rather than seconds
+./test.sh     # 10132 checks, minutes rather than seconds
 ./build.sh    # builds and relaunches if it was running
 swift build   # only so your editor can index the code
 ```

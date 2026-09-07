@@ -185,12 +185,13 @@ that queue one dictation would hold every other request *and* `/v1/events` for a
 That reasoning is not about whisper; it is about **how long an answer takes**, so anything measured
 in seconds now leaves that queue the same way. `POST /v1/intents` does, for the model turn behind
 it. So do the three slowest ordinary readings — `/v1/sessions/:id/info`, `/v1/places` and
-`/v1/sessions/:id/transcript` — which between them run `lsof`, an Apple event to iTerm2, a whole
-transcript and a `git status`, and which used to stop a 0.001s health check for 3.143 seconds when
-five of them were in flight. The gates still run on the serial queue, where the state they read
-lives; only the waiting moved. The queue it goes to instead is serial too: two whispers at once
-on one Mac are slower than two in a row, so the queue **is** the concurrency limit, and the only
-thing left to choose was how long a line is worth standing in. Two.
+`/v1/sessions/:id/transcript` — which between them run `lsof`, an Apple event to iTerm2, a bounded
+provider-record tail and a `git status`, and which used to stop a 0.001s health check for 3.143
+seconds when five of them were in flight. The gates still run on the serial queue, where the state
+they read lives; only the waiting moved. The queue it goes to instead is serial too: two whispers
+at once on one Mac are slower than two in a row, so the queue **is** the concurrency limit, and the
+only thing left to choose was how long a line is worth standing in. Two. The measurements and the
+long-running-process bounds are in [runtime-performance.md](runtime-performance.md).
 
 Terminal writes use the same isolation principle with a different bound: one serial iTerm/tmux
 handoff at a time, eight admitted broker operations. A blocked iTerm Apple event settles the request

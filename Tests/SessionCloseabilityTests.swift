@@ -367,6 +367,22 @@ group("every broker blocker has a record that produces it, and a closure that cl
         identity: root, tasks: [own], waits: [], handoffs: [], owed: nil)
     expect("the executor does not inherit the dispatching root's landing obligations",
            executorAfterDelivery.map(\.code.rawValue), [])
+
+    // Historical tasks that cannot contribute to this root do not belong in its hot projection.
+    // This is a shape assertion rather than a wall-clock test: a timing threshold can pass on a
+    // fast Mac while the request still walks every historical record.
+    var history: [Orchestrator.Task] = (0..<500).map { index in
+        var task = child("history-\(index)", .success, rootSession: "conversation-other")
+        task.landing = landing(.landed)
+        return task
+    }
+    history.append(child("live-for-root", .briefed))
+    let indexed = Orchestrator.closeabilityObligationsIndexedForTesting(
+        identity: root, tasks: history, waits: [], handoffs: [], owed: nil)
+    expect("the indexed projection keeps the same positive obligation",
+           indexed.reasons.map(\.code.rawValue), ["live_descendant_task"])
+    expect("and gives this Session only its relevant task instead of all history",
+           indexed.taskCandidates, 1)
 }
 
 group("a closure attestation is bound to one process and one turn, and survives a restart") {

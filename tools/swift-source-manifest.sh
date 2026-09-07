@@ -11,6 +11,7 @@ clawdline_production_sources=(
   Sources/ClaudeSkills.swift
   Sources/ClawdlineMessage.swift
   Sources/ClawdlineSessionMessage.swift
+  Sources/CloseabilityIndex.swift
   Sources/CloudAccount.swift
   Sources/CloudAppBridge.swift
   Sources/CloudBridgeLifecycle.swift

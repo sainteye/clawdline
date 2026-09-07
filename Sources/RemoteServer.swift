@@ -4608,31 +4608,22 @@ final class RemoteServer: @unchecked Sendable {
         var costOverrideUsd: Double?
         var model: String?
         var fastMode: SessionInfo.FastMode?
-        // The transcript is read if it can be, and its absence no longer silences everything
-        // else. Claude Code's status-line cache answers the context fill and the exact cost on
-        // its own, under the same id this record names, so a transcript that is missing, empty
-        // or unreadable now costs only the facts that actually come from it. Every reader below
-        // takes an empty buffer as "the transcript said nothing" and answers absent.
+        // The provider record is append-only and unbounded. SessionInfo owns the one bounded,
+        // signature-cached tail reading shared by summary and full cards; nothing on this request
+        // path may turn an old conversation into a whole-file read.
         if let record {
-            let data = (try? Data(contentsOf: record.url)) ?? Data()
-            switch record.assistant {
-            case .claude:
-                let sessionID = record.url.deletingPathExtension().lastPathComponent
-                let cache = SessionInfo.claudeSessionCache(
-                    cacheDirectory: ProjectStatus.cacheDirectory, sessionID: sessionID)
-                usage = Orchestrator.claudeUsage(transcript: record.url)
-                let read = SessionInfo.claudeLimits(transcript: data)
-                model = read.model
-                let usageModel = usage?.model.flatMap { $0.hasPrefix("<") ? nil : $0 }
-                context = SessionInfo.claudeContext(
-                    transcript: data, cache: cache, model: model ?? usageModel)
-                costOverrideUsd = SessionInfo.claudeCost(cache: cache)
-            case .codex:
-                usage = Orchestrator.codexUsage(rollout: record.url)
-                context = SessionInfo.codexContext(rollout: data)
-                model = usage?.model
-                fastMode = SessionInfo.codexFastMode(rollout: data)
-            }
+            let cache = record.assistant == .claude
+                ? SessionInfo.claudeSessionCache(
+                    cacheDirectory: ProjectStatus.cacheDirectory,
+                    sessionID: record.url.deletingPathExtension().lastPathComponent)
+                : nil
+            let facts = SessionInfo.recordFacts(
+                at: record.url, assistant: record.assistant, claudeCache: cache)
+            usage = facts?.usage
+            context = facts?.context
+            model = facts?.model
+            fastMode = facts?.fastMode
+            if record.assistant == .claude { costOverrideUsd = SessionInfo.claudeCost(cache: cache) }
         }
         if model == nil, let named = usage?.model, !named.hasPrefix("<") { model = named }
         // Session info is now the one home for every project address. Keep the smaller `deploy`

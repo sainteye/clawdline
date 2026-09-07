@@ -225,6 +225,16 @@ func runReadingFreshnessTests() {
         check("both are stored", readings.storedKeysForTesting == ["info:A", "info:B"])
     }
 
+    group("finished readings have a lifetime memory bound") {
+        let readings = FreshReadings<FakeReading>(capacity: 2)
+        for key in ["info:A", "info:B", "info:C"] {
+            read(readings, key, execute: inline,
+                 compute: { FakeReading(body: key, refusal: nil) }, deliver: { _ in })
+        }
+        check("the newest two readings remain and the oldest key is reclaimed",
+              readings.storedKeysForTesting == ["info:B", "info:C"])
+    }
+
     group("a full lane refuses only a request it had nothing to answer") {
         let readings = FreshReadings<FakeReading>()
         var answers: [FreshReadings<FakeReading>.Answer] = []

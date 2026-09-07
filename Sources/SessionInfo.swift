@@ -10,6 +10,81 @@ import Foundation
 /// it a string. Nothing in this file writes anywhere.
 enum SessionInfo {
 
+    /// A live card never reads beyond this much of a provider's append-only record. The value is
+    /// shared with the transcript route: large histories may exist, but request cost must not grow
+    /// with their lifetime size.
+    static let recordReadLimit = 8 << 20
+
+    struct RecordFacts {
+        var usage: Orchestrator.Usage?
+        var context: Context?
+        var model: String?
+        var fastMode: FastMode?
+        let recordComplete: Bool
+    }
+
+    private struct RecordFactsKey: Hashable {
+        let path: String
+        let assistant: String
+        let size: UInt64
+        let modified: UInt64
+        let maxBytes: Int
+        let claudeCache: Data?
+    }
+
+    private static let recordFactsLock = NSLock()
+    private static var recordFactsCache: [RecordFactsKey: RecordFacts] = [:]
+    private static var recordFactsOrder: [RecordFactsKey] = []
+    private static let recordFactsCacheLimit = 24
+
+    /// The one file-facing reader behind both summary and full Info. Its key is the provider
+    /// record's observed identity, so the full card completes a summary without reading or parsing
+    /// the same bytes again; an append changes the key and gets a fresh bounded reading.
+    static func recordFacts(at url: URL, assistant: Assistant, maxBytes: Int = recordReadLimit,
+                            claudeCache: Data? = nil) -> RecordFacts? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let number = attributes[.size] as? NSNumber else { return nil }
+        let modified = ((attributes[.modificationDate] as? Date)?
+            .timeIntervalSinceReferenceDate ?? 0).bitPattern
+        let key = RecordFactsKey(path: url.path, assistant: assistant.rawValue,
+                                 size: number.uint64Value, modified: modified,
+                                 maxBytes: maxBytes, claudeCache: claudeCache)
+        recordFactsLock.lock()
+        if let cached = recordFactsCache[key] {
+            recordFactsOrder.removeAll { $0 == key }
+            recordFactsOrder.append(key)
+            recordFactsLock.unlock()
+            return cached
+        }
+        recordFactsLock.unlock()
+
+        guard let read = Transcript.tailData(of: url, bytes: maxBytes) else { return nil }
+        let facts: RecordFacts
+        switch assistant {
+        case .codex:
+            facts = codexFacts(rollout: read.data, recordComplete: read.complete)
+        case .claude:
+            let stated = claudeLimits(transcript: read.data)
+            let usage = read.complete ? Orchestrator.claudeUsage(transcript: read.data) : nil
+            let usageModel = usage?.model.flatMap { $0.hasPrefix("<") ? nil : $0 }
+            let model = stated.model ?? usageModel
+            facts = RecordFacts(
+                usage: usage,
+                context: claudeContext(transcript: read.data, cache: claudeCache, model: model),
+                model: model, fastMode: nil, recordComplete: read.complete)
+        }
+
+        recordFactsLock.lock()
+        recordFactsCache[key] = facts
+        recordFactsOrder.removeAll { $0 == key }
+        recordFactsOrder.append(key)
+        while recordFactsOrder.count > recordFactsCacheLimit {
+            recordFactsCache.removeValue(forKey: recordFactsOrder.removeFirst())
+        }
+        recordFactsLock.unlock()
+        return facts
+    }
+
     // MARK: - Context
 
     /// The current conversation against the model's context window. This is deliberately not
@@ -48,6 +123,79 @@ enum SessionInfo {
                            usedTokens: used, windowTokens: window)
         }
         return nil
+    }
+
+    /// Codex repeats the cumulative usage, current context and effective settings near the end of
+    /// its rollout. Read those lines in one reverse pass rather than splitting and searching the
+    /// same multi-megabyte tail once per field.
+    private static func codexFacts(rollout data: Data, recordComplete: Bool) -> RecordFacts {
+        var usage: Orchestrator.Usage?
+        var context: Context?
+        var model: String?
+        var fallbackModel: String?
+        var fastMode: FastMode?
+
+        for line in data.split(separator: 0x0A).reversed() {
+            let text = String(decoding: line, as: UTF8.self)
+            let wantsTokens = (usage == nil || context == nil) && text.contains("token_count")
+            let wantsModel = model == nil && text.contains("\"model\"")
+            let wantsFast = fastMode == nil && text.contains("thread_settings_applied")
+            guard wantsTokens || wantsModel || wantsFast,
+                  let obj = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any]
+            else { continue }
+            let payload = obj["payload"] as? [String: Any] ?? obj
+            let type = payload["type"] as? String
+
+            if wantsFast, type == "thread_settings_applied" {
+                if let settings = payload["thread_settings"] as? [String: Any],
+                   let tier = settings["service_tier"] as? String {
+                    switch tier {
+                    case "default": fastMode = .standard
+                    case "fast", "priority", "ultrafast": fastMode = .fast
+                    default: fastMode = .unknown
+                    }
+                } else {
+                    fastMode = .unknown
+                }
+            }
+
+            if wantsTokens, obj["type"] as? String == "event_msg", type == "token_count",
+               let info = payload["info"] as? [String: Any] {
+                if usage == nil, let totals = info["total_token_usage"] as? [String: Any] {
+                    var made = Orchestrator.Usage()
+                    made.input = int(totals["input_tokens"]) ?? 0
+                    made.output = int(totals["output_tokens"]) ?? 0
+                    made.cacheRead = int(totals["cached_input_tokens"]) ?? 0
+                    made.cacheWrite = int(totals["cache_write_input_tokens"]) ?? 0
+                    made.total = int(totals["total_tokens"]) ?? (made.input + made.output)
+                    usage = made
+                }
+                if context == nil,
+                   let current = info["last_token_usage"] as? [String: Any],
+                   let used = int(current["total_tokens"]), used >= 0,
+                   let window = int(info["model_context_window"]), window > 0 {
+                    context = Context(
+                        usedPercent: min(100, max(0, Double(used) * 100 / Double(window))),
+                        usedTokens: used, windowTokens: window)
+                }
+            }
+
+            if wantsModel, let named = payload["model"] as? String, !named.isEmpty {
+                if type == "turn_context" { model = named }
+                else if fallbackModel == nil { fallbackModel = named }
+            }
+
+            if usage != nil, context != nil, model != nil, fastMode != nil { break }
+        }
+
+        model = model ?? fallbackModel
+        if var made = usage {
+            made.model = model
+            made.costUsd = Orchestrator.cost(of: made)
+            usage = made
+        }
+        return RecordFacts(usage: usage, context: context, model: model,
+                           fastMode: fastMode ?? .unknown, recordComplete: recordComplete)
     }
 
     /// Claude model windows used only when the per-session status-line cache is absent. This is

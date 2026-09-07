@@ -1325,19 +1325,27 @@ enum Orchestrator {
     static let legacyCompletionLookback: TimeInterval = 7 * 24 * 3600
     static let legacyCompletionBatchLimit = 25
     private static var loaded = false
-    static var tasks: [String: Task] = [:]
+    static var tasks: [String: Task] = [:] {
+        didSet { obligationFingerprintDirty = true }
+    }
     static var restartReceipt: RestartReceipt?
-    private static var handoffs: [String: HandoffEnvelope] = [:]
+    private static var handoffs: [String: HandoffEnvelope] = [:] {
+        didSet { obligationFingerprintDirty = true }
+    }
     /// Handoff id → the tab that handoff was delivered into and what it is called. Durable, and
     /// the only thing that gives a handed-off root its job title back after a restart.
     private static var handoffLabels: [String: HandoffLabel] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     static var rootAssignments: [String: RootAssignment] = [:]
-    private static var coordinationWaits: [String: CoordinationWait] = [:]
+    private static var coordinationWaits: [String: CoordinationWait] = [:] {
+        didSet { obligationFingerprintDirty = true }
+    }
     /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
     /// this receipt is consumed when the same tab begins another observed turn.
     static var sessionDeliveries: [String: SessionDelivery] = [:]
-    private static var sessionSelfStates: [String: SessionSelfState] = [:]
+    private static var sessionSelfStates: [String: SessionSelfState] = [:] {
+        didSet { obligationFingerprintDirty = true }
+    }
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
     private static var beatsInFlight = 0
@@ -2228,6 +2236,12 @@ enum Orchestrator {
     /// title or a progress note does not silently invalidate the attestation just written.
     private static var obligationGeneration = 0
     private static var obligationFingerprint = ""
+    /// Registry mutations mark these dirty at the mutation itself. Reads can therefore reuse the
+    /// settled fingerprint and indexed snapshot; history size is paid once per change, not once
+    /// per Session-list poll or SSE publication.
+    private static var obligationFingerprintDirty = true
+    private static var closeabilityIndexDirty = true
+    private static var cachedCloseabilityRegistryIndex: CloseabilityRegistryIndex?
     private static var closeabilityRegistryReadCountForTesting = 0
 
     static func resetCloseabilityRegistryReadCountForTesting() {
@@ -2287,8 +2301,13 @@ enum Orchestrator {
             row.append(task.rootSessionId ?? "-")
             row.append(task.rootAssistant?.rawValue ?? "-")
             row.append(task.parentTaskId ?? "-")
+            row.append(task.assistant.rawValue)
             row.append(task.childTerminalId ?? "-")
+            row.append(task.childTTY ?? "-")
+            row.append(task.childPID.map(String.init) ?? "-")
+            row.append(task.childProcStart.map { String($0.timeIntervalSince1970) } ?? "-")
             row.append(task.childSessionId ?? "-")
+            row.append(task.transcriptProven ? "1" : "0")
             row.append(task.resultVerifiedAt == nil ? "0" : "1")
             row.append(task.summary == nil ? "0" : "1")
             row.append(task.landing?.state.rawValue ?? "-")
@@ -2322,10 +2341,13 @@ enum Orchestrator {
     /// Caller holds `lock`. Returns whether it moved.
     @discardableResult
     private static func settleObligationGenerationLocked() -> Bool {
+        guard obligationFingerprintDirty else { return false }
         let current = obligationFingerprintLocked()
+        obligationFingerprintDirty = false
         guard current != obligationFingerprint else { return false }
         obligationFingerprint = current
         obligationGeneration += 1
+        closeabilityIndexDirty = true
         return true
     }
 
@@ -2542,123 +2564,31 @@ enum Orchestrator {
             mover: unique.count == 1 ? unique[0] : nil)
     }
 
-    /// Every positive obligation the broker can prove for one Session, from records alone.
-    ///
-    /// Pure, and given its inputs rather than reading the registry, so the whole table can be
-    /// exercised without seeding one. Nothing here stats a filesystem or reads a screen: a
-    /// worktree is dirty because the record says a reading found it dirty, and a claim was
-    /// touched because the terminal-state audit wrote that down at the time.
-    static func closeabilityObligations(identity: SessionWorkIdentity,
-                                        tasks: [Task],
-                                        waits: [CoordinationWait],
-                                        handoffs: [HandoffEnvelope],
-                                        owed: OwedDebt?) -> [CloseabilityReason] {
-        var out: [CloseabilityReason] = []
-        let ownTask = taskForCurrentSession(tasks, identity: identity)
-        if let ownTask, !ownTask.state.isTerminal {
-            out.append(CloseabilityReason(.ownTaskUnfinished, subjectKind: "task",
-                                          subjectID: ownTask.id, mover: .thisSession))
-        }
-
-        func dispatchedByThisSession(_ task: Task) -> Bool {
-            if let ownTask, task.parentTaskId == ownTask.id { return true }
-            guard let conversation = identity.conversationID,
-                  task.rootSessionId == conversation,
-                  let rootAssistant = task.rootAssistant,
-                  rootAssistant == identity.assistant else { return false }
-            return true
-        }
-
-        for task in tasks.sorted(by: { $0.created < $1.created }) {
-            let mine = dispatchedByThisSession(task)
-            if mine, !task.state.isTerminal {
-                out.append(CloseabilityReason(
-                    .liveDescendantTask, subjectKind: "task", subjectID: task.id,
-                    mover: task.childTerminalId.map { CloseabilityMover.otherSession($0) }
-                        ?? .task(task.id)))
-                continue
-            }
-            // Once an executor's own task is terminal, its result, landing and isolated bytes
-            // are obligations of the dispatching root. A child cannot land and must never be
-            // told that `this session` can move the root's row.
-            guard mine else { continue }
-            // `isSettled`, not a fourth hand-rolled spelling of it. This read `landed ||
-            // abandoned`, so a task correctly closed as having written nothing kept its claim and
-            // dirty rows for ever — no state could clear them.
-            let landingClosed = task.landing?.state.isSettled ?? false
-            if task.state.isTerminal, task.resultVerifiedAt == nil, task.summary == nil,
-               !landingClosed {
-                out.append(CloseabilityReason(.taskWithoutResult, subjectKind: "task",
-                                              subjectID: task.id, mover: .thisSession))
-            }
-            if task.landing?.state == .pending {
-                out.append(CloseabilityReason(.pendingLandingOwned, subjectKind: "task",
-                                              subjectID: task.id, mover: .thisSession))
-            }
-            if let delivery = task.completionDelivery, delivery.state != .acknowledged, mine {
-                out.append(CloseabilityReason(.completionUndelivered, subjectKind: "task",
-                                              subjectID: task.id, mover: .thisSession))
-            }
-            if task.worktree?.dirty == true, !landingClosed {
-                out.append(CloseabilityReason(.dirtyIsolatedWorktree, subjectKind: "task",
-                                              subjectID: task.id, mover: .thisSession))
-            }
-            if !task.claims.isEmpty, task.state.isTerminal, !landingClosed,
-               Set(task.untouchedClaims) != Set(task.claims) {
-                out.append(CloseabilityReason(.touchedClaimsWithoutClosure, subjectKind: "task",
-                                              subjectID: task.id, mover: .thisSession))
-            }
-        }
-
-        for wait in waits.sorted(by: { $0.created < $1.created }) {
-            let pending = wait.waiters.filter { $0.releaseDeliveredAt == nil }
-            guard !pending.isEmpty else { continue }
-            if wait.ownerSessionID == identity.terminalID {
-                out.append(CloseabilityReason(.coordinationWaitOwned, subjectKind: "wait",
-                                              subjectID: wait.id, mover: .thisSession))
-            } else if pending.contains(where: { $0.sessionID == identity.terminalID }) {
-                out.append(CloseabilityReason(
-                    .coordinationWaitWaiting, subjectKind: "wait", subjectID: wait.id,
-                    mover: .otherSession(wait.ownerSessionID)))
-            }
-        }
-
-        for handoff in handoffs.sorted(by: { $0.created < $1.created })
-        where handoff.state != .delivered
-            && handoffSource(handoff.fromSession, matches: identity) {
-            out.append(CloseabilityReason(.openHandoff, subjectKind: "handoff",
-                                          subjectID: handoff.id, mover: .thisSession))
-        }
-
-        if let owed {
-            out.append(CloseabilityReason(
-                .owedDecision, subjectKind: "session", subjectID: identity.terminalID,
-                mover: owed.personNeeded ? .person : .thisSession))
-        }
-        return out
-    }
-
-    /// One immutable registry reading shared by every Session projected in an HTTP response.
-    /// Building it settles the machine-wide clock and copies the three record collections once,
-    /// so a polled list is O(registry + sessions) rather than O(registry × sessions).
-    struct CloseabilityRegistrySnapshot {
-        let tasks: [Task]
-        let waits: [CoordinationWait]
-        let handoffs: [HandoffEnvelope]
-        let selfStates: [String: SessionSelfState]
-        let attestations: [String: ClosureAttestation]
-        let activityGenerations: [String: Int]
-        let obligationGeneration: Int
-    }
-
     static func closeabilityRegistrySnapshot() -> CloseabilityRegistrySnapshot {
         load()
         lock.lock()
         settleObligationGenerationLocked()
         closeabilityRegistryReadCountForTesting += 1
+        let index: CloseabilityRegistryIndex
+        if !closeabilityIndexDirty, let cached = cachedCloseabilityRegistryIndex {
+            index = cached
+        } else {
+            let orderedTasks = tasks.values.sorted {
+                $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
+            }
+            let orderedWaits = coordinationWaits.values.sorted {
+                $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
+            }
+            let orderedHandoffs = handoffs.values.sorted {
+                $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
+            }
+            index = CloseabilityRegistryIndex(
+                tasks: orderedTasks, waits: orderedWaits, handoffs: orderedHandoffs)
+            cachedCloseabilityRegistryIndex = index
+            closeabilityIndexDirty = false
+        }
         let snapshot = CloseabilityRegistrySnapshot(
-            tasks: Array(tasks.values), waits: Array(coordinationWaits.values),
-            handoffs: Array(handoffs.values), selfStates: sessionSelfStates,
+            index: index, selfStates: sessionSelfStates,
             attestations: closureAttestations,
             activityGenerations: sessionActivityGenerations,
             obligationGeneration: obligationGeneration)
@@ -2706,10 +2636,11 @@ enum Orchestrator {
         let selfState = snapshot.selfStates[identity.terminalID].flatMap {
             recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
         }
+        let candidates = snapshot.candidates(for: identity)
         let obligations = closeabilityObligations(
-            identity: identity, tasks: snapshot.tasks,
-            waits: snapshot.waits, handoffs: snapshot.handoffs,
-            owed: selfState?.owed)
+            identity: identity, tasks: candidates.tasks,
+            waits: candidates.waits, handoffs: candidates.handoffs,
+            owed: selfState?.owed, inputsAreOrdered: true)
         return CloseabilityInput(
             terminalState: terminalState, identity: identity, identityBound: bound,
             inventoryComplete: inventoryComplete, inventoryObservedAt: inventoryObservedAt,
@@ -9521,9 +9452,17 @@ enum Orchestrator {
         }
     }
 
-    /// Sum of every assistant turn's `message.usage` in a Claude transcript.
+    /// Sum of every assistant turn's `message.usage` in a Claude transcript. Per-turn Claude
+    /// counters are not cumulative, so a record beyond the live-read budget has no honest total;
+    /// callers get nil instead of a partial number labelled as the whole session.
     static func claudeUsage(transcript: URL) -> Usage? {
-        guard let data = try? Data(contentsOf: transcript), !data.isEmpty else { return nil }
+        guard let read = Transcript.tailData(of: transcript, bytes: SessionInfo.recordReadLimit),
+              read.complete else { return nil }
+        return claudeUsage(transcript: read.data)
+    }
+
+    static func claudeUsage(transcript data: Data) -> Usage? {
+        guard !data.isEmpty else { return nil }
         var usage = Usage()
         var found = false
         for line in data.split(separator: 0x0A) {
@@ -9545,41 +9484,9 @@ enum Orchestrator {
     }
 
     /// The last cumulative `token_count` event in a Codex rollout — Codex keeps the running
-    /// total itself, so the newest event is the whole answer.
+    /// total itself, so a bounded tail containing the newest event is the whole answer.
     static func codexUsage(rollout: URL) -> Usage? {
-        guard let data = try? Data(contentsOf: rollout), !data.isEmpty else { return nil }
-        var usage: Usage?
-        var model: String?
-        for line in data.split(separator: 0x0A) {
-            // A byte scan before a parse: rollouts run to tens of thousands of lines and only a
-            // few say either of the words this reader is looking for.
-            guard let text = String(data: Data(line), encoding: .utf8) else { continue }
-            if model == nil || text.contains("turn_context") {
-                if text.contains("\"model\""),
-                   let obj = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any] {
-                    let payload = obj["payload"] as? [String: Any] ?? obj
-                    if let named = payload["model"] as? String { model = named }
-                }
-            }
-            guard text.contains("token_count"),
-                  let obj = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
-                  obj["type"] as? String == "event_msg",
-                  let payload = obj["payload"] as? [String: Any],
-                  payload["type"] as? String == "token_count",
-                  let info = payload["info"] as? [String: Any],
-                  let totals = info["total_token_usage"] as? [String: Any] else { continue }
-            var made = Usage()
-            made.input = totals["input_tokens"] as? Int ?? 0
-            made.output = totals["output_tokens"] as? Int ?? 0
-            made.cacheRead = totals["cached_input_tokens"] as? Int ?? 0
-            made.cacheWrite = totals["cache_write_input_tokens"] as? Int ?? 0
-            made.total = totals["total_tokens"] as? Int ?? (made.input + made.output)
-            usage = made
-        }
-        guard var made = usage else { return nil }
-        made.model = model
-        made.costUsd = cost(of: made)
-        return made
+        SessionInfo.recordFacts(at: rollout, assistant: .codex)?.usage
     }
 
     // MARK: - What the API answers with
@@ -10426,9 +10333,6 @@ enum Orchestrator {
             Log.write("orchestrator: could not persist the store — \(error)")
             return false
         }
-        try? FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        try? data.write(to: storeURL, options: .atomic)
         // Every time, not only at creation — same reason as `RemoteAuth.save`.
         do {
             try FileManager.default.setAttributes([.posixPermissions: 0o600],
@@ -10750,6 +10654,9 @@ enum Orchestrator {
         sessionActivityClasses = [:]
         obligationGeneration = 0
         obligationFingerprint = ""
+        obligationFingerprintDirty = true
+        closeabilityIndexDirty = true
+        cachedCloseabilityRegistryIndex = nil
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllHandoffTitles() }
         secrets = [:]
         dispatchTimes = []
