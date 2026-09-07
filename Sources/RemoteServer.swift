@@ -1275,7 +1275,7 @@ final class RemoteServer: @unchecked Sendable {
             // Validated rather than stored as given. An endpoint is a URL **this Mac will POST to
             // from inside your network**, every time a session changes — so an unchecked one is a
             // request-forgery primitive, handed over by whoever holds a token.
-            guard let subscription = WebPush.subscription(from: json, device: device) else {
+            guard let subscription = WebPush.subscription(from: json, device: device, origin: request.headers["origin"]) else {
                 return .error(400, "bad_request", "That is not a usable push subscription.")
             }
             WebPush.add(subscription)

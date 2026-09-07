@@ -210,6 +210,119 @@ group("every direct SessionWatch nudge call site is inventoried across productio
 }
 
 group("one published Session inventory owns process evidence and bounded subprocess cleanup") {
+    let previousInventory = SessionWatch.inventoryForTesting
+    let previousProcessRun = ITerm.assistantProcessRunForTesting
+    let previousProcessDelay = ITerm.assistantProcessDelayForTesting
+    let previousSessionPayload = RemoteServer.sessionPayloadForTesting
+    let completeNonMachineInventory = {
+        (scan: ITerm.AssistantProcessScan(assistants: [:], error: nil),
+         snapshot: Targets.Snapshot(sessions: [], currentID: nil, error: nil,
+                                    isComplete: true))
+    }
+    let controlledReadRelease = DispatchSemaphore(value: 0)
+    defer {
+        controlledReadRelease.signal()
+        SessionWatch.shared.stop()
+        // If an assertion exits while a read still owns these process-wide boundaries, leave it
+        // only complete non-machine answers. Restoring the borrowed seams is safe only after the
+        // worker has returned to main and relinquished `reading`.
+        SessionWatch.inventoryForTesting = completeNonMachineInventory
+        ITerm.assistantProcessRunForTesting = (out: "", timedOut: false, status: 0)
+        ITerm.assistantProcessDelayForTesting = 0
+        RemoteServer.sessionPayloadForTesting = ([], [:])
+        let fixtureIsIdle = eventually(timeout: 10) {
+            !SessionWatch.shared.isReadingForTesting
+        }
+        check("the SessionWatch fixture is idle before its process-wide seams are restored",
+              fixtureIsIdle)
+        if fixtureIsIdle {
+            SessionWatch.inventoryForTesting = previousInventory
+            ITerm.assistantProcessRunForTesting = previousProcessRun
+            ITerm.assistantProcessDelayForTesting = previousProcessDelay
+            RemoteServer.sessionPayloadForTesting = previousSessionPayload
+        }
+    }
+
+    // Replace the machine readers before stopping cadence. A worker admitted by an earlier group
+    // may not have reached this seam yet; once it does, it must receive a complete fixture rather
+    // than starting ps or terminal automation while this group owns their global test state.
+    SessionWatch.inventoryForTesting = completeNonMachineInventory
+    SessionWatch.shared.stop()
+    let priorSessionReadIsIdle = eventually(timeout: 10) {
+        !SessionWatch.shared.isReadingForTesting
+    }
+    check("an old SessionWatch read is idle before process-wide test state is reset",
+          priorSessionReadIsIdle)
+    guard priorSessionReadIsIdle else { return }
+
+    // Exercise that ordering without relying on whichever cadence work earlier groups happened to
+    // leave behind. This complete fixture is held before publication, so stop must leave the read
+    // observable and the eventually barrier must see its real completion before any global reset.
+    let controlledReadLock = NSLock()
+    var controlledReadAdmissions = 0
+    SessionWatch.inventoryForTesting = {
+        controlledReadLock.lock()
+        controlledReadAdmissions += 1
+        controlledReadLock.unlock()
+        _ = controlledReadRelease.wait(timeout: .now() + 5)
+        return (scan: ITerm.AssistantProcessScan(assistants: [:], error: nil),
+                snapshot: Targets.Snapshot(sessions: [], currentID: nil, error: nil,
+                                           isComplete: true))
+    }
+    _ = SessionWatch.shared.refresh()
+    let controlledReadWasAdmitted = eventually {
+        controlledReadLock.lock(); defer { controlledReadLock.unlock() }
+        return controlledReadAdmissions == 1
+    }
+    check("the quiescence fixture admits one complete non-machine inventory read",
+          controlledReadWasAdmitted)
+    guard controlledReadWasAdmitted else { return }
+    SessionWatch.shared.stop()
+    check("stop leaves that old read visible instead of claiming synchronous cancellation",
+          SessionWatch.shared.isReadingForTesting)
+    var releasedControlledRead = false
+    let controlledReadIsIdle = eventually(timeout: 10) {
+        if !releasedControlledRead {
+            releasedControlledRead = true
+            controlledReadRelease.signal()
+            return false
+        }
+        return !SessionWatch.shared.isReadingForTesting
+    }
+    check("the eventually barrier observes the stopped read become idle before global resets",
+          controlledReadIsIdle)
+    guard controlledReadIsIdle else { return }
+
+    // Retire the one-shot blocking closure before touching any process-wide metric or cache. The
+    // second refresh is the mutation witness: removing this replacement admits the depleted
+    // semaphore closure a second time, which the admission count reports immediately without a
+    // sleep or waiting for its five-second ceiling.
+    SessionWatch.inventoryForTesting = completeNonMachineInventory
+    SessionWatch.shared.stop()
+    let postBarrierSequence = SessionWatch.shared.completedScanSequence
+    let postBarrierReceipt = SessionWatch.shared.refresh()
+    let postBarrierRefreshObserved = eventually(timeout: 10) {
+        controlledReadLock.lock()
+        let admissions = controlledReadAdmissions
+        controlledReadLock.unlock()
+        return admissions > 1
+            || SessionWatch.shared.completedScanSequence > postBarrierSequence
+    }
+    controlledReadLock.lock()
+    let finalControlledReadAdmissions = controlledReadAdmissions
+    controlledReadLock.unlock()
+    let postBarrierRefreshCompleted =
+        SessionWatch.shared.completedScanSequence > postBarrierSequence
+    check("a later refresh cannot re-enter the depleted quiescence fixture",
+          postBarrierReceipt.disposition.rawValue == "accepted"
+            && postBarrierRefreshObserved && postBarrierRefreshCompleted
+            && finalControlledReadAdmissions == 1,
+          "disposition=\(postBarrierReceipt.disposition.rawValue), "
+            + "observed=\(postBarrierRefreshObserved), "
+            + "completed=\(postBarrierRefreshCompleted), "
+            + "controlledAdmissions=\(finalControlledReadAdmissions)")
+    guard postBarrierRefreshCompleted && finalControlledReadAdmissions == 1 else { return }
+
     let sessionWatch = (try? String(contentsOfFile: "Sources/SessionWatch.swift",
                                     encoding: .utf8)) ?? ""
     let orchestrator = (try? String(contentsOfFile: "Sources/Orchestrator.swift",
@@ -270,7 +383,6 @@ group("one published Session inventory owns process evidence and bounded subproc
     // Hold one exact Session and one exact publication still. This is the route the browser uses
     // to open the row; process counters and the shared hop recorder make "no scan" observable
     // rather than inferred from its response time.
-    SessionWatch.shared.stop()
     let fixedID = "SESSION-PUBLISHED-IDENTITY"
     let conversationID = "11111111-3333-4555-8777-999999999999"
     let fixed = TargetSession(
@@ -418,9 +530,13 @@ group("one published Session inventory owns process evidence and bounded subproc
     let refreshProcessScanCompleted = refreshProcessScanFinished.wait(timeout: .now() + 2) == .success
     ITerm.assistantProcessRunForTesting = nil
     ITerm.assistantProcessDelayForTesting = nil
+    let processScanReset = ITerm.resetAssistantProcessScanForTesting()
     check("completed single-flight process scans return to an idle cache boundary",
           firstProcessScanCompleted && refreshProcessScanCompleted
-            && ITerm.resetAssistantProcessScanForTesting())
+            && processScanReset,
+          "firstProcessScanCompleted=\(firstProcessScanCompleted), "
+            + "refreshProcessScanCompleted=\(refreshProcessScanCompleted), "
+            + "resetAssistantProcessScanForTesting=\(processScanReset)")
 
     // Partial output, non-zero exit and a TERM-resistant timeout take different exits through
     // the same cleanup. Sequential repetitions make the expected high-water mark exactly one

@@ -9,6 +9,19 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: tapping a notification over an open iPhone app never reached its Session
+
+An installed iOS web app could receive and display a push while it was already open, then do
+nothing when the notification was tapped. The page and worker were the same build and all five
+worker listeners were registered, but WebKit emitted no `notificationclick`; every message,
+cache, focus and deep-link fallback sat downstream of an event that never happened.
+
+Apple subscriptions now use Declarative Web Push with an absolute same-origin `navigate` address,
+so Safari owns the tap and opens the Session without waiting for the service worker. Other push
+services keep the existing worker payload. Re-subscribing also replaces an older endpoint for the
+same paired device, preventing a reinstall from sending one declarative and one stale legacy
+notification to the same phone.
+
 ### Fixed: a build mismatch tore the worker down instead of just being reported
 
 Unregistering the service worker whenever the page and the worker disagreed about the build was a

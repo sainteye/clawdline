@@ -56,6 +56,10 @@ enum WebPush {
         /// Which paired device this belongs to, so revoking the device can take the
         /// subscription with it.
         let device: String
+        /// The secure web-app origin that created this subscription. Safari needs it to turn a
+        /// root-relative session address into Declarative Web Push's absolute `navigate` URL.
+        /// Older stored rows have no origin and deliberately keep the service-worker path.
+        let origin: URL?
         let created: Date
     }
 
@@ -187,6 +191,7 @@ enum WebPush {
             found[id] = Subscription(
                 id: id, endpoint: endpoint, p256dh: p256dh, auth: auth,
                 device: row["device"] as? String ?? "?",
+                origin: webAppOrigin(from: row["origin"] as? String),
                 created: Date(timeIntervalSince1970: row["created"] as? Double ?? 0))
         }
         let seed = (obj["vapid_private"] as? String).flatMap(base64urlDecoded)
@@ -199,7 +204,7 @@ enum WebPush {
     private static func save() {
         lock.lock()
         let rows = stored.values.sorted { $0.created < $1.created }.map { subscription in
-            [
+            var row = [
                 "id": subscription.id,
                 "endpoint": subscription.endpoint.absoluteString,
                 "p256dh": base64url(subscription.p256dh),
@@ -207,6 +212,10 @@ enum WebPush {
                 "device": subscription.device,
                 "created": subscription.created.timeIntervalSince1970,
             ] as [String: Any]
+            if let origin = subscription.origin {
+                row["origin"] = origin.absoluteString
+            }
+            return row
         }
         var obj: [String: Any] = ["version": 1, "subscriptions": rows]
         if let seed = vapidSeed { obj["vapid_private"] = base64url(seed) }
@@ -262,11 +271,11 @@ enum WebPush {
     static func add(_ subscription: Subscription) {
         load()
         lock.lock()
-        // One row per endpoint. A browser that is asked to subscribe twice — a reload, a
-        // re-granted permission, a second tab — hands back the endpoint it already had, and
-        // keeping both rows would POST the same message twice and buzz the phone twice for one
-        // question.
-        for (key, existing) in stored where existing.endpoint == subscription.endpoint {
+        // One row per physical device as well as per endpoint. Safari can replace an endpoint
+        // across a reinstall; keeping the old row then sends both the declarative message and a
+        // legacy notification to the same phone, and leaves the test button reporting two sends.
+        for (key, existing) in stored
+            where existing.endpoint == subscription.endpoint || existing.device == subscription.device {
             stored.removeValue(forKey: key)
         }
         stored[subscription.id] = subscription
@@ -307,7 +316,7 @@ enum WebPush {
     /// The key lengths are checked here too, because a compressed 33-octet point is a perfectly
     /// plausible thing for a client to send and the resulting failure is otherwise a CryptoKit
     /// error thrown an hour later with no mention of where the data came from.
-    static func subscription(from json: [String: Any], device: String,
+    static func subscription(from json: [String: Any], device: String, origin rawOrigin: String? = nil,
                              id: String = UUID().uuidString.lowercased()) -> Subscription? {
         guard let raw = json["endpoint"] as? String,
               let endpoint = URL(string: raw),
@@ -319,7 +328,17 @@ enum WebPush {
               let auth = (keys["auth"] as? String).flatMap(base64urlDecoded),
               auth.count == 16 else { return nil }
         return Subscription(id: id, endpoint: endpoint, p256dh: p256dh, auth: auth,
-                            device: device, created: Date())
+                            device: device, origin: webAppOrigin(from: rawOrigin), created: Date())
+    }
+
+    /// Keep only the RFC 6454 origin supplied by the browser. A path, query, credentials, or
+    /// fragment in a stored base would let persistence change where a later notification opens.
+    private static func webAppOrigin(from raw: String?) -> URL? {
+        guard let raw, let url = URL(string: raw), url.scheme?.lowercased() == "https",
+              let serialised = origin(of: url), let made = URL(string: serialised) else {
+            return nil
+        }
+        return made
     }
 
     // MARK: - One encrypted message
@@ -560,6 +579,74 @@ enum WebPush {
         return made
     }
 
+    struct Message: Equatable {
+        let plaintext: Data
+        let contentType: String
+    }
+
+    /// Select the envelope the receiving browser understands. Safari's Declarative Web Push
+    /// lets the browser display and navigate without first waking the service worker; that is the
+    /// missing boundary when an installed web app is already alive and WebKit never dispatches
+    /// `notificationclick`. Other push services, and old rows without a trustworthy origin, keep
+    /// the existing payload and worker behavior.
+    static func message(title: String, body: String, url: String?, tag: String?, icon: String?,
+                        for subscription: Subscription, at: Date = Date()) -> Message? {
+        let host = subscription.endpoint.host?.lowercased() ?? ""
+        let isApple = host == "push.apple.com" || host.hasSuffix(".push.apple.com")
+        guard isApple, let base = subscription.origin,
+              let destination = sameOriginURL(url ?? "/", relativeTo: base) else {
+            return notificationPayload(title: title, body: body, url: url, tag: tag,
+                                       icon: icon, at: at).map {
+                Message(plaintext: $0, contentType: "application/octet-stream")
+            }
+        }
+
+        var notification: [String: Any] = [
+            "title": title,
+            "body": body,
+            "navigate": destination,
+            "timestamp": Int(at.timeIntervalSince1970 * 1_000),
+        ]
+        if let tag, !tag.isEmpty { notification["tag"] = topic(for: tag) }
+        if let icon, !icon.isEmpty, let absolute = sameOriginURL(icon, relativeTo: base) {
+            notification["icon"] = absolute
+        }
+        func encoded() -> Data? {
+            try? JSONSerialization.data(
+                withJSONObject: ["web_push": 8030, "notification": notification],
+                options: [.withoutEscapingSlashes])
+        }
+
+        var made = encoded()
+        if let over = made, over.count > maxPayload, notification["icon"] != nil {
+            Log.write("push: the mark did not fit in \(maxPayload) octets — sending without it")
+            notification.removeValue(forKey: "icon")
+            made = encoded()
+        }
+        if let over = made, over.count > maxPayload {
+            let characters = Array(body)
+            var low = 0
+            var high = characters.count
+            while low < high {
+                let middle = (low + high + 1) / 2
+                notification["body"] = String(characters.prefix(middle))
+                if (encoded()?.count ?? Int.max) <= maxPayload { low = middle }
+                else { high = middle - 1 }
+            }
+            notification["body"] = String(characters.prefix(low))
+            made = encoded()
+            Log.write("push: the body was shortened from \(characters.count) to \(low) characters")
+        }
+        guard let made, made.count <= maxPayload else { return nil }
+        return Message(plaintext: made, contentType: "application/notification+json")
+    }
+
+    private static func sameOriginURL(_ raw: String, relativeTo base: URL) -> String? {
+        guard !raw.isEmpty, let resolved = URL(string: raw, relativeTo: base)?.absoluteURL,
+              origin(of: resolved) == origin(of: base) else { return nil }
+        return resolved.absoluteString
+    }
+
     /// Send to everything subscribed, or — with `device` — only to what that one device
     /// subscribed with.
     ///
@@ -584,12 +671,6 @@ enum WebPush {
             return 0
         }
         DispatchQueue.global(qos: .utility).async {
-            guard let plaintext = notificationPayload(title: title, body: body, url: url,
-                                                        tag: tag, icon: icon) else {
-                Log.write("push: could not serialise the payload — nothing sent")
-                completion?(Delivery(sent: 0, failed: targets.count))
-                return
-            }
             let key = vapidKey()
             // One token for the whole fan-out. Endpoints on different hosts need different `aud`
             // claims, so it is re-signed per subscriber — but the expiry is taken once, so a slow
@@ -601,8 +682,15 @@ enum WebPush {
             var failed = 0
             for subscription in targets {
                 group.enter()
-                post(plaintext, to: subscription, key: key, expires: expires,
-                     topic: tag.map(topic(for:))) { accepted in
+                guard let made = message(title: title, body: body, url: url, tag: tag,
+                                         icon: icon, for: subscription) else {
+                    Log.write("push: could not serialise the payload for \(subscription.device)")
+                    resultLock.lock(); failed += 1; resultLock.unlock()
+                    group.leave()
+                    continue
+                }
+                post(made.plaintext, contentType: made.contentType, to: subscription,
+                     key: key, expires: expires, topic: tag.map(topic(for:))) { accepted in
                     resultLock.lock()
                     if accepted { sent += 1 } else { failed += 1 }
                     resultLock.unlock()
@@ -647,7 +735,7 @@ enum WebPush {
     /// into the successful count while the network half remains hard to exercise in unit tests.
     static func serviceAccepted(status: Int) -> Bool { (200..<300).contains(status) }
 
-    private static func post(_ plaintext: Data, to subscription: Subscription,
+    private static func post(_ plaintext: Data, contentType: String, to subscription: Subscription,
                              key: P256.Signing.PrivateKey, expires: Date, topic: String? = nil,
                              done: @escaping (Bool) -> Void) {
         let sealed: Data
@@ -673,7 +761,7 @@ enum WebPush {
         request.httpBody = sealed
         request.setValue(credential, forHTTPHeaderField: "Authorization")
         request.setValue("aes128gcm", forHTTPHeaderField: "Content-Encoding")
-        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.setValue(String(ttl), forHTTPHeaderField: "TTL")
         request.setValue(urgency, forHTTPHeaderField: "Urgency")
         // Replaces an undelivered message about the same session rather than joining it in the

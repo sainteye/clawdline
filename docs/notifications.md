@@ -142,7 +142,8 @@ field the same way. That matches what everybody else reports; the Apple develope
 about it has no reply and no workaround. So on an iPhone a notification is told apart by its words
 alone, and there is nothing this end can do about it.
 
-**Declarative Web Push does not rescue it, and that was tried rather than assumed.** Safari 18.4
+**Declarative Web Push does not rescue the per-project icon, and that was tried rather than
+assumed.** Safari 18.4
 added a second rendering path: a payload carrying `"web_push": 8030` and a `notification` object,
 sent with `Content-Type: application/notification+json`, is validated and drawn by the browser
 with no service worker involved — and WebKit's explainer says "most of the optional members of
@@ -163,11 +164,35 @@ At the size a phone draws a notification the two were the same picture, so *the 
 change* was exactly what a working icon and an ignored one both looked like. A control that looks
 like the treatment is not a test.
 
+## On Apple, the browser owns the tap
+
+An installed web app that was already open produced the decisive reading on 2026-09-07: the page
+and worker were the same build, the worker had registered all five listeners including
+`notificationclick`, the notification arrived, and tapping it emitted no click entry and opened no
+Session. That is upstream of every message, cache, focus and routing fallback below. WebKit bug
+268797 describes the same missing event, and a Firebase report describes the same dependence on
+whether the home-screen app was already open.
+
+Apple subscriptions therefore receive Declarative Web Push. Their encrypted plaintext has
+`"web_push": 8030`, a nested `notification`, and an absolute same-origin `navigate` URL, and the
+request is labelled `application/notification+json`. Safari can display it and open the Session
+without waking the worker or dispatching `notificationclick`. The authenticated request `Origin`
+is stored with the subscription so a root-relative Session address can become that absolute URL;
+an older row without an origin stays on the legacy path until the page subscribes again.
+
+Non-Apple endpoints keep the existing payload and `application/octet-stream`. The declarative
+JSON is also a valid legacy payload: if a browser does hand it to the worker, the worker reads the
+nested notification and uses `navigate` as the old `data.url`. One physical device owns one current
+endpoint, so a PWA reinstall cannot leave an old legacy row buzzing beside the new declarative one.
+
 ## Tapping one, and the trace that says where the tap stopped
 
 A notification about a session carries `/#session=<id>`, and reaching that session takes six steps
 in three places. Five of them had been proved and the sixth had never been looked at, so a tap that
 ended on the session list said nothing about which step lost it.
+
+This table is now the legacy/non-Apple route and the diagnostic fallback. An Apple declarative
+notification normally takes the direct `notification.navigate` route above and bypasses it.
 
 | | where | what it means when it is missing |
 | --- | --- | --- |
@@ -184,9 +209,9 @@ The worker's two entries are durable because they have to be: the worker is shut
 events, and a message posted to a page that was not listening leaves nothing at either end. They go
 into Cache Storage — the one store a worker and a page can both open — under
 `clawdline-notification-trace`, numbered rather than timestamped, and `readWorkerTrace()` folds
-them into the page's own trace at boot and on every `visibilitychange`. `activate` empties Cache
-Storage, so a trace does not survive a worker update; that is the right way round, because a trace
-is evidence about the build that wrote it.
+them into the page's own trace at boot and on every `visibilitychange`. `activate` keeps this trace,
+the wanted record and the worker mark while sweeping caches the worker does not own; each record
+carries its build, so preserving the evidence cannot silently pass one build off as another.
 
 **Nothing acts on what the trace records.** What an app should do when a client message is dropped
 was a design question with more than one answer, and the trace exists so that it could be asked of

@@ -1214,14 +1214,23 @@ enum RemotePage {
         on("push", function (event) {
             var payload = {};
             try { payload = event.data ? event.data.json() : {}; } catch (e) {}
-            say("push arrived", { title: payload.title || "", url: payload.url || "/",
+            // Declarative Web Push is deliberately also a valid legacy payload. A browser that
+            // knows `web_push: 8030` draws `notification` itself and never reaches this listener;
+            // an older browser hands the same JSON to the worker, where the nested description
+            // has to become the notification it would have received before. Keeping this fallback
+            // is what lets Apple take the direct-navigation road without making Chrome or an older
+            // Safari draw a blank notification from the same server release.
+            var described = (payload.notification && typeof payload.notification === "object")
+                ? payload.notification : payload;
+            var destination = described.navigate || described.url || payload.url || "/";
+            say("push arrived", { title: described.title || "", url: destination,
                                   build: BUILD });
-            event.waitUntil(self.registration.showNotification(payload.title || "Clawdline", {
-                body: payload.body || "",
+            event.waitUntil(self.registration.showNotification(described.title || "Clawdline", {
+                body: described.body || "",
                 // The tag collapses repeats about one session into a single line rather than a
                 // stack: a phone that was in a pocket for ten minutes should find one notification
                 // about a session, not six.
-                tag: payload.tag || "clawdline",
+                tag: described.tag || "clawdline",
                 renotify: true,
                 // The project's own mark, so two notifications from two projects are told apart
                 // before either sentence is read. Falls back to the app's creature, which is what
@@ -1235,8 +1244,8 @@ enum RemotePage {
                 // no workaround. So on an iPhone a notification is told apart by its words alone,
                 // and there is nothing this end can do about that. This line stays for the
                 // platforms that do honour it, and costs one field.
-                icon: payload.icon || "/icon-192.png",
-                data: { url: payload.url || "/" }
+                icon: described.icon || "/icon-192.png",
+                data: { url: destination }
             }));
         });
 

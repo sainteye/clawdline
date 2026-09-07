@@ -257,6 +257,28 @@ check("and adds no sixth listener nobody asked for",
         shown.options.icon === "/icon/project.png" && shown.options.data.url === "/#session-7");
 }
 {
+  // A browser that does not understand Declarative Web Push still delivers its standardized JSON
+  // to the legacy push event. The same worker must draw the same notification in that fallback;
+  // otherwise making iOS reliable would make every older browser's notification blank.
+  const payload = {
+    web_push: 8030,
+    notification: {
+      title: "clawdline — main", body: "waiting for you", tag: "session-8",
+      icon: "https://clawdline.example/icon.png",
+      navigate: "https://clawdline.example/#session-8",
+    },
+  };
+  const w = runWorker();
+  w.fire("push", eventFor(w.calls, { data: { json: () => payload } }));
+  await Promise.all(w.calls.waited);
+  const shown = w.calls.shown[0];
+  check("an older browser renders the declarative payload through the legacy worker",
+        w.calls.shown.length === 1 && shown.title === payload.notification.title
+        && shown.options.body === payload.notification.body);
+  check("and tapping that fallback keeps the declarative destination",
+        shown.options.data.url === payload.notification.navigate);
+}
+{
   // A push with nothing readable in it still has to draw something. `event.data.json()` throwing is
   // not hypothetical — it is what a malformed or empty payload does.
   const w = runWorker();

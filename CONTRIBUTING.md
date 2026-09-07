@@ -3,7 +3,7 @@
 Plain AppKit. No dependencies, no Xcode project, no build system beyond `swiftc`.
 
 ```bash
-./test.sh     # 9954 checks, minutes rather than seconds
+./test.sh     # 9970 checks, minutes rather than seconds
 ./build.sh    # builds the .app and relaunches it if it was running
 ```
 

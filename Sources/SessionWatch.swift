@@ -869,6 +869,15 @@ final class SessionWatch {
 
     // MARK: - Test seam
 
+    /// Whether an admitted inventory read has not yet returned to the main queue.
+    ///
+    /// Read-only because tests may wait for an old worker to relinquish process-wide seams, but
+    /// must not make `stop()` pretend it cancelled work that production deliberately lets finish.
+    var isReadingForTesting: Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
+        return reading
+    }
+
     /// What a reading asks the machine, replaced only by the suite. nil in the app.
     ///
     /// **The one seam in this file, and it is at the one boundary that matters.** Everything

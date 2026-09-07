@@ -163,6 +163,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a burst of finishes becomes one push, not one each",
     "smart notification health is visible where the switch is",
     "a push payload keeps the beginning of a sentence that does not fit",
+    "Apple push opens its session without waiting for notificationclick",
+    "one device owns one current push endpoint",
     "a notification's deep link carries a session id a browser can read back",
     "a notification that names a session carries its address, and one that names none does not",
     "push-service receipts distinguish acceptance from refusal",

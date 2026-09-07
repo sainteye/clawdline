@@ -1028,6 +1028,81 @@ group("a push payload keeps the beginning of a sentence that does not fit") {
     check("and discards the tail", !shortened.hasSuffix(ending))
 }
 
+group("Apple push opens its session without waiting for notificationclick") {
+    let endpoint = URL(string: "https://web.push.apple.com/declarative-test")!
+    let origin = URL(string: "https://phone.clawdline.example")!
+    let subscription = WebPush.Subscription(
+        id: "declarative-test", endpoint: endpoint,
+        p256dh: Data([UInt8(0x04)] + Array(repeating: UInt8(0x01), count: 64)),
+        auth: Data(repeating: 0x02, count: 16), device: "phone", origin: origin,
+        created: Date(timeIntervalSince1970: 1))
+    let made = WebPush.message(title: "waiting", body: "answer me",
+                               url: "/#session=%25295", tag: "session-%295", icon: nil,
+                               for: subscription, at: Date(timeIntervalSince1970: 2))
+    expect("an Apple subscription with a known web-app origin uses the declarative media type",
+           made?.contentType ?? "", "application/notification+json")
+    let object = made.flatMap {
+        try? JSONSerialization.jsonObject(with: $0.plaintext) as? [String: Any]
+    }
+    expect("the wire opts into declarative Web Push", object?["web_push"] as? Int, 8030)
+    let notification = object?["notification"] as? [String: Any]
+    expect("the browser receives an absolute same-origin destination",
+           notification?["navigate"] as? String,
+           "https://phone.clawdline.example/#session=%25295")
+    expect("the visible words survive the different envelope",
+           notification?["title"] as? String, "waiting")
+    expect("and so does its body", notification?["body"] as? String, "answer me")
+
+    let browserJSON: [String: Any] = [
+        "endpoint": endpoint.absoluteString,
+        "keys": ["p256dh": WebPush.base64url(subscription.p256dh),
+                 "auth": WebPush.base64url(subscription.auth)],
+    ]
+    let captured = WebPush.subscription(from: browserJSON, device: "phone",
+                                        origin: "https://phone.clawdline.example/a?b#c")
+    expect("the subscription keeps only the authenticated page origin",
+           captured?.origin?.absoluteString, "https://phone.clawdline.example")
+
+    let chrome = WebPush.Subscription(
+        id: "legacy-test", endpoint: URL(string: "https://fcm.googleapis.com/push")!,
+        p256dh: subscription.p256dh, auth: subscription.auth, device: "laptop",
+        origin: origin, created: subscription.created)
+    let legacy = WebPush.message(title: "waiting", body: "answer me", url: "/#session=one",
+                                 tag: nil, icon: nil, for: chrome)
+    expect("a non-Apple endpoint keeps the legacy encrypted media type",
+           legacy?.contentType ?? "", "application/octet-stream")
+    let legacyObject = legacy.flatMap {
+        try? JSONSerialization.jsonObject(with: $0.plaintext) as? [String: Any]
+    }
+    expect("and the existing worker still receives the existing payload shape",
+           legacyObject?["url"] as? String, "/#session=one")
+}
+
+group("one device owns one current push endpoint") {
+    let device = "one-phone-\(UUID().uuidString.lowercased())"
+    func subscription(_ id: String, _ endpoint: String, _ second: TimeInterval)
+        -> WebPush.Subscription {
+        WebPush.Subscription(
+            id: id, endpoint: URL(string: endpoint)!,
+            p256dh: Data([UInt8(0x04)] + Array(repeating: UInt8(0x01), count: 64)),
+            auth: Data(repeating: 0x02, count: 16), device: device,
+            origin: URL(string: "https://phone.clawdline.example")!,
+            created: Date(timeIntervalSince1970: second))
+    }
+    let old = subscription("old-\(device)", "https://web.push.apple.com/old", 1)
+    let current = subscription("current-\(device)", "https://web.push.apple.com/current", 2)
+    defer {
+        WebPush.remove(id: old.id)
+        WebPush.remove(id: current.id)
+    }
+    WebPush.add(old)
+    WebPush.add(current)
+    let mine = WebPush.subscriptions.filter { $0.device == device }
+    expect("a new endpoint replaces the old endpoint for the same physical device", mine.count, 1)
+    expect("and it is the subscription the browser most recently supplied",
+           mine.first?.id, current.id)
+}
+
 group("a notification's deep link carries a session id a browser can read back") {
     // The id this Mac actually watches. `Sources/Tmux.swift` calls `%12` "stable for the life of
     // the pane", and `tmux list-panes -a -F '#{pane_id}'` prints `%141` here.
