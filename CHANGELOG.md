@@ -9,6 +9,21 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: a worker that is not this build is now replaced rather than asked again
+
+Registering on every load and calling `update()` at both wake-ups are the polite ways to ask a
+browser for a newer service worker, and a phone spent several rounds running a page from one build
+over a worker from an earlier one through both of them. Every reading taken in that state was about
+a program nobody was looking at.
+
+The worker's note now carries the build it came from, the page reports it, and when the two numbers
+are known and different the worker is thrown away and installed again. Silent when either number is
+missing, which is a worker from before the stamp or a server too old to answer one.
+
+The stamp was added to the worker in the previous change and the reader was left reporting the
+capability instead — a signal shipped with nobody listening to it, which is the same shape as a
+check that cannot fail.
+
 ### Fixed: three more ways a tap was lost after the worker had already woken
 
 A phone produced a reading no round before this could have: a worker that had plainly run and left

@@ -66,8 +66,17 @@ check("the router answers GET /sw.js exactly once",
 check("and it answers it with RemotePage.serviceWorker(), which is called nowhere else",
       occurrences(server, "RemotePage.serviceWorker()") === 1
       && /case \("GET", "\/sw\.js"\):\s*\n\s*return RemotePage\.serviceWorker\(\)/.test(server));
-check("and the page registers that same path with the browser",
-      occurrences(registration, 'navigator.serviceWorker.register("/sw.js")') === 1);
+// **One spelling, however many callers.** This counted the whole call with the literal inside it,
+// which was the same thing while `start` was the only place that registered. A second caller —
+// throwing a mismatched worker away and installing it again — made that count a fact about how
+// many times somebody registers rather than about how many ways the path is written, which is
+// what this check is for. The literal now lives in one constant and this holds that.
+check("the page writes that path exactly once",
+      occurrences(registration, '"/sw.js"') === 1
+      && /var SW_PATH = "\/sw\.js";/.test(registration));
+check("and registers with it rather than with a second copy of the string",
+      occurrences(registration, "navigator.serviceWorker.register(SW_PATH)") >= 1
+      && occurrences(registration, 'navigator.serviceWorker.register("') === 0);
 check("RemotePage declares that handler exactly once", occurrences(page, SIGNATURE) === 1);
 if (occurrences(page, SIGNATURE) !== 1) stop("cannot find the handler this suite is about");
 

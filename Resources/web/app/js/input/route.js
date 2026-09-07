@@ -139,6 +139,9 @@ export function openWanted() {
     // And where the flood cannot reach it: `reads` is how many times a request was held against
     // a list, `entries` how many of them ended in a session opening.
     Diagnostics.sourceRead(OPEN_SOURCE, id ? "found" : "missing", id ? 1 : 0);
+    say("opening what the tap asked for", {
+        wanted: wantedSession, found: !!id, opening: id || null
+    });
     if (!id) return false;
     wantedSession = null;
     wantedSessionAsWritten = null;
@@ -189,6 +192,11 @@ if ("serviceWorker" in navigator) {
         // The same fact, where a flood cannot reach it. `reads` is how many messages arrived at
         // all, which is the one number that says whether `postMessage` is being delivered.
         Diagnostics.sourceRead(MESSAGE_SOURCE, (data && data.type) || "empty", 1);
+        say("a message arrived from the worker", {
+            type: (data && data.type) || "", url: (data && data.url) || "",
+            want: (data && data.want) || "", hidden: document.hidden,
+            alreadyAnswered: !!(data && data.want && data.want === settledWant)
+        });
         if (!data || data.type !== "navigate" || typeof data.url !== "string") return;
         // **The same guard, in the other direction, and it was missing.** `readWorkerWant` refuses
         // a record this page has already answered; nothing refused a *message* announcing a tap the
@@ -314,6 +322,21 @@ Diagnostics.source(OPEN_SOURCE);
  * `sw.postMessage` each time it hands a tap to a window; `notificationMessage` counts the ones
  * that arrived. **The two numbers side by side are the drop**, and neither alone is.
  */
+/** The page's half of what the worker says out loud. See `RemotePage.serviceWorker`'s `say`.
+ *
+ *  Safari's Web Inspector gives the page and the worker separate consoles, so the two halves of
+ *  this road are read side by side rather than inferred from one another. Prefixed so it can be
+ *  filtered to, and quiet on the path that runs constantly: a look that found nothing is the
+ *  ordinary state of a page nobody has tapped a notification for, and printing it every time a
+ *  session list arrives would bury the one line that matters. */
+function say(what, data) {
+    try {
+        if (typeof console === "undefined" || !console || !console.log) return;
+        if (data === undefined) console.log("[clawdline/page] " + what);
+        else console.log("[clawdline/page] " + what, data);
+    } catch (e) { }
+}
+
 export var WORKER_MARK_CACHE = "clawdline-worker-mark";
 export var WORKER_MARK_URL = "/__clawdline/worker-mark";
 export var MARK_SOURCE = "serviceWorkerMark";
@@ -323,6 +346,12 @@ Diagnostics.source(POSTED_SOURCE);
 
 /** Read the worker's own note about itself. Never rejects: a browser with no Cache Storage is a
  *  page that cannot be told, which is `unavailable` and not a fault of the road. */
+/** The build the worker last said it was, or null when it has not said. */
+var workerBuild = null;
+
+/** What the worker under this page says it is. Null until a mark has been read. */
+export function workerBuildSeen() { return workerBuild; }
+
 export function readWorkerMark() {
     try {
         if (typeof caches === "undefined" || !caches || !caches.open) {
@@ -337,8 +366,16 @@ export function readWorkerMark() {
         .then(function (cache) { return cache.match(WORKER_MARK_URL); })
         .then(function (found) { return found ? found.json() : null; })
         .then(function (mark) {
-            var answer = mark && mark.wants ? "wants" : "absent";
-            Diagnostics.sourceRead(MARK_SOURCE, answer, answer === "wants" ? 1 : 0);
+            // **The build, when the worker knows it.** A capability alone could not separate two
+            // consecutive builds that both had it — one keeping the record it wrote and one
+            // sweeping it away — and on 2026-09-07 a stamp was added to the worker and this line
+            // was left reporting the capability, so the reading still could not say which was
+            // running. The number is the answer; `wants` without one means a worker from before
+            // the stamp existed.
+            var answer = mark && mark.wants ? (mark.build ? "b" + mark.build : "wants") : "absent";
+            Diagnostics.sourceRead(MARK_SOURCE, answer, mark && mark.wants ? 1 : 0);
+            workerBuild = (mark && mark.build) ? String(mark.build) : null;
+            say("the worker under this page", { says: answer, build: workerBuild });
             return answer;
         })
         .catch(function () {
@@ -530,6 +567,9 @@ export function readWorkerWant() {
         // `entries` counts the reads that actually routed, so the row says both what the last
         // look decided and how many taps this page has carried out by this road.
         Diagnostics.sourceRead(WANT_SOURCE, answer, answer === "routed" ? 1 : 0);
+        // Quiet on `none`: that is the ordinary answer on a page nobody has tapped anything for,
+        // and it is read once per session list.
+        if (answer !== "none") say("the record road decided", { answer: answer });
         return answer;
     });
 }

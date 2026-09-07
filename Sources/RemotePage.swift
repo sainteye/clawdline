@@ -1070,6 +1070,25 @@ enum RemotePage {
         // installs, `skipWaiting` stops it queuing behind open tabs, `clients.claim` takes those
         // tabs over, and from that moment the handler below fetches the page itself instead of
         // the cache. **One more reload after that and the device is out.**
+        // **Said out loud, for somebody with the phone plugged into the Mac.**
+        //
+        // Safari's Web Inspector attaches to a device over a cable and gives the worker a console
+        // of its own, separate from the page's. That is a far better instrument than the one this
+        // road has been read through — it needs no press, it arrives while the thing is
+        // happening, and it can be seen on both sides of the gap at once.
+        //
+        // Every line is prefixed so it can be filtered to, and every one of them is on a road a
+        // person has just tapped: this is not a log that runs while nothing is going on. Session
+        // ids are printed, unlike in the diagnostic report, because the console belongs to the
+        // person holding the device and the id is the thing they are trying to see.
+        function say(what, data) {
+            try {
+                if (typeof console === "undefined" || !console || !console.log) { return; }
+                if (data === undefined) { console.log("[clawdline/sw] " + what); }
+                else { console.log("[clawdline/sw] " + what, data); }
+            } catch (e) { }
+        }
+
         // What this worker can do, left where the page can read it back. See `activate`.
         var MARK_CACHE = "clawdline-worker-mark";
         var MARK_URL = "/__clawdline/worker-mark";
@@ -1128,6 +1147,7 @@ enum RemotePage {
                     // was no way to tell a worker that had not updated from a road that was
                     // broken. This is that difference, written down where a flood cannot reach.
                     .then(function () {
+                        say("activate: this worker is now in charge", { build: BUILD });
                         try {
                             return caches.open(MARK_CACHE).then(function (cache) {
                                 return cache.put(MARK_URL, new Response(
@@ -1175,6 +1195,8 @@ enum RemotePage {
         self.addEventListener("push", function (event) {
             var payload = {};
             try { payload = event.data ? event.data.json() : {}; } catch (e) {}
+            say("push arrived", { title: payload.title || "", url: payload.url || "/",
+                                  build: BUILD });
             event.waitUntil(self.registration.showNotification(payload.title || "Clawdline", {
                 body: payload.body || "",
                 // The tag collapses repeats about one session into a single line rather than a
@@ -1336,6 +1358,7 @@ enum RemotePage {
             // the message as well as into the store: the page uses it to tell "the message for
             // this tap arrived" from "a second tap happened", and those two want opposite things
             // done about the record. Nothing about it is awaited in front of the roads below.
+            say("notificationclick", { url: url, build: BUILD });
             var want = null;
             if (wantedFragment(url)) {
                 want = { at: Date.now(), url: url, id: String(Date.now()) + "." + (++wantCount) };
@@ -1371,9 +1394,18 @@ enum RemotePage {
             // Whichever road is taken below, and before any of them: on iOS the system opens the
             // web app at `start_url` itself before this handler runs, so `openWindow` is usually
             // not reached and the URL it would have carried is not the one the app came up on.
-            if (want) { noted.push(wantWrite(want)); }
+            if (want) {
+                say("wrote the record this tap is for", want);
+                noted.push(wantWrite(want).then(function (ok) {
+                    say("record write finished", { landed: ok, id: want.id });
+                    return ok;
+                }));
+            } else {
+                say("no record: this URL names no session", { url: url });
+            }
             event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true })
                 .then(function (list) {
+                    say("windows this worker can reach", { count: list.length });
                     noted.push(traceNote("sw.notificationclick",
                                          { url: url, windows: list.length }));
                     for (var i = 0; i < list.length; i++) {
@@ -1383,6 +1415,10 @@ enum RemotePage {
                             // `want` rides along so the page can recognise the record this tap
                             // left behind as one it has already answered. Empty when the URL
                             // names no session, which is when no record was written either.
+                            say("posting to a window", { index: i, of: list.length,
+                                                        visibility: client.visibilityState || "",
+                                                        focused: !!client.focused,
+                                                        want: want ? want.id : "" });
                             client.postMessage({ type: "navigate", url: url,
                                                  want: want ? want.id : "" });
                             noted.push(traceNote("sw.postMessage", {
@@ -1402,14 +1438,19 @@ enum RemotePage {
                         if (!focused) {
                             focused = true;
                             noted.push(client.focus().then(function () {
+                                say("focus taken");
                                 if (!client.postMessage && client.navigate) {
                                     noted.push(traceNote("sw.navigate", { url: url }));
                                     return client.navigate(url).catch(function () {});
                                 }
-                            }).catch(function () {}));
+                            }).catch(function (e) {
+                                say("focus refused, which used to end the handler here",
+                                    { why: (e && e.message) || String(e) });
+                            }));
                         }
                     }
                     if (delivered) { return undefined; }
+                    say("no window would take a message; opening one", { url: url });
                     noted.push(traceNote("sw.openWindow", { url: url }));
                     return clients.openWindow(url);
                 })

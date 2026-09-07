@@ -366,6 +366,7 @@ async function makeWorld({ deliver = true, listed = [], startHash = "", noCaches
     putForeign: (name) => stores.set(name, new Map()),
     hasStore: (name) => stores.has(name),
     readMark: () => page.readWorkerMark(),
+    workerBuild: () => page.workerBuildSeen(),
     putMark: (value) => stores.set(page.WORKER_MARK_CACHE, new Map(
       [[page.WORKER_MARK_URL, new Res(JSON.stringify(value))]])),
     wantRecord, putWant,
@@ -647,6 +648,30 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
         "a worker that left its mark is reported as one that knows how to leave a record");
   const row = fresh.reads.filter((r) => r.name === "serviceWorkerMark").slice(-1)[0] || {};
   equal(row.state, "wants", "and the row says so where a flood cannot reach it");
+}
+
+{
+  // **The build, not just the capability.** Two consecutive builds both answered `wants` — one
+  // keeping the record it wrote and one sweeping it away on the next activation — so a reading
+  // taken under either could not say which. The stamp was added to the worker and this reader was
+  // left reporting the capability, which is a signal shipped with nobody listening to it.
+  const stamped = await makeWorld({ deliver: false, listed: [PANE] });
+  stamped.putMark({ wants: true, keeps: true, build: "1788744677", at: Date.now() });
+  equal(await stamped.readMark(), "b1788744677",
+        "a worker that says which build it is, is reported as that build");
+  const row = stamped.reads.filter((r) => r.name === "serviceWorkerMark").slice(-1)[0] || {};
+  equal(row.state, "b1788744677", "and the row carries it where a flood cannot reach");
+  equal(stamped.workerBuild(), "1788744677",
+        "and the page can hold it against the build it is itself talking to");
+}
+
+{
+  // A worker from before the stamp existed still answers, and says only what it can.
+  const older = await makeWorld({ deliver: false, listed: [PANE] });
+  older.putMark({ wants: true, at: Date.now() });
+  equal(await older.readMark(), "wants",
+        "a worker from before the stamp says the capability and no more");
+  equal(older.workerBuild(), null, "and offers no build to compare");
 }
 
 {
@@ -1212,6 +1237,21 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
         occurrences(mainSource, "readWorkerMark()") === 2);
   check("and asks the browser for a newer worker at both of them",
         occurrences(mainSource, "Push.recheck()") === 2);
+  // **And stops asking when the two builds are known and different.** Registering on every load
+  // and calling `update()` at both wake-ups are the polite forms, and a phone ran a page over an
+  // older worker through several rounds of both.
+  // **The cable is an instrument too.** Safari attaches to a device over USB and gives the page
+  // and the worker separate consoles, which is the only reading of this road that arrives while it
+  // is happening. Both halves are prefixed so they can be filtered to; a prefix somebody quietly
+  // removes takes the instrument with it.
+  check("both halves of the road say what they are doing, under one prefix",
+        pageSource.includes("[clawdline/sw] ") && routeSource.includes("[clawdline/page] "));
+  // And quiet where it would otherwise print once per session list.
+  check("the look that found nothing does not say so",
+        routeSource.includes('if (answer !== "none") say('));
+  check("a worker that is not this build is thrown away and installed again",
+        mainSource.includes("Push.reinstall()")
+        && occurrences(mainSource, "readWorkerMark().then(matchWorkerToBuild)") === 2);
   check("main.js imports the reader from route.js",
         /import \{[^}]*\breadWorkerWant\b[^}]*\} from "\.\/input\/route\.js";/.test(mainSource));
   equal(occurrences(mainSource, "readWorkerWant()"), 2,

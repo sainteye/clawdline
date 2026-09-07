@@ -127,7 +127,7 @@ reports intact. So the notification road is read from four rows rather than from
 | `notificationMessage` | messages that actually arrived | the last one's `type` | same as `reads` |
 | `notificationWant` | reads of the worker's record | the last answer: `routed`, `stale`, `settled`, `declined`, `none`, `unavailable` | times it routed |
 | `notificationOpen` | decisions by `openWanted` | `found` or `missing` | sessions actually opened |
-| `serviceWorkerMark` | times the worker's own note was read | `wants` — the worker knows how to leave a record — or `absent` | 1 when current |
+| `serviceWorkerMark` | times the worker's own note was read | the worker's build as `b<stamp>`; `wants` for one from before the stamp existed; `absent` for one older still | 1 when a mark was found |
 | `workerPosted` | reads that folded in worker entries | `posted` | taps the worker says it handed to a window |
 
 **`notificationMessage.reads` is the number the road could not produce before.** Zero means no

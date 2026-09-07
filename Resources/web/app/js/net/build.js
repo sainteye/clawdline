@@ -26,6 +26,8 @@ import { els } from "../core/dom.js";
  */
 export var Build = {
     seen: null,
+    /// The Mac's own build stamp, as last answered by `/v1/health`.
+    build: null,
     stale: false,
     rebase: false,
 
@@ -40,7 +42,12 @@ export var Build = {
     },
 
     saw: function (info) {
-        if (!info || this.stale) return;
+        if (!info) return;
+        // **Kept whatever else this function decides.** The service worker under this page can be
+        // a different build from the page, and telling them apart needs the number even when
+        // there is nothing stale to say — see `readWorkerMark` in `input/route.js`.
+        if (info.build !== null && info.build !== undefined) this.build = String(info.build);
+        if (this.stale) return;
         var now = this.stamp(info);
         if (!now) return;
         if (this.seen === null || this.rebase) { this.rebase = false; this.seen = now; return; }

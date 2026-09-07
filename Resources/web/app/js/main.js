@@ -17,7 +17,7 @@ import { Diagnostics } from "./core/layout-diagnostics.js";
 import { clockOf, tint } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
 import { api, useApi } from "./net/api.js";
-import "./net/build.js";
+import { Build } from "./net/build.js";
 import "./net/fetch.js";
 import { Schedules } from "./net/schedules.js";
 import { Live } from "./net/live.js";
@@ -58,7 +58,7 @@ import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
-import { routeTo, readWorkerTrace, readWorkerWant, readWorkerMark, lookAgainForWant } from "./input/route.js";
+import { routeTo, readWorkerTrace, readWorkerWant, readWorkerMark, lookAgainForWant, workerBuildSeen } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import "./input/start.js";
@@ -500,11 +500,35 @@ function boot(data) {
     // And which worker wrote any of it. A page and the worker under it are two builds, and on
     // 2026-09-07 they were a build apart on a real phone with nothing on either side able to say
     // so. Read after the two above, so a report lists what happened and then who it happened in.
-    readWorkerMark();
+    readWorkerMark().then(matchWorkerToBuild);
     // **And ask for the newer one.** `Push.start` registers on every load, which is supposed to
     // be enough; on that phone it was not — the page was current and the worker was not. This
     // asks outright, and costs one conditional request against a route that answers `no-cache`.
     Push.recheck();
+}
+
+/**
+ * A worker that is not the build this page is talking to, thrown away and installed again.
+ *
+ * **Asking has been tried.** `Push.start` registers on every load, `Push.recheck` calls
+ * `update()` at both wake-ups, and on 2026-09-07 a phone still ran a page from one build over a
+ * worker from an earlier one through several rounds of both — long enough to produce readings
+ * about a program nobody was looking at. When the two numbers are known and different there is
+ * nothing left to interpret, so this stops asking.
+ *
+ * Silent when either number is missing: a worker from before the stamp existed says nothing about
+ * itself, and a server too old to answer `build` leaves nothing to compare it with.
+ */
+function matchWorkerToBuild() {
+    var mine = Build.build;
+    var theirs = workerBuildSeen();
+    if (!mine || !theirs || mine === theirs) return;
+    Diagnostics.note("worker.mismatch", { page: mine, worker: theirs });
+    try {
+        console.log("[clawdline/page] the worker is not this build — reinstalling",
+                    { page: mine, worker: theirs });
+    } catch (e) { }
+    Push.reinstall();
 }
 
 /**
@@ -531,7 +555,7 @@ function watchForStaleness() {
         readWorkerTrace();
         readWorkerWant();
         lookAgainForWant();
-        readWorkerMark();
+        readWorkerMark().then(matchWorkerToBuild);
         // Coming back is the other moment a worker update can land, and the moment somebody is
         // most likely to be looking at a screen that is a build behind.
         Push.recheck();

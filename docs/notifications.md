@@ -307,7 +307,7 @@ after an update, this is why.
 `Tests/web-notification-route.mjs` runs the worker and the page against each other, with the
 message delivered and with it dropped, on tmux pane ids. Every fixture in the two suites either
 side of it — `web-service-worker.mjs` taps `/#session-9`, `/#cold`, `/#fresh` — is a URL no
-notification has ever carried, which is why neither of them could see this segment. Its 230 checks
+notification has ever carried, which is why neither of them could see this segment. Its 238 checks
 cover the dropped message, the list that has not arrived yet, a record too old to obey, a page woken
 twice, the two roads meeting in both orders, two notifications tapped before the list arrives, a
 request let go of, the record that lands between two reads, a first read that answers `stale` or
