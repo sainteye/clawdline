@@ -63,6 +63,40 @@ for (const file of surfaces) {
     }
 }
 
+function validateOperationalFinalizerVeto(text, file) {
+    assert.match(text,
+        /named\s+operational\s+finalizer[\s\S]*?workflow\s+explicitly\s+names[\s\S]*?downstream\s+root[\s\S]*?stops\s+after\s+the\s+commit[\s\S]*?exact-tree\s+verification\s+receipt/i,
+        `${file}: missing the named downstream finalizer's landing-root stop point`);
+    assert.match(text,
+        /sends\s+that\s+exact\s+commit\s+and\s+receipt[\s\S]*?named\s+owner[\s\S]*?must\s+not\s+build,\s+restart,\s+or\s+deploy/i,
+        `${file}: missing the exact commit/receipt handoff or duplicate-side-effect veto`);
+    assert.match(text,
+        /ordinary\s+landing\s+root[\s\S]*?only\s+when\s+no\s+downstream\s+finalizer\s+was\s+named/i,
+        `${file}: missing the ordinary landing-root default`);
+    assert.match(text,
+        /transport\s+acceptance[\s\S]*?only[\s\S]*?handoff\s+was\s+sent[\s\S]*?explicit\s+acknowledgement[\s\S]*?re-read[\s\S]*?named\s+owner[\s\S]*?acknowledge[\s\S]*?before[\s\S]*?live/i,
+        `${file}: transport acceptance is still allowed to masquerade as an acknowledged handoff`);
+}
+
+const agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8");
+const finalizerStart = agents.indexOf("**One named operational finalizer owns the side effects.**");
+const finalizerFinish = agents.indexOf("\n- ", finalizerStart);
+assert.ok(finalizerStart >= 0 && finalizerFinish > finalizerStart,
+    "AGENTS.md: missing the closed operational-finalizer rule");
+const finalizerRule = agents.slice(finalizerStart, finalizerFinish);
+validateOperationalFinalizerVeto(finalizerRule, "AGENTS.md");
+for (const [phrase, pattern] of [
+    ["stops after the commit", /stops after the\s+commit/],
+    ["sends that exact commit and receipt", /sends that exact commit and receipt/],
+    ["must not build, restart, or deploy", /must not build, restart, or deploy/],
+    ["explicit acknowledgement", /explicit\s+acknowledgement/],
+]) {
+    assert.throws(
+        () => validateOperationalFinalizerVeto(finalizerRule.replace(pattern, "removed"),
+            "AGENTS.md mutation"),
+        `AGENTS.md: removing "${phrase}" must make the operational-finalizer guard red`);
+}
+
 const skillTriggers = [
     ["skills/clawdline/SKILL.md", "another live session"],
     ["skills/clawdline/SKILL.zh-TW.md", "另一個 live session"],
@@ -132,4 +166,5 @@ for (const file of ["skills/clawdline/SKILL.md", "skills/clawdline/SKILL.zh-TW.m
         `${file}: ordinary dispatch still exposes poll-only as a generic switch`);
 }
 
-console.log(`dispatch role contract: ${surfaces.length} surfaces, ${clauses.length} clauses`);
+console.log(`dispatch role contract: ${surfaces.length} surfaces, ${clauses.length} clauses; `
+    + "operational finalizer: 4 clauses");

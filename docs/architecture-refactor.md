@@ -559,10 +559,10 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 565 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered groups | 567 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 39 | `Tests/main.swift`, counted by the guard |
 | suite files | 52 | `Tests/*Tests.swift`, counted by the guard |
-| Swift checks | 10,000 | `expected_swift_receipt` in `test.sh`, set from a run |
+| Swift checks | 10,111 | `expected_swift_receipt` in `test.sh`, set from a run |
 | `Orchestrator.swift` ceiling | 10,826 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,898 | the receipt in `tools/check-architecture-boundaries.sh` |
 

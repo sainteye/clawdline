@@ -1332,11 +1332,11 @@ enum Orchestrator {
     /// the only thing that gives a handed-off root its job title back after a restart.
     private static var handoffLabels: [String: HandoffLabel] = [:]
     private static var handoffDeliveries: [String: HandoffDelivery] = [:]
-    private static var rootAssignments: [String: RootAssignment] = [:]
+    static var rootAssignments: [String: RootAssignment] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:]
     /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
     /// this receipt is consumed when the same tab begins another observed turn.
-    private static var sessionDeliveries: [String: SessionDelivery] = [:]
+    static var sessionDeliveries: [String: SessionDelivery] = [:]
     private static var sessionSelfStates: [String: SessionSelfState] = [:]
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
@@ -1495,8 +1495,7 @@ enum Orchestrator {
         /// `state` on purpose — the most common real combination is "my main line waits on a
         /// person, my side work proceeds", which a single value cannot spell.
         let owed: [String: Any]?
-        /// Only check states carry this. It describes the receipt and its deliberately narrow
-        /// task scope; it is never accepted back as a source of truth.
+        /// Only check states carry this narrow task/current-Session receipt projection.
         let disposition: [String: Any]?
 
         init(state: SessionWorkState, provenance: String = "broker", note: String? = nil,
@@ -1526,17 +1525,13 @@ enum Orchestrator {
         var conversationID: String?
     }
 
-    /// A root's authenticated claim that its current turn delivered what it was assigned.
-    ///
-    /// This is deliberately weaker than a broker-verified landing and therefore produces only
-    /// the single-check milestone. `settled` means the report has subsequently been observed at
-    /// an idle prompt; the next working/waiting transition consumes it so an older turn cannot
-    /// reappear as complete after a newer one ends without reporting.
-    struct SessionDelivery {
+    /// Base is one check; `landing` upgrades it to two. The next turn consumes either after idle.
+    struct SessionDelivery: Equatable {
         let identity: SessionWorkIdentity
         let summary: String
         let reportedAt: Date
         var settled: Bool
+        var landing: SessionLanding? = nil
     }
 
     static let sessionDeliverySummaryLimit = 500
@@ -1651,6 +1646,7 @@ enum Orchestrator {
         hasOpenHandoff: Bool,
         assignmentKnownAbsent: Bool,
         hasSessionDelivery: Bool = false,
+        hasSessionLanding: Bool = false,
         hasOutstandingChild: Bool = false,
         selfClaim: SessionWorkState? = nil
     ) -> SessionWorkState {
@@ -1672,9 +1668,10 @@ enum Orchestrator {
             }
             // A finished non-success receipt outranks any self claim: a failure the session
             // talks past is exactly what fail-closed exists for. A still-live assignment falls
-            // through — its child may honestly declare its own quiet state mid-task.
+            // through; its child may honestly declare its own quiet state mid-task.
             if task.state.isTerminal { return .unknown }
         }
+        if hasSessionLanding { return .workComplete }
         if hasSessionDelivery { return .milestoneComplete }
         if selfClaim == .ready || selfClaim == .holding { return selfClaim ?? .unknown }
         if assignmentKnownAbsent { return .ready }
@@ -1702,6 +1699,9 @@ enum Orchestrator {
         let task = taskForCurrentSession(Array(tasks.values), identity: identity)
         let sessionDelivery = sessionDeliveries[identity.terminalID].flatMap {
             sessionDeliveryMatchesCurrentSession($0, identity: identity) ? $0 : nil
+        }
+        let sessionLanding = sessionDelivery?.landing.flatMap {
+            isBrokerVerifiedSessionLanding($0) ? $0 : nil
         }
         let hasOutstandingChild = tasks.values.contains { child in
             guard !child.state.isTerminal else { return false }
@@ -1742,6 +1742,7 @@ enum Orchestrator {
             hasCoordinationWait: hasWait, hasOpenHandoff: hasOpenHandoff,
             assignmentKnownAbsent: identity.assistant == nil,
             hasSessionDelivery: sessionDelivery != nil,
+            hasSessionLanding: sessionLanding != nil,
             hasOutstandingChild: hasOutstandingChild,
             selfClaim: selfState?.claim)
         // The claim led exactly when leaving it out changes the answer; everything above it in
@@ -1751,6 +1752,7 @@ enum Orchestrator {
             hasCoordinationWait: hasWait, hasOpenHandoff: hasOpenHandoff,
             assignmentKnownAbsent: identity.assistant == nil,
             hasSessionDelivery: sessionDelivery != nil,
+            hasSessionLanding: sessionLanding != nil,
             hasOutstandingChild: hasOutstandingChild)
         guard state == .milestoneComplete || state == .workComplete else {
             if claimLed, let selfState {
@@ -1762,12 +1764,9 @@ enum Orchestrator {
             return SessionWorkProjection(state: state, owed: owed, disposition: nil)
         }
         if let delivery = sessionDelivery, task == nil {
-            return SessionWorkProjection(state: state, owed: owed, disposition: [
-                "scope": "session",
-                "title": delivery.summary,
-                "evidence": "authenticated_session_delivery",
-                "receiptAt": Int(delivery.reportedAt.timeIntervalSince1970),
-            ])
+            return SessionWorkProjection(
+                state: state, owed: owed,
+                disposition: sessionDeliveryDisposition(delivery))
         }
         guard let task else {
             return SessionWorkProjection(state: .unknown, owed: owed, disposition: nil)
@@ -1832,6 +1831,14 @@ enum Orchestrator {
             lock.unlock()
             return .ok(["ok": true, "created": false, "disposition": disposition])
         }
+        if let existing = sessionDeliveries[identity.terminalID],
+           sessionDeliveryMatchesCurrentSession(existing, identity: identity),
+           existing.landing != nil, !existing.settled {
+            lock.unlock()
+            return .refused(status: 409, code: "landing_conflict",
+                            message: "This turn already has a verified landing with a different summary.",
+                            extra: ["field": "summary"])
+        }
         let made = SessionDelivery(identity: identity, summary: summary,
                                    reportedAt: now, settled: false)
         sessionDeliveries[identity.terminalID] = made
@@ -1846,14 +1853,6 @@ enum Orchestrator {
         // delivery would be the old defect wearing a new event.
         announceDelivery(made)
         return .ok(["ok": true, "created": true, "disposition": disposition])
-    }
-
-    private static func sessionDeliveryDisposition(_ delivery: SessionDelivery) -> [String: Any] {
-        [
-            "scope": "session", "title": delivery.summary,
-            "evidence": "authenticated_session_delivery",
-            "receiptAt": Int(delivery.reportedAt.timeIntervalSince1970),
-        ]
     }
 
     /// One bounded line of the session's own words, or a typed refusal reason via nil.
@@ -9283,7 +9282,7 @@ enum Orchestrator {
     /// repeated report `created: false` is the same de-duplication that keeps the phone quiet.
     /// A session the watch no longer holds still buzzes: the receipt is the event, and a tab
     /// closed between the report and this line does not unmake it.
-    private static func announceDelivery(_ delivery: SessionDelivery) {
+    static func announceDelivery(_ delivery: SessionDelivery) {
         guard Config.shared.pushOnDelivery else { return }
         let id = delivery.identity.terminalID
         let session = target(withID: id)
@@ -10779,6 +10778,7 @@ enum Orchestrator {
         taskStarterForTesting = nil
         agentPushForTesting = nil
         sessionDeliveryPushForTesting = nil
+        resetSessionLandingTesting()
         watchedSessionIDsForTesting = nil
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllTerminalTitles() }
         OrchestratorRegistry.withTransactionOnHeldLock {

@@ -45,6 +45,9 @@ const closed = [
      "milestone_complete"],
     [{ state: "idle", work_state: "work_complete",
        disposition: { scope: "task", taskId: "one", evidence: "broker_verified_target_landing" } },
+     "work_complete"],
+    [{ state: "idle", work_state: "work_complete",
+       disposition: { scope: "session", evidence: "broker_verified_target_landing" } },
      "work_complete"]
 ];
 for (const [session, state] of closed) {
@@ -85,6 +88,9 @@ assert.equal(project({ state: "idle", work_state: "work_complete",
 assert.equal(project({ state: "idle", work_state: "milestone_complete",
     disposition: { scope: "session", evidence: "authenticated_task_delivery" }
 }).state, "unknown", "a root receipt cannot borrow task delivery evidence");
+assert.equal(project({ state: "idle", work_state: "work_complete",
+    disposition: { scope: "session", evidence: "authenticated_session_delivery" }
+}).state, "unknown", "a root delivery receipt cannot borrow landing semantics");
 
 const hostile = {
     state: "idle", work_state: "milestone_complete",
@@ -107,6 +113,10 @@ assert.equal((html({ state: "idle", work_state: "work_complete",
     disposition: { scope: "task", taskId: "one", evidence: "broker_verified_target_landing" } })
     .match(/session-work-check/g) || []).length, 2,
     "broker closure draws exactly two CSS checks");
+assert.equal((html({ state: "idle", work_state: "work_complete",
+    disposition: { scope: "session", evidence: "broker_verified_target_landing" } })
+    .match(/session-work-check/g) || []).length, 2,
+    "a broker-verified root landing draws exactly two CSS checks");
 const unknownHTML = html({ state: "idle" });
 assert.match(unknownHTML, />status unknown</,
     "the fail-closed state is readable text rather than an empty row");

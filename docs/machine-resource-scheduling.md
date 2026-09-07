@@ -10,6 +10,8 @@ nobody, and removed on 2026-09-03.** What is on this machine today:
   same heartbeat and the same fail-closed wait.
 - **`CLAWDLINE_SUITE_JOBS`** (`54891280`), a compile-job ceiling both scripts read and both print
   the provenance of.
+- **`Resources/clawdline-progress.sh list [--json]`**, a read-only view of the run rows both scripts
+  publish before they reach the lock and continue refreshing while they run.
 - **The measurements below**, which are the most durable thing the night produced and which depend
   on none of the above.
 
@@ -128,6 +130,48 @@ So the limitation is real and currently live: **a checkout based on a commit old
 no lock, and nothing tells its user that.** The remedy is to rebase such a tree onto a `main` that
 contains it — not to hand-write a lock file in it, because a record with no renewer behind it
 expires in sixty seconds and lands in exactly the window this page describes above.
+
+### Preflight is observed before it is locked
+
+`test.sh` calls `progress_start` before its guards and node suites, long before
+`clawdline_acquire_suite_lock`. During that preflight there is correctly no
+`/tmp/clawdline-suite.lock`, no `swift-frontend`, and sometimes no interesting child process at all.
+Those three absences therefore do not prove that no exact-tree suite is running. Before making that
+claim, read the producer's existing rows once:
+
+This is measured, not hypothetical. At about 14:56 Asia/Taipei on 2026-09-07 the lock path was
+absent while `run--private-tmp-clawdline-feature-final.Ar4P1g.json` said `state=running`,
+`phase=node suites`, `started_at=1788764501`, `updated_at=1788764539`, and named
+`/private/tmp/clawdline-feature-final.Ar4P1g` as its tree. The two readings held one run still across
+the row and lock surfaces: it was active in preflight and did not yet hold the slot.
+
+```sh
+Resources/clawdline-progress.sh list
+Resources/clawdline-progress.sh list --json
+```
+
+The default is a labelled tab-separated table for a person; `--json` is one array, including an
+empty `[]` when the cache has never been created or a successful query found no rows. Each row file
+must contain exactly one JSON object. Syntax damage, a scalar, an empty file, or several JSON values
+becomes one isolated `malformed` entry and cannot corrupt the array or hide a later valid row. Both
+forms retain fresh `active` running rows, running rows classified `stale`, and completed `ok` and
+`fail` verdicts. They also expose the recorded holder, tree, start and update timestamps,
+age/freshness, phase, label and log when those fields exist. Machine output carries `error`; the
+human table carries the same reason in `ERROR`, including `invalid_json`, `missing_state`,
+`invalid_state`, `missing_updated_at`, and `invalid_updated_at`. A fresh `running` row with no suite
+lock is observable preflight, not a lock holder; a phase such as `guards` or `node suites` says what
+that preflight is doing.
+
+Empty observation and failed observation are deliberately different. An existing status path that
+cannot be listed returns `status_directory_unreadable` with exit 74; an unavailable or non-epoch
+`date +%s` result returns `clock_unavailable` with exit 69. Neither prints a successful `[]` or a
+partial table.
+
+This reader is evidence, never admission. It does not create, remove, inspect or wait on the suite
+lock; it does not poll processes; and neither a stale row nor an empty array authorizes a compile or
+a takeover. **`/tmp/clawdline-suite.lock` remains the sole exclusion primitive.** Its own fail-closed
+heartbeat and global compiler checks remain the only path by which the scripts acquire or replace
+that authority.
 
 **This is the thing a broker lease could have done and a file in one tree cannot**: be visible to
 every checkout and every snapshot at once. It is written down because the decision to keep only the

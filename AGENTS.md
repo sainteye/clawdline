@@ -777,4 +777,12 @@ rather than to a file you have to wait for.
   interrupt work owned by another session. Before a root runs it, re-check `git status` and make
   sure its wildcard source and resource inputs will not absorb another session's uncommitted work;
   if they would, build the exact intended tree in an isolated snapshot or coordinate first.
+- **One named operational finalizer owns the side effects.** When a workflow explicitly names a
+  downstream root as the finalizer for build, restart, or deploy, the landing root stops after the
+  commit and its exact-tree verification receipt. It sends that exact commit and receipt to the
+  named owner and must not build, restart, or deploy the same change itself. The ordinary landing
+  root remains the operational finalizer only when no downstream finalizer was named. Transport
+  acceptance is not observation; it proves only that the handoff was sent. Obtain an explicit
+  acknowledgement from the named owner, or re-read the named owner's session and see it acknowledge
+  the handoff, before treating the handoff as live.
 - Never alter, stage, discard, or claim another session's pre-existing uncommitted work.

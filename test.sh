@@ -382,7 +382,12 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`, and the Cloud receipt itself unchanged because
 # none of the three groups is a Cloud one. The witness below is what the guard named on the same
 # tree before any of it compiled.
-expected_swift_receipt='10000 checks passed'
+# **10,111 is the measured combined process/status tree, not 10,000 plus a static count.**
+# `CLAWDLINE_RESEAL=1 ./test.sh` on the private exact candidate tree
+# `89a40c9b3a1cf86e06e213a0df8252d2c38b55dd` ran all 10,111 checks with all twelve Cloud
+# suites present. Its only two failures were the closed direct-nudge and ordered-group manifests
+# that this same reseal updates; no production behavior assertion failed.
+expected_swift_receipt='10111 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -395,7 +400,7 @@ expected_swift_receipt='10000 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8054
+expected_swift_receipt_witness=8134
 
 count_exact_receipt_lines() {
   local receipt=$1

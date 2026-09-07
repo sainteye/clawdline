@@ -301,8 +301,8 @@ export var Mock = (function () {
           cwd: "/Users/x/code/clawdline", state: "working", work_state: "working",
           line: "Reading Copy+German.swift",
           isClaude: true, assistant: "claude", sessionId: null, icon: clawdline },
-        // The two receipt glyphs side by side in the mock: task delivery is not graph closure;
-        // the double check is the narrower broker-verified target landing for that task scope.
+        // The two receipt glyphs side by side in the mock: delivery is not graph closure;
+        // the double check is broker-verified target landing for the disposition's named scope.
         { id: "D311-01", backend: "iterm", tty: "ttys023", label: "review delivered",
           cwd: "/Users/x/code/clawdline", state: "idle", work_state: "milestone_complete",
           disposition: { scope: "task", taskId: "mock-milestone", title: "review delivered",

@@ -264,14 +264,22 @@ longer wholly true, and what changed is which of the guard's three answers a mac
 
 | the guard's answer | who acts on it now |
 |---|---|
-| `unrecorded landing` | **the broker.** Its own sweep asks the same `merge-base --is-ancestor` question and closes the record itself, through the same verified path the HTTP route takes. |
+| `unrecorded landing` | **the broker.** After proving an isolated branch has complete clean, non-empty delivery evidence, its sweep asks the same `merge-base --is-ancestor` question and closes the record itself through the same verified path the HTTP route takes. |
 | `outstanding delivery` | a person. The delivery is not in the target branch; whether that is work still to land or a squash nobody can see is a judgement. |
 | `undecidable` | **the broker, but only narrowly.** A shared-checkout task has no branch to ask about, so the sweep asks the one question that *is* answerable — is anything this task was allowed to write still outstanding? — and closes on that, saying so. Everything else here is still a person's. |
 
 **The two arms prove two different propositions and the record says which.**
 
-- **Ancestry.** Terminal task, record open, a named target, and a delivery head the registry knows
-  (`worktree.head`, else the live `refs/heads/clawdline/task/<id>`). If that head is contained by
+- **Ancestry.** Terminal task, record open, a named target, and a delivery head supported by its
+  own kind of evidence. An isolated task requires a known `worktree.base` and `worktree.head`,
+  `worktree.commits > 0`, `worktree.dirty == false`, and a chosen head different from its base; if
+  a successful ref scan finds live `refs/heads/clawdline/task/<id>`, it must agree with the
+  recorded head. A successful scan that confirms the branch is absent may use the complete stored
+  receipt, because merged delivery branches can be deleted. A ref scan that cannot launch, exits
+  nonzero, returns malformed text, or exits successfully with stdout that is not valid UTF-8 is
+  `unanswerable`: undecodable bytes are not an empty ref list, and may use neither stored head nor
+  write-set containment. Missing, unknown, zero, dirty, empty, or
+  contradictory worktree evidence likewise stays pending. If the admissible head is contained by
   `refs/heads/<target>`, the record closes as `landed` through
   `OrchestratorDraft.verifyTargetLanding` — so `verification_origin`, `verified_commit`,
   `verified_target_commit` and `landed_at` are all real, and this stays the two-check

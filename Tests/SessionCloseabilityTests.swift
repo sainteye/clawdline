@@ -733,4 +733,255 @@ group("the closure route is closed at its edges") {
     expect("and no other route call reached it", ended, [peer.id, session.id])
 }
 
+group("a root session landing receipt is broker verified and process bound") {
+    let repository = makeLandingRepository()
+    defer { try? FileManager.default.removeItem(at: repository.url) }
+    expect("the root landing fixture has a second local target",
+           testGit(["branch", "release/main"], cwd: repository.url).status, 0)
+    expect("the root landing fixture opens an unrelated history",
+           testGit(["switch", "-q", "--orphan", "unrelated"], cwd: repository.url).status, 0)
+    expect("the unrelated root history commits", testGit([
+        "-c", "user.name=Clawdline Tests", "-c", "user.email=tests@clawdline.invalid",
+        "commit", "--allow-empty", "-qm", "unrelated root",
+    ], cwd: repository.url).status, 0)
+    let unrelatedCommit = testGit(["rev-parse", "HEAD"], cwd: repository.url).output
+    expect("the root landing fixture returns to main",
+           testGit(["switch", "-q", "main"], cwd: repository.url).status, 0)
+
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    let wasWriting = Config.shared.remoteWrite
+    try? FileManager.default.removeItem(at: store)
+    Orchestrator.forget()
+    Config.shared.remoteWrite = true
+    let session = TargetSession(
+        backend: .iterm, id: "ROOT-LANDING", name: "root landing", tty: "/dev/ttys79",
+        windowIndex: 0, tabIndex: 0, assistant: .codex, cwd: repository.url.path)
+    var currentIdentity = Orchestrator.SessionWorkIdentity(
+        terminalID: session.id, assistant: .codex, tty: session.tty, pid: 7_900,
+        processStart: Date(timeIntervalSince1970: 7_900),
+        conversationID: "conversation-root-landing")
+    var currentState = SessionState.working("landing")
+    var currentDirectory: String? = repository.url.path
+    var publicationGeneration = 1
+    var publicationEpoch = "root-landing-test-publication"
+    RemoteServer.sessionWorkIdentityForTesting = { _ in currentIdentity }
+    RemoteServer.sessionLandingObservationForTesting = { id in
+        guard id == currentIdentity.terminalID else { return nil }
+        return Orchestrator.SessionLandingObservation(
+            identity: currentIdentity, terminalState: currentState,
+            repositoryDirectory: currentDirectory,
+            publicationGeneration: publicationGeneration, publicationEpoch: publicationEpoch)
+    }
+    RemoteServer.sessionPayloadForTesting = ([session], [session.id: .working("finishing")])
+    let landingMutation = ProcessInfo.processInfo.environment["CLAWDLINE_TEST_MUTATION"]
+    Orchestrator.sessionLandingSkipPostGitValidationForTesting =
+        landingMutation == "session_landing_skip_post_git_validation"
+    Orchestrator.sessionLandingCompareTargetTipForTesting =
+        landingMutation == "session_landing_compare_target_tip"
+    defer {
+        Config.shared.remoteWrite = wasWriting
+        RemoteServer.sessionPayloadForTesting = nil
+        RemoteServer.sessionWorkIdentityForTesting = nil
+        RemoteServer.sessionLandingObservationForTesting = nil
+        Orchestrator.sessionLandingDidVerifyForTesting = nil
+        Orchestrator.sessionLandingSkipPostGitValidationForTesting = false
+        Orchestrator.sessionLandingCompareTargetTipForTesting = false
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    let auth = ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken(),
+                "Content-Type": "application/json"]
+    let completePath = "/v1/orchestrator/sessions/\(session.id)/complete"
+    let landingPath = "/v1/orchestrator/sessions/\(session.id)/landing"
+    let summary = "Integrated and verified the root-owned change."
+    func postLanding(commit: String, target: String = "main",
+                     sessionID: String? = nil, summaryText: String? = nil)
+        -> RemoteServer.Response {
+        let id = sessionID ?? session.id
+        return RemoteServer.shared.route(remoteRequest(
+            "POST", "/v1/orchestrator/sessions/\(id)/landing", headers: auth,
+            body: "{\"summary\":\"\(summaryText ?? summary)\",\"target\":\"\(target)\",\"commit\":\"\(commit)\"}"))
+    }
+    func sessionRow() -> [String: Any]? {
+        let response = RemoteServer.shared.route(remoteRequest(
+            "GET", "/v1/orchestrator/sessions", headers: auth))
+        let body = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+        return (body?["sessions"] as? [[String: Any]])?.first { $0["id"] as? String == session.id }
+    }
+
+    expect("the root landing route needs the machine credential",
+           RemoteServer.shared.route(remoteRequest(
+            "POST", landingPath,
+            body: "{\"summary\":\"done\",\"target\":\"main\",\"commit\":\"HEAD\"}"))
+            .status, 401)
+    expect("the existing root completion route still accepts one delivery check",
+           RemoteServer.shared.route(remoteRequest(
+            "POST", completePath, headers: auth,
+            body: "{\"summary\":\"\(summary)\"}")).status, 200)
+    RemoteServer.sessionPayloadForTesting = ([session], [session.id: .idle])
+    let oneCheck = sessionRow()
+    expect("before landing the root has one check",
+           oneCheck?["work_state"] as? String, "milestone_complete")
+    expect("the one-check receipt is still authenticated delivery",
+           (oneCheck?["disposition"] as? [String: Any])?["evidence"] as? String,
+           "authenticated_session_delivery")
+
+    RemoteServer.sessionPayloadForTesting = ([session], [session.id: .working("landing")])
+    let refused = postLanding(commit: unrelatedCommit)
+    expect("an uncontained commit is refused", refused.status, 409)
+    expect("the refusal is typed", remoteErrorCode(refused), "unverified_landing")
+    RemoteServer.sessionPayloadForTesting = ([session], [session.id: .idle])
+    expect("a refused landing leaves the delivery at one check",
+           sessionRow()?["work_state"] as? String, "milestone_complete")
+
+    RemoteServer.sessionPayloadForTesting = ([session], [session.id: .working("landing")])
+    let landed = postLanding(commit: "HEAD")
+    expect("a contained commit produces a root landing receipt", landed.status, 200)
+    let landedBody = (try? JSONSerialization.jsonObject(with: landed.body)) as? [String: Any]
+    let landedDisposition = landedBody?["disposition"] as? [String: Any]
+    expect("the route returns session scope", landedDisposition?["scope"] as? String, "session")
+    expect("the route returns broker verification",
+           landedDisposition?["evidence"] as? String, "broker_verified_target_landing")
+    expect("caller revision text is replaced by a canonical object id",
+           landedDisposition?["commit"] as? String, repository.commit)
+    let firstTargetTip = landedDisposition?["targetCommit"] as? String
+    let firstLandedAt = landedDisposition?["landedAt"] as? Int
+    expect("the target can advance after the receipt",
+           testGit(["-c", "user.name=Clawdline Tests", "-c",
+                    "user.email=tests@clawdline.invalid", "commit", "--allow-empty", "-qm",
+                    "advance target after receipt"], cwd: repository.url).status, 0)
+    let replay = postLanding(commit: repository.commit)
+    let replayBody = (try? JSONSerialization.jsonObject(with: replay.body)) as? [String: Any]
+    let replayDisposition = replayBody?["disposition"] as? [String: Any]
+    expect("the same canonical evidence stays idempotent after target fast-forward",
+           replayBody?["created"] as? Bool, false)
+    expect("an idempotent retry preserves the originally verified target tip",
+           replayDisposition?["targetCommit"] as? String, firstTargetTip)
+    expect("an idempotent retry preserves the original landed time",
+           replayDisposition?["landedAt"] as? Int, firstLandedAt)
+    let conflict = postLanding(commit: repository.commit, target: "release/main")
+    expect("different settled landing evidence conflicts", conflict.status, 409)
+    expect("the mismatch is typed", remoteErrorCode(conflict), "landing_conflict")
+
+    func installRaceSession(_ id: String) {
+        currentIdentity = Orchestrator.SessionWorkIdentity(
+            terminalID: id, assistant: .codex, tty: "/dev/ttys80", pid: 8_000,
+            processStart: Date(timeIntervalSince1970: 8_000),
+            conversationID: "conversation-\(id.lowercased())")
+        currentState = .working("landing")
+        currentDirectory = repository.url.path
+        publicationGeneration += 1
+        publicationEpoch = "root-landing-test-publication"
+    }
+    func raceLanding(_ id: String) -> RemoteServer.Response {
+        postLanding(commit: repository.commit, sessionID: id,
+                    summaryText: "Race-safe root landing.")
+    }
+
+    installRaceSession("ROOT-RACE-PROCESS")
+    Orchestrator.sessionLandingDidVerifyForTesting = { currentIdentity.pid = 8_001 }
+    let replaced = raceLanding(currentIdentity.terminalID)
+    expect("process reuse during Git is refused", replaced.status, 409)
+    expect("process reuse has a typed stale-session answer",
+           remoteErrorCode(replaced), "session_changed")
+
+    installRaceSession("ROOT-RACE-STATE")
+    Orchestrator.sessionLandingDidVerifyForTesting = { currentState = .idle }
+    let stopped = raceLanding(currentIdentity.terminalID)
+    expect("a turn ending during Git is refused", stopped.status, 409)
+    expect("the ended turn uses the same typed stale-session answer",
+           remoteErrorCode(stopped), "session_changed")
+
+    installRaceSession("ROOT-RACE-PUBLICATION")
+    Orchestrator.sessionLandingDidVerifyForTesting = { publicationGeneration += 1 }
+    let republished = raceLanding(currentIdentity.terminalID)
+    expect("a moved Session publication is refused", republished.status, 409)
+    expect("the publication conflict is typed", remoteErrorCode(republished), "session_changed")
+
+    installRaceSession("ROOT-RACE-REPOSITORY")
+    Orchestrator.sessionLandingDidVerifyForTesting = { currentDirectory = "/tmp" }
+    let movedRepository = raceLanding(currentIdentity.terminalID)
+    expect("a repository change during Git is refused", movedRepository.status, 409)
+    expect("the repository race is typed",
+           remoteErrorCode(movedRepository), "session_repository_changed")
+
+    installRaceSession("ROOT-RACE-RECEIPT")
+    Orchestrator.sessionLandingDidVerifyForTesting = {
+        _ = Orchestrator.reportSessionDelivery(
+            identity: currentIdentity, terminalState: currentState,
+            summary: "Race-safe root landing.")
+    }
+    let concurrentReceipt = raceLanding(currentIdentity.terminalID)
+    expect("a concurrent complete receipt wins the CAS", concurrentReceipt.status, 409)
+    expect("the receipt CAS refusal is typed",
+           remoteErrorCode(concurrentReceipt), "receipt_changed")
+
+    installRaceSession("ROOT-RACE-ASSIGNMENT")
+    var assignment = Orchestrator.RootAssignment(
+        id: "assignment-root-landing", requestID: UUID().uuidString.lowercased(),
+        requestDigest: String(repeating: "a", count: 64), assistant: .codex,
+        model: "default", projectDir: repository.url.path, label: "Landing root",
+        objective: "land", scope: "root", constraints: "none",
+        relevantReferences: "review", acceptance: "receipt", projectApproved: true,
+        created: Date(timeIntervalSince1970: 8_000), state: .active, language: nil)
+    assignment.identity = Orchestrator.RootAssignmentIdentity(
+        terminalID: currentIdentity.terminalID, assistant: .codex,
+        tty: currentIdentity.tty, pid: currentIdentity.pid,
+        processStart: currentIdentity.processStart?.timeIntervalSince1970,
+        conversationID: currentIdentity.conversationID)
+    Orchestrator.rootAssignments[assignment.id] = assignment
+    Orchestrator.sessionLandingDidVerifyForTesting = {
+        Orchestrator.rootAssignments[assignment.id]?.state = .inactive
+    }
+    let reassigned = raceLanding(currentIdentity.terminalID)
+    expect("a Root Assignment transition during Git is refused", reassigned.status, 409)
+    expect("the assignment CAS refusal is typed",
+           remoteErrorCode(reassigned), "root_assignment_changed")
+
+    installRaceSession("ROOT-RACE-CHILD")
+    Orchestrator.sessionLandingDidVerifyForTesting = {
+        var child = Orchestrator.Task(
+            id: "child-root-landing-race", state: .briefed, kind: "custom",
+            title: "child appeared", assistant: .codex, projectDir: repository.url.path,
+            timeoutMinutes: 30, created: Date(timeIntervalSince1970: 8_000),
+            secretHash: String(repeating: "0", count: 64))
+        child.childTerminalId = currentIdentity.terminalID
+        child.childTTY = currentIdentity.tty
+        child.childPID = currentIdentity.pid
+        child.childProcStart = currentIdentity.processStart
+        child.childSessionId = currentIdentity.conversationID
+        child.transcriptProven = true
+        Orchestrator.tasks[child.id] = child
+    }
+    let becameChild = raceLanding(currentIdentity.terminalID)
+    expect("a child appearing during Git is refused", becameChild.status, 409)
+    expect("the child race keeps the established typed answer",
+           remoteErrorCode(becameChild), "child_session")
+    Orchestrator.sessionLandingDidVerifyForTesting = nil
+
+    currentIdentity = Orchestrator.SessionWorkIdentity(
+        terminalID: session.id, assistant: .codex, tty: session.tty, pid: 7_900,
+        processStart: Date(timeIntervalSince1970: 7_900),
+        conversationID: "conversation-root-landing")
+    currentState = .working("landing")
+    currentDirectory = repository.url.path
+    RemoteServer.sessionPayloadForTesting = ([session], [session.id: .idle])
+    let twoChecks = sessionRow()
+    expect("verified root landing becomes two checks",
+           twoChecks?["work_state"] as? String, "work_complete")
+    let disposition = twoChecks?["disposition"] as? [String: Any]
+    expect("the idle projection keeps session scope", disposition?["scope"] as? String, "session")
+    expect("the idle projection keeps the verified target", disposition?["target"] as? String,
+           "main")
+    expect("landing does not mint the independent closeability key",
+           (twoChecks?["closeability"] as? [String: Any])?["state"] as? String,
+           "needs_attestation")
+
+    currentIdentity.pid = 7_901
+    expect("a replacement process cannot borrow the root landing receipt",
+           sessionRow()?["work_state"] as? String, "unknown")
+}
+
 }

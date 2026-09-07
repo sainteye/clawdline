@@ -588,6 +588,29 @@ enum OrchestratorDraft {
         /// be kept apart. It is empty otherwise — including when git wrote a diagnostic — because
         /// the merged stream puts that text in `output`. Never a substitute for `status`.
         var errorOutput: String = ""
+        /// Whether stdout was valid UTF-8. `output` deliberately keeps its historical empty-string
+        /// fallback so callers that only log or match git's text do not change behavior, while a
+        /// caller that parses stdout as data can fail closed instead of mistaking undecodable bytes
+        /// for successful empty output.
+        var outputIsUTF8: Bool = true
+
+        init(output: String, status: Int32, errorOutput: String = "",
+             outputIsUTF8: Bool = true) {
+            self.output = output
+            self.status = status
+            self.errorOutput = errorOutput
+            self.outputIsUTF8 = outputIsUTF8
+        }
+
+        /// The production Data-to-answer boundary. Tests that need to exercise decoding use this
+        /// initializer too, so an invalid byte reaches the same conversion as subprocess stdout.
+        init(outputData: Data, status: Int32, errorData: Data = Data()) {
+            let decodedOutput = String(data: outputData, encoding: .utf8)
+            self.output = decodedOutput ?? ""
+            self.status = status
+            self.errorOutput = String(data: errorData, encoding: .utf8) ?? ""
+            self.outputIsUTF8 = decodedOutput != nil
+        }
     }
 
     /// The only git execution seam for worktree lifecycle operations. Arguments never pass
@@ -639,9 +662,8 @@ enum OrchestratorDraft {
         drained.wait()
         process.waitQuietly()
         killer.cancel()
-        return GitAnswer(output: String(data: data, encoding: .utf8) ?? "",
-                         status: process.terminationStatus,
-                         errorOutput: String(data: errorData, encoding: .utf8) ?? "")
+        return GitAnswer(outputData: data, status: process.terminationStatus,
+                         errorData: errorData)
     }
 
     /// Stable repository identity for linked worktrees. The returned path is Git's common

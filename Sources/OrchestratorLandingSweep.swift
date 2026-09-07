@@ -13,10 +13,15 @@ import Foundation
 /// This is the broker closing, by itself, what it can prove by itself. It proves two different
 /// propositions and never lets the weaker one wear the stronger one's clothes:
 ///
-/// - **Arm 1, ancestry.** The delivery's head is contained by `refs/heads/<target>` in the task's
-///   own repository. That is the same question `tools/check-landing-records.py` asks and calls
-///   *unrecorded landing*, and the same one `OrchestratorDraft.verifyTargetLanding` asks for the
-///   HTTP route. The record closes through that exact verified path, so `verification_origin`,
+/// - **Arm 1, ancestry.** An isolated delivery first has to carry a complete clean, non-empty
+///   worktree receipt: known base, recorded head, positive commit count, `dirty == false`, chosen
+///   head different from base, and no disagreement between a successfully observed live ref and
+///   the recorded head. A successfully confirmed absent ref may use the stored receipt; an
+///   unreadable ref scan may not. Only then may the sweep ask whether that delivery head is
+///   contained by `refs/heads/<target>` in the task's own repository. That is the same ancestry
+///   question `tools/check-landing-records.py` asks and calls *unrecorded landing*, and the same one
+///   `OrchestratorDraft.verifyTargetLanding` asks for the HTTP route. The record closes through
+///   that exact verified path, so `verification_origin`,
 ///   `verified_commit`, `verified_target_commit` and `landed_at` are all real and
 ///   ``Orchestrator/isBrokerVerifiedTargetLanding(_:)`` stays true — this delivery reached the
 ///   target, and the two checks say so.
@@ -56,6 +61,40 @@ extension Orchestrator {
         case writeSet = "write_set"
     }
 
+    /// The registry evidence that says what kind of delivery head a candidate can have. Keeping
+    /// the worktree facts together makes it impossible for the question below to mistake an
+    /// isolated branch's base commit for delivered bytes merely because git contains that base.
+    enum LandingSweepDeliveryEvidence: Equatable {
+        case isolated(base: String, head: String?, commits: Int?, dirty: Bool?)
+        case sharedCheckout
+    }
+
+    /// What one repository-wide delivery-ref scan observed. A successful empty map is evidence
+    /// that the named ref is absent; a command that did not answer has a different case and can
+    /// never be mistaken for that absence.
+    enum LandingSweepDeliveryRefs: Equatable {
+        case observed([String: String])
+        case unreadable(String)
+
+        func observation(for branch: String) -> LandingSweepDeliveryRefObservation {
+            switch self {
+            case .observed(let heads):
+                return heads[branch].map(LandingSweepDeliveryRefObservation.present) ?? .absent
+            case .unreadable(let reason):
+                return .unreadable(reason)
+            }
+        }
+    }
+
+    /// The three answers the ref scan can give for one candidate. In particular, `.absent` means
+    /// git successfully enumerated the namespace and did not list this branch; it never means git
+    /// failed to launch, exited nonzero, or returned output that could not be parsed.
+    enum LandingSweepDeliveryRefObservation: Equatable {
+        case present(String)
+        case absent
+        case unreadable(String)
+    }
+
     /// A pending landing this pass may be able to settle, chosen from records alone before git has
     /// been asked anything. Nothing here stats a filesystem: that is the next phase's job.
     struct LandingSweepCandidate: Equatable {
@@ -64,9 +103,10 @@ extension Orchestrator {
         let target: String
         /// The branch a delivery of this task would be on, whether or not one exists.
         let deliveryBranch: String
-        /// The head the registry last recorded for that branch. The live ref wins over it; this is
-        /// the only thing left once a merged branch has been deleted.
-        let storedHead: String?
+        /// The typed evidence for the kind of delivery this row represents. An isolated delivery
+        /// must answer every stored fact before ancestry can be asked; a shared checkout has no
+        /// branch receipt of its own and is normally judged through its write set.
+        let deliveryEvidence: LandingSweepDeliveryEvidence
         /// The declared write set. Empty for an isolated task by design — the broker drops that
         /// lease — which is why an isolated task is never an arm-2 candidate.
         let claims: [String]
@@ -201,7 +241,10 @@ extension Orchestrator {
                 target: task.landing?.target ?? "",
                 deliveryBranch: task.worktree?.branch
                     ?? OrchestratorDraft.worktreeBranch(for: task.id) ?? "",
-                storedHead: task.worktree?.head,
+                deliveryEvidence: task.worktree.map {
+                    .isolated(base: $0.base, head: $0.head,
+                              commits: $0.commits, dirty: $0.dirty)
+                } ?? .sharedCheckout,
                 claims: task.worktree == nil ? task.claims : [])
         }
     }
@@ -317,14 +360,63 @@ extension Orchestrator {
 
     /// Which question this candidate answers, given what the repository's refs say right now.
     ///
-    /// **A live ref beats the stored head**, the way `Orchestrator.inflightRow` and
-    /// `check-landing-records.py` both prefer it: the difference between reporting a delivery and
-    /// reporting a memory of one. A delivery branch that exists at all makes this an ancestry
-    /// question and not a write-set one — arm 2 is for the class that has no branch to ask about.
+    /// A shared checkout with a live delivery ref keeps the old ancestry question; otherwise it
+    /// uses its declared write set. An isolated delivery is stricter: ancestry is admissible only
+    /// when its complete typed receipt proves a clean, non-empty branch and a successfully observed
+    /// live ref (when present) agrees with the recorded head. An unreadable scan, and every missing
+    /// or contradictory fact, leaves the obligation pending; an isolated row never falls through
+    /// to the write-set arm.
     static func landingSweepQuestion(for candidate: LandingSweepCandidate,
-                                     liveHead: String?) -> LandingSweepQuestion {
-        if let head = liveHead ?? candidate.storedHead, !head.isEmpty {
+                                     deliveryRef: LandingSweepDeliveryRefObservation)
+        -> LandingSweepQuestion {
+        switch candidate.deliveryEvidence {
+        case .isolated(let base, let storedHead, let commits, let dirty):
+            guard !base.isEmpty else {
+                return .unanswerable("isolated delivery base is unknown")
+            }
+            guard let storedHead, !storedHead.isEmpty else {
+                return .unanswerable("isolated delivery head is unknown")
+            }
+            guard let commits else {
+                return .unanswerable("isolated delivery commit count is unknown")
+            }
+            guard commits > 0 else {
+                return .unanswerable("isolated delivery branch has no commits beyond its base")
+            }
+            guard let dirty else {
+                return .unanswerable("isolated delivery dirty state is unknown")
+            }
+            guard !dirty else {
+                return .unanswerable("isolated delivery worktree still has dirty bytes")
+            }
+            let head: String
+            switch deliveryRef {
+            case .present(let liveHead):
+                guard liveHead == storedHead else {
+                    return .unanswerable(
+                        "isolated delivery live head contradicts its recorded head")
+                }
+                head = liveHead
+            case .absent:
+                // A successfully enumerated namespace with no such ref is the one situation where
+                // a clean, non-empty stored receipt may outlive its deleted delivery branch.
+                head = storedHead
+            case .unreadable(let reason):
+                return .unanswerable(reason)
+            }
+            guard head != base else {
+                return .unanswerable("isolated delivery head is still its base")
+            }
             return .ancestry(head: head)
+        case .sharedCheckout:
+            switch deliveryRef {
+            case .present(let liveHead):
+                return .ancestry(head: liveHead)
+            case .absent:
+                break
+            case .unreadable(let reason):
+                return .unanswerable(reason)
+            }
         }
         guard landingSweepClaimsUsable(candidate.claims) else {
             return .unanswerable("no delivery branch, and no usable declared write set")
@@ -440,21 +532,48 @@ extension Orchestrator {
         return (tip, contained)
     }
 
-    /// Delivery branch name → the commit it points at now. One subprocess per repository. An
-    /// unreadable answer is an empty map: every candidate then falls back to its stored head,
-    /// which is the same fallback a deleted merged branch takes.
-    static func landingSweepDeliveryHeads(gitDirectory: String) -> [String: String] {
-        guard let answer = OrchestratorDraft.git(
+    /// Test-only injection at the exact subprocess seam used by the production pass. Nil runs the
+    /// real command. Tests use a nonzero answer to prove command failure remains different from a
+    /// successful scan which simply did not list one branch.
+    static var landingSweepDeliveryRefsGitOverrideForTesting:
+        ((String) -> OrchestratorDraft.GitAnswer?)?
+
+    /// Delivery branch name → the commit it points at now. One subprocess per repository. The
+    /// result keeps command failure and malformed output out of the successful-map case, so an
+    /// empty map can mean only that git successfully confirmed the namespace was empty.
+    static func landingSweepDeliveryRefs(gitDirectory: String) -> LandingSweepDeliveryRefs {
+        let answer: OrchestratorDraft.GitAnswer?
+        if let override = landingSweepDeliveryRefsGitOverrideForTesting {
+            answer = override(gitDirectory)
+        } else {
+            answer = OrchestratorDraft.git(
                 ["for-each-ref", "--format=%(refname:short) %(objectname)",
-                 "refs/heads/clawdline/task/"], cwd: "/", gitDirectory: gitDirectory),
-              answer.status == 0 else { return [:] }
+                 "refs/heads/clawdline/task/"], cwd: "/", gitDirectory: gitDirectory)
+        }
+        guard let answer else {
+            return .unreadable("git could not launch the delivery-ref scan")
+        }
+        guard answer.status == 0 else {
+            return .unreadable("git delivery-ref scan exited with status \(answer.status)")
+        }
+        guard answer.outputIsUTF8 else {
+            return .unreadable("git delivery-ref scan output is not valid UTF-8")
+        }
         var heads: [String: String] = [:]
         for line in answer.output.split(separator: "\n") {
             let parts = line.split(separator: " ")
-            guard parts.count == 2 else { continue }
-            heads[String(parts[0])] = String(parts[1])
+            guard parts.count == 2 else {
+                return .unreadable("git delivery-ref scan returned malformed output")
+            }
+            let branch = String(parts[0])
+            let head = String(parts[1])
+            guard branch.hasPrefix("clawdline/task/"), isFullObjectID(head),
+                  heads[branch] == nil else {
+                return .unreadable("git delivery-ref scan returned malformed output")
+            }
+            heads[branch] = head
         }
-        return heads
+        return .observed(heads)
     }
 
     /// Whether every claimed path resolves to something, is unmodified in the checkout, and is
@@ -577,7 +696,7 @@ extension Orchestrator {
         // the task, which is the worktree case `landingGitDirectory` validates against the task id.
         var identities: [String: String?] = [:]
         var histories: [String: (tip: String, contained: Set<String>)?] = [:]
-        var deliveryHeads: [String: [String: String]] = [:]
+        var deliveryRefs: [String: LandingSweepDeliveryRefs] = [:]
         var out: [LandingSweepOutcome] = []
         // One save and one broadcast for a whole pass rather than per row. `broadcastOrchestrator`
         // rebuilds the wire shape through `records()`, which crosses to the main queue, and a
@@ -620,12 +739,17 @@ extension Orchestrator {
                                    + "landed")))
                 continue
             }
-            if deliveryHeads[gitDirectory] == nil {
-                deliveryHeads[gitDirectory] = landingSweepDeliveryHeads(gitDirectory: gitDirectory)
+            let refObservation: LandingSweepDeliveryRefs
+            if let cached = deliveryRefs[gitDirectory] {
+                refObservation = cached
+            } else {
+                refObservation = landingSweepDeliveryRefs(gitDirectory: gitDirectory)
+                deliveryRefs[gitDirectory] = refObservation
             }
-            let liveHead = deliveryHeads[gitDirectory]?[candidate.deliveryBranch]
 
-            switch landingSweepQuestion(for: candidate, liveHead: liveHead) {
+            switch landingSweepQuestion(
+                    for: candidate,
+                    deliveryRef: refObservation.observation(for: candidate.deliveryBranch)) {
             case .unanswerable(let why):
                 out.append(LandingSweepOutcome(taskID: candidate.taskID, verdict: .left(why)))
             case .ancestry(let head):

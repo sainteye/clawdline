@@ -87,7 +87,10 @@ export function projectSessionWorkState(s) {
         var taskClosure = s.work_state === "work_complete" &&
             disposition.scope === "task" && !!disposition.taskId &&
             disposition.evidence === "broker_verified_target_landing";
-        if (!taskMilestone && !sessionMilestone && !taskClosure) {
+        var sessionClosure = s.work_state === "work_complete" &&
+            disposition.scope === "session" &&
+            disposition.evidence === "broker_verified_target_landing";
+        if (!taskMilestone && !sessionMilestone && !taskClosure && !sessionClosure) {
             return { state: "unknown", failedClosed: true };
         }
     }

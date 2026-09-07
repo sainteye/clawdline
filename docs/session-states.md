@@ -50,7 +50,7 @@ Chinese (the first-class copy; every other language translates it).
 | `ready` | 📭 | **You can hand this one work.** An invitation, almost always the session's own declaration, marked as such. | `📭 可接新工作 · 自述` |
 | `unknown` | *(none, on purpose)* | Nothing is being asked of you. The broker has no positive evidence — an absence, not a category. Giving an absence a symbol is how `needs_triage` came to read as a demand, so this one has no icon at all. | `狀態未知`（灰、斜體、安靜） |
 | `milestone_complete` | ✓ (one CSS check) | **Review and accept it.** Delivered on authenticated evidence; review or landing may remain. | `✓ 已交付，等待驗收` |
-| `work_complete` | ✓✓ (two CSS checks) | **That task scope has landed.** This alone does not prove a root tab is safe to close — that is the separate [`closeability`](#the-fourth-projection-closeability) projection, and the `lost_if_closed` close gate still applies underneath it. | `✓✓ 已驗收完成` |
+| `work_complete` | ✓✓ (two CSS checks) | **That receipt's task or current-Session scope has landed.** This alone does not prove a root tab is safe to close — that is the separate [`closeability`](#the-fourth-projection-closeability) projection, and the `lost_if_closed` close gate still applies underneath it. | `✓✓ 已驗收完成` |
 
 The icons are meaning, not severity: a raised hand asks, a tray holds what you owe, an hourglass
 is somebody else's time, an "up next" sign moves on its own, an open empty mailbox can receive.
@@ -169,8 +169,8 @@ to the obligation list — it makes that list's *completeness* unknown, and a re
 incomplete list reads it as a checklist. The obligations that were seen are still listed
 underneath; what changes is the headline.
 
-`work_complete` on a task row is not this. It proves that one task scope landed; a root tab's
-whole responsibility graph is a different question, and this is the one that answers it. The full
+`work_complete` is not this. It proves either one task scope or one current root Session delivery
+landed; neither proves that root tab has accounted for every local or external obligation. The full
 contract — the closed reason vocabulary, the two generations, the attestation route and the
 compare-and-swap on close — is in [`session-closeability.md`](session-closeability.md).
 
@@ -178,8 +178,8 @@ compare-and-swap on close — is in [`session-closeability.md`](session-closeabi
 
 - `ready` + `blocked`: it can accept another task, but it still owns something and must not close.
 - `working` + `blocked`: it is executing now and also has a known closing obligation.
-- `work_complete` + `needs_attestation`: the named task landed, but the whole root Session has not
-  yet accounted for local or external work.
+- `work_complete` + `needs_attestation`: the named task or current Session delivery landed, but
+  the root Session has not yet accounted for all local or external work.
 - `unknown` work state + `unknown` closeability: neither absence asks the user to act immediately,
   and neither may be upgraded to "idle" or "safe" by guessing.
 

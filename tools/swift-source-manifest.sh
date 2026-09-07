@@ -73,6 +73,7 @@ clawdline_production_sources=(
   Sources/OrchestratorPlanning.swift
   Sources/OrchestratorRegistry.swift
   Sources/OrchestratorRootAssignmentShape.swift
+  Sources/OrchestratorSessionLanding.swift
   Sources/OrchestratorStore.swift
   Sources/OwnedStorage.swift
   Sources/Panel.swift
@@ -89,6 +90,7 @@ clawdline_production_sources=(
   Sources/RemotePage.swift
   Sources/RemoteQR.swift
   Sources/RemoteServer.swift
+  Sources/RemoteServerSessionLanding.swift
   Sources/RemoteTunnel.swift
   Sources/Schedules.swift
   Sources/Scratch.swift

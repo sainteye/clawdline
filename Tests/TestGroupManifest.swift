@@ -317,6 +317,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a closure attestation is bound to one process and one turn, and survives a restart",
     "the close route asks to be proven only when a client says so",
     "the closure route is closed at its edges",
+    "a root session landing receipt is broker verified and process bound",
     "session completion receipts are bound to the current process, not a reusable terminal",
     "a root session can report one delivered turn without becoming a child task",
     "only broker-verified target landing evidence can produce the double check",
@@ -571,6 +572,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a read-only delivery gets a terminal state, and one that wrote may not use it",
     "a worktree's landing state is the one that is true now, and its row says what the work was",
     "the broker closes by ancestry what git already proves, and keeps the receipt real",
+    "delivery-ref observation keeps absent separate from unreadable at the production git seam",
     "a sweep that cannot prove it leaves the record exactly as it found it",
     "a settled landing is replayed, corrected against the same target, or refused — never ok in vain",
 ]

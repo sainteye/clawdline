@@ -160,6 +160,7 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
 | `POST` | `/v1/artifacts/images` | orchestrator token + key | — |
 | `POST` | `/v1/orchestrator/sessions/:id/complete` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/sessions/:id/landing` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/sessions/:id/state` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/sessions/:id/closure` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/coordinator/register` | orchestrator token | — |
@@ -2277,6 +2278,8 @@ $ curl -s http://127.0.0.1:7717/v1/orchestrator/sessions \
    {"id":"B3ACDE0D-DE72-4E58-A99A-AB845A539C90","assistant":"claude",
     "cwd":"/Users/you/code/clawdline","label":"the envelope work","state":"idle",
     "work_state":"milestone_complete",
+    "disposition":{"scope":"task","taskId":"54ee36cb-7d69-4def-b4d2-fd2a5eb157ad",
+                   "evidence":"authenticated_task_delivery"},
     "taskId":"54ee36cb-7d69-4def-b4d2-fd2a5eb157ad"}]}
 ```
 
@@ -2294,6 +2297,7 @@ had nowhere to read the ids it takes.
 | `label` | one short line naming the session: a name a person typed for it, else the Clawdline task title when this app opened the tab, else what the conversation calls itself in the assistant's own records, else `⌘<window>-<tab>`. **Never the tab's title** — see [the Session object](#the-session-object) |
 | `state` | `working`, `waiting`, `idle` or `unknown` — the terminal state, so a caller knows whether anybody is home |
 | `work_state` | the closed, fail-closed broker projection documented on [the Session object](#the-session-object); always present |
+| `disposition` | structural receipt identity when `work_state` is a check: `scope`, typed `evidence`, receipt timestamps and verified Git fields. The Session-authored summary/title is deliberately omitted on this address-book route |
 | `taskId` | the Clawdline task this tab was opened for. **Absent** for a session a person opened themselves |
 | `coordinator` | present only on the one exact process-bound Session registered as coordinator; the closed row projection is `{"label":"Clawdfather","status":"online","commands":[…]}` |
 
@@ -2512,8 +2516,9 @@ retry is idempotent (`created:false` with the original timestamp).
 This produces `milestone_complete`: one check and **delivered, awaiting approval**. Its
 `disposition` has `scope:"session"` and `evidence:"authenticated_session_delivery"`. It does not
 claim that every descendant, review, landing or deployment obligation in a root's graph is closed,
-and it can never produce `work_complete`; two checks still require the task-scoped,
-machine-authenticated Git landing receipt. A child tab is refused because its authenticated
+and it can never produce `work_complete`; two checks require either the session-scoped landing
+receipt below or the existing task-scoped, machine-authenticated Git landing receipt. A child tab
+is refused because its authenticated
 `result.json` remains the only completion signal for that assignment.
 
 The first observed idle after the report settles it. When the same terminal next enters `working`
@@ -2528,6 +2533,48 @@ device reaches this machine-only handler; `404 session_not_found` when
 `409 session_unbound` when the complete process/conversation tuple cannot be proved; and
 `409 child_session` when the target already has a matching Clawdline task receipt path. A refusal
 must be reported honestly; prose does not substitute for the missing receipt.
+
+### `POST /v1/orchestrator/sessions/:id/landing`
+
+A root calls this instead of—or immediately after an identical in-turn call to—`/complete` when
+the scope it is delivering has landed on a local target branch. The machine-authenticated closed
+body is:
+
+```json
+{"summary":"Integrated and verified the root-owned change.",
+ "target":"main","commit":"<commit or revision resolving to it>"}
+```
+
+Like `/complete`, `:id` resolves to the exact current terminal, assistant, tty, pid/process start
+and process-proved conversation, and the route is accepted only while that turn is visibly
+`working`. The caller cannot provide a repository path. The broker takes cwd from the same live
+Session observation, resolves its canonical Git common directory, and, for a Root Assignment,
+also requires it to agree with the assignment's durable `project_dir`. It then resolves `commit`
+to a canonical object id and proves it is an ancestor of local `refs/heads/<target>` using the
+same fail-closed verifier as task landing. The watcher publication, current receipt, child binding
+and relevant Root Assignment records are snapshotted before Git; after Git the broker re-reads the
+same Session and applies the receipt only if those exact expected values still pass their CAS.
+
+The durable receipt returns and projects `work_complete` with `scope:"session"`,
+`evidence:"broker_verified_target_landing"`, canonical `commit`, `target`, `targetCommit`, and
+`landedAt`. It describes only that current Session delivery; it does not aggregate a graph, parse
+prose, infer from HEAD, or attest closeability. An identical canonical retry is `created:false`;
+the stable claim is the same turn, summary, target and canonical landed commit, so a later target
+fast-forward neither changes the original `targetCommit`/`landedAt` nor turns that retry into a
+conflict. Different claim evidence for an already settled in-turn receipt is `409
+landing_conflict`. A failed Git proof writes nothing, so an existing `/complete` receipt remains
+one check.
+
+In addition to `/complete`'s authentication, identity, active-turn and child-session refusals,
+this route returns `400 bad_request` unless exactly three bounded strings are present;
+`409 session_repository_unbound` when the watched cwd has no readable Git identity;
+`409 session_repository_ambiguous` or `session_repository_mismatch` when durable Root Assignment
+evidence is contradictory; `409 unverified_landing` when the commit cannot be proved inside the
+named local target; `409 receipt_stale` for an earlier settled turn; and `409 landing_conflict`
+when the current turn already recorded a different summary or landing. A move during the Git
+window is refused as `409 session_changed`, `session_repository_changed`,
+`root_assignment_changed`, `receipt_changed`, or `child_session`, naming which authorizing fact
+failed its second observation or CAS.
 
 ### `POST /v1/orchestrator/sessions/:id/state`
 
@@ -5411,14 +5458,16 @@ receipt is also bound to the exact current process, carries `scope:"session"` an
 observed turn. It is the root's authenticated delivery claim, not independent review or closure of
 every obligation in its graph.
 
-`work_complete` is two checks and means only **broker-verified target landing for that task**. The
-same task must carry a new-format `landed` receipt whose machine-authenticated git verification
-proved its canonical commit is contained by the named local target branch. Legacy landed data,
-arbitrary commit text, the task secret alone, or missing verification fields stay at one check.
-This does not claim that a whole multi-task graph or its tests are complete. `disposition` names
-the receipt scope and typed evidence; for the double check it also carries canonical `commit`,
-`target`, `targetCommit`, and `landedAt`. It is output only: agent prose and coordinator advice
-cannot write either check.
+`work_complete` is two checks and means **broker-verified target landing for the scope named by
+the receipt**. A task may carry the existing new-format `landed` receipt; a root may call
+[`POST /v1/orchestrator/sessions/:id/landing`](#post-v1orchestratorsessionsidlanding) for its exact
+current Session delivery. Both machine-authenticated paths prove that the canonical commit is
+contained by the named local target branch. Legacy landed data, arbitrary commit text, the task
+secret alone, missing verification fields, or an old process in a reused terminal stay at one
+check or fail closed. Neither scope claims that a whole multi-task graph, all tests, or closeability
+is complete. `disposition` names `scope:"task"` or `scope:"session"` and the typed evidence; for
+the double check it also carries canonical `commit`, `target`, `targetCommit`, and `landedAt`. It
+is output only: agent prose and coordinator advice cannot write either check.
 
 `coordination` is an independent broker overlay, not another terminal state. `waitingOn` lists
 durable file-wait groups that block this session; `waitedOnBy` lists each active waiter for groups

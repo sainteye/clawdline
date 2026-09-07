@@ -156,10 +156,17 @@ private func identityFields(_ identity: Orchestrator.SessionWorkIdentity) -> [(S
 private func sessionDeliveryFields(_ delivery: Orchestrator.SessionDelivery?)
     -> [(String, String)] {
     guard let delivery else { return [] }
+    let landing = delivery.landing
     return identityFields(delivery.identity) + [
         ("summary", delivery.summary),
         ("reported_at", stamp(delivery.reportedAt)),
         ("settled", String(delivery.settled)),
+        ("landing.repository_common_dir", fieldText(landing?.repositoryCommonDir)),
+        ("landing.verification_origin", fieldText(landing?.verificationOrigin)),
+        ("landing.target", fieldText(landing?.target)),
+        ("landing.verified_commit", fieldText(landing?.verifiedCommit)),
+        ("landing.verified_target_commit", fieldText(landing?.verifiedTargetCommit)),
+        ("landing.landed_at", stampText(landing?.landedAt)),
     ]
 }
 
@@ -564,7 +571,13 @@ func runOrchestratorStoreTests() {
             processStart: epoch, conversationID: sessionID)
         let full = Orchestrator.SessionDelivery(
             identity: identity, summary: String(repeating: "s", count: 500),
-            reportedAt: later(9), settled: true)
+            reportedAt: later(9), settled: true,
+            landing: Orchestrator.SessionLanding(
+                repositoryCommonDir: "/tmp/session-landing.git",
+                verificationOrigin: "local_target_branch", target: "main",
+                verifiedCommit: String(repeating: "a", count: 40),
+                verifiedTargetCommit: String(repeating: "b", count: 40),
+                landedAt: later(10)))
         let minimal = Orchestrator.SessionDelivery(
             identity: identity, summary: "x", reportedAt: epoch, settled: false)
         for (label, value) in [("a settled delivery", full), ("an unsettled delivery", minimal)] {
@@ -586,6 +599,36 @@ func runOrchestratorStoreTests() {
         oversized["summary"] = String(repeating: "s", count: 501)
         check("a summary past its limit refuses the record",
               OrchestratorStore.sessionDelivery(from: oversized) == nil)
+        for (field, bad) in [
+            ("repository_common_dir", "relative/repository.git"),
+            ("verification_origin", "caller_claim"),
+            ("target", ""),
+            ("verified_commit", "not-an-object-id"),
+            ("verified_target_commit", String(repeating: "g", count: 40)),
+        ] {
+            var damaged = OrchestratorStore.stored(full)
+            var landing = damaged["landing"] as? [String: Any] ?? [:]
+            landing[field] = bad
+            damaged["landing"] = landing
+            check("a malformed landing \(field) refuses the whole delivery",
+                  OrchestratorStore.sessionDelivery(from: damaged) == nil)
+        }
+        var missingLandingField = OrchestratorStore.stored(full)
+        var incompleteLanding = missingLandingField["landing"] as? [String: Any] ?? [:]
+        incompleteLanding.removeValue(forKey: "landed_at")
+        missingLandingField["landing"] = incompleteLanding
+        check("an incomplete nested landing refuses the whole delivery",
+              OrchestratorStore.sessionDelivery(from: missingLandingField) == nil)
+        var invalidLandingTime = OrchestratorStore.stored(full)
+        var nonFiniteLanding = invalidLandingTime["landing"] as? [String: Any] ?? [:]
+        nonFiniteLanding["landed_at"] = Double.nan
+        invalidLandingTime["landing"] = nonFiniteLanding
+        check("a non-finite landing time refuses the whole delivery",
+              OrchestratorStore.sessionDelivery(from: invalidLandingTime) == nil)
+        var wrongLandingShape = OrchestratorStore.stored(full)
+        wrongLandingShape["landing"] = "landed"
+        check("a non-object nested landing refuses the whole delivery",
+              OrchestratorStore.sessionDelivery(from: wrongLandingShape) == nil)
     }
 
     group("the session self-state codec keeps both halves and refuses a third claim") {

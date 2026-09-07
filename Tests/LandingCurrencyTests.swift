@@ -112,6 +112,10 @@ let sweepDirectoryTask = "31313131-4141-5151-6161-717171717179"
 let sweepMissingClaimTask = "31313131-4141-5151-6161-71717171717a"
 let sweepDeletedClaimTask = "31313131-4141-5151-6161-71717171717b"
 let sweepWarningClaimTask = "31313131-4141-5151-6161-71717171717c"
+let sweepDirtyEmptyTask = "31313131-4141-5151-6161-71717171717d"
+let sweepUnreadableRefsTask = "31313131-4141-5151-6161-71717171717e"
+let sweepDeletedBranchTask = "31313131-4141-5151-6161-71717171717f"
+let sweepUnreadableWriteSetTask = "41414141-5151-6161-7171-818181818181"
 
 func runLandingCurrencyTests() {
 
@@ -377,6 +381,28 @@ group("the broker closes by ancestry what git already proves, and keeps the rece
     hold(sweepAncestryTask, isolated: true)
     hold(sweepWriteSetTask, claims: ["Sources/Kept.swift"])
     hold(sweepDirectoryTask, claims: ["docs"])
+    expect("the empty delivery branch exists at its base", testGit([
+        "branch", "clawdline/task/\(sweepDirtyEmptyTask)", repository.base,
+    ], cwd: repository.url).status, 0)
+    var dirtyEmpty = Orchestrator.Task(
+        id: sweepDirtyEmptyTask, state: .success, kind: "custom",
+        title: "dirty bytes on a zero-commit delivery branch",
+        assistant: .claude, projectDir: repository.url.path, timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 2), rootSessionId: "sweep-root",
+        claims: [], claimsDeclared: true,
+        secretHash: String(repeating: "0", count: 64))
+    dirtyEmpty.finishedAt = Date(timeIntervalSince1970: 900)
+    dirtyEmpty.resultVerifiedAt = dirtyEmpty.finishedAt
+    dirtyEmpty.summary = "delivered as dirty worktree bytes"
+    dirtyEmpty.isolation = .worktree
+    dirtyEmpty.worktree = Orchestrator.Worktree(
+        path: OrchestratorDraft.worktreePath(
+            project: repository.url.path, taskID: sweepDirtyEmptyTask)!,
+        branch: OrchestratorDraft.worktreeBranch(for: sweepDirtyEmptyTask)!,
+        base: repository.base, repository: repository.url.path, cwd: repository.url.path,
+        head: repository.base, commits: 0, dirty: true)
+    dirtyEmpty.landing = pending("main")
+    Orchestrator.holdScheduleTaskForTesting(dirtyEmpty)
     Orchestrator.forgetLandingSweepObservations()
 
     // **Two passes, because arm 2 waits and arm 1 does not.** What arm 2 proves is true at an
@@ -392,6 +418,63 @@ group("the broker closes by ancestry what git already proves, and keeps the rece
     }
     expect("the merged delivery closes on ancestry on the first pass",
            opening.first { $0.taskID == sweepAncestryTask }?.verdict, .closed(.ancestry))
+    check("a dirty zero-commit worktree is not closed merely because main contains its base",
+          Orchestrator.held(sweepDirtyEmptyTask)?.landing?.state == .pending)
+    check("and the pass does not claim ancestry proved those dirty delivery bytes landed",
+          opening.first { $0.taskID == sweepDirtyEmptyTask }?.verdict != .closed(.ancestry))
+
+    // The pure admission matrix keeps each stored fact independently observable. These are also
+    // the mutation witnesses: deleting any one gate below makes its named row choose ancestry.
+    func isolatedQuestion(base: String = repository.base,
+                          head: String? = repository.delivery,
+                          commits: Int? = 1, dirty: Bool? = false,
+                          deliveryRef: Orchestrator.LandingSweepDeliveryRefObservation = .absent,
+                          claims: [String] = []) -> Orchestrator.LandingSweepQuestion {
+        Orchestrator.landingSweepQuestion(
+            for: Orchestrator.LandingSweepCandidate(
+                taskID: sweepDirtyEmptyTask, projectDir: repository.url.path, target: "main",
+                deliveryBranch: "clawdline/task/\(sweepDirtyEmptyTask)",
+                deliveryEvidence: .isolated(
+                    base: base, head: head, commits: commits, dirty: dirty),
+                claims: claims),
+            deliveryRef: deliveryRef)
+    }
+    func isUnanswerable(_ question: Orchestrator.LandingSweepQuestion) -> Bool {
+        if case .unanswerable = question { return true }
+        return false
+    }
+    expect("clean nonempty isolated evidence admits the actual delivery head",
+           isolatedQuestion(), .ancestry(head: repository.delivery))
+    expect("dirty nonempty isolated evidence is unanswerable",
+           isolatedQuestion(dirty: true),
+           .unanswerable("isolated delivery worktree still has dirty bytes"))
+    expect("clean empty isolated evidence is unanswerable",
+           isolatedQuestion(head: repository.base, commits: 0),
+           .unanswerable("isolated delivery branch has no commits beyond its base"))
+    check("dirty empty isolated evidence is unanswerable too",
+          isUnanswerable(isolatedQuestion(
+            head: repository.base, commits: 0, dirty: true)))
+    expect("an unknown isolated commit count is not permission",
+           isolatedQuestion(commits: nil),
+           .unanswerable("isolated delivery commit count is unknown"))
+    expect("an unknown isolated dirty state is not permission",
+           isolatedQuestion(dirty: nil),
+           .unanswerable("isolated delivery dirty state is unknown"))
+    expect("a missing isolated base is not permission",
+           isolatedQuestion(base: ""),
+           .unanswerable("isolated delivery base is unknown"))
+    expect("a missing isolated recorded head is not permission",
+           isolatedQuestion(head: nil),
+           .unanswerable("isolated delivery head is unknown"))
+    expect("a clean nonempty receipt whose head is still base is contradictory",
+           isolatedQuestion(head: repository.base),
+           .unanswerable("isolated delivery head is still its base"))
+    expect("a live head that disagrees with the receipt is contradictory",
+           isolatedQuestion(deliveryRef: .present(repository.main)),
+           .unanswerable("isolated delivery live head contradicts its recorded head"))
+    expect("an isolated row with unusable evidence never falls back to its claims",
+           isolatedQuestion(head: nil, claims: ["Sources/Kept.swift"]),
+           .unanswerable("isolated delivery head is unknown"))
     check("a write set clear once is a window that has opened, not a record",
           windowReason(sweepWriteSetTask)?.contains("a second reading") == true)
     check("and nothing was written for it",
@@ -487,6 +570,184 @@ group("the broker closes by ancestry what git already proves, and keeps the rece
           !second.contains { $0.taskID == sweepAncestryTask || $0.taskID == sweepWriteSetTask })
     expect("and the record it wrote is still the one it wrote",
            settled(sweepAncestryTask), ancestry)
+}
+
+group("delivery-ref observation keeps absent separate from unreadable at the production git seam") {
+    let repository = makeSweepRepository()
+    defer { try? FileManager.default.removeItem(at: repository.url) }
+    let store = Orchestrator.storeURL
+    let before = try? Data(contentsOf: store)
+    defer {
+        Orchestrator.landingSweepDeliveryRefsGitOverrideForTesting = nil
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    let opened = Date(timeIntervalSince1970: 1_000)
+    func hold(_ id: String, storedHead: String) {
+        var task = Orchestrator.Task(
+            id: id, state: .success, kind: "custom", title: "a clean committed delivery",
+            assistant: .claude, projectDir: repository.url.path, timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: id == sweepUnreadableRefsTask ? 1 : 2),
+            rootSessionId: "sweep-root", claims: [], claimsDeclared: true,
+            secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = Date(timeIntervalSince1970: 900)
+        task.resultVerifiedAt = task.finishedAt
+        task.summary = "delivered"
+        task.isolation = .worktree
+        task.worktree = Orchestrator.Worktree(
+            path: OrchestratorDraft.worktreePath(project: repository.url.path, taskID: id)!,
+            branch: OrchestratorDraft.worktreeBranch(for: id)!, base: repository.base,
+            repository: repository.url.path, cwd: repository.url.path,
+            head: storedHead, commits: 1, dirty: false)
+        task.landing = Orchestrator.Landing(
+            state: .pending, target: "main", delivery: "the delivery",
+            ownerRootKey: "0123abcd", since: opened, commit: nil, note: nil)
+        Orchestrator.holdScheduleTaskForTesting(task)
+    }
+    func holdSharedCheckout() {
+        var task = Orchestrator.Task(
+            id: sweepUnreadableWriteSetTask, state: .success, kind: "custom",
+            title: "a shared-checkout delivery", assistant: .claude,
+            projectDir: repository.url.path, timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 3), rootSessionId: "sweep-root",
+            claims: ["Sources/Kept.swift"], claimsDeclared: true,
+            secretHash: String(repeating: "0", count: 64))
+        task.finishedAt = Date(timeIntervalSince1970: 900)
+        task.resultVerifiedAt = task.finishedAt
+        task.summary = "delivered"
+        task.claimKeys = OrchestratorDraft.freezeClaims(task.claims, projectDir: task.projectDir)
+        task.landing = Orchestrator.Landing(
+            state: .pending, target: "main", delivery: "the delivery",
+            ownerRootKey: "0123abcd", since: opened, commit: nil, note: nil)
+        Orchestrator.holdScheduleTaskForTesting(task)
+    }
+
+    let unreadableBranch = "clawdline/task/\(sweepUnreadableRefsTask)"
+    let actualLiveHead = testGit(["rev-parse", "HEAD"], cwd: repository.url).output
+    expect("the failure fixture has a live head different from its stored merged head",
+           testGit(["branch", unreadableBranch, actualLiveHead], cwd: repository.url).status, 0)
+    check("and the actual live head is neither the stored head nor contained by main",
+          actualLiveHead != repository.delivery
+              && testGit(["merge-base", "--is-ancestor", actualLiveHead, "main"],
+                         cwd: repository.url).status != 0)
+    hold(sweepUnreadableRefsTask, storedHead: repository.delivery)
+    hold(sweepDeletedBranchTask, storedHead: repository.delivery)
+    holdSharedCheckout()
+    Orchestrator.forgetLandingSweepObservations()
+    let affected = [
+        sweepUnreadableRefsTask, sweepDeletedBranchTask, sweepUnreadableWriteSetTask,
+    ]
+
+    let gitDirectory = OrchestratorDraft.gitCommonDirectory(at: repository.url.path)!
+    let successfulScan = Orchestrator.landingSweepDeliveryRefs(gitDirectory: gitDirectory)
+    expect("a successful scan reports the moved live ref as present",
+           successfulScan.observation(for: unreadableBranch), .present(actualLiveHead))
+    expect("and confirms a deleted delivery branch is absent rather than unreadable",
+           successfulScan.observation(
+            for: "clawdline/task/\(sweepDeletedBranchTask)"), .absent)
+    func reason(_ id: String, in outcomes: [Orchestrator.LandingSweepOutcome]) -> String? {
+        if case .left(let reason) = outcomes.first(where: { $0.taskID == id })?.verdict {
+            return reason
+        }
+        return nil
+    }
+
+    Orchestrator.landingSweepDeliveryRefsGitOverrideForTesting = { _ in nil }
+    let unlaunchable = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 4_800))
+    expect("the unlaunchable scan produced one outcome for each affected record",
+           unlaunchable.map(\.taskID).sorted(),
+           affected.sorted())
+    check("an unlaunchable ref scan leaves every affected record pending",
+          affected.allSatisfy {
+            Orchestrator.held($0)?.landing?.state == .pending
+          })
+    check("and says command launch was unanswerable rather than branch absence",
+          unlaunchable.allSatisfy {
+            if case .left(let why) = $0.verdict {
+                return why.contains("could not launch the delivery-ref scan")
+            }
+            return false
+          })
+
+    Orchestrator.landingSweepDeliveryRefsGitOverrideForTesting = { _ in
+        OrchestratorDraft.GitAnswer(output: "not-a-ref-record", status: 0)
+    }
+    let malformed = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 4_900))
+    expect("the malformed scan produced one outcome for each affected record",
+           malformed.map(\.taskID).sorted(),
+           affected.sorted())
+    check("malformed ref output leaves every affected record pending",
+          affected.allSatisfy {
+            Orchestrator.held($0)?.landing?.state == .pending
+          })
+    check("and is typed as malformed rather than confirmed absence",
+          malformed.allSatisfy {
+            if case .left(let why) = $0.verdict {
+                return why.contains("delivery-ref scan returned malformed output")
+            }
+            return false
+          })
+
+    var undecodableRefBytes = Data("\(unreadableBranch) \(actualLiveHead)\n"
+        .utf8)
+    undecodableRefBytes.append(contentsOf: "clawdline/task/".utf8)
+    undecodableRefBytes.append(0xff)
+    undecodableRefBytes.append(contentsOf: "rogue \(repository.delivery)\n".utf8)
+    let undecodableAnswer = OrchestratorDraft.GitAnswer(
+        outputData: undecodableRefBytes, status: 0)
+    check("the byte fixture crosses the production decoder as unreadable",
+          undecodableAnswer.output.isEmpty && !undecodableAnswer.outputIsUTF8)
+    Orchestrator.landingSweepDeliveryRefsGitOverrideForTesting = { _ in undecodableAnswer }
+    let undecodable = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 4_950))
+    expect("the undecodable byte scan produced one outcome for each affected record",
+           undecodable.map(\.taskID).sorted(),
+           affected.sorted())
+    check("status-zero stdout with invalid UTF-8 leaves every affected record pending",
+          affected.allSatisfy {
+            Orchestrator.held($0)?.landing?.state == .pending
+          })
+    check("and stays typed as unreadable rather than confirmed absence",
+          undecodable.allSatisfy {
+            if case .left(let why) = $0.verdict {
+                return why.contains("delivery-ref scan output is not valid UTF-8")
+            }
+            return false
+          })
+
+    Orchestrator.landingSweepDeliveryRefsGitOverrideForTesting = { _ in
+        OrchestratorDraft.GitAnswer(output: "temporary ref backend failure", status: 1)
+    }
+    let failed = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 5_000))
+    expect("the failed scan produced one outcome for each affected record",
+           failed.map(\.taskID).sorted(),
+           affected.sorted())
+    check("a failed ref scan is typed unanswerable at the pass seam",
+          reason(sweepUnreadableRefsTask, in: failed)?.contains(
+            "delivery-ref scan exited with status 1") == true)
+    check("stored B cannot close while the unseen live ref is C, even though target contains B",
+          Orchestrator.held(sweepUnreadableRefsTask)?.landing?.state == .pending)
+    check("the same unreadable scan cannot masquerade as a deleted branch",
+          Orchestrator.held(sweepDeletedBranchTask)?.landing?.state == .pending)
+    check("nor can it fall through to the shared checkout's usable write set",
+          reason(sweepUnreadableWriteSetTask, in: failed)?.contains(
+            "delivery-ref scan exited with status 1") == true
+              && Orchestrator.held(sweepUnreadableWriteSetTask)?.landing?.state == .pending)
+
+    Orchestrator.landingSweepDeliveryRefsGitOverrideForTesting = nil
+    let answered = Orchestrator.landingSweepPass(now: Date(timeIntervalSince1970: 5_300))
+    expect("the successfully confirmed-deleted branch closes from its clean stored head",
+           answered.first { $0.taskID == sweepDeletedBranchTask }?.verdict,
+           .closed(.ancestry))
+    expect("that closure names the stored merged delivery commit",
+           Orchestrator.held(sweepDeletedBranchTask)?.landing?.verifiedCommit,
+           repository.delivery)
+    check("while a successful present ref must still agree with the stored head",
+          reason(sweepUnreadableRefsTask, in: answered)?.contains(
+            "live head contradicts its recorded head") == true
+              && Orchestrator.held(sweepUnreadableRefsTask)?.landing?.state == .pending)
 }
 
 group("a sweep that cannot prove it leaves the record exactly as it found it") {
@@ -687,19 +948,24 @@ group("a sweep that cannot prove it leaves the record exactly as it found it") {
               && !Orchestrator.landingSweepClaimsUsable([":(glob)Sources/*"])
               && !Orchestrator.landingSweepClaimsUsable([])
               && Orchestrator.landingSweepClaimsUsable(["Sources/A.swift", "docs"]))
-    check("a live delivery ref outranks the head the registry remembers",
+    check("a live delivery ref that contradicts the isolated receipt is not chosen",
           Orchestrator.landingSweepQuestion(
             for: Orchestrator.LandingSweepCandidate(
                 taskID: sweepDirtyTask, projectDir: repository.url.path, target: "main",
-                deliveryBranch: "clawdline/task/\(sweepDirtyTask)", storedHead: "stale",
+                deliveryBranch: "clawdline/task/\(sweepDirtyTask)",
+                deliveryEvidence: .isolated(
+                    base: repository.base, head: "stale", commits: 1, dirty: false),
                 claims: ["Sources/Dirty.swift"]),
-            liveHead: repository.delivery) == .ancestry(head: repository.delivery))
+            deliveryRef: .present(repository.delivery))
+              == .unanswerable("isolated delivery live head contradicts its recorded head"))
     check("and a candidate with neither a branch nor a usable write set is asked nothing",
           Orchestrator.landingSweepQuestion(
             for: Orchestrator.LandingSweepCandidate(
                 taskID: sweepDirtyTask, projectDir: repository.url.path, target: "main",
-                deliveryBranch: "clawdline/task/\(sweepDirtyTask)", storedHead: nil, claims: []),
-            liveHead: nil) == .unanswerable("no delivery branch, and no usable declared write set"))
+                deliveryBranch: "clawdline/task/\(sweepDirtyTask)",
+                deliveryEvidence: .sharedCheckout, claims: []),
+            deliveryRef: .absent)
+              == .unanswerable("no delivery branch, and no usable declared write set"))
 }
 
 

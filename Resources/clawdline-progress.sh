@@ -7,7 +7,7 @@
 # it a facility rather than a format**: a lint run, a data import, a migration, a video encode all
 # fit, because `label` and `phase` are free text and nothing in the record is about tests or builds.
 #
-# Two forms, and the first is the one to reach for:
+# The producer has two forms, and the first is the one to reach for:
 #
 #     clawdline-progress run --label lint --typical 120 -- ./scripts/lint.sh
 #
@@ -18,6 +18,15 @@
 #     progress_start --label test --typical 288
 #     progress_phase compiling
 #     # no explicit finish: the traps progress_start installs decide from the exit status
+#
+# A reader needs no process scan and opens no lock:
+#
+#     clawdline-progress list
+#     clawdline-progress list --json
+#
+# It reports fresh and stale running rows as well as completed and malformed ones. In particular,
+# a suite's row exists during preflight, before /tmp/clawdline-suite.lock does; the row observes
+# that interval and never becomes a second exclusion or takeover authority.
 #
 # The second form is for a script that wants its own phases. **The traps live here, written once**,
 # because a dedicated agent with a full brief got them wrong on its first attempt and so did a
@@ -458,11 +467,136 @@ progress_finish() { clawdline_run_file_finish "$@"; }
 progress_clear()  { clawdline_run_file_clear "$@"; }
 # <<< clawdline run file <<<
 
+clawdline_progress_list() {
+    # Read the rows the producers above already publish. This is observation only: in particular,
+    # there is deliberately no test for /tmp/clawdline-suite.lock here. test.sh opens its row before
+    # it reaches that lock, and that preflight interval is exactly when a process scan and a lock
+    # lookup both answer "nothing" while a suite is nevertheless running.
+    #
+    # `list` is plural because the cache is machine-wide and keyed by tree. Human-readable TSV is
+    # the default; `--json` is one array so an agent gets an empty-but-successful `[]`, not the same
+    # bytes as a failed or never-run query. Malformed files become rows of their own and never abort
+    # the scan, because hiding the valid row alphabetically after one bad file recreates false
+    # absence by a different route.
+    local format=human run_dir now row_path rendered separator=''
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --json) format=json; shift ;;
+            -h | --help) clawdline_progress_usage; return 0 ;;
+            *) clawdline_progress_usage "list: unknown option $1"; return 64 ;;
+        esac
+    done
+    command -v jq >/dev/null 2>&1 || {
+        echo "clawdline-progress: list needs jq to read run rows" >&2
+        return 69
+    }
+    run_dir="${CLAWDLINE_STATUS_DIR:-${HOME:-}/.claude/statusline-cache}"
+
+    # A cache that has never been created is the legitimate zero-row case. Once a path exists,
+    # however, inability to enumerate it is an unknown observation and must not be rendered as [].
+    if [ ! -e "$run_dir" ]; then
+        if [ "$format" = json ]; then
+            printf '[]\n'
+        else
+            printf 'CLASS\tSTATE\tFRESHNESS\tAGE_SECONDS\tPHASE\tLABEL\tTREE\tHOLDER\tSTARTED_AT\tUPDATED_AT\tLOG\tERROR\tFILE\n'
+        fi
+        return 0
+    fi
+    if [ ! -d "$run_dir" ] || ! /bin/ls -1 "$run_dir" >/dev/null 2>&1; then
+        echo "clawdline-progress: status_directory_unreadable: $run_dir" >&2
+        return 74
+    fi
+    if ! now=$(date +%s 2>/dev/null); then
+        echo "clawdline-progress: clock_unavailable: date +%s failed" >&2
+        return 69
+    fi
+    case "$now" in
+        '' | *[!0-9]*)
+            echo "clawdline-progress: clock_unavailable: date +%s returned a non-epoch value" >&2
+            return 69
+            ;;
+    esac
+
+    [ "$format" = json ] || printf 'CLASS\tSTATE\tFRESHNESS\tAGE_SECONDS\tPHASE\tLABEL\tTREE\tHOLDER\tSTARTED_AT\tUPDATED_AT\tLOG\tERROR\tFILE\n'
+    [ "$format" != json ] || printf '['
+    for row_path in "$run_dir"/run-*.json; do
+        [ -e "$row_path" ] || continue
+        # CLAWDLINE_PROGRESS_LIST_ROW
+        rendered=$(jq -c -r -s --arg file "$row_path" --arg format "$format" --argjson now "$now" '
+            def optional_string:
+                if type == "string" and length > 0 then . else null end;
+            def optional_number:
+                if type == "number" then . else null end;
+            (if length == 1 and (.[0] | type) == "object"
+             then .[0]
+             else error("one run-row file must contain exactly one JSON object")
+             end) as $source
+            | ($source | has("state")) as $has_state
+            | ($source.state | optional_string) as $state
+            | ($source | has("updated_at")) as $has_updated
+            | $source.updated_at as $raw_updated
+            | ($raw_updated | optional_number) as $updated
+            | ($source.stale_after | optional_number) as $recorded_stale_after
+            | ($recorded_stale_after // 900) as $stale_after
+            | (if $updated == null then null else (($now - $updated) | floor) end) as $age
+            | (if ($has_state | not) then "missing_state"
+               elif $state != "running" and $state != "ok" and $state != "fail" then "invalid_state"
+               elif $state == "running" and ($has_updated | not) then "missing_updated_at"
+               elif $state == "running" and ($raw_updated | type) != "number" then "invalid_updated_at"
+               else null end) as $error
+            | (if $error != null then "malformed"
+               elif $state == "running" and $age > $stale_after then "stale"
+               elif $state == "running" then "active"
+               else "completed" end) as $classification
+            | (if $classification == "active" then "fresh"
+               elif $classification == "stale" then "stale"
+               elif $classification == "completed" then "complete"
+               else "unknown" end) as $freshness
+            | {file: $file,
+               classification: $classification,
+               state: $state,
+               freshness: $freshness,
+               age_seconds: $age,
+               stale_after: $stale_after,
+               phase: ($source.phase | optional_string),
+               label: ($source.label | optional_string),
+               tree: ($source.tree | optional_string),
+               holder: ($source.holder | optional_string),
+               started_at: ($source.started_at | optional_number),
+               updated_at: $updated,
+               log: ($source.log | optional_string),
+               error: $error}
+            | if $format == "json" then .
+              else [.classification, .state, .freshness, .age_seconds, .phase, .label,
+                    .tree, .holder, .started_at, .updated_at, .log, .error, .file]
+                   | map(if . == null then "" else tostring end) | @tsv
+              end
+        ' "$row_path" 2>/dev/null) || {
+            if [ "$format" = json ]; then
+                rendered=$(jq -nc --arg file "$row_path" \
+                    '{file:$file,classification:"malformed",state:null,freshness:"unknown",age_seconds:null,stale_after:null,phase:null,label:null,tree:null,holder:null,started_at:null,updated_at:null,log:null,error:"invalid_json"}')
+            else
+                rendered=$(jq -nr --arg file "$row_path" \
+                    '["malformed","","unknown","","","","","","","","","invalid_json",$file] | @tsv')
+            fi
+        }
+        if [ "$format" = json ]; then
+            printf '%s%s' "$separator" "$rendered"
+            separator=,
+        else
+            printf '%s\n' "$rendered"
+        fi
+    done
+    [ "$format" != json ] || printf ']\n'
+    return 0
+}
+
 clawdline_progress_usage() {
     [ $# -eq 0 ] || echo "clawdline-progress: $1" >&2
     cat >&2 <<'USAGE'
 usage: clawdline-progress run [--label NAME] [--typical SECONDS]
                               [--stale-after SECONDS] [--log PATH] [--] COMMAND [ARG...]
+       clawdline-progress list [--json]
 
 Runs COMMAND and writes a progress row to $CLAWDLINE_STATUS_DIR (default
 ~/.claude/statusline-cache) keyed by the working directory, so Clawdline's bar and a terminal
@@ -477,6 +611,13 @@ Or, inside a script that wants its own phases:
 
 --typical is optional and nothing is invented for it: with no measurement, no typical_seconds is
 written at all.
+
+`list` reads every existing run row without consulting or creating the suite lock. Its default
+output is a labelled tab-separated table with an ERROR column; --json returns one array. Fresh
+running rows are `active`, running rows past stale_after are `stale`, ok/fail rows are `completed`,
+and malformed rows are reported in isolation instead of hiding their valid neighbours. Each file
+must contain exactly one JSON object. A never-created status directory is an empty observation;
+failure to list an existing directory or read the clock is a typed nonzero query failure.
 USAGE
     return 0
 }
@@ -534,6 +675,7 @@ clawdline_progress_run() {
 clawdline_progress_main() {
     case "${1:-}" in
         run) shift; clawdline_progress_run "$@" ;;
+        list) shift; clawdline_progress_list "$@" ;;
         -h | --help | help) clawdline_progress_usage; return 0 ;;
         "") clawdline_progress_usage "say what to run"; return 64 ;;
         *) clawdline_progress_usage "unknown command: $1"; return 64 ;;

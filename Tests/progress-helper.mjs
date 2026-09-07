@@ -23,7 +23,7 @@
 
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, existsSync, readdirSync,
-         realpathSync, rmSync, statSync } from "node:fs";
+         realpathSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 // `fileURLToPath`, not `URL.pathname`: this checkout lives under `Application Support`, and a
@@ -153,6 +153,30 @@ const runHelper = (w, args, env = {}, path = helperPath) => {
         env: { ...process.env, CLAWDLINE_STATUS_DIR: cache, ...env },
     });
     return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
+};
+
+const listCache = join(scratch, "list-statusline-cache");
+const absentSuiteLock = join(scratch, "suite-lock-that-does-not-exist");
+const runList = (args = [], path = helperPath, env = {}) => {
+    const r = spawnSync("/bin/bash", [path, "list", ...args], {
+        encoding: "utf8",
+        cwd: scratch,
+        env: {
+            ...process.env,
+            CLAWDLINE_STATUS_DIR: listCache,
+            CLAWDLINE_SUITE_LOCK_DIR: absentSuiteLock,
+            ...env,
+        },
+    });
+    return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
+};
+const listedRows = (path = helperPath) => {
+    const r = runList(["--json"], path);
+    try {
+        return { ...r, rows: JSON.parse(r.out) };
+    } catch {
+        return { ...r, rows: null };
+    }
 };
 
 // A script that sources the helper, for the second form.
@@ -774,7 +798,196 @@ try {
           readdirSync(cache).filter((n) => n.includes(".tmp")).length === 0);
 
     // ---------------------------------------------------------------------------------------
-    // 7. Positive controls. Every check above is worth exactly what its ability to go red is
+    // 7. Listing run rows. This is deliberately driven with no suite lock anywhere: test.sh
+    //    writes its progress row before it reaches the lock, so hiding rows until the lock exists
+    //    recreates the false "there is no suite" inference this command exists to stop.
+    {
+        const empty = listedRows();
+        check("an empty machine-readable query is [] rather than indistinguishable empty output",
+              empty.code === 0 && Array.isArray(empty.rows) && empty.rows.length === 0);
+        mkdirSync(listCache, { recursive: true });
+        const now = Math.floor(Date.now() / 1000);
+        const writeRow = (name, row) => writeFileSync(
+            join(listCache, `run-${name}.json`), JSON.stringify(row) + "\n");
+        writeRow("1-preflight", {
+            state: "running", label: "test", started_at: now - 8, updated_at: now - 1,
+            stale_after: 60, holder: "root (iTerm2 preflight)", tree: "/tmp/preflight-tree",
+        });
+        writeRow("2-phased", {
+            state: "running", label: "test", phase: "guards", started_at: now - 20,
+            updated_at: now - 2, stale_after: 60, holder: "agent (tmux %4)",
+            tree: "/tmp/phased-tree", log: "/tmp/phased.log",
+        });
+        // Alphabetically between valid rows, so a reader that aborts on malformed input hides
+        // rows after it and the test catches the isolation failure rather than only the warning.
+        writeFileSync(join(listCache, "run-3-malformed.json"), "{this is not json\n");
+        writeFileSync(join(listCache, "run-3a-multiple-values.json"),
+                      '{"state":"ok"}\n{"state":"fail"}\n');
+        writeRow("3b-invalid-state", {
+            state: "paused", label: "invalid state", updated_at: now - 3,
+        });
+        writeRow("3c-missing-updated-at", {
+            state: "running", label: "missing updated_at",
+        });
+        writeRow("3d-invalid-updated-at", {
+            state: "running", label: "invalid updated_at", updated_at: "recently",
+        });
+        writeRow("4-stale", {
+            state: "running", label: "test", phase: "node suites", started_at: now - 100,
+            updated_at: now - 90, stale_after: 30, holder: "old holder", tree: "/tmp/stale-tree",
+        });
+        writeRow("5-ok", {
+            state: "ok", label: "test", started_at: now - 50, updated_at: now - 5,
+            stale_after: 1, holder: "done holder", tree: "/tmp/ok-tree", log: "/tmp/ok.log",
+        });
+        writeRow("6-fail", {
+            state: "fail", label: "build", started_at: now - 40, updated_at: now - 4,
+            holder: "failed holder", tree: "/tmp/fail-tree",
+        });
+
+        const json = listedRows();
+        check("list --json returns one machine-readable array without requiring a suite lock",
+              json.code === 0 && Array.isArray(json.rows) && json.rows.length === 10
+                && !existsSync(absentSuiteLock));
+        const byLabel = (label) => json.rows?.find((row) => row.label === label);
+        const preflight = byLabel("test")?.tree === "/tmp/preflight-tree"
+            ? byLabel("test")
+            : json.rows?.find((row) => row.tree === "/tmp/preflight-tree");
+        check("a fresh preflight row is active even though the sole suite lock is absent",
+              preflight?.classification === "active" && preflight.state === "running"
+                && preflight.freshness === "fresh" && preflight.phase === null);
+        const phased = json.rows?.find((row) => row.tree === "/tmp/phased-tree");
+        check("an active phased row keeps holder, tree, timestamps, freshness, phase, label and log",
+              phased?.classification === "active" && phased.freshness === "fresh"
+                && phased.phase === "guards" && phased.label === "test"
+                && phased.holder === "agent (tmux %4)" && phased.log === "/tmp/phased.log"
+                && Number.isInteger(phased.started_at) && Number.isInteger(phased.updated_at)
+                && Number.isInteger(phased.age_seconds));
+        const stale = json.rows?.find((row) => row.tree === "/tmp/stale-tree");
+        check("a stale running row remains inspectable and is distinct from an active one",
+              stale?.classification === "stale" && stale.state === "running"
+                && stale.freshness === "stale" && stale.age_seconds > stale.stale_after);
+        const ok = json.rows?.find((row) => row.state === "ok");
+        const fail = json.rows?.find((row) => row.state === "fail");
+        check("completed ok and fail rows remain separate verdicts, not liveness claims",
+              ok?.classification === "completed" && ok.freshness === "complete"
+                && fail?.classification === "completed" && fail.freshness === "complete");
+        const malformed = json.rows?.find((row) => /run-3-malformed\.json$/.test(row.file));
+        const multiple = json.rows?.find((row) => /run-3a-multiple-values\.json$/.test(row.file));
+        check("syntax-broken and multiple-value files are separate malformed rows without hiding neighbours",
+              malformed?.error === "invalid_json" && multiple?.error === "invalid_json"
+                && fail?.tree === "/tmp/fail-tree");
+        const invalidState = json.rows?.find((row) => row.label === "invalid state");
+        const missingUpdated = json.rows?.find((row) => row.label === "missing updated_at");
+        const invalidUpdated = json.rows?.find((row) => row.label === "invalid updated_at");
+        check("invalid state and missing or invalid updated_at fail closed with distinct reasons",
+              invalidState?.classification === "malformed" && invalidState.error === "invalid_state"
+                && missingUpdated?.classification === "malformed"
+                && missingUpdated.error === "missing_updated_at"
+                && invalidUpdated?.classification === "malformed"
+                && invalidUpdated.error === "invalid_updated_at");
+
+        const human = runList();
+        const humanLines = human.out.trimEnd().split("\n").map((line) => line.split("\t"));
+        const humanHeader = humanLines[0] ?? [];
+        const humanError = humanHeader.indexOf("ERROR");
+        const humanFile = humanHeader.indexOf("FILE");
+        const errorFor = (suffix) => humanLines.find((cells) =>
+            humanFile >= 0 && cells[humanFile]?.endsWith(suffix))?.[humanError];
+        check("plain list output labels its columns and carries the same human-readable distinctions",
+              human.code === 0 && /^CLASS\tSTATE\tFRESHNESS\tAGE_SECONDS\tPHASE\tLABEL\tTREE\tHOLDER\tSTARTED_AT\tUPDATED_AT\tLOG\tERROR\tFILE$/m.test(human.out)
+                && /^active\trunning\tfresh\t\d+\t\ttest\t\/tmp\/preflight-tree\t/m.test(human.out)
+                && /^stale\trunning\tstale\t\d+\tnode suites\ttest\t\/tmp\/stale-tree\t/m.test(human.out)
+                && /^completed\tok\tcomplete\t\d+\t\ttest\t\/tmp\/ok-tree\t/m.test(human.out)
+                && /^completed\tfail\tcomplete\t\d+\t\tbuild\t\/tmp\/fail-tree\t/m.test(human.out));
+        check("plain list output exposes each malformed reason rather than flattening them",
+              humanError >= 0 && humanFile >= 0
+                && errorFor("run-3-malformed.json") === "invalid_json"
+                && errorFor("run-3a-multiple-values.json") === "invalid_json"
+                && errorFor("run-3b-invalid-state.json") === "invalid_state"
+                && errorFor("run-3c-missing-updated-at.json") === "missing_updated_at"
+                && errorFor("run-3d-invalid-updated-at.json") === "invalid_updated_at");
+
+        const unreadableCache = join(scratch, "unreadable-list-statusline-cache");
+        mkdirSync(unreadableCache);
+        chmodSync(unreadableCache, 0o000);
+        const unreadable = runList(["--json"], helperPath,
+                                   { CLAWDLINE_STATUS_DIR: unreadableCache });
+        chmodSync(unreadableCache, 0o700);
+        check("an unreadable status directory is a typed query failure, never successful []",
+              unreadable.code === 74 && unreadable.out === ""
+                && /status_directory_unreadable/.test(unreadable.err));
+
+        const jqOnlyBin = join(scratch, "jq-only-bin");
+        mkdirSync(jqOnlyBin);
+        const jqPath = spawnSync("/bin/bash", ["-lc", "command -v jq"],
+                                 { encoding: "utf8" }).stdout.trim();
+        symlinkSync(jqPath, join(jqOnlyBin, "jq"));
+        const emptyExistingCache = join(scratch, "empty-existing-list-statusline-cache");
+        mkdirSync(emptyExistingCache);
+        const noDate = runList(["--json"], helperPath,
+                               { PATH: jqOnlyBin, CLAWDLINE_STATUS_DIR: emptyExistingCache });
+        check("a failed clock dependency is a typed query failure, never successful []",
+              noDate.code === 69 && noDate.out === ""
+                && /clock_unavailable/.test(noDate.err));
+
+        // Positive control for the exact regression: add the tempting but false condition to a
+        // copy. It still parses and runs, but the preflight row disappears because there is no
+        // lock yet. The production assertion above would therefore go red under this mutation.
+        const m = mutantHelper("list-requires-suite-lock", (t) => t.replace(
+            '        # CLAWDLINE_PROGRESS_LIST_ROW\n',
+            '        # CLAWDLINE_PROGRESS_LIST_ROW\n'
+                + '        [ -d "${CLAWDLINE_SUITE_LOCK_DIR:-/tmp/clawdline-suite.lock}" ] || continue\n'));
+        check("control: a lock-gated list mutation is syntactically valid",
+              spawnSync("/bin/bash", ["-n", m.path]).status === 0);
+        const hidden = listedRows(m.path);
+        check("control: requiring the suite lock hides every active preflight row and would fail the observation",
+              hidden.code === 0 && Array.isArray(hidden.rows) && hidden.rows.length === 0);
+
+        const streamed = mutantHelper("list-streams-multiple-values", (t) => t.replace(
+            '            (if length == 1 and (.[0] | type) == "object"\n'
+                + '             then .[0]\n'
+                + '             else error("one run-row file must contain exactly one JSON object")\n'
+                + '             end) as $source\n',
+            '            .[] as $source\n'));
+        const invalidAggregate = listedRows(streamed.path);
+        check("control: accepting a JSON value stream makes the aggregate invalid and hides later rows",
+              invalidAggregate.code === 0 && invalidAggregate.rows === null
+                && /\/tmp\/fail-tree/.test(invalidAggregate.out));
+
+        const uncheckedDirectory = mutantHelper("list-unchecked-directory", (t) => t.replace(
+            '    if [ ! -d "$run_dir" ] || ! /bin/ls -1 "$run_dir" >/dev/null 2>&1; then\n'
+                + '        echo "clawdline-progress: status_directory_unreadable: $run_dir" >&2\n'
+                + '        return 74\n'
+                + '    fi\n',
+            ''));
+        chmodSync(unreadableCache, 0o000);
+        const falseEmptyDirectory = runList(["--json"], uncheckedDirectory.path,
+                                            { CLAWDLINE_STATUS_DIR: unreadableCache });
+        chmodSync(unreadableCache, 0o700);
+        check("control: skipping the directory probe turns an unreadable query into successful []",
+              falseEmptyDirectory.code === 0 && falseEmptyDirectory.out === "[]\n");
+
+        const uncheckedClock = mutantHelper("list-unchecked-clock", (t) => t.replace(
+            '    if ! now=$(date +%s 2>/dev/null); then\n'
+                + '        echo "clawdline-progress: clock_unavailable: date +%s failed" >&2\n'
+                + '        return 69\n'
+                + '    fi\n'
+                + '    case "$now" in\n'
+                + "        '' | *[!0-9]*)\n"
+                + '            echo "clawdline-progress: clock_unavailable: date +%s returned a non-epoch value" >&2\n'
+                + '            return 69\n'
+                + '            ;;\n'
+                + '    esac\n',
+            '    now=$(date +%s)\n'));
+        const falseEmptyClock = runList(["--json"], uncheckedClock.path,
+                                        { PATH: jqOnlyBin, CLAWDLINE_STATUS_DIR: emptyExistingCache });
+        check("control: skipping the clock check turns a failed dependency into successful []",
+              falseEmptyClock.code === 0 && falseEmptyClock.out === "[]\n");
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // 8. Positive controls. Every check above is worth exactly what its ability to go red is
     //    worth, so each of the five lines that carry the feature is taken out of a copy of the
     //    helper and the defect is driven until it happens.
     {

@@ -1748,6 +1748,20 @@ Bearings a `heavy_compile_lease` block; both went with the broker lease. Who is 
 in `/tmp/clawdline-suite.lock/holder.txt`, which is what a waiting run prints, and asking that run
 is what a waiter is told to do.
 
+There is a separate observation before that slot exists. `test.sh` publishes its `run-<tree>.json`
+row before guards and node suites, and therefore before it calls the lock acquisition code. An agent
+must run `Resources/clawdline-progress.sh list --json` (or `list` for the labelled table) before
+claiming that no suite is running merely because the lock, `swift-frontend`, and `test.sh` process
+samples are absent. The reader exposes active and stale running rows, their phase, holder, tree,
+timestamps/freshness, label and log, completed `ok`/`fail` rows, and malformed rows without allowing
+one bad file to hide valid neighbours. A row file is exactly one JSON object; multiple JSON values
+are malformed rather than streamed into an invalid aggregate. JSON output's `error` and the human
+table's `ERROR` distinguish invalid JSON/state and missing/invalid running timestamps. Only a
+successful empty query returns `[]`: failure to list an existing status directory or obtain an epoch
+clock returns a typed nonzero error. A fresh running row while the lock is absent is preflight
+evidence only. The command never grants, queues, kills, takes over or creates another lease:
+**`/tmp/clawdline-suite.lock` remains the sole exclusion primitive.**
+
 ### Clawdfather Phase A1: durable identity and read-only Bearings
 
 Clawdfather is now a broker-authenticated role, not presentation fiction. Construction is explicit:

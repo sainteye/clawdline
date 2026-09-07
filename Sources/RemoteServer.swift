@@ -2015,6 +2015,11 @@ final class RemoteServer: @unchecked Sendable {
                               "at": Int(Date().timeIntervalSince1970)])
             }
 
+        case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
+            && path.hasSuffix("/landing"):
+            return routeSessionLanding(request, path: path,
+                                       orchestratorAuthed: orchestratorAuthed)
+
         // A root's explicit end-of-turn receipt. The path names the terminal-neutral id already
         // published by the GET above; every process/conversation fact is resolved here from the
         // live target, never trusted from the request body. It is a single-check delivery claim,
@@ -5040,6 +5045,13 @@ final class RemoteServer: @unchecked Sendable {
                 "work_state": work.state.rawValue,
                 "closeability": closeable.wire,
             ]
+            if var disposition = work.disposition {
+                // This address book deliberately carries no Session-authored prose. Receipt
+                // scope and broker evidence are structural; the summary/title remains on the
+                // paired-device Session surface where it was already published.
+                disposition.removeValue(forKey: "title")
+                row["disposition"] = disposition
+            }
             if let assistant = session.assistant { row["assistant"] = assistant.rawValue }
             let cwd = publishedIdentities[session.id]?.workingDirectory
             if let cwd { row["cwd"] = cwd }

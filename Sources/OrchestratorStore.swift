@@ -391,6 +391,16 @@ enum OrchestratorStore {
         if let conversation = delivery.identity.conversationID {
             out["conversation_id"] = conversation
         }
+        if let landing = delivery.landing {
+            out["landing"] = [
+                "repository_common_dir": landing.repositoryCommonDir,
+                "verification_origin": landing.verificationOrigin,
+                "target": landing.target,
+                "verified_commit": landing.verifiedCommit,
+                "verified_target_commit": landing.verifiedTargetCommit,
+                "landed_at": landing.landedAt.timeIntervalSince1970,
+            ]
+        }
         return out
     }
 
@@ -414,9 +424,34 @@ enum OrchestratorStore {
             terminalID: terminalID, assistant: assistant, tty: tty, pid: pid,
             processStart: Date(timeIntervalSince1970: processStart),
             conversationID: conversation)
-        return Orchestrator.SessionDelivery(identity: identity, summary: summary,
-                               reportedAt: Date(timeIntervalSince1970: reportedAt),
-                               settled: settled)
+        let landing: Orchestrator.SessionLanding?
+        if let row = obj["landing"] as? [String: Any] {
+            guard let repository = row["repository_common_dir"] as? String,
+                  repository.hasPrefix("/"), repository.count <= 4_096,
+                  OrchestratorDraft.canonicalFilesystemPath(repository) == repository,
+                  let origin = row["verification_origin"] as? String,
+                  origin == "local_target_branch",
+                  let target = row["target"] as? String,
+                  !target.isEmpty, target.count <= 200,
+                  let commit = row["verified_commit"] as? String,
+                  let targetCommit = row["verified_target_commit"] as? String,
+                  let landedAt = row["landed_at"] as? Double,
+                  landedAt.isFinite, landedAt > 0 else { return nil }
+            let decoded = Orchestrator.SessionLanding(
+                repositoryCommonDir: repository, verificationOrigin: origin, target: target,
+                verifiedCommit: commit, verifiedTargetCommit: targetCommit,
+                landedAt: Date(timeIntervalSince1970: landedAt))
+            guard Orchestrator.isBrokerVerifiedSessionLanding(decoded) else { return nil }
+            landing = decoded
+        } else if obj["landing"] == nil {
+            landing = nil
+        } else {
+            return nil
+        }
+        return Orchestrator.SessionDelivery(
+            identity: identity, summary: summary,
+            reportedAt: Date(timeIntervalSince1970: reportedAt), settled: settled,
+            landing: landing)
     }
 
     static func stored(_ selfState: Orchestrator.SessionSelfState) -> [String: Any] {
