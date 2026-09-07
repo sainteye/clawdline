@@ -108,6 +108,36 @@ A report that carries no `completeness` block at all — an older build — is w
 `"completeness": {"stated": false, …}` rather than with the field simply absent, so an absent block
 never reads as an empty one.
 
+## The rows a flood cannot reach
+
+The trace is a ring of 80 against a page that writes about five entries a second, so it holds
+roughly **eighteen seconds** — and the gesture that sends a report (Settings, five taps, the
+button, *Send to Mac*) takes longer than that. On 2026-09-06 and again on the 7th, two reports
+came back from a real phone in which six independent 80-entry windows contained not one `sw.` or
+`route.` entry between them. The evidence of the fault was written down and then evicted by
+`layout` before anybody could read it.
+
+**`sources` is the half of this recorder that a flood cannot reach**: one row per recorder, holding
+the last state, how many times it was looked at and a running count. It survived both of those
+reports intact. So the notification road is read from four rows rather than from the trace:
+
+| row | `reads` | `state` | `entries` |
+|---|---|---|---|
+| `serviceWorker` | times the worker's trace was read back | `merged` / `unavailable` / `failed` | entries folded in |
+| `notificationMessage` | messages that actually arrived | the last one's `type` | same as `reads` |
+| `notificationWant` | reads of the worker's record | the last answer: `routed`, `stale`, `settled`, `declined`, `none`, `unavailable` | times it routed |
+| `notificationOpen` | decisions by `openWanted` | `found` or `missing` | sessions actually opened |
+
+**`notificationMessage.reads` is the number the road could not produce before.** Zero means no
+message was ever delivered to the page; one with no routing behind it means a message arrived and
+was declined. Those are different faults with opposite fixes, and until these rows existed both of
+them looked like an empty trace.
+
+**Zero is only a reading when the recorder could have said otherwise.** A row at zero because
+nothing happened and a row at zero because the reporting was removed look identical, so read them
+together: `notificationWant` and `notificationOpen` reporting while `notificationMessage` is zero
+is a silent road; all four silent is a silent recorder.
+
 ## Adding a source of your own
 
 If your observation point records into somewhere the page reads back later — Cache Storage, a

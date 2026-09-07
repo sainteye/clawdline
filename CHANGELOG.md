@@ -9,6 +9,20 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Added: the notification road is now read from counts, not from a trace that overflows
+
+Two reports came back from a phone with the evidence already gone. The trace is eighty entries
+against a page that writes about five a second, so it holds eighteen seconds, and opening the panel
+that sends a report takes longer than that: six independent windows across those two reports held
+not one entry about the tap between them.
+
+The four questions are now asked of `completeness.sources`, which is a row per recorder rather than
+a ring and survived both reports intact — whether the worker wrote, whether a message ever arrived,
+what the record road decided, and whether the session it named was in the list. The one that could
+not be asked at all before is the second: a message that was never delivered and one that arrived
+and was declined are different faults with opposite fixes, and both used to look like an empty
+trace.
+
 ### Fixed: a suite failing over a landing record it was not allowed to write
 
 `./test.sh` checks that no delivery reached a target branch while the record saying so was never

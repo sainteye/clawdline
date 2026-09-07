@@ -503,10 +503,80 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
   // recorder is declared at load and the read reports `unavailable`, so the report can say which
   // of the three it is instead of leaving somebody to guess from an empty list.
   check("the recorder is declared before anything looks at it",
-        blind.declared.length === 1 && blind.declared[0] === "serviceWorker");
-  equal(blind.reads.length, 1, "and one read is reported");
-  equal(blind.reads[0].state, "unavailable",
+        blind.declared.includes("serviceWorker"));
+  // By name and not by position: three more recorders are declared beside it now, and a check
+  // that reads `declared[0]` is a check about the order somebody wrote the lines in.
+  const blindWorkerReads = blind.reads.filter(function (r) { return r.name === "serviceWorker"; });
+  equal(blindWorkerReads.length, 1, "and one read is reported");
+  equal(blindWorkerReads[0].state, "unavailable",
         "a browser with no store says so, rather than reporting an empty trace");
+
+  // **The three rows a flood cannot reach.** Declared at load, so a report taken from a page
+  // where nothing has happened says `unread` for each rather than leaving the row out.
+  check("the message, want and open recorders are declared at load as well",
+        blind.declared.includes("notificationMessage")
+        && blind.declared.includes("notificationWant")
+        && blind.declared.includes("notificationOpen"));
+}
+
+/* ---- the three rows a flood cannot reach -----------------------------------------------------
+ *
+ * The trace holds eighteen seconds and the gesture that sends a report takes longer, so every
+ * reading below has been lost twice on a real phone. `completeness.sources` is a row per recorder
+ * rather than a ring, and these are the three numbers the road is read from now.
+ */
+{
+  // The tap this whole file exists for: the message is dropped, the record does the work.
+  const dropped = await makeWorld({ deliver: false, listed: [PANE] });
+  await dropped.tap(sessionURL(PANE));
+  await dropped.wake();
+  const row = (name) => dropped.reads.filter((r) => r.name === name);
+  const total = (name) => row(name).reduce((n, r) => n + (r.entries || 0), 0);
+  // A word rather than a subscript into a list that may be empty: a recorder that stopped
+  // reporting should fail this block by name, not take the runner down with a TypeError three
+  // checks before the one that would have said what happened.
+  const last = (name) => (row(name).slice(-1)[0] || {}).state || "(never reported)";
+
+  // **The number none of this could produce before.** No message arrived at all, which is a
+  // different fault from one that arrived and was declined, and the two want opposite fixes.
+  // **Zero here only means something if this row can be non-zero at all**, and with the reporting
+  // removed it would read zero for the same reason a delivered message would. So the pair below
+  // is the check, and the delivered case a few lines down is its other half: a recorder that
+  // stopped reporting fails there, and this line is then read as the fault it names.
+  equal(row("notificationMessage").length, 0,
+        "a dropped message leaves the message row at zero reads, which is what says it was dropped");
+  check("and the other two rows did report, so zero above is a silent road and not a silent recorder",
+        row("notificationWant").length > 0 && row("notificationOpen").length > 0);
+  equal(last("notificationWant"), "routed",
+        "while the record row says the second road read it and acted");
+  equal(total("notificationWant"), 1, "and counts exactly one tap carried out by that road");
+  equal(last("notificationOpen"), "found",
+        "and the open row says the session the tap named was in the list");
+  equal(total("notificationOpen"), 1, "and that one session was opened");
+}
+
+{
+  // The same tap with the message delivered: the message road wins and the count says so.
+  const heard = await makeWorld({ deliver: true, listed: [PANE] });
+  await heard.tap(sessionURL(PANE));
+  const row = (name) => heard.reads.filter((r) => r.name === name);
+  equal(row("notificationMessage").length, 1,
+        "a delivered message is one read on the message row, whatever the road does next");
+  equal(row("notificationMessage")[0].state, "navigate",
+        "and the row carries the type it arrived with");
+}
+
+{
+  // A cold start whose list has not arrived: the request is held, and the row says `missing`
+  // rather than looking like a road that was never walked.
+  const early = await makeWorld({ deliver: false, listed: [] });
+  await early.tap(sessionURL(PANE));
+  await early.wake();
+  const opens = early.reads.filter((r) => r.name === "notificationOpen");
+  check("a request held against a list that has not arrived is recorded as a miss",
+        opens.length >= 1 && opens[opens.length - 1].state === "missing");
+  equal(opens.reduce((n, r) => n + (r.entries || 0), 0), 0,
+        "and nothing is counted as opened, because nothing was");
 }
 
 /* ---- and the same page where the store is there and empty ----------------------------------- */

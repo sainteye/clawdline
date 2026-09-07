@@ -136,6 +136,9 @@ export function openWanted() {
         found: !!id, rescued: !!(id && id === wantedSessionAsWritten),
         held: !!wantedSessionAsWritten
     });
+    // And where the flood cannot reach it: `reads` is how many times a request was held against
+    // a list, `entries` how many of them ended in a session opening.
+    Diagnostics.sourceRead(OPEN_SOURCE, id ? "found" : "missing", id ? 1 : 0);
     if (!id) return false;
     wantedSession = null;
     wantedSessionAsWritten = null;
@@ -183,6 +186,9 @@ if ("serviceWorker" in navigator) {
             // message naming no session leaves.
             answered: !!(data && data.want && data.want === settledWant)
         });
+        // The same fact, where a flood cannot reach it. `reads` is how many messages arrived at
+        // all, which is the one number that says whether `postMessage` is being delivered.
+        Diagnostics.sourceRead(MESSAGE_SOURCE, (data && data.type) || "empty", 1);
         if (!data || data.type !== "navigate" || typeof data.url !== "string") return;
         // **The same guard, in the other direction, and it was missing.** `readWorkerWant` refuses
         // a record this page has already answered; nothing refused a *message* announcing a tap the
@@ -259,6 +265,38 @@ export var WORKER_TRACE_SOURCE = "serviceWorker";
 // a run that found nothing says `merged` with no entries, and a browser with no Cache Storage
 // says `unavailable`. Those were one empty trace until this line existed.
 Diagnostics.source(WORKER_TRACE_SOURCE);
+
+/* ---- the three counts that a flood cannot reach ---------------------------
+ *
+ * Everything this file writes about a tapped notification goes into the trace, and the trace is
+ * eighty entries deep against a page that writes about five a second — eighteen seconds of room.
+ * Opening the panel that sends a report takes longer than that, so **the evidence is gone before
+ * it can be sent**: measured twice, on 2026-09-06 and again on the 7th, in reports whose six
+ * independent eighty-entry windows contained not one `sw.` or `route.` entry between them.
+ *
+ * `completeness.sources` is the other half of the recorder and it is not a ring: a row per
+ * recorder, holding the last state, how many times it was looked at, and a running count. It
+ * survived both of those reports intact. So the three questions this road has to be able to
+ * answer are asked of it instead of of the trace:
+ *
+ * | row | `reads` | `state` | `entries` |
+ * |---|---|---|---|
+ * | `notificationMessage` | messages that arrived | the last one's `type` | same as reads |
+ * | `notificationWant` | reads of the record | the last answer | times it routed |
+ * | `notificationOpen` | decisions by `openWanted` | `found` or `missing` | sessions opened |
+ *
+ * **`notificationMessage.reads === 0` is the reading none of this could produce before.** It is
+ * the difference between a message that was never delivered and one that arrived and was
+ * declined, and the whole question of what to do next turns on it. Declared here, at load, so a
+ * report taken before anything happened says `unread` rather than leaving the row out — an
+ * absent row and an empty one are the confusion this block exists to end.
+ */
+export var MESSAGE_SOURCE = "notificationMessage";
+export var WANT_SOURCE = "notificationWant";
+export var OPEN_SOURCE = "notificationOpen";
+Diagnostics.source(MESSAGE_SOURCE);
+Diagnostics.source(WANT_SOURCE);
+Diagnostics.source(OPEN_SOURCE);
 
 /** The newest entry already read into the trace, so that waking up twice does not report twice.
  *
@@ -433,6 +471,9 @@ export function readWorkerWant() {
     wantReading = true;
     return readWantRecord().then(function (answer) {
         wantReading = false;
+        // `entries` counts the reads that actually routed, so the row says both what the last
+        // look decided and how many taps this page has carried out by this road.
+        Diagnostics.sourceRead(WANT_SOURCE, answer, answer === "routed" ? 1 : 0);
         return answer;
     });
 }
