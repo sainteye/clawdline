@@ -1101,7 +1101,11 @@ group("the machine-level providers read the same file shapes /info already reads
     let tmp = FileManager.default.temporaryDirectory
         .appendingPathComponent("clawdline-quota-test-\(UUID().uuidString)", isDirectory: true)
     try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-    defer { try? FileManager.default.removeItem(at: tmp) }
+    defer {
+        try? FileManager.default.removeItem(at: tmp)
+        RemoteServer.sessionPayloadForTesting = nil
+        AssistantQuota.setOverrideForTesting(nil, for: .codex)
+    }
 
     // Claude: the same rate-limits.json shape SessionInfo.claudeLimits(cacheDirectory:) already
     // reads directly — this only checks that the shaping and §A.1/§A.2 on top of it are wired.
@@ -1153,6 +1157,14 @@ group("the machine-level providers read the same file shapes /info already reads
     check("and a detail sentence that names the credits, not just the percentage",
           codexQuota.detail.contains("premium credits exhausted"))
 
+    AssistantQuota.setOverrideForTesting(codexQuota, for: .codex)
+    let displayedCodex = AssistantQuota.machineLimits(for: .codex, now: now)
+    AssistantQuota.setOverrideForTesting(nil, for: .codex)
+    expect("the display reads the machine-level Codex windows rather than a session rollout",
+           displayedCodex.windows, codexQuota.windows)
+    expect("and preserves the provider observation time used to order snapshots",
+           displayedCodex.at, codexQuota.observedAt)
+
     // The route and /v1/places both answer with what these providers found — real machine state,
     // since neither route takes an injectable path, so only structure is asserted here.
     let phone = RemoteAuth.addDevice(name: "assistant quota reader", caps: [.read, .send])
@@ -1169,6 +1181,29 @@ group("the machine-level providers read the same file shapes /info already reads
            ["claude", "codex"])
     check("availability is always present, the one field a client must read",
           rows?.allSatisfy { $0["availability"] is String } ?? false)
+
+    // A just-opened session has no rollout record yet. Its Info route must still receive the
+    // account's machine-level snapshot; otherwise quota remains absent until this particular
+    // conversation spends its first tokens, and every Session becomes a different cache.
+    let newCodex = TargetSession(backend: .iterm, id: "NEW-CODEX-NO-ROLLOUT", name: "codex",
+                                 tty: "/dev/ttys987", windowIndex: 0, tabIndex: 0,
+                                 assistant: .codex, cwd: nil)
+    RemoteServer.sessionPayloadForTesting = ([newCodex], [newCodex.id: .idle])
+    AssistantQuota.setOverrideForTesting(codexQuota, for: .codex)
+    let newSessionInfo = RemoteServer.shared.route(remoteRequest(
+        "GET", "/v1/sessions/\(newCodex.id)/info",
+        headers: ["Authorization": "Bearer \(phone.token)"]))
+    AssistantQuota.setOverrideForTesting(nil, for: .codex)
+    RemoteServer.sessionPayloadForTesting = nil
+    let newSessionJSON = (try? JSONSerialization.jsonObject(with: newSessionInfo.body))
+        as? [String: Any]
+    let newSessionLimits = (newSessionJSON?["info"] as? [String: Any])?["limits"]
+        as? [String: Any]
+    let newSessionWindows = newSessionLimits?["windows"] as? [[String: Any]]
+    expect("a new session with no rollout receives the machine's latest quota windows",
+           newSessionWindows?.compactMap { $0["usedPercent"] as? Double }, [100])
+    check("the route stamps when it read the shared snapshot so clients can reject late replies",
+          newSessionLimits?["readAtMs"] is Int)
 
     let placesResponse = RemoteServer.shared.route(remoteRequest(
         "GET", "/v1/places", headers: ["Authorization": "Bearer \(phone.token)"]))

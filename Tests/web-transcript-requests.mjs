@@ -157,6 +157,61 @@ equal(aging.peek("D"), { tier: "summary" }, "and is not what the row draws eithe
 equal(aging.tier("D"), "summary",
     "which is what tells the status line to ask for the rest of the reading again");
 
+// Plan windows belong to the account on this Mac, not to whichever transcript happened to
+// report them. A per-session cache used to preserve each session's old copy independently: a new
+// Codex session had no windows at all until its first token_count, and switching between two old
+// sessions made the footer jump between two percentages for the same account.
+let quotaClock = 9000;
+const quotaReads = [];
+const quotaFacts = createTieredSessionFacts(function (id) {
+    const gate = deferred(); quotaReads.push({ id, gate }); return gate.promise;
+}, null, { ttl: 60000, now: function () { return quotaClock; } });
+function quotaInfo(assistant, usedPercent, readAtMs) {
+    return { info: {
+        session: { assistant: assistant },
+        limits: {
+            readAtMs: readAtMs,
+            windows: usedPercent === null ? [] : [
+                { name: "7d", usedPercent: usedPercent, resetsAt: 9999999999, hit: false }
+            ]
+        }
+    } };
+}
+
+const quotaA = quotaFacts.get("codex-old"); await tick();
+quotaReads[0].gate.resolve(quotaInfo("codex", 41, 100));
+equal((await quotaA).limits.windows[0].usedPercent, 41,
+    "the first Codex session establishes the machine's quota snapshot");
+const quotaB = quotaFacts.get("codex-new"); await tick();
+quotaReads[1].gate.resolve(quotaInfo("codex", 57, 200));
+equal((await quotaB).limits.windows[0].usedPercent, 57,
+    "a newer Codex session advances the shared snapshot");
+equal(quotaFacts.peek("codex-old").limits.windows[0].usedPercent, 57,
+    "returning to an older session cannot restore its older account percentage");
+equal(quotaFacts.machineLimits("codex").windows[0].usedPercent, 57,
+    "a brand-new session can draw the machine snapshot before its own Info read completes");
+
+const lateQuota = quotaFacts.get("codex-late"); await tick();
+quotaReads[2].gate.resolve(quotaInfo("codex", 48, 150));
+equal((await lateQuota).limits.windows[0].usedPercent, 57,
+    "a late older response cannot roll the machine snapshot backward");
+const claudeQuota = quotaFacts.get("claude"); await tick();
+quotaReads[3].gate.resolve(quotaInfo("claude", 91, 300));
+equal((await claudeQuota).limits.windows[0].usedPercent, 91,
+    "Claude and Codex retain separate account-level truths");
+equal(quotaFacts.machineLimits("codex").windows[0].usedPercent, 57,
+    "a Claude reading cannot replace Codex's snapshot");
+
+const resetQuota = quotaFacts.get("codex-reset"); await tick();
+quotaReads[4].gate.resolve(quotaInfo("codex", null, 400));
+equal((await resetQuota).limits.windows, [],
+    "a newer machine reading may clear a window after reset instead of retaining stale usage");
+
+const statusLineSource = readFileSync(
+    new URL("../Resources/web/app/js/input/status-line.js", import.meta.url), "utf8");
+ok(statusLineSource.includes("SessionFacts.machineLimits(s.assistant)"),
+    "a new session draws the last machine snapshot while its own Info request is loading");
+
 function renderHarness(newestFirst, mutation) {
     const entries = Array.from({ length: 200 }, function (_, id) {
         return { id, text: "x".repeat(41944), image: "image-" + id };

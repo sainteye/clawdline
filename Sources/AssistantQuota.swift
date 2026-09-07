@@ -339,6 +339,16 @@ extension AssistantQuota {
         return quota
     }
 
+    /// The one plan-window reading every Session surface on this Mac displays. Session usage,
+    /// context and model still come from that Session's own transcript; quota does not. Keeping
+    /// this projection beside `current(for:)` prevents `/info` from accidentally making an
+    /// account-level fact session-scoped again.
+    static func machineLimits(for assistant: Assistant,
+                              now: Date = Date()) -> SessionInfo.Limits {
+        let quota = current(for: assistant, now: now)
+        return SessionInfo.Limits(windows: quota.windows, at: quota.observedAt)
+    }
+
     /// Test-only: forget the 5-second cache so a test can hand a fresh directory and see it read.
     static func forgetCacheForTesting() {
         cacheLock.lock()

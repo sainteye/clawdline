@@ -137,6 +137,37 @@ export function createTieredSessionFacts(readFull, readSummary, options) {
     var now = options.now || function () { return Date.now(); };
     var ttl = Math.max(0, Number(options.ttl) || 60000);
     var states = {};
+    var machineLimitsByAssistant = {};
+
+    function assistantOf(data) {
+        return data && data.session && data.session.assistant || "";
+    }
+    function overlayMachineLimits(data) {
+        var held = machineLimitsByAssistant[assistantOf(data)];
+        if (!data || !held || data.limits === held.limits) return data;
+        return Object.assign({}, data, { limits: held.limits });
+    }
+    function captureMachineLimits(data) {
+        var assistant = assistantOf(data), limits = data && data.limits;
+        if (!assistant || !limits) return overlayMachineLimits(data);
+        var readAtMs = Number(limits.readAtMs);
+        // Older Macs do not yet send the read stamp. Their provider observation time is still a
+        // useful monotonic fallback for non-empty windows, though only a current server can order
+        // a reset-to-unknown snapshot because that deliberately has no provider `at`.
+        if (!Number.isFinite(readAtMs) && Number.isFinite(Number(limits.at))) {
+            readAtMs = Number(limits.at) * 1_000;
+        }
+        if (Number.isFinite(readAtMs)) {
+            var held = machineLimitsByAssistant[assistant];
+            // Two requests for different sessions can complete out of order. The server stamps
+            // the moment it read the account-level source so completion order cannot move the
+            // one shared snapshot backwards.
+            if (!held || readAtMs >= held.readAtMs) {
+                machineLimitsByAssistant[assistant] = { readAtMs: readAtMs, limits: limits };
+            }
+        }
+        return overlayMachineLimits(data);
+    }
 
     function stateFor(id) {
         return states[id] || (states[id] = {
@@ -155,9 +186,9 @@ export function createTieredSessionFacts(readFull, readSummary, options) {
         if (!id) return Promise.resolve(null);
         var state = stateFor(id);
         if (force) invalidate(state, true);
-        if (!force && fresh(state.full)) return Promise.resolve(state.full.data);
+        if (!force && fresh(state.full)) return Promise.resolve(overlayMachineLimits(state.full.data));
         if (tier === "summary" && !force && fresh(state.summary)) {
-            return Promise.resolve(state.summary.data);
+            return Promise.resolve(overlayMachineLimits(state.summary.data));
         }
         var pendingKey = tier + "Pending";
         if (state[pendingKey]) return state[pendingKey].promise;
@@ -167,7 +198,7 @@ export function createTieredSessionFacts(readFull, readSummary, options) {
         var record = {};
         record.promise = Promise.resolve().then(function () { return reader(id); }).then(
             function (answer) {
-                var data = (answer && answer.info) || null;
+                var data = captureMachineLimits((answer && answer.info) || null);
                 if (state.generation !== generation || state[pendingKey] !== record) return null;
                 state[pendingKey] = null;
                 if (tier === "full") {
@@ -188,7 +219,7 @@ export function createTieredSessionFacts(readFull, readSummary, options) {
                         };
                     }
                 }
-                return tier === "summary" && state.full ? state.full.data : data;
+                return overlayMachineLimits(tier === "summary" && state.full ? state.full.data : data);
             }, function (error) {
                 if (state.generation === generation && state[pendingKey] === record) {
                     state[pendingKey] = null;
@@ -203,7 +234,7 @@ export function createTieredSessionFacts(readFull, readSummary, options) {
         peek: function (id) {
             var state = states[id];
             return state && (state.full || state.summary)
-                ? (state.full || state.summary).data : null;
+                ? overlayMachineLimits((state.full || state.summary).data) : null;
         },
         fresh: function (id) { return !!(states[id] && fresh(states[id].full)); },
         tier: function (id) {
@@ -217,9 +248,14 @@ export function createTieredSessionFacts(readFull, readSummary, options) {
             if (!id || !data) return data || null;
             var state = stateFor(id);
             var generation = invalidate(state, false);
+            data = captureMachineLimits(data);
             state.full = { tier: "full", generation: generation, data: data, at: now() };
             state.summary = null;
             return data;
+        },
+        machineLimits: function (assistant) {
+            var held = machineLimitsByAssistant[assistant];
+            return held ? held.limits : null;
         }
     };
 }

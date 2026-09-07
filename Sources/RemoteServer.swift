@@ -4606,7 +4606,6 @@ final class RemoteServer: @unchecked Sendable {
         var usage: Orchestrator.Usage?
         var context: SessionInfo.Context?
         var costOverrideUsd: Double?
-        var limits = SessionInfo.Limits()
         var model: String?
         var fastMode: SessionInfo.FastMode?
         // The transcript is read if it can be, and its absence no longer silences everything
@@ -4623,7 +4622,6 @@ final class RemoteServer: @unchecked Sendable {
                     cacheDirectory: ProjectStatus.cacheDirectory, sessionID: sessionID)
                 usage = Orchestrator.claudeUsage(transcript: record.url)
                 let read = SessionInfo.claudeLimits(transcript: data)
-                limits = read.limits
                 model = read.model
                 let usageModel = usage?.model.flatMap { $0.hasPrefix("<") ? nil : $0 }
                 context = SessionInfo.claudeContext(
@@ -4632,20 +4630,11 @@ final class RemoteServer: @unchecked Sendable {
             case .codex:
                 usage = Orchestrator.codexUsage(rollout: record.url)
                 context = SessionInfo.codexContext(rollout: data)
-                limits = SessionInfo.codexLimits(rollout: data)
                 model = usage?.model
                 fastMode = SessionInfo.codexFastMode(rollout: data)
             }
         }
         if model == nil, let named = usage?.model, !named.hasPrefix("<") { model = named }
-        // The percentages Claude Code never writes into a transcript, as the status line wrote
-        // them down. Laid under whatever the transcript did say — see `SessionInfo.merged`.
-        if session.assistant == .claude {
-            limits = SessionInfo.merged(
-                transcript: limits,
-                cache: SessionInfo.claudeLimits(cacheDirectory: ProjectStatus.cacheDirectory))
-        }
-
         // Session info is now the one home for every project address. Keep the smaller `deploy`
         // field — which a local test or build rides in too, being the same chip — for older web
         // clients, while current clients receive the same full list `/links` exposes.
@@ -4658,6 +4647,14 @@ final class RemoteServer: @unchecked Sendable {
 
         let permission = includeDeferred && session.assistant == .claude
             ? SessionInfo.permissionMode(screen: Targets.visibleScreen(of: session)) : nil
+        let files = includeDeferred ? cwd.flatMap { SessionInfo.files(cwd: $0) } : nil
+        // Plan windows belong to the provider account on this Mac. Reading them only after the
+        // slower Session-specific work also makes `readAtMs` order concurrent full/summary
+        // responses by the snapshot they contain, rather than by whichever response arrived last.
+        let limitReadAt = Date()
+        let limits = session.assistant.map {
+            AssistantQuota.machineLimits(for: $0, now: limitReadAt)
+        } ?? SessionInfo.Limits()
         var payload = SessionInfo.payload(
             id: session.id, title: publication.labels[session.id] ?? session.coordinate,
             assistant: session.assistant,
@@ -4666,9 +4663,13 @@ final class RemoteServer: @unchecked Sendable {
             model: model,
             cwd: cwd, startedAt: publishedIdentity?.processStart,
             usage: usage, context: context, costOverrideUsd: costOverrideUsd, limits: limits,
-            files: includeDeferred ? cwd.flatMap { SessionInfo.files(cwd: $0) } : nil,
+            files: files,
             deploy: deploy, models: SessionInfo.models(for: session.assistant),
             permission: permission, fastMode: fastMode)
+        if session.assistant != nil, var plan = payload["limits"] as? [String: Any] {
+            plan["readAtMs"] = Int(limitReadAt.timeIntervalSince1970 * 1_000)
+            payload["limits"] = plan
+        }
         if includeDeferred { payload["links"] = links }
         return payload
     }

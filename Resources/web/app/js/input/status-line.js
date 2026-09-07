@@ -216,7 +216,8 @@ export var StatusLine = (function () {
         button.innerHTML = '<span class="item model">' + assistantLogo(s.assistant) +
             '<span class="word">' + esc(assistantName(s.assistant)) + '</span></span>' +
             '<span class="item empty">' + esc(T.webLoading) + "</span>";
-        drawRest(null, null);
+        var machineLimits = SessionFacts.machineLimits(s.assistant);
+        drawRest(machineLimits ? { limits: machineLimits } : null, null);
     }
 
     /** After the fast half is on screen, and never before it. `requestIdleCallback` has a
