@@ -33,6 +33,25 @@ func remoteErrorMessage(_ response: RemoteServer.Response) -> String {
     return ((body?["error"] as? [String: Any])?["message"] as? String) ?? ""
 }
 
+private final class CloudRouteResultBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var response: RemoteServer.Response?
+    private var text = ""
+
+    func record(response: RemoteServer.Response) {
+        lock.lock(); self.response = response; lock.unlock()
+    }
+
+    func record(text: String) {
+        lock.lock(); self.text = text; lock.unlock()
+    }
+
+    func snapshot() -> (status: Int?, text: String) {
+        lock.lock(); defer { lock.unlock() }
+        return (response?.status, text)
+    }
+}
+
 func runSessionLaunchTests() {
 group("a browser token is adopted before its credential leaves the address bar") {
     let browser = RemoteAuth.addDevice(name: "browser adoption test", caps: [.read])
@@ -358,6 +377,22 @@ group("terminal writes cannot hold the remote server queue") {
                                 assistant: .codex)
     RemoteServer.sessionPayloadForTesting = ([session], [:])
 
+    let cloudFinished = DispatchSemaphore(value: 0)
+    let cloudResult = CloudRouteResultBox()
+    RemoteServer.terminalSendForTesting = { text, _ in
+        cloudResult.record(text: text)
+        return nil
+    }
+    Task {
+        let response = await RemoteServer.shared.routeVerifiedCloudCommand(
+            .send(session: session.id, text: "from cloud", images: []),
+            sender: "cloud:viewer", idempotencyKey: UUID().uuidString)
+        cloudResult.record(response: response)
+        cloudFinished.signal()
+    }
+    let cloudSettled = cloudFinished.wait(timeout: .now() + 1) == .success
+    let cloudSnapshot = cloudResult.snapshot()
+
     let entered = DispatchSemaphore(value: 0)
     let release = DispatchSemaphore(value: 0)
     let responses = DispatchSemaphore(value: 0)
@@ -383,8 +418,9 @@ group("terminal writes cannot hold the remote server queue") {
             responses.signal()
         }
     }
-    check("the first terminal command actually entered its isolated queue",
-          entered.wait(timeout: .now() + 1) == .success)
+    check("Cloud and HTTP sends both enter the isolated terminal route",
+          cloudSettled && cloudSnapshot.status == 200 && cloudSnapshot.text == "from cloud"
+              && entered.wait(timeout: .now() + 1) == .success)
 
     let health = DispatchSemaphore(value: 0)
     let heartbeat = DispatchSemaphore(value: 0)

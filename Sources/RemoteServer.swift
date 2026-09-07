@@ -297,9 +297,19 @@ final class RemoteServer: @unchecked Sendable {
                                                           "The local command broker is unavailable."))
                     return
                 }
-                continuation.resume(returning: self.dispatch(Request(
-                    verifiedCloud: command, sender: sender, idempotencyKey: idempotencyKey
-                )))
+                let request = Request(
+                    verifiedCloud: command, sender: sender, idempotencyKey: idempotencyKey)
+                // The HTTP connection door admits these routes to bounded terminal workers
+                // before `dispatch`. Cloud commands have no NWConnection, but they must enter
+                // the same workers: `dispatch` intentionally has no synchronous `/send` case,
+                // and running the other terminal mutations there would hold this server queue.
+                if request.method == "POST", Self.isTerminalSend(request.path) {
+                    self.sendTerminal(request) { continuation.resume(returning: $0) }
+                } else if request.method == "POST", Self.isTerminalWorkerRoute(request.path) {
+                    self.terminalMutation(request) { continuation.resume(returning: $0) }
+                } else {
+                    continuation.resume(returning: self.dispatch(request))
+                }
             }
         }
     }
