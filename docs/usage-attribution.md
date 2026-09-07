@@ -256,3 +256,40 @@ Old rows may be assigned when durable evidence exists. They must not be guessed 
 basename, root Session, or successful task state. When evidence is incomplete, reports retain an
 Unknown/Partial bucket. Event ids make retries idempotent, and the supersession chain preserves the
 reason a Feature total changed.
+
+## Where a Feature's implementation-versus-review split belongs, and where it cannot go
+
+Asked for on 2026-09-06: show, per Feature, how much was spent implementing it and how much
+reviewing it. The join that answers it exists today — `GET /v1/orchestrator/usage?group=task` gives
+tokens and USD per task, and the Project read already carries each worktree's tasks — but **the
+worktree is the wrong unit and cannot be made the right one.**
+
+Two measurements, on this machine, on 2026-09-06:
+
+- **128 of 131 worktrees hold exactly one task.** A per-worktree implementation/review split is one
+  slice on every card.
+- **Of this Project's 65 review tasks, 14 have a worktree.** The other 51 ran with
+  `isolation: none`, so they produce no worktree row at all: **$711.80 of $827.87 of review spend —
+  86% — is invisible to that screen.** That is not a gap that will close. `dispatch-policy.md` says
+  a review session produces findings and not bytes, so a review is dispatched unisolated *by rule*,
+  and a unit keyed on worktrees can never see one.
+
+The Feature is the unit that already spans them: 28 Features covered 19, 16, 12, 10, 8, 6 and fewer
+worktrees each.
+
+**One Feature identity, not two.** The screen reads `acceptedFeatures` — the classifier's four rungs,
+`explicit_feature_hint` 0.95 down to `lineage` 0.66. Store version 6 gave `usage_intervals.graph_id`
+its producer, and a declared `graph_id` is harder evidence than a title prefix, so it belongs
+**above** `explicit_feature_hint` as the strongest rung, feeding the same accepted Feature — rather
+than becoming a second, parallel notion of Feature that would give one Feature two honest and
+different totals. Decided by root on 2026-09-06 after the alternatives were priced; the rung itself
+is a separate delivery.
+
+**Two things the reader must not collapse.** A NULL `graph_id` means *this task's graph was never
+recorded*, not *this task had no graph*. And the review-receipt tables carry no marker for a write
+that failed, so *no receipt found* does not mean *no review happened* — see the store's own note.
+
+The role predicate is `Orchestrator.requiresTypedReview(_:)` with `kindDenotesReview(_:)` beneath
+it. Do not build a second table of kind spellings: `kind` is unvalidated free text — one
+`String(prefix(40))` in `OrchestratorDraft`, no vocabulary check — and 81 of 347 tasks on this
+machine carry a spelling outside the four the guide documents, the most recent two days old.
