@@ -1352,13 +1352,43 @@ enum RemotePage {
         }
 
         self.addEventListener("notificationclick", function (event) {
-            event.notification.close();
+            // **The first line of this handler, and nothing before it.** Everything else here is
+            // downstream of the handler having been entered at all, and on 2026-09-07 two readings
+            // said a worker had woken and left nothing whatsoever behind — no trace, no message,
+            // no record. That is what a handler that dies on its first statement looks like, and
+            // for the life of this file the first statement was `event.notification.close()`.
+            say("notificationclick: handler entered");
+
             var url = (event.notification.data && event.notification.data.url) || "/";
+
+            // **Closing it comes last, and only when it is old enough to be closed.** WebKit
+            // refuses to dismiss a persistent notification shortly after it was shown —
+            // `Persistent notifications cannot be closed shortly after they are shown.` appears
+            // on the console before every one of these — and a refusal at the top of a handler
+            // takes the whole tap with it. Whether it merely warns or actually throws is not
+            // something this end can find out from the outside, so it is moved out of the way and
+            // wrapped, which costs nothing either way. The tap dismisses the notification on iOS
+            // regardless; on the platforms where it does not, one that has been on screen for a
+            // second is past the window this complains about.
+            var closed = "not tried";
+            try {
+                var shown = event.notification.timestamp;
+                var age = (typeof shown === "number") ? (Date.now() - shown) : null;
+                if (age === null || age > 1000) {
+                    event.notification.close();
+                    closed = "closed";
+                } else {
+                    closed = "left open, too new: " + age + "ms";
+                }
+            } catch (e) {
+                closed = "close refused: " + ((e && e.message) || String(e));
+            }
+            say("close attempt", { outcome: closed });
             // What this tap was for, decided here and now, because the identity has to travel on
             // the message as well as into the store: the page uses it to tell "the message for
             // this tap arrived" from "a second tap happened", and those two want opposite things
             // done about the record. Nothing about it is awaited in front of the roads below.
-            say("notificationclick", { url: url, build: BUILD });
+            say("notificationclick: url resolved", { url: url, build: BUILD });
             var want = null;
             if (wantedFragment(url)) {
                 want = { at: Date.now(), url: url, id: String(Date.now()) + "." + (++wantCount) };

@@ -1247,6 +1247,12 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
   check("both halves of the road say what they are doing, under one prefix",
         pageSource.includes("[clawdline/sw] ") && routeSource.includes("[clawdline/page] "));
   // And quiet where it would otherwise print once per session list.
+  // **And the worker's half reaches the page's console.** Safari only lists a running worker as an
+  // inspectable target and stops one that is idle, so the console that can always be attached to
+  // is the page's. The carrier is Cache Storage, not a message: a diagnostic that travels the road
+  // being diagnosed is silent exactly when it is wanted.
+  check("what the worker wrote is repeated into the page's console as it is read back",
+        /say\("worker said"/.test(routeSource));
   check("the look that found nothing does not say so",
         routeSource.includes('if (answer !== "none") say('));
   check("a worker that is not this build is thrown away and installed again",

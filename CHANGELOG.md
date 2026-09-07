@@ -9,6 +9,19 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: closing the notification was the first thing a tap did, and the platform refuses it
+
+WebKit will not dismiss a persistent notification shortly after it was shown, and says so on the
+console before every tap: *Persistent notifications cannot be closed shortly after they are shown.*
+That call was the first statement in the handler, ahead of the message, the record and the trace —
+so a refusal there is a tap that leaves nothing behind at all, which is exactly the reading two
+reports from a phone produced and nothing could explain. Whether it warns or throws is not
+answerable from outside, and it does not need to be: it is last now, guarded, and skipped entirely
+for a notification too new to be closed.
+
+The handler also says when it has been entered, before anything can go wrong, so the difference
+between a worker that never ran and one that died on its first line is one line of console.
+
 ### Fixed: a worker that is not this build is now replaced rather than asked again
 
 Registering on every load and calling `update()` at both wake-ups are the polite ways to ask a

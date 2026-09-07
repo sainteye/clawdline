@@ -428,6 +428,15 @@ export function readWorkerTrace() {
                 readThrough = entry.seq;
                 fresh += 1;
                 if (entry.event === "sw.postMessage") posted += 1;
+                // **The worker's half, in the page's console.** Safari gives a service worker its
+                // own inspector target and only while it is running — a worker is stopped when
+                // idle, so the target is usually not in the menu by the time anybody looks. This
+                // carries what it wrote into the one console that is always attachable.
+                //
+                // Through Cache Storage rather than a message: the thing being diagnosed is a
+                // message that does not arrive, and a diagnostic that shares its failure mode
+                // says nothing on exactly the occasions it is needed.
+                say("worker said", { event: entry.event, at: entry.at, data: entry.data });
                 Diagnostics.note(entry.event, entry.data);
             }
             Diagnostics.sourceRead(WORKER_TRACE_SOURCE, "merged", fresh);
