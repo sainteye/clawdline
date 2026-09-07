@@ -102,6 +102,15 @@ try {
     assert.equal(traditional.lang, "zh-Hant");
     assert.notEqual(traditional.webProjects, "Projects",
         "the hosted bundle contains translated UI strings rather than the English fallback");
+    assert.deepEqual({
+        title: traditional.webInfoFastMode,
+        standard: traditional.webInfoFastStandard,
+        fast: traditional.webInfoFastOn
+    }, {
+        title: "快速模式",
+        standard: "關閉",
+        fast: "開啟"
+    }, "new Session controls are exported into the hosted Traditional Chinese catalog");
 
     /* ---- the headers the stamp earns, and the policy it allows ----------- */
 

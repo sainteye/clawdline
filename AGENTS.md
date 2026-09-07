@@ -777,6 +777,13 @@ rather than to a file you have to wait for.
   interrupt work owned by another session. Before a root runs it, re-check `git status` and make
   sure its wildcard source and resource inputs will not absorb another session's uncommitted work;
   if they would, build the exact intended tree in an isolated snapshot or coordinate first.
+- **An unqualified Clawdline deploy includes the hosted console.** The user works from the Cloud
+  version, so installing/restarting the Mac app alone is not a completed deploy. Unless the request
+  explicitly limits the target to one surface, deploy the exact accepted commit both as the native
+  app and as the `app.clawdline.com` bundle: build the latter with `tools/build-web-app.py`, upload
+  it to the Cloudflare Pages project `clawdline-app`, then verify the deployment-specific
+  `*.pages.dev` hostname and `https://app.clawdline.com/BUILD.json` name the expected build stamp.
+  This default adds the hosted console, not the unrelated marketing, API, or relay deployments.
 - **One named operational finalizer owns the side effects.** When a workflow explicitly names a
   downstream root as the finalizer for build, restart, or deploy, the landing root stops after the
   commit and its exact-tree verification receipt. It sends that exact commit and receipt to the
