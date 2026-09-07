@@ -756,6 +756,7 @@ assert.equal(readOnlyCloud.readWaiters.size, 0,
     "and neither refusal leaves a waiter behind to be settled by somebody else's answer");
 
 const readTimers = [];
+const readTimerDelays = [];
 /** Sealing an envelope is real WebCrypto, so a published read is several turns away, not two. */
 async function until(predicate, what) {
     for (let turn = 0; turn < 500; turn += 1) {
@@ -782,7 +783,9 @@ function makeReadingCloud(socketClass = FakeWebSocket) {
         WebSocket: socketClass, allowWrites: true, nextSequence: function () {
             return Promise.resolve(readTimers.length + 900);
         },
-        setTimeout: function (fn) { readTimers.push(fn); return readTimers.length; },
+        setTimeout: function (fn, delay) {
+            readTimers.push(fn); readTimerDelays.push(delay); return readTimers.length;
+        },
         clearTimeout: function () {}
     });
 }
@@ -1199,6 +1202,135 @@ await answerPicture(pacedCloud, pacedSocket, pngAnswer("11111111-2222-4333-8444-
 await answerPicture(pacedCloud, pacedSocket, pngAnswer("11111111-2222-4333-8444-555555555553"));
 assert.equal((await Promise.all(paced)).length, 3, "and every picture is delivered in the end");
 pacedCloud.stop();
+
+/* Cloud controls that used to disappear at the transport seam. Every write waits for the Mac's
+ * action answer: accepting a relay envelope is not evidence that it was executed. */
+const controlCloud = makeReadingCloud();
+const controlSocket = await becomeReady(controlCloud);
+const controlSession = await sealEnvelope({
+    ch: "s/mac-01/session-01", seq: 100, ts: 1787817600000, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ id: "session-01", label: "cloud session" }), masterKey, signingKey);
+controlSocket.receive({ type: "envelope", envelope: controlSession });
+const controlOrchestrator = await sealEnvelope({
+    ch: "orch/mac-01", seq: 101, ts: 1787817600001, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ schedules: [{ id: "morning", title: "Morning" }], at: 1787817600 }),
+masterKey, signingKey);
+controlSocket.receive({ type: "envelope", envelope: controlOrchestrator });
+await controlCloud.messageChain;
+
+const sentPrompt = controlCloud.send("session-01", "ship it", []);
+await until(function () { return publishedReads(controlSocket).length === 1; },
+    "the acknowledged prompt to leave");
+let controlRequest = await requestBody(publishedReads(controlSocket)[0]);
+assert.equal(controlRequest.type, "send");
+assert.equal(controlRequest.session, "session-01");
+assert.match(controlRequest.request, /^[0-9a-f-]{36}$/,
+    "a prompt has an answer name, so relay acceptance is not mistaken for execution");
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 200, body: { ok: true }
+});
+assert.equal((await sentPrompt).ok, true, "send resolves only after the Mac accepted the prompt");
+
+const scheduleDetail = controlCloud.schedule("morning");
+await until(function () { return publishedReads(controlSocket).length === 2; },
+    "the schedule detail read to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[1]);
+assert.deepEqual({ type: controlRequest.type, id: controlRequest.id },
+    { type: "schedule", id: "morning" },
+    "a Cloud schedule row asks its owning Mac for the detail that contains project_dir");
+await answerRead(controlCloud, controlSocket, {
+    read: "read:" + controlRequest.request, status: 200,
+    body: { schedule: { id: "morning", task: { project_dir: "/code/app" } } }
+}, "__clawdline_machine__");
+assert.equal((await scheduleDetail).schedule.task.project_dir, "/code/app");
+
+const scheduleBody = { title: "Morning", when: { at: "09:00", days: "daily" },
+    task: { place_id: "portfolio", instructions: "Publish" } };
+controlCloud.placeRoutes.set("portfolio", { machine: "mac-01", id: "local-portfolio",
+    path: "/code/app" });
+for (const operation of [
+    ["createSchedule", [scheduleBody], "schedule-create", null],
+    ["updateSchedule", ["morning", scheduleBody], "schedule-update", "morning"],
+    ["deleteSchedule", ["morning"], "schedule-delete", "morning"]
+]) {
+    const before = publishedReads(controlSocket).length;
+    const pending = controlCloud[operation[0]](...operation[1]);
+    await until(function () { return publishedReads(controlSocket).length === before + 1; },
+        operation[0] + " to leave");
+    controlRequest = await requestBody(publishedReads(controlSocket)[before]);
+    assert.equal(controlRequest.type, operation[2]);
+    if (operation[3]) assert.equal(controlRequest.id, operation[3]);
+    await answerRead(controlCloud, controlSocket, {
+        read: "action:" + controlRequest.request, status: 200, body: { ok: true }
+    }, "__clawdline_machine__");
+    assert.equal((await pending).ok, true, operation[0] + " returns the Mac's action answer");
+}
+
+const beforePushKey = publishedReads(controlSocket).length;
+const pushKey = controlCloud.pushKey();
+await until(function () { return publishedReads(controlSocket).length === beforePushKey + 1; },
+    "the push key read to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforePushKey]);
+assert.equal(controlRequest.type, "push-key");
+await answerRead(controlCloud, controlSocket, {
+    read: "read:" + controlRequest.request, status: 200, body: { key: "vapid-public" }
+}, "__clawdline_machine__");
+assert.equal((await pushKey).key, "vapid-public");
+
+const subscription = { endpoint: "https://push.example/sub", expirationTime: null,
+    keys: { p256dh: "key", auth: "auth" } };
+const beforeSubscribe = publishedReads(controlSocket).length;
+const subscribedPush = controlCloud.pushSubscribe(subscription);
+await until(function () { return publishedReads(controlSocket).length === beforeSubscribe + 1; },
+    "the push subscription to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeSubscribe]);
+assert.equal(controlRequest.type, "push-subscribe");
+assert.deepEqual(controlRequest.subscription, subscription);
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 200, body: { ok: true, id: "push-1" }
+}, "__clawdline_machine__");
+assert.equal((await subscribedPush).id, "push-1");
+
+const beforePushTest = publishedReads(controlSocket).length;
+const testedPush = controlCloud.pushTest("session-01");
+await until(function () { return publishedReads(controlSocket).length === beforePushTest + 1; },
+    "the push test to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforePushTest]);
+assert.deepEqual({ type: controlRequest.type, target: controlRequest.target },
+    { type: "push-test", target: "session-01" });
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 200, body: { ok: true, sent: 1 }
+}, "__clawdline_machine__");
+assert.equal((await testedPush).sent, 1);
+
+const beforeUnsubscribe = publishedReads(controlSocket).length;
+const unsubscribedPush = controlCloud.pushUnsubscribe("push-1");
+await until(function () { return publishedReads(controlSocket).length === beforeUnsubscribe + 1; },
+    "the push unsubscribe to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeUnsubscribe]);
+assert.deepEqual({ type: controlRequest.type, id: controlRequest.id },
+    { type: "push-unsubscribe", id: "push-1" });
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 200, body: { ok: true }
+}, "__clawdline_machine__");
+assert.equal((await unsubscribedPush).ok, true);
+
+const beforeVoice = publishedReads(controlSocket).length;
+const heard = controlCloud.voice("AAEC", 16000);
+assert.equal(readTimerDelays.at(-1), 6 * 60 * 1000,
+    "a permitted five-minute recording does not inherit a one-minute read deadline");
+await until(function () { return publishedReads(controlSocket).length === beforeVoice + 1; },
+    "the voice command to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeVoice]);
+assert.deepEqual({ type: controlRequest.type, audio: controlRequest.audio, rate: controlRequest.rate },
+    { type: "voice", audio: "AAEC", rate: 16000 });
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 200, body: { text: "聽到了" }
+}, "__clawdline_machine__");
+assert.equal((await heard).text, "聽到了");
+controlCloud.stop();
 
 // ── 一個放著不動就會過期的畫面，以及它唯一的檢查點 ──────────────────────────
 // 手機把背景分頁的連線暫停，回來時不補送錯過的東西；而一個「答完就不再變」的 session

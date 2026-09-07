@@ -12,10 +12,11 @@ struct CloudLocalRoute: Sendable {
     let body: Data
 
     init(command: CloudHeadlessCommand) {
-        method = "POST"
         query = [:]
+        var routeMethod = "POST"
         var route: String
-        let object: [String: Any]
+        var object: [String: Any] = [:]
+        var encodedBody: Data?
         switch command {
         case .send(let session, let text, let images):
             route = "/v1/sessions/\(Self.segment(session))/send"
@@ -34,11 +35,33 @@ struct CloudLocalRoute: Sendable {
             route = "/v1/places/\(Self.segment(place))/resume/"
             if !assistant.isEmpty { route += Self.segment(assistant) + "/" }
             route += Self.segment(session)
-            object = [:]
+        case .scheduleCreate(let data):
+            route = "/v1/orchestrator/schedules"
+            encodedBody = data
+        case .scheduleUpdate(let id, let data):
+            routeMethod = "PATCH"
+            route = "/v1/orchestrator/schedules/\(Self.segment(id))"
+            encodedBody = data
+        case .scheduleDelete(let id):
+            routeMethod = "DELETE"
+            route = "/v1/orchestrator/schedules/\(Self.segment(id))"
+        case .pushSubscribe(let data):
+            route = "/v1/push/subscribe"
+            encodedBody = data
+        case .pushUnsubscribe(let id):
+            route = "/v1/push/unsubscribe"
+            object = ["id": id]
+        case .pushTest(let session):
+            route = "/v1/push/test"
+            object = session.isEmpty ? [:] : ["session_id": session]
+        case .voice(let audio, let rate):
+            route = "/v1/voice"
+            object = ["audio": audio, "rate": rate]
         }
+        method = routeMethod
         path = route
-        body = (try? JSONSerialization.data(withJSONObject: object,
-                                             options: [.withoutEscapingSlashes])) ?? Data()
+        body = encodedBody ?? (try? JSONSerialization.data(
+            withJSONObject: object, options: [.withoutEscapingSlashes])) ?? Data()
     }
 
     init(read: CloudHeadlessRead) {
@@ -73,6 +96,10 @@ struct CloudLocalRoute: Sendable {
         case .pastSessions(_, _, let place, let assistant):
             route = "/v1/places/\(Self.segment(place))/sessions"
             if !assistant.isEmpty { route += "/" + Self.segment(assistant) }
+        case .schedule(_, _, let id):
+            route = "/v1/orchestrator/schedules/\(Self.segment(id))"
+        case .pushKey:
+            route = "/v1/push/key"
         }
         path = route
         query = parameters
@@ -80,5 +107,100 @@ struct CloudLocalRoute: Sendable {
 
     private static func segment(_ value: String) -> String {
         CloudAppBridge.channelSegment(value)
+    }
+}
+
+/// Dictation is the one local route that deliberately does not run through `dispatch`: Whisper
+/// takes seconds, so the HTTP server hands it to a private queue before answering its socket. A
+/// relay command has no socket to hand over. This actor provides the same bounded asynchronous
+/// door, while the actual recognizer remains `Whisper.transcribe` — shared with both the menu bar
+/// and the local web route, and globally serialized there so two transports cannot start two
+/// whisper processes on one Mac.
+actor CloudVoiceCommandRouter {
+    static let shared = CloudVoiceCommandRouter()
+
+    private var active = 0
+    private var remembered: [String: (at: Date, result: CloudCommandResult)] = [:]
+
+    func route(audio: String, rate: Int, sender: String,
+               idempotencyKey: String) async -> CloudCommandResult {
+        let now = Date()
+        remembered = remembered.filter { now.timeIntervalSince($0.value.at) < 600 }
+        if let seen = remembered[idempotencyKey] { return seen.result }
+
+        let samples: Data
+        switch RemoteServer.voiceSamples(from: ["audio": audio, "rate": rate]) {
+        case .samples(let data):
+            samples = data
+        case .refused(let response):
+            let result = Self.commandResult(response)
+            remembered[idempotencyKey] = (now, result)
+            return result
+        }
+
+        guard active < RemoteServer.voiceDepth else {
+            return Self.failure(429, "busy",
+                "Two recordings are already waiting to be transcribed on this Mac. "
+                    + "Try again in a moment.")
+        }
+        active += 1
+        let result = await Task.detached(priority: .userInitiated) {
+            Self.transcribe(samples, sender: "cloud:\(sender)")
+        }.value
+        active -= 1
+        if result.status == 200 { remembered[idempotencyKey] = (Date(), result) }
+        return result
+    }
+
+    private static func transcribe(_ samples: Data, sender: String) -> CloudCommandResult {
+        switch Whisper.status(binary: Config.shared.whisperBinary,
+                              model: Config.shared.whisperModel) {
+        case .noBinary:
+            return failure(503, "no_whisper",
+                "This Mac has no whisper-cli, so there is nothing here to read a recording with. "
+                    + "See docs/whisper.md.", ["reason": "no_binary"])
+        case .noModel:
+            return failure(503, "no_whisper",
+                "whisper-cli is installed on this Mac and has no model to read with. "
+                    + "See docs/whisper.md.", ["reason": "no_model"])
+        case .ready:
+            break
+        }
+
+        let started = Date()
+        let heard = Whisper.transcribe(samples, rate: RemoteServer.voiceRate, vocabulary: [],
+                                       language: Config.shared.voiceLanguage)
+        let milliseconds = Int(Date().timeIntervalSince(started) * 1_000)
+        let text = heard.map {
+            Whisper.applyVocabulary($0,
+                terms: Voice.alwaysExpected + Config.shared.voiceVocabulary)
+        } ?? ""
+        let seconds = Double(samples.count) / (RemoteServer.voiceRate * 2)
+        RemoteAuth.audit("voice.transcribe", ["device": sender,
+            "seconds": String(format: "%.1f", seconds), "ms": "\(milliseconds)",
+            "chars": "\(text.count)", "ok": heard == nil ? "0" : "1"])
+        return success(["text": text, "ms": milliseconds])
+    }
+
+    private static func commandResult(_ response: RemoteServer.Response) -> CloudCommandResult {
+        let object = (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any]
+        let error = object?["error"] as? [String: Any]
+        return CloudCommandResult(status: response.status, code: error?["code"] as? String,
+                                  body: response.body)
+    }
+
+    private static func success(_ body: [String: Any]) -> CloudCommandResult {
+        let data = (try? JSONSerialization.data(
+            withJSONObject: body, options: [.withoutEscapingSlashes])) ?? Data()
+        return CloudCommandResult(status: 200, code: nil, body: data)
+    }
+
+    private static func failure(_ status: Int, _ code: String, _ message: String,
+                                _ extra: [String: Any] = [:]) -> CloudCommandResult {
+        var error: [String: Any] = ["code": code, "message": message]
+        extra.forEach { error[$0.key] = $0.value }
+        let data = (try? JSONSerialization.data(
+            withJSONObject: ["error": error], options: [.withoutEscapingSlashes])) ?? Data()
+        return CloudCommandResult(status: status, code: code, body: data)
     }
 }

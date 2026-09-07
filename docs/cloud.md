@@ -439,9 +439,11 @@ SecurityTool invocation.
 - **Other hosted locales.** Traditional Chinese is bundled from the same catalog as the Mac.
   Other non-English catalogs still fall back to the English document until they are exported and
   named in the build declaration.
-- **Push.** Web push needs the Mac's VAPID keys and does not work through the relay, so the hosted
-  console registers no service worker.
-- **The reads that still do not cross.** Seven do now: a session's messages, both tiers of its
+- **Push is machine-scoped.** The hosted worker and subscription now use the one connected Mac's
+  VAPID key through an encrypted request/reply. An account showing more than one Mac is refused
+  with `cloud_machine_ambiguous` instead of registering a browser subscription against whichever
+  machine happened to publish first.
+- **The reads that still do not cross.** Nine do now: a session's messages, both tiers of its
   Info, one background agent's conversation, one background command's output, its skills menu, its
   Git panel and the pictures inside its transcript. The viewer asks on `ctl/<machine>` and the Mac
   answers on `t/<machine>/<session>`, which is the channel the viewer had always subscribed to and
@@ -463,6 +465,10 @@ SecurityTool invocation.
   `orch/` snapshot now carries `schedules` beside `tasks`, and an unpublished field is refused
   rather than drawn as an empty list — the two paragraphs above **The `orch/` snapshot carries
   three things** say how, and why an empty inventory and a missing one had to be different answers.
+  A row's full detail is a separate read, just as it is on the direct path; that is where the task's
+  project directory comes from, after which the shared `places()` and schedule renderer supply the
+  project label and mark. Create, update and delete use the same local schedule routes and return a
+  named action answer instead of treating relay acceptance as completion.
 - **A read an older Mac has never heard of ends in a timeout, not in a refusal.** A malformed or
   unknown read is answered to the bridge and published to nobody — before it is parsed there is
   neither a body to send nor a name to send it under — so a hosted console that knows a read the

@@ -32,6 +32,7 @@ function readKey(identity, read) {
 
 /** How long a read may go unanswered before it is an answer of its own. */
 const READ_TIMEOUT_MS = 60000;
+const VOICE_TIMEOUT_MS = 6 * 60 * 1000;
 
 /** The agent or shell a read is about, as the string the Mac will echo back inside `read`. */
 function readSubject(value) {
@@ -487,14 +488,45 @@ export class CloudClient {
         return Array.from(found).sort();
     }
 
-    _machineRequest(machine, type, extra, kind) {
+    /** A machine-scoped control cannot guess in a fleet. Push subscriptions and dictation belong
+     * to one Mac's keys and model, so they are available when this account currently names one. */
+    _onlyMachine(feature) {
+        var machines = this._knownMachines();
+        if (!machines.length) {
+            throw cloudError("cloud_read_unavailable",
+                "no Mac has published an inventory to this account yet");
+        }
+        if (machines.length !== 1) {
+            throw cloudError("cloud_machine_ambiguous",
+                feature + " needs one Mac, and this account currently has more than one");
+        }
+        return machines[0];
+    }
+
+    _scheduleMachine(value) {
+        var id = String(value || "");
+        var found = [];
+        this.orchestratorSnapshots.forEach(function (snapshot, machine) {
+            var schedules = snapshot && Array.isArray(snapshot.schedules) ? snapshot.schedules : [];
+            if (schedules.some(function (row) { return row && row.id === id; })) found.push(machine);
+        });
+        if (found.length === 1) return found[0];
+        if (found.length > 1) {
+            throw cloudError("cloud_schedule_ambiguous",
+                "more than one Mac published this schedule id");
+        }
+        throw cloudError("not_found", "this schedule is not in the Cloud inventory");
+    }
+
+    _machineRequest(machine, type, extra, kind, timeoutMs) {
         if (typeof machine !== "string" || !machine) {
             return Promise.reject(cloudError("cloud_read_unavailable",
                 "no Mac has published an inventory to this account yet"));
         }
         var request = requestID();
         return this._read({ machine: machine, session: MACHINE_REPLY_SESSION }, type,
-            Object.assign({ request: request }, extra || {}), (kind || "read") + ":" + request);
+            Object.assign({ request: request }, extra || {}), (kind || "read") + ":" + request,
+            timeoutMs);
     }
 
     /** Projects and the start sheet are account views, so each Mac answers its own inventory. */
@@ -567,6 +599,55 @@ export class CloudClient {
         return this._machineRequest(route.machine, "resume", {
             place: route.id, past: String(past || ""), assistant: assistant || ""
         }, "action");
+    }
+
+    schedule(id) {
+        try {
+            var schedule = String(id || "");
+            var machine = this._scheduleMachine(schedule);
+            return this._machineRequest(machine, "schedule", { id: schedule }, "read");
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    _scheduleBody(schedule) {
+        var body = schedule && typeof schedule === "object" && !Array.isArray(schedule)
+            ? Object.assign({}, schedule) : {};
+        var task = body.task && typeof body.task === "object" && !Array.isArray(body.task)
+            ? Object.assign({}, body.task) : {};
+        var place = this._place(task.place_id);
+        task.place_id = place.id;
+        body.task = task;
+        return { machine: place.machine, schedule: body };
+    }
+
+    createSchedule(schedule) {
+        try {
+            var routed = this._scheduleBody(schedule);
+            return this._machineRequest(routed.machine, "schedule-create",
+                { schedule: routed.schedule }, "action");
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    updateSchedule(id, schedule) {
+        try {
+            var scheduleID = String(id || "");
+            var machine = this._scheduleMachine(scheduleID);
+            var routed = this._scheduleBody(schedule);
+            if (routed.machine !== machine) {
+                return Promise.reject(cloudError("cloud_schedule_machine_mismatch",
+                    "a schedule cannot be moved to a Project on another Mac"));
+            }
+            return this._machineRequest(machine, "schedule-update",
+                { id: scheduleID, schedule: routed.schedule }, "action");
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    deleteSchedule(id) {
+        try {
+            var scheduleID = String(id || "");
+            return this._machineRequest(this._scheduleMachine(scheduleID), "schedule-delete",
+                { id: scheduleID }, "action");
+        } catch (error) { return Promise.reject(error); }
     }
 
     /**
@@ -676,7 +757,7 @@ export class CloudClient {
      * rather than spending another envelope sequence, which is what the direct path's own
      * transcript coalescing does for the same reason.
      */
-    _read(value, type, extra, answer) {
+    _read(value, type, extra, answer, timeoutMs) {
         var identity = this._sessionIdentity(value);
         // The refusal that is deliberate, and it is the relay's rather than this page's: PROTOCOL
         // §12 says publishing to `ctl/` needs `send_prompt`, in either class, and a read has to
@@ -701,7 +782,7 @@ export class CloudClient {
             waiters.timer = self.setTimeout(function () {
                 self._settleRead(key, null,
                     cloudError("cloud_read_timeout", "the Mac did not answer this read"));
-            }, self.readTimeoutMs);
+            }, timeoutMs || self.readTimeoutMs);
             self.subscribe(["t/" + channelSegment(identity.machine) + "/"
                 + channelSegment(identity.session)]);
             Promise.resolve()
@@ -850,9 +931,13 @@ export class CloudClient {
 
     send(value, text, images) {
         var identity = this._sessionIdentity(value);
-        return this._publishCommand(identity.machine, "send", {
-            session: identity.session, text: text || "", images: images || []
-        }, "ctl");
+        if (!this.allowWrites) {
+            return Promise.reject(cloudError("cloud_read_only", "cloud writes are disabled"));
+        }
+        var request = requestID();
+        return this._read(identity, "send", {
+            request: request, text: text || "", images: images || []
+        }, "action:" + request);
     }
 
     answer(value, answer) {
@@ -863,6 +948,42 @@ export class CloudClient {
     }
 
     key(value, answer) { return this.answer(value, answer); }
+
+    pushKey() {
+        try {
+            return this._machineRequest(this._onlyMachine("notifications"), "push-key", {}, "read");
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    pushSubscribe(subscription) {
+        try {
+            return this._machineRequest(this._onlyMachine("notifications"), "push-subscribe",
+                { subscription: subscription }, "action");
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    pushUnsubscribe(id) {
+        try {
+            return this._machineRequest(this._onlyMachine("notifications"), "push-unsubscribe",
+                { id: String(id || "") }, "action");
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    pushTest(value) {
+        try {
+            var identity = value ? this._sessionIdentity(value) : null;
+            var machine = identity ? identity.machine : this._onlyMachine("notifications");
+            return this._machineRequest(machine, "push-test",
+                { target: identity ? identity.session : "" }, "action");
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    voice(audio, rate) {
+        try {
+            return this._machineRequest(this._onlyMachine("voice input"), "voice",
+                { audio: audio, rate: rate }, "action", VOICE_TIMEOUT_MS);
+        } catch (error) { return Promise.reject(error); }
+    }
 
     /**
      * Naming a session is a local operation on the Mac that owns it, and the cloud protocol has

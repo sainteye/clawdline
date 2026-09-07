@@ -40,6 +40,7 @@ APP = WEB / "app"
 INDEX = WEB / "index.html"
 ICNS = ROOT / "Resources" / "Clawdline.icns"
 STRINGS = WEB / "strings"
+CLOUD_WORKER = WEB / "cloud-sw.js"
 
 # More-specific aliases win in the browser. The canonical file is generated from the same
 # TraditionalChinese Copy that RemotePage serves; Pages only supplies the request-time seam.
@@ -202,6 +203,7 @@ def build(out, app_origin, api_origin, relay_url):
     }
     write("manifest.webmanifest",
           (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+    write("sw.js", CLOUD_WORKER.read_bytes())
 
     api_host = urlsplit(api_origin)
     relay_host = urlsplit(relay_url)
@@ -252,6 +254,9 @@ def build(out, app_origin, api_origin, relay_url):
         "",
         "/manifest.webmanifest",
         "  Cache-Control: public, max-age=300",
+        "",
+        "/sw.js",
+        "  Cache-Control: no-cache",
         "",
     ])
     write("_headers", headers.encode("utf-8"))

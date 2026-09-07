@@ -376,7 +376,7 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
     try require(firstFrames.count == 3 && removedFirstObject?["deleted"] as? Bool == true,
                 "independent authoritative-empty evidence tombstones the last session")
 
-    transport.yield(#"{"type":"send","session":"plain","text":"hello","images":[]}"#,
+    transport.yield(#"{"type":"send","session":"plain","request":"send-off","text":"hello","images":[]}"#,
                     sequence: 10)
     try await waitForCloudAppBridge("default-off command refusal") {
         results.all().contains { $0.code == "cloud_commands_disabled" }
@@ -395,9 +395,24 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
     try require(routed.first?.idempotencyKey == "cloud:viewer:11",
                 "verified sender and sequence supply HTTP-equivalent idempotency")
 
+    let envelopesBeforeSend = transport.envelopes().count
+    transport.yield(#"{"type":"send","session":"plain","request":"send-1","text":"hello","images":[]}"#,
+                    sequence: 12)
+    try await waitForCloudAppBridge("send execution answer") {
+        transport.envelopes().count == envelopesBeforeSend + 1
+    }
+    let sendAnswer = try transport.envelopes().last?.open(
+        masterSecret: masterSecret,
+        publicKeyForSender: { $0 == "machine-device" ? signingKey.publicKeyRaw : nil }
+    )
+    let sendPayload = sendAnswer.flatMap {
+        (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+    }
+    let callsAfterSend = await router.recorded()
+
     let envelopesBeforeStart = transport.envelopes().count
     transport.yield(#"{"type":"start","session":"__clawdline_machine__","request":"r-1","place":"portfolio","assistant":"claude","model":"sonnet"}"#,
-                    sequence: 12)
+                    sequence: 13)
     try await waitForCloudAppBridge("start command answer") {
         transport.envelopes().count == envelopesBeforeStart + 1
     }
@@ -410,22 +425,49 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
         (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
     }
 
-    transport.yield("not json", sequence: 13)
-    transport.yield(#"{"type":"erase","session":"plain"}"#, sequence: 14)
+    let featureBodies = [
+        #"{"type":"schedule-create","session":"__clawdline_machine__","request":"create-1","schedule":{"title":"Morning"}}"#,
+        #"{"type":"schedule-update","session":"__clawdline_machine__","request":"update-1","id":"morning","schedule":{"title":"Later"}}"#,
+        #"{"type":"schedule-delete","session":"__clawdline_machine__","request":"delete-1","id":"morning"}"#,
+        #"{"type":"push-subscribe","session":"__clawdline_machine__","request":"push-1","subscription":{"endpoint":"https://push.example/one","keys":{"p256dh":"key","auth":"auth"}}}"#,
+        #"{"type":"push-unsubscribe","session":"__clawdline_machine__","request":"push-2","id":"subscription-1"}"#,
+        #"{"type":"push-test","session":"__clawdline_machine__","request":"push-3","target":"plain"}"#,
+        #"{"type":"voice","session":"__clawdline_machine__","request":"voice-1","audio":"AAEC","rate":16000}"#,
+    ]
+    let featureCallsBefore = await router.recorded().count
+    let featureEnvelopesBefore = transport.envelopes().count
+    for (offset, body) in featureBodies.enumerated() {
+        transport.yield(body, sequence: UInt64(20 + offset))
+    }
+    try await waitForCloudAppBridge("cloud controls to parse and answer") {
+        await router.recorded().count == featureCallsBefore + featureBodies.count
+            && transport.envelopes().count == featureEnvelopesBefore + featureBodies.count
+    }
+    let featureCommands = Array((await router.recorded()).suffix(featureBodies.count)).map(\.command)
+
+    transport.yield("not json", sequence: 14)
+    transport.yield(#"{"type":"erase","session":"plain"}"#, sequence: 15)
     transport.yield(#"{"type":"dispatch","task":{"title":"not pinned"}}"#,
-                    sequence: 15, commandClass: .dispatch)
+                    sequence: 16, commandClass: .dispatch)
     try await waitForCloudAppBridge("typed command refusals") {
         let codes = results.all().compactMap(\.code)
         return codes.contains("malformed_command") && codes.contains("unknown_command")
             && codes.contains("cloud_dispatch_unpinned")
     }
     let refusedCalls = await router.recorded()
-    try require(refusedCalls.count == 2
+    try require(refusedCalls.count == 3 + featureBodies.count
+                    && callsAfterSend.last?.command
+                        == .send(session: "plain", text: "hello", images: [])
+                    && sendPayload?["read"] as? String == "action:send-1"
+                    && featureCommands.contains(.scheduleDelete(id: "morning"))
+                    && featureCommands.contains(.pushUnsubscribe(id: "subscription-1"))
+                    && featureCommands.contains(.pushTest(session: "plain"))
+                    && featureCommands.contains(.voice(audio: "AAEC", rate: 16000))
                     && startCalls.last?.command
                         == .start(place: "portfolio", assistant: "claude", model: "sonnet")
                     && startPayload?["read"] as? String == "action:r-1"
                     && (startPayload?["body"] as? [String: Any])?["id"] as? String == "opened",
-                "only the answer and start reach execution, and start returns its new session id")
+                "only admitted commands reach execution, and start returns its new session id")
 
     await bridge.stop()
     try require(transport.state().stopped, "bridge shutdown stops the transport")
@@ -1232,6 +1274,8 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         "places": #"{"type":"places","session":"__clawdline_machine__","request":"p-1"}"#,
         "project-worktrees": #"{"type":"project-worktrees","session":"__clawdline_machine__","request":"p-2","project":"/code/app"}"#,
         "past-sessions": #"{"type":"past-sessions","session":"__clawdline_machine__","request":"p-3","place":"portfolio","assistant":"claude"}"#,
+        "schedule": #"{"type":"schedule","session":"__clawdline_machine__","request":"p-4","id":"morning"}"#,
+        "push-key": #"{"type":"push-key","session":"__clawdline_machine__","request":"p-5"}"#,
     ]
     try require(Set(wellFormed.keys) == CloudAppBridge.readTypes,
                 "every read type this bridge admits has a body written for it here")
@@ -1254,7 +1298,8 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let typedNames = Set(typedReads.map(\.read.name))
     try require(typedNames
                     == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git",
-                        "image.img-1", "read:p-1", "read:p-2", "read:p-3"],
+                        "image.img-1", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
+                        "read:p-5"],
                 "and each parses into the read it names rather than into the switch's last case")
 
     // Strictness, in the same shape the commands already have: an exact key set, a bounded

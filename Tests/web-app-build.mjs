@@ -89,6 +89,12 @@ try {
         "and its offline decoder worker is in the same immutable bundle");
     assert.ok(files.includes("app/" + stamp + "/js/vendor/qr-scanner.LICENSE.txt"),
         "the distributed third-party decoder carries its license");
+    assert.ok(files.includes("sw.js"),
+        "the hosted PWA ships the worker PushManager needs before it can subscribe");
+    const worker = readFileSync(join(first, "sw.js"), "utf8");
+    assert.ok(worker.includes('addEventListener("push"')
+        && worker.includes('addEventListener("notificationclick"'),
+        "the hosted worker displays legacy push payloads and routes a notification tap");
     assert.equal(config.strings["zh-TW"], "zh-Hant",
         "the declaration routes a Taiwan device to Traditional Chinese");
     const traditional = JSON.parse(readFileSync(
@@ -104,6 +110,8 @@ try {
         "stamped assets are immutable");
     assert.ok(headers.includes("/index.html\n  Cache-Control: no-store"),
         "and the document that names them never is");
+    assert.ok(headers.includes("/sw.js\n  Cache-Control: no-cache"),
+        "the browser revalidates the one long-lived script outside the stamped asset tree");
     const policy = /Content-Security-Policy: (.*)/.exec(headers)[1];
     assert.ok(policy.includes("default-src 'none'"), "the policy starts closed");
     assert.ok(!policy.includes("'unsafe-inline'"),

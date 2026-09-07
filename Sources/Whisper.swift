@@ -18,6 +18,11 @@ import Foundation
 /// two opinions about it would be a strange way to get one sentence.
 enum Whisper {
 
+    /// One whisper process per Mac, across the menu bar, local web app and Cloud relay. Each
+    /// caller has its own admission bound; this lock is the last line that prevents two accepted
+    /// recordings from multiplying CPU and making both slower than running them in order.
+    private static let transcriptionLock = NSLock()
+
     // MARK: - Finding the pieces
 
     /// The `whisper-cli` binary, if this Mac has one.
@@ -140,6 +145,8 @@ enum Whisper {
         guard samples.count > Int(rate) / 4,          // under a quarter second is a stray click
               let bin = binary(configured: Config.shared.whisperBinary),
               let model = model(configured: Config.shared.whisperModel) else { return nil }
+        transcriptionLock.lock()
+        defer { transcriptionLock.unlock() }
 
         // Hand over the part with speech in it, and nothing else.
         let speech = trimSilence(samples, rate: rate)

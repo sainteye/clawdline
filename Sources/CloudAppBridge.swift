@@ -31,6 +31,13 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case answer(session: String, key: String)
     case start(place: String, assistant: String, model: String)
     case resume(place: String, session: String, assistant: String)
+    case scheduleCreate(body: Data)
+    case scheduleUpdate(id: String, body: Data)
+    case scheduleDelete(id: String)
+    case pushSubscribe(body: Data)
+    case pushUnsubscribe(id: String)
+    case pushTest(session: String)
+    case voice(audio: String, rate: Int)
 }
 
 /// The reads a paired viewer may ask this Mac for over the relay.
@@ -62,6 +69,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
     case places(session: String, request: String)
     case projectWorktrees(session: String, request: String, project: String)
     case pastSessions(session: String, request: String, place: String, assistant: String)
+    case schedule(session: String, request: String, id: String)
+    case pushKey(session: String, request: String)
 
     /// The session this read is about — also the channel its answer is published on.
     var session: String {
@@ -76,6 +85,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .places(let session, _): return session
         case .projectWorktrees(let session, _, _): return session
         case .pastSessions(let session, _, _, _): return session
+        case .schedule(let session, _, _): return session
+        case .pushKey(let session, _): return session
         }
     }
 
@@ -107,7 +118,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .git: return "git"
         case .image(_, let id): return "image." + id
         case .places(_, let request), .projectWorktrees(_, let request, _),
-             .pastSessions(_, let request, _, _): return "read:" + request
+             .pastSessions(_, let request, _, _), .schedule(_, let request, _),
+             .pushKey(_, let request): return "read:" + request
         }
     }
 }
@@ -165,6 +177,10 @@ struct RemoteServerCloudCommandRouter: CloudCommandRouting, @unchecked Sendable 
 
     func route(_ command: CloudHeadlessCommand, sender: String,
                idempotencyKey: String) async -> CloudCommandResult {
+        if case .voice(let audio, let rate) = command {
+            return await CloudVoiceCommandRouter.shared.route(
+                audio: audio, rate: rate, sender: sender, idempotencyKey: idempotencyKey)
+        }
         let response = await server.routeVerifiedCloudCommand(
             command, sender: sender, idempotencyKey: idempotencyKey
         )
@@ -526,7 +542,11 @@ actor CloudAppBridge {
                             lifecycleGeneration: ownedGeneration)
             return
         }
-        guard allowCloudCommands() else {
+        // Registering this already-paired browser as a notification destination is read-level on
+        // the direct route. It must not inherit the separate switch for typing into a session.
+        let readLevelCommand = requestedType == "push-subscribe"
+            || requestedType == "push-unsubscribe" || requestedType == "push-test"
+        guard readLevelCommand || allowCloudCommands() else {
             commandResult(CloudCommandResult(status: 403, code: "cloud_commands_disabled"))
             return
         }
@@ -539,7 +559,13 @@ actor CloudAppBridge {
         var commandReply: (session: String, name: String)?
         switch type {
         case "send":
-            guard inbound.commandClass == .ctl, Set(body.keys) == ["type", "session", "text", "images"],
+            // A page already open on the previous hosted build has no `request`. Keep accepting
+            // that wire shape while the new one adds an execution answer; reloading must improve
+            // delivery semantics, not become a prerequisite for sending at all.
+            let sendKeys = Set(body.keys)
+            guard inbound.commandClass == .ctl,
+                  sendKeys == ["type", "session", "text", "images"]
+                    || sendKeys == ["type", "session", "request", "text", "images"],
                   let session = body["session"] as? String, !session.isEmpty,
                   let text = body["text"] as? String, let images = body["images"] as? [String]
             else {
@@ -547,6 +573,13 @@ actor CloudAppBridge {
                 return
             }
             command = .send(session: session, text: text, images: images)
+            if sendKeys.contains("request") {
+                guard let request = Self.requestName(body["request"]) else {
+                    commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                    return
+                }
+                commandReply = (session, "action:" + request)
+            }
         case "answer", "key":
             let allowedKeys: Set<String> = type == "answer"
                 ? ["type", "session", "answer"] : ["type", "session", "key"]
@@ -588,6 +621,101 @@ actor CloudAppBridge {
             }
             command = .resume(place: place, session: past, assistant: assistant)
             commandReply = (session, "action:" + request)
+        case "schedule-create", "schedule-update":
+            let wanted: Set<String> = type == "schedule-create"
+                ? ["type", "session", "request", "schedule"]
+                : ["type", "session", "request", "id", "schedule"]
+            guard inbound.commandClass == .ctl, Set(body.keys) == wanted,
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let schedule = body["schedule"] as? [String: Any],
+                  JSONSerialization.isValidJSONObject(schedule),
+                  let data = try? JSONSerialization.data(
+                    withJSONObject: schedule, options: [.withoutEscapingSlashes])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            if type == "schedule-create" {
+                command = .scheduleCreate(body: data)
+            } else {
+                guard let id = body["id"] as? String, !id.isEmpty else {
+                    commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                    return
+                }
+                command = .scheduleUpdate(id: id, body: data)
+            }
+            commandReply = (session, "action:" + request)
+        case "schedule-delete":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "id"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let id = body["id"] as? String, !id.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .scheduleDelete(id: id)
+            commandReply = (session, "action:" + request)
+        case "push-subscribe":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "subscription"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let subscription = body["subscription"] as? [String: Any],
+                  JSONSerialization.isValidJSONObject(subscription),
+                  let data = try? JSONSerialization.data(
+                    withJSONObject: subscription, options: [.withoutEscapingSlashes])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .pushSubscribe(body: data)
+            commandReply = (session, "action:" + request)
+        case "push-unsubscribe":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "id"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let id = body["id"] as? String, !id.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .pushUnsubscribe(id: id)
+            commandReply = (session, "action:" + request)
+        case "push-test":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "target"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let target = body["target"] as? String
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .pushTest(session: target)
+            commandReply = (session, "action:" + request)
+        case "voice":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "audio", "rate"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let audio = body["audio"] as? String, !audio.isEmpty,
+                  let rate = body["rate"] as? Int, rate == Int(RemoteServer.voiceRate)
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .voice(audio: audio, rate: rate)
+            commandReply = (session, "action:" + request)
         case "dispatch":
             // cloud-client.js sends only `{task}`. The local broker protocol requires a materialized
             // task.json plus task_id and secret, and no pinned wire shape says how those are carried
@@ -621,7 +749,7 @@ actor CloudAppBridge {
     /// member for a well-formed body, so the two cannot come apart quietly.
     static let readTypes: Set<String> = [
         "transcript", "info", "agent", "shell", "skills", "git", "image",
-        "places", "project-worktrees", "past-sessions",
+        "places", "project-worktrees", "past-sessions", "schedule", "push-key",
     ]
 
     private static func requestName(_ value: Any?) -> String? {
@@ -791,6 +919,27 @@ actor CloudAppBridge {
             }
             read = .pastSessions(session: session, request: request,
                                  place: place, assistant: assistant)
+        case "schedule":
+            guard Set(body.keys) == ["type", "session", "request", "id"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let id = body["id"] as? String, !id.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .schedule(session: session, request: request, id: id)
+        case "push-key":
+            guard Set(body.keys) == ["type", "session", "request"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .pushKey(session: session, request: request)
         default:
             // `readTypes` admitted a word this switch does not know, which means the two lists
             // have come apart. Fail closed rather than reading it as whichever case sits last —
