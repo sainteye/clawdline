@@ -31,6 +31,22 @@ roughly 100–140 MiB. Memory pressure was therefore not the primary cause. iTer
 high while several terminals were painting output, which can add contention and Apple-event
 latency, but it did not explain the provider-record size curve.
 
+## Cloud reconnects are credential rotation, not an empty inventory
+
+The production viewer device token normally lives for 300 seconds. The relay closes a socket when
+that credential expires, so waiting for the close before minting the next token creates a visible
+control-plane and WebSocket round trip every five minutes. The hosted client renews 30 seconds
+early: the authenticated socket already serving the page remains active while its replacement
+mints a token and completes the signed relay challenge. The replacement is not installed as the
+page's API merely because its WebSocket object exists; it becomes usable only after `ready`.
+
+Relay realignment is one retained `s/<machine>/<session>` channel at a time, in no inventory order.
+It is not an atomic account-wide Session list. A replacement client therefore starts with the same
+viewer's last-known-good Session rows and applies the realigned envelopes to that map. An explicit
+tombstone still removes a closed Session. Without that distinction, the first retained row after a
+reconnect looked like the complete inventory and the phone closed whichever conversation had not
+replayed yet, returning the reader to the list.
+
 The task registry held about 400 records. That means 400 retained rows, not 400 filesystem scans.
 The defect was that Session-list projection repeatedly fingerprinted and sorted the whole registry,
 then selected one Session's obligations by walking it again. A compact rendering of that fact must

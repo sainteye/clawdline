@@ -521,6 +521,7 @@ export class CloudViewerSession {
         if (!master) return { state: "pairing_required", accountID: this.account };
         var token = await this.deviceToken();
         var self = this;
+        var previous = this.client;
         var client = new CloudClient({
             relayURL: token.relayURL,
             deviceToken: token.token,
@@ -537,11 +538,26 @@ export class CloudViewerSession {
             allowWrites: this.caps.indexOf("send_prompt") >= 0,
             nextSequence: durableSequence(this.storage, SEQUENCE_KEY + ":" + this.deviceID),
             WebSocket: this.WebSocket,
-            handlers: this.handlers
+            handlers: this.handlers,
+            // Reconnect realignment is channel-by-channel, not one atomic account inventory.
+            // Seed the replacement client so an early row cannot evict the conversation the
+            // phone is already reading before its own retained channel is replayed.
+            resumeFrom: previous
         });
+        // During token renewal the previous authenticated socket remains usable. Do not replace
+        // the header's live state with "connecting" merely because its successor is warming up.
+        await client.start({ quiet: !!(previous && previous.ready) });
+        try {
+            await client.whenReady();
+        } catch (error) {
+            client.stop();
+            throw error;
+        }
         this.client = client;
-        await client.start();
-        return { state: "connected", client: client, expiresAt: token.expiresAt };
+        return {
+            state: "connected", client: client, previous: previous,
+            expiresAt: token.expiresAt
+        };
     }
 }
 
@@ -614,9 +630,34 @@ export function keepConnected(session, options) {
     var jitter = options.jitter || Math.random;
     var initial = options.initialBackoffMs || 250;
     var maximum = options.maximumBackoffMs || 30000;
+    var now = options.now || function () { return Date.now(); };
+    var renewalLeadMs = Math.max(0, Number(options.renewalLeadMs) || 30000);
     var onState = options.onState || function () {};
     var stopped = false;
     var backoff = initial;
+    var active = null;
+
+    function nextBoundary(client, expiresAt) {
+        return new Promise(function (resolve) {
+            var settled = false;
+            var off = client.events(function (event) {
+                if (event.type === "connection" && event.state === "offline") finish("offline");
+            });
+            function finish(reason) {
+                if (settled) return;
+                settled = true;
+                off();
+                resolve(reason);
+            }
+            if (Number.isFinite(expiresAt)) {
+                var delay = Math.max(0, expiresAt - now() - renewalLeadMs);
+                Promise.resolve(sleep(delay)).then(function () { finish("renew"); }, function () {
+                    finish("renew");
+                });
+            }
+            if (stopped) finish("stopped");
+        });
+    }
 
     var loop = (async function () {
         while (!stopped) {
@@ -632,7 +673,12 @@ export function keepConnected(session, options) {
                     onState({ state: "terminal_error", error: error });
                     return;
                 }
-                onState({ state: "retrying", error: error, afterMs: backoff });
+                // A proactive replacement is allowed to fail while the old credential is still
+                // serving. Retrying that warm-up is not an outage and must not cover the usable
+                // page with the reconnect error screen.
+                if (!active || !active.ready) {
+                    onState({ state: "retrying", error: error, afterMs: backoff });
+                }
                 await sleep(Math.min(maximum, backoff) * (0.75 + jitter() * 0.5));
                 backoff = Math.min(maximum, backoff * 2);
                 continue;
@@ -642,18 +688,21 @@ export function keepConnected(session, options) {
                 return;
             }
             backoff = initial;
+            active = outcome.client;
             onState({ state: "connected", client: outcome.client });
-            await new Promise(function (resolve) {
-                var off = outcome.client.events(function (event) {
-                    if (event.type === "connection" && event.state === "offline") {
-                        off();
-                        resolve();
-                    }
-                });
-                if (stopped) { off(); resolve(); }
-            });
+            // A five-minute device token is a credential rotation boundary, not a user-visible
+            // outage. The replacement has completed its signed handshake before `connect()`
+            // returns, so only now retire the socket it superseded.
+            if (outcome.previous && outcome.previous !== outcome.client) {
+                if (typeof outcome.previous.retire === "function") outcome.previous.retire();
+                else outcome.previous.stop();
+            }
+            var boundary = await nextBoundary(outcome.client, outcome.expiresAt);
             if (stopped) return;
-            onState({ state: "reconnecting" });
+            if (boundary === "offline") {
+                active = null;
+                onState({ state: "reconnecting" });
+            }
         }
     })();
 

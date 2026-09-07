@@ -212,9 +212,21 @@ export class CloudClient {
         this.handlers = options.handlers || null;
         this.socket = null;
         this.ready = false;
+        this.connectionAnnounced = false;
         this.listeners = new Set();
         this.pendingSubscriptions = new Set();
-        this.sessionSnapshots = new Map();
+        // A short-lived viewer token creates a new socket and a new CloudClient. The relay then
+        // realigns one retained `s/<machine>/<session>` channel at a time, in no inventory order.
+        // Starting that reconstruction from an empty Map made the first envelope look like the
+        // whole account: if the phone was reading another session, `handlers.sessions` closed it
+        // before that session's envelope arrived. Carry only the last-known-good session rows
+        // from the same account and viewer device. Real tombstones still remove copied rows; no
+        // read waiter or inbound sequence is inherited across sockets.
+        var prior = options.resumeFrom;
+        var sameViewer = prior instanceof CloudClient && !!this.account && !!this.deviceID
+            && prior.account === this.account && prior.deviceID === this.deviceID;
+        this.sessionSnapshots = sameViewer
+            ? new Map(prior.sessionSnapshots) : new Map();
         this.transcriptSnapshots = new Map();
         this.orchestratorSnapshots = new Map();
         this.placeRoutes = new Map();
@@ -225,6 +237,7 @@ export class CloudClient {
         this.readTimeoutMs = options.readTimeoutMs || READ_TIMEOUT_MS;
         this.setTimeout = options.setTimeout || globalThis.setTimeout.bind(globalThis);
         this.clearTimeout = options.clearTimeout || globalThis.clearTimeout.bind(globalThis);
+        this.readyWaiters = [];
         this.sequenceBySender = new Map();
         this.messageChain = Promise.resolve();
     }
@@ -242,11 +255,14 @@ export class CloudClient {
         });
     }
 
-    async start() {
+    async start(options) {
         if (this.socket) return;
         if (!this.WebSocket) throw new Error("WebSocket is unavailable");
         if (!this.devicePrivateKey) throw cloudError("missing_device_key", "the viewer device key is unavailable");
-        if (this.handlers && this.handlers.conn) this.handlers.conn("connecting");
+        this.connectionAnnounced = !(options && options.quiet === true);
+        if (this.connectionAnnounced && this.handlers && this.handlers.conn) {
+            this.handlers.conn("connecting");
+        }
         var ws = new this.WebSocket(this.url,
             ["clawdline.v1", "clawdline.token." + this.deviceToken]);
         this.socket = ws;
@@ -264,10 +280,13 @@ export class CloudClient {
         ws.onclose = function () {
             if (self.socket === ws) self.socket = null;
             self.ready = false;
+            self._settleReady(cloudError("offline", "the cloud connection dropped"));
             // Every read still waiting was waiting on this socket. Left alone they would sit out
             // their whole timeout behind a skeleton for a connection that is already gone.
             self._failAllReads(cloudError("offline", "the cloud connection dropped"));
-            if (self.handlers && self.handlers.conn) self.handlers.conn("offline");
+            if (self.connectionAnnounced && self.handlers && self.handlers.conn) {
+                self.handlers.conn("offline");
+            }
             self._emit({ type: "connection", state: "offline" });
         };
     }
@@ -276,8 +295,41 @@ export class CloudClient {
         var ws = this.socket;
         this.socket = null;
         this.ready = false;
-        this._failAllReads(cloudError("offline", "the cloud connection was stopped"));
+        var stopped = cloudError("offline", "the cloud connection was stopped");
+        this._settleReady(stopped);
+        this._failAllReads(stopped);
         if (ws) ws.close(1000, "viewer stopped");
+    }
+
+    /** Hand an authenticated replacement client the UI before closing this socket. A retired
+     *  socket may still fail its own in-flight reads, but it must not overwrite the replacement's
+     *  connection indicator with an `offline` callback. */
+    retire() {
+        this.connectionAnnounced = false;
+        this.handlers = null;
+        this.stop();
+    }
+
+    /** Opening a WebSocket is not authentication. The hosted boot must not install this client
+     *  until the signed challenge has produced the relay's `ready` frame; otherwise the first
+     *  transcript request races the handshake and visibly fails with "connection is not ready". */
+    whenReady() {
+        if (this.ready) return Promise.resolve(this);
+        if (!this.socket) {
+            return Promise.reject(cloudError("offline", "the cloud socket is not open"));
+        }
+        var self = this;
+        return new Promise(function (resolve, reject) {
+            self.readyWaiters.push({ resolve: resolve, reject: reject });
+        });
+    }
+
+    _settleReady(error) {
+        var waiters = this.readyWaiters.splice(0);
+        var self = this;
+        waiters.forEach(function (waiter) {
+            if (error) waiter.reject(error); else waiter.resolve(self);
+        });
     }
 
     refresh() {
@@ -336,6 +388,8 @@ export class CloudClient {
             throw cloudError("bad_ready", "the relay ready frame does not match the challenge");
         }
         this.ready = true;
+        this.connectionAnnounced = true;
+        this._settleReady(null);
         if (this.handlers && this.handlers.hello) this.handlers.hello({ write: this.allowWrites });
         if (this.handlers && this.handlers.conn) this.handlers.conn("live");
         this._emit({ type: "connection", state: "live", account: this.account, device: this.deviceID });

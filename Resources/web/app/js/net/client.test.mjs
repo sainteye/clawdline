@@ -566,6 +566,13 @@ const connectedCloud = new CloudClient({
 connectedCloud.events(function (event) { liveEvents.push(event); });
 await connectedCloud.start();
 const fakeSocket = FakeWebSocket.latest;
+let connectedReady = false;
+const connectedReadyPromise = connectedCloud.whenReady().then(function () {
+    connectedReady = true;
+});
+await Promise.resolve();
+assert.equal(connectedReady, false,
+    "opening a WebSocket is not yet a usable Cloud connection");
 assert.deepEqual(fakeSocket.protocols, ["clawdline.v1", "clawdline.token.jwt"]);
 fakeSocket.receive({ type: "challenge", v: 1, context: "clawdline-challenge-v1",
     account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
@@ -575,6 +582,9 @@ assert.equal(fakeSocket.sent[0].type, "hello", "CloudClient signs the relay chal
 fakeSocket.receive({ type: "ready", v: 1, role: "viewer", account: "account-01",
     device: "device-vector-01" });
 await connectedCloud.messageChain;
+await connectedReadyPromise;
+assert.equal(connectedReady, true,
+    "the Cloud connection becomes usable only after the authenticated ready frame");
 const eventCountBeforePing = liveEvents.length;
 fakeSocket.receive({ type: "ping" });
 await connectedCloud.messageChain;
@@ -593,6 +603,49 @@ assert.deepEqual((await connectedCloud.sessions()).sessions[0].identity,
     { machine: "mac-01", session: "session-01" },
     "a verified cloud snapshot is stored under (machine, session)");
 assert.equal(liveEvents.some(function (event) { return event.type === "sessions"; }), true);
+
+const secondSnapshotEnvelope = await sealEnvelope({
+    ch: "s/mac-01/session-02", seq: 11, ts: 1787817600001, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ id: "session-02", label: "second cloud session" }), masterKey, signingKey);
+fakeSocket.receive({ type: "envelope", envelope: secondSnapshotEnvelope });
+await connectedCloud.messageChain;
+
+const reconnectLists = [];
+const resumedCloud = new CloudClient({
+    relayURL: "https://relay.example", deviceToken: "jwt-2", devicePrivateKey: signingKey,
+    masterKey: masterKey, senderKeys: { "device-vector-01": senderKey },
+    account: "account-01", deviceID: "device-vector-01", WebSocket: FakeWebSocket,
+    resumeFrom: connectedCloud,
+    handlers: {
+        sessions: function (rows) { reconnectLists.push(rows.map(function (row) { return row.id; })); },
+        conn: function () {}, hello: function () {}
+    }
+});
+await resumedCloud.start();
+const resumedSocket = FakeWebSocket.latest;
+resumedSocket.receive({ type: "challenge", v: 1, context: "clawdline-challenge-v1",
+    account: "account-01", device: "device-vector-01", challenge: canonicalChallenge,
+    expires_in_ms: 30_000 });
+await resumedCloud.messageChain;
+resumedSocket.receive({ type: "ready", v: 1, role: "viewer", account: "account-01",
+    device: "device-vector-01" });
+await resumedCloud.messageChain;
+// A real relay can replay the retained session channels in either order. The first envelope is
+// not a complete account inventory, so it must update the last-known-good map rather than replace
+// it and eject whichever phone conversation has not replayed yet.
+resumedSocket.receive({ type: "envelope", realign: true, envelope: secondSnapshotEnvelope });
+await resumedCloud.messageChain;
+assert.deepEqual(reconnectLists.at(-1), ["session-01", "session-02"],
+    "a reconnect keeps sessions that have not replayed yet instead of publishing a partial list");
+const removedFirstEnvelope = await sealEnvelope({
+    ch: "s/mac-01/session-01", seq: 12, ts: 1787817600002, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ session: null, deleted: true }), masterKey, signingKey);
+resumedSocket.receive({ type: "envelope", realign: true, envelope: removedFirstEnvelope });
+await resumedCloud.messageChain;
+assert.deepEqual(reconnectLists.at(-1), ["session-02"],
+    "an explicit tombstone still removes a last-known-good session after reconnect");
 
 /* ---- the two fields the orch/ snapshot used to leave out ------------------
    Row 10 and row 17 of the Cloud enumeration are one defect twice: the Mac published a snapshot

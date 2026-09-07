@@ -489,6 +489,45 @@ function fakeClient() {
 
 {
     const states = [];
+    const sleeps = [];
+    let attempts = 0;
+    let firstStops = 0;
+    const first = fakeClient();
+    first.stop = function () { firstStops += 1; };
+    const second = fakeClient();
+    const session = {
+        client: first,
+        connect: function () {
+            attempts += 1;
+            if (attempts === 1) {
+                return Promise.resolve({ state: "connected", client: first,
+                    previous: null, expiresAt: 10_000 });
+            }
+            session.client = second;
+            return Promise.resolve({ state: "connected", client: second,
+                previous: first, expiresAt: null });
+        }
+    };
+    const keeper = boot.keepConnected(session, {
+        now: function () { return 1_000; },
+        renewalLeadMs: 2_000,
+        sleep: function (ms) { sleeps.push(ms); return Promise.resolve(); },
+        onState: function (update) { states.push(update.state); }
+    });
+    await new Promise(function (resolve) { setTimeout(resolve, 5); });
+    assert.equal(attempts, 2,
+        "the viewer opens a replacement socket before its five-minute token expires");
+    assert.deepEqual(states, ["connected", "connected"],
+        "a warm token renewal never reports an offline reconnect between usable clients");
+    assert.deepEqual(sleeps, [7_000],
+        "renewal starts at the bounded lead time, not after token expiry");
+    assert.equal(firstStops, 1,
+        "the old socket retires only after the replacement is connected");
+    keeper.stop();
+}
+
+{
+    const states = [];
     let attempts = 0;
     const keeper = boot.keepConnected({
         connect: function () {
