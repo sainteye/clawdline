@@ -130,6 +130,8 @@ try {
         "one hash per inline script actually emitted");
     assert.ok(policy.includes("connect-src 'self' https://api.clawdline.com wss://relay.clawdline.com"),
         "the page may reach its own API and relay and nothing else");
+    assert.ok(policy.includes("img-src 'self' data: blob:"),
+        "the cloud transcript may render image bytes carried from the Mac as a blob URL");
     assert.ok(policy.includes("frame-ancestors 'none'"), "and cannot be framed");
 
     /* ---- the manifest names icons that are actually there ---------------- */

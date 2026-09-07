@@ -211,7 +211,11 @@ def build(out, app_origin, api_origin, relay_url):
         "default-src 'none'",
         "script-src 'self' " + " ".join(inline_hashes),
         "style-src 'self'",
-        "img-src 'self' data:",
+        # Transcript images reach the hosted console as encrypted relay bytes and become blob
+        # URLs in `view/transcript.js`. The direct page uses the same-origin artifact route, but
+        # the hosted origin has no such route; omitting `blob:` here makes WebKit fire the image's
+        # error handler and misreport a freshly delivered picture as expired.
+        "img-src 'self' data: blob:",
         # The QR decoder. `net/cloud-qr-scanner.js` uses the bundled qr-scanner, which prefers the
         # native `BarcodeDetector` and falls back to a worker when there is none —
         # `createWorker = () => new Worker(URL.createObjectURL(new Blob([…])))`, a blob worker.
