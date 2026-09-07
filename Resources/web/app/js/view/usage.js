@@ -81,6 +81,39 @@ function coverageText(coverage) {
         + " · " + formatUsageNumber(coverage.unknownOutputRuns) + " unknown output";
 }
 
+function featureRoleText(reading) {
+    if (!reading) return "Unavailable";
+    var tokens = reading.tokens || {}, tokenText;
+    if (tokens.state === "present") {
+        tokenText = typeof tokens.total === "number"
+            ? formatUsageNumber(tokens.total) + " tokens"
+            : "≥" + formatUsageNumber(tokens.measured) + " tokens · partial";
+    } else if (tokens.state === "unknown") {
+        tokenText = "Tokens unknown";
+    } else {
+        tokenText = "Tokens absent";
+    }
+
+    var cost = reading.cost || {}, series = cost.series || [], costTextValue;
+    if (cost.state === "present") {
+        costTextValue = (series.length === 1 ? "Cost " : "Costs ") + series.map(function (item) {
+            return significant(item.value) + " " + item.unit + " · " + item.basis;
+        }).join("; ");
+        if (cost.comparable === false || series.length > 1) costTextValue += " · mixed series";
+        if (cost.unknownRows) {
+            costTextValue += " · " + formatUsageNumber(cost.unknownRows) + " cost unknown";
+        }
+    } else if (cost.state === "unknown") {
+        var reasons = Object.keys(cost.reasons || {}).sort().map(function (reason) {
+            return reason.replaceAll("_", " ");
+        });
+        costTextValue = "Cost unknown" + (reasons.length ? " · " + reasons.join(", ") : "");
+    } else {
+        costTextValue = "Cost absent";
+    }
+    return tokenText + " · " + costTextValue;
+}
+
 function errorFrom(response) {
     return response.json().catch(function () { return {}; }).then(function (body) {
         var error = body.error || {}, code = error.code || "usage_error";
@@ -380,6 +413,10 @@ function renderFeatures(context, features) {
         tableCell(doc, row, "Feature", item.label || item.id);
         tableCell(doc, row, "Agent work", formatUsageNumber(item.runs), "usage-value");
         tableCell(doc, row, "Generated output", formatUsageNumber(item.output), "usage-value usage-value-primary");
+        var roles = item.usageByRole || {};
+        tableCell(doc, row, "Implementation", featureRoleText(roles.implementation));
+        tableCell(doc, row, "Review", featureRoleText(roles.review));
+        tableCell(doc, row, "Unproved role", featureRoleText(roles.undeclared));
         tableCell(doc, row, "Coverage", coverageText(item.coverage));
         body.appendChild(row);
     });
@@ -389,7 +426,7 @@ function renderFeatures(context, features) {
             : "No accepted Feature attribution in this range";
         var empty = doc.createElement("tr"), cell = tableCell(doc, empty, "Features", emptyText, "usage-empty");
         empty.setAttribute("role", "row");
-        cell.colSpan = 5;
+        cell.colSpan = 8;
         body.appendChild(empty);
     }
     applyFeatureFold(context, groups.length);

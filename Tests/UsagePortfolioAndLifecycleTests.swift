@@ -420,6 +420,172 @@ group("usage portfolio accepts exactly one Feature head and leaves proposals or 
           UsageLedger.acceptedHead(from: acceptedEvents)?.valueID
             == UsageLedger.shared.resolvedAttribution(intervalKey: accepted,
                                                        dimension: .feature)?.valueID)
+
+    var implementation = analyticsRow(
+        "role-implementation", at: at, counts: .init(inputNew: 20, output: 30,
+                                                       cacheRead: 40, cacheWrite: 10),
+        cost: 1.25, unit: "USD", basis: "provider_actual", missing: nil)
+    implementation.kindRaw = "custom"
+    var review = analyticsRow(
+        "role-review", at: at.addingTimeInterval(60),
+        counts: .init(inputNew: 5, output: 10, cacheRead: 30, cacheWrite: nil),
+        cost: 0.5, unit: "USD", basis: "list_price_estimate", missing: nil,
+        coverage: "partial", reasons: ["source_regressed"])
+    // The row's kind is deliberately non-review: its durable graph must be the stronger fact.
+    review.kindRaw = "custom"
+    var reviewUnpriced = analyticsRow(
+        "role-review-unpriced", at: at.addingTimeInterval(120),
+        counts: .init(inputNew: 1, output: 2, cacheRead: 3, cacheWrite: 4),
+        missing: "no_cost_recorded")
+    reviewUnpriced.kindRaw = "security review"
+    var undeclared = analyticsRow(
+        "role-undeclared", at: at.addingTimeInterval(180), counts: .init(),
+        missing: "plan_billed", coverage: "source_missing",
+        reasons: ["source_unreadable_at_close"])
+    undeclared.kindRaw = nil
+    var mixedUnit = analyticsRow(
+        "role-mixed-unit", at: at.addingTimeInterval(240),
+        counts: .init(inputNew: 2, output: 3, cacheRead: 4, cacheWrite: 1),
+        cost: 0.75, unit: "EUR", basis: "provider_actual", missing: nil)
+    // The opposite disagreement: a correction may look like review in free text, but its graph
+    // proves that it closes findings rather than producing a new verdict.
+    mixedUnit.kindRaw = "code-review"
+    var mixedBasis = analyticsRow(
+        "role-mixed-basis", at: at.addingTimeInterval(300),
+        counts: .init(inputNew: 1, output: 1, cacheRead: 2, cacheWrite: 1),
+        cost: 0.25, unit: "USD", basis: "list_price_estimate", missing: nil)
+    mixedBasis.kindRaw = "custom"
+    let roleRows = [implementation, review, reviewUnpriced, undeclared, mixedUnit, mixedBasis]
+    let roleAccepted = Dictionary(uniqueKeysWithValues: roleRows.map {
+        ($0.intervalKey, UsageLedger.AcceptedAttribution(id: "portfolio",
+                                                         label: "Usage Portfolio"))
+    })
+    func durableTask(_ row: UsageLedger.Row, nodeKind: Orchestrator.GraphNodeKind)
+        -> Orchestrator.Task {
+        let id = row.taskID!
+        var task = Orchestrator.Task(
+            id: id, state: .success, kind: row.kindRaw ?? "", title: "role fixture",
+            assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30, created: at,
+            secretHash: String(repeating: "0", count: 64))
+        task.graph = Orchestrator.PlanningGraph(
+            id: "graph-role-fixture", destination: "roles stay truthful", currentNode: id,
+            nodes: [Orchestrator.GraphNode(id: id, title: "role node", kind: nodeKind,
+                                           dependsOn: [], acceptance: ["role is explicit"])],
+            unknowns: [], outOfScope: [])
+        return task
+    }
+    let durableRoles = UsageQueryService.featureTaskRoles([
+        durableTask(review, nodeKind: .review),
+        durableTask(mixedUnit, nodeKind: .correction),
+    ])
+    check("a durable correction node outranks its review-looking kind",
+          durableRoles[mixedUnit.taskID!] == .implementation
+            && durableRoles[review.taskID!] == .review)
+    let rolePayload = UsageQueryService(
+        rows: { roleRows }, acceptedFeatures: { roleAccepted },
+        featureTaskRoles: { durableRoles })
+        .query(.init(from: "2026-08-20", to: "2026-08-20", timezoneID: "UTC"), now: at)
+        .payload
+    let roleFeature = ((((rolePayload["portfolio"] as? [String: Any])?["features"]
+        as? [String: Any])?["groups"] as? [[String: Any]]) ?? []).first
+    let byRole = roleFeature?["usageByRole"] as? [String: Any]
+    let implementationUsage = byRole?["implementation"] as? [String: Any]
+    let implementationTokens = implementationUsage?["tokens"] as? [String: Any]
+    check("accepted Feature usage splits implementation tokens without changing Feature identity",
+          roleFeature?["id"] as? String == "portfolio"
+            && implementationTokens?["state"] as? String == "present"
+            && implementationTokens?["total"] as? Int == 115)
+    let implementationCost = implementationUsage?["cost"] as? [String: Any]
+    let implementationSeries = implementationCost?["series"] as? [[String: Any]] ?? []
+    check("mixed cost units and bases remain separate series and are never summed",
+          implementationCost?["state"] as? String == "present"
+            && implementationCost?["comparable"] as? Bool == false
+            && implementationSeries.count == 3
+            && Set(implementationSeries.compactMap { $0["unit"] as? String }) == ["USD", "EUR"]
+            && Set(implementationSeries.compactMap { $0["basis"] as? String })
+                == ["provider_actual", "list_price_estimate"])
+    let reviewUsage = byRole?["review"] as? [String: Any]
+    let reviewTokens = reviewUsage?["tokens"] as? [String: Any]
+    let reviewCost = reviewUsage?["cost"] as? [String: Any]
+    check("partial review tokens and cost remain partial beside their measured floors",
+          reviewTokens?["state"] as? String == "present"
+            && reviewTokens?["total"] is NSNull
+            && reviewTokens?["measured"] as? Int == 55
+            && reviewCost?["coverage"] as? String == "partial"
+            && reviewCost?["unknownRows"] as? Int == 1)
+    let undeclaredUsage = byRole?["undeclared"] as? [String: Any]
+    check("a row with no role or quantities remains undeclared and unknown rather than zero",
+          (undeclaredUsage?["tokens"] as? [String: Any])?["state"] as? String == "unknown"
+            && (undeclaredUsage?["tokens"] as? [String: Any])?["total"] is NSNull
+            && (undeclaredUsage?["cost"] as? [String: Any])?["state"] as? String == "unknown")
+    var sweptReview = analyticsRow(
+        "role-swept-review", at: at.addingTimeInterval(360),
+        counts: .init(inputNew: 7, output: 11, cacheRead: 13, cacheWrite: 17),
+        cost: 0.9, unit: "USD", basis: "provider_actual", missing: nil)
+    sweptReview.kindRaw = "custom"
+    let sweptAccepted = [sweptReview.intervalKey:
+        UsageLedger.AcceptedAttribution(id: "receipt-feature", label: "Receipt Feature")]
+    let typedReceipt = UsageLedger.StoredReviewReceipt(
+        taskID: sweptReview.taskID!, graphID: "receipt-feature", nodeID: "review",
+        projectKey: nil, kindRaw: "custom", taskState: "success", verdict: "safe_to_land",
+        axes: [], findings: [], recordedAt: at)
+    var retainedKindOnly = durableTask(sweptReview, nodeKind: .review)
+    retainedKindOnly.graph = nil
+    let retainedKindOnlyRoles = UsageQueryService.featureTaskRoles([retainedKindOnly])
+    check("a retained graphless task leaves the typed receipt rung reachable", retainedKindOnlyRoles[sweptReview.taskID!] == nil)
+    let receiptPayload = UsageQueryService(
+        rows: { [sweptReview] }, acceptedFeatures: { sweptAccepted },
+        featureTaskRoles: { retainedKindOnlyRoles },
+        featureReviewEvidence: { .init(
+            receipts: [typedReceipt], truncated: false,
+            limit: UsageQueryService.maxFeatureReviewReceipts) })
+        .query(.init(from: "2026-08-20", to: "2026-08-20", timezoneID: "UTC"), now: at)
+        .payload
+    let receiptFeatures = (receiptPayload["portfolio"] as? [String: Any])?["features"] as? [String: Any]
+    let receiptFeature = (receiptFeatures?["groups"] as? [[String: Any]])?.first
+    let receiptRoles = receiptFeature?["usageByRole"] as? [String: Any]
+    check("a durable review receipt outranks a swept task's non-review kind",
+          (((receiptRoles?["review"] as? [String: Any])?["tokens"]
+                as? [String: Any])?["total"] as? Int) == 48
+            && (((receiptRoles?["implementation"] as? [String: Any])?["tokens"]
+                as? [String: Any])?["state"] as? String) == "absent"
+            && (((receiptFeatures?["roleEvidence"] as? [String: Any])?["reviewReceipts"]
+                as? [String: Any])?["status"] as? String) == "complete")
+    var truncatedUnknown = analyticsRow(
+        "role-truncated-unknown", at: at.addingTimeInterval(420),
+        counts: .init(inputNew: 2, output: 3, cacheRead: 5, cacheWrite: 7),
+        cost: 0.2, unit: "USD", basis: "provider_actual", missing: nil)
+    truncatedUnknown.kindRaw = "custom"
+    var truncatedReview = analyticsRow(
+        "role-truncated-review", at: at.addingTimeInterval(480),
+        counts: .init(inputNew: 1, output: 1, cacheRead: 1, cacheWrite: 1),
+        cost: 0.1, unit: "USD", basis: "provider_actual", missing: nil)
+    truncatedReview.kindRaw = "security review"
+    let truncatedRows = [truncatedUnknown, truncatedReview]
+    let truncatedAccepted = Dictionary(uniqueKeysWithValues: truncatedRows.map {
+        ($0.intervalKey, UsageLedger.AcceptedAttribution(
+            id: "truncated-feature", label: "Truncated Feature")) })
+    let truncatedPayload = UsageQueryService(
+        rows: { truncatedRows }, acceptedFeatures: { truncatedAccepted },
+        featureReviewEvidence: {
+            .init(receipts: [], truncated: true,
+                  limit: UsageQueryService.maxFeatureReviewReceipts)
+        })
+        .query(.init(from: "2026-08-20", to: "2026-08-20", timezoneID: "UTC"), now: at)
+        .payload
+    let truncatedFeatures = (truncatedPayload["portfolio"] as? [String: Any])?["features"]
+        as? [String: Any]
+    let truncatedFeature = (truncatedFeatures?["groups"] as? [[String: Any]])?.first
+    let truncatedRoles = truncatedFeature?["usageByRole"] as? [String: Any]
+    check("truncated receipt evidence leaves an unmatched kind unproved without hiding review",
+          ((((truncatedRoles?["undeclared"] as? [String: Any])?["tokens"]
+                as? [String: Any])?["total"] as? Int) == 17
+            && (((truncatedRoles?["review"] as? [String: Any])?["tokens"]
+                as? [String: Any])?["total"] as? Int) == 4
+            && (((truncatedRoles?["implementation"] as? [String: Any])?["tokens"]
+                as? [String: Any])?["state"] as? String) == "absent"
+            && (((truncatedFeatures?["roleEvidence"] as? [String: Any])?["reviewReceipts"]
+                as? [String: Any])?["status"] as? String) == "partial"))
 }
 
 group("a Feature row names the Project its own row in the Projects table names") {

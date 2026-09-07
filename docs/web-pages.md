@@ -287,6 +287,24 @@ independently — by the review of the slice that added the drawer, and again he
 repaired there before this page landed, so the chain in `input/keys.js` is now the only place a
 page answers Escape.
 
+### Accepted Feature usage by role
+
+The Usage page's existing accepted Feature table remains keyed by the classifier's accepted
+Feature id and canonical Project. Its three added columns—Implementation, Review and Unproved
+role—draw `usageByRole` from the same row; they are readings, not a second Feature grouping.
+
+Each cell prints a strict token total when it exists, an `≥` measured floor when coverage is
+partial, and words rather than digits for absent or unknown quantities. Costs retain every
+unit/basis series separately. Mixed series are listed and labelled mixed instead of summed, and a
+partial reading keeps its count of unknown-cost rows beside the amounts that were recorded.
+`Unproved role` is intentionally visible: a row with neither a retained durable task decision nor
+a stored kind is not silently treated as implementation.
+
+`Tokens absent` and `Cost absent` are reserved for an explicit backend `state: "absent"`. If an
+older or incomplete payload omits `usageByRole` or one of its role keys, that whole cell says
+`Unavailable`; the renderer never turns a missing field into an assertion that this Mac has no
+record.
+
 ## The verification ledger
 
 `Resources/web/app/js/view/ledger.js`, styled in `app/css/ledger.css`, drawn from

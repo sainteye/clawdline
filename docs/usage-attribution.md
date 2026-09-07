@@ -315,3 +315,27 @@ The role predicate is `Orchestrator.requiresTypedReview(_:)` with `kindDenotesRe
 it. Do not build a second table of kind spellings: `kind` is unvalidated free text — one
 `String(prefix(40))` in `OrchestratorDraft`, no vocabulary check — and 81 of 347 tasks on this
 machine carry a spelling outside the four the guide documents, the most recent two days old.
+
+The accepted Feature table is the read that exposes this join. Each existing `features.groups[]`
+row keeps its accepted id, label and canonical Project scope, and adds `usageByRole` with exactly
+three keys: `implementation`, `review`, and `undeclared`. A retained durable task graph is
+classified with `Orchestrator.requiresTypedReview(_:)`, so a correction node dispatched with a
+review-looking free-text kind remains implementation work. After retention removes that record, a
+matching durable typed review receipt is positive review evidence even when the stored kind is
+`custom`; only then does the stored row kind fall back to `Orchestrator.kindDenotesReview(_:)`.
+These rungs reuse `VerificationLedgerService.role` rather than defining another kind vocabulary.
+
+That receipt read is bounded and reads one extra sentinel. The sibling
+`features.roleEvidence.reviewReceipts` object publishes `status`, `read`, `limit`, and `truncated`
+so consumers can distinguish complete from partial role evidence. When it is partial, no match is
+not evidence of no receipt: a row without a retained task or another positive review fact remains
+`undeclared` rather than being asserted as implementation. A review-looking kind still proves
+review; a missing kind is always `undeclared`.
+
+Each role carries independent `tokens` and `cost` readings. Tokens use `present`, `absent`, and
+`unknown`; `measured` is a floor and `total` stays `null` if any token part is missing. Cost keeps
+one `series[]` per `(unit, basis)` and intentionally publishes no cross-series total. Its
+`coverage` distinguishes `absent`, `unknown`, `partial`, and `complete`, while `unknownRows` and
+`reasons` keep missing prices beside the recorded series. Thus zero is emitted only when a stored
+measurement is actually zero; no role, failed measurement, mixed currency, mixed basis, or absent
+review receipt can silently become one.

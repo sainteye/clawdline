@@ -3795,6 +3795,31 @@ final class UsageQueryService {
         var to: String
     }
 
+    /// The bounded durable-review join used by the accepted Feature projection. A receipt is
+    /// positive evidence; truncation means that the absence of one from this set proves nothing.
+    struct FeatureReviewEvidence {
+        let reviewedTaskIDs: Set<String>
+        let truncated: Bool
+        let read: Int
+        let limit: Int
+
+        init(receipts: [UsageLedger.StoredReviewReceipt], truncated: Bool, limit: Int) {
+            reviewedTaskIDs = Set(receipts.map(\.taskID))
+            self.truncated = truncated
+            read = receipts.count
+            self.limit = limit
+        }
+
+        var payload: [String: Any] {
+            ["status": truncated ? "partial" : "complete",
+             "read": read, "limit": limit, "truncated": truncated]
+        }
+    }
+
+    /// Review receipts cost further reads for axes and findings, so this shares the verification
+    /// ledger's deliberately lower review ceiling instead of inheriting the store-wide default.
+    static let maxFeatureReviewReceipts = VerificationLedgerService.maxReviewReceipts
+
     enum ExportError: Error { case jsonSerialization }
     static var jsonEncoderForTesting: (([String: Any]) -> Data?)?
 
@@ -3803,6 +3828,12 @@ final class UsageQueryService {
     /// Whether a Feature producer is configured, injected the way `readScheduleLabels` is: a test
     /// says what the setting is without reaching for the person's own config file.
     private let readFeatureClassifier: () -> UsageLedger.FeatureClassifierState
+    /// Review is a property of the durable task graph when that record still exists. The row's
+    /// frozen free-text kind is only the fallback after retention has swept the task.
+    private let readFeatureTaskRoles: () -> [String: VerificationLedgerService.Role]
+    /// Typed receipts outlive the task registry. The injected snapshot keeps tests away from the
+    /// person's live store and carries whether the bounded read was complete.
+    private let readFeatureReviewEvidence: () -> FeatureReviewEvidence
     /// A Project's pixel mark, keyed by the canonical identity `resolveProject` returned, and
     /// injected for the same reason the two above are: a test must be able to give a Feature row
     /// an icon without `~/.claude/project-icons.json` existing or saying anything in particular.
@@ -3818,6 +3849,13 @@ final class UsageQueryService {
         readRows = { UsageLedger.shared.analyticsRead($0) }
         readScheduleLabels = { Orchestrator.usageScheduleLabels() }
         readFeatureClassifier = { UsageLedger.featureClassifierState() }
+        readFeatureTaskRoles = { Orchestrator.usageFeatureTaskRoles() }
+        readFeatureReviewEvidence = {
+            let limit = UsageQueryService.maxFeatureReviewReceipts
+            let read = UsageLedger.shared.reviewReceipts(.all, limit: limit + 1)
+            return FeatureReviewEvidence(
+                receipts: Array(read.prefix(limit)), truncated: read.count > limit, limit: limit)
+        }
         readProjectIcon = { ProjectIcon.grid(forCwd: $0).map(ProjectIcon.gridJSON) }
         encodeJSON = Self.jsonEncoderForTesting ?? {
             try? JSONSerialization.data(withJSONObject: $0,
@@ -3834,6 +3872,11 @@ final class UsageQueryService {
          featureClassifier: @escaping () -> UsageLedger.FeatureClassifierState = {
              .notConfigured
          },
+         featureTaskRoles: @escaping () -> [String: VerificationLedgerService.Role] = { [:] },
+         featureReviewEvidence: @escaping () -> FeatureReviewEvidence = {
+             .init(receipts: [], truncated: false,
+                   limit: UsageQueryService.maxFeatureReviewReceipts)
+         },
          projectIcon: @escaping (String) -> [String: Any]? = { _ in nil },
          jsonEncoder: @escaping ([String: Any]) -> Data? = {
              try? JSONSerialization.data(withJSONObject: $0,
@@ -3848,6 +3891,8 @@ final class UsageQueryService {
         }
         readScheduleLabels = scheduleLabels
         readFeatureClassifier = featureClassifier
+        readFeatureTaskRoles = featureTaskRoles
+        readFeatureReviewEvidence = featureReviewEvidence
         readProjectIcon = projectIcon
         encodeJSON = jsonEncoder
     }
@@ -4050,6 +4095,8 @@ final class UsageQueryService {
             previousAcceptedProjects: previousAcceptedProjects, calendar: calendar,
             scheduleLabels: readScheduleLabels(),
             featureClassifier: readFeatureClassifier(),
+            featureTaskRoles: readFeatureTaskRoles(),
+            featureReviewEvidence: readFeatureReviewEvidence(),
             projectIcon: readProjectIcon,
             query: query, priorRange: priorRange,
             comparisonTruncated: truncated || previousTruncated)
@@ -4590,7 +4637,9 @@ final class UsageQueryService {
                                     accepted: [String: UsageLedger.AcceptedAttribution],
                                     acceptedProjects: [String: UsageLedger.AcceptedAttribution],
                                     projectScopes: [String: FeatureProjectScope],
-                                    classifier: UsageLedger.FeatureClassifierState)
+                                    classifier: UsageLedger.FeatureClassifierState,
+                                    taskRoles: [String: VerificationLedgerService.Role],
+                                    reviewEvidence: FeatureReviewEvidence)
         -> [String: Any] {
         var groups: [String: (label: String, rows: [UsageLedger.Row])] = [:]
         var unknown: [UsageLedger.Row] = []
@@ -4610,6 +4659,8 @@ final class UsageQueryService {
                     "runs": Set(value.rows.map(runID)).count,
                     "output": output(totals) as Any? ?? NSNull(),
                     "unknownOutputRuns": unknownOutputRuns(value.rows),
+                    "usageByRole": featureUsageByRole(
+                        value.rows, taskRoles: taskRoles, reviewEvidence: reviewEvidence),
                     "coverage": coveragePayload(value.rows, totals: totals)]
         }.sorted {
             let left = $0["output"] as? Int ?? -1, right = $1["output"] as? Int ?? -1
@@ -4627,6 +4678,7 @@ final class UsageQueryService {
             "automaticAttribution": classifier.configured,
             "policy": "one_unambiguous_accepted_head",
             "classifier": classifier.payload,
+            "roleEvidence": ["reviewReceipts": reviewEvidence.payload],
             "groups": payload,
             "unknown": [
                 "label": "Unknown Feature", "runs": Set(unknown.map(runID)).count,
@@ -4635,6 +4687,94 @@ final class UsageQueryService {
                 "reason": "no_unambiguous_accepted_head",
             ],
         ]
+    }
+
+    /// The retained durable graph decides first, then a typed receipt that outlived that task.
+    /// The shared word predicate is the lower seam. A truncated receipt read cannot turn a missing
+    /// match into implementation: only a review-looking kind remains positive evidence there.
+    private static func featureRole(
+        _ row: UsageLedger.Row,
+        taskRoles: [String: VerificationLedgerService.Role],
+        reviewEvidence: FeatureReviewEvidence
+    ) -> VerificationLedgerService.Role {
+        if let taskID = row.taskID, let role = taskRoles[taskID] { return role }
+        let hasReviewReceipt = row.taskID.map {
+            reviewEvidence.reviewedTaskIDs.contains($0)
+        } ?? false
+        let fallback = VerificationLedgerService.role(
+            kindRaw: row.kindRaw, hasReviewReceipt: hasReviewReceipt)
+        if hasReviewReceipt || !reviewEvidence.truncated { return fallback }
+        return fallback == .review ? .review : .undeclared
+    }
+
+    /// Cost series retain unit and basis as part of their identity. `series` is therefore the
+    /// amount-bearing field; there is deliberately no cross-series total to tempt a caller into
+    /// adding provider actuals to estimates, or one currency to another.
+    private static func featureCostPayload(_ rows: [UsageLedger.Row]) -> [String: Any] {
+        let totals = summary(rows)
+        let series = totals["costs"] as? [[String: Any]] ?? []
+        let unavailable = totals["unavailableCost"] as? [String: Any] ?? [:]
+        let unknownRows = unavailable["rows"] as? Int ?? 0
+        let measuredRows = series.reduce(0) { result, item in
+            result + (item["rows"] as? Int ?? 0)
+        }
+        let state: VerificationLedgerService.Presence
+        if rows.isEmpty { state = .absent }
+        else if measuredRows == 0 { state = .unknown }
+        else { state = .present }
+        let coverage: String
+        if rows.isEmpty { coverage = "absent" }
+        else if measuredRows == 0 { coverage = "unknown" }
+        else if unknownRows > 0 { coverage = "partial" }
+        else { coverage = "complete" }
+        return [
+            "state": state.rawValue,
+            "rows": rows.count,
+            "measuredRows": measuredRows,
+            "unknownRows": unknownRows,
+            "reasons": unavailable["reasons"] as Any? ?? [:],
+            "coverage": coverage,
+            "comparable": state == .present && series.count == 1,
+            "series": series,
+        ]
+    }
+
+    private static func featureUsageByRole(
+        _ rows: [UsageLedger.Row],
+        taskRoles: [String: VerificationLedgerService.Role],
+        reviewEvidence: FeatureReviewEvidence
+    ) -> [String: Any] {
+        var grouped: [VerificationLedgerService.Role: [UsageLedger.Row]] = [:]
+        for row in rows {
+            grouped[featureRole(row, taskRoles: taskRoles,
+                                reviewEvidence: reviewEvidence), default: []].append(row)
+        }
+        var payload: [String: Any] = [:]
+        for role in VerificationLedgerService.Role.allCases {
+            let roleRows = grouped[role] ?? []
+            var tokenReading = VerificationLedgerService.TokenReading()
+            for row in roleRows { tokenReading.add(row) }
+            payload[role.rawValue] = [
+                "tokens": VerificationLedgerService.payload(of: tokenReading),
+                "cost": featureCostPayload(roleRows),
+            ]
+        }
+        return payload
+    }
+
+    /// Pure projection used by the production registry snapshot and focused tests. Only a graph
+    /// node enters this highest rung; legacy task kind is deliberately left for the lower seam,
+    /// after durable review receipts have had their say.
+    static func featureTaskRoles(_ tasks: [Orchestrator.Task])
+        -> [String: VerificationLedgerService.Role] {
+        let graphRoles: [(String, VerificationLedgerService.Role)] = tasks.compactMap { task in
+            let graphProvesRole = task.graph.flatMap { graph in
+                graph.nodes.first(where: { $0.id == graph.currentNode })
+            } != nil
+            guard graphProvesRole else { return nil }
+            return (task.id, Orchestrator.requiresTypedReview(task) ? .review : .implementation)
+        }
+        return Dictionary(uniqueKeysWithValues: graphRoles)
     }
 
     private static func portfolioInsights(projects: [[String: Any]], rows: [UsageLedger.Row],
@@ -4710,6 +4850,8 @@ final class UsageQueryService {
                                   previousAcceptedProjects: [String: UsageLedger.AcceptedAttribution],
                                   calendar: Calendar, scheduleLabels: [String: String],
                                   featureClassifier: UsageLedger.FeatureClassifierState,
+                                  featureTaskRoles: [String: VerificationLedgerService.Role],
+                                  featureReviewEvidence: FeatureReviewEvidence,
                                   projectIcon: (String) -> [String: Any]?,
                                   query: Query, priorRange: PreviousRange?,
                                   comparisonTruncated: Bool) -> [String: Any] {
@@ -4759,7 +4901,9 @@ final class UsageQueryService {
             "features": featureWork(rows, accepted: acceptedFeatures,
                                     acceptedProjects: acceptedProjects,
                                     projectScopes: featureProjectScopes,
-                                    classifier: featureClassifier),
+                                    classifier: featureClassifier,
+                                    taskRoles: featureTaskRoles,
+                                    reviewEvidence: featureReviewEvidence),
             "insights": portfolioInsights(projects: projects, rows: rows,
                                            previousRows: previousRows),
         ]
@@ -4900,6 +5044,17 @@ final class UsageQueryService {
             return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
         return value
+    }
+}
+
+extension Orchestrator {
+    /// One bounded registry snapshot for the accepted Feature table's read-time role join.
+    static func usageFeatureTaskRoles() -> [String: VerificationLedgerService.Role] {
+        load()
+        lock.lock()
+        let snapshots = Array(tasks.values)
+        lock.unlock()
+        return UsageQueryService.featureTaskRoles(snapshots)
     }
 }
 

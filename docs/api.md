@@ -4402,6 +4402,29 @@ accepted disposition remain unavailable until an explicit producer exists. Featu
 only through one active accepted attribution head; proposal-only, rejected, conflicting and absent
 evidence stays `Unknown Feature`. None is inferred from root Session or task success.
 
+Each accepted `portfolio.features.groups[]` row also carries `usageByRole.implementation`,
+`.review`, and `.undeclared`. Every role contains a token reading
+`{state,rows,unknownRows,incompleteRows,reasons,measured,total}` and a cost reading
+`{state,rows,measuredRows,unknownRows,reasons,coverage,comparable,series}`. `state` is `present`,
+`absent`, or `unknown`; absent and unknown token quantities serialize `measured` and `total` as
+`null`. `series` keeps `{unit,basis,value,rows,priceSnapshotIds}` separately for every comparable
+cost identity, so `comparable:false` never comes with an invented cross-series total. A partial
+cost reading retains both its priced series and its missing-row reasons.
+
+Role is read from a retained durable task graph with `Orchestrator.requiresTypedReview(_:)` first.
+If that graph evidence is unavailable, a matching durable typed review receipt is the next positive fact;
+both paths reuse `VerificationLedgerService.role`. Only after those rungs does the row's stored
+free-text kind use `Orchestrator.kindDenotesReview(_:)`. Missing role evidence is `undeclared`.
+Consequently a graph correction whose dispatch kind contains `review` stays implementation work,
+while a swept task with a typed review receipt stays review even if its stored kind is `custom`.
+
+The typed-receipt join is bounded at `VerificationLedgerService.maxReviewReceipts`, reading one
+sentinel row beyond the bound. `portfolio.features.roleEvidence.reviewReceipts` publishes
+`{status,read,limit,truncated}`; `status` is `complete` or `partial`. Under `partial`, a row with no
+retained task and no matching receipt is not classified as implementation merely because its kind
+is nonempty: it remains `undeclared`. A review-looking kind is still independent positive review
+evidence. Thus truncation is coverage state, never negative proof that no receipt exists.
+
 `portfolio` is a versioned projection over the exact bounded row subject behind `totals`. `runs`
 deduplicates task rows by task id and session segments by stored boundary/session identity.
 `projects` ranks generated output with a deterministic id tie-break and keeps measured values beside

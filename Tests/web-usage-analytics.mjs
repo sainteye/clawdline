@@ -112,6 +112,54 @@ function unconfiguredFeatures() {
 // Every field here differs from every other field in this payload, so no assertion can pass by
 // reading the wrong one: a green "every field survives" over coincident values proves nothing.
 function classifiedFeatures() {
+  const usageByRole = {
+    implementation: {
+      tokens: { state: "present", rows: 3, unknownRows: 0, incompleteRows: 0,
+                reasons: [], measured: 115, total: 115 },
+      cost: { state: "present", rows: 3, measuredRows: 3, unknownRows: 0,
+              reasons: {}, coverage: "complete", comparable: false,
+              series: [
+                { unit: "EUR", basis: "provider_actual", value: 0.75, rows: 1 },
+                { unit: "USD", basis: "list_price_estimate", value: 0.25, rows: 1 },
+                { unit: "USD", basis: "provider_actual", value: 1.25, rows: 1 },
+              ] },
+    },
+    review: {
+      tokens: { state: "present", rows: 2, unknownRows: 0, incompleteRows: 1,
+                reasons: ["source_regressed"], measured: 55, total: null },
+      cost: { state: "present", rows: 2, measuredRows: 1, unknownRows: 1,
+              reasons: { no_cost_recorded: 1 }, coverage: "partial", comparable: true,
+              series: [{ unit: "USD", basis: "list_price_estimate", value: 0.5, rows: 1 }] },
+    },
+    undeclared: {
+      tokens: { state: "unknown", rows: 1, unknownRows: 1, incompleteRows: 1,
+                reasons: ["source_unreadable_at_close"], measured: null, total: null },
+      cost: { state: "unknown", rows: 1, measuredRows: 0, unknownRows: 1,
+              reasons: { plan_billed: 1 }, coverage: "unknown", comparable: false,
+              series: [] },
+    },
+  };
+  const scheduleUsageByRole = {
+    implementation: {
+      tokens: { state: "absent", rows: 0, unknownRows: 0, incompleteRows: 0,
+                reasons: [], measured: null, total: null },
+      cost: { state: "present", rows: 1, measuredRows: 1, unknownRows: 0,
+              reasons: {}, coverage: "complete", comparable: true,
+              series: [{ unit: "JPY", basis: "provider_actual", value: 320, rows: 1 }] },
+    },
+    review: {
+      tokens: { state: "present", rows: 1, unknownRows: 0, incompleteRows: 0,
+                reasons: [], measured: 19, total: 19 },
+      cost: { state: "absent", rows: 0, measuredRows: 0, unknownRows: 0,
+              reasons: {}, coverage: "absent", comparable: false, series: [] },
+    },
+    undeclared: {
+      tokens: { state: "absent", rows: 0, unknownRows: 0, incompleteRows: 0,
+                reasons: [], measured: null, total: null },
+      cost: { state: "absent", rows: 0, measuredRows: 0, unknownRows: 0,
+              reasons: {}, coverage: "absent", comparable: false, series: [] },
+    },
+  };
   return {
     status: "available",
     automaticAttribution: true,
@@ -123,10 +171,11 @@ function classifiedFeatures() {
       { id: "feature-4a2b", label: "Ledger repair", runs: 9, output: 41000,
         project: { id: "project-1f3a", label: "clawdline",
                    icon: { accent: "#2F6B5E", cells: [["#EEF6F4", null]] } },
-        coverage: { status: "complete" } },
+        coverage: { status: "complete" }, usageByRole },
       { id: "feature-7c9d", label: "Schedule identity", runs: 4, output: 17500,
         project: { id: null, label: "Unknown Project", reason: "mixed_project_scope" },
-        coverage: { status: "partial", unknownOutputRuns: 3 } },
+        coverage: { status: "partial", unknownOutputRuns: 3 },
+        usageByRole: scheduleUsageByRole },
     ],
     unknown: { label: "Unknown Feature", runs: 13, output: 6200, unknownOutputRuns: 6,
                reason: "no_unambiguous_accepted_head" },
@@ -375,11 +424,17 @@ function exerciseConfiguredFeatures(usage, mainSource) {
      { label: "Feature", text: "Ledger repair" },
      { label: "Agent work", text: "9" },
      { label: "Generated output", text: "41,000" },
+     { label: "Implementation", text: "115 tokens · Costs 0.75 EUR · provider_actual; 0.25 USD · list_price_estimate; 1.25 USD · provider_actual · mixed series" },
+     { label: "Review", text: "≥55 tokens · partial · Cost 0.5 USD · list_price_estimate · 1 cost unknown" },
+     { label: "Unproved role", text: "Tokens unknown · Cost unknown · plan billed" },
      { label: "Coverage", text: "Complete" }],
     [{ label: "Project", text: "Unknown Project" },
      { label: "Feature", text: "Schedule identity" },
      { label: "Agent work", text: "4" },
      { label: "Generated output", text: "17,500" },
+     { label: "Implementation", text: "Tokens absent · Cost 320 JPY · provider_actual" },
+     { label: "Review", text: "19 tokens · Cost absent" },
+     { label: "Unproved role", text: "Tokens absent · Cost absent" },
      { label: "Coverage", text: "Partial · 3 unknown output" }],
   ], "two accepted Features with different labels, runs and outputs must both render, "
      + "each naming the Project it belongs to");
@@ -387,6 +442,24 @@ function exerciseConfiguredFeatures(usage, mainSource) {
                "13 runs remain Unknown Feature. Proposals, rejections,"
                + " and conflicting accepted heads never enter a named total.",
                "Unknown Feature must report its own runs, never zero and never suppressed");
+
+  const incompleteRoles = classifiedFeatures();
+  delete incompleteRoles.groups[0].usageByRole;
+  incompleteRoles.groups[1].usageByRole = {
+    implementation: incompleteRoles.groups[1].usageByRole.implementation,
+  };
+  const { elements: incomplete } = renderPortfolio(usage, mainSource, incompleteRoles);
+  const incompleteRows = featureRows(incomplete);
+  verify.deepEqual(incompleteRows[0].slice(4, 7), [
+    { label: "Implementation", text: "Unavailable" },
+    { label: "Review", text: "Unavailable" },
+    { label: "Unproved role", text: "Unavailable" },
+  ], "a nonempty Feature without usageByRole must not invent explicit absence");
+  verify.deepEqual(incompleteRows[1].slice(4, 7), [
+    { label: "Implementation", text: "Tokens absent · Cost 320 JPY · provider_actual" },
+    { label: "Review", text: "Unavailable" },
+    { label: "Unproved role", text: "Unavailable" },
+  ], "a missing role key must be unavailable while supplied role evidence remains readable");
 
   // An empty table under a configured classifier is a different statement from an empty table
   // under no classifier, so it must not borrow the unconfigured sentence.
@@ -559,6 +632,8 @@ async function main() {
   }
   verify.match(page, /<th scope="col" role="columnheader">Project<\/th><th scope="col" role="columnheader">Feature<\/th>/,
                "the Feature table names its Project column, first and before the Feature name");
+  verify.match(page, /Generated output<\/th><th scope="col" role="columnheader">Implementation<\/th><th scope="col" role="columnheader">Review<\/th><th scope="col" role="columnheader">Unproved role<\/th>/,
+               "the accepted Feature table exposes all three role readings in a fixed order");
   verify.match(page, /id="usage-feature-fold"[^>]*aria-controls="usage-feature-body"/,
                "the fold control must say in the markup which rows it folds");
   verify.match(css, /\.usage-feature-project-mark\.none \{[^}]*background: #202028/,
