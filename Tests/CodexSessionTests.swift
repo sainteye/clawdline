@@ -964,6 +964,11 @@ group("the fields of a rollout, one at a time") {
            Codex.outcome(of: ["exit_code": 3, "aggregated_output": ""]), "exit 3")
     expect("and a success with no output says nothing",
            Codex.outcome(of: ["exit_code": 0, "aggregated_output": ""]), "")
+    let largeOutput = "first\n" + String(repeating: "discarded output\n", count: 100_000)
+    let firstLine = Codex.firstLineReading(of: largeOutput)
+    expect("the first output line stays exact", firstLine.text, "first")
+    expect("reading the first output line stops before the discarded tail",
+           firstLine.examined, 5)
     expect("an MCP call shows the title its plugin wrote",
            Codex.arguments(["title": "open the run page", "code": "await browser.open()"]),
            "open the run page")

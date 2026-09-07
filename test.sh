@@ -394,7 +394,11 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # with `CLAWDLINE_RESEAL=1` reached all 10,132 checks and all twelve Cloud suites; the seven new
 # checks exercise bounded provider-record reads, indexed closeability, and the slow-reading cache
 # lifetime bound. The same run measured the 8,154-site witness below.
-expected_swift_receipt='10132 checks passed'
+# **10,134 is the measured early-output-scan tree.** The private exact candidate run with
+# `CLAWDLINE_RESEAL=1` reached all 10,134 checks and all twelve Cloud suites. The two new checks
+# preserve the first non-empty output line and prove the scan stops before a 1.7 MB discarded tail.
+# The same run measured the 8,156-site witness below.
+expected_swift_receipt='10134 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -407,7 +411,7 @@ expected_swift_receipt='10132 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8154
+expected_swift_receipt_witness=8156
 
 count_exact_receipt_lines() {
   local receipt=$1

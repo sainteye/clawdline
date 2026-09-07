@@ -526,8 +526,8 @@ enum Codex {
         let output = (item["aggregated_output"] as? String)
             ?? (item["stdout"] as? String)
             ?? (item["stderr"] as? String) ?? ""
-        let first = output.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init)
-        if let first, !first.isEmpty { return first }
+        let first = firstLineReading(of: output).text
+        if !first.isEmpty { return first }
         guard let code = item["exit_code"] as? Int else { return "" }
         return code == 0 ? "" : "exit \(code)"
     }
@@ -778,7 +778,24 @@ enum Codex {
         }
     }
 
+    // Command output can be much larger than its one-line transcript summary. Stop at the first
+    // useful line instead of splitting and materializing the entire discarded tail.
+    static func firstLineReading(of text: String) -> (text: String, examined: Int) {
+        let bytes = text.utf8
+        var start = bytes.startIndex
+        while start < bytes.endIndex {
+            let end = bytes[start...].firstIndex(of: UInt8(ascii: "\n")) ?? bytes.endIndex
+            if start < end {
+                return (String(decoding: bytes[start..<end], as: UTF8.self),
+                        bytes.distance(from: bytes.startIndex, to: end))
+            }
+            guard end < bytes.endIndex else { break }
+            start = bytes.index(after: end)
+        }
+        return ("", bytes.count)
+    }
+
     private static func firstLine(of text: String) -> String {
-        text.split(separator: "\n", omittingEmptySubsequences: true).first.map(String.init) ?? ""
+        firstLineReading(of: text).text
     }
 }
