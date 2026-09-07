@@ -1244,6 +1244,17 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
   // and the worker separate consoles, which is the only reading of this road that arrives while it
   // is happening. Both halves are prefixed so they can be filtered to; a prefix somebody quietly
   // removes takes the instrument with it.
+  // **What the script managed, not what it intends.** A worker is evaluated from the top every
+  // time the browser starts one, and the handlers are whatever the evaluation reached; a stop
+  // partway leaves the ones above it live and the ones below silently absent. `activate` is near
+  // the top and `notificationclick` near the bottom, which is the shape of "the worker plainly
+  // woke and tapping does nothing".
+  check("every listener is registered through the one place that records it",
+        pageSource.includes("function on(type, handler)")
+        && occurrences(pageSource, 'self.addEventListener("') === 0
+        && occurrences(pageSource, 'on("notificationclick", function') === 1);
+  check("and the list it managed travels to the page in the mark",
+        /listeners: registered/.test(pageSource));
   check("both halves of the road say what they are doing, under one prefix",
         pageSource.includes("[clawdline/sw] ") && routeSource.includes("[clawdline/page] "));
   // And quiet where it would otherwise print once per session list.
@@ -1255,8 +1266,12 @@ const WANT_WINDOW = (await makeWorld({})).page.WORKER_WANT_MAX_AGE_MS;
         /say\("worker said"/.test(routeSource));
   check("the look that found nothing does not say so",
         routeSource.includes('if (answer !== "none") say('));
-  check("a worker that is not this build is thrown away and installed again",
-        mainSource.includes("Push.reinstall()")
+  // **A mismatch is reported and not acted on.** Unregistering whenever the two builds differ
+  // fires on every rebuild and takes the push subscription with it each time; after four of them
+  // a phone that had been routing taps correctly stopped delivering `notificationclick` at all,
+  // and rolling the code back did not bring it back.
+  check("a worker of a different build is named, not demolished",
+        !mainSource.includes("Push.reinstall()")
         && occurrences(mainSource, "readWorkerMark().then(matchWorkerToBuild)") === 2);
   check("main.js imports the reader from route.js",
         /import \{[^}]*\breadWorkerWant\b[^}]*\} from "\.\/input\/route\.js";/.test(mainSource));

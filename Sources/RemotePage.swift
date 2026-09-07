@@ -1089,6 +1089,23 @@ enum RemotePage {
             } catch (e) { }
         }
 
+        // **Which listeners this script actually got as far as registering.**
+        //
+        // A service worker script is evaluated from the top every time the browser starts one, and
+        // the listeners are whatever the evaluation reached. If it stops partway — for any reason
+        // this end cannot see — the handlers above the stopping point are live and the ones below
+        // it silently do not exist. `activate` is registered near the top and `notificationclick`
+        // near the bottom, which is exactly the shape of "the worker plainly woke, and tapping
+        // does nothing": measured on a phone on 2026-09-07 across three states of the app.
+        //
+        // Node registers all five, and node is not WebKit. So the script says what it managed
+        // rather than what it intends, and the mark carries the list to the page.
+        var registered = [];
+        function on(type, handler) {
+            self.addEventListener(type, handler);
+            registered.push(type);
+        }
+
         // What this worker can do, left where the page can read it back. See `activate`.
         var MARK_CACHE = "clawdline-worker-mark";
         var MARK_URL = "/__clawdline/worker-mark";
@@ -1106,9 +1123,9 @@ enum RemotePage {
         // cleared up after itself. The stamp is the answer that a capability could not give.
         var BUILD = (typeof CLAWDLINE_BUILD === "string") ? CLAWDLINE_BUILD : "";
 
-        self.addEventListener("install", function () { self.skipWaiting(); });
+        on("install", function () { self.skipWaiting(); });
 
-        self.addEventListener("activate", function (event) {
+        on("activate", function (event) {
             event.waitUntil(
                 // Nothing here writes to Cache Storage, so normally there is nothing to delete.
                 // It is done anyway, because "nothing wrote to it" is a claim about every version
@@ -1147,12 +1164,14 @@ enum RemotePage {
                     // was no way to tell a worker that had not updated from a road that was
                     // broken. This is that difference, written down where a flood cannot reach.
                     .then(function () {
-                        say("activate: this worker is now in charge", { build: BUILD });
+                        say("activate: this worker is now in charge",
+                            { build: BUILD, listeners: registered.join(",") });
                         try {
                             return caches.open(MARK_CACHE).then(function (cache) {
                                 return cache.put(MARK_URL, new Response(
                                     JSON.stringify({ wants: true, keeps: true,
-                                                     build: BUILD, at: Date.now() }),
+                                                     build: BUILD, listeners: registered,
+                                                     at: Date.now() }),
                                     { headers: { "Content-Type": "application/json" } }));
                             }).catch(function () {});
                         } catch (e) { return undefined; }
@@ -1161,7 +1180,7 @@ enum RemotePage {
             );
         });
 
-        self.addEventListener("fetch", function (event) {
+        on("fetch", function (event) {
             // Only the page. Everything else on this origin is either an API answer, which is
             // `no-store` already, a drawn icon, which is worth its day of cache, or a stylesheet
             // or module under a URL naming the build it came from, which is worth a year.
@@ -1192,7 +1211,7 @@ enum RemotePage {
             );
         });
 
-        self.addEventListener("push", function (event) {
+        on("push", function (event) {
             var payload = {};
             try { payload = event.data ? event.data.json() : {}; } catch (e) {}
             say("push arrived", { title: payload.title || "", url: payload.url || "/",
@@ -1351,7 +1370,7 @@ enum RemotePage {
             } catch (e) { return Promise.resolve(false); }
         }
 
-        self.addEventListener("notificationclick", function (event) {
+        on("notificationclick", function (event) {
             // **The first line of this handler, and nothing before it.** Everything else here is
             // downstream of the handler having been entered at all, and on 2026-09-07 two readings
             // said a worker had woken and left nothing whatsoever behind — no trace, no message,

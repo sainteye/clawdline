@@ -375,7 +375,9 @@ export function readWorkerMark() {
             var answer = mark && mark.wants ? (mark.build ? "b" + mark.build : "wants") : "absent";
             Diagnostics.sourceRead(MARK_SOURCE, answer, mark && mark.wants ? 1 : 0);
             workerBuild = (mark && mark.build) ? String(mark.build) : null;
-            say("the worker under this page", { says: answer, build: workerBuild });
+            say("the worker under this page",
+                { says: answer, build: workerBuild,
+                  listeners: (mark && mark.listeners) ? mark.listeners.join(",") : "(not said)" });
             return answer;
         })
         .catch(function () {

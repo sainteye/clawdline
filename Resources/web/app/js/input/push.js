@@ -213,31 +213,6 @@ export var Push = (function () {
             } catch (e) { /* an update check is never worth an exception on this path */ }
         },
 
-        /// Throw the worker away and install it again.
-        ///
-        /// **The hammer, for when asking has not worked.** `register()` on every load and
-        /// `update()` at both wake-ups are the polite forms, and on 2026-09-07 a phone ran a page
-        /// from one build over a worker from an earlier one through several rounds of both. A
-        /// worker that is not the build this page is talking to cannot do what this page expects
-        /// of it, and every reading taken under it is about a program nobody is looking at.
-        ///
-        /// Costs one uninstall and one install, and the browser serves `sw.js` `no-cache`, so the
-        /// copy that comes back is the current one. Never called unless the two builds are known
-        /// and different.
-        reinstall: function () {
-            try {
-                if (!("serviceWorker" in navigator)) return Promise.resolve(false);
-                var again = function () {
-                    return navigator.serviceWorker.register(SW_PATH).then(function (r) {
-                        registration = r;
-                        return true;
-                    });
-                };
-                if (!registration || typeof registration.unregister !== "function") return again();
-                return registration.unregister().then(again, again);
-            } catch (e) { return Promise.resolve(false); }
-        },
-
         toggle: function () {
             if (busy) return;
             if (state === "off") enable();

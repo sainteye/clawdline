@@ -524,11 +524,20 @@ function matchWorkerToBuild() {
     var theirs = workerBuildSeen();
     if (!mine || !theirs || mine === theirs) return;
     Diagnostics.note("worker.mismatch", { page: mine, worker: theirs });
+    // **Said, and not acted on.** This used to unregister the worker and register it again
+    // whenever the two builds differed, which is a hammer that was added for a problem never
+    // actually shown to exist — and it fires on every rebuild, because every rebuild changes the
+    // stamp. Four rebuilds in an afternoon is four registrations torn down and rebuilt under a
+    // device, each one taking the push subscription with it, and after them a phone that had been
+    // routing taps correctly stopped delivering `notificationclick` at all. Rolling the code back
+    // did not bring it back, which is what a damaged registration looks like from here.
+    //
+    // A mismatch is worth knowing about and is not worth that. `register()` on every load and
+    // `update()` at both wake-ups remain, and they ask without demolishing anything.
     try {
-        console.log("[clawdline/page] the worker is not this build — reinstalling",
+        console.log("[clawdline/page] the worker is a different build from this page",
                     { page: mine, worker: theirs });
     } catch (e) { }
-    Push.reinstall();
 }
 
 /**

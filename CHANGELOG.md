@@ -9,6 +9,25 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: a build mismatch tore the worker down instead of just being reported
+
+Unregistering the service worker whenever the page and the worker disagreed about the build was a
+hammer added for a problem that was never actually shown to exist, and it fired on every rebuild —
+because every rebuild changes the stamp. Four rebuilds in an afternoon is four registrations torn
+down and rebuilt underneath a device, each one taking the push subscription with it. After them, a
+phone that had been routing taps correctly stopped delivering `notificationclick` at all, and
+rolling the code back did not bring it back, which is what a damaged registration looks like from
+the outside.
+
+A mismatch is now said and not acted on. Registering on every load and asking for an update at both
+wake-ups remain; neither demolishes anything.
+
+The worker also records which listeners its evaluation actually reached and carries the list to the
+page. A worker script is evaluated top to bottom every time the browser starts one, and a stop
+partway leaves the handlers above it live and the ones below it silently absent — `activate` is
+near the top and `notificationclick` near the bottom, which is exactly the shape of a worker that
+plainly woke while tapping did nothing.
+
 ### Fixed: closing the notification was the first thing a tap did, and the platform refuses it
 
 WebKit will not dismiss a persistent notification shortly after it was shown, and says so on the
