@@ -34,6 +34,8 @@ enum UsageFeatureBackfill {
         var kind: String?
         var parentTaskID: String?
         var retryOf: String?
+        var graphID: String?
+        var graphLabel: String?
     }
 
     /// The columns of one `usage_intervals` row this instrument is allowed to look at.
@@ -45,13 +47,15 @@ enum UsageFeatureBackfill {
         var kindRaw: String?
         var parentTaskID: String?
         var retryOf: String?
+        /// Exact stored spelling; classifier validation, not this mirror, decides admission.
+        var graphID: String?
         var boundaryKind = ""
         var boundaryID = ""
         var sessionID = ""
     }
 
     /// One Feature's totals. `rung` and `confidence` are the **strongest** rung anything in the
-    /// group reached, not the first one that happened to arrive: rung 4 copies its parent's
+    /// group reached, not the first one that happened to arrive: lineage copies its parent's
     /// Feature id, so a Feature holding both an explicit hint and rows that inherited it would
     /// otherwise print whichever the batch reached first.
     struct FeatureTally {
@@ -117,7 +121,9 @@ enum UsageFeatureBackfill {
                 planHeadline: planHeadline(nonEmpty(fields["planHeadline"] as? String)),
                 kind: nonEmpty(fields["kind"] as? String),
                 parentTaskID: nonEmpty(fields["parentTaskID"] as? String),
-                retryOf: nonEmpty(fields["retryOf"] as? String))
+                retryOf: nonEmpty(fields["retryOf"] as? String),
+                graphID: nonEmpty(fields["graphID"] as? String),
+                graphLabel: nonEmpty(fields["graphLabel"] as? String))
         }
         return facts
     }
@@ -131,7 +137,7 @@ enum UsageFeatureBackfill {
         defer { sqlite3_finalize(statement) }
         guard sqlite3_prepare_v2(db, """
             SELECT interval_key, task_id, project_key, schedule_id, kind_raw, parent_task_id,
-                   retry_of, boundary_kind, boundary_id, session_id
+                   retry_of, graph_id, boundary_kind, boundary_id, session_id
               FROM usage_intervals ORDER BY started_at, interval_key;
             """, -1, &statement, nil) == SQLITE_OK else {
             // Say what SQLite said. A `.backup` copy of the live ledger is in WAL mode, and a
@@ -155,9 +161,10 @@ enum UsageFeatureBackfill {
             row.kindRaw = nonEmpty(text(4))
             row.parentTaskID = nonEmpty(text(5))
             row.retryOf = nonEmpty(text(6))
-            row.boundaryKind = text(7) ?? ""
-            row.boundaryID = text(8) ?? ""
-            row.sessionID = text(9) ?? ""
+            row.graphID = text(7)
+            row.boundaryKind = text(8) ?? ""
+            row.boundaryID = text(9) ?? ""
+            row.sessionID = text(10) ?? ""
             guard !row.intervalKey.isEmpty else { continue }
             out.append(row)
         }
@@ -225,7 +232,7 @@ enum UsageFeatureBackfill {
         let ledgerRows = reading.rows
 
         // Schedule titles are a live registry read the production producer makes and this
-        // instrument cannot: a ledger copy carries the schedule id and not its name. Rung 2 falls
+        // instrument cannot: a ledger copy carries the schedule id and not its name. That rung falls
         // back to the id, exactly as it does in production for a schedule whose file has gone.
         let evidence = ledgerRows.map { row -> UsageFeatureClassifier.Evidence in
             let record = row.taskID.flatMap { facts[$0] }
@@ -242,7 +249,9 @@ enum UsageFeatureBackfill {
                 declaredWorkLine: record?.declaredWorkLine, planHeadline: record?.planHeadline,
                 scheduleID: row.scheduleID, scheduleTitle: nil,
                 parentTaskID: row.parentTaskID ?? record?.parentTaskID,
-                retryOf: row.retryOf ?? record?.retryOf)
+                retryOf: row.retryOf ?? record?.retryOf,
+                graphID: row.graphID,
+                graphLabel: row.graphID == record?.graphID ? record?.graphLabel : nil)
         }
         let outcome = UsageFeatureClassifier.classify(evidence)
 

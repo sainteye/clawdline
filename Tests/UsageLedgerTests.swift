@@ -920,12 +920,13 @@ func featureEvidence(_ key: String, project: String? = nil, task: String? = nil,
                      durable: Bool = true, kind: String? = nil, title: String? = nil,
                      line: String? = nil, plan: String? = nil, schedule: String? = nil,
                      scheduleTitle: String? = nil, parent: String? = nil,
-                     retryOf: String? = nil) -> UsageFeatureClassifier.Evidence {
+                     retryOf: String? = nil, graph: String? = nil,
+                     graphLabel: String? = nil) -> UsageFeatureClassifier.Evidence {
     UsageFeatureClassifier.Evidence(
         intervalKey: key, projectKey: project, taskID: task, hasDurableTaskRecord: durable,
         taskKind: kind, taskTitle: title, declaredWorkLine: line, planHeadline: plan,
         scheduleID: schedule, scheduleTitle: scheduleTitle, parentTaskID: parent,
-        retryOf: retryOf)
+        retryOf: retryOf, graphID: graph, graphLabel: graphLabel)
 }
 
 /// Three stored intervals: two tasks of one declared work line, and one task carrying a label
@@ -994,10 +995,22 @@ func featurePortfolio(_ payload: [String: Any]) -> [String: Any] {
 group("the local Feature classifier proposes only from durable evidence") {
     // One interval per rung, one per decline reason, and one pair that proves Feature identity is
     // scoped to a Project: the same label under two Project keys is two Features, not one.
+    let graph = "11111111-1111-4111-8111-111111111111"
+    let evictedGraph = "55555555-5555-4555-8555-555555555555"
     let evidence = [
         featureEvidence("iv-hint", project: "/private/acme/alpha", task: "task-hint",
                         kind: "code", title: "a title the hint outranks",
                         plan: "Feature: \u{201c}Ledger receipts\u{201d} for the whole range"),
+        featureEvidence("iv-graph-implementation", project: "/private/acme/alpha", task: "task-graph-implementation", kind: "code", plan: "Feature: A hint the graph outranks", graph: graph, graphLabel: "Usage attribution testing flow"),
+        featureEvidence("iv-graph-review", project: "/private/acme/alpha", task: "task-graph-review", kind: "code-review", plan: "Feature: A different review hint", graph: graph, graphLabel: "Usage attribution testing flow"),
+        featureEvidence("iv-graph-retry", project: "/private/acme/alpha", task: "task-graph-retry", kind: "code", retryOf: "task-graph-implementation", graph: graph, graphLabel: "Usage attribution testing flow"),
+        featureEvidence("iv-graph-other-project", project: "/private/acme/other", task: "task-graph-other-project", kind: "review", graph: graph, graphLabel: "Usage attribution testing flow"),
+        featureEvidence("iv-graph-evicted", project: "/private/acme/alpha", task: "task-graph-evicted", durable: false, kind: "review", graph: evictedGraph),
+        featureEvidence("iv-null-graph", project: "/private/acme/alpha", task: "task-null-graph", kind: "code", plan: "Feature: Null graph fallback", graphLabel: "A durable record label is not a recorded graph"),
+        featureEvidence("iv-graph-uppercase", project: "/private/acme/alpha", task: "task-graph-uppercase", kind: "code", plan: "Feature: Uppercase graph fallback", graph: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA", graphLabel: "Invalid label"),
+        featureEvidence("iv-graph-malformed", project: "/private/acme/alpha", task: "task-graph-malformed", kind: "code", plan: "Feature: Malformed graph fallback", graph: "not-a-uuid", graphLabel: "Invalid label"),
+        featureEvidence("iv-graph-whitespace", project: "/private/acme/alpha", task: "task-graph-whitespace", kind: "code", plan: "Feature: Padded graph fallback", graph: " 33333333-3333-4333-8333-333333333333 ", graphLabel: "Invalid label"),
+        featureEvidence("iv-graph-evicted-null", project: "/private/acme/alpha", task: "task-graph-evicted-null", durable: false, kind: "review"),
         featureEvidence("iv-schedule", project: "/private/acme/bravo", task: "task-schedule",
                         kind: "custom", title: "Nightly title", schedule: "schedule-nightly",
                         scheduleTitle: "Nightly sweep"),
@@ -1029,7 +1042,7 @@ group("the local Feature classifier proposes only from durable evidence") {
                         kind: "sweep", title: "India one title", line: "zebra   crossing"),
         featureEvidence("iv-india-two", project: "/private/acme/india", task: "task-india-two",
                         kind: "triage", title: "India two title", line: "Zebra Crossing"),
-        // One task owning two rows, carrying one declared label. Rung 3 counts distinct *tasks*,
+        // One task owning two rows. The declared-work-line rung counts distinct *tasks*,
         // so this is a one-off however many intervals it spans. Everything else in this fixture
         // gives every field a different value; these two deliberately share a task, a title and a
         // label, because that sharing is the thing under test.
@@ -1041,9 +1054,43 @@ group("the local Feature classifier proposes only from durable evidence") {
     let outcome = UsageFeatureClassifier.classify(evidence)
     var proposals: [String: UsageFeatureClassifier.Proposal] = [:]
     for proposal in outcome.proposals { proposals[proposal.intervalKey] = proposal }
-    expect("every classified interval leaves as a proposal", outcome.proposals.count, 10)
+    expect("every classified interval leaves as a proposal", outcome.proposals.count, 19)
 
-    expect("an explicit Feature hint is the first rung", proposals["iv-hint"]?.rung,
+    expect("recorded graph identity is the strongest rung", proposals["iv-graph-implementation"]?.rung, .graphIdentity)
+    expect("and outranks even an explicit Feature hint", proposals["iv-graph-implementation"]?.featureLabel, "Usage attribution testing flow")
+    check("one graph merges implementation, review and retry intervals into one Feature", proposals["iv-graph-implementation"]?.featureID == proposals["iv-graph-review"]?.featureID && proposals["iv-graph-review"]?.featureID == proposals["iv-graph-retry"]?.featureID)
+    check("the same graph id in two Projects remains two Features", proposals["iv-graph-implementation"]?.featureID != proposals["iv-graph-other-project"]?.featureID)
+    check("a recorded graph survives registry eviction with its UUID as the honest label", proposals["iv-graph-evicted"]?.rung == .graphIdentity && proposals["iv-graph-evicted"]?.featureLabel == evictedGraph)
+    expect("a NULL recorded graph falls through to the old ladder", proposals["iv-null-graph"]?.rung, .explicitFeatureHint)
+    check("noncanonical graph spellings never obtain the 1.00 rung", ["iv-graph-uppercase", "iv-graph-malformed", "iv-graph-whitespace"].allSatisfy { proposals[$0]?.rung == .explicitFeatureHint })
+    let retrySeed = proposals["iv-graph-retry"]?.proposalEventID
+    expect("retry classification has the same deterministic event id on a repeat", UsageFeatureClassifier.classify(evidence).proposals.first { $0.intervalKey == "iv-graph-retry" }?.proposalEventID, retrySeed)
+    func mutatedProposal(_ key: String, _ change: (inout UsageFeatureClassifier.Evidence) -> Void) -> UsageFeatureClassifier.Proposal? {
+        var copy = evidence.first { $0.intervalKey == key }!; change(&copy)
+        return UsageFeatureClassifier.classify([copy]).proposals.first
+    }
+    expect("mutation: removing graph identity exposes the lower explicit hint", mutatedProposal("iv-graph-implementation") { $0.graphID = nil }?.rung, .explicitFeatureHint)
+    check("mutation: changing review graph breaks its implementation merge", mutatedProposal("iv-graph-review") { $0.graphID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }?.featureID != proposals["iv-graph-implementation"]?.featureID)
+    check("mutation: moving the second graph row into the first Project merges them", mutatedProposal("iv-graph-other-project") { $0.projectKey = "/private/acme/alpha" }?.featureID == proposals["iv-graph-implementation"]?.featureID)
+    expect("mutation: recording a graph stops NULL fallthrough", mutatedProposal("iv-null-graph") { $0.graphID = "33333333-3333-4333-8333-333333333333" }?.rung, .graphIdentity)
+    check("mutation: a retry moved to another graph gets another deterministic event id", mutatedProposal("iv-graph-retry") { $0.graphID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }?.proposalEventID != retrySeed)
+    let relabelled = mutatedProposal("iv-graph-review") { $0.graphLabel = "Mutated label" }
+    check("mutation: changing a graph label changes its evidence digest and both event ids", relabelled?.evidenceDigest != proposals["iv-graph-review"]?.evidenceDigest && relabelled?.proposalEventID != proposals["iv-graph-review"]?.proposalEventID && relabelled?.acceptanceEventID != proposals["iv-graph-review"]?.acceptanceEventID)
+
+    var recordedGraphRow = UsageLedger.Row()
+    recordedGraphRow.intervalKey = "iv-recorded-graph-seam"; recordedGraphRow.taskID = "task-recorded-graph-seam"; recordedGraphRow.projectKey = "/private/acme/seam"
+    recordedGraphRow.graphID = "22222222-2222-4222-8222-222222222222"
+    let seamFacts = UsageLedger.TaskFacts(title: "Feature: Lower evidence", graphID: recordedGraphRow.graphID, graphLabel: "Durable graph destination")
+    let assembled = UsageLedger.featureEvidence(rows: [recordedGraphRow], taskFacts: [recordedGraphRow.taskID!: seamFacts], scheduleTitles: [:]).first
+    check("the row's recorded graph and its matching durable label cross the evidence seam", assembled?.graphID == recordedGraphRow.graphID && assembled?.graphLabel == "Durable graph destination")
+    let evicted = UsageLedger.featureEvidence(rows: [recordedGraphRow], taskFacts: [:], scheduleTitles: [:]).first
+    let evictedProposal = evicted.flatMap { UsageFeatureClassifier.classify([$0]).proposals.first }
+    check("registry eviction loses only the destination and keeps recorded graph classification", evicted?.hasDurableTaskRecord == false && evicted?.graphLabel == nil && evictedProposal?.rung == .graphIdentity && evictedProposal?.featureLabel == recordedGraphRow.graphID)
+    recordedGraphRow.graphID = nil
+    let absent = UsageLedger.featureEvidence(rows: [recordedGraphRow], taskFacts: [recordedGraphRow.taskID!: seamFacts], scheduleTitles: [:]).first
+    check("NULL graph_id is not backfilled from today's durable task record", absent?.graphID == nil && absent?.graphLabel == nil)
+
+    expect("an explicit Feature hint is the first fallback rung", proposals["iv-hint"]?.rung,
            .explicitFeatureHint)
     expect("and it is the most confident one", proposals["iv-hint"]?.confidence, 0.95)
     expect("the hint's own words become the label, without either half of its quotation",
@@ -1052,7 +1099,7 @@ group("the local Feature classifier proposes only from durable evidence") {
            proposals["iv-title-hint"]?.rung, .explicitFeatureHint)
     expect("and that title's quotation is stripped in the same pair",
            proposals["iv-title-hint"]?.featureLabel, "Title rung")
-    expect("a schedule identity is the second rung", proposals["iv-schedule"]?.rung,
+    expect("a schedule identity follows explicit hints", proposals["iv-schedule"]?.rung,
            .scheduleIdentity)
     expect("at 0.88", proposals["iv-schedule"]?.confidence, 0.88)
     expect("labelled by the schedule's title rather than its id",
@@ -1113,15 +1160,15 @@ group("the local Feature classifier proposes only from durable evidence") {
     expect("the Feature id recipe is the documented one", golden?.featureID,
            "feature-4aef34c26a966067604adf70e9fd5ba6")
     expect("so is the evidence digest recipe", golden?.evidenceDigest,
-           "c82e12b250984aaacdd35c3201bccf9d0cb915be6f5781735e1f919ee146a3ef")
+           "4b28ffc64c34f1506c4704ffc29af9d8d9ae7bae294debf8f2bf28a2ca28cb94")
     expect("and so is the event id seed", golden?.proposalEventID,
-           "feature-proposal-v1-f167d0e8b4c9c30246f4a17fa852c5a76342a3a5")
+           "feature-proposal-v2-d3f10c7469aab8b465af4f638b61f505a67fee21")
     expect("whose acceptance shares that seed and nothing else", golden?.acceptanceEventID,
-           "feature-accepted-v1-f167d0e8b4c9c30246f4a17fa852c5a76342a3a5")
+           "feature-accepted-v2-d3f10c7469aab8b465af4f638b61f505a67fee21")
 
     check("every event id is one the ledger will accept", outcome.proposals.allSatisfy {
-        $0.proposalEventID.hasPrefix("feature-proposal-v1-") && $0.proposalEventID.count <= 128
-            && $0.acceptanceEventID.hasPrefix("feature-accepted-v1-")
+        $0.proposalEventID.hasPrefix("feature-proposal-v2-") && $0.proposalEventID.count <= 128
+            && $0.acceptanceEventID.hasPrefix("feature-accepted-v2-")
             && $0.acceptanceEventID != $0.proposalEventID
     })
     check("classifying the same batch twice is the same answer",
@@ -1135,6 +1182,8 @@ group("the local Feature classifier proposes only from durable evidence") {
     expect("a row with no task identity says so", declines["iv-no-task"], .noTaskIdentity)
     expect("so does one no durable record confirms", declines["iv-no-record"],
            .noDurableTaskRecord)
+    expect("an evicted record with NULL graph retains the old durable-record requirement",
+           declines["iv-graph-evicted-null"], .noDurableTaskRecord)
     expect("a label one task carries is a one-off, not a work line", declines["iv-solitary"],
            .solitaryDeclaredLabel)
     check("and two intervals of that one task are still one task, not two",
@@ -1145,6 +1194,9 @@ group("the local Feature classifier proposes only from durable evidence") {
            .noGroupingEvidence)
     expect("every interval leaves exactly once", outcome.proposals.count + outcome.declined.count,
            evidence.count)
+
+    let backfillSource = try! String(contentsOfFile: "tools/usage-feature-backfill.swift", encoding: .utf8)
+    check("the executable backfill mirror reads row graph identity and matching task facts", backfillSource.contains("var graphID: String?") && backfillSource.contains("var graphLabel: String?") && backfillSource.contains("retry_of, graph_id") && backfillSource.contains("graphID: row.graphID") && backfillSource.contains("graphLabel: row.graphID == record?.graphID ? record?.graphLabel : nil"))
 }
 
 group("the acceptance policy promotes only above its configured threshold") {
@@ -1213,6 +1265,34 @@ group("the acceptance policy promotes only above its configured threshold") {
           featureMeasurementBytes(before) == featureMeasurementBytes(after))
     check("and no other column of that row moved either", before == after)
 
+    let graphStore = freshUsageLedger()
+    defer { forgetUsageLedger(graphStore) }
+    var graphSample = ledgerSample(.codex, session: "feature-graph-claim", boundary: .task,
+        id: "task-graph-claim", origin: .dispatch,
+        usage: ["input": 23, "output": 29, "cache_read": 31, "cache_write": 37, "total": 120],
+        model: "gpt-5", at: at)
+    graphSample.taskID = "task-graph-claim"; graphSample.projectKey = "/private/acme/graph-claim"
+    graphSample.graphID = "44444444-4444-4444-8444-444444444444"; graphSample.seal = true
+    let graphKey = UsageLedger.shared.observeNow(graphSample)!
+    let graphRows = UsageLedger.shared.rows()
+    func graphEvidence(_ label: String) -> [UsageFeatureClassifier.Evidence] {
+        UsageLedger.featureEvidence(rows: graphRows, taskFacts: ["task-graph-claim": .init(
+            title: "a title the graph outranks", graphID: graphSample.graphID, graphLabel: label)],
+            scheduleTitles: [:])
+    }
+    let graphEvidenceBefore = graphEvidence("Destination before")
+    let graphProposalBefore = UsageFeatureClassifier.classify(graphEvidenceBefore).proposals.first!
+    let graphFirst = UsageLedger.shared.runFeatureAttribution(evidence: graphEvidenceBefore, now: at, threshold: 0.80, accepting: true)
+    check("the first graph claim is proposed and accepted", graphFirst.proposed == 1 && graphFirst.accepted == 1)
+    let graphHeadBefore = UsageLedger.shared.resolvedAttribution(intervalKey: graphKey, dimension: .feature)
+
+    let graphEvidenceAfter = graphEvidence("Destination after")
+    let graphProposalAfter = UsageFeatureClassifier.classify(graphEvidenceAfter).proposals.first!
+    let graphSecond = UsageLedger.shared.runFeatureAttribution(evidence: graphEvidenceAfter,
+        now: at.addingTimeInterval(600), threshold: 0.80, accepting: true)
+    check("a changed graph destination is a new deterministic claim, not an idempotent duplicate", graphProposalAfter.proposalEventID != graphProposalBefore.proposalEventID && graphProposalAfter.acceptanceEventID != graphProposalBefore.acceptanceEventID && graphSecond.proposed == 1 && graphSecond.proposalsAlreadyPresent == 0)
+    check("the accepted-head policy holds the changed claim for review", graphSecond.accepted == 0 && graphSecond.acceptancesAlreadyPresent == 0 && graphSecond.heldExistingAcceptedHead == 1 && UsageLedger.shared.resolvedAttribution(intervalKey: graphKey, dimension: .feature)?.eventID == graphHeadBefore?.eventID && UsageLedger.shared.containsAttributionEvent(graphProposalAfter.proposalEventID))
+
     let stricter = freshUsageLedger()
     defer { forgetUsageLedger(stricter) }
     let strictKeys = featureFixtureIntervals(at: at)
@@ -1248,7 +1328,7 @@ group("the acceptance policy promotes only above its configured threshold") {
     expect("with nothing written", refused.proposed, 0)
     expect("and no acceptance attempted on a predecessor that is not there",
            refused.accepted + refused.acceptancesAlreadyPresent + refused.acceptancesRefused, 0)
-    // A bounded reader that came back full has dropped its oldest rows, and rung 3 asks about
+    // A bounded reader that came back full has dropped its oldest rows; work-line grouping asks about
     // *this batch*, so the receipt has to be able to say so.
     expect("a receipt says its window was not truncated", refused.windowTruncated, false)
     expect("and says so when the reader that filled it was",
@@ -1269,7 +1349,7 @@ group("the acceptance policy promotes only above its configured threshold") {
     let settledHead = UsageLedger.shared.resolvedAttribution(intervalKey: movedKeys[0],
                                                              dimension: .feature)
     // The durable record gains the plan headline it did not have when it was first classified, so
-    // the row moves from rung 3 to rung 1: the Feature id, the rung and therefore the event id
+    // the row moves from declared-work-line to explicit-hint: the Feature id and event id
     // seed all change. A `classifierVersion` bump — which §3.2 *mandates* for any change to a
     // rung, a confidence, a normalization rule or the digest recipe — moves the same seed the
     // same way, and this is the half of it a test can reach.

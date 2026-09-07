@@ -22,117 +22,19 @@ services keep the existing worker payload. Re-subscribing also replaces an older
 same paired device, preventing a reinstall from sending one declarative and one stale legacy
 notification to the same phone.
 
-### Fixed: a build mismatch tore the worker down instead of just being reported
+The retired Cache Storage routing record is no longer reread after a tap. It could survive a
+successful declarative navigation and reopen an older Session as soon as the reader returned to
+the list. Activating the new worker clears those old caches, and leaving a phone detail clears its
+Session fragment. The worker keeps only the compact legacy fallback required by browsers that do
+deliver `notificationclick`.
 
-Unregistering the service worker whenever the page and the worker disagreed about the build was a
-hammer added for a problem that was never actually shown to exist, and it fired on every rebuild —
-because every rebuild changes the stamp. Four rebuilds in an afternoon is four registrations torn
-down and rebuilt underneath a device, each one taking the push subscription with it. After them, a
-phone that had been routing taps correctly stopped delivering `notificationclick` at all, and
-rolling the code back did not bring it back, which is what a damaged registration looks like from
-the outside.
+Enabling notifications can no longer stay on **Asking…** forever. Permission, worker readiness,
+VAPID-key lookup, browser subscription and server registration are separately named in the phone
+diagnostic trace and bounded; every failure clears the busy state and reports its stage and code.
+The press also retries a worker registration that failed during boot instead of waiting forever on
+`navigator.serviceWorker.ready`. On the hosted Cloud PWA, its immutable web build now keeps the
+Settings version line and five-tap diagnostic door visible before a Mac version snapshot arrives.
 
-A mismatch is now said and not acted on. Registering on every load and asking for an update at both
-wake-ups remain; neither demolishes anything.
-
-The worker also records which listeners its evaluation actually reached and carries the list to the
-page. A worker script is evaluated top to bottom every time the browser starts one, and a stop
-partway leaves the handlers above it live and the ones below it silently absent — `activate` is
-near the top and `notificationclick` near the bottom, which is exactly the shape of a worker that
-plainly woke while tapping did nothing.
-
-### Fixed: closing the notification was the first thing a tap did, and the platform refuses it
-
-WebKit will not dismiss a persistent notification shortly after it was shown, and says so on the
-console before every tap: *Persistent notifications cannot be closed shortly after they are shown.*
-That call was the first statement in the handler, ahead of the message, the record and the trace —
-so a refusal there is a tap that leaves nothing behind at all, which is exactly the reading two
-reports from a phone produced and nothing could explain. Whether it warns or throws is not
-answerable from outside, and it does not need to be: it is last now, guarded, and skipped entirely
-for a notification too new to be closed.
-
-The handler also says when it has been entered, before anything can go wrong, so the difference
-between a worker that never ran and one that died on its first line is one line of console.
-
-### Fixed: a worker that is not this build is now replaced rather than asked again
-
-Registering on every load and calling `update()` at both wake-ups are the polite ways to ask a
-browser for a newer service worker, and a phone spent several rounds running a page from one build
-over a worker from an earlier one through both of them. Every reading taken in that state was about
-a program nobody was looking at.
-
-The worker's note now carries the build it came from, the page reports it, and when the two numbers
-are known and different the worker is thrown away and installed again. Silent when either number is
-missing, which is a worker from before the stamp or a server too old to answer one.
-
-The stamp was added to the worker in the previous change and the reader was left reporting the
-capability instead — a signal shipped with nobody listening to it, which is the same shape as a
-check that cannot fail.
-
-### Fixed: three more ways a tap was lost after the worker had already woken
-
-A phone produced a reading no round before this could have: a worker that had plainly run and left
-nothing at all — no trace of the tap, no message, no record. Three mechanisms make that, and rather
-than test them one at a time against one rebuild each, all three are closed here.
-
-`focus()` sat in the middle of the promise the handler gave `waitUntil`, and a device that refuses
-it — iOS does — skipped the tail, settled the wait, and let the worker be stopped with the tap's own
-record still in flight. The wait now always reaches the writes.
-
-The message went to the first window that would take one and returned. A phone holding a copy the
-reader cannot see gave that copy the tap and the window on screen nothing. Every window is told now;
-answering twice was already impossible, because a tap is answered once by its id.
-
-And a record that lands behind the read that went looking for it had nothing to bring anybody back:
-a banner tapped over an app already in front of you produces no list, no focus and no visibility
-change. Three bounded looks follow each wake-up, then it stops.
-
-The worker also stamps the build it came from into the mark it leaves, because a capability said
-"knows how to leave a record" and two consecutive builds answered it identically — one that kept the
-record and one that swept it away.
-
-### Fixed: taking over deleted the record the tap had just left
-
-The worker cleared every cache when it took over. That was two defensive lines from a time when
-nothing wrote to Cache Storage, and it stayed correct exactly until a tap started leaving a record
-there for the page to find. The cost was written down as "a worker update loses one tap", and it
-was every tap the worker was restarted under.
-
-Measured on a phone on 2026-09-07: the worker posted its message and wrote its record, and the page
-then read that store 151 times and found nothing, with the worker's own mark reading four looks and
-three finds — one of them landing in the window where the purge had run and the rewrite had not.
-
-Taking over now sweeps only what this worker does not own. The three stores it does keep — the
-trace, the record a tap leaves, and the mark saying which worker this is — outlive it.
-
-### Fixed: the page and the service worker could be a build apart with nothing able to say so
-
-A report from a phone said the second road had looked for the worker's record 116 times and never
-found one, while that same worker's trace was arriving normally. Two faults make that picture — a
-road that does not work, and a worker that has not updated and does not know how to leave a record
-at all — and they have opposite fixes. Nothing on either side could tell them apart, so two rounds
-of work went into the wrong one.
-
-The worker now writes down what it can do when it takes over, and the page reads it back and reports
-it: `absent` names a worker older than the page rather than leaving it to look like a broken road.
-The page also counts what the worker says it posted against what actually arrived, which is the drop
-stated as two numbers instead of inferred from one. And it asks the browser outright for a newer
-worker at both moments it wakes up — registering on every load is supposed to be enough and on that
-phone it was not.
-
-### Added: the notification road is now read from counts, not from a trace that overflows
-
-Two reports came back from a phone with the evidence already gone. The trace is eighty entries
-against a page that writes about five a second, so it holds eighteen seconds, and opening the panel
-that sends a report takes longer than that: six independent windows across those two reports held
-not one entry about the tap between them.
-
-The four questions are now asked of `completeness.sources`, which is a row per recorder rather than
-a ring and survived both reports intact — whether the worker wrote, whether a message ever arrived,
-what the record road decided, and whether the session it named was in the list. The one that could
-not be asked at all before is the second: a message that was never delivered and one that arrived
-and was declined are different faults with opposite fixes, and both used to look like an empty
-trace.
 
 ### Fixed: a suite failing over a landing record it was not allowed to write
 
@@ -204,25 +106,6 @@ What a correction replaces comes back in the reply and goes to the audit log. Th
 stays as immutable as it was; what changed is that a write which was not applied can no longer
 answer `ok`.
 
-### Fixed: tapping a notification while the app is already open
-
-The note a tap leaves behind — the one that was supposed to make a dropped message a delay rather
-than the end of the tap — did nothing at all in the case it is most needed for: the app already
-open in front of you when the banner arrives.
-
-Two things had to be wrong at once, and both were. The page stopped reading the store as soon as
-one read came back with anything other than *nothing there yet* — so a record left over from a
-notification tapped last night, correctly refused for being too old, closed the road for the rest
-of that page's life. A test push's record closed it the same way. And nothing woke the page anyway:
-a tap made in front of the app loads nothing, hides nothing, and the session list only arrives when
-something on the Mac changes — which it did when the notification was sent, a moment before the
-banner was tapped.
-
-The page now reads the store whenever a list arrives and whenever its window takes the focus back,
-which is what a banner drawn over the app hands back when it goes. What stops one tap being carried
-out twice is the tap's own id, which was always the thing doing that work; the flag beside it was
-only ever an economy, and the economy was the bug. The cost of dropping it is one small store read
-per list, which is a fraction of the render it sits beside.
 ### Added: a page that says what reviewing each Feature found, and what it cost
 
 There was nowhere to look. Mutation testing and reviews were finding real things, corrections were
@@ -412,35 +295,6 @@ out.
 
 The store holds 64 pictures at a time and shares that with the ones sessions send each other, so
 store the picture at the moment you are going to show it rather than well in advance.
-### Fixed: tapping a notification could leave you on the session list
-
-The notification names a session and carries its address, and on a phone it could still land you on
-the list you were already looking at. The URL was right, the page's reading of it was right, and
-the list had the session in it — what was wrong was the one step in the middle that nobody could
-see. A service worker reaching a window that is already open has exactly one way to tell it where
-to go: it sends a message. If that message is not delivered, the worker has already finished and
-gone back to sleep, and nothing is left anywhere to say what the tap was for. There is no second
-attempt, and the fallback written beside it cannot run — `postMessage` exists on every window a
-worker can reach, so the branch that would have navigated one is unreachable by construction.
-
-Tapping a notification now leaves a note behind as well as sending the message: one record, saying
-which session was wanted, in a store the page can read when it next wakes up. The message still
-goes first and still does the work when it arrives; the record is only for when it does not.
-
-The rules around it are the interesting half. A record goes stale after two minutes — wide enough
-for an iPhone launching the app cold, narrow enough that a notification tapped in a lift cannot
-move you an hour later when you have opened the app to read something else. The tap's own id
-travels on the message as well as into the store, so whichever road gets there first marks that tap
-answered and the other declines it — in both orders, which matters because a page coming back from
-the background can be given the message behind the record it has already acted on. So the two roads
-cannot both act on one tap: nothing takes you back to a session you have already read and moved on
-from, and nothing opens the same one twice. Waking up twice routes once. And a test push — which carries `/`,
-not a session — leaves nothing behind at all, because a record meaning *the list* would have sent
-you to the list every time you opened the app for the next two minutes.
-
-One cost, written down rather than discovered: installing a new worker empties the store, so a
-notification tapped across an update keeps only the road it had before. `docs/notifications.md` has
-the whole of it.
 ### Fixed: tapping a notification about a session now opens that session
 
 A notification whose title is a session's name should open that session, and five of the ones this

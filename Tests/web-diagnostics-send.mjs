@@ -2,21 +2,11 @@
 
 // The press, and what the panel says afterwards — driven, not read.
 //
-// **Two things are being guarded here and they fail differently.**
-//
-// **One: a button that only changes colour.** The person pressing it is holding a phone and has no
-// other way to find out what happened. "Sent" is not an answer; the answer is the path, so they can
+// A button that only changes colour is not a result. The person pressing it is holding a phone
+// and has no other way to find out what happened. "Sent" is not an answer; the answer is the path, so they can
 // read it to whoever asked, and on a refusal it is which refusal. So the assertions below are about
 // the *text on the screen* containing the server's own path and the server's own typed code — not
 // about a request having been made. A panel that posts perfectly and says nothing is the failure.
-//
-// **Two: a report that cannot say what is missing from it.** The recorder keeps 80 trace entries
-// and folds in recorders that live where the page cannot see. Before this, both losses were
-// silent: a trace that had dropped half the story rendered exactly like one where the story began
-// there, and a service-worker half that had not been read yet rendered exactly like one that was
-// read and was empty. Those are opposite readings with opposite fixes. The four `state` values are
-// driven against a real `readWorkerTrace` here rather than asserted as source, because the point is
-// that the distinction survives the code path and not that the words appear in a file.
 //
 // It deliberately does not go near HTTP or the disk — `Tests/diagnostic-report-focused.mjs` owns
 // what happens on this Mac. The one thing held across the gap is the route string, which is spelled
@@ -30,8 +20,6 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
 const panelPath = resolve(process.env.CLAWDLINE_DIAGNOSTIC_PANEL_SOURCE
   || join(repoRoot, "Resources", "web", "app", "js", "core", "layout-diagnostics.js"));
-const routePath = resolve(process.env.CLAWDLINE_ROUTE_SOURCE
-  || join(repoRoot, "Resources", "web", "app", "js", "input", "route.js"));
 
 let checks = 0;
 let failures = 0;
@@ -40,12 +28,6 @@ const check = (what, ok) => {
   if (!ok) failures += 1;
   console.log(`  ${ok ? "✓" : "✗"} ${what}`);
 };
-const stop = (why) => {
-  console.log(`  ✗ ${why}`);
-  console.log(`web diagnostics send: stopped after ${checks} checks — ${why}`);
-  process.exit(1);
-};
-
 /* ---- a document, small enough to read -------------------------------------------------------- */
 function element(tag) {
   return {
@@ -135,92 +117,6 @@ check("an event name nothing in this module knows about is recorded verbatim",
       trace[trace.length - 1].event === "gesture.longpress.begin");
 check("with its data", trace[trace.length - 1].data.fingers === 1);
 
-/* ---- the four states of a recorder this page cannot see --------------------------------------- */
-const stores = { entries: [{ seq: 1, event: "sw.notificationclick", data: {} },
-                           { seq: 2, event: "sw.postMessage", data: {} }] };
-const cacheStorage = {
-  open: () => Promise.resolve({
-    match: () => Promise.resolve(stores.entries === null ? undefined : {
-      json: () => Promise.resolve(stores.entries),
-    }),
-  }),
-};
-const env = {
-  Pages: { knows: () => true, go: () => {}, goHome: () => {} },
-  pageInHash: () => null,
-  byId: () => null,
-  openSession: () => {},
-  Diagnostics,
-  window: { addEventListener: () => {} },
-  location: { hash: "" },
-  navigator: {},
-  document: { hidden: true },
-  caches: cacheStorage,
-};
-globalThis.__diagnosticsRouteEnv = env;
-const routeSource = readFileSync(routePath, "utf8");
-const standalone =
-  "const window = globalThis.__diagnosticsRouteEnv.window;\n" +
-  "const location = globalThis.__diagnosticsRouteEnv.location;\n" +
-  "const navigator = globalThis.__diagnosticsRouteEnv.navigator;\n" +
-  "const document = globalThis.__diagnosticsRouteEnv.document;\n" +
-  "const caches = globalThis.__diagnosticsRouteEnv.caches;\n" +
-  routeSource
-    .replace('import { Pages, pageInHash } from "../core/pages.js";',
-      "const Pages = globalThis.__diagnosticsRouteEnv.Pages;\n" +
-      "const pageInHash = globalThis.__diagnosticsRouteEnv.pageInHash;")
-    .replace('import { byId } from "../view/derive.js";',
-      "const byId = globalThis.__diagnosticsRouteEnv.byId;")
-    .replace('import { openSession } from "../session/open.js";',
-      "const openSession = globalThis.__diagnosticsRouteEnv.openSession;")
-    .replace('import { Diagnostics } from "../core/layout-diagnostics.js";',
-      "const Diagnostics = globalThis.__diagnosticsRouteEnv.Diagnostics;");
-if (/^import /m.test(standalone)) {
-  stop("an import in route.js was left behind — it would pull the whole app in and hang");
-}
-const page = await import("data:text/javascript;base64,"
-  + Buffer.from(standalone).toString("base64"));
-
-const named = page.WORKER_TRACE_SOURCE;
-const sourceRow = () => Diagnostics.completeness().sources
-  .filter((row) => row.name === named)[0] || {};
-check("route.js names the recorder it folds in", typeof named === "string" && !!named);
-check("declaring it at load makes it visible before anything has looked",
-      !!sourceRow() && sourceRow().state === "unread");
-check("with no entries and no reads", sourceRow().entries === 0 && sourceRow().reads === 0);
-
-check("a read that found entries is merged with a count",
-      (await page.readWorkerTrace()) === 2 && sourceRow().state === "merged"
-      && sourceRow().entries === 2);
-
-stores.entries = [];
-await page.readWorkerTrace();
-check("a read that found nothing is still merged — which is not the same word as unread",
-      sourceRow().state === "merged" && sourceRow().reads === 2);
-check("and the two readings are told apart by the state, not by an entry count of zero",
-      sourceRow().state !== "unread");
-
-const savedOpen = cacheStorage.open;
-delete cacheStorage.open;
-await page.readWorkerTrace();
-check("a browser with no store for it at all says unavailable",
-      sourceRow().state === "unavailable");
-
-cacheStorage.open = () => Promise.resolve({
-  match: () => Promise.resolve({ json: () => Promise.resolve({ not: "an array" }) }),
-});
-await page.readWorkerTrace();
-check("a store holding something that is not a trace says failed",
-      sourceRow().state === "failed");
-
-cacheStorage.open = () => Promise.reject(new Error("denied"));
-await page.readWorkerTrace();
-check("and so does a store that refuses to open", sourceRow().state === "failed");
-cacheStorage.open = savedOpen;
-
-check("a report with a source that has not been merged is not whole",
-      Diagnostics.completeness().whole === false);
-
 /* ---- the panel, and what it says --------------------------------------------------------------- */
 Diagnostics.reveal();
 const panel = root.childNodes[root.childNodes.length - 1];
@@ -277,11 +173,6 @@ check("with its completeness block, so the file can say what is missing from it"
       !!sent.completeness && sent.completeness.trace.dropped
         === Diagnostics.completeness().trace.dropped
       && sent.completeness.trace.dropped >= 20);
-check("naming every recorder it declared, in the state it is actually in",
-      sent.completeness.sources.length >= 1
-      && sent.completeness.sources[0].name === named
-      && sent.completeness.sources[0].state === "failed");
-
 check("the panel is speaking", said().hidden === false);
 check("and it says the path the server wrote, so it can be read out to somebody",
       said().textContent.indexOf(writtenTo) >= 0);

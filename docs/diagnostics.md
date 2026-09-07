@@ -18,6 +18,8 @@ phone is one press.**
    learn them.
 2. **Ask for one press.** Settings → the small version line at the bottom → **five taps inside two
    seconds** → the `LAYOUT DEBUG` button appears at the bottom left → open it → **Send to Mac**.
+   On the hosted Cloud PWA that line shows the immutable web build until the Mac version arrives;
+   an absent or late machine snapshot therefore cannot remove the door needed to diagnose it.
    The panel then says, in words, where the file went.
 3. **Read the file.**
 
@@ -42,8 +44,8 @@ the envelope is UTC and is how you know it is the press you asked for; if it is 
 request, the press did not happen or it went to a different Mac — say so rather than reasoning about
 the wrong afternoon.
 
-**Open the panel after the fault, not before.** Some of what the report contains — the service
-worker's half of a notification tap, for one — is only folded in when the page next wakes.
+**Open the panel after the fault, not before.** The report is a snapshot of the page's bounded
+trace; opening it first only spends that window on the gesture used to reach the panel.
 
 ## The gesture, said out loud
 
@@ -70,98 +72,38 @@ JSON, always, with the page's own document untouched inside an envelope:
 `report` is exactly what `window.__clawdlineDiagnostics.report()` returns. Nothing in the route
 reads it, validates it, or knows what any of the event names mean — a body that is not a JSON
 object is refused and everything else is stored as sent. That is what makes the mechanism outlive
-the defect it was built during: today's events are `sw.*` and `route.*`, next month's will be
+the defect it was built during: today's events are page, route and layout facts; next month's will be
 something else, and neither the route nor this document has to change for it.
 
 ## It says how complete it is
 
-**An empty record and a broken record look identical** unless something writes down the difference,
-and this machine has paid for that lesson more than once. So the report states its own gaps:
+The page keeps a bounded trace, so the report states what that bound discarded:
 
 ```json
 "completeness": {
   "trace":      { "kept": 80, "limit": 80, "dropped": 46, "droppedThrough": 8123, "from": 8130, "to": 20455 },
   "incidents":  { "kept": 3, "limit": 5 },
-  "sources":    [ { "name": "serviceWorker", "state": "unread", "entries": 0, "reads": 0, "at": null } ],
   "whole":      false
 }
 ```
 
-* **`trace.dropped`** is how many entries the ring buffer threw away before the ones you are
-  reading, and **`droppedThrough`** is the clock reading it stopped at. A trace that begins in the
-  middle of the story and a trace where the story begins there are different readings.
-* **`sources`** are recorders that live somewhere the page cannot see and are folded in when it
-  wakes. Their `state` is the distinction that matters:
+`trace.dropped` is how many entries the ring buffer threw away before the ones being read, and
+`droppedThrough` is the page clock reading where that lost prefix ended. `whole` is true when
+nothing was dropped. It is not a claim that the fault is visible in the file; it says only that
+the page's bounded trace did not truncate itself.
 
-  | state | what it means |
-  |---|---|
-  | `unread` | declared, and this page has not looked yet — **not** the same as nothing being there |
-  | `merged` | looked, and folded in `entries` of them. `merged` with `entries: 0` means there really was nothing |
-  | `unavailable` | the store it lives in is not present in this browser at all |
-  | `failed` | the read threw, or what came back was not what it should be |
+Notification registration records finite boundaries as `push.<stage>.begin`, `.end`, and
+`.failure`: `permission`, `worker.ready` (with `worker.register`/`worker.activate` when needed),
+`key`, `browser.subscribe`, and `server.subscribe`. Failure data contains only its typed code; the
+subscription endpoint and key are never recorded.
 
-* **`whole`** is `true` only when nothing was dropped and every declared source has been merged. It
-  is not a claim that the fault is visible in the file — no counter can say that — only that
-  nothing the recorder knows about is missing from it.
+A report carrying no `completeness` block — from an older build — is wrapped as
+`{"stated": false, …}` rather than rendered as an empty report.
 
-A report that carries no `completeness` block at all — an older build — is written with
-`"completeness": {"stated": false, …}` rather than with the field simply absent, so an absent block
-never reads as an empty one.
-
-## The rows a flood cannot reach
-
-The trace is a ring of 80 against a page that writes about five entries a second, so it holds
-roughly **eighteen seconds** — and the gesture that sends a report (Settings, five taps, the
-button, *Send to Mac*) takes longer than that. On 2026-09-06 and again on the 7th, two reports
-came back from a real phone in which six independent 80-entry windows contained not one `sw.` or
-`route.` entry between them. The evidence of the fault was written down and then evicted by
-`layout` before anybody could read it.
-
-**`sources` is the half of this recorder that a flood cannot reach**: one row per recorder, holding
-the last state, how many times it was looked at and a running count. It survived both of those
-reports intact. So the notification road is read from four rows rather than from the trace:
-
-| row | `reads` | `state` | `entries` |
-|---|---|---|---|
-| `serviceWorker` | times the worker's trace was read back | `merged` / `unavailable` / `failed` | entries folded in |
-| `notificationMessage` | messages that actually arrived | the last one's `type` | same as `reads` |
-| `notificationWant` | reads of the worker's record | the last answer: `routed`, `stale`, `settled`, `declined`, `none`, `unavailable` | times it routed |
-| `notificationOpen` | decisions by `openWanted` | `found` or `missing` | sessions actually opened |
-| `serviceWorkerMark` | times the worker's own note was read | the worker's build as `b<stamp>`; `wants` for one from before the stamp existed; `absent` for one older still | 1 when a mark was found |
-| `workerPosted` | reads that folded in worker entries | `posted` | taps the worker says it handed to a window |
-
-**`notificationMessage.reads` is the number the road could not produce before.** Zero means no
-message was ever delivered to the page; one with no routing behind it means a message arrived and
-was declined. Those are different faults with opposite fixes, and until these rows existed both of
-them looked like an empty trace.
-
-**`serviceWorkerMark: absent` means the phone is running a worker older than the page**, and every
-row under it is then about that worker rather than about the build you are reading the source of.
-A page and the worker beneath it are two builds that can drift apart, and on 2026-09-07 they did:
-116 reads of a record that the worker on the device did not know how to write, with nothing on
-either side able to say so. The worker writes a capability rather than a version, because a version
-is a number somebody has to remember to bump.
-
-**`workerPosted` against `notificationMessage` is the drop, and neither alone is.** One is how many
-taps the worker says it handed to a window; the other how many of them the page received.
-
-**Zero is only a reading when the recorder could have said otherwise.** A row at zero because
-nothing happened and a row at zero because the reporting was removed look identical, so read them
-together: `notificationWant` and `notificationOpen` reporting while `notificationMessage` is zero
-is a silent road; all four silent is a silent recorder.
-
-## Adding a source of your own
-
-If your observation point records into somewhere the page reads back later — Cache Storage, a
-worker, IndexedDB — declare it once at module load and report each read:
-
-```js
-Diagnostics.source("myRecorder");                      // now "unread" until something looks
-Diagnostics.sourceRead("myRecorder", "merged", count); // or "unavailable", or "failed"
-```
-
-`Resources/web/app/js/input/route.js` is the worked example: it declares `serviceWorker` at load
-and reports every one of `readWorkerTrace`'s four outcomes.
+Older reports can contain a `sources` array for the retired service-worker notification trace.
+Current builds no longer create those rows: Declarative Web Push bypasses the missing
+`notificationclick` event, so keeping a Cache Storage recorder and routing fallback for that
+event would preserve the mechanism that caused old Sessions to reopen.
 
 ## The route
 

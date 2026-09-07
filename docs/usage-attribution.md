@@ -67,17 +67,31 @@ automatic Feature attribution is not configured, because that is the truth. An e
 presented as though classification had run, and a threshold nothing is applying is never reported.
 
 The classifier is a pure batch function over a bounded evidence set, because grouping is a batch
-property: one interval cannot know on its own whether its label names a durable work line. It walks
-four rungs, and the first match wins.
+property: one interval cannot know on its own whether its label names a durable work line. Version
+2 walks five rungs, and the first match wins.
 
 | rung | fires when | confidence |
 |---|---|---|
+| `graph_identity` | the usage row carries a canonical lowercase UUID graph id | 1.00 |
 | `explicit_feature_hint` | the plan headline, else the task title, opens with `Feature:` | 0.95 |
 | `schedule_identity` | the row carries a non-empty schedule id | 0.88 |
 | `declared_work_line` | a declared label is carried by two or more distinct tasks inside one Project | 0.82 |
 | `lineage` | the parent task, else the retry predecessor, was classified by a rung above — one hop, no chains | 0.66 |
 
-"Two or more distinct tasks" is what keeps rung 3 from turning the Feature table into a list of
+`graph_identity` groups by the graph UUID inside the row's Project scope. The stored spelling must
+be exactly the canonical lowercase UUID: uppercase, malformed, whitespace-padded and other
+noncanonical strings do not obtain the 1.00 rung. Its readable label is the durable graph's
+`destination` only when the retained task record names the same graph id; otherwise the UUID itself
+is the honest fallback. The recorded UUID therefore survives registry eviction as historical graph
+identity, while the evicted destination does not. If malformed durable records offer different
+destinations for one graph, the same lexicographically-smallest-label rule used by every other rung
+makes the answer independent of row order. A NULL `usage_intervals.graph_id` never borrows today's
+task-record graph: it means graph identity was not recorded for that interval, so classification
+falls through to the pre-existing rungs and retains their durable-record requirement. The Feature
+id groups on graph UUID; the evidence digest additionally covers the admitted display label, so a
+changed durable destination is a changed claim.
+
+"Two or more distinct tasks" is what keeps `declared_work_line` from turning the Feature table into a list of
 tasks: a label one task carries is a one-off, and a label two tasks carry is a work line. It counts
 tasks and not rows, so one task that happens to span two intervals is still a one-off.
 
@@ -97,11 +111,11 @@ document does not make.
 
 Within one Feature the stored label is the **lexicographically smallest** spelling in the group,
 not whichever row was written first: two spellings of one work line share an id and therefore share
-an event id, and the ledger keeps the first event forever. A rung-1 hint written in quotation marks
+an event id, and the ledger keeps the first event forever. An explicit hint written in quotation marks
 loses both halves of the quotation rather than only the opening one.
 
-**Rung 4 recorded nothing on the data measured on 2026-09-03**, and that is a reading of one ledger
-copy rather than a property of the producer. The rung has three inputs — the row's
+**The then-last `lineage` rung recorded nothing on the data measured on 2026-09-03**, and that is a
+reading of one ledger copy rather than a property of the producer. The rung has three inputs — the row's
 `usage_intervals.parent_task_id`, the durable broker record's own `parentTaskID`, and the retry
 predecessor (`usage_intervals.retry_of`, else the record's `retryOf`) — and what was measured is
 that `parent_task_id` was NULL in all 605 rows, that none of the 201 durable records carried a
@@ -114,9 +128,9 @@ Where no rung fires, the classifier says why: `no_task_identity`, `no_durable_ta
 a run receipt. They are not written into the ledger, and they are not the Portfolio's
 `no_unambiguous_accepted_head`, which is a different statement about a different thing.
 
-**What it reached on this Mac's own ledger, measured 2026-09-03 by a read-only dry run of
-`tools/usage-feature-backfill.swift`** — a reading of one ledger copy on one day, not a property of
-the producer, and the shape a different history would give is a different number:
+**What classifier version 1 reached on this Mac's own ledger, measured 2026-09-03 by a read-only
+dry run of `tools/usage-feature-backfill.swift`** — before `graph_identity` was a rung, and therefore
+a reading of one ledger copy on one day rather than a property of version 2 or of the producer:
 
 | | rows | runs |
 |---|---:|---:|
@@ -133,9 +147,9 @@ each said why: `no_task_identity` 136 — Session-boundary rows carry no task at
 short.** `no_task_identity` and `no_durable_task_record` are absent evidence, and the rule against
 guessing from a directory basename, a root Session or a successful task state is what keeps them
 absent instead of invented. `solitary_declared_label` is the one that could be widened by dropping
-rung 3's "two or more distinct tasks", and dropping it would raise the classified rows to 285 and
-the Feature count to 67 — a table of one-off tasks wearing Feature names, which is the failure the
-rule exists to prevent.
+the declared-work-line rung's "two or more distinct tasks", and dropping it would raise the
+classified rows to 285 and the Feature count to 67 — a table of one-off tasks wearing Feature names,
+which is the failure the rule exists to prevent.
 
 A match appends a `proposed` attribution event whose source is `heuristic` — not `llm`, because no
 model participates, and not `policy`, because a policy decides where this only observes evidence.
@@ -146,13 +160,17 @@ proposal at or above the threshold; the rest are left for manual review. Manual 
 another decision that supersedes the prior one. The accounting row never changes.
 
 Any change to a rung, a confidence, a normalization rule or the digest recipe increments the
-classifier version, because event ids are derived from it. Those ids are deterministic, so a repeat
-pass inserts nothing and reports what was already present instead.
+classifier version, because event ids are derived from it. Graph event ids additionally derive from
+that row's graph-claim digest: identical evidence repeats the same id, while a changed admitted
+destination produces a new auditable proposal rather than colliding with the old event. Those ids
+are deterministic, so a repeat of the same claim inserts nothing and reports what was already
+present instead.
 
 **A pass never appends an acceptance beside an accepted head it did not supersede.** A version
-bump, or a durable record that has since gained a plan headline, moves the event id seed; the new
-acceptance would supersede only its own new proposal, leaving two active accepted heads on one
-interval — which resolves to none, so the interval would silently leave its Feature for `Unknown`.
+bump, a durable record that has since gained a plan headline, or a changed admitted graph
+destination moves the event id seed; the new acceptance would supersede only its own new proposal,
+leaving two active accepted heads on one interval — which resolves to none, so the interval would
+silently leave its Feature for `Unknown`.
 Where an active accepted head is already there, the pass appends its `proposed` event, holds the
 acceptance for manual review and counts it as `heldExistingAcceptedHead`, and the existing head
 keeps the interval in its Feature meanwhile. Superseding the old head instead is not available: an
@@ -161,7 +179,7 @@ changed.
 
 A production pass reads a bounded window: thirty days, at most 5,000 rows, newest first. A window
 that comes back holding its whole cap says so in the receipt (`windowTruncated`), because past the
-cap the batch loses its oldest rows — and rung 3 asks whether a label is carried by two tasks *in
+cap the batch loses its oldest rows — and the declared-work-line rung asks whether a label is carried by two tasks *in
 this batch*, so a truncated window can under-report a genuine work line as
 `solitary_declared_label`.
 
@@ -252,10 +270,14 @@ scope and into its repository's — the Feature id changes with it, as a scope c
 
 ## Backfill and retention
 
-Old rows may be assigned when durable evidence exists. They must not be guessed from a directory
+Old rows may be assigned when durable evidence exists. The backfill mirror reads `graph_id` from
+the row without normalizing it and reads graph id plus destination from task facts; it admits that
+destination only for an exact id match, exactly as production does. A valid row UUID remains enough
+for graph identity after the task record is swept, with the UUID as its label. A NULL or invalid row
+graph still needs the durable record for every lower rung. Rows must not be guessed from a directory
 basename, root Session, or successful task state. When evidence is incomplete, reports retain an
-Unknown/Partial bucket. Event ids make retries idempotent, and the supersession chain preserves the
-reason a Feature total changed.
+Unknown/Partial bucket. Event ids make identical retries idempotent, and the supersession chain
+preserves the reason a Feature total changed.
 
 ## Where a Feature's implementation-versus-review split belongs, and where it cannot go
 
@@ -277,8 +299,8 @@ Two measurements, on this machine, on 2026-09-06:
 The Feature is the unit that already spans them: 28 Features covered 19, 16, 12, 10, 8, 6 and fewer
 worktrees each.
 
-**One Feature identity, not two.** The screen reads `acceptedFeatures` — the classifier's four rungs,
-`explicit_feature_hint` 0.95 down to `lineage` 0.66. Store version 6 gave `usage_intervals.graph_id`
+**One Feature identity, not two.** The screen reads `acceptedFeatures` — classifier version 2's five
+rungs, `graph_identity` 1.00 down to `lineage` 0.66. Store version 6 gave `usage_intervals.graph_id`
 its producer, and a declared `graph_id` is harder evidence than a title prefix, so it belongs
 **above** `explicit_feature_hint` as the strongest rung, feeding the same accepted Feature — rather
 than becoming a second, parallel notion of Feature that would give one Feature two honest and

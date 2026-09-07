@@ -18,7 +18,7 @@ enum UsageFeatureClassifier {
     /// Classifier/prompt version. Any change to a rung, a confidence, a normalization rule or the
     /// digest recipe increments it, because event ids are derived from it and a re-run under the
     /// same version must be a no-op rather than a second opinion.
-    static let classifierVersion = "1"
+    static let classifierVersion = "2"
     static let defaultAcceptanceThreshold = 0.80
 
     /// The minimum safe metadata `docs/usage-attribution.md` permits.
@@ -46,12 +46,19 @@ enum UsageFeatureClassifier {
         var scheduleTitle: String?
         var parentTaskID: String?
         var retryOf: String?
+        /// The graph identity frozen on the usage row. Nil means it was not recorded; a durable
+        /// task record that has a graph today must not fill this absence after the fact.
+        var graphID: String?
+        /// The durable graph destination, admitted only when the task record's graph id matches
+        /// `graphID`. It supplies a readable label; graph identity remains the grouping key.
+        var graphLabel: String?
 
         init(intervalKey: String, projectKey: String? = nil, taskID: String? = nil,
              hasDurableTaskRecord: Bool = false, taskKind: String? = nil,
              taskTitle: String? = nil, declaredWorkLine: String? = nil,
              planHeadline: String? = nil, scheduleID: String? = nil, scheduleTitle: String? = nil,
-             parentTaskID: String? = nil, retryOf: String? = nil) {
+             parentTaskID: String? = nil, retryOf: String? = nil, graphID: String? = nil,
+             graphLabel: String? = nil) {
             self.intervalKey = intervalKey
             self.projectKey = projectKey
             self.taskID = taskID
@@ -64,11 +71,14 @@ enum UsageFeatureClassifier {
             self.scheduleTitle = scheduleTitle
             self.parentTaskID = parentTaskID
             self.retryOf = retryOf
+            self.graphID = graphID
+            self.graphLabel = graphLabel
         }
     }
 
     /// The ladder, in the order it is climbed. First match wins.
     enum Rung: String, CaseIterable {
+        case graphIdentity = "graph_identity"
         case explicitFeatureHint = "explicit_feature_hint"
         case scheduleIdentity = "schedule_identity"
         case declaredWorkLine = "declared_work_line"
@@ -76,6 +86,7 @@ enum UsageFeatureClassifier {
 
         var confidence: Double {
             switch self {
+            case .graphIdentity: return 1.0
             case .explicitFeatureHint: return 0.95
             case .scheduleIdentity: return 0.88
             case .declaredWorkLine: return 0.82
@@ -206,8 +217,19 @@ enum UsageFeatureClassifier {
 
     /// Deterministic event ids are what make a second pass a no-op: `UsageLedger.record(_:)`
     /// returns false on a duplicate id and never replaces the first event.
-    static func eventIDSeed(intervalKey: String, featureID: String, rung: Rung) -> String {
-        String(hex([classifierVersion, intervalKey, featureID, rung.rawValue]).prefix(40))
+    static func eventIDSeed(intervalKey: String, featureID: String, rung: Rung,
+                            graphClaimDigest: String? = nil) -> String {
+        var fields = [classifierVersion, intervalKey, featureID, rung.rawValue]
+        if let graphClaimDigest { fields.append(graphClaimDigest) }
+        return String(hex(fields).prefix(40))
+    }
+
+    /// Graph ids are protocol identities, not labels. UUID parsing alone is deliberately too
+    /// permissive: uppercase and padded spellings would otherwise become separate 1.00 Features.
+    static func canonicalGraphID(_ raw: String?) -> String? {
+        guard let raw, raw == raw.lowercased(),
+              UUID(uuidString: raw)?.uuidString.lowercased() == raw else { return nil }
+        return raw
     }
 
     private static func hex(_ fields: [String]) -> String {
@@ -274,7 +296,8 @@ enum UsageFeatureClassifier {
     /// Every interval leaves exactly once, as a proposal or as a decline, and the two arrays keep
     /// the input's order so a receipt reads the same way twice.
     static func classify(_ evidence: [Evidence]) -> Outcome {
-        // Rung 3's index. "Two or more distinct task ids" is the whole point of the batch shape:
+        // The declared-work-line rung's index. "Two or more distinct task ids" is the whole
+        // point of the batch shape:
         // a label one task carries is a one-off, a label two tasks carry is a work line.
         var workLineTasks: [String: Set<String>] = [:]
         for item in evidence {
@@ -286,9 +309,9 @@ enum UsageFeatureClassifier {
             ].insert(taskID)
         }
 
-        var matches: [String: Match] = [:]      // interval key -> rungs 1-3
+        var matches: [String: Match] = [:]      // interval key -> direct-evidence rungs
         var declined: [String: DeclineReason] = [:]
-        // What rungs 1-3 decided for each task, so rung 4 can inherit from it. Order-independent
+        // What direct evidence decided for each task, so lineage can inherit from it. Order-independent
         // on purpose: a task whose rows classify differently must answer the same way whatever
         // order the batch arrived in, so the strongest rung wins and the id breaks the tie.
         var byTask: [String: Match] = [:]
@@ -298,17 +321,23 @@ enum UsageFeatureClassifier {
                 declined[item.intervalKey] = .noTaskIdentity
                 continue
             }
-            guard item.hasDurableTaskRecord else {
-                declined[item.intervalKey] = .noDurableTaskRecord
-                continue
-            }
             let scope = projectScope(item.projectKey)
             var match: Match?
+            if let graphID = canonicalGraphID(item.graphID),
+               let label = displayLabel(item.hasDurableTaskRecord
+                   ? (trimmed(item.graphLabel) ?? graphID) : graphID) {
+                match = Match(rung: .graphIdentity,
+                              featureID: featureID(projectScope: scope, rung: .graphIdentity,
+                                                   groupingKey: graphID),
+                              featureLabel: label, groupingKey: graphID)
+            } else if !item.hasDurableTaskRecord {
+                declined[item.intervalKey] = .noDurableTaskRecord
+                continue
             // The plan headline first and the task title after it — both of them, not whichever
             // exists. A record whose headline says something other than `Feature:` still has a
             // title that may say it, and skipping that costs matches without ever adding a wrong
             // one, which is what §3.1's "(else `taskTitle`)" reads.
-            if let hint = explicitFeatureHint(in: item.planHeadline)
+            } else if let hint = explicitFeatureHint(in: item.planHeadline)
                 ?? explicitFeatureHint(in: item.taskTitle),
                let label = displayLabel(hint) {
                 match = Match(rung: .explicitFeatureHint,
@@ -347,7 +376,7 @@ enum UsageFeatureClassifier {
             }
         }
 
-        // Rung 4, one hop only. A row inherits its parent's Feature verbatim rather than
+        // The lineage rung, one hop only. A row inherits its parent's Feature verbatim rather than
         // inventing one, and an inheriting row never becomes a parent itself — chains would make
         // a Feature's membership depend on the order the batch happened to arrive in.
         var inherited: [String: Match] = [:]
@@ -382,20 +411,25 @@ enum UsageFeatureClassifier {
                 declines.append(Declined(intervalKey: item.intervalKey, reason: reason))
                 continue
             }
+            let admittedLabel = labelByFeature[match.featureID] ?? match.featureLabel
+            let digest = evidenceDigest(rung: match.rung,
+                                        projectScope: projectScope(item.projectKey),
+                                        intervalKey: item.intervalKey,
+                                        taskID: trimmed(item.taskID),
+                                        groupingKey: match.rung == .graphIdentity
+                                            ? match.groupingKey + unitSeparator + admittedLabel
+                                            : match.groupingKey)
             let seed = eventIDSeed(intervalKey: item.intervalKey, featureID: match.featureID,
-                                   rung: match.rung)
+                                   rung: match.rung,
+                                   graphClaimDigest: match.rung == .graphIdentity ? digest : nil)
             proposals.append(Proposal(
                 intervalKey: item.intervalKey, featureID: match.featureID,
-                featureLabel: labelByFeature[match.featureID] ?? match.featureLabel,
+                featureLabel: admittedLabel,
                 rung: match.rung,
                 confidence: match.rung.confidence,
-                evidenceDigest: evidenceDigest(rung: match.rung,
-                                               projectScope: projectScope(item.projectKey),
-                                               intervalKey: item.intervalKey,
-                                               taskID: trimmed(item.taskID),
-                                               groupingKey: match.groupingKey),
-                proposalEventID: "feature-proposal-v1-" + seed,
-                acceptanceEventID: "feature-accepted-v1-" + seed))
+                evidenceDigest: digest,
+                proposalEventID: "feature-proposal-v" + classifierVersion + "-" + seed,
+                acceptanceEventID: "feature-accepted-v" + classifierVersion + "-" + seed))
         }
         return Outcome(proposals: proposals, declined: declines)
     }

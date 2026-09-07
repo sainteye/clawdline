@@ -286,7 +286,18 @@ export function closeDetail(silent) {
     ShellPanel.follow();
     Terminal.follow();
     SkillPicker.close();
-    if (phone()) els.app.dataset.view = "list";
+    if (phone()) {
+        els.app.dataset.view = "list";
+        // A notification arrives at `#session=…`. Leaving its detail must also leave that route:
+        // otherwise the list is drawn under an address that still asks for a Session, and a later
+        // hash read or reload opens it again. Replace rather than assign so clearing the route does
+        // not create one more Back step.
+        try {
+            history.replaceState({ view: "list" }, "", location.pathname + location.search);
+        } catch (e) {
+            try { location.hash = ""; } catch (ignored) { }
+        }
+    }
     renderTranscript();
     if (!silent) render();
 }

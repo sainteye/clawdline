@@ -382,7 +382,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`, and the Cloud receipt itself unchanged because
 # none of the three groups is a Cloud one. The witness below is what the guard named on the same
 # tree before any of it compiled.
-expected_swift_receipt='9970 checks passed'
+expected_swift_receipt='9992 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -395,7 +395,7 @@ expected_swift_receipt='9970 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8024
+expected_swift_receipt_witness=8046
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -950,19 +950,10 @@ node Tests/remote-response-write-close.mjs
 # guarding is the only lever that reaches a browser already holding a stale copy of the page, and
 # every step of that lever is one line.
 node Tests/web-service-worker.mjs
-# The same worker, joined to the page it sends its message to. The suite above drives the branch a
-# tap takes and the one below drives the fragment the page reads; between them sat the segment
-# nobody had ever run — the message arriving — because the two halves live in two languages and
-# `web-pages.mjs` hands `route.js` a `navigator` with no `serviceWorker` on it, so the listener
-# that receives one was never installed by any test. Its fixtures are tmux pane ids, which is the
-# only id shape this family of faults has ever appeared on.
-node Tests/web-notification-route.mjs
-# The press that carries that trace onto this Mac, and what the panel says afterwards. Driven
+# The press that carries the layout trace onto this Mac, and what the panel says afterwards. Driven
 # rather than read: the panel's own click handler runs against a stand-in fetch, so what is checked
 # is the text on the screen containing the server's path and the server's typed code — a button
-# that posts perfectly and says nothing is the failure this file exists for. It also drives the
-# four states a recorder living outside the page can be in, because `unread` and `merged with
-# nothing` were one empty trace until they were not.
+# that posts perfectly and says nothing is the failure this file exists for.
 node Tests/web-diagnostics-send.mjs
 node Tests/release-signing-contract.mjs
 # The shared-tree commit guard: that `tools/git-hooks/pre-commit` refuses a commit carrying a path

@@ -360,6 +360,23 @@ check(/open:\s*function\s*\(\)\s*\{\s*Pages\.go\("settings"\)/.test(settingsSour
 check(/enter:\s*function/.test(settingsSource),
       "with what it draws on arrival kept as its own arrival, so the address bar draws it too");
 
+/* A Cloud page can reach Settings before a Mac snapshot has supplied `S.version`. The immutable
+   hosted bundle already declares its own build in `window.__clawdlineCloud`; hiding the version
+   line in that interval also hides the five-press diagnostics door, exactly when a phone-only
+   fault needs it. Lift and run the tiny choice rather than accepting a mention of `build`. */
+const versionChoice = /export function settingsBuildVersion\([^)]*\)\s*\{\s*return ([^;]+);\s*\}/
+    .exec(settingsSource);
+check(versionChoice !== null, "Settings has one testable choice for the visible build version");
+const chooseVersion = versionChoice
+    ? new Function("macVersion", "cloud", "return " + versionChoice[1] + ";")
+    : () => null;
+equal(chooseVersion("", { build: "bcloud123" }), "bcloud123",
+      "before a Mac version arrives, the Cloud build keeps the diagnostics door visible");
+equal(chooseVersion("mac-version", { build: "bcloud123" }), "mac-version",
+      "after it arrives, the Mac app version remains the reader-facing version");
+check(/settingsBuildVersion\(S\.version,\s*window\.__clawdlineCloud\)/.test(settingsSource),
+      "Settings.enter draws that choice from the same Cloud declaration that owns this bundle");
+
 /* ---- Usage stopped deciding which page is on screen ---------------------- */
 
 check(/id="usage-analytics"[\s\S]{0,200}?data-page-view="usage"/.test(page),
@@ -487,6 +504,7 @@ const routeStandalone =
     "const window = globalThis.__routeEnv.window;\n" +
     "const location = globalThis.__routeEnv.location;\n" +
     "const navigator = globalThis.__routeEnv.navigator;\n" +
+    "const document = globalThis.__routeEnv.document;\n" +
     routeSource
         .replace('import { Pages, pageInHash } from "../core/pages.js";',
             "const Pages = globalThis.__routeEnv.Pages;\n" +
@@ -502,18 +520,44 @@ check(!/^import /m.test(routeStandalone),
 
 const listed = new Set();
 const opened = [];
+const routeListeners = {};
+const workerListeners = {};
+let legacyNotificationWant = null;
+const routeLocation = {
+    value: "",
+    get hash() { return this.value; },
+    set hash(next) {
+        if (next === this.value) return;
+        this.value = next;
+        for (const handler of routeListeners.hashchange || []) handler();
+    },
+};
+globalThis.caches = {
+    open: () => Promise.resolve({
+        match: () => Promise.resolve(legacyNotificationWant && {
+            json: () => Promise.resolve(legacyNotificationWant),
+        }),
+        delete: () => Promise.resolve(true),
+    }),
+    delete: () => { legacyNotificationWant = null; return Promise.resolve(true); },
+};
 globalThis.__routeEnv = {
     Pages: { knows: () => true, go: () => {}, goHome: () => {}, current: () => "sessions",
              home: () => "sessions" },
     pageInHash: () => null,
     byId: (id) => (listed.has(id) ? { id: id } : null),
     openSession: (id) => { opened.push(id); },
-    // The recorder, which this file only has to satisfy: what the notes say is
-    // `Tests/web-notification-route.mjs`, which drives the whole road rather than this half of it.
-    Diagnostics: { note: () => {}, source: () => {}, sourceRead: () => {} },
-    window: { addEventListener: () => {} },
-    location: { hash: "" },
-    navigator: {},
+    Diagnostics: { note: () => {} },
+    window: {
+        addEventListener: (name, handler) => { (routeListeners[name] ||= []).push(handler); },
+    },
+    location: routeLocation,
+    navigator: {
+        serviceWorker: {
+            addEventListener: (name, handler) => { (workerListeners[name] ||= []).push(handler); },
+        },
+    },
+    document: { hidden: false },
 };
 const route = await import(
     "data:text/javascript;base64," + Buffer.from(routeStandalone).toString("base64"));
@@ -529,6 +573,29 @@ opened.length = 0;
 route.routeTo("#session=%25141");
 equal(opened.join(","), pane,
       "a notification written today opens the pane it names — its per-cent arrives as %25");
+
+opened.length = 0;
+routeLocation.value = "";
+for (const handler of workerListeners.message || []) {
+    handler({ data: { type: "navigate", url: "/#session=%25141" } });
+}
+equal(opened.join(","), pane,
+      "the legacy worker message enters the same fragment route and opens the pane");
+
+// A list the reader deliberately returned to must stay a list. Older builds left a
+// `notification-wanted` record in Cache Storage as a second delivery road for iOS; a later focus
+// or session-list refresh replayed it after the notification had already opened correctly through
+// Declarative Web Push. That is one tap turning into two navigations: first to the requested
+// session, and then back to an older one after the reader exits.
+opened.length = 0;
+legacyNotificationWant = {
+    id: "legacy-tap", url: "/#session=%25141", at: Date.now(),
+};
+for (const handler of routeListeners.focus || []) handler();
+await new Promise((done) => setTimeout(done, 0));
+equal(opened.length, 0,
+      "returning to the list does not replay an obsolete worker record and reopen a session");
+legacyNotificationWant = null;
 
 // The half that cannot be re-issued: a notification already sitting on a phone was written before
 // this, and tapping it a day later has to land in the same place.

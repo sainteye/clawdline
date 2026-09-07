@@ -56,6 +56,111 @@ const page = readFileSync(pagePath, "utf8");
 const server = readFileSync(serverPath, "utf8");
 const registration = readFileSync(registrationPath, "utf8");
 
+/* ---- a press retries the worker instead of waiting forever -----------------------------------
+   `navigator.serviceWorker.ready` never rejects and may wait forever. On the Cloud PWA the first
+   registration attempt can lose a reconnect during boot; the old page then drew the ordinary
+   Enable button, but its press waited on `ready` without trying to register again. The permission
+   had already been granted, so the only visible state was a permanent “Asking…”.
+
+   Run the page half with exactly that history: boot registration fails once, the press gets a
+   working registration, and `ready` is deliberately a promise that never settles. A source grep
+   cannot prove this because both the broken and repaired versions contain register and ready. */
+const pushStandalone =
+  "const window = globalThis.__pushEnv.window;\n" +
+  "const navigator = globalThis.__pushEnv.navigator;\n" +
+  "const Notification = globalThis.__pushEnv.Notification;\n" +
+  "const localStorage = globalThis.__pushEnv.localStorage;\n" +
+  registration
+    .replace('import { T } from "../core/i18n.js";', "const T = globalThis.__pushEnv.T;")
+    .replace('import { els } from "../core/dom.js";', "const els = globalThis.__pushEnv.els;")
+    .replace('import { toast } from "../core/util.js";', "const toast = globalThis.__pushEnv.toast;")
+    .replace('import { api } from "../net/api.js";', "const api = globalThis.__pushEnv.api;")
+    .replace('import { Settings } from "./settings.js";', "const Settings = globalThis.__pushEnv.Settings;")
+    .replace('import { Diagnostics } from "../core/layout-diagnostics.js";',
+      "const Diagnostics = globalThis.__pushEnv.Diagnostics;");
+check("the push harness replaced every import", !/^import /m.test(pushStandalone));
+
+{
+  let registerCalls = 0;
+  let subscriptions = 0;
+  let settingsOpened = 0;
+  const stages = [];
+  const remembered = new Map();
+  const registrationAfterPress = {
+    active: {},
+    pushManager: {
+      getSubscription: () => Promise.resolve(null),
+      subscribe: () => { subscriptions += 1; return Promise.resolve({ toJSON: () => ({ endpoint: "apple" }) }); },
+    },
+  };
+  const elements = {
+    notify: { hidden: false, dataset: {} },
+    "notify-go": { hidden: false, disabled: false, addEventListener: () => {} },
+    "notify-go-label": { textContent: "" },
+    "notify-say": { textContent: "" },
+  };
+  globalThis.__pushEnv = {
+    window: {
+      navigator: { standalone: true },
+      isSecureContext: true,
+      PushManager: function () {},
+      matchMedia: () => ({ matches: true }),
+    },
+    navigator: {
+      platform: "iPhone", maxTouchPoints: 5,
+      serviceWorker: {
+        register: () => {
+          registerCalls += 1;
+          return registerCalls === 1
+            ? Promise.reject(new Error("boot reconnect"))
+            : Promise.resolve(registrationAfterPress);
+        },
+        ready: new Promise(() => {}),
+      },
+    },
+    Notification: {
+      permission: "default",
+      requestPermission: (done) => { done("granted"); return Promise.resolve("granted"); },
+    },
+    localStorage: {
+      getItem: (key) => remembered.get(key) || null,
+      setItem: (key, value) => { remembered.set(key, value); },
+      removeItem: (key) => { remembered.delete(key); },
+    },
+    T: { webNotifyAsking: "Asking…", webNotifyGo: "Enable", webNotifyOff: "Off",
+         webNotifyHomeScreen: "Home", webNotifyOnFailed: "Failed", webNotifyOffFailed: "Failed" },
+    els: elements,
+    toast: () => {},
+    api: {
+      pushKey: () => Promise.resolve({ key: "AQ" }),
+      pushSubscribe: () => Promise.resolve({ id: "push-1" }),
+      pushUnsubscribe: () => Promise.resolve({ ok: true }),
+    },
+    Settings: {
+      drawNotify: () => {},
+      open: () => { settingsOpened += 1; },
+    },
+    Diagnostics: { note: (name, data) => { stages.push({ name: name, data: data }); } },
+  };
+  const pushModule = await import("data:text/javascript;base64," +
+    Buffer.from(pushStandalone).toString("base64"));
+  pushModule.Push.start();
+  await new Promise((done) => setTimeout(done, 0));
+  pushModule.Push.toggle();
+  await new Promise((done) => setTimeout(done, 0));
+  await new Promise((done) => setTimeout(done, 0));
+  check("after a boot registration failure, one press retries registration and subscribes",
+        registerCalls === 2 && subscriptions === 1 && settingsOpened === 1);
+  check("the repaired press settles instead of leaving the button on Asking…",
+        elements["notify-go"].disabled === false
+        && elements["notify-go-label"].textContent !== "Asking…");
+  check("permission, worker, key, browser subscription and server subscription are named",
+        ["permission", "worker.ready", "key", "browser.subscribe", "server.subscribe"].every(
+          (stage) => stages.some((entry) => entry.name === "push." + stage + ".begin")
+            && stages.some((entry) => entry.name === "push." + stage + ".end")));
+  delete globalThis.__pushEnv;
+}
+
 // ---- the route ---------------------------------------------------------------------------------
 // Three files have to agree on one string for a service worker to exist at all: the page registers
 // a path, the router answers that path, and the handler behind it is this one. Two of the three
@@ -66,17 +171,8 @@ check("the router answers GET /sw.js exactly once",
 check("and it answers it with RemotePage.serviceWorker(), which is called nowhere else",
       occurrences(server, "RemotePage.serviceWorker()") === 1
       && /case \("GET", "\/sw\.js"\):\s*\n\s*return RemotePage\.serviceWorker\(\)/.test(server));
-// **One spelling, however many callers.** This counted the whole call with the literal inside it,
-// which was the same thing while `start` was the only place that registered. A second caller —
-// throwing a mismatched worker away and installing it again — made that count a fact about how
-// many times somebody registers rather than about how many ways the path is written, which is
-// what this check is for. The literal now lives in one constant and this holds that.
-check("the page writes that path exactly once",
-      occurrences(registration, '"/sw.js"') === 1
-      && /var SW_PATH = "\/sw\.js";/.test(registration));
-check("and registers with it rather than with a second copy of the string",
-      occurrences(registration, "navigator.serviceWorker.register(SW_PATH)") >= 1
-      && occurrences(registration, 'navigator.serviceWorker.register("') === 0);
+check("the page registers that exact path once",
+      occurrences(registration, 'navigator.serviceWorker.register("/sw.js")') === 1);
 check("RemotePage declares that handler exactly once", occurrences(page, SIGNATURE) === 1);
 if (occurrences(page, SIGNATURE) !== 1) stop("cannot find the handler this suite is about");
 
@@ -319,31 +415,8 @@ check("and adds no sixth listener nobody asked for",
         && messages[0].url === "/#session-9");
   check("and it is focused, because the point of the tap is to reach the session",
         focused.length === 1 && w.calls.opened.length === 0);
-  check("this URL names no session, so no record was left behind and the message carries no id",
-        messages[0].want === "");
-}
-{
-  // The same handler on a URL a notification is actually written with. The record it leaves in
-  // Cache Storage is `web-notification-route.mjs`'s subject — the stand-in here has no
-  // `caches.open`, on purpose, because a worker in a browser that refuses the store must still
-  // take every road it took before. What belongs to this suite is the message: the id that joins
-  // the two roads travels on it, and a page with no id cannot tell the record this tap left from
-  // one a second tap will leave.
-  const messages = [];
-  const client = {
-    focus: () => Promise.resolve(),
-    postMessage: (message) => { messages.push(message); },
-  };
-  const w = runWorker({ clients: () => [client] });
-  w.fire("notificationclick", eventFor(w.calls, {
-    notification: { close: () => {}, data: { url: "/#session=%25208" } },
-  }));
-  await Promise.all(w.calls.waited);
-  check("a notification naming a session sends the tap's own id beside the URL",
-        messages.length === 1 && messages[0].url === "/#session=%25208"
-        && typeof messages[0].want === "string" && messages[0].want.length > 0);
-  check("and a store that cannot be opened costs the tap nothing: the message road was still taken",
-        w.calls.opened.length === 0);
+  check("the compatibility message carries only the destination — no persistent replay id",
+        Object.keys(messages[0]).sort().join(",") === "type,url");
 }
 {
   // A client this worker does not control has no `postMessage` here; `navigate` is the fallback,

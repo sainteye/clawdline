@@ -16,7 +16,7 @@ private enum FeatureAttributionSchedule {
     static var lastRunAt: Date?
     /// One pass per five minutes, the same cadence a usage checkpoint runs on.
     static let interval: TimeInterval = 300
-    /// The bounded recent window a production pass classifies. Rung 3 asks whether a label is
+    /// The bounded recent window a production pass classifies. The declared-work-line rung asks
     /// carried by two or more tasks *in this batch*, so the window is what "a work line" means
     /// here: long enough that the two tasks of one line are usually both inside it, short enough
     /// that the pass stays a small read.
@@ -71,7 +71,7 @@ extension UsageLedger {
         }
     }
 
-    /// What the durable broker record contributes to one row's evidence. Six fields, and no
+    /// What the durable broker record contributes to one row's evidence. Eight fields, and no
     /// prompt, instruction body, transcript, working directory or file path among them.
     struct TaskFacts: Equatable {
         var title: String?
@@ -80,15 +80,20 @@ extension UsageLedger {
         var kind: String?
         var parentTaskID: String?
         var retryOf: String?
+        var graphID: String?
+        var graphLabel: String?
 
         init(title: String? = nil, declaredWorkLine: String? = nil, planHeadline: String? = nil,
-             kind: String? = nil, parentTaskID: String? = nil, retryOf: String? = nil) {
+             kind: String? = nil, parentTaskID: String? = nil, retryOf: String? = nil,
+             graphID: String? = nil, graphLabel: String? = nil) {
             self.title = title
             self.declaredWorkLine = declaredWorkLine
             self.planHeadline = planHeadline
             self.kind = kind
             self.parentTaskID = parentTaskID
             self.retryOf = retryOf
+            self.graphID = graphID
+            self.graphLabel = graphLabel
         }
     }
 
@@ -124,7 +129,7 @@ extension UsageLedger {
         /// Whether the bounded read this run classified came back holding its whole row cap. A
         /// newest-first reader cannot tell "exactly the cap" from "more than the cap", so this is
         /// the strongest honest statement: past the cap the batch loses its oldest members, and
-        /// rung 3 asks whether a label is carried by two tasks *in this batch*.
+        /// the declared-work-line rung asks whether a label is carried by two tasks *in this batch*.
         var windowTruncated: Bool
         /// `UsageFeatureClassifier.DeclineReason.rawValue` -> count. A run receipt, never a
         /// ledger field: `no_unambiguous_accepted_head` is the Portfolio's own, different word.
@@ -215,6 +220,10 @@ extension UsageLedger {
             let taskID = featureNonEmpty(row.taskID)
             let facts = taskID.flatMap { taskFacts[$0] }
             let scheduleID = featureNonEmpty(row.scheduleID)
+            // Preserve the row's exact spelling. The classifier admits only the canonical
+            // lowercase UUID; trimming here would silently promote padded legacy data to 1.00.
+            let recordedGraphID = row.graphID
+            let durableGraphID = featureNonEmpty(facts?.graphID)
             return UsageFeatureClassifier.Evidence(
                 intervalKey: row.intervalKey,
                 projectKey: UsageFeatureClassifier.resolveProject(
@@ -230,7 +239,10 @@ extension UsageLedger {
                 scheduleTitle: scheduleID.flatMap { featureNonEmpty(scheduleTitles[$0]) },
                 parentTaskID: featureNonEmpty(row.parentTaskID)
                     ?? featureNonEmpty(facts?.parentTaskID),
-                retryOf: featureNonEmpty(row.retryOf) ?? featureNonEmpty(facts?.retryOf))
+                retryOf: featureNonEmpty(row.retryOf) ?? featureNonEmpty(facts?.retryOf),
+                graphID: recordedGraphID,
+                graphLabel: recordedGraphID == durableGraphID
+                    ? featureNonEmpty(facts?.graphLabel) : nil)
         }
     }
 
@@ -285,10 +297,11 @@ extension UsageLedger {
                 continue
             }
             // **A machine never overwrites an accepted head.** Event ids are derived from the
-            // classifier version, the interval, the Feature id and the rung, so a version bump —
-            // which §3.2 *mandates* whenever a rung, a confidence, a normalization rule or the
-            // digest recipe changes — or a record that has since gained a plan headline moves the
-            // seed. This pass's acceptance supersedes only its own proposal, so appending it
+            // classifier version, the interval, the Feature id and the rung; graph events also
+            // include the admitted graph-claim digest in that deterministic identity. A version
+            // bump — which §3.2 *mandates* whenever a rung, a confidence, a normalization rule or
+            // the digest recipe changes — or an admitted graph claim change moves the seed. This
+            // pass's acceptance supersedes only its own proposal, so appending it
             // beside the head already there leaves two active accepted heads, `acceptedHead(from:)`
             // returns nil, and the interval silently leaves its Feature for `Unknown`.
             //
@@ -378,7 +391,7 @@ extension UsageLedger {
 }
 
 extension Orchestrator {
-    /// The six durable facts the Feature classifier may see, one entry per known task record.
+    /// The eight durable facts the Feature classifier may see, one entry per known task record.
     /// Same shape and same locking discipline as ``Orchestrator/usageScheduleLabels()``: load the
     /// registry, take one snapshot under the lock, and do every projection outside it.
     static func usageFeatureTaskFacts() -> [String: UsageLedger.TaskFacts] {
@@ -394,7 +407,9 @@ extension Orchestrator {
                 planHeadline: UsageLedger.featurePlanHeadline(task.plan),
                 kind: UsageLedger.featureNonEmpty(task.kind),
                 parentTaskID: UsageLedger.featureNonEmpty(task.parentTaskId),
-                retryOf: UsageLedger.featureNonEmpty(task.respawnOf))
+                retryOf: UsageLedger.featureNonEmpty(task.respawnOf),
+                graphID: UsageLedger.featureNonEmpty(task.graph?.id),
+                graphLabel: UsageLedger.featureNonEmpty(task.graph?.destination))
         }
         return facts
     }

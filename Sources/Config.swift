@@ -514,10 +514,11 @@ final class Config {
     /// How long a task's registry record is kept, in days, counted from `finishedAt ?? created`.
     ///
     /// **This is the time limit on the record, not on its directory**, which goes far sooner: the
-    /// record is small and it is the only durable evidence the usage Feature classifier has.
-    /// `Orchestrator.usageFeatureTaskFacts()` reads six fields off it, and a usage row whose
-    /// record has been swept is permanently `no_durable_task_record` — 149 rows were already in
-    /// that state when the classifier was first switched on.
+    /// record is small and supplies the eight task facts the usage Feature classifier may see.
+    /// A canonical lowercase graph UUID recorded on `usage_intervals` survives this sweep and can
+    /// still classify at `graph_identity`, using the UUID as its label; the task record supplies
+    /// the matching destination label and every lower rung's evidence. A row without a valid
+    /// recorded graph whose record has been swept remains `no_durable_task_record`.
     ///
     /// 30 by default, which is `FeatureAttributionSchedule.window` said in days. The classifier
     /// re-reads a 30-day window of rows on every pass, so anything shorter throws away evidence
@@ -543,9 +544,9 @@ final class Config {
     var usageFeatureClassifier = false
     /// The confidence at or above which the policy appends an `accepted` event over a proposal.
     ///
-    /// 0.80 by default, which sits just under the declared-work-line rung at 0.82 — so the three
-    /// rungs that name a work line are accepted and lineage at 0.66 is left as a proposal for a
-    /// person to look at. Values outside `0.5 ... 1.0` are ignored rather than clamped: a
+    /// 0.80 by default, which sits just under the declared-work-line rung at 0.82 — so the four v2
+    /// rungs at 1.00, 0.95, 0.88 and 0.82 are accepted and lineage at 0.66 is left as a proposal
+    /// for a person to look at. Values outside `0.5 ... 1.0` are ignored rather than clamped: a
     /// threshold of 0 would accept everything the classifier ever guessed.
     var usageFeatureAcceptanceThreshold: Double = 0.80
     /// Where the project status files are read from, and where the icon registry lives.

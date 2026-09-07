@@ -3,6 +3,7 @@ import { els } from "../core/dom.js";
 import { toast } from "../core/util.js";
 import { api } from "../net/api.js";
 import { Settings } from "./settings.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 
 /* ---- notifications ------------------------------------------------------- */
 
@@ -23,11 +24,9 @@ import { Settings } from "./settings.js";
  * what to do when one is tapped; this end registers it and hands it a subscription.
  */
 export var Push = (function () {
-    /// **One spelling of the path, and two callers.** `web-service-worker.mjs` holds this against
-    /// the route that answers it, and it does so by counting the literal — so the literal lives
-    /// here and the callers say this instead.
-    var SW_PATH = "/sw.js";
-
+    var WORKER_READY_TIMEOUT_MS = 15000;
+    var PERMISSION_TIMEOUT_MS = 60000;
+    var PUSH_OPERATION_TIMEOUT_MS = 30000;
     var registration = null;
     var subscribed = false;
     var state = "unsupported";   // unsupported | homescreen | blocked | off | on
@@ -95,6 +94,85 @@ export var Push = (function () {
         });
     }
 
+    function taggedError(error, stage) {
+        var tagged = new Error(error && error.message ? error.message : T.webNotifyOnFailed);
+        tagged.stage = stage;
+        tagged.code = error && (error.code || error.name) || "push_failed";
+        return tagged;
+    }
+
+    /** One named, finite boundary. The report keeps only the stage and typed outcome — never the
+     * endpoint, key or subscription bytes — so a phone can say where it stopped without leaking
+     * the capability it was trying to create. */
+    function timed(stage, timeout, operation) {
+        Diagnostics.note("push." + stage + ".begin", {});
+        return new Promise(function (resolve, reject) {
+            var done = false;
+            var timer = setTimeout(function () {
+                var error = taggedError({ code: "push_timeout" }, stage);
+                Diagnostics.note("push." + stage + ".failure", { code: error.code });
+                finish(null, error);
+            }, timeout);
+            function finish(value, error) {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                if (error) reject(error);
+                else resolve(value);
+            }
+            Promise.resolve().then(operation).then(function (value) {
+                Diagnostics.note("push." + stage + ".end", {});
+                finish(value, null);
+            }, function (error) {
+                var tagged = taggedError(error, stage);
+                Diagnostics.note("push." + stage + ".failure", { code: tagged.code });
+                finish(null, tagged);
+            });
+        });
+    }
+
+    /**
+     * A registration promise can reject; `navigator.serviceWorker.ready` cannot. The latter waits
+     * forever when boot's registration failed or the new worker never activated, which used to
+     * leave a granted permission behind an equally permanent “Asking…” button. Register at the
+     * moment the reader asks, use that exact registration, and put a bound on activation.
+     */
+    function ensureRegistration() {
+        if (registration && registration.active) return Promise.resolve(registration);
+        return timed("worker.register", WORKER_READY_TIMEOUT_MS, function () {
+            return navigator.serviceWorker.register("/sw.js");
+        }).then(function (r) {
+            registration = r;
+            if (r.active) return r;
+            var worker = r.installing || r.waiting;
+            if (!worker || typeof worker.addEventListener !== "function") {
+                throw new Error(T.webNotifyOnFailed);
+            }
+            return timed("worker.activate", WORKER_READY_TIMEOUT_MS, function () {
+                return new Promise(function (resolve, reject) {
+                    var settled = false;
+                    function finish(error) {
+                        if (settled) return;
+                        settled = true;
+                        if (typeof worker.removeEventListener === "function") {
+                            worker.removeEventListener("statechange", changed);
+                        }
+                        if (error) reject(error);
+                        else resolve(r);
+                    }
+                    function changed() {
+                        if (r.active || worker.state === "activated") finish(null);
+                        else if (worker.state === "redundant") {
+                            finish(new Error(T.webNotifyOnFailed));
+                        }
+                    }
+                    worker.addEventListener("statechange", changed);
+                    changed();
+                });
+            });
+        });
+    }
+
     function draw() {
         state = busy ? state : decide();
         // **Only the two states somebody can act on from here keep a place in the flow.** Off is
@@ -120,18 +198,22 @@ export var Push = (function () {
 
     function enable() {
         busy = true; draw();
-        askPermission().then(function (answer) {
+        timed("permission", PERMISSION_TIMEOUT_MS, askPermission).then(function (answer) {
             if (answer !== "granted") { busy = false; draw(); return null; }
-            return navigator.serviceWorker.ready.then(function (r) {
+            return timed("worker.ready", WORKER_READY_TIMEOUT_MS, ensureRegistration).then(function (r) {
                 registration = r;
-                return api.pushKey();
+                return timed("key", PUSH_OPERATION_TIMEOUT_MS, function () { return api.pushKey(); });
             }).then(function (d) {
-                return registration.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: keyBytes(d.key)
+                return timed("browser.subscribe", PUSH_OPERATION_TIMEOUT_MS, function () {
+                    return registration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: keyBytes(d.key)
+                    });
                 });
             }).then(function (subscription) {
-                return api.pushSubscribe(subscription.toJSON());
+                return timed("server.subscribe", PUSH_OPERATION_TIMEOUT_MS, function () {
+                    return api.pushSubscribe(subscription.toJSON());
+                });
             }).then(function (d) {
                 subscribed = true;
                 remember(d && d.id);
@@ -143,15 +225,22 @@ export var Push = (function () {
             });
         }).catch(function (e) {
             busy = false; draw();
-            toast(e && e.message ? e.message : T.webNotifyOnFailed, true);
+            Diagnostics.note("push.enable.failure", {
+                stage: e && e.stage || "enable", code: e && e.code || "push_failed"
+            });
+            var detail = " [" + (e && e.stage || "enable") + ": "
+                + (e && e.code || "push_failed") + "]";
+            toast((e && e.message ? e.message : T.webNotifyOnFailed) + detail, true);
         });
     }
 
     function disable() {
         busy = true; draw();
         var id = recall();
-        navigator.serviceWorker.ready.then(function (r) {
-            return r.pushManager.getSubscription();
+        timed("worker.ready", WORKER_READY_TIMEOUT_MS, ensureRegistration).then(function (r) {
+            return timed("browser.lookup", PUSH_OPERATION_TIMEOUT_MS, function () {
+                return r.pushManager.getSubscription();
+            });
         }).then(function (subscription) {
             return subscription ? subscription.unsubscribe() : null;
         }).then(function () {
@@ -179,11 +268,10 @@ export var Push = (function () {
                 draw();
                 return;
             }
-            navigator.serviceWorker.register(SW_PATH).then(function (r) {
-                registration = r;
-                return navigator.serviceWorker.ready;
-            }).then(function (r) {
-                return r.pushManager.getSubscription();
+            timed("worker.ready", WORKER_READY_TIMEOUT_MS, ensureRegistration).then(function (r) {
+                return timed("browser.lookup", PUSH_OPERATION_TIMEOUT_MS, function () {
+                    return r.pushManager.getSubscription();
+                });
             }).then(function (subscription) {
                 // Both halves have to agree. A subscription this browser still holds but the app
                 // has forgotten — reinstalled, database cleared — would draw as "on" and never
@@ -197,22 +285,6 @@ export var Push = (function () {
                 draw();
             });
         },
-        /// Ask the browser to look for a newer worker.
-        ///
-        /// **`register()` on every load is supposed to be this**, and on 2026-09-07 it was not:
-        /// a phone ran a page from one build over a worker from an earlier one for long enough
-        /// to produce 116 reads of a record that worker did not know how to write. Whatever the
-        /// browser's own schedule is, this asks. It is one conditional request against a route
-        /// served `no-cache`, it never reloads anything by itself, and a browser with no worker
-        /// or no registration yet simply has nothing to do.
-        recheck: function () {
-            try {
-                if (!registration || typeof registration.update !== "function") return;
-                var asked = registration.update();
-                if (asked && typeof asked.catch === "function") asked.catch(function () {});
-            } catch (e) { /* an update check is never worth an exception on this path */ }
-        },
-
         toggle: function () {
             if (busy) return;
             if (state === "off") enable();

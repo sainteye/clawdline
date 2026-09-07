@@ -16,7 +16,7 @@ import {
 import { agentRow, agentsRev, loadAgent, renderAgentHead } from "../session/agent.js";
 import { SwipeRows } from "../input/swipe.js";
 import { SessionActions } from "../input/detail-actions.js";
-import { openWanted, retryWorkerWant, setWantedSession, wantedSession } from "../input/route.js";
+import { openWanted, setWantedSession, wantedSession } from "../input/route.js";
 import { Start } from "../input/start.js";
 import { StatusLine } from "../input/status-line.js";
 import { Info } from "../input/info.js";
@@ -103,13 +103,6 @@ export function onSessions() {
     // tried on every list rather than once, because a cold start routes before it knows what
     // sessions exist.
     var routed = openWanted();
-
-    // And the other half of that same request, which had no retry at all: what the worker wrote
-    // down about the tap. The write is not awaited, so `boot` can read the store before the record
-    // lands, and a page that came up in the foreground gets no `visibilitychange` to read it at —
-    // the record then goes stale unread, which is the second road failing on the tap it is for.
-    // This is the same retry point for the same reason, and it stops asking once it has an answer.
-    retryWorkerWant();
 
     // The first list to arrive puts the highlight somewhere, so the arrow keys and Return mean
     // something without a click first. On a desk it also opens that session: a two-column layout

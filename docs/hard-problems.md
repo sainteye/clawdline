@@ -21,24 +21,22 @@ family below — a check that cannot go red. This file is the family.
 
 ## 2026-09-06/07 — Tapping a notification did not open the session
 
-**Eleven rounds. Four defects, three of them upstream of the one being looked for, and one instrument
-that had to be rebuilt three times before it could see any of them.**
+**Eleven rounds of service-worker fallback work before the decisive observation showed that the
+foreground Apple tap never dispatched `notificationclick` at all.** The final implementation uses
+Declarative Web Push, and the caches, counters, build mark and dedicated cross-context suite
+described below have since been removed. This entry keeps the investigation as a lesson about
+evidence; it no longer describes the current notification mechanism.
 
 ### What was actually wrong
 
-1. **The service worker on the phone was never updating.** The page was current; the worker was from
-   an earlier build. Registering on every load and `update()` at both wake-ups both failed to move
-   it, and there was no way to see the skew, so **every reading taken for two rounds was about a
-   program nobody was looking at**. Fixed by having the worker stamp its build into a mark the page
-   reads, and unregistering and reinstalling when the two numbers differ.
-2. **Taking over deleted the record the tap had just left.** `activate` cleared every cache — two
-   defensive lines from when nothing wrote to Cache Storage. By then three things did. The cost was
-   written down as "a worker update loses one tap"; it was every tap the worker was restarted under.
-3. **The fallback was a one-shot.** A flag meaning "there is nothing left to wait for" was never
-   reset, so one stale record read at boot switched the second road off for the life of the page.
-4. **`postMessage` is genuinely unreliable** — measured at four posts to one arrival under the old
-   worker. That is the defect the whole line was opened for, and it was the last one to be
-   confirmed, because the three above kept the instrument from ever seeing it.
+1. **WebKit did not emit `notificationclick` for the foreground installed-app tap.** The worker and
+   page matched and all five listeners were registered; there was simply no event for any fallback
+   below it to repair. Declarative `notification.navigate` now gives that tap to Safari itself.
+2. **The attempted fallback had defects of its own.** Its build mark, cache retention, one-shot
+   retry and `postMessage` path each produced useful evidence about testing, but none could repair
+   an event that never existed. Once declarative navigation worked, its persistent wanted record
+   became harmful: it could replay after the reader returned to the list. The whole second road was
+   retired rather than maintained beside the mechanism that solved the platform fault.
 
 ### Why it took eleven rounds
 
@@ -93,7 +91,7 @@ disproved two of them as explanations within an hour:
   answered `{count: 1}`, and the one window was `focused: true`, `visibility: "visible"`.
 * **"`focus()` was rejected and took the writes with it"** — the line printed was `focus taken`.
 
-Both were real defects and both keep their tests. **Neither is why it started working**, and saying
+Both were real defects in the now-retired fallback. **Neither is why it started working**, and saying
 so is the point of writing this down: a fix that lands beside a recovery collects credit for it
 unless something is watching that can say otherwise. Four changes went out together — which was the
 right call, and the person paying in taps had asked for it — and the cost of that call is exactly

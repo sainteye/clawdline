@@ -24,9 +24,6 @@ var debugPanel = null;
 // and those are opposite readings of the same file.
 var dropped = 0;
 var droppedThrough = null;
-// Recorders that live somewhere this page cannot see and are folded in when it wakes.
-var sources = {};
-var sourceOrder = [];
 
 function clock() {
     return typeof performance !== "undefined" && performance.now
@@ -54,31 +51,8 @@ function append(event, data) {
     }
 }
 
-/**
- * One external recorder, by name. Declaring it is what makes its silence readable.
- *
- * The worker's half of a notification is written into Cache Storage while this page is not
- * running, and read back when it wakes. **Never read** and **read, and there was nothing** are
- * different faults with different fixes, and before this they produced the same empty trace —
- * which is the shape this machine has now paid for more than once. A source that has been
- * declared and never read says `unread`; one whose store is not there at all says `unavailable`,
- * which is a third thing again.
- *
- * Names are the caller's and this file knows none of them. A new observation point next month
- * declares its own and appears in the report without anything here or on the Mac changing.
- */
-function sourceRow(name) {
-    if (!sources[name]) {
-        sources[name] = { name: name, state: "unread", entries: 0, reads: 0, at: null };
-        sourceOrder.push(name);
-    }
-    return sources[name];
-}
-
 /** What this report knows it is missing, stated rather than left to be noticed. */
 function completeness() {
-    var rows = sourceOrder.map(function (name) { return sources[name]; });
-    var waiting = rows.filter(function (row) { return row.state !== "merged"; });
     return {
         trace: {
             kept: trace.length, limit: TRACE_LIMIT, dropped: dropped,
@@ -87,11 +61,7 @@ function completeness() {
             to: trace.length ? trace[trace.length - 1].t : null
         },
         incidents: { kept: incidents.length, limit: INCIDENT_LIMIT },
-        sources: rows,
-        // True only when nothing was dropped and every declared source has actually been folded
-        // in. It is not a promise that the fault is in here — no counter can say that — it is the
-        // narrower claim that nothing this recorder knows about is missing from the file.
-        whole: dropped === 0 && waiting.length === 0
+        whole: dropped === 0
     };
 }
 
@@ -227,9 +197,8 @@ function stateSnapshot(reason) {
  *
  * Written twice — here and as a `case` in `Sources/RemoteServer.swift` — because a route is a
  * string on both sides of a wire. `Tests/web-diagnostics-send.mjs` holds the two copies against
- * each other, for the same reason `Tests/web-notification-route.mjs` holds the worker's cache
- * name against the page's: two spellings of one name in two languages is the shape that drifts,
- * and the drift is silent.
+ * each other: two spellings of one name in two languages is the shape that drifts, and the drift
+ * is silent.
  */
 export var REPORT_ROUTE = "/v1/diagnostics/report";
 
@@ -543,26 +512,6 @@ export var Diagnostics = {
     },
     ready: function () { ready = true; append("boot.ready"); schedule("boot.ready"); },
     note: function (event, data) { append(event, data); schedule(event); },
-    /**
-     * Declare a recorder that lives somewhere this page cannot see.
-     *
-     * Call it once, at module load, for anything that will later be folded into this trace. That
-     * is what buys the report the difference between "not folded in yet" and "there was nothing
-     * to fold in" — and the caller names it, so a new observation point next month needs no
-     * change here and none on the Mac.
-     */
-    source: function (name) { sourceRow(name); },
-    /**
-     * What became of one read of that recorder. `merged` with a count, `unavailable` when the
-     * store it lives in is not there, `failed` when reading it threw or gave back nonsense.
-     */
-    sourceRead: function (name, state, entries) {
-        var row = sourceRow(name);
-        row.state = state || "merged";
-        row.reads += 1;
-        row.entries += typeof entries === "number" ? entries : 0;
-        row.at = clock();
-    },
     completeness: completeness,
     capture: function (reason) {
         var sample = stateSnapshot(reason || "manual"); save("manual_capture", sample); return sample;

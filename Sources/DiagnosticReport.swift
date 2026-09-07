@@ -20,8 +20,8 @@ import Foundation
 /// bound": the directory holds at most `maxBytes` twice, whatever anybody sends.
 ///
 /// **It carries nothing this route understands.** The envelope names when, who and how big; the
-/// page's own document goes inside `report` untouched. Today the events in it are `sw.*` and
-/// `route.*`; the next defect will have different ones, and nothing here has to change for that —
+/// page's own document goes inside `report` untouched. Today it contains page, route and layout
+/// events; the next defect will have different ones, and nothing here has to change for that —
 /// this refuses a body that is not a JSON object and has no opinion about what is in the object.
 enum DiagnosticReport {
     /// Two megabytes, and the number has two jobs.
@@ -129,10 +129,9 @@ enum DiagnosticReport {
         }
 
         // Hoisted rather than left for a reader to find. The page states its own completeness —
-        // how many trace entries it dropped, and which of its external sources it has folded in
-        // yet — and the one question somebody opening this file asks first is whether it says so
-        // at all. An absent block and a block saying "nothing was dropped" are different readings
-        // and must not render the same.
+        // how many trace entries it dropped — and the one question somebody opening this file
+        // asks first is whether it says so at all. An absent block and a block saying "nothing
+        // was dropped" are different readings and must not render the same.
         var completeness: Any = ["stated": false,
                                  "why": "the page sent no completeness block with this report"]
         var stated = false

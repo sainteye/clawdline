@@ -25,6 +25,12 @@ import { Push } from "./push.js";
  */
 var diagnosticsDoorBound = false;
 
+/** The Mac version is friendlier; the immutable Cloud build is always present before its first
+ * snapshot arrives, and keeps the version line — therefore the diagnostics door — real. */
+export function settingsBuildVersion(macVersion, cloud) {
+    return String(macVersion || (cloud && cloud.build) || "");
+}
+
 function bindDiagnosticsDoor() {
     if (diagnosticsDoorBound) return;
     var line = els["settings-version"];
@@ -80,8 +86,9 @@ export var Settings = (function () {
         /** Drawn on arrival, however the arrival happened. */
         enter: function () {
             say("");
+            var version = settingsBuildVersion(S.version, window.__clawdlineCloud);
             els["settings-version"].textContent =
-                S.version ? fill(T.webSettingsVersion, { v: S.version }) : "";
+                version ? fill(T.webSettingsVersion, { v: version }) : "";
             bindDiagnosticsDoor();
             Push.redraw();
             this.drawAssistantIcons();

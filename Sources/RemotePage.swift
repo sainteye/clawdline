@@ -1057,483 +1057,91 @@ enum RemotePage {
     static func serviceWorker() -> RemoteServer.Response {
         let js = #"""
         // Clawdline's service worker. Its whole job is to be awake when the page is not.
-        // **The one lever that can reach a page already stuck on an old copy.**
         //
-        // For a long time no route set `Cache-Control`, and a browser with no header applies
-        // heuristic freshness — Safari on a home-screen web app especially. Serving `no-store`
-        // fixes it for every load after the fix, and does nothing for a device that already
-        // holds the old copy: it never asks again, so it never learns. Reloading does not help,
-        // because the reload is served from the same cache.
-        //
-        // A worker can break that, and it is the only thing that can. `sw.js` itself is sent
-        // `no-cache`, so a browser revalidates it on its own schedule; when this file changes it
-        // installs, `skipWaiting` stops it queuing behind open tabs, `clients.claim` takes those
-        // tabs over, and from that moment the handler below fetches the page itself instead of
-        // the cache. **One more reload after that and the device is out.**
-        // **Said out loud, for somebody with the phone plugged into the Mac.**
-        //
-        // Safari's Web Inspector attaches to a device over a cable and gives the worker a console
-        // of its own, separate from the page's. That is a far better instrument than the one this
-        // road has been read through — it needs no press, it arrives while the thing is
-        // happening, and it can be seen on both sides of the gap at once.
-        //
-        // Every line is prefixed so it can be filtered to, and every one of them is on a road a
-        // person has just tapped: this is not a log that runs while nothing is going on. Session
-        // ids are printed, unlike in the diagnostic report, because the console belongs to the
-        // person holding the device and the id is the thing they are trying to see.
-        function say(what, data) {
-            try {
-                if (typeof console === "undefined" || !console || !console.log) { return; }
-                if (data === undefined) { console.log("[clawdline/sw] " + what); }
-                else { console.log("[clawdline/sw] " + what, data); }
-            } catch (e) { }
-        }
+        // The worker is served `no-cache`, skips waiting, and claims open pages so an installed
+        // PWA can move off an old document. Navigations are fetched with `reload`; versioned
+        // modules and styles stay outside this handler.
+        self.addEventListener("install", function () { self.skipWaiting(); });
 
-        // **Which listeners this script actually got as far as registering.**
-        //
-        // A service worker script is evaluated from the top every time the browser starts one, and
-        // the listeners are whatever the evaluation reached. If it stops partway — for any reason
-        // this end cannot see — the handlers above the stopping point are live and the ones below
-        // it silently do not exist. `activate` is registered near the top and `notificationclick`
-        // near the bottom, which is exactly the shape of "the worker plainly woke, and tapping
-        // does nothing": measured on a phone on 2026-09-07 across three states of the app.
-        //
-        // Node registers all five, and node is not WebKit. So the script says what it managed
-        // rather than what it intends, and the mark carries the list to the page.
-        var registered = [];
-        function on(type, handler) {
-            self.addEventListener(type, handler);
-            registered.push(type);
-        }
-
-        // What this worker can do, left where the page can read it back. See `activate`.
-        var MARK_CACHE = "clawdline-worker-mark";
-        var MARK_URL = "/__clawdline/worker-mark";
-
-        // **Which build this script came from**, prepended by the route rather than interpolated
-        // into the literal below it: this file is read as text by the suite that drives it, and a
-        // Swift interpolation in the middle of it is not JavaScript. Absent under that suite and
-        // under any older server, which is why every read of it is guarded.
-        //
-        // A capability said "this worker knows how to leave a record" and two consecutive builds
-        // both answered it the same way — one that kept the record and one that swept it away on
-        // the next activation. That is a reading that cannot separate the two things it was being
-        // asked to separate, and on 2026-09-07 that cost a round: the trace was empty and there
-        // was no way to tell a worker that had not run from a worker that had run and then
-        // cleared up after itself. The stamp is the answer that a capability could not give.
-        var BUILD = (typeof CLAWDLINE_BUILD === "string") ? CLAWDLINE_BUILD : "";
-
-        on("install", function () { self.skipWaiting(); });
-
-        on("activate", function (event) {
+        self.addEventListener("activate", function (event) {
             event.waitUntil(
-                // Nothing here writes to Cache Storage, so normally there is nothing to delete.
-                // It is done anyway, because "nothing wrote to it" is a claim about every version
-                // of this file that has ever run on somebody's phone, and this is two lines.
-                // **Everything except the three this worker keeps.** This used to delete every
-                // cache, and that was right for exactly as long as nothing wrote to Cache
-                // Storage — it was two lines against the possibility that some older version of
-                // this file had left something behind. Three things write there now: the trace,
-                // the record a tap leaves for the page, and the mark saying which worker this
-                // is. A blanket purge takes all three, and the one it can least afford to take
-                // is the record: the tap that writes it is the tap the record exists for.
-                //
-                // Measured on 2026-09-07, on a phone, in the reading that finally named it: the
-                // worker posted (`workerPosted` 3 → 4) and wrote a record, the page read the
-                // store 151 times and found nothing, and the mark row said 4 reads and 3 finds
-                // — one read landing in the window where a purge had run and the rewrite had
-                // not. The cost was written down as "an update loses one tap"; it was every tap
-                // this worker was restarted under.
+                // Older builds used Cache Storage for notification traces and a second routing
+                // record. Declarative Web Push made that record unnecessary, and replaying it
+                // could reopen an old Session after the reader returned to the list. Delete every
+                // cache left by those builds before claiming their pages.
                 caches.keys()
                     .then(function (names) {
-                        var mine = [TRACE_CACHE, WANT_CACHE, MARK_CACHE];
-                        var others = names.filter(function (n) { return mine.indexOf(n) < 0; });
-                        return Promise.all(others.map(function (n) { return caches.delete(n); }));
+                        return Promise.all(names.map(function (name) {
+                            return caches.delete(name);
+                        }));
                     })
                     .catch(function () {})
-                    // **And then say which worker this is**, in the one direction that works:
-                    // a page can read Cache Storage and a worker cannot be asked a question
-                    // without a sixth listener. What it writes is a capability and not a
-                    // version — the reader's question is never "which build" but "does the
-                    // worker running on this phone know how to leave a record", and a version
-                    // string would need somebody to remember to bump it.
-                    //
-                    // **A worker from before this line writes nothing, and that absence is the
-                    // reading.** On 2026-09-07 a page reported 116 reads of a record that was
-                    // never there while the worker's own trace was arriving normally, and there
-                    // was no way to tell a worker that had not updated from a road that was
-                    // broken. This is that difference, written down where a flood cannot reach.
-                    .then(function () {
-                        say("activate: this worker is now in charge",
-                            { build: BUILD, listeners: registered.join(",") });
-                        try {
-                            return caches.open(MARK_CACHE).then(function (cache) {
-                                return cache.put(MARK_URL, new Response(
-                                    JSON.stringify({ wants: true, keeps: true,
-                                                     build: BUILD, listeners: registered,
-                                                     at: Date.now() }),
-                                    { headers: { "Content-Type": "application/json" } }));
-                            }).catch(function () {});
-                        } catch (e) { return undefined; }
-                    })
                     .then(function () { return self.clients.claim(); })
             );
         });
 
-        on("fetch", function (event) {
-            // Only the page. Everything else on this origin is either an API answer, which is
-            // `no-store` already, a drawn icon, which is worth its day of cache, or a stylesheet
-            // or module under a URL naming the build it came from, which is worth a year.
-            //
-            // **`reload` stays, and this handler stays, and both were measured before that was
-            // decided.** Answering a navigation from here means the worker has to be running
-            // before the request can go out: cold, that is 35ms in front of a 630ms trip through
-            // the tunnel, and warm it is nothing. Navigation preload would win those 35ms back
-            // and cost the only thing this is for — a preloaded request goes through the HTTP
-            // cache, which is exactly what a device stuck on a pre-`no-store` copy needs bypassed.
-            //
-            // The half-second is the document's own round trip, and no arrangement of this file
-            // removes a trip that has to be made. Serving the document from Cache Storage first
-            // would, and that is the one thing this must never do: it now carries the versioned
-            // URLs of every stylesheet and module *and* the interface's words, so a stale document
-            // is a stale build rather than stale markup, and the only way out of one is the reload
-            // the notice in `build.js` exists to avoid taking without asking.
-            if (event.request.mode !== "navigate") { return; }
+        self.addEventListener("fetch", function (event) {
+            if (event.request.mode !== "navigate") return;
             event.respondWith(
-                // The URL rather than the request, and it costs nothing: the header the page now
-                // picks its language from is added by the browser to a worker's `fetch` too —
-                // checked against a local origin, all four ways of building this request arrive
-                // carrying the same `Accept-Language`.
                 fetch(event.request.url, { cache: "reload", credentials: "include" })
-                    // Offline: hand back whatever the browser would have done on its own, which
-                    // is the stale copy. Stale and readable beats an error page.
                     .catch(function () { return fetch(event.request); })
             );
         });
 
-        on("push", function (event) {
+        self.addEventListener("push", function (event) {
             var payload = {};
             try { payload = event.data ? event.data.json() : {}; } catch (e) {}
-            // Declarative Web Push is deliberately also a valid legacy payload. A browser that
-            // knows `web_push: 8030` draws `notification` itself and never reaches this listener;
-            // an older browser hands the same JSON to the worker, where the nested description
-            // has to become the notification it would have received before. Keeping this fallback
-            // is what lets Apple take the direct-navigation road without making Chrome or an older
-            // Safari draw a blank notification from the same server release.
+
+            // Declarative Web Push is also a valid legacy payload. Supporting the nested
+            // notification here keeps Chrome and older Safari builds working while current
+            // WebKit draws and navigates the notification without running this listener.
             var described = (payload.notification && typeof payload.notification === "object")
                 ? payload.notification : payload;
             var destination = described.navigate || described.url || payload.url || "/";
-            say("push arrived", { title: described.title || "", url: destination,
-                                  build: BUILD });
             event.waitUntil(self.registration.showNotification(described.title || "Clawdline", {
                 body: described.body || "",
-                // The tag collapses repeats about one session into a single line rather than a
-                // stack: a phone that was in a pocket for ten minutes should find one notification
-                // about a session, not six.
                 tag: described.tag || "clawdline",
                 renotify: true,
-                // The project's own mark, so two notifications from two projects are told apart
-                // before either sentence is read. Falls back to the app's creature, which is what
-                // every notification looked like before this existed.
-                //
-                // **Honoured by Chrome and by Firefox, and ignored by iOS.** Measured on a real
-                // iPhone on 2026-08-25: a home-screen web app draws the icon from the manifest
-                // whatever this says, whether the mark is fetched from a URL or carried whole
-                // inside the sealed message, and `image` is ignored the same way. That matches
-                // what everybody else reports — the Apple forum thread about it has no reply and
-                // no workaround. So on an iPhone a notification is told apart by its words alone,
-                // and there is nothing this end can do about that. This line stays for the
-                // platforms that do honour it, and costs one field.
                 icon: described.icon || "/icon-192.png",
                 data: { url: destination }
             }));
         });
 
-        // ---- the half of the road nobody has been able to look at ----------------------------
-        //
-        // A tap that ends on the session list has five places it could have stopped, and the page
-        // can only ever report the last two: by the time anybody asks, the worker has been shut
-        // down and a message that was never delivered left nothing behind to find. So the worker
-        // writes its own half down where the page can read it after the fact.
-        //
-        // **Cache Storage because it is the only store both contexts share.** A worker has no
-        // `localStorage`; the alternative is IndexedDB, which is thirty lines of callbacks for a
-        // twenty-entry ring. The cost is that `activate` above empties every cache, so a trace
-        // does not survive a worker update — which is the right way round: a trace is evidence
-        // about the build that wrote it.
-        //
-        // Nothing here is allowed to cost the tap. Every call is defensive and none of them is
-        // awaited before the client is focused or a window is opened: a browser that refuses
-        // Cache Storage, and the stand-in globals a test runs this under, both take the same road
-        // as before and simply record nothing.
-        var TRACE_CACHE = "clawdline-notification-trace";
-        var TRACE_URL = "/__clawdline/notification-trace";
-        var TRACE_LIMIT = 20;
-
-        // **One entry at a time, because this is a read-modify-write.** A click and the message it
-        // sends are recorded in the same tick: run concurrently they both read the same list, both
-        // take the same sequence number, and the second `put` overwrites the first — so the trace
-        // would have said the worker never posted a message on the taps where it did, which is the
-        // one sentence this whole diagnostic exists to be able to say correctly. The chain lives
-        // in the worker's global scope, which is exactly as long-lived as a wake-up.
-        var traceChain = Promise.resolve();
-
-        function traceNote(name, data) {
+        // Current Apple platforms follow `notification.navigate` declaratively and do not depend
+        // on this handler. It remains the small compatibility road for browsers that deliver the
+        // same payload through the legacy Push API.
+        self.addEventListener("notificationclick", function (event) {
+            var notification = event.notification || {};
+            var url = (notification.data && notification.data.url) || "/";
             try {
-                if (typeof caches === "undefined" || !caches || !caches.open) {
-                    return Promise.resolve(false);
-                }
-                if (typeof Response !== "function") { return Promise.resolve(false); }
-                var entry = { at: Date.now(), event: name, data: data || {} };
-                traceChain = traceChain.then(function () { return traceWrite(entry); })
-                    .catch(function () { return false; });
-                return traceChain;
-            } catch (e) { return Promise.resolve(false); }
-        }
+                if (typeof notification.close === "function") notification.close();
+            } catch (e) {}
 
-        function traceWrite(entry) {
-            try {
-                return caches.open(TRACE_CACHE).then(function (cache) {
-                    return cache.match(TRACE_URL)
-                        .then(function (found) { return found ? found.json() : []; })
-                        .catch(function () { return []; })
-                        .then(function (list) {
-                            if (!Array.isArray(list)) { list = []; }
-                            // **Numbered, not timestamped.** The click and the message it sends
-                            // land in the same millisecond every time, and a reader that skips
-                            // what it has already seen by clock would read the first of them and
-                            // silently drop the second — which is the one that says which road
-                            // was taken. The counter is carried in the ring rather than held in a
-                            // variable, because a worker is shut down between two events.
-                            var previous = list.length ? list[list.length - 1] : null;
-                            entry.seq = ((previous && previous.seq) || 0) + 1;
-                            list.push(entry);
-                            if (list.length > TRACE_LIMIT) {
-                                list = list.slice(list.length - TRACE_LIMIT);
-                            }
-                            return cache.put(TRACE_URL, new Response(JSON.stringify(list), {
-                                headers: { "Content-Type": "application/json" }
-                            }));
-                        })
-                        .then(function () { return true; });
-                }).catch(function () { return false; });
-            } catch (e) { return Promise.resolve(false); }
-        }
-
-        // ---- the second road: what the tap wanted, left where the page will find it ----------
-        //
-        // The message below is the only road an already-open window has, and it gets one attempt:
-        // by the time anybody could notice it was dropped this handler has returned and the worker
-        // is asleep. So the tap also writes down *what it was for* — one record, in a store the
-        // page can read whenever it next wakes up. If the message arrives, the page marks this
-        // spent and nothing else happens; if it does not, the record is what opens the session.
-        //
-        // **Its own cache, deliberately.** The ring above is evidence — a numbered history nobody
-        // acts on — and this is an instruction that is carried out once and then destroyed. Kept
-        // in one store the two would have to share a read-modify-write, a sequence number and a
-        // pruning rule, and the first bug in either would be a tap that either vanished or fired
-        // twice. One record, replaced whole, is the whole of the write.
-        var WANT_CACHE = "clawdline-notification-wanted";
-        var WANT_URL = "/__clawdline/notification-wanted";
-
-        // Taps within one wake-up, so that two of them cannot share an identity. `Date.now()`
-        // alone is enough between wake-ups — a worker is shut down in between, and no two taps by
-        // a person are one millisecond apart — and the counter covers a test that taps twice in
-        // the same tick, which is the only thing that ever does.
-        var wantCount = 0;
-
-        // **Only a URL that names a session is worth wanting.** `/v1/push/test` and a fan-out
-        // notification both carry `url: "/"`, and a record saying "the person wanted the session
-        // list" would send somebody who tapped a test push back to the list they were already on
-        // the next three times they opened the app. The page declines the same URLs on the message
-        // road — `sessionCandidates()` in `input/route.js` — and the two are held against each
-        // other in `Tests/web-notification-route.mjs` by driving both, because this is a second
-        // copy of a judgement and second copies drift.
-        //
-        // **And it had drifted.** A `[^&]+` test does not refuse an empty value, it looks further
-        // along the fragment for one that is not empty; `sessionCandidates()` reads the *first*
-        // `session=` and refuses it when it is empty. On `/#session=&session=%25141` that is a
-        // record to the worker and nothing at all to the page — the tap lost on both roads. So
-        // this is written as the same match plus the same emptiness check, and the two cannot come
-        // apart on which `session=` they read.
-        function wantedFragment(url) {
-            var text = String(url || "");
-            var cut = text.indexOf("#");
-            if (cut < 0) { return ""; }
-            var hash = text.slice(cut);
-            var found = /(?:^|[#&])session=([^&]*)/.exec(hash);
-            return found && found[1] ? hash : "";
-        }
-
-        function wantWrite(record) {
-            try {
-                if (typeof caches === "undefined" || !caches || !caches.open) {
-                    return Promise.resolve(false);
-                }
-                if (typeof Response !== "function") { return Promise.resolve(false); }
-                return caches.open(WANT_CACHE).then(function (cache) {
-                    return cache.put(WANT_URL, new Response(JSON.stringify(record), {
-                        headers: { "Content-Type": "application/json" }
-                    })).then(function () { return true; });
-                }).catch(function () { return false; });
-            } catch (e) { return Promise.resolve(false); }
-        }
-
-        on("notificationclick", function (event) {
-            // **The first line of this handler, and nothing before it.** Everything else here is
-            // downstream of the handler having been entered at all, and on 2026-09-07 two readings
-            // said a worker had woken and left nothing whatsoever behind — no trace, no message,
-            // no record. That is what a handler that dies on its first statement looks like, and
-            // for the life of this file the first statement was `event.notification.close()`.
-            say("notificationclick: handler entered");
-
-            var url = (event.notification.data && event.notification.data.url) || "/";
-
-            // **Closing it comes last, and only when it is old enough to be closed.** WebKit
-            // refuses to dismiss a persistent notification shortly after it was shown —
-            // `Persistent notifications cannot be closed shortly after they are shown.` appears
-            // on the console before every one of these — and a refusal at the top of a handler
-            // takes the whole tap with it. Whether it merely warns or actually throws is not
-            // something this end can find out from the outside, so it is moved out of the way and
-            // wrapped, which costs nothing either way. The tap dismisses the notification on iOS
-            // regardless; on the platforms where it does not, one that has been on screen for a
-            // second is past the window this complains about.
-            var closed = "not tried";
-            try {
-                var shown = event.notification.timestamp;
-                var age = (typeof shown === "number") ? (Date.now() - shown) : null;
-                if (age === null || age > 1000) {
-                    event.notification.close();
-                    closed = "closed";
-                } else {
-                    closed = "left open, too new: " + age + "ms";
-                }
-            } catch (e) {
-                closed = "close refused: " + ((e && e.message) || String(e));
-            }
-            say("close attempt", { outcome: closed });
-            // What this tap was for, decided here and now, because the identity has to travel on
-            // the message as well as into the store: the page uses it to tell "the message for
-            // this tap arrived" from "a second tap happened", and those two want opposite things
-            // done about the record. Nothing about it is awaited in front of the roads below.
-            say("notificationclick: url resolved", { url: url, build: BUILD });
-            var want = null;
-            if (wantedFragment(url)) {
-                want = { at: Date.now(), url: url, id: String(Date.now()) + "." + (++wantCount) };
-            }
-            // Focus a window that is already open before making another one — the point of
-            // tapping this is to reach the session, not to collect tabs.
-            //
-            // **Three things had to be true for this to land on the session and only one of them
-            // was.** `navigate()` throws on a client this worker does not control, which is every
-            // client until the page has been reloaded once after the worker installed — and a
-            // rejected promise here is silent, so it read as "focus worked, routing did not".
-            // Second, a URL differing only in its fragment is a same-document navigation: even
-            // when `navigate()` succeeds the page is not reloaded, so nothing re-reads it. Third,
-            // the page only ever looked at the fragment on first load.
-            //
-            // So the message is the mechanism and the navigation is the fallback: an open page
-            // routes itself, and a cold start gets the fragment the ordinary way.
-            //
-            // **And the fallback is unreachable, which is worth saying where it is written.**
-            // `postMessage` is on `Client` itself, so every window this loop can reach has one;
-            // `client.navigate` below has never run in a browser and cannot. An open window gets
-            // the message and nothing else, and if the message is dropped this handler has
-            // already returned. That is what `sw.postMessage` with no `page.sw.message` after it
-            // means in the trace, and it is the reading this was built to make possible.
-            //
-            // So the record above is the second road, and it is second in order as well as in
-            // name: the message still goes first and still does the work when it arrives. What
-            // the record removes is the part where a dropped message ended the tap in silence.
-            var noted = [];
-            // How many windows were told, and whether one has been brought forward yet.
-            var delivered = 0;
-            var focused = false;
-            // Whichever road is taken below, and before any of them: on iOS the system opens the
-            // web app at `start_url` itself before this handler runs, so `openWindow` is usually
-            // not reached and the URL it would have carried is not the one the app came up on.
-            if (want) {
-                say("wrote the record this tap is for", want);
-                noted.push(wantWrite(want).then(function (ok) {
-                    say("record write finished", { landed: ok, id: want.id });
-                    return ok;
-                }));
-            } else {
-                say("no record: this URL names no session", { url: url });
-            }
             event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true })
                 .then(function (list) {
-                    say("windows this worker can reach", { count: list.length });
-                    noted.push(traceNote("sw.notificationclick",
-                                         { url: url, windows: list.length }));
                     for (var i = 0; i < list.length; i++) {
                         var client = list[i];
-                        if (!("focus" in client)) { continue; }
+                        if (!("focus" in client)) continue;
                         if (client.postMessage) {
-                            // `want` rides along so the page can recognise the record this tap
-                            // left behind as one it has already answered. Empty when the URL
-                            // names no session, which is when no record was written either.
-                            say("posting to a window", { index: i, of: list.length,
-                                                        visibility: client.visibilityState || "",
-                                                        focused: !!client.focused,
-                                                        want: want ? want.id : "" });
-                            client.postMessage({ type: "navigate", url: url,
-                                                 want: want ? want.id : "" });
-                            noted.push(traceNote("sw.postMessage", {
-                                url: url, index: i, windows: list.length,
-                                visibility: client.visibilityState || "",
-                                focused: !!client.focused
-                            }));
-                            delivered += 1;
+                            client.postMessage({ type: "navigate", url: url });
                         }
-                        // **Every window, not the first one that will take a message.** This
-                        // used to return here, and a phone that is holding a client the reader
-                        // cannot see — a suspended copy, a window the system kept — got the tap
-                        // and the one on screen did not. There is nothing to lose by telling all
-                        // of them: the page answers a tap once by its id, so the second copy of
-                        // one message is declined by the same guard that declines the record
-                        // when the message has already been acted on.
-                        if (!focused) {
-                            focused = true;
-                            noted.push(client.focus().then(function () {
-                                say("focus taken");
+                        return Promise.resolve(client.focus())
+                            .catch(function () {})
+                            .then(function () {
                                 if (!client.postMessage && client.navigate) {
-                                    noted.push(traceNote("sw.navigate", { url: url }));
                                     return client.navigate(url).catch(function () {});
                                 }
-                            }).catch(function (e) {
-                                say("focus refused, which used to end the handler here",
-                                    { why: (e && e.message) || String(e) });
-                            }));
-                        }
+                            });
                     }
-                    if (delivered) { return undefined; }
-                    say("no window would take a message; opening one", { url: url });
-                    noted.push(traceNote("sw.openWindow", { url: url }));
                     return clients.openWindow(url);
                 })
-                // **Nothing above may stop this line being reached.** `focus()` rejects on iOS
-                // often enough to matter, and it used to sit in the middle of this chain: one
-                // rejection and the tail never ran, `waitUntil` settled early, and the worker was
-                // shut down with its own record of the tap still unwritten. That is exactly the
-                // reading taken from a phone on 2026-09-07 — a worker that had plainly woken and
-                // left nothing at all behind — and it is why `catch` comes before the wait rather
-                // than after it.
-                .catch(function () {})
-                .then(function () { return Promise.all(noted.map(function (p) {
-                    return Promise.resolve(p).catch(function () { return false; });
-                })); }));
+                .catch(function () { return clients.openWindow(url); }));
         });
         """#
-        // The build, in front of the script rather than inside it. `Tests/web-notification-route.mjs`
-        // reads the literal above as text and runs it, so an interpolation inside it would be a
-        // syntax error in the one place this script is exercised; the worker reads this global
-        // defensively and works without it.
-        let stamped = "var CLAWDLINE_BUILD = \"\(RemoteServer.buildStamp)\";\n" + js
         return RemoteServer.Response(status: 200,
                                      headers: ["Content-Type": "text/javascript; charset=utf-8",
                                                "Cache-Control": "no-cache"],
-                                     body: Data(stamped.utf8))
+                                     body: Data(js.utf8))
     }
 
     static func manifest() -> RemoteServer.Response {

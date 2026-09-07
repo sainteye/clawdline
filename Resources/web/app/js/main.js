@@ -59,7 +59,7 @@ import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
-import { routeTo, readWorkerTrace, readWorkerWant, readWorkerMark, lookAgainForWant, workerBuildSeen } from "./input/route.js";
+import { routeTo } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import "./input/start.js";
@@ -483,62 +483,6 @@ function boot(data) {
     Push.start();
     watchForStaleness();
     Diagnostics.ready();
-    // Whatever the service worker wrote down while this page was not running. A tap on a
-    // notification is the one road into this app whose first three steps happen somewhere the
-    // page cannot see, and this is where they are read back — after `ready`, so that the entries
-    // sit in the trace beside the routing they were supposed to cause.
-    readWorkerTrace();
-    // And what that tap was *for*, which is the half that is acted on. `routeTo` above has already
-    // read the fragment this document was opened with, and on iOS that fragment is the manifest's
-    // `start_url` — the system opens the web app itself before the worker's handler runs, so a
-    // cold start arrives at `/` however specific the notification was. Read after the trace, so
-    // that a report taken from a phone shows the worker's entries and then the routing they
-    // caused, in the order they happened.
-    readWorkerWant();
-    // And again shortly, because the worker does not hold the tap up for its own write and this
-    // read can be in front of it. Bounded; see `WANT_LOOK_AGAIN_MS`.
-    lookAgainForWant();
-    // And which worker wrote any of it. A page and the worker under it are two builds, and on
-    // 2026-09-07 they were a build apart on a real phone with nothing on either side able to say
-    // so. Read after the two above, so a report lists what happened and then who it happened in.
-    readWorkerMark().then(matchWorkerToBuild);
-    // **And ask for the newer one.** `Push.start` registers on every load, which is supposed to
-    // be enough; on that phone it was not — the page was current and the worker was not. This
-    // asks outright, and costs one conditional request against a route that answers `no-cache`.
-    Push.recheck();
-}
-
-/**
- * A worker that is not the build this page is talking to, thrown away and installed again.
- *
- * **Asking has been tried.** `Push.start` registers on every load, `Push.recheck` calls
- * `update()` at both wake-ups, and on 2026-09-07 a phone still ran a page from one build over a
- * worker from an earlier one through several rounds of both — long enough to produce readings
- * about a program nobody was looking at. When the two numbers are known and different there is
- * nothing left to interpret, so this stops asking.
- *
- * Silent when either number is missing: a worker from before the stamp existed says nothing about
- * itself, and a server too old to answer `build` leaves nothing to compare it with.
- */
-function matchWorkerToBuild() {
-    var mine = Build.build;
-    var theirs = workerBuildSeen();
-    if (!mine || !theirs || mine === theirs) return;
-    Diagnostics.note("worker.mismatch", { page: mine, worker: theirs });
-    // **Said, and not acted on.** This used to unregister the worker and register it again
-    // whenever the two builds differed, which is a hammer that was added for a problem never
-    // actually shown to exist — and it fires on every rebuild, because every rebuild changes the
-    // stamp. Four rebuilds in an afternoon is four registrations torn down and rebuilt under a
-    // device, each one taking the push subscription with it, and after them a phone that had been
-    // routing taps correctly stopped delivering `notificationclick` at all. Rolling the code back
-    // did not bring it back, which is what a damaged registration looks like from here.
-    //
-    // A mismatch is worth knowing about and is not worth that. `register()` on every load and
-    // `update()` at both wake-ups remain, and they ask without demolishing anything.
-    try {
-        console.log("[clawdline/page] the worker is a different build from this page",
-                    { page: mine, worker: theirs });
-    } catch (e) { }
 }
 
 /**
@@ -558,17 +502,6 @@ function watchForStaleness() {
     document.addEventListener("visibilitychange", function () {
         if (document.hidden) return;
         if (api && typeof api.revalidate === "function") api.revalidate("visible");
-        // The other thing that may have happened while this page was away: somebody tapped a
-        // notification. The worker ran, this page did not, and coming back is the first moment
-        // its half of the road can be read — and, when the message it sent was dropped, the first
-        // moment anything can be done about it.
-        readWorkerTrace();
-        readWorkerWant();
-        lookAgainForWant();
-        readWorkerMark().then(matchWorkerToBuild);
-        // Coming back is the other moment a worker update can land, and the moment somebody is
-        // most likely to be looking at a screen that is a build behind.
-        Push.recheck();
     });
 }
 
