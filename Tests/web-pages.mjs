@@ -562,6 +562,29 @@ globalThis.__routeEnv = {
 const route = await import(
     "data:text/javascript;base64," + Buffer.from(routeStandalone).toString("base64"));
 
+const openedDocuments = [];
+let hiddenDocuments = 0;
+route.bindDocumentRoute(
+    (locator, error) => openedDocuments.push({ locator, error }),
+    (hash) => hash.includes("path=report.md")
+        ? { machine: "mac", session: "session", scope: "project", path: "report.md" } : null,
+    () => { hiddenDocuments += 1; }
+);
+route.routeTo("#document=1&machine=mac&session=session&scope=project&path=report.md");
+equal(openedDocuments.length, 1,
+      "a direct document fragment is handed to the registered document page");
+equal(openedDocuments[0].locator.machine, "mac",
+      "with the explicit machine identity the fragment named");
+equal(openedDocuments[0].error, null, "a valid document route carries no invented error");
+route.routeTo("#page=usage");
+equal(hiddenDocuments, 1, "a non-document route asks the document controller to clear itself");
+equal(route.wantedDocument, null, "and the route no longer retains a hidden document locator");
+route.routeTo("#document=1&path=missing-identity.md");
+check(!!openedDocuments[1].error,
+      "an invalid document intent still opens a typed error instead of falling home silently");
+equal(route.wantedDocument, null,
+      "a malformed direct locator does not leave the previous locator retained");
+
 // The pane really is what this Mac watches: `Sources/Tmux.swift` calls `%12` "stable for the life
 // of the pane", and `%141` is what `tmux list-panes` prints here.
 const pane = "%141";

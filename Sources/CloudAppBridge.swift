@@ -70,6 +70,10 @@ enum CloudHeadlessRead: Equatable, Sendable {
     /// console serves no such route, so every image in every transcript was a broken-image icon —
     /// the one failure in this transport that looked like the reader's own fault.
     case image(session: String, id: String)
+    /// The inert text documents the existing authenticated local route offers for this Session.
+    case documents(session: String)
+    /// One document under the existing project or task root, correlated by an opaque request id.
+    case document(session: String, request: String, scope: String, task: String, path: String)
     case places(session: String, request: String)
     case projectWorktrees(session: String, request: String, project: String)
     case pastSessions(session: String, request: String, place: String, assistant: String)
@@ -90,6 +94,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .git(let session): return session
         case .screen(let session): return session
         case .image(let session, _): return session
+        case .documents(let session): return session
+        case .document(let session, _, _, _, _): return session
         case .places(let session, _): return session
         case .projectWorktrees(let session, _, _): return session
         case .pastSessions(let session, _, _, _): return session
@@ -128,6 +134,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .git: return "git"
         case .screen: return "screen"
         case .image(_, let id): return "image." + id
+        case .documents: return "documents"
+        case .document(_, let request, _, _, _): return "read:" + request
         case .board(_, let request, _, _), .places(_, let request), .projectWorktrees(_, let request, _),
              .pastSessions(_, let request, _, _), .schedule(_, let request, _),
              .schedules(_, let request), .snippets(_, let request),
@@ -156,10 +164,9 @@ struct CloudReadResult: Equatable, Sendable {
     let body: Data
     /// What those bytes are, when they are not JSON.
     ///
-    /// Only the image read needs it: its route answers with the PNG itself and says so in a
-    /// header, and the bridge has to name the media type in a payload field because an envelope
-    /// has no headers. Every other read forwards JSON and leaves this nil rather than restating
-    /// `application/json` in a second place.
+    /// Image and document reads need it: their routes answer with bytes and say what those bytes
+    /// are in a header, while an envelope has no headers. JSON reads leave this nil rather than
+    /// restating `application/json` in a second place.
     let contentType: String?
 
     init(status: Int, body: Data, contentType: String? = nil) {
@@ -791,6 +798,7 @@ actor CloudAppBridge {
     /// member for a well-formed body, so the two cannot come apart quietly.
     static let readTypes: Set<String> = [
         "transcript", "info", "agent", "shell", "skills", "git", "image",
+        "documents", "document",
         "screen", "board", "places", "project-worktrees", "past-sessions", "schedules",
         "snippets", "schedule", "push-key",
     ]
@@ -800,6 +808,23 @@ actor CloudAppBridge {
               value.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7f })
         else { return nil }
         return value
+    }
+
+    /// A cheap copy of the local route's lexical boundary, before any filesystem is touched.
+    /// `ProjectDocuments.file` applies the same checks again against its resolved authoritative
+    /// root; this one exists to keep malformed relay reads from reaching that router at all.
+    private static func cloudDocumentPath(_ value: Any?) -> String? {
+        guard let path = value as? String, !path.isEmpty, path.count <= 512,
+              !path.hasPrefix("/"), !path.contains("\0"),
+              path.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7f })
+        else { return nil }
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard !parts.isEmpty, parts.count <= ProjectDocuments.maximumDepth,
+              parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") }),
+              ProjectDocuments.readableExtensions.contains(
+                  URL(fileURLWithPath: path).pathExtension.lowercased())
+        else { return nil }
+        return path
     }
 
     /// The relay's per-account ciphertext cap, which every tier shares (`max_envelope_bytes`).
@@ -936,6 +961,29 @@ actor CloudAppBridge {
                 return
             }
             read = .image(session: session, id: id)
+        case "documents":
+            guard Set(body.keys) == ["type", "session"],
+                  let session = body["session"] as? String, !session.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .documents(session: session)
+        case "document":
+            guard Set(body.keys) == ["type", "session", "request", "scope", "task", "path"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let request = Self.requestName(body["request"]),
+                  let scope = body["scope"] as? String,
+                  let task = body["task"] as? String,
+                  let path = Self.cloudDocumentPath(body["path"]),
+                  (scope == "project" && task.isEmpty)
+                    || (scope == "task" && OrchestratorDraft.isTaskID(task))
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .document(session: session, request: request, scope: scope,
+                             task: task, path: path)
         case "board":
             guard Set(body.keys) == ["type", "session", "request", "project", "item"],
                   let session = body["session"] as? String,
@@ -1118,6 +1166,13 @@ actor CloudAppBridge {
         if answer.status == 200, case .image(_, let id) = read {
             return imageOutcome(id: id, answer: answer)
         }
+        if answer.status == 200, case .documents = read {
+            return documentListingOutcome(answer: answer)
+        }
+        if answer.status == 200,
+           case .document(_, _, let scope, let task, let path) = read {
+            return documentOutcome(scope: scope, task: task, path: path, answer: answer)
+        }
         let parsed = (try? JSONSerialization.jsonObject(with: answer.body)) as? [String: Any]
         if answer.status == 200, let parsed {
             return ReadOutcome(status: 200, code: nil, body: parsed, error: nil)
@@ -1159,5 +1214,86 @@ actor CloudAppBridge {
             body: ["id": id, "media_type": mediaType, "byte_count": answer.body.count,
                    "data": answer.body.base64EncodedString()],
             error: nil)
+    }
+
+    /// Strip the local HTTP address and duplicate label before the listing enters an envelope.
+    /// The relative document path is retained because it is the requested identity; no resolved
+    /// root or filesystem path is present in the route's response or the payload built here.
+    private static func documentListingOutcome(answer: CloudReadResult) -> ReadOutcome {
+        guard let object = (try? JSONSerialization.jsonObject(with: answer.body)) as? [String: Any],
+              Set(object.keys) == ["documents"],
+              let sourceRows = object["documents"] as? [[String: Any]],
+              sourceRows.count <= ProjectDocuments.maximumListed
+        else {
+            return .refused(502, "document_listing_invalid",
+                            "The Mac returned an invalid document listing.")
+        }
+        var rows: [[String: Any]] = []
+        for row in sourceRows {
+            guard let source = row["source"] as? String,
+                  let path = cloudDocumentPath(row["path"]),
+                  row["label"] as? String == path,
+                  let bytes = row["bytes"] as? Int, (0...ProjectDocuments.maximumBytes).contains(bytes),
+                  let modified = row["modified"] as? NSNumber,
+                  modified.doubleValue.isFinite,
+                  row["url"] is String
+            else {
+                return .refused(502, "document_listing_invalid",
+                                "The Mac returned invalid document metadata.")
+            }
+            if source == "project" {
+                guard Set(row.keys) == ["source", "path", "label", "bytes", "modified", "url"]
+                else {
+                    return .refused(502, "document_listing_invalid",
+                                    "The Mac returned unexpected document metadata.")
+                }
+                rows.append(["scope": "project", "path": path, "bytes": bytes,
+                             "modified": modified])
+            } else if source == "task" {
+                guard Set(row.keys)
+                        == ["source", "path", "label", "bytes", "modified", "url", "task"],
+                      let task = row["task"] as? [String: Any],
+                      Set(task.keys) == ["id", "title"],
+                      let id = task["id"] as? String, OrchestratorDraft.isTaskID(id),
+                      let title = task["title"] as? String, title.count <= 300
+                else {
+                    return .refused(502, "document_listing_invalid",
+                                    "The Mac returned invalid task document metadata.")
+                }
+                rows.append(["scope": "task", "task": id, "title": title, "path": path,
+                             "bytes": bytes, "modified": modified])
+            } else {
+                return .refused(502, "document_listing_invalid",
+                                "The Mac returned an unknown document scope.")
+            }
+        }
+        return ReadOutcome(status: 200, code: nil, body: ["documents": rows], error: nil)
+    }
+
+    /// Put only inert UTF-8 text inside the encrypted answer, with a count the browser rechecks.
+    private static func documentOutcome(
+        scope: String, task: String, path: String, answer: CloudReadResult
+    ) -> ReadOutcome {
+        let allowed = ["text/markdown; charset=utf-8", "text/plain; charset=utf-8"]
+        guard let mediaType = answer.contentType, allowed.contains(mediaType) else {
+            return .refused(415, "document_media_type_unsupported",
+                            "That file is not an inert Markdown or text document.")
+        }
+        guard answer.body.count <= ProjectDocuments.maximumBytes else {
+            return .refused(413, "document_too_large",
+                            "That document is too large to carry in one encrypted answer.",
+                            ["byte_count": answer.body.count,
+                             "limit_bytes": ProjectDocuments.maximumBytes])
+        }
+        guard String(data: answer.body, encoding: .utf8) != nil else {
+            return .refused(415, "document_not_utf8",
+                            "That document is not valid UTF-8 text.")
+        }
+        var body: [String: Any] = [
+            "scope": scope, "path": path, "media_type": mediaType,
+            "byte_count": answer.body.count, "data": answer.body.base64EncodedString(),
+        ]
+        if scope == "task" { body["task"] = task }
+        return ReadOutcome(status: 200, code: nil, body: body, error: nil)
     }
 }

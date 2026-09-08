@@ -592,12 +592,17 @@ what they change is a *local* read into one from a paired device rather than how
 reaches. Closing them means carrying a descriptor from the check to the read, which is the day a
 root stops being a directory this Mac's own agents write into.
 
-**Absent on the Cloud path, deliberately.** By the rule the Cloud section below states, a read the
-hosted console does not have is guarded at its call site by `typeof api.X === "function"` and the
-control it belongs to is not drawn. There is no document view yet, so there is no control and no
-Cloud read; the slice that draws the page adds both together. For the same reason no row for this
-appears on `/v1/sessions/:id/links`: a `/links` row is an address something already knows how to
-draw, and a row the client cannot render is a control whose read this transport does not carry.
+**The Cloud path reuses these routes rather than recreating their filesystem rules.** A paired
+hosted viewer asks the closed `documents` or `document` read described below; the Mac converts it
+to exactly one of these authenticated local requests. The listing that crosses the relay retains
+only `scope`, task id/title where applicable, relative `path`, `bytes` and `modified`. Its local
+HTTP `url` and duplicate label are removed. A byte answer retains the requested scope/task/path,
+exact media type and byte count, plus base64 data inside the already encrypted envelope. No
+absolute root, paired-device token, orchestrator token or task secret enters either payload.
+The hosted Session action resolves its row to one complete machine/session pair before asking for
+this listing. Two Macs publishing the same bare session id are `cloud_session_ambiguous`; the
+browser does not select the first row. Direct/local and Mock reads retain the explicit
+`machine=this-mac` identity, but that alias is never promoted into a hosted share address.
 
 ### `GET /v1/sessions/:id/info`
 
@@ -715,13 +720,16 @@ and what is reachable is a closed list named in `CloudHeadlessRead`:
 | `{"type":"git","session":"…"}` | `read: "git"` | [`GET /v1/sessions/:id/git`](#get-v1sessionsidgit) |
 | `{"type":"screen","session":"…"}` | `read: "screen"` | [`GET /v1/sessions/:id/screen`](#get-v1sessionsidscreen) |
 | `{"type":"image","session":"…","id":"…"}` | `read: "image.<id>"` | `GET /v1/artifacts/images/:id` |
+| `{"type":"documents","session":"…"}` | `read: "documents"` | [`GET /v1/sessions/:id/documents`](#get-v1sessionsiddocuments) |
+| `{"type":"document","session":"…","request":"…","scope":"project","task":"","path":"notes.md"}` | `read: "read:<request>"` | `GET /v1/sessions/:id/documents/project/notes.md` |
+| `{"type":"document","session":"…","request":"…","scope":"task","task":"<uuid>","path":"report.md"}` | `read: "read:<request>"` | `GET /v1/sessions/:id/documents/task/:taskId/report.md` |
 | `{"type":"places","session":"__clawdline_machine__","request":"…"}` | `read: "read:<request>"` | `GET /v1/places` |
 | `{"type":"project-worktrees","session":"__clawdline_machine__","request":"…","project":"…"}` | `read: "read:<request>"` | `GET /v1/orchestrator/usage/project-worktrees?project=…` |
 | `{"type":"past-sessions","session":"__clawdline_machine__","request":"…","place":"…","assistant":"…"}` | `read: "read:<request>"` | `GET /v1/places/:id/sessions/:assistant` |
 
-**An agent, a shell and an image name themselves in the answer; the single-instance reads do not
+**An agent, a shell, an image and one document name themselves in the answer; the single-instance reads do not
 have to.** A session has one transcript, one Info, one skills menu, one Git panel and one live
-screen, but many agents, many commands and many pictures — and every one of them answers on that
+screen, and one document listing, but many agents, many commands, many pictures and many documents — and every one of them answers on that
 session's single channel. A
 reader with two agents open, which is the ordinary case because the strip lists them side by side,
 would have the first settled by the second's conversation if both answers were called `agent`; a
@@ -733,9 +741,12 @@ the transcript window, 1–1000, because an agent's file is read by the same par
 shell is the tail, 1 KiB to 1 MiB, because a command has no turns and the only honest bound on it
 is how much of the end to take — and here the viewer states the direct path's own default of
 64 KiB rather than omitting the field, because a read's key set is checked exactly and an omitted
-field is `malformed_read` rather than a default. `skills` and `git` take no bound at all: the
+field is `malformed_read` rather than a default. `skills`, `git` and `documents` take no bound at all: the
 first answers a menu as long as that assistant has skills, and the second answers file rows with
-counts and **no diff text**, so neither has a size a caller could name. An image names no bound
+counts and **no diff text**; the document menu is capped by the authoritative route at 200 rows,
+so none has a size a caller could name. A `document` path is at most 512 characters and six
+segments, may be only relative non-dot `md`, `markdown` or `txt`, and task scope requires a UUID
+while project scope requires the `task` field to be empty. An image names no bound
 either, and for the opposite reason: its size is the file's, so the limit is the transport's rather
 than the caller's — the relay's 16 MiB envelope cap, minus the tag and the JSON around the base64,
 comes to 12,582,132 bytes of PNG, and a picture over it is refused in a sentence.
@@ -783,6 +794,15 @@ so all but the last kilobyte of what this Mac will ever hold does cross. A pictu
 write its own sentence; the bytes are not sent and the envelope is not built. An artifact that is
 not a PNG — which the store does not produce — is `415 image_media_type_unsupported`.
 
+**A document is the other byte answer, but it stays inert text.** The Mac accepts only exact
+`text/markdown; charset=utf-8` or `text/plain; charset=utf-8`, valid UTF-8 and at most 2 MiB. The
+answer contains `media_type`, `byte_count` and base64 `data`; the viewer decodes canonically,
+rechecks the byte count and requested scope/task/path, and passes only the resulting string to the
+existing escaping Markdown renderer. Unsupported media is
+`415 document_media_type_unsupported`, invalid UTF-8 is `415 document_not_utf8`, and an oversized
+answer is `413 document_too_large`. An invalid local listing becomes
+`502 document_listing_invalid` rather than metadata the browser might turn into a request.
+
 The cost of carrying one is **about 1.78 times the PNG on the wire**, because the bytes are base64
 twice: once into the answer payload, once as the envelope's `ct` inside the relay frame. A 1 MiB
 screenshot is a 1,864,906-byte frame; a picture at the ceiling is a 22,369,003-byte one, which is
@@ -802,9 +822,9 @@ device sees through the tunnel, for no reason anybody chose. `send`, `answer` an
 **They queue where a phone queues.** A cloud transcript read enters the same serial transcript
 worker and a cloud Info read the same eight-place reading lane, so both can come back
 `429 transcript_busy` or `429 busy` with the same fields as above. A second door that skipped
-those lanes would put back the exclusivity they were built to remove. The other five take the
+those lanes would put back the exclusivity they were built to remove. The other reads take the
 shared queue, and that is the same rule and not an exception to it: `isTranscriptReading` and
-`isSlowReading` both say no to `agents`, `shells`, `skills` and `git` arriving over HTTP too, so a
+`isSlowReading` both say no to `agents`, `shells`, `skills`, `git` and documents arriving over HTTP too, so a
 lane for them here would be a second policy nobody measured. An image is in neither lane for the
 same reason and by the same precedent: `/v1/artifacts/images/:id` is a bounded read of one
 already-validated file, and it goes on the shared queue on the direct path too.
@@ -815,9 +835,10 @@ of its own so a page can say which it hit rather than showing the same empty vie
 | code | what it means | whose decision |
 |---|---|---|
 | `cloud_read_needs_send_prompt` | this device may read but may not publish on `ctl/`, so it cannot ask | the relay's: PROTOCOL §12 requires `send_prompt` to publish on `ctl/` in either class |
-| `malformed_read` | the request had a missing, extra or wrongly typed field, or arrived with class `dispatch` | the bridge's, before anything reaches a route — and the viewer's for the one case it can see first, an `agent` or `shell` read with no id |
+| `malformed_read` | the request had a missing, extra or wrongly typed field, an invalid document scope/task/path, or arrived with class `dispatch` | the bridge's, before anything reaches a route |
 | `cloud_read_timeout` | nothing answered within the client's window | the client's, and the honest end of a read nobody will answer |
 | `image_too_large_for_cloud` | this picture is over one envelope's ciphertext cap | the relay's cap, this repository's arithmetic — and the tile says it in words with the size in it |
+| `document_listing_invalid` / `document_media_type_unsupported` / `document_not_utf8` / `document_too_large` | the local answer violated the closed document boundary | the bridge's, before plaintext is put into an answer envelope |
 
 **`cloud_read_unavailable` is gone, and its absence is the point.** It meant *this transport has
 no method for it*, and it was the answer for exactly these four; now that they cross, no read

@@ -157,6 +157,7 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/plan.css">
 <link rel="stylesheet" href="/app/css/ledger.css">
 <link rel="stylesheet" href="/app/css/board.css">
+<link rel="stylesheet" href="/app/css/documents.css">
 
 <!-- Every module, named here so that all forty are asked for at once.
      `main.js` is the only script this document mentions, and a browser cannot know what it
@@ -381,6 +382,7 @@ document.documentElement.className = "booting";
                                 <button id="session-focus" type="button" role="menuitem">Show on Mac</button>
                                 <button id="session-info" type="button" role="menuitem">Session info</button>
                                 <button id="session-screen" type="button" role="menuitem">Live screen</button>
+                                <button id="session-documents" type="button" role="menuitem">Documents</button>
                                 <button id="session-git-more" type="button" role="menuitem" aria-haspopup="menu">Git <span class="next" aria-hidden="true">›</span></button>
                                 <button class="end" id="session-end" type="button" role="menuitem">Close session</button>
                             </div>
@@ -534,6 +536,38 @@ document.documentElement.className = "booting";
         </footer>
     </section>
 </main>
+
+<!-- A document address is deliberately a fragment rather than a server route. The origin receives
+     only this PWA shell; after boot, the paired encrypted client asks the named Mac and Session for
+     the bytes. The same page also lists the documents already authorized by the local Session
+     route, so local and Cloud readers share one renderer and one set of controls. -->
+<section id="documents-page" class="page documents-page" data-page-view="documents"
+         aria-labelledby="documents-title" hidden>
+    <div class="documents-shell">
+        <header class="documents-head">
+            <button id="documents-back" class="documents-back" type="button">‹ Sessions</button>
+            <button id="document-list-back" class="documents-back" type="button" hidden>‹ Documents</button>
+            <h1 id="documents-title" tabindex="-1">Documents</h1>
+        </header>
+        <p id="documents-status" class="documents-status" role="status" aria-live="polite"></p>
+        <div id="documents-list-view">
+            <ol id="documents-rows" class="documents-rows"></ol>
+        </div>
+        <article id="document-viewer" class="document-viewer" hidden>
+            <div class="document-heading">
+                <div>
+                    <h2 id="document-title"></h2>
+                    <p id="document-meta" class="document-meta"></p>
+                </div>
+                <div class="document-actions">
+                    <button id="document-share" type="button" disabled>Share</button>
+                    <button id="document-copy" type="button" disabled>Copy link</button>
+                </div>
+            </div>
+            <div id="document-body" class="document-body"></div>
+        </article>
+    </div>
+</section>
 
 <section id="board" class="page board-page" data-page-view="board" hidden aria-label="Project Board">
     <header class="board-head">

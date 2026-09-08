@@ -101,6 +101,12 @@ struct CloudLocalRoute: Sendable {
             route = "/v1/sessions/\(Self.segment(session))/screen"
         case .image(_, let id):
             route = "/v1/artifacts/images/\(Self.segment(id))"
+        case .documents(let session):
+            route = "/v1/sessions/\(Self.segment(session))/documents"
+        case .document(let session, _, let scope, let task, let path):
+            route = "/v1/sessions/\(Self.segment(session))/documents/\(scope)"
+            if scope == "task" { route += "/" + Self.segment(task) }
+            route += "/" + ProjectDocuments.escaped(path)
         case .places:
             route = "/v1/places"
         case .projectWorktrees(_, _, let project):

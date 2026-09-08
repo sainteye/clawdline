@@ -3,6 +3,9 @@ import { ASK_MARK, uuid } from "../core/util.js";
 import { handlers } from "./handlers.js";
 import { Door } from "../door/door.js";
 import { createBoardMock } from "./board-mock.js";
+import {
+    documentBytesAnswer, normalizeDocumentIdentity, normalizeDocumentLocator
+} from "./document-links.js";
 
 /* ---- fixtures ------------------------------------------------------------
    Enough of a machine to see every state, every animation and the reconnect —
@@ -791,6 +794,29 @@ export var Mock = (function () {
     };
     var MOCK_INFO = params.get("info") || "";
     var MOCK_GIT = params.get("git") || "";
+    var MOCK_DOCUMENT_TASK = "9e475a3b-a6dc-437a-8630-2fc78375e76d";
+    var MOCK_DOCUMENT_TEXT = {
+        "README.md": "# Encrypted Cloud document fixture\n\nThis bounded project fixture is safe to render offline.\n",
+        "feature-review.md": "# Encrypted Cloud document fixture\n\n- Relay envelope: sealed\n- Local path: withheld\n"
+    };
+
+    function mockDocumentFailure(code, message) {
+        return Object.assign(new Error(message), { code: code });
+    }
+
+    function mockDocumentRows(identity) {
+        var rows = [
+            { machine: identity.machine, session: identity.session, scope: "project",
+              path: "README.md", modified: now - 3600 },
+            { machine: identity.machine, session: identity.session, scope: "task",
+              task: MOCK_DOCUMENT_TASK, path: "feature-review.md",
+              title: "Encrypted Cloud documents", modified: now - 120 }
+        ];
+        return rows.map(function (row) {
+            var bytes = new TextEncoder().encode(MOCK_DOCUMENT_TEXT[row.path]).length;
+            return Object.assign({}, row, { bytes: bytes });
+        });
+    }
 
     // How the fixture's start behaves: `?start=slow` never reports in, so the fifteen seconds
     // can be watched rather than described; `closed`, `unsupported` and `gone` are the three
@@ -979,6 +1005,41 @@ export var Mock = (function () {
                     if (!entries.length) { fail(Object.assign(new Error("Nothing to read from this session yet."), { code: "not_found" })); return; }
                     done({ entries: entries.slice(), signature: id + ":" + entries.length + ":" + (entries[entries.length - 1] || {}).at });
                 }, 220);
+            });
+        },
+        /** Bounded normal/empty/error fixtures for the production Documents composition. */
+        documents: function (value) {
+            return Promise.resolve().then(function () {
+                if (params.get("documents") === "error") {
+                    throw mockDocumentFailure("mock_document_failure",
+                        "The mock document listing was asked to fail.");
+                }
+                var identity = normalizeDocumentIdentity(value);
+                if (identity.machine !== "this-mac" || !find(identity.session)) {
+                    throw mockDocumentFailure("not_found", "This fixture session does not exist.");
+                }
+                return { documents: params.get("documents") === "empty"
+                    ? [] : mockDocumentRows(identity) };
+            });
+        },
+        document: function (value) {
+            return Promise.resolve().then(function () {
+                if (params.get("documents") === "error") {
+                    throw mockDocumentFailure("mock_document_failure",
+                        "The mock document read was asked to fail.");
+                }
+                var locator = normalizeDocumentLocator(value);
+                if (locator.machine !== "this-mac" || !find(locator.session)) {
+                    throw mockDocumentFailure("not_found", "This fixture session does not exist.");
+                }
+                var text = MOCK_DOCUMENT_TEXT[locator.path];
+                var expectedTask = locator.scope !== "task" || locator.task === MOCK_DOCUMENT_TASK;
+                if (typeof text !== "string" || !expectedTask) {
+                    throw mockDocumentFailure("document_not_found", "This fixture document does not exist.");
+                }
+                var media = locator.path.endsWith(".md")
+                    ? "text/markdown; charset=utf-8" : "text/plain; charset=utf-8";
+                return documentBytesAnswer(locator, media, new TextEncoder().encode(text));
             });
         },
         // Stopping one, which the fixtures answer and do not act on: there is no process behind

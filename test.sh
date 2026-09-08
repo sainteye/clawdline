@@ -6,7 +6,7 @@
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:69,CloudAppBridge:132,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:87'
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:69,CloudAppBridge:150,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:87'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
 # the typed planning graph adds 14, the Cloud bridge lifecycle adds 75, and the Usage mobile,
@@ -410,7 +410,10 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # Project Board report candidate 48554e8e measured 10,552 checks and all twelve Cloud suites
 # on 2026-09-08; the same run measured 8,572 assertion sites. The final seal/governance-only
 # delta is checked against that retained log rather than paying for a second full run.
-expected_swift_receipt='10552 checks passed'
+# Encrypted Cloud task documents candidate f4b2b518 measured 10,570 checks and all twelve Cloud
+# suites on 2026-09-08; the same run measured 8,572 assertion sites. All 18 added checks are in
+# CloudAppBridge (132 -> 150); the only exit was the expected stale-seal refusal (125).
+expected_swift_receipt='10570 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -928,8 +931,9 @@ browser_contract_suites=(
   Tests/web-terminal.mjs
   Tests/web-pages.mjs
   Tests/web-projects.mjs
+  Tests/web-documents.mjs
 )
-if [ "${#browser_contract_suites[@]}" -ne 21 ]; then
+if [ "${#browser_contract_suites[@]}" -ne 22 ]; then
   echo "browser contract roster changed without updating its sealed count" >&2
   exit 1
 fi

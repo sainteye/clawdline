@@ -734,6 +734,8 @@ export function idleClient() {
             return Promise.resolve({ sessions: [], at: 0, scan: { emptyAuthoritative: false } });
         },
         transcript: offline,
+        documents: offline,
+        document: offline,
         send: offline,
         answer: offline,
         dispatch: offline,

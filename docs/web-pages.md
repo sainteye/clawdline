@@ -11,6 +11,7 @@ There is a place to *be* now. This page is how it works and what adding the next
 - [What a page is](#what-a-page-is)
 - [The drawer](#the-drawer)
 - [The address](#the-address)
+- [Document links](#document-links)
 - [Adding a page](#adding-a-page)
 - [The Projects page](#the-projects-page)
 - [The verification ledger](#the-verification-ledger)
@@ -123,6 +124,43 @@ with `{hash: false}`, because an address being obeyed must not be written back t
 Opening a session goes home first. `#session=…` means the session list with that session open on
 it, and without that line a push arriving while somebody is reading Usage would load the
 transcript underneath a page that is still on screen.
+
+### Document links
+
+A document uses the whole strict fragment
+`#document=1&machine=<machine>&session=<session>&scope=<project|task>&[task=<uuid>&]path=<relative>`.
+It is not `#page=documents` plus more fields: `#page=` is the complete address of ordinary
+navigation pages, while this address is a capability-free locator for one encrypted read. The
+share helper always constructs the one canonical `https://app.clawdline.com/` origin, resets its
+pathname to `/`, clears the query, and rejects localhost, LAN, named-tunnel, `this-mac`, duplicate,
+missing or extra identities and fields. Thus the hosted origin and its logs receive only the PWA
+shell request; no device token, task secret, orchestrator token, absolute filesystem root or
+plaintext document is in the URL.
+
+The Documents surface is still a registered `Pages` page, with `enter`/`leave` and focus owned by
+the ordinary registry. Its Session-actions control cannot be a bare `data-page-to`, because the
+press first has to pin the open row's explicit machine/session identity; navigation without that
+identity would draw a list whose subject is unknowable. `input/route.js` similarly hands a valid
+locator to the bound document controller before navigating. Neither path writes the lossy
+`#page=documents` spelling over a complete locator. If two Cloud rows share the open bare session
+id, the action paints `cloud_session_ambiguous` rather than choosing whichever Mac appeared first.
+
+If the Cloud client is still the cold placeholder—or a read lands during reconnect—the view shows
+a connection state, retains that same locator and retries on a bounded timer until the transport
+can answer. It never searches the Session list for a matching bare id. Rows opened from a local
+Session use `machine=this-mac` and the legacy authenticated routes, so the feature does not replace
+local mode. That local identity cannot promise a paired-phone destination, so Share and Copy stay
+disabled outside the hosted Cloud transport. The Mock transport carries a bounded two-document
+fixture; `?documents=empty` and `?documents=error` hold its empty and typed-error states for visual
+acceptance.
+
+The resulting bytes pass exact scope/task/path, media type, size and UTF-8 checks before
+`view/document-render.js` sends the string through the existing escaped Markdown renderer. The
+viewer exposes separate Share and Copy-link gestures; Share prefers the native mobile sheet and
+falls back to clipboard, with typed visible errors when neither is available. Leaving this page,
+returning to its list, or routing to any non-document address invalidates pending work and clears
+the decrypted answer, locator, identity, title, metadata and document DOM; no plaintext survives
+in the hidden SPA page.
 
 ### The session id in the fragment is percent-encoded
 

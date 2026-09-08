@@ -14,6 +14,9 @@ import {
     sealEnvelope
 } from "./cloud-crypto.js";
 import { T } from "../core/i18n.js";
+import {
+    documentAnswer, documentListing, normalizeDocumentIdentity, normalizeDocumentLocator
+} from "./document-links.js";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -749,6 +752,39 @@ export class CloudClient {
      */
     transcript(value) {
         return this._read(value, "transcript", { limit: TRANSCRIPT_LIMIT }, "transcript");
+    }
+
+    /**
+     * The documents published by one explicit machine/session pair. A bare session is never
+     * resolved through the current inventory here: a pasted direct link has already named its
+     * Mac, and changing that into "whichever row currently looks unique" makes the same URL mean
+     * something else after a second Mac reconnects.
+     */
+    documents(value) {
+        var identity;
+        try { identity = normalizeDocumentIdentity(value); }
+        catch (error) {
+            return Promise.reject(cloudError("document_identity_required", error.message));
+        }
+        return this._read(identity, "documents", {}, "documents").then(function (body) {
+            try { return documentListing(body, identity); }
+            catch (error) { throw cloudError("bad_payload", error.message); }
+        });
+    }
+
+    /** One inert text document, correlated by a random request id rather than its relative path. */
+    document(value) {
+        var locator;
+        try { locator = normalizeDocumentLocator(value); }
+        catch (error) { return Promise.reject(cloudError("malformed_document_locator", error.message)); }
+        var request = requestID();
+        var extra = { request: request, scope: locator.scope,
+            task: locator.scope === "task" ? locator.task : "", path: locator.path };
+        return this._read({ machine: locator.machine, session: locator.session }, "document",
+            extra, "read:" + request).then(function (body) {
+                try { return documentAnswer(locator, body); }
+                catch (error) { throw cloudError("bad_payload", error.message); }
+            });
     }
 
     /**

@@ -45,6 +45,10 @@ import { bindBoardPage, enterProjectBoard, resolveBoardSession } from "./view/bo
 import { BoardControls } from "./input/board-settings.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import { bindPlanPage } from "./view/plan.js";
+import { bindDocumentsPage } from "./view/documents.js";
+import {
+    CANONICAL_DOCUMENT_ORIGIN, documentIdentityForSession, documentLocatorFromHash
+} from "./net/document-links.js";
 import "./view/markdown.js";
 import "./view/composer.js";
 import { paintStatic } from "./view/static.js";
@@ -61,7 +65,7 @@ import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
-import { routeTo } from "./input/route.js";
+import { bindDocumentRoute, routeTo } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import "./input/start.js";
@@ -235,6 +239,47 @@ Diagnostics.bind({ state: S, elements: els });
 // makes the preload URL and the runtime request one identity, while these literal lookups keep the
 // DOM contract visible to the permanent repository guard.
 var byId = function (id) { return document.getElementById(id); };
+var documents = bindDocumentsPage({
+    page: byId("documents-page"), title: byId("documents-title"),
+    back: byId("documents-back"), listBack: byId("document-list-back"),
+    status: byId("documents-status"), listView: byId("documents-list-view"),
+    rows: byId("documents-rows"), viewer: byId("document-viewer"),
+    documentTitle: byId("document-title"), meta: byId("document-meta"),
+    body: byId("document-body"), share: byId("document-share"),
+    copy: byId("document-copy"), menu: byId("session-documents")
+}, {
+    document: document,
+    language: function () { return document.documentElement.lang || navigator.language || "en"; },
+    list: function (identity) { return api.documents(identity); },
+    read: function (locator) { return api.document(locator); },
+    shareOrigin: function () {
+        return transportKind === "cloud" ? CANONICAL_DOCUMENT_ORIGIN : null;
+    },
+    navigator: function () { return navigator; },
+    // A list has no stable address of its own because it needs a Session identity. A selected
+    // document writes its complete fragment through the share controls instead; entering either
+    // form must not replace that locator with the lossy `#page=documents` spelling.
+    navigate: function (name, options) {
+        return Pages.go(name, name === "documents" ? { hash: false } : options);
+    }
+});
+bindDocumentRoute(
+    function (locator, error) { documents.openDirect(locator, error); },
+    documentLocatorFromHash,
+    function () { documents.hide(); }
+);
+byId("session-documents").addEventListener("click", function () {
+    if (!S.openId) return;
+    var identity;
+    try { identity = documentIdentityForSession(S.sessions, S.openId, transportKind); }
+    catch (error) {
+        SessionActions.close();
+        documents.openSessionError(error);
+        return;
+    }
+    SessionActions.close();
+    documents.openSession(identity);
+});
 // `usage-open` is not in this table any more. It is the drawer's Usage row now, and reaching the
 // page is the drawer's business; the portfolio module stopped having an opinion about how somebody
 // got to it. The id stays on that row — `usage.css` styles it and the Usage guard looks for it.
@@ -409,6 +454,8 @@ Pages.bind({
     focusFallback: "brand",
     pages: [
         { name: "sessions", element: byId("app") },
+        { name: "documents", element: byId("documents-page"), focus: "documents-title",
+          enter: function () { documents.enter(); }, leave: function () { documents.leave(); } },
         { name: "board", element: byId("board"), focus: "board-title",
           enter: function () { enterProjectBoard(board, function (name) { Pages.go(name); }); }, leave: function () { board.leave(); } },
         { name: "projects", element: byId("projects"), focus: "projects-title",
@@ -489,6 +536,7 @@ function boot(data) {
     // is a page, and a page that is permanently invisible is not.
     document.documentElement.classList.remove("booting");
     try { applyStrings(data); } catch (e) { /* English, then */ }
+    documents.paint();
     paintStatic();
 
     renderConn();

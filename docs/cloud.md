@@ -443,7 +443,7 @@ SecurityTool invocation.
   VAPID key through an encrypted request/reply. An account showing more than one Mac is refused
   with `cloud_machine_ambiguous` instead of registering a browser subscription against whichever
   machine happened to publish first.
-- **The reads that still do not cross.** A session's messages, both tiers of its Info, one
+- **The reads that cross.** A session's messages, both tiers of its Info, one
   background agent's conversation, one background command's output, its skills menu, its Git
   panel, its live screen and the pictures inside its transcript now cross. The viewer asks on
   `ctl/<machine>` and the Mac
@@ -457,6 +457,19 @@ SecurityTool invocation.
   route and this Mac is not reachable from it; the bound on one is the relay's 16 MiB envelope cap
   turned into 12,582,132 bytes of PNG, and a picture over it is drawn as a stated size rather than
   as the broken-image icon it used to be.
+  Project and task Markdown/text documents use the same encrypted request/reply path. Their
+  listing carries only explicit machine/session identity plus relative scope/task/path metadata;
+  a selected document crosses as bounded base64 inside the encrypted envelope and is decoded only
+  by the paired viewer. The Mac still sends the request through its existing document routes, so
+  root containment, task ownership, symlink, extension and 2 MiB decisions have one authority.
+  A share URL is `https://app.clawdline.com/#document=1&machine=…&session=…&scope=…&task=…&path=…`:
+  the origin receives only `/`, because browsers do not send a fragment, and the fragment holds no
+  credential or local root. The hosted page keeps that explicit locator while its relay is cold
+  and retries after connection instead of selecting a matching bare session from the fleet. A
+  Session action with the same bare id on two Macs fails as `cloud_session_ambiguous`; only one
+  complete machine/session pair may enter the document page. Localhost, LAN, named-tunnel and Mock
+  documents remain readable through their existing transport but cannot enable Share or Copy:
+  only a real Cloud machine identity can produce the canonical `app.clawdline.com` address.
   A live screen answer preserves the Mac's actual backend, but Cloud presents a signalled tmux
   screen as `channel: "on-demand"` and asks again after one second. The direct path's `screen` SSE
   revision does not cross the relay; claiming it did would leave the first pending capture and all

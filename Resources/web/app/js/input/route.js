@@ -13,6 +13,25 @@ import { Diagnostics } from "../core/layout-diagnostics.js";
  * before it knows what sessions exist, and `onSessions` tries again with every list.
  */
 export var wantedSession = null;
+export var wantedDocument = null;
+var openDocumentRoute = null;
+var parseDocumentRoute = null;
+var hideDocumentRoute = null;
+
+/** Installed by the document page after the page registry and its transport thunks exist. */
+export function bindDocumentRoute(open, parse, hide) {
+    openDocumentRoute = open;
+    parseDocumentRoute = parse;
+    hideDocumentRoute = hide;
+}
+
+function documentIntent(hash) {
+    var source = String(hash || "");
+    if (!/(?:^|[#&])document=/.test(source)) return null;
+    var locator = parseDocumentRoute ? parseDocumentRoute(source) : null;
+    return locator ? { locator: locator, error: null }
+        : { locator: null, error: "The document link is malformed or carries an unsupported field." };
+}
 
 /**
  * The same request, spelled the other way.
@@ -44,12 +63,27 @@ function sessionCandidates(hash) {
  */
 export function routeTo(hash) {
     var candidates = sessionCandidates(hash);
+    var documentRoute = documentIntent(hash);
     Diagnostics.note("route.to", {
         fragment: !!hash,
         page: pageInHash(hash) || "",
         names: candidates ? candidates.length : 0,
-        rescued: !!(candidates && candidates.length > 1)
+        rescued: !!(candidates && candidates.length > 1),
+        document: !!documentRoute
     });
+
+    if (documentRoute) {
+        wantedSession = null;
+        wantedSessionAsWritten = null;
+        wantedDocument = documentRoute.locator;
+        if (openDocumentRoute) {
+            openDocumentRoute(documentRoute.locator, documentRoute.error);
+        }
+        return;
+    }
+
+    wantedDocument = null;
+    if (hideDocumentRoute) hideDocumentRoute();
 
     var page = pageInHash(hash);
     if (page) {
@@ -59,6 +93,7 @@ export function routeTo(hash) {
     }
 
     if (!candidates) return;
+    wantedDocument = null;
     wantedSession = candidates[0];
     wantedSessionAsWritten = candidates.length > 1 ? candidates[1] : null;
     openWanted();
@@ -102,7 +137,7 @@ if ("serviceWorker" in navigator) {
 
         var cut = data.url.indexOf("#");
         var hash = cut < 0 ? "" : data.url.slice(cut);
-        if (!sessionCandidates(hash)) return;
+        if (!sessionCandidates(hash) && !documentIntent(hash)) return;
         if (hash === location.hash) routeTo(hash);
         else location.hash = hash;
     });

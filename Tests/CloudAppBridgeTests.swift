@@ -1,4 +1,7 @@
 import Foundation
+#if CLOUD_APP_BRIDGE_STANDALONE
+import AppKit
+#endif
 
 private struct CloudAppBridgeTestFailure: Error, CustomStringConvertible {
     let description: String
@@ -1010,6 +1013,7 @@ func runCloudAppBridgeTests() async throws -> Int {
     case "aba": return try await runCloudAppBridgeABATests()
     case "reads": return try await runCloudAppBridgeReadTests()
     case "images": return try await runCloudAppBridgeImageTests()
+    case "documents": return try await runCloudAppBridgeDocumentTests()
     case "snapshot": return try await runCloudAppBridgeSnapshotTests()
     default:
         let base = try await runCloudAppBridgeBaseTests()
@@ -1021,9 +1025,10 @@ func runCloudAppBridgeTests() async throws -> Int {
         let aba = try await runCloudAppBridgeABATests()
         let reads = try await runCloudAppBridgeReadTests()
         let images = try await runCloudAppBridgeImageTests()
+        let documents = try await runCloudAppBridgeDocumentTests()
         let snapshot = try await runCloudAppBridgeSnapshotTests()
         return base + lifecycle + transitiveLifecycle + publicationLifecycle
-            + reconnect + concreteReconnect + aba + reads + images + snapshot
+            + reconnect + concreteReconnect + aba + reads + images + documents + snapshot
     }
 }
 
@@ -1071,6 +1076,40 @@ private func waitForCloudAppBridge(
 }
 
 #if CLOUD_APP_BRIDGE_STANDALONE
+// The complete suite normally receives these fixtures from its shared test files. Keep the
+// standalone focused runner self-contained so compiling one group does not require compiling all
+// unrelated test bodies merely to satisfy names in groups it will not execute.
+private let isolatedTestSessionImagesDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("clawdline-cloud-bridge-images-\(UUID().uuidString)",
+                            isDirectory: true)
+
+private func remoteRequest(_ method: String, _ target: String,
+                           headers: [String: String] = [:]) -> RemoteServer.Request {
+    var head = "\(method) \(target) HTTP/1.1\r\nHost: 127.0.0.1:\(Config.shared.remotePort)\r\n"
+    for (key, value) in headers.sorted(by: { $0.key < $1.key }) {
+        head += "\(key): \(value)\r\n"
+    }
+    return RemoteServer.Request(head: Data((head + "\r\n").utf8))!
+}
+
+private func exactPixelPNG(width: Int, height: Int,
+                           rgba: (UInt8, UInt8, UInt8, UInt8)) -> Data? {
+    guard width > 0, height > 0,
+          let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height,
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+          let pixels = rep.bitmapData else { return nil }
+    for y in 0..<height {
+        let row = pixels.advanced(by: y * rep.bytesPerRow)
+        for x in 0..<width {
+            let pixel = row.advanced(by: x * 4)
+            pixel[0] = rgba.0; pixel[1] = rgba.1; pixel[2] = rgba.2; pixel[3] = rgba.3
+        }
+    }
+    return rep.representation(using: .png, properties: [:])
+}
+
 @main
 private enum CloudAppBridgeTestMain {
     static func main() async throws {
@@ -1279,6 +1318,8 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         // that is parsed and then refused has answered that question. The picture's own answer,
         // its byte bound and its refusals are checked further down with a real PNG.
         "image": #"{"type":"image","session":"typed","id":"img-1"}"#,
+        "documents": #"{"type":"documents","session":"typed"}"#,
+        "document": #"{"type":"document","session":"typed","request":"p-doc","scope":"project","task":"","path":"notes.md"}"#,
         "board": #"{"type":"board","session":"__clawdline_machine__","request":"p-board","project":"project-1","item":"item-1"}"#,
         "places": #"{"type":"places","session":"__clawdline_machine__","request":"p-1"}"#,
         "project-worktrees": #"{"type":"project-worktrees","session":"__clawdline_machine__","request":"p-2","project":"/code/app"}"#,
@@ -1309,7 +1350,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let typedNames = Set(typedReads.map(\.read.name))
     try require(typedNames
                     == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git", "screen",
-                        "image.img-1", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
+                        "image.img-1", "documents", "read:p-doc", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
                         "read:p-5", "read:p-list", "read:p-snippets", "read:p-board"],
                 "and each parses into the read it names rather than into the switch's last case")
 
@@ -1678,6 +1719,157 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
     try require(!RemoteServer.isTranscriptReading(request.path)
                     && !RemoteServer.isSlowReading(request.path),
                 "a picture queues where the direct path's own <img> queues, not in a read lane")
+
+    return checks
+}
+
+/// Project/task documents cross only as closed encrypted reads. The existing local document
+/// router remains the authority for roots, containment, extensions, symlinks and the two MiB cap;
+/// this layer proves that the relay can name only that router and validates the bytes it encloses.
+private func runCloudAppBridgeDocumentTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x73, count: 32))
+    let transport = CloudAppBridgeTestTransport()
+    let router = CloudAppBridgeTestRouter()
+    let results = CloudAppBridgeTestResults()
+    let bridge = CloudAppBridge(
+        transport: transport,
+        identity: CloudAppIdentity(
+            machineID: "Mac / 台灣", deviceID: "machine-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey
+        ),
+        sequencing: CloudAppBridgeTestSequence(),
+        allowCloudCommands: { false },
+        commandRouter: router,
+        nowMilliseconds: { 1_788_000_000_000 },
+        commandResult: { results.append($0) }
+    )
+    try await bridge.start()
+
+    func opened(_ envelope: CloudEnvelope) throws -> [String: Any] {
+        let clear = try envelope.open(masterSecret: masterSecret, publicKeyForSender: {
+            $0 == "machine-device" ? signingKey.publicKeyRaw : nil
+        })
+        return (try JSONSerialization.jsonObject(with: clear)) as? [String: Any] ?? [:]
+    }
+
+    let taskID = "9e475a3b-a6dc-437a-8630-2fc78375e76d"
+    await router.answerReadsWith(CloudReadResult(status: 200, body: Data(#"{"documents":[{"source":"task","path":"feature-review.md","label":"feature-review.md","bytes":3258,"modified":1788800000,"url":"/v1/sessions/plain/documents/task/9e475a3b-a6dc-437a-8630-2fc78375e76d/feature-review.md","task":{"id":"9e475a3b-a6dc-437a-8630-2fc78375e76d","title":"Cloud review"}}]}"#.utf8)))
+    transport.yield(#"{"type":"documents","session":"plain"}"#, sequence: 80)
+    try await waitForCloudAppBridge("the document listing") {
+        transport.envelopes().count == 1
+    }
+    let listRead = await router.recordedReads().last?.read
+    try require(listRead == .documents(session: "plain"),
+                "the list reaches the existing session document route as a closed read")
+    let listPayload = try opened(transport.envelopes()[0])
+    let listRows = ((listPayload["body"] as? [String: Any])?["documents"] as? [[String: Any]]) ?? []
+    try require(listRows.count == 1 && listRows[0]["scope"] as? String == "task",
+                "the local listing becomes typed Cloud document metadata")
+    try require(listRows[0]["path"] as? String == "feature-review.md"
+                    && listRows[0]["task"] as? String == taskID,
+                "the encrypted row retains only the identity needed to ask for its bytes")
+    try require(listRows[0]["url"] == nil && listRows[0]["label"] == nil,
+                "the local HTTP route and its duplicate label do not cross the relay")
+
+    let markdown = Data("# Review\n\n<script>alert(1)</script>\n".utf8)
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: markdown, contentType: "text/markdown; charset=utf-8"))
+    transport.yield(#"{"type":"document","session":"plain","request":"doc-1","scope":"task","task":"9e475a3b-a6dc-437a-8630-2fc78375e76d","path":"feature-review.md"}"#, sequence: 81)
+    try await waitForCloudAppBridge("the document bytes") { transport.envelopes().count == 2 }
+    let documentRead = await router.recordedReads().last?.read
+    try require(documentRead == .document(
+        session: "plain", request: "doc-1", scope: "task", task: taskID,
+        path: "feature-review.md"),
+        "the byte read carries the exact session, root, task and relative path")
+    let documentPayload = try opened(transport.envelopes()[1])
+    try require(documentPayload["read"] as? String == "read:doc-1",
+                "the answer is correlated by an opaque request id rather than a path")
+    let documentBody = documentPayload["body"] as? [String: Any]
+    try require(documentBody?["media_type"] as? String == "text/markdown; charset=utf-8",
+                "the inert text media type crosses beside the bytes")
+    try require(documentBody?["byte_count"] as? Int == markdown.count,
+                "the exact byte count crosses so truncation is observable")
+    try require(Data(base64Encoded: documentBody?["data"] as? String ?? "") == markdown,
+                "the document bytes cross base64 and unchanged inside the encrypted envelope")
+
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: Data("<html>".utf8), contentType: "text/html"))
+    transport.yield(#"{"type":"document","session":"plain","request":"doc-2","scope":"project","task":"","path":"notes.md"}"#, sequence: 82)
+    try await waitForCloudAppBridge("the executable media type refusal") {
+        transport.envelopes().count == 3
+    }
+    let mediaRefusal = try opened(transport.envelopes()[2])
+    try require(mediaRefusal["status"] as? Int == 415
+                    && (mediaRefusal["error"] as? [String: Any])?["code"] as? String
+                        == "document_media_type_unsupported",
+                "an executable media type is refused before it can reach the renderer")
+
+    let tooLarge = Data(repeating: 0x61, count: ProjectDocuments.maximumBytes + 1)
+    await router.answerReadsWith(CloudReadResult(
+        status: 200, body: tooLarge, contentType: "text/plain; charset=utf-8"))
+    transport.yield(#"{"type":"document","session":"plain","request":"doc-3","scope":"project","task":"","path":"notes.txt"}"#, sequence: 83)
+    try await waitForCloudAppBridge("the oversized document refusal") {
+        transport.envelopes().count == 4
+    }
+    let sizeRefusal = try opened(transport.envelopes()[3])
+    try require(sizeRefusal["status"] as? Int == 413
+                    && (sizeRefusal["error"] as? [String: Any])?["code"] as? String
+                        == "document_too_large",
+                "a route that violates the authoritative two MiB cap cannot create an envelope")
+    try require(sizeRefusal["body"] == nil,
+                "the refused bytes are not carried in the refusal")
+
+    let beforeMalformed = await router.recordedReads().count
+    let malformed = [
+        #"{"type":"document","session":"plain","scope":"project","task":"","path":"a.md"}"#,
+        #"{"type":"document","session":"plain","request":"r","scope":"elsewhere","task":"","path":"a.md"}"#,
+        #"{"type":"document","session":"plain","request":"r","scope":"task","task":"","path":"a.md"}"#,
+        #"{"type":"document","session":"plain","request":"r","scope":"project","task":"9e475a3b-a6dc-437a-8630-2fc78375e76d","path":"a.md"}"#,
+        #"{"type":"document","session":"plain","request":"r","scope":"project","task":"","path":"../a.md"}"#,
+        #"{"type":"document","session":"plain","request":"r","scope":"project","task":"","path":"a.html"}"#,
+        #"{"type":"document","session":"plain","request":"r","scope":"project","task":"","path":"a/b/c/d/e/f/g.md"}"#,
+        #"{"type":"documents","session":"plain","path":"a.md"}"#,
+    ]
+    var sequence: UInt64 = 90
+    for body in malformed {
+        transport.yield(body, sequence: sequence)
+        sequence += 1
+    }
+    try await waitForCloudAppBridge("all malformed document reads") {
+        results.all().filter { $0.code == "malformed_read" }.count == malformed.count
+    }
+    let afterMalformed = await router.recordedReads().count
+    try require(afterMalformed == beforeMalformed,
+                "no malformed scope or path reaches the local router")
+    try require(transport.envelopes().count == 4,
+                "a malformed read publishes no uncorrelated answer")
+
+    await bridge.stop()
+
+    let listingRequest = RemoteServer.Request(
+        verifiedCloudRead: .documents(session: "session/一|?"), sender: "viewer")
+    try require(listingRequest.path
+                    == "/v1/sessions/session%2F%E4%B8%80%7C%3F/documents",
+                "the listing maps to the existing authenticated route")
+    let taskRequest = RemoteServer.Request(verifiedCloudRead: .document(
+        session: "plain", request: "ignored-locally", scope: "task", task: taskID,
+        path: "nested/two words?.md"), sender: "viewer")
+    try require(taskRequest.path == "/v1/sessions/plain/documents/task/\(taskID)/nested/two%20words%3F.md",
+                "the task root and every document segment are encoded without accepting a route")
+    let projectRequest = RemoteServer.Request(verifiedCloudRead: .document(
+        session: "plain", request: "ignored-locally", scope: "project", task: "",
+        path: "notes.txt"), sender: "viewer")
+    try require(projectRequest.path == "/v1/sessions/plain/documents/project/notes.txt",
+                "project scope can choose only the existing project root")
+    try require(taskRequest.query.isEmpty && taskRequest.body.isEmpty,
+                "the local document read is a bare GET with no credential or filesystem path")
 
     return checks
 }

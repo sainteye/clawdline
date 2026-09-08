@@ -6,6 +6,10 @@ import { Door } from "../door/door.js";
 import { T } from "../core/i18n.js";
 import { LOCAL_MACHINE, sessionIdentity } from "./client.js";
 import { Diagnostics } from "../core/layout-diagnostics.js";
+import {
+    documentBytesAnswer, localDocumentListing, normalizeDocumentIdentity,
+    normalizeDocumentLocator
+} from "./document-links.js";
 
 var eventSubscribers = new Set();
 
@@ -431,6 +435,55 @@ export var LocalClient = {
         var priority = demand && demand.foreground ? "&priority=foreground" : "";
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) +
                          "/transcript?limit=200" + priority, undefined, phases);
+    },
+
+    documents: function (value) {
+        var identity = normalizeDocumentIdentity(value);
+        if (identity.machine !== LOCAL_MACHINE) {
+            var wrong = new Error("This document belongs to another Mac.");
+            wrong.code = "document_machine_mismatch";
+            return Promise.reject(wrong);
+        }
+        return jsonFetch("/v1/sessions/" + encodeURIComponent(identity.session) + "/documents",
+            { cache: "no-store" }).then(function (body) {
+            return localDocumentListing(body, identity);
+        });
+    },
+
+    document: function (value) {
+        var locator = normalizeDocumentLocator(value);
+        if (locator.machine !== LOCAL_MACHINE) {
+            var wrong = new Error("This document belongs to another Mac.");
+            wrong.code = "document_machine_mismatch";
+            return Promise.reject(wrong);
+        }
+        var path = "/v1/sessions/" + encodeURIComponent(locator.session) + "/documents/" +
+            locator.scope + "/";
+        if (locator.scope === "task") path += encodeURIComponent(locator.task) + "/";
+        path += locator.path.split("/").map(encodeURIComponent).join("/");
+        return fetch(path, { cache: "no-store" }).catch(function () {
+            var offline = new Error(T.webOffline);
+            offline.code = "offline";
+            throw offline;
+        }).then(async function (response) {
+            var bytes = new Uint8Array(await response.arrayBuffer());
+            if (!response.ok) {
+                var body = null;
+                try { body = JSON.parse(new TextDecoder().decode(bytes)); } catch (error) { }
+                var detail = body && body.error;
+                var refusal = new Error(detail && (detail.message || detail.code) ||
+                    response.statusText || T.webRequestFailed);
+                refusal.code = detail && detail.code || "http_" + response.status;
+                throw refusal;
+            }
+            try {
+                return documentBytesAnswer(locator,
+                    response.headers.get("content-type") || "", bytes);
+            } catch (error) {
+                error.code = "bad_payload";
+                throw error;
+            }
+        });
     },
 
     /// Every task the app knows about — what a session dispatched, and which session got it.
