@@ -7,6 +7,24 @@
 // Usage: osascript -l JavaScript iterm.js
 //          <list|current|send|key|capture|tails|reveal|revealtmux|activate|newtab|close> [args...]
 
+// The identity the combined Swift inventory uses for the tab somebody is looking at.
+//
+// An ordinary iTerm2 row keeps its session UUID. Under `tmux -CC`, however, the selected row is
+// a mirror with no pty; Swift deliberately leaves that row out of the iTerm backend and publishes
+// the real tmux pane as `%<pane>`. Returning the mirror's UUID made `Targets.snapshot.currentID`
+// name something that could never occur in its own session list, so summoning the bar fell back
+// to the previously selected session instead of the tab underneath it.
+//
+// Kept pure because the three input shapes are a protocol boundary, not an Apple-event question.
+function currentTarget(id, role, pane) {
+  const own = String(id || "");
+  const paneNumber = String(pane || "");
+  if (String(role || "") === "client" && /^[0-9]+$/.test(paneNumber)) {
+    return { ok: true, id: "%" + paneNumber };
+  }
+  return { ok: true, id: own };
+}
+
 function run(argv) {
   const cmd = argv[0] || "list";
 
@@ -260,7 +278,17 @@ function run(argv) {
   if (cmd === "current") {
     try {
       const s = it.currentWindow().currentSession();
-      return JSON.stringify({ ok: true, id: String(s.id()) });
+      // These are commands in iTerm2's scripting dictionary, not session properties. On a tmux
+      // mirror they say `client` and the pane number without `%`; on an ordinary row both are
+      // empty. The active split is `currentSession()`, so a split tmux window still identifies
+      // the pane whose cursor somebody was actually looking at.
+      const role = safe(function () {
+        return s.variable({ named: "session.tmuxRole" });
+      }, "");
+      const pane = safe(function () {
+        return s.variable({ named: "session.tmuxWindowPane" });
+      }, "");
+      return JSON.stringify(currentTarget(s.id(), role, pane));
     } catch (e) {
       return JSON.stringify({ ok: false, error: "No active session" });
     }

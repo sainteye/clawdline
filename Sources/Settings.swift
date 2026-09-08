@@ -1192,12 +1192,22 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
     /// administer, and a browser tab should start with neither until somebody says so.
     private func openRemote() {
         guard Config.shared.remote else { return }
-        let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite ? [.read, .send] : [.read]
-        let made = RemoteAuth.addDevice(name: "Browser on this Mac", caps: caps)
-        guard let url = URL(string:
-            "http://127.0.0.1:\(Config.shared.remotePort)/?t=\(made.token)") else { return }
-        NSWorkspace.shared.open(url)
-        refreshDevices()
+        LocalBrowserReadiness.whenReadyForBrowser(port: UInt16(Config.shared.remotePort)) {
+            [weak self] ready in
+            guard ready, Config.shared.remote else {
+                Log.write("remote: browser open declined — loopback listener did not become ready")
+                return
+            }
+            // Mint only after readiness. A token made for a URL that never opened left a device
+            // in Settings which had never authenticated and gave the failed click durable state.
+            let caps: Set<RemoteAuth.Capability> = Config.shared.remoteWrite
+                ? [.read, .send] : [.read]
+            let made = RemoteAuth.addDevice(name: "Browser on this Mac", caps: caps)
+            guard let url = URL(string:
+                "http://127.0.0.1:\(Config.shared.remotePort)/?t=\(made.token)") else { return }
+            NSWorkspace.shared.open(url)
+            self?.refreshDevices()
+        }
     }
 
     /// Mint a key for a phone and put it on screen as something a camera can read.
