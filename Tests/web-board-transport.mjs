@@ -51,11 +51,14 @@ const context = { _onlyMachine: () => "owning-machine",
     _machineRequest: (...args) => { cloudCalls.push(args); return Promise.resolve({ board: { revision: 3 } }); } };
 await CloudClient.prototype.board.call(context, "p", "i");
 equal(cloudCalls[0], ["owning-machine", "board", { project: "p", item: "i" }, "read"], "Cloud closed read names its owner");
+await CloudClient.prototype.board.call(context, "p", "i", "r");
+equal(cloudCalls[1], ["owning-machine", "board", { project: "p", item: "report:i:r" }, "read"],
+    "Cloud report retrieval preserves item and opaque report selectors in its bounded read");
 await CloudClient.prototype.boardCommand.call(context, body);
-equal(cloudCalls[1], ["owning-machine", "board-command", { command: body }, "action"], "Cloud command preserves same command identity");
+equal(cloudCalls[2], ["owning-machine", "board-command", { command: body }, "action"], "Cloud command preserves same command identity");
 context._onlyMachine = () => { throw Object.assign(new Error("ambiguous"), { code: "ambiguous_machine" }); };
 assert.throws(() => CloudClient.prototype.board.call(context), { code: "ambiguous_machine" }); checks++;
-equal(cloudCalls.length, 2, "ambiguous machine never dispatches a request");
+equal(cloudCalls.length, 3, "ambiguous machine never dispatches a request");
 
 const { createBoardMock } = await import("../Resources/web/app/js/net/board-mock.js");
 const mock = createBoardMock();

@@ -407,7 +407,10 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # Project model/isolation candidate e050d053 measured 10,500 checks and all twelve Cloud suites
 # on 2026-09-08; witness 8,520. Full log creation-to-final-write: 406 s. Only the two seal
 # values and generated governance count changed afterwards; the receipt guard rechecked that log.
-expected_swift_receipt='10500 checks passed'
+# Project Board report candidate 48554e8e measured 10,552 checks and all twelve Cloud suites
+# on 2026-09-08; the same run measured 8,572 assertion sites. The final seal/governance-only
+# delta is checked against that retained log rather than paying for a second full run.
+expected_swift_receipt='10552 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -420,7 +423,7 @@ expected_swift_receipt='10500 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8520
+expected_swift_receipt_witness=8572
 
 count_exact_receipt_lines() {
   local receipt=$1

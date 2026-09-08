@@ -28,6 +28,13 @@ export function createBoardMock() {
     items.push({ ...structuredClone(items[0]), id: "preview-landed", key: "WORK-3", title: "手機即時畫面自動換行", state: "closed",
         summary: "長行不再超出螢幕，閱讀程式碼與執行結果不必左右捲動。", progress: { state: "landed", active: false, historical: true },
         obligations: [], checklist: [], updatedAt: now - 86400,
+        completionReport: { status: "current", version: 2, authoredAt: now - 86000, actor: "preview-root", authorship: "assistant", model: "preview-model",
+            objective: "讓手機上的長內容保持可讀。", deliveredOutcomes: "長行會在可視寬度內換行，程式碼和執行結果不再要求左右捲動。",
+            verificationLanding: "這是預覽敘述；下方模擬收據才是狀態依據。", remainingWork: "真實專案仍需自己的驗證與落地紀錄。",
+            lessons: "閱讀介面要保留內容，也要把敘述與證據分開。",
+            sourceReferences: [{ kind: "evidence", targetId: "preview-proof", label: "預覽落地紀錄", resolution: "same_item", relationship: "same_item_at_authorship", resolvedAt: now - 86000, authority: "narrative_only" }] },
+        completionReportHistory: [{ id: "preview-report-v1", version: 1, status: "superseded",
+            authoredAt: now - 172000, actor: "preview-root", authorship: "assistant", sourceCount: 1 }],
         landings: [{ id: "preview-proof", subject: "preview-commit", sourceId: "preview-only", summary: "僅供預覽：模擬已有落地紀錄，不代表真實 Git 驗證。" }] });
     items.push({ ...structuredClone(items[0]), id: "preview-canceled", key: "WORK-4", title: "加入手動狀態選單", state: "canceled",
         summary: "改由系統依執行證據自動更新，不再需要手動選單。", progress: { state: "canceled", active: false, historical: true }, obligations: [], checklist: [], updatedAt: now - 172800 });
@@ -39,6 +46,16 @@ export function createBoardMock() {
         spans: [{ id: "coord-span", sessionId: "preview-session", phase: "output", startedAt: now - 3600, endedAt: null }],
         links: [{ kind: "coordinates", targetId: "preview-item", label: "讓每個專案的進度一目了然" }] });
     var receipts = new Map();
+    var reportBodies = new Map([["preview-report-v1", {
+        id: "preview-report-v1", version: 1, status: "superseded", authoredAt: now - 172000,
+        actor: "preview-root", authorship: "assistant", objective: "較早版本的手機閱讀目標。",
+        deliveredOutcomes: "保留舊版報告正文，只在讀者展開時載入。",
+        verificationLanding: "預覽敘述不取代驗證。", remainingWork: "由新版報告接續。",
+        lessons: "歷史版本需要可讀，但不該灌入每次 Project 讀取。",
+        sourceReferences: [{ kind: "evidence", targetId: "preview-proof", label: "較早預覽紀錄",
+            resolution: "same_item", relationship: "same_item_at_authorship",
+            resolvedAt: now - 172000, authority: "narrative_only" }]
+    }]]);
     function progressState(item) { return item.progress && item.progress.state || item.state; }
     function updateProjects() {
         projects.forEach(function (project) {
@@ -56,11 +73,20 @@ export function createBoardMock() {
     }
     updateProjects();
     function read(project, item) {
+        var report = null;
+        if (item && item.startsWith("report:")) {
+            var parts = item.split(":");
+            if (parts.length === 3) {
+                item = parts[1];
+                report = reportBodies.get(parts[2]) || null;
+            }
+        }
         return { board: { schemaVersion: 1, revision: revision, enabled: enabled,
             mode: enabled ? "board" : "standard", entitlement: { state: "free_preview", label: "Currently free" },
             viewer: { id: "preview", canWrite: true, canManage: true },
             projects: projects, items: project && !item ? items.filter(function (row) { return row.projectId === project; }) : [],
             item: items.find(function (row) { return row.id === item; }) || null,
+            reportSelection: report,
             readState: { status: "ready" },
             updatedAt: now, truncated: false } };
     }

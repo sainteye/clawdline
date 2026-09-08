@@ -1,4 +1,5 @@
 import {
+    boardReportSelection,
     channelSegment,
     decodedChannelSegment,
     sessionIdentity,
@@ -635,7 +636,8 @@ export class CloudClient {
             "read");
     }
 
-    board(project, item) {
+    board(project, item, report) {
+        if (report) item = boardReportSelection(item, report);
         return this._machineRequest(this._onlyMachine("Project Board"), "board",
             { project: project || "", item: item || "" }, "read");
     }

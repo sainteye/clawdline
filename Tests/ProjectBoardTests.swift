@@ -313,6 +313,273 @@ group("Project Board commands are closed, CAS-serialized, and durably idempotent
     expect("a selected record whose mandatory blockers exceed the byte budget is typed unavailable",
            (((atCapacity.snapshot(item: boundedItem)["board"] as? [String: Any])?["error"]
                 as? [String: Any])?["code"] as? String), "board_snapshot_too_large")
+
+    var reportClock = 1_800_000_000.0
+    let reports = BoardTestDriver(name: "reports-\(UUID().uuidString)", now: {
+        Date(timeIntervalSince1970: reportClock)
+    })
+    reports.createProject()
+    let closed = reports.create(type: "task", title: "Closure narrative")
+    let open = reports.create(type: "task", title: "Still open")
+    let artifactReply = reports.send("artifact", [
+        "itemId": closed, "title": "Report", "url": "https://example.test/report",
+        "kind": "document",
+    ])
+    let artifactID = ((((artifactReply.body["board"] as? [String: Any])?["item"]
+        as? [String: Any])?["artifacts"] as? [[String: Any]])?.first?["id"] as? String) ?? ""
+    boardAdvanceToExecution(reports, item: closed)
+    _ = reports.send("accept_artifact", [
+        "itemId": closed, "artifactId": artifactID, "note": "accepted",
+    ], trusted: true)
+    expect("a missing report does not block evidence-driven closure",
+           reports.item(closed)["state"] as? String, "closed")
+    expect("report absence is explicit rather than an empty claimed report",
+           (reports.item(closed)["completionReport"] as? [String: Any])?["status"] as? String,
+           "absent")
+    let reportFields: [String: Any] = [
+        "itemId": closed,
+        "objective": "Explain what the work set out to accomplish.",
+        "deliveredOutcomes": "A durable report and readable detail.",
+        "verificationLanding": "Artifact accepted; this prose is not the receipt.",
+        "remainingWork": "Historical pilot remains separate.",
+        "lessons": "Keep narrative authority separate from evidence authority.",
+        "authorship": "assistant",
+        "model": "low-cost-test-model",
+        "sourceReferences": [
+            ["kind": "artifact", "targetId": artifactID, "label": "Accepted report"],
+            ["kind": "item", "targetId": open, "label": "Related same-project item"],
+            ["kind": "external", "targetId": "missing-transcript", "label": "Unavailable source"],
+        ],
+    ]
+    let coordination = reports.create(type: "coordination", title: "Bounded coordination")
+    var coordinationReport = reportFields
+    coordinationReport["itemId"] = coordination
+    coordinationReport["reportBoundary"] = [
+        "kind": "time_interval", "label": "September integration window",
+        "startedAt": reportClock - 3_600, "endedAt": reportClock,
+    ]
+    coordinationReport["sourceReferences"] = [
+        ["kind": "item", "targetId": coordination, "label": "Coordination record"],
+    ]
+    let coordinationState = reports.item(coordination)["state"] as? String
+    expect("Coordination narrative without a typed boundary is refused",
+           boardError(reports.send("record_report", reportFields.merging(
+                ["itemId": coordination]) { _, new in new },
+                actor: "owning-root", trusted: true)),
+           "coordination_report_boundary_required")
+    expect("a named bounded Coordination period can receive narrative without lifecycle",
+           reports.send("record_report", coordinationReport, actor: "owning-root",
+                        trusted: true).status, 200)
+    expect("recording a Coordination report never mutates lifecycle state",
+           reports.item(coordination)["state"] as? String, coordinationState)
+    let coordinationBoundary = (reports.item(coordination)["completionReport"]
+        as? [String: Any])?["reportBoundary"] as? [String: Any]
+    expect("Coordination report exposes its typed time boundary",
+           coordinationBoundary?["kind"] as? String, "time_interval")
+
+    let handedCoordination = reports.create(type: "coordination", title: "Handoff boundary")
+    _ = reports.send("handoff", ["itemId": handedCoordination, "owner": "receiver",
+                                  "note": "continue the next period"])
+    let handoffID = (reports.item(handedCoordination)["handoff"]
+        as? [String: Any])?["id"] as? String ?? ""
+    var handoffReport = reportFields
+    handoffReport["itemId"] = handedCoordination
+    handoffReport["reportBoundary"] = [
+        "kind": "handoff", "label": "Root to receiver", "handoffId": handoffID,
+    ]
+    handoffReport["sourceReferences"] = [
+        ["kind": "handoff", "targetId": handoffID, "label": "Pending handoff"],
+    ]
+    expect("a same-item handoff can bound a Coordination report",
+           reports.send("record_report", handoffReport, actor: "owning-root",
+                        trusted: true).status, 200)
+
+    let inferredTask: [String: Any] = [
+        "id": "historical-report-task", "title": "Historical report delivery",
+        "state": "success", "assistant": "codex", "startedAt": reportClock - 200,
+        "finishedAt": reportClock - 100,
+        "graph": ["id": "historical-report-graph", "destination": "Historical report",
+                  "current_node": "delivery", "kind": "delivery"],
+        "landing": [
+            "state": "landed", "verification_origin": "local_target_branch",
+            "verified_commit": "historical-report-commit",
+            "verified_target_commit": "historical-report-target",
+            "landed_at": reportClock - 50,
+        ],
+    ]
+    _ = reports.store.ingest(task: inferredTask, projectID: "project-1")
+    let inferred = boardItems(reports.store).first { item in
+        (item["links"] as? [[String: Any]])?.contains {
+            $0["kind"] as? String == "task"
+                && $0["targetId"] as? String == "historical-report-task"
+        } == true
+    } ?? [:]
+    let inferredID = inferred["id"] as? String ?? ""
+    expect("authoritative historical landing is report-eligible despite missing older process facts",
+           boardProgress(inferred)["state"] as? String, "landed")
+    check("historical landing does not counterfeit formal closure",
+          inferred["state"] as? String != "closed")
+    var inferredReport = reportFields
+    inferredReport["itemId"] = inferredID
+    inferredReport["sourceReferences"] = [[
+        "kind": "task", "targetId": "historical-report-task", "label": "Delivered task",
+    ]]
+    let inferredState = inferred["state"] as? String
+    expect("an authoritative landed projection can receive its report",
+           reports.send("record_report", inferredReport, actor: "owning-root",
+                        trusted: true).status, 200)
+    expect("report admission does not advance a landed historical item's lifecycle",
+           reports.item(inferredID)["state"] as? String, inferredState)
+    expect("landed-not-closed report is current for its unchanged scope",
+           (reports.item(inferredID)["completionReport"] as? [String: Any])?["status"]
+                as? String,
+           "current")
+
+    let rebound = reports.create(type: "feature", title: "Explicit report owner")
+    var reboundTask = inferredTask
+    reboundTask["workItemId"] = rebound
+    _ = reports.store.ingest(task: reboundTask, projectID: "project-1")
+    let retainedReport = reports.item(inferredID)["completionReport"] as? [String: Any]
+    expect("inferred-to-explicit rebind preserves the authored report body",
+           retainedReport?["objective"] as? String,
+           "Explain what the work set out to accomplish.")
+    expect("rebound report is qualified rather than presented as current truth",
+           retainedReport?["status"] as? String, "historical_needs_update")
+    let retainedSource = (retainedReport?["sourceReferences"] as? [[String: Any]])?.first
+    expect("rebound source relationship is explicitly authoring-time provenance",
+           retainedSource?["relationship"] as? String, "same_item_at_authorship")
+    expect("rebound source relationship retains its resolution epoch",
+           retainedSource?["resolvedAt"] as? Double, reportClock)
+
+    expect("an open item cannot receive a closure report",
+           boardError(reports.send("record_report", reportFields.merging(["itemId": open]) { _, new in new },
+                                   trusted: true)),
+           "report_requires_landed_or_closed_item")
+    expect("ordinary send authority cannot author an item closure report",
+           boardError(reports.send("record_report", reportFields)), "trusted_report_required")
+    expect("unsafe report source URLs are refused before persistence",
+           boardError(reports.send("record_report", reportFields.merging([
+                "sourceReferences": [["kind": "external", "targetId": "x", "label": "bad",
+                                      "url": "javascript:alert(1)"]],
+           ]) { _, new in new }, trusted: true)),
+           "invalid_report_source_url")
+    expect("report failure never reopens or blocks the closed item",
+           reports.item(closed)["state"] as? String, "closed")
+    expect("a trusted closed report is accepted",
+           reports.send("record_report", reportFields, actor: "owning-root", trusted: true).status,
+           200)
+    var report = reports.item(closed)["completionReport"] as? [String: Any]
+    expect("the report has a server-issued version", report?["version"] as? Int, 1)
+    expect("the report is current only for its closed scope", report?["status"] as? String,
+           "current")
+    expect("the report actor comes from authenticated command context", report?["actor"] as? String,
+           "owning-root")
+    expect("the authored time comes from the store clock", report?["authoredAt"] as? Double,
+           reportClock)
+    expect("assistant model provenance is retained", report?["model"] as? String,
+           "low-cost-test-model")
+    let sources = report?["sourceReferences"] as? [[String: Any]]
+    expect("same-item source resolution is server-issued", sources?[0]["resolution"] as? String,
+           "same_item")
+    expect("same-project source resolution is explicit", sources?[1]["resolution"] as? String,
+           "same_project")
+    expect("missing sources remain explicitly unresolved", sources?[2]["resolution"] as? String,
+           "unresolved")
+    check("report sources can never mint evidentiary authority",
+          sources?.allSatisfy { $0["authority"] as? String == "narrative_only" } == true)
+    let card = boardItems(reports.store).first { $0["id"] as? String == closed }
+    let cardReport = card?["completionReport"] as? [String: Any]
+    check("catalog payload has report metadata but not the report body",
+          cardReport?["version"] as? Int == 1 && cardReport?["objective"] == nil)
+
+    reportClock += 10
+    var replacement = reportFields
+    replacement["lessons"] = "Replacement keeps the earlier version."
+    _ = reports.send("record_report", replacement, actor: "owning-root", trusted: true)
+    report = reports.item(closed)["completionReport"] as? [String: Any]
+    expect("a replacement increments report version", report?["version"] as? Int, 2)
+    var durableReportState = try! JSONSerialization.jsonObject(with: Data(contentsOf: reports.file))
+        as! [String: Any]
+    var durableReportItems = durableReportState["items"] as! [[String: Any]]
+    var durableVersions = durableReportItems.first { $0["id"] as? String == closed }?["completionReports"]
+        as! [[String: Any]]
+    expect("prior report prose remains durably stored after replacement",
+           durableVersions.first?["lessons"] as? String,
+           "Keep narrative authority separate from evidence authority.")
+    check("detail exposes superseded provenance without repeating full reports",
+          ((reports.item(closed)["completionReportHistory"] as? [[String: Any]])?.first)?["version"] as? Int == 1
+            && ((reports.item(closed)["completionReportHistory"] as? [[String: Any]])?.first)?["lessons"] == nil)
+    let firstReportID = ((reports.item(closed)["completionReportHistory"]
+        as? [[String: Any]])?.first)?["id"] as? String ?? ""
+    let selectedPrior = reports.store.reportSnapshot(
+        project: "project-1", item: closed, report: firstReportID)
+    let selectedPriorBoard = selectedPrior.body["board"] as? [String: Any]
+    let selectedPriorReport = selectedPriorBoard?["reportSelection"] as? [String: Any]
+    expect("one selected superseded report body is retrievable through a bounded read",
+           selectedPriorReport?["lessons"] as? String,
+           "Keep narrative authority separate from evidence authority.")
+    let selectedPriorSource = (selectedPriorReport?["sourceReferences"]
+        as? [[String: Any]])?.first
+    expect("selected report roundtrips its authoring-time source relation",
+           selectedPriorSource?["relationship"] as? String, "same_item_at_authorship")
+    check("lazy report response remains inside the Store byte budget",
+          (try? JSONSerialization.data(withJSONObject: selectedPrior.body).count) ?? Int.max
+              <= 1_000_000)
+    expect("an unknown report selector is typed",
+           boardError(reports.store.reportSnapshot(
+                project: "project-1", item: closed, report: "missing-report")),
+           "report_not_found")
+    let coordinationReportID = (reports.item(coordination)["completionReport"]
+        as? [String: Any])?["id"] as? String ?? ""
+    expect("a report selector cannot cross item ownership",
+           boardError(reports.store.reportSnapshot(
+                project: "project-1", item: closed, report: coordinationReportID)),
+           "report_item_mismatch")
+    for _ in 3...16 {
+        _ = reports.send("record_report", reportFields, actor: "owning-root", trusted: true)
+    }
+    expect("report version capacity refuses overflow without eviction",
+           boardError(reports.send("record_report", reportFields, actor: "owning-root",
+                                   trusted: true)),
+           "report_history_capacity_reached")
+    expect("all bounded report versions remain after overflow refusal",
+           (reports.item(closed)["completionReportHistory"] as? [[String: Any]])?.count, 15)
+    durableReportState = try! JSONSerialization.jsonObject(with: Data(contentsOf: reports.file))
+        as! [String: Any]
+    durableReportItems = durableReportState["items"] as! [[String: Any]]
+    durableVersions = durableReportItems.first { $0["id"] as? String == closed }?["completionReports"]
+        as! [[String: Any]]
+    expect("overflow refusal leaves every report body on disk", durableVersions.count, 16)
+    _ = reports.send("update", ["itemId": closed, "summary": "new scope after closure"])
+    report = reports.item(closed)["completionReport"] as? [String: Any]
+    expect("new scope preserves but qualifies the prior report",
+           report?["status"] as? String, "historical_needs_update")
+    let reloadedReport = (ProjectBoardStore(url: reports.file).snapshot(item: closed)["board"]
+        as? [String: Any])?["item"] as? [String: Any]
+    expect("report provenance and historical qualification survive reload",
+           (reloadedReport?["completionReport"] as? [String: Any])?["status"] as? String,
+           "historical_needs_update")
+    var oldSchemaState = try! JSONSerialization.jsonObject(with: Data(contentsOf: reports.file))
+        as! [String: Any]
+    var oldSchemaItems = oldSchemaState["items"] as! [[String: Any]]
+    let oldSchemaIndex = oldSchemaItems.firstIndex { $0["id"] as? String == closed }!
+    var oldSchemaReports = oldSchemaItems[oldSchemaIndex]["completionReports"] as! [[String: Any]]
+    var oldSchemaSources = oldSchemaReports[0]["sourceReferences"] as! [[String: Any]]
+    oldSchemaSources[0].removeValue(forKey: "resolvedAt")
+    oldSchemaReports[0]["sourceReferences"] = oldSchemaSources
+    oldSchemaItems[oldSchemaIndex]["completionReports"] = oldSchemaReports
+    oldSchemaState["items"] = oldSchemaItems
+    try! JSONSerialization.data(withJSONObject: oldSchemaState, options: [.sortedKeys])
+        .write(to: reports.file, options: .atomic)
+    let oldSchemaSelection = ProjectBoardStore(url: reports.file).reportSnapshot(
+        project: "project-1", item: closed, report: firstReportID)
+    let oldSchemaBoard = oldSchemaSelection.body["board"] as? [String: Any]
+    let oldSchemaReport = oldSchemaBoard?["reportSelection"] as? [String: Any]
+    let oldSchemaSource = (oldSchemaReport?["sourceReferences"] as? [[String: Any]])?.first
+    expect("older source rows inherit the report authorship epoch",
+           oldSchemaSource?["resolvedAt"] as? Double, reportClock - 10)
+    expect("older source rows still expose the explicit authoring-time discriminator",
+           oldSchemaSource?["relationship"] as? String, "same_item_at_authorship")
 }
 
 group("six item types, hierarchy, relations, handoff, and spans retain their distinct meanings") {

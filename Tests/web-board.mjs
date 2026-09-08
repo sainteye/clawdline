@@ -170,6 +170,7 @@ check("hidden search overrides its ID-level display rule", /display:\s*none/.tes
         check("selected Project still enters its own board", opened.length === 1 && destinations.length === 1);
     }
 }
+check("completion report has a phone-width layout boundary", /@media\s*\(max-width:\s*640px\)[\s\S]*\.board-report-body\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/.test(css));
 check("explicit server progress wins old backlog", boardProgress(rows[1]) === "landed");
 {
     const p = page({ read: async () => envelope({ projects: [], items: [], readState: { status: "error" } }) }, "en");
@@ -471,12 +472,23 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     p.view.leave();
 }
 {
-    const p = page({ read: () => Promise.resolve(envelope({ enabled: false })) }, "en");
-    await p.view.enter();
+    const retained = {
+        ...item("off-report", "landed"),
+        state: "closed",
+        completionReport: {
+            status: "current", version: 1, objective: "Retained while off",
+            deliveredOutcomes: "Readable history", verificationLanding: "Separate evidence",
+            remainingWork: "None recorded", lessons: "Off mode preserves reports",
+            sourceReferences: []
+        }
+    };
+    const p = page({ read: (_, id) => Promise.resolve(envelope({ enabled: false, item: id ? retained : null })) }, "en");
+    await p.view.open("a", retained.id);
     check(
         "disabled mode retains read-only history",
         p.elements["board-status"].textContent.includes("read-only")
     );
+    check("disabled mode keeps report history readable", p.elements["board-detail"].textContent.includes("Retained while off"));
     check("disabled mode stops automatic workflow refresh", p.timers.size === 0);
     p.view.leave();
 }
@@ -492,7 +504,12 @@ check(
             outcomes: "Joined two delivery lines",
             difficulties: "Overlapping claims",
             improvements: "Declare scopes earlier"
-        }
+        },
+        completionReport: { status: "current", id: "coord-report", version: 1,
+            objective: "Bound one coordination period", deliveredOutcomes: "Handoff prepared",
+            verificationLanding: "Narrative only", remainingWork: "Receiver continues",
+            lessons: "Name the boundary", reportBoundary: { kind: "handoff",
+                label: "Root to receiver", handoffId: "handoff-1" }, sourceReferences: [] }
     };
     const p = page(
         {
@@ -524,6 +541,13 @@ check(
         "coordination detail also omits lifecycle",
         p.elements["board-detail"].all(".board-state-pill").length === 0
     );
+    check(
+        "coordination uses period and handoff report wording",
+        p.elements["board-detail"].textContent.includes("Period / handoff report") &&
+            !p.elements["board-detail"].textContent.includes("Completion report")
+    );
+    check("coordination report displays its typed handoff boundary",
+        p.elements["board-detail"].textContent.includes("Root to receiver · same-item handoff"));
     p.view.leave();
 }
 {
@@ -545,6 +569,151 @@ check(
         "bug lessons are retained alongside result",
         p.elements["board-detail"].textContent.includes("Compare the same record across both surfaces")
     );
+    p.view.leave();
+}
+{
+    const reported = {
+        ...item("reported", "delivered"),
+        state: "closed",
+        completionReport: {
+            status: "current",
+            version: 2,
+            authoredAt: 1700000000,
+            actor: "root-report",
+            authorship: "assistant",
+            model: "small-model",
+            objective: "Make closure understandable.",
+            deliveredOutcomes: "Rendered <img src=x onerror=alert(1)> as literal text.",
+            verificationLanding: "Delivered only; no landing proof was forged.",
+            remainingWork: "Run a separate historical pilot.",
+            lessons: "Narrative is not evidence.",
+            sourceReferences: [
+                { kind: "artifact", targetId: "a", label: "Safe source", url: "https://example.test/a", resolution: "same_item", authority: "narrative_only", resolvedAt: 1700000000 },
+                { kind: "external", targetId: "b", label: "Unsafe source", url: "javascript:alert(1)", resolution: "unresolved", authority: "narrative_only" }
+            ]
+        },
+        completionReportHistory: [
+            { id: "older-report", version: 1, status: "superseded", authoredAt: 1699990000,
+              actor: "root-report", authorship: "assistant", sourceCount: 1 }
+        ]
+    };
+    const oldReport = {
+        id: "older-report", version: 1, status: "superseded", authoredAt: 1699990000,
+        actor: "root-report", authorship: "assistant", objective: "Earlier objective body",
+        deliveredOutcomes: "Earlier outcome body", verificationLanding: "Earlier proof limits",
+        remainingWork: "Earlier remainder", lessons: "Earlier durable lesson",
+        sourceReferences: [{ kind: "task", targetId: "old-task", label: "Old task",
+            resolution: "same_item", authority: "narrative_only", resolvedAt: 1699990000 }]
+    };
+    const reads = [];
+    const p = page({ read: (_project, id) => {
+        reads.push(id);
+        return Promise.resolve(id && id.startsWith("report:")
+            ? envelope({ items: [], item: reported, reportSelection: oldReport })
+            : envelope({ item: reported }));
+    } }, "en");
+    await p.view.open("a", reported.id);
+    const target = p.elements["board-detail"];
+    for (const value of [
+        "Completion report",
+        "Objective",
+        "Delivered outcomes",
+        "Verification & landing",
+        "Remaining work",
+        "Lessons",
+        "Make closure understandable.",
+        "Narrative is not evidence.",
+        "Attributed narrative · not verification or landing evidence"
+    ])
+        check("completion report renders " + value, target.textContent.includes(value));
+    check("report keeps markup literal", target.textContent.includes("<img src=x onerror=alert(1)>"));
+    check("report markup cannot create executable elements", target.all((n) => ["IMG", "SCRIPT"].includes(n.tagName)).length === 0);
+    check("only safe report source URLs become links", target.all((n) => n.tagName === "A").length === 1);
+    check("safe report links isolate their opener", target.all((n) => n.tagName === "A")[0].rel === "noopener noreferrer");
+    check("source relationship is qualified as authoring-time provenance",
+        target.textContent.includes("Same item at authorship"));
+    check("a report never promotes delivered-only progress", boardProgress(reported) === "delivered");
+    const historyButton = target.all(".board-report-history-button")[0];
+    check("superseded report metadata exposes a lazy reader", !!historyButton);
+    historyButton.click();
+    await flush();
+    check("history expansion requests one opaque report with the selected item",
+        reads[1] === "report:" + reported.id + ":older-report");
+    check("a selected prior report body becomes readable without replacing the current body",
+        target.textContent.includes("Earlier durable lesson")
+            && target.textContent.includes("Narrative is not evidence."));
+    p.view.leave();
+}
+{
+    const current = {
+        ...item("report-failure", "landed"), state: "closed",
+        completionReport: { status: "current", id: "current-report", version: 2,
+            objective: "Current body stays readable", deliveredOutcomes: "Current result",
+            verificationLanding: "Current limits", remainingWork: "Current remainder",
+            lessons: "Current lesson", sourceReferences: [] },
+        completionReportHistory: [{ id: "prior-failure", version: 1, status: "superseded" }]
+    };
+    const p = page({ read: (_project, id) => id && id.startsWith("report:")
+        ? Promise.reject(new Error("version offline"))
+        : Promise.resolve(envelope({ item: current })) }, "en");
+    await p.view.open("a", current.id);
+    p.elements["board-detail"].all(".board-report-history-button")[0].click();
+    await flush();
+    check("report-version failure stays inside history reader",
+        p.elements["board-detail"].textContent.includes("version offline"));
+    check("report-version failure never clears the current report or item selection",
+        p.elements["board-detail"].textContent.includes("Current body stays readable")
+            && p.view.state.item.id === current.id && p.view.state.readStatus !== "error");
+    p.view.leave();
+}
+{
+    const hold = deferred(), current = {
+        ...item("stale-report-item", "landed"), state: "closed",
+        completionReport: { status: "current", id: "current-stale", version: 2,
+            objective: "Current stale guard", deliveredOutcomes: "Current result",
+            verificationLanding: "Current limits", remainingWork: "Current remainder",
+            lessons: "Current lesson", sourceReferences: [] },
+        completionReportHistory: [{ id: "prior-stale", version: 1, status: "superseded" }]
+    }, next = { ...item("next-item", "execution"), completionReport: { status: "absent" } };
+    const p = page({ read: (_project, id) => id && id.startsWith("report:")
+        ? hold.promise : Promise.resolve(envelope({ item: id === next.id ? next : current })) }, "en");
+    await p.view.open("a", current.id);
+    p.elements["board-detail"].all(".board-report-history-button")[0].click();
+    await p.view.open("a", next.id);
+    hold.resolve(envelope({ items: [], item: current, reportSelection: {
+        id: "prior-stale", version: 1, status: "superseded", objective: "Stale prior body",
+        deliveredOutcomes: "old", verificationLanding: "old", remainingWork: "old",
+        lessons: "old", sourceReferences: [] } }));
+    await flush();
+    check("late report response cannot overwrite a newer item selection",
+        p.view.state.item.id === next.id
+            && !p.elements["board-detail"].textContent.includes("Stale prior body"));
+    p.view.leave();
+}
+{
+    const absent = { ...item("absent", "execution"), completionReport: { status: "absent" } };
+    const p = page({ read: () => Promise.resolve(envelope({ item: absent })) }, "en");
+    await p.view.open("a", absent.id);
+    check("missing report is stated honestly", p.elements["board-detail"].textContent.includes("No completion report has been recorded"));
+    p.view.leave();
+}
+{
+    const historical = {
+        ...item("historical-report", "execution"),
+        completionReport: {
+            status: "historical_needs_update",
+            version: 1,
+            objective: "Earlier objective",
+            deliveredOutcomes: "Earlier delivery",
+            verificationLanding: "Earlier receipts",
+            remainingWork: "New scope",
+            lessons: "Earlier lesson",
+            sourceReferences: []
+        }
+    };
+    const p = page({ read: () => Promise.resolve(envelope({ item: historical })) }, "en");
+    await p.view.open("a", historical.id);
+    check("reopened scope visibly qualifies its old report", p.elements["board-detail"].textContent.includes("Earlier scope · needs an updated report"));
     p.view.leave();
 }
 check(

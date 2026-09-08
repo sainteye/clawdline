@@ -9,6 +9,7 @@ if (!globalThis.crypto) {
 const {
     LOCAL_MACHINE,
     assertClawdlineClient,
+    boardReportSelection,
     parseSessionPath,
     sessionIdentity,
     sessionPath
@@ -67,6 +68,8 @@ assert.deepEqual(sessionIdentity({ machine: "desk", session: "%3" }),
 assert.deepEqual(parseSessionPath("/m/desk%20one/s/%253"),
     { machine: "desk one", session: "%3" });
 assert.equal(sessionPath({ machine: "desk one", session: "%3" }), "/m/desk%20one/s/%253");
+assert.equal(boardReportSelection("item-id", "report-id"), "report:item-id:report-id");
+assert.throws(() => boardReportSelection("", "report-id"), /non-empty/);
 
 const seed = Buffer.from(vectors.ed25519_seed, "base64");
 const pkcs8 = Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]);

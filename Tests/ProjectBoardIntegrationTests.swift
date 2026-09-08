@@ -219,14 +219,42 @@ group("board HTTP authority cannot be supplied by command content") {
     expect("send does not change global mode", call(#"{"operation":"set_enabled"}"#)?.status, 403)
     expect("send does not accept artifact", call(#"{"operation":"accept_artifact"}"#)?.status, 403)
     expect("send cannot mint verification", call(#"{"operation":"record_evidence","kind":"verification","trusted":true}"#)?.status, 403)
+    expect("send cannot author a closure report", call(#"{"operation":"record_report"}"#)?.status, 403)
     expect("even root cannot forge broker landing", call(#"{"operation":"record_evidence","kind":"landing"}"#, machine: true)?.status, 403)
     expect("root verification reaches schema validator", call(#"{"operation":"record_evidence","kind":"verification"}"#, machine: true)?.status, 400)
+    expect("root report reaches schema validator", call(#"{"operation":"record_report"}"#, machine: true)?.status, 400)
     expect("admin acceptance reaches schema validator", call(#"{"operation":"accept_artifact"}"#, caps: [.read, .send, .admin])?.status, 400)
     Config.shared.remoteWrite = false
     expect("remote write switch preserved", call("{}")?.status, 403)
     expect("machine auth preserves baseline local control", call("{}", machine: true)?.status, 400)
     let repeated = remoteRequest("GET", "/v1/board?item=a&item=b")
     expect("duplicate query is refused", ProjectBoardHTTP.route(repeated, machine: true, permission: .denied)?.status, 400)
+    let reportWithoutItem = remoteRequest("GET", "/v1/board?report=report-a")
+    expect("report reads require an independently selected item",
+           ProjectBoardHTTP.route(reportWithoutItem, machine: true, permission: .denied)?.status,
+           400)
+    let selectorRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-board-http-report-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: selectorRoot) }
+    let selectorStore = ProjectBoardStore(url: selectorRoot.appendingPathComponent("board.json"))
+    ProjectBoardHTTP.configureStoreForTesting(selectorStore)
+    defer { ProjectBoardHTTP.configureStoreForTesting(nil) }
+    let unknownReport = remoteRequest(
+        "GET", "/v1/board?project=project-a&item=item-a&report=report-a")
+    let unknownReportReply = ProjectBoardHTTP.route(
+        unknownReport, machine: true, permission: .denied)
+    expect("direct report selector enters the authenticated bounded read lane",
+           unknownReportReply?.status, 404)
+    let unknownReportObject = (try? JSONSerialization.jsonObject(
+        with: unknownReportReply?.body ?? Data())) as? [String: Any]
+    expect("unknown report item refusal remains typed",
+           (unknownReportObject?["error"] as? [String: Any])?["code"] as? String,
+           "report_item_not_found")
+    let cloudEncodedReport = remoteRequest(
+        "GET", "/v1/board?project=project-a&item=report:item-a:report-a")
+    expect("closed Cloud selector spelling reaches the same report reader",
+           ProjectBoardHTTP.route(cloudEncodedReport, machine: true, permission: .denied)?.status,
+           404)
     let disabled = ProjectBoardHTTP.viewer(machine: false, permission: .allowed(device: "writer", caps: [.read, .send, .admin]), source: .http, remoteWrite: false)
     expect("viewer reflects remote write switch", disabled["canWrite"] as? Bool, false)
     expect("viewer cannot administer through disabled transport", disabled["canManage"] as? Bool, false)

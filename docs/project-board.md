@@ -111,6 +111,84 @@ improvements and the receiving owner. Debug work records cause and reusable find
 Refactors and Epics retain their checklist and milestone obligations. This first release supplies
 the common record and evidence gates, not automatic extraction of those narratives from transcripts.
 
+## Completion reports
+
+An item's short `summary` remains its objective or description. Its owning root can add a separate
+completion report after ordinary work reaches `closed` or its current scope has an authoritative
+landed projection. This includes retained historical work whose later broker landing is sound even
+when older process records are missing; it excludes genuinely active, unlanded delivery. The report
+answers five reader questions: the objective, delivered outcomes, what verification and landing do
+(and do not) establish, remaining work, and lessons.
+
+Coordination has no closure lifecycle. Its period / handoff report instead requires one typed,
+named boundary: either a finite increasing `time_interval`, or a `handoff` id that resolves to a
+handoff source on that same item. Recording or failing to record either kind of report never changes,
+holds or advances item status.
+
+The assistant composes the prose through its ordinary conversation, result and handoff workflow.
+There is no model call in `GET /v1/board`, no new provider configuration, and no claim that existing
+items already have autonomously generated reports. If drafting fails or no report has been written,
+the item still advances from its independent evidence and the reader says that the report is absent.
+Turning Board mode off keeps earlier reports readable and starts no report workflow.
+
+The owning local root records one consolidated report with the same CAS and idempotency rules as
+every Board command. A useful template is:
+
+```json
+{
+  "operation": "record_report",
+  "requestId": "report-<stable-intent-id>",
+  "expectedRevision": 42,
+  "itemId": "<opaque-item-id>",
+  "objective": "What this item set out to accomplish, without copying the card summary.",
+  "deliveredOutcomes": "Concrete user-visible or operational results; distinguish child delivery from integration.",
+  "verificationLanding": "Exact receipt subjects and limits. Say plainly when work is delivered-only or landing is unknown.",
+  "remainingWork": "Unknown facts, residual obligations, deferred scope and their named owners.",
+  "lessons": "Reusable decisions, pitfalls and what a future attempt should know.",
+  "authorship": "assistant",
+  "model": "<model-used-to-compose-this-prose>",
+  "sourceReferences": [
+    {"kind":"task", "targetId":"<task-id>", "label":"delivery result"},
+    {"kind":"artifact", "targetId":"<item-artifact-id>", "label":"report artifact"},
+    {"kind":"evidence", "targetId":"<receipt-source-id>", "label":"exact-tree acceptance"},
+    {"kind":"external", "targetId":"<missing-or-legacy-source>", "label":"unresolved historical source"}
+  ]
+}
+```
+
+For a Coordination period, the same command additionally carries:
+
+```json
+{"reportBoundary":{"kind":"time_interval","label":"September integration","startedAt":1788796800,"endedAt":1789401600}}
+```
+
+The alternative is
+`{"kind":"handoff","label":"Root to receiver","handoffId":"<same-item-handoff-id>"}`
+and its `sourceReferences` must include that handoff id.
+
+The server supplies actor, authored time, report version, current scope revision, source resolution
+and `authority:"narrative_only"`; callers cannot submit those fields. Source relationship is frozen
+authoring-time provenance, not recomputed current truth: wire rows expose an explicit relationship
+such as `same_item_at_authorship` plus `resolvedAt`. Older stored rows without that optional epoch
+use the report's `authoredAt`, so a later inferred-to-explicit rebind can never relabel old provenance
+as a present-day same-item fact. Task, artifact, evidence and
+handoff references resolve only inside the same item, item references only inside the same Project,
+and everything else remains explicitly `unresolved`. URLs accept only HTTP(S). These references
+help a reader retrace the narrative but cannot mint verification or landing authority.
+
+Replacing a report appends a version rather than erasing prose. Up to 16 versions are retained; a
+seventeenth is refused without discarding the first. Catalog and ordinary detail reads keep
+superseded versions metadata-only. Expanding one version performs the bounded lazy read
+`GET /v1/board?project=<id>&item=<id>&report=<report-id>` through the same authenticated read lane;
+unknown selectors and item/Project mismatches are typed refusals. A failed or late expansion stays
+inside that version reader and cannot clear the current item or current report.
+
+Reopened or newly scoped work keeps its latest report but labels it `historical_needs_update` until
+that exact scope is again report-eligible and receives a new report. Rebinding also preserves the
+old report body while qualifying its authoring-time relationships. This same command and provenance
+model is the intended seam for a later, separately measured low-cost historical pilot; the pilot
+does not receive a second store or lifecycle shortcut.
+
 ## Evidence and accounting
 
 Only trusted broker task links allocate existing UsageLedger intervals. User-created Session/task
@@ -159,7 +237,8 @@ still follow [the verification workflow](verification-workflow.md) and [landing]
 
 ## API and authority
 
-`GET /v1/board?project=<opaque-id>&item=<opaque-id>` returns a versioned snapshot. `POST /v1/board`
+`GET /v1/board?project=<opaque-id>&item=<opaque-id>` returns a versioned snapshot; adding the opaque
+`report=<report-id>` selector retrieves one retained version body. `POST /v1/board`
 accepts the closed commands in [the implementation contract](project-board-contract.md). Every
 write carries `requestId` and `expectedRevision`. Conflicting revisions refuse rather than overwrite;
 ambiguous delivery retries use the same request ID and body. A changed intent uses a new ID.

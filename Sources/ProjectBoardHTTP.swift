@@ -10,9 +10,18 @@ enum ProjectBoardHTTP {
         let viewer: [String: Any]
         let project: String?
         let item: String?
+        let report: String?
+        let store: ProjectBoardStore
 
         func execute() -> RemoteServer.Response {
-            var envelope = ProjectBoardIntegration.read(project: project, item: item)
+            let result: (status: Int, envelope: [String: Any])
+            if let report, let item {
+                let reply = store.reportSnapshot(project: project, item: item, report: report)
+                result = (reply.status, reply.body)
+            } else {
+                result = (200, ProjectBoardIntegration.read(project: project, item: item))
+            }
+            var envelope = result.envelope
             if var board = envelope["board"] as? [String: Any] {
                 if board["available"] as? Bool == false {
                     return .json(["error": board["error"] ?? [
@@ -22,7 +31,7 @@ enum ProjectBoardHTTP {
                 board["viewer"] = viewer
                 envelope["board"] = board
             }
-            return ProjectBoardHTTP.response(envelope)
+            return ProjectBoardHTTP.response(envelope, status: result.status)
         }
     }
 
@@ -101,11 +110,35 @@ enum ProjectBoardHTTP {
         if request.method == "GET" {
             guard request.repeatedQueryKeys.isEmpty,
                   request.query.values.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 200 }),
-                  Set(request.query.keys).isSubset(of: ["project", "item"]) else {
+                  Set(request.query.keys).isSubset(of: ["project", "item", "report"]) else {
                 return .response(.error(400, "bad_request", "Unknown board query field."))
             }
+            var item = request.query["item"]
+            var report = request.query["report"]
+            // Cloud's existing closed Board read carries two selector slots. Until that protocol
+            // vocabulary is versioned, the view encodes this narrow third selector inside the
+            // item slot; direct HTTP callers use the explicit `report` query field.
+            if let encoded = item, encoded.hasPrefix("report:") {
+                guard report == nil else {
+                    return .response(.error(400, "bad_request",
+                                            "Report selector was supplied twice."))
+                }
+                let parts = encoded.split(separator: ":", maxSplits: 2,
+                                          omittingEmptySubsequences: false)
+                guard parts.count == 3, !parts[1].isEmpty, !parts[2].isEmpty else {
+                    return .response(.error(400, "invalid_report_selector",
+                                            "Malformed report selector."))
+                }
+                item = String(parts[1])
+                report = String(parts[2])
+            }
+            if report != nil && item == nil {
+                return .response(.error(400, "report_item_required",
+                                        "A report version must be read with its selected item."))
+            }
             return .read(.init(viewer: viewer, project: request.query["project"],
-                               item: request.query["item"]))
+                               item: item, report: report,
+                               store: storeForTesting ?? ProjectBoardStore.shared))
         }
         guard request.method == "POST" else { return .response(.status(405)) }
         // A verified Cloud sender already holds the existing write capability. A
@@ -125,7 +158,7 @@ enum ProjectBoardHTTP {
             return .response(.error(403, "forbidden", "Changing board mode requires an administrative device."))
         }
         // Only a local root may attest a verification/finding. This is an attributed
-        // root report, not a claim that the broker executed a test. Landing still
+        // root attestation, not a claim that the broker executed a test. Landing still
         // enters exclusively through broker-verified ancestry, never this command.
         let acceptsArtifact = body["operation"] as? String == "accept_artifact"
         if acceptsArtifact && !canAdmin {
@@ -135,6 +168,16 @@ enum ProjectBoardHTTP {
         if recordsEvidence && (!machine || !["verification", "finding"].contains(body["kind"] as? String ?? "")) {
             return .response(.error(403, "forbidden", "Only a local root may attest verification or findings; landing comes from the broker."))
         }
+        // Closure prose is composed in the ordinary root conversation, then recorded here.
+        // It is attributed narrative and never evidence, but only the owning local root may
+        // attach it to eligible landed/closed work or bounded Coordination; public send
+        // authority cannot impersonate that actor.
+        let recordsReport = body["operation"] as? String == "record_report"
+        if recordsReport && !machine {
+            return .response(.error(403, "forbidden", "Only a local root may record a completion report."))
+        }
+        let commandActor = recordsEvidence ? "root_attestation"
+            : (recordsReport ? "root_report" : actor)
         guard let requestID = body["requestId"] as? String, !requestID.isEmpty,
               let canonical = try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys]) else {
             return .response(.error(400, "bad_request",
@@ -143,8 +186,9 @@ enum ProjectBoardHTTP {
         let fingerprint = SHA256.hash(data: canonical).map { String(format: "%02x", $0) }.joined()
         return .command(.init(
             viewer: viewer, body: body,
-            actor: recordsEvidence ? "root_attestation" : actor,
-            trusted: (acceptsArtifact && canAdmin) || (recordsEvidence && machine),
+            actor: commandActor,
+            trusted: (acceptsArtifact && canAdmin) || (recordsEvidence && machine)
+                || (recordsReport && machine),
             requestID: requestID, fingerprint: fingerprint,
             store: storeForTesting ?? ProjectBoardStore.shared))
     }

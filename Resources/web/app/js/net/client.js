@@ -8,6 +8,16 @@
 
 export const LOCAL_MACHINE = "this-mac";
 
+/** Carry one lazy report selector through both the direct and current closed Cloud Board read. */
+export function boardReportSelection(item, report) {
+    if (typeof item !== "string" || !item || typeof report !== "string" || !report)
+        throw new TypeError("a report selection needs non-empty item and report ids");
+    const value = "report:" + item + ":" + report;
+    if (new TextEncoder().encode(value).length > 200)
+        throw new TypeError("the report selection exceeds its transport bound");
+    return value;
+}
+
 export const ClawdlineClient = Object.freeze({
     methods: Object.freeze([
         "events", "sessions", "transcript", "send", "answer", "dispatch", "schedules"

@@ -54,6 +54,8 @@ final class ProjectBoardStore {
     private static let maximumSelectedEvidence = 256
     private static let maximumSelectedChildren = 128
     private static let maximumSummaryChildren = 8
+    private static let maximumReportVersions = 16
+    private static let maximumReportSources = 32
 
     private static let itemTypes = Set([
         "feature", "refactor", "task", "bug", "coordination", "epic",
@@ -80,6 +82,9 @@ final class ProjectBoardStore {
         "session", "task", "worktree", "related", "blocks", "coordinates",
     ])
     private static let itemLinkKinds = Set(["related", "blocks", "coordinates"])
+    private static let reportSourceKinds = Set([
+        "task", "artifact", "evidence", "handoff", "item", "external",
+    ])
 
     private struct StoredProject: Codable {
         var id: String
@@ -188,6 +193,45 @@ final class ProjectBoardStore {
         var firstObservedAt: Double
     }
 
+    private struct StoredReportSource: Codable {
+        var kind: String
+        var targetId: String
+        var label: String
+        var url: String?
+        /// Resolution and authority are issued by the store, never accepted as caller claims.
+        var resolution: String
+        var authority: String
+        /// Historical relation epoch. Older schema-v1 rows fall back to report authored time.
+        var resolvedAt: Double? = nil
+    }
+
+    private struct StoredReportBoundary: Codable {
+        var kind: String
+        var label: String
+        var startedAt: Double?
+        var endedAt: Double?
+        var handoffId: String?
+    }
+
+    private struct StoredCompletionReport: Codable {
+        var id: String
+        var version: Int
+        var objective: String
+        var deliveredOutcomes: String
+        var verificationLanding: String
+        var remainingWork: String
+        var lessons: String
+        var sourceReferences: [StoredReportSource]
+        var authoredAt: Double
+        var actor: String
+        var authorship: String
+        var model: String?
+        var scopeRevision: Int
+        var itemStateAtAuthorship: String
+        /// Required for Coordination; absent on older and ordinary delivery reports.
+        var reportBoundary: StoredReportBoundary? = nil
+    }
+
     private struct StoredItem: Codable {
         var id: String
         var key: String
@@ -222,6 +266,8 @@ final class ProjectBoardStore {
         var inferredSourceKey: String? = nil
         var ingestionCoverage: [StoredIngestionCoverage]? = nil
         var typeDetails: [String: String]? = nil
+        /// Optional keeps schema-v1 stores loadable without a migration rewrite.
+        var completionReports: [StoredCompletionReport]? = nil
     }
 
     private struct StoredReceipt: Codable {
@@ -419,6 +465,67 @@ final class ProjectBoardStore {
         return snapshotLocked(project: project, item: item)
     }
 
+    /// Retrieve exactly one durable report body. Catalog and ordinary item detail keep older
+    /// versions metadata-only; this path is admitted only through the bounded read lane.
+    func reportSnapshot(project: String? = nil, item itemID: String,
+                        report reportID: String) -> Reply {
+        lock.lock(); defer { lock.unlock() }
+        if let unavailable { return Self.errorReply(unavailable) }
+        guard let itemID = Self.boundedText(itemID, maximum: 200),
+              let reportID = Self.boundedText(reportID, maximum: 200),
+              project.map({ Self.boundedText($0, maximum: 200) != nil }) ?? true else {
+            return Self.errorReply(BoardError(
+                status: 400, code: "invalid_report_selector",
+                message: "item and report must be bounded opaque selectors"))
+        }
+        guard let selectedIndex = state.items.firstIndex(where: { $0.id == itemID }) else {
+            return Self.errorReply(BoardError(
+                status: 404, code: "report_item_not_found",
+                message: "the selected Board item does not exist"))
+        }
+        if let project, state.items[selectedIndex].projectId != project {
+            return Self.errorReply(BoardError(
+                status: 409, code: "report_project_mismatch",
+                message: "the selected item does not belong to the selected Project"))
+        }
+        guard let ownerIndex = state.items.firstIndex(where: { item in
+            (item.completionReports ?? []).contains { $0.id == reportID }
+        }) else {
+            return Self.errorReply(BoardError(
+                status: 404, code: "report_not_found",
+                message: "the selected report version does not exist"))
+        }
+        guard ownerIndex == selectedIndex else {
+            return Self.errorReply(BoardError(
+                status: 409, code: "report_item_mismatch",
+                message: "the selected report does not belong to the selected item"))
+        }
+        let item = state.items[selectedIndex]
+        let reports = item.completionReports ?? []
+        guard let offset = reports.firstIndex(where: { $0.id == reportID }) else {
+            return Self.errorReply(BoardError(
+                status: 404, code: "report_not_found",
+                message: "the selected report version does not exist"))
+        }
+        var envelope = snapshotLocked(project: project, item: itemID)
+        guard var board = envelope["board"] as? [String: Any] else {
+            return Self.errorReply(BoardError(
+                status: 503, code: "board_unavailable", message: "Board unavailable"))
+        }
+        board["items"] = [] as [[String: Any]]
+        board["reportSelection"] = reportObject(
+            reports[offset], status: reportStatus(reports[offset], item: item,
+                                                  latest: offset == reports.count - 1),
+            includeBody: true)
+        envelope["board"] = board
+        guard Self.serializedSize(envelope) <= Self.maximumSnapshotBytes else {
+            return Self.errorReply(BoardError(
+                status: 503, code: "board_report_response_too_large",
+                message: "the selected report exceeds the Board read budget"))
+        }
+        return Reply(status: 200, body: envelope)
+    }
+
     @discardableResult
     func ensureProject(id: String, name: String) -> AutomaticMutationOutcome {
         guard let id = Self.boundedText(id, maximum: 200),
@@ -536,7 +643,7 @@ final class ProjectBoardStore {
             let applied = try apply(operation: operation, body: body, actor: actor,
                                     trusted: trusted, timestamp: timestamp, draft: &draft)
             if let itemID = applied.itemId,
-               operation != "transition", operation != "create" {
+               operation != "transition", operation != "create", operation != "record_report" {
                 reconcileLifecycle(around: itemID, actor: "board", timestamp: timestamp,
                                    draft: &draft)
             }
@@ -1467,6 +1574,55 @@ final class ProjectBoardStore {
                   at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
+        case "record_report":
+            guard trusted else {
+                throw BoardError(status: 403, code: "trusted_report_required",
+                                 message: "record_report requires an authenticated local root")
+            }
+            let index = try itemIndex(body, draft: draft)
+            let item = draft.items[index]
+            if item.type != "coordination" && !reportEligible(item) {
+                throw BoardError(status: 409, code: "report_requires_landed_or_closed_item",
+                                 message: "record_report requires closed work or an authoritative current-scope landing")
+            }
+            let prior = draft.items[index].completionReports ?? []
+            guard prior.count < Self.maximumReportVersions else {
+                throw BoardError(status: 409, code: "report_history_capacity_reached",
+                                 message: "the bounded completion report history is full; no version was discarded")
+            }
+            let authorship = try requiredChoice(
+                body, "authorship", choices: Set(["assistant", "human"]))
+            let modelText = try optionalText(body, "model", maximum: 200)
+            let model = modelText.flatMap { $0.isEmpty ? nil : $0 }
+            if authorship == "human", model != nil {
+                throw BoardError(status: 400, code: "invalid_report_model",
+                                 message: "model is valid only for assistant-authored narrative")
+            }
+            let sources = try reportSources(body["sourceReferences"], itemIndex: index,
+                                            resolvedAt: timestamp, draft: draft)
+            let boundary = try reportBoundary(body["reportBoundary"], itemIndex: index,
+                                              sources: sources, draft: draft)
+            let report = StoredCompletionReport(
+                id: Self.newID(), version: prior.count + 1,
+                objective: try requiredText(body, "objective", maximum: Self.maximumUTF8),
+                deliveredOutcomes: try requiredText(body, "deliveredOutcomes",
+                                                    maximum: Self.maximumUTF8),
+                verificationLanding: try requiredText(body, "verificationLanding",
+                                                       maximum: Self.maximumUTF8),
+                remainingWork: try requiredText(body, "remainingWork",
+                                                maximum: Self.maximumUTF8),
+                lessons: try requiredText(body, "lessons", maximum: Self.maximumUTF8),
+                sourceReferences: sources, authoredAt: timestamp, actor: actor,
+                authorship: authorship, model: model,
+                scopeRevision: draft.items[index].scopeRevision ?? 0,
+                itemStateAtAuthorship: draft.items[index].state,
+                reportBoundary: boundary)
+            draft.items[index].completionReports = prior + [report]
+            touch(&draft.items[index], actor: actor, kind: "completion_report_recorded",
+                  summary: "Completion report version \(report.version) was recorded as attributed narrative, not evidence.",
+                  at: timestamp)
+            return Applied(itemId: draft.items[index].id)
+
         default:
             throw BoardError(status: 400, code: "unknown_operation",
                              message: "operation is not supported")
@@ -2010,7 +2166,9 @@ final class ProjectBoardStore {
                 "error": ["code": unavailable.code, "message": unavailable.message],
             ] as [String: Any]]
         }
-        var matching = state.items
+        // One selected detail is its own bounded scope. Sibling summaries belong to the Project
+        // read and must not prevent a report-version read from fitting its response budget.
+        var matching = selectedID == nil ? state.items : []
         if let project { matching = matching.filter { $0.projectId == project } }
         matching.sort { lhs, rhs in
             lhs.updatedAt == rhs.updatedAt ? lhs.key < rhs.key : lhs.updatedAt > rhs.updatedAt
@@ -2108,6 +2266,44 @@ final class ProjectBoardStore {
     private static let entitlement: [String: Any] = [
         "state": "free_preview", "label": "Currently free",
     ]
+
+    private func reportObject(_ report: StoredCompletionReport, status: String,
+                              includeBody: Bool) -> [String: Any] {
+        var answer: [String: Any] = [
+            "id": report.id, "version": report.version, "status": status,
+            "authoredAt": report.authoredAt, "actor": report.actor,
+            "authorship": report.authorship, "model": report.model ?? NSNull(),
+            "scopeRevision": report.scopeRevision,
+            "itemStateAtAuthorship": report.itemStateAtAuthorship,
+            "sourceCount": report.sourceReferences.count,
+        ]
+        if let boundary = report.reportBoundary {
+            var object: [String: Any] = ["kind": boundary.kind, "label": boundary.label]
+            if let startedAt = boundary.startedAt { object["startedAt"] = startedAt }
+            if let endedAt = boundary.endedAt { object["endedAt"] = endedAt }
+            if let handoffId = boundary.handoffId { object["handoffId"] = handoffId }
+            answer["reportBoundary"] = object
+        } else {
+            answer["reportBoundary"] = NSNull()
+        }
+        guard includeBody else { return answer }
+        answer["objective"] = report.objective
+        answer["deliveredOutcomes"] = report.deliveredOutcomes
+        answer["verificationLanding"] = report.verificationLanding
+        answer["remainingWork"] = report.remainingWork
+        answer["lessons"] = report.lessons
+        answer["sourceReferences"] = report.sourceReferences.map { source in
+            var row: [String: Any] = [
+                "kind": source.kind, "targetId": source.targetId, "label": source.label,
+                "resolution": source.resolution, "authority": source.authority,
+                "relationship": source.resolution + "_at_authorship",
+                "resolvedAt": source.resolvedAt ?? report.authoredAt,
+            ]
+            row["url"] = source.url ?? NSNull()
+            return row
+        }
+        return answer
+    }
 
     private func itemObject(_ item: StoredItem, detail: Bool) -> [String: Any] {
         let childLimit = detail ? Self.maximumSelectedChildren : Self.maximumSummaryChildren
@@ -2243,6 +2439,31 @@ final class ProjectBoardStore {
                                                    retained: retainedEvidence.count),
             ] as [String: Any],
         ]
+        let reports = item.completionReports ?? []
+        if let report = reports.last {
+            let reportStatus = reportStatus(report, item: item, latest: true)
+            answer["completionReport"] = reportObject(
+                report, status: reportStatus, includeBody: detail)
+            if detail {
+                answer["completionReportHistory"] = reports.dropLast().map {
+                    reportObject($0, status: "superseded", includeBody: false)
+                }
+            } else {
+                answer["completionReportHistory"] = [
+                    "retainedCount": reports.count,
+                    "maximumVersions": Self.maximumReportVersions,
+                ]
+            }
+        } else {
+            answer["completionReport"] = ["status": "absent"] as [String: Any]
+            if detail { answer["completionReportHistory"] = [] as [[String: Any]] }
+            else {
+                answer["completionReportHistory"] = [
+                    "retainedCount": 0,
+                    "maximumVersions": Self.maximumReportVersions,
+                ]
+            }
+        }
         if let handoff = item.pendingHandoff {
             answer["handoff"] = [
                 "id": handoff.id, "fromOwner": handoff.fromOwner,
@@ -2507,6 +2728,9 @@ final class ProjectBoardStore {
             "accept_artifact": ["itemId", "artifactId", "note"],
             "record_evidence": ["itemId", "kind", "summary", "subject", "status",
                                 "sourceId", "checklistId", "blocking", "resolved"],
+            "record_report": ["itemId", "objective", "deliveredOutcomes",
+                              "verificationLanding", "remainingWork", "lessons",
+                              "authorship", "model", "sourceReferences", "reportBoundary"],
         ]
         guard let fields = specific[operation] else { return common }
         return common.union(fields)
@@ -2569,6 +2793,131 @@ final class ProjectBoardStore {
             else { result[key] = trimmed }
         }
         return result.isEmpty ? nil : result
+    }
+
+    private func reportSources(_ raw: Any?, itemIndex: Int, resolvedAt: Double,
+                               draft: StoredState) throws -> [StoredReportSource] {
+        guard let rows = raw as? [[String: Any]], !rows.isEmpty,
+              rows.count <= Self.maximumReportSources else {
+            throw BoardError(status: 400, code: "invalid_report_sources",
+                             message: "sourceReferences must contain 1 to \(Self.maximumReportSources) sources")
+        }
+        let item = draft.items[itemIndex]
+        return try rows.map { row in
+            guard Set(row.keys).isSubset(of: ["kind", "targetId", "label", "url"]) else {
+                throw BoardError(status: 400, code: "invalid_report_source_fields",
+                                 message: "a report source contains an unknown field")
+            }
+            let kind = try requiredChoice(row, "kind", choices: Self.reportSourceKinds)
+            let targetID = try requiredText(row, "targetId", maximum: 300)
+            let label = try requiredText(row, "label", maximum: 300)
+            let requestedURL = try optionalText(row, "url", maximum: 2_000)
+            if let requestedURL {
+                guard let components = URLComponents(string: requestedURL),
+                      let scheme = components.scheme?.lowercased(),
+                      ["http", "https"].contains(scheme), components.host != nil else {
+                    throw BoardError(status: 400, code: "invalid_report_source_url",
+                                     message: "report source url must use http or https")
+                }
+            }
+            let resolution: String
+            var sourceURL: String? = requestedURL
+            switch kind {
+            case "task":
+                resolution = item.links.contains {
+                    $0.kind == "task" && $0.targetId == targetID
+                } ? "same_item" : "unresolved"
+            case "artifact":
+                let artifact = item.artifacts.first {
+                    $0.id == targetID || $0.url == targetID
+                }
+                resolution = artifact == nil ? "unresolved" : "same_item"
+                if let artifact { sourceURL = artifact.url }
+            case "evidence":
+                resolution = item.evidence.contains {
+                    $0.id == targetID || $0.sourceId == targetID
+                } ? "same_item" : "unresolved"
+            case "handoff":
+                let ownsHandoff = item.pendingHandoff?.id == targetID || item.history.contains {
+                    $0.id == targetID && $0.kind.contains("handoff")
+                }
+                resolution = ownsHandoff ? "same_item" : "unresolved"
+            case "item":
+                if targetID == item.id { resolution = "same_item" }
+                else if draft.items.contains(where: {
+                    $0.id == targetID && $0.projectId == item.projectId
+                }) { resolution = "same_project" }
+                else { resolution = "unresolved" }
+            default:
+                resolution = "unresolved"
+            }
+            if requestedURL != nil && !["artifact", "external"].contains(kind) {
+                throw BoardError(status: 400, code: "invalid_report_source_url",
+                                 message: "only artifact and external report sources accept a url")
+            }
+            return StoredReportSource(
+                kind: kind, targetId: targetID, label: label, url: sourceURL,
+                resolution: resolution, authority: "narrative_only", resolvedAt: resolvedAt)
+        }
+    }
+
+    private func reportBoundary(_ raw: Any?, itemIndex: Int,
+                                sources: [StoredReportSource],
+                                draft: StoredState) throws -> StoredReportBoundary? {
+        let item = draft.items[itemIndex]
+        guard item.type == "coordination" else {
+            guard raw == nil else {
+                throw BoardError(status: 400, code: "report_boundary_not_applicable",
+                                 message: "reportBoundary is only valid for Coordination")
+            }
+            return nil
+        }
+        guard let object = raw as? [String: Any],
+              let kind = Self.boundedText(object["kind"], maximum: 64),
+              let label = Self.boundedText(object["label"], maximum: 300) else {
+            throw BoardError(status: 400, code: "coordination_report_boundary_required",
+                             message: "Coordination reports require a named time interval or same-item handoff")
+        }
+        switch kind {
+        case "time_interval":
+            guard Set(object.keys) == Set(["kind", "label", "startedAt", "endedAt"]),
+                  let startedAt = Self.exactDouble(object["startedAt"]),
+                  let endedAt = Self.exactDouble(object["endedAt"]),
+                  endedAt > startedAt else {
+                throw BoardError(status: 400, code: "invalid_report_time_interval",
+                                 message: "a report time interval needs finite increasing boundaries")
+            }
+            return StoredReportBoundary(kind: kind, label: label, startedAt: startedAt,
+                                        endedAt: endedAt, handoffId: nil)
+        case "handoff":
+            guard Set(object.keys) == Set(["kind", "label", "handoffId"]),
+                  let handoffID = Self.boundedText(object["handoffId"], maximum: 200),
+                  sources.contains(where: {
+                      $0.kind == "handoff" && $0.targetId == handoffID
+                          && $0.resolution == "same_item"
+                  }) else {
+                throw BoardError(status: 400, code: "invalid_report_handoff_boundary",
+                                 message: "a report handoff boundary must name a same-item handoff source")
+            }
+            return StoredReportBoundary(kind: kind, label: label, startedAt: nil,
+                                        endedAt: nil, handoffId: handoffID)
+        default:
+            throw BoardError(status: 400, code: "invalid_report_boundary_kind",
+                             message: "reportBoundary kind must be time_interval or handoff")
+        }
+    }
+
+    private func reportEligible(_ item: StoredItem) -> Bool {
+        item.state == "closed" || progressObject(item)["state"] as? String == "landed"
+    }
+
+    private func reportStatus(_ report: StoredCompletionReport, item: StoredItem,
+                              latest: Bool) -> String {
+        guard latest else { return "superseded" }
+        let eligible = item.type == "coordination"
+            ? report.reportBoundary != nil : reportEligible(item)
+        return eligible && report.scopeRevision == (item.scopeRevision ?? 0)
+            ? "current" : "historical_needs_update"
     }
 
     private func requiredChoice(_ body: [String: Any], _ key: String,
@@ -2955,7 +3304,7 @@ final class ProjectBoardStore {
         guard item.inferredSourceKey != nil, item.links.isEmpty, item.spans.isEmpty,
               item.evidence.isEmpty, item.checklist.isEmpty, item.milestones.isEmpty,
               item.artifacts.isEmpty, item.obligations.isEmpty, item.pendingHandoff == nil,
-              item.typeDetails == nil else { return false }
+              item.typeDetails == nil, (item.completionReports ?? []).isEmpty else { return false }
         return !item.history.contains { $0.actor != "board" && $0.actor != "broker" }
     }
 
@@ -3011,6 +3360,58 @@ final class ProjectBoardStore {
             !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 && $0.lengthOfBytes(using: .utf8) <= maximumUTF8
         }
+    }
+
+    private static func validCompletionReports(_ reports: [StoredCompletionReport]?) -> Bool {
+        let reports = reports ?? []
+        guard reports.count <= maximumReportVersions else { return false }
+        return reports.enumerated().allSatisfy { offset, report in
+            let texts = [report.objective, report.deliveredOutcomes,
+                         report.verificationLanding, report.remainingWork, report.lessons]
+            return report.version == offset + 1
+                && report.authoredAt.isFinite && report.authoredAt >= 0
+                && report.scopeRevision >= 0
+                && boundedText(report.id, maximum: 200) != nil
+                && boundedText(report.actor, maximum: 300) != nil
+                && ["assistant", "human"].contains(report.authorship)
+                && (report.authorship == "assistant" || report.model == nil)
+                && (report.model.map { boundedText($0, maximum: 200) != nil } ?? true)
+                && boundedText(report.itemStateAtAuthorship, maximum: 64) != nil
+                && validReportBoundary(report.reportBoundary)
+                && texts.allSatisfy { boundedText($0, maximum: maximumUTF8) != nil }
+                && !report.sourceReferences.isEmpty
+                && report.sourceReferences.count <= maximumReportSources
+                && report.sourceReferences.allSatisfy { source in
+                    let validURL: Bool = {
+                        guard let value = source.url else { return true }
+                        guard let components = URLComponents(string: value),
+                              let scheme = components.scheme?.lowercased() else { return false }
+                        return ["http", "https"].contains(scheme) && components.host != nil
+                    }()
+                    return reportSourceKinds.contains(source.kind)
+                        && boundedText(source.targetId, maximum: 300) != nil
+                        && boundedText(source.label, maximum: 300) != nil
+                        && ["same_item", "same_project", "unresolved"].contains(source.resolution)
+                        && source.authority == "narrative_only"
+                        && (source.resolvedAt.map { $0.isFinite && $0 >= 0 } ?? true)
+                        && validURL
+                }
+        }
+    }
+
+    private static func validReportBoundary(_ boundary: StoredReportBoundary?) -> Bool {
+        guard let boundary else { return true }
+        guard boundedText(boundary.label, maximum: 300) != nil else { return false }
+        if boundary.kind == "time_interval" {
+            guard let startedAt = boundary.startedAt, let endedAt = boundary.endedAt else {
+                return false
+            }
+            return startedAt.isFinite && startedAt >= 0 && endedAt.isFinite
+                && endedAt > startedAt && boundary.handoffId == nil
+        }
+        return boundary.kind == "handoff" && boundary.startedAt == nil
+            && boundary.endedAt == nil
+            && boundary.handoffId.flatMap { boundedText($0, maximum: 200) } != nil
     }
 
     private static func exactBool(_ raw: Any?) -> Bool? {
@@ -3133,6 +3534,7 @@ final class ProjectBoardStore {
                   item.evidence.count <= maximumHistory,
                   item.history.count <= maximumHistory,
                   Self.validTypeDetails(item.typeDetails, for: item.type),
+                  Self.validCompletionReports(item.completionReports),
                   (item.scopeRevision ?? 0) >= 0,
                   (item.scopeEventAt.map { $0.isFinite && $0 >= 0 } ?? true),
                   (item.scopeEventOrdinal.map { $0 >= 0 } ?? true),

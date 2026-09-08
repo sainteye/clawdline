@@ -17,6 +17,9 @@ Project Board is **enabled by default and currently free**. This page describes 
 Adapter interface:
 
 - `snapshot(project: String? = nil, item: String? = nil) -> [String: Any]` returns complete envelope `{"board": ...}`. Bounded scan/pagination with honest truncation allowed; expose it.
+- `reportSnapshot(project:item:report:) -> Reply` retrieves exactly one opaque report version with
+  strict Project/item ownership checks. It does not add superseded bodies to the catalog or normal
+  item materialization and remains under the Store snapshot budget.
 - `command(_ body: [String: Any], actor: String, trusted: Bool = false) -> Reply` where Reply has `status: Int`, `body: [String: Any]`. Errors body `{"error":{"code":...,"message":...}}`. Success full snapshot plus `itemId` when applicable.
 - `ensureProject(id: String, name: String) -> AutomaticMutationOutcome` persists id/name only; the adapter resolves canonical identity. No paths in public record.
 - `var enabled: Bool { get }` durable default true. Mode and entitlement owned here, not a second Config boolean.
@@ -57,6 +60,21 @@ unknown/incomplete scope, never an authoritative empty Project.
 
 Item fields: `id`, `key` (human readable), `projectId`, `title`, `type`, `state`, `summary`, `owner` (readable name/id string), `parentId` nullable, `createdAt`, `updatedAt`, `checklist:[{id,title,status,required,evidenceId?}]`, `milestones:[{id,title,status}]`, `artifacts:[{id,title,url,kind}]`, `links:[{id,kind,targetId,label}]`, `obligations:[{id,title,owner,blocking,resolved}]`, `history:[{id,at,actor,kind,summary}]`, `spans:[{id,sessionId,phase,startedAt,endedAt}]`. Include trustworthy findings/verification/landing separately from user claims. Item `usage` may be absent (unknown, never zero); root enriches from UsageLedger.
 
+`completionReport` is always explicit: `{status:"absent"}` when none exists. Summary/card items expose
+only report metadata (`id`, `version`, `status`, `authoredAt`, `actor`, `authorship`, optional `model`,
+`scopeRevision`, `itemStateAtAuthorship`, optional `reportBoundary`, `sourceCount`). Selected detail
+additionally exposes the five body fields and `sourceReferences`. Every source keeps the stored
+`resolution` for compatibility and adds `relationship:<resolution>_at_authorship` plus `resolvedAt`;
+an older row without `resolvedAt` uses its report's `authoredAt`. GET never recomputes source relation
+against present links.
+
+`completionReportHistory` is metadata counts on cards and retained superseded-version provenance in
+normal detail. Superseded bodies remain durable and are fetched one at a time with the selected item
+through `report=<opaque-report-id>`; `board.reportSelection` contains only that selected body. Current
+report status requires the exact scope and either closed/current authoritative landed ordinary work,
+or a typed Coordination boundary; otherwise it is `historical_needs_update`.
+Schema-v1 stores with no report fields decode unchanged.
+
 Evidence uses plural arrays `findings`, `verifications`, `landings`, `artifactAcceptances`, `evidenceSummaries`, with `currentEvidence` pointers. The browser displays receipt identity, subject, status and current/historical distinction; artifact acceptance is not a mutable `artifact.accepted` boolean. Bounded projections expose per-collection `projection` counts (`retainedCount`, `omittedCount`, `reason`), not silent data loss. The HTTP service caps the final encoded, enriched response at 2 MiB for both local and Cloud callers.
 
 Types: `feature`, `refactor`, `task`, `bug`, `coordination`, `epic`.
@@ -92,12 +110,29 @@ Common fields: `operation`, `requestId`, `expectedRevision`; item operations use
 - `span`: `itemId`, `sessionId`, `phase`; one active per session. Timestamp labels are declarations, not exact measured token boundaries. Root will join only proven usage boundaries; unknown usage remains unknown.
 - `handoff`: `itemId`, `owner` (proposed receiver), `note`; records pending transfer, does not close or change effective owner.
 - `accept_handoff`: `itemId`, `note`; root must authenticate receiving identity. Atomically transfer owner and preserve item history.
+- `record_report`: ordinary items only when closed or their current progress is authoritatively
+  landed; `objective`, `deliveredOutcomes`, `verificationLanding`,
+  `remainingWork`, `lessons`, `authorship` (`assistant` or `human`), optional assistant `model`, and
+  1–32 `sourceReferences:[{kind,targetId,label,url?}]`. Source `kind` is `task`, `artifact`,
+  `evidence`, `handoff`, `item` or `external`; URLs are HTTP(S). Store supplies actor/time/version,
+  resolves references as authoring-time `same_item`, `same_project` or `unresolved`, and stamps every
+  source `authority:narrative_only`. Coordination has no lifecycle eligibility; it must instead add
+  `reportBoundary` as either `{kind:"time_interval",label,startedAt,endedAt}` with finite increasing
+  bounds, or `{kind:"handoff",label,handoffId}` matching a same-item handoff source. Only a local
+  machine-authenticated root may call it. It neither reconciles nor gates lifecycle. Replacement
+  appends; the immutable 16-version capacity refuses overflow without eviction.
 
-`accept_artifact` uses administrative user authority (Cloud's existing write authority). `record_evidence` with kind `verification` or `finding` is available only to the local machine credential and is labeled `root_attestation`, not broker-executed proof. Public landing evidence is always refused; only broker ingestion supplies it. Both operations still require closed schemas, revision and request identity. Version/capability checks must not pretend unavailable backend features exist.
+`accept_artifact` uses administrative user authority (Cloud's existing write authority). `record_evidence` with kind `verification` or `finding` and `record_report` are available only to the local machine credential. Evidence is labeled `root_attestation`, not broker-executed proof; report sources are narrative-only. Public landing evidence is always refused; only broker ingestion supplies it. All operations still require closed schemas, revision and request identity. Version/capability checks must not pretend unavailable backend features exist.
 
 ## HTTP / Cloud (root)
 
-`GET /v1/board?project=<id>&item=<id>`; `POST /v1/board` command body. Authenticated read, send for ordinary mutation, admin for mode; machine credential allowed. Common service for local and encrypted Cloud. Cloud `board` read with machine request channel and `board-command` action. Opaque IDs; root registers canonical Projects from known start places / tasks.
+`GET /v1/board?project=<id>&item=<id>`; add `report=<report-id>` only with the selected item to fetch
+one report body. `POST /v1/board` carries command bodies. Authenticated read, send for ordinary
+mutation, admin for mode; machine credential allowed. Common service for local and encrypted Cloud.
+Cloud `board` uses the same bounded read lane and keeps both selected item and report identities;
+`board-command` remains the action. Opaque IDs; root registers canonical Projects from known start
+places / tasks. Unknown reports return `report_not_found`; cross-item and cross-Project selectors
+return `report_item_mismatch` and `report_project_mismatch` rather than guessing.
 
 Both local and verified Cloud requests authenticate, validate bounded bodies/queries, and capture
 request identity on `RemoteServer`'s owner, then leave it. Commands enter a bounded single-writer
@@ -125,12 +160,16 @@ Export `bindBoardPage(elements, environment)` returning `{enter,leave,refresh,es
 
 The Projects page opens the board within one selected Project. Render an overview, visual lifecycle,
 scoped search and item cards; landed/canceled history is collapsed separately. Detail leads with
-objective, progress, blockers and outputs, then progressively discloses token spending, Session and
+objective, progress and a prominent five-part report (or an honest absent/historical qualification),
+then blockers and outputs, progressively disclosing token spending, Session and
 worktree relations, evidence and history. No create/edit/transition command is emitted by this view.
 Assistants record objectives and facts through the existing authorized API; lifecycle advancement
 belongs to the store. Only the settings controller emits a browser mode mutation, using revision
 CAS and stable ambiguous-retry identity. Stale reads cannot overwrite newer selection. One bounded
 15-second refresh loop belongs to the active, visible board; off mode retains read-only history.
+Report text uses DOM `textContent`; only HTTP(S) source links become anchors with opener isolation.
+Superseded report metadata renders as explicit version controls. Loading, failure and ticket-fenced
+late replies are local to that reader and never replace the current selected item/report.
 
 ## Proof
 

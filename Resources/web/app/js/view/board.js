@@ -1,3 +1,5 @@
+import { boardReportSelection } from "../net/client.js";
+
 // Conversations record facts. This reading surface never issues lifecycle commands.
 const STATUS = {
     planning: ["Planning", "規劃中", "Clarifying the objective and approach.", "正在釐清目標與執行步驟。"],
@@ -241,6 +243,161 @@ function fact(ctx, parent, label, value) {
     el(ctx, row, "span", label, "board-fact-label");
     el(ctx, row, "span", value == null || value === "" ? "—" : value, "board-fact-value");
 }
+export function renderCompletionReport(ctx, parent, item, showHistory = true) {
+    const report = item.completionReport || { status: "absent" },
+        coordination = item.type === "coordination",
+        title = report.status === "superseded"
+            ? words(ctx, "Report version v" + report.version, "報告版本 v" + report.version)
+            : coordination
+            ? words(ctx, "Period / handoff report", "階段／交接報告")
+            : words(ctx, "Completion report", "結案報告"),
+        container = section(ctx, parent, title, false, "completion-report");
+    container.className += " board-completion-report";
+    if (report.status === "absent") {
+        el(
+            ctx,
+            container,
+            "p",
+            coordination
+                ? words(
+                      ctx,
+                      "No period or handoff report has been recorded. This does not assign a completion status.",
+                      "尚未記錄階段或交接報告；這不代表任何完成狀態。"
+                  )
+                : words(
+                      ctx,
+                      "No completion report has been recorded. Status and evidence remain available separately.",
+                      "尚未記錄結案報告；狀態與證據仍會分開呈現。"
+                  ),
+            "board-report-empty"
+        );
+        return container;
+    }
+    const historical = report.status === "historical_needs_update",
+        superseded = report.status === "superseded";
+    el(
+        ctx,
+        container,
+        "p",
+        historical
+            ? words(ctx, "Earlier scope · needs an updated report", "較早範圍・需要更新報告")
+            : superseded
+              ? words(ctx, "Superseded report · retained history", "已被取代的報告・保留歷史")
+            : words(ctx, "Current recorded scope", "目前記錄範圍"),
+        "board-report-scope" + (historical || superseded ? " is-historical" : "")
+    );
+    el(
+        ctx,
+        container,
+        "p",
+        words(
+            ctx,
+            "Attributed narrative · not verification or landing evidence",
+            "具名敘述・不等同驗證或落地證據"
+        ),
+        "board-report-authority"
+    );
+    const provenance = [
+        report.actor,
+        report.authorship === "assistant"
+            ? words(ctx, "AI-assisted", "AI 協作")
+            : report.authorship === "human"
+              ? words(ctx, "Human-authored", "人工撰寫")
+              : null,
+        report.model,
+        report.authoredAt ? date(report.authoredAt) : null,
+        report.version ? "v" + report.version : null
+    ].filter(Boolean);
+    if (provenance.length)
+        el(ctx, container, "p", provenance.join(" · "), "board-report-provenance");
+    const boundary = report.reportBoundary;
+    if (boundary) {
+        const value = boundary.kind === "time_interval"
+            ? boundary.label + " · " + date(boundary.startedAt) + " – " + date(boundary.endedAt)
+            : boundary.label + words(ctx, " · same-item handoff", "・同項目交接");
+        el(ctx, container, "p", value, "board-report-boundary");
+    }
+    const body = el(ctx, container, "div", null, "board-report-body");
+    [
+        ["objective", "Objective", "目標"],
+        ["deliveredOutcomes", "Delivered outcomes", "交付成果"],
+        ["verificationLanding", "Verification & landing", "驗證與落地"],
+        ["remainingWork", "Remaining work", "尚待處理"],
+        ["lessons", "Lessons", "經驗與學習"]
+    ].forEach(([key, en, zh]) => {
+        const part = el(ctx, body, "section", null, "board-report-part");
+        el(ctx, part, "h3", words(ctx, en, zh), "board-report-part-title");
+        el(
+            ctx,
+            part,
+            "p",
+            report[key] || words(ctx, "Not recorded.", "尚未記錄。"),
+            "board-report-text"
+        );
+    });
+    const sources = report.sourceReferences || [];
+    if (sources.length) {
+        const sourceBlock = el(ctx, container, "div", null, "board-report-sources");
+        el(ctx, sourceBlock, "h3", words(ctx, "Sources", "來源"), "board-report-part-title");
+        sources.forEach((row) => {
+            const url = safeURL(row.url),
+                line = el(ctx, sourceBlock, "div", null, "board-report-source"),
+                label = row.label || row.targetId || words(ctx, "Unlabelled source", "未命名來源"),
+                link = el(ctx, line, url ? "a" : "span", label, "board-report-source-link");
+            if (url) {
+                link.href = url;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+            }
+            const relationship = row.relationship || (row.resolution || "unresolved") + "_at_authorship";
+            let relation = relationship === "unresolved_at_authorship"
+                ? words(ctx, "Unresolved at authorship", "撰寫時尚未解析")
+                : relationship === "same_project_at_authorship"
+                  ? words(ctx, "Same Project at authorship", "撰寫時屬同一 Project")
+                  : words(ctx, "Same item at authorship", "撰寫時屬同一項目");
+            if (row.resolvedAt) relation += " · " + date(row.resolvedAt);
+            el(
+                ctx,
+                line,
+                "span",
+                relation,
+                "board-report-source-state"
+            );
+        });
+    }
+    const history = Array.isArray(item.completionReportHistory)
+        ? item.completionReportHistory : [];
+    if (showHistory && history.length) {
+        const historyBlock = el(ctx, container, "div", null, "board-report-history");
+        el(ctx, historyBlock, "h3", words(ctx, "Earlier versions", "較早版本"),
+            "board-report-part-title");
+        const actions = el(ctx, historyBlock, "div", null, "board-report-history-actions");
+        history.forEach((row) => {
+            const action = button(ctx, actions, "v" + row.version + " · " + date(row.authoredAt),
+                "report-version", () => ctx.openReport(row.id), "board-report-history-button");
+            action.dataset.boardReportId = row.id;
+        });
+        const selected = ctx.state.reportSelection;
+        if (selected) {
+            const reader = el(ctx, historyBlock, "div", null, "board-report-reader");
+            reader.setAttribute("aria-live", "polite");
+            if (selected.status === "loading") {
+                el(ctx, reader, "p", words(ctx, "Loading report version…", "正在載入報告版本…"),
+                    "board-report-empty");
+            } else if (selected.status === "error") {
+                el(ctx, reader, "p",
+                    words(ctx, "This report version could not be loaded. ", "無法載入這個報告版本。")
+                        + (selected.error || ""), "board-report-empty");
+                button(ctx, reader, words(ctx, "Retry version", "重試此版本"), "report-retry",
+                    () => ctx.openReport(selected.id), "board-report-history-button");
+            } else if (selected.report) {
+                renderCompletionReport(ctx, reader,
+                    { ...item, completionReport: selected.report, completionReportHistory: [] }, false);
+            }
+        }
+    }
+    return container;
+}
 function detail(ctx) {
     const item = ctx.state.item,
         target = ctx.e["board-detail"];
@@ -282,6 +439,7 @@ function detail(ctx) {
             ),
             "board-section-help"
         );
+    renderCompletionReport(ctx, target, item);
     const specialized = item.typeDetails || {};
     const topics =
         item.type === "bug"
@@ -541,7 +699,9 @@ export function bindBoardPage(elements, environment = {}) {
         revision: -1,
         enabled: true,
         active: false,
-        readTicket: 0
+        readTicket: 0,
+        reportTicket: 0,
+        reportSelection: null
     });
     let timer = null,
         inflight = null,
@@ -867,10 +1027,49 @@ export function bindBoardPage(elements, environment = {}) {
     function refresh() {
         return inflight || load();
     }
+    function loadReport(report) {
+        const ticket = ++state.reportTicket,
+            project = state.projectId,
+            item = state.itemId;
+        state.reportSelection = { id: report, status: "loading" };
+        render();
+        return Promise.resolve()
+            .then(() => {
+                if (!environment.read || !project || !item)
+                    throw new Error(words(ctx, "Board unavailable", "無法讀取看板"));
+                return environment.read(project, boardReportSelection(item, report));
+            })
+            .then((answer) => {
+                if (!state.active || ticket !== state.reportTicket
+                    || project !== state.projectId || item !== state.itemId) return;
+                const board = answer && answer.board,
+                    selected = board && board.reportSelection;
+                if (!board || board.schemaVersion !== 1 || board.revision < state.revision
+                    || !board.item || board.item.id !== item || board.item.projectId !== project
+                    || !selected || selected.id !== report)
+                    throw new Error(words(ctx, "Report response is stale or incomplete.",
+                        "報告回應已過期或不完整。"));
+                state.reportSelection = { id: report, status: "ready", report: selected };
+                render();
+            })
+            .catch((error) => {
+                if (!state.active || ticket !== state.reportTicket
+                    || project !== state.projectId || item !== state.itemId) return;
+                state.reportSelection = {
+                    id: report, status: "error", error: error.message || String(error)
+                };
+                render();
+            });
+    }
+    ctx.openReport = loadReport;
     function open(project, item, presentation) {
         state.active = true;
         if (state.projectId !== project) state.projectPresentation = null;
-        if (state.projectId !== (project || null) || state.itemId !== (item || null)) state.revision = -1;
+        if (state.projectId !== (project || null) || state.itemId !== (item || null)) {
+            state.revision = -1;
+            ++state.reportTicket;
+            state.reportSelection = null;
+        }
         if (presentation) state.projectPresentation = presentation;
         else if (!state.projectPresentation)
             state.projectPresentation = state.projects.find((row) => row.id === project) || null;
@@ -904,6 +1103,7 @@ export function bindBoardPage(elements, environment = {}) {
     function leave() {
         state.active = false;
         ++state.readTicket;
+        ++state.reportTicket;
         stopTimer();
         inflight = null;
         opened = null;
