@@ -1326,8 +1326,24 @@ group("broker ingestion is idempotent, phase-explicit, and has one accounting ow
     let afterConflictRevision = d.revision
     _ = d.store.ingest(task: conflictTask, projectID: "project-1")
     _ = d.store.ingest(task: afterConflictFallback, projectID: "project-1")
-    expect("batch replay of conflicting explicit identity is revision-idempotent",
-           d.revision, afterConflictRevision)
+    // A root coordinates several unrelated objectives. Its identity alone cannot transfer
+    // their owner facts: production backfill otherwise rewrites every card on every read.
+    let sharedRoot = BoardTestDriver(name: "shared-root-replay-\(UUID().uuidString)")
+    sharedRoot.createProject()
+    let unrelated: [[String: Any]] = (0..<3).map { index in [
+        "id": "unrelated-\(index)", "title": "Independent work \(index)",
+        "state": "success", "root": ["sessionId": "one-root"],
+        "startedAt": 100.0, "finishedAt": 200.0,
+    ] }
+    for record in unrelated { sharedRoot.store.ingest(task: record, projectID: "project-1") }
+    let sharedRootRevision = sharedRoot.revision
+    for record in unrelated { sharedRoot.store.ingest(task: record, projectID: "project-1") }
+    let retainedOwners = boardItems(sharedRoot.store).allSatisfy {
+        $0["owner"] as? String == "one-root"
+    }
+    expect("batch replay preserves explicit identity and independent cards sharing one root",
+           [d.revision, sharedRoot.revision, retainedOwners ? 1 : 0],
+           [afterConflictRevision, sharedRootRevision, 1])
 
     d.createProject(id: "project-2", name: "Other")
     var otherProjectTask = task

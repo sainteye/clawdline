@@ -2687,7 +2687,9 @@ final class ProjectBoardStore {
         }
         let movedHistory = draft.items[from].history.filter(owns)
         let ownsOwner = draft.items[from].ownerSourceTaskId == taskID
-            || (draft.items[from].inferredSourceKey != nil
+            || (draft.items[from].ownerSourceTaskId == nil
+                && draft.items[from].inferredSourceKey != nil
+                && movedLinks.contains { $0.kind == "task" && $0.targetId == taskID }
                 && taskOwner != nil && draft.items[from].owner == taskOwner)
         guard !movedLinks.isEmpty || !movedSpans.isEmpty || !movedEvidence.isEmpty
                 || !movedHistory.isEmpty || ownsOwner else { return false }
