@@ -2981,7 +2981,7 @@ final class RemoteServer: @unchecked Sendable {
             return .error(404, "not_found", "No such route")
 
         case ("GET", "/"), ("GET", "/index.html"):
-            // `/?t=<token>` signs the browser in and bounces to `/`.
+            // `/?t=<token>` signs the browser in on the document response itself.
             //
             // The page cannot be handed a token any other way: there is nowhere sensible for a
             // person to type one, and `EventSource` cannot carry a header even if they did. So
@@ -2990,13 +2990,13 @@ final class RemoteServer: @unchecked Sendable {
             // bar before anybody can copy it into a chat window. A fragment would keep it off the
             // wire entirely and the page handles that too — but a fragment is invisible to the
             // server, so it cannot work on the very first load, and half the QR readers in the
-            // world drop one.
+            // world drop one. The document removes `t` before its modules run. Avoid a 303 here:
+            // Chrome reports ERR_FAILED when this Network.framework server closes that redirect.
             if let token = request.query["t"], !token.isEmpty,
                case .allowed = RemoteAuth.verify(bearer: token) {
-                var response = signedIn(token, secure: request.headers["x-forwarded-proto"] == "https")
-                response.status = 303
-                response.headers["Location"] = "/"
-                response.body = Data()
+                let signIn = signedIn(token, secure: request.headers["x-forwarded-proto"] == "https")
+                var response = RemotePage.page(for: request)
+                response.headers["Set-Cookie"] = signIn.headers["Set-Cookie"]
                 return response
             }
             return RemotePage.page(for: request)

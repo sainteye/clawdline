@@ -60,10 +60,15 @@ group("a browser token is adopted before its credential leaves the address bar")
     let setCookie = adoption.headers["Set-Cookie"] ?? ""
     let cookie = String(setCookie.split(separator: ";", maxSplits: 1).first ?? "")
 
-    expect("token adoption redirects with See Other", adoption.status, 303)
-    expect("the redirect strips the credential from its destination",
-           adoption.headers["Location"], "/")
-    check("the credential does not remain in a redirect body", adoption.body.isEmpty)
+    check("token adoption no longer asks Chrome to follow a closing redirect",
+          adoption.status != 303 && adoption.headers["Location"] == nil)
+    let shippedDocument = (try? String(contentsOfFile: "Resources/web/index.html",
+                                       encoding: .utf8)) ?? ""
+    check("the shipped document removes the credential before its modules run",
+          shippedDocument.contains("searchParams.delete('t')")
+            && shippedDocument.contains("history.replaceState"))
+    let document = String(data: adoption.body, encoding: .utf8) ?? ""
+    check("the credential is not reflected into the document", !document.contains(browser.token))
     check("loopback adoption sets an HttpOnly strict cookie without Secure",
           setCookie.hasPrefix("clawdline=")
             && setCookie.contains("; Path=/")

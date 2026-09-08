@@ -5356,14 +5356,15 @@ authorization, and cancel is where it is easiest to see.
 ### `GET /`, and the things a browser asks for on its own
 
 The web interface, which ships inside the app rather than being fetched from anywhere.
-`/?t=<token>` signs a browser in and answers `303` to `/`, so that a QR code can carry a credential
-and the address bar does not keep it:
+`/?t=<token>` signs a browser in on the `200` document response. The document removes `t` with
+`history.replaceState` before its modules run, so that a QR code can carry a credential and the
+address bar and history do not keep it:
 
 ```console
 $ curl -s -i "http://127.0.0.1:7717/?t=$TOKEN" | head -3
-HTTP/1.1 303 See Other
+HTTP/1.1 200 OK
 Connection: close
-Content-Length: 0
+Content-Type: text/html; charset=utf-8
 ```
 
 `/manifest.webmanifest`, `/favicon.ico` and `/icon-32|64|180|192|512.png` need no token, and they

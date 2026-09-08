@@ -9,6 +9,8 @@ const iterm = fs.readFileSync(path.join(root, "Resources/iterm.js"), "utf8");
 const settings = fs.readFileSync(path.join(root, "Sources/Settings.swift"), "utf8");
 const readinessSource = fs.readFileSync(
     path.join(root, "Sources/LocalBrowserReadiness.swift"), "utf8");
+const remoteServer = fs.readFileSync(path.join(root, "Sources/RemoteServer.swift"), "utf8");
+const browserPage = fs.readFileSync(path.join(root, "Resources/web/index.html"), "utf8");
 
 function functionBody(text, signature) {
     const start = text.indexOf(signature);
@@ -61,5 +63,19 @@ assert.match(polling, /asyncAfter/,
     "a listener still starting is waited for rather than read as ready");
 assert.match(polling, /deadline/,
     "a listener that never becomes ready cannot leave the browser action pending forever");
+
+const tokenAdoption = remoteServer.slice(
+    remoteServer.indexOf('if let token = request.query["t"]'),
+    remoteServer.indexOf('return RemotePage.page(for: request)',
+        remoteServer.indexOf('if let token = request.query["t"]')) +
+        'return RemotePage.page(for: request)'.length);
+assert.match(tokenAdoption, /RemotePage\.page\(for: request\)/,
+    "a valid browser token is adopted on a successful document response");
+assert.doesNotMatch(tokenAdoption, /status\s*=\s*303|headers\["Location"\]/,
+    "token adoption does not depend on Chrome following a connection-closing redirect");
+assert.match(browserPage, /searchParams\.delete\(["']t["']\)/,
+    "the document removes the adopted credential from its query string");
+assert.match(browserPage, /history\.replaceState/,
+    "the credential-bearing history entry is replaced rather than retained");
 
 console.log("terminal current target and browser readiness contracts");

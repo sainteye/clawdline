@@ -78,6 +78,15 @@
 <link rel="apple-touch-startup-image" href="/splash-1334x750.png"
       media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape)">
 <script>
+// A valid `/?t=...` request is adopted by the document response itself. Remove the credential
+// before modules run, and replace this history entry so Back cannot reveal it again. Invalid
+// values are removed too: keeping an unusable credential visible serves no diagnostic purpose.
+var browserTokenURL = new URL(location.href);
+if (browserTokenURL.searchParams.has('t')) {
+    browserTokenURL.searchParams.delete('t');
+    history.replaceState(history.state, '', browserTokenURL.pathname
+        + browserTokenURL.search + browserTokenURL.hash);
+}
 // The manifest is served by the app, so from a file:// copy — which is how mock mode is opened —
 // there is nothing at that path and the browser logs a fetch failure. It would be the only line in
 // an otherwise clean console, and a console you have learned to ignore is not a console.

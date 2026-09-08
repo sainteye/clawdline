@@ -84,8 +84,11 @@ Two ways in:
   `http://127.0.0.1:7717/?t=<token>`. A query string rather than a fragment, and that is the whole
   point: **a fragment is the one part of a URL a browser never sends**, so on a cold open the
   server would have nothing to authenticate and the page would be refused before it could run any
-  script. The server takes the token off the query, sets a cookie and answers `303` back to `/`,
-  which takes it out of the address bar and out of history in the same move. The page also accepts
+  script. The server verifies the token and sets a cookie on the document response itself; the
+  document removes `t` with `history.replaceState` before its modules run, taking the credential
+  out of the address bar and replacing its history entry. This deliberately avoids a redirect:
+  Chrome can report `ERR_FAILED` instead of following a connection-closing `303` from the app's
+  small HTTP server. The page also accepts
   `#t=` for the case where something already loaded hands it one.
 - **From the other device** — the six-digit flow below.
 
