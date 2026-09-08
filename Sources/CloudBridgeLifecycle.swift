@@ -271,6 +271,11 @@ final class CloudBridgeLifecycle {
         var commandRouter: @MainActor () -> any CloudCommandRouting
         var commandResult: @Sendable (CloudCommandResult) -> Void
         var log: @MainActor (String) -> Void
+        /// Lifecycle-owned companion to the relay bridge. Tests omit it; production starts one
+        /// machine-credential webhook poller for exactly the restored signed-in identity.
+        var scheduleWebhooks: @MainActor (
+            CloudMachineIdentity?, @escaping @Sendable () -> Void
+        ) -> Void = { _, _ in }
     }
 
     /// `nonisolated` because `Services.production()` is not on the main actor and these are
@@ -397,6 +402,12 @@ final class CloudBridgeLifecycle {
                 commandResult: services.commandResult)
             attachedBridge = bridge
             services.attach(bridge)
+            services.scheduleWebhooks(identity) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.scheduleWebhookAuthorizationRefused(
+                        identity: identity, generation: owned)
+                }
+            }
             set(.attached(accountID: identity.accountID, machineID: identity.machineID))
             services.log("cloud: bridge attached for machine \(identity.machineID)")
         } catch {
@@ -442,11 +453,22 @@ final class CloudBridgeLifecycle {
         services.log("cloud: the control plane refused this machine's device token — \(error)")
     }
 
+    private func scheduleWebhookAuthorizationRefused(
+        identity: CloudMachineIdentity, generation owned: UInt64
+    ) {
+        guard owned == generation, case .attached(let account, let machine) = state,
+              account == identity.accountID, machine == identity.machineID else { return }
+        detach()
+        set(.unauthorized(accountID: identity.accountID, machineID: identity.machineID))
+        services.log("cloud: schedule webhook polling stopped after machine authorization refusal")
+    }
+
     private func detach() {
         guard attachedBridge != nil else { return }
         attachedBridge = nil
         generation &+= 1
         services.attach(nil)
+        services.scheduleWebhooks(nil, {})
     }
 
     private func set(_ next: State) {
@@ -517,6 +539,16 @@ extension CloudBridgeLifecycle.Services {
                 guard result.status < 200 || result.status >= 300 else { return }
                 Log.write("cloud: command refused \(result.status) \(result.code ?? "-")")
             },
-            log: { Log.write($0) })
+            log: { Log.write($0) },
+            scheduleWebhooks: { identity, onUnauthorized in
+                Task {
+                    if let identity {
+                        await ScheduleWebhookRuntime.shared.start(
+                            identity: identity, onUnauthorized: onUnauthorized)
+                    } else {
+                        await ScheduleWebhookRuntime.shared.stop()
+                    }
+                }
+            })
     }
 }

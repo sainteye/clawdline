@@ -212,6 +212,14 @@ private final class AttachRecorder {
     var detachedCount: Int { attaches.filter { $0 == nil }.count }
 }
 
+@MainActor
+private final class ScheduleWebhookWorkerRecorder {
+    private(set) var identities: [CloudMachineIdentity?] = []
+    func apply(_ identity: CloudMachineIdentity?, _ unauthorized: @escaping @Sendable () -> Void) {
+        identities.append(identity)
+    }
+}
+
 private struct CloudLifecycleTests {
     static var checks = 0
     static var failures: [String] = []
@@ -593,6 +601,7 @@ private struct CloudLifecycleTests {
         results: LifecycleTestResults = LifecycleTestResults(),
         allowCommands: @escaping @Sendable () -> Bool = { false },
         appIdentityFails: Bool = false,
+        webhookWorker: ScheduleWebhookWorkerRecorder? = nil,
         sequenceDirectory: URL
     ) -> CloudBridgeLifecycle {
         let signing = CloudDeviceKeyPair()
@@ -618,7 +627,10 @@ private struct CloudLifecycleTests {
             allowCloudCommands: allowCommands,
             commandRouter: { router },
             commandResult: { results.record($0) },
-            log: { _ in }))
+            log: { _ in },
+            scheduleWebhooks: { identity, unauthorized in
+                webhookWorker?.apply(identity, unauthorized)
+            }))
     }
 
     @MainActor
@@ -629,8 +641,10 @@ private struct CloudLifecycleTests {
         let transport = LifecycleTestTransport()
         let identity = LifecycleIdentityBox(
             CloudMachineIdentity(accountID: "acct", machineID: "mac-1"))
+        let webhookWorker = ScheduleWebhookWorkerRecorder()
         let lifecycle = makeLifecycle(
             identity: { identity.get() }, recorder: recorder, transports: transport,
+            webhookWorker: webhookWorker,
             sequenceDirectory: directory)
 
         lifecycle.apply()
@@ -639,6 +653,8 @@ private struct CloudLifecycleTests {
               firstAttached, "\(recorder.attaches.count)")
         check("the attached state names the account and machine",
               lifecycle.state == .attached(accountID: "acct", machineID: "mac-1"))
+        check("a restored signed-in identity starts exactly one webhook worker",
+              webhookWorker.identities.compactMap { $0 }.map(\.machineID) == ["mac-1"])
         let generation = lifecycle.generation
 
         lifecycle.apply()
@@ -657,10 +673,14 @@ private struct CloudLifecycleTests {
         check("replacing detaches the old bridge before attaching the new one",
               recorder.attaches.count == 3 && recorder.attaches[1] == nil
                   && recorder.attaches[2] != nil)
+        check("identity replacement stops then starts the lifecycle-owned webhook worker",
+              webhookWorker.identities.count == 3 && webhookWorker.identities[1] == nil
+                  && webhookWorker.identities[2]?.machineID == "mac-2")
 
         lifecycle.signedOut()
         check("signing out detaches", lifecycle.state == .detached && recorder.detachedCount == 2)
         check("nothing is attached after signing out", lifecycle.attachedBridge == nil)
+        check("sign-out stops webhook polling", webhookWorker.identities.last! == nil)
     }
 
     @MainActor

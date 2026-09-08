@@ -7,6 +7,10 @@ import { scheduleRunsHTML, scheduleRunPlace } from "../view/schedules.js";
 import { openSession } from "../session/open.js";
 import { Schedule } from "./schedule.js";
 import { Start } from "./start.js";
+import { generateAndBindScheduleWebhook, scheduleWebhookCanGenerate,
+    scheduleWebhookManagementWarning, scheduleWebhookReceiptHeads,
+    scheduleWebhookTimelineHTML, shouldObserveScheduleWebhook }
+    from "../net/schedule-webhooks.js";
 
 /* --------------------------------------------------------------------------
    A schedule is more than the form that defines its next occurrence. This sheet
@@ -25,6 +29,137 @@ export var ScheduleHistory = (function () {
     var loading = false;
     var pressing = null;
     var ticket = 0;
+    var webhook = null;
+    var hook = null;
+    var deliveries = [];
+    var ephemeralURL = null;
+    var effectiveTier = null;
+    var observedReceipts = {};
+    var observingReceipts = {};
+
+    function webhookWords() {
+        return String(document.documentElement.lang || "").toLowerCase() === "zh-tw" ? {
+            title: "雲端 Webhook", generate: "產生 Webhook", copy: "複製網址",
+            rotate: "輪替網址", disable: "停用 Webhook",
+            once: "請立即複製此網址；Clawdline 不會再次顯示。",
+            idempotency: "未帶 Idempotency-Key 的每次觸發都會建立一次新的執行。",
+            unavailable: "目前無法讀取 Webhook 紀錄。"
+        } : {
+            title: "Cloud webhook", generate: "Generate webhook", copy: "Copy URL",
+            rotate: "Rotate URL", disable: "Disable webhook",
+            once: "Copy this URL now. Clawdline will not show it again.",
+            idempotency: "A trigger without Idempotency-Key is a new run each time.",
+            unavailable: "Webhook history is unavailable."
+        };
+    }
+
+    function webhookNode(id) { return document.getElementById(id); }
+
+    function drawWebhook() {
+        var panel = webhookNode("schedule-webhook");
+        if (!panel) return;
+        var words = webhookWords();
+        panel.hidden = !webhook || !record;
+        webhookNode("schedule-webhook-title").textContent = words.title;
+        webhookNode("schedule-webhook-note").textContent = ephemeralURL
+            ? words.once : words.idempotency;
+        var managementContext = {
+            bindingAvailability: record && record.webhook_binding_availability,
+            effectiveTier: effectiveTier, language: document.documentElement.lang
+        };
+        webhookNode("schedule-webhook-warning").textContent =
+            scheduleWebhookManagementWarning(hook, managementContext);
+        webhookNode("schedule-webhook-generate").textContent = words.generate;
+        webhookNode("schedule-webhook-copy").textContent = words.copy;
+        webhookNode("schedule-webhook-rotate").textContent = words.rotate;
+        webhookNode("schedule-webhook-disable").textContent = words.disable;
+        webhookNode("schedule-webhook-generate").hidden = !(!hook || hook.state === "disabled");
+        webhookNode("schedule-webhook-generate").disabled =
+            !scheduleWebhookCanGenerate(hook, managementContext);
+        webhookNode("schedule-webhook-copy").hidden = !ephemeralURL;
+        webhookNode("schedule-webhook-rotate").hidden = !hook || hook.state !== "active";
+        webhookNode("schedule-webhook-rotate").disabled =
+            effectiveTier === null || effectiveTier === "free";
+        webhookNode("schedule-webhook-disable").hidden = !hook || hook.state === "disabled";
+        webhookNode("schedule-webhook-timeline").innerHTML =
+            scheduleWebhookTimelineHTML(deliveries, observedReceipts);
+        observeVisibleTimeline();
+    }
+
+    function observeVisibleTimeline() {
+        if (!webhook || !hook || !deliveries.length) return;
+        scheduleWebhookReceiptHeads(deliveries).forEach(function (latest) {
+            var key = latest.deliveryID + ":" + latest.receiptVersion;
+            if (observedReceipts[key] || observingReceipts[key]) return;
+            if (!shouldObserveScheduleWebhook({ open: !els["schedule-history"].hidden,
+                visibilityState: document.visibilityState,
+                renderedVersion: latest.receiptVersion })) return;
+            observingReceipts[key] = true;
+            webhook.client.observe(hook.hook_id, latest.deliveryID, latest.receiptVersion)
+                .then(function (answer) {
+                    observedReceipts[key] = answer && (answer.last_observed_at || answer.observed_at)
+                        || new Date().toISOString();
+                    delete observingReceipts[key];
+                    drawWebhook();
+                }, function () { delete observingReceipts[key]; });
+        });
+    }
+
+    function loadWebhook() {
+        if (!webhook || !record) { drawWebhook(); return Promise.resolve(); }
+        var hookID = record.webhook_hook_id;
+        var hookRead = hookID ? webhook.client.read(hookID) : Promise.resolve(null);
+        var deliveryRead = hookID ? webhook.client.deliveries(hookID)
+            : Promise.resolve({ deliveries: [] });
+        var entitlementRead = webhook.client.entitlements().catch(function () { return null; });
+        return Promise.all([hookRead, deliveryRead, entitlementRead])
+            .then(function (answers) {
+                hook = answers[0] && (answers[0].hook || answers[0]);
+                deliveries = answers[1] && answers[1].deliveries || [];
+                effectiveTier = answers[2];
+                drawWebhook();
+            }, function () {
+                webhookNode("schedule-webhook-status").textContent =
+                    webhookWords().unavailable;
+                drawWebhook();
+            });
+    }
+
+    function webhookAction(action) {
+        if (!webhook || !record) return Promise.resolve();
+        webhookNode("schedule-webhook-status").textContent = "";
+        if (action === "copy" && ephemeralURL) {
+            return Promise.resolve(webhook.copy(ephemeralURL));
+        }
+        if (action === "generate") {
+            return generateAndBindScheduleWebhook(webhook.client, webhook.bind,
+                webhook.machine(scheduleId), scheduleId, hook).then(function (made) {
+                        hook = made.hook;
+                        ephemeralURL = made.publicURL;
+                        record.webhook_hook_id = hook.hook_id;
+                        record.webhook_binding_availability = "active";
+                        deliveries = [];
+                        drawWebhook();
+            }).catch(webhookFailed);
+        }
+        if (!hook) return Promise.resolve();
+        if (action === "rotate") {
+            return webhook.client.rotate(hook.hook_id, hook.revision).then(function (made) {
+                hook = made.hook; ephemeralURL = made.publicURL; drawWebhook();
+            }).catch(webhookFailed);
+        }
+        if (action === "disable") {
+            return webhook.client.disable(hook.hook_id, hook.revision).then(function (answer) {
+                hook = answer.hook || answer; ephemeralURL = null; drawWebhook();
+            }).catch(webhookFailed);
+        }
+        return Promise.resolve();
+    }
+
+    function webhookFailed() {
+        webhookNode("schedule-webhook-status").textContent = webhookWords().unavailable;
+        drawWebhook();
+    }
 
     function terminalIsOpen(id) { return !!byId(id); }
 
@@ -114,6 +249,7 @@ export var ScheduleHistory = (function () {
             places = (answers[1] && answers[1].places) || [];
             loading = false;
             draw();
+            loadWebhook();
         }).catch(function (e) {
             if (mine !== ticket || scheduleId !== id) return;
             loading = false;
@@ -130,6 +266,12 @@ export var ScheduleHistory = (function () {
         places = [];
         loading = false;
         pressing = null;
+        hook = null;
+        deliveries = [];
+        ephemeralURL = null;
+        effectiveTier = null;
+        observedReceipts = {};
+        observingReceipts = {};
         els["schedule-history"].hidden = true;
     }
 
@@ -178,7 +320,10 @@ export var ScheduleHistory = (function () {
         });
     }
 
-    return { open: open, close: close, edit: edit, pick: pick };
+    return {
+        open: open, close: close, edit: edit, pick: pick,
+        bindWebhook: function (value) { webhook = value; }, webhookAction: webhookAction
+    };
 })();
 
 // Delegated because the ambient schedule refresh replaces every row once a minute.
@@ -198,6 +343,12 @@ els["schedule-history"].addEventListener("click", function () { ScheduleHistory.
 els["schedule-history-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
 els["schedule-history-close"].addEventListener("click", function () { ScheduleHistory.close(); });
 els["schedule-history-edit"].addEventListener("click", function () { ScheduleHistory.edit(); });
+["generate", "copy", "rotate", "disable"].forEach(function (action) {
+    var button = document.getElementById("schedule-webhook-" + action);
+    if (button) button.addEventListener("click", function () {
+        ScheduleHistory.webhookAction(action);
+    });
+});
 els["schedule-run-rows"].addEventListener("click", function (ev) {
     var button = ev.target.closest ? ev.target.closest(".schedule-run-button") : null;
     if (!button || button.disabled) return;

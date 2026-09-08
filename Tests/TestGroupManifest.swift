@@ -20,6 +20,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a schedule that was written says whether anything on this Mac will run it",
     "a schedule can be changed and taken away, and an edit is not a way past the parser",
     "changing and removing a schedule pass the same three gates as making one",
+    "schedule webhook binding and delivery records are closed durable authorities",
     "snippet files are strict, bounded, atomic, and addressed only by UUID",
     "snippet scope follows the mark, the git common directory, and then cwd",
     "snippet routes share the write gate and preserve typed refusals",

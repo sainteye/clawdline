@@ -28,6 +28,7 @@ import {
 } from "./net/cloud-boot.js";
 import { handlers } from "./net/handlers.js";
 import { createBillingClient } from "./net/billing.js";
+import { ScheduleWebhookClient } from "./net/schedule-webhooks.js";
 import {
     captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudInstallGate,
     hideCloudGate, deferCloudGate, showCloudGate, showCloudBootError, showCloudDeviceRecovery,
@@ -71,7 +72,7 @@ import { Settings } from "./input/settings.js";
 import "./input/start.js";
 import "./input/command.js";
 import "./input/schedule.js";
-import "./input/schedule-history.js";
+import { ScheduleHistory } from "./input/schedule-history.js";
 import "./input/status-line.js";
 import "./input/info.js";
 import { Push } from "./input/push.js";
@@ -104,6 +105,7 @@ function bindTranscriptEvents(transport) {
    upgrade button. See the `not_here` state there. */
 var planBilling = null;
 var planSignIn = function () { return ""; };
+var scheduleWebhookManagement = null;
 
 /* Lemon Squeezy hands a finished checkout back to `${WEB_APP_URL}/billing/done` — the success
    URL `api/src/services/billing.ts` sends with every session. Cloudflare Pages serves this same
@@ -157,6 +159,7 @@ if (transportKind === "cloud") {
             deviceName: cloudDevice.name
         });
         planBilling = createBillingClient({ apiOrigin: cloudConfig.apiOrigin });
+        scheduleWebhookManagement = new ScheduleWebhookClient({ origin: cloudConfig.apiOrigin });
         planSignIn = function () { return cloudSession.signInURL(); };
         var cloudInvitation = null;
         try {
@@ -225,6 +228,31 @@ if (transportKind === "cloud") {
 } else {
     useApi(transportKind === "mock" ? Mock : Live);
     bindTranscriptEvents(api);
+}
+
+if (scheduleWebhookManagement) {
+    ScheduleHistory.bindWebhook({
+        client: scheduleWebhookManagement,
+        machine: function (scheduleID) { return api._scheduleMachine(scheduleID); },
+        bind: async function (scheduleID, hookID, replaceHookID) {
+            var requestID = crypto.randomUUID().toLowerCase();
+            var machine = api._scheduleMachine(scheduleID);
+            await api._publishCommand(machine, "schedule-webhook-bind-v1", {
+                request_id: requestID, hook_id: hookID, schedule_id: scheduleID,
+                replace_hook_id: replaceHookID
+            }, "ctl");
+            // The encrypted publish is transport acceptance, not activation. The management
+            // read is the Cloud authority proving the Mac's machine-credential activate landed.
+            for (var attempt = 0; attempt < 20; attempt += 1) {
+                var answer = await scheduleWebhookManagement.read(hookID);
+                var current = answer && (answer.hook || answer);
+                if (current && current.state === "active") return current;
+                await new Promise(function (resolve) { setTimeout(resolve, 250); });
+            }
+            throw new Error("webhook activation not observed");
+        },
+        copy: function (value) { return navigator.clipboard.writeText(value); }
+    });
 }
 
 // A deterministic visual fixture for the same bundled page. It never runs outside mock mode,
@@ -422,7 +450,13 @@ var plan = bindPlanPage({
     "plan-upgrade": byId("plan-upgrade"), "plan-portal": byId("plan-portal"),
     "plan-signin": byId("plan-signin"), "plan-retry": byId("plan-retry"),
     "plan-recheck": byId("plan-recheck"),
-    "plan-elsewhere": byId("plan-elsewhere"), "plan-console": byId("plan-console")
+    "plan-elsewhere": byId("plan-elsewhere"), "plan-console": byId("plan-console"),
+    "plan-simulation": byId("plan-simulation"),
+    "plan-simulation-title": byId("plan-simulation-title"),
+    "plan-simulation-values": byId("plan-simulation-values"),
+    "plan-simulation-actual": byId("plan-simulation-actual"),
+    "plan-simulation-free": byId("plan-simulation-free"),
+    "plan-simulation-pro": byId("plan-simulation-pro")
 }, {
     billing: planBilling,
     signInURL: function () { return planSignIn(); },

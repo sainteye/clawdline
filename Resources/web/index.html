@@ -921,6 +921,15 @@ document.documentElement.className = "booting";
         <h2 class="plan-includes" id="plan-includes">What this plan includes</h2>
         <dl class="plan-limits" id="plan-limits" hidden></dl>
         <p class="plan-fine" id="plan-fine" hidden></p>
+        <section class="plan-simulation" id="plan-simulation" hidden>
+            <h2 id="plan-simulation-title">SuperUser plan simulation</h2>
+            <dl class="plan-limits" id="plan-simulation-values"></dl>
+            <div class="plan-actions">
+                <button class="plan-alt" id="plan-simulation-actual" type="button">Actual</button>
+                <button class="plan-alt" id="plan-simulation-free" type="button">Free</button>
+                <button class="plan-alt" id="plan-simulation-pro" type="button">Pro</button>
+            </div>
+        </section>
     </div>
 </section>
 
@@ -1112,6 +1121,19 @@ document.documentElement.className = "booting";
             <button class="chip" id="schedule-history-edit" type="button">Edit schedule</button>
         </div>
         <p class="said" id="schedule-history-said" role="status" aria-live="polite"></p>
+        <section class="schedule-webhook" id="schedule-webhook" hidden>
+            <h3 id="schedule-webhook-title">Cloud webhook</h3>
+            <p id="schedule-webhook-note"></p>
+            <p class="schedule-webhook-warning" id="schedule-webhook-warning"></p>
+            <div class="buttons">
+                <button class="chip" id="schedule-webhook-generate" type="button">Generate webhook</button>
+                <button class="chip" id="schedule-webhook-copy" type="button" hidden>Copy URL</button>
+                <button class="chip" id="schedule-webhook-rotate" type="button" hidden>Rotate URL</button>
+                <button class="chip" id="schedule-webhook-disable" type="button" hidden>Disable webhook</button>
+            </div>
+            <p id="schedule-webhook-status" role="status" aria-live="polite"></p>
+            <ol class="schedule-webhook-timeline" id="schedule-webhook-timeline"></ol>
+        </section>
         <h3 id="schedule-history-runs-label">Which conversation?</h3>
         <ul class="schedule-run-rows" id="schedule-run-rows"></ul>
         <p class="schedule-history-empty" id="schedule-history-empty" hidden></p>

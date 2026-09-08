@@ -710,6 +710,7 @@ enum Orchestrator {
         // so rather than drawing the bottom of the list as the beginning of history.
         if snapshots.count >= 200 { out["runs_may_be_truncated"] = true }
         if let missed { out["last_missed_at"] = Int(missed.timeIntervalSince1970) }
+        ScheduleWebhookProjection.apply(scheduleID: id, to: &out)
         return out
     }
 

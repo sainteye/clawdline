@@ -145,7 +145,7 @@ function transport(script) {
         calls,
         fetch(url, init) {
             const path = String(url).replace("https://api.example", "");
-            calls.push({ path, method: (init && init.method) || "GET" });
+            calls.push({ path, method: (init && init.method) || "GET", init: init || {} });
             const answer = typeof script === "function" ? script(path, calls.length) : script[path];
             if (!answer) throw new Error(`no scripted answer for ${path}`);
             return Promise.resolve({
@@ -158,8 +158,40 @@ function transport(script) {
 }
 
 const { createBillingClient } = await module_("Resources/web/app/js/net/billing.js");
-const { bindPlanPage, planRows, checkoutSentence, portalSentence } = await module_("Resources/web/app/js/view/plan.js");
+const { bindPlanPage, planRows, checkoutSentence, portalSentence, planSimulationRows } = await module_("Resources/web/app/js/view/plan.js");
 const { T } = await module_("Resources/web/app/js/core/i18n.js");
+
+{
+    const simulation = {
+        schema: "clawdline.plan_simulation.v1", actual_tier: "pro", effective_tier: "free",
+        override_source: "superuser_browser_session", override_tier: "free",
+        actual_evaluated_at: "2026-09-08T10:00:00.000Z",
+        override_set_at: "2026-09-08T10:01:00.000Z",
+        override_expires_at: "2026-09-08T18:01:00.000Z", override_cleared_at: null,
+        effective_evaluated_at: "2026-09-08T10:01:00.000Z", revision: 4
+    };
+    const network = transport({
+        "/su/v1/plan-simulation": { status: 200, body: simulation }
+    });
+    const client = createBillingClient({ apiOrigin: "https://api.example", fetch: network.fetch,
+        idempotencyKey: () => "stable-simulation" });
+    equal((await client.planSimulation()).effective_tier, "free",
+        "SuperUser simulation keeps actual and effective tier distinct");
+    await client.setPlanSimulation("pro", 4);
+    equal(network.calls[1].method, "PUT", "simulation mutation uses PUT");
+    equal(network.calls[1].init.headers["Idempotency-Key"], "stable-simulation",
+        "simulation mutation carries stable idempotency");
+    equal(JSON.stringify(JSON.parse(network.calls[1].init.body)),
+        JSON.stringify({ mode: "pro", expected_revision: 4 }),
+        "simulation body is the sealed exact CAS");
+    equal(JSON.stringify(planSimulationRows(simulation).map((row) => row[1]).slice(0, 3)),
+        JSON.stringify(["Pro", "Free", "superuser_browser_session"]),
+        "Plan shows actual, effective and source as separate facts");
+    equal(JSON.stringify(planSimulationRows(simulation).map((row) => row[1]).slice(3)),
+        JSON.stringify(["2026-09-08T10:00:00.000Z", "2026-09-08T10:01:00.000Z", "—",
+            "2026-09-08T10:01:00.000Z", "2026-09-08T18:01:00.000Z"]),
+        "Plan keeps actual evaluation, override set/clear, effective evaluation and expiry distinct");
+}
 
 function page(script, extra = {}) {
     const table = elements();

@@ -26,6 +26,13 @@
    -------------------------------------------------------------------------- */
 
 import { T, fill } from "../core/i18n.js";
+import { planSimulationWords } from "../net/billing.js";
+
+function simulationWords() {
+    var language = globalThis.document && globalThis.document.documentElement
+        ? globalThis.document.documentElement.lang : "";
+    return planSimulationWords(language);
+}
 
 /** How a limit reads when the plan sets none. Not "unlimited": the relay still has ceilings,
  *  and a page that promises none is the page that has to be argued with later. */
@@ -49,6 +56,21 @@ export function planRows(entitlements) {
             : fill(T.webPlanHistoryDays, { n: days })],
         [T.webPlanRowFleet, yesNo(e.fleet)],
         [T.webPlanRowTeam, yesNo(e.team)]
+    ];
+}
+
+export function planSimulationRows(value) {
+    if (!value) return [];
+    var words = simulationWords();
+    return [
+        [words.actual, tierName(value.actual_tier)],
+        [words.effective, tierName(value.effective_tier)],
+        [words.source, String(value.override_source || "")],
+        [words.actualEvaluated, String(value.actual_evaluated_at || "—")],
+        [words.set, String(value.override_set_at || "—")],
+        [words.cleared, String(value.override_cleared_at || "—")],
+        [words.evaluated, String(value.effective_evaluated_at || "")],
+        [words.expires, String(value.override_expires_at || "—")]
     ];
 }
 
@@ -171,6 +193,26 @@ export function bindPlanPage(elements, seams) {
         show("plan-fine", provisional);
     }
 
+    function drawSimulation(value) {
+        var panel = node("plan-simulation");
+        var list = node("plan-simulation-values");
+        show("plan-simulation", !!value);
+        if (!value || !list || !list.ownerDocument) return;
+        panel.dataset.revision = String(value.revision);
+        while (list.firstChild) list.removeChild(list.firstChild);
+        planSimulationRows(value).forEach(function (row) {
+            var term = list.ownerDocument.createElement("dt");
+            var answer = list.ownerDocument.createElement("dd");
+            term.textContent = row[0]; answer.textContent = row[1];
+            list.appendChild(term); list.appendChild(answer);
+        });
+        ["actual", "free", "pro"].forEach(function (mode) {
+            var button = node("plan-simulation-" + mode);
+            if (button) button.disabled = value.override_tier === mode
+                || (mode === "actual" && value.override_source === "actual");
+        });
+    }
+
     function drawTier(tier, note) {
         text("plan-tier", tierName(tier));
         text("plan-tier-note", note || (tier === "free" ? T.webPlanFreeNote : T.webPlanPaidNote));
@@ -195,6 +237,11 @@ export function bindPlanPage(elements, seams) {
         text("plan-signin", T.webPlanSignIn);
         text("plan-retry", T.webPlanRetry);
         text("plan-recheck", T.webPlanRecheck);
+        var simulation = simulationWords();
+        text("plan-simulation-title", simulation.title);
+        text("plan-simulation-actual", simulation.actualMode);
+        text("plan-simulation-free", simulation.freeMode);
+        text("plan-simulation-pro", simulation.proMode);
     }
 
     /* ==========================================================================
@@ -275,14 +322,32 @@ export function bindPlanPage(elements, seams) {
         if (!billing) { toElsewhere(); return Promise.resolve(); }
         var mine = generation;
         toLoading();
-        return billing.plan().then(function (answer) {
+        var simulation = typeof billing.planSimulation === "function"
+            ? billing.planSimulation().catch(function () { return null; }) : Promise.resolve(null);
+        return Promise.all([billing.plan(), simulation]).then(function (answers) {
             if (mine !== generation) return;
+            var answer = answers[0];
             if (!answer.signedIn) { toSignedOut(); return; }
             toSettled(answer);
+            drawSimulation(answers[1]);
         }, function () {
             if (mine !== generation) return;
             toUnreadable();
         });
+    }
+
+
+    function simulate(mode) {
+        if (!billing || typeof billing.setPlanSimulation !== "function") return Promise.resolve();
+        var revision = Number(node("plan-simulation") &&
+            node("plan-simulation").dataset.revision || 0);
+        return billing.setPlanSimulation(mode, revision).then(function (answer) {
+            if (!answer) { drawSimulation(null); return; }
+            var panel = node("plan-simulation");
+            if (panel) panel.dataset.revision = String(answer.revision);
+            drawSimulation(answer);
+            return load();
+        }, function () { trouble(simulationWords().failed); });
     }
 
     /* ==========================================================================
@@ -430,6 +495,10 @@ export function bindPlanPage(elements, seams) {
             else if (id === "plan-signin") signIn();
             else load();
         });
+    });
+    ["actual", "free", "pro"].forEach(function (mode) {
+        var button = node("plan-simulation-" + mode);
+        if (button) button.addEventListener("click", function () { simulate(mode); });
     });
 
     return {

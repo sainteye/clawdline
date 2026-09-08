@@ -284,3 +284,10 @@
     .schedule-history-head { align-items: center; }
     .schedule-run-button { min-height: 64px; padding: 12px; }
 }
+.schedule-webhook { margin: 1rem 0; padding: .9rem; border: 1px solid var(--line, #d8d8d8); border-radius: .8rem; }
+.schedule-webhook-warning { color: var(--warn, #a15c00); font-size: .9rem; line-height: 1.4; }
+.schedule-webhook-timeline { display: grid; gap: .55rem; padding-left: 1.4rem; }
+.schedule-webhook-event { display: grid; gap: .12rem; }
+.schedule-webhook-event-name { font-weight: 650; }
+.schedule-webhook-event time, .schedule-webhook-event-detail,
+.schedule-webhook-event-time { color: var(--muted, #666); font-size: .88rem; }

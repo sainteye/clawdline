@@ -52,6 +52,12 @@ struct CloudLocalRoute: Sendable {
         case .scheduleDelete(let id):
             routeMethod = "DELETE"
             route = "/v1/orchestrator/schedules/\(Self.segment(id))"
+        case .scheduleWebhookBind(let requestID, let hookID, let scheduleID,
+                                  let replaceHookID):
+            route = "/v1/orchestrator/schedule-webhooks/bind"
+            object = ["request_id": requestID, "hook_id": hookID,
+                      "schedule_id": scheduleID,
+                      "replace_hook_id": replaceHookID ?? NSNull()]
         case .pushSubscribe(let data):
             route = "/v1/push/subscribe"
             encodedBody = data

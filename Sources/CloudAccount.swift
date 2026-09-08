@@ -207,6 +207,122 @@ struct CloudMachineIdentity: Equatable, Sendable {
     let machineID: String
 }
 
+struct ScheduleWebhookLease: Codable, Equatable, Sendable {
+    let token: String
+    let revision: Int
+    let expiresAt: String
+    enum CodingKeys: String, CodingKey {
+        case token, revision
+        case expiresAt = "expires_at"
+    }
+}
+
+struct ScheduleWebhookClaim: Codable, Equatable, Sendable {
+    var deliveryID: String
+    let hookID: String
+    let hookGeneration: Int
+    let acceptedAt: String
+    let expiresAt: String
+    var deliveryDigest: String
+    let attempt: Int
+    let lease: ScheduleWebhookLease
+    enum CodingKeys: String, CodingKey {
+        case deliveryID = "delivery_id"
+        case hookID = "hook_id"
+        case hookGeneration = "hook_generation"
+        case acceptedAt = "accepted_at"
+        case expiresAt = "expires_at"
+        case deliveryDigest = "delivery_digest"
+        case attempt, lease
+    }
+}
+
+struct ScheduleWebhookClaimResult: Equatable, Sendable {
+    let delivery: ScheduleWebhookClaim?
+    let serverTime: String
+    let pollAfterMilliseconds: Int
+}
+
+struct ScheduleWebhookActivation: Equatable, Sendable {
+    let hookID: String
+    let state: String
+    let revision: Int
+}
+
+struct ScheduleWebhookReceiptAck: Equatable, Sendable {
+    let deliveryID: String
+    let receiptVersion: Int
+    let state: String
+    let acknowledgedAt: String
+    let duplicate: Bool
+}
+
+struct ScheduleWebhookReceipt: Codable, Equatable, Sendable {
+    let schema: String
+    let receiptVersion: Int
+    let previousReceiptVersion: Int
+    let kind: String
+    let occurredAt: String
+    let macBuild: String
+    let leaseToken: String?
+    let taskID: String?
+    let outcomeCode: String?
+    let taskTerminalState: String?
+    let retryAt: String?
+    enum CodingKeys: String, CodingKey {
+        case schema, kind
+        case receiptVersion = "receipt_version"
+        case previousReceiptVersion = "previous_receipt_version"
+        case occurredAt = "occurred_at"
+        case macBuild = "mac_build"
+        case leaseToken = "lease_token"
+        case taskID = "task_id"
+        case outcomeCode = "outcome_code"
+        case taskTerminalState = "task_terminal_state"
+        case retryAt = "retry_at"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(schema, forKey: .schema)
+        try values.encode(receiptVersion, forKey: .receiptVersion)
+        try values.encode(previousReceiptVersion, forKey: .previousReceiptVersion)
+        try values.encode(kind, forKey: .kind)
+        try values.encode(occurredAt, forKey: .occurredAt)
+        try values.encode(macBuild, forKey: .macBuild)
+        try values.encode(leaseToken, forKey: .leaseToken)
+        try values.encode(taskID, forKey: .taskID)
+        try values.encode(outcomeCode, forKey: .outcomeCode)
+        try values.encode(taskTerminalState, forKey: .taskTerminalState)
+        try values.encode(retryAt, forKey: .retryAt)
+    }
+}
+
+enum ScheduleWebhookActivationDecoder {
+    static func decode(_ data: Data, hookID: String, expectedRevision: Int) throws
+        -> ScheduleWebhookActivation {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw CloudAccountError.invalidResponse
+        }
+        guard Set(object.keys) == ["schema", "hook"],
+              object["schema"] as? String == "clawdline.schedule_webhook.management.v1",
+              let hook = object["hook"] as? [String: Any] else {
+            throw CloudAccountError.invalidResponse
+        }
+        let hookKeys = Set(["hook_id", "machine_id", "state", "availability", "generation",
+                            "revision", "created_at", "activated_at", "rotated_at",
+                            "disabled_at", "credential_fingerprint"])
+        guard Set(hook.keys) == hookKeys,
+              hook["hook_id"] as? String == hookID,
+              let state = hook["state"] as? String, state == "active",
+              let revision = strictInt(hook["revision"]),
+              revision == expectedRevision + 1 else {
+            throw CloudAccountError.invalidResponse
+        }
+        return .init(hookID: hookID, state: state, revision: revision)
+    }
+}
+
 enum CloudDeviceLoginPollState: Equatable, Sendable {
     case authorizationPending
     case slowDown(retryAfter: Int)
@@ -690,6 +806,80 @@ final class CloudAccountClient: Sendable {
         return CloudHeartbeat(at: date)
     }
 
+    func activateScheduleWebhook(hookID: String, expectedRevision: Int,
+                                 idempotencyKey: String) async throws
+        -> ScheduleWebhookActivation {
+        let result = try await rawSend(
+            method: "POST", path: ["v1", "schedule-webhooks", hookID, "activate"],
+            body: ScheduleWebhookActivateRequest(expectedRevision: expectedRevision),
+            authorization: .machineCredential,
+            headers: ["Idempotency-Key": idempotencyKey])
+        try requireStatus(result, expected: 200)
+        return try ScheduleWebhookActivationDecoder.decode(
+            result.data, hookID: hookID, expectedRevision: expectedRevision)
+    }
+
+    func claimScheduleWebhookDelivery(waitSeconds: Int = 20) async throws
+        -> ScheduleWebhookClaimResult {
+        guard (0...25).contains(waitSeconds) else { throw CloudAccountError.invalidResponse }
+        let result = try await rawSend(
+            method: "POST", path: ["v1", "schedule-webhook-deliveries", "claim"],
+            body: ScheduleWebhookClaimRequest(
+                protocolName: "clawdline.schedule_webhook.v1", waitSeconds: waitSeconds),
+            authorization: .machineCredential)
+        try requireStatus(result, expected: 200)
+        let object = try jsonObject(result.data)
+        try requireKeys(object, exactly: ["schema", "delivery", "server_time", "poll_after_ms"])
+        guard object["schema"] as? String == "clawdline.schedule_webhook.claim.v1",
+              let serverTime = object["server_time"] as? String,
+              let pollAfter = strictInt(object["poll_after_ms"]),
+              (0...300_000).contains(pollAfter) else {
+            throw CloudAccountError.invalidResponse
+        }
+        if object["delivery"] is NSNull {
+            return .init(delivery: nil, serverTime: serverTime,
+                         pollAfterMilliseconds: pollAfter)
+        }
+        guard let deliveryObject = object["delivery"] as? [String: Any] else {
+            throw CloudAccountError.invalidResponse
+        }
+        try requireKeys(deliveryObject, exactly: ["delivery_id", "hook_id", "hook_generation",
+                                                  "accepted_at", "expires_at", "delivery_digest",
+                                                  "attempt", "lease"])
+        guard let lease = deliveryObject["lease"] as? [String: Any] else {
+            throw CloudAccountError.invalidResponse
+        }
+        try requireKeys(lease, exactly: ["token", "revision", "expires_at"])
+        let bytes = try JSONSerialization.data(withJSONObject: deliveryObject)
+        let delivery: ScheduleWebhookClaim = try decode(bytes)
+        return .init(delivery: delivery, serverTime: serverTime,
+                     pollAfterMilliseconds: pollAfter)
+    }
+
+    func sendScheduleWebhookReceipt(deliveryID: String, receipt: ScheduleWebhookReceipt)
+        async throws -> ScheduleWebhookReceiptAck {
+        let result = try await rawSend(
+            method: "POST",
+            path: ["v1", "schedule-webhook-deliveries", deliveryID, "receipts"],
+            body: receipt, authorization: .machineCredential,
+            headers: ["Idempotency-Key": "receipt:\(deliveryID):\(receipt.receiptVersion)"])
+        try requireStatus(result, expected: 200)
+        let object = try jsonObject(result.data)
+        try requireKeys(object, exactly: ["schema", "delivery_id", "receipt_version", "state",
+                                          "acknowledged_at", "duplicate"])
+        guard object["schema"] as? String == "clawdline.schedule_webhook.receipt_ack.v1",
+              object["delivery_id"] as? String == deliveryID,
+              let version = strictInt(object["receipt_version"]),
+              version == receipt.receiptVersion,
+              let state = object["state"] as? String,
+              let at = object["acknowledged_at"] as? String,
+              let duplicate = object["duplicate"] as? Bool else {
+            throw CloudAccountError.invalidResponse
+        }
+        return .init(deliveryID: deliveryID, receiptVersion: version, state: state,
+                     acknowledgedAt: at, duplicate: duplicate)
+    }
+
     func listMachines() async throws -> CloudMachineList {
         let data = try await send(
             method: "GET", path: ["v1", "machines"], authorization: .machineCredential)
@@ -867,7 +1057,8 @@ final class CloudAccountClient: Sendable {
 
     private func rawSend<T: Encodable>(
         method: String, path: [String], body: T,
-        authorization: Authorization?, encodeNilBody: Bool = true
+        authorization: Authorization?, encodeNilBody: Bool = true,
+        headers: [String: String] = [:]
     ) async throws -> RawResult {
         let url = try endpoint(path)
         var request = URLRequest(url: url)
@@ -877,6 +1068,7 @@ final class CloudAccountClient: Sendable {
             request.httpBody = try JSONEncoder().encode(body)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         var sentCredential: CloudMachineCredential?
         switch authorization {
         case .machineCredential:
@@ -1079,6 +1271,20 @@ private struct HeartbeatRequest: Encodable {
 }
 
 private struct HeartbeatResponse: Decodable { let ok: Bool; let at: String }
+
+private struct ScheduleWebhookActivateRequest: Encodable {
+    let expectedRevision: Int
+    enum CodingKeys: String, CodingKey { case expectedRevision = "expected_revision" }
+}
+
+private struct ScheduleWebhookClaimRequest: Encodable {
+    let protocolName: String
+    let waitSeconds: Int
+    enum CodingKeys: String, CodingKey {
+        case protocolName = "protocol"
+        case waitSeconds = "wait_seconds"
+    }
+}
 
 private struct PairingStartRequest: Encodable { let fingerprint: String }
 

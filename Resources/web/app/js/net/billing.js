@@ -59,10 +59,32 @@ export function isPaidTier(tier) {
     return typeof tier === "string" && tier !== "" && tier !== "free";
 }
 
+export function planSimulationWords(language) {
+    return String(language || "").toLowerCase() === "zh-tw" ? {
+        title: "超級使用者方案模擬", actual: "實際方案", effective: "生效方案",
+        source: "覆寫來源", actualEvaluated: "實際方案評估時間",
+        set: "覆寫設定時間", cleared: "覆寫清除時間",
+        evaluated: "生效評估時間", expires: "覆寫到期時間",
+        actualMode: "實際", freeMode: "免費", proMode: "專業版",
+        failed: "Clawdline 無法變更此方案模擬。"
+    } : {
+        title: "SuperUser plan simulation", actual: "Actual tier", effective: "Effective tier",
+        source: "Override source", actualEvaluated: "Actual evaluated at",
+        set: "Override set at", cleared: "Override cleared at", evaluated: "Effective evaluated at",
+        expires: "Override expires at", actualMode: "Actual", freeMode: "Free",
+        proMode: "Pro", failed: "Clawdline could not change this plan simulation."
+    };
+}
+
 export function createBillingClient(options) {
     options = options || {};
     var origin = String(options.apiOrigin || "").replace(/\/$/, "");
     var fetchImpl = options.fetch || function (url, init) { return globalThis.fetch(url, init); };
+    var intent = options.idempotencyKey || function () {
+        return globalThis.crypto && typeof globalThis.crypto.randomUUID === "function"
+            ? globalThis.crypto.randomUUID().toLowerCase()
+            : "plan-simulation-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+    };
     if (!origin) throw new TypeError("createBillingClient needs an apiOrigin");
 
     function post(path, payload) {
@@ -142,6 +164,38 @@ export function createBillingClient(options) {
                     "Clawdline could not open the customer portal", { status: result.status });
             }
             throw errorFrom(result, "portal_failed", "That subscription could not be opened");
+        },
+
+        /** SuperUser-only. A 404 is the deliberate default-deny answer and leaves ordinary Plan
+         *  behavior untouched; callers only reveal controls after this closed response exists. */
+        async planSimulation() {
+            var result = await read(fetchImpl, origin + "/su/v1/plan-simulation",
+                { cache: "no-store" });
+            if (result.status === 404) return null;
+            if (result.status !== 200 || !result.body ||
+                result.body.schema !== "clawdline.plan_simulation.v1") {
+                throw errorFrom(result, "plan_simulation_unavailable",
+                    "Clawdline could not read plan simulation");
+            }
+            return result.body;
+        },
+
+        async setPlanSimulation(mode, revision) {
+            if (["actual", "free", "pro"].indexOf(mode) < 0 || !Number.isInteger(revision)) {
+                throw billingError("bad_field", "Invalid plan simulation request");
+            }
+            var result = await read(fetchImpl, origin + "/su/v1/plan-simulation", {
+                method: "PUT", cache: "no-store",
+                headers: { "content-type": "application/json", "Idempotency-Key": intent() },
+                body: JSON.stringify({ mode: mode, expected_revision: revision })
+            });
+            if (result.status === 404) return null;
+            if (result.status !== 200 || !result.body ||
+                result.body.schema !== "clawdline.plan_simulation.v1") {
+                throw errorFrom(result, "plan_simulation_failed",
+                    "Clawdline could not change plan simulation");
+            }
+            return result.body;
         }
     };
 }

@@ -36,6 +36,8 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case scheduleCreate(body: Data)
     case scheduleUpdate(id: String, body: Data)
     case scheduleDelete(id: String)
+    case scheduleWebhookBind(requestID: String, hookID: String, scheduleID: String,
+                             replaceHookID: String?)
     case pushSubscribe(body: Data)
     case pushUnsubscribe(id: String)
     case pushTest(session: String)
@@ -196,6 +198,12 @@ struct RemoteServerCloudCommandRouter: CloudCommandRouting, @unchecked Sendable 
 
     func route(_ command: CloudHeadlessCommand, sender: String,
                idempotencyKey: String) async -> CloudCommandResult {
+        if case .scheduleWebhookBind(let requestID, let hookID, let scheduleID,
+                                     let replaceHookID) = command {
+            return await ScheduleWebhookBindingCoordinator.shared.bind(
+                requestID: requestID, hookID: hookID, scheduleID: scheduleID,
+                replaceHookID: replaceHookID, sender: sender)
+        }
         if case .voice(let audio, let rate) = command {
             return await CloudVoiceCommandRouter.shared.route(
                 audio: audio, rate: rate, sender: sender, idempotencyKey: idempotencyKey)
@@ -709,6 +717,23 @@ actor CloudAppBridge {
             }
             command = .scheduleDelete(id: id)
             commandReply = (session, "action:" + request)
+        case "schedule-webhook-bind-v1":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "request_id", "hook_id", "schedule_id",
+                                      "replace_hook_id"],
+                  let requestID = body["request_id"] as? String,
+                  UUID(uuidString: requestID) != nil, requestID == requestID.lowercased(),
+                  let hookID = body["hook_id"] as? String,
+                  let scheduleID = body["schedule_id"] as? String,
+                  body["replace_hook_id"] is NSNull || body["replace_hook_id"] is String
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .scheduleWebhookBind(
+                requestID: requestID, hookID: hookID, scheduleID: scheduleID,
+                replaceHookID: body["replace_hook_id"] as? String)
+            commandReply = (Self.machineReplySession, "action:" + requestID)
         case "push-subscribe":
             guard inbound.commandClass == .ctl,
                   Set(body.keys) == ["type", "session", "request", "subscription"],

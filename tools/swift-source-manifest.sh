@@ -102,6 +102,7 @@ clawdline_production_sources=(
   Sources/RemoteServerSessionLanding.swift
   Sources/RemoteTunnel.swift
   Sources/Schedules.swift
+  Sources/ScheduleWebhook.swift
   Sources/Scratch.swift
   Sources/SessionClosePolicy.swift
   Sources/SessionImageArtifact.swift
@@ -179,6 +180,7 @@ clawdline_test_sources=(
   Tests/RootAssignmentCoordinationTests.swift
   Tests/ScheduleResumeTests.swift
   Tests/ScheduledDispatchTests.swift
+  Tests/ScheduleWebhookTests.swift
   Tests/SessionCloseAndQuotaTests.swift
   Tests/SessionCloseabilityTests.swift
   Tests/SessionImageMarkerTests.swift

@@ -205,7 +205,8 @@ main_lines=$(line_count Tests/main.swift)
 # live in separate owners. Measured 2026-09-08 on this candidate, without headroom.
 # Board live-transition correction: replaceTask captures one credential-free source record and
 # publishes it after unlocking. Registry state ownership remains here; Board projection stays out.
-orchestrator_ceiling=10749
+# Schedule Webhook adds one projection call; binding authority remains in ScheduleWebhook.swift.
+orchestrator_ceiling=10750
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -462,7 +463,8 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # that reports it read the same variable.
 # Project Board domain and integration each have a focused runner.
 # The bounded Board narrative worker has its own injected-clock/process-boundary runner.
-runner_count_expected=42
+# Schedule Webhook has one cohesive binding/delivery runner beside scheduled dispatch.
+runner_count_expected=43
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -656,8 +658,10 @@ done
 # 52 with Tests/VerificationLedgerTests.swift; see the runner-count note above for why the four
 # groups that answer for one route are their own file rather than four more in a suite eighty-six
 # lines from the limit.
+# 56 with Tests/ScheduleWebhookTests.swift, one cohesive durable binding/delivery suite beside
+# scheduled dispatch. This is feature coverage, not a split made only to move the guard.
 # One owner for the number, for the reason written above the runner count.
-suite_count_expected=55
+suite_count_expected=56
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
