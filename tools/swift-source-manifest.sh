@@ -29,6 +29,7 @@ clawdline_production_sources=(
   Sources/CloudTransportFakes.swift
   Sources/Codex.swift
   Sources/CodexNaming.swift
+  Sources/StructuredModelProcess.swift
   Sources/CodexSkills.swift
   Sources/Compat.swift
   Sources/Config.swift
@@ -84,6 +85,7 @@ clawdline_production_sources=(
   Sources/Project.swift
   Sources/ProjectArtifact.swift
   Sources/ProjectBoardStore.swift
+  Sources/ProjectBoardNarrative.swift
   Sources/ProjectBoardIntegration.swift
   Sources/ProjectBoardReadCache.swift
   Sources/ProjectBoardRequestCoordinator.swift
@@ -195,6 +197,7 @@ clawdline_test_sources=(
   Tests/UsageProjectWorktreeTests.swift
   Tests/ProjectBoardTests.swift
   Tests/ProjectBoardIntegrationTests.swift
+  Tests/ProjectBoardNarrativeTests.swift
   Tests/VerificationLedgerTests.swift
   Tests/main.swift
 )

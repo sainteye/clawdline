@@ -3039,7 +3039,12 @@ enum Orchestrator {
     @discardableResult
     static func replaceTask(_ candidate: Task, expecting expected: State? = nil,
                             discardSecret: Bool = false) -> Bool {
-        lock.lock(); defer { lock.unlock() }
+        var boardRecord: [String: Any]?
+        lock.lock()
+        defer {
+            lock.unlock()
+            if let boardRecord { ProjectBoardIntegration.observe(boardRecord) }
+        }
         guard let current = tasks[candidate.id] else { return false }
         if let expected, current.state != expected { return false }
         guard mayReplaceState(current.state, with: candidate.state) else {
@@ -3052,6 +3057,9 @@ enum Orchestrator {
         }
         tasks[candidate.id] = candidate
         if discardSecret { secrets.removeValue(forKey: candidate.id) }
+        if current.state != candidate.state || current.childSessionId != candidate.childSessionId {
+            boardRecord = ledgerRecord(of: candidate)
+        }
         return true
     }
 

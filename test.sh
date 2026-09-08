@@ -413,7 +413,10 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # Encrypted Cloud task documents candidate f4b2b518 measured 10,570 checks and all twelve Cloud
 # suites on 2026-09-08; the same run measured 8,572 assertion sites. All 18 added checks are in
 # CloudAppBridge (132 -> 150); the only exit was the expected stale-seal refusal (125).
-expected_swift_receipt='10570 checks passed'
+# Board reading/progress candidate eae7784aa11e39641cbee5ac54364a5635341df6 measured
+# 10,743 checks and all twelve Cloud suites on 2026-09-08, with 8,718 assertion sites.
+# Only seal/governance metadata changes after that run; its retained receipt is checked below.
+expected_swift_receipt='10743 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -426,7 +429,7 @@ expected_swift_receipt='10570 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8572
+expected_swift_receipt_witness=8718
 
 count_exact_receipt_lines() {
   local receipt=$1

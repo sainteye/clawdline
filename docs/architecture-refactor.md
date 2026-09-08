@@ -319,6 +319,28 @@ indirection.
 
 ## Anti-over-splitting test
 
+### Project Board reading/progress correction (2026-09-08)
+
+The Board root adds a cohesive `ProjectBoardNarrative` worker: it owns a separate timer, bounded
+model admission/retry lifetime and injected candidate/generation/persistence ports (criteria 1–4).
+It does not take state or evidence authority from `ProjectBoardStore`; the existing naming runner
+retains the shared subprocess budget. Its focused test runner is an independent worker-boundary
+suite, not a fragment extracted merely to lower a file count.
+
+The same correction needs a narrow eight-line growth exception in `Orchestrator.replaceTask`:
+the owner captures a credential-free record only after accepting a state/child-identity change and
+notifies the existing Board adapter after releasing its lock. Previously Board saw dispatch and
+completion but not live execution. Extracting registry mutation into the Board would invert ownership;
+the next extraction remains the registry-owner migration above, not a new Board-specific task owner.
+
+The Board Store and web view remain over their stop-growth guidance during this correctness repair.
+The Store owns the atomic graph-node attribution, source chronology, mode fence and durable reading
+variants together; moving private state across extension files would not reduce coupling. Its next
+cohesive seam is an immutable progress-projection input/output boundary. The web view owns selection,
+lazy history/report readers and refresh fencing; its next seam is the completion-report reader with
+its own selection and cancellation lifetime. Neither relocation is mixed into this correction.
+These exceptions do not authorize continued growth or another unreviewed feature in those files.
+
 Extract only when at least two are true:
 
 1. independent reason to change;
@@ -559,11 +581,11 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 585 | `Tests/TestGroupManifest.swift`, counted by the guard |
-| ordered runners | 41 | `Tests/main.swift`, counted by the guard |
-| suite files | 54 | `Tests/*Tests.swift`, counted by the guard |
-| Swift checks | 10,570 | `expected_swift_receipt` in `test.sh`, set from a run |
-| `Orchestrator.swift` ceiling | 10,741 | the ratchet in `tools/check-architecture-boundaries.sh` |
+| ordered groups | 596 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered runners | 42 | `Tests/main.swift`, counted by the guard |
+| suite files | 55 | `Tests/*Tests.swift`, counted by the guard |
+| Swift checks | 10,743 | `expected_swift_receipt` in `test.sh`, set from a run |
+| `Orchestrator.swift` ceiling | 10,749 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,885 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->

@@ -10,10 +10,27 @@ enum ProjectBoardIntegration {
     private static let reads = ProjectBoardReadCache()
     private static var source = MaterializedSources()
     private static var prepared = false
+    private static var catalogTimer: DispatchSourceTimer?
+    private static var catalogSignal = CatalogSignal()
+    private static var configObserver: NSObjectProtocol?
     private static var storeForTesting: ProjectBoardStore?
     private static var refreshForTesting: ((ProjectBoardStore, ProjectBoardReadCache.DirtyReasons)
         -> Result<ProjectBoardReadCache.Model, ProjectBoardReadCache.Failure>)?
     static let sourceLimit = 100_000
+
+    /// An incomplete inventory cannot remove Projects, and ordinary polling of an unchanged
+    /// inventory cannot initiate expensive source work. Accessed only on the source queue.
+    struct CatalogSignal {
+        private var paths: Set<String>?
+
+        mutating func invalidate() { paths = nil }
+
+        mutating func observe(enabled: Bool, complete: Bool, paths next: Set<String>) -> Bool {
+            guard enabled, complete, paths != next else { return false }
+            paths = next
+            return true
+        }
+    }
 
     private struct MaterializedSources {
         var presentations: [String: ProjectPresentation] = [:]
@@ -38,32 +55,60 @@ enum ProjectBoardIntegration {
     }
 
     struct IngestionCoverage {
-        private(set) var issueCount = 0
-        private(set) var reasonsByProject: [String: Set<String>] = [:]
-
-        mutating func record(_ outcome: ProjectBoardStore.AutomaticMutationOutcome, projectID: String?) {
-            // Standard mode deliberately does not ingest work. That is not a lost write.
-            guard outcome.reason != "board_disabled", outcome.reason != "irrelevant",
-                  outcome.status == .partial || outcome.status == .refused || outcome.status == .unavailable
-                    || !outcome.persisted || outcome.droppedCount > 0 else { return }
-            issueCount += 1
-            reasonsByProject[projectID ?? "*", default: []].insert(outcome.reason ?? "source_ingestion_incomplete")
+        private struct Issue {
+            let projectID: String
+            let reason: String
         }
 
-        mutating func merge(_ other: IngestionCoverage) {
-            issueCount += other.issueCount
-            for (projectID, reasons) in other.reasonsByProject {
-                reasonsByProject[projectID, default: []].formUnion(reasons)
+        private var issuesBySource: [String: Issue] = [:]
+        private var unscopedReasonsByProject: [String: Set<String>] = [:]
+
+        var issueCount: Int {
+            issuesBySource.count + unscopedReasonsByProject.values.reduce(0) { $0 + $1.count }
+        }
+
+        mutating func record(_ outcome: ProjectBoardStore.AutomaticMutationOutcome,
+                             projectID: String?, sourceID: String? = nil) {
+            // Standard mode deliberately does not ingest work. That is not a lost write.
+            guard outcome.reason != "board_disabled", outcome.reason != "irrelevant" else { return }
+            let project = projectID ?? "*"
+            let isIssue = outcome.status == .partial || outcome.status == .refused
+                || outcome.status == .unavailable || !outcome.persisted || outcome.droppedCount > 0
+            if let sourceID {
+                let key = project + "\u{0}" + sourceID
+                if isIssue {
+                    issuesBySource[key] = Issue(
+                        projectID: project,
+                        reason: outcome.reason ?? "source_ingestion_incomplete")
+                } else {
+                    // Only a later complete observation of this exact source proves its transient
+                    // issue is repaired. Success elsewhere cannot erase a dropped source.
+                    issuesBySource.removeValue(forKey: key)
+                    if projectID != nil {
+                        issuesBySource.removeValue(forKey: "*\u{0}" + sourceID)
+                    }
+                }
+            } else if isIssue {
+                unscopedReasonsByProject[project, default: []].insert(
+                    outcome.reason ?? "source_ingestion_incomplete")
             }
         }
 
         func reasons(projectID: String?) -> [String] {
-            Array((reasonsByProject[projectID ?? "*"] ?? []).union(reasonsByProject["*"] ?? [])).sorted()
+            let project = projectID ?? "*"
+            let scoped = issuesBySource.values.filter {
+                $0.projectID == project || $0.projectID == "*"
+            }.map(\.reason)
+            return Array(Set(scoped)
+                .union(unscopedReasonsByProject[project] ?? [])
+                .union(unscopedReasonsByProject["*"] ?? [])).sorted()
         }
 
         var jsonObject: [String: Any] {
-            ["status": issueCount == 0 ? "complete" : "partial", "issueCount": issueCount,
-             "reasons": Set(reasonsByProject.values.flatMap { $0 }).sorted()]
+            let reasons = Set(issuesBySource.values.map(\.reason)
+                + unscopedReasonsByProject.values.flatMap { $0 })
+            return ["status": issueCount == 0 ? "complete" : "partial",
+                    "issueCount": issueCount, "reasons": reasons.sorted()]
         }
     }
 
@@ -148,25 +193,34 @@ enum ProjectBoardIntegration {
     /// Capture the record before leaving the broker owner; never call back into
     /// Orchestrator while holding the board store's lock.
     static func observe(_ record: [String: Any]) {
+        let suppliedStore = storeForTesting, suppliedRefresh = refreshForTesting
         queue.async {
-            let result = ingest(record)
+            let store = suppliedStore ?? ProjectBoardStore.shared
+            let result = ingest(record, store: store)
             coverageLock.lock()
-            ingestionCoverage.record(result.outcome, projectID: result.projectID)
+            ingestionCoverage.record(result.outcome, projectID: result.projectID,
+                                     sourceID: sourceID(record))
             coverageLock.unlock()
-            let store = ProjectBoardStore.shared
             let header = store.readHeader()
             reads.refresh(header: header,
-                          reasons: [.catalog, .durableModel, .usage],
-                          work: { reconcile(store: store, reasons: $0) })
+                          reasons: [.catalog, .durableModel],
+                          work: { suppliedRefresh?(store, $0) ?? reconcile(store: store, reasons: $0) })
         }
+    }
+
+    static func drainObservationsForTesting() { queue.sync {} }
+
+    private static func sourceID(_ record: [String: Any]) -> String? {
+        record["id"] as? String ?? record["task_id"] as? String
+            ?? record["taskId"] as? String
     }
 
     static func read(project: String?, item: String?) -> [String: Any] {
         let store = storeForTesting ?? ProjectBoardStore.shared
         let header = store.readHeader()
-        let startup = store.readSeedIfAvailable()?.seed.envelope(project: project, item: item)
-            ?? loadingEnvelope(header: header)
-        return reads.read(project: project, item: item, header: header, loading: startup) { reasons in
+        return reads.read(project: project, item: item, header: header,
+                          loading: store.readSeedIfAvailable()?.seed.envelope(
+                            project: project, item: item) ?? loadingEnvelope(header: header)) { reasons in
             refreshForTesting?(store, reasons) ?? reconcile(store: store, reasons: reasons)
         }
     }
@@ -185,6 +239,7 @@ enum ProjectBoardIntegration {
     private static func loadingEnvelope(header: ProjectBoardStore.ReadHeader) -> [String: Any] {
         ["board": [
             "schemaVersion": 1, "revision": header.revision, "enabled": header.enabled,
+            "narrativeConsent": header.narrativeConsent as Any? ?? NSNull(),
             "mode": header.enabled ? "board" : "standard",
             "entitlement": ["state": "free_preview", "label": "Currently free"],
             "projects": [] as [[String: Any]], "items": [] as [[String: Any]],
@@ -200,6 +255,28 @@ enum ProjectBoardIntegration {
         guard !prepared else { coverageLock.unlock(); return }
         prepared = true
         coverageLock.unlock()
+        // New ordinary Sessions may introduce a Project without dispatching a broker task.
+        // Observe the existing immutable inventory cheaply; never rescan transcripts on GET.
+        configObserver = NotificationCenter.default.addObserver(forName: .clawdlineConfigChanged,
+            object: nil, queue: nil) { _ in
+                queue.async { catalogSignal.invalidate() }
+            }
+        queue.async {
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + 10, repeating: 20, leeway: .seconds(3))
+            timer.setEventHandler {
+                let header = ProjectBoardStore.shared.readHeader()
+                guard header.enabled else { return }
+                let inventory = SessionWatch.shared.publishedInventory()
+                let paths = Set(inventory.identities.values.compactMap(\.workingDirectory))
+                guard catalogSignal.observe(enabled: header.enabled,
+                    complete: inventory.complete, paths: paths) else { return }
+                reads.refresh(header: header, reasons: [.catalog, .durableModel],
+                              work: { reconcile(store: .shared, reasons: $0) })
+            }
+            catalogTimer = timer
+            timer.resume()
+        }
         let store = ProjectBoardStore.shared
         let header = store.readHeader()
         reads.setEnabled(header.enabled)
@@ -212,7 +289,8 @@ enum ProjectBoardIntegration {
                 reads.seed(retained)
             }
             guard current.enabled else { return }
-            reads.refresh(header: current, reasons: [.catalog, .durableModel],
+            reads.refresh(header: current,
+                          reasons: [.modeCatchUp, .catalog, .durableModel, .usage],
                           work: { reconcile(store: store, reasons: $0) })
         }
     }
@@ -262,34 +340,39 @@ enum ProjectBoardIntegration {
     }
 
     private static func refreshCatalogSources(store: ProjectBoardStore) {
-        var coverage = IngestionCoverage()
         let places = StartPoints.places()
         let presentations = projectPresentations(places)
+        var outcomes: [(String, ProjectBoardStore.AutomaticMutationOutcome, String)] = []
         for place in places {
             guard let canonical = UsageLedger.canonicalProjectKey(projectDir: place.path) else { continue }
             let id = projectID(canonical)
-            coverage.record(store.ensureProject(
+            let outcome = store.ensureProject(
                 id: id, name: persistentProjectName(canonical,
-                    presentationLabel: presentations[id]?.label)), projectID: id)
+                    presentationLabel: presentations[id]?.label))
+            outcomes.append((id, outcome, "start-point:" + canonical))
         }
         let order = projectOrder(places)
         coverageLock.lock()
         source.presentations = presentations
         source.projectOrder = order
-        ingestionCoverage.merge(coverage)
+        for (projectID, outcome, sourceID) in outcomes {
+            ingestionCoverage.record(outcome, projectID: projectID, sourceID: sourceID)
+        }
         coverageLock.unlock()
     }
 
     /// OFF intentionally refuses inference. Re-enabling therefore catches up the bounded broker
     /// registry once on the background read worker; ordinary GET never enters this replay path.
     private static func catchUpBrokerHistory(store: ProjectBoardStore) {
-        var coverage = IngestionCoverage()
+        var outcomes: [(String?, ProjectBoardStore.AutomaticMutationOutcome, String?)] = []
         for record in Orchestrator.ledgerBackfillRecords() {
             let result = ingest(record)
-            coverage.record(result.outcome, projectID: result.projectID)
+            outcomes.append((result.projectID, result.outcome, sourceID(record)))
         }
         coverageLock.lock()
-        ingestionCoverage.merge(coverage)
+        for (projectID, outcome, sourceID) in outcomes {
+            ingestionCoverage.record(outcome, projectID: projectID, sourceID: sourceID)
+        }
         coverageLock.unlock()
     }
 
@@ -366,14 +449,13 @@ enum ProjectBoardIntegration {
         let catalogEnvelope = projected(seed.envelope(), catalog: catalog,
             coverage: coverage, sources: sources, observedAt: observedAt)
         var projectModels: [String: [String: Any]] = [:]
-        var itemModels: [String: [String: Any]] = [:]
         for project in catalog {
             guard let projectID = project["id"] as? String else { continue }
             let reasons = coverage.reasons(projectID: projectID)
             let summaries = (seed.itemSummariesByProject[projectID] ?? []).map {
-                enrichFromIndex($0, rowsByTask: sources.rowsByTask,
-                                truncated: sources.usageTruncated,
-                                ingestionReasons: reasons)
+                compactCard(enrichFromIndex($0, rowsByTask: sources.rowsByTask,
+                                            truncated: sources.usageTruncated,
+                                            ingestionReasons: reasons))
             }
             var envelope = seed.envelope(project: projectID)
             if var board = envelope["board"] as? [String: Any] {
@@ -382,33 +464,39 @@ enum ProjectBoardIntegration {
                 // seed's complete item array. Otherwise every item is counted once in `base` and
                 // again while selecting summaries, making a large but valid project look empty.
                 board["items"] = [] as [[String: Any]]
-                board["items"] = boundedSummaries(summaries, board: board)
-                board["truncated"] = summaries.count > (board["items"] as? [[String: Any]] ?? []).count
+                let retained = boundedSummaries(summaries, board: board)
+                let omitted = summaries.count - retained.count
+                board["items"] = retained
+                board["truncated"] = omitted > 0
+                board["truncation"] = [
+                    "reason": omitted == 0 ? NSNull()
+                        : (retained.count == 500 ? "item_count_limit" : "snapshot_byte_budget"),
+                    "itemsOmittedCount": omitted,
+                ] as [String: Any]
                 envelope["board"] = board
             }
             projectModels[projectID] = projected(envelope, catalog: catalog,
                 coverage: coverage, sources: sources, observedAt: observedAt)
-
-            for summary in seed.itemSummariesByProject[projectID] ?? [] {
-                guard let itemID = summary["id"] as? String,
-                      let detail = seed.itemDetailsByID[itemID] else { continue }
-                var itemEnvelope = seed.envelope(project: projectID, item: itemID)
-                if var board = itemEnvelope["board"] as? [String: Any] {
-                    board["projects"] = catalog
-                    board["items"] = [] as [[String: Any]]
-                    board["item"] = enrichFromIndex(
-                        detail, rowsByTask: sources.rowsByTask,
-                        truncated: sources.usageTruncated,
-                        ingestionReasons: reasons)
-                    itemEnvelope["board"] = board
-                }
-                itemModels[itemID] = projected(itemEnvelope, catalog: catalog,
-                    coverage: coverage, sources: sources, observedAt: observedAt)
-            }
         }
         return .success(.init(revision: seed.header.revision, observedAt: observedAt,
                               catalog: catalogEnvelope, projects: projectModels,
-                              items: itemModels))
+                              items: [:], resolveItem: { itemID, requestedProject in
+            guard let detail = seed.itemDetailsByID[itemID],
+                  let projectID = detail["projectId"] as? String,
+                  requestedProject == nil || requestedProject == projectID else { return nil }
+            var itemEnvelope = seed.envelope(project: projectID, item: itemID)
+            if var board = itemEnvelope["board"] as? [String: Any] {
+                board["projects"] = catalog
+                board["items"] = [] as [[String: Any]]
+                board["item"] = enrichFromIndex(
+                    detail, rowsByTask: sources.rowsByTask,
+                    truncated: sources.usageTruncated,
+                    ingestionReasons: coverage.reasons(projectID: projectID))
+                itemEnvelope["board"] = board
+            }
+            return projected(itemEnvelope, catalog: catalog,
+                             coverage: coverage, sources: sources, observedAt: observedAt)
+        }))
     }
 
     private static func enrichFromIndex(_ item: [String: Any],
@@ -420,7 +508,7 @@ enum ProjectBoardIntegration {
                         ingestionReasons: ingestionReasons)
     }
 
-    private static func boundedSummaries(_ items: [[String: Any]], board: [String: Any])
+    static func boundedSummaries(_ items: [[String: Any]], board: [String: Any])
         -> [[String: Any]] {
         let budget = 1_000_000
         let base = (try? JSONSerialization.data(withJSONObject: ["board": board]).count) ?? budget
@@ -428,10 +516,66 @@ enum ProjectBoardIntegration {
         var retained: [[String: Any]] = []
         for item in items.prefix(500) {
             let size = (try? JSONSerialization.data(withJSONObject: item).count) ?? budget
-            guard used + size <= budget else { break }
-            retained.append(item); used += size
+            let separator = retained.isEmpty ? 0 : 1
+            guard used + size + separator <= budget else { break }
+            retained.append(item); used += size + separator
         }
         return retained
+    }
+
+    /// Stable, bounded list projection. Selected item detail continues to use `enriched` directly;
+    /// a card never pays to carry the detail arrays merely so accounting can find its task links.
+    static func compactCard(_ item: [String: Any]) -> [String: Any] {
+        let stableFields = [
+            "id", "key", "projectId", "title", "type", "state", "summary", "owner",
+            "parentId", "createdAt", "updatedAt", "scopeRevision", "progress",
+            "presentation", "deliveryLanes", "deliveryLaneCount",
+        ]
+        var card: [String: Any] = [:]
+        for key in stableFields where item[key] != nil { card[key] = item[key] }
+
+        if let usage = item["usage"] as? [String: Any] {
+            let usageFields = [
+                "state", "rows", "measured", "total", "output", "incompleteRows",
+                "coverageReasons", "truncated", "costSeries", "missingCostRows",
+            ]
+            var summary: [String: Any] = [:]
+            for key in usageFields where usage[key] != nil { summary[key] = usage[key] }
+            card["usage"] = summary
+        }
+
+        let projection = item["projection"] as? [String: [String: Any]] ?? [:]
+        func collectionSummary(_ name: String, rows: [[String: Any]], checklist: Bool)
+            -> [String: Any] {
+            let retained = projection[name]?["retainedCount"] as? Int ?? rows.count
+            let omitted = projection[name]?["omittedCount"] as? Int ?? 0
+            let isComplete: ([String: Any]) -> Bool = {
+                ["passed", "not_applicable"].contains($0["status"] as? String ?? "")
+            }
+            var value: [String: Any] = [
+                "total": retained + omitted,
+                "completed": rows.filter(isComplete).count,
+                "retained": retained,
+                "omitted": omitted,
+                "coverage": omitted == 0 ? "complete" : "partial",
+            ]
+            if checklist {
+                let required = rows.filter { $0["required"] as? Bool == true }
+                value["required"] = required.count
+                value["requiredCompleted"] = required.filter(isComplete).count
+            }
+            return value
+        }
+        card["cardSummary"] = [
+            "checklist": collectionSummary(
+                "checklist", rows: item["checklist"] as? [[String: Any]] ?? [], checklist: true),
+            "milestones": collectionSummary(
+                "milestones", rows: item["milestones"] as? [[String: Any]] ?? [], checklist: false),
+        ] as [String: Any]
+        if let exact = item["cardSummary"] as? [String: Any] {
+            card["cardSummary"] = exact
+        }
+        return card
     }
 
     private static func projected(_ envelope: [String: Any], catalog: [[String: Any]],

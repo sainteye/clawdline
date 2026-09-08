@@ -60,6 +60,7 @@ class Node {
 function document(lang = "zh-Hant") {
     const doc = { documentElement: { lang }, hidden: false };
     doc.createElement = (tag) => new Node(doc, tag);
+    doc.createElementNS = (_namespace, tag) => new Node(doc, tag);
     return doc;
 }
 function deferred() {
@@ -188,16 +189,118 @@ check(
 );
 check("task success is not landing", boardProgress({ state: "backlog", success: true }) === "planning");
 {
+    const kinds = ["feature", "refactor", "task", "bug", "coordination", "epic"];
+    const p = page({ read: async () => envelope({ items: kinds.map(type => ({
+        ...item(type, "execution"), type, progress: { state: "execution", group: "active" }
+    })) }) });
+    await p.view.open("a");
+    const coordination = p.elements["board-items"].all(".board-coordination-group")[0];
+    if (coordination) { coordination.open = true; coordination.dispatch("toggle"); }
+    const cards = p.elements["board-items"].all(".board-item-card");
+    check("every execution type has a visible icon and text label", cards.length === 6 &&
+        cards.every(card => card.all(".board-kind").length === 1 && card.all(".board-kind-label")[0]?.textContent));
+    check("type identity leads on the left before the separate progress marker", cards.every(card =>
+        card.all(".board-card-top")[0].firstChild?.className.includes("board-kind")));
+    const marks = cards.map(card => card.all(row => row.tagName === "PATH")[0]?.getAttribute("d"));
+    check("six execution types use distinct icon silhouettes", marks.every(Boolean) && new Set(marks).size === 6);
+    check("decorative icons do not duplicate spoken type labels", cards.every(card =>
+        card.all(row => row.tagName === "SVG")[0]?.getAttribute("aria-hidden") === "true"));
+    check("each type has its own visual treatment", kinds.every(type => css.includes('.board-kind-' + type + ' ')));
+    p.view.leave();
+}
+{
+    const p = page({ read: async () => envelope({ readState: { status: "stale", refreshing: false, error: { code: "source_failed" } }, source: { observedAt: 1700000000, ingestion: { issueCount: 1, reasons: ["graph_node_binding_conflict"] } } }) });
+    await p.view.open("a");
+    check("a failed refresh is not described as actively updating", p.elements["board-status"].textContent.includes("更新暫時失敗") && !p.elements["board-status"].textContent.includes("正在背景更新"));
+    check("reading status explains coverage without raw protocol jargon", !p.elements["board-status"].textContent.includes("graph_node_binding_conflict") && p.elements["board-status"].textContent.includes("資料截至"));
+    p.view.leave();
+}
+{
+    const readable = item("Raw broker graph destination that nobody should need to parse", "execution");
+    readable.summary = "SOURCE-OBJECTIVE-UNIQUE";
+    readable.presentation = { authority: "narrative_only", variants: [
+        { locale: "zh-TW", status: "current", title: "讓手機閱讀更清楚", summary: "改善手機上的文章排版。", outcome: "", nextStep: "" },
+        { locale: "en", status: "current", title: "Readable mobile articles", summary: "Improve article layout on phones." }
+    ] };
+    readable.cardSummary = { checklist: { required: 5, requiredCompleted: 3, coverage: "complete" } };
+    const p = page({ read: async () => envelope({ items: [readable], item: readable }) });
+    await p.view.open("a");
+    check("localized persisted AI title replaces raw destination on the card",
+        p.elements["board-items"].all(".board-card-title")[0].textContent === "讓手機閱讀更清楚");
+    check("compact card counts do not require loading checklist records",
+        p.elements["board-items"].textContent.includes("3/5"));
+    await p.view.open("a", readable.id);
+    check("detail leads with the same readable title and identifies AI narrative",
+        p.elements["board-detail"].all(".board-detail-title")[0].textContent === "讓手機閱讀更清楚"
+        && p.elements["board-detail"].textContent.includes("AI 整理"));
+    check("AI reading retains the original objective in the detail",
+        p.elements["board-detail"].textContent.includes("SOURCE-OBJECTIVE-UNIQUE"));
+    p.view.leave();
+    const en = page({ read: async () => envelope({ items: [readable] }) }, "en");
+    await en.view.open("a");
+    check("configured reading language chooses the matching stored variant",
+        en.elements["board-items"].all(".board-card-title")[0].textContent === "Readable mobile articles");
+    en.view.leave();
+}
+{
+    const pendingItem = item("Waiting for acceptance", "verified");
+    pendingItem.progress = { state: "verified", group: "waiting", active: false };
+    const p = page({ read: async () => envelope({ items: [pendingItem] }) });
+    await p.view.open("a");
+    check("waiting work never claims there is nothing left to advance",
+        !p.elements["board-items"].textContent.includes("目前沒有待推進"));
+    p.view.leave();
+}
+{
+    const epic = item("Program", "execution"); epic.type = "epic";
+    epic.deliveryLanes = [{ id: "cloud-child", projectId: "b", projectName: "Cloud", title: "接收排程通知", owner: "%406", progress: { state: "execution" }, checklistDone: 2, checklistTotal: 4 }];
+    const reads = [];
+    const p = page({ read: async (project, id) => { reads.push([project, id]); return envelope({ item: epic }); } });
+    await p.view.open("a", epic.id);
+    const lane = p.elements["board-detail"].all(".board-delivery-lane")[0];
+    check("Epic presents related delivery with Project, owner and progress", lane && lane.textContent.includes("Cloud") && lane.textContent.includes("%406") && lane.textContent.includes("執行中"));
+    lane.click(); await flush();
+    check("cross-Project delivery opens the item's owning Project", reads.some(([project, id]) => project === "b" && id === "cloud-child"));
+    p.view.leave();
+}
+{
+    const declared = item("declared", "execution");
+    declared.progress.basisCodes = ["declared_output_span"];
+    const p = page({ read: async () => envelope({ items: [declared] }) });
+    await p.view.open("a");
+    check("declared activity is visibly attributed rather than presented as observed execution",
+        p.elements["board-items"].textContent.includes("Session 回報")
+        && p.elements["board-items"].textContent.includes("尚未取得派工系統的執行確認"));
+    p.view.leave();
+}
+{
     const p = page({ read: () => Promise.resolve(envelope({
-        projects: [{ id: "a", name: "Clawdline", summary: { open: 24, needsClarity: 6, landed: 90 } }],
+        projects: [{ id: "a", name: "Clawdline", summary: { active: 24, waiting: 6, landed: 90 } }],
         items: [], truncated: true
     })) });
     await p.view.open("a");
     check("Project totals come from its materialized summary, not loaded item rows",
         p.elements["board-items"].all(".board-overview-stat").map(row => row.textContent).join("|")
-            === "24尚在推進|6需要釐清|90已落地");
+            === "24正在進行|6等待處理|90已落地");
     check("partial item projection does not contradict a nonempty Project model",
         !p.elements["board-items"].textContent.includes("目前沒有待推進的項目"));
+    p.view.leave();
+}
+{
+    const historical = item("old-audit", "delivered");
+    historical.progress = { state: "delivered", active: false, historical: true, group: "history" };
+    const live = item("live", "execution");
+    live.progress = { state: "execution", active: true, historical: false, group: "active" };
+    const p = page({ read: async () => envelope({ items: [historical, live] }) });
+    await p.view.open("a");
+    const retained = p.elements["board-items"].all(".board-unconfirmed-history")[0];
+    check("collapsed historical groups do not construct every hidden card", retained.all(".board-item-card").length === 0);
+    retained.open = true; retained.dispatch("toggle");
+    check("unfinished history stays readable outside current work without claiming completion",
+        retained && retained.tagName === "DETAILS" && retained.textContent.includes("old-audit")
+        && !retained.textContent.includes("live <literal>"));
+    check("old audit cannot inflate active counter", p.elements["board-items"]
+        .all(".board-overview-stat")[0].textContent === "1正在進行");
     p.view.leave();
 }
 {
@@ -230,15 +333,25 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
         "even unfiltered server data cannot mix projects",
         !p.elements["board-items"].textContent.includes("foreign")
     );
-    check("four scoped items rendered", p.elements["board-items"].all(".board-item-card").length === 4);
+    check("current scoped items render without constructing collapsed history", p.elements["board-items"].all(".board-item-card").length === 2);
     check("payload is literal text", p.elements["board-items"].textContent.includes("<literal>"));
     const history = p.elements["board-items"].all(".board-history-group")[0];
     check("history is a collapsible region", history.tagName === "DETAILS");
+    history.open = true; history.dispatch("toggle");
     check("landed and canceled retained in history", history.all(".board-item-card").length === 2);
     check("delivery alone stays outside completed history", !history.textContent.includes("delivered"));
     const stats = p.elements["board-items"].all(".board-overview-stat");
     check("canceled is excluded from landed count", stats[2].textContent === "1已落地");
-    check("visual progress exists", p.elements["board-items"].all(".board-journey").length === 4);
+    check("known lifecycle stages have a visual journey", p.elements["board-items"].all(".board-journey").length === 2);
+    const deliveredCard = p.elements["board-items"].all(".board-item-card")
+        .find(row => row.dataset.boardItemId === "delivered");
+    check("delivery has an explicit visible checkpoint instead of four unlit stages",
+        deliveredCard.all(".board-progress-checkpoint").length === 1
+        && deliveredCard.all(".board-journey").length === 0
+        && deliveredCard.textContent.includes("階段待確認"));
+    check("canceled work does not look like an unstarted four-stage journey",
+        p.elements["board-items"].all(".board-item-card")
+            .find(row => row.dataset.boardItemId === "stopped").all(".board-journey").length === 0);
     check(
         "each journey has one observed stage at most",
         p.elements["board-items"]
@@ -349,7 +462,9 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     );
     check("unsafe scheme is not an anchor", target.all((n) => n.tagName === "A").length === 1);
     check("partial usage is not an exact total", target.textContent.includes("≥ 120"));
-    check("source gaps remain visible", p.elements["board-status"].textContent.includes("link_capacity"));
+    check("source gaps remain visible with technical detail available",
+        p.elements["board-status"].textContent.includes("source records still need matching")
+        && p.elements["board-status"].title.includes("link_capacity"));
     target.all((n) => n.dataset.boardAction === "open-session")[0].click();
     await flush();
     check(
@@ -463,7 +578,7 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     await p.view.refresh();
     check(
         "failed refresh keeps last known records",
-        p.elements["board-items"].all(".board-item-card").length === 4
+        p.elements["board-items"].all(".board-item-card").length === 2
     );
     check(
         "failure names stale information rather than empty success",

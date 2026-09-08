@@ -96,7 +96,8 @@ enum ProjectBoardHTTP {
         }
         if case .verifiedCloud = source { canAdmin = canSend }
         if case .http = source, !machine, !remoteWrite { canSend = false; canAdmin = false }
-        return ["id": actor, "canWrite": canSend, "canManage": canAdmin && canSend]
+        return ["id": actor, "canWrite": canSend, "canManage": canAdmin && canSend,
+                "narrativeProvider": Config.shared.automaticNamingAssistant.rawValue]
     }
 
     static func admit(_ request: RemoteServer.Request, machine: Bool,
@@ -154,7 +155,7 @@ enum ProjectBoardHTTP {
         else {
             return .response(.error(400, "bad_request", "A bounded board command is required."))
         }
-        if body["operation"] as? String == "set_enabled", !canAdmin {
+        if ["set_enabled", "set_ai_consent"].contains(body["operation"] as? String ?? ""), !canAdmin {
             return .response(.error(403, "forbidden", "Changing board mode requires an administrative device."))
         }
         // Only a local root may attest a verification/finding. This is an attributed

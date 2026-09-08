@@ -199,15 +199,15 @@ document.documentElement.className = "booting";
              reading about them. Three things and no new mechanism, exactly as `docs/web-pages.md`
              says: the section below, the line in `main.js`'s registry, and this row. -->
         <button class="sidebar-item" id="nav-projects" type="button" data-page-to="projects">Projects</button>
-        <button class="sidebar-item" id="nav-board" type="button" data-page-to="board">Projects · Board</button>
+        <button class="sidebar-item" id="nav-board" type="button" data-page-to="board" hidden>Projects · Board</button>
         <!-- `usage-open` keeps its name from the days when it was a button at the bottom of the
              settings sheet. The name is what `usage.css` styles and what the Usage guard looks for;
              what it does is now the same as every other row here. -->
-        <button class="sidebar-item" id="usage-open" type="button" data-page-to="usage">Usage</button>
+        <button class="sidebar-item" id="usage-open" type="button" data-page-to="usage" hidden>Usage</button>
         <!-- Beside Usage, because it is the same subject read a different way: Usage answers
              what was spent, this answers what the spending bought and what reviewing it found.
              Three things and no new mechanism, exactly as `docs/web-pages.md` says. -->
-        <button class="sidebar-item" id="nav-ledger" type="button" data-page-to="ledger">Verification ledger</button>
+        <button class="sidebar-item" id="nav-ledger" type="button" data-page-to="ledger" hidden>Verification ledger</button>
         <!-- After the readings and before Settings. It is not a setting: nothing on it is a
              preference, and one of its buttons starts a payment. -->
         <button class="sidebar-item" id="nav-plan" type="button" data-page-to="plan">Plan</button>
@@ -834,6 +834,9 @@ document.documentElement.className = "booting";
             <button class="chip" id="settings-board-toggle" type="button" aria-pressed="true" disabled>Loading…</button>
             <button class="chip" id="settings-board-history" type="button" data-page-to="projects">Open projects</button>
             <p class="say" id="settings-board-status" role="status"></p>
+            <b id="settings-board-ai-title">AI reading summaries</b>
+            <p class="say" id="settings-board-ai-say">Off until you consent to sending stored Board titles, descriptions and documented outcomes to your selected AI provider. No transcript or attachment reading.</p>
+            <button class="chip" id="settings-board-ai-toggle" type="button" aria-pressed="false" disabled>Loading…</button>
         </div>
         <div class="foot"><span id="settings-version"></span></div>
         <button class="chip wide" id="settings-close" type="button" data-page-to="sessions">Close</button>

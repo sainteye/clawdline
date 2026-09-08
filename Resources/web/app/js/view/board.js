@@ -29,11 +29,12 @@ const STATUS = {
         "Recorded evidence supports this delivery.",
         "已有成果落地的紀錄，可展開查看依據。"
     ],
+    settled: ["Execution finished", "執行已結束", "The root confirmed no code landing is needed for this execution.", "這段工作已結束，負責人確認不需要程式碼落地。"],
     delivered: [
-        "Delivered · awaiting confirmation",
-        "已交付・待確認",
-        "An attempt finished; landing is not established.",
-        "執行已交付，尚未確認整個項目已落地。"
+        "Task output received · stage unconfirmed",
+        "已有任務交付・階段待確認",
+        "A task produced output. This does not establish the whole item's verification or landing.",
+        "已有任務產出；尚不能據此判定整個項目已驗證或落地。"
     ],
     blocked: [
         "Needs attention",
@@ -57,6 +58,15 @@ const TYPES = {
     coordination: ["Coordination", "協調"],
     epic: ["Epic", "大型計畫"]
 };
+// Stable monochrome silhouettes; type color never substitutes for the readable label.
+const TYPE_ICONS = {
+    feature: "M12 3v18M3 12h18M5.5 5.5l13 13M18.5 5.5l-13 13",
+    refactor: "M4 7h13l-3-3m3 3-3 3M20 17H7l3-3m-3 3 3 3",
+    task: "M6 3h9l3 3v15H6zM9 12l2 2 4-4M14 3v4h4",
+    bug: "M8 8h8v8a4 4 0 0 1-8 0zM9 8V6a3 3 0 0 1 6 0v2M4 10h4m8 0h4M4 15h4m8 0h4M5 21l4-3m6 0 4 3M12 9v10",
+    coordination: "M9 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0M21 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0M15 19a3 3 0 1 1-6 0 3 3 0 0 1 6 0M6 10v3l4 3m8-6v3l-4 3M10 5h4",
+    epic: "M12 2 2 7l10 5 10-5zM2 12l10 5 10-5M2 17l10 5 10-5"
+};
 const PHASES = {
     planning: ["Planning", "規劃"],
     output: ["Main output", "執行產出"],
@@ -72,6 +82,23 @@ function localized(ctx, pair) {
 }
 function words(ctx, en, zh) {
     return localized(ctx, [en, zh]);
+}
+function readingLocale(value) {
+    const locale = String(value || "en").toLowerCase();
+    if (/^zh-(tw|hant|hk)/.test(locale)) return "zh-hant";
+    if (/^zh/.test(locale)) return "zh-hans";
+    return locale.split("-")[0];
+}
+function reading(ctx, item) {
+    const locale = readingLocale(ctx.doc.documentElement.lang);
+    const variants = item.presentation && item.presentation.authority === "narrative_only"
+        ? item.presentation.variants || [] : [];
+    const current = variants.find(row => row.status === "current" && readingLocale(row.locale) === locale);
+    return current || { title: item.title, summary: item.summary === "Retained broker execution record." ? "" : item.summary };
+}
+function shortTitle(value) {
+    const text = String(value || "").trim();
+    return text.length > 100 ? text.slice(0, 100) + "…" : text;
 }
 function el(ctx, parent, tag, value, cls) {
     const node = ctx.doc.createElement(tag);
@@ -132,6 +159,18 @@ export function boardProgress(item) {
         item.state;
     return STATUS[state] ? state : "unknown";
 }
+export function boardGroup(item) {
+    if (item.type === "coordination") return "coordination";
+    const group = item.progress && item.progress.group;
+    if (["active", "waiting", "history", "completed", "canceled"].includes(group)) return group;
+    const state = boardProgress(item);
+    if (state === "landed" || state === "settled") return "completed";
+    if (state === "canceled") return "canceled";
+    if (state === "queued" || state === "verified") return "waiting";
+    if (item.progress && item.progress.active === true) return "active";
+    if (item.progress && item.progress.historical === true) return "history";
+    return ["execution", "correction", "review_testing"].includes(state) ? "active" : "waiting";
+}
 function say(ctx, item) {
     if (item.type === "coordination")
         return words(
@@ -139,6 +178,14 @@ function say(ctx, item) {
                 "Coordination is recorded by time period or handoff, not completion status.",
                 "依時段或交接記錄協調，不套用完成狀態。"
         );
+    if (((item.progress && item.progress.basisCodes) || []).includes("active_delivery_lanes"))
+        return words(ctx, "Related implementation work is active; see each Project below.", "相關實作正在進行；下方可查看各專案的進度。");
+    if (boardProgress(item) === "queued" && item.progress && item.progress.attemptCounts && item.progress.attemptCounts.succeeded > 0)
+        return words(ctx, "Earlier work produced output. The next step is queued.", "先前已有工作產出，目前等待下一步執行。");
+    if (((item.progress && item.progress.basisCodes) || []).some(code => /^declared_.+_span$/.test(code)))
+        return words(ctx,
+            "A Session reports this activity; execution has not yet been confirmed by the dispatcher.",
+            "Session 回報此階段正在進行；尚未取得派工系統的執行確認。");
     if (boardProgress(item) === "landed" && ((item.progress && item.progress.warningCodes) || []).length)
         return words(
             ctx,
@@ -159,6 +206,21 @@ function badge(ctx, parent, item) {
         localized(ctx, STATUS[boardProgress(item)]),
         "board-state-pill board-state-" + boardProgress(item)
     );
+}
+function typeMark(ctx, parent, item) {
+    const type = TYPES[item.type] ? item.type : "task";
+    const mark = el(ctx, parent, "span", null, "board-kind board-kind-" + type);
+    const tile = el(ctx, mark, "span", null, "board-kind-icon");
+    const svg = ctx.doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+    for (const [name, value] of Object.entries({ viewBox: "0 0 24 24", width: "22", height: "22",
+        fill: "none", stroke: "currentColor", "stroke-width": "1.6", "stroke-linecap": "round",
+        "stroke-linejoin": "round", "aria-hidden": "true", focusable: "false" })) svg.setAttribute(name, value);
+    const path = ctx.doc.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", TYPE_ICONS[type]);
+    svg.appendChild(path);
+    tile.appendChild(svg);
+    el(ctx, mark, "span", localized(ctx, TYPES[type]), "board-kind-label");
+    return mark;
 }
 function usageText(ctx, item) {
     const u = item.usage;
@@ -186,6 +248,15 @@ function journey(ctx, parent, item) {
             verified: 2,
             landed: 3
         }[state];
+    // Delivery is an attempt receipt, not a fifth lifecycle state or proof that execution,
+    // verification and landing all happened. Show the known observation explicitly rather
+    // than four dark dots that incorrectly suggest this work never began.
+    if (step === undefined) {
+        const checkpoint = el(ctx, parent, "div", null, "board-progress-checkpoint");
+        el(ctx, checkpoint, "span", state === "canceled" ? "—" : "●", "board-step-dot");
+        el(ctx, checkpoint, "span", localized(ctx, STATUS[state]));
+        return;
+    }
     const track = el(ctx, parent, "ol", null, "board-journey");
     track.setAttribute("aria-label", words(ctx, "Recorded progress", "紀錄中的進度"));
     [
@@ -208,26 +279,31 @@ function card(ctx, item) {
     node.dataset.boardType = item.type;
     node.dataset.boardState = boardProgress(item);
     const top = el(ctx, node, "span", null, "board-card-top");
+    typeMark(ctx, top, item);
     badge(ctx, top, item);
-    el(ctx, top, "span", localized(ctx, TYPES[item.type] || [item.type, item.type]), "board-type");
-    el(ctx, node, "strong", item.title || item.key || item.id, "board-card-title");
-    if (item.summary) el(ctx, node, "span", item.summary, "board-card-summary");
+    const narrative = reading(ctx, item);
+    el(ctx, node, "strong", shortTitle(narrative.title || item.key || item.id), "board-card-title");
+    if (narrative.summary) el(ctx, node, "span", narrative.summary, "board-card-summary");
     const blocker = (item.obligations || []).find((row) => row.blocking && !row.resolved);
     el(ctx, node, "span", blocker ? blocker.title : say(ctx, item), "board-card-next");
     journey(ctx, node, item);
     const foot = el(ctx, node, "span", null, "board-card-facts"),
-        checks = (item.checklist || []).filter((row) => row.required);
-    if (checks.length && item.type !== "coordination")
+        checks = (item.checklist || []).filter((row) => row.required),
+        summary = item.cardSummary && item.cardSummary.checklist,
+        total = summary ? summary.required : checks.length,
+        completed = summary ? summary.requiredCompleted : checks.filter(row => ["passed", "not_applicable"].includes(row.status)).length;
+    if (total && item.type !== "coordination")
         el(
             ctx,
             foot,
             "span",
-            checks.filter((row) => ["passed", "not_applicable"].includes(row.status)).length +
+            (summary && summary.coverage === "partial" ? words(ctx, "Loaded ", "已載入 ") : "") + completed +
                 "/" +
-                checks.length +
+                total +
                 words(ctx, " checks", " 項檢查")
         );
-    el(ctx, foot, "span", usageText(ctx, item));
+    if (item.owner && !/[a-f0-9]{8}-[a-f0-9-]{20,}/i.test(item.owner))
+        el(ctx, foot, "span", words(ctx, "Owner ", "負責 ") + item.owner);
     el(ctx, foot, "span", date(item.updatedAt));
     return node;
 }
@@ -237,6 +313,30 @@ function section(ctx, parent, title, collapsed = false, key = title) {
     if (collapsed) node.open = !!(ctx.openSections && ctx.openSections.has(key));
     el(ctx, node, collapsed ? "summary" : "h2", title, "board-section-title");
     return node;
+}
+function historicalCards(ctx, part, rows, searching) {
+    if (searching) part.open = true;
+    let built = false;
+    const key = ctx.state.projectId + ":" + part.dataset.boardSection;
+    ctx.cardLimits ||= new Map();
+    const fill = () => {
+        if (!part.open || built) return;
+        built = true;
+        const list = el(ctx, part, "div", null, "board-card-grid");
+        let drawn = 0, more;
+        const append = () => {
+            if (more) part.removeChild(more);
+            const limit = Math.min(rows.length, Math.max(30, ctx.cardLimits.get(key) || 30));
+            rows.slice(drawn, limit).forEach(row => list.appendChild(card(ctx, row)));
+            drawn = limit;
+            if (drawn < rows.length) more = button(ctx, part,
+                words(ctx, "Show more", "顯示更多") + " · " + drawn + "/" + rows.length,
+                "more-history", () => { ctx.cardLimits.set(key, drawn + 30); append(); });
+        };
+        append();
+    };
+    part.addEventListener("toggle", fill);
+    fill();
 }
 function fact(ctx, parent, label, value) {
     const row = el(ctx, parent, "div", null, "board-fact");
@@ -251,7 +351,7 @@ export function renderCompletionReport(ctx, parent, item, showHistory = true) {
             : coordination
             ? words(ctx, "Period / handoff report", "階段／交接報告")
             : words(ctx, "Completion report", "結案報告"),
-        container = section(ctx, parent, title, false, "completion-report");
+        container = section(ctx, parent, title, report.status === "absent", "completion-report");
     container.className += " board-completion-report";
     if (report.status === "absent") {
         el(
@@ -415,13 +515,15 @@ function detail(ctx) {
         return;
     }
     const head = el(ctx, target, "header", null, "board-detail-header");
-    badge(ctx, head, item);
-    el(ctx, head, "h2", item.title, "board-detail-title");
-    if (item.summary) el(ctx, head, "p", item.summary, "board-detail-summary");
+    const identity = el(ctx, head, "div", null, "board-card-top");
+    typeMark(ctx, identity, item);
+    badge(ctx, identity, item);
+    const narrative = reading(ctx, item);
+    el(ctx, head, "h2", narrative.title || item.title, "board-detail-title");
+    if (narrative.summary) el(ctx, head, "p", narrative.summary, "board-detail-summary");
+    if (narrative.locale) el(ctx, head, "p", words(ctx, "AI reading summary · progress follows recorded evidence", "AI 整理・進度仍以實際紀錄為準"), "board-narrative-provenance");
     journey(ctx, head, item);
     el(ctx, head, "p", say(ctx, item), "board-detail-summary");
-    if (["task", "bug"].includes(item.type))
-        el(ctx, head, "p", usageText(ctx, item), "board-usage-value");
     if (
         !["landed", "not_applicable"].includes(boardProgress(item)) &&
         item.progress &&
@@ -440,6 +542,26 @@ function detail(ctx) {
             "board-section-help"
         );
     renderCompletionReport(ctx, target, item);
+    if (narrative.outcome && (!item.completionReport || item.completionReport.status === "absent")) {
+        const outcomes = section(ctx, target, words(ctx, "What changed", "完成了什麼"));
+        el(ctx, outcomes, "p", narrative.outcome, "board-detail-summary");
+    }
+    if (narrative.nextStep) {
+        const next = section(ctx, target, words(ctx, "Recorded next step", "紀錄中的下一步"));
+        el(ctx, next, "p", narrative.nextStep, "board-detail-summary");
+    }
+    if ((item.deliveryLanes || []).length) {
+        const lanes = section(ctx, target, words(ctx, "Delivery across Projects", "各專案的實作進度"));
+        item.deliveryLanes.forEach(lane => {
+            const row = button(ctx, lanes, null, "delivery-lane", () => ctx.openProjectItem(lane.projectId, lane.id), "board-delivery-lane");
+            el(ctx, row, "span", lane.projectName, "board-lane-project");
+            el(ctx, row, "strong", shortTitle(reading(ctx, lane).title || lane.title));
+            badge(ctx, row, lane);
+            el(ctx, row, "span", [lane.owner, lane.checklistTotal ? lane.checklistDone + "/" + lane.checklistTotal + words(ctx, " checks", " 項檢查") : null].filter(Boolean).join(" · "), "board-card-facts");
+        });
+        if (item.deliveryLaneCount > item.deliveryLanes.length)
+            el(ctx, lanes, "p", words(ctx, "More related work exists in its owning Projects.", "還有其他相關項目，可至所屬專案查看。"), "board-section-help");
+    }
     const specialized = item.typeDetails || {};
     const topics =
         item.type === "bug"
@@ -619,10 +741,18 @@ function detail(ctx) {
             date(row.startedAt) + " – " + (row.endedAt ? date(row.endedAt) : words(ctx, "Ongoing", "持續中"))
         )
     );
+    const original = section(ctx, target, words(ctx, "Original objective", "原始目標與描述"), true);
+    fact(ctx, original, words(ctx, "Original title", "原始標題"), item.title);
+    fact(ctx, original, words(ctx, "Original description", "原始描述"), item.summary || words(ctx, "Not recorded", "尚未記錄"));
     const proof = section(ctx, target, words(ctx, "Why this status?", "狀態的依據"), true),
         current = item.currentEvidence || {};
-    if (item.progress && item.progress.reason)
-        fact(ctx, proof, words(ctx, "Basis", "判讀依據"), item.progress.reason);
+    if (item.progress && item.progress.reason) {
+        fact(ctx, proof, words(ctx, "Basis", "判讀依據"), say(ctx, item));
+        const raw = section(ctx, proof, words(ctx, "Technical source", "技術來源"), true);
+        fact(ctx, raw, "Source reason", item.progress.reason);
+        fact(ctx, raw, words(ctx, "Original title", "原始標題"), item.title);
+        fact(ctx, raw, "ID", item.id);
+    }
     [
         ["verifications", "verificationId", ["Verification", "驗證"]],
         ["landings", "landingId", ["Landing", "落地"]],
@@ -800,29 +930,28 @@ export function bindBoardPage(elements, environment = {}) {
         const rows = all.filter(
             (row) =>
                 !query ||
-                [row.title, row.summary, row.key, row.owner].join(" ").toLocaleLowerCase().includes(query)
+                [row.title, row.summary, reading(ctx, row).title, reading(ctx, row).summary, row.key, row.owner].join(" ").toLocaleLowerCase().includes(query)
         );
         const delivery = all.filter((row) => row.type !== "coordination"),
             coordinated = rows.filter((row) => row.type === "coordination");
-        const active = rows.filter(
-                (row) => row.type !== "coordination" && !["landed", "canceled"].includes(boardProgress(row))
-            ),
-            history = rows.filter((row) => ["landed", "canceled"].includes(boardProgress(row)));
+        const active = rows.filter(row => boardGroup(row) === "active"),
+            waiting = rows.filter(row => boardGroup(row) === "waiting"),
+            unconfirmed = rows.filter(row => boardGroup(row) === "history"),
+            history = rows.filter(row => ["completed", "canceled"].includes(boardGroup(row)));
         const overview = el(ctx, target, "div", null, "board-overview");
         const summary = project && project.summary;
         const modelCount = (key, loaded) => summary && Number.isInteger(summary[key]) && summary[key] >= 0
             ? summary[key] : loaded;
         [
             [
-                modelCount("open", delivery.filter((row) => !["landed", "canceled"].includes(boardProgress(row))).length),
-                "Open work",
-                "尚在推進"
+                modelCount("active", delivery.filter(row => boardGroup(row) === "active").length),
+                "Active now",
+                "正在進行"
             ],
             [
-                modelCount("needsClarity", delivery.filter((row) => ["blocked", "delivered", "unknown"].includes(boardProgress(row)))
-                    .length),
-                "Needs clarity",
-                "需要釐清"
+                modelCount("waiting", delivery.filter(row => boardGroup(row) === "waiting").length),
+                "Waiting",
+                "等待處理"
             ],
             [modelCount("landed", delivery.filter((row) => boardProgress(row) === "landed").length), "Landed", "已落地"]
         ].forEach(([count, en, chinese]) => {
@@ -843,15 +972,32 @@ export function bindBoardPage(elements, environment = {}) {
                 "p",
                 query
                     ? words(ctx, "No matching open work.", "沒有符合搜尋的進行中項目。")
-                    : modelCount("open", 0) > 0 ? words(ctx,
+                    : modelCount("active", 0) > 0 ? words(ctx,
                           "More work is recorded than this view has loaded.",
-                          "專案還有進行中的工作，此畫面尚未載入。") : words(
+                          "專案還有進行中的工作，此畫面尚未載入。")
+                      : waiting.length || unconfirmed.length || modelCount("waiting", 0) > 0 || modelCount("historicalUnconfirmed", 0) > 0
+                      ? words(ctx, "No work is executing right now. Other records are shown below.", "目前沒有執行中的工作，其他待處理與歷史紀錄列於下方。") : words(
                           ctx,
                           "No open work. Tell your assistant what you would like to do next.",
                           "目前沒有待推進的項目。想做什麼，直接在對話中告訴 assistant。"
                       ),
                 "board-empty"
             );
+        if (waiting.length) {
+            const part = section(ctx, target, words(ctx, "Waiting or planned", "等待處理與已規劃")),
+                list = el(ctx, part, "div", null, "board-card-grid");
+            waiting.forEach(row => list.appendChild(card(ctx, row)));
+        }
+        if (unconfirmed.length) {
+            const part = section(ctx, target,
+                words(ctx, "Historical records · outcome unconfirmed", "歷史紀錄・結果尚未確認")
+                    + " · " + unconfirmed.length, true, "unconfirmed-history");
+            part.className += " board-unconfirmed-history";
+            el(ctx, part, "p", words(ctx,
+                "No activity is currently recorded for these items. Missing outcome evidence does not mean work is ongoing.",
+                "這些項目目前沒有執行活動紀錄。結果資料不足，不代表仍在進行。"), "board-section-help");
+            historicalCards(ctx, part, unconfirmed, !!query);
+        }
         if (history.length) {
             const part = section(
                 ctx,
@@ -861,10 +1007,7 @@ export function bindBoardPage(elements, environment = {}) {
                 "delivery-history"
             );
             part.className += " board-history-group";
-            const list = el(ctx, part, "div", null, "board-card-grid");
-            history
-                .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-                .forEach((row) => list.appendChild(card(ctx, row)));
+            historicalCards(ctx, part, history.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)), !!query);
         }
         if (coordinated.length) {
             const part = section(
@@ -886,8 +1029,7 @@ export function bindBoardPage(elements, environment = {}) {
                 ),
                 "board-section-help"
             );
-            const list = el(ctx, part, "div", null, "board-card-grid");
-            coordinated.forEach((row) => list.appendChild(card(ctx, row)));
+            historicalCards(ctx, part, coordinated, !!query);
         }
     }
     function render() {
@@ -989,19 +1131,20 @@ export function bindBoardPage(elements, environment = {}) {
                     : words(ctx, "Automatically updated from recorded activity", "依執行紀錄自動更新");
                 if (state.readStatus === "loading") message = words(ctx,
                     "Preparing project records in the background…", "正在背景整理專案紀錄…");
-                if (state.readStatus === "stale") message = words(ctx,
-                    "Showing the last available records; updating in the background.", "目前顯示上次可用的紀錄，正在背景更新。");
+                if (state.enabled && state.readStatus === "stale") message = board.readState && board.readState.error && !board.readState.refreshing
+                    ? words(ctx, "Update temporarily failed; retained records remain readable.", "更新暫時失敗；仍可閱讀先前保留的紀錄。")
+                    : words(ctx, "Showing the last available records; updating in the background.", "目前顯示上次可用的紀錄，正在背景更新。");
                 if (state.readStatus === "error") message = words(ctx,
                     "Project records are temporarily unavailable; retrying in the background.", "專案紀錄暫時無法取得，稍後會在背景重試。");
-                if (board.source && board.source.observedAt) message += " · " + date(board.source.observedAt);
+                if (board.source && board.source.observedAt) message += words(ctx, " · Records as of ", "・資料截至 ") + date(board.source.observedAt);
                 if (board.truncated)
                     message += words(ctx, " · Some records are not loaded", "・部分紀錄未載入");
                 const ingestion = board.source && board.source.ingestion;
                 if (ingestion && ingestion.issueCount)
-                    message +=
-                        words(ctx, " · Source synchronization incomplete: ", "・來源同步不完整：") +
-                        (ingestion.reasons || []).join(", ");
+                    message += words(ctx, " · Some source records still need matching", "・部分來源紀錄尚待對應");
                 ctx.status(message);
+                elements["board-status"].title = [board.readState && "Snapshot " + board.readState.revision + " / " + board.revision,
+                    ingestion && (ingestion.reasons || []).join(", ")].filter(Boolean).join(" · ");
             })
             .catch((error) => {
                 if (state.active && ticket === state.readTicket) {
@@ -1090,6 +1233,7 @@ export function bindBoardPage(elements, environment = {}) {
         return request;
     }
     ctx.openItem = (item) => open(state.projectId, item);
+    ctx.openProjectItem = (project, item) => open(project, item);
     function escape() {
         if (state.itemId) return open(state.projectId);
         if (state.projectId) {

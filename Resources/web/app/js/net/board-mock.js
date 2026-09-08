@@ -1,6 +1,6 @@
 // Browser-only preview data. No mock writes reach the live board or claim Git proof.
 export function createBoardMock() {
-    var now = Math.floor(Date.now() / 1000), revision = 1, enabled = true;
+    var now = Math.floor(Date.now() / 1000), revision = 1, enabled = true, narrativeConsent = null;
     function icon(accent) { return { accent: accent, cells: [
         [null, accent, accent, accent, accent, accent, accent, null],
         [accent, accent, "#141416", accent, accent, "#141416", accent, accent],
@@ -83,7 +83,8 @@ export function createBoardMock() {
         }
         return { board: { schemaVersion: 1, revision: revision, enabled: enabled,
             mode: enabled ? "board" : "standard", entitlement: { state: "free_preview", label: "Currently free" },
-            viewer: { id: "preview", canWrite: true, canManage: true },
+            narrativeConsent: narrativeConsent,
+            viewer: { id: "preview", canWrite: true, canManage: true, narrativeProvider: "codex" },
             projects: projects, items: project && !item ? items.filter(function (row) { return row.projectId === project; }) : [],
             item: items.find(function (row) { return row.id === item; }) || null,
             reportSelection: report,
@@ -100,9 +101,14 @@ export function createBoardMock() {
                 return structuredClone(saved.result);
             }
             if (body.expectedRevision !== revision) fail("revision_conflict", "Preview changed; refresh and retry.");
-            if (!enabled && body.operation !== "set_enabled") fail("board_disabled", "Preview board is read-only.");
+            if (!enabled && !["set_enabled", "set_ai_consent"].includes(body.operation)) fail("board_disabled", "Preview board is read-only.");
             var item = items.find(function (row) { return row.id === body.itemId; });
             if (body.operation === "set_enabled") enabled = body.enabled;
+            else if (body.operation === "set_ai_consent") {
+                if (typeof body.enabled !== "boolean" || !["codex", "claude"].includes(body.provider)
+                    || body.policy !== "board-reading-v1") fail("invalid_command", "Preview consent requires a named provider and policy.");
+                narrativeConsent = body.enabled ? body.provider : null;
+            }
             else if (body.operation === "create") {
                 item = { id: crypto.randomUUID(), key: "WORK-" + (items.length + 1), projectId: body.projectId,
                     title: body.title, type: body.type, summary: body.summary || "", state: "backlog", owner: body.owner || "",

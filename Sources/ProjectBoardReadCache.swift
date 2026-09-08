@@ -25,15 +25,30 @@ final class ProjectBoardReadCache {
     }
 
     struct Model {
+        typealias ItemResolver = (_ item: String, _ project: String?) -> Envelope?
+
         let revision: Int
         let observedAt: Double
         let catalog: Envelope
         let projects: [String: Envelope]
         let items: [String: Envelope]
+        private let resolveItem: ItemResolver?
+
+        init(revision: Int, observedAt: Double, catalog: Envelope,
+             projects: [String: Envelope], items: [String: Envelope],
+             resolveItem: ItemResolver? = nil) {
+            self.revision = revision
+            self.observedAt = observedAt
+            self.catalog = catalog
+            self.projects = projects
+            self.items = items
+            self.resolveItem = resolveItem
+        }
 
         func envelope(project: String?, item: String?) -> Envelope {
             if let item {
-                if let value = items[item], itemProject(in: value) == project || project == nil {
+                if let value = items[item] ?? resolveItem?(item, project),
+                   itemProject(in: value) == project || project == nil {
                     return value
                 }
                 var value = project.flatMap { projects[$0] } ?? unknownProject(project)
@@ -79,7 +94,7 @@ final class ProjectBoardReadCache {
     }
 
     private let lock = NSLock()
-    private let freshFor: TimeInterval
+    private let retryAfter: TimeInterval
     private let clock: () -> Date
     private let execute: Executor
     private var model: Model?
@@ -87,18 +102,22 @@ final class ProjectBoardReadCache {
     private var generation: UInt64 = 0
     private var inFlight = false
     private var attemptedAt: Double?
+    private var attemptedRevision: Int?
     private var failure: Failure?
     private var refreshStarts = 0
     private var pendingRefresh: Refresh?
     private var pendingReasons: DirtyReasons = []
+    private var pendingRevision: Int?
 
+    /// `freshFor` is retained as the initializer label for source compatibility. It now bounds
+    /// retries after a failed source refresh; elapsed time alone never invalidates a good model.
     init(freshFor: TimeInterval = 10,
          clock: @escaping () -> Date = Date.init,
          execute: @escaping Executor = { work in
              DispatchQueue(label: "clawdline.board.reconcile", qos: .utility).async(execute: work)
          }) {
         precondition(freshFor >= 0)
-        self.freshFor = freshFor
+        self.retryAfter = freshFor
         self.clock = clock
         self.execute = execute
     }
@@ -120,7 +139,9 @@ final class ProjectBoardReadCache {
         generation &+= 1
         pendingRefresh = nil
         pendingReasons = []
+        pendingRevision = nil
         attemptedAt = nil
+        attemptedRevision = nil
         failure = nil
     }
 
@@ -135,13 +156,15 @@ final class ProjectBoardReadCache {
             generation &+= 1
             pendingRefresh = nil
             pendingReasons = []
+            pendingRevision = nil
             attemptedAt = nil
+            attemptedRevision = nil
             failure = nil
         }
         if !header.enabled {
             let retained = model?.envelope(project: project, item: item)
             let revisionBehind = model.map { $0.revision != header.revision } ?? true
-            let answer = stamped(model?.envelope(project: project, item: item) ?? loading(),
+            let answer = stamped(retained ?? loading(),
                                  status: retained == nil ? "loading" : (revisionBehind ? "stale" : "ready"),
                                  header: header, attemptedAt: attemptedAt,
                                  observedAt: model?.observedAt, modelRevision: model?.revision,
@@ -150,10 +173,14 @@ final class ProjectBoardReadCache {
             return answer
         }
 
-        let age = model.map { max(0, now - $0.observedAt) }
-        let revisionBehind = model.map { $0.revision != header.revision } ?? true
-        if !inFlight && (model == nil || age! >= freshFor || revisionBehind || failure != nil) {
-            start = admitLocked([.catalog, .durableModel], refresh, at: now)
+        let revisionBehind = (model?.revision ?? attemptedRevision).map {
+            $0 != header.revision
+        } ?? false
+        let firstAttempt = model == nil && attemptedRevision == nil
+        let retryDue = failure != nil && attemptedAt.map { now - $0 >= retryAfter } == true
+        if !inFlight && (firstAttempt || revisionBehind || retryDue) {
+            start = admitLocked([.catalog, .durableModel], refresh,
+                                revision: header.revision, at: now)
         }
         let status: String
         if model == nil { status = failure == nil ? "loading" : "error" }
@@ -185,15 +212,18 @@ final class ProjectBoardReadCache {
             generation &+= 1
             pendingRefresh = nil
             pendingReasons = []
+            pendingRevision = nil
             attemptedAt = nil
+            attemptedRevision = nil
             failure = nil
         }
         guard header.enabled else { lock.unlock(); return }
         if inFlight {
             pendingRefresh = work
             pendingReasons.formUnion(reasons)
+            pendingRevision = header.revision
         } else {
-            start = admitLocked(reasons, work, at: now)
+            start = admitLocked(reasons, work, revision: header.revision, at: now)
         }
         lock.unlock()
         if let (refreshGeneration, reasons, work) = start {
@@ -201,10 +231,12 @@ final class ProjectBoardReadCache {
         }
     }
 
-    private func admitLocked(_ reasons: DirtyReasons, _ work: @escaping Refresh, at: Double)
+    private func admitLocked(_ reasons: DirtyReasons, _ work: @escaping Refresh,
+                             revision: Int, at: Double)
         -> (UInt64, DirtyReasons, Refresh) {
         inFlight = true
         attemptedAt = at
+        attemptedRevision = revision
         refreshStarts += 1
         return (generation, reasons, work)
     }
@@ -232,8 +264,11 @@ final class ProjectBoardReadCache {
         if enabled == true, let pending = pendingRefresh {
             pendingRefresh = nil
             let reasons = pendingReasons
+            let revision = pendingRevision ?? attemptedRevision ?? model?.revision ?? 0
             pendingReasons = []
-            next = admitLocked(reasons, pending, at: clock().timeIntervalSince1970)
+            pendingRevision = nil
+            next = admitLocked(reasons, pending, revision: revision,
+                               at: clock().timeIntervalSince1970)
         }
         lock.unlock()
         if let (nextGeneration, reasons, work) = next {
@@ -258,6 +293,7 @@ final class ProjectBoardReadCache {
             "revision": modelRevision ?? header.revision,
             "observedAt": observedAt ?? NSNull(),
             "attemptedAt": attemptedAt ?? NSNull(),
+            "refreshing": header.enabled && inFlight,
             "error": NSNull(),
         ]
         if let failure {
@@ -285,7 +321,9 @@ final class ProjectBoardReadCache {
         inFlight = false
         pendingRefresh = nil
         pendingReasons = []
+        pendingRevision = nil
         attemptedAt = nil
+        attemptedRevision = nil
         failure = nil
         refreshStarts = 0
     }

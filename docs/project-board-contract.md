@@ -6,6 +6,8 @@ Project Board is **enabled by default and currently free**. This page describes 
 
 - `ProjectBoardStore` owns persistence, mode, work items, lifecycle gates and command receipts.
 - `ProjectBoardIntegration` projects trusted broker and UsageLedger facts without transferring their ownership to the board.
+- `ProjectBoardNarrative` schedules bounded background reading-text generation through the existing
+  naming runner; it owns no lifecycle or evidence authority.
 - `ProjectBoardRequestCoordinator` owns bounded Board request execution after transport admission: one serial command writer and a separate serial read/encode lane.
 - `ProjectBoardHTTP` owns transport authority and the final response byte budget; local and Cloud requests use the same service.
 - `view/board.js` renders evidence-driven, read-only Project snapshots. `input/board-settings.js` owns navigation and the administrative mode command, not a second persisted mode.
@@ -37,7 +39,12 @@ unavailability refusal, a transport carrying both baseline Project readers may f
 with a visible warning; it must not change the persisted setting. A transport without those readers
 preserves the typed refusal. Authentication and routing refusals do not silently select a fallback.
 
-Graph fallback keys include Project identity. The first explicit binding replaces an inferred fallback; a conflicting later explicit item retains its own task link but reports `graph_binding_conflict` without moving the established fallback. The mapping and conflict coverage survive reload and replay.
+Graph fallback keys include Project identity. The first explicit binding replaces an inferred
+fallback. Node-to-item bindings are persisted separately from the primary graph fallback; different
+nodes may name different items. Conflicting assignments of the same node report
+`graph_node_binding_conflict` without moving that node. Task accounting remains item-owned. Epic
+`related` links may reference other Projects; only unambiguous owning-Project membership can resolve
+a foreign Epic task binding. The mappings and conflict coverage survive reload and replay.
 
 Use `requestId` (nonempty bounded string) and `expectedRevision` on every command, store revision global CAS. Duplicate request with identical normalized body replays receipt; same id different body conflicts. Actor part of identity. Validate closed per-operation keys. User-editable evidence notes must not mint trusted verification/landing. Disabling works even with live work, preserves histories, stops board-only new operations. Board unavailable errors must not block baseline dispatch.
 
@@ -50,7 +57,7 @@ restore an earlier mode. A successful mutation publishes its header only after t
 
 `board`: `schemaVersion:1`, `revision:Int`, `enabled:Bool`, `mode:"board"|"standard"`, `entitlement:{state:"free_preview",label:"Currently free"}`, `projects:[{id,name,itemCount}]`, `items:[Item]`, `item:Item|null` (selected detail), `truncated:Bool`, `updatedAt:unix seconds`. Transport adds `viewer:{id,canWrite,canManage}` on reads and command replies. Local capabilities include the remote-write switch; UI gates do not replace server authority.
 
-Every read also carries `readState:{status,revision,observedAt,attemptedAt,error}`. Top-level
+Every read also carries `readState:{status,revision,observedAt,attemptedAt,refreshing,error}`. Top-level
 `board.revision` is the latest durable command/CAS revision; `readState.revision` is the revision of
 the returned model body. If the header is newer, the body is `stale` and retains its older revision.
 A durable OFF startup seed is `ready` read-only retained history when its revision matches the
@@ -59,6 +66,23 @@ An unknown scoped Project is `status:"error"` with `error.code:"project_not_foun
 unknown/incomplete scope, never an authoritative empty Project.
 
 Item fields: `id`, `key` (human readable), `projectId`, `title`, `type`, `state`, `summary`, `owner` (readable name/id string), `parentId` nullable, `createdAt`, `updatedAt`, `checklist:[{id,title,status,required,evidenceId?}]`, `milestones:[{id,title,status}]`, `artifacts:[{id,title,url,kind}]`, `links:[{id,kind,targetId,label}]`, `obligations:[{id,title,owner,blocking,resolved}]`, `history:[{id,at,actor,kind,summary}]`, `spans:[{id,sessionId,phase,startedAt,endedAt}]`. Include trustworthy findings/verification/landing separately from user claims. Item `usage` may be absent (unknown, never zero); root enriches from UsageLedger.
+
+Project list cards are an allowlisted compact projection, not hidden detail envelopes. They omit
+nested evidence, history, links, spans and checklist/milestone rows, replacing the latter with
+`cardSummary.checklist:{total,completed,required,requiredCompleted,retained,omitted,coverage}` and
+`cardSummary.milestones:{total,completed,retained,omitted,coverage}`. Selected detail retains the
+bounded underlying collections. Truncated lists report their reason and omitted item count.
+
+Optional `presentation:{authority:"narrative_only",variants:[...]}` contains up to three language
+variants with `locale,title,summary,outcome,nextStep,model,authoredAt,status` (`current` or `stale`).
+The internal candidate/write seam uses a source fingerprint and mode-generation fence; it is not
+a public command and grants no evidence authority. Presentation writes persist atomically without
+changing item scope, lifecycle, history or work-update time. Readers use only the current matching
+language. Schema-v1 records without this optional field decode unchanged.
+
+Epic `deliveryLanes` exposes up to 32 related non-Epic implementation summaries, including own
+Project identity, owner, progress and checklist counts; `deliveryLaneCount` states the total.
+Cross-Project navigation must carry the lane's Project, not the enclosing Epic's Project.
 
 `completionReport` is always explicit: `{status:"absent"}` when none exists. Summary/card items expose
 only report metadata (`id`, `version`, `status`, `authoredAt`, `actor`, `authorship`, optional `model`,
@@ -81,7 +105,11 @@ Types: `feature`, `refactor`, `task`, `bug`, `coordination`, `epic`.
 States: `backlog`, `planning`, `ready`, `execution`, `verified`, `integrated`, `closed`, `canceled`. Unknown historical state must remain explicit if imported.
 The browser renders the separate `progress` projection, not a manually advanced status field.
 It carries `state`, evidence-based `reason`/`basisCodes`, procedural `warningCodes`,
-`lifecycleApplicable`, activity/history flags and bounded attempt/evidence counts. Coordination has
+`lifecycleApplicable`, activity/history flags and bounded attempt/evidence counts. `group` is one of
+`active`, `waiting`, `history`, `completed`, `canceled`, `coordination`; unresolved historical
+delivery is not active work. A retained successful Task with broker `nothing_to_land` settlement
+can project `state:"settled"` without landing evidence. A later read-only settled attempt does not
+invalidate prior authoritative landing. Coordination has
 `lifecycleApplicable:false`: its context is an interval or handoff, never a completed/open lifecycle.
 An authoritative later landing can display landed despite missing older procedural records; those
 records qualify the evidence as warnings, not a stale state gate. New work retains previous landings.
@@ -98,6 +126,7 @@ Checklist status: `todo`, `doing`, `passed`, `failed`, `not_applicable`.
 Common fields: `operation`, `requestId`, `expectedRevision`; item operations use `itemId`.
 
 - `set_enabled`: `enabled:Bool`. Always permitted by store; root transport requires admin. Close open spans at suspension boundary; resume never invents suspended usage.
+- `set_ai_consent`: `enabled:Bool`, `provider:"codex"|"claude"`, `policy:"board-reading-v1"`. Requires admin and the same revision/idempotency contract. Independent of Board mode; new and migrated stores default to no consent. Consent is provider-specific and revocable. Changing it invalidates pending narrative writes without changing item lifecycle. Reads expose `narrativeConsent` and `viewer.narrativeProvider`; enabling Board never grants AI consent.
 - `create`: `projectId`, `title`, `type`, optional `summary`, `owner`, `parentId`. Return itemId. Project must exist.
 - `update`: `itemId`, optional `title`, `summary`, `owner`, `type` (validate parent/container rules).
 - `transition`: `itemId`, `state`, optional `note`. Verified/integrated/closed require type-appropriate evidence; artifact Tasks can close with artifact + accepted evidence, never counterfeit Git landing. Trusted caller bool only for backend evidence ingestion, root must enforce credential/role.
@@ -150,6 +179,18 @@ not replace earlier obligations. A successful UsageLedger checkpoint contributes
 leaving the ledger owner. Board never owns the Ledger or waits on its commit lock, and failed
 checkpoints emit no invalidation.
 
+Accepted broker live-state or child-identity changes publish a captured, credential-free source
+record after leaving the registry lock. Creation and terminal/landing receipts are not sufficient:
+`spawning` and `briefed` must reach the durable Board without a GET, restart or raw-data rescan.
+Refused stale replacements emit nothing. The adapter ingests on its utility lane, not on the
+interactive registry owner.
+
+Elapsed time alone does not invalidate a successful model. Failed refreshes have bounded retries;
+the current model is still served. Ordinary broker observations do not rescan UsageLedger. A
+utility timer compares complete published Session inventory Project paths and admits catalog work
+only on changes (or configuration invalidation), never while OFF or on incomplete inventory.
+Catalog reads do not build every item's detail or evaluate an unnecessary startup seed.
+
 If a command persisted but its response projection exceeds the byte budget, the typed error explicitly says the command was saved and carries `commandApplied:true`. Projection failure does not masquerade as a successful mode-off snapshot. Ambiguous persistence/network failure continues to require the same request identity on retry.
 
 Browser `api.board(project?, item?) -> envelope` and `api.boardCommand(body) -> envelope`, using selected/owning machine (never arbitrary fleet machine). Mock supports same shape.
@@ -159,8 +200,9 @@ Browser `api.board(project?, item?) -> envelope` and `api.boardCommand(body) -> 
 Export `bindBoardPage(elements, environment)` returning `{enter,leave,refresh,escape,open,state}`. `elements` has `board`, `board-title`, `board-subtitle`, `board-items`, `board-detail`, `board-status`, `board-search`, `board-back`, `board-refresh`. `environment` has `read(project?,item?)`, `navigate`, `openSession(id)`, `onMode(board)` and optionally `onProjects(projects)` and injectable timers. The Session callback resolves a durable conversation ID to exactly one live terminal ID; zero or multiple matches return a visible typed refusal. Traditional Chinese and English copy is local to the view module. DOM uses safe textContent, not unsanitized HTML.
 
 The Projects page opens the board within one selected Project. Render an overview, visual lifecycle,
-scoped search and item cards; landed/canceled history is collapsed separately. Detail leads with
-objective, progress and a prominent five-part report (or an honest absent/historical qualification),
+scoped search and item cards; unresolved historical records and completed/canceled history are
+collapsed separately and render in batches on expansion. Detail leads with
+objective, progress and a prominent five-part report when present (absence is a collapsed note),
 then blockers and outputs, progressively disclosing token spending, Session and
 worktree relations, evidence and history. No create/edit/transition command is emitted by this view.
 Assistants record objectives and facts through the existing authorized API; lifecycle advancement

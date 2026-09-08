@@ -76,6 +76,14 @@ group("Project Board defaults, mode boundaries, and corrupt stores fail closed")
     let d = BoardTestDriver(name: "mode-\(UUID().uuidString)")
     var board = d.store.snapshot()["board"] as? [String: Any]
     expect("a new store defaults enabled", board?["enabled"] as? Bool, true)
+    check("Board enabled never implies external AI consent", !d.store.permitsNarrative(assistant: .codex))
+    _ = d.send("set_ai_consent", ["enabled": true, "provider": "codex", "policy": "board-reading-v1"])
+    check("explicit provider permission admits only that provider",
+          d.store.permitsNarrative(assistant: .codex) && !d.store.permitsNarrative(assistant: .claude))
+    let consentReload = ProjectBoardStore(url: d.file)
+    check("AI permission survives restart", consentReload.permitsNarrative(assistant: .codex))
+    _ = d.send("set_ai_consent", ["enabled": false, "provider": "codex", "policy": "board-reading-v1"])
+    check("revocation stops provider admission", !d.store.permitsNarrative(assistant: .codex))
     expect("the effective default mode is board", board?["mode"] as? String, "board")
     expect("the schema is explicitly versioned", board?["schemaVersion"] as? Int, 1)
     expect("the current entitlement is free", (board?["entitlement"] as? [String: Any])?["state"] as? String,
@@ -110,6 +118,33 @@ group("Project Board defaults, mode boundaries, and corrupt stores fail closed")
     let reopened = ProjectBoardStore(url: d.file)
     expect("mode and history survive a new process owner", reopened.enabled, true)
     expect("the same item survives a new process owner", boardItems(reopened).count, 1)
+
+    let candidates = d.store.presentationCandidates(locale: "zh-TW", limit: 1)
+    expect("presentation work is bounded and uses the requested language", candidates.first?["locale"] as? String, "zh-TW")
+    let fingerprint = candidates.first?["sourceFingerprint"] as? String ?? "missing"
+    let oldState = d.item(item)["state"] as? String
+    let oldScope = (d.item(item)["currentEvidence"] as? [String: Any])?["scopeRevision"] as? Int
+    check("AI reading text is durably recorded independently of work state",
+          d.store.recordPresentation(itemID: item, locale: "zh-TW", sourceFingerprint: fingerprint,
+              title: "改善專案閱讀", summary: "讓使用者了解工作成果。", outcome: "", nextStep: "", model: "test-model"))
+    expect("presentation never reopens lifecycle", d.item(item)["state"] as? String, oldState)
+    expect("presentation never changes evidence scope", (d.item(item)["currentEvidence"] as? [String: Any])?["scopeRevision"] as? Int, oldScope)
+    expect("a matching language and source is not regenerated", d.store.presentationCandidates(locale: "zh-TW", limit: 8).count, 0)
+    let persistedPresentation = ProjectBoardStore(url: d.file)
+    expect("reading presentation survives restart", persistedPresentation.presentationCandidates(locale: "zh-TW", limit: 8).count, 0)
+    expect("another configured language has its own presentation", persistedPresentation.presentationCandidates(locale: "ja", limit: 1).count, 1)
+    expect("temporarily failed items can yield the bounded queue to later work",
+           d.store.presentationCandidates(locale: "ja", limit: 8, excluding: [item]).count, 0)
+    _ = d.send("update", ["itemId": item, "summary": "The requested scope has changed."])
+    expect("obsolete AI source cannot overwrite newer content",
+           d.store.recordPresentation(itemID: item, locale: "zh-TW", sourceFingerprint: fingerprint,
+              title: "Old", summary: "Old", outcome: "", nextStep: "", model: "test-model"), false)
+    let suspendedToken = d.store.presentationCandidates(locale: "en", limit: 1).first?["sourceFingerprint"] as? String ?? "missing"
+    _ = d.send("set_enabled", ["enabled": false])
+    expect("OFF does not enqueue AI history work", d.store.presentationCandidates(locale: "en", limit: 8).count, 0)
+    expect("OFF cannot commit a pending AI result", d.store.recordPresentation(itemID: item, locale: "en", sourceFingerprint: suspendedToken, title: "Old", summary: "Old", outcome: "", nextStep: "", model: "test"), false)
+    _ = d.send("set_enabled", ["enabled": true])
+    expect("an OFF/ON cycle fences the earlier AI worker without changing work scope", d.store.recordPresentation(itemID: item, locale: "en", sourceFingerprint: suspendedToken, title: "Old", summary: "Old", outcome: "", nextStep: "", model: "test"), false)
 
     let corruptRoot = FileManager.default.temporaryDirectory
         .appendingPathComponent("clawdline-board-corrupt-\(UUID().uuidString)")
@@ -918,6 +953,43 @@ group("board progress reconciles broker attempts and immutable evidence without 
            deliveredProgress["historical"] as? Bool, true)
     expect("attempt counters retain the delivered fact",
            (deliveredProgress["attemptCounts"] as? [String: Any])?["succeeded"] as? Int, 1)
+    check("delivery without any landing does not claim a delivery after landing",
+          !(deliveredProgress["basisCodes"] as? [String] ?? []).contains("new_delivery_after_landing"))
+
+    let activity = BoardTestDriver()
+    activity.createProject()
+    let activityID = activity.create()
+    boardAdvanceToExecution(activity, item: activityID)
+    _ = activity.store.ingest(task: [
+        "id": "old-discovery", "title": "Discovery", "state": "success",
+        "workItemId": activityID, "workPhase": "planning",
+        "startedAt": base, "finishedAt": base + 1,
+    ], projectID: "project-1")
+    _ = activity.send("span", ["itemId": activityID, "sessionId": "implementation",
+                                "phase": "output"])
+    let declaredProgress = boardProgress(activity.item(activityID))
+    expect("declared implementation activity outranks an old successful discovery",
+           declaredProgress["state"] as? String, "execution")
+    check("declared activity is not described as broker-observed execution",
+          (declaredProgress["basisCodes"] as? [String] ?? []).contains("declared_output_span"))
+    expect("declared activity never fabricates a broker attempt",
+           (declaredProgress["attemptCounts"] as? [String: Any])?["active"] as? Int, 0)
+    expect("declared activity belongs to current work", declaredProgress["group"] as? String, "active")
+    let lateSpan = BoardTestDriver(name: "late-span-\(UUID().uuidString)", now: { Date(timeIntervalSince1970: base + 20) })
+    lateSpan.createProject()
+    let lateID = lateSpan.create()
+    _ = lateSpan.send("span", ["itemId": lateID, "sessionId": "late-child", "phase": "output"])
+    var lateTask: [String: Any] = ["id": "late-task", "workItemId": lateID, "workPhase": "output", "state": "briefed", "startedAt": base + 10, "child": ["sessionId": "late-child"]]
+    expect("catch-up cannot close a newer declared span before it began", lateSpan.store.ingest(task: lateTask, projectID: "project-1").persisted, true)
+    lateTask["state"] = "success"; lateTask["finishedAt"] = base + 30
+    _ = lateSpan.store.ingest(task: lateTask, projectID: "project-1")
+    expect("terminal observation ends only the matching declared execution interval", boardProgress(lateSpan.item(lateID))["active"] as? Bool, false)
+    expect("inactive delivered history is not current work", deliveredProgress["group"] as? String, "history")
+    let historicalCatalog = d.store.readSeed(rebuild: true).seed.catalog.first
+    expect("inactive delivered history does not inflate active Project count",
+           historicalCatalog?["activeItemCount"] as? Int, 0)
+    expect("Project retains the unfinished historical count separately",
+           (historicalCatalog?["summary"] as? [String: Any])?["history"] as? Int, 1)
 
     var landed = delivered
     landed["landing"] = [
@@ -925,6 +997,27 @@ group("board progress reconciles broker attempts and immutable evidence without 
         "verified_commit": "commit-auto", "verified_target_commit": "target-auto",
         "landed_at": base + 10,
     ]
+    let settled = BoardTestDriver(name: "settled-history-\(UUID().uuidString)")
+    settled.createProject()
+    _ = settled.store.ingest(task: ["id": "read-only-audit", "title": "Read-only audit",
+        "state": "success", "finishedAt": base,
+        "landing": ["state": "nothing_to_land", "since": base + 1]], projectID: "project-1")
+    let settledItem = boardItems(settled.store).first!
+    expect("root-settled execution history is completed without claiming Git landing",
+           boardProgress(settledItem)["state"] as? String, "settled")
+    expect("settled read-only history is outside unfinished work",
+           boardProgress(settledItem)["group"] as? String, "completed")
+    let auxiliary = BoardTestDriver(name: "auxiliary-after-landing-\(UUID().uuidString)")
+    auxiliary.createProject()
+    let auxiliaryID = auxiliary.create()
+    var original = landed
+    original["workItemId"] = auxiliaryID
+    _ = auxiliary.store.ingest(task: original, projectID: "project-1")
+    _ = auxiliary.store.ingest(task: ["id": "later-summary", "workItemId": auxiliaryID,
+        "title": "Summarize prior history", "state": "success", "finishedAt": base + 30,
+        "landing": ["state": "nothing_to_land", "since": base + 31]], projectID: "project-1")
+    expect("a completed no-change summary cannot hide a real prior landing",
+           boardProgress(auxiliary.item(auxiliaryID))["state"] as? String, "landed")
     clock = base + 10
     _ = d.store.ingest(task: landed, projectID: "project-1")
     let historicalLanding = d.item(itemID)
@@ -1241,6 +1334,26 @@ group("board progress reconciles broker attempts and immutable evidence without 
     }
 
     let unknownAfterLanding = d.create(type: "feature", title: "Unknown post-landing time")
+    for source in ["broker", "declared"] {
+        clock = base + 900
+        let ongoing = d.create(type: "feature", title: "Live across landing \(source)")
+        if source == "broker" {
+            _ = d.store.ingest(task: ["id": "still-live", "workItemId": ongoing,
+                "title": "Still executing", "state": "briefed", "workPhase": "output",
+                "startedAt": base + 890], projectID: "project-1")
+        } else {
+            _ = d.send("span", ["itemId": ongoing, "sessionId": "live-declared", "phase": "output"])
+        }
+        clock = base + 930
+        _ = d.store.ingest(task: ["id": "landed-other-\(source)", "workItemId": ongoing,
+            "title": "Parallel delivery", "state": "success", "finishedAt": base + 910,
+            "landing": ["state": "landed", "verification_origin": "local_target_branch",
+                "verified_commit": "parallel-commit", "verified_target_commit": "parallel-target",
+                "landed_at": base + 920]], projectID: "project-1")
+        let progress = boardProgress(d.item(ongoing))
+        expect("live \(source) spanning landing remains execution", progress["state"] as? String, "execution")
+        expect("live \(source) spanning landing remains in active group", progress["group"] as? String, "active")
+    }
     clock = base + 930
     _ = d.store.ingest(task: [
         "id": "known-landed-receipt", "title": "known landing", "state": "success",
@@ -1627,7 +1740,63 @@ group("broker ingestion is idempotent, phase-explicit, and has one accounting ow
     conflictTask["workItemId"] = conflictingExplicit
     let conflict = d.store.ingest(task: conflictTask, projectID: "project-1")
     expect("a second explicit item cannot toggle an established graph canonical binding",
-           conflict.reason, "graph_binding_conflict")
+           conflict.reason, "graph_node_binding_conflict")
+    var otherNode = conflictTask
+    otherNode["id"] = "broker-other-node"
+    // Use the same actual graph identity as the original fixture, not another graph.
+    var sharedGraph = task["graph"] as? [String: Any] ?? [:]
+    sharedGraph["current_node"] = "other_delivery"
+    otherNode["graph"] = sharedGraph
+    expect("different graph nodes may bind different explicit work items",
+           d.store.ingest(task: otherNode, projectID: "project-1").droppedCount, 0)
+
+    let program = BoardTestDriver()
+    program.createProject()
+    program.createProject(id: "cloud", name: "Cloud")
+    let epicID = program.create(type: "epic", title: "Webhook")
+    let macID = program.create(title: "Mac", parent: epicID)
+    let macGraph = ["id": "mac-program", "current_node": "implementation", "destination": "Webhook"]
+    _ = program.store.ingest(task: ["id": "mac-discovery", "title": "Discovery", "state": "success",
+        "workItemId": macID, "graph": macGraph], projectID: "project-1")
+    _ = program.store.ingest(task: ["id": "mac-implementation", "title": "Implementation", "state": "briefed",
+        "workItemId": epicID, "workPhase": "output", "graph": macGraph], projectID: "project-1")
+    let macLinks = program.item(macID)["accountingTaskLinks"] as? [[String: Any]] ?? []
+    let epicLinks = program.item(epicID)["accountingTaskLinks"] as? [[String: Any]] ?? []
+    check("known node owns a later Epic-referenced attempt", macLinks.contains { $0["targetId"] as? String == "mac-implementation" })
+    check("Epic never absorbs its established node accounting", !epicLinks.contains { $0["targetId"] as? String == "mac-implementation" })
+    for number in 0..<9 {
+        _ = program.send("checklist", ["itemId": macID, "title": "Check \(number)", "required": number == 8])
+    }
+    let list = program.store.snapshot(project: "project-1")["board"] as? [String: Any] ?? [:]
+    let summaryItem = (list["items"] as? [[String: Any]] ?? []).first { $0["id"] as? String == macID } ?? [:]
+    let exactCard = ProjectBoardIntegration.compactCard(summaryItem)["cardSummary"] as? [String: [String: Any]]
+    expect("required row beyond retained checklist remains counted", exactCard?["checklist"]?["required"] as? Int, 1)
+    expect("required row beyond retained checklist is not completed", exactCard?["checklist"]?["requiredCompleted"] as? Int, 0)
+    let cloudID = program.create(title: "Cloud", project: "cloud")
+    _ = program.send("link", ["itemId": epicID, "kind": "related", "targetId": cloudID,
+                               "label": "Cloud implementation"])
+    _ = program.send("link", ["itemId": cloudID, "kind": "task", "targetId": "cloud-live",
+                               "label": "Cloud execution"])
+    let foreign = program.store.ingest(task: [
+        "id": "cloud-live", "title": "Cloud execution", "state": "briefed",
+        "workItemId": epicID, "workPhase": "output",
+        "graph": ["id": "cross-program", "current_node": "cloud", "destination": "Webhook"],
+    ], projectID: "cloud")
+    expect("a foreign Epic routes execution to the uniquely linked owning-project Feature",
+           foreign.droppedCount, 0)
+    expect("Cloud Feature receives the broker-observed activity",
+           boardProgress(program.item(cloudID))["state"] as? String, "execution")
+    let laneCandidate = program.store.presentationCandidates(locale: "zh-TW", limit: 8)
+        .first { $0["id"] as? String == cloudID }
+    _ = program.store.recordPresentation(itemID: cloudID, locale: "zh-TW",
+        sourceFingerprint: laneCandidate?["sourceFingerprint"] as? String ?? "missing",
+        title: "接收雲端通知", summary: "將通知交給排程執行。", outcome: "", nextStep: "", model: "test")
+    let lanes = program.item(epicID)["deliveryLanes"] as? [[String: Any]] ?? []
+    check("Epic materializes both local and related cross-project delivery lanes",
+          Set(lanes.compactMap { $0["id"] as? String }) == Set([macID, cloudID]))
+    let laneReading = lanes.first { $0["id"] as? String == cloudID }?["presentation"] as? [String: Any]
+    expect("cross-Project lanes retain localized reading titles without changing their own progress",
+           (laneReading?["variants"] as? [[String: Any]])?.first?["title"] as? String, "接收雲端通知")
     var afterConflictFallback = task
     afterConflictFallback["id"] = "broker-task-after-conflict"
     afterConflictFallback.removeValue(forKey: "workItemId")

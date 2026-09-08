@@ -68,6 +68,10 @@ equal(initial.board.items.length, 0, "catalog read never carries nested work ite
 const initialWork = (await mock.board("preview-project")).board.items;
 equal(initialWork.length, 5, "a selected Project independently loads its five records");
 const html = readFileSync(new URL("../Resources/web/index.html", import.meta.url), "utf8");
+for (const id of ["nav-board", "usage-open", "nav-ledger"]) {
+    equal(new RegExp('<button[^>]*id="' + id + '"[^>]*\\bhidden\\b').test(html), true,
+        id + " stays hidden before a mode response, including disconnected cold startup");
+}
 equal(html.includes('id="sidebar-board-projects"'), false, "sidebar has one Projects entry, not a raw project directory");
 const command = { operation: "set_enabled", enabled: false, expectedRevision: initial.board.revision, requestId: "off" };
 const off = await mock.boardCommand(command);
@@ -97,7 +101,8 @@ useClient({ board: async () => ({ board: settingsBoard }), boardCommand: body =>
     settingCalls.push(structuredClone(body));
     if (outcome === "sync") throw Object.assign(new Error("ambiguous machine"), { code: "cloud_machine_ambiguous" });
     if (outcome === "offline") return Promise.reject(Object.assign(new Error("offline"), { code: "offline" }));
-    settingsBoard = { ...settingsBoard, enabled: body.enabled, revision: body.expectedRevision + 1 };
+    settingsBoard = { ...settingsBoard, revision: body.expectedRevision + 1,
+        ...(body.operation === "set_ai_consent" ? { narrativeConsent: body.enabled ? body.provider : null } : { enabled: body.enabled }) };
     return Promise.resolve({ board: settingsBoard });
 } });
 const settled = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
@@ -141,6 +146,19 @@ equal(document.documentElement.dataset.boardMode, "board", "successful re-enable
 equal(control("usage-open").hidden, true, "re-enable folds Usage back into work items");
 equal(control("nav-ledger").hidden, true, "re-enable folds Ledger back into work items");
 equal(control("sidebar-board-projects").children.length, 0, "re-enable never recreates a sidebar project directory");
+settingsBoard = { ...settingsBoard, revision: 20, enabled: false, narrativeConsent: null,
+    viewer: { ...manager, narrativeProvider: "codex" } };
+BoardControls.apply(settingsBoard);
+equal(control("settings-board-ai-toggle").textContent.includes("OpenAI"), true, "consent names the external destination before opt-in");
+control("settings-board-ai-toggle").listeners.click();
+await settled();
+equal(settingCalls.at(-1).operation, "set_ai_consent", "AI sharing is not a Board-mode command");
+equal(settingCalls.at(-1).policy, "board-reading-v1", "consent names its data-purpose policy");
+equal(settingsBoard.enabled, false, "AI consent cannot enable Board workflow");
+equal(settingsBoard.narrativeConsent, "codex", "successful consent is provider scoped");
+control("settings-board-ai-toggle").listeners.click();
+await settled();
+equal(settingsBoard.narrativeConsent, null, "the same visible control revokes AI sharing");
 const backOn = await mock.boardCommand({ operation: "set_enabled", enabled: true,
     expectedRevision: off.board.revision, requestId: "on-again" });
 equal(backOn.board.enabled, true, "mock lifecycle also supports off then on");
@@ -151,5 +169,11 @@ try {
         type: "task", expectedRevision: backOn.board.revision, requestId: "create-from-conversation" });
 } catch (error) { createFailure = error; }
 equal(createFailure, null, "conversation creation updates materialized mock counts without requiring a progress projection");
+const consentMock = createBoardMock();
+const previewConsent = await consentMock.board();
+equal(previewConsent.board.narrativeConsent, null, "preview also starts without AI permission");
+const previewAllowed = await consentMock.boardCommand({ operation: "set_ai_consent", enabled: true,
+    provider: "codex", policy: "board-reading-v1", expectedRevision: previewConsent.board.revision, requestId: "preview-consent" });
+equal(previewAllowed.board.narrativeConsent, "codex", "preview can demonstrate provider-specific consent without external calls");
 console.log(`${checks} web board transport checks passed`);
 process.exit(0); // imported preview transport owns timers unrelated to this bounded question

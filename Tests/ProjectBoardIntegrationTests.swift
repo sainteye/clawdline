@@ -15,7 +15,74 @@ private final class BoardCloudStatusBox: @unchecked Sendable {
 }
 
 func runProjectBoardIntegrationTests() {
+group("broker live transitions reach the Board before task completion") {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("board-live-event-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let registry = root.appendingPathComponent("registry.json")
+    let previousRegistry = Orchestrator.storeURLOverrideForTesting
+    Orchestrator.forget()
+    Orchestrator.storeURLOverrideForTesting = registry
+    let store = ProjectBoardStore(url: root.appendingPathComponent("board.json"))
+    ProjectBoardIntegration.configureReadStoreForTesting(store) { store, _ in
+        let seed = store.readSeed(rebuild: true).seed
+        return .success(.init(revision: seed.header.revision, observedAt: seed.header.updatedAt,
+                             catalog: seed.envelope(), projects: [:], items: [:]))
+    }
+    defer {
+        ProjectBoardIntegration.drainObservationsForTesting()
+        ProjectBoardIntegration.configureReadStoreForTesting(nil)
+        Orchestrator.forget()
+        Orchestrator.storeURLOverrideForTesting = previousRegistry
+        try? FileManager.default.removeItem(at: root)
+    }
+    let id = UUID().uuidString.lowercased()
+    var task = Orchestrator.Task(id: id, state: .queued, kind: "custom", title: "Current work",
+        assistant: .codex, projectDir: root.path, timeoutMinutes: 30,
+        created: Date(timeIntervalSince1970: 100), secretHash: String(repeating: "0", count: 64))
+    try! JSONSerialization.data(withJSONObject: ["version": 1, "tasks": [OrchestratorStore.stored(task)]])
+        .write(to: registry)
+    Orchestrator.load()
+    var seed = OrchestratorStore.stored(task)
+    seed.removeValue(forKey: "secret_hash")
+    _ = ProjectBoardIntegration.ingest(seed, store: store)
+    func attemptState() -> String? {
+        let board = store.snapshot()["board"] as? [String: Any]
+        let item = (board?["items"] as? [[String: Any]])?.first
+        return (item?["links"] as? [[String: Any]])?.first { $0["kind"] as? String == "task" }?["attemptState"] as? String
+    }
+    expect("initial dispatch is queued", attemptState(), "queued")
+    task.state = .spawning
+    check("broker accepts the next live stage", Orchestrator.replaceTask(task, expecting: .queued))
+    ProjectBoardIntegration.drainObservationsForTesting()
+    expect("spawning reaches the durable model without a GET or restart", attemptState(), "spawning")
+    task.state = .briefed
+    task.childSessionId = "live-child"
+    task.briefedAt = Date(timeIntervalSince1970: 110)
+    check("broker accepts observed briefing", Orchestrator.replaceTask(task, expecting: .spawning))
+    ProjectBoardIntegration.drainObservationsForTesting()
+    expect("briefed reaches the same Board task before any terminal receipt", attemptState(), "briefed")
+    let revision = store.readHeader().revision
+    task.state = .queued
+    check("stale transition remains refused", !Orchestrator.replaceTask(task))
+    ProjectBoardIntegration.drainObservationsForTesting()
+    expect("a refused transition publishes no Board mutation", store.readHeader().revision, revision)
+}
+
 group("board accounting allocates only broker task boundaries and preserves unknowns") {
+    var signal = ProjectBoardIntegration.CatalogSignal()
+    check("OFF inventory does not start catalog discovery",
+          !signal.observe(enabled: false, complete: true, paths: ["/new"]))
+    check("incomplete inventory does not establish catalog membership",
+          !signal.observe(enabled: true, complete: false, paths: ["/new"]))
+    check("a complete new inventory invalidates catalog once",
+          signal.observe(enabled: true, complete: true, paths: ["/new"]))
+    check("unchanged inventory polling cannot rebuild sources",
+          !signal.observe(enabled: true, complete: true, paths: ["/new"]))
+    check("another ordinary Session Project invalidates the model",
+          signal.observe(enabled: true, complete: true, paths: ["/new", "/second"]))
+    signal.invalidate()
+    check("configuration invalidation refreshes unchanged Project paths",
+          signal.observe(enabled: true, complete: true, paths: ["/new", "/second"]))
     var row = UsageLedger.Row()
     row.intervalKey = "interval"; row.taskID = "task-1"; row.sessionID = "session-1"
     row.counts = .init(inputNew: 10, output: 2, cacheRead: 3, cacheWrite: 0)
@@ -67,12 +134,119 @@ group("board accounting allocates only broker task boundaries and preserves unkn
     expect("failure reasons remain project scoped", coverage.reasons(projectID: "other"), [])
     expect("coverage does not collapse failure kinds", coverage.reasons(projectID: "p"), ["link_capacity", "persistence_failed"])
     expect("source failure cannot advertise refresh complete", coverage.jsonObject["status"] as? String, "partial")
+    var repaired = ProjectBoardIntegration.IngestionCoverage()
+    var identityRepair = ProjectBoardIntegration.IngestionCoverage()
+    for source in ["resolved-task", "still-unknown"] {
+        identityRepair.record(.init(status: .refused, acceptedCount: 0, droppedCount: 1,
+            persisted: true, reason: "project_identity_unavailable"), projectID: nil, sourceID: source)
+    }
+    identityRepair.record(.init(status: .accepted, acceptedCount: 1, droppedCount: 0,
+        persisted: true, reason: nil), projectID: "p", sourceID: "resolved-task")
+    expect("resolved identity removes only its own wildcard predecessor", identityRepair.issueCount, 1)
+    identityRepair.record(.init(status: .accepted, acceptedCount: 1, droppedCount: 0,
+        persisted: true, reason: nil), projectID: "q", sourceID: "still-unknown")
+    expect("all resolved sources remove global warning", identityRepair.reasons(projectID: "other"), [])
+    repaired.record(.init(status: .unavailable, acceptedCount: 0, droppedCount: 1,
+                          persisted: false, reason: "persistence_failed"),
+                    projectID: "p", sourceID: "task-1")
+    repaired.record(.init(status: .accepted, acceptedCount: 1, droppedCount: 0,
+                          persisted: true, reason: nil),
+                    projectID: "p", sourceID: "task-1")
+    expect("the same repaired source clears its transient current issue", repaired.issueCount, 0)
+    repaired.record(.init(status: .partial, acceptedCount: 1, droppedCount: 1,
+                          persisted: true, reason: "link_capacity"),
+                    projectID: "p", sourceID: "task-lost")
+    repaired.record(.init(status: .accepted, acceptedCount: 1, droppedCount: 0,
+                          persisted: true, reason: nil),
+                    projectID: "p", sourceID: "other-task")
+    expect("success for another source cannot erase proven loss",
+           repaired.reasons(projectID: "p"), ["link_capacity"])
     let compact: [String: Any] = ["id": "item", "links": [],
         "accountingTaskLinks": [["targetId": "task-1", "source": "broker", "phase": "output"]],
         "sourceIngestion": ["status": "partial", "reasons": ["span_capacity"]]]
     let compactUsage = ProjectBoardIntegration.enriched(compact, rows: [row])["usage"] as? [String: Any]
     expect("summary accounting survives omitted display links", compactUsage?["measured"] as? Int, 15)
     check("durable ingestion warning survives source retention", (compactUsage?["coverageReasons"] as? [String])?.contains("span_capacity") == true)
+}
+
+group("board list cards are compact summaries rather than hidden detail envelopes") {
+    let checklist: [[String: Any]] = [
+        ["id": "c1", "title": "Required", "status": "passed", "required": true,
+         "evidenceId": "e1"],
+        ["id": "c2", "title": "Optional", "status": "doing", "required": false],
+    ]
+    let milestones: [[String: Any]] = [
+        ["id": "m1", "title": "One", "status": "not_applicable"],
+        ["id": "m2", "title": "Two", "status": "todo"],
+    ]
+    var verbose: [String: Any] = [
+        "id": "item", "key": "F-1", "projectId": "project", "title": "Compact card",
+        "type": "feature", "state": "execution", "summary": "A realistic card summary.",
+        "owner": "root", "parentId": "epic", "createdAt": 1.0, "updatedAt": 2.0,
+        "scopeRevision": 3,
+        "progress": ["state": "execution", "futureProgressKey": "preserved"],
+        "presentation": [
+            "authority": "narrative_only",
+            "variants": [["locale": "zh-Hant", "title": "精簡", "summary": "摘要",
+                           "outcome": "更快讀取", "nextStep": "審查", "model": "worker",
+                           "authoredAt": 2.0, "status": "current"]],
+        ],
+        "deliveryLanes": [["id": "child", "state": "execution"]],
+        "deliveryLaneCount": 3,
+        "checklist": checklist, "milestones": milestones,
+        "artifacts": [["id": "a", "title": String(repeating: "artifact", count: 12)]],
+        "links": [["id": "l", "kind": "task", "targetId": "task", "source": "broker"]],
+        "accountingTaskLinks": [["targetId": "task", "source": "broker"]],
+        "obligations": [["id": "o", "title": "hidden", "blocking": true]],
+        "history": [["id": "h", "summary": String(repeating: "history", count: 30)]],
+        "findings": [["id": "f"]], "verifications": [["id": "v"]],
+        "landings": [["id": "l"]], "evidenceSummaries": [["id": "s"]],
+        "projection": [
+            "checklist": ["retainedCount": 2, "omittedCount": 0],
+            "milestones": ["retainedCount": 2, "omittedCount": 0],
+        ],
+    ]
+    var usage = ProjectBoardIntegration.usage([])
+    usage["state"] = "present"; usage["rows"] = 1; usage["measured"] = 42
+    usage["total"] = 42; usage["output"] = 7
+    verbose["usage"] = usage
+
+    let card = ProjectBoardIntegration.compactCard(verbose)
+    let detail = ProjectBoardIntegration.enriched(verbose, rows: [])
+    check("detail enrichment keeps the arrays excluded only from cards",
+          detail["checklist"] != nil && detail["history"] != nil && detail["links"] != nil
+            && detail["accountingTaskLinks"] != nil && detail["findings"] != nil)
+    let keys = Set(card.keys)
+    for leaked in ["checklist", "milestones", "artifacts", "links", "accountingTaskLinks",
+                   "obligations", "history", "findings", "verifications", "landings",
+                   "evidenceSummaries", "projection"] {
+        check("list card excludes \(leaked)", !keys.contains(leaked))
+    }
+    expect("unknown progress keys survive list projection",
+           (card["progress"] as? [String: Any])?["futureProgressKey"] as? String, "preserved")
+    check("localized presentation survives list projection", card["presentation"] != nil)
+    check("Epic delivery lanes survive list projection", card["deliveryLanes"] != nil)
+    expect("Epic lane total survives bounded list projection", card["deliveryLaneCount"] as? Int, 3)
+    expect("list keeps nullable parent identity", card["parentId"] as? String, "epic")
+    let cardSummary = card["cardSummary"] as? [String: [String: Any]]
+    expect("checklist total is compact", cardSummary?["checklist"]?["total"] as? Int, 2)
+    expect("required completion is compact", cardSummary?["checklist"]?["requiredCompleted"] as? Int, 1)
+    expect("milestone completion is compact", cardSummary?["milestones"]?["completed"] as? Int, 1)
+    check("list usage drops per-phase detail",
+          (card["usage"] as? [String: Any])?["phases"] == nil)
+
+    let cards = (0..<277).map { index -> [String: Any] in
+        var row = verbose
+        row["id"] = "item-\(index)"; row["key"] = "F-\(index)"
+        row["title"] = "Realistic work item \(index)"
+        return ProjectBoardIntegration.compactCard(row)
+    }
+    let bytes = cards.compactMap { try? JSONSerialization.data(withJSONObject: $0).count }
+    check("realistic cards average at most one KiB",
+          bytes.count == 277 && bytes.reduce(0, +) / bytes.count <= 1_024)
+    let board: [String: Any] = ["items": [] as [[String: Any]], "projects": [] as [[String: Any]]]
+    expect("all 277 modest cards fit the scoped snapshot budget",
+           ProjectBoardIntegration.boundedSummaries(cards, board: board).count, 277)
 }
 
 group("board adapters preserve identities and share the closed Cloud route") {
@@ -217,6 +391,7 @@ group("board HTTP authority cannot be supplied by command content") {
     }
     expect("reader cannot send", call("{}", caps: [.read])?.status, 403)
     expect("send does not change global mode", call(#"{"operation":"set_enabled"}"#)?.status, 403)
+    expect("send cannot consent to external Board AI", call(#"{"operation":"set_ai_consent"}"#)?.status, 403)
     expect("send does not accept artifact", call(#"{"operation":"accept_artifact"}"#)?.status, 403)
     expect("send cannot mint verification", call(#"{"operation":"record_evidence","kind":"verification","trusted":true}"#)?.status, 403)
     expect("send cannot author a closure report", call(#"{"operation":"record_report"}"#)?.status, 403)
@@ -491,6 +666,8 @@ group("board materialization is single-flight and mode storms stay bounded") {
     }
     _ = cache.read(project: nil, item: nil, header: on, loading: loading) { _ in .success(model()) }
     expect("cold reads expose loading", status(first), "loading")
+    expect("cold reads distinguish active refresh from retained failure",
+           ((first["board"] as? [String: Any])?["readState"] as? [String: Any])?["refreshing"] as? Bool, true)
     expect("duplicate reads start one materialization", jobs.count, 1)
     expect("one refresh admission is recorded", cache.stateForTesting.refreshStarts, 1)
     jobs.removeFirst()()
@@ -498,31 +675,81 @@ group("board materialization is single-flight and mode storms stay bounded") {
            status(cache.read(project: nil, item: nil, header: on, loading: loading) { _ in
                .success(model())
            }), "ready")
+    var startupEnvelopeCalls = 0
+    func countedLoading() -> [String: Any] {
+        startupEnvelopeCalls += 1
+        return loading
+    }
+    _ = cache.read(project: nil, item: nil, header: on, loading: countedLoading()) { _ in
+        .success(model())
+    }
+    expect("a current cache does not assemble its startup envelope", startupEnvelopeCalls, 0)
     let wrongScope = cache.read(project: "other", item: "i", header: on, loading: loading) { _ in
         .success(model())
     }
     check("item lookup validates Project and item together",
           ((wrongScope["board"] as? [String: Any])?["item"] is NSNull))
 
+    var detailResolutions = 0
+    let lazyDetails = ProjectBoardReadCache.Model(
+        revision: 7, observedAt: 100, catalog: catalog, projects: [:], items: [:],
+        resolveItem: { item, project in
+            detailResolutions += 1
+            return item == "i" && (project == nil || project == "p") ? detail : nil
+        })
+    let detailCache = ProjectBoardReadCache(freshFor: 10, clock: { now }, execute: { _ in })
+    detailCache.seed(lazyDetails)
+    _ = detailCache.read(project: nil, item: nil, header: on, loading: loading) { _ in
+        .success(lazyDetails)
+    }
+    expect("catalog reads do not materialize item detail", detailResolutions, 0)
+    let selected = detailCache.read(project: "p", item: "i", header: on, loading: loading) { _ in
+        .success(lazyDetails)
+    }
+    expect("one selected item materializes exactly one detail", detailResolutions, 1)
+    expect("lazy detail preserves selected item semantics",
+           (((selected["board"] as? [String: Any])?["item"] as? [String: Any])?["id"] as? String),
+           "i")
+
     now = Date(timeIntervalSince1970: 120)
-    expect("expired materialization is explicitly stale",
+    expect("elapsed TTL alone does not stale or rebuild an unchanged revision",
            status(cache.read(project: nil, item: nil, header: on, loading: loading) { _ in
                .failure(.init(code: "held_source", message: "fixture"))
-           }), "stale")
-    jobs.removeFirst()()
-    let failed = cache.read(project: nil, item: nil, header: on, loading: loading) { _ in
+           }), "ready")
+    expect("unchanged hot reads schedule no background rebuild", jobs.count, 0)
+
+    var recoveryJobs: [() -> Void] = []
+    let recovery = ProjectBoardReadCache(freshFor: 10, clock: { now },
+                                         execute: { recoveryJobs.append($0) })
+    recovery.seed(model())
+    recovery.refresh(header: on, reasons: [.catalog]) { _ in
+        .failure(.init(code: "held_source", message: "fixture"))
+    }
+    recoveryJobs.removeFirst()()
+    let failed = recovery.read(project: nil, item: nil, header: on, loading: loading) { _ in
         .success(model(120))
     }
     expect("failed refresh keeps old data stale", status(failed), "stale")
+    expect("a failed source is not falsely still updating",
+           ((failed["board"] as? [String: Any])?["readState"] as? [String: Any])?["refreshing"] as? Bool, false)
     expect("failed refresh names its source",
            ((((failed["board"] as? [String: Any])?["readState"] as? [String: Any])?["error"]
                 as? [String: Any])?["code"] as? String), "held_source")
-    jobs.removeFirst()()
+    expect("failure retry is bounded before its interval", recoveryJobs.count, 0)
+    now = Date(timeIntervalSince1970: 130)
+    _ = recovery.read(project: nil, item: nil, header: on, loading: loading) { _ in
+        .success(model(130))
+    }
+    expect("failure recovery retries after its bounded interval", recoveryJobs.count, 1)
+    recoveryJobs.removeFirst()()
+    expect("successful retry restores ready data",
+           status(recovery.read(project: nil, item: nil, header: on, loading: loading) { _ in
+               .success(model(130))
+           }), "ready")
 
-    _ = cache.read(project: nil, item: nil, header: on, loading: loading) { _ in .success(model(120)) }
     now = Date(timeIntervalSince1970: 140)
-    _ = cache.read(project: nil, item: nil, header: on, loading: loading) { _ in .success(model(140)) }
-    expect("a stale read starts one held generation", jobs.count, 1)
+    cache.refresh(header: on, reasons: [.catalog]) { _ in .success(model(140)) }
+    expect("an explicit source invalidation starts one held generation", jobs.count, 1)
     for _ in 0..<20 {
         cache.setEnabled(false)
         cache.setEnabled(true)
@@ -563,6 +790,7 @@ group("board materialization is single-flight and mode storms stay bounded") {
     expect("CAS header exposes the latest durable revision", staleBoard?["revision"] as? Int, 8)
     expect("stale coverage names the body model revision", staleState?["revision"] as? Int, 7)
     expect("revision mismatch is explicitly stale", staleState?["status"] as? String, "stale")
+    expect("a newly observed durable revision schedules refresh", retainedJobs.count, 1)
 
     let scoped = ProjectBoardReadCache(freshFor: 100, clock: { Date(timeIntervalSince1970: 140) },
                                        execute: { retainedJobs.append($0) })

@@ -203,7 +203,9 @@ main_lines=$(line_count Tests/main.swift)
 # the 93-line reduction is measured on this tree, not headroom.
 # Project Board adds eight broker call-site/metadata lines; domain and adapters
 # live in separate owners. Measured 2026-09-08 on this candidate, without headroom.
-orchestrator_ceiling=10741
+# Board live-transition correction: replaceTask captures one credential-free source record and
+# publishes it after unlocking. Registry state ownership remains here; Board projection stays out.
+orchestrator_ceiling=10749
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -459,7 +461,8 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # is right. A guard exists to tell somebody what to do, so the expected count and the sentence
 # that reports it read the same variable.
 # Project Board domain and integration each have a focused runner.
-runner_count_expected=41
+# The bounded Board narrative worker has its own injected-clock/process-boundary runner.
+runner_count_expected=42
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -654,7 +657,7 @@ done
 # groups that answer for one route are their own file rather than four more in a suite eighty-six
 # lines from the limit.
 # One owner for the number, for the reason written above the runner count.
-suite_count_expected=54
+suite_count_expected=55
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts

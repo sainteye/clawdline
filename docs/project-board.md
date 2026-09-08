@@ -1,5 +1,16 @@
 # Project Board
 
+### Optional AI reading summaries
+
+Board mode and AI sharing are separate settings. Board mode defaults on; AI sharing defaults off,
+including for existing stores. Settings names the configured provider before an administrator can
+consent. The background worker may send bounded stored item titles, descriptions and outcome text
+to that provider using the existing model account. It does not send full Session transcripts,
+credential files or attachments. Item text itself may contain sensitive information; enable sharing
+only when that content may leave the device. Revocation stops new admissions and rejects pending
+results. Provider changes require consent for the new provider. Original text remains readable;
+generated prose never creates verification or landing evidence.
+
 Project Board combines durable work items with existing dispatch, Session, worktree, usage and
 landing records. It is **enabled by default and currently free**. The entitlement returned by the
 API is `free_preview`; this is not a subscription check or a promise about future pricing.
@@ -94,10 +105,13 @@ than leaving duplicate delivery evidence on two cards. The ordinary item limit a
 refusals remain visible in source coverage instead of silently dropping historical work.
 
 Graph fallback identity is scoped to its Project. The first explicit item binding replaces an
-inferred fallback and becomes the stable default for later undeclared attempts. A later task may
-still explicitly name another item, but it cannot silently retarget that graph default: the
-adapter reports `graph_binding_conflict` and keeps the explicit task's accounting owner separate.
-Replaying retained tasks therefore does not alternate the fallback between competing items.
+inferred fallback and becomes the stable default for later undeclared attempts. Individual graph
+nodes have separate stable item bindings: discovery, implementation and review may belong to
+different Features without making the whole graph invalid. Only competing assignments of the same
+node report `graph_node_binding_conflict`; replay never silently retargets that node. An Epic can
+show related implementation items from other Projects as delivery lanes, while every attempt and
+its accounting stay with its owning Project's item. A foreign Epic reference is resolved only when
+the owning Project has one unambiguous related implementation item; ambiguity remains explicit.
 
 Children receive a mode-aware briefing and report checklist progress, output references, exact
 verification subjects and outstanding obligations in their existing progress/result artifacts.
@@ -125,9 +139,9 @@ named boundary: either a finite increasing `time_interval`, or a `handoff` id th
 handoff source on that same item. Recording or failing to record either kind of report never changes,
 holds or advances item status.
 
-The assistant composes the prose through its ordinary conversation, result and handoff workflow.
+The assistant composes the report through its ordinary conversation, result and handoff workflow.
 There is no model call in `GET /v1/board`, no new provider configuration, and no claim that existing
-items already have autonomously generated reports. If drafting fails or no report has been written,
+items all have generated completion reports. If drafting fails or no report has been written,
 the item still advances from its independent evidence and the reader says that the report is absent.
 Turning Board mode off keeps earlier reports readable and starts no report workflow.
 
@@ -189,6 +203,41 @@ old report body while qualifying its authoring-time relationships. This same com
 model is the intended seam for a later, separately measured low-cost historical pilot; the pilot
 does not receive a second store or lifecycle shortcut.
 
+### AI reading titles and summaries
+
+A separate background worker can prepare a short title, explanation, documented outcome and
+explicit next step from an item's stored text. It uses the configured Clawdline language (the
+system language when set to automatic) and the existing naming provider configuration. This is a
+reading aid, not another completion report or a source of status evidence. The original objective,
+report and technical references remain available in detail.
+
+Generated text is persisted with its language, model, authoring time and source fingerprint. Reads
+never wait for generation. The browser uses only a current variant in the reader's language;
+missing, obsolete or other-language variants fall back to the original text. Board OFF stops new
+generation and rejects in-flight results, including results from before an OFF/ON cycle. Updating
+reading text never changes work scope, reopens a landed item or invalidates verification. A failed
+summary must not hold up work, Session interaction or lifecycle progression.
+
+The worker starts once with the app, on a utility queue. It admits one generation at a time,
+at most 60 attempts in a rolling hour, through the existing naming process lane at very low
+priority. Each tick asks for at most eight candidates. Failed item IDs are temporarily excluded
+from that bounded snapshot so later history can progress; exclusions expire rather than abandoning
+an item permanently. Session auto-naming's separate switch does not enable or disable Board prose.
+Board AI sharing has its own provider-scoped, durable `board-reading-v1` consent, OFF for new
+and migrated stores. The Settings control names OpenAI/Codex or Anthropic/Claude and the source
+fields before accepting consent: stored title, description, type and documented outcome, not
+transcript, credential files or attachments. Board ON alone never grants sharing; Board OFF,
+revocation or a provider change stops admission. Revocation advances the presentation epoch so
+an older in-flight result cannot commit even if permission is subsequently restored.
+The configured naming assistant is retained, with its existing configured Codex model or Claude
+Haiku model. Missing model output remains a readable original title, not a blocking spinner.
+Structured turns use a bounded stdin file, capped in-memory stdout, launch-to-exit deadline and
+an owned subprocess group; no model output file can grow without limit. Codex currently accepts
+only the probed CLI 0.153.4 with a frozen `code_mode_only` model catalog and disabled code-mode
+host. Its API may still advertise wrapper tools; forced execution is rejected by the handler,
+and direct shell calls are unsupported. Unknown versions/catalog modes fall back to original
+text, rather than assuming that a feature-list flag proves isolation.
+
 ## Evidence and accounting
 
 Only trusted broker task links allocate existing UsageLedger intervals. User-created Session/task
@@ -219,8 +268,25 @@ also available on demand. Disabling the board stops its automatic refresh and wo
 Each item exposes a bounded `progress` object beside its durable lifecycle. It distinguishes
 planning, queued, execution, review/testing, correction, verified, landed, delivered-only, blocked,
 canceled and unknown. The browser uses that projection for its status marker and four-stage visual
-journey. Only the observed stage is highlighted; a historical landing does not manufacture missing
+journey where a lifecycle stage is known. Delivered-only and unknown use a labeled checkpoint,
+not an unexplained row of unlit stage markers. Only the observed stage is highlighted; a historical landing does not manufacture missing
 test receipts for earlier stages. Evidence detail retains current versus historical applicability.
+
+`progress.group` separates active work, waiting work, unresolved history, completed records,
+cancellations and coordination. Historical uncertainty is not a count of work still being done.
+A successful read-only broker attempt explicitly settled as `nothing_to_land` may finish its
+retained Task execution record without claiming that a Feature was merged. Such an attempt after
+a real landing does not reopen that landed work. A current observed attempt or declared Session
+span takes precedence over older discovery output; declared activity is labeled as a declaration.
+Epic delivery lanes expose each related item's own Project, owner and progress without turning
+aggregate activity into aggregate verification or landing.
+
+Project cards use compact materialized summaries; selected item details are resolved only when
+opened. Successful models do not expire merely because ten seconds elapsed. Durable changes,
+source events and changes in the already-published Session Project inventory trigger bounded
+background updates. Failed updates retain the last model and distinguish failure from a refresh
+that is actually running. Collapsed history initially creates no card DOM; expansion renders it
+in batches of 30, without changing authoritative Project totals.
 
 Historical delivery and current exact-scope acceptance answer different questions. A broker-verified
 historical landing may be displayed as landed without forging exact-tree verification. An old

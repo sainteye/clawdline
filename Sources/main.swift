@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // what notices a child finishing while nothing on screen moves.
         Orchestrator.start()
         CodexNaming.shared.apply()
+        // Presentation prose is produced off the interactive path; its worker checks Board mode
+        // before admission and before persistence, independently of Session auto-naming.
+        ProjectBoardNarrative.shared.start()
         // Reads the config and does nothing at all when it says off, which is what it says
         // until somebody changes it.
         RemoteServer.shared.apply()
