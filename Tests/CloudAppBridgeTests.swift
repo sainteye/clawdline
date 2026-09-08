@@ -1272,6 +1272,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         "shell": #"{"type":"shell","session":"typed","shell":"s","bytes":1024}"#,
         "skills": #"{"type":"skills","session":"typed"}"#,
         "git": #"{"type":"git","session":"typed"}"#,
+        "screen": #"{"type":"screen","session":"typed"}"#,
         // The stub answers every read with the same JSON body and no `Content-Type`, so this one
         // is refused 415 by `imageOutcome` rather than answered. That is the right fixture here:
         // this table asks whether a word admitted by `readTypes` reaches its own case, and a read
@@ -1307,7 +1308,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let typedReads = await router.recordedReads().suffix(wellFormed.count)
     let typedNames = Set(typedReads.map(\.read.name))
     try require(typedNames
-                    == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git",
+                    == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git", "screen",
                         "image.img-1", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
                         "read:p-5", "read:p-list", "read:p-snippets", "read:p-board"],
                 "and each parses into the read it names rather than into the switch's last case")
@@ -1349,6 +1350,8 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         #"{"type":"skills","session":""}"#,
         #"{"type":"git","session":"plain","parts":"summary"}"#,
         #"{"type":"git","session":""}"#,
+        #"{"type":"screen"}"#,
+        #"{"type":"screen","session":"plain","extra":true}"#,
     ]
     var sequence: UInt64 = 30
     for body in malformed {
@@ -1423,6 +1426,9 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     )
     try require(gitRequest.path == "/v1/sessions/plain/git" && gitRequest.query.isEmpty,
                 "and so is the Git panel")
+    let screenRequest = RemoteServer.Request(
+        verifiedCloudRead: .screen(session: "session/一|?"), sender: "viewer"
+    )
     let scheduleListRequest = RemoteServer.Request(
         verifiedCloudRead: .schedules(session: CloudAppBridge.machineReplySession,
                                       request: "fresh"), sender: "viewer"
@@ -1444,13 +1450,15 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(gitRequest.method == "GET" && gitRequest.headers["idempotency-key"] == nil
                     && scheduleListRequest.path == "/v1/orchestrator/schedules"
                     && snippetListRequest.path == "/v1/snippets"
+                    && screenRequest.path == "/v1/sessions/session%2F%E4%B8%80%7C%3F/screen"
+                    && screenRequest.query.isEmpty
                     && closeRequest.path == "/v1/sessions/%25306/end"
                     && ((try? JSONSerialization.jsonObject(with: closeRequest.body))
                         as? [String: Any])?["expected_closeability_version"] as? String == "close-v1"
                     && resumeRequest.path
                         == "/v1/places/project%2Fone/resume/codex/past%2Fsession%7C%E4%B8%80",
-                "reads mint no key, while fresh schedules, snippets, Session close, and Resume map to "
-                    + "the exact local routes")
+                "reads mint no key, while live screen, fresh schedules, snippets, Session close, "
+                    + "and Resume map to the exact local routes")
 
     // Where they queue, which is the shared queue — and that is not this door's decision, it is
     // the direct path's. Both lane predicates refuse these four paths over HTTP too, so sending

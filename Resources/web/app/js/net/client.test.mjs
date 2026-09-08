@@ -1286,6 +1286,27 @@ await answerRead(controlCloud, controlSocket, {
 });
 assert.equal((await sentPrompt).ok, true, "send resolves only after the Mac accepted the prompt");
 
+const beforeScreen = publishedReads(controlSocket).length;
+const liveScreen = controlCloud.screen("session-01");
+await until(function () { return publishedReads(controlSocket).length === beforeScreen + 1; },
+    "the live-screen read to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeScreen]);
+assert.deepEqual({ type: controlRequest.type, session: controlRequest.session },
+    { type: "screen", session: "session-01" },
+    "Cloud asks the owning Mac for the same session screen as the local transport");
+await answerRead(controlCloud, controlSocket, {
+    read: "screen", status: 200, body: { screen: {
+        id: "session-01", backend: "tmux", channel: "signalled", revision: "pending",
+        readable: false, pending: true, text: null, lines: 0
+    } }
+});
+const cloudScreen = (await liveScreen).screen;
+assert.equal(cloudScreen.backend, "tmux", "the terminal backend remains the Mac's fact");
+assert.equal(cloudScreen.channel, "on-demand",
+    "without an SSE revision lane, the Cloud panel polls instead of waiting forever");
+assert.equal(cloudScreen.askAgainAfterMs, 1000,
+    "the first pending capture is asked for again on the panel's bounded polling lane");
+
 const beforeEnd = publishedReads(controlSocket).length;
 const endedSession = controlCloud.end("session-01", true, "closeability-v1");
 await until(function () { return publishedReads(controlSocket).length === beforeEnd + 1; },

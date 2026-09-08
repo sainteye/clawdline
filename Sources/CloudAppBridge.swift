@@ -60,6 +60,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
     case shell(session: String, shell: String, bytes: Int)
     case skills(session: String)
     case git(session: String)
+    case screen(session: String)
     /// One image already referenced by a message in that session's transcript.
     ///
     /// The reference — id, media type, byte count, pixel size, expiry — has always crossed,
@@ -87,6 +88,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .shell(let session, _, _): return session
         case .skills(let session): return session
         case .git(let session): return session
+        case .screen(let session): return session
         case .image(let session, _): return session
         case .places(let session, _): return session
         case .projectWorktrees(let session, _, _): return session
@@ -124,6 +126,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .shell(_, let shell, _): return "shell:" + shell
         case .skills: return "skills"
         case .git: return "git"
+        case .screen: return "screen"
         case .image(_, let id): return "image." + id
         case .board(_, let request, _, _), .places(_, let request), .projectWorktrees(_, let request, _),
              .pastSessions(_, let request, _, _), .schedule(_, let request, _),
@@ -788,8 +791,8 @@ actor CloudAppBridge {
     /// member for a well-formed body, so the two cannot come apart quietly.
     static let readTypes: Set<String> = [
         "transcript", "info", "agent", "shell", "skills", "git", "image",
-        "board", "places", "project-worktrees", "past-sessions", "schedules", "snippets", "schedule",
-        "push-key",
+        "screen", "board", "places", "project-worktrees", "past-sessions", "schedules",
+        "snippets", "schedule", "push-key",
     ]
 
     private static func requestName(_ value: Any?) -> String? {
@@ -912,6 +915,14 @@ actor CloudAppBridge {
                 return
             }
             read = .git(session: session)
+        case "screen":
+            guard Set(body.keys) == ["type", "session"],
+                  let session = body["session"] as? String, !session.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .screen(session: session)
         case "image":
             // The id is the opaque one the transcript already published, and it is checked by the
             // store rather than here: this bridge knows what a read looks like, not what an

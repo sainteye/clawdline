@@ -769,6 +769,26 @@ export class CloudClient {
     }
 
     /**
+     * What the terminal on the owning Mac is showing now.
+     *
+     * The direct transport receives a separate SSE revision event when a tmux pipe moves. Cloud
+     * has no equivalent event channel: `t/<machine>/<session>` carries named request answers,
+     * not ambient revisions. Preserve the Mac's backend fact but expose the transport's real
+     * delivery mode as on-demand, so the existing panel polls at the same one-second floor it
+     * already uses for iTerm2. That both collects an initial pending capture and keeps a visible
+     * screen live instead of waiting forever for an SSE event this origin cannot receive.
+     */
+    screen(value) {
+        return this._read(value, "screen", {}, "screen").then(function (body) {
+            var screen = body && body.screen;
+            if (!screen || screen.channel !== "signalled") return body;
+            return Object.assign({}, body, { screen: Object.assign({}, screen, {
+                channel: "on-demand", askAgainAfterMs: 1000
+            }) });
+        });
+    }
+
+    /**
      * One picture out of a transcript, as bytes.
      *
      * **Why the bytes and not a URL.** On the direct path a tile is `<img

@@ -713,14 +713,16 @@ and what is reachable is a closed list named in `CloudHeadlessRead`:
 | `{"type":"shell","session":"…","shell":"…","bytes":1024‑1048576}` | `read: "shell:<shell>"` | [`GET /v1/sessions/:id/shells/:shellId`](#get-v1sessionsidshellsshellidbytes65536) |
 | `{"type":"skills","session":"…"}` | `read: "skills"` | [`GET /v1/sessions/:id/skills`](#get-v1sessionsidskills) |
 | `{"type":"git","session":"…"}` | `read: "git"` | [`GET /v1/sessions/:id/git`](#get-v1sessionsidgit) |
+| `{"type":"screen","session":"…"}` | `read: "screen"` | [`GET /v1/sessions/:id/screen`](#get-v1sessionsidscreen) |
 | `{"type":"image","session":"…","id":"…"}` | `read: "image.<id>"` | `GET /v1/artifacts/images/:id` |
 | `{"type":"places","session":"__clawdline_machine__","request":"…"}` | `read: "read:<request>"` | `GET /v1/places` |
 | `{"type":"project-worktrees","session":"__clawdline_machine__","request":"…","project":"…"}` | `read: "read:<request>"` | `GET /v1/orchestrator/usage/project-worktrees?project=…` |
 | `{"type":"past-sessions","session":"__clawdline_machine__","request":"…","place":"…","assistant":"…"}` | `read: "read:<request>"` | `GET /v1/places/:id/sessions/:assistant` |
 
-**An agent, a shell and an image name themselves in the answer; the other four do not have to.** A
-session has one transcript, one Info, one skills menu and one Git panel, but many agents, many
-commands and many pictures — and every one of them answers on that session's single channel. A
+**An agent, a shell and an image name themselves in the answer; the single-instance reads do not
+have to.** A session has one transcript, one Info, one skills menu, one Git panel and one live
+screen, but many agents, many commands and many pictures — and every one of them answers on that
+session's single channel. A
 reader with two agents open, which is the ordinary case because the strip lists them side by side,
 would have the first settled by the second's conversation if both answers were called `agent`; a
 transcript's pictures are asked for together and come back in whatever order the disk gives them,

@@ -443,9 +443,10 @@ SecurityTool invocation.
   VAPID key through an encrypted request/reply. An account showing more than one Mac is refused
   with `cloud_machine_ambiguous` instead of registering a browser subscription against whichever
   machine happened to publish first.
-- **The reads that still do not cross.** Nine do now: a session's messages, both tiers of its
-  Info, one background agent's conversation, one background command's output, its skills menu, its
-  Git panel and the pictures inside its transcript. The viewer asks on `ctl/<machine>` and the Mac
+- **The reads that still do not cross.** A session's messages, both tiers of its Info, one
+  background agent's conversation, one background command's output, its skills menu, its Git
+  panel, its live screen and the pictures inside its transcript now cross. The viewer asks on
+  `ctl/<machine>` and the Mac
   answers on `t/<machine>/<session>`, which is the channel the viewer had always subscribed to and
   nothing had ever published on. The route table, the bounds and the typed refusals are in
   [`docs/api.md`](api.md#the-reads-a-browser-on-the-cloud-path-may-ask-for).
@@ -456,6 +457,11 @@ SecurityTool invocation.
   route and this Mac is not reachable from it; the bound on one is the relay's 16 MiB envelope cap
   turned into 12,582,132 bytes of PNG, and a picture over it is drawn as a stated size rather than
   as the broken-image icon it used to be.
+  A live screen answer preserves the Mac's actual backend, but Cloud presents a signalled tmux
+  screen as `channel: "on-demand"` and asks again after one second. The direct path's `screen` SSE
+  revision does not cross the relay; claiming it did would leave the first pending capture and all
+  later changes waiting forever. Each capture remains a named answer delivered only to the tab
+  that requested it.
   Machine-scoped Projects, place inventory and past-session reads now use one reserved transcript
   answer channel with a per-request name; opening and resuming a session returns its local route's
   body on that channel. The durable `orch/` snapshot is not reused for these one-off answers, so

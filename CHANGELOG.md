@@ -9,6 +9,17 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: Cloud schedule edits and Live Screen could not reach the Mac
+
+Editing a scheduled task from the hosted Cloud console no longer fails by looking for its Project
+inside a response-only `task` wrapper. The flat form payload now resolves its Project place on the
+owning Mac before the update is sent.
+
+Live Screen now opens from Cloud as well. Its captures use the same authenticated request/reply
+bridge as the other Session reads; because the direct path's screen-revision event does not cross
+that bridge, an open Cloud panel asks again once per second instead of waiting forever after the
+first pending capture. The panel still reports the Mac's actual tmux backend.
+
 ### Added: Codex Fast mode in Session info
 
 A Codex Session's info card now says whether Fast mode is on and can switch it on or off while

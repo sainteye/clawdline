@@ -97,6 +97,8 @@ struct CloudLocalRoute: Sendable {
             route = "/v1/sessions/\(Self.segment(session))/skills"
         case .git(let session):
             route = "/v1/sessions/\(Self.segment(session))/git"
+        case .screen(let session):
+            route = "/v1/sessions/\(Self.segment(session))/screen"
         case .image(_, let id):
             route = "/v1/artifacts/images/\(Self.segment(id))"
         case .places:
