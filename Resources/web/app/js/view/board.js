@@ -975,7 +975,9 @@ export function bindBoardPage(elements, environment = {}) {
                     : modelCount("active", 0) > 0 ? words(ctx,
                           "More work is recorded than this view has loaded.",
                           "專案還有進行中的工作，此畫面尚未載入。")
-                      : waiting.length || unconfirmed.length || modelCount("waiting", 0) > 0 || modelCount("historicalUnconfirmed", 0) > 0
+                      : !unconfirmed.length && modelCount("history", 0) > 0
+                      ? words(ctx, "Some historical records are not loaded. This does not mean they are still active.", "部分歷史紀錄尚未載入，不代表仍在進行。")
+                      : waiting.length || unconfirmed.length || modelCount("waiting", 0) > 0
                       ? words(ctx, "No work is executing right now. Other records are shown below.", "目前沒有執行中的工作，其他待處理與歷史紀錄列於下方。") : words(
                           ctx,
                           "No open work. Tell your assistant what you would like to do next.",

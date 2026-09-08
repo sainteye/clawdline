@@ -287,6 +287,18 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     p.view.leave();
 }
 {
+    const p = page({ read: async () => envelope({
+        projects: [{ id: "a", name: "Clawdline", summary: { active: 0, waiting: 0, landed: 0, history: 50 } }],
+        items: [], truncated: true
+    }) });
+    await p.view.open("a");
+    check("omitted historical rows cannot be called no remaining work",
+        !p.elements["board-items"].textContent.includes("目前沒有待推進"));
+    check("omitted historical rows explicitly say they are not loaded",
+        p.elements["board-items"].textContent.includes("歷史紀錄尚未載入"));
+    p.view.leave();
+}
+{
     const historical = item("old-audit", "delivered");
     historical.progress = { state: "delivered", active: false, historical: true, group: "history" };
     const live = item("live", "execution");
