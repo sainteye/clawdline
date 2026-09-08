@@ -5268,6 +5268,17 @@ was posted. A child in a sandbox with no outbound network finishes correctly; th
 that would rather not wonder how often the directory is being read. When a task is finalized this
 way the app still opens `result.json` if it is there, for the artifact list.
 
+Current child briefings require the child to write `result.json.tmp` first and give it one exact,
+self-contained Node command that validates `task.json` plus that tmp file before an `&& mv` creates
+`result.json`. It does not depend on the target project containing Clawdline or a `tools/`
+directory. Validation covers protocol/task identity, the `success`/`failure` status, optional
+verification, and the exact closed review receipt (verdict, all three unique axes, axis/status
+agreement, unique bounded findings, and finding keys). On failure the command never runs `mv`,
+leaves the tmp file for correction, and never prints the task-secret value. Thus preflight adds no second
+completion channel: only the renamed `result.json` is observable to the broker. The repository
+copy is runnable as `node tools/validate-task-result.mjs <task.json> <result.json.tmp>`; it is a
+development/diagnostic entry point, not a path assumed to exist in every dispatched project.
+
 | `code` | status | |
 |---|---|---|
 | `forbidden` | 403 | wrong secret. The same answer for an id that exists with a different secret and for one nobody could guess |

@@ -1042,17 +1042,31 @@ honestly, and explains that the user disabled agent notifications.
 }
 ```
 
-Written last, and written atomically — to `result.json.tmp` and then `mv`, so the watcher never
-sees half of it. The app checks it once a beat for every briefed task, hashes `task_secret`, and
-compares against what it stored at dispatch in constant time. A file whose secret does not match is
+Written last, and written atomically — first to `result.json.tmp`, then through the exact preflight
+command in that task's `CHILD.md`, which renames it to `result.json` only after validation succeeds.
+The validator is embedded in the briefing, so it works in projects that do not contain a Clawdline
+checkout or `tools/` directory. It checks protocol/task identity, the `success`/`failure` status,
+optional verification metadata, and any required or supplied closed review receipt. A refusal
+prints only schema locations and reasons, never the `task_secret` value, and leaves `result.json.tmp` in
+place for correction. The watcher therefore sees neither a partial nor a knowingly malformed
+receipt; `result.json` remains the one completion signal.
+
+The same validator is available to contributors as the dependency-free
+`node tools/validate-task-result.mjs <task.json> <result.json.tmp>` command. That repository-local
+entry point and the self-contained briefing payload are held byte-for-byte equal by
+`Tests/task-result-validator.mjs`; the project-local path is not what a dispatched child depends on.
+After the rename, the app checks the result once a beat for every briefed task, hashes
+`task_secret`, and compares against what it stored at dispatch in constant time. A file whose
+secret does not match is
 **ignored** and logged once: a wrong secret in a task directory is either a bug or somebody
 poking, and neither is a reason to finalize somebody's task.
 
 `verification` is optional metadata about the proof the child actually ran. `runs` and `seconds`
 are non-negative integers, `last` is `pass`, `fail`, or `skipped`, and `scope` is a short free-text
 description. A well-formed object is stored on the task record. Older results without it work
-unchanged, and a malformed object is ignored rather than turning an otherwise authenticated
-success into failure. The briefing gives verification one third of `timeout_minutes`, while still
+unchanged, and the broker still ignores malformed metadata for compatibility; a current child
+catches it in preflight and corrects the tmp file before publishing. The briefing gives
+verification one third of `timeout_minutes`, while still
 requiring one relevant compile-and-test pass and red-before-green for every new test. Until a
 focused Swift runner ships, an implementer that cannot exercise its behavior more narrowly may use
 one full-suite run labelled `focused_runner_unavailable`; reviewers do not repeat it, and root

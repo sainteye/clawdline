@@ -49,6 +49,13 @@ extension Orchestrator {
     /// and in itself for the person reading over its shoulder: "Traditional Chinese (繁體中文)".
     static var languageName: String { rootAssignmentLanguage().name }
 
+    /// The dependency-free validator every child runs before publishing its result. It is
+    /// encoded only so the generated shell command keeps the program in one argument. The
+    /// focused Node test decodes this value and requires it to match the repository-local tool.
+    /// Shipping the program in the briefing, rather than looking under `task.projectDir`, lets
+    /// a child working in any unrelated repository perform the same preflight.
+    static let childResultValidatorProgramBase64 = "Y29uc3QgeyByZWFkRmlsZVN5bmMgfSA9IGF3YWl0IGltcG9ydCgibm9kZTpmcyIpOwoKY29uc3QgaW52YWxpZCA9IChyZWFzb24pID0+IHsKICAgIGNvbnNvbGUuZXJyb3IoYHRhc2sgcmVzdWx0IHByZWZsaWdodDogaW52YWxpZCDigJQgJHtyZWFzb259YCk7CiAgICBwcm9jZXNzLmV4aXQoMSk7Cn07CmNvbnN0IG9iamVjdCA9ICh2YWx1ZSkgPT4gdmFsdWUgIT09IG51bGwgJiYgdHlwZW9mIHZhbHVlID09PSAib2JqZWN0IiAmJiAhQXJyYXkuaXNBcnJheSh2YWx1ZSk7CmNvbnN0IGV4YWN0S2V5cyA9ICh2YWx1ZSwga2V5cykgPT4gb2JqZWN0KHZhbHVlKQogICAgJiYgT2JqZWN0LmtleXModmFsdWUpLmxlbmd0aCA9PT0ga2V5cy5sZW5ndGgKICAgICYmIGtleXMuZXZlcnkoKGtleSkgPT4gT2JqZWN0Lmhhc093bih2YWx1ZSwga2V5KSk7CmNvbnN0IG5vbkVtcHR5ID0gKHZhbHVlLCBtYXhpbXVtKSA9PiB0eXBlb2YgdmFsdWUgPT09ICJzdHJpbmciCiAgICAmJiB2YWx1ZS50cmltKCkubGVuZ3RoID4gMCAmJiB2YWx1ZS5sZW5ndGggPD0gbWF4aW11bTsKY29uc3QgdGFza0lEID0gKHZhbHVlKSA9PiB0eXBlb2YgdmFsdWUgPT09ICJzdHJpbmciICYmIHZhbHVlLmxlbmd0aCA9PT0gMzYKICAgICYmIC9eW2EtZjAtOS1dKyQvLnRlc3QodmFsdWUpOwpjb25zdCB0YXNrU2VjcmV0ID0gKHZhbHVlKSA9PiB0eXBlb2YgdmFsdWUgPT09ICJzdHJpbmciICYmIC9eW2EtZjAtOV17NjR9JC8udGVzdCh2YWx1ZSk7CmNvbnN0IHNsdWcgPSAodmFsdWUpID0+IHR5cGVvZiB2YWx1ZSA9PT0gInN0cmluZyIgJiYgdmFsdWUubGVuZ3RoID4gMCAmJiB2YWx1ZS5sZW5ndGggPD0gNjQKICAgICYmICF2YWx1ZS5zdGFydHNXaXRoKCItIikgJiYgL15bYS16MC05Ll8tXSskLy50ZXN0KHZhbHVlLnRvTG93ZXJDYXNlKCkpOwoKY29uc3QgcmVhZEpTT04gPSAocGF0aCwgbGFiZWwpID0+IHsKICAgIHRyeSB7CiAgICAgICAgY29uc3QgdmFsdWUgPSBKU09OLnBhcnNlKHJlYWRGaWxlU3luYyhwYXRoLCAidXRmOCIpKTsKICAgICAgICBpZiAoIW9iamVjdCh2YWx1ZSkpIGludmFsaWQoYCR7bGFiZWx9IG11c3QgY29udGFpbiBvbmUgSlNPTiBvYmplY3RgKTsKICAgICAgICByZXR1cm4gdmFsdWU7CiAgICB9IGNhdGNoIHsKICAgICAgICBpbnZhbGlkKGAke2xhYmVsfSBpcyBub3QgcmVhZGFibGUgSlNPTmApOwogICAgfQp9OwoKY29uc3QgW3Rhc2tQYXRoLCByZXN1bHRQYXRoXSA9IHByb2Nlc3MuYXJndi5zbGljZSgtMik7CmlmICghdGFza1BhdGggfHwgIXJlc3VsdFBhdGggfHwgdGFza1BhdGggPT09IHJlc3VsdFBhdGgpIGludmFsaWQoInVzYWdlOiB2YWxpZGF0b3IgdGFzay5qc29uIHJlc3VsdC5qc29uLnRtcCIpOwpjb25zdCB0YXNrID0gcmVhZEpTT04odGFza1BhdGgsICJ0YXNrLmpzb24iKTsKY29uc3QgcmVzdWx0ID0gcmVhZEpTT04ocmVzdWx0UGF0aCwgInJlc3VsdC5qc29uLnRtcCIpOwoKaWYgKHRhc2suY2xhd2RsaW5lX3Byb3RvY29sICE9PSAxIHx8ICF0YXNrSUQodGFzay50YXNrX2lkKSkgewogICAgaW52YWxpZCgidGFzay5qc29uIGhhcyBubyB2YWxpZCBwcm90b2NvbCBpZGVudGl0eSIpOwp9CmlmIChyZXN1bHQuY2xhd2RsaW5lX3Byb3RvY29sICE9PSAxKSBpbnZhbGlkKCJjbGF3ZGxpbmVfcHJvdG9jb2wgbXVzdCBiZSAxIik7CmlmICghdGFza0lEKHJlc3VsdC50YXNrX2lkKSB8fCByZXN1bHQudGFza19pZCAhPT0gdGFzay50YXNrX2lkKSB7CiAgICBpbnZhbGlkKCJ0YXNrX2lkIG11c3QgYmUgYSBsb3dlcmNhc2UgVVVJRCBtYXRjaGluZyB0YXNrLmpzb24iKTsKfQppZiAoIXRhc2tTZWNyZXQocmVzdWx0LnRhc2tfc2VjcmV0KSkgaW52YWxpZCgidGFza19zZWNyZXQgbXVzdCBiZSA2NCBsb3dlcmNhc2UgaGV4YWRlY2ltYWwgY2hhcmFjdGVycyIpOwppZiAocmVzdWx0LnN0YXR1cyAhPT0gInN1Y2Nlc3MiICYmIHJlc3VsdC5zdGF0dXMgIT09ICJmYWlsdXJlIikgewogICAgaW52YWxpZCgic3RhdHVzIG11c3QgYmUgc3VjY2VzcyBvciBmYWlsdXJlIik7Cn0KCmlmIChPYmplY3QuaGFzT3duKHJlc3VsdCwgInZlcmlmaWNhdGlvbiIpKSB7CiAgICBjb25zdCByb3cgPSByZXN1bHQudmVyaWZpY2F0aW9uOwogICAgaWYgKCFvYmplY3Qocm93KQogICAgICAgIHx8ICFOdW1iZXIuaXNJbnRlZ2VyKHJvdy5ydW5zKSB8fCByb3cucnVucyA8IDAKICAgICAgICB8fCAhTnVtYmVyLmlzSW50ZWdlcihyb3cuc2Vjb25kcykgfHwgcm93LnNlY29uZHMgPCAwCiAgICAgICAgfHwgIVsicGFzcyIsICJmYWlsIiwgInNraXBwZWQiXS5pbmNsdWRlcyhyb3cubGFzdCkKICAgICAgICB8fCAhbm9uRW1wdHkocm93LnNjb3BlLCAzMDApKSB7CiAgICAgICAgaW52YWxpZCgidmVyaWZpY2F0aW9uIG11c3QgY29udGFpbiBub24tbmVnYXRpdmUgaW50ZWdlciBydW5zL3NlY29uZHMsIGEgdmFsaWQgbGFzdCB2YWx1ZSwgYW5kIGEgbm9uLWVtcHR5IHNjb3BlIik7CiAgICB9Cn0KCmNvbnN0IGdyYXBoTm9kZSA9IG9iamVjdCh0YXNrLmdyYXBoKSAmJiBBcnJheS5pc0FycmF5KHRhc2suZ3JhcGgubm9kZXMpCiAgICA/IHRhc2suZ3JhcGgubm9kZXMuZmluZCgobm9kZSkgPT4gb2JqZWN0KG5vZGUpICYmIG5vZGUuaWQgPT09IHRhc2suZ3JhcGguY3VycmVudF9ub2RlKQogICAgOiB1bmRlZmluZWQ7CmNvbnN0IGtpbmRXb3JkcyA9IHR5cGVvZiB0YXNrLmtpbmQgPT09ICJzdHJpbmciCiAgICA/IHRhc2sua2luZC50b0xvd2VyQ2FzZSgpLnNwbGl0KC9bXlxwe0x9XHB7Tn1dKy91KS5maWx0ZXIoQm9vbGVhbikgOiBbXTsKY29uc3QgcmVxdWlyZXNSZXZpZXcgPSBncmFwaE5vZGUgPyBncmFwaE5vZGUua2luZCA9PT0gInJldmlldyIgOiBraW5kV29yZHMuaW5jbHVkZXMoInJldmlldyIpOwoKY29uc3QgdmFsaWRhdGVSZXZpZXcgPSAocmV2aWV3KSA9PiB7CiAgICBpZiAoIWV4YWN0S2V5cyhyZXZpZXcsIFsidmVyZGljdCIsICJheGVzIl0pCiAgICAgICAgfHwgIVsic2FmZV90b19sYW5kIiwgImNoYW5nZXNfcmVxdWlyZWQiXS5pbmNsdWRlcyhyZXZpZXcudmVyZGljdCkKICAgICAgICB8fCAhQXJyYXkuaXNBcnJheShyZXZpZXcuYXhlcykgfHwgcmV2aWV3LmF4ZXMubGVuZ3RoICE9PSAzKSB7CiAgICAgICAgaW52YWxpZCgicmV2aWV3IG11c3QgY29udGFpbiBvbmx5IGEgdmFsaWQgdmVyZGljdCBhbmQgZXhhY3RseSB0aHJlZSBheGVzIik7CiAgICB9CiAgICBjb25zdCB3YW50ZWRBeGVzID0gbmV3IFNldChbInNwZWNpZmljYXRpb24iLCAicmVwb3NpdG9yeV9pbnZhcmlhbnRzIiwgInJ1bnRpbWVfZmFpbHVyZV9iZWhhdmlvciJdKTsKICAgIGNvbnN0IHNlZW5BeGVzID0gbmV3IFNldCgpOwogICAgbGV0IGZpbmRpbmdDb3VudCA9IDA7CiAgICBmb3IgKGNvbnN0IGF4aXMgb2YgcmV2aWV3LmF4ZXMpIHsKICAgICAgICBpZiAoIWV4YWN0S2V5cyhheGlzLCBbImF4aXMiLCAic3RhdHVzIiwgImZpbmRpbmdzIl0pCiAgICAgICAgICAgIHx8ICF3YW50ZWRBeGVzLmhhcyhheGlzLmF4aXMpIHx8IHNlZW5BeGVzLmhhcyhheGlzLmF4aXMpCiAgICAgICAgICAgIHx8ICFbInBhc3MiLCAiZmluZGluZ3MiXS5pbmNsdWRlcyhheGlzLnN0YXR1cykKICAgICAgICAgICAgfHwgIUFycmF5LmlzQXJyYXkoYXhpcy5maW5kaW5ncykgfHwgYXhpcy5maW5kaW5ncy5sZW5ndGggPiAzMikgewogICAgICAgICAgICBpbnZhbGlkKCJyZXZpZXcgYXhlcyBtdXN0IGJlIHVuaXF1ZSwgY2xvc2VkLCBuYW1lZCBheGVzIHdpdGggdmFsaWQgc3RhdHVzIGFuZCBmaW5kaW5ncyIpOwogICAgICAgIH0KICAgICAgICBzZWVuQXhlcy5hZGQoYXhpcy5heGlzKTsKICAgICAgICBjb25zdCBmaW5kaW5nSURzID0gbmV3IFNldCgpOwogICAgICAgIGZvciAoY29uc3QgZmluZGluZyBvZiBheGlzLmZpbmRpbmdzKSB7CiAgICAgICAgICAgIGlmICghZXhhY3RLZXlzKGZpbmRpbmcsIFsiaWQiLCAic2V2ZXJpdHkiLCAic3VtbWFyeSIsICJldmlkZW5jZSJdKQogICAgICAgICAgICAgICAgfHwgIXNsdWcoZmluZGluZy5pZCkgfHwgZmluZGluZ0lEcy5oYXMoZmluZGluZy5pZCkKICAgICAgICAgICAgICAgIHx8ICFbImJsb2NraW5nIiwgImltcG9ydGFudCIsICJtaW5vciJdLmluY2x1ZGVzKGZpbmRpbmcuc2V2ZXJpdHkpCiAgICAgICAgICAgICAgICB8fCAhbm9uRW1wdHkoZmluZGluZy5zdW1tYXJ5LCA1MDApCiAgICAgICAgICAgICAgICB8fCAhQXJyYXkuaXNBcnJheShmaW5kaW5nLmV2aWRlbmNlKSB8fCBmaW5kaW5nLmV2aWRlbmNlLmxlbmd0aCA8IDEKICAgICAgICAgICAgICAgIHx8IGZpbmRpbmcuZXZpZGVuY2UubGVuZ3RoID4gOAogICAgICAgICAgICAgICAgfHwgZmluZGluZy5ldmlkZW5jZS5zb21lKChpdGVtKSA9PiAhbm9uRW1wdHkoaXRlbSwgNTAwKSkpIHsKICAgICAgICAgICAgICAgIGludmFsaWQoImVhY2ggcmV2aWV3IGZpbmRpbmcgbXVzdCB1c2UgdGhlIGV4YWN0IGlkL3NldmVyaXR5L3N1bW1hcnkvZXZpZGVuY2Ugc2NoZW1hIik7CiAgICAgICAgICAgIH0KICAgICAgICAgICAgZmluZGluZ0lEcy5hZGQoZmluZGluZy5pZCk7CiAgICAgICAgICAgIGZpbmRpbmdDb3VudCArPSAxOwogICAgICAgIH0KICAgICAgICBpZiAoKGF4aXMuc3RhdHVzID09PSAicGFzcyIpICE9PSAoYXhpcy5maW5kaW5ncy5sZW5ndGggPT09IDApKSB7CiAgICAgICAgICAgIGludmFsaWQoImEgcGFzc2luZyBheGlzIGhhcyBubyBmaW5kaW5ncyBhbmQgYSBmaW5kaW5ncyBheGlzIGhhcyBhdCBsZWFzdCBvbmUiKTsKICAgICAgICB9CiAgICB9CiAgICBpZiAoc2VlbkF4ZXMuc2l6ZSAhPT0gd2FudGVkQXhlcy5zaXplKSBpbnZhbGlkKCJyZXZpZXcgbXVzdCBjb250YWluIGVhY2ggcmVxdWlyZWQgYXhpcyBvbmNlIik7CiAgICBpZiAoKHJldmlldy52ZXJkaWN0ID09PSAic2FmZV90b19sYW5kIikgIT09IChmaW5kaW5nQ291bnQgPT09IDApKSB7CiAgICAgICAgaW52YWxpZCgicmV2aWV3IHZlcmRpY3QgbXVzdCBhZ3JlZSB3aXRoIGl0cyBmaW5kaW5ncyIpOwogICAgfQp9OwoKaWYgKHJlcXVpcmVzUmV2aWV3ICYmIHJlc3VsdC5zdGF0dXMgPT09ICJzdWNjZXNzIiAmJiAhT2JqZWN0Lmhhc093bihyZXN1bHQsICJyZXZpZXciKSkgewogICAgaW52YWxpZCgiYSBzdWNjZXNzZnVsIHJldmlldyB0YXNrIHJlcXVpcmVzIGEgY2xvc2VkIHJldmlldyByZWNlaXB0Iik7Cn0KaWYgKE9iamVjdC5oYXNPd24ocmVzdWx0LCAicmV2aWV3IikpIHZhbGlkYXRlUmV2aWV3KHJlc3VsdC5yZXZpZXcpOwoKY29uc29sZS5sb2coInRhc2sgcmVzdWx0IHByZWZsaWdodDogdmFsaWQiKTsK"
+
     static func rootAssignmentLanguage(copy: Copy = L.t) -> RootAssignmentLanguage {
         let tag = L.tag(of: copy)
         let english: String
@@ -301,6 +308,13 @@ extension Orchestrator {
               This is never required; the file alone is enough — so when this call fails, the
               work is already reported and there is nothing to repair.
               """
+        let validatorLoader = #"eval("(async()=>{"+Buffer.from(process.argv[1],"base64").toString("utf8")+"\n})()")"#
+        let resultTmp = dir + "/result.json.tmp"
+        let resultFile = dir + "/result.json"
+        let resultPreflightCommand = "node -e " + Project.shellQuoted(validatorLoader) + " "
+            + Project.shellQuoted(childResultValidatorProgramBase64) + " "
+            + Project.shellQuoted(dir + "/task.json") + " " + Project.shellQuoted(resultTmp)
+            + " && mv -- " + Project.shellQuoted(resultTmp) + " " + Project.shellQuoted(resultFile)
         let reviewReporting = typedReviewReporting(for: task)
         return """
         # Clawdline child briefing — task \(task.id)
@@ -397,7 +411,7 @@ extension Orchestrator {
 
         ## Reporting — this is the completion signal, do it exactly
 
-        When the work is done (or has failed for good), write \(dir)/result.json:
+        When the work is done (or has failed for good), first write \(resultTmp):
 
         ```json
         {"clawdline_protocol": 1,
@@ -411,8 +425,20 @@ extension Orchestrator {
          "finished_at": "<ISO8601 UTC>"}
         ```
 
-        Use "status": "failure" when you could not do it. Write it LAST — the moment it exists
-        your work is considered finished.
+        Use "status": "failure" when you could not do it. Then run this exact preflight and
+        atomic rename command:
+
+        ```bash
+        \(resultPreflightCommand)
+        ```
+
+        The validator is carried inside this briefing, so this works even when the project you
+        are working in has no Clawdline checkout or `tools/` directory. It validates the task and
+        result identities, status, optional verification, and the closed review receipt when one
+        is present or required. It never prints the `task_secret` value. If validation fails, do
+        not rename or delete the tmp file: correct that file and run the same command again. `result.json`
+        remains the only completion signal; the task is considered finished only after the
+        successful rename creates it.
         \(reviewReporting)
 
         **`symbols` is how your work is told apart from everybody else's.** This tree is shared:
@@ -431,11 +457,11 @@ extension Orchestrator {
         the result, and "both halves came back" and "both halves failed and I did it myself" are
         different amounts of evidence behind the same answer.
 
-        **Write it with your file-writing tool, not with a shell command.** A shell line that
-        builds JSON and moves it into place gets refused by command screening on its own shape —
-        quotes inside braces, a redirect it cannot analyse statically — and that refusal is a
-        prompt with no "always allow" on a tab nobody is watching. Atomicity is not yours to
-        arrange: a half-written file simply fails to parse and is read again a few seconds later.
+        **Write the tmp file with your file-writing tool, not with a shell command.** A shell line
+        that builds JSON gets refused by command screening on its own shape — quotes inside braces,
+        a redirect it cannot analyse statically — and that refusal is a prompt with no "always
+        allow" on a tab nobody is watching. The exact command above is the one shell step: its
+        guarded rename supplies atomicity, and a half-written tmp file is never a completion signal.
 
         \(announceSection)
         """

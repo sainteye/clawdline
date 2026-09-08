@@ -751,8 +751,10 @@ group("a child briefing carries the whole of what a child needs, and none of wha
           !brief.contains("orchestrator-token") && !brief.contains("X-Clawdline-Orchestrator"))
     check("nor the one field nothing else would tell a dispatcher",
           !brief.contains("parent_task"))
-    check("and reporting says to use the file tool rather than a shell line",
-          brief.contains("Write it with your file-writing tool, not with a shell command"))
+    check("and reporting keeps JSON authoring in the file tool while naming one guarded publish step",
+          brief.contains("Write the tmp file with your file-writing tool, not with a shell command")
+            && brief.contains("The exact command above is the one shell step")
+            && brief.contains("&& mv --"))
     check("and it learns the narrow push opening without needing a skill",
           brief.contains("/v1/orchestrator/tasks/\(taskID)/notify")
               && brief.contains("The value of push is rarity")

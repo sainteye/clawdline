@@ -902,6 +902,10 @@ node Tests/docs-suite-facts.mjs
 # dead key to bury it from one that names it as a live setting; that half stays a person's job.
 node Tests/changelog-facts.mjs
 node Tests/agent-attention-principle.mjs
+# A child's final file is irreversible broker input. Validate the temporary receipt first,
+# including the closed review schema, and prove the briefing carries the validator into projects
+# that do not contain Clawdline's own tools directory.
+node Tests/task-result-validator.mjs
 
 # The checked-in protocol fixture is the cross-runtime byte authority. Generate the expected
 # bytes in memory and compare through the generator's read-only mode so hand edits fail closed.
