@@ -84,6 +84,8 @@ clawdline_production_sources=(
   Sources/ProjectArtifact.swift
   Sources/ProjectBoardStore.swift
   Sources/ProjectBoardIntegration.swift
+  Sources/ProjectBoardReadCache.swift
+  Sources/ProjectBoardRequestCoordinator.swift
   Sources/ProjectBoardHTTP.swift
   Sources/ProjectIcon.swift
   Sources/ProjectStatus.swift

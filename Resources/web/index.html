@@ -190,7 +190,6 @@ document.documentElement.className = "booting";
              says: the section below, the line in `main.js`'s registry, and this row. -->
         <button class="sidebar-item" id="nav-projects" type="button" data-page-to="projects">Projects</button>
         <button class="sidebar-item" id="nav-board" type="button" data-page-to="board">Projects · Board</button>
-        <div id="sidebar-board-projects"></div>
         <!-- `usage-open` keeps its name from the days when it was a button at the bottom of the
              settings sheet. The name is what `usage.css` styles and what the Usage guard looks for;
              what it does is now the same as every other row here. -->
@@ -534,7 +533,10 @@ document.documentElement.className = "booting";
     </header>
     <div class="board-intro">
         <p class="board-eyebrow">PROJECT / BOARD</p>
-        <h1 tabindex="-1" id="board-title">Projects</h1>
+        <div class="board-project-heading">
+            <canvas id="board-project-mark" class="project-mark" hidden aria-hidden="true"></canvas>
+            <h1 tabindex="-1" id="board-title">Projects</h1>
+        </div>
         <p id="board-subtitle"></p>
     </div>
     <p id="board-status" role="status" aria-live="polite"></p>
@@ -787,7 +789,7 @@ document.documentElement.className = "booting";
             <b id="settings-board-title">Enable Project Board</b>
             <p class="say" id="settings-board-say">Currently free. Turn off to use the standard workflow; history is retained.</p>
             <button class="chip" id="settings-board-toggle" type="button" aria-pressed="true" disabled>Loading…</button>
-            <button class="chip" id="settings-board-history" type="button" data-page-to="board">Open board history</button>
+            <button class="chip" id="settings-board-history" type="button" data-page-to="projects">Open projects</button>
             <p class="say" id="settings-board-status" role="status"></p>
         </div>
         <div class="foot"><span id="settings-version"></span></div>

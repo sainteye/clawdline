@@ -269,6 +269,8 @@ function harness(options = {}) {
         carries: options.carries === undefined ? () => true : options.carries,
         drawIcon: () => true,
         tint: () => "#d97757",
+        setTimeout: options.setTimeout,
+        clearTimeout: options.clearTimeout,
     };
     if (options.places !== null) {
         environment.places = () => { asked.push("places"); return options.places(); };
@@ -863,7 +865,10 @@ if (placesBody) {
         "return async function () {" + placesBody[1] + "};")(api,
         { apply: board => modes.push(board) }, module.readProjectPlaces);
     const on = { enabled: true, revision: 2, projects: [
-        { id: "p", name: "repo", label: "Client App", displayPath: "/repo", itemCount: 3 }
+        { id: "p", name: "repo", label: "Client App", displayPath: "/repo", itemCount: 3,
+          isStartPoint: true, icon: { accent: "#d97757", cells: [["#d97757"]] } },
+        { id: "old", name: "historical-uuid", itemCount: 99 },
+        { id: "scratch", name: "temporary", displayPath: "/tmp/scratch", isStartPoint: false, itemCount: 8 }
     ] };
     let modes = [], baselineReads = 0;
     const baseline = { places: async () => { baselineReads++; return PLACES; },
@@ -872,6 +877,8 @@ if (placesBody) {
     const inBoard = await readProjects();
     equal(inBoard.places[0].boardProjectId, "p", "enabled Projects open their own board");
     equal(inBoard.places[0].label, "Client App", "Project presentation retains the user's label");
+    equal(inBoard.places.length, 1, "only registered durable Start Points enter the Project directory");
+    equal(inBoard.places[0].icon, on.projects[0].icon, "Project icon and accent survive the directory projection");
     equal(baselineReads, 0, "enabled mode does not read the standard worktree list");
     equal(modes.length, 1, "successful board read publishes the real setting");
     modes = [];
@@ -906,6 +913,43 @@ if (placesBody) {
     catch (error) { caught = error; }
     equal(caught, denied, "an authorization refusal is not treated as store unavailability");
     equal(baselineReads, beforeDenied, "authorization refusal never silently switches readers");
+}
+
+{
+    let attempt = 0, followup, canceled = 0, scheduled = 0;
+    const h = harness({ ...ok,
+        places: async () => {
+            attempt++;
+            if (attempt === 1) return { places: [], readState: { status: "loading" } };
+            if (attempt === 2) return { ...PLACES, readState: { status: "stale" } };
+            throw new Error("temporary failure");
+        },
+        setTimeout: (fn, delay) => { scheduled++; followup = fn; equal(delay, attempt === 1 ? 2000 : 15000,
+            "catalog refresh is bounded and freshness-aware"); return 42; },
+        clearTimeout: () => { canceled++; }
+    });
+    await h.page.enter();
+    match(h.elements["projects-status"].textContent, /background/i, "cold catalog is not authoritative empty");
+    followup(); await flush();
+    equal(h.elements["projects-rows"].children.length, PLACES.places.length, "background publication fills the catalog");
+    followup(); await flush();
+    equal(h.elements["projects-rows"].children.length, PLACES.places.length, "failed refresh retains the last usable catalog");
+    match(h.elements["projects-status"].textContent, /old|previous|last/i, "failed catalog read labels retained data stale");
+    equal(scheduled, 3, "transient failure retains one bounded retry instead of stranding the catalog");
+    h.page.leave();
+    equal(canceled, 1, "leaving cancels the outstanding retry");
+}
+
+{
+    let calls = 0, release;
+    const h = harness({ ...ok, places: () => ++calls === 1 ? Promise.resolve(PLACES)
+        : new Promise(resolve => { release = resolve; }) });
+    await h.page.enter(); h.page.leave();
+    const next = h.page.enter();
+    equal(h.elements["projects-rows"].children.length, 0,
+        "re-entering cannot click stale rows from the previous workflow mode");
+    release({ places: [] }); await next;
+    h.page.leave();
 }
 
 console.log(`${failed ? "not ok" : "ok"}: web projects page, ${checks} checks`);

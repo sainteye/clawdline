@@ -37,19 +37,7 @@ export var BoardControls = {
         if (node("settings-board-say")) node("settings-board-say").textContent = words(
             "Currently free. Organize work, sessions, usage and delivery under each Project. Disable to use the standard workflow; history is retained.",
             "目前免費。以 Project 項目整合派工、進度、用量與成果。關閉後使用一般流程，歷史紀錄仍保留。");
-        if (node("settings-board-history")) node("settings-board-history").textContent = words("Open board history", "開啟看板與歷史紀錄");
-        var projects = node("sidebar-board-projects");
-        if (projects) {
-            projects.hidden = !board.enabled;
-            projects.replaceChildren();
-            (board.projects || []).forEach(function (project) {
-                var button = document.createElement("button");
-                button.type = "button"; button.className = "sidebar-item board-project-shortcut";
-                button.textContent = (project.label || project.name) + " / " + words("Work", "工作項目") + " · " + project.itemCount;
-                button.addEventListener("click", function () { BoardControls.open(project.id); });
-                projects.appendChild(button);
-            });
-        }
+        if (node("settings-board-history")) node("settings-board-history").textContent = words("Open projects", "開啟專案");
     },
     refresh: function () {
         if (!api || typeof api.board !== "function") return Promise.resolve(null);

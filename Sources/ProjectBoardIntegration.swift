@@ -5,14 +5,25 @@ import Foundation
 /// board never reads transcripts or adds a task's cumulative usage a second time.
 enum ProjectBoardIntegration {
     private static let queue = DispatchQueue(label: "clawdline.board.sources", qos: .utility)
-    private static var refreshed = Date.distantPast
-    private static var lastAttempt = Date.distantPast
+    private static let coverageLock = NSLock()
     private static var ingestionCoverage = IngestionCoverage()
-    private static var sourceRows: [UsageLedger.Row] = []
-    private static var sourceProjects: [String: ProjectPresentation] = [:]
-    private static var sourceTruncated = false
-    private static var latestObservation: Date?
+    private static let reads = ProjectBoardReadCache()
+    private static var source = MaterializedSources()
+    private static var prepared = false
+    private static var storeForTesting: ProjectBoardStore?
+    private static var refreshForTesting: ((ProjectBoardStore, ProjectBoardReadCache.DirtyReasons)
+        -> Result<ProjectBoardReadCache.Model, ProjectBoardReadCache.Failure>)?
     static let sourceLimit = 100_000
+
+    private struct MaterializedSources {
+        var presentations: [String: ProjectPresentation] = [:]
+        var projectOrder: [String: Int] = [:]
+        var rowsByTask: [String: [UsageLedger.Row]] = [:]
+        var usageRows = 0
+        var usageTruncated = false
+        var usageThrough: Date?
+        var usageRevision: String?
+    }
 
     struct ProjectPresentation {
         let label: String
@@ -37,6 +48,13 @@ enum ProjectBoardIntegration {
                     || !outcome.persisted || outcome.droppedCount > 0 else { return }
             issueCount += 1
             reasonsByProject[projectID ?? "*", default: []].insert(outcome.reason ?? "source_ingestion_incomplete")
+        }
+
+        mutating func merge(_ other: IngestionCoverage) {
+            issueCount += other.issueCount
+            for (projectID, reasons) in other.reasonsByProject {
+                reasonsByProject[projectID, default: []].formUnion(reasons)
+            }
         }
 
         func reasons(projectID: String?) -> [String] {
@@ -79,6 +97,21 @@ enum ProjectBoardIntegration {
         return result
     }
 
+    /// Start Points are newest-first. Canonical repository identity may collapse a main checkout
+    /// and one or more linked worktrees, so retain the first position deterministically instead of
+    /// feeding duplicate keys to Dictionary's trapping initializer.
+    static func projectOrder(_ places: [StartPoints.Place]) -> [String: Int] {
+        var result: [String: Int] = [:]
+        for (index, place) in places.enumerated() {
+            guard let canonical = UsageLedger.canonicalProjectKey(projectDir: place.path) else {
+                continue
+            }
+            let id = projectID(canonical)
+            if result[id] == nil { result[id] = index }
+        }
+        return result
+    }
+
     static func normalized(_ record: [String: Any]) -> [String: Any] {
         var row = record
         row["workItemId"] = record["work_item_id"] ?? record["workItemId"]
@@ -117,71 +150,313 @@ enum ProjectBoardIntegration {
     static func observe(_ record: [String: Any]) {
         queue.async {
             let result = ingest(record)
+            coverageLock.lock()
             ingestionCoverage.record(result.outcome, projectID: result.projectID)
-            lastAttempt = .distantPast
+            coverageLock.unlock()
+            let store = ProjectBoardStore.shared
+            let header = store.readHeader()
+            reads.refresh(header: header,
+                          reasons: [.catalog, .durableModel, .usage],
+                          work: { reconcile(store: store, reasons: $0) })
         }
     }
 
     static func read(project: String?, item: String?) -> [String: Any] {
-        queue.sync {
-            if Date().timeIntervalSince(lastAttempt) >= 10 {
-                var coverage = IngestionCoverage()
-                let places = StartPoints.places()
-                let presentations = projectPresentations(places)
-                sourceProjects = presentations
-                for place in places {
-                    guard let canonical = UsageLedger.canonicalProjectKey(projectDir: place.path)
-                    else { continue }
-                    let id = projectID(canonical)
-                    let result = ProjectBoardStore.shared.ensureProject(
-                        id: id,
-                        name: persistentProjectName(
-                            canonical, presentationLabel: presentations[id]?.label))
-                    coverage.record(result, projectID: id)
-                }
-                for record in Orchestrator.ledgerBackfillRecords() {
-                    let result = ingest(record)
-                    coverage.record(result.outcome, projectID: result.projectID)
-                }
-                let read = UsageLedger.shared.analyticsRead(.init(limit: sourceLimit + 1))
-                sourceTruncated = read.rows.count > sourceLimit
-                sourceRows = Array(read.rows.prefix(sourceLimit))
-                latestObservation = read.latestLedgerObservation
-                lastAttempt = Date()
-                ingestionCoverage = coverage
-                if coverage.issueCount == 0 { refreshed = lastAttempt }
-            }
-            var envelope = ProjectBoardStore.shared.snapshot(project: project, item: item)
-            guard var board = envelope["board"] as? [String: Any] else { return envelope }
-            if let projects = board["projects"] as? [[String: Any]] {
-                board["projects"] = projects.map { project -> [String: Any] in
-                    guard let id = project["id"] as? String,
-                          let presentation = sourceProjects[id] else { return project }
-                    return project.merging(presentation.jsonObject) { _, presentation in presentation }
-                }
-            }
-            let durableCoverage = board["sourceIngestion"] as? [String: Any] ?? [:]
-            let durableReasons = durableCoverage["reasons"] as? [String] ?? []
-            let items = board["items"] as? [[String: Any]] ?? []
-            board["items"] = items.map { enriched($0, rows: sourceRows, truncated: sourceTruncated,
-                ingestionReasons: durableReasons + ingestionCoverage.reasons(projectID: $0["projectId"] as? String)) }
-            if let selected = board["item"] as? [String: Any] {
-                board["item"] = enriched(selected, rows: sourceRows, truncated: sourceTruncated,
-                    ingestionReasons: durableReasons + ingestionCoverage.reasons(projectID: selected["projectId"] as? String))
-            }
-            board["truncated"] = sourceTruncated || (board["truncated"] as? Bool ?? false)
-            var coverage = ingestionCoverage.jsonObject
-            coverage["historicalDroppedCount"] = durableCoverage["droppedCount"] ?? 0
-            coverage["issueCount"] = ingestionCoverage.issueCount + durableReasons.count
-            coverage["reasons"] = Set((coverage["reasons"] as? [String] ?? []) + durableReasons).sorted()
-            coverage["status"] = ingestionCoverage.issueCount == 0 && durableReasons.isEmpty ? "complete" : "partial"
-            board["source"] = ["observedAt": refreshed == .distantPast ? NSNull() : Int(refreshed.timeIntervalSince1970) as Any,
-                "attemptedAt": Int(lastAttempt.timeIntervalSince1970), "ingestion": coverage,
-                "usageThrough": latestObservation.map { Int($0.timeIntervalSince1970) } as Any? ?? NSNull(),
-                "usageRows": sourceRows.count, "truncated": sourceTruncated]
-            envelope["board"] = board
-            return envelope
+        let store = storeForTesting ?? ProjectBoardStore.shared
+        let header = store.readHeader()
+        let startup = store.readSeedIfAvailable()?.seed.envelope(project: project, item: item)
+            ?? loadingEnvelope(header: header)
+        return reads.read(project: project, item: item, header: header, loading: startup) { reasons in
+            refreshForTesting?(store, reasons) ?? reconcile(store: store, reasons: reasons)
         }
+    }
+
+    static func configureReadStoreForTesting(_ store: ProjectBoardStore?,
+        refresh: ((ProjectBoardStore, ProjectBoardReadCache.DirtyReasons)
+            -> Result<ProjectBoardReadCache.Model,
+            ProjectBoardReadCache.Failure>)? = nil) {
+        storeForTesting = store
+        refreshForTesting = refresh
+        reads.resetForTesting()
+    }
+
+    static var readCacheStateForTesting: ProjectBoardReadCache.State { reads.stateForTesting }
+
+    private static func loadingEnvelope(header: ProjectBoardStore.ReadHeader) -> [String: Any] {
+        ["board": [
+            "schemaVersion": 1, "revision": header.revision, "enabled": header.enabled,
+            "mode": header.enabled ? "board" : "standard",
+            "entitlement": ["state": "free_preview", "label": "Currently free"],
+            "projects": [] as [[String: Any]], "items": [] as [[String: Any]],
+            "item": NSNull(), "truncated": false, "updatedAt": header.updatedAt,
+            "available": header.available,
+        ] as [String: Any]]
+    }
+
+    /// Called during app startup before either HTTP or Cloud admission opens. Durable decoding and
+    /// the first materialized Store seed therefore never become the first GET's hidden work.
+    static func prepare() {
+        coverageLock.lock()
+        guard !prepared else { coverageLock.unlock(); return }
+        prepared = true
+        coverageLock.unlock()
+        let store = ProjectBoardStore.shared
+        let header = store.readHeader()
+        reads.setEnabled(header.enabled)
+        queue.async {
+            _ = store.readSeed(rebuild: true)
+            let current = store.readHeader()
+            // Durable OFF history is a settled read-only projection. Startup never infers a
+            // Project, replays broker history, or scans usage merely to make retained facts visible.
+            if case .success(let retained) = materializeReadModel(store: store) {
+                reads.seed(retained)
+            }
+            guard current.enabled else { return }
+            reads.refresh(header: current, reasons: [.catalog, .durableModel],
+                          work: { reconcile(store: store, reasons: $0) })
+        }
+    }
+
+    static func modeDidChange(enabled: Bool) {
+        reads.setEnabled(enabled)
+        guard enabled else { return }
+        let store = ProjectBoardStore.shared
+        let header = store.readHeader()
+        reads.refresh(header: header,
+                      reasons: [.modeCatchUp, .catalog, .durableModel, .usage],
+                      work: { reconcile(store: store, reasons: $0) })
+    }
+
+    /// A successful Board mutation dirties the durable seed in ProjectBoardStore. Reconcile it
+    /// here, on the bounded worker, instead of making the next GET discover and rebuild the model.
+    static func didMutate() {
+        let store = ProjectBoardStore.shared
+        let header = store.readHeader()
+        reads.refresh(header: header, reasons: [.catalog, .durableModel],
+                      work: { reconcile(store: store, reasons: $0) })
+    }
+
+    /// A committed ledger checkpoint emits this cheap invalidation after leaving the ledger queue.
+    /// The Board neither owns the ledger nor waits on its SQLite work.
+    static func usageDidCommit() {
+        let store = storeForTesting ?? ProjectBoardStore.shared
+        let header = store.readHeader()
+        let testRefresh = refreshForTesting
+        reads.refresh(header: header, reasons: [.usage],
+                      work: { testRefresh?(store, $0) ?? reconcile(store: store, reasons: $0) })
+    }
+
+    /// One running worker consumes one typed reason union. Event floods can add at most one
+    /// successor union, and each source is refreshed at most once in that generation.
+    private static func reconcile(store: ProjectBoardStore,
+                                  reasons: ProjectBoardReadCache.DirtyReasons)
+        -> Result<ProjectBoardReadCache.Model, ProjectBoardReadCache.Failure> {
+        guard store.enabled else {
+            return .failure(.init(code: "board_disabled",
+                                  message: "Project Board reconciliation is disabled."))
+        }
+        if reasons.contains(.modeCatchUp) { catchUpBrokerHistory(store: store) }
+        if reasons.contains(.catalog) { refreshCatalogSources(store: store) }
+        if reasons.contains(.usage) { refreshUsageSources() }
+        return materializeReadModel(store: store)
+    }
+
+    private static func refreshCatalogSources(store: ProjectBoardStore) {
+        var coverage = IngestionCoverage()
+        let places = StartPoints.places()
+        let presentations = projectPresentations(places)
+        for place in places {
+            guard let canonical = UsageLedger.canonicalProjectKey(projectDir: place.path) else { continue }
+            let id = projectID(canonical)
+            coverage.record(store.ensureProject(
+                id: id, name: persistentProjectName(canonical,
+                    presentationLabel: presentations[id]?.label)), projectID: id)
+        }
+        let order = projectOrder(places)
+        coverageLock.lock()
+        source.presentations = presentations
+        source.projectOrder = order
+        ingestionCoverage.merge(coverage)
+        coverageLock.unlock()
+    }
+
+    /// OFF intentionally refuses inference. Re-enabling therefore catches up the bounded broker
+    /// registry once on the background read worker; ordinary GET never enters this replay path.
+    private static func catchUpBrokerHistory(store: ProjectBoardStore) {
+        var coverage = IngestionCoverage()
+        for record in Orchestrator.ledgerBackfillRecords() {
+            let result = ingest(record)
+            coverage.record(result.outcome, projectID: result.projectID)
+        }
+        coverageLock.lock()
+        ingestionCoverage.merge(coverage)
+        coverageLock.unlock()
+    }
+
+    /// Usage is refreshed only from a broker/ledger event (or mode-on bootstrap), never because a
+    /// GET crossed a TTL. The indexed rows are then reused by every scoped materialization.
+    private static func refreshUsageSources() {
+        let usageRead = UsageLedger.shared.analyticsRead(.init(limit: sourceLimit + 1))
+        let sourceTruncated = usageRead.rows.count > sourceLimit
+        let rows = Array(usageRead.rows.prefix(sourceLimit))
+        var revisionHasher = SHA256()
+        for row in rows {
+            var fields: [String] = [row.intervalKey, row.taskID ?? "", row.coverage,
+                          row.coverageReasons.joined(separator: ","), row.costUnit ?? "",
+                          row.costBasis, row.costValue.map { String($0) } ?? ""]
+            fields.append(contentsOf: UsageLedger.Part.allCases.map {
+                row.counts[$0].map(String.init) ?? "?"
+            })
+            revisionHasher.update(data: Data(fields.joined(separator: "\u{0}").utf8))
+        }
+        let usageRevision = revisionHasher.finalize().map { String(format: "%02x", $0) }.joined()
+            + ":\(usageRead.corrections):\(sourceTruncated)"
+        coverageLock.lock()
+        let usageUnchanged = source.usageRevision == usageRevision
+        coverageLock.unlock()
+        if usageUnchanged { return }
+        var rowsByTask: [String: [UsageLedger.Row]] = [:]
+        for row in rows {
+            if let taskID = row.taskID { rowsByTask[taskID, default: []].append(row) }
+        }
+        coverageLock.lock()
+        source.rowsByTask = rowsByTask
+        source.usageRows = rows.count
+        source.usageTruncated = sourceTruncated
+        source.usageThrough = usageRead.latestLedgerObservation
+        source.usageRevision = usageRevision
+        coverageLock.unlock()
+    }
+
+    private static func materializeReadModel(store: ProjectBoardStore)
+        -> Result<ProjectBoardReadCache.Model, ProjectBoardReadCache.Failure> {
+        coverageLock.lock()
+        let sources = source
+        let coverage = ingestionCoverage
+        coverageLock.unlock()
+        let seed = store.readSeed(rebuild: true).seed
+        guard seed.header.available else {
+            let error = seed.error ?? [:]
+            return .failure(.init(code: error["code"] as? String ?? "board_unavailable",
+                                  message: error["message"] as? String ?? "Board store unavailable."))
+        }
+        let observedAt = Date().timeIntervalSince1970
+        var catalog = seed.catalog.map { row -> [String: Any] in
+            var value = row
+            let id = row["id"] as? String ?? ""
+            if let presentation = sources.presentations[id] {
+                value.merge(presentation.jsonObject) { _, new in new }
+                value["isStartPoint"] = true
+            } else {
+                value["isStartPoint"] = false
+            }
+            value["observedAt"] = observedAt
+            return value
+        }
+        catalog.sort { lhs, rhs in
+            let left = sources.projectOrder[lhs["id"] as? String ?? ""]
+            let right = sources.projectOrder[rhs["id"] as? String ?? ""]
+            if let left, let right { return left < right }
+            if left != nil { return true }
+            if right != nil { return false }
+            return (lhs["name"] as? String ?? "").localizedCaseInsensitiveCompare(
+                rhs["name"] as? String ?? "") == .orderedAscending
+        }
+
+        let catalogEnvelope = projected(seed.envelope(), catalog: catalog,
+            coverage: coverage, sources: sources, observedAt: observedAt)
+        var projectModels: [String: [String: Any]] = [:]
+        var itemModels: [String: [String: Any]] = [:]
+        for project in catalog {
+            guard let projectID = project["id"] as? String else { continue }
+            let reasons = coverage.reasons(projectID: projectID)
+            let summaries = (seed.itemSummariesByProject[projectID] ?? []).map {
+                enrichFromIndex($0, rowsByTask: sources.rowsByTask,
+                                truncated: sources.usageTruncated,
+                                ingestionReasons: reasons)
+            }
+            var envelope = seed.envelope(project: projectID)
+            if var board = envelope["board"] as? [String: Any] {
+                board["projects"] = catalog
+                // The budget is for the scoped response, so measure the fixed shell without the
+                // seed's complete item array. Otherwise every item is counted once in `base` and
+                // again while selecting summaries, making a large but valid project look empty.
+                board["items"] = [] as [[String: Any]]
+                board["items"] = boundedSummaries(summaries, board: board)
+                board["truncated"] = summaries.count > (board["items"] as? [[String: Any]] ?? []).count
+                envelope["board"] = board
+            }
+            projectModels[projectID] = projected(envelope, catalog: catalog,
+                coverage: coverage, sources: sources, observedAt: observedAt)
+
+            for summary in seed.itemSummariesByProject[projectID] ?? [] {
+                guard let itemID = summary["id"] as? String,
+                      let detail = seed.itemDetailsByID[itemID] else { continue }
+                var itemEnvelope = seed.envelope(project: projectID, item: itemID)
+                if var board = itemEnvelope["board"] as? [String: Any] {
+                    board["projects"] = catalog
+                    board["items"] = [] as [[String: Any]]
+                    board["item"] = enrichFromIndex(
+                        detail, rowsByTask: sources.rowsByTask,
+                        truncated: sources.usageTruncated,
+                        ingestionReasons: reasons)
+                    itemEnvelope["board"] = board
+                }
+                itemModels[itemID] = projected(itemEnvelope, catalog: catalog,
+                    coverage: coverage, sources: sources, observedAt: observedAt)
+            }
+        }
+        return .success(.init(revision: seed.header.revision, observedAt: observedAt,
+                              catalog: catalogEnvelope, projects: projectModels,
+                              items: itemModels))
+    }
+
+    private static func enrichFromIndex(_ item: [String: Any],
+                                        rowsByTask: [String: [UsageLedger.Row]],
+                                        truncated: Bool, ingestionReasons: [String]) -> [String: Any] {
+        let links = item["accountingTaskLinks"] as? [[String: Any]] ?? []
+        let rows = links.compactMap { $0["targetId"] as? String }.flatMap { rowsByTask[$0] ?? [] }
+        return enriched(item, rows: rows, truncated: truncated,
+                        ingestionReasons: ingestionReasons)
+    }
+
+    private static func boundedSummaries(_ items: [[String: Any]], board: [String: Any])
+        -> [[String: Any]] {
+        let budget = 1_000_000
+        let base = (try? JSONSerialization.data(withJSONObject: ["board": board]).count) ?? budget
+        var used = base
+        var retained: [[String: Any]] = []
+        for item in items.prefix(500) {
+            let size = (try? JSONSerialization.data(withJSONObject: item).count) ?? budget
+            guard used + size <= budget else { break }
+            retained.append(item); used += size
+        }
+        return retained
+    }
+
+    private static func projected(_ envelope: [String: Any], catalog: [[String: Any]],
+                                  coverage: IngestionCoverage,
+                                  sources: MaterializedSources,
+                                  observedAt: Double) -> [String: Any] {
+        var envelope = envelope
+        guard var board = envelope["board"] as? [String: Any] else { return envelope }
+        board["projects"] = catalog
+        let durable = board["sourceIngestion"] as? [String: Any] ?? [:]
+        let durableReasons = durable["reasons"] as? [String] ?? []
+        var ingestion = coverage.jsonObject
+        ingestion["historicalDroppedCount"] = durable["droppedCount"] ?? 0
+        ingestion["issueCount"] = coverage.issueCount + durableReasons.count
+        ingestion["reasons"] = Set((ingestion["reasons"] as? [String] ?? []) + durableReasons).sorted()
+        ingestion["status"] = coverage.issueCount == 0 && durableReasons.isEmpty ? "complete" : "partial"
+        board["source"] = [
+            "observedAt": observedAt, "attemptedAt": observedAt, "ingestion": ingestion,
+            "usageThrough": sources.usageThrough.map {
+                Int($0.timeIntervalSince1970)
+            } as Any? ?? NSNull(),
+            "usageRows": sources.usageRows, "truncated": sources.usageTruncated,
+        ]
+        envelope["board"] = board
+        return envelope
     }
 
     static func enriched(_ item: [String: Any], rows: [UsageLedger.Row], truncated: Bool = false,

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { bindBoardPage, boardProgress, resolveBoardSession } from "../Resources/web/app/js/view/board.js";
+import * as boardModule from "../Resources/web/app/js/view/board.js";
 
 class Node {
     constructor(doc, tag = "div") {
@@ -157,7 +158,26 @@ check("no manual New item entry exists", !html.includes('id="board-new"'));
 check("no lifecycle selector exists", !html.includes('id="board-state"'));
 const css = readFileSync(new URL("../Resources/web/app/css/board.css", import.meta.url), "utf8");
 check("hidden search overrides its ID-level display rule", /display:\s*none/.test(css.match(/#board-search\[hidden\]\s*\{([^}]*)\}/)?.[1] || ""));
+{
+    const opened = [], destinations = [];
+    const shell = { state: { projectId: null }, enter: () => opened.push("selected") };
+    check("project-contained entry seam exists", typeof boardModule.enterProjectBoard === "function");
+    if (boardModule.enterProjectBoard) {
+        await boardModule.enterProjectBoard(shell, destination => destinations.push(destination));
+        check("cold Board URL resolves to the sole Project catalog", destinations[0] === "projects" && opened.length === 0);
+        shell.state.projectId = "a";
+        await boardModule.enterProjectBoard(shell, destination => destinations.push(destination));
+        check("selected Project still enters its own board", opened.length === 1 && destinations.length === 1);
+    }
+}
 check("explicit server progress wins old backlog", boardProgress(rows[1]) === "landed");
+{
+    const p = page({ read: async () => envelope({ projects: [], items: [], readState: { status: "error" } }) }, "en");
+    await p.view.open("a");
+    check("failed first materialization does not claim to display previous records",
+        !p.elements["board-status"].textContent.includes("last available"));
+    p.view.leave();
+}
 check(
     "unknown server status is not called complete",
     boardProgress({
@@ -166,6 +186,19 @@ check(
     }) === "unknown"
 );
 check("task success is not landing", boardProgress({ state: "backlog", success: true }) === "planning");
+{
+    const p = page({ read: () => Promise.resolve(envelope({
+        projects: [{ id: "a", name: "Clawdline", summary: { open: 24, needsClarity: 6, landed: 90 } }],
+        items: [], truncated: true
+    })) });
+    await p.view.open("a");
+    check("Project totals come from its materialized summary, not loaded item rows",
+        p.elements["board-items"].all(".board-overview-stat").map(row => row.textContent).join("|")
+            === "24尚在推進|6需要釐清|90已落地");
+    check("partial item projection does not contradict a nonempty Project model",
+        !p.elements["board-items"].textContent.includes("目前沒有待推進的項目"));
+    p.view.leave();
+}
 {
     const reads = [],
         commands = [],
@@ -341,6 +374,38 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
         p.elements["board-detail"].textContent.includes("new <literal>") &&
             !p.elements["board-detail"].textContent.includes("old <literal>")
     );
+    p.view.leave();
+}
+{
+    const pending = deferred();
+    const p = page({ read: () => pending.promise });
+    const opening = p.view.open("a", null, { id: "a", label: "Chosen project" });
+    check("clicked Project identity appears before the network resolves",
+        p.elements["board-title"].textContent === "Chosen project");
+    check("initial loading is not a zero-count dashboard",
+        p.elements["board-items"].all(".board-overview-stat").length === 0);
+    check("initial loading never claims the Project has no work",
+        !p.elements["board-items"].textContent.includes("No open work")
+        && !p.elements["board-items"].textContent.includes("目前沒有待推進"));
+    pending.resolve(envelope({ projects: [], items: [], readState: { status: "loading" } }));
+    await opening;
+    check("background initialization remains loading, not authoritative empty",
+        p.elements["board-items"].all(".board-overview-stat").length === 0);
+    check("a cold snapshot cannot erase the clicked Project name",
+        p.elements["board-title"].textContent === "Chosen project");
+    p.view.leave();
+}
+{
+    const p = page({ read: () => Promise.resolve(envelope({ projects: [], items: [],
+        readState: { status: "ready" } })) }, "en");
+    await p.view.open("missing", null, { id: "missing", label: "Chosen project" });
+    check("unknown Project keeps the identity the user selected",
+        p.elements["board-title"].textContent === "Chosen project");
+    check("a catalog shell cannot masquerade as an empty selected Project",
+        p.elements["board-items"].all(".board-overview-stat").length === 0
+        && !p.elements["board-items"].textContent.includes("No open work"));
+    check("unknown Project is explicitly unavailable",
+        p.elements["board-status"].textContent.includes("Project records are unavailable"));
     p.view.leave();
 }
 {

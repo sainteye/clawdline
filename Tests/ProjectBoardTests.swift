@@ -157,6 +157,53 @@ group("Project Board defaults, mode boundaries, and corrupt stores fail closed")
            failedAutomatic?["reason"] as? String, "persistence_failed")
 }
 
+group("Project Board seed publication cannot roll durable mode or revision backwards") {
+    let d = BoardTestDriver(name: "publication-\(UUID().uuidString)")
+    d.createProject(id: "first")
+    _ = d.store.readSeed(rebuild: true)
+    d.createProject(id: "dirty")
+
+    let publicationEntered = DispatchSemaphore(value: 0)
+    let publicationRelease = DispatchSemaphore(value: 0)
+    let seedFinished = DispatchSemaphore(value: 0)
+    let mutationsFinished = DispatchSemaphore(value: 0)
+    let pauseLock = NSLock()
+    var paused = false
+    ProjectBoardStore.seedPublicationPauseForTesting = {
+        pauseLock.lock()
+        let shouldPause = !paused
+        paused = true
+        pauseLock.unlock()
+        guard shouldPause else { return }
+        publicationEntered.signal()
+        _ = publicationRelease.wait(timeout: .now() + 4)
+    }
+    defer { ProjectBoardStore.seedPublicationPauseForTesting = nil }
+
+    DispatchQueue.global(qos: .utility).async {
+        _ = d.store.readSeed(rebuild: true)
+        seedFinished.signal()
+    }
+    check("seed reaches the former cross-lock publication window",
+          publicationEntered.wait(timeout: .now() + 1) == .success)
+    DispatchQueue.global(qos: .utility).async {
+        _ = d.store.ensureProject(id: "ordinary", name: "Ordinary")
+        let revision = d.store.readHeader().revision
+        _ = d.store.command(["operation": "set_enabled", "requestId": "off-after-seed",
+                             "expectedRevision": revision, "enabled": false], actor: "root")
+        mutationsFinished.signal()
+    }
+    check("ordinary mutation and OFF cannot pass a seed that still owns the writer",
+          mutationsFinished.wait(timeout: .now() + 0.1) == .timedOut)
+    publicationRelease.signal()
+    check("held seed completes", seedFinished.wait(timeout: .now() + 2) == .success)
+    check("interleaved mutations complete", mutationsFinished.wait(timeout: .now() + 2) == .success)
+    let final = d.store.readHeader()
+    expect("older ON seed cannot restore Board mode", final.enabled, false)
+    check("older seed cannot restore its revision", final.revision > 2)
+    expect("published header matches durable state", final.revision, d.revision)
+}
+
 group("Project Board commands are closed, CAS-serialized, and durably idempotent") {
     let d = BoardTestDriver(name: "cas-\(UUID().uuidString)")
     d.createProject()

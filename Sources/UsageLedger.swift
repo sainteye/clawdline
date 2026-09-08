@@ -1674,14 +1674,43 @@ final class UsageLedger {
     /// Take one reading of one session. Safe to call as often as anything likes: a reading that
     /// says nothing new attributes nothing.
     func observe(_ sample: Sample) {
-        queue.async { [weak self] in _ = self?.apply(sample) }
+        queue.async { [weak self] in
+            guard let self, self.apply(sample) != nil else { return }
+            self.publishCommittedCheckpoint()
+        }
     }
 
     /// The same thing, synchronously, for a caller that needs the answer — the suite, and the
     /// finalize collector, which must have written its row before the task's directory goes.
     @discardableResult
     func observeNow(_ sample: Sample) -> String? {
-        queue.sync { apply(sample) }
+        let key = queue.sync { apply(sample) }
+        if key != nil { publishCommittedCheckpoint() }
+        return key
+    }
+
+    private static let committedObserverLock = NSLock()
+    private static var committedObserverStorage: (() -> Void)?
+
+    static var committedObserverForTesting: (() -> Void)? {
+        get {
+            committedObserverLock.lock(); defer { committedObserverLock.unlock() }
+            return committedObserverStorage
+        }
+        set {
+            committedObserverLock.lock(); committedObserverStorage = newValue
+            committedObserverLock.unlock()
+        }
+    }
+
+    /// Leave the serial SQLite owner before invalidating the Board. The callback is deliberately
+    /// cheap: it only contributes a typed dirty reason to the Board's bounded single-flight worker.
+    private func publishCommittedCheckpoint() {
+        let observer = Self.committedObserverForTesting
+        DispatchQueue.global(qos: .utility).async {
+            if let observer { observer() }
+            else { ProjectBoardIntegration.usageDidCommit() }
+        }
     }
 
     /// Returns the interval key the reading landed on, or nil when nothing could be written.

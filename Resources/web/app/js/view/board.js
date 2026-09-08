@@ -250,7 +250,9 @@ function detail(ctx) {
             ctx,
             target,
             "p",
-            words(ctx, "This item is unavailable.", "目前無法讀取這個項目。"),
+            !ctx.state.selectionLoaded && ctx.state.readStatus !== "error"
+                ? words(ctx, "Loading this item's details…", "正在載入這個項目的詳細紀錄…")
+                : words(ctx, "This item is unavailable.", "目前無法讀取這個項目。"),
             "board-empty"
         );
         return;
@@ -514,6 +516,12 @@ function detail(ctx) {
             "board-section-help"
         );
 }
+export function enterProjectBoard(page, navigate) {
+    if (page.state.projectId) return page.enter();
+    // Defer until the page router has completed its current navigation bookkeeping.
+    return Promise.resolve().then(() => navigate("projects"));
+}
+
 export function bindBoardPage(elements, environment = {}) {
     const ctx = {
         e: elements,
@@ -526,6 +534,9 @@ export function bindBoardPage(elements, environment = {}) {
         items: [],
         item: null,
         projectId: null,
+        projectPresentation: null,
+        selectionLoaded: false,
+        readStatus: "loading",
         itemId: null,
         revision: -1,
         enabled: true,
@@ -549,14 +560,21 @@ export function bindBoardPage(elements, environment = {}) {
     };
     function renderBody() {
         if (elements.board) elements.board.dataset.boardView = state.view;
-        const project = state.projects.find((row) => row.id === state.projectId);
+        const project = state.projects.find((row) => row.id === state.projectId)
+            || state.projectPresentation;
         if (elements["board-title"])
             elements["board-title"].textContent = project
                 ? project.label || project.name
                 : words(ctx, "Projects", "專案");
+        const mark = elements["board-project-mark"];
+        if (mark) mark.hidden = !(project && environment.drawIcon
+            && environment.drawIcon(mark, project.icon, 5));
+        if (elements["board-title"] && elements["board-title"].style)
+            elements["board-title"].style.color = project && project.icon && environment.tint
+                ? environment.tint(project.icon.accent) : "";
         if (elements["board-subtitle"])
             elements["board-subtitle"].textContent = project
-                ? words(
+                ? project.displayPath || project.path || words(
                       ctx,
                       "Work takes shape in conversation. Progress follows the evidence.",
                       "從對話開始，依實際執行與成果自動更新。"
@@ -581,6 +599,13 @@ export function bindBoardPage(elements, environment = {}) {
         const target = elements["board-items"];
         clear(target);
         target.className = "board-items";
+        target.setAttribute("aria-busy", String(!state.selectionLoaded));
+        if (!state.selectionLoaded) {
+            el(ctx, target, "p", state.readStatus === "error"
+                ? words(ctx, "Project records could not be loaded. Retry to continue.", "專案紀錄尚未載入，請重試。")
+                : words(ctx, "Loading this project's work…", "正在載入這個專案的工作項目…"), "board-loading");
+            return;
+        }
         if (!state.projectId) {
             state.projects.forEach((row) => {
                 const node = button(ctx, target, null, "project", () => open(row.id), "board-project-card");
@@ -624,19 +649,22 @@ export function bindBoardPage(elements, environment = {}) {
             ),
             history = rows.filter((row) => ["landed", "canceled"].includes(boardProgress(row)));
         const overview = el(ctx, target, "div", null, "board-overview");
+        const summary = project && project.summary;
+        const modelCount = (key, loaded) => summary && Number.isInteger(summary[key]) && summary[key] >= 0
+            ? summary[key] : loaded;
         [
             [
-                delivery.filter((row) => !["landed", "canceled"].includes(boardProgress(row))).length,
+                modelCount("open", delivery.filter((row) => !["landed", "canceled"].includes(boardProgress(row))).length),
                 "Open work",
                 "尚在推進"
             ],
             [
-                delivery.filter((row) => ["blocked", "delivered", "unknown"].includes(boardProgress(row)))
-                    .length,
+                modelCount("needsClarity", delivery.filter((row) => ["blocked", "delivered", "unknown"].includes(boardProgress(row)))
+                    .length),
                 "Needs clarity",
                 "需要釐清"
             ],
-            [delivery.filter((row) => boardProgress(row) === "landed").length, "Landed", "已落地"]
+            [modelCount("landed", delivery.filter((row) => boardProgress(row) === "landed").length), "Landed", "已落地"]
         ].forEach(([count, en, chinese]) => {
             const stat = el(ctx, overview, "div", null, "board-overview-stat");
             el(ctx, stat, "strong", count);
@@ -655,7 +683,9 @@ export function bindBoardPage(elements, environment = {}) {
                 "p",
                 query
                     ? words(ctx, "No matching open work.", "沒有符合搜尋的進行中項目。")
-                    : words(
+                    : modelCount("open", 0) > 0 ? words(ctx,
+                          "More work is recorded than this view has loaded.",
+                          "專案還有進行中的工作，此畫面尚未載入。") : words(
                           ctx,
                           "No open work. Tell your assistant what you would like to do next.",
                           "目前沒有待推進的項目。想做什麼，直接在對話中告訴 assistant。"
@@ -741,7 +771,7 @@ export function bindBoardPage(elements, environment = {}) {
                 timer = null;
                 if (ctx.doc.hidden) later();
                 else load(true);
-            }, 15000);
+            }, state.readStatus === "loading" ? 2000 : 15000);
             if (timer && timer.unref) timer.unref();
         }
     }
@@ -769,11 +799,23 @@ export function bindBoardPage(elements, environment = {}) {
                 if (typeof board.revision !== "number" || board.revision < state.revision) return;
                 state.revision = board.revision;
                 state.projects = board.projects;
-                state.items = board.items;
-                state.item =
-                    board.item && board.item.id === item && board.item.projectId === project
-                        ? board.item
-                        : null;
+                state.readStatus = board.readState && board.readState.status || "ready";
+                if (project && !["loading", "error"].includes(state.readStatus)
+                    && !board.projects.some((row) => row.id === project)) {
+                    const unavailable = new Error(words(ctx,
+                        "Project records are unavailable; the directory response does not contain this project.",
+                        "專案紀錄目前無法取得；目錄回應未包含這個專案。"));
+                    unavailable.code = "project_not_found";
+                    throw unavailable;
+                }
+                if (state.readStatus !== "loading" && state.readStatus !== "error") {
+                    state.selectionLoaded = true;
+                    state.items = board.items;
+                    state.item =
+                        board.item && board.item.id === item && board.item.projectId === project
+                            ? board.item
+                            : null;
+                }
                 state.enabled = board.enabled !== false;
                 if (environment.onMode) environment.onMode(board);
                 if (environment.onProjects) environment.onProjects(board.projects);
@@ -785,6 +827,12 @@ export function bindBoardPage(elements, environment = {}) {
                           "一般模式・只顯示已保留的歷史紀錄。"
                       )
                     : words(ctx, "Automatically updated from recorded activity", "依執行紀錄自動更新");
+                if (state.readStatus === "loading") message = words(ctx,
+                    "Preparing project records in the background…", "正在背景整理專案紀錄…");
+                if (state.readStatus === "stale") message = words(ctx,
+                    "Showing the last available records; updating in the background.", "目前顯示上次可用的紀錄，正在背景更新。");
+                if (state.readStatus === "error") message = words(ctx,
+                    "Project records are temporarily unavailable; retrying in the background.", "專案紀錄暫時無法取得，稍後會在背景重試。");
                 if (board.source && board.source.observedAt) message += " · " + date(board.source.observedAt);
                 if (board.truncated)
                     message += words(ctx, " · Some records are not loaded", "・部分紀錄未載入");
@@ -796,7 +844,9 @@ export function bindBoardPage(elements, environment = {}) {
                 ctx.status(message);
             })
             .catch((error) => {
-                if (state.active && ticket === state.readTicket)
+                if (state.active && ticket === state.readTicket) {
+                    state.readStatus = "error";
+                    render();
                     ctx.status(
                         words(
                             ctx,
@@ -805,6 +855,7 @@ export function bindBoardPage(elements, environment = {}) {
                         ) + (error.message || ""),
                         true
                     );
+                }
             })
             .finally(() => {
                 if (inflight === promise) inflight = null;
@@ -816,8 +867,15 @@ export function bindBoardPage(elements, environment = {}) {
     function refresh() {
         return inflight || load();
     }
-    function open(project, item) {
+    function open(project, item, presentation) {
         state.active = true;
+        if (state.projectId !== project) state.projectPresentation = null;
+        if (state.projectId !== (project || null) || state.itemId !== (item || null)) state.revision = -1;
+        if (presentation) state.projectPresentation = presentation;
+        else if (!state.projectPresentation)
+            state.projectPresentation = state.projects.find((row) => row.id === project) || null;
+        state.selectionLoaded = false;
+        state.readStatus = "loading";
         state.projectId = project || null;
         state.itemId = item || null;
         state.item = null;

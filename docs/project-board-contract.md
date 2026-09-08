@@ -6,6 +6,7 @@ Project Board is **enabled by default and currently free**. This page describes 
 
 - `ProjectBoardStore` owns persistence, mode, work items, lifecycle gates and command receipts.
 - `ProjectBoardIntegration` projects trusted broker and UsageLedger facts without transferring their ownership to the board.
+- `ProjectBoardRequestCoordinator` owns bounded Board request execution after transport admission: one serial command writer and a separate serial read/encode lane.
 - `ProjectBoardHTTP` owns transport authority and the final response byte budget; local and Cloud requests use the same service.
 - `view/board.js` renders evidence-driven, read-only Project snapshots. `input/board-settings.js` owns navigation and the administrative mode command, not a second persisted mode.
 
@@ -37,9 +38,22 @@ Graph fallback keys include Project identity. The first explicit binding replace
 
 Use `requestId` (nonempty bounded string) and `expectedRevision` on every command, store revision global CAS. Duplicate request with identical normalized body replays receipt; same id different body conflicts. Actor part of identity. Validate closed per-operation keys. User-editable evidence notes must not mint trusted verification/landing. Disabling works even with live work, preserves histories, stops board-only new operations. Board unavailable errors must not block baseline dispatch.
 
+Published Store headers and materialized seeds are one monotonic revision domain. A seed is published
+while its writer generation still owns the Store; it cannot overwrite a later durable header or
+restore an earlier mode. A successful mutation publishes its header only after the atomic write and
+`fsync` complete.
+
 ## JSON view
 
 `board`: `schemaVersion:1`, `revision:Int`, `enabled:Bool`, `mode:"board"|"standard"`, `entitlement:{state:"free_preview",label:"Currently free"}`, `projects:[{id,name,itemCount}]`, `items:[Item]`, `item:Item|null` (selected detail), `truncated:Bool`, `updatedAt:unix seconds`. Transport adds `viewer:{id,canWrite,canManage}` on reads and command replies. Local capabilities include the remote-write switch; UI gates do not replace server authority.
+
+Every read also carries `readState:{status,revision,observedAt,attemptedAt,error}`. Top-level
+`board.revision` is the latest durable command/CAS revision; `readState.revision` is the revision of
+the returned model body. If the header is newer, the body is `stale` and retains its older revision.
+A durable OFF startup seed is `ready` read-only retained history when its revision matches the
+header; OFF does not infer Projects, replay broker history, scan usage, or advance lifecycle.
+An unknown scoped Project is `status:"error"` with `error.code:"project_not_found"` and explicit
+unknown/incomplete scope, never an authoritative empty Project.
 
 Item fields: `id`, `key` (human readable), `projectId`, `title`, `type`, `state`, `summary`, `owner` (readable name/id string), `parentId` nullable, `createdAt`, `updatedAt`, `checklist:[{id,title,status,required,evidenceId?}]`, `milestones:[{id,title,status}]`, `artifacts:[{id,title,url,kind}]`, `links:[{id,kind,targetId,label}]`, `obligations:[{id,title,owner,blocking,resolved}]`, `history:[{id,at,actor,kind,summary}]`, `spans:[{id,sessionId,phase,startedAt,endedAt}]`. Include trustworthy findings/verification/landing separately from user claims. Item `usage` may be absent (unknown, never zero); root enriches from UsageLedger.
 
@@ -84,6 +98,22 @@ Common fields: `operation`, `requestId`, `expectedRevision`; item operations use
 ## HTTP / Cloud (root)
 
 `GET /v1/board?project=<id>&item=<id>`; `POST /v1/board` command body. Authenticated read, send for ordinary mutation, admin for mode; machine credential allowed. Common service for local and encrypted Cloud. Cloud `board` read with machine request channel and `board-command` action. Opaque IDs; root registers canonical Projects from known start places / tasks.
+
+Both local and verified Cloud requests authenticate, validate bounded bodies/queries, and capture
+request identity on `RemoteServer`'s owner, then leave it. Commands enter a bounded single-writer
+lane with typed `board_command_busy` saturation; an identical in-flight actor/requestId joins one
+durable result and different content conflicts.
+`board_command_busy` also bounds identical retries to eight retained replies per command; excess
+callers may retry the same identity after draining. Reads enter a separate bounded lane with typed
+`board_read_busy` saturation, so response encoding never waits behind Board persistence. Command
+success is returned only after durable effect. Neither lane is an interactive terminal, usage, or
+general slow-read queue.
+
+Read-model invalidation is a bounded union of `catalog`, `durableModel`, `usage`, and
+`modeCatchUp` reasons. One running worker has at most one consolidated successor; later events do
+not replace earlier obligations. A successful UsageLedger checkpoint contributes `usage` only after
+leaving the ledger owner. Board never owns the Ledger or waits on its commit lock, and failed
+checkpoints emit no invalidation.
 
 If a command persisted but its response projection exceeds the byte budget, the typed error explicitly says the command was saved and carries `commandApplied:true`. Projection failure does not masquerade as a successful mode-off snapshot. Ambiguous persistence/network failure continues to require the same request identity on retry.
 

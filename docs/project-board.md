@@ -24,6 +24,18 @@ worktrees; task success is delivery, not item closure. The lifecycle is:
 
 `backlog → planning → ready → execution → verified → integrated → closed`
 
+The sidebar contains one Projects entry, not a second directory of every historical board record.
+The catalog uses the existing durable Project/start-point identity, pixel icon and accent color;
+temporary worktrees and retained task-only paths remain records, not new visible Projects. Opening
+a row immediately shows that Project's name, icon and path while its work loads. A loading response
+never means zero work. Failed or stale reads retain their last observed data with an explicit warning.
+
+Reads follow the presentation hierarchy: catalog, selected Project summaries, then selected item
+detail. Catalog totals belong to the materialized Project summary, not to the subset of item rows
+currently loaded by the browser. A truncated item view cannot establish that a Project is empty.
+A missing or unavailable selected Project is not an empty Project: the view retains the selected
+identity and reports unavailable instead of presenting zero work as a measured result.
+
 Cancellation is separate from completion. New scope or failed evidence reopens affected work.
 Lifecycle advancement is automatic when the recorded facts satisfy its gates; it is not a job
 for the person reading the board. Work beyond planning needs an

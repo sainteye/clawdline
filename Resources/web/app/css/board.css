@@ -92,7 +92,9 @@ details.board-section[open] > summary { margin-bottom: 14px; color: var(--ink); 
 .board-project-copy { display: grid; gap: 8px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .board-project-copy strong { font-size: 18px; }
 .board-project-copy > span, .board-project-arrow { color: var(--faint); font-size: 12px; }
-.board-project-shortcut { padding-left: 24px; font-size: 11px; }
+.board-project-heading { display: flex; align-items: center; gap: 16px; }
+.board-project-heading [hidden] { display: none; }
+.board-loading { padding: 28px 0; color: var(--dim); line-height: 1.8; }
 @media (max-width: 640px) {
     .board-page { padding-top: 16px; }
     .board-head { margin-bottom: 20px; }

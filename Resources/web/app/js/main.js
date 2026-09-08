@@ -41,7 +41,7 @@ import { renderTranscript } from "./view/transcript.js";
 import "./view/terminal.js";
 import { bindProjectsPage, readProjectPlaces } from "./view/projects.js";
 import { bindLedgerPage } from "./view/ledger.js";
-import { bindBoardPage, resolveBoardSession } from "./view/board.js";
+import { bindBoardPage, enterProjectBoard, resolveBoardSession } from "./view/board.js";
 import { BoardControls } from "./input/board-settings.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import { bindPlanPage } from "./view/plan.js";
@@ -272,7 +272,7 @@ var projects = bindProjectsPage({
     places: async function () {
         return readProjectPlaces(api, function (board) { BoardControls.apply(board); });
     },
-    openBoard: function (place) { BoardControls.open(place.boardProjectId); },
+    openBoard: function (place) { BoardControls.open(place.boardProjectId, null, place); },
     projectWorktrees: function (place) { return api.projectWorktrees(place); },
     // The same seam the Feature table uses, and for the same reason: `view/projects.js` imports
     // nothing but the words, because `core/pixels.js` reaches `window` while it is being
@@ -302,12 +302,13 @@ var ledger = bindLedgerPage({
 });
 
 var boardElements = {};
-["board", "board-title", "board-subtitle", "board-items", "board-detail", "board-status",
+["board", "board-title", "board-project-mark", "board-subtitle", "board-items", "board-detail", "board-status",
  "board-search", "board-back", "board-refresh"].forEach(function (id) {
     boardElements[id] = byId(id);
 });
 var board = bindBoardPage(boardElements, {
     read: function (project, item) { return api.board(project, item); },
+    drawIcon: drawIcon, tint: tint,
     navigate: function (name) { Pages.go(name); },
     openSession: function (id) {
         var destination = resolveBoardSession(S.sessions, id);
@@ -317,8 +318,9 @@ var board = bindBoardPage(boardElements, {
     onMode: function (snapshot) { BoardControls.apply(snapshot); }
 });
 BoardControls.escape = function () { return board.escape(); };
-BoardControls.open = function (project, item) {
-    board.open(project, item);
+BoardControls.open = function (project, item, presentation) {
+    if (!project) { Pages.go("projects"); return; }
+    board.open(project, item, presentation);
     Pages.go("board");
 };
 
@@ -408,7 +410,7 @@ Pages.bind({
     pages: [
         { name: "sessions", element: byId("app") },
         { name: "board", element: byId("board"), focus: "board-title",
-          enter: function () { board.enter(); }, leave: function () { board.leave(); } },
+          enter: function () { enterProjectBoard(board, function (name) { Pages.go(name); }); }, leave: function () { board.leave(); } },
         { name: "projects", element: byId("projects"), focus: "projects-title",
           enter: function () { projects.enter(); }, leave: function () { projects.leave(); } },
         { name: "usage", element: byId("usage-analytics"), focus: "usage-close",

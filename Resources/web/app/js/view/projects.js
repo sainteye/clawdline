@@ -416,7 +416,7 @@ function renderPlaces(context, places) {
         // The path is here for the one job `/v1/places` says it is for: telling two projects with
         // the same name apart. Nothing on this page is built out of it except the query below.
         appendText(doc, text, "span", place.path || "", "project-row-path");
-        if (place.boardProjectId) appendText(doc, text, "span", place.itemCount +
+        if (place.boardProjectId && Number.isInteger(place.itemCount) && place.itemCount >= 0) appendText(doc, text, "span", place.itemCount +
             (/^zh/i.test(doc.documentElement && doc.documentElement.lang || "") ? " 個工作項目 · 查看進度 →" : " work items · View progress →"), "project-row-path");
         button.appendChild(text);
         button.setAttribute("aria-label", fill(T.webProjectOpenLabel, { name: place.label || place.path }));
@@ -442,10 +442,15 @@ export async function readProjectPlaces(transport, onMode) {
                 throw invalid;
             }
             if (onMode) onMode(board);
-            if (board.enabled) return { places: board.projects.map(function (project) {
+            if (board.enabled) return { places: board.projects.filter(function (project) {
+                // Membership comes from the Mac's durable Start Point catalog, not historical
+                // task existence. displayPath is the older server's same trusted exact join.
+                return project.isStartPoint === true || (project.isStartPoint !== false
+                    && typeof project.displayPath === "string" && project.displayPath.length > 0);
+            }).map(function (project) {
                 return { id: project.id, boardProjectId: project.id, label: project.label || project.name,
                     icon: project.icon, path: project.displayPath || "", itemCount: project.itemCount };
-            }), boardMode: true };
+            }), boardMode: true, readState: board.readState };
         } catch (error) {
             if (!baseline || !(/^(board_|http_503$)/.test(error.code || "") || error.status === 503)) throw error;
             var fallback = await transport.places();
@@ -466,6 +471,24 @@ export function bindProjectsPage(elements, environment) {
     environment = environment || {};
     var doc = environment.document || document;
     var state = { view: "list", places: null, place: null, status: "", loading: 0 };
+    var active = false, catalogTimer = null;
+    var schedule = environment.setTimeout || globalThis.setTimeout;
+    var unschedule = environment.clearTimeout || globalThis.clearTimeout;
+    function stopCatalogTimer() {
+        if (catalogTimer !== null) unschedule(catalogTimer);
+        catalogTimer = null;
+    }
+    function laterCatalog(delay) {
+        stopCatalogTimer();
+        if (!active || state.view !== "list") return;
+        catalogTimer = schedule(function () {
+            catalogTimer = null;
+            if (!active || state.view !== "list") return;
+            if (doc.hidden) laterCatalog(delay);
+            else loadPlaces(true);
+        }, delay);
+        if (catalogTimer && catalogTimer.unref) catalogTimer.unref();
+    }
     var context = {
         document: doc, elements: elements, state: state,
         drawIcon: environment.drawIcon || function () { return false; },
@@ -500,7 +523,13 @@ export function bindProjectsPage(elements, environment) {
      * directories that are no longer on the disk while it builds this answer, so the list is only
      * as true as the moment it was given.
      */
-    function loadPlaces() {
+    function loadPlaces(background = false) {
+        stopCatalogTimer();
+        if (!background) {
+            clear(elements["projects-rows"]);
+            elements["projects-count"].textContent = "";
+            state.places = null;
+        }
         if (!readPlaces || !carries()) {
             clear(elements["projects-rows"]);
             elements["projects-count"].textContent = "";
@@ -513,6 +542,16 @@ export function bindProjectsPage(elements, environment) {
             if (ticket !== state.loading) return;
             state.places = (data && data.places) || [];
             renderPlaces(context, state.places);
+            var freshness = data && data.readState && data.readState.status;
+            if (freshness === "loading" || freshness === "stale" || freshness === "error") {
+                var chinese = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "");
+                elements["projects-status"].textContent = freshness === "loading"
+                    ? (chinese ? "正在背景準備專案目錄…" : "Preparing the project directory in the background…")
+                    : freshness === "error" && !state.places.length
+                    ? (chinese ? "專案目錄暫時無法取得，稍後自動重試。" : "The project directory is temporarily unavailable; retrying shortly.")
+                    : (chinese ? "顯示上次可用的專案目錄，背景正在更新。" : "Showing the last available directory while it updates.");
+                laterCatalog(freshness === "loading" ? 2000 : 15000);
+            }
             if (data && data.boardUnavailable) {
                 var zh = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "");
                 elements["projects-status"].textContent = (zh
@@ -522,6 +561,16 @@ export function bindProjectsPage(elements, environment) {
             }
         }).catch(function (error) {
             if (ticket !== state.loading) return;
+            if (background && state.places && state.places.length
+                && ![401, 403].includes(error.status)
+                && !/unauthorized|forbidden|permission/.test(error.code || "")) {
+                var chinese = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "");
+                elements["projects-status"].textContent = (chinese
+                    ? "更新失敗，目前保留上次的專案目錄。"
+                    : "Update failed; showing the last available project directory. ") + refusalText(error);
+                laterCatalog(15000);
+                return;
+            }
             clear(elements["projects-rows"]);
             elements["projects-count"].textContent = "";
             elements["projects-status"].textContent = refusalText(error);
@@ -538,6 +587,7 @@ export function bindProjectsPage(elements, environment) {
      */
     function openProject(place) {
         if (place.boardProjectId && environment.openBoard) {
+            stopCatalogTimer();
             environment.openBoard(place);
             return Promise.resolve();
         }
@@ -569,13 +619,14 @@ export function bindProjectsPage(elements, environment) {
 
     /** Arriving. The list, every time — the detail is a view rather than an address. */
     function enter() {
+        active = true;
         showView("list");
         state.place = null;
         return loadPlaces();
     }
 
     /** Nothing to put back: the page that follows draws itself. Kept as the seam a page has. */
-    function leave() { }
+    function leave() { active = false; ++state.loading; stopCatalogTimer(); }
 
     function backToList() {
         showView("list");

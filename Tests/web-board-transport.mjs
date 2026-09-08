@@ -32,6 +32,8 @@ const { Live } = await import("../Resources/web/app/js/net/live.js");
 const body = { operation: "set_enabled", enabled: false, expectedRevision: 2, requestId: "same-retry" };
 let checks = 0;
 function equal(got, expected, why) { assert.deepEqual(got, expected, why); checks++; }
+equal(/id="settings-board-history"[^>]*data-page-to="projects"/.test(readFileSync(new URL("../Resources/web/index.html", import.meta.url), "utf8")),
+    true, "Settings uses the same Project catalog rather than another global Board menu");
 const answer = await Live.boardCommand(body);
 equal(calls.length, 1, "a command really sends a request rather than returning fetch options");
 equal(calls[0].path, "/v1/board", "local command route");
@@ -59,11 +61,16 @@ const { createBoardMock } = await import("../Resources/web/app/js/net/board-mock
 const mock = createBoardMock();
 const initial = await mock.board();
 equal(initial.board.enabled, true, "preview follows default ON");
+equal(initial.board.items.length, 0, "catalog read never carries nested work items");
+const initialWork = (await mock.board("preview-project")).board.items;
+equal(initialWork.length, 5, "a selected Project independently loads its five records");
+const html = readFileSync(new URL("../Resources/web/index.html", import.meta.url), "utf8");
+equal(html.includes('id="sidebar-board-projects"'), false, "sidebar has one Projects entry, not a raw project directory");
 const command = { operation: "set_enabled", enabled: false, expectedRevision: initial.board.revision, requestId: "off" };
 const off = await mock.boardCommand(command);
 equal(off.board.enabled, false, "preview mode can be disabled");
 equal((await mock.boardCommand(command)).board.revision, off.board.revision, "retry does not mutate again");
-equal((await mock.board()).board.items.length, initial.board.items.length, "off preserves history");
+equal((await mock.board("preview-project")).board.items.length, initialWork.length, "off preserves history");
 const css = readFileSync(new URL("../Resources/web/app/css/pages.css", import.meta.url), "utf8");
 assert.match(css, /\.app\[hidden\]\s*\{\s*display:\s*none/); checks++;
 assert.match(css, /\.sidebar \[hidden\]\s*\{\s*display:\s*none/); checks++;
@@ -107,7 +114,7 @@ equal(settingCalls[1], settingCalls[0], "ambiguous retry preserves exact CAS bod
 equal(control("nav-projects").hidden, false, "successful off restores old navigation");
 equal(control("usage-open").hidden, false, "off restores Usage");
 equal(control("nav-ledger").hidden, false, "off restores Ledger");
-equal(control("sidebar-board-projects").hidden, true, "off hides Board-specific shortcuts");
+equal(control("sidebar-board-projects").children.length, 0, "off never creates sidebar project shortcuts");
 BoardControls.apply({ ...settingsBoard, enabled: true, revision: 1 });
 equal(control("nav-projects").hidden, false, "older read cannot roll mode back");
 BoardControls.apply({ ...settingsBoard, revision: 3, viewer: { id: "writer", canWrite: true, canManage: false } });
@@ -130,10 +137,16 @@ equal(settingCalls.at(-1).enabled, true, "the same setting can turn Board back o
 equal(document.documentElement.dataset.boardMode, "board", "successful re-enable restores Board mode");
 equal(control("usage-open").hidden, true, "re-enable folds Usage back into work items");
 equal(control("nav-ledger").hidden, true, "re-enable folds Ledger back into work items");
-equal(control("sidebar-board-projects").hidden, false, "re-enable restores Project Board shortcuts");
+equal(control("sidebar-board-projects").children.length, 0, "re-enable never recreates a sidebar project directory");
 const backOn = await mock.boardCommand({ operation: "set_enabled", enabled: true,
     expectedRevision: off.board.revision, requestId: "on-again" });
 equal(backOn.board.enabled, true, "mock lifecycle also supports off then on");
-equal(backOn.board.items.length, initial.board.items.length, "off then on retains the same history");
+equal((await mock.board("preview-project")).board.items.length, initialWork.length, "off then on retains the same history");
+let createFailure = null;
+try {
+    await mock.boardCommand({ operation: "create", projectId: "preview-project", title: "Conversation-created task",
+        type: "task", expectedRevision: backOn.board.revision, requestId: "create-from-conversation" });
+} catch (error) { createFailure = error; }
+equal(createFailure, null, "conversation creation updates materialized mock counts without requiring a progress projection");
 console.log(`${checks} web board transport checks passed`);
 process.exit(0); // imported preview transport owns timers unrelated to this bounded question

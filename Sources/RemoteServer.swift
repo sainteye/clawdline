@@ -72,10 +72,8 @@ enum SessionTitleSync {
 /// Those two are not the same feature and they do not ship together — see `docs/remote.md`. Until
 /// the write half exists and is separately armed, every mutating route answers `write_disabled`.
 final class RemoteServer: @unchecked Sendable {
-
     static let shared = RemoteServer()
     private init() {}
-
     /// SessionWatch is main-queue-owned, but queue ownership and main-thread identity diverge
     /// after the test runner calls `dispatchMain()`. The app still drains this queue on its main
     /// thread; this helper preserves that production shape while asking the identity that the
@@ -83,12 +81,10 @@ final class RemoteServer: @unchecked Sendable {
     private func onMain<T>(from site: String, _ work: () -> T) -> T {
         MainQueue.hop(from: site, alreadyOnMain: MainQueue.isCurrent, work)
     }
-
     /// Bumped when a client would have to be changed. The path carries the same number, so a
     /// client that speaks `/v1` never has to look at this — it exists for the health route, where
     /// a person is asking "what am I talking to".
     static let protocolVersion = 1
-
     static let buildStamp: Int = {
         // Read once. It cannot change while this process is running — a rebuild replaces
         // the binary and relaunches, so the next answer comes from the next process.
@@ -97,8 +93,7 @@ final class RemoteServer: @unchecked Sendable {
         else { return 0 }
         return Int(at.timeIntervalSince1970)
     }()
-
-    private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote")
+    private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote"), boardRequests = ProjectBoardRequestCoordinator()
     private var listener: NWListener?
     private var streams: [ObjectIdentifier: Stream] = [:]
     private var nextEventID = 0
@@ -119,10 +114,8 @@ final class RemoteServer: @unchecked Sendable {
     /// away, so the two lifetimes cannot drift apart.
     static let liveScreenDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         .appendingPathComponent("clawdline-live-screens", isDirectory: true)
-
     private var liveScreensStorage: LiveScreens?
     private let liveScreensLock = NSLock()
-
     /// Live screens for whoever is watching one, made on first use and behind a lock rather than
     /// `lazy`.
     ///
@@ -151,7 +144,6 @@ final class RemoteServer: @unchecked Sendable {
         liveScreensStorage = made
         return made
     }
-
     /// Set only through `attachCloudBridge`. It lives on `queue`, beside the SSE streams whose
     /// already-serialized readings it shares.
     private var cloudBridge: CloudAppBridge?
@@ -161,7 +153,6 @@ final class RemoteServer: @unchecked Sendable {
     /// Main-thread mirror used only to decide whether SessionWatch still needs its observer when
     /// the loopback listener is off.
     private var cloudAttached = false
-
     /// Pure route seam: tests supply complete process-bound observations without asking iTerm,
     /// tmux or assistant transcript registries. Production never sets it.
     static var coordinatorSessionsForTesting: [Coordinator.LiveSession]?
@@ -201,13 +192,11 @@ final class RemoteServer: @unchecked Sendable {
     /// Already-serialized full snapshots for bridge lifecycle integration tests. Production keeps
     /// using the SessionWatch/Orchestrator serializers on the main thread.
     static var cloudSnapshotDataForTesting: (sessions: Data, orchestrator: Data)?
-
     /// Put non-HTTP orchestrator work behind the same serial gate as requests. Schedule timing
     /// is calculated off this queue; only the ordinary dispatch transaction enters here.
     func serialized(_ work: @escaping () -> Void) {
         queue.async(execute: work)
     }
-
     /// Terminal commands have one bounded, serial lane of their own. iTerm2 serializes Apple
     /// events itself; doing the same here keeps that queue visible and, crucially, keeps a modal
     /// sheet from occupying the HTTP/SSE queue.
@@ -215,7 +204,6 @@ final class RemoteServer: @unchecked Sendable {
     func enqueueTerminalCommand(channel: String? = nil, _ work: @escaping () -> Void) -> Bool {
         enqueueTerminalCommand(channels: channel.map { [$0] } ?? [], work)
     }
-
     /// Multi-recipient form used by durable coordination delivery. One HTTP operation may fan a
     /// release out to several waiter terminals; reserving every known recipient before enqueue
     /// makes the documented per-session depth true for those production paths too.
@@ -278,14 +266,12 @@ final class RemoteServer: @unchecked Sendable {
         }
         return true
     }
-
     /// Test receipt for the production admission counters, read under the same lock that mutates
     /// them. A nested terminal cascade must finish with both totals back at zero.
     func terminalOutstandingForTesting() -> (total: Int, channels: Int) {
         terminalAdmissionLock.lock(); defer { terminalAdmissionLock.unlock() }
         return (terminalOutstanding, terminalOutstandingByChannel.values.reduce(0, +))
     }
-
     /// Enter a verified cloud command through the same route transaction local HTTP uses. The
     /// bridge supplies an idempotency key derived from the already replay-checked sender/sequence.
     func routeVerifiedCloudCommand(_ command: CloudHeadlessCommand, sender: String,
@@ -307,13 +293,13 @@ final class RemoteServer: @unchecked Sendable {
                     self.sendTerminal(request) { continuation.resume(returning: $0) }
                 } else if request.method == "POST", Self.isTerminalWorkerRoute(request.path) {
                     self.terminalMutation(request) { continuation.resume(returning: $0) }
+                } else if request.path == "/v1/board" { self.startBoardRequest(request) { continuation.resume(returning: $0) }
                 } else {
                     continuation.resume(returning: self.dispatch(request))
                 }
             }
         }
     }
-
     /// Enter a verified cloud read through the same lanes local HTTP uses, and through the same
     /// route transaction underneath them.
     ///
@@ -347,13 +333,13 @@ final class RemoteServer: @unchecked Sendable {
                     self.startTranscriptRead(request) { continuation.resume(returning: $0) }
                 } else if Self.isSlowReading(request.path) {
                     self.startSlowReading(request) { continuation.resume(returning: $0) }
+                } else if request.path == "/v1/board" { self.startBoardRequest(request) { continuation.resume(returning: $0) }
                 } else {
                     continuation.resume(returning: self.withCachePolicy(self.dispatch(request)))
                 }
             }
         }
     }
-
     /// Explicit Cloud lifecycle seam. Merely constructing a bridge changes nothing; attaching it
     /// starts its transport and installs the existing SessionWatch observer. Passing nil detaches
     /// and shuts it down without touching the local listener or its write setting.
@@ -410,7 +396,6 @@ final class RemoteServer: @unchecked Sendable {
             }
         }
     }
-
     /// Wait until the attach, replacement, or detach most recently accepted by `queue` has
     /// completed. Configuration owners use this when replacing credentials or tearing down.
     func awaitCloudBridgeLifecycle() async {
@@ -421,7 +406,6 @@ final class RemoteServer: @unchecked Sendable {
         }
         await task?.value
     }
-
     func cloudLifecycleStateForTesting(
         bridge expected: CloudAppBridge?
     ) async -> (bridgeMatches: Bool, generation: UInt64) {
@@ -437,7 +421,6 @@ final class RemoteServer: @unchecked Sendable {
             }
         }
     }
-
     private func cloudBridgeIsCurrent(_ bridge: CloudAppBridge, generation: UInt64) async -> Bool {
         await withCheckedContinuation { continuation in
             queue.async { [weak self] in
@@ -447,7 +430,6 @@ final class RemoteServer: @unchecked Sendable {
             }
         }
     }
-
     /// A relay-ready generation is authoritative evidence that relay memory may be fresh. Build
     /// both full snapshots on the main thread, then re-check lifecycle ownership before enqueueing
     /// them so a stale bridge cannot publish after detach or replacement.
@@ -505,6 +487,7 @@ final class RemoteServer: @unchecked Sendable {
 
     /// Start, stop, or restart to match the config. Safe to call whenever anything changes.
     func apply() {
+        ProjectBoardIntegration.prepare()
         // First, and outside the early return below: turning sending on or off must take effect
         // even when nothing about the listener changed, which is the usual case.
         syncWriteCapability()
@@ -712,6 +695,13 @@ final class RemoteServer: @unchecked Sendable {
             plan(request, on: conn)
             return
         }
+        if request.path == "/v1/board" {
+            startBoardRequest(request) { [weak self] response in
+                guard let self else { conn.cancel(); return }
+                self.send(response, on: conn)
+            }
+            return
+        }
         // Analytics has its own bounded worker and admission budget: a full analytics queue must
         // never spend the depth reserved for a phone's /info, transcript or places refresh.
         if request.method == "GET", Self.isUsageAnalyticsReading(request.path) {
@@ -819,6 +809,14 @@ final class RemoteServer: @unchecked Sendable {
     /// that a test can ask it a question without opening a socket.
     func route(_ request: Request) -> Response {
         withCachePolicy(dispatch(request))
+    }
+
+    private func startBoardRequest(_ request: Request, deliver: @escaping (Response) -> Void) {
+        let machine = Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
+        boardRequests.start(request, machine: machine, permission: permission(for: request),
+            preAuthRefusal: crossOriginRefusal(request), postAuthRefusal: writeOriginRefusal(request),
+            decorate: withCachePolicy, completeOnOwner: { [queue] in queue.async(execute: $0) },
+            deliver: deliver)
     }
 
     /// Everything that leaves here, with a cache policy applied at the door.
@@ -3609,7 +3607,10 @@ final class RemoteServer: @unchecked Sendable {
 
     func routeOnServerQueueForTesting(_ request: Request,
                                       completion: @escaping (Response) -> Void) {
-        queue.async { completion(self.route(request)) }
+        queue.async {
+            if request.path == "/v1/board" { self.startBoardRequest(request, deliver: completion) }
+            else { completion(self.route(request)) }
+        }
     }
 
     func heartbeatTurnForTesting(_ completion: @escaping () -> Void) {
@@ -4304,7 +4305,6 @@ final class RemoteServer: @unchecked Sendable {
             // And the verification ledger is a third: the same interval scan, plus four receipt
             // tables the same size order. Same worker, same budget.
             || path == "/v1/orchestrator/usage/verification-ledger"
-            || path == "/v1/board"
     }
 
     /// The slow optional reads that may be refused before they enter their worker queue.

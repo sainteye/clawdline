@@ -1,8 +1,14 @@
 // Browser-only preview data. No mock writes reach the live board or claim Git proof.
 export function createBoardMock() {
     var now = Math.floor(Date.now() / 1000), revision = 1, enabled = true;
-    var projects = [{ id: "preview-project", name: "clawdline", displayPath: "/Projects/clawdline", itemCount: 4 },
-        { id: "preview-atrium", name: "atrium", displayPath: "/Projects/atrium", itemCount: 1 }];
+    function icon(accent) { return { accent: accent, cells: [
+        [null, accent, accent, accent, accent, accent, accent, null],
+        [accent, accent, "#141416", accent, accent, "#141416", accent, accent],
+        [accent, accent, accent, accent, accent, accent, accent, accent],
+        [null, accent, accent, null, null, accent, accent, null]
+    ] }; }
+    var projects = [{ id: "preview-project", name: "clawdline", displayPath: "/Projects/clawdline", isStartPoint: true, icon: icon("#d97757") },
+        { id: "preview-atrium", name: "atrium", displayPath: "/Projects/atrium", isStartPoint: true, icon: icon("#83c2b6") }];
     var items = [{ id: "preview-item", key: "WORK-1", projectId: "preview-project",
         title: "讓每個專案的進度一目了然", type: "feature", state: "execution", progress: { state: "review_testing", active: true, historical: false }, summary: "把對話、執行與成果串起來，手機上也能看懂正在發生什麼。",
         owner: "Clawdfather", parentId: null, createdAt: now - 3600, updatedAt: now,
@@ -33,13 +39,29 @@ export function createBoardMock() {
         spans: [{ id: "coord-span", sessionId: "preview-session", phase: "output", startedAt: now - 3600, endedAt: null }],
         links: [{ kind: "coordinates", targetId: "preview-item", label: "讓每個專案的進度一目了然" }] });
     var receipts = new Map();
+    function progressState(item) { return item.progress && item.progress.state || item.state; }
+    function updateProjects() {
+        projects.forEach(function (project) {
+            var rows = items.filter(function (item) { return item.projectId === project.id; });
+            var delivery = rows.filter(function (item) { return item.type !== "coordination"; });
+            project.itemCount = rows.length;
+            project.summary = {
+                open: delivery.filter(function (item) { return !["landed", "canceled"].includes(progressState(item)); }).length,
+                needsClarity: delivery.filter(function (item) { return ["blocked", "delivered", "unknown"].includes(progressState(item)); }).length,
+                landed: delivery.filter(function (item) { return progressState(item) === "landed"; }).length,
+                coordination: rows.length - delivery.length
+            };
+            project.summaryCoverage = "complete";
+        });
+    }
+    updateProjects();
     function read(project, item) {
-        projects.forEach(function (project) { project.itemCount = items.filter(function (item) { return item.projectId === project.id; }).length; });
         return { board: { schemaVersion: 1, revision: revision, enabled: enabled,
             mode: enabled ? "board" : "standard", entitlement: { state: "free_preview", label: "Currently free" },
             viewer: { id: "preview", canWrite: true, canManage: true },
-            projects: projects, items: items.filter(function (row) { return !project || row.projectId === project; }),
+            projects: projects, items: project && !item ? items.filter(function (row) { return row.projectId === project; }) : [],
             item: items.find(function (row) { return row.id === item; }) || null,
+            readState: { status: "ready" },
             updatedAt: now, truncated: false } };
     }
     function fail(code, message) { var error = new Error(message); error.code = code; throw error; }
@@ -68,6 +90,7 @@ export function createBoardMock() {
                 item.state = body.state;
             } else fail("preview_unsupported", "This preview cannot certify or modify evidence. Use the running app for this operation.");
             revision += 1;
+            updateProjects();
             var result = structuredClone(read(null, item && item.id));
             if (item) result.itemId = item.id;
             receipts.set(body.requestId, { hash: hash, result: result });

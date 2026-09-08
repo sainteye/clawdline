@@ -404,7 +404,10 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # Project-contained automatic Board candidate a3f49163 measured 10,432 checks and all twelve
 # Cloud suites on 2026-09-08, with 8,452 assertion sites. Authorized exact-tree run: 367.40 s;
 # the earlier sandbox attempt stopped before the main compile on unavailable hw.ncpu access.
-expected_swift_receipt='10432 checks passed'
+# Project model/isolation candidate e050d053 measured 10,500 checks and all twelve Cloud suites
+# on 2026-09-08; witness 8,520. Full log creation-to-final-write: 406 s. Only the two seal
+# values and generated governance count changed afterwards; the receipt guard rechecked that log.
+expected_swift_receipt='10500 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -417,7 +420,7 @@ expected_swift_receipt='10432 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8452
+expected_swift_receipt_witness=8520
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -1050,6 +1053,7 @@ node Tests/web-waiting-card.mjs
 node Tests/web-ledger.mjs
 node Tests/web-board.mjs
 node Tests/web-board-transport.mjs
+node Tests/board-request-capacity-focused.mjs
 node Resources/web/app/js/net/client.test.mjs
 # The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
 # what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05

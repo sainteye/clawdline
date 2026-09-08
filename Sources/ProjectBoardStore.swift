@@ -259,6 +259,55 @@ final class ProjectBoardStore {
         }
     }
 
+    struct ReadHeader {
+        let revision: Int
+        let enabled: Bool
+        let updatedAt: Double
+        let available: Bool
+    }
+
+    /// A process-local, typed projection of the durable store.  It is rebuilt on startup and by
+    /// the Board reconciliation worker after writes; HTTP reads only copy one already-materialized
+    /// scope.  The durable StoredState remains authoritative for every lifecycle decision.
+    struct MaterializedReadSeed {
+        let header: ReadHeader
+        let catalog: [[String: Any]]
+        let itemSummariesByProject: [String: [[String: Any]]]
+        let itemDetailsByID: [String: [String: Any]]
+        let automaticMutation: [String: Any]
+        let sourceIngestion: [String: Any]
+        let error: [String: Any]?
+
+        func envelope(project: String? = nil, item: String? = nil) -> [String: Any] {
+            var board: [String: Any] = [
+                "schemaVersion": ProjectBoardStore.schemaVersion,
+                "revision": header.revision,
+                "enabled": header.enabled,
+                "mode": header.enabled ? "board" : "standard",
+                "entitlement": ProjectBoardStore.entitlement,
+                "projects": catalog,
+                "items": [],
+                "item": NSNull(),
+                "truncated": false,
+                "updatedAt": header.updatedAt,
+                "available": header.available,
+                "snapshotBudgetBytes": ProjectBoardStore.maximumSnapshotBytes,
+                "automaticMutation": automaticMutation,
+                "sourceIngestion": sourceIngestion,
+            ]
+            if let error { board["error"] = error }
+            if let item {
+                if let detail = itemDetailsByID[item],
+                   project == nil || detail["projectId"] as? String == project {
+                    board["item"] = detail
+                }
+            } else if let project {
+                board["items"] = itemSummariesByProject[project] ?? []
+            }
+            return ["board": board]
+        }
+    }
+
     /// Known source timestamps form one ordered domain; unknown timestamps sort before it and use
     /// a durable observation ordinal amongst themselves. Equal known timestamps use that same
     /// ordinal. This lexicographic policy is total and replay-stable without treating an ingestion
@@ -298,21 +347,71 @@ final class ProjectBoardStore {
     private let url: URL
     private let now: () -> Date
     private let lock = NSLock()
+    private let publicationLock = NSLock()
     private var state: StoredState
     private var unavailable: BoardError?
     private var lastAutomaticFailure: AutomaticMutationOutcome?
+    private var materializedSeed: MaterializedReadSeed?
+    private var materializedSeedStale = false
+    private var publishedHeader: ReadHeader
+    private var publishedSeed: MaterializedReadSeed?
+
+    static var materializationPauseForTesting: (() -> Void)?
+    static var seedPublicationPauseForTesting: (() -> Void)?
+    static var persistencePauseForTesting: (() -> Void)?
 
     init(url: URL, now: @escaping () -> Date = Date.init) {
         self.url = url
         self.now = now
         self.state = .empty(now: now().timeIntervalSince1970)
+        self.publishedHeader = ReadHeader(revision: 0, enabled: true,
+                                          updatedAt: 0, available: true)
         load()
+        self.publishedHeader = currentHeaderLocked()
     }
 
     var enabled: Bool {
         lock.lock(); defer { lock.unlock() }
         // A corrupt or future-version store cannot safely authorize new workflow gates.
         return unavailable == nil && state.enabled
+    }
+
+    func readHeader() -> ReadHeader {
+        publicationLock.lock(); defer { publicationLock.unlock() }
+        return publishedHeader
+    }
+
+    /// `rebuild` is used only by the background reconciliation worker.  A request with no current
+    /// model receives the startup seed immediately and lets that worker catch it up.
+    func readSeed(rebuild: Bool) -> (seed: MaterializedReadSeed, stale: Bool) {
+        lock.lock()
+        if materializedSeed == nil || (rebuild && materializedSeedStale) {
+            materializedSeed = buildMaterializedReadSeedLocked()
+            materializedSeedStale = false
+        }
+        let answer = (materializedSeed!, materializedSeedStale)
+        // Keep writer ownership through publication. A command cannot durably publish N+1 in the
+        // former unlock window and then be overwritten by this older N seed.
+        Self.seedPublicationPauseForTesting?()
+        publicationLock.lock()
+        if answer.0.header.revision >= publishedHeader.revision {
+            publishedSeed = answer.0
+            publishedHeader = answer.0.header
+        }
+        publicationLock.unlock()
+        lock.unlock()
+        return answer
+    }
+
+    func readSeedIfAvailable() -> (seed: MaterializedReadSeed, stale: Bool)? {
+        publicationLock.lock(); defer { publicationLock.unlock() }
+        return publishedSeed.map { ($0, $0.header.revision != publishedHeader.revision) }
+    }
+
+    private func currentHeaderLocked(_ value: StoredState? = nil) -> ReadHeader {
+        let value = value ?? state
+        return ReadHeader(revision: value.revision, enabled: unavailable == nil && value.enabled,
+                          updatedAt: value.updatedAt, available: unavailable == nil)
     }
 
     func snapshot(project: String? = nil, item: String? = nil) -> [String: Any] {
@@ -1821,6 +1920,86 @@ final class ProjectBoardStore {
 
     // MARK: - Snapshot
 
+    private func buildMaterializedReadSeedLocked() -> MaterializedReadSeed {
+        Self.materializationPauseForTesting?()
+        let header = ReadHeader(revision: state.revision,
+                                enabled: unavailable == nil && state.enabled,
+                                updatedAt: state.updatedAt,
+                                available: unavailable == nil)
+        if let unavailable {
+            return MaterializedReadSeed(
+                header: header, catalog: [], itemSummariesByProject: [:], itemDetailsByID: [:],
+                automaticMutation: ["status": "unavailable", "persisted": false,
+                                    "reason": unavailable.code],
+                sourceIngestion: ["status": "unavailable", "droppedCount": 0,
+                                  "reasons": [unavailable.code], "issues": []],
+                error: ["code": unavailable.code, "message": unavailable.message])
+        }
+
+        let grouped = Dictionary(grouping: state.items, by: \.projectId)
+        var summariesByProject: [String: [[String: Any]]] = [:]
+        var detailsByID: [String: [String: Any]] = [:]
+        var catalog: [[String: Any]] = []
+        for project in state.projects {
+            let items = (grouped[project.id] ?? []).sorted { lhs, rhs in
+                lhs.updatedAt == rhs.updatedAt ? lhs.key < rhs.key : lhs.updatedAt > rhs.updatedAt
+            }
+            let summaries = items.map { itemObject($0, detail: false) }
+            summariesByProject[project.id] = summaries
+            for item in items { detailsByID[item.id] = itemObject(item, detail: true) }
+
+            var open = 0, needsClarity = 0, landed = 0, coordination = 0
+            for item in items {
+                if item.type == "coordination" { coordination += 1; continue }
+                let progress = progressObject(item)
+                let progressState = progress["state"] as? String ?? "unknown"
+                if progressState == "landed" { landed += 1 }
+                else if progressState != "canceled" { open += 1 }
+                let hasBlockingObligation = item.obligations.contains { $0.blocking && !$0.resolved }
+                let hasBlockingFinding = item.evidence.contains {
+                    $0.kind == "finding" && $0.blocking && !$0.resolved
+                }
+                if hasBlockingObligation || hasBlockingFinding
+                    || ["blocked", "failed", "unknown"].contains(progressState) {
+                    needsClarity += 1
+                }
+            }
+            let updatedAt = items.map(\.updatedAt).max() ?? state.updatedAt
+            catalog.append([
+                "id": project.id, "name": project.name, "itemCount": items.count,
+                "activeItemCount": open, "updatedAt": updatedAt,
+                "revision": state.revision, "observedAt": state.updatedAt,
+                "isStartPoint": false,
+                "summary": ["open": open, "needsClarity": needsClarity,
+                            "landed": landed, "coordination": coordination],
+                "summaryCoverage": ["status": "complete", "retainedCount": items.count,
+                                    "omittedCount": 0, "reasons": [] as [String]],
+            ])
+        }
+        catalog.sort {
+            ($0["name"] as? String ?? "").localizedCaseInsensitiveCompare(
+                $1["name"] as? String ?? "") == .orderedAscending
+        }
+        let coverage = state.ingestionCoverage ?? []
+        let sourceIngestion: [String: Any] = [
+            "status": coverage.isEmpty ? "complete" : "partial",
+            "droppedCount": coverage.reduce(0) { $0 + $1.sourceDigests.count },
+            "reasons": Array(Set(coverage.map(\.reason))).sorted(),
+            "issues": coverage.map {
+                ["kind": $0.kind, "reason": $0.reason,
+                 "droppedCount": $0.sourceDigests.count, "saturated": $0.saturated,
+                 "firstObservedAt": $0.firstObservedAt] as [String: Any]
+            },
+        ]
+        let mutation = lastAutomaticFailure?.jsonObject
+            ?? ["status": "available", "persisted": true, "reason": NSNull()] as [String: Any]
+        return MaterializedReadSeed(header: header, catalog: catalog,
+                                    itemSummariesByProject: summariesByProject,
+                                    itemDetailsByID: detailsByID,
+                                    automaticMutation: mutation,
+                                    sourceIngestion: sourceIngestion, error: nil)
+    }
+
     private func snapshotLocked(project: String?, item selectedID: String?) -> [String: Any] {
         if let unavailable {
             return ["board": [
@@ -1841,10 +2020,11 @@ final class ProjectBoardStore {
                 candidate.id == id && (project == nil || candidate.projectId == project)
             })
         }
+        let itemCounts = Dictionary(grouping: state.items, by: \.projectId).mapValues(\.count)
         let projects = state.projects.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
             .map { project in
                 ["id": project.id, "name": project.name,
-                 "itemCount": state.items.filter { $0.projectId == project.id }.count] as [String: Any]
+                 "itemCount": itemCounts[project.id] ?? 0] as [String: Any]
             }
         let selectedObject = selected.map { itemObject($0, detail: true) }
         var board: [String: Any] = [
@@ -1888,15 +2068,18 @@ final class ProjectBoardStore {
 
         var visible: [[String: Any]] = []
         var byteLimited = false
+        let baseBytes = Self.serializedSize(["board": board])
+        var itemBytes = 0
         for candidate in matching.prefix(Self.maximumSnapshotItems) {
-            var trialBoard = board
             let candidateObject = itemObject(candidate, detail: false)
-            trialBoard["items"] = visible + [candidateObject]
-            if Self.serializedSize(["board": trialBoard]) > Self.maximumSnapshotBytes {
+            let candidateBytes = Self.serializedSize(["item": candidateObject])
+            if candidateBytes == Int.max
+                || baseBytes + itemBytes + candidateBytes > Self.maximumSnapshotBytes {
                 byteLimited = true
                 break
             }
             visible.append(candidateObject)
+            itemBytes += candidateBytes
         }
         let omitted = matching.count - visible.count
         board["items"] = visible
@@ -3028,6 +3211,7 @@ final class ProjectBoardStore {
                 return BoardError(status: 409, code: "board_store_capacity_reached",
                                   message: "the Project Board store reached its durable byte capacity")
             }
+            Self.persistencePauseForTesting?()
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                                     withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
@@ -3036,6 +3220,10 @@ final class ProjectBoardStore {
             let handle = try FileHandle(forWritingTo: url)
             try handle.synchronize()
             try handle.close()
+            materializedSeedStale = true
+            publicationLock.lock()
+            publishedHeader = currentHeaderLocked(value)
+            publicationLock.unlock()
             return nil
         } catch let error as BoardError {
             return error
