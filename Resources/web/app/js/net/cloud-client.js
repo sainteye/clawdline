@@ -689,11 +689,13 @@ export class CloudClient {
     _scheduleBody(schedule) {
         var body = schedule && typeof schedule === "object" && !Array.isArray(schedule)
             ? Object.assign({}, schedule) : {};
-        var task = body.task && typeof body.task === "object" && !Array.isArray(body.task)
-            ? Object.assign({}, body.task) : {};
-        var place = this._place(task.place_id);
-        task.place_id = place.id;
-        body.task = task;
+        // `input/schedule.js` deliberately gives both transports the local HTTP route's flat
+        // request body (`at`, `days`, `place_id`, ...). The Mac is the one that validates it and
+        // turns it into the stored `when`/`task` record. Looking under `task.place_id` here was
+        // therefore looking at the *response* shape while handling the *request* shape: every
+        // real Cloud Create/Save tried to route `undefined` and failed before reaching the Mac.
+        var place = this._place(body.place_id);
+        body.place_id = place.id;
         return { machine: place.machine, schedule: body };
     }
 

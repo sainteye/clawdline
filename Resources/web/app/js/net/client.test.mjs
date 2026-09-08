@@ -1355,8 +1355,13 @@ await answerRead(controlCloud, controlSocket, {
 }, "__clawdline_machine__");
 assert.equal((await scheduleDetail).schedule.task.project_dir, "/code/app");
 
-const scheduleBody = { title: "Morning", when: { at: "09:00", days: "daily" },
-    task: { place_id: "portfolio", instructions: "Publish" } };
+// Use the exact flat body `input/schedule.js` gives both transports. The Mac route translates
+// this into its stored `when`/`task` shape; the Cloud transport only owns translating the
+// account-wide Project id back to the local id on the Mac that published it.
+const scheduleBody = { title: "Morning", at: "09:00", days: "daily",
+    place_id: "portfolio", assistant: "codex", model: "", instructions: "Publish",
+    enabled: true, close_tab: "on_success", catch_up_hours: 6,
+    notify_on_failure: true, timeout_minutes: 30 };
 controlCloud.placeRoutes.set("portfolio", { machine: "mac-01", id: "local-portfolio",
     path: "/code/app" });
 const beforeResume = publishedReads(controlSocket).length;
@@ -1386,6 +1391,11 @@ for (const operation of [
     controlRequest = await requestBody(publishedReads(controlSocket)[before]);
     assert.equal(controlRequest.type, operation[2]);
     if (operation[3]) assert.equal(controlRequest.id, operation[3]);
+    if (operation[0] !== "deleteSchedule") {
+        assert.deepEqual(controlRequest.schedule,
+            { ...scheduleBody, place_id: "local-portfolio" },
+            operation[0] + " sends the Mac parser's flat body with only the Project id translated");
+    }
     await answerRead(controlCloud, controlSocket, {
         read: "action:" + controlRequest.request, status: 200, body: { ok: true }
     }, "__clawdline_machine__");
