@@ -69,6 +69,10 @@ final class ProjectBoardStore {
         "todo", "doing", "passed", "failed", "not_applicable",
     ])
     private static let terminalStates = Set(["integrated", "closed", "canceled"])
+    private static let terminalAttemptStates = Set([
+        "success", "failure", "timeout", "cancelled", "spawn_failed",
+    ])
+    private static let activeAttemptStates = Set(["queued", "spawning", "briefed"])
     private static let artifactKinds = Set([
         "document", "website", "deployment", "commit", "other",
     ])
@@ -111,6 +115,15 @@ final class ProjectBoardStore {
         var source: String?
         var phase: String?
         var head: String?
+        /// A deliberately small copy of broker-owned attempt facts used only for the board's
+        /// progress projection. The task registry remains authoritative and replay refreshes it.
+        var attemptState: String? = nil
+        var startedAt: Double? = nil
+        var finishedAt: Double? = nil
+        var statusObservedAt: Double? = nil
+        var sourceTaskId: String? = nil
+        var eventAt: Double? = nil
+        var eventOrdinal: Int? = nil
     }
 
     private struct StoredObligation: Codable {
@@ -127,6 +140,7 @@ final class ProjectBoardStore {
         var actor: String
         var kind: String
         var summary: String
+        var sourceTaskId: String? = nil
     }
 
     private struct StoredSpan: Codable {
@@ -162,6 +176,8 @@ final class ProjectBoardStore {
         var actor: String
         var source: String? = nil
         var scopeRevision: Int? = nil
+        var eventAt: Double? = nil
+        var eventOrdinal: Int? = nil
     }
 
     private struct StoredIngestionCoverage: Codable {
@@ -182,6 +198,7 @@ final class ProjectBoardStore {
         var state: String
         var summary: String
         var owner: String
+        var ownerSourceTaskId: String? = nil
         var parentId: String?
         var createdAt: Double
         var updatedAt: Double
@@ -200,7 +217,11 @@ final class ProjectBoardStore {
         var currentArtifactAcceptanceId: String?
         var historyDroppedCount: Int?
         var scopeRevision: Int? = nil
+        var scopeEventAt: Double? = nil
+        var scopeEventOrdinal: Int? = nil
+        var inferredSourceKey: String? = nil
         var ingestionCoverage: [StoredIngestionCoverage]? = nil
+        var typeDetails: [String: String]? = nil
     }
 
     private struct StoredReceipt: Codable {
@@ -226,11 +247,41 @@ final class ProjectBoardStore {
         var receiptEvictions: Int?
         var ingestionCoverage: [StoredIngestionCoverage]? = nil
         var explicitGraphItems: [String: String]? = nil
+        /// Project-scoped fallback identities for retained tasks that predate decision graphs.
+        var taskItems: [String: String]? = nil
+        /// Monotonic tie-breaker for source events whose timestamps are equal or absent.
+        var eventSequence: Int? = nil
 
         static func empty(now: Double) -> StoredState {
             StoredState(schemaVersion: ProjectBoardStore.schemaVersion, revision: 0,
                         enabled: true, updatedAt: now, projects: [], items: [], receipts: [],
                         graphItems: [:], receiptEvictions: 0)
+        }
+    }
+
+    /// Known source timestamps form one ordered domain; unknown timestamps sort before it and use
+    /// a durable observation ordinal amongst themselves. Equal known timestamps use that same
+    /// ordinal. This lexicographic policy is total and replay-stable without treating an ingestion
+    /// clock as source chronology. A newly observed unknown attempt is surfaced separately as an
+    /// unresolved post-landing event, so it cannot silently erase or hide the established landing.
+    private struct StoredEventOrder: Comparable {
+        let at: Double?
+        let ordinal: Int
+        let stableID: String
+
+        static func < (lhs: StoredEventOrder, rhs: StoredEventOrder) -> Bool {
+            switch (lhs.at, rhs.at) {
+            case let (left?, right?) where left != right:
+                return left < right
+            case (nil, .some):
+                return true
+            case (.some, nil):
+                return false
+            default:
+                break
+            }
+            if lhs.ordinal != rhs.ordinal { return lhs.ordinal < rhs.ordinal }
+            return lhs.stableID < rhs.stableID
         }
     }
 
@@ -282,6 +333,11 @@ final class ProjectBoardStore {
             return AutomaticMutationOutcome(status: .unavailable, acceptedCount: 0,
                                             droppedCount: 1, persisted: false,
                                             reason: unavailable.code)
+        }
+        guard state.enabled else {
+            return AutomaticMutationOutcome(status: .refused, acceptedCount: 0,
+                                            droppedCount: 1, persisted: true,
+                                            reason: "board_disabled")
         }
         var draft = state
         let timestamp = now().timeIntervalSince1970
@@ -380,6 +436,11 @@ final class ProjectBoardStore {
         do {
             let applied = try apply(operation: operation, body: body, actor: actor,
                                     trusted: trusted, timestamp: timestamp, draft: &draft)
+            if let itemID = applied.itemId,
+               operation != "transition", operation != "create" {
+                reconcileLifecycle(around: itemID, actor: "board", timestamp: timestamp,
+                                   draft: &draft)
+            }
             draft.revision += 1
             draft.updatedAt = timestamp
             appendReceipt(StoredReceipt(
@@ -427,8 +488,12 @@ final class ProjectBoardStore {
         var acceptedCount = 0
         var droppedCount = 0
         var droppedReasons: Set<String> = []
+        var eventSequence = draft.eventSequence ?? maximumEventOrdinal(in: draft)
+        let initialEventSequence = eventSequence
 
         var itemIndex: Int?
+        let taskID = Self.boundedText(task["id"], maximum: 200)
+        let taskKey = taskID.map { Self.taskKey(projectID: projectID, taskID: $0) }
         let explicit = Self.boundedText(task["workItemId"] ?? task["work_item_id"], maximum: 200)
         if let explicit {
             itemIndex = draft.items.firstIndex { $0.id == explicit && $0.projectId == projectID }
@@ -448,14 +513,51 @@ final class ProjectBoardStore {
                 $0.id == existingID && $0.projectId == projectID
             }
         }
+        if itemIndex == nil, graphID == nil, let taskKey,
+           let existingID = draft.taskItems?[taskKey] {
+            itemIndex = draft.items.firstIndex {
+                $0.id == existingID && $0.projectId == projectID
+            }
+        }
+        // Schema-v1 inferred cards predate their explicit marker. The durable graph/task index is
+        // enough to recover that provenance before an explicit attribution replaces the mapping.
+        if explicit != nil, let selectedID = itemIndex.map({ draft.items[$0].id }) {
+            let legacyInferredIDs = [graphKey.flatMap { draft.graphItems[$0] },
+                                     taskKey.flatMap { draft.taskItems?[$0] }]
+                .compactMap { $0 }.filter { $0 != selectedID }
+            for inferredID in legacyInferredIDs {
+                if let index = draft.items.firstIndex(where: { $0.id == inferredID }),
+                   draft.items[index].inferredSourceKey == nil {
+                    draft.items[index].inferredSourceKey = graphKey ?? taskKey
+                }
+            }
+        }
         if itemIndex == nil, let graphID,
            let destination = Self.boundedText(graph?["destination"], maximum: 500),
            draft.items.count < Self.maximumItems {
-            let item = makeItem(projectID: projectID, title: destination, type: "feature",
+            var item = makeItem(projectID: projectID, title: destination, type: "feature",
                                 summary: "", owner: "", parentID: nil, timestamp: timestamp,
                                 projects: draft.projects, items: draft.items)
+            item.inferredSourceKey = graphKey
             draft.items.append(item)
             draft.graphItems[Self.graphKey(projectID: projectID, graphID: graphID)] = item.id
+            itemIndex = draft.items.count - 1
+            changed = true
+            acceptedCount += 1
+        } else if itemIndex == nil, graphID == nil, let taskID,
+                  draft.items.count < Self.maximumItems {
+            var item = makeItem(
+                projectID: projectID,
+                title: Self.boundedText(task["title"], maximum: 300) ?? "Execution \(taskID)",
+                type: "task", summary: "Retained broker execution record.",
+                owner: Self.brokerOwner(task) ?? "", parentID: nil, timestamp: timestamp,
+                projects: draft.projects, items: draft.items)
+            item.inferredSourceKey = taskKey
+            if !item.owner.isEmpty { item.ownerSourceTaskId = taskID }
+            draft.items.append(item)
+            var taskItems = draft.taskItems ?? [:]
+            if let taskKey { taskItems[taskKey] = item.id }
+            draft.taskItems = taskItems
             itemIndex = draft.items.count - 1
             changed = true
             acceptedCount += 1
@@ -465,6 +567,27 @@ final class ProjectBoardStore {
             if recordIngestionDrop(kind: "item", reason: "item_capacity_reached",
                                    sourceID: graphID ?? "unknown",
                                    coverage: &draft.ingestionCoverage,
+                                   timestamp: timestamp) {
+                draft.revision += 1
+                draft.updatedAt = timestamp
+                if let persistenceError = persist(draft) {
+                    let outcome = AutomaticMutationOutcome(
+                        status: persistenceError.status >= 500 ? .unavailable : .refused,
+                        acceptedCount: 0, droppedCount: 1, persisted: false,
+                        reason: persistenceError.code)
+                    lastAutomaticFailure = outcome
+                    return outcome
+                }
+                state = draft
+            }
+            return AutomaticMutationOutcome(status: .refused, acceptedCount: 0,
+                                            droppedCount: 1, persisted: true,
+                                            reason: "item_capacity_reached")
+        }
+        if itemIndex == nil, graphID == nil, let taskID,
+           draft.items.count >= Self.maximumItems {
+            if recordIngestionDrop(kind: "item", reason: "item_capacity_reached",
+                                   sourceID: taskID, coverage: &draft.ingestionCoverage,
                                    timestamp: timestamp) {
                 draft.revision += 1
                 draft.updatedAt = timestamp
@@ -505,20 +628,48 @@ final class ProjectBoardStore {
                                             reason: "irrelevant")
         }
 
-        if let taskID = Self.boundedText(task["id"], maximum: 200) {
+        let child = task["child"] as? [String: Any]
+        let sessionID = Self.boundedText(child?["sessionId"] ?? child?["session_id"], maximum: 200)
+        let taskOwner = Self.brokerOwner(task)
+        let incomingWorktreeTarget: String? = {
+            guard let worktree = task["worktree"] as? [String: Any],
+                  let path = Self.boundedText(worktree["path"], maximum: 2_000),
+                  let opaque = Self.stringDigest("\(projectID)\u{0}\(path)") else { return nil }
+            return "worktree:\(opaque.prefix(32))"
+        }()
+        var reattributedItemIDs: Set<String> = []
+
+        if let taskID {
+            if let taskKey, draft.taskItems?[taskKey] != draft.items[selected].id {
+                var taskItems = draft.taskItems ?? [:]
+                taskItems[taskKey] = draft.items[selected].id
+                draft.taskItems = taskItems
+                changed = true
+                acceptedCount += 1
+            }
+            if draft.items[selected].owner.isEmpty, let owner = taskOwner {
+                draft.items[selected].owner = owner
+                draft.items[selected].ownerSourceTaskId = taskID
+                changed = true
+                acceptedCount += 1
+            }
             let declaredPhase = Self.boundedText(
                 task["workPhase"] ?? task["work_phase"], maximum: 64
             ).flatMap { Self.phases.contains($0) ? $0 : nil }
+            let attemptState = Self.boundedText(task["state"], maximum: 64)
+            let attemptStartedAt = Self.canonicalBrokerStart(task)
+            let attemptFinishedAt = Self.exactDouble(task["finished_at"] ?? task["finishedAt"])
+            let attemptEventAt = attemptFinishedAt ?? attemptStartedAt
             for index in draft.items.indices
             where index != selected && draft.items[index].projectId == projectID {
-                let before = draft.items[index].links.count
-                draft.items[index].links.removeAll {
-                    $0.kind == "task" && $0.targetId == taskID && $0.source == "broker"
-                }
-                if draft.items[index].links.count != before {
+                if reattributeTaskFacts(taskID: taskID, taskOwner: taskOwner,
+                                        sessionID: sessionID,
+                                        worktreeTarget: incomingWorktreeTarget,
+                                        from: index, to: selected, draft: &draft) {
+                    reattributedItemIDs.insert(draft.items[index].id)
                     appendHistory(item: &draft.items[index], actor: "broker",
                                   kind: "task_reattributed",
-                                  summary: "Execution attempt \(taskID) moved to its explicit item.",
+                                  summary: "Broker execution facts moved to their explicit item.",
                                   at: timestamp)
                     draft.items[index].updatedAt = timestamp
                     changed = true
@@ -528,19 +679,45 @@ final class ProjectBoardStore {
             if let existing = draft.items[selected].links.firstIndex(where: {
                 $0.kind == "task" && $0.targetId == taskID && $0.source == "broker"
             }) {
-                if let declaredPhase,
-                   draft.items[selected].links[existing].phase != declaredPhase {
+                let old = draft.items[selected].links[existing]
+                if shouldReplaceAttempt(old, state: attemptState, at: attemptEventAt) {
+                    let ordinal = Self.nextEventOrdinal(&eventSequence)
                     draft.items[selected].links[existing].phase = declaredPhase
+                    draft.items[selected].links[existing].attemptState = attemptState
+                    draft.items[selected].links[existing].startedAt = attemptStartedAt
+                    draft.items[selected].links[existing].finishedAt = attemptFinishedAt
+                    draft.items[selected].links[existing].statusObservedAt = attemptEventAt
+                    draft.items[selected].links[existing].sourceTaskId = taskID
+                    draft.items[selected].links[existing].eventAt = attemptEventAt
+                    draft.items[selected].links[existing].eventOrdinal = ordinal
+                    changed = true
+                    acceptedCount += 1
+                } else if old.sourceTaskId == nil || old.eventOrdinal == nil
+                            || (attemptEventAt != nil && old.eventAt == nil) {
+                    // Schema-v1 rows used observation time as statusObservedAt. A replay supplies
+                    // the source boundary and repairs that legacy ordering exactly once.
+                    draft.items[selected].links[existing].sourceTaskId = taskID
+                    draft.items[selected].links[existing].eventAt = attemptEventAt
+                    if old.eventOrdinal == nil {
+                        draft.items[selected].links[existing].eventOrdinal =
+                            Self.nextEventOrdinal(&eventSequence)
+                    }
                     changed = true
                     acceptedCount += 1
                 }
             } else if draft.items[selected].links.count < Self.maximumChildren {
+                let ordinal = Self.nextEventOrdinal(&eventSequence)
                 draft.items[selected].links.append(StoredLink(
                     id: Self.newID(), kind: "task", targetId: taskID,
                     label: Self.boundedText(task["title"], maximum: 300) ?? taskID,
-                    source: "broker", phase: declaredPhase, head: nil))
+                    source: "broker", phase: declaredPhase, head: nil,
+                    attemptState: attemptState, startedAt: attemptStartedAt,
+                    finishedAt: attemptFinishedAt,
+                    statusObservedAt: attemptEventAt, sourceTaskId: taskID,
+                    eventAt: attemptEventAt, eventOrdinal: ordinal))
                 appendHistory(item: &draft.items[selected], actor: "broker", kind: "task_linked",
-                              summary: "Linked execution attempt \(taskID).", at: timestamp)
+                              summary: "Linked execution attempt \(taskID).", at: timestamp,
+                              sourceTaskId: taskID)
                 changed = true
                 acceptedCount += 1
             } else {
@@ -550,9 +727,13 @@ final class ProjectBoardStore {
                                        sourceID: taskID, item: &draft.items[selected],
                                        timestamp: timestamp) { changed = true }
             }
+            let acceptedTaskEventAt = draft.items[selected].links.first(where: {
+                $0.kind == "task" && $0.targetId == taskID && $0.source == "broker"
+            })?.eventAt
             let evidenceResult = ingestBrokerEvidence(
                 task: task, taskID: taskID, graphID: graphID,
-                item: &draft.items[selected], timestamp: timestamp)
+                item: &draft.items[selected], timestamp: timestamp,
+                taskEventAt: acceptedTaskEventAt, eventSequence: &eventSequence)
             if evidenceResult.changed {
                 changed = true
             }
@@ -560,24 +741,32 @@ final class ProjectBoardStore {
             droppedCount += evidenceResult.droppedCount
             droppedReasons.formUnion(evidenceResult.reasons)
             if evidenceResult.invalidatedCurrentEvidence {
-                reopenAncestors(of: draft.items[selected].id, draft: &draft)
+                reopenAncestors(of: draft.items[selected].id, timestamp: timestamp, draft: &draft)
+                eventSequence = max(eventSequence, draft.eventSequence ?? 0)
             }
         }
 
-        let child = task["child"] as? [String: Any]
-        let sessionID = Self.boundedText(child?["sessionId"] ?? child?["session_id"], maximum: 200)
-        if let sessionID,
-           !draft.items[selected].links.contains(where: {
-               $0.kind == "session" && $0.targetId == sessionID
-           }), draft.items[selected].links.count < Self.maximumChildren {
+        if let sessionID, let existing = draft.items[selected].links.firstIndex(where: {
+            $0.kind == "session" && $0.targetId == sessionID
+                && ($0.sourceTaskId == nil || $0.sourceTaskId == taskID)
+        }) {
+            if draft.items[selected].links[existing].source == "broker",
+               draft.items[selected].links[existing].sourceTaskId == nil {
+                draft.items[selected].links[existing].sourceTaskId = taskID
+                changed = true
+                acceptedCount += 1
+            }
+        } else if let sessionID, draft.items[selected].links.count < Self.maximumChildren {
             draft.items[selected].links.append(StoredLink(
                 id: Self.newID(), kind: "session", targetId: sessionID, label: sessionID,
-                source: "broker", phase: nil, head: nil))
+                source: "broker", phase: nil, head: nil,
+                sourceTaskId: taskID))
             changed = true
             acceptedCount += 1
         } else if let sessionID,
                   !draft.items[selected].links.contains(where: {
                       $0.kind == "session" && $0.targetId == sessionID
+                          && ($0.sourceTaskId == nil || $0.sourceTaskId == taskID)
                   }) {
             droppedCount += 1
             droppedReasons.insert("link_capacity_reached")
@@ -593,18 +782,22 @@ final class ProjectBoardStore {
             let head = Self.boundedText(worktree["head"], maximum: 200)
             if let existing = draft.items[selected].links.firstIndex(where: {
                 $0.kind == "worktree" && $0.targetId == target && $0.source == "broker"
+                    && ($0.sourceTaskId == nil || $0.sourceTaskId == taskID)
             }) {
                 if draft.items[selected].links[existing].label != branch
-                    || draft.items[selected].links[existing].head != head {
+                    || draft.items[selected].links[existing].head != head
+                    || draft.items[selected].links[existing].sourceTaskId == nil {
                     draft.items[selected].links[existing].label = branch
                     draft.items[selected].links[existing].head = head
+                    draft.items[selected].links[existing].sourceTaskId = taskID
                     changed = true
                     acceptedCount += 1
                 }
             } else if draft.items[selected].links.count < Self.maximumChildren {
                 draft.items[selected].links.append(StoredLink(
                     id: Self.newID(), kind: "worktree", targetId: target, label: branch,
-                    source: "broker", phase: nil, head: head))
+                    source: "broker", phase: nil, head: head,
+                    sourceTaskId: taskID))
                 changed = true
                 acceptedCount += 1
             } else {
@@ -663,6 +856,22 @@ final class ProjectBoardStore {
             }
         }
 
+        let reconciled = reconcileLifecycle(around: draft.items[selected].id, actor: "board",
+                                            timestamp: timestamp, draft: &draft)
+        if reconciled > 0 {
+            changed = true
+            acceptedCount += reconciled
+        }
+        for itemID in reattributedItemIDs {
+            let count = reconcileLifecycle(around: itemID, actor: "board",
+                                           timestamp: timestamp, draft: &draft)
+            if count > 0 {
+                changed = true
+                acceptedCount += count
+            }
+        }
+        if eventSequence != initialEventSequence { draft.eventSequence = eventSequence }
+
         guard changed else {
             lastAutomaticFailure = nil
             let status: AutomaticMutationStatus = droppedCount > 0 ? .refused : .unchanged
@@ -671,6 +880,8 @@ final class ProjectBoardStore {
                                             reason: droppedReasons.sorted().first)
         }
         draft.items[selected].updatedAt = timestamp
+        let retiredCount = retireInferredItems(reattributedItemIDs, draft: &draft)
+        acceptedCount += retiredCount
         draft.revision += 1
         draft.updatedAt = timestamp
         if let persistenceError = persist(draft) {
@@ -740,16 +951,19 @@ final class ProjectBoardStore {
             let owner = try optionalText(body, "owner", maximum: 300) ?? ""
             let parent = try optionalText(body, "parentId", maximum: 200)
             if let parent { try validateParent(parent, projectID: projectID, draft: draft) }
-            let item = makeItem(projectID: projectID, title: title, type: type,
+            var item = makeItem(projectID: projectID, title: title, type: type,
                                 summary: summary, owner: owner, parentID: parent,
                                 timestamp: timestamp, projects: draft.projects, items: draft.items)
+            item.typeDetails = try parsedTypeDetails(body["typeDetails"], type: type,
+                                                     existing: nil)
             draft.items.append(item)
             return Applied(itemId: item.id)
 
         case "update":
             let index = try itemIndex(body, draft: draft)
-            try requireMutable(index, draft: draft)
+            try requireRecordable(index, draft: draft)
             var changed = false
+            let oldType = draft.items[index].type
             if body.keys.contains("title") {
                 draft.items[index].title = try requiredText(body, "title", maximum: 300)
                 changed = true
@@ -761,6 +975,7 @@ final class ProjectBoardStore {
             }
             if body.keys.contains("owner") {
                 draft.items[index].owner = try optionalText(body, "owner", maximum: 300) ?? ""
+                draft.items[index].ownerSourceTaskId = nil
                 changed = true
             }
             if body.keys.contains("type") {
@@ -773,11 +988,20 @@ final class ProjectBoardStore {
                 draft.items[index].type = type
                 changed = true
             }
+            if body.keys.contains("typeDetails") {
+                let existing = oldType == draft.items[index].type
+                    ? draft.items[index].typeDetails : nil
+                draft.items[index].typeDetails = try parsedTypeDetails(
+                    body["typeDetails"], type: draft.items[index].type, existing: existing)
+                changed = true
+            } else if oldType != draft.items[index].type {
+                draft.items[index].typeDetails = nil
+            }
             guard changed else {
                 throw BoardError(status: 400, code: "empty_update",
                                  message: "update must name at least one mutable field")
             }
-            invalidateCurrentEvidence(&draft.items[index], reopen: true)
+            reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
             touch(&draft.items[index], actor: actor, kind: "item_updated",
                   summary: "Item details were updated.", at: timestamp)
             return Applied(itemId: draft.items[index].id)
@@ -790,7 +1014,10 @@ final class ProjectBoardStore {
             let old = draft.items[index].state
             draft.items[index].state = target
             if target == "planning" || target == "execution" {
-                invalidateCurrentEvidence(&draft.items[index], reopen: false)
+                let scopeOrdinal = nextEventOrdinal(&draft)
+                invalidateCurrentEvidence(&draft.items[index], reopen: false,
+                                          eventAt: timestamp,
+                                          eventOrdinal: scopeOrdinal)
             }
             touch(&draft.items[index], actor: actor, kind: "state_transition",
                   summary: note ?? "State changed from \(old) to \(target).", at: timestamp)
@@ -798,7 +1025,7 @@ final class ProjectBoardStore {
 
         case "checklist":
             let index = try itemIndex(body, draft: draft)
-            try requireMutable(index, draft: draft)
+            try requireRecordable(index, draft: draft)
             if body["checklistId"] != nil || body["status"] != nil {
                 guard body["title"] == nil, body["required"] == nil else {
                     throw BoardError(status: 400, code: "invalid_checklist_command",
@@ -828,14 +1055,14 @@ final class ProjectBoardStore {
                     id: Self.newID(), title: title, status: "todo", required: required,
                     evidenceId: nil))
             }
-            invalidateCurrentEvidence(&draft.items[index], reopen: true)
+            reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
             touch(&draft.items[index], actor: actor, kind: "checklist_updated",
                   summary: "Checklist scope or status changed.", at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
         case "milestone":
             let index = try itemIndex(body, draft: draft)
-            try requireMutable(index, draft: draft)
+            try requireRecordable(index, draft: draft)
             if body["milestoneId"] != nil || body["status"] != nil {
                 guard body["title"] == nil else {
                     throw BoardError(status: 400, code: "invalid_milestone_command",
@@ -859,14 +1086,14 @@ final class ProjectBoardStore {
                     id: Self.newID(), title: try requiredText(body, "title", maximum: 500),
                     status: "todo"))
             }
-            invalidateCurrentEvidence(&draft.items[index], reopen: true)
+            reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
             touch(&draft.items[index], actor: actor, kind: "milestone_updated",
                   summary: "Milestone scope or status changed.", at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
         case "artifact":
             let index = try itemIndex(body, draft: draft)
-            try requireMutable(index, draft: draft)
+            try requireRecordable(index, draft: draft)
             guard draft.items[index].artifacts.count < Self.maximumChildren else {
                 throw BoardError(status: 409, code: "artifact_capacity_reached",
                                  message: "the artifact capacity is exhausted")
@@ -881,7 +1108,7 @@ final class ProjectBoardStore {
             draft.items[index].artifacts.append(StoredArtifact(
                 id: Self.newID(), title: try requiredText(body, "title", maximum: 300),
                 url: rawURL, kind: try requiredChoice(body, "kind", choices: Self.artifactKinds)))
-            invalidateCurrentEvidence(&draft.items[index], reopen: true)
+            reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
             touch(&draft.items[index], actor: actor, kind: "artifact_added",
                   summary: "An artifact reference was added; it is not verification by itself.",
                   at: timestamp)
@@ -918,7 +1145,7 @@ final class ProjectBoardStore {
 
         case "obligation":
             let index = try itemIndex(body, draft: draft)
-            try requireMutable(index, draft: draft)
+            try requireRecordable(index, draft: draft)
             guard draft.items[index].obligations.count < Self.maximumChildren else {
                 throw BoardError(status: 409, code: "obligation_capacity_reached",
                                  message: "the obligation capacity is exhausted")
@@ -1024,12 +1251,14 @@ final class ProjectBoardStore {
             }
             try requireEvidenceCapacity(draft.items[index])
             let evidenceID = Self.newID()
+            let eventOrdinal = nextEventOrdinal(&draft)
             draft.items[index].evidence.append(StoredEvidence(
                 id: evidenceID, kind: "artifact_acceptance", summary: note,
                 subject: artifactID, status: "passed", sourceId: sourceID,
                 checklistId: nil, artifactId: artifactID, blocking: false, resolved: true,
                 at: timestamp, actor: actor, source: "root_attestation",
-                scopeRevision: scopeRevision))
+                scopeRevision: scopeRevision, eventAt: timestamp,
+                eventOrdinal: eventOrdinal))
             if usesArtifactAcceptance(draft.items[index]) {
                 draft.items[index].currentArtifactAcceptanceId = evidenceID
                 draft.items[index].currentVerificationSubject = artifactID
@@ -1085,10 +1314,11 @@ final class ProjectBoardStore {
             let subjectChanged = draft.items[index].currentVerificationSubject != subject
             if kind == "verification", status == "passed", subjectChanged,
                Self.terminalStates.contains(draft.items[index].state) {
-                reopenForInvalidatedEvidence(index, draft: &draft)
+                reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
             }
             let scopeRevision = draft.items[index].scopeRevision ?? 0
             let evidenceID = Self.newID()
+            let eventOrdinal = nextEventOrdinal(&draft)
             draft.items[index].evidence.append(StoredEvidence(
                 id: evidenceID, kind: kind,
                 summary: summary, subject: subject, status: status,
@@ -1096,22 +1326,36 @@ final class ProjectBoardStore {
                 blocking: kind == "finding" && blocking,
                 resolved: kind == "finding" ? (resolved || status == "resolved") : true,
                 at: timestamp, actor: actor, source: "root_attestation",
-                scopeRevision: scopeRevision))
+                scopeRevision: scopeRevision, eventAt: timestamp,
+                eventOrdinal: eventOrdinal))
             if kind == "verification" {
                 if status == "passed" {
                     if !usesArtifactAcceptance(draft.items[index]) {
                         draft.items[index].currentVerificationEvidenceId = evidenceID
                         draft.items[index].currentVerificationSubject = subject
                         if subjectChanged { draft.items[index].currentLandingEvidenceId = nil }
+                        if let landing = draft.items[index].evidence.last(where: {
+                            $0.kind == "landing" && $0.status == "passed"
+                                && $0.subject == subject
+                                && ($0.scopeRevision ?? 0) == (draft.items[index].scopeRevision ?? 0)
+                        }) {
+                            draft.items[index].currentLandingEvidenceId = landing.id
+                        }
                         draft.items[index].currentArtifactAcceptanceId = nil
                     }
                 } else {
-                    invalidateCurrentEvidence(&draft.items[index], reopen: true)
-                    reopenAncestors(of: draft.items[index].id, draft: &draft)
+                    let scopeOrdinal = nextEventOrdinal(&draft)
+                    invalidateCurrentEvidence(&draft.items[index], reopen: true,
+                                              eventAt: timestamp,
+                                              eventOrdinal: scopeOrdinal)
+                    reopenAncestors(of: draft.items[index].id, timestamp: timestamp, draft: &draft)
                 }
             } else if blocking && !(resolved || status == "resolved") {
-                invalidateCurrentEvidence(&draft.items[index], reopen: true)
-                reopenAncestors(of: draft.items[index].id, draft: &draft)
+                let scopeOrdinal = nextEventOrdinal(&draft)
+                invalidateCurrentEvidence(&draft.items[index], reopen: true,
+                                          eventAt: timestamp,
+                                          eventOrdinal: scopeOrdinal)
+                reopenAncestors(of: draft.items[index].id, timestamp: timestamp, draft: &draft)
             }
             if kind == "verification", status == "passed", let checklistID,
                let child = draft.items[index].checklist.firstIndex(where: {
@@ -1196,7 +1440,7 @@ final class ProjectBoardStore {
                 throw BoardError(status: 409, code: "evidence_required",
                                  message: "closure requires coherent current verification and delivery evidence")
             }
-            guard item.obligations.filter({ $0.blocking }).allSatisfy(\.resolved),
+            guard item.obligations.allSatisfy(\.resolved),
                   item.milestones.allSatisfy({
                       $0.status == "passed" || $0.status == "not_applicable"
                   }), item.pendingHandoff == nil else {
@@ -1268,6 +1512,311 @@ final class ProjectBoardStore {
             throw BoardError(status: 409, code: "evidence_subject_mismatch",
                              message: "all required checklist rows must attest one current subject and scope revision")
         }
+    }
+
+    private func currentChecklistEvidenceIsValid(_ item: StoredItem) -> Bool {
+        (try? validateCurrentChecklistEvidence(item)) != nil
+    }
+
+    private func closureIsSafe(_ item: StoredItem, allItems: [StoredItem]) -> Bool {
+        guard item.obligations.allSatisfy(\.resolved),
+              item.milestones.allSatisfy({
+                  $0.status == "passed" || $0.status == "not_applicable"
+              }), item.pendingHandoff == nil else { return false }
+        guard item.type == "epic" else { return true }
+        return allItems.filter { $0.parentId == item.id }.allSatisfy {
+            ["integrated", "closed"].contains($0.state)
+        }
+    }
+
+    /// Reconcile the item and its Epic ancestors from durable facts. The loop is bounded by the
+    /// two-level hierarchy invariant and lets a child delivery unlock its already-proven Epic.
+    @discardableResult
+    private func reconcileLifecycle(around itemID: String, actor: String, timestamp: Double,
+                                    draft: inout StoredState) -> Int {
+        var ids = [itemID]
+        var parent = draft.items.first(where: { $0.id == itemID })?.parentId
+        while let id = parent {
+            ids.append(id)
+            parent = draft.items.first(where: { $0.id == id })?.parentId
+        }
+        var changed = 0
+        for id in ids {
+            guard let index = draft.items.firstIndex(where: { $0.id == id }),
+                  draft.items[index].state != "canceled",
+                  draft.items[index].type != "coordination" else { continue }
+            let item = draft.items[index]
+            let attempts = item.links.filter { $0.kind == "task" && $0.source == "broker" }
+            let openBlockingFinding = item.evidence.contains {
+                $0.kind == "finding" && $0.blocking && !$0.resolved
+            }
+            let owned = !item.owner.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let verified = owned && !openBlockingFinding
+                && currentChecklistEvidenceIsValid(item) && hasVerificationEvidence(item)
+            let delivered = verified && hasDeliveryEvidence(item)
+            let currentLanding = item.currentLandingEvidenceId.flatMap { id in
+                item.evidence.first(where: { $0.id == id })
+            }
+            let currentVerification = item.currentVerificationEvidenceId.flatMap { id in
+                item.evidence.first(where: { $0.id == id })
+            } ?? item.currentArtifactAcceptanceId.flatMap { id in
+                item.evidence.first(where: { $0.id == id })
+            }
+            let newerAttemptAfterLanding = currentLanding.map { landing in
+                attempts.contains { attempt in
+                    attemptOccurredAfter(attempt, evidence: landing)
+                }
+            } ?? false
+            let attemptAfterCurrentVerification = currentVerification.map { verification in
+                attempts.contains { attempt in
+                    attemptOccurredAfter(attempt, evidence: verification)
+                }
+            } ?? !attempts.isEmpty
+            let target: String
+            if delivered && !newerAttemptAfterLanding {
+                target = closureIsSafe(item, allItems: draft.items) ? "closed" : "integrated"
+            } else if verified && !attemptAfterCurrentVerification {
+                target = "verified"
+            } else if !attempts.isEmpty {
+                let active = attempts.filter {
+                    Self.activeAttemptStates.contains($0.attemptState ?? "")
+                }
+                if !owned {
+                    target = "planning"
+                } else if !active.isEmpty,
+                          active.allSatisfy({ $0.attemptState == "queued" || $0.attemptState == "spawning" }) {
+                    target = "ready"
+                } else if !active.isEmpty,
+                          active.allSatisfy({ $0.phase == "planning" }) {
+                    target = "planning"
+                } else {
+                    // Success is delivery, while failure/cancellation is an attempt outcome. None
+                    // of those facts by itself establishes verification or closes the work item.
+                    target = "execution"
+                }
+            } else {
+                target = item.state
+            }
+            guard target != item.state else { continue }
+            draft.items[index].state = target
+            touch(&draft.items[index], actor: actor, kind: "automatic_state_reconciled",
+                  summary: "Recorded evidence reconciled lifecycle from \(item.state) to \(target).",
+                  at: timestamp)
+            changed += 1
+        }
+        return changed
+    }
+
+    private func progressObject(_ item: StoredItem) -> [String: Any] {
+        let attempts = item.links.filter { $0.kind == "task" && $0.source == "broker" }
+        let states = attempts.map { $0.attemptState }
+        let activeAttempts = attempts.filter {
+            Self.activeAttemptStates.contains($0.attemptState ?? "")
+        }
+        let queued = attempts.filter {
+            $0.attemptState == "queued" || $0.attemptState == "spawning"
+        }.count
+        let succeeded = attempts.filter { $0.attemptState == "success" }.count
+        let failed = attempts.filter {
+            $0.attemptState == "failure" || $0.attemptState == "timeout"
+                || $0.attemptState == "spawn_failed"
+        }.count
+        let canceled = attempts.filter { $0.attemptState == "cancelled" }.count
+        let unknownAttempts = states.filter {
+            guard let value = $0 else { return true }
+            return !Self.activeAttemptStates.contains(value)
+                && !Self.terminalAttemptStates.contains(value)
+        }.count
+        let findings = item.evidence.filter { $0.kind == "finding" }
+        let openFindings = findings.filter { !$0.resolved }
+        let blockingFindings = openFindings.filter(\.blocking)
+        let passedVerifications = item.evidence.filter {
+            $0.kind == "verification" && $0.status == "passed"
+        }
+        let failedVerifications = item.evidence.filter {
+            $0.kind == "verification" && $0.status == "failed"
+        }
+        let landings = item.evidence.filter { $0.kind == "landing" && $0.status == "passed" }
+        let verificationSummaries = item.evidence.filter { $0.kind == "verification_summary" }
+        let artifactAcceptances = item.evidence.filter { $0.kind == "artifact_acceptance" }
+        let currentEvidenceVerified = hasVerificationEvidence(item)
+            && currentChecklistEvidenceIsValid(item) && blockingFindings.isEmpty
+        let latestLanding = landings.max { eventOrder($0) < eventOrder($1) }
+        let uncertainAttemptsAfterLanding = latestLanding.map { landing in
+            attempts.filter { attempt in
+                attempt.eventAt == nil
+                    && (attempt.eventOrdinal ?? 0) > (landing.eventOrdinal ?? 0)
+            }
+        } ?? []
+        let roundAttempts = latestLanding.map { landing in
+            attempts.filter { attempt in
+                eventOrder(attempt) > eventOrder(landing)
+                    || uncertainAttemptsAfterLanding.contains { $0.id == attempt.id }
+            }
+        } ?? attempts
+        let roundActive = roundAttempts.filter {
+            Self.activeAttemptStates.contains($0.attemptState ?? "")
+        }
+        let roundPhases = Set(roundActive.compactMap(\.phase))
+        let latestRoundAttempt = roundAttempts.max { eventOrder($0) < eventOrder($1) }
+        let roundSucceeded = latestRoundAttempt?.attemptState == "success"
+        let roundFailed = latestRoundAttempt.map {
+            $0.attemptState == "failure" || $0.attemptState == "timeout"
+                || $0.attemptState == "spawn_failed"
+        } ?? false
+        let currentVerification = item.currentVerificationEvidenceId.flatMap { id in
+            item.evidence.first(where: { $0.id == id })
+        } ?? item.currentArtifactAcceptanceId.flatMap { id in
+            item.evidence.first(where: { $0.id == id })
+        }
+        let currentVerified = currentEvidenceVerified && (currentVerification.map { verification in
+            !roundAttempts.contains { attemptOccurredAfter($0, evidence: verification) }
+        } ?? false)
+        let latestVerification = item.evidence.filter { $0.kind == "verification" }
+            .max { eventOrder($0) < eventOrder($1) }
+        let failedProofAfterLanding = latestVerification.map { verification in
+            verification.status == "failed"
+                && (latestLanding.map { eventOrder(verification) > eventOrder($0) } ?? true)
+        } ?? false
+        let blockingAfterLanding = latestLanding.map { landing in
+            blockingFindings.contains { eventOrder($0) > eventOrder(landing) }
+        } ?? !blockingFindings.isEmpty
+        let scopeChangedAfterLanding = latestLanding.map {
+            ($0.scopeRevision ?? 0) < (item.scopeRevision ?? 0)
+        } ?? false
+        let activeSpanCount = item.spans.filter { $0.endedAt == nil }.count
+        let isActive = !activeAttempts.isEmpty || activeSpanCount > 0
+        var warningCodes: [String] = []
+        if !uncertainAttemptsAfterLanding.isEmpty {
+            warningCodes.append("attempt_chronology_unresolved")
+        }
+        if latestLanding != nil {
+            if !hasVerificationEvidence(item) { warningCodes.append("exact_verification_missing") }
+            if item.checklist.contains(where: { $0.required })
+                && !currentChecklistEvidenceIsValid(item) {
+                warningCodes.append("checklist_evidence_incomplete")
+            }
+            if blockingFindings.contains(where: { finding in
+                latestLanding.map { eventOrder(finding) <= eventOrder($0) } ?? false
+            }) { warningCodes.append("historical_findings_unresolved") }
+            if item.milestones.contains(where: {
+                $0.status != "passed" && $0.status != "not_applicable"
+            }) { warningCodes.append("milestones_incomplete") }
+            if item.obligations.contains(where: { !$0.resolved }) {
+                warningCodes.append("obligations_unresolved")
+            }
+            if item.pendingHandoff != nil { warningCodes.append("handoff_pending") }
+        }
+
+        let progress: (state: String, label: String, reason: String, basis: [String])
+        if item.type == "coordination" {
+            if !roundActive.isEmpty && roundActive.allSatisfy({
+                $0.attemptState == "queued" || $0.attemptState == "spawning"
+            }) {
+                progress = ("queued", "Queued", "Coordination is waiting to begin; lifecycle does not apply.",
+                            ["coordination_context", "queued_attempt"])
+            } else if isActive {
+                progress = ("execution", "Active", "Coordination has an active attempt or declared interval; lifecycle does not apply.",
+                            ["coordination_context", "active_interval"])
+            } else {
+                progress = ("unknown", "Coordination", "Coordination is described by its period, handoff, relations, and outcomes rather than lifecycle status.",
+                            ["coordination_context", "lifecycle_not_applicable"])
+            }
+        } else if item.state == "canceled" {
+            progress = ("canceled", "Canceled", "The work item was explicitly canceled.",
+                        ["item_canceled"])
+        } else if roundPhases.contains("correction") {
+            progress = ("correction", "Correction", "A linked broker attempt is correcting the work.",
+                        ["active_correction_attempt"])
+        } else if roundPhases.contains("review_testing") {
+            progress = ("review_testing", "Review & testing", "A linked broker review or test attempt is active.",
+                        ["active_review_testing_attempt"])
+        } else if roundPhases.contains("planning") {
+            progress = ("planning", "Planning", "A linked planning attempt is active.",
+                        ["active_planning_attempt"])
+        } else if !roundActive.isEmpty && roundActive.allSatisfy({
+            $0.attemptState == "queued" || $0.attemptState == "spawning"
+        }) {
+            progress = ("queued", "Queued", "Linked broker attempts are waiting to execute.",
+                        ["queued_attempt"])
+        } else if !roundActive.isEmpty {
+            progress = ("execution", "In progress", "A linked broker attempt is executing.",
+                        ["active_execution_attempt"])
+        } else if failedProofAfterLanding || blockingAfterLanding || scopeChangedAfterLanding {
+            let basis = failedProofAfterLanding ? "verification_failed_after_landing"
+                : (blockingAfterLanding ? "blocking_finding_after_landing"
+                                        : "scope_changed_after_landing")
+            progress = latestLanding == nil
+                ? ("blocked", "Blocked", "Current proof or a blocking finding requires correction.",
+                   [failedProofAfterLanding ? "verification_failed" : "open_blocking_finding"])
+                : ("correction", "Correction", "New evidence after the last landing opened another work round.",
+                   [basis, "historical_landing_retained"])
+        } else if let latestLanding, roundAttempts.isEmpty {
+            progress = ("landed", "Landed", "Broker ancestry confirms the latest observed delivery landed.",
+                        ["authoritative_broker_landing", "landing:\(Int(latestLanding.at))"])
+        } else if usesArtifactAcceptance(item) && currentVerified && hasDeliveryEvidence(item) {
+            progress = ("landed", "Delivered", "An administrative user accepted the current non-code artifact.",
+                        ["authoritative_artifact_acceptance"])
+        } else if currentVerified {
+            progress = ("verified", "Verified", "Current-scope trusted verification passed.",
+                        ["current_exact_verification"])
+        } else if roundSucceeded {
+            progress = ("delivered", "Delivered", "A child delivered output; integration is not yet proven.",
+                        ["new_delivery_after_landing"])
+        } else if roundFailed {
+            progress = latestLanding == nil
+                ? ("blocked", "Blocked", "The retained attempts ended without delivery.",
+                   ["terminal_attempt_failure"])
+                : ("correction", "Correction", "A newer attempt ended unsuccessfully after the last landing.",
+                   ["attempt_failure_after_landing", "historical_landing_retained"])
+        } else if let latestLanding {
+            progress = ("landed", "Landed", "Broker ancestry confirms the latest observed delivery landed.",
+                        ["authoritative_broker_landing", "landing:\(Int(latestLanding.at))"])
+        } else if succeeded > 0 {
+            progress = ("delivered", "Delivered", "A child delivered output; integration is not yet proven.",
+                        ["task_delivery_only"])
+        } else if failed > 0 {
+            progress = ("blocked", "Blocked", "The retained attempts ended without delivery.",
+                        ["terminal_attempt_failure"])
+        } else if canceled > 0 && canceled == attempts.count {
+            progress = ("canceled", "Canceled", "All retained attempts were canceled.",
+                        ["all_attempts_canceled"])
+        } else if item.state == "planning" || item.state == "backlog" {
+            progress = ("planning", "Planning", "The item has not begun an execution attempt.",
+                        [item.state == "backlog" ? "item_backlog" : "item_planning"])
+        } else {
+            progress = ("unknown", "Unknown", "Retained facts do not establish a current progress state.",
+                        ["insufficient_evidence"])
+        }
+
+        let hasHistory = !attempts.isEmpty || !item.evidence.isEmpty
+        return [
+            "state": progress.state, "label": progress.label, "reason": progress.reason,
+            "basisCodes": progress.basis, "warningCodes": warningCodes,
+            "lifecycleApplicable": item.type != "coordination", "active": isActive,
+            "historical": !isActive && hasHistory,
+            "attemptCounts": [
+                "total": attempts.count, "active": activeAttempts.count, "queued": queued,
+                "succeeded": succeeded, "failed": failed, "canceled": canceled,
+                "unknown": unknownAttempts,
+            ] as [String: Any],
+            "evidenceCounts": [
+                "total": item.evidence.count, "openFindings": openFindings.count,
+                "blockingFindings": blockingFindings.count,
+                "passedVerifications": passedVerifications.count,
+                "failedVerifications": failedVerifications.count,
+                "landings": landings.count,
+                "verificationSummaries": verificationSummaries.count,
+                "artifactAcceptances": artifactAcceptances.count,
+            ] as [String: Any],
+            "coordinationContext": [
+                "activeSpans": activeSpanCount, "totalSpans": item.spans.count,
+                "pendingHandoff": item.pendingHandoff != nil,
+                "relatedItems": item.links.filter {
+                    Self.itemLinkKinds.contains($0.kind)
+                }.count,
+            ] as [String: Any],
+        ]
     }
 
     // MARK: - Snapshot
@@ -1411,6 +1960,7 @@ final class ProjectBoardStore {
             "id": item.id, "key": item.key, "projectId": item.projectId,
             "title": item.title, "type": item.type, "state": item.state,
             "summary": item.summary, "owner": item.owner,
+            "typeDetails": item.typeDetails ?? [:],
             "parentId": item.parentId ?? NSNull(), "createdAt": item.createdAt,
             "updatedAt": item.updatedAt,
             "scopeRevision": item.scopeRevision ?? 0,
@@ -1433,6 +1983,10 @@ final class ProjectBoardStore {
                 ]
                 if let phase = link.phase { value["phase"] = phase }
                 if let head = link.head { value["head"] = head }
+                if let attemptState = link.attemptState { value["attemptState"] = attemptState }
+                if let startedAt = link.startedAt { value["startedAt"] = startedAt }
+                if let finishedAt = link.finishedAt { value["finishedAt"] = finishedAt }
+                if let sourceTaskId = link.sourceTaskId { value["sourceTaskId"] = sourceTaskId }
                 return value
             },
             "accountingTaskLinks": accountingLinks.map { link in
@@ -1475,6 +2029,7 @@ final class ProjectBoardStore {
                 "artifactAcceptanceId": item.currentArtifactAcceptanceId ?? NSNull(),
                 "scopeRevision": item.scopeRevision ?? 0,
             ] as [String: Any],
+            "progress": progressObject(item),
             "sourceIngestion": [
                 "status": coverage.isEmpty ? "complete" : "partial",
                 "droppedCount": coverage.reduce(0) { $0 + $1.sourceDigests.count },
@@ -1565,8 +2120,13 @@ final class ProjectBoardStore {
 
     private func ingestBrokerEvidence(task: [String: Any], taskID: String, graphID: String?,
                                       item: inout StoredItem,
-                                      timestamp: Double) -> BrokerEvidenceResult {
+                                      timestamp: Double,
+                                      taskEventAt: Double?,
+                                      eventSequence: inout Int) -> BrokerEvidenceResult {
         var result = BrokerEvidenceResult()
+        // Derived broker facts share the chronology already accepted for their task link. A stale
+        // replay cannot be rejected for the attempt and still rewrite its finding/summary clock.
+        let sourceAt = taskEventAt
         if let review = task["review"] as? [String: Any],
            let axes = review["axes"] as? [[String: Any]] {
             for axis in axes {
@@ -1575,9 +2135,21 @@ final class ProjectBoardStore {
                           let summary = Self.boundedText(finding["summary"], maximum: 1_000)
                     else { continue }
                     let source = "task:\(taskID):finding:\(findingID)"
-                    guard !item.evidence.contains(where: {
+                    if let existing = item.evidence.firstIndex(where: {
                         $0.kind == "finding" && $0.sourceId == source
-                    }) else { continue }
+                    }) {
+                        if item.evidence[existing].eventAt != sourceAt
+                            || item.evidence[existing].eventOrdinal == nil {
+                            item.evidence[existing].eventAt = sourceAt
+                            if item.evidence[existing].eventOrdinal == nil {
+                                item.evidence[existing].eventOrdinal =
+                                    Self.nextEventOrdinal(&eventSequence)
+                            }
+                            result.changed = true
+                            result.acceptedCount += 1
+                        }
+                        continue
+                    }
                     guard item.evidence.count < Self.maximumHistory else {
                         result.droppedCount += 1
                         result.reasons.insert("evidence_capacity_reached")
@@ -1587,13 +2159,22 @@ final class ProjectBoardStore {
                         continue
                     }
                     let severity = Self.boundedText(finding["severity"], maximum: 64) ?? "blocking"
+                    let ordinal = Self.nextEventOrdinal(&eventSequence)
                     item.evidence.append(StoredEvidence(
                         id: Self.newID(), kind: "finding", summary: summary,
                         subject: graphID ?? taskID, status: "open", sourceId: source,
                         checklistId: nil, artifactId: nil, blocking: severity == "blocking",
-                        resolved: false, at: timestamp, actor: "broker", source: "broker"))
-                    if severity == "blocking" {
-                        invalidateCurrentEvidence(&item, reopen: true)
+                        resolved: false, at: sourceAt ?? 0, actor: "broker", source: "broker",
+                        eventAt: sourceAt, eventOrdinal: ordinal))
+                    let findingOrder = eventOrder(item.evidence[item.evidence.count - 1])
+                    let latestLandingOrder = item.evidence.filter {
+                        $0.kind == "landing" && $0.status == "passed"
+                    }.map(eventOrder).max()
+                    if severity == "blocking",
+                       latestLandingOrder.map({ findingOrder > $0 }) ?? true {
+                        invalidateCurrentEvidence(&item, reopen: true,
+                                                  eventAt: sourceAt,
+                                                  eventOrdinal: ordinal)
                         result.invalidatedCurrentEvidence = true
                     }
                     result.changed = true
@@ -1603,9 +2184,20 @@ final class ProjectBoardStore {
         }
         if let verification = task["verification"] as? [String: Any], !verification.isEmpty {
             let sourceID = "task:\(taskID):verification-summary"
-            if !item.evidence.contains(where: {
+            if let existing = item.evidence.firstIndex(where: {
                 $0.kind == "verification_summary" && $0.sourceId == sourceID
             }) {
+                if item.evidence[existing].eventAt != sourceAt
+                    || item.evidence[existing].eventOrdinal == nil {
+                    item.evidence[existing].eventAt = sourceAt
+                    if item.evidence[existing].eventOrdinal == nil {
+                        item.evidence[existing].eventOrdinal =
+                            Self.nextEventOrdinal(&eventSequence)
+                    }
+                    result.changed = true
+                    result.acceptedCount += 1
+                }
+            } else {
                 guard item.evidence.count < Self.maximumHistory else {
                     result.droppedCount += 1
                     result.reasons.insert("evidence_capacity_reached")
@@ -1614,15 +2206,17 @@ final class ProjectBoardStore {
                                            timestamp: timestamp) { result.changed = true }
                     return result
                 }
+                let ordinal = Self.nextEventOrdinal(&eventSequence)
                 item.evidence.append(StoredEvidence(
                     id: Self.newID(), kind: "verification_summary",
                     summary: "Execution attempt carries a verification summary; it is not exact-subject proof.",
                     subject: taskID, status: "reported", sourceId: sourceID,
                     checklistId: nil, artifactId: nil, blocking: false, resolved: true,
-                    at: timestamp, actor: "broker", source: "broker"))
+                    at: sourceAt ?? 0, actor: "broker", source: "broker",
+                    eventAt: sourceAt, eventOrdinal: ordinal))
                 appendHistory(item: &item, actor: "broker", kind: "verification_summary_linked",
                               summary: "Execution attempt \(taskID) carries a verification summary; it is not exact-subject proof.",
-                              at: timestamp)
+                              at: timestamp, sourceTaskId: taskID)
                 result.changed = true
                 result.acceptedCount += 1
             }
@@ -1635,12 +2229,39 @@ final class ProjectBoardStore {
                                                ?? landing["verifiedTargetCommit"], maximum: 200),
            Self.boundedText(landing["verification_origin"]
                             ?? landing["verificationOrigin"], maximum: 200) != nil {
-            let scopeRevision = item.scopeRevision ?? 0
-            let source = "task:\(taskID):landing:\(commit):\(targetCommit):scope:\(scopeRevision)"
-            if let existing = item.evidence.first(where: {
-                $0.kind == "landing" && $0.sourceId == source
+            let landedAt = Self.exactDouble(landing["landed_at"] ?? landing["landedAt"])
+            let landingDisplayAt = landedAt ?? sourceAt ?? 0
+            let landingSourceAt = landedAt ?? sourceAt
+            let source = "task:\(taskID):landing:\(commit):\(targetCommit)"
+            if let existingIndex = item.evidence.firstIndex(where: {
+                $0.kind == "landing" && ($0.sourceId == source
+                    || $0.sourceId.hasPrefix(source + ":scope:"))
             }) {
+                let repairedOrdinal = item.evidence[existingIndex].eventOrdinal
+                    ?? Self.nextEventOrdinal(&eventSequence)
+                let repairedOrder = StoredEventOrder(at: landingSourceAt,
+                                                     ordinal: repairedOrdinal,
+                                                     stableID: "evidence:\(source)")
+                let currentScopeRevision = item.scopeRevision ?? 0
+                let matchesCurrentProof = item.currentVerificationEvidenceId != nil
+                    && item.currentVerificationSubject == commit
+                let repairedScopeRevision = matchesCurrentProof ? currentScopeRevision
+                    : (scopeEventOrder(item).map { repairedOrder < $0 } == true
+                        ? max(0, currentScopeRevision - 1) : currentScopeRevision)
+                if item.evidence[existingIndex].eventAt != landingSourceAt
+                    || item.evidence[existingIndex].eventOrdinal == nil
+                    || (item.evidence[existingIndex].scopeRevision ?? 0)
+                        != repairedScopeRevision {
+                    item.evidence[existingIndex].eventAt = landingSourceAt
+                    item.evidence[existingIndex].eventOrdinal = repairedOrdinal
+                    item.evidence[existingIndex].scopeRevision = repairedScopeRevision
+                    result.changed = true
+                    result.acceptedCount += 1
+                }
+                let existing = item.evidence[existingIndex]
+                let scopeRevision = existing.scopeRevision ?? 0
                 if item.currentVerificationSubject == commit
+                    && scopeRevision == (item.scopeRevision ?? 0)
                     && item.currentLandingEvidenceId != existing.id {
                     item.currentLandingEvidenceId = existing.id
                     result.changed = true
@@ -1655,12 +2276,22 @@ final class ProjectBoardStore {
                                            timestamp: timestamp) { result.changed = true }
                     return result
                 }
+                let ordinal = Self.nextEventOrdinal(&eventSequence)
+                let landingOrder = StoredEventOrder(at: landingSourceAt, ordinal: ordinal,
+                                                    stableID: "evidence:\(source)")
+                let currentScopeRevision = item.scopeRevision ?? 0
+                let matchesCurrentProof = item.currentVerificationEvidenceId != nil
+                    && item.currentVerificationSubject == commit
+                let scopeRevision = matchesCurrentProof ? currentScopeRevision
+                    : (scopeEventOrder(item).map { landingOrder < $0 } == true
+                        ? max(0, currentScopeRevision - 1) : currentScopeRevision)
                 item.evidence.append(StoredEvidence(
                     id: Self.newID(), kind: "landing",
                     summary: "Broker-verified commit \(commit) is contained by target \(targetCommit).",
                     subject: commit, status: "passed", sourceId: source, checklistId: nil,
-                    artifactId: nil, blocking: false, resolved: true, at: timestamp,
-                    actor: "broker", source: "broker", scopeRevision: scopeRevision))
+                    artifactId: nil, blocking: false, resolved: true, at: landingDisplayAt,
+                    actor: "broker", source: "broker", scopeRevision: scopeRevision,
+                    eventAt: landingSourceAt, eventOrdinal: ordinal))
                 if item.currentVerificationSubject == commit {
                     item.currentLandingEvidenceId = item.evidence.last?.id
                 }
@@ -1677,8 +2308,9 @@ final class ProjectBoardStore {
         let common = Set(["operation", "requestId", "expectedRevision"])
         let specific: [String: Set<String>] = [
             "set_enabled": ["enabled"],
-            "create": ["projectId", "title", "type", "summary", "owner", "parentId"],
-            "update": ["itemId", "title", "summary", "owner", "type"],
+            "create": ["projectId", "title", "type", "summary", "owner", "parentId",
+                       "typeDetails"],
+            "update": ["itemId", "title", "summary", "owner", "type", "typeDetails"],
             "transition": ["itemId", "state", "note"],
             "checklist": ["itemId", "title", "required", "checklistId", "status"],
             "milestone": ["itemId", "title", "milestoneId", "status"],
@@ -1725,6 +2357,37 @@ final class ProjectBoardStore {
         return value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private func parsedTypeDetails(_ raw: Any?, type: String,
+                                   existing: [String: String]?) throws -> [String: String]? {
+        guard let raw else { return existing }
+        guard let object = raw as? [String: Any] else {
+            throw BoardError(status: 400, code: "invalid_type_details",
+                             message: "typeDetails must be an object")
+        }
+        let allowed: Set<String>
+        switch type {
+        case "bug": allowed = ["rootCause", "lessons"]
+        case "coordination": allowed = ["outcomes", "difficulties", "improvements"]
+        default: allowed = []
+        }
+        guard Set(object.keys).isSubset(of: allowed) else {
+            throw BoardError(status: 400, code: "invalid_type_details",
+                             message: "typeDetails contains fields not supported by this item type")
+        }
+        var result = existing ?? [:]
+        for (key, rawValue) in object {
+            guard let value = rawValue as? String,
+                  value.lengthOfBytes(using: .utf8) <= Self.maximumUTF8 else {
+                throw BoardError(status: 400, code: "invalid_type_details",
+                                 message: "typeDetails values must be bounded strings")
+            }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { result.removeValue(forKey: key) }
+            else { result[key] = trimmed }
+        }
+        return result.isEmpty ? nil : result
+    }
+
     private func requiredChoice(_ body: [String: Any], _ key: String,
                                 choices: Set<String>) throws -> String {
         let value = try requiredText(body, key, maximum: 64)
@@ -1758,6 +2421,15 @@ final class ProjectBoardStore {
            Self.terminalStates.contains(parent.state) {
             throw BoardError(status: 409, code: "ancestor_locked",
                              message: "explicitly reopen the parent Epic before mutating its child")
+        }
+    }
+
+    /// Conversation-authored facts may reopen delivered work automatically. Cancellation is the
+    /// separate terminal decision and still requires an explicit lifecycle reconciliation first.
+    private func requireRecordable(_ index: Int, draft: StoredState) throws {
+        guard draft.items[index].state != "canceled" else {
+            throw BoardError(status: 409, code: "item_locked",
+                             message: "reopen canceled work before recording new scope")
         }
     }
 
@@ -1811,8 +2483,11 @@ final class ProjectBoardStore {
         appendHistory(item: &item, actor: actor, kind: kind, summary: summary, at: at)
     }
 
-    private func invalidateCurrentEvidence(_ item: inout StoredItem, reopen: Bool) {
+    private func invalidateCurrentEvidence(_ item: inout StoredItem, reopen: Bool,
+                                           eventAt: Double?, eventOrdinal: Int) {
         item.scopeRevision = (item.scopeRevision ?? 0) + 1
+        item.scopeEventAt = eventAt
+        item.scopeEventOrdinal = eventOrdinal
         item.currentVerificationEvidenceId = nil
         item.currentVerificationSubject = nil
         item.currentLandingEvidenceId = nil
@@ -1823,17 +2498,23 @@ final class ProjectBoardStore {
         }
     }
 
-    private func reopenForInvalidatedEvidence(_ index: Int, draft: inout StoredState) {
-        invalidateCurrentEvidence(&draft.items[index], reopen: true)
-        reopenAncestors(of: draft.items[index].id, draft: &draft)
+    private func reopenForInvalidatedEvidence(_ index: Int, timestamp: Double,
+                                              draft: inout StoredState) {
+        let ordinal = nextEventOrdinal(&draft)
+        invalidateCurrentEvidence(&draft.items[index], reopen: true,
+                                  eventAt: timestamp, eventOrdinal: ordinal)
+        reopenAncestors(of: draft.items[index].id, timestamp: timestamp, draft: &draft)
     }
 
-    private func reopenAncestors(of itemID: String, draft: inout StoredState) {
+    private func reopenAncestors(of itemID: String, timestamp: Double,
+                                 draft: inout StoredState) {
         var parentID = draft.items.first(where: { $0.id == itemID })?.parentId
         while let current = parentID,
               let index = draft.items.firstIndex(where: { $0.id == current }) {
             if ["verified", "integrated", "closed"].contains(draft.items[index].state) {
-                invalidateCurrentEvidence(&draft.items[index], reopen: true)
+                let ordinal = nextEventOrdinal(&draft)
+                invalidateCurrentEvidence(&draft.items[index], reopen: true,
+                                          eventAt: timestamp, eventOrdinal: ordinal)
             }
             parentID = draft.items[index].parentId
         }
@@ -1873,6 +2554,18 @@ final class ProjectBoardStore {
         "project-graph-v1:\(stringDigest("\(projectID)\u{0}\(graphID)") ?? "")"
     }
 
+    private static func taskKey(projectID: String, taskID: String) -> String {
+        "project-task-v1:\(stringDigest("\(projectID)\u{0}\(taskID)") ?? "")"
+    }
+
+    private static func brokerOwner(_ task: [String: Any]) -> String? {
+        let root = task["root"] as? [String: Any]
+        return boundedText(root?["label"], maximum: 300)
+            ?? boundedText(root?["sessionId"] ?? root?["session_id"], maximum: 300)
+            ?? boundedText(task["root_label"] ?? task["rootLabel"], maximum: 300)
+            ?? boundedText(task["assistant"], maximum: 300)
+    }
+
     private static func canonicalBrokerStart(_ task: [String: Any]) -> Double? {
         let keys = ["started_at", "startedAt", "briefed_at", "briefedAt",
                     "spawned_at", "spawnedAt", "created_at", "createdAt"]
@@ -1882,14 +2575,224 @@ final class ProjectBoardStore {
         return nil
     }
 
+    private static func nextEventOrdinal(_ sequence: inout Int) -> Int {
+        sequence += 1
+        return sequence
+    }
+
+    private func nextEventOrdinal(_ draft: inout StoredState) -> Int {
+        var sequence = draft.eventSequence ?? maximumEventOrdinal(in: draft)
+        let ordinal = Self.nextEventOrdinal(&sequence)
+        draft.eventSequence = sequence
+        return ordinal
+    }
+
+    private func maximumEventOrdinal(in draft: StoredState) -> Int {
+        draft.items.reduce(0) { maximum, item in
+            let links = item.links.compactMap(\.eventOrdinal).max() ?? 0
+            let evidence = item.evidence.compactMap(\.eventOrdinal).max() ?? 0
+            return max(max(maximum, links), max(evidence, item.scopeEventOrdinal ?? 0))
+        }
+    }
+
+    private func eventOrder(_ link: StoredLink) -> StoredEventOrder {
+        StoredEventOrder(at: link.eventAt,
+                         ordinal: link.eventOrdinal ?? 0, stableID: "link:\(link.targetId)")
+    }
+
+    private func eventOrder(_ evidence: StoredEvidence) -> StoredEventOrder {
+        let trustedAt = evidence.source == "root_attestation" ? evidence.at : nil
+        return StoredEventOrder(at: evidence.eventAt ?? trustedAt,
+                         ordinal: evidence.eventOrdinal ?? 0,
+                         stableID: "evidence:\(evidence.sourceId)")
+    }
+
+    private func scopeEventOrder(_ item: StoredItem) -> StoredEventOrder? {
+        guard item.scopeEventAt != nil || item.scopeEventOrdinal != nil else { return nil }
+        return StoredEventOrder(at: item.scopeEventAt,
+                                ordinal: item.scopeEventOrdinal ?? 0,
+                                stableID: "scope:\(item.id)")
+    }
+
+    private func attemptOccurredAfter(_ attempt: StoredLink,
+                                      evidence: StoredEvidence) -> Bool {
+        eventOrder(attempt) > eventOrder(evidence)
+            || (attempt.eventAt == nil
+                && (attempt.eventOrdinal ?? 0) > (evidence.eventOrdinal ?? 0))
+    }
+
+    /// Broker tasks have immutable terminal outcomes. Active snapshots may advance, and a
+    /// terminal snapshot may close an active one, but a replay cannot rewrite one terminal fact
+    /// into another merely because it was observed later.
+    private func shouldReplaceAttempt(_ old: StoredLink, state: String?, at: Double?) -> Bool {
+        guard old.attemptState != state || old.eventAt != at else { return false }
+        let oldTerminal = Self.terminalAttemptStates.contains(old.attemptState ?? "")
+        let newTerminal = Self.terminalAttemptStates.contains(state ?? "")
+        if oldTerminal {
+            guard old.attemptState == state else { return false }
+            guard let at else { return old.eventAt == nil }
+            return old.eventAt.map { at > $0 } ?? true
+        }
+        if newTerminal { return true }
+        let rank = ["queued": 0, "spawning": 1, "briefed": 2]
+        let oldRank = rank[old.attemptState ?? ""] ?? -1
+        let newRank = rank[state ?? ""] ?? -1
+        if newRank != oldRank { return newRank > oldRank }
+        guard let at else { return old.eventAt == nil }
+        return old.eventAt.map { at > $0 } ?? true
+    }
+
     private func appendHistory(item: inout StoredItem, actor: String, kind: String,
-                               summary: String, at: Double) {
+                               summary: String, at: Double,
+                               sourceTaskId: String? = nil) {
         if item.history.count >= Self.maximumHistory {
             item.history.removeFirst(item.history.count - Self.maximumHistory + 1)
             item.historyDroppedCount = (item.historyDroppedCount ?? 0) + 1
         }
         item.history.append(StoredHistory(id: Self.newID(), at: at, actor: actor,
-                                          kind: kind, summary: summary))
+                                          kind: kind, summary: summary,
+                                          sourceTaskId: sourceTaskId))
+    }
+
+    /// Move every fact whose provenance names one broker task. This happens in the same draft as
+    /// the explicit graph binding, so no persisted revision can expose duplicate accounting or a
+    /// half-moved execution history.
+    private func reattributeTaskFacts(taskID: String, taskOwner: String?, sessionID: String?,
+                                      worktreeTarget: String?, from: Int, to: Int,
+                                      draft: inout StoredState) -> Bool {
+        guard from != to else { return false }
+        let evidencePrefix = "task:\(taskID):"
+        func owns(_ link: StoredLink) -> Bool {
+            if link.sourceTaskId == taskID { return true }
+            if link.kind == "task" && link.targetId == taskID && link.source == "broker" {
+                return true
+            }
+            if link.source == "broker", link.sourceTaskId == nil,
+               (link.kind == "session" && link.targetId == sessionID
+                || link.kind == "worktree" && link.targetId == worktreeTarget) {
+                return true
+            }
+            return false
+        }
+        let movedLinks = draft.items[from].links.filter(owns)
+        let movedSpans = draft.items[from].spans.filter {
+            $0.source == "broker" && $0.sourceId == taskID
+        }
+        let movedEvidence = draft.items[from].evidence.filter {
+            $0.source == "broker" && $0.sourceId.hasPrefix(evidencePrefix)
+        }
+        func owns(_ history: StoredHistory) -> Bool {
+            history.sourceTaskId == taskID
+                || (history.actor == "broker" && history.summary.contains(taskID))
+        }
+        let movedHistory = draft.items[from].history.filter(owns)
+        let ownsOwner = draft.items[from].ownerSourceTaskId == taskID
+            || (draft.items[from].inferredSourceKey != nil
+                && taskOwner != nil && draft.items[from].owner == taskOwner)
+        guard !movedLinks.isEmpty || !movedSpans.isEmpty || !movedEvidence.isEmpty
+                || !movedHistory.isEmpty || ownsOwner else { return false }
+
+        let evidenceIDs = Set(movedEvidence.map(\.id))
+        let oldVerification = draft.items[from].currentVerificationEvidenceId
+        let oldLanding = draft.items[from].currentLandingEvidenceId
+        let oldArtifact = draft.items[from].currentArtifactAcceptanceId
+        let oldSubject = draft.items[from].currentVerificationSubject
+        draft.items[from].links.removeAll(where: owns)
+        draft.items[from].spans.removeAll {
+            $0.source == "broker" && $0.sourceId == taskID
+        }
+        draft.items[from].evidence.removeAll {
+            $0.source == "broker" && $0.sourceId.hasPrefix(evidencePrefix)
+        }
+        draft.items[from].history.removeAll(where: owns)
+        if ownsOwner {
+            if draft.items[to].owner.isEmpty {
+                draft.items[to].owner = draft.items[from].owner
+                draft.items[to].ownerSourceTaskId = taskID
+            }
+            draft.items[from].owner = ""
+            draft.items[from].ownerSourceTaskId = nil
+        }
+        if oldVerification.map(evidenceIDs.contains) == true {
+            draft.items[from].currentVerificationEvidenceId = nil
+            draft.items[from].currentVerificationSubject = nil
+        }
+        if oldLanding.map(evidenceIDs.contains) == true {
+            draft.items[from].currentLandingEvidenceId = nil
+        }
+        if oldArtifact.map(evidenceIDs.contains) == true {
+            draft.items[from].currentArtifactAcceptanceId = nil
+        }
+
+        for var link in movedLinks where !draft.items[to].links.contains(where: {
+            $0.kind == link.kind && $0.targetId == link.targetId && $0.source == link.source
+                && ($0.sourceTaskId ?? taskID) == (link.sourceTaskId ?? taskID)
+        }) {
+            link.sourceTaskId = taskID
+            draft.items[to].links.append(link)
+        }
+        for span in movedSpans where !draft.items[to].spans.contains(where: {
+            $0.source == span.source && $0.sourceId == span.sourceId
+        }) {
+            draft.items[to].spans.append(span)
+        }
+        for evidence in movedEvidence where !draft.items[to].evidence.contains(where: {
+            $0.kind == evidence.kind && $0.sourceId == evidence.sourceId
+        }) {
+            draft.items[to].evidence.append(evidence)
+        }
+        for history in movedHistory where !draft.items[to].history.contains(where: {
+            $0.id == history.id
+        }) {
+            draft.items[to].history.append(history)
+        }
+        if draft.items[to].currentVerificationEvidenceId == nil,
+           oldVerification.map(evidenceIDs.contains) == true {
+            draft.items[to].currentVerificationEvidenceId = oldVerification
+            draft.items[to].currentVerificationSubject = oldSubject
+        }
+        if draft.items[to].currentLandingEvidenceId == nil,
+           let oldLanding, evidenceIDs.contains(oldLanding),
+           let landing = draft.items[to].evidence.first(where: { $0.id == oldLanding }),
+           draft.items[to].currentVerificationEvidenceId != nil,
+           draft.items[to].currentVerificationSubject == landing.subject,
+           (landing.scopeRevision ?? 0) == (draft.items[to].scopeRevision ?? 0) {
+            draft.items[to].currentLandingEvidenceId = oldLanding
+        }
+        if draft.items[to].currentArtifactAcceptanceId == nil,
+           oldArtifact.map(evidenceIDs.contains) == true {
+            draft.items[to].currentArtifactAcceptanceId = oldArtifact
+        }
+        return true
+    }
+
+    private func canRetireInferredItem(_ item: StoredItem) -> Bool {
+        guard item.inferredSourceKey != nil, item.links.isEmpty, item.spans.isEmpty,
+              item.evidence.isEmpty, item.checklist.isEmpty, item.milestones.isEmpty,
+              item.artifacts.isEmpty, item.obligations.isEmpty, item.pendingHandoff == nil,
+              item.typeDetails == nil else { return false }
+        return !item.history.contains { $0.actor != "board" && $0.actor != "broker" }
+    }
+
+    private func retireInferredItems(_ ids: Set<String>, draft: inout StoredState) -> Int {
+        let referenced = Set(draft.items.flatMap { item -> [String] in
+            var targets = item.links.filter {
+                Self.itemLinkKinds.contains($0.kind) && ids.contains($0.targetId)
+            }.map(\.targetId)
+            if let parentID = item.parentId, ids.contains(parentID) { targets.append(parentID) }
+            return targets
+        })
+        let retired = Set(draft.items.filter {
+            ids.contains($0.id) && !referenced.contains($0.id) && canRetireInferredItem($0)
+        }.map(\.id))
+        guard !retired.isEmpty else { return 0 }
+        draft.items.removeAll { retired.contains($0.id) }
+        draft.graphItems = draft.graphItems.filter { !retired.contains($0.value) }
+        draft.explicitGraphItems = draft.explicitGraphItems.map {
+            $0.filter { !retired.contains($0.value) }
+        }
+        draft.taskItems = draft.taskItems.map { $0.filter { !retired.contains($0.value) } }
+        return retired.count
     }
 
     private func closeActiveSpans(sessionID: String, at: Double,
@@ -1909,6 +2812,20 @@ final class ProjectBoardStore {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, value.lengthOfBytes(using: .utf8) <= maximum else { return nil }
         return value
+    }
+
+    private static func validTypeDetails(_ details: [String: String]?, for type: String) -> Bool {
+        let keys: Set<String>
+        switch type {
+        case "bug": keys = ["rootCause", "lessons"]
+        case "coordination": keys = ["outcomes", "difficulties", "improvements"]
+        default: keys = []
+        }
+        guard let details else { return true }
+        return Set(details.keys).isSubset(of: keys) && details.values.allSatisfy {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && $0.lengthOfBytes(using: .utf8) <= maximumUTF8
+        }
     }
 
     private static func exactBool(_ raw: Any?) -> Bool? {
@@ -2006,6 +2923,7 @@ final class ProjectBoardStore {
         guard state.schemaVersion == schemaVersion, state.revision >= 0,
               state.projects.count <= maximumProjects, state.items.count <= maximumItems,
               state.receipts.count <= maximumReceipts,
+              (state.eventSequence ?? 0) >= 0,
               (state.ingestionCoverage ?? []).count <= maximumChildren,
               (state.ingestionCoverage ?? []).allSatisfy({
                   $0.sourceDigests.count <= maximumHistory
@@ -2029,7 +2947,10 @@ final class ProjectBoardStore {
                   item.spans.count <= maximumChildren,
                   item.evidence.count <= maximumHistory,
                   item.history.count <= maximumHistory,
+                  Self.validTypeDetails(item.typeDetails, for: item.type),
                   (item.scopeRevision ?? 0) >= 0,
+                  (item.scopeEventAt.map { $0.isFinite && $0 >= 0 } ?? true),
+                  (item.scopeEventOrdinal.map { $0 >= 0 } ?? true),
                   (item.ingestionCoverage ?? []).count <= maximumChildren,
                   (item.ingestionCoverage ?? []).allSatisfy({
                       $0.sourceDigests.count <= maximumHistory
@@ -2038,6 +2959,18 @@ final class ProjectBoardStore {
                   item.spans.allSatisfy({ span in
                       span.startedAt.isFinite && span.startedAt >= 0
                           && (span.endedAt.map { $0.isFinite && $0 >= span.startedAt } ?? true)
+                  }),
+                  item.links.allSatisfy({ link in
+                      (link.startedAt.map { $0.isFinite && $0 >= 0 } ?? true)
+                          && (link.finishedAt.map { $0.isFinite && $0 >= 0 } ?? true)
+                          && (link.statusObservedAt.map { $0.isFinite && $0 >= 0 } ?? true)
+                          && (link.eventAt.map { $0.isFinite && $0 >= 0 } ?? true)
+                          && (link.eventOrdinal.map { $0 >= 0 } ?? true)
+                  }),
+                  item.evidence.allSatisfy({ evidence in
+                      evidence.at.isFinite && evidence.at >= 0
+                          && (evidence.eventAt.map { $0.isFinite && $0 >= 0 } ?? true)
+                          && (evidence.eventOrdinal.map { $0 >= 0 } ?? true)
                   }),
                   item.createdAt.isFinite, item.updatedAt.isFinite,
                   item.parentId.map(itemIDs.contains) ?? true else {
@@ -2055,7 +2988,7 @@ final class ProjectBoardStore {
                 }
             }
             if item.state == "closed" {
-                guard item.obligations.filter({ $0.blocking }).allSatisfy(\.resolved),
+                guard item.obligations.allSatisfy(\.resolved),
                       item.milestones.allSatisfy({
                           $0.status == "passed" || $0.status == "not_applicable"
                       }), item.pendingHandoff == nil else {
@@ -2077,7 +3010,7 @@ final class ProjectBoardStore {
         guard state.graphItems.values.allSatisfy(itemIDs.contains),
               (state.explicitGraphItems ?? [:]).allSatisfy({ key, itemID in
                   itemIDs.contains(itemID) && state.graphItems[key] == itemID
-              }) else {
+              }), (state.taskItems ?? [:]).values.allSatisfy(itemIDs.contains) else {
             throw BoardError(status: 503, code: "board_store_corrupt",
                              message: "the Project Board graph index is invalid")
         }

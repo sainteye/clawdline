@@ -7,7 +7,7 @@ Project Board is **enabled by default and currently free**. This page describes 
 - `ProjectBoardStore` owns persistence, mode, work items, lifecycle gates and command receipts.
 - `ProjectBoardIntegration` projects trusted broker and UsageLedger facts without transferring their ownership to the board.
 - `ProjectBoardHTTP` owns transport authority and the final response byte budget; local and Cloud requests use the same service.
-- `view/board.js` renders snapshots and serializes user commands. `input/board-settings.js` owns navigation and settings projection, not a second persisted mode.
+- `view/board.js` renders evidence-driven, read-only Project snapshots. `input/board-settings.js` owns navigation and the administrative mode command, not a second persisted mode.
 
 ## Store boundary (Foundation/CryptoKit only, independently testable)
 
@@ -19,9 +19,19 @@ Adapter interface:
 - `command(_ body: [String: Any], actor: String, trusted: Bool = false) -> Reply` where Reply has `status: Int`, `body: [String: Any]`. Errors body `{"error":{"code":...,"message":...}}`. Success full snapshot plus `itemId` when applicable.
 - `ensureProject(id: String, name: String) -> AutomaticMutationOutcome` persists id/name only; the adapter resolves canonical identity. No paths in public record.
 - `var enabled: Bool { get }` durable default true. Mode and entitlement owned here, not a second Config boolean.
-- `ingest(task: [String: Any], projectID: String) -> AutomaticMutationOutcome` receives trusted broker records; idempotently links explicit `workItemId`, or a Project-scoped graph identity to an item; never closes an item based on task success. Preserve lineage/evidence summaries; derive facts only with evidence. Unknown Feature remains unknown, not automatic per-task cards. Disabled mode means no new inferred cards/spans.
+- `ingest(task: [String: Any], projectID: String) -> AutomaticMutationOutcome` receives trusted broker records; idempotently links explicit `workItemId`, or a Project-scoped graph identity to an item; never closes an item based on task success. Preserve lineage/evidence summaries; derive facts only with evidence. Feature attribution is never guessed from a title or unknown task kind. Disabled mode means no new inferred cards/spans or automatic lifecycle advancement.
+
+An ungraphed retained broker attempt without an explicit item creates a stable `task` record keyed
+by canonical Project plus task id. Replays reuse that identity; later explicit binding transfers
+its task-scoped facts to the chosen item without duplicating delivery or accounting. This fallback
+uses the ordinary item capacity and reports a refused import when capacity is exhausted.
 
 Automatic outcomes expose `status` (`accepted`, `unchanged`, `partial`, `refused`, `unavailable`), `acceptedCount`, `droppedCount`, `persisted` and an optional typed `reason`. The adapter publishes incomplete ingestion through `board.source.ingestion`, qualifies affected Project usage, and keeps successful `observedAt` separate from `attemptedAt`. A failed attempt retries after the bounded refresh interval; it is never stamped successful merely because its read completed.
+
+Intentional standard mode and an unavailable Board store are different states. On a typed Board
+unavailability refusal, a transport carrying both baseline Project readers may fall back to them
+with a visible warning; it must not change the persisted setting. A transport without those readers
+preserves the typed refusal. Authentication and routing refusals do not silently select a fallback.
 
 Graph fallback keys include Project identity. The first explicit binding replaces an inferred fallback; a conflicting later explicit item retains its own task link but reports `graph_binding_conflict` without moving the established fallback. The mapping and conflict coverage survive reload and replay.
 
@@ -37,6 +47,17 @@ Evidence uses plural arrays `findings`, `verifications`, `landings`, `artifactAc
 
 Types: `feature`, `refactor`, `task`, `bug`, `coordination`, `epic`.
 States: `backlog`, `planning`, `ready`, `execution`, `verified`, `integrated`, `closed`, `canceled`. Unknown historical state must remain explicit if imported.
+The browser renders the separate `progress` projection, not a manually advanced status field.
+It carries `state`, evidence-based `reason`/`basisCodes`, procedural `warningCodes`,
+`lifecycleApplicable`, activity/history flags and bounded attempt/evidence counts. Coordination has
+`lifecycleApplicable:false`: its context is an interval or handoff, never a completed/open lifecycle.
+An authoritative later landing can display landed despite missing older procedural records; those
+records qualify the evidence as warnings, not a stale state gate. New work retains previous landings.
+
+Optional `typeDetails` is accepted by create/update and returned with the item. Bug supports only
+`rootCause` and `lessons`; Coordination supports only `outcomes`, `difficulties`, `improvements`.
+Values are bounded strings. Other types do not accept these fields. Missing narratives are shown
+as missing, not inferred from task titles, and do not override observed delivery.
 Phases: `planning`, `output`, `review_testing`, `correction`, `integration`; missing = undeclared.
 Checklist status: `todo`, `doing`, `passed`, `failed`, `not_applicable`.
 
@@ -70,9 +91,16 @@ Browser `api.board(project?, item?) -> envelope` and `api.boardCommand(body) -> 
 
 ## Web module contract
 
-Export `bindBoardPage(elements, environment)` returning `{enter,leave,refresh,escape,open,state}`. `elements` has `board`, `board-projects`, `board-items`, `board-detail`, `board-status`, `board-new`, `board-search`, `board-layout`, `board-type`, `board-state`, `board-back`. `environment` has `read(project?,item?)`, `command(body)`, `navigate`, `openSession(id)`, `onMode(board)` and optionally `onProjects(projects)`. The Session callback resolves a durable conversation ID to exactly one live terminal ID; zero or multiple matches return a visible typed refusal. Traditional Chinese and English copy is local to the view module. DOM uses safe textContent, not unsanitized HTML.
+Export `bindBoardPage(elements, environment)` returning `{enter,leave,refresh,escape,open,state}`. `elements` has `board`, `board-title`, `board-subtitle`, `board-items`, `board-detail`, `board-status`, `board-search`, `board-back`, `board-refresh`. `environment` has `read(project?,item?)`, `navigate`, `openSession(id)`, `onMode(board)` and optionally `onProjects(projects)` and injectable timers. The Session callback resolves a durable conversation ID to exactly one live terminal ID; zero or multiple matches return a visible typed refusal. Traditional Chinese and English copy is local to the view module. DOM uses safe textContent, not unsanitized HTML.
 
-Render Project selection then items (list default, optional board columns), filters/search; detail all checklist/milestone/links/spans/artifacts/obligations/history plus token unknown treatment. Create/edit forms inline not browser prompt; action errors visible. Mutations use current revision and idempotency id; stale async reads cannot overwrite newer selection. Off shows history read-only and standard-mode explanation. Navigation/new command mode handled by root. Mobile no mandatory drag.
+The Projects page opens the board within one selected Project. Render an overview, visual lifecycle,
+scoped search and item cards; landed/canceled history is collapsed separately. Detail leads with
+objective, progress, blockers and outputs, then progressively discloses token spending, Session and
+worktree relations, evidence and history. No create/edit/transition command is emitted by this view.
+Assistants record objectives and facts through the existing authorized API; lifecycle advancement
+belongs to the store. Only the settings controller emits a browser mode mutation, using revision
+CAS and stable ambiguous-retry identity. Stale reads cannot overwrite newer selection. One bounded
+15-second refresh loop belongs to the active, visible board; off mode retains read-only history.
 
 ## Proof
 

@@ -16,13 +16,15 @@ export var BoardControls = {
         if (latest && board.revision < latest.revision) return;
         if (!board.viewer && latest) board = Object.assign({}, board, { viewer: latest.viewer });
         latest = board;
+        if (node("projects-lede")) node("projects-lede").textContent = board.enabled
+            ? words("Choose a project to see its work, progress and results.", "選擇專案，了解正在進行的工作與已落地的成果。")
+            : words("Directories an assistant has actually been run in, and that are still there.", "assistant 真的跑過、而且還在的目錄。");
         document.documentElement.dataset.boardMode = board.enabled ? "board" : "standard";
-        ["nav-projects", "usage-open", "nav-ledger"].forEach(function (id) {
+        ["usage-open", "nav-ledger"].forEach(function (id) {
             if (node(id)) node(id).hidden = board.enabled;
         });
         if (node("nav-board")) {
-            node("nav-board").hidden = !board.enabled;
-            node("nav-board").textContent = words("Projects · Board", "Projects · 看板");
+            node("nav-board").hidden = true;
         }
         var toggle = node("settings-board-toggle");
         if (toggle) {
@@ -43,7 +45,7 @@ export var BoardControls = {
             (board.projects || []).forEach(function (project) {
                 var button = document.createElement("button");
                 button.type = "button"; button.className = "sidebar-item board-project-shortcut";
-                button.textContent = project.name + " · " + project.itemCount;
+                button.textContent = (project.label || project.name) + " / " + words("Work", "工作項目") + " · " + project.itemCount;
                 button.addEventListener("click", function () { BoardControls.open(project.id); });
                 projects.appendChild(button);
             });

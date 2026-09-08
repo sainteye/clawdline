@@ -5,20 +5,28 @@ landing records. It is **enabled by default and currently free**. The entitlemen
 API is `free_preview`; this is not a subscription check or a promise about future pricing.
 
 Settings → Enable Project Board changes the persisted machine-wide workflow mode. Turning it off
-keeps history readable and restores the standalone Projects/Worktrees, Usage and Ledger entries.
+keeps history readable and restores the worktree-oriented Project view, Usage and Ledger entries.
 It does not cancel tasks, close Sessions, delete data or disable the ordinary permission, claims,
 independent-review, landing or machine-resource protections. Existing work can finish through its
 original task protocol. Re-enabling does not manufacture usage boundaries for the suspended time.
+It resumes reconciliation from the available broker facts. A Board-store failure is not a mode
+change: the Projects entry uses the connection's available standard Project/worktree readers with
+a warning, while retaining the setting. A connection without those readers reports unavailable.
 
 ## A work item is not an execution attempt
 
-Each Project has a list, optional board columns, and item detail. The six execution types are
+The existing Projects list is the entry point. Open a Project to see its work overview, visual
+progress, unresolved work and collapsed delivery history. There is no browser New button, edit
+form or manual status selector: the owning assistant creates the objective through conversation
+and records the supporting facts. The six execution types are
 Feature, Refactor, Task, Bug, Coordination and Epic. An item may link several tasks, Sessions and
 worktrees; task success is delivery, not item closure. The lifecycle is:
 
 `backlog → planning → ready → execution → verified → integrated → closed`
 
-Cancellation is separate from completion. Reopening is explicit. Work beyond planning needs an
+Cancellation is separate from completion. New scope or failed evidence reopens affected work.
+Lifecycle advancement is automatic when the recorded facts satisfy its gates; it is not a job
+for the person reading the board. Work beyond planning needs an
 owner. Verification needs evidence, not only checked boxes. Code integration needs a broker
 landing record; a URL or an agent's statement that it merged is insufficient. A non-code Task
 can instead use an artifact accepted by an administrative user. Open blocking findings prevent
@@ -28,7 +36,25 @@ authenticated receiver accepts it; it is not a shortcut to completion.
 
 The durable board record survives task retention and terminal closure. It does not replace
 `work_state` (what a Session is doing) or the broker task state (what an attempt reached).
-Worktrees remain available from the board as an advanced resource view, not the unit of work.
+Worktrees remain linked execution records in item detail, not the unit of work. The standalone
+worktree-oriented Project view remains available in standard mode.
+
+### Different work, different records
+
+| Execution type | What the reader needs to understand |
+| --- | --- |
+| Feature | Objective, automatic delivery progress, current checklist and related Sessions/worktrees |
+| Refactor | Architecture change, checklist, milestones and delivery progress |
+| Task | Measured token cost and concrete output, such as a document, URL or deployment |
+| Bug (Debug / Fixed) | Fix and cost, `typeDetails.rootCause`, `typeDetails.lessons`, and reference documents |
+| Coordination (Moderator / Coordinate) | Time- or handoff-bounded coordination, `coordinates` relations, `typeDetails.outcomes`, `typeDetails.difficulties` and `typeDetails.improvements` |
+| Epic (Creation) | Large objective, child work, checklist, milestones and aggregate delivery |
+
+Coordination has **no delivery lifecycle**. It is excluded from completed/open delivery counts and
+has no lifecycle progress bar. A coordination record describes a bounded period or handoff, not an
+eternally incomplete Feature. Missing narratives are visible gaps, not reasons to hold a status.
+Assistants record specialized fields through the ordinary authorized create/update command. A
+Session's work type follows its explicit item association; its token activity phase remains separate.
 
 ## Clawdfather and agent workflow
 
@@ -49,6 +75,12 @@ as `workItemId` / `workPhase`. They remain optional so standard mode and existin
 A retained task with a planning graph can introduce one graph-backed Feature; title similarity and
 unknown task kinds never create guessed Feature attribution.
 
+An ungraphed retained attempt without an explicit item receives a stable **Task execution record**,
+not a guessed Feature. Its identity is canonical Project plus task id, not its title. Repeated
+imports reuse it. A later explicit item binding moves its task-scoped records to that item rather
+than leaving duplicate delivery evidence on two cards. The ordinary item limit applies; capacity
+refusals remain visible in source coverage instead of silently dropping historical work.
+
 Graph fallback identity is scoped to its Project. The first explicit item binding replaces an
 inferred fallback and becomes the stable default for later undeclared attempts. A later task may
 still explicitly name another item, but it cannot silently retarget that graph default: the
@@ -57,7 +89,8 @@ Replaying retained tasks therefore does not alternate the fallback between compe
 
 Children receive a mode-aware briefing and report checklist progress, output references, exact
 verification subjects and outstanding obligations in their existing progress/result artifacts.
-The root attaches those facts to the item. A child must not obtain the machine credential merely
+The root attaches those facts to the item, not a sequence of user-facing status changes. The
+store reconciles the lifecycle after relevant factual commands and broker observations. A child must not obtain the machine credential merely
 to write board state. Disabling the board does not invalidate a child's existing result contract.
 
 Clawdfather records coordination as its own item, relating the work it coordinated through
@@ -86,8 +119,24 @@ than writing a file that cannot reload. Snapshot summaries and selected detail m
 nested records, with explicit retained/omitted counts. Broker accounting links survive summary
 projection. A snapshot has a 1,000,000-byte store budget and the enriched HTTP response has a
 2 MiB budget, below Cloud's envelope limit. These limits are capacity protections, not paid tiers.
-Use Refresh or re-enter the page to read updated broker facts; the initial UI does not stream live
-board changes or silently refresh an unfinished form.
+The visible board refreshes every 15 seconds after its previous read finishes. Reads do not overlap;
+hidden documents and pages do not poll. A failed refresh retains the last observed records with an
+explicit stale warning. Expanded record sections and reading position survive refresh. Refresh is
+also available on demand. Disabling the board stops its automatic refresh and workflow advancement.
+
+### Progress is a projection of evidence, not a completion guess
+
+Each item exposes a bounded `progress` object beside its durable lifecycle. It distinguishes
+planning, queued, execution, review/testing, correction, verified, landed, delivered-only, blocked,
+canceled and unknown. The browser uses that projection for its status marker and four-stage visual
+journey. Only the observed stage is highlighted; a historical landing does not manufacture missing
+test receipts for earlier stages. Evidence detail retains current versus historical applicability.
+
+Historical delivery and current exact-scope acceptance answer different questions. A broker-verified
+historical landing may be displayed as landed without forging exact-tree verification. An old
+landing must not hide newer active work, failed proof or reopened scope. Child success alone is
+shown as delivered, awaiting confirmation, never as landed. Cancellation is kept distinct and is
+excluded from landed totals. Evidence gaps remain visible rather than mass-closing old cards.
 
 Verification summaries from old tasks remain summaries: they are not exact-tree acceptance.
 Local roots may submit an attributed verification/finding attestation through `record_evidence`;

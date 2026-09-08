@@ -144,6 +144,15 @@ group("the usage analytics gate accepts both documented read credentials") {
         headers: ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()])
     check("the orchestrator token reaches the worker rather than the paired-device refusal",
           RemoteServer.shared.slowReadingRefusal(machine) == nil)
+    let board = remoteRequest("GET", "/v1/board",
+        headers: ["X-Clawdline-Orchestrator": Orchestrator.dispatchToken()])
+    check("board machine authority also reaches the expensive-read worker",
+          RemoteServer.shared.slowReadingRefusal(board) == nil)
+    expect("anonymous board reads remain refused before source ingestion",
+           RemoteServer.shared.slowReadingRefusal(remoteRequest("GET", "/v1/board"))?.status, 401)
+    expect("invalid machine credentials cannot read the board",
+           RemoteServer.shared.slowReadingRefusal(remoteRequest("GET", "/v1/board",
+               headers: ["X-Clawdline-Orchestrator": "invalid"]))?.status, 401)
 }
 
 group("usage analytics saturation is isolated from ordinary remote readings") {

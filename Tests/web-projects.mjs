@@ -855,5 +855,58 @@ check(/typeof api\.projectWorktrees === "function"/.test(mainSource),
 check(read("Resources/web/app/js/net/mock.js").includes("projectWorktrees:"),
       "the fixtures answer it too, which is what makes ?mock=1 a real walk through this page");
 
+// PB-REV-005: drive the actual main.js reader body, including its production helper.
+const placesBody = /places: async function \(\) \{([\s\S]*?)\n    \},\n    openBoard:/.exec(mainSource);
+check(!!placesBody, "main.js Project reader seam is present, not an empty extracted test");
+if (placesBody) {
+    const makeRead = (api, modes) => new Function("api", "BoardControls", "readProjectPlaces",
+        "return async function () {" + placesBody[1] + "};")(api,
+        { apply: board => modes.push(board) }, module.readProjectPlaces);
+    const on = { enabled: true, revision: 2, projects: [
+        { id: "p", name: "repo", label: "Client App", displayPath: "/repo", itemCount: 3 }
+    ] };
+    let modes = [], baselineReads = 0;
+    const baseline = { places: async () => { baselineReads++; return PLACES; },
+        projectWorktrees: async () => answer() };
+    let readProjects = makeRead({ ...baseline, board: async () => ({ board: on }) }, modes);
+    const inBoard = await readProjects();
+    equal(inBoard.places[0].boardProjectId, "p", "enabled Projects open their own board");
+    equal(inBoard.places[0].label, "Client App", "Project presentation retains the user's label");
+    equal(baselineReads, 0, "enabled mode does not read the standard worktree list");
+    equal(modes.length, 1, "successful board read publishes the real setting");
+    modes = [];
+    const off = { ...on, enabled: false };
+    const standard = await makeRead({ ...baseline, board: async () => ({ board: off }) }, modes)();
+    equal(standard.places[0].boardProjectId, undefined, "off restores ordinary worktree navigation");
+    equal(standard.boardUnavailable, undefined, "intentional off is not a failure warning");
+    equal(modes[0].enabled, false, "off comes only from a successful setting snapshot");
+    const unavailable = Object.assign(new Error("Board store needs repair"), { code: "board_store_corrupt" });
+    modes = [];
+    readProjects = makeRead({ ...baseline, board: async () => { throw unavailable; } }, modes);
+    let fallback, caught;
+    try { fallback = await readProjects(); } catch (error) { caught = error; }
+    equal(caught, undefined, "Board-store 503 does not disable the available baseline Project reader");
+    equal(fallback?.places.length, 2, "fallback retains standard Project rows");
+    equal(fallback?.boardUnavailable?.code, "board_store_corrupt", "fallback preserves typed failure separately from mode");
+    equal(modes.length, 0, "Board failure never claims the user turned it off");
+    const h = harness({ ...ok, places: readProjects });
+    await h.page.enter();
+    equal(h.elements["projects-rows"].querySelectorAll(".project-row").length, 2,
+        "fallback is actually rendered in the primary Project entry");
+    match(h.elements["projects-status"].textContent, /Board.*unavailable.*standard/i,
+        "visible fallback warning explains why this is a standard view");
+    caught = undefined;
+    try { await makeRead({ board: async () => { throw unavailable; } }, [])(); }
+    catch (error) { caught = error; }
+    equal(caught, unavailable, "a transport without baseline readers preserves typed unavailable");
+    const denied = Object.assign(new Error("Unauthorized"), { code: "unauthorized" });
+    caught = undefined;
+    const beforeDenied = baselineReads;
+    try { await makeRead({ ...baseline, board: async () => { throw denied; } }, [])(); }
+    catch (error) { caught = error; }
+    equal(caught, denied, "an authorization refusal is not treated as store unavailability");
+    equal(baselineReads, beforeDenied, "authorization refusal never silently switches readers");
+}
+
 console.log(`${failed ? "not ok" : "ok"}: web projects page, ${checks} checks`);
 if (failed) process.exit(1);

@@ -6,12 +6,12 @@ private final class BoardTestDriver {
     let store: ProjectBoardStore
     private var request = 0
 
-    init(name: String = UUID().uuidString) {
+    init(name: String = UUID().uuidString, now: @escaping () -> Date = Date.init) {
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("clawdline-board-\(name)", isDirectory: true)
         file = root.appendingPathComponent("board.json")
         try? FileManager.default.removeItem(at: root)
-        store = ProjectBoardStore(url: file)
+        store = ProjectBoardStore(url: file, now: now)
     }
 
     deinit { try? FileManager.default.removeItem(at: root) }
@@ -62,6 +62,10 @@ private func boardItems(_ store: ProjectBoardStore) -> [[String: Any]] {
     return board?["items"] as? [[String: Any]] ?? []
 }
 
+private func boardProgress(_ item: [String: Any]) -> [String: Any] {
+    item["progress"] as? [String: Any] ?? [:]
+}
+
 private func boardAdvanceToExecution(_ driver: BoardTestDriver, item: String) {
     _ = driver.send("transition", ["itemId": item, "state": "ready"])
     _ = driver.send("transition", ["itemId": item, "state": "execution"])
@@ -94,6 +98,13 @@ group("Project Board defaults, mode boundaries, and corrupt stores fail closed")
     expect("board-only mutation is refused while disabled",
            boardError(d.send("create", ["projectId": "project-1", "title": "no",
                                          "type": "task"])), "board_disabled")
+    let disabledProjectCount = (board?["projects"] as? [[String: Any]])?.count ?? 0
+    expect("disabled mode refuses automatic Project discovery",
+           d.store.ensureProject(id: "project-disabled", name: "Disabled").reason,
+           "board_disabled")
+    expect("disabled automatic discovery preserves existing history only",
+           (((d.store.snapshot()["board"] as? [String: Any])?["projects"]
+                as? [[String: Any]])?.count), disabledProjectCount)
     expect("set_enabled remains available while disabled",
            d.send("set_enabled", ["enabled": true]).status, 200)
     let reopened = ProjectBoardStore(url: d.file)
@@ -388,9 +399,8 @@ group("lifecycle promotion requires current trusted evidence of the right delive
            (d.item(item)["landings"] as? [[String: Any]])?.count, 1)
     check("mismatched historical landing is not the current integration proof",
           ((d.item(item)["currentEvidence"] as? [String: Any])?["landingId"] is NSNull))
-    expect("a historical verification plus a different landing cannot integrate",
-           boardError(d.send("transition", ["itemId": item, "state": "integrated"])),
-           "evidence_required")
+    expect("a newer delivery attempt after verification automatically reopens code",
+           d.item(item)["state"] as? String, "execution")
     d.store.ingest(task: [
         "id": "task-right", "workItemId": item, "state": "success",
         "landing": ["state": "landed", "verification_origin": "git",
@@ -398,12 +408,10 @@ group("lifecycle promotion requires current trusted evidence of the right delive
     ], projectID: "project-1")
     let landing = (d.item(item)["landings"] as? [[String: Any]])?.first
     expect("matching landing ancestry is labelled broker", landing?["source"] as? String, "broker")
-    expect("matching broker-verified landing integrates code",
-           d.send("transition", ["itemId": item, "state": "integrated"]).status, 200)
-    expect("an integrated item must be explicitly reopened before editing",
-           boardError(d.send("update", ["itemId": item, "summary": "new scope"])), "item_locked")
-    _ = d.send("transition", ["itemId": item, "state": "execution"])
-    _ = d.send("update", ["itemId": item, "summary": "new scope"])
+    expect("matching broker-verified landing closes safe code automatically",
+           d.item(item)["state"] as? String, "closed")
+    expect("conversation-recorded scope can reopen integrated work automatically",
+           d.send("update", ["itemId": item, "summary": "new scope"]).status, 200)
     let afterEdit = d.item(item)
     expect("scope edit keeps immutable historical verification", (afterEdit["verifications"] as? [[String: Any]])?.count, 1)
     expect("scope edit invalidates checklist evidence pointer",
@@ -436,29 +444,26 @@ group("lifecycle promotion requires current trusted evidence of the right delive
            "trusted_evidence_required")
     _ = d.send("accept_artifact", ["itemId": document, "artifactId": artifactID,
                                     "note": "content checked"], trusted: true)
-    expect("accepted document Task can verify",
-           d.send("transition", ["itemId": document, "state": "verified"]).status, 200)
-    expect("accepted document Task can deliver without counterfeit Git landing",
-           d.send("transition", ["itemId": document, "state": "integrated"]).status, 200)
-    expect("integrated work requires explicit reopening before a new obligation",
-           boardError(d.send("obligation", ["itemId": document, "title": "late blocker",
-                                             "owner": "root", "blocking": true])), "item_locked")
-    _ = d.send("transition", ["itemId": document, "state": "execution"])
+    expect("accepted document Task automatically closes without counterfeit Git landing",
+           d.item(document)["state"] as? String, "closed")
+    expect("accepted non-code artifact is visibly complete",
+           boardProgress(d.item(document))["state"] as? String, "landed")
+    expect("artifact completion basis cannot masquerade as Git ancestry",
+           (boardProgress(d.item(document))["basisCodes"] as? [String])?.first,
+           "authoritative_artifact_acceptance")
     let obligationReply = d.send("obligation", ["itemId": document, "title": "notify owner",
                                                    "owner": "root", "blocking": true])
     let obligationID = ((((obligationReply.body["board"] as? [String: Any])?["item"]
         as? [String: Any])?["obligations"] as? [[String: Any]])?.first?["id"] as? String) ?? ""
-    _ = d.send("accept_artifact", ["itemId": document, "artifactId": artifactID,
-                                    "note": "manager rechecked reopened work"], trusted: true)
-    _ = d.send("transition", ["itemId": document, "state": "verified"])
-    _ = d.send("transition", ["itemId": document, "state": "integrated"])
+    expect("new obligation automatically reopens otherwise delivered work",
+           d.item(document)["state"] as? String, "integrated")
     expect("open blocking obligation prevents closure",
            boardError(d.send("transition", ["itemId": document, "state": "closed"])),
            "closure_obligations_open")
     _ = d.send("resolve_obligation", ["itemId": document, "obligationId": obligationID,
                                        "note": "owner notified"])
-    expect("settled non-code Task closes",
-           d.send("transition", ["itemId": document, "state": "closed"]).status, 200)
+    expect("settled non-code Task closes automatically",
+           d.item(document)["state"] as? String, "closed")
 
     let renewed = d.create(type: "task", title: "Renewed guide")
     let requiredReply = d.send("checklist", ["itemId": renewed, "title": "manager review",
@@ -477,16 +482,19 @@ group("lifecycle promotion requires current trusted evidence of the right delive
            d.send("accept_artifact", ["itemId": renewed, "artifactId": renewedArtifact,
                                        "note": "manager checked artifact and checklist"],
                   trusted: true).status, 200)
-    expect("the accepted non-code checklist can advance on one artifact subject",
-           d.send("transition", ["itemId": renewed, "state": "verified"]).status, 200)
-    _ = d.send("transition", ["itemId": renewed, "state": "execution"])
+    expect("the accepted non-code checklist closes on one artifact subject",
+           d.item(renewed)["state"] as? String, "closed")
     _ = d.send("update", ["itemId": renewed, "summary": "scope revision two"])
+    check("renewed Task scope is no longer visibly delivered before re-acceptance",
+          boardProgress(d.item(renewed))["state"] as? String != "landed")
     expect("the same artifact can be renewed after scope invalidation",
            d.send("accept_artifact", ["itemId": renewed, "artifactId": renewedArtifact,
                                        "note": "manager rechecked revised scope"],
                   trusted: true).status, 200)
     expect("artifact renewal keeps both immutable acceptance events",
            (d.item(renewed)["artifactAcceptances"] as? [[String: Any]])?.count, 2)
+    expect("renewed artifact returns the Task to visible delivery",
+           boardProgress(d.item(renewed))["state"] as? String, "landed")
 
     let mixed = d.create(type: "task", title: "Mixed delivery")
     let mixedDocumentReply = d.send("artifact", ["itemId": mixed, "title": "Guide",
@@ -515,8 +523,6 @@ group("lifecycle promotion requires current trusted evidence of the right delive
     boardAdvanceToExecution(d, item: nonCodeCurrent)
     _ = d.send("accept_artifact", ["itemId": nonCodeCurrent, "artifactId": currentArtifact,
                                     "note": "manager accepted"], trusted: true)
-    _ = d.send("transition", ["itemId": nonCodeCurrent, "state": "verified"])
-    _ = d.send("transition", ["itemId": nonCodeCurrent, "state": "integrated"])
     _ = d.send("record_evidence", ["itemId": nonCodeCurrent, "kind": "verification",
                                     "summary": "supplemental proof", "subject": currentArtifact,
                                     "status": "passed", "sourceId": "supplemental-proof"],
@@ -571,6 +577,493 @@ group("lifecycle promotion requires current trusted evidence of the right delive
           ((d.item(failed)["currentEvidence"] as? [String: Any])?["landingId"] is NSNull))
 }
 
+group("board progress reconciles broker attempts and immutable evidence without human transitions") {
+    var clock = 1_800_000_000.0
+    let d = BoardTestDriver(name: "automatic-progress-\(UUID().uuidString)",
+                            now: { Date(timeIntervalSince1970: clock) })
+    d.createProject()
+    let graph: [String: Any] = [
+        "id": "automatic-graph", "destination": "Automatic feature",
+        "current_node": "delivery", "kind": "delivery",
+    ]
+    let base = clock
+    let delivered: [String: Any] = [
+        "id": "attempt-delivered", "title": "delivery", "state": "success",
+        "workPhase": "output", "assistant": "codex", "graph": graph,
+        "startedAt": base, "finishedAt": base + 5,
+    ]
+    _ = d.store.ingest(task: delivered, projectID: "project-1")
+    let itemID = boardItems(d.store).first?["id"] as? String ?? ""
+    let deliveredItem = d.item(itemID)
+    expect("task success automatically starts lifecycle without claiming verification",
+           deliveredItem["state"] as? String, "execution")
+    let deliveredProgress = boardProgress(deliveredItem)
+    expect("task success is displayed as delivery rather than completion",
+           deliveredProgress["state"] as? String, "delivered")
+    expect("finished delivery is historical rather than active",
+           deliveredProgress["historical"] as? Bool, true)
+    expect("attempt counters retain the delivered fact",
+           (deliveredProgress["attemptCounts"] as? [String: Any])?["succeeded"] as? Int, 1)
+
+    var landed = delivered
+    landed["landing"] = [
+        "state": "landed", "verification_origin": "local_target_branch",
+        "verified_commit": "commit-auto", "verified_target_commit": "target-auto",
+        "landed_at": base + 10,
+    ]
+    clock = base + 10
+    _ = d.store.ingest(task: landed, projectID: "project-1")
+    let historicalLanding = d.item(itemID)
+    expect("trusted historical landing is visible even without exact item verification",
+           boardProgress(historicalLanding)["state"] as? String, "landed")
+    expect("historical landing does not forge stronger lifecycle completion",
+           historicalLanding["state"] as? String, "execution")
+    check("historical landing is not installed as current exact proof",
+          ((historicalLanding["currentEvidence"] as? [String: Any])?["landingId"] is NSNull))
+
+    clock = base + 15
+    _ = d.send("record_evidence", [
+        "itemId": itemID, "kind": "verification", "summary": "exact candidate passed",
+        "subject": "commit-auto", "status": "passed", "sourceId": "exact-auto",
+    ], trusted: true)
+    expect("verification observed after matching landing closes safe work without controls",
+           d.item(itemID)["state"] as? String, "closed")
+    check("out-of-order proof binds the pre-existing matching landing",
+          !((d.item(itemID)["currentEvidence"] as? [String: Any])?["landingId"] is NSNull))
+
+    let activeCorrection: [String: Any] = [
+        "id": "attempt-correction", "title": "correction", "state": "briefed",
+        "workPhase": "correction", "assistant": "codex", "graph": graph,
+        "startedAt": base + 20,
+    ]
+    clock = base + 20
+    _ = d.store.ingest(task: activeCorrection, projectID: "project-1")
+    let mixed = boardProgress(d.item(itemID))
+    expect("new active correction outranks older landing history",
+           mixed["state"] as? String, "correction")
+    expect("mixed landed and active attempts remain visibly active", mixed["active"] as? Bool, true)
+    expect("multi-attempt counts retain both attempts",
+           (mixed["attemptCounts"] as? [String: Any])?["total"] as? Int, 2)
+
+    var finishedCorrection = activeCorrection
+    finishedCorrection["state"] = "success"
+    finishedCorrection["finishedAt"] = base + 30
+    clock = base + 30
+    _ = d.store.ingest(task: finishedCorrection, projectID: "project-1")
+    expect("new delivered attempt after an old landing remains a new round",
+           boardProgress(d.item(itemID))["state"] as? String, "delivered")
+    clock = base + 35
+    _ = d.send("record_evidence", [
+        "itemId": itemID, "kind": "verification", "summary": "corrected candidate passed",
+        "subject": "commit-next", "status": "passed", "sourceId": "exact-next",
+    ], trusted: true)
+    expect("new exact proof advances the new round only to verified",
+           d.item(itemID)["state"] as? String, "verified")
+    var newlyLanded = finishedCorrection
+    newlyLanded["landing"] = [
+        "state": "landed", "verification_origin": "local_target_branch",
+        "verified_commit": "commit-next", "verified_target_commit": "target-next",
+        "landed_at": base + 40,
+    ]
+    clock = base + 40
+    _ = d.store.ingest(task: newlyLanded, projectID: "project-1")
+    expect("newer authoritative landing completes the newer round",
+           d.item(itemID)["state"] as? String, "closed")
+
+    clock = base + 45
+    expect("conversation-recorded new scope reopens closed work without a state control",
+           d.send("update", ["itemId": itemID, "summary": "new scope"]).status, 200)
+    let reopened = d.item(itemID)
+    expect("new scope cannot remain complete", reopened["state"] as? String, "execution")
+    expect("old landing after new scope is visibly correction, not landed",
+           boardProgress(reopened)["state"] as? String, "correction")
+    check("new scope retains immutable historical landing evidence",
+          (reopened["landings"] as? [[String: Any]])?.isEmpty == false)
+    let replayRevision = d.revision
+    let replayLandingCount = (reopened["landings"] as? [[String: Any]])?.count
+    _ = d.store.ingest(task: newlyLanded, projectID: "project-1")
+    expect("replaying an old landing after new scope does not mint current-scope evidence",
+           (d.item(itemID)["landings"] as? [[String: Any]])?.count, replayLandingCount)
+    expect("old landing replay does not churn the durable board", d.revision, replayRevision)
+    expect("old landing replay cannot regress the new round to landed",
+           boardProgress(d.item(itemID))["state"] as? String, "correction")
+
+    let failed = d.create(type: "feature", title: "Failed proof")
+    boardAdvanceToExecution(d, item: failed)
+    clock = base + 46
+    _ = d.send("record_evidence", [
+        "itemId": failed, "kind": "verification", "summary": "first pass",
+        "subject": "failed-subject", "status": "passed", "sourceId": "failed-pass-auto",
+    ], trusted: true)
+    clock = base + 47
+    _ = d.send("record_evidence", [
+        "itemId": failed, "kind": "verification", "summary": "regression",
+        "subject": "failed-subject", "status": "failed", "sourceId": "failed-red-auto",
+    ], trusted: true)
+    expect("failed current proof reopens lifecycle automatically",
+           d.item(failed)["state"] as? String, "execution")
+    expect("failed proof without a finding is blocked rather than landed",
+           boardProgress(d.item(failed))["state"] as? String, "blocked")
+
+    clock = base + 50
+    _ = d.store.ingest(task: [
+        "id": "ungraphed-canceled", "title": "Historic maintenance",
+        "state": "cancelled", "assistant": "claude", "finishedAt": 300.0,
+    ], projectID: "project-1")
+    let ungraphed = boardItems(d.store).first { item in
+        (item["links"] as? [[String: Any]])?.contains {
+            $0["targetId"] as? String == "ungraphed-canceled"
+        } == true
+    } ?? [:]
+    expect("ungraphed retained execution becomes a Task, never a guessed Feature",
+           ungraphed["type"] as? String, "task")
+    expect("attempt cancellation stays separate from item closure",
+           ungraphed["state"] as? String, "execution")
+    expect("all-canceled attempt history is visibly canceled",
+           boardProgress(ungraphed)["state"] as? String, "canceled")
+
+    let landedOverOldFinding = d.create(type: "feature", title: "Historical finding")
+    clock = base + 55
+    _ = d.store.ingest(task: [
+        "id": "old-review-and-landing", "title": "old delivery", "state": "success",
+        "workItemId": landedOverOldFinding, "assistant": "codex",
+        "startedAt": base + 50, "finishedAt": base + 55,
+        "review": ["axes": [["findings": [[
+            "id": "old-blocker", "summary": "administrative finding", "severity": "blocking",
+        ]]]]],
+        "landing": [
+            "state": "landed", "verification_origin": "local_target_branch",
+            "verified_commit": "historical-commit", "verified_target_commit": "historical-target",
+            "landed_at": base + 60,
+        ],
+    ], projectID: "project-1")
+    let authoritative = boardProgress(d.item(landedOverOldFinding))
+    expect("newer authoritative landing outranks an older unresolved finding",
+           authoritative["state"] as? String, "landed")
+    check("older procedural finding remains a visible warning",
+          (authoritative["warningCodes"] as? [String])?.contains("historical_findings_unresolved") == true)
+    clock = base + 65
+    _ = d.send("record_evidence", [
+        "itemId": landedOverOldFinding, "kind": "verification",
+        "summary": "later regression", "subject": "historical-commit",
+        "status": "failed", "sourceId": "post-landing-failure",
+    ], trusted: true)
+    expect("failed proof newer than landing opens correction without erasing delivery",
+           boardProgress(d.item(landedOverOldFinding))["state"] as? String, "correction")
+    clock = base + 70
+    _ = d.store.ingest(task: [
+        "id": "post-landing-active", "title": "new correction", "state": "briefed",
+        "workItemId": landedOverOldFinding, "workPhase": "correction",
+        "assistant": "codex", "startedAt": base + 70,
+    ], projectID: "project-1")
+    expect("newer correction remains visible over retained authoritative landing",
+           boardProgress(d.item(landedOverOldFinding))["state"] as? String, "correction")
+    let reloaded = ProjectBoardStore(url: d.file)
+    _ = reloaded.ingest(task: [
+        "id": "old-review-and-landing", "title": "old delivery", "state": "success",
+        "workItemId": landedOverOldFinding, "assistant": "codex",
+        "startedAt": base + 50, "finishedAt": base + 55,
+        "landing": [
+            "state": "landed", "verification_origin": "local_target_branch",
+            "verified_commit": "historical-commit", "verified_target_commit": "historical-target",
+            "landed_at": base + 60,
+        ],
+    ], projectID: "project-1")
+    expect("restart and old-record replay cannot hide the newer active round",
+           boardProgress(((reloaded.snapshot(item: landedOverOldFinding)["board"]
+                as? [String: Any])?["item"] as? [String: Any]) ?? [:])["state"] as? String,
+           "correction")
+
+    let terminalOrder = d.create(type: "feature", title: "Terminal chronology")
+    clock = base + 80
+    _ = d.store.ingest(task: [
+        "id": "terminal-success", "title": "older success", "state": "success",
+        "workItemId": terminalOrder, "assistant": "codex",
+        "startedAt": base + 75, "finishedAt": base + 80,
+    ], projectID: "project-1")
+    clock = base + 90
+    _ = d.store.ingest(task: [
+        "id": "terminal-failure", "title": "newer failure", "state": "failure",
+        "workItemId": terminalOrder, "assistant": "codex",
+        "startedAt": base + 85, "finishedAt": base + 90,
+    ], projectID: "project-1")
+    expect("a later failed attempt outranks an older successful attempt",
+           boardProgress(d.item(terminalOrder))["state"] as? String, "blocked")
+
+    let tiedOrder = d.create(type: "feature", title: "Tied chronology")
+    clock = base + 100
+    _ = d.store.ingest(task: [
+        "id": "tied-success", "title": "first observation", "state": "success",
+        "workItemId": tiedOrder, "assistant": "codex", "finishedAt": base + 100,
+    ], projectID: "project-1")
+    _ = d.store.ingest(task: [
+        "id": "tied-failure", "title": "second observation", "state": "failure",
+        "workItemId": tiedOrder, "assistant": "codex", "finishedAt": base + 100,
+    ], projectID: "project-1")
+    expect("same-time terminal attempts use their persisted observation order",
+           boardProgress(d.item(tiedOrder))["state"] as? String, "blocked")
+
+    let staleTask = d.create(type: "feature", title: "Stale snapshot")
+    clock = base + 110
+    let latestFailure: [String: Any] = [
+        "id": "same-task-snapshot", "title": "one immutable attempt", "state": "failure",
+        "workItemId": staleTask, "assistant": "codex",
+        "startedAt": base + 105, "finishedAt": base + 110,
+    ]
+    _ = d.store.ingest(task: latestFailure, projectID: "project-1")
+    let staleStableRevision = d.revision
+    clock = base + 120
+    _ = d.store.ingest(task: [
+        "id": "same-task-snapshot", "title": "stale terminal snapshot", "state": "success",
+        "workItemId": staleTask, "assistant": "codex",
+        "startedAt": base + 95, "finishedAt": base + 100,
+    ], projectID: "project-1")
+    expect("an older snapshot of one task cannot overwrite its terminal facts",
+           boardProgress(d.item(staleTask))["state"] as? String, "blocked")
+    expect("a stale snapshot does not churn the durable board", d.revision, staleStableRevision)
+
+    let staleDerivedFacts = d.create(type: "feature", title: "Stale derived facts")
+    var newestReviewedTask: [String: Any] = [
+        "id": "reviewed-snapshot", "title": "review execution", "state": "success",
+        "workItemId": staleDerivedFacts, "assistant": "codex",
+        "startedAt": base + 195, "finishedAt": base + 200,
+        "review": ["axes": [["findings": [[
+            "id": "newer-finding", "summary": "finding belongs at task finish 200",
+            "severity": "blocking",
+        ]]]]],
+    ]
+    clock = base + 200
+    _ = d.store.ingest(task: newestReviewedTask, projectID: "project-1")
+    clock = base + 205
+    _ = d.store.ingest(task: [
+        "id": "separate-older-landing", "title": "older landing", "state": "success",
+        "workItemId": staleDerivedFacts, "assistant": "codex", "finishedAt": base + 150,
+        "landing": [
+            "state": "landed", "verification_origin": "local_target_branch",
+            "verified_commit": "separate-old-commit",
+            "verified_target_commit": "separate-old-target", "landed_at": base + 155,
+        ],
+    ], projectID: "project-1")
+    expect("a task finding newer than a separate landing opens correction",
+           boardProgress(d.item(staleDerivedFacts))["state"] as? String, "correction")
+    let derivedStableRevision = d.revision
+    newestReviewedTask["startedAt"] = base + 95
+    newestReviewedTask["finishedAt"] = base + 100
+    clock = base + 210
+    _ = d.store.ingest(task: newestReviewedTask, projectID: "project-1")
+    expect("a rejected stale task clock cannot rewrite its derived finding chronology",
+           boardProgress(d.item(staleDerivedFacts))["state"] as? String, "correction")
+    expect("stale derived facts replay without durable churn", d.revision, derivedStableRevision)
+
+    let lateReview = d.create(type: "feature", title: "Late historical review")
+    var historicalReceipt: [String: Any] = [
+        "id": "late-review-receipt", "title": "historical receipt", "state": "success",
+        "workItemId": lateReview, "assistant": "codex",
+        "startedAt": base + 125, "finishedAt": base + 130,
+        "landing": [
+            "state": "landed", "verification_origin": "local_target_branch",
+            "verified_commit": "late-review-commit", "verified_target_commit": "late-review-target",
+            "landed_at": base + 140,
+        ],
+    ]
+    clock = base + 150
+    _ = d.store.ingest(task: historicalReceipt, projectID: "project-1")
+    historicalReceipt["review"] = ["axes": [["findings": [[
+        "id": "late-old-finding", "summary": "old review arrived during backfill",
+        "severity": "blocking",
+    ]]]]]
+    clock = base + 500
+    _ = d.store.ingest(task: historicalReceipt, projectID: "project-1")
+    let lateReviewProgress = boardProgress(d.item(lateReview))
+    expect("late ingestion cannot make an old review newer than its landing",
+           lateReviewProgress["state"] as? String, "landed")
+    check("the old review remains an explicit historical warning",
+          (lateReviewProgress["warningCodes"] as? [String])?
+            .contains("historical_findings_unresolved") == true)
+
+    let lateLanding = d.create(type: "feature", title: "Late historical landing")
+    var lateHistoricalLanding: [String: Any] = [
+        "id": "late-landing-receipt", "title": "historical attempt", "state": "success",
+        "workItemId": lateLanding, "assistant": "codex",
+        "startedAt": base + 155, "finishedAt": base + 160,
+    ]
+    clock = base + 165
+    _ = d.store.ingest(task: lateHistoricalLanding, projectID: "project-1")
+    clock = base + 170
+    _ = d.send("update", ["itemId": lateLanding, "summary": "scope after the old attempt"])
+    lateHistoricalLanding["landing"] = [
+        "state": "landed", "verification_origin": "local_target_branch",
+        "verified_commit": "late-landing-commit", "verified_target_commit": "late-landing-target",
+        "landed_at": base + 162,
+    ]
+    clock = base + 600
+    _ = d.store.ingest(task: lateHistoricalLanding, projectID: "project-1")
+    expect("a first-seen historical landing cannot close a newer scope",
+           boardProgress(d.item(lateLanding))["state"] as? String, "correction")
+
+    let mixedChronologyRecords: [[String: Any]] = [
+        ["id": "mixed-known-new", "title": "known newest", "state": "failure",
+         "assistant": "codex", "finishedAt": base + 900],
+        ["id": "mixed-missing", "title": "missing boundary", "state": "success",
+         "assistant": "codex"],
+        ["id": "mixed-known-old", "title": "known older", "state": "success",
+         "assistant": "codex", "finishedAt": base + 800],
+    ]
+    let mixedPermutations = [
+        [0, 1, 2], [0, 2, 1], [1, 0, 2],
+        [1, 2, 0], [2, 0, 1], [2, 1, 0],
+    ]
+    for (number, order) in mixedPermutations.enumerated() {
+        let item = d.create(type: "feature", title: "Mixed chronology \(number)")
+        for index in order {
+            var record = mixedChronologyRecords[index]
+            record["id"] = "\(record["id"] as! String)-\(number)"
+            record["workItemId"] = item
+            clock += 1
+            _ = d.store.ingest(task: record, projectID: "project-1")
+        }
+        expect("mixed known/missing order is permutation-stable \(number)",
+               boardProgress(d.item(item))["state"] as? String, "blocked")
+    }
+
+    let unknownAfterLanding = d.create(type: "feature", title: "Unknown post-landing time")
+    clock = base + 930
+    _ = d.store.ingest(task: [
+        "id": "known-landed-receipt", "title": "known landing", "state": "success",
+        "workItemId": unknownAfterLanding, "assistant": "codex",
+        "finishedAt": base + 920,
+        "landing": [
+            "state": "landed", "verification_origin": "local_target_branch",
+            "verified_commit": "unknown-boundary-commit",
+            "verified_target_commit": "unknown-boundary-target", "landed_at": base + 925,
+        ],
+    ], projectID: "project-1")
+    clock = base + 940
+    _ = d.store.ingest(task: [
+        "id": "unknown-time-active", "title": "newly observed correction", "state": "briefed",
+        "workItemId": unknownAfterLanding, "workPhase": "correction", "assistant": "codex",
+    ], projectID: "project-1")
+    let unknownProgress = boardProgress(d.item(unknownAfterLanding))
+    expect("a newly observed unknown-time active attempt is not hidden by a known landing",
+           unknownProgress["state"] as? String, "correction")
+    check("unknown post-landing chronology is explicit rather than manufactured",
+          (unknownProgress["warningCodes"] as? [String])?
+            .contains("attempt_chronology_unresolved") == true)
+
+    let legacy = BoardTestDriver(name: "legacy-event-order-\(UUID().uuidString)", now: { Date(timeIntervalSince1970: clock) })
+    legacy.createProject()
+    let legacyItem = legacy.create(type: "feature", title: "Legacy observation clock")
+    var legacyReceipt: [String: Any] = [
+        "id": "legacy-receipt", "title": "legacy source", "state": "success",
+        "workItemId": legacyItem, "assistant": "codex",
+        "startedAt": base + 700, "finishedAt": base + 710,
+        "review": ["axes": [["findings": [[
+            "id": "legacy-finding", "summary": "source-old finding", "severity": "blocking",
+        ]]]]],
+        "landing": [
+            "state": "landed", "verification_origin": "local_target_branch",
+            "verified_commit": "legacy-commit", "verified_target_commit": "legacy-target",
+            "landed_at": base + 720,
+        ],
+    ]
+    clock = base + 1_000
+    _ = legacy.store.ingest(task: legacyReceipt, projectID: "project-1")
+    var legacyJSON = try! JSONSerialization.jsonObject(with: Data(contentsOf: legacy.file))
+        as! [String: Any]
+    var legacyItems = legacyJSON["items"] as! [[String: Any]]
+    var legacyEvidence = legacyItems[0]["evidence"] as! [[String: Any]]
+    for index in legacyEvidence.indices {
+        legacyEvidence[index].removeValue(forKey: "eventAt")
+        legacyEvidence[index].removeValue(forKey: "eventOrdinal")
+        if legacyEvidence[index]["kind"] as? String == "finding" {
+            legacyEvidence[index]["at"] = base + 1_000
+        }
+    }
+    legacyItems[0]["evidence"] = legacyEvidence
+    var legacyLinks = legacyItems[0]["links"] as! [[String: Any]]
+    for index in legacyLinks.indices where legacyLinks[index]["kind"] as? String == "task" {
+        legacyLinks[index].removeValue(forKey: "eventAt")
+        legacyLinks[index].removeValue(forKey: "eventOrdinal")
+        legacyLinks[index]["statusObservedAt"] = base + 1_000
+    }
+    legacyItems[0]["links"] = legacyLinks
+    legacyJSON["items"] = legacyItems
+    try! JSONSerialization.data(withJSONObject: legacyJSON, options: [.sortedKeys])
+        .write(to: legacy.file, options: .atomic)
+    let upgradedLegacy = ProjectBoardStore(url: legacy.file, now: { Date(timeIntervalSince1970: clock) })
+    _ = upgradedLegacy.ingest(task: legacyReceipt, projectID: "project-1")
+    let upgradedBoard = (upgradedLegacy.snapshot(item: legacyItem)["board"] as? [String: Any]) ?? [:]
+    expect("schema-v1 observation timestamps are repaired from replayed source chronology",
+           boardProgress((upgradedBoard["item"] as? [String: Any]) ?? [:])["state"] as? String,
+           "landed")
+    let upgradedRevision = upgradedBoard["revision"] as? Int
+    _ = upgradedLegacy.ingest(task: legacyReceipt, projectID: "project-1")
+    expect("legacy chronology repair is durable and replay-idempotent",
+           (upgradedLegacy.snapshot()["board"] as? [String: Any])?["revision"] as? Int,
+           upgradedRevision)
+}
+
+group("type-specific narratives stay typed and coordination has no lifecycle") {
+    let d = BoardTestDriver(name: "type-details-\(UUID().uuidString)")
+    d.createProject()
+    let bugReply = d.send("create", [
+        "projectId": "project-1", "title": "Intermittent failure", "type": "bug",
+        "owner": "root", "typeDetails": [
+            "rootCause": "A stale projection won the race.",
+            "lessons": "Hold the observed row still across surfaces.",
+        ],
+    ])
+    let bug = bugReply.body["itemId"] as? String ?? ""
+    let bugDetails = d.item(bug)["typeDetails"] as? [String: String]
+    expect("Bug retains a named root-cause field", bugDetails?["rootCause"],
+           "A stale projection won the race.")
+    expect("Bug retains a named lessons field", bugDetails?["lessons"],
+           "Hold the observed row still across surfaces.")
+    _ = d.send("update", ["itemId": bug,
+                            "typeDetails": ["lessons": "Compare the same id."]])
+    expect("partial narrative update preserves the other typed Bug field",
+           (d.item(bug)["typeDetails"] as? [String: String])?["rootCause"],
+           "A stale projection won the race.")
+    expect("Bug rejects Coordination narrative keys",
+           boardError(d.send("update", ["itemId": bug,
+                                         "typeDetails": ["outcomes": "wrong type"]])),
+           "invalid_type_details")
+    expect("typed narrative strings remain bounded",
+           boardError(d.send("update", ["itemId": bug,
+                                         "typeDetails": ["lessons": String(repeating: "x", count: 4_001)]])),
+           "invalid_type_details")
+
+    let coordinationReply = d.send("create", [
+        "projectId": "project-1", "title": "Release coordination", "type": "coordination",
+        "owner": "moderator", "typeDetails": [
+            "outcomes": "Owners aligned.", "difficulties": "One stale receipt.",
+            "improvements": "Persist acknowledgement.",
+        ],
+    ])
+    let coordination = coordinationReply.body["itemId"] as? String ?? ""
+    _ = d.store.ingest(task: [
+        "id": "coordination-attempt", "title": "coordinate", "state": "briefed",
+        "workItemId": coordination, "workPhase": "output", "assistant": "claude",
+    ], projectID: "project-1")
+    let coordinated = d.item(coordination)
+    expect("Coordination broker activity does not enter Feature lifecycle",
+           coordinated["state"] as? String, "backlog")
+    let coordinationProgress = boardProgress(coordinated)
+    expect("Coordination explicitly opts out of lifecycle", coordinationProgress["lifecycleApplicable"] as? Bool,
+           false)
+    expect("Coordination still exposes active interval context",
+           coordinationProgress["active"] as? Bool, true)
+    expect("Coordination narrative fields remain named",
+           (coordinated["typeDetails"] as? [String: String])?["improvements"],
+           "Persist acknowledgement.")
+    _ = d.send("record_evidence", [
+        "itemId": coordination, "kind": "verification", "summary": "administrative check",
+        "subject": "coordination-note", "status": "passed", "sourceId": "coord-proof",
+    ], trusted: true)
+    expect("Coordination verification does not trigger lifecycle gates",
+           d.item(coordination)["state"] as? String, "backlog")
+}
+
 group("broker ingestion is idempotent, phase-explicit, and has one accounting owner") {
     let d = BoardTestDriver(name: "ingest-\(UUID().uuidString)")
     d.createProject()
@@ -589,8 +1082,8 @@ group("broker ingestion is idempotent, phase-explicit, and has one accounting ow
     let fallback = boardItems(d.store).first ?? [:]
     expect("accepted graph identity creates one Feature rather than one card per task",
            fallback["type"] as? String, "feature")
-    expect("task success alone leaves lifecycle at backlog", fallback["state"] as? String,
-           "backlog")
+    expect("task success without an attributable owner cannot pass planning safety",
+           fallback["state"] as? String, "planning")
     let links = fallback["links"] as? [[String: Any]]
     let taskLink = links?.first { $0["kind"] as? String == "task" }
     expect("ingested task link carries broker provenance", taskLink?["source"] as? String,
@@ -642,7 +1135,169 @@ group("broker ingestion is idempotent, phase-explicit, and has one accounting ow
     expect("the explicit item is the accounting owner", brokerOwners.first?["id"] as? String,
            explicit)
     let fallbackAfter = all.first { $0["id"] as? String == fallback["id"] as? String }
-    check("graph fallback remains durable after reattribution", fallbackAfter != nil)
+    check("an empty inferred graph card retires after explicit reattribution", fallbackAfter == nil)
+    let explicitlyOwned = d.item(explicit)
+    expect("reattribution moves the task's session fact exactly once",
+           (explicitlyOwned["links"] as? [[String: Any]])?.filter {
+               $0["kind"] as? String == "session" && $0["targetId"] as? String == "child-session"
+           }.count, 1)
+    expect("reattribution moves the task's worktree fact exactly once",
+           (explicitlyOwned["links"] as? [[String: Any]])?.filter {
+               $0["kind"] as? String == "worktree"
+           }.count, 1)
+    expect("reattribution moves the task's execution span exactly once",
+           (explicitlyOwned["spans"] as? [[String: Any]])?.filter {
+               $0["sourceId"] as? String == "broker-task"
+           }.count, 1)
+    expect("reattribution moves the task's evidence summary exactly once",
+           (explicitlyOwned["evidenceSummaries"] as? [[String: Any]])?.filter {
+               $0["sourceId"] as? String == "task:broker-task:verification-summary"
+           }.count, 1)
+
+    var preservedFallbackTask = task
+    preservedFallbackTask["id"] = "preserved-fallback-task"
+    preservedFallbackTask["graph"] = [
+        "id": "preserved-graph", "destination": "Preserved inferred card",
+        "current_node": "delivery", "kind": "delivery",
+    ]
+    d.store.ingest(task: preservedFallbackTask, projectID: "project-1")
+    let preservedFallback = boardItems(d.store).first { item in
+        (item["links"] as? [[String: Any]])?.contains {
+            $0["targetId"] as? String == "preserved-fallback-task"
+        } == true
+    } ?? [:]
+    let preservedFallbackID = preservedFallback["id"] as? String ?? ""
+    _ = d.send("update", ["itemId": preservedFallbackID,
+                           "summary": "Independent operator note must survive."])
+    let preservedExplicit = d.create(type: "feature", title: "Preserved canonical card")
+    preservedFallbackTask["workItemId"] = preservedExplicit
+    d.store.ingest(task: preservedFallbackTask, projectID: "project-1")
+    let preservedOld = boardItems(d.store).first { $0["id"] as? String == preservedFallbackID }
+    expect("independent manual content preserves the old inferred card",
+           preservedOld?["summary"] as? String, "Independent operator note must survive.")
+    check("a preserved old card keeps no reattributed task-scoped links",
+          (preservedOld?["links"] as? [[String: Any]])?.contains {
+              $0["sourceTaskId"] as? String == "preserved-fallback-task"
+                  || $0["targetId"] as? String == "preserved-fallback-task"
+          } == false)
+    check("a preserved old card keeps no reattributed task-scoped spans",
+          (preservedOld?["spans"] as? [[String: Any]])?.contains {
+              $0["sourceId"] as? String == "preserved-fallback-task"
+          } == false)
+    check("a preserved old card keeps no reattributed task-scoped evidence",
+          (preservedOld?["evidenceSummaries"] as? [[String: Any]])?.contains {
+              ($0["sourceId"] as? String)?.hasPrefix("task:preserved-fallback-task:") == true
+          } == false)
+
+    var referencedFallbackTask = task
+    referencedFallbackTask["id"] = "referenced-fallback-task"
+    referencedFallbackTask["graph"] = [
+        "id": "referenced-graph", "destination": "Referenced inferred card",
+        "current_node": "delivery", "kind": "delivery",
+    ]
+    d.store.ingest(task: referencedFallbackTask, projectID: "project-1")
+    let referencedFallbackID = boardItems(d.store).first { item in
+        (item["links"] as? [[String: Any]])?.contains {
+            $0["targetId"] as? String == "referenced-fallback-task"
+        } == true
+    }?["id"] as? String ?? ""
+    let coordinator = d.create(type: "coordination", title: "Incoming relation owner")
+    _ = d.send("link", ["itemId": coordinator, "kind": "coordinates",
+                         "targetId": referencedFallbackID, "label": "Coordinates"])
+    let referencedExplicit = d.create(type: "feature", title: "Referenced canonical card")
+    referencedFallbackTask["workItemId"] = referencedExplicit
+    d.store.ingest(task: referencedFallbackTask, projectID: "project-1")
+    check("an incoming item relation preserves an otherwise-empty inferred card",
+          boardItems(d.store).contains { $0["id"] as? String == referencedFallbackID })
+    check("safe cleanup never leaves the incoming relation dangling",
+          (d.item(coordinator)["links"] as? [[String: Any]])?.contains {
+              $0["kind"] as? String == "coordinates"
+                  && $0["targetId"] as? String == referencedFallbackID
+          } == true)
+    check("the relation-preserved card still loses reattributed execution facts",
+          (d.item(referencedFallbackID)["links"] as? [[String: Any]])?.contains {
+              $0["sourceTaskId"] as? String == "referenced-fallback-task"
+                  || $0["targetId"] as? String == "referenced-fallback-task"
+          } == false)
+
+    var sharedReferenceA = task
+    sharedReferenceA["id"] = "shared-reference-a"
+    sharedReferenceA["graph"] = [
+        "id": "shared-reference-graph", "destination": "Shared reference fallback",
+        "current_node": "delivery", "kind": "delivery",
+    ]
+    sharedReferenceA["child"] = ["sessionId": "shared-session", "terminalId": "%shared"]
+    sharedReferenceA["worktree"] = ["path": "/private/worktrees/shared",
+                                     "branch": "shared", "head": "shared-head"]
+    d.store.ingest(task: sharedReferenceA, projectID: "project-1")
+    var sharedReferenceB = sharedReferenceA
+    sharedReferenceB["id"] = "shared-reference-b"
+    d.store.ingest(task: sharedReferenceB, projectID: "project-1")
+    let sharedFallbackID = boardItems(d.store).first { item in
+        (item["links"] as? [[String: Any]])?.contains {
+            $0["targetId"] as? String == "shared-reference-a"
+        } == true
+    }?["id"] as? String ?? ""
+    let sharedExplicit = d.create(type: "feature", title: "Shared reference canonical")
+    sharedReferenceA["workItemId"] = sharedExplicit
+    d.store.ingest(task: sharedReferenceA, projectID: "project-1")
+    let sharedFallbackLinks = d.item(sharedFallbackID)["links"] as? [[String: Any]]
+    check("reattributing A preserves B's shared Session provenance without replaying B",
+          sharedFallbackLinks?.contains {
+              $0["kind"] as? String == "session" && $0["targetId"] as? String == "shared-session"
+                  && $0["sourceTaskId"] as? String == "shared-reference-b"
+          } == true)
+    check("reattributing A preserves B's shared worktree provenance without replaying B",
+          sharedFallbackLinks?.contains {
+              $0["kind"] as? String == "worktree"
+                  && $0["sourceTaskId"] as? String == "shared-reference-b"
+          } == true)
+    check("the shared fallback retains only B's task allocation",
+          sharedFallbackLinks?.contains {
+              $0["kind"] as? String == "task" && $0["targetId"] as? String == "shared-reference-b"
+          } == true && sharedFallbackLinks?.contains {
+              $0["kind"] as? String == "task" && $0["targetId"] as? String == "shared-reference-a"
+          } == false)
+
+    var pointerTask = task
+    pointerTask["id"] = "pointer-task"
+    pointerTask["graph"] = [
+        "id": "pointer-graph", "destination": "Pointer fallback",
+        "current_node": "delivery", "kind": "delivery",
+    ]
+    pointerTask["landing"] = [
+        "state": "landed", "verification_origin": "local_target_branch",
+        "verified_commit": "fallback-commit", "verified_target_commit": "fallback-target",
+        "landed_at": 1_789_100_200.0,
+    ]
+    d.store.ingest(task: pointerTask, projectID: "project-1")
+    let pointerFallbackID = boardItems(d.store).first { item in
+        (item["links"] as? [[String: Any]])?.contains {
+            $0["targetId"] as? String == "pointer-task"
+        } == true
+    }?["id"] as? String ?? ""
+    _ = d.send("record_evidence", [
+        "itemId": pointerFallbackID, "kind": "verification", "summary": "fallback exact proof",
+        "subject": "fallback-commit", "status": "passed", "sourceId": "fallback-exact",
+    ], trusted: true)
+    d.store.ingest(task: pointerTask, projectID: "project-1")
+    let pointerExplicit = d.create(type: "feature", title: "Pointer canonical")
+    _ = d.send("record_evidence", [
+        "itemId": pointerExplicit, "kind": "verification", "summary": "destination proof",
+        "subject": "destination-commit", "status": "passed", "sourceId": "destination-exact",
+    ], trusted: true)
+    pointerTask["workItemId"] = pointerExplicit
+    d.store.ingest(task: pointerTask, projectID: "project-1")
+    let pointerDestination = d.item(pointerExplicit)
+    let destinationCurrent = pointerDestination["currentEvidence"] as? [String: Any]
+    expect("reattribution preserves the destination's exact verification subject",
+           destinationCurrent?["subject"] as? String, "destination-commit")
+    check("a moved historical landing cannot become current for a mismatched destination proof",
+          destinationCurrent?["landingId"] is NSNull)
+    check("the mismatched historical landing remains visible without becoming current proof",
+          (pointerDestination["landings"] as? [[String: Any]])?.contains {
+              $0["subject"] as? String == "fallback-commit"
+          } == true)
 
     var laterFallback = task
     laterFallback["id"] = "broker-task-later"
@@ -720,7 +1375,8 @@ group("broker ingestion is idempotent, phase-explicit, and has one accounting ow
         "id": "task-overflow", "title": "overflow", "workItemId": capacityItem,
     ]
     let overflow = capacityStore.ingest(task: overflowTask, projectID: "project-1")
-    expect("automatic capacity loss is a typed refusal", overflow.status.rawValue, "refused")
+    expect("automatic capacity loss with a retained lifecycle change is typed partial",
+           overflow.status.rawValue, "partial")
     expect("automatic capacity loss reports one dropped source", overflow.droppedCount, 1)
     expect("automatic capacity loss is durably represented", overflow.persisted, true)
     let overflowItem = (capacityStore.snapshot(item: capacityItem)["board"]
@@ -737,9 +1393,13 @@ group("broker ingestion is idempotent, phase-explicit, and has one accounting ow
            ((capacityStore.snapshot()["board"] as? [String: Any])?["revision"] as? Int),
            capacityAfter)
 
-    let beforeUnknown = d.revision
+    let beforeUnknown = boardItems(d.store).count
     d.store.ingest(task: ["id": "unknown-task", "state": "success"], projectID: "project-1")
-    expect("unknown Feature does not become a per-task card", d.revision, beforeUnknown)
+    expect("ungraphed history becomes a stable execution record",
+           boardItems(d.store).count, beforeUnknown + 1)
+    let retainedUnknown = boardItems(d.store).first { $0["title"] as? String == "Execution unknown-task" }
+    expect("ungraphed history is never guessed to be a Feature",
+           retainedUnknown?["type"] as? String, "task")
     _ = d.send("set_enabled", ["enabled": false])
     let beforeDisabled = boardItems(d.store).count
     d.store.ingest(task: ["id": "disabled-task",

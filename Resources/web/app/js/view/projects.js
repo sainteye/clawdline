@@ -416,12 +416,50 @@ function renderPlaces(context, places) {
         // The path is here for the one job `/v1/places` says it is for: telling two projects with
         // the same name apart. Nothing on this page is built out of it except the query below.
         appendText(doc, text, "span", place.path || "", "project-row-path");
+        if (place.boardProjectId) appendText(doc, text, "span", place.itemCount +
+            (/^zh/i.test(doc.documentElement && doc.documentElement.lang || "") ? " 個工作項目 · 查看進度 →" : " work items · View progress →"), "project-row-path");
         button.appendChild(text);
         button.setAttribute("aria-label", fill(T.webProjectOpenLabel, { name: place.label || place.path }));
         button.addEventListener("click", function () { context.open(place); });
         item.appendChild(button);
         rows.appendChild(item);
     });
+}
+
+// Mode is a successful store fact, not an inference from a failed read. A broken Board must not
+// remove a transport's independently authorized baseline Projects reader.
+export async function readProjectPlaces(transport, onMode) {
+    var baseline = typeof transport.places === "function"
+        && typeof transport.projectWorktrees === "function";
+    if (typeof transport.board === "function") {
+        try {
+            var answer = await transport.board();
+            var board = answer && answer.board;
+            if (!board || board.available === false || typeof board.enabled !== "boolean"
+                || !Array.isArray(board.projects)) {
+                var invalid = new Error(board && board.error && board.error.message || "Board unavailable");
+                invalid.code = board && board.error && board.error.code || "board_unavailable";
+                throw invalid;
+            }
+            if (onMode) onMode(board);
+            if (board.enabled) return { places: board.projects.map(function (project) {
+                return { id: project.id, boardProjectId: project.id, label: project.label || project.name,
+                    icon: project.icon, path: project.displayPath || "", itemCount: project.itemCount };
+            }), boardMode: true };
+        } catch (error) {
+            if (!baseline || !(/^(board_|http_503$)/.test(error.code || "") || error.status === 503)) throw error;
+            var fallback = await transport.places();
+            return Object.assign({}, fallback, { boardUnavailable: {
+                code: error.code || "board_unavailable", message: error.message || "Board unavailable"
+            } });
+        }
+    }
+    if (!baseline) {
+        var unavailable = new Error("Projects are unavailable on this connection in standard mode.");
+        unavailable.code = "projects_unavailable";
+        throw unavailable;
+    }
+    return transport.places();
 }
 
 export function bindProjectsPage(elements, environment) {
@@ -475,6 +513,13 @@ export function bindProjectsPage(elements, environment) {
             if (ticket !== state.loading) return;
             state.places = (data && data.places) || [];
             renderPlaces(context, state.places);
+            if (data && data.boardUnavailable) {
+                var zh = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "");
+                elements["projects-status"].textContent = (zh
+                    ? "看板暫時無法讀取，目前顯示一般專案。設定未變更。"
+                    : "Board unavailable; showing standard Projects. Your setting has not changed.")
+                    + " (" + data.boardUnavailable.code + ")";
+            }
         }).catch(function (error) {
             if (ticket !== state.loading) return;
             clear(elements["projects-rows"]);
@@ -492,6 +537,10 @@ export function bindProjectsPage(elements, environment) {
      * from another Project is worse than no receipt at all.
      */
     function openProject(place) {
+        if (place.boardProjectId && environment.openBoard) {
+            environment.openBoard(place);
+            return Promise.resolve();
+        }
         state.place = place;
         showView("detail");
         elements["project-name"].textContent = place.label || place.path;

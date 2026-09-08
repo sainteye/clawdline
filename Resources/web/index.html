@@ -529,20 +529,16 @@ document.documentElement.className = "booting";
 
 <section id="board" class="page board-page" data-page-view="board" hidden aria-label="Project Board">
     <header class="board-head">
-        <h1 tabindex="-1" id="board-title">Projects</h1>
         <button id="board-back" type="button">Back</button>
         <button id="board-refresh" class="board-button" type="button">Refresh</button>
-        <button class="chip" type="button" data-page-to="projects">Worktrees</button>
-        <button id="board-new" type="button">New item</button>
     </header>
-    <p id="board-status" role="status" aria-live="polite"></p>
-    <div class="board-filters">
-        <label>Project <select id="board-projects"></select></label>
-        <label>Search <input id="board-search" type="search"></label>
-        <label>Type <select id="board-type"></select></label>
-        <label>Status <select id="board-state"></select></label>
-        <button id="board-layout" type="button">Board / List</button>
+    <div class="board-intro">
+        <p class="board-eyebrow">PROJECT / BOARD</p>
+        <h1 tabindex="-1" id="board-title">Projects</h1>
+        <p id="board-subtitle"></p>
     </div>
+    <p id="board-status" role="status" aria-live="polite"></p>
+    <input id="board-search" type="search" aria-label="Search project work" hidden>
     <div id="board-items"></div>
     <div id="board-detail" hidden></div>
 </section>

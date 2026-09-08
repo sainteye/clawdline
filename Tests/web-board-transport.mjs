@@ -87,12 +87,14 @@ useClient({ board: async () => ({ board: settingsBoard }), boardCommand: body =>
     settingCalls.push(structuredClone(body));
     if (outcome === "sync") throw Object.assign(new Error("ambiguous machine"), { code: "cloud_machine_ambiguous" });
     if (outcome === "offline") return Promise.reject(Object.assign(new Error("offline"), { code: "offline" }));
-    settingsBoard = { ...settingsBoard, enabled: body.enabled, revision: 2 };
+    settingsBoard = { ...settingsBoard, enabled: body.enabled, revision: body.expectedRevision + 1 };
     return Promise.resolve({ board: settingsBoard });
 } });
 const settled = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
 await BoardControls.refresh();
-equal(control("nav-projects").hidden, true, "default on removes duplicate navigation");
+equal(control("nav-projects").hidden, false, "Projects remains the primary entry in board mode");
+equal(control("nav-board").hidden, true, "no competing global Board navigation");
+equal(control("usage-open").hidden, true, "standalone usage is folded into Project work");
 control("settings-board-toggle").listeners.click();
 await settled();
 equal(control("settings-board-toggle").disabled, false, "ambiguous failure exposes retry");
@@ -103,6 +105,9 @@ control("settings-board-toggle").listeners.click();
 await settled();
 equal(settingCalls[1], settingCalls[0], "ambiguous retry preserves exact CAS body and request identity");
 equal(control("nav-projects").hidden, false, "successful off restores old navigation");
+equal(control("usage-open").hidden, false, "off restores Usage");
+equal(control("nav-ledger").hidden, false, "off restores Ledger");
+equal(control("sidebar-board-projects").hidden, true, "off hides Board-specific shortcuts");
 BoardControls.apply({ ...settingsBoard, enabled: true, revision: 1 });
 equal(control("nav-projects").hidden, false, "older read cannot roll mode back");
 BoardControls.apply({ ...settingsBoard, revision: 3, viewer: { id: "writer", canWrite: true, canManage: false } });
@@ -116,5 +121,19 @@ assert.doesNotThrow(() => control("settings-board-toggle").listeners.click(), "s
 await settled();
 equal(control("settings-board-toggle").disabled, false, "synchronous refusal never leaves saving latched");
 assert.match(control("settings-board-status").textContent, /ambiguous/); checks++;
+settingsBoard = { ...settingsBoard, enabled: false, revision: 5 };
+BoardControls.apply(settingsBoard);
+outcome = "success";
+control("settings-board-toggle").listeners.click();
+await settled();
+equal(settingCalls.at(-1).enabled, true, "the same setting can turn Board back on");
+equal(document.documentElement.dataset.boardMode, "board", "successful re-enable restores Board mode");
+equal(control("usage-open").hidden, true, "re-enable folds Usage back into work items");
+equal(control("nav-ledger").hidden, true, "re-enable folds Ledger back into work items");
+equal(control("sidebar-board-projects").hidden, false, "re-enable restores Project Board shortcuts");
+const backOn = await mock.boardCommand({ operation: "set_enabled", enabled: true,
+    expectedRevision: off.board.revision, requestId: "on-again" });
+equal(backOn.board.enabled, true, "mock lifecycle also supports off then on");
+equal(backOn.board.items.length, initial.board.items.length, "off then on retains the same history");
 console.log(`${checks} web board transport checks passed`);
 process.exit(0); // imported preview transport owns timers unrelated to this bounded question

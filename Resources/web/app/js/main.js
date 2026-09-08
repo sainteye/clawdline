@@ -39,7 +39,7 @@ import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
 import { renderTranscript } from "./view/transcript.js";
 import "./view/terminal.js";
-import { bindProjectsPage } from "./view/projects.js";
+import { bindProjectsPage, readProjectPlaces } from "./view/projects.js";
 import { bindLedgerPage } from "./view/ledger.js";
 import { bindBoardPage, resolveBoardSession } from "./view/board.js";
 import { BoardControls } from "./input/board-settings.js";
@@ -267,9 +267,12 @@ var projects = bindProjectsPage({
     "project-read": byId("project-read")
 }, {
     carries: function () {
-        return typeof api.places === "function" && typeof api.projectWorktrees === "function";
+        return typeof api.board === "function" || typeof api.places === "function" && typeof api.projectWorktrees === "function";
     },
-    places: function () { return api.places(); },
+    places: async function () {
+        return readProjectPlaces(api, function (board) { BoardControls.apply(board); });
+    },
+    openBoard: function (place) { BoardControls.open(place.boardProjectId); },
     projectWorktrees: function (place) { return api.projectWorktrees(place); },
     // The same seam the Feature table uses, and for the same reason: `view/projects.js` imports
     // nothing but the words, because `core/pixels.js` reaches `window` while it is being
@@ -299,13 +302,12 @@ var ledger = bindLedgerPage({
 });
 
 var boardElements = {};
-["board", "board-projects", "board-items", "board-detail", "board-status", "board-new",
- "board-search", "board-layout", "board-type", "board-state", "board-back", "board-refresh"].forEach(function (id) {
+["board", "board-title", "board-subtitle", "board-items", "board-detail", "board-status",
+ "board-search", "board-back", "board-refresh"].forEach(function (id) {
     boardElements[id] = byId(id);
 });
 var board = bindBoardPage(boardElements, {
     read: function (project, item) { return api.board(project, item); },
-    command: function (body) { return api.boardCommand(body); },
     navigate: function (name) { Pages.go(name); },
     openSession: function (id) {
         var destination = resolveBoardSession(S.sessions, id);

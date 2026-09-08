@@ -112,6 +112,56 @@ group("board adapters preserve identities and share the closed Cloud route") {
     } else { check("stored board task decodes", false) }
 }
 
+
+group("board Project presentation joins only the same canonical Start Point") {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-board-presentation-\(UUID().uuidString)", isDirectory: true)
+    let nested = root.appendingPathComponent("Sources", isDirectory: true)
+    try! FileManager.default.createDirectory(at: root.appendingPathComponent(".git"),
+                                              withIntermediateDirectories: true)
+    try! FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let places = [
+        StartPoints.Place(id: "nested", path: nested.path, label: "Wrong nested label", at: Date()),
+        StartPoints.Place(id: "root", path: root.path, label: "Wrong root label", at: Date.distantPast),
+    ]
+    let presentations = ProjectBoardIntegration.projectPresentations(places)
+    let id = ProjectBoardIntegration.projectID(root.path)
+    expect("nested Start Points join the exact canonical Project id", presentations.count, 1)
+    expect("Project display path is canonical rather than the nested Session cwd",
+           presentations[id]?.displayPath, root.path)
+    expect("Project label is resolved from that same canonical place",
+           presentations[id]?.label, StartPoints.label(for: root.path))
+    check("canonical Project metadata carries a stable icon payload",
+          presentations[id]?.icon?["cells"] is [[Any]])
+
+    let storeRoot = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-board-project-name-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: storeRoot) }
+    let store = ProjectBoardStore(url: storeRoot.appendingPathComponent("board.json"))
+    let persistentName = ProjectBoardIntegration.persistentProjectName(
+        root.path, presentationLabel: "Friendly Start Point label")
+    _ = store.ensureProject(id: id, name: persistentName)
+    let stableRevision = (store.snapshot()["board"] as? [String: Any])?["revision"] as? Int
+    _ = store.ensureProject(id: id, name: persistentName)
+    expect("presentation labels never alternate the durable Project name",
+           (store.snapshot()["board"] as? [String: Any])?["revision"] as? Int,
+           stableRevision)
+    expect("the durable Project name is the canonical repository basename",
+           ((store.snapshot()["board"] as? [String: Any])?["projects"] as? [[String: Any]])?
+                .first?["name"] as? String,
+           root.lastPathComponent)
+    _ = ProjectBoardIntegration.ingest([
+        "id": "project-name-idempotence", "title": "retained task", "state": "success",
+        "project_dir": root.path, "finished_at": 100.0,
+    ], store: store)
+    let afterIngestRevision = (store.snapshot()["board"] as? [String: Any])?["revision"] as? Int
+    _ = store.ensureProject(id: id, name: persistentName)
+    expect("the Start Point refresh cannot rename and churn an ingest-owned Project",
+           (store.snapshot()["board"] as? [String: Any])?["revision"] as? Int,
+           afterIngestRevision)
+}
+
 group("board HTTP authority cannot be supplied by command content") {
     let oldWrite = Config.shared.remoteWrite
     Config.shared.remoteWrite = true

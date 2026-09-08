@@ -4451,7 +4451,7 @@ final class RemoteServer: @unchecked Sendable {
     /// answer.
     func slowReadingRefusal(_ request: Request) -> Response? {
         if let refusal = crossOriginRefusal(request) { return refusal }
-        let orchestratorAuthed = request.path.hasPrefix("/v1/orchestrator/")
+        let orchestratorAuthed = (request.path.hasPrefix("/v1/orchestrator/") || request.path == "/v1/board")
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
         if case .denied = permission(for: request), !orchestratorAuthed {
             return .error(401, "unauthorized", "This needs a paired device.")

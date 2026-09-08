@@ -20,9 +20,13 @@ When [Project Board](project-board.md) is enabled (the default), the owning root
 durable objective and checklist on a Project work item and names `work_item_id` and `work_phase`
 on each applicable task JSON. Coordination is a separate item related through `coordinates`,
 not tokens silently added to every Feature it touches. Children keep reporting through their
-existing authenticated result/progress protocol; the root updates the item and owns its evidence
+existing authenticated result/progress protocol; the root records facts on the item and owns its evidence
 and unresolved obligations. Turning the board off removes these board-only duties, without changing
-dispatch ownership, claims, resource locks or landing. The current preview is free.
+dispatch ownership, claims, resource locks or landing. The current preview is free. Users do not
+create cards or push statuses through browser controls. Conversation owners establish the objective,
+checklist, output and verification records; broker observations and those records drive automatic
+progress. Do not ask a user to mark execution, verification or landing manually, and never substitute
+an old landing or a successful child result for current-scope acceptance.
 
 The registered Clawdfather is the machine-wide context owner. Its scarce resource is attention
 across sessions, tasks, waits, landings, failures, and user decisions—not keystrokes in one

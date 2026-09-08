@@ -9,9 +9,22 @@ enum ProjectBoardIntegration {
     private static var lastAttempt = Date.distantPast
     private static var ingestionCoverage = IngestionCoverage()
     private static var sourceRows: [UsageLedger.Row] = []
+    private static var sourceProjects: [String: ProjectPresentation] = [:]
     private static var sourceTruncated = false
     private static var latestObservation: Date?
     static let sourceLimit = 100_000
+
+    struct ProjectPresentation {
+        let label: String
+        let displayPath: String
+        let icon: [String: Any]?
+
+        var jsonObject: [String: Any] {
+            var value: [String: Any] = ["label": label, "displayPath": displayPath]
+            value["icon"] = icon ?? NSNull()
+            return value
+        }
+    }
 
     struct IngestionCoverage {
         private(set) var issueCount = 0
@@ -39,6 +52,31 @@ enum ProjectBoardIntegration {
     static func projectID(_ canonical: String) -> String {
         "project-" + SHA256.hash(data: Data(canonical.utf8)).prefix(12)
             .map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func persistentProjectName(_ canonical: String,
+                                      presentationLabel: String? = nil) -> String {
+        // Presentation labels are joined only at read time. Persisting them here would alternate
+        // with ingest(), which always has the canonical repository basename.
+        _ = presentationLabel
+        return URL(fileURLWithPath: canonical).lastPathComponent
+    }
+
+    /// Join display metadata only after resolving each Start Point to the exact canonical Project
+    /// identity used by board ingestion. A nearby path or a matching label is never a join key.
+    static func projectPresentations(_ places: [StartPoints.Place]) -> [String: ProjectPresentation] {
+        var result: [String: ProjectPresentation] = [:]
+        for place in places {
+            guard let canonical = UsageLedger.canonicalProjectKey(projectDir: place.path) else {
+                continue
+            }
+            let id = projectID(canonical)
+            guard result[id] == nil else { continue }
+            result[id] = ProjectPresentation(
+                label: StartPoints.label(for: canonical), displayPath: canonical,
+                icon: ProjectIcon.grid(forCwd: canonical).map(ProjectIcon.gridJSON))
+        }
+        return result
     }
 
     static func normalized(_ record: [String: Any]) -> [String: Any] {
@@ -88,12 +126,18 @@ enum ProjectBoardIntegration {
         queue.sync {
             if Date().timeIntervalSince(lastAttempt) >= 10 {
                 var coverage = IngestionCoverage()
-                for place in StartPoints.places() {
+                let places = StartPoints.places()
+                let presentations = projectPresentations(places)
+                sourceProjects = presentations
+                for place in places {
                     guard let canonical = UsageLedger.canonicalProjectKey(projectDir: place.path)
                     else { continue }
-                    let result = ProjectBoardStore.shared.ensureProject(id: projectID(canonical),
-                        name: URL(fileURLWithPath: canonical).lastPathComponent)
-                    coverage.record(result, projectID: projectID(canonical))
+                    let id = projectID(canonical)
+                    let result = ProjectBoardStore.shared.ensureProject(
+                        id: id,
+                        name: persistentProjectName(
+                            canonical, presentationLabel: presentations[id]?.label))
+                    coverage.record(result, projectID: id)
                 }
                 for record in Orchestrator.ledgerBackfillRecords() {
                     let result = ingest(record)
@@ -109,6 +153,13 @@ enum ProjectBoardIntegration {
             }
             var envelope = ProjectBoardStore.shared.snapshot(project: project, item: item)
             guard var board = envelope["board"] as? [String: Any] else { return envelope }
+            if let projects = board["projects"] as? [[String: Any]] {
+                board["projects"] = projects.map { project -> [String: Any] in
+                    guard let id = project["id"] as? String,
+                          let presentation = sourceProjects[id] else { return project }
+                    return project.merging(presentation.jsonObject) { _, presentation in presentation }
+                }
+            }
             let durableCoverage = board["sourceIngestion"] as? [String: Any] ?? [:]
             let durableReasons = durableCoverage["reasons"] as? [String] ?? []
             let items = board["items"] as? [[String: Any]] ?? []
@@ -220,7 +271,7 @@ enum ProjectBoardIntegration {
         return """
         Workflow mode: board (currently free). Re-read GET /v1/board before starting a new board action; the user can disable this mode at any time.
         Work item: \(itemID ?? "unassigned; retain explicit task/graph lineage, do not guess from a title"). Activity phase: \(phase ?? "undeclared").
-        Record the objective, checklist progress, output references, next action and unresolved obligations in your task progress/result artifacts for the owning root to attach to this item. Task success means delivery, not item closure; handoff means transfer, not completion. Never fabricate a token phase split from elapsed time. The owning root uses the machine-authenticated board API; a child must not read that credential. A network failure must not prevent the existing task result/progress file protocol.
+        Record the objective, checklist progress, output references, next action and unresolved obligations in your task progress/result artifacts for the owning root to attach to this item. Project Board status is computed automatically from recorded broker, checklist, obligation, finding, verification and landing facts; users do not operate lifecycle controls. Task success means delivery, not item closure; handoff means transfer, not completion. Never fabricate a token phase split from elapsed time. The owning root uses the machine-authenticated board API; a child must not read that credential. A network failure must not prevent the existing task result/progress file protocol.
         """
     }
 }

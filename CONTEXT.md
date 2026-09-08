@@ -39,7 +39,10 @@ graph node, but task success alone does not mean the graph is complete.
 ## Work item and board mode
 
 A durable Project-level objective, spanning execution attempts, Sessions, worktrees, evidence and
-handoffs. Its type, lifecycle and token activity phase are distinct axes. Board mode is enabled by
+handoffs. Its type, delivery progress and token activity phase are distinct axes. Conversation
+records and observed evidence advance delivery progress automatically; missing older process records
+do not negate an established later delivery. Coordination records describe periods and handoffs,
+not a completion lifecycle. Board mode is enabled by
 default and currently free; disabling it preserves history and removes board-only workflow gates,
 not ordinary dispatch or safety rules. See `docs/project-board.md`.
 
