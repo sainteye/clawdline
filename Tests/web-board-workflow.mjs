@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import http from "node:http";
 import { pathToFileURL } from "node:url";
 
 const projectRoot = path.resolve(process.env.CLAWDLINE_WORKFLOW_PROJECT_ROOT || ".");
@@ -68,7 +69,7 @@ for arg do
   [ "$arg" = -H ] && previous=H || previous=
 done
 case " $* " in
-  *'/v1/orchestrator/whoami'*) printf '{"terminal_id":"%fixture"}' ;;
+  *'/v1/orchestrator/whoami'*) printf '%s' '{"terminal_id":"%fixture"}' ;;
   *) printf '{"ok":true}' ;;
 esac
 `, { mode: 0o700 });
@@ -102,4 +103,80 @@ esac
     fs.rmSync(root, { recursive: true, force: true });
 }
 
-console.log("web board workflow: 22 checks passed");
+// Exercise the real curl/auth/idempotency boundary with synthetic credentials only.
+const authRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clawdline-workflow-auth-"));
+const credential = Buffer.alloc(32, 251).toString("base64url");
+const tokenPath = path.join(authRoot, "token");
+const requests = [], receipts = new Map();
+let helperChecks = 0;
+function proof(name, actual, expected) { assert.deepEqual(actual, expected, name); helperChecks++; }
+const server = http.createServer(async (req, res) => {
+    requests.push({ url: req.url, key: req.headers["idempotency-key"] });
+    res.setHeader("Content-Type", "application/json");
+    if (req.headers["x-clawdline-orchestrator"] !== credential) {
+        res.writeHead(403); res.end('{"error":"forbidden"}'); return;
+    }
+    if (req.url.startsWith("/v1/orchestrator/whoami?")) {
+        res.end('{"terminal_id":"%fixture"}'); return;
+    }
+    if (req.url !== "/v1/orchestrator/sessions/%25fixture/workflow") {
+        res.writeHead(404); res.end('{}'); return;
+    }
+    let body = ""; for await (const chunk of req) body += chunk;
+    const key = req.headers["idempotency-key"];
+    if (!key) { res.writeHead(400); res.end('{}'); return; }
+    if (receipts.has(key) && receipts.get(key) !== body) {
+        res.writeHead(409); res.end('{"error":"workflow_request_conflict"}'); return;
+    }
+    receipts.set(key, body); res.end('{"ok":true,"receipt":"stable"}');
+});
+await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+async function invoke(value, key = "same-request", body = '{"operation":"progress","summary":"test"}') {
+    if (value === null) fs.rmSync(tokenPath, { force: true });
+    else fs.writeFileSync(tokenPath, value, { mode: 0o600 });
+    const before = requests.length;
+    const result = await new Promise(resolve => {
+        const child = spawn(path.join(projectRoot, "Resources/clawdline-board-workflow.sh"), [
+            "11111111-1111-4111-8111-111111111111", key
+        ], { env: { ...process.env, TMPDIR: authRoot,
+            CLAWDLINE_ORCHESTRATOR_TOKEN_FILE: tokenPath,
+            CLAWDLINE_PORT: String(server.address().port) }, stdio: ["pipe", "pipe", "pipe"] });
+        let stdout = "", stderr = "";
+        child.stdout.on("data", chunk => { stdout += chunk; });
+        child.stderr.on("data", chunk => { stderr += chunk; });
+        child.on("close", status => resolve({ status, stdout, stderr }));
+        child.stdin.end(body);
+    });
+    proof("credential never appears in output", (result.stdout + result.stderr).includes(credential), false);
+    proof("all helper temporary carriers are cleaned", fs.readdirSync(authRoot).filter(name => name.startsWith("clawdline-board-")), []);
+    return { ...result, calls: requests.slice(before) };
+}
+try {
+    const first = await invoke(credential);
+    proof("minted base64url credential authenticates", first.status, 0);
+    proof("identity lookup precedes exactly one semantic POST", first.calls.map(row => row.url.split('?')[0]),
+        ["/v1/orchestrator/whoami", "/v1/orchestrator/sessions/%25fixture/workflow"]);
+    const replay = await invoke(credential);
+    proof("same request reuses the server receipt", replay.stdout, first.stdout);
+    proof("same request creates one receipt", receipts.size, 1);
+    proof("the stable key is forwarded unchanged", replay.calls[1].key, "same-request");
+    const conflict = await invoke(credential, "same-request", '{"operation":"progress","summary":"changed"}');
+    proof("changed-body same-key conflict is not retried", [conflict.status, conflict.calls.length, receipts.size], [22, 2, 1]);
+    const denied = await invoke(Buffer.alloc(32, 252).toString("base64url"));
+    proof("identity auth refusal never reaches semantic POST", [denied.status, denied.calls.length], [22, 1]);
+    for (const value of [null, "", credential + "\n", " " + credential, credential + " ",
+        credential.slice(0, 20) + "\n" + credential.slice(20), credential + "\r\nX-Forged: yes",
+        "a".repeat(65), "a".repeat(1024), "!".repeat(43), "a".repeat(42),
+        credential.slice(0, -1) + "B",
+        "a".repeat(63), Buffer.concat([Buffer.from(credential), Buffer.from([0])]),
+        "a".repeat(64) + "\n", "a".repeat(64) + "\n" + "b".repeat(64)]) {
+        const refused = await invoke(value);
+        proof("malformed credential is refused before networking", [refused.status, refused.calls.length], [77, 0]);
+        proof("malformed credential has a typed refusal", refused.stderr.trim(),
+            "clawdline-board-workflow: machine_credential_unavailable");
+    }
+} finally {
+    await new Promise(resolve => server.close(resolve));
+    fs.rmSync(authRoot, { recursive: true, force: true });
+}
+console.log("web board workflow: " + (22 + helperChecks) + " checks passed");

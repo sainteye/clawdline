@@ -96,7 +96,16 @@ process-bound conversation id and caller-stable idempotency key, resolves the te
 authenticated `whoami`, then posts JSON from stdin. It feeds the token to both curl requests through
 one mode-0600 temporary header file, never curl argv, stdout/stderr, JSON, or assistant context, and
 removes the carrier on exit. `Resources/board-workflow.md` is the short adapter instruction. A
-successful terminal response whose workflow status is `unrecorded` produces a non-retrying UI
+credential is snapshotted with a 65-byte read limit and validated before any HTTP request. The
+helper accepts the current 32-byte, unpadded base64url token encoding and the legacy 64-character
+lowercase hexadecimal form; whitespace, line breaks, malformed and oversized files are refused
+without sending a request. This is local format validation, not authentication: the server still
+authenticates the credential. A refused identity lookup never proceeds to the semantic POST.
+Terminal identifiers are validated before URL encoding, including the normal leading `%`.
+The caller's stable idempotency key and exact JSON are forwarded unchanged; the helper does not
+retry a refused or uncertain request and never resends the person's terminal input.
+
+A successful terminal response whose workflow status is `unrecorded` produces a non-retrying UI
 warning and diagnostic; it does not pretend the terminal send failed.
 
 This change intentionally does not copy either resource into the app bundle or a global managed

@@ -24,16 +24,27 @@ printf '%s\n' "$conversation_id" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4
 
 token_file=${CLAWDLINE_ORCHESTRATOR_TOKEN_FILE:-"$HOME/.config/clawdline/orchestrator-token"}
 [ -f "$token_file" ] || { echo "clawdline-board-workflow: machine_credential_unavailable" >&2; exit 77; }
-grep -Eq '^[a-f0-9]{64}$' "$token_file" \
-    || { echo "clawdline-board-workflow: machine_credential_unavailable" >&2; exit 77; }
 port=${CLAWDLINE_PORT:-7717}
 case "$port" in *[!0-9]*|'') echo "clawdline-board-workflow: port_invalid" >&2; exit 64;; esac
 
 body=$(mktemp "${TMPDIR:-/tmp}/clawdline-board-workflow.XXXXXX")
 identity=$(mktemp "${TMPDIR:-/tmp}/clawdline-board-identity.XXXXXX")
 header=$(mktemp "${TMPDIR:-/tmp}/clawdline-board-header.XXXXXX")
-trap 'rm -f "$body" "$identity" "$header"' EXIT HUP INT TERM
-{ printf 'X-Clawdline-Orchestrator: '; command cat "$token_file"; printf '\n'; } > "$header"
+credential=$(mktemp "${TMPDIR:-/tmp}/clawdline-board-credential.XXXXXX")
+trap 'rm -f "$body" "$identity" "$header" "$credential"' EXIT HUP INT TERM
+# Snapshot at most one byte beyond the largest supported encoding. Validate those exact
+# bytes, not one matching line from a file that will later be read again into an HTTP header.
+# RemoteAuth.newToken emits 32 random bytes as unpadded base64url (43 characters). Retain
+# compatibility with the 64-character lowercase hex encoding accepted by protocol 1.
+dd if="$token_file" of="$credential" bs=65 count=1 2>/dev/null \
+    || { echo "clawdline-board-workflow: machine_credential_unavailable" >&2; exit 77; }
+credential_size=$(wc -c < "$credential" | tr -d ' ')
+invalid_bytes=$(LC_ALL=C tr -d 'A-Za-z0-9_-' < "$credential" | wc -c | tr -d ' ')
+[ "$invalid_bytes" = 0 ] && {
+    { [ "$credential_size" = 43 ] && LC_ALL=C grep -Eq '^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$' "$credential"; } \
+    || { [ "$credential_size" = 64 ] && LC_ALL=C grep -Eq '^[a-f0-9]{64}$' "$credential"; }
+} || { echo "clawdline-board-workflow: machine_credential_unavailable" >&2; exit 77; }
+{ printf 'X-Clawdline-Orchestrator: '; command cat "$credential"; printf '\n'; } > "$header"
 chmod 600 "$header"
 command cat > "$body"
 [ "$(wc -c < "$body" | tr -d ' ')" -le 65536 ] \
@@ -45,12 +56,12 @@ curl --fail-with-body -sS -G "http://127.0.0.1:$port/v1/orchestrator/whoami" \
 terminal_id=$(/usr/bin/plutil -extract terminal_id raw -o - "$identity" 2>/dev/null || true)
 [ -n "$terminal_id" ] \
     || { echo "clawdline-board-workflow: workflow_identity_unavailable" >&2; exit 69; }
+printf '%s\n' "$terminal_id" | grep -Eq '^%?[A-Za-z0-9._~-]+$' \
+    || { echo "clawdline-board-workflow: terminal_id_malformed" >&2; exit 69; }
 case "$terminal_id" in
     %*) terminal_segment="%25${terminal_id#%}" ;;
     *) terminal_segment=$terminal_id ;;
 esac
-printf '%s\n' "$terminal_segment" | grep -Eq '^[A-Za-z0-9._~-]+$' \
-    || { echo "clawdline-board-workflow: terminal_id_malformed" >&2; exit 69; }
 
 curl --fail-with-body -sS -X POST \
     "http://127.0.0.1:$port/v1/orchestrator/sessions/$terminal_segment/workflow" \
