@@ -702,6 +702,138 @@ group("key and end terminal mutations leave health and SSE turns responsive") {
     expect("focus reports its own circuit refusal", focusResponse?.status, 502)
     expect("focus circuit refusal is typed", focusResponse.map(remoteErrorCode),
            "iterm_attention_required")
+
+    // Run now enters through the connection-level terminal lane. Exercise that production entry
+    // so its paired gates, in-flight coalescing and retry policy cannot drift apart from the route.
+    let scheduleID = "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa"
+    let runPath = "/v1/orchestrator/schedules/\(scheduleID)/run"
+    let reader = RemoteAuth.addDevice(name: "manual-run reader", caps: [.read])
+    defer { RemoteAuth.revoke(id: reader.id) }
+    func runRequest(_ token: String?, key: String?) -> RemoteServer.Request {
+        var headers: [String: String] = ["Content-Type": "application/json"]
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        if let key { headers["Idempotency-Key"] = key }
+        return remoteRequest("POST", runPath, headers: headers, body: "{}")
+    }
+    func run(_ request: RemoteServer.Request) -> RemoteServer.Response {
+        let finished = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var result: RemoteServer.Response?
+        RemoteServer.shared.unfiledTerminalMutationForTesting(request) {
+            lock.lock(); result = $0; lock.unlock(); finished.signal()
+        }
+        check("the manual-run request settles",
+              finished.wait(timeout: .now() + 2) == .success)
+        lock.lock(); defer { lock.unlock() }
+        return result ?? .error(599, "test_timeout", "The test request did not settle.")
+    }
+    let callsLock = NSLock()
+    var calls = 0
+    func called() -> Int { callsLock.lock(); defer { callsLock.unlock() }; return calls }
+    func serve(_ response: RemoteServer.Response) {
+        RemoteServer.terminalRouteForTesting = { _ in
+            callsLock.lock(); calls += 1; callsLock.unlock()
+            return response
+        }
+    }
+
+    Config.shared.remoteWrite = false
+    serve(.json(["ok": true]))
+    expect("Run now is refused while remote writes are switched off",
+           remoteErrorCode(run(runRequest(writer.token, key: UUID().uuidString))),
+           "write_disabled")
+    expect("the disabled request never reaches the schedule route", called(), 0)
+    Config.shared.remoteWrite = true
+    expect("a read-only paired device cannot run a schedule",
+           remoteErrorCode(run(runRequest(reader.token, key: UUID().uuidString))), "forbidden")
+    expect("a paired run without an idempotency key is refused",
+           remoteErrorCode(run(runRequest(writer.token, key: nil))), "bad_request")
+    expect("all refused requests still leave the route untouched", called(), 0)
+
+    let successKey = UUID().uuidString
+    expect("a paired send-capable device may run once",
+           run(runRequest(writer.token, key: successKey)).status, 200)
+    expect("the successful run reached the route exactly once", called(), 1)
+    expect("retrying a successful run replays its answer",
+           run(runRequest(writer.token, key: successKey)).status, 200)
+    expect("the replay does not run the schedule twice", called(), 1)
+
+    let activeKey = UUID().uuidString
+    serve(.error(409, "schedule_active", "This schedule is already active."))
+    expect("an active refusal reaches the route",
+           run(runRequest(writer.token, key: activeKey)).status, 409)
+    expect("the same active refusal is replayed",
+           run(runRequest(writer.token, key: activeKey)).status, 409)
+    expect("a stable 409 is filed without executing again", called(), 2)
+
+    for (status, code) in [(429, "over_capacity"), (500, "internal_error")] {
+        let transientKey = UUID().uuidString
+        serve(.error(status, code, "Try again."))
+        expect("a transient \(status) is returned",
+               run(runRequest(writer.token, key: transientKey)).status, status)
+        let afterTransient = called()
+        serve(.json(["ok": true]))
+        expect("the same key may retry after \(status)",
+               run(runRequest(writer.token, key: transientKey)).status, 200)
+        expect("retry after \(status) reaches the route again", called(), afterTransient + 1)
+    }
+
+    let joinedKey = UUID().uuidString
+    let joinedEntered = DispatchSemaphore(value: 0)
+    let joinedRelease = DispatchSemaphore(value: 0)
+    let joined = DispatchSemaphore(value: 0)
+    let joinedLock = NSLock()
+    var joinedResponses: [RemoteServer.Response] = []
+    let beforeJoin = called()
+    RemoteServer.terminalRouteForTesting = { _ in
+        callsLock.lock(); calls += 1; callsLock.unlock(); joinedEntered.signal()
+        _ = joinedRelease.wait(timeout: .now() + 2)
+        return .json(["ok": true])
+    }
+    let joinedRequest = runRequest(writer.token, key: joinedKey)
+    for _ in 0..<2 {
+        RemoteServer.shared.unfiledTerminalMutationForTesting(joinedRequest) {
+            joinedLock.lock(); joinedResponses.append($0); joinedLock.unlock(); joined.signal()
+        }
+    }
+    check("the first same-key request enters the terminal lane",
+          joinedEntered.wait(timeout: .now() + 1) == .success)
+    let bothAdmitted = DispatchSemaphore(value: 0)
+    RemoteServer.shared.routeOnServerQueueForTesting(remoteRequest("GET", "/v1/health")) { _ in
+        bothAdmitted.signal()
+    }
+    check("the concurrent retry joins before the effect completes",
+          bothAdmitted.wait(timeout: .now() + 1) == .success)
+    joinedRelease.signal()
+    check("both same-key callers settle",
+          joined.wait(timeout: .now() + 1) == .success
+            && joined.wait(timeout: .now() + 1) == .success)
+    expect("concurrent same-key requests execute once", called(), beforeJoin + 1)
+    joinedLock.lock(); let joinedSnapshot = joinedResponses; joinedLock.unlock()
+    check("both joined callers receive the same success",
+          joinedSnapshot.count == 2 && joinedSnapshot.allSatisfy { $0.status == 200 })
+
+    let cloudEntered = DispatchSemaphore(value: 0)
+    let cloudRelease = DispatchSemaphore(value: 0)
+    let cloudFinished = DispatchSemaphore(value: 0)
+    let cloudResult = CloudRouteResultBox()
+    RemoteServer.terminalRouteForTesting = { _ in
+        cloudEntered.signal(); _ = cloudRelease.wait(timeout: .now() + 2)
+        return .json(["ok": true])
+    }
+    Task {
+        let response = await RemoteServer.shared.routeVerifiedCloudCommand(
+            .scheduleRun(id: scheduleID), sender: "viewer", idempotencyKey: UUID().uuidString)
+        cloudResult.record(response: response); cloudFinished.signal()
+    }
+    check("a verified encrypted Cloud run enters the bounded terminal lane",
+          cloudEntered.wait(timeout: .now() + 1) == .success)
+    let outstanding = RemoteServer.shared.terminalOutstandingForTesting()
+    check("the Cloud run occupies exactly one bounded command and schedule channel",
+          outstanding.total == 1 && outstanding.channels == 1)
+    cloudRelease.signal()
+    check("the Cloud run settles", cloudFinished.wait(timeout: .now() + 1) == .success)
+    expect("the verified Cloud run receives the route response", cloudResult.snapshot().status, 200)
 }
 
 group("a project folder says which directory it is, and is not taken at its word") {

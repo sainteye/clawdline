@@ -36,6 +36,7 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case scheduleCreate(body: Data)
     case scheduleUpdate(id: String, body: Data)
     case scheduleDelete(id: String)
+    case scheduleRun(id: String)
     case snippetCreate(body: Data)
     case snippetUpdate(id: String, body: Data)
     case snippetDelete(id: String)
@@ -708,7 +709,7 @@ actor CloudAppBridge {
                 command = .scheduleUpdate(id: id, body: data)
             }
             commandReply = (session, "action:" + request)
-        case "schedule-delete":
+        case "schedule-delete", "schedule-run":
             guard inbound.commandClass == .ctl,
                   Set(body.keys) == ["type", "session", "request", "id"],
                   let session = body["session"] as? String,
@@ -719,7 +720,7 @@ actor CloudAppBridge {
                 commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
                 return
             }
-            command = .scheduleDelete(id: id)
+            command = type == "schedule-delete" ? .scheduleDelete(id: id) : .scheduleRun(id: id)
             commandReply = (session, "action:" + request)
         case "snippet-create", "snippet-update":
             let wanted: Set<String> = type == "snippet-create"

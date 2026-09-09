@@ -45,6 +45,20 @@ const {
 
 const scheduleHistorySource = await readFile(
     new URL("../Resources/web/app/js/input/schedule-history.js", import.meta.url), "utf8");
+const localScheduleSource = await readFile(
+    new URL("../Resources/web/app/js/net/live.js", import.meta.url), "utf8");
+const cloudScheduleSource = await readFile(
+    new URL("../Resources/web/app/js/net/cloud-client.js", import.meta.url), "utf8");
+const cloudBridgeSource = await readFile(
+    new URL("../Sources/CloudAppBridge.swift", import.meta.url), "utf8");
+const cloudRouteSource = await readFile(
+    new URL("../Sources/CloudLocalRoute.swift", import.meta.url), "utf8");
+const remoteServerSource = await readFile(
+    new URL("../Sources/RemoteServer.swift", import.meta.url), "utf8");
+const scheduleWebhookSource = await readFile(
+    new URL("../Sources/ScheduleWebhook.swift", import.meta.url), "utf8");
+const { scheduleRunConfirmation, scheduleRunCopy, scheduleRunMessage } =
+    await import("../Resources/web/app/js/input/schedule-run.js");
 
 const rows = [
     { id: "shown", title: "Morning brief", enabled: true, next_fire: 200 },
@@ -189,6 +203,69 @@ assert.match(scheduleHistorySource, /scheduleWebhookCurlExample/,
     "the inline help can copy the safe placeholder command");
 assert.match(scheduleCSS, /\.schedule-webhook-help[\s\S]*overflow-x:\s*auto/,
     "the inline instructions keep the command readable on narrow screens");
+assert.equal(scheduleWebhookCopy("zh-Hant").showDetails, "展開 Webhook 詳情",
+    "the compact Webhook card has a Traditional Chinese disclosure label");
+assert.match(scheduleHistorySource,
+    /webhookOpen\s*=\s*false[\s\S]*dataset\.collapsed[\s\S]*aria-expanded/,
+    "Webhook details start collapsed and expose their disclosure state");
+assert.match(scheduleHistorySource,
+    /open:\s*!els\["schedule-history"\]\.hidden\s*&&\s*webhookOpen/,
+    "a collapsed receipt timeline is not recorded as human-observed");
+assert.match(scheduleCSS,
+    /\.schedule-history-sheet\s*\{[\s\S]*overflow-y:\s*auto/,
+    "the complete Schedule detail sheet scrolls when its content exceeds the viewport");
+assert.match(scheduleCSS,
+    /\.schedule-webhook\[data-collapsed="true"\][\s\S]*display:\s*none/,
+    "the collapsed Webhook card hides its instructions, controls, and receipt timeline");
+
+assert.equal(scheduleRunCopy("zh-Hant").button, "立即執行",
+    "the canonical Traditional Chinese schedule sheet translates Run now");
+assert.equal(scheduleRunCopy("zh-TW").running, "正在啟動…",
+    "the regional Traditional Chinese locale translates the pending state");
+assert.match(scheduleRunConfirmation("Atrium", "zh-Hant"),
+    /Atrium[\s\S]*Mac[\s\S]*真實工作/,
+    "the confirmation names the schedule and warns that real Mac work starts");
+assert.match(scheduleRunConfirmation("Atrium", "en"), /counts as that occurrence/,
+    "the confirmation explains that a due occurrence can be consumed");
+assert.equal(scheduleRunMessage({ code: "schedule_active" }, "zh-Hant"),
+    "此排程已有一個執行中的工作。",
+    "a duplicate press gets the typed active-run explanation");
+assert.equal(scheduleRunMessage({ code: "schedule_spent" }, "zh-Hant"),
+    "這個單次排程已經執行過；若要再次執行，請建立新排程。",
+    "a spent one-shot is not presented as retryable");
+assert.match(scheduleHistorySource,
+    /id\s*=\s*["']schedule-history-run-now["'][\s\S]*window\.confirm[\s\S]*api\.runSchedule/,
+    "the schedule detail creates a discoverable button, confirms, then uses the typed API");
+assert.match(scheduleHistorySource,
+    /runningNow\s*=\s*true[\s\S]*Schedules\.refresh\(\)[\s\S]*api\.schedule\(id\)/,
+    "a successful press refreshes both the list and the execution history");
+assert.match(localScheduleSource,
+    /LocalClient\.runSchedule[\s\S]*Idempotency-Key[\s\S]*uuid\(\)/,
+    "the direct paired-browser command carries a per-press idempotency key");
+assert.doesNotMatch(localScheduleSource.match(
+    /LocalClient\.runSchedule[\s\S]*?\n};/)[0], /X-Clawdline-Orchestrator|dispatchToken/i,
+    "the browser Run now implementation never receives the machine orchestrator credential");
+assert.match(cloudScheduleSource,
+    /runSchedule\(id\)[\s\S]*_machineRequest[\s\S]*["']schedule-run["']/,
+    "the hosted viewer sends one closed encrypted command rather than naming a local route");
+assert.match(cloudBridgeSource,
+    /case "schedule-delete", "schedule-run"[\s\S]*type == "schedule-delete"\s*\?\s*\.scheduleDelete\(id: id\)\s*:\s*\.scheduleRun\(id: id\)/,
+    "the Mac decoder keeps Run now distinct from deleting the same schedule");
+assert.match(cloudRouteSource,
+    /case \.scheduleRun\(let id\):[\s\S]*\/v1\/orchestrator\/schedules\/\\\(Self\.segment\(id\)\)\/run/,
+    "the closed command maps to the existing named manual-run route");
+assert.match(scheduleWebhookSource,
+    /func receiptV1[\s\S]*taskID:\s*nil/,
+    "the receipt v1 normalizer removes the early private task identity");
+assert.match(scheduleWebhookSource,
+    /pending\.receiptVersion == 1, pending\.taskID != nil[\s\S]*pending = receiptV1/,
+    "startup repairs the released receipt v1 shape before retrying it to Cloud");
+assert.match(remoteServerSource,
+    /routeVerifiedCloudCommand[\s\S]*isOrchestratorTerminalWorkerRoute\(request\.path\)[\s\S]*terminalMutation\(request\)/,
+    "verified Cloud Run now enters the bounded filed terminal worker");
+assert.match(remoteServerSource,
+    /unfiledTerminalMutation[\s\S]*hasPrefix\("\/v1\/orchestrator\/schedules\/"\)[\s\S]*hasSuffix\("\/run"\)[\s\S]*!Orchestrator\.verifyDispatch[\s\S]*terminalMutation\(request, deliver: deliver\)/,
+    "direct paired Run now enters the write/send/idempotency gate before its worker");
 
 assert.match(scheduleWebhookManagementWarning(null, {
     language: "zh-Hant", bindingAvailability: "unbound", effectiveTier: "free"

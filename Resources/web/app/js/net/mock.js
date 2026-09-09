@@ -2076,6 +2076,30 @@ Mock.deleteSchedule = function (id) {
     });
 };
 
+Mock.runSchedule = function (id) {
+    return new Promise(function (done, fail) {
+        setTimeout(function () {
+            if (!MOCK_WRITE) {
+                fail(Object.assign(new Error("Sending is not enabled on this server."),
+                    { code: "write_disabled" }));
+                return;
+            }
+            var row = scheduleRow(id);
+            if (!row) {
+                fail(Object.assign(new Error("No schedule named that"), { code: "not_found" }));
+                return;
+            }
+            var mode = params.get("scheduleRun") || "";
+            if (mode === "active") {
+                fail(Object.assign(new Error("That schedule already has an active run."),
+                    { code: "schedule_active" }));
+                return;
+            }
+            done({ ok: true, task: { id: uuid(), schedule_id: id } });
+        }, 420);
+    });
+};
+
 /* ---- snippets fixture -----------------------------------------------------
    Its own block beside the schedule fixtures above, for the same reason they are one: this file
    is an editing surface and a feature's rows should be findable in one place.

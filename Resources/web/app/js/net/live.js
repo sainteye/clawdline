@@ -761,13 +761,13 @@ LocalClient.dispatch = function (place, assistant, model) {
 // Compatibility export for the entry point; both names are the exact same object.
 export var Live = LocalClient;
 
-/* ---- schedules: reading is ambient, making one is gated ------------------
+/* ---- schedules: reading is ambient, mutations are gated -----------------
    Kept outside the transport object above so the two permissions stay visible at a glance:
    listing needs nothing but pairing, the same as everything else on `Live`. Making one goes
    through `writeGate` exactly like `voice` and `intents` below it — the write switch, the `send`
    capability, an Idempotency-Key — and never the orchestrator token, which is local-only and
-   could not reach a phone. Neither route can make an existing schedule *run* early; that button
-   does not exist anywhere on this page.
+   could not reach a phone. Running one early uses the same three gates and the same bounded
+   terminal lane as an ordinary scheduled occurrence.
    -------------------------------------------------------------------------- */
 LocalClient.schedules = function () { return jsonFetch("/v1/orchestrator/schedules"); };
 
@@ -802,6 +802,14 @@ LocalClient.updateSchedule = function (id, schedule) {
 LocalClient.deleteSchedule = function (id) {
     return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id),
                      { method: "DELETE", headers: { "Idempotency-Key": uuid() } });
+};
+
+/// Run the named schedule now without editing its definition; a currently due occurrence may be consumed.
+/// The request carries no task body: the Mac re-reads the durable schedule and applies the same
+/// disabled/spent/active checks as its native Run Now control.
+LocalClient.runSchedule = function (id) {
+    return jsonFetch("/v1/orchestrator/schedules/" + encodeURIComponent(id) + "/run",
+                     post({}, { "Idempotency-Key": uuid() }));
 };
 
 /* ---- snippets: pressing one is local, keeping one is a write -------------

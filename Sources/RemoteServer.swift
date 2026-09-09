@@ -291,7 +291,7 @@ final class RemoteServer: @unchecked Sendable {
                 // and running the other terminal mutations there would hold this server queue.
                 if request.method == "POST", Self.isTerminalSend(request.path) {
                     self.sendTerminal(request) { continuation.resume(returning: $0) }
-                } else if request.method == "POST", Self.isTerminalWorkerRoute(request.path) {
+                } else if request.method == "POST", Self.isTerminalWorkerRoute(request.path) || Self.isOrchestratorTerminalWorkerRoute(request.path) {
                     self.terminalMutation(request) { continuation.resume(returning: $0) }
                 } else if request.path == "/v1/board" { self.startBoardRequest(request) { continuation.resume(returning: $0) }
                 } else {
@@ -786,9 +786,6 @@ final class RemoteServer: @unchecked Sendable {
         return (parts.count == 3 || parts.count == 4) && parts[1] == "resume"
     }
 
-    /// Orchestrator writes that may open a tab or deliver a coordination message. Their own task,
-    /// handoff and wait identifiers provide idempotency, so they need bounded isolation but not
-    /// the paired-device idempotency table used by session routes.
     static func isOrchestratorTerminalWorkerRoute(_ path: String) -> Bool {
         if path == "/v1/orchestrator/tasks"
             || path == "/v1/orchestrator/detached-tasks"
@@ -796,13 +793,14 @@ final class RemoteServer: @unchecked Sendable {
             || path == "/v1/orchestrator/root-assignments"
             || path == "/v1/orchestrator/waits"
             || path == "/v1/orchestrator/landing-queue/advance" { return true }
-        if path.hasPrefix("/v1/orchestrator/schedules/") && path.hasSuffix("/run") {
-            return true
-        }
+        if isManualScheduleRun(path) { return true }
         let task = path.dropFirst("/v1/orchestrator/tasks/".count)
         if path.hasPrefix("/v1/orchestrator/tasks/"), !task.isEmpty,
            !task.contains("/") { return true } // the DELETE cancel route
         return path.hasPrefix("/v1/orchestrator/waits/") && path.hasSuffix("/release")
+    }
+    private static func isManualScheduleRun(_ path: String) -> Bool {
+        path.hasPrefix("/v1/orchestrator/schedules/") && path.hasSuffix("/run")
     }
 
     /// Every route that answers with a body and closes. Split out from the connection handling so
@@ -2370,12 +2368,12 @@ final class RemoteServer: @unchecked Sendable {
 
         case ("POST", let path) where path.hasPrefix("/v1/orchestrator/schedules/")
             && path.hasSuffix("/run"):
-            guard orchestratorAuthed else {
-                return .error(403, "forbidden", "Running a schedule needs the orchestrator token.")
-            }
             let id = String(path.dropFirst("/v1/orchestrator/schedules/".count)
                 .dropLast("/run".count))
-            return answer(Orchestrator.runSchedule(id: id.removingPercentEncoding ?? id))
+            let run = { self.answer(Orchestrator.runSchedule(
+                id: id.removingPercentEncoding ?? id)) }
+            if orchestratorAuthed { return run() }
+            return writing(request, keeping: { $0.status != 429 && $0.status < 500 }) { _ in run() }
 
         // What every session on this machine has spent, out of the durable ledger rather than
         // out of the registry — which keeps 200 rows and is why the ledger exists. Read-level,
@@ -3462,9 +3460,6 @@ final class RemoteServer: @unchecked Sendable {
                       "The terminal command did not complete: \(failure.message)")
     }
 
-    /// Asynchronous wrapper for `/key`, `/end` and `/start`. Validation, reservation and
-    /// idempotency stay on the server queue; only the existing route body enters the bounded
-    /// terminal worker. The queue-specific marker lets `writing` skip duplicate bookkeeping.
     private func terminalMutation(_ request: Request, deliver: @escaping (Response) -> Void) {
         if let refusal = crossOriginRefusal(request) { deliver(refusal); return }
         if case .denied = permission(for: request) {
@@ -3506,7 +3501,9 @@ final class RemoteServer: @unchecked Sendable {
             let response = Self.terminalRouteForTesting?(request) ?? self.route(request)
             self.queue.async {
                 let waiters = self.terminalPending.removeValue(forKey: key) ?? []
-                self.remember(response, under: key, for: request, by: device)
+                if Self.keepsTerminalMutation(response, for: request) {
+                    self.remember(response, under: key, for: request, by: device)
+                } else { self.note(response, for: request, by: device) }
                 for waiter in waiters { waiter(response) }
             }
         }
@@ -3519,8 +3516,11 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
-    private func unfiledTerminalMutation(_ request: Request,
-                                         deliver: @escaping (Response) -> Void) {
+    private func unfiledTerminalMutation(_ request: Request, deliver: @escaping (Response) -> Void) {
+        if request.method == "POST", Self.isManualScheduleRun(request.path),
+           !Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"]) {
+            terminalMutation(request, deliver: deliver); return
+        }
         if let refusal = terminalMaintenanceRefusal() {
             deliver(refusal); return
         }
@@ -3536,7 +3536,9 @@ final class RemoteServer: @unchecked Sendable {
                     + "Try again after they drain."))
         }
     }
-
+    private static func keepsTerminalMutation(_ response: Response, for request: Request) -> Bool {
+        !isManualScheduleRun(request.path) || (response.status != 429 && response.status < 500)
+    }
     private static func terminalChannels(for request: Request) -> [String] {
         if request.path.hasPrefix("/v1/sessions/") {
             let rest = request.path.dropFirst("/v1/sessions/".count)
@@ -3592,19 +3594,17 @@ final class RemoteServer: @unchecked Sendable {
     static func terminalChannelsForTesting(_ request: Request) -> [String] {
         terminalChannels(for: request)
     }
-
-    /// Deterministic queue seams. They submit to the production queues rather than imitating
-    /// them, so a blocked test command proves the actual server and reading lanes still move.
     func sendTerminalForTesting(_ request: Request,
                                 completion: @escaping (Response) -> Void) {
         queue.async { self.sendTerminal(request, deliver: completion) }
     }
 
-    func terminalMutationForTesting(_ request: Request,
-                                    completion: @escaping (Response) -> Void) {
+    func terminalMutationForTesting(_ request: Request, completion: @escaping (Response) -> Void) {
         queue.async { self.terminalMutation(request, deliver: completion) }
     }
-
+    func unfiledTerminalMutationForTesting(_ request: Request, completion: @escaping (Response) -> Void) {
+        queue.async { self.unfiledTerminalMutation(request, deliver: completion) }
+    }
     func routeOnServerQueueForTesting(_ request: Request,
                                       completion: @escaping (Response) -> Void) {
         queue.async {

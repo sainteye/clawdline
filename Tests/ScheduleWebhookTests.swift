@@ -35,6 +35,9 @@ private final class ScheduleWebhookCloudFixture: ScheduleWebhookCloudAPI, @unche
     func sendScheduleWebhookReceipt(deliveryID: String, receipt: ScheduleWebhookReceipt)
         async throws -> ScheduleWebhookReceiptAck {
         events.add("send:\(receipt.receiptVersion)")
+        if receipt.receiptVersion == 1, receipt.taskID != nil {
+            throw CloudAccountError.http(status: 400, code: "bad_field")
+        }
         if takeReceiptFailure() {
             throw CloudAccountError.http(status: 503, code: "temporarily_unavailable")
         }
@@ -428,7 +431,21 @@ func runScheduleWebhookTests() {
         let pending = (try? behaviorDeliveries.row(deliveryID: deliveryID)) ?? nil
         expect("the exact durable receipt remains pending after response loss",
                pending?.pendingReceipt?.receiptVersion, 1)
+        expect("durable acceptance keeps its preallocated task id private",
+               pending?.pendingReceipt?.taskID, nil)
         let stable = pending?.taskID
+        // Recreate the exact receipt v1 written by the first released Mac implementation. Cloud
+        // rejects its early task_id, and resume must repair this journal before it can poll again.
+        if var legacy = pending, let receipt = legacy.pendingReceipt {
+            legacy.pendingReceipt = ScheduleWebhookReceipt(
+                schema: receipt.schema, receiptVersion: receipt.receiptVersion,
+                previousReceiptVersion: receipt.previousReceiptVersion, kind: receipt.kind,
+                occurredAt: receipt.occurredAt, macBuild: receipt.macBuild,
+                leaseToken: receipt.leaseToken, taskID: stable,
+                outcomeCode: receipt.outcomeCode, taskTerminalState: receipt.taskTerminalState,
+                retryAt: receipt.retryAt)
+            try? behaviorDeliveries.save(legacy)
+        }
 
         scheduleWebhookAwait {
             let restarted = ScheduleWebhookDeliveryProcessor(
@@ -610,6 +627,9 @@ func runScheduleWebhookTests() {
         check("re-claim replaces the stale v1 token and later receipts carry null",
               leaseSnapshot.1.contains { $0.receiptVersion == 1 && $0.leaseToken == renewedToken }
                 && leaseSnapshot.1.contains { $0.receiptVersion == 2 && $0.leaseToken == nil })
+        check("re-claimed durable acceptance never sends the preallocated task id",
+              leaseSnapshot.1.filter { $0.receiptVersion == 1 }
+                .allSatisfy { $0.taskID == nil })
         expect("lease recovery releases one stable schedule effect", leaseEffect.snapshot().0, 1)
 
         let expiryRoot = root.appendingPathComponent("delivery-expiry", isDirectory: true)

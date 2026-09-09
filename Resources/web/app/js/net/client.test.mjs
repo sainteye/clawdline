@@ -1406,7 +1406,8 @@ assert.equal((await resumed).id, "new-session",
 for (const operation of [
     ["createSchedule", [scheduleBody], "schedule-create", null],
     ["updateSchedule", ["morning", scheduleBody], "schedule-update", "morning"],
-    ["deleteSchedule", ["morning"], "schedule-delete", "morning"]
+    ["deleteSchedule", ["morning"], "schedule-delete", "morning"],
+    ["runSchedule", ["morning"], "schedule-run", "morning"]
 ]) {
     const before = publishedReads(controlSocket).length;
     const pending = controlCloud[operation[0]](...operation[1]);
@@ -1415,7 +1416,7 @@ for (const operation of [
     controlRequest = await requestBody(publishedReads(controlSocket)[before]);
     assert.equal(controlRequest.type, operation[2]);
     if (operation[3]) assert.equal(controlRequest.id, operation[3]);
-    if (operation[0] !== "deleteSchedule") {
+    if (operation[0] === "createSchedule" || operation[0] === "updateSchedule") {
         assert.deepEqual(controlRequest.schedule,
             { ...scheduleBody, place_id: "local-portfolio" },
             operation[0] + " sends the Mac parser's flat body with only the Project id translated");

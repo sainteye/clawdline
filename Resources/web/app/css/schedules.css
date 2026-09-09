@@ -149,14 +149,19 @@
 
 /* A schedule as a timeline of sessions. It is deliberately a separate sheet from the editor:
    opening history is read-only, while Edit is an explicit second press before any writable form
-   appears. The run list scrolls inside the card so its Close button remains reachable on a phone. */
+   appears. The entire card scrolls: Webhook details and a long run history must not make the
+   content below either one unreachable on a phone. */
 .schedule-history-sheet {
     width: min(500px, 100%);
     max-height: min(720px, calc(100vh - 28px));
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
+.schedule-history-sheet > * { flex-shrink: 0; }
 .schedule-history-head {
     display: flex; align-items: flex-start; gap: 12px;
     padding-bottom: 13px;
@@ -189,9 +194,8 @@
     letter-spacing: 0.07em; text-transform: uppercase;
 }
 .schedule-run-rows {
-    min-height: 0;
     margin: 0; padding: 0;
-    overflow-y: auto;
+    overflow: visible;
     list-style: none;
     border: 1px solid var(--line);
     border-radius: 9px;
@@ -284,7 +288,19 @@
     .schedule-history-head { align-items: center; }
     .schedule-run-button { min-height: 64px; padding: 12px; }
 }
-.schedule-webhook { margin: 1rem 0; padding: .9rem; border: 1px solid var(--line, #d8d8d8); border-radius: .8rem; }
+.schedule-webhook {
+    position: relative;
+    margin: 1rem 0; padding: .9rem;
+    border: 1px solid var(--line, #d8d8d8); border-radius: .8rem;
+}
+.schedule-webhook > h3 { margin: .3rem 10.5rem .3rem 0; }
+.schedule-webhook-panel-toggle {
+    position: absolute; top: .55rem; right: .65rem;
+    min-height: 32px;
+}
+.schedule-webhook[data-collapsed="true"] > :not(h3):not(.schedule-webhook-panel-toggle) {
+    display: none;
+}
 .schedule-webhook-warning { color: var(--warn, #a15c00); font-size: .9rem; line-height: 1.4; }
 .schedule-webhook-help {
     margin: .8rem 0;

@@ -456,10 +456,12 @@ launch daemon and does not wake a powered-off Mac.
 
 ## Inspect and verify
 
-The examples use the orchestrator token. It authenticates every route here; a paired device with
-read access may also use both `GET`s, while a manual run requires the orchestrator token just like
-dispatch. The three routes that write a file go the other way and take a device token instead —
-see [Making one without a text editor](#making-one-without-a-text-editor) and
+The examples use the orchestrator token, which is the trusted on-Mac door. A paired device with
+read access may also use both `GET`s. A manual run has a second door: a paired token with `send`,
+the Remote write switch on, and an `Idempotency-Key`. The hosted viewer sends the same intent as an
+authenticated encrypted `schedule-run` command; it never receives the machine token. The three
+routes that write a file use their own rules — see
+[Making one without a text editor](#making-one-without-a-text-editor) and
 [Changing one, and taking one away](#changing-one-and-taking-one-away):
 
 ```sh
@@ -502,10 +504,13 @@ promise a suggestion.
 detail route spells `when` the way the file does, so a one-shot comes back as `{"at": …, "on": …}`.
 
 A paired device (read-only is sufficient) sees the schedule list and any single schedule through
-these same GET routes; a manual run remains restricted to the orchestrator token. Making, changing
-and removing one needs either `send` and the write switch, or — for a schedule that runs once —
-that same orchestrator token. `GET /v1/orchestrator/schedules/:id` is the read half of both, and
-it is what the refusal points a machine caller at to check what it wrote.
+these same GET routes. Running one needs either the machine's orchestrator token, or a paired
+device's `send` capability, enabled Remote write switch, and non-empty idempotency key. For the
+paired door, the same key joins concurrent calls and replays `200`/stable `409`; `429` and `5xx`
+remain retryable and are not cached. Making, changing and removing a schedule needs either `send`
+and the write switch, or — for a schedule that runs once — that same orchestrator token.
+`GET /v1/orchestrator/schedules/:id` is the read half of both, and is where a caller checks what it
+wrote.
 
 The local scheduler is the on-Mac form of the cloud blueprint's Phase 6: the trigger and worker
 may move to another machine later, while the task protocol and lifecycle stay the same.

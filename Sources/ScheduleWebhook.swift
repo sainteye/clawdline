@@ -844,13 +844,7 @@ actor ScheduleWebhookDeliveryProcessor {
             row.leaseToken = claim.lease.token
             row.leaseRevision = claim.lease.revision
             if let pending = row.pendingReceipt, pending.receiptVersion == 1 {
-                row.pendingReceipt = ScheduleWebhookReceipt(
-                    schema: pending.schema, receiptVersion: pending.receiptVersion,
-                    previousReceiptVersion: pending.previousReceiptVersion, kind: pending.kind,
-                    occurredAt: pending.occurredAt, macBuild: pending.macBuild,
-                    leaseToken: claim.lease.token, taskID: pending.taskID,
-                    outcomeCode: pending.outcomeCode,
-                    taskTerminalState: pending.taskTerminalState, retryAt: pending.retryAt)
+                row.pendingReceipt = receiptV1(pending, leaseToken: claim.lease.token)
             }
             try deliveries.save(row)
         }
@@ -888,9 +882,30 @@ actor ScheduleWebhookDeliveryProcessor {
         try await advance(row)
     }
 
+    private func receiptV1(_ pending: ScheduleWebhookReceipt, leaseToken: String?)
+        -> ScheduleWebhookReceipt {
+        ScheduleWebhookReceipt(
+            schema: pending.schema, receiptVersion: pending.receiptVersion,
+            previousReceiptVersion: pending.previousReceiptVersion, kind: pending.kind,
+            occurredAt: pending.occurredAt, macBuild: pending.macBuild,
+            leaseToken: leaseToken,
+            // Receipt v1 proves only durable Mac admission. The stable task id remains in the
+            // private journal until a dispatch receipt; Cloud's closed v1 shape requires null.
+            taskID: nil, outcomeCode: pending.outcomeCode,
+            taskTerminalState: pending.taskTerminalState, retryAt: pending.retryAt)
+    }
+
     private func advance(_ original: ScheduleWebhookDeliveryRow) async throws {
         var row = original
-        if let pending = row.pendingReceipt {
+        if var pending = row.pendingReceipt {
+            // Repair the receipt v1 emitted by the first released Mac implementation before
+            // retrying it. A 400 for that old task_id otherwise aborts every poll before Cloud
+            // can grant a new lease, so the repair cannot wait for `admit` above.
+            if pending.receiptVersion == 1, pending.taskID != nil {
+                pending = receiptV1(pending, leaseToken: pending.leaseToken)
+                row.pendingReceipt = pending
+                try deliveries.save(row)
+            }
             do {
                 let ack = try await cloud.sendScheduleWebhookReceipt(
                     deliveryID: row.deliveryID, receipt: pending)
@@ -992,7 +1007,10 @@ actor ScheduleWebhookDeliveryProcessor {
             previousReceiptVersion: row.lastReceiptVersion, kind: kind,
             occurredAt: ScheduleWebhookTime.string(now()), macBuild: Self.macBuild,
             leaseToken: next == 1 ? row.leaseToken : nil,
-            taskID: row.taskID, outcomeCode: outcome,
+            // The task id exists before receipt v1 so a crash can never allocate a second task,
+            // but v1 is an admission receipt rather than a dispatch receipt. Cloud's closed v1
+            // schema therefore requires JSON null here and learns the id from receipt v2.
+            taskID: kind == "mac_durable_accepted" ? nil : row.taskID, outcomeCode: outcome,
             taskTerminalState: terminalState, retryAt: retryAt)
         row.lastReceiptVersion = next
         row.state = state

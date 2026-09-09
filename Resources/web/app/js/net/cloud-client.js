@@ -734,6 +734,15 @@ export class CloudClient {
         } catch (error) { return Promise.reject(error); }
     }
 
+
+    runSchedule(id) {
+        try {
+            var scheduleID = String(id || "");
+            return this._machineRequest(this._scheduleMachine(scheduleID), "schedule-run",
+                { id: scheduleID }, "action");
+        } catch (error) { return Promise.reject(error); }
+    }
+
     /**
      * This session's messages.
      *

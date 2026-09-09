@@ -434,6 +434,7 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
         #"{"type":"schedule-create","session":"__clawdline_machine__","request":"create-1","schedule":{"title":"Morning"}}"#,
         #"{"type":"schedule-update","session":"__clawdline_machine__","request":"update-1","id":"morning","schedule":{"title":"Later"}}"#,
         #"{"type":"schedule-delete","session":"__clawdline_machine__","request":"delete-1","id":"morning"}"#,
+        #"{"type":"schedule-run","session":"__clawdline_machine__","request":"run-1","id":"morning"}"#,
         #"{"type":"snippet-create","session":"__clawdline_machine__","request":"snippet-create-1","snippet":{"title":"Deploy","body":"commit, push","scope":"global"}}"#,
         #"{"type":"snippet-update","session":"__clawdline_machine__","request":"snippet-update-1","id":"snippet/one","snippet":{"title":"Ship"}}"#,
         #"{"type":"snippet-delete","session":"__clawdline_machine__","request":"snippet-delete-1","id":"snippet/one"}"#,
@@ -473,6 +474,28 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
             && body["order"] as? [String] == ["two", "one"]
     }
 
+    let scheduleRunRoute = CloudLocalRoute(command: .scheduleRun(id: "morning/one"))
+    try require(scheduleRunRoute.method == "POST"
+                    && scheduleRunRoute.path
+                        == "/v1/orchestrator/schedules/morning%2Fone/run",
+                "the closed Run now command maps only to the named local schedule route")
+
+    let callsBeforeMalformedSchedules = await router.recorded().count
+    let malformedSchedules = [
+        #"{"type":"schedule-run","session":"__clawdline_machine__","request":"bad-run-1","id":""}"#,
+        #"{"type":"schedule-run","session":"__clawdline_machine__","request":"bad-run-2","id":"morning","path":"/v1/orchestrator/tasks"}"#,
+    ]
+    for (offset, body) in malformedSchedules.enumerated() {
+        transport.yield(body, sequence: UInt64(50 + offset))
+    }
+    try await waitForCloudAppBridge("malformed schedule-run commands to be refused") {
+        results.all().filter { $0.code == "malformed_command" }.count
+            >= malformedSchedules.count
+    }
+    let callsAfterMalformedSchedules = await router.recorded().count
+    try require(callsAfterMalformedSchedules == callsBeforeMalformedSchedules,
+                "a malformed Run now command cannot choose or reach a local route")
+
     let callsBeforeMalformedSnippets = await router.recorded().count
     let malformedSnippets = [
         #"{"type":"snippet-create","session":"__clawdline_machine__","request":"bad-1"}"#,
@@ -511,6 +534,7 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
                                                         session: "past/session|一",
                                                         assistant: "codex"))
                     && featureCommands.contains(.scheduleDelete(id: "morning"))
+                    && featureCommands.contains(.scheduleRun(id: "morning"))
                     && parsedSnippetCreate && parsedSnippetUpdate
                     && featureCommands.contains(.snippetDelete(id: "snippet/one"))
                     && parsedSnippetOrder

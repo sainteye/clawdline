@@ -7,6 +7,9 @@ import { scheduleRunsHTML, scheduleRunPlace } from "../view/schedules.js";
 import { openSession } from "../session/open.js";
 import { Schedule } from "./schedule.js";
 import { Start } from "./start.js";
+import { Schedules } from "../net/schedules.js";
+import { scheduleRunConfirmation, scheduleRunCopy, scheduleRunMessage }
+    from "./schedule-run.js";
 import { generateAndBindScheduleWebhook, scheduleWebhookCanGenerate,
     scheduleWebhookCopy, scheduleWebhookCurlExample, scheduleWebhookHelpHTML,
     scheduleWebhookManagementWarning, scheduleWebhookReceiptHeads,
@@ -38,12 +41,47 @@ export var ScheduleHistory = (function () {
     var observedReceipts = {};
     var observingReceipts = {};
     var helpOpen = false;
+    var webhookOpen = false;
+    var runningNow = false;
+
+    function scheduleRunWords() {
+        return scheduleRunCopy(document.documentElement.lang);
+    }
+
+    function ensureRunNowButton() {
+        var edit = els["schedule-history-edit"];
+        if (!edit || document.getElementById("schedule-history-run-now")) return;
+        var button = document.createElement("button");
+        button.id = "schedule-history-run-now";
+        button.type = "button";
+        button.className = "chip confirm-go";
+        button.addEventListener("click", runNow);
+        edit.parentNode.insertBefore(button, edit);
+    }
 
     function webhookWords() {
         return scheduleWebhookCopy(document.documentElement.lang);
     }
 
     function webhookNode(id) { return document.getElementById(id); }
+
+    function ensureWebhookToggle() {
+        var panel = webhookNode("schedule-webhook");
+        var title = webhookNode("schedule-webhook-title");
+        if (!panel || !title || webhookNode("schedule-webhook-panel-toggle")) return;
+        var toggle = document.createElement("button");
+        toggle.id = "schedule-webhook-panel-toggle";
+        toggle.type = "button";
+        toggle.className = "chip schedule-webhook-panel-toggle";
+        toggle.setAttribute("aria-controls", "schedule-webhook-note schedule-webhook-warning "
+            + "schedule-webhook-help schedule-webhook-status schedule-webhook-timeline");
+        toggle.addEventListener("click", function () {
+            webhookOpen = !webhookOpen;
+            drawWebhook();
+        });
+        title.insertAdjacentElement("afterend", toggle);
+        panel.dataset.collapsed = "true";
+    }
 
     function ensureWebhookHelp() {
         var panel = webhookNode("schedule-webhook");
@@ -93,9 +131,16 @@ export var ScheduleHistory = (function () {
     function drawWebhook() {
         var panel = webhookNode("schedule-webhook");
         if (!panel) return;
+        ensureWebhookToggle();
         ensureWebhookHelp();
         var words = webhookWords();
         panel.hidden = !webhook || !record;
+        panel.dataset.collapsed = webhookOpen ? "false" : "true";
+        var panelToggle = webhookNode("schedule-webhook-panel-toggle");
+        if (panelToggle) {
+            panelToggle.textContent = webhookOpen ? words.hideDetails : words.showDetails;
+            panelToggle.setAttribute("aria-expanded", webhookOpen ? "true" : "false");
+        }
         webhookNode("schedule-webhook-title").textContent = words.title;
         webhookNode("schedule-webhook-note").textContent = ephemeralURL
             ? words.once : words.idempotency;
@@ -138,7 +183,8 @@ export var ScheduleHistory = (function () {
         scheduleWebhookReceiptHeads(deliveries).forEach(function (latest) {
             var key = latest.deliveryID + ":" + latest.receiptVersion;
             if (observedReceipts[key] || observingReceipts[key]) return;
-            if (!shouldObserveScheduleWebhook({ open: !els["schedule-history"].hidden,
+            if (!shouldObserveScheduleWebhook({
+                open: !els["schedule-history"].hidden && webhookOpen,
                 visibilityState: document.visibilityState,
                 renderedVersion: latest.receiptVersion })) return;
             observingReceipts[key] = true;
@@ -239,8 +285,10 @@ export var ScheduleHistory = (function () {
     }
 
     function draw() {
+        ensureRunNowButton();
         var runs = (record && record.runs) || [];
-        els["schedule-history-sheet"].setAttribute("aria-busy", loading || pressing ? "true" : "false");
+        els["schedule-history-sheet"].setAttribute(
+            "aria-busy", loading || pressing || runningNow ? "true" : "false");
         els["schedule-history-title"].textContent = (record && record.title) || T.webScheduleEdit;
         var path = record && record.task && record.task.project_dir;
         var next = record && record.next_fire
@@ -255,16 +303,22 @@ export var ScheduleHistory = (function () {
         els["schedule-history-capped"].textContent = T.webResumeCapped;
         els["schedule-history-capped"].hidden = !(record && record.runs_may_be_truncated);
         els["schedule-history-edit"].textContent = T.webScheduleEdit;
-        els["schedule-history-edit"].disabled = loading || !!pressing || !record;
+        els["schedule-history-edit"].disabled = loading || !!pressing || runningNow || !record;
+        var runNowButton = document.getElementById("schedule-history-run-now");
+        if (runNowButton) {
+            runNowButton.textContent = runningNow
+                ? scheduleRunWords().running : scheduleRunWords().button;
+            runNowButton.disabled = loading || !!pressing || runningNow || !record;
+        }
         els["schedule-history-close"].textContent = T.webClose;
-        els["schedule-history-close"].disabled = !!pressing;
+        els["schedule-history-close"].disabled = !!pressing || runningNow;
 
         var buttons = els["schedule-run-rows"].querySelectorAll(".schedule-run-button");
         for (var i = 0; i < buttons.length; i++) {
             // The resume route takes an opaque place id, never a path. If this old project has
             // fallen out of the bounded place list, keep the occurrence readable without
             // offering a press the server cannot resolve.
-            buttons[i].disabled = buttons[i].disabled || !!pressing
+            buttons[i].disabled = buttons[i].disabled || !!pressing || runningNow
                 || (buttons[i].dataset.action === "resume"
                     && !projectPlace(run(buttons[i].dataset.taskId)));
             if (pressing && buttons[i].dataset.taskId === pressing) {
@@ -279,6 +333,8 @@ export var ScheduleHistory = (function () {
         record = null;
         places = [];
         pressing = null;
+        runningNow = false;
+        webhookOpen = false;
         loading = true;
         els["schedule-history-said"].textContent = "";
         els["schedule-history"].hidden = false;
@@ -306,13 +362,14 @@ export var ScheduleHistory = (function () {
     }
 
     function close(force) {
-        if (pressing && !force) return;
+        if ((pressing || runningNow) && !force) return;
         ticket += 1;
         scheduleId = null;
         record = null;
         places = [];
         loading = false;
         pressing = null;
+        runningNow = false;
         hook = null;
         deliveries = [];
         ephemeralURL = null;
@@ -320,18 +377,57 @@ export var ScheduleHistory = (function () {
         observedReceipts = {};
         observingReceipts = {};
         helpOpen = false;
+        webhookOpen = false;
         els["schedule-history"].hidden = true;
     }
 
     function edit() {
-        if (loading || pressing || !record) return;
+        if (loading || pressing || runningNow || !record) return;
         var id = scheduleId;
         close(true);
         Schedule.openEdit(id);
     }
 
+    function runNow() {
+        if (loading || pressing || runningNow || !record) return;
+        if (!S.write) {
+            els["schedule-history-said"].textContent = scheduleRunWords().writeOff;
+            return;
+        }
+        if (typeof api.runSchedule !== "function") {
+            els["schedule-history-said"].textContent = scheduleRunWords().failed;
+            return;
+        }
+        if (!window.confirm(scheduleRunConfirmation(
+            record.title || scheduleId, document.documentElement.lang))) return;
+
+        var id = scheduleId;
+        runningNow = true;
+        els["schedule-history-said"].textContent = "";
+        draw();
+        api.runSchedule(id).then(function () {
+            if (scheduleId !== id) return;
+            runningNow = false;
+            els["schedule-history-said"].textContent = scheduleRunWords().accepted;
+            draw();
+            Schedules.refresh();
+            return api.schedule(id).then(function (answer) {
+                if (scheduleId !== id) return;
+                record = answer && answer.schedule || record;
+                draw();
+            }, function () { });
+        }).catch(function (error) {
+            if (scheduleId !== id) return;
+            runningNow = false;
+            if (error && error.code === "write_disabled") S.write = false;
+            els["schedule-history-said"].textContent =
+                scheduleRunMessage(error, document.documentElement.lang);
+            draw();
+        });
+    }
+
     function pick(taskId, action) {
-        if (loading || pressing) return;
+        if (loading || pressing || runningNow) return;
         var selected = run(taskId);
         if (!selected) return;
 
@@ -369,7 +465,7 @@ export var ScheduleHistory = (function () {
     }
 
     return {
-        open: open, close: close, edit: edit, pick: pick,
+        open: open, close: close, edit: edit, pick: pick, runNow: runNow,
         bindWebhook: function (value) { webhook = value; }, webhookAction: webhookAction
     };
 })();
@@ -404,7 +500,8 @@ els["schedule-run-rows"].addEventListener("click", function (ev) {
 });
 els["schedule-history"].addEventListener("keydown", function (ev) {
     if (ev.key !== "Tab") return;
-    var items = [els["schedule-history-edit"]]
+    var items = [document.getElementById("schedule-history-run-now"),
+                 els["schedule-history-edit"]]
         .concat(Array.from(els["schedule-history-sheet"].querySelectorAll(
             "#schedule-webhook button:not([hidden]):not([disabled])")))
         .concat(Array.from(els["schedule-run-rows"].querySelectorAll(

@@ -185,7 +185,7 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/schedules` | token + key, **or** orchestrator token + key when `when.on` | `send` **and** the write switch — the second door passes neither |
 | `PATCH` | `/v1/orchestrator/schedules/:id` | token + key, **or** orchestrator token + key when the schedule has `when.on` | `send` **and** the write switch — the second door passes neither |
 | `DELETE` | `/v1/orchestrator/schedules/:id` | token + key, **or** orchestrator token + key when the schedule has `when.on` | `send` **and** the write switch — the second door passes neither |
-| `POST` | `/v1/orchestrator/schedules/:id/run` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/schedules/:id/run` | token + key, **or** orchestrator token | `send` **and** the write switch — the second door passes neither |
 | `GET` | `/v1/snippets` | token | `read` |
 | `POST` | `/v1/snippets` | token + key | `send` **and** the write switch |
 | `PATCH` | `/v1/snippets/:id` | token + key | `send` **and** the write switch |
@@ -3464,14 +3464,26 @@ nothing and is audited as `orchestrator.schedule.skipped` with `why=removed`.
 
 ### `POST /v1/orchestrator/schedules/:id/run`
 
-Runs one valid schedule immediately, ignoring `enabled` and the wall clock. This needs
-`X-Clawdline-Orchestrator`; a successful response is the ordinary dispatch response. It returns
-`404 not_found` for an unknown or invalid schedule, `403 orchestrator_disabled` when dispatch is
-off, and `409 schedule_active` while any task from the schedule is non-terminal or its dispatch is
-already queued. It also returns `409 schedule_spent` for a schedule that runs once and already
-has: running once is the whole of what that schedule promised. A successful manual run records the
-current occurrence as handled when it is at or after that occurrence; running before the next
-scheduled time does not consume that future fire, and so does not spend a one-shot either.
+Runs one valid schedule immediately, ignoring `enabled` and the wall clock. There are two separate
+doors. A trusted process on this Mac may send `X-Clawdline-Orchestrator`. A paired device sends its
+Bearer token plus a non-empty `Idempotency-Key`, and must have `send` while Settings → Remote →
+**Let a paired device write into a session** is on. The hosted viewer never receives the machine
+token: its authenticated encrypted `schedule-run` command is decoded from a closed command type on
+the Mac and enters this same bounded terminal lane.
+
+A successful response is the ordinary dispatch response. `400 bad_request` means a paired request
+omitted its idempotency key; `401 unauthorized` means it is not paired; `403 write_disabled` or
+`forbidden` names a disabled switch or missing `send`, and `403 orchestrator_disabled` means task
+dispatch itself is off. The route returns `404 not_found` for an unknown or invalid schedule and
+`409 schedule_active` while a run is non-terminal or already queued. It also returns
+`409 schedule_spent` for a one-shot that already ran: running once is the whole promise.
+
+For a paired caller, `200` and the stable `409` answers are replayed under the same key for ten
+minutes; simultaneous requests with that key join one execution. `429` and `5xx` are observed but
+not filed, so retrying the same key can reach the route after capacity or the transient fault
+recovers. A successful manual run records the current occurrence as handled when it is at or after
+that occurrence; running before the next scheduled time does not consume that future fire, and so
+does not spend a one-shot either.
 
 ### The snippets a session can press
 

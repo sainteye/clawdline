@@ -52,6 +52,8 @@ struct CloudLocalRoute: Sendable {
         case .scheduleDelete(let id):
             routeMethod = "DELETE"
             route = "/v1/orchestrator/schedules/\(Self.segment(id))"
+        case .scheduleRun(let id):
+            route = "/v1/orchestrator/schedules/\(Self.segment(id))/run"
         case .snippetCreate(let data):
             route = "/v1/snippets"
             encodedBody = data
