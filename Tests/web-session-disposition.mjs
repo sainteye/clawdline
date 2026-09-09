@@ -21,6 +21,22 @@ globalThis.__workStateStrings = {
     sessionWaitedOnByMany: "{n} waiting on you",
     sessionWorkMilestone: "Delivered; awaiting approval",
     sessionWorkComplete: "Reviewed and approved",
+    webInfoCloseReasonWorking: "The agent is still working in this session.",
+    webInfoCloseReasonWaitingYou: "This session is waiting for your answer.",
+    webInfoCloseReasonTaskActive: "A task owned by this session is still running.",
+    webInfoCloseReasonChildActive: "A child session is still working.",
+    webInfoCloseReasonTaskResult: "A finished task has not returned its result.",
+    webInfoCloseReasonLanding: "A delivered change still needs to be landed or closed out.",
+    webInfoCloseReasonCoordinationOwned: "Another session is waiting for this session to release its work.",
+    webInfoCloseReasonCoordinationWaiting: "This session is waiting for another session to release its work.",
+    webInfoCloseReasonHandoff: "A handoff has not been delivered.",
+    webInfoCloseReasonCompletion: "A completion message has not been acknowledged.",
+    webInfoCloseReasonDecision: "A decision is still owed.",
+    webInfoCloseReasonDirtyWorktree: "A task worktree still has uncommitted changes.",
+    webInfoCloseReasonTouchedFiles: "Changed files have not been landed or closed out.",
+    webInfoCloseReasonEvidence: "Clawdline cannot verify the current session information yet.",
+    webInfoCloseReasonAttestation: "This session still needs its close-out check.",
+    webInfoCloseReasonOther: "One item still needs to be closed out.",
     webTaskRoot: "Root",
     webTaskTasks: "Tasks"
 };
@@ -60,8 +76,8 @@ assert.equal(project({ state: "idle", work_state: "future_guess" }).state, "unkn
     "an unknown future value fails closed instead of being guessed");
 assert.equal(project({ state: "idle", work_state: "needs_triage" }).state, "unknown",
     "the retired needs_triage spelling is just another unknown value now");
-assert.equal(project({ state: "working" }).state, "unknown",
-    "even obvious terminal activity cannot fill in a missing work_state at the client");
+assert.equal(project({ state: "working" }).state, "working",
+    "observed terminal activity is sufficient to keep Working as the primary state");
 assert.equal(project({ state: "idle", work_state: "waiting_you" }).state, "unknown",
     "a projected wait inconsistent with its source axis fails closed");
 assert.equal(project({ state: "idle", work_state: "holding" }).state, "unknown",
@@ -80,6 +96,9 @@ assert.equal(project({ state: "waiting", work_state: "work_complete" }).state, "
 assert.equal(project({ state: "idle", work_state: "work_complete",
     coordination: { waitingOn: [{ id: "wait" }], waitedOnBy: [] } }).state,
     "waiting_session", "a peer wait outranks both checks without asking the human");
+assert.equal(project({ state: "working", work_state: "working",
+    coordination: { waitingOn: [{ id: "wait" }], waitedOnBy: [] } }).state,
+    "working", "actual agent activity outranks a quiet peer-wait overlay");
 assert.equal(project({ state: "unknown", work_state: "work_complete" }).state, "unknown",
     "an unreadable terminal outranks a stale completion projection");
 assert.equal(project({ state: "idle", work_state: "work_complete",
@@ -157,6 +176,23 @@ assert.match(html({ state: "working", work_state: "working",
 assert.doesNotMatch(html({ state: "idle", work_state: "unknown",
     owed: { note: '"><img src=x onerror=alert(1)>', since: 0, person_needed: true } }),
     /<img src=/, "a hostile debt note cannot inject row markup");
+
+const plainReasons = derive.closeabilityPlainReasons({
+    state: "working", work_state: "working",
+    closeability: { state: "blocked", reasons: [
+        { code: "terminal_working", kind: "obligation", subject_id: "%406" },
+        { code: "dirty_isolated_worktree", kind: "obligation", subject_id: "task-one" },
+        { code: "dirty_isolated_worktree", kind: "obligation", subject_id: "task-two" },
+        { code: "coordination_wait_owned", kind: "obligation", subject_id: "wait-one" }
+    ] }
+});
+assert.deepEqual(plainReasons, [
+    { text: "The agent is still working in this session.", count: 1 },
+    { text: "A task worktree still has uncommitted changes.", count: 2 },
+    { text: "Another session is waiting for this session to release its work.", count: 1 }
+], "Session info groups duplicate obligations into human explanations");
+assert.doesNotMatch(JSON.stringify(plainReasons), /terminal_working|dirty_isolated|task-one|wait-one/,
+    "human explanations do not expose broker codes or opaque ids");
 
 const clawdfather = {
     id: "clawdfather", label: "Clawdfather", state: "working", work_state: "working",
@@ -251,6 +287,13 @@ assert.match(infoSource,
     "each full status in Session info is a clickable explanation disclosure");
 assert.match(infoSource, /closeabilityLines\(s\)/,
     "the closeability explanation names the current reasons instead of only defining the key");
+assert.match(infoSource, /closeabilityPlainReasons\(s\)/,
+    "Session info leads with human closeability explanations");
+assert.match(infoSource,
+    /class="closeability-technical"[\s\S]*T\.closeabilityTechnicalDetails/,
+    "raw broker codes and ids remain available only behind Technical details");
+assert.match(infoSource, /data-status-review/,
+    "the closeability explanation offers a direct way back to the session");
 
 const pageSource = await readFile(
     new URL("../Resources/web/index.html", import.meta.url), "utf8");
@@ -342,8 +385,11 @@ assert.match(sheetCSS, /\.info-sheet \.hero \.session-title\s*\{[^}]*overflow-wr
 assert.doesNotMatch(sheetCSS, /\.info-sheet \.hero \.session-title\s*\{[^}]*line-clamp/s,
     "the Session info headline has no line clamp");
 assert.match(sheetCSS,
-    /\.info-sheet \.session-status-detail summary\s*\{[^}]*white-space:\s*normal/s,
+    /\.info-sheet \.session-status-detail > summary\s*\{[^}]*white-space:\s*normal/s,
     "Session info statuses wrap in full instead of inheriting the list's ellipsis");
+assert.match(sheetCSS,
+    /\.closeability-technical > summary::after[\s\S]*\.closeability-technical\[open\] > summary::after/,
+    "the nested Technical details disclosure owns its arrow independently");
 
 const i18n = await readFile(
     new URL("../Resources/web/app/js/core/i18n.js", import.meta.url), "utf8");
@@ -379,8 +425,8 @@ assert.match(chineseCopy, /sessionWorkOwed = "欠一個決定"/,
     "Traditional Chinese names the debt the reader owes");
 assert.match(chineseCopy, /sessionWorkReady = "可接新工作"/,
     "Traditional Chinese reads ready as the invitation it is");
-assert.match(chineseCopy, /webInfoCloseabilityMeaning = "鑰匙表示這個 session 現在能不能安全關閉/,
-    "Traditional Chinese explains the key separately from delivery");
+assert.match(chineseCopy, /webInfoCloseabilityMeaning = "這把鎖只回答現在能不能關閉，不代表 Agent 是否還在工作/,
+    "Traditional Chinese explains that closeability cannot replace live work status");
 
 // lost_if_closed at the moment of the press: the page-side half of the close gate.
 state.sessions = [{ id: "root", label: "a root", state: "idle", work_state: "unknown",

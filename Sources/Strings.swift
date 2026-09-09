@@ -1320,6 +1320,23 @@ protocol Copy {
     var webInfoStatus: String { get }
     var webInfoWorkStatusMeaning: String { get }
     var webInfoCloseabilityMeaning: String { get }
+    var webInfoTapForDetails: String { get }
+    var webInfoCloseReasonWorking: String { get }
+    var webInfoCloseReasonWaitingYou: String { get }
+    var webInfoCloseReasonTaskActive: String { get }
+    var webInfoCloseReasonChildActive: String { get }
+    var webInfoCloseReasonTaskResult: String { get }
+    var webInfoCloseReasonLanding: String { get }
+    var webInfoCloseReasonCoordinationOwned: String { get }
+    var webInfoCloseReasonCoordinationWaiting: String { get }
+    var webInfoCloseReasonHandoff: String { get }
+    var webInfoCloseReasonCompletion: String { get }
+    var webInfoCloseReasonDecision: String { get }
+    var webInfoCloseReasonDirtyWorktree: String { get }
+    var webInfoCloseReasonTouchedFiles: String { get }
+    var webInfoCloseReasonEvidence: String { get }
+    var webInfoCloseReasonAttestation: String { get }
+    var webInfoCloseReasonOther: String { get }
     var webInfoUsage: String { get }
     var webInfoInput: String { get }
     var webInfoOutput: String { get }
@@ -1846,6 +1863,27 @@ extension Copy {
     /// Languages that do not inflect this sentence may keep their established form twice.
     var closeabilityBlockedOne: String { closeabilityBlocked }
     var closeabilityBlockedMany: String { closeabilityBlocked }
+
+    // New Session-info explanations fall back to plain English until a locale supplies its own
+    // copy. That is still more legible than the snake_case broker codes these sentences replace;
+    // the codes remain available under the localized Technical details disclosure.
+    var webInfoTapForDetails: String { "Tap to see what this means" }
+    var webInfoCloseReasonWorking: String { "The agent is still working in this session." }
+    var webInfoCloseReasonWaitingYou: String { "This session is waiting for your answer." }
+    var webInfoCloseReasonTaskActive: String { "A task owned by this session is still running." }
+    var webInfoCloseReasonChildActive: String { "A child session is still working." }
+    var webInfoCloseReasonTaskResult: String { "A finished task has not returned its result." }
+    var webInfoCloseReasonLanding: String { "A delivered change still needs to be landed or closed out." }
+    var webInfoCloseReasonCoordinationOwned: String { "Another session is waiting for this session to release its work." }
+    var webInfoCloseReasonCoordinationWaiting: String { "This session is waiting for another session to release its work." }
+    var webInfoCloseReasonHandoff: String { "A handoff has not been delivered." }
+    var webInfoCloseReasonCompletion: String { "A completion message has not been acknowledged." }
+    var webInfoCloseReasonDecision: String { "A decision is still owed." }
+    var webInfoCloseReasonDirtyWorktree: String { "A task worktree still has uncommitted changes." }
+    var webInfoCloseReasonTouchedFiles: String { "Changed files have not been landed or closed out." }
+    var webInfoCloseReasonEvidence: String { "Clawdline cannot verify the current session information yet." }
+    var webInfoCloseReasonAttestation: String { "This session still needs its close-out check." }
+    var webInfoCloseReasonOther: String { "One item still needs to be closed out." }
 
     func setupLocalHealthFailure(_ failure: LocalHealthFailure) -> String {
         switch failure {

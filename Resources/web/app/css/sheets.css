@@ -75,6 +75,13 @@
     cursor: pointer; color: var(--dim); font-size: 12px; list-style: none;
 }
 .closeability-technical > summary::-webkit-details-marker { display: none; }
+.closeability-technical > summary::after {
+    content: "⌄"; margin-left: auto; color: var(--faint);
+    transition: transform 120ms ease, color 120ms ease;
+}
+.closeability-technical[open] > summary::after {
+    transform: rotate(180deg); color: var(--accent);
+}
 .closeability-technical > summary .help-mark {
     display: inline-flex; align-items: center; justify-content: center;
     width: 18px; height: 18px; border: 1px solid var(--line-hi); border-radius: 50%;
@@ -367,21 +374,26 @@
 .info-sheet .session-status-detail {
     min-width: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
 }
-.info-sheet .session-status-detail summary {
+.info-sheet .session-status-detail > summary {
     display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
     min-height: 42px; box-sizing: border-box; padding: 9px 34px 9px 11px;
     position: relative; cursor: pointer; list-style: none; white-space: normal;
     font: 12px/1.45 var(--mono); color: var(--dim);
 }
-.info-sheet .session-status-detail summary::-webkit-details-marker { display: none; }
-.info-sheet .session-status-detail summary::after {
+.info-sheet .session-status-detail > summary::-webkit-details-marker { display: none; }
+.info-sheet .session-status-detail > summary::after {
     content: "⌄"; position: absolute; right: 12px; top: 50%; transform: translateY(-54%);
     color: var(--faint); transition: transform 120ms ease, color 120ms ease;
 }
-.info-sheet .session-status-detail[open] summary::after {
+.info-sheet .session-status-detail[open] > summary::after {
     transform: translateY(-46%) rotate(180deg); color: var(--accent);
 }
-.info-sheet .session-status-detail summary:hover { color: var(--ink); }
+.info-sheet .session-status-detail > summary:hover { color: var(--ink); }
+.info-sheet .session-status-detail .status-tap {
+    flex: 0 1 auto; margin-left: auto; padding-right: 3px;
+    font: 11px/1.3 var(--ui); color: var(--faint);
+}
+.info-sheet .session-status-detail[open] > summary .status-tap { display: none; }
 .info-sheet .session-status-detail .session-work-completion,
 .info-sheet .session-status-detail .session-work-copy,
 .info-sheet .session-status-detail .session-closeability,
@@ -393,8 +405,23 @@
 }
 .info-sheet .status-explanation p { margin: 0; }
 .info-sheet .status-explanation .status-context { margin-top: 7px; color: var(--dim); }
-.info-sheet .status-explanation ul { margin: 7px 0 0 0; padding-left: 18px; }
-.info-sheet .status-explanation li { margin-top: 4px; overflow-wrap: anywhere; font-family: var(--mono); }
+.info-sheet .status-explanation ul { margin: 9px 0 0 0; padding-left: 18px; }
+.info-sheet .status-explanation li { margin-top: 5px; overflow-wrap: anywhere; }
+.info-sheet .status-explanation .status-reasons { color: var(--dim); }
+.info-sheet .status-explanation .reason-count {
+    white-space: nowrap; font: 11px var(--mono); color: var(--faint);
+}
+.info-sheet .status-explanation .status-review {
+    min-height: 38px; margin-top: 12px; padding: 7px 11px;
+    border: 1px solid var(--accent-ed); border-radius: 8px;
+    background: var(--accent-in); color: var(--accent); font: 500 12px var(--ui);
+    cursor: pointer;
+}
+.info-sheet .status-explanation .status-review:hover { background: var(--card-hi); }
+.info-sheet .status-explanation .closeability-technical { margin-top: 9px; }
+.info-sheet .status-explanation .closeability-technical .technical-copy li {
+    font-family: var(--mono); color: var(--faint);
+}
 /* A door beside a fact that cannot be read: a small ring with a question mark in it, to the
    page of the manual that says why and what to install. Drawn faint, since the sentence beside
    it already says what it says; lit in the accent under a finger. */

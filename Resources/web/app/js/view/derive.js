@@ -49,6 +49,13 @@ export function sessionStatusGlyphHTML(icon, copy) {
 export function projectSessionWorkState(s) {
     s = s || {};
     if (s.state === "waiting") return { state: "waiting_you", failedClosed: false };
+    // The terminal is the direct observation that an agent is moving. Coordination is an
+    // independent, quiet overlay: it may explain what this turn is waiting to release, but it
+    // must never replace Working as the row's primary state. In particular, do not require a
+    // matching `work_state` from a possibly mixed-version frame before drawing activity — doing
+    // so turns a live spinner into an hourglass exactly when the person most needs to know the
+    // agent is still running.
+    if (s.state === "working") return { state: "working", failedClosed: false };
     var coordination = s.coordination || {};
     if ((coordination.waitingOn || []).length || (coordination.waitedOnBy || []).length) {
         return { state: "waiting_session", failedClosed: false };
@@ -61,7 +68,7 @@ export function projectSessionWorkState(s) {
     if (s.work_state === "waiting_you") {
         return { state: "unknown", failedClosed: true };
     }
-    if ((s.state === "working") !== (s.work_state === "working")) {
+    if (s.work_state === "working") {
         return { state: "unknown", failedClosed: true };
     }
     if (s.work_state === "waiting_session") {
@@ -185,6 +192,46 @@ export function closeabilityLines(s) {
         if (mover) said += " · " + mover;
         return said;
     });
+}
+
+/**
+ * Session info is read by a person, not by the broker. Translate the closed reason vocabulary
+ * into actions and group repetitions (two dirty child worktrees are one kind of problem, not two
+ * UUIDs somebody should have to decode). `closeabilityLines` remains the deliberately searchable
+ * technical form used by logs and the close confirmation's disclosure.
+ */
+export function closeabilityPlainReasons(s) {
+    var keys = {
+        terminal_working: "webInfoCloseReasonWorking",
+        terminal_waiting_you: "webInfoCloseReasonWaitingYou",
+        own_task_unfinished: "webInfoCloseReasonTaskActive",
+        live_descendant_task: "webInfoCloseReasonChildActive",
+        task_without_result: "webInfoCloseReasonTaskResult",
+        pending_landing_owned: "webInfoCloseReasonLanding",
+        coordination_wait_owned: "webInfoCloseReasonCoordinationOwned",
+        coordination_wait_waiting: "webInfoCloseReasonCoordinationWaiting",
+        open_handoff: "webInfoCloseReasonHandoff",
+        completion_undelivered: "webInfoCloseReasonCompletion",
+        owed_decision: "webInfoCloseReasonDecision",
+        dirty_isolated_worktree: "webInfoCloseReasonDirtyWorktree",
+        touched_claims_without_closure: "webInfoCloseReasonTouchedFiles"
+    };
+    var groups = [];
+    var byText = {};
+    projectSessionCloseability(s).reasons.forEach(function (row) {
+        var key = keys[row.code];
+        if (!key && row.kind === "evidence") key = "webInfoCloseReasonEvidence";
+        if (!key && row.kind === "attestation") key = "webInfoCloseReasonAttestation";
+        var copy = T[key || "webInfoCloseReasonOther"] || T.webInfoCloseReasonOther;
+        if (!copy) return;
+        if (byText[copy] != null) {
+            groups[byText[copy]].count += 1;
+            return;
+        }
+        byText[copy] = groups.length;
+        groups.push({ text: copy, count: 1 });
+    });
+    return groups;
 }
 
 /** The opaque CAS token a proven close hands back, and only when the client itself agrees the

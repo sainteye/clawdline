@@ -6,9 +6,9 @@ import { els } from "../core/dom.js";
 import { shortPath, toast } from "../core/util.js";
 import { assistantLogo } from "../core/pixels.js";
 import { api } from "../net/api.js";
-import { byId, closeabilityLines, owedBadgeHTML, projectSessionCloseability, projectSessionWorkState,
-         sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML,
-         sessionWorkStateHTML } from "../view/derive.js";
+import { byId, closeabilityLines, closeabilityPlainReasons, owedBadgeHTML,
+         projectSessionCloseability, projectSessionWorkState, sessionCloseabilityHTML,
+         sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML } from "../view/derive.js";
 import { GitPanel } from "./git-panel.js";
 import { SessionFacts, StatusLine } from "./status-line.js";
 import { isOpenableProjectLink, isServedProjectArtifact } from "./project-links.js";
@@ -296,19 +296,33 @@ export var Info = (function () {
         }
         var context = s.disposition && s.disposition.title
             ? '<p class="status-context">' + esc(s.disposition.title) + "</p>" : "";
+        var tap = '<span class="status-tap">' + esc(T.webInfoTapForDetails) + "</span>";
         var out = '<details class="session-status-detail" data-status-kind="work"><summary>' +
-            workSaid + '</summary><div class="status-explanation"><p>' +
+            workSaid + tap + '</summary><div class="status-explanation"><p>' +
             esc(T.webInfoWorkStatusMeaning) + "</p>" + context + "</div></details>";
 
         var closeable = projectSessionCloseability(s);
         if (closeable.block) {
             var reasons = closeabilityLines(s);
-            var reasonHTML = reasons.length
-                ? '<ul>' + reasons.map(function (line) { return "<li>" + esc(line) + "</li>"; }).join("") + "</ul>"
+            var plain = closeabilityPlainReasons(s);
+            var reasonHTML = plain.length
+                ? '<ul class="status-reasons">' + plain.map(function (reason) {
+                    return "<li>" + esc(reason.text) +
+                        (reason.count > 1 ? ' <span class="reason-count">×' + reason.count + "</span>" : "") +
+                        "</li>";
+                }).join("") + "</ul>"
+                : "";
+            var technical = reasons.length
+                ? '<details class="closeability-technical"><summary><span class="help-mark" aria-hidden="true">?</span>' +
+                    esc(T.closeabilityTechnicalDetails) + '</summary><div class="technical-copy"><ul>' +
+                    reasons.map(function (line) { return "<li>" + esc(line) + "</li>"; }).join("") +
+                    "</ul></div></details>"
                 : "";
             out += '<details class="session-status-detail" data-status-kind="closeability"><summary>' +
-                sessionCloseabilityHTML(s) + '</summary><div class="status-explanation"><p>' +
-                esc(T.webInfoCloseabilityMeaning) + "</p>" + reasonHTML + "</div></details>";
+                sessionCloseabilityHTML(s) + tap + '</summary><div class="status-explanation"><p>' +
+                esc(T.webInfoCloseabilityMeaning) + "</p>" + reasonHTML +
+                '<button type="button" class="status-review" data-status-review>' +
+                esc(T.webReviewBeforeClosing) + "</button>" + technical + "</div></details>";
         }
         return '<div class="session-statuses">' + out + "</div>";
     }
@@ -793,6 +807,8 @@ els["info-body"].addEventListener("click", function (ev) {
     if (sid) { Info.copy(sid.dataset.copy, sid.dataset.copySaid); return; }
     var editTitle = t.closest ? t.closest("button[data-title-edit]") : null;
     if (editTitle) { if (!editTitle.disabled) Info.editTitle(); return; }
+    var statusReview = t.closest ? t.closest("button[data-status-review]") : null;
+    if (statusReview) { Info.close(); return; }
     var cancelTitle = t.closest ? t.closest("button[data-title-cancel]") : null;
     if (cancelTitle) Info.cancelTitle();
 });
