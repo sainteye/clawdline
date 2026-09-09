@@ -449,6 +449,7 @@ struct Indonesian: Copy {
     let webNoticeHandoffNeedsDelivery = "Serah terima perlu dikirim manual"
     let webNoticeRecheckGit = "Periksa kembali HEAD, status, dan diff sebelum mengintegrasikan."
     let webPending = "Menunggu Mac…"
+    let webPromptAccepted = "Diterima Mac · menyinkronkan percakapan…"
     let webAttachedImage = "{n} gambar terlampir"
     let webAttachedImages = "{n} gambar terlampir"
     let webSteps = "{n} langkah"

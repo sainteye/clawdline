@@ -111,6 +111,9 @@ try {
         standard: "關閉",
         fast: "開啟"
     }, "new Session controls are exported into the hosted Traditional Chinese catalog");
+    assert.equal(traditional.webPromptAccepted,
+        "Mac 已收到 · 正在同步對話紀錄⋯",
+        "a hosted accepted prompt names transcript sync rather than claiming it still awaits the Mac");
 
     /* ---- the headers the stamp earns, and the policy it allows ----------- */
 

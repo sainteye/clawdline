@@ -447,6 +447,7 @@ struct Korean: Copy {
     let webNoticeHandoffNeedsDelivery = "인계를 수동으로 전달해야 함"
     let webNoticeRecheckGit = "통합하기 전에 HEAD, status 및 diff를 다시 확인하세요."
     let webPending = "Mac을 기다리는 중…"
+    let webPromptAccepted = "Mac에서 받음 · 대화 동기화 중…"
     let webAttachedImage = "이미지 {n}개 첨부됨"
     let webAttachedImages = "이미지 {n}개 첨부됨"
     let webSteps = "{n}단계"

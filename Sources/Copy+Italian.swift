@@ -449,6 +449,7 @@ struct Italian: Copy {
     let webNoticeHandoffNeedsDelivery = "Il passaggio richiede una consegna manuale"
     let webNoticeRecheckGit = "Ricontrolla HEAD, status e diff prima dell’integrazione."
     let webPending = "In attesa del Mac…"
+    let webPromptAccepted = "Ricevuto dal Mac · sincronizzazione conversazione…"
     let webAttachedImage = "{n} immagine allegata"
     let webAttachedImages = "{n} immagini allegate"
     let webSteps = "{n} passaggi"

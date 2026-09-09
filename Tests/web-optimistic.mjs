@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
     authoritativeSendTime, knownOccurrences, matchesOptimistic, optimisticKey,
@@ -10,6 +11,11 @@ import { createTranscriptRequests } from
 const pending = function (text, imageCount, at, known = {}) {
     return { text, imageCount, at, known };
 };
+
+const transcriptSource = readFileSync(new URL(
+    "../Resources/web/app/js/view/transcript.js", import.meta.url), "utf8");
+assert.match(transcriptSource, /esc\(T\.webPromptAccepted\)/,
+    "a prompt shown only after the Mac accepted it says accepted, not waiting for the Mac");
 
 assert.equal(matchesOptimistic(
     pending("look here", 1, 100),

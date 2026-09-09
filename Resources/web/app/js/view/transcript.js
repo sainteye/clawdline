@@ -954,7 +954,7 @@ export function entryHTML(e) {
                 ? T.webAttachedImage : T.webAttachedImages, { n: e.imageCount })) + "</div>"
             : "";
         body += attached + '<div class="pending-state" role="status"><canvas class="spin"></canvas><span>' +
-            esc(T.webPending) + "</span></div>";
+            esc(T.webPromptAccepted) + "</span></div>";
     }
     return '<div class="entry' + (e.pending ? ' pending' : '') + '" data-role="' + role + '">' +
         whoHTML(role, e.at) +

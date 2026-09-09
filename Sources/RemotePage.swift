@@ -182,6 +182,7 @@ enum RemotePage {
             "webNoticeHandoffNeedsDelivery": t.webNoticeHandoffNeedsDelivery,
             "webNoticeRecheckGit": t.webNoticeRecheckGit,
             "webPending": t.webPending,
+            "webPromptAccepted": t.webPromptAccepted,
             "webAttachedImage": t.webAttachedImage,
             "webAttachedImages": t.webAttachedImages,
             "webSteps": t.webSteps,

@@ -453,6 +453,7 @@ struct Hindi: Copy {
     let webNoticeHandoffNeedsDelivery = "हैंडऑफ़ को हाथ से पहुँचाना होगा"
     let webNoticeRecheckGit = "एकीकृत करने से पहले HEAD, status और diff फिर जाँचें।"
     let webPending = "Mac का इंतज़ार है…"
+    let webPromptAccepted = "Mac ने पा लिया · बातचीत सिंक हो रही है…"
     let webAttachedImage = "{n} तस्वीर जुड़ी है"
     let webAttachedImages = "{n} तस्वीरें जुड़ी हैं"
     let webSteps = "{n} चरण"

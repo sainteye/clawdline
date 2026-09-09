@@ -449,6 +449,7 @@ struct Turkish: Copy {
     let webNoticeHandoffNeedsDelivery = "Devir teslim elle ulaştırılmalı"
     let webNoticeRecheckGit = "Birleştirmeden önce HEAD, status ve diff’i yeniden denetleyin."
     let webPending = "Mac bekleniyor…"
+    let webPromptAccepted = "Mac aldı · konuşma eşitleniyor…"
     let webAttachedImage = "{n} resim eklendi"
     let webAttachedImages = "{n} resim eklendi"
     let webSteps = "{n} adım"

@@ -769,6 +769,8 @@ protocol Copy {
     var webNoticeRecheckGit: String { get }
     /// A sent message that the Mac has not picked up yet.
     var webPending: String { get }
+    /// A prompt the Mac accepted, while its durable transcript row has not reached the browser.
+    var webPromptAccepted: String { get }
     /// Attached-image counts for pending messages. `{n}` is replaced by the web client.
     var webAttachedImage: String { get }
     var webAttachedImages: String { get }

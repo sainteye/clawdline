@@ -447,6 +447,7 @@ struct Japanese: Copy {
     let webNoticeHandoffNeedsDelivery = "引き継ぎを手動で届けてください"
     let webNoticeRecheckGit = "統合前に HEAD、status、diff を再確認してください。"
     let webPending = "Mac を待っています…"
+    let webPromptAccepted = "Mac が受信済み · 会話を同期中…"
     let webAttachedImage = "画像 {n} 枚を添付"
     let webAttachedImages = "画像 {n} 枚を添付"
     let webSteps = "{n} ステップ"

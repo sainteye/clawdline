@@ -255,6 +255,7 @@ export var T = {
     webNoticeHandoffNeedsDelivery: "Handoff needs manual delivery",
     webNoticeRecheckGit: "Re-check HEAD, status and diff before integrating.",
     webPending: "Waiting for the Mac…",
+    webPromptAccepted: "Mac received it · syncing the conversation…",
     webAttachedImage: "{n} image attached",
     webAttachedImages: "{n} images attached",
     webSteps: "{n} steps",

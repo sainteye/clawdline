@@ -449,6 +449,7 @@ struct Russian: Copy {
     let webNoticeHandoffNeedsDelivery = "Передачу нужно доставить вручную"
     let webNoticeRecheckGit = "Перед интеграцией снова проверьте HEAD, status и diff."
     let webPending = "Ждём Mac…"
+    let webPromptAccepted = "Mac получил · синхронизируем диалог…"
     let webAttachedImage = "Прикреплено изображение: {n}"
     let webAttachedImages = "Прикреплено изображений: {n}"
     let webSteps = "шагов: {n}"
