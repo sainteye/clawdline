@@ -286,6 +286,31 @@
 }
 .schedule-webhook { margin: 1rem 0; padding: .9rem; border: 1px solid var(--line, #d8d8d8); border-radius: .8rem; }
 .schedule-webhook-warning { color: var(--warn, #a15c00); font-size: .9rem; line-height: 1.4; }
+.schedule-webhook-help {
+    margin: .8rem 0;
+    padding: .85rem;
+    border: 1px solid var(--line, #d8d8d8);
+    border-radius: .65rem;
+    background: var(--panel-subtle, rgba(127, 127, 127, .06));
+    font-size: .9rem;
+    line-height: 1.5;
+}
+.schedule-webhook-help h4 { margin: 0 0 .45rem; font-size: 1rem; }
+.schedule-webhook-help p { margin: .45rem 0; }
+.schedule-webhook-help ul { margin: .5rem 0 .7rem; padding-left: 1.25rem; }
+.schedule-webhook-help li + li { margin-top: .3rem; }
+.schedule-webhook-help-availability { color: var(--accent); font-weight: 650; }
+.schedule-webhook-help-example-label { color: var(--muted, #666); font-weight: 650; }
+.schedule-webhook-help pre {
+    max-width: 100%;
+    margin: .45rem 0 .7rem;
+    padding: .7rem;
+    overflow-x: auto;
+    border-radius: .45rem;
+    background: var(--code-bg, rgba(0, 0, 0, .08));
+    font: .78rem/1.45 var(--mono, ui-monospace, monospace);
+    white-space: pre;
+}
 .schedule-webhook-timeline { display: grid; gap: .55rem; padding-left: 1.4rem; }
 .schedule-webhook-event { display: grid; gap: .12rem; }
 .schedule-webhook-event-name { font-weight: 650; }

@@ -33,11 +33,18 @@ const {
     scheduleWebhookLatestReceipt,
     scheduleWebhookReceiptHeads,
     scheduleWebhookManagementWarning,
+    scheduleWebhookCopy,
+    scheduleWebhookCurlExample,
+    scheduleWebhookHelpHTML,
+    SCHEDULE_WEBHOOK_GUIDE_URL,
     scheduleWebhookSecretIsEphemeral,
     shouldObserveScheduleWebhook,
     scheduleWebhookCanGenerate,
     generateAndBindScheduleWebhook
 } = await import("../Resources/web/app/js/net/schedule-webhooks.js");
+
+const scheduleHistorySource = await readFile(
+    new URL("../Resources/web/app/js/input/schedule-history.js", import.meta.url), "utf8");
 
 const rows = [
     { id: "shown", title: "Morning brief", enabled: true, next_fire: 200 },
@@ -139,6 +146,55 @@ assert.equal(scheduleWebhookSecretIsEphemeral(rotated.publicURL, {
     localStorage: {}, sessionStorage: {}
 }), true, "the bearer URL is absent from DOM attributes and browser storage");
 
+const traditional = scheduleWebhookCopy("zh-Hant");
+assert.equal(traditional.title, "雲端 Webhook",
+    "the app's canonical zh-Hant language renders the Webhook card in Traditional Chinese");
+assert.equal(scheduleWebhookCopy("zh-TW").copy, "複製網址",
+    "the regional zh-TW spelling reaches the same Traditional Chinese copy");
+assert.equal(scheduleWebhookCopy("zh-HK").howToUse, "如何使用？",
+    "Traditional Chinese regional variants share the discoverable help action");
+assert.equal(scheduleWebhookCopy("zh-Hans").title, "Cloud webhook",
+    "unsupported Simplified Chinese falls back honestly instead of claiming a translation");
+
+const curlExample = scheduleWebhookCurlExample();
+assert.match(curlExample, /curl[\s\S]*--request POST/,
+    "the help gives a runnable POST example");
+assert.match(curlExample, /CLAWDLINE_WEBHOOK_URL/,
+    "the example uses a secret variable rather than inviting a capability into source code");
+assert.match(curlExample, /Idempotency-Key/,
+    "the example shows the retry identity header");
+assert.match(curlExample, /--data '\{\}'/,
+    "the example sends the protocol's only JSON body");
+assert.doesNotMatch(curlExample, /swhk_secret/,
+    "the generic example never contains the one-shot capability URL");
+
+const traditionalHelp = scheduleWebhookHelpHTML("zh-Hant");
+for (const fact of ["Pro", "POST", "{}", "GET", "不會啟動排程", "Idempotency-Key", "202", "不代表 Mac 已執行", "密碼"]) {
+    assert.match(traditionalHelp, new RegExp(fact.replace(/[{}]/g, "\\$&")),
+        `Traditional Chinese help explains ${fact}`);
+}
+assert.doesNotMatch(traditionalHelp, /swhk_secret/,
+    "help markup never repeats the bearer URL");
+assert.equal(SCHEDULE_WEBHOOK_GUIDE_URL,
+    "https://clawdline.com/docs/schedule-webhooks",
+    "the in-app help points to the public canonical guide");
+assert.match(traditionalHelp,
+    /href="https:\/\/clawdline\.com\/docs\/schedule-webhooks"[^>]*target="_blank"[^>]*rel="noreferrer"/,
+    "the discoverable Traditional Chinese help opens the public guide safely");
+assert.match(scheduleHistorySource, /aria-expanded/,
+    "the inline help toggle exposes its state to assistive technology");
+assert.match(scheduleHistorySource, /role["']?,?\s*["']region|setAttribute\(["']role["'],\s*["']region["']\)/,
+    "the expanded instructions are a named accessible region");
+assert.match(scheduleHistorySource, /scheduleWebhookCurlExample/,
+    "the inline help can copy the safe placeholder command");
+assert.match(scheduleCSS, /\.schedule-webhook-help[\s\S]*overflow-x:\s*auto/,
+    "the inline instructions keep the command readable on narrow screens");
+
+assert.match(scheduleWebhookManagementWarning(null, {
+    language: "zh-Hant", bindingAvailability: "unbound", effectiveTier: "free"
+}), /需要專業版/,
+"the canonical Traditional Chinese locale translates the Pro entitlement warning");
+
 const productionDeliveries = [
     { delivery_id: "swd_1", state: "leased", accepted_at: "2026-09-08T00:00:00.000Z",
       attempt: 2, receipts: [
@@ -171,6 +227,13 @@ for (const state of ["queued", "leased", "mac_durable_accepted", "schedule_dispa
         state + " has its own manager-visible rendering");
 }
 assert.doesNotMatch(timeline, /swhk_/, "timeline rendering never carries the bearer URL");
+const traditionalTimeline = scheduleWebhookTimelineHTML(productionDeliveries, {}, "zh-Hant");
+assert.match(traditionalTimeline, /已由 Mac 持久接受/,
+    "the receipt timeline follows the Webhook card into Traditional Chinese");
+assert.match(traditionalTimeline, /第 2 次嘗試/,
+    "attempt metadata is translated instead of leaving an English fragment");
+assert.match(traditionalTimeline, /時間戳記不可用/,
+    "missing timestamps are translated explicitly");
 assert.deepEqual(scheduleWebhookLatestReceipt(productionDeliveries),
     { deliveryID: "swd_1", receiptVersion: 4 },
     "observation targets the newest nested production receipt");

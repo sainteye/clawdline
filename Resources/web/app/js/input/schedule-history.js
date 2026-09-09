@@ -8,6 +8,7 @@ import { openSession } from "../session/open.js";
 import { Schedule } from "./schedule.js";
 import { Start } from "./start.js";
 import { generateAndBindScheduleWebhook, scheduleWebhookCanGenerate,
+    scheduleWebhookCopy, scheduleWebhookCurlExample, scheduleWebhookHelpHTML,
     scheduleWebhookManagementWarning, scheduleWebhookReceiptHeads,
     scheduleWebhookTimelineHTML, shouldObserveScheduleWebhook }
     from "../net/schedule-webhooks.js";
@@ -36,28 +37,63 @@ export var ScheduleHistory = (function () {
     var effectiveTier = null;
     var observedReceipts = {};
     var observingReceipts = {};
+    var helpOpen = false;
 
     function webhookWords() {
-        return String(document.documentElement.lang || "").toLowerCase() === "zh-tw" ? {
-            title: "雲端 Webhook", generate: "產生 Webhook", copy: "複製網址",
-            rotate: "輪替網址", disable: "停用 Webhook",
-            once: "請立即複製此網址；Clawdline 不會再次顯示。",
-            idempotency: "未帶 Idempotency-Key 的每次觸發都會建立一次新的執行。",
-            unavailable: "目前無法讀取 Webhook 紀錄。"
-        } : {
-            title: "Cloud webhook", generate: "Generate webhook", copy: "Copy URL",
-            rotate: "Rotate URL", disable: "Disable webhook",
-            once: "Copy this URL now. Clawdline will not show it again.",
-            idempotency: "A trigger without Idempotency-Key is a new run each time.",
-            unavailable: "Webhook history is unavailable."
-        };
+        return scheduleWebhookCopy(document.documentElement.lang);
     }
 
     function webhookNode(id) { return document.getElementById(id); }
 
+    function ensureWebhookHelp() {
+        var panel = webhookNode("schedule-webhook");
+        if (!panel || webhookNode("schedule-webhook-help-toggle")) return;
+        var actions = panel.querySelector(".buttons");
+        var status = webhookNode("schedule-webhook-status");
+        if (!actions || !status) return;
+
+        var toggle = document.createElement("button");
+        toggle.id = "schedule-webhook-help-toggle";
+        toggle.type = "button";
+        toggle.className = "chip schedule-webhook-help-toggle";
+        toggle.setAttribute("aria-controls", "schedule-webhook-help");
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.addEventListener("click", function () {
+            helpOpen = !helpOpen;
+            drawWebhook();
+        });
+        actions.appendChild(toggle);
+
+        var region = document.createElement("section");
+        region.id = "schedule-webhook-help";
+        region.className = "schedule-webhook-help";
+        region.hidden = true;
+        region.setAttribute("role", "region");
+        region.setAttribute("aria-labelledby", toggle.id);
+
+        var content = document.createElement("div");
+        content.id = "schedule-webhook-help-content";
+        region.appendChild(content);
+
+        var copy = document.createElement("button");
+        copy.id = "schedule-webhook-help-copy-example";
+        copy.type = "button";
+        copy.className = "chip";
+        copy.addEventListener("click", function () {
+            if (!webhook || typeof webhook.copy !== "function") return;
+            Promise.resolve(webhook.copy(scheduleWebhookCurlExample())).then(function () {
+                webhookNode("schedule-webhook-status").textContent =
+                    webhookWords().exampleCopied;
+            }, webhookFailed);
+        });
+        region.appendChild(copy);
+        panel.insertBefore(region, status);
+    }
+
     function drawWebhook() {
         var panel = webhookNode("schedule-webhook");
         if (!panel) return;
+        ensureWebhookHelp();
         var words = webhookWords();
         panel.hidden = !webhook || !record;
         webhookNode("schedule-webhook-title").textContent = words.title;
@@ -73,6 +109,16 @@ export var ScheduleHistory = (function () {
         webhookNode("schedule-webhook-copy").textContent = words.copy;
         webhookNode("schedule-webhook-rotate").textContent = words.rotate;
         webhookNode("schedule-webhook-disable").textContent = words.disable;
+        var helpToggle = webhookNode("schedule-webhook-help-toggle");
+        var help = webhookNode("schedule-webhook-help");
+        if (helpToggle && help) {
+            helpToggle.textContent = helpOpen ? words.hideHelp : words.howToUse;
+            helpToggle.setAttribute("aria-expanded", helpOpen ? "true" : "false");
+            help.hidden = !helpOpen;
+            webhookNode("schedule-webhook-help-content").innerHTML =
+                scheduleWebhookHelpHTML(document.documentElement.lang);
+            webhookNode("schedule-webhook-help-copy-example").textContent = words.copyExample;
+        }
         webhookNode("schedule-webhook-generate").hidden = !(!hook || hook.state === "disabled");
         webhookNode("schedule-webhook-generate").disabled =
             !scheduleWebhookCanGenerate(hook, managementContext);
@@ -82,7 +128,8 @@ export var ScheduleHistory = (function () {
             effectiveTier === null || effectiveTier === "free";
         webhookNode("schedule-webhook-disable").hidden = !hook || hook.state === "disabled";
         webhookNode("schedule-webhook-timeline").innerHTML =
-            scheduleWebhookTimelineHTML(deliveries, observedReceipts);
+            scheduleWebhookTimelineHTML(
+                deliveries, observedReceipts, document.documentElement.lang);
         observeVisibleTimeline();
     }
 
@@ -272,6 +319,7 @@ export var ScheduleHistory = (function () {
         effectiveTier = null;
         observedReceipts = {};
         observingReceipts = {};
+        helpOpen = false;
         els["schedule-history"].hidden = true;
     }
 
@@ -357,6 +405,8 @@ els["schedule-run-rows"].addEventListener("click", function (ev) {
 els["schedule-history"].addEventListener("keydown", function (ev) {
     if (ev.key !== "Tab") return;
     var items = [els["schedule-history-edit"]]
+        .concat(Array.from(els["schedule-history-sheet"].querySelectorAll(
+            "#schedule-webhook button:not([hidden]):not([disabled])")))
         .concat(Array.from(els["schedule-run-rows"].querySelectorAll(
             ".schedule-run-button:not([disabled])")))
         .concat([els["schedule-history-close"]])
