@@ -40,7 +40,7 @@ const webhookCopy = {
         helpRotation: "If the URL is exposed or lost, Rotate URL. Rotation immediately invalidates the old URL.",
         helpExample: "Terminal or automation example",
         helpFullGuide: "Open the complete Schedule Webhook guide",
-        copyExample: "Copy example", exampleCopied: "Example copied. Add the URL as a secret named CLAWDLINE_WEBHOOK_URL.",
+        copyExample: "Copy example", exampleCopied: "Example copied. Add the URL as a secret named CLAWDLINE_SCHEDULE_WEBHOOK_URL.",
         attempt: "Attempt {n}", retry: "Retry {at}", timestampUnavailable: "Timestamp unavailable",
         warningBindingStore: "The local binding store is unavailable. Repair it before generating another webhook.",
         warningBindingUnknown: "The local binding status is unavailable. Confirm it before generating another webhook.",
@@ -77,7 +77,7 @@ const webhookCopy = {
         helpRotation: "若網址外洩或遺失，請輪替網址；輪替會立即讓舊網址失效。",
         helpExample: "終端機或自動化範例",
         helpFullGuide: "開啟完整的排程 Webhook 指南",
-        copyExample: "複製範例", exampleCopied: "已複製範例；請將網址儲存為名為 CLAWDLINE_WEBHOOK_URL 的機密資料。",
+        copyExample: "複製範例", exampleCopied: "已複製範例；請將網址儲存為名為 CLAWDLINE_SCHEDULE_WEBHOOK_URL 的機密資料。",
         attempt: "第 {n} 次嘗試", retry: "重試時間 {at}", timestampUnavailable: "時間戳記不可用",
         warningBindingStore: "本機 Webhook 綁定資料無法讀取；修復前不能產生另一個 Webhook。",
         warningBindingUnknown: "本機 Webhook 綁定狀態不明；確認狀態前不能產生另一個 Webhook。",
@@ -110,7 +110,7 @@ export function scheduleWebhookCopy(language) {
 }
 
 export function scheduleWebhookCurlExample() {
-    return "curl --request POST \"$CLAWDLINE_WEBHOOK_URL\" \\\n"
+    return "curl --request POST \"$CLAWDLINE_SCHEDULE_WEBHOOK_URL\" \\\n"
         + "  --header 'Content-Type: application/json' \\\n"
         + "  --header 'Idempotency-Key: request-001' \\\n"
         + "  --data '{}'";

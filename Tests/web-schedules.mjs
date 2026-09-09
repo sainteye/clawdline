@@ -159,7 +159,7 @@ assert.equal(scheduleWebhookCopy("zh-Hans").title, "Cloud webhook",
 const curlExample = scheduleWebhookCurlExample();
 assert.match(curlExample, /curl[\s\S]*--request POST/,
     "the help gives a runnable POST example");
-assert.match(curlExample, /CLAWDLINE_WEBHOOK_URL/,
+assert.match(curlExample, /CLAWDLINE_SCHEDULE_WEBHOOK_URL/,
     "the example uses a secret variable rather than inviting a capability into source code");
 assert.match(curlExample, /Idempotency-Key/,
     "the example shows the retry identity header");
