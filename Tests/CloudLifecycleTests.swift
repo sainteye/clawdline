@@ -1197,6 +1197,110 @@ private struct CloudLifecycleTests {
     }
 
     @MainActor
+    static func testBrowserPairingWorkflow() async {
+        guard let fixture = try? makeFixture() else {
+            check("the browser workflow fixture builds", false)
+            return
+        }
+        let outcome = CloudPairingCompleter.Outcome(
+            viewerDeviceID: fixture.offer.viewerDeviceID,
+            viewerFingerprint: fixture.offer.viewerFingerprint,
+            deliveredFingerprint: fixture.offer.viewerFingerprint,
+            machineFingerprint: "MAC1-MAC2-MAC3-MAC4")
+
+        let bounds = LifecycleBrowserPairingRecorder(offer: fixture.offer, outcome: outcome)
+        let bounded = CloudBrowserPairingWorkflow(services: .init(
+            nowMilliseconds: { fixture.now },
+            decode: { fragment, now in try bounds.decode(fragment: fragment, now: now) },
+            complete: { fragment in try await bounds.complete(fragment: fragment) }))
+
+        var emptyRefused = false
+        do { _ = try bounded.preview(raw: " \n ") }
+        catch {
+            emptyRefused = (error as? CloudBrowserPairingWorkflow.InputFailure) == .emptyOffer
+        }
+        check("an empty browser offer is refused before decoding", emptyRefused)
+
+        let below = String(repeating: "a", count:
+            CloudBrowserPairingWorkflow.maxOfferFragmentUTF8Bytes - 1)
+        let at = String(repeating: "b", count:
+            CloudBrowserPairingWorkflow.maxOfferFragmentUTF8Bytes)
+        _ = try? bounded.preview(raw: below)
+        _ = try? bounded.preview(raw: at)
+        let decodeCountAtBoundary = bounds.decodeCount()
+        var aboveRefused = false
+        do { _ = try bounded.preview(raw: at + "c") }
+        catch {
+            aboveRefused = (error as? CloudBrowserPairingWorkflow.InputFailure)
+                == .offerTooLarge(maxBytes:
+                    CloudBrowserPairingWorkflow.maxOfferFragmentUTF8Bytes)
+        }
+        check("browser offers below and at the byte ceiling reach the decoder",
+              decodeCountAtBoundary == 2)
+        check("a browser offer one byte above the ceiling is refused", aboveRefused)
+        check("an oversized browser offer is refused before decoding",
+              bounds.decodeCount() == decodeCountAtBoundary)
+
+        let consent = LifecycleBrowserPairingRecorder(offer: fixture.offer, outcome: outcome)
+        let workflow = CloudBrowserPairingWorkflow(services: .init(
+            nowMilliseconds: { fixture.now },
+            decode: { fragment, now in try consent.decode(fragment: fragment, now: now) },
+            complete: { fragment in try await consent.complete(fragment: fragment) }))
+        let firstPreview = try? workflow.preview(raw: "  carried-offer  ")
+        check("the preview exposes the decoded fingerprint, not raw Cloud text",
+              firstPreview?.viewerFingerprint == fixture.offer.viewerFingerprint
+                  && firstPreview?.fragment == "carried-offer")
+        workflow.cancel()
+        await Task.yield()
+        check("cancelling before consent never calls the completer", consent.completeCount() == 0)
+
+        let confirmed = try? workflow.preview(raw: "carried-offer")
+        if let confirmed {
+            workflow.confirm(confirmed)
+            workflow.confirm(confirmed)
+        }
+        let completedOnce = await eventually {
+            if case .succeeded = workflow.phase { return consent.completeCount() == 1 }
+            return false
+        }
+        check("explicit confirmation completes exactly the previewed offer once", completedOnce)
+
+        let delayed = LifecycleBrowserPairingRecorder(
+            offer: fixture.offer, outcome: outcome, suspendCompletion: true)
+        let cancellable = CloudBrowserPairingWorkflow(services: .init(
+            nowMilliseconds: { fixture.now },
+            decode: { fragment, now in try delayed.decode(fragment: fragment, now: now) },
+            complete: { fragment in try await delayed.complete(fragment: fragment) }))
+        if let preview = try? cancellable.preview(raw: "delayed-offer") {
+            cancellable.confirm(preview)
+        }
+        let delayedReached = await eventually { delayed.completeCount() == 1 }
+        check("the confirmed browser handover reaches its owned async operation", delayedReached)
+        cancellable.cancel()
+        delayed.release()
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        check("a late completion cannot replace a cancelled browser attempt",
+              cancellable.phase == .cancelled)
+
+        let teardown = LifecycleBrowserPairingRecorder(
+            offer: fixture.offer, outcome: outcome, suspendCompletion: true)
+        var owned: CloudBrowserPairingWorkflow? = CloudBrowserPairingWorkflow(services: .init(
+            nowMilliseconds: { fixture.now },
+            decode: { fragment, now in try teardown.decode(fragment: fragment, now: now) },
+            complete: { fragment in try await teardown.complete(fragment: fragment) }))
+        weak var released = owned
+        if let workflow = owned,
+           let preview = try? workflow.preview(raw: "teardown-offer") {
+            workflow.confirm(preview)
+        }
+        let teardownReached = await eventually { teardown.completeCount() == 1 }
+        check("the teardown fixture reaches its owned async operation", teardownReached)
+        owned = nil
+        check("dropping the browser workflow releases its task owner", released == nil)
+        teardown.release()
+    }
+
+    @MainActor
     static func run(vectorsURL: URL) async throws -> Int {
         await testSequenceFile()
         testPairedDeviceStore()
@@ -1211,6 +1315,7 @@ private struct CloudLifecycleTests {
         await testRevocationStopsReconnecting()
         await testWriteGateAndCommandSeam()
         await testPairingCompleter()
+        await testBrowserPairingWorkflow()
 
         guard failures.isEmpty else {
             throw CloudLifecycleTestFailure(failures: failures, checks: checks)
@@ -1245,6 +1350,66 @@ private final class LifecycleDeliveryRecorder: @unchecked Sendable {
         defer { lock.unlock() }
         guard let blob else { return nil }
         return Data(base64Encoded: blob.wireBase64ForTesting)
+    }
+}
+
+private final class LifecycleBrowserPairingRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let offer: CloudPairingOffer
+    private let outcome: CloudPairingCompleter.Outcome
+    private let suspendCompletion: Bool
+    private var decoded: [String] = []
+    private var completed: [String] = []
+    private var continuation: CheckedContinuation<CloudPairingCompleter.Outcome, Error>?
+
+    init(
+        offer: CloudPairingOffer,
+        outcome: CloudPairingCompleter.Outcome,
+        suspendCompletion: Bool = false
+    ) {
+        self.offer = offer
+        self.outcome = outcome
+        self.suspendCompletion = suspendCompletion
+    }
+
+    func decode(fragment: String, now: Int64) throws -> CloudPairingOffer {
+        lock.lock()
+        decoded.append(fragment)
+        lock.unlock()
+        return offer
+    }
+
+    func complete(fragment: String) async throws -> CloudPairingCompleter.Outcome {
+        lock.lock()
+        completed.append(fragment)
+        let shouldSuspend = suspendCompletion
+        lock.unlock()
+        guard shouldSuspend else { return outcome }
+        return try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            self.continuation = continuation
+            lock.unlock()
+        }
+    }
+
+    func decodeCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return decoded.count
+    }
+
+    func completeCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return completed.count
+    }
+
+    func release() {
+        lock.lock()
+        let continuation = self.continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(returning: outcome)
     }
 }
 

@@ -700,3 +700,143 @@ struct CloudPairingCompleter: Sendable {
             machineFingerprint: machineFingerprint)
     }
 }
+
+/// Owns one desktop-browser handover from preview through its terminal result.
+///
+/// The AppKit surface asks this object to preview an offer, shows the returned fingerprint, and
+/// calls ``confirm(_:)`` only after the person accepts that exact preview. Keeping the task and an
+/// attempt generation here gives cancellation one owner: a completion that arrives after cancel
+/// cannot make an old Settings sheet look successful. Cancellation still means "stop waiting",
+/// not "roll back" — a synchronous Keychain operation or a Cloud write that already completed may
+/// finish underneath it, which is the same boundary documented by ``CloudKeychainReader``.
+@MainActor
+final class CloudBrowserPairingWorkflow {
+    /// A closed offer has bounded identifiers and fixed-size keys/nonces. Four KiB is deliberately
+    /// generous for that JSON after base64url expansion, while still rejecting attacker-sized text
+    /// before normalization, base64 decoding or JSON allocation.
+    static let maxOfferFragmentUTF8Bytes = 4_096
+
+    struct Preview: Equatable, Sendable {
+        let fragment: String
+        let viewerDeviceID: String
+        let viewerFingerprint: String
+    }
+
+    enum Phase: Equatable, Sendable {
+        case idle
+        case awaitingConfirmation(viewerFingerprint: String)
+        case pairing(viewerFingerprint: String)
+        case succeeded(CloudPairingCompleter.Outcome)
+        case cancelled
+        case failed(String)
+    }
+
+    enum InputFailure: Error, LocalizedError, Equatable {
+        case emptyOffer
+        case offerTooLarge(maxBytes: Int)
+        case alreadyPairing
+
+        var errorDescription: String? {
+            switch self {
+            case .emptyOffer:
+                return "Paste the pairing code shown by app.clawdline.com."
+            case .offerTooLarge(let maxBytes):
+                return "That pairing code is larger than the \(maxBytes)-byte protocol limit."
+            case .alreadyPairing:
+                return "This Mac is already finishing another browser pairing."
+            }
+        }
+    }
+
+    struct Services: Sendable {
+        var nowMilliseconds: @Sendable () -> Int64
+        var decode: @Sendable (String, Int64) throws -> CloudPairingOffer
+        var complete: @Sendable (String) async throws -> CloudPairingCompleter.Outcome
+    }
+
+    private let services: Services
+    private var pending: Preview?
+    private var task: Task<Void, Never>?
+    private var generation = 0
+    private(set) var phase: Phase = .idle {
+        didSet { onChange?(phase) }
+    }
+    var onChange: ((Phase) -> Void)?
+
+    init(services: Services) {
+        self.services = services
+    }
+
+    static func production(
+        completer: CloudPairingCompleter = .production()
+    ) -> CloudBrowserPairingWorkflow {
+        CloudBrowserPairingWorkflow(services: Services(
+            nowMilliseconds: { Int64(Date().timeIntervalSince1970 * 1_000) },
+            decode: { fragment, now in
+                try CloudHandover.decodeOfferFragment(fragment, nowMilliseconds: now)
+            },
+            complete: { fragment in
+                try await completer.complete(offerFragment: fragment)
+            }))
+    }
+
+    func preview(raw: String) throws -> Preview {
+        guard task == nil else { throw InputFailure.alreadyPairing }
+        guard raw.utf8.count <= Self.maxOfferFragmentUTF8Bytes else {
+            throw InputFailure.offerTooLarge(maxBytes: Self.maxOfferFragmentUTF8Bytes)
+        }
+        let fragment = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fragment.isEmpty else { throw InputFailure.emptyOffer }
+        let offer = try services.decode(fragment, services.nowMilliseconds())
+        let preview = Preview(
+            fragment: fragment,
+            viewerDeviceID: offer.viewerDeviceID,
+            viewerFingerprint: offer.viewerFingerprint)
+        pending = preview
+        phase = .awaitingConfirmation(viewerFingerprint: preview.viewerFingerprint)
+        return preview
+    }
+
+    /// Cross the consent boundary once for exactly the preview currently on screen.
+    func confirm(_ preview: Preview) {
+        guard task == nil, pending == preview,
+              phase == .awaitingConfirmation(viewerFingerprint: preview.viewerFingerprint)
+        else { return }
+        generation += 1
+        let attempt = generation
+        pending = nil
+        phase = .pairing(viewerFingerprint: preview.viewerFingerprint)
+        let complete = services.complete
+        task = Task { [weak self] in
+            do {
+                let outcome = try await complete(preview.fragment)
+                try Task.checkCancellation()
+                self?.settle(attempt: attempt, phase: .succeeded(outcome))
+            } catch is CancellationError {
+                self?.settle(attempt: attempt, phase: .cancelled)
+            } catch {
+                let described = (error as? LocalizedError)?.errorDescription
+                    ?? error.localizedDescription
+                self?.settle(attempt: attempt, phase: .failed(described))
+            }
+        }
+    }
+
+    func cancel() {
+        generation += 1
+        pending = nil
+        task?.cancel()
+        task = nil
+        phase = .cancelled
+    }
+
+    private func settle(attempt: Int, phase terminal: Phase) {
+        guard generation == attempt, task != nil else { return }
+        task = nil
+        phase = terminal
+    }
+
+    deinit {
+        task?.cancel()
+    }
+}

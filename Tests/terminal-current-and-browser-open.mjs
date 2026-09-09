@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const iterm = fs.readFileSync(path.join(root, "Resources/iterm.js"), "utf8");
 const settings = fs.readFileSync(path.join(root, "Sources/Settings.swift"), "utf8");
+const cloudHandover = fs.readFileSync(
+    path.join(root, "Sources/CloudHandover.swift"), "utf8");
 const readinessSource = fs.readFileSync(
     path.join(root, "Sources/LocalBrowserReadiness.swift"), "utf8");
 const remoteServer = fs.readFileSync(path.join(root, "Sources/RemoteServer.swift"), "utf8");
@@ -52,6 +54,53 @@ const mint = openRemote.indexOf("RemoteAuth.addDevice");
 const open = openRemote.indexOf("NSWorkspace.shared.open");
 assert.ok(wait >= 0 && mint > wait && open > mint,
     "the browser waits for the listener before a credential is minted and the URL is opened");
+
+const cloudControl = settings.slice(
+    settings.indexOf("private final class CloudSettingsControl"),
+    settings.indexOf("// MARK: - The apps the hotkey fires in"));
+assert.match(cloudControl, /Pair a Browser…/,
+    "Cloud Settings exposes the browser half of the pairing protocol instead of only phone QR");
+const pairBrowser = functionBody(cloudControl, "private func beginBrowserPairing()");
+const browserWorkflow = cloudHandover.slice(
+    cloudHandover.indexOf("final class CloudBrowserPairingWorkflow"));
+assert.match(browserWorkflow, /CloudHandover\.decodeOfferFragment/,
+    "the Mac decodes the carried browser offer before asking the person to trust it");
+const confirmationStart = pairBrowser.indexOf("let confirmation = NSAlert()");
+const confirmationEnd = pairBrowser.indexOf("pairingKind = .browser");
+const confirmation = pairBrowser.slice(confirmationStart, confirmationEnd);
+assert.ok(confirmationStart >= 0 && confirmationEnd > confirmationStart,
+    "browser pairing has a closed confirmation step before its async handover starts");
+assert.match(confirmation, /confirmation\.informativeText[\s\S]*preview\.viewerFingerprint/,
+    "the consent dialog itself shows the decoded browser fingerprint");
+assert.match(confirmation,
+    /guard confirmation\.runModal\(\) == \.alertFirstButtonReturn else \{ return \}/,
+    "only the explicit Pair Browser button crosses the consent boundary");
+assert.match(browserWorkflow, /CloudPairingCompleter = \.production\(\)/,
+    "browser pairing reuses the encrypted Cloud handover rather than minting another credential");
+assert.match(browserWorkflow, /\.complete\(offerFragment:/,
+    "the accepted browser offer is delivered through the existing bounded completer");
+assert.doesNotMatch(pairBrowser + browserWorkflow,
+    /Log\.write|NSLog|os_log|Logger\s*\(|Diagnostics\.|print\(/,
+    "the carried offer is never copied into a diagnostic or console log");
+const connected = cloudControl.slice(
+    cloudControl.indexOf("case .connected"), cloudControl.indexOf("case .signingOut"));
+assert.match(connected, /if pairing[\s\S]*Cancel Pairing/,
+    "an in-flight handover exposes one explicit cancellation action");
+assert.doesNotMatch(connected,
+    /if pairing[\s\S]*Cancel Pairing[\s\S]*Sign Out[\s\S]*else/,
+    "Sign Out is not available in the in-flight pairing action set");
+const cloudDeinit = functionBody(cloudControl, "deinit");
+assert.match(cloudDeinit, /pairingTask\?\.cancel\(\)/,
+    "tearing down Cloud Settings cancels its phone pairing task");
+assert.match(cloudControl, /private var browserPairing: CloudBrowserPairingWorkflow\?/,
+    "Cloud Settings owns the browser pairing workflow for exactly its own lifetime");
+const workflowDeinit = functionBody(browserWorkflow, "deinit");
+assert.match(workflowDeinit, /task\?\.cancel\(\)/,
+    "releasing Cloud Settings releases the workflow, whose own deinit cancels its task");
+const byteLimit = pairBrowser.indexOf("maxOfferFragmentUTF8Bytes");
+const preview = pairBrowser.indexOf("workflow.preview(raw:");
+assert.ok(byteLimit >= 0 && preview > byteLimit,
+    "the carried offer is byte-bounded before any base64 or JSON decoding");
 
 const readiness = functionBody(readinessSource, "func whenReadyForBrowser");
 assert.match(readiness, /attempt\(/,

@@ -829,10 +829,16 @@ private struct CloudSettingsTests {
             return
         }
         racingModel.cancel()
+        let cancellationObserved = await eventually {
+            ordering.snapshot().contains("cancel-task")
+        }
         let events = ordering.snapshot()
+        let reserveIndex = events.firstIndex(of: "reserve") ?? events.endIndex
+        let cancellationIndex = events.firstIndex(of: "cancel-task") ?? events.endIndex
         check("invalidation reserves before cancelling the in-flight Task",
-              events.first == "reserve"
-                  && events.firstIndex(of: "reserve")! < events.firstIndex(of: "cancel-task")!)
+              cancellationObserved && events.first == "reserve"
+                  && reserveIndex < cancellationIndex
+                  && cancellationIndex < events.endIndex)
         check("the exact synchronous reservation is handed to durable persistence",
               reservedForPersistence == CloudCredentialGeneration(41)
                   && events.last == "persist")

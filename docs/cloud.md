@@ -256,6 +256,19 @@ hash and opaque bytes to `POST /v1/pairing/invitations/accept`. The Mac polls
 `POST /v1/pairing/invitations/poll`, decrypts that offer locally, and the existing
 `complete`/`claim` X25519 handover moves the account master secret Mac → viewer.
 
+A desktop browser uses the compatibility hand-carry path because it cannot scan a QR displayed on
+the same Mac. Sign in at `app.clawdline.com`; while it says *Pair this browser*, copy the complete
+short-lived pairing code. On the Mac choose Settings → Cloud → *Pair a Browser…*, paste that code,
+and continue. The Mac decodes and bounds the offer before showing the browser fingerprint. Compare
+that fingerprint with the one still visible in the browser, then choose *Pair Browser*; pressing
+Cancel never starts the encrypted handover. While the handover is running Settings exposes only
+*Cancel Pairing*, so signing out cannot race it. Cancellation stops this Settings owner from
+waiting and ignores a late result; it cannot promise to roll back a synchronous Keychain operation
+or Cloud write that already finished. An expired, malformed, oversized, wrong-account or
+fingerprint-mismatched offer fails visibly and must be restarted from the browser. This first Mac
+surface uses English security copy, matching the existing Cloud identity card; translating that
+copy is a presentation follow-up, not a second pairing protocol.
+
 The acceptance seam after that poll is bounded too. `CloudPairingCompleter.production` loads the
 restored identity, device signing key and master secret through one-shot `CloudKeychainReader`
 awaits. A locked or non-answering load-or-create returns a visible pairing failure after ten

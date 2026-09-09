@@ -192,14 +192,20 @@ enum Codex {
     /// rather than offered, which is how a brand-new tab avoids showing somebody else's
     /// conversation with its own name on it.
     static func locate(cwd: String, startedAt: Date? = nil, pid: Int32? = nil,
-                       days: Int = 3) -> URL? {
+                       days: Int = 3,
+                       openFilesForTesting: ((Int32) -> [String])? = nil) -> URL? {
         // A pid is a stronger answer even while its rollout is still being created. Falling
         // through when `lsof` has not seen the new file yet lets the clock-based lookup borrow
         // another Codex session's rollout from the same directory. That is exactly the moment a
         // session started from the browser is first opened, so the reader briefly lands in an
         // older conversation despite the new row being the one selected. Empty until this
         // process names its own file is the only honest answer.
-        if let pid { return heldRollout(ofPID: pid) }
+        if let pid {
+            if let openFilesForTesting {
+                return rollout(among: openFilesForTesting(pid))
+            }
+            return heldRollout(ofPID: pid)
+        }
 
         let mine = rollouts(days: days)
             .filter { head(of: $0)?.cwd == cwd }

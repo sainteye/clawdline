@@ -6,7 +6,7 @@
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:69,CloudAppBridge:152,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:90'
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:69,CloudAppBridge:152,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:101'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
 # the typed planning graph adds 14, the Cloud bridge lifecycle adds 75, and the Usage mobile,
@@ -418,7 +418,7 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # The Cloud snippet-write candidate run on 2026-09-09 reported 10,799 checks and the twelve-suite
 # receipt above. Only seal/governance metadata changes after that run; its retained receipt is
 # checked below.
-expected_swift_receipt='10799 checks passed'
+expected_swift_receipt='10810 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -431,7 +431,7 @@ expected_swift_receipt='10799 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8789
+expected_swift_receipt_witness=8801
 
 count_exact_receipt_lines() {
   local receipt=$1

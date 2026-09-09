@@ -276,9 +276,14 @@ group("a new Codex process never borrows an existing conversation") {
 
     check("the clock remains a fallback when there is no process to ask",
           Codex.locate(cwd: "/w", startedAt: Date(), days: 3) == file)
-    check("a known process with no rollout returns nothing instead of the fallback",
-          Codex.locate(cwd: "/w", startedAt: Date(),
-                       pid: Int32(ProcessInfo.processInfo.processIdentifier), days: 3) == nil)
+    var observedPID: Int32?
+    let located = Codex.locate(cwd: "/w", startedAt: Date(), pid: 42, days: 3,
+                               openFilesForTesting: { pid in
+                                   observedPID = pid
+                                   return []
+                               })
+    check("a process observation with no rollout returns nothing instead of the fallback",
+          observedPID == 42 && located == nil)
 }
 
 group("a rollout reads as the same entries a transcript does") {

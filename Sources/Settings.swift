@@ -3015,6 +3015,11 @@ final class DeviceChips: NSView, SelfSizing {
 /// selectable reading and the actions that are valid at that moment.
 private final class CloudSettingsControl: NSView, SelfSizing {
 
+    private enum PairingKind {
+        case phone
+        case browser
+    }
+
     var onResize: (() -> Void)?
 
     private let model: CloudSettingsModel
@@ -3023,8 +3028,10 @@ private final class CloudSettingsControl: NSView, SelfSizing {
     /// The result of the last pairing attempt, shown under the connection line. It is the only
     /// place the two fingerprints a person is comparing appear on this side.
     private var pairingNote: String?
-    private var pairing = false
+    private var pairingKind: PairingKind?
+    private var pairing: Bool { pairingKind != nil }
     private var pairingTask: Task<Void, Never>?
+    private var browserPairing: CloudBrowserPairingWorkflow?
     private var pairingWindow: NSWindow?
     private var pairingCloseObserver: NSObjectProtocol?
 
@@ -3036,6 +3043,13 @@ private final class CloudSettingsControl: NSView, SelfSizing {
         refresh(notifyResize: false)
     }
     required init?(coder: NSCoder) { fatalError() }
+
+    deinit {
+        pairingTask?.cancel()
+        if let observer = pairingCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     func height(forWidth width: CGFloat) -> CGFloat {
         card.height(forWidth: width) + (buttons.isEmpty ? 0 : 40)
@@ -3094,11 +3108,16 @@ private final class CloudSettingsControl: NSView, SelfSizing {
             let note = pairingNote.map { "\n" + $0 } ?? ""
             text = "Connected to Clawdline Cloud. Account \(identity.accountID), Mac \(identity.machineID).\(restored)\(note)"
             dot = .live
-            actions = [
-                (pairing ? "Pairing…" : "Pair a Phone…", true,
-                 { [weak self] in self?.beginQRPairing() }),
-                ("Sign Out", false, { [weak model] in model?.signOut() }),
-            ]
+            if pairing {
+                actions = [("Cancel Pairing", false, { [weak self] in self?.cancelPairing() })]
+            } else {
+                actions = [
+                    ("Pair a Phone…", true, { [weak self] in self?.beginQRPairing() }),
+                    ("Pair a Browser…", false,
+                     { [weak self] in self?.beginBrowserPairing() }),
+                    ("Sign Out", false, { [weak model] in model?.signOut() }),
+                ]
+            }
         case .signingOut(let identity):
             text = "Signing out of account \(identity.accountID)… "
                 + "Waiting for this Mac's Keychain to release the credential."
@@ -3167,12 +3186,112 @@ private final class CloudSettingsControl: NSView, SelfSizing {
         if notifyResize { onResize?() }
     }
 
+    /// Accept the compatibility offer already displayed by a signed-in Cloud browser.
+    ///
+    /// The offer carries only the viewer's public keys and a one-time claim nonce. It is decoded
+    /// before the person grants access so the Mac can show the same fingerprint as the browser.
+    /// The raw offer is deliberately kept in this stack frame and never copied into a log, note,
+    /// preference or diagnostic report.
+    private func beginBrowserPairing() {
+        guard !pairing else { return }
+
+        let entry = NSAlert()
+        entry.messageText = "Pair a Browser"
+        entry.informativeText = "Copy the short-lived pairing code from app.clawdline.com and paste it here."
+        entry.alertStyle = .informational
+        entry.addButton(withTitle: "Continue")
+        entry.addButton(withTitle: "Cancel")
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 460, height: 24))
+        field.placeholderString = "Pairing code"
+        field.isEditable = true
+        field.isSelectable = true
+        entry.accessoryView = field
+        entry.window.initialFirstResponder = field
+        NSApp.activate(ignoringOtherApps: true)
+        guard entry.runModal() == .alertFirstButtonReturn else { return }
+
+        let rawFragment = field.stringValue
+        guard rawFragment.utf8.count
+                <= CloudBrowserPairingWorkflow.maxOfferFragmentUTF8Bytes else {
+            pairingNote = "Browser pairing code was refused: that code is larger than the protocol limit."
+            refresh()
+            return
+        }
+        let fragment = rawFragment.trimmingCharacters(in: .whitespacesAndNewlines)
+        let workflow = CloudBrowserPairingWorkflow.production()
+        let preview: CloudBrowserPairingWorkflow.Preview
+        do {
+            preview = try workflow.preview(raw: fragment)
+        } catch {
+            let described = (error as? LocalizedError)?.errorDescription
+                ?? error.localizedDescription
+            pairingNote = "Browser pairing code was refused: \(described)"
+            refresh()
+            return
+        }
+
+        let confirmation = NSAlert()
+        confirmation.messageText = "Pair this browser?"
+        confirmation.informativeText = "Browser fingerprint \(preview.viewerFingerprint). "
+            + "Confirm that app.clawdline.com shows the same fingerprint before granting access."
+        confirmation.alertStyle = .informational
+        confirmation.addButton(withTitle: "Pair Browser")
+        confirmation.addButton(withTitle: "Cancel")
+        guard confirmation.runModal() == .alertFirstButtonReturn else { return }
+
+        pairingKind = .browser
+        pairingNote = "Pairing browser fingerprint \(preview.viewerFingerprint)…"
+        browserPairing = workflow
+        workflow.onChange = { [weak self, weak workflow] phase in
+            guard workflow != nil else { return }
+            self?.browserPairingChanged(phase)
+        }
+        refresh()
+        workflow.confirm(preview)
+    }
+
+    private func browserPairingChanged(_ phase: CloudBrowserPairingWorkflow.Phase) {
+        guard pairingKind == .browser else { return }
+        switch phase {
+        case .succeeded(let outcome):
+            finishPairing(note: "Paired \(outcome.viewerDeviceID). Browser fingerprint "
+                + "\(outcome.viewerFingerprint); this Mac's is \(outcome.machineFingerprint).")
+        case .failed(let message):
+            finishPairing(note: "Browser pairing failed: \(message)")
+        case .cancelled:
+            finishPairing(note: "Browser pairing stopped waiting. A Keychain operation or Cloud "
+                + "write that already completed may still finish.")
+        case .idle, .awaitingConfirmation, .pairing:
+            break
+        }
+    }
+
+    private func cancelPairing() {
+        guard pairing else { return }
+        pairingKind = nil
+        pairingTask?.cancel()
+        pairingTask = nil
+        browserPairing?.onChange = nil
+        browserPairing?.cancel()
+        browserPairing = nil
+        if let observer = pairingCloseObserver {
+            NotificationCenter.default.removeObserver(observer)
+            pairingCloseObserver = nil
+        }
+        let window = pairingWindow
+        pairingWindow = nil
+        window?.close()
+        pairingNote = "Pairing stopped waiting. A Keychain operation or Cloud write that already "
+            + "completed may still finish."
+        refresh()
+    }
+
     /// Put the one-time secret on the Mac as a QR, then wait for the signed-in phone to return
     /// its encrypted viewer offer. The QR secret is in a URL fragment, so neither the web server
     /// nor the OAuth redirect receives it; Cloud stores only its SHA-256 and the opaque offer.
     private func beginQRPairing() {
         guard !pairing else { return }
-        pairing = true
+        pairingKind = .phone
         pairingNote = nil
         refresh()
         let client = CloudAccountClient()
@@ -3233,7 +3352,7 @@ private final class CloudSettingsControl: NSView, SelfSizing {
     }
 
     private func showPairingQR(url: URL, expiresIn: Int) {
-        guard pairing, pairingWindow == nil else { return }
+        guard pairingKind == .phone, pairingWindow == nil else { return }
         let width: CGFloat = 420
         let height: CGFloat = 570
         let side: CGFloat = 280
@@ -3291,16 +3410,18 @@ private final class CloudSettingsControl: NSView, SelfSizing {
         pairingCloseObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification, object: window, queue: .main
         ) { [weak self] _ in
-            self?.pairingTask?.cancel()
+            self?.cancelPairing()
         }
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     private func finishPairing(note: String?) {
-        pairing = false
+        pairingKind = nil
         pairingNote = note
         pairingTask = nil
+        browserPairing?.onChange = nil
+        browserPairing = nil
         if let observer = pairingCloseObserver {
             NotificationCenter.default.removeObserver(observer)
             pairingCloseObserver = nil
