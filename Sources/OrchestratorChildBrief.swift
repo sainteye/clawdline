@@ -36,12 +36,14 @@ extension Orchestrator {
     }
 
 
-    /// The announcement rides in the typed line and not only in CHILD.md, because an assistant
+    /// The ownership marker rides in the typed line and not only in CHILD.md, because an assistant
     /// answers the line before it opens the file — and the first thing on the screen should be
-    /// what the child was sent to do, in the language of whoever is looking.
-    static func firstLine(id: String, secret: String, announce: String? = nil) -> String {
+    /// what the Session was sent to do, in the language of whoever is looking.
+    static func firstLine(id: String, secret: String, announce: String? = nil,
+                          sessionRoot: Bool = false) -> String {
         let opening = announce.map { "Say this line first, verbatim: \($0) Then read" } ?? "Read"
-        return "You are a Clawdline CHILD agent for task \(id). "
+        let ownership = sessionRoot ? "ROOT" : "CHILD"
+        return "You are a Clawdline \(ownership) agent for task \(id). "
             + "\(opening) /tmp/.clawdline/\(id)/CHILD.md and follow it exactly. TASK_SECRET=\(secret)"
     }
 
@@ -139,11 +141,30 @@ extension Orchestrator {
         // sentence is the part that changes behaviour rather than only forbidding it: the work
         // that used to be handed to a grandchild is work an assistant's own subagents do,
         // without a terminal tab, a briefing or a level of supervision under this one.
-        let handOnRule = "**You are the bottom of this tree: you cannot dispatch Clawdline tasks "
-            + "of your own, and a request to open one is refused.** When part of this needs to "
-            + "run in parallel or wants a context of its own, use your own assistant's built-in "
-            + "subagents (Claude Code's Task tool, Codex's subagents). They cost no terminal tab "
-            + "and no broker capacity, and their answers come back to you rather than to a file."
+        let handOnRule = task.sessionRoot
+            ? "**You are a Root Session. You may dispatch Clawdline child tasks of your own.** "
+                + "You own their synthesis, integration, verification, and landing."
+            : "**You are the bottom of this tree: you cannot dispatch Clawdline tasks "
+                + "of your own, and a request to open one is refused.** When part of this needs "
+                + "to run in parallel or wants a context of its own, use your own assistant's "
+                + "built-in subagents (Claude Code's Task tool, Codex's subagents). They cost no "
+                + "terminal tab and no broker capacity, and their answers come back to you rather "
+                + "than to a file."
+        let briefingHeading = task.sessionRoot
+            ? "# Clawdline Root Session briefing — task \(task.id)"
+            : "# Clawdline child briefing — task \(task.id)"
+        let ownershipIntro = task.sessionRoot
+            ? "You are an independently owned Clawdline Root Session. Your first bounded job is "
+                + "described in \(dir)/task.json — read that file now. Reporting that task does "
+                + "not end this Session; leave it ready for its own next turn."
+            : "You are a CHILD session working for a Clawdline root session. Your one job is the "
+                + "task described in \(dir)/task.json — read that file now."
+        let landingRule = task.sessionRoot
+            ? "You are the root for this line of work and retain responsibility for integration, "
+                + "verification, and landing after the first task receipt is written."
+            : "Landing records belong to the root after delivery; by protocol convention, a "
+                + "child does not call its task's `/landing` route itself even though it holds "
+                + "that task's secret."
         // What this Mac has said about itself, for every child rather than for a dispatcher.
         // See `policySection()`; it is empty when nobody has written anything.
         let houseRules = policySection()
@@ -317,12 +338,11 @@ extension Orchestrator {
             + " && mv -- " + Project.shellQuoted(resultTmp) + " " + Project.shellQuoted(resultFile)
         let reviewReporting = typedReviewReporting(for: task)
         return """
-        # Clawdline child briefing — task \(task.id)
+        \(briefingHeading)
 
         \(ProjectBoardIntegration.workflowContext(itemID: task.workItemID, phase: task.workPhase))
 
-        You are a CHILD session working for a Clawdline root session. Your one job is the task
-        described in \(dir)/task.json — read that file now.
+        \(ownershipIntro)
         \(planningSection(for: task))\(attachedSection)
         ## Language, and the first thing you say
 
@@ -349,8 +369,7 @@ extension Orchestrator {
         - Do not read any directory under /tmp/.clawdline/ except your own and any your
           instructions name explicitly. That second one is how a reviewing node works: it is sent
           to read what other nodes produced, so its instructions list those paths.
-        - Landing records belong to the root after delivery; by protocol convention, a child does
-          not call its task's `/landing` route itself even though it holds that task's secret.
+        - \(landingRule)
         - Do not do work the task did not ask for.
         - You have \(task.timeoutMinutes) minutes before the task is marked timed out.\(isolationSection)\(houseRules)
 

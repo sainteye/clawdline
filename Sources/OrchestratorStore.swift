@@ -116,6 +116,7 @@ enum OrchestratorStore {
             out["schedule_close_tab"] = task.scheduleCloseTab.rawValue
             out["schedule_notify_failure"] = task.scheduleNotifyFailure
         }
+        if task.sessionRoot { out["session_root"] = true }
         if !task.serialize.isEmpty { out["serialize"] = task.serialize }
         if task.claimsDeclared { out["claims"] = task.claims }
         if !task.claimKeys.isEmpty { out["claim_keys"] = task.claimKeys }
@@ -746,6 +747,7 @@ enum OrchestratorStore {
         task.scheduleCloseTab = (obj["schedule_close_tab"] as? String)
             .flatMap(Orchestrator.ScheduleCloseTab.init(rawValue:)) ?? .onSuccess
         task.scheduleNotifyFailure = obj["schedule_notify_failure"] as? Bool ?? true
+        task.sessionRoot = obj["session_root"] as? Bool == true
         task.serialize = (obj["serialize"] as? [String] ?? []).filter {
             StartPoints.modelName($0) == $0
         }

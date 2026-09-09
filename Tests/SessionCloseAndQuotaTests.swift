@@ -48,7 +48,8 @@ group("closing a root session takes the work it dispatched with it") {
     defer { try? FileManager.default.removeItem(at: identityDir) }
     func row(_ id: String, _ state: String, rootSession: String?, at: Double,
              child: String? = nil, childSession: String? = nil,
-             transcript: String? = nil, parentTask: String? = nil) -> [String: Any] {
+             transcript: String? = nil, parentTask: String? = nil,
+             sessionRoot: Bool = false) -> [String: Any] {
         var out: [String: Any] = ["id": id, "state": state, "kind": "custom", "title": "a task",
                                   "assistant": "claude", "project_dir": "/tmp",
                                   "timeout_minutes": 30, "created": at,
@@ -59,6 +60,7 @@ group("closing a root session takes the work it dispatched with it") {
         if let childSession { out["child_session"] = childSession }
         if let transcript { out["transcript"] = transcript }
         if let parentTask { out["parent_task"] = parentTask }
+        if sessionRoot { out["session_root"] = true }
         return out
     }
     let live = "0f8fad5b-d9cb-469f-a165-70867728950e"
@@ -68,6 +70,8 @@ group("closing a root session takes the work it dispatched with it") {
     let orphan = "55555555-6666-7777-8888-999999999999"
     let alsoDone = "66666666-7777-8888-9999-aaaaaaaaaaaa"
     let noTab = "77777777-8888-9999-aaaa-bbbbbbbbbbbb"
+    let independentLive = "77777777-8888-9999-aaaa-bbbbbbbbbbbc"
+    let independentDone = "77777777-8888-9999-aaaa-bbbbbbbbbbbd"
     // The second level. `live` is a child that got as far as being read, so it has a session id
     // of its own to be named by; `done` reported already, and the work it handed on is still
     // running under it — which is the case that decides whether a grandchild belongs to anybody.
@@ -98,6 +102,10 @@ group("closing a root session takes the work it dispatched with it") {
         row(orphan, "briefed", rootSession: nil, at: born + 4),
         row(alsoDone, "failure", rootSession: root, at: born + 5, child: "%tab-also%"),
         row(noTab, "spawn_failed", rootSession: root, at: born + 6),
+        row(independentLive, "briefed", rootSession: root, at: born + 6.1,
+            child: "%root-live%", sessionRoot: true),
+        row(independentDone, "failure", rootSession: root, at: born + 6.2,
+            child: "%root-done%", sessionRoot: true),
         row(staleParent, "spawn_failed", rootSession: stranger, at: born + 10,
             childSession: staleSession, transcript: staleTranscript.path),
         row(underStale, "briefed", rootSession: staleSession, at: born + 11),
@@ -111,6 +119,8 @@ group("closing a root session takes the work it dispatched with it") {
            Orchestrator.liveTasks(dispatchedBy: root), [live, alsoLive])
     check("a task that already finished is not cancelled — `success` is a fact about work that happened",
           !Orchestrator.liveTasks(dispatchedBy: root).contains(done))
+    check("an independently owned Root task is not cancelled with the Session that requested it",
+          !Orchestrator.liveTasks(dispatchedBy: root).contains(independentLive))
 
     // The other half: the work is over, but the tab it left behind is still indented under this
     // root on the page, and closing the root has to take those with it or it reads as having done
@@ -120,6 +130,8 @@ group("closing a root session takes the work it dispatched with it") {
            Orchestrator.lingeringTasks(dispatchedBy: root), [done, alsoDone])
     check("a task that never got a tab has nothing left to close",
           !Orchestrator.lingeringTasks(dispatchedBy: root).contains(noTab))
+    check("a retained Root tab does not become somebody else's lingering child",
+          !Orchestrator.lingeringTasks(dispatchedBy: root).contains(independentDone))
     check("and work still running is not collected twice",
           !Orchestrator.lingeringTasks(dispatchedBy: root).contains(live)
               && !Orchestrator.lingeringTasks(dispatchedBy: root).contains(alsoLive))

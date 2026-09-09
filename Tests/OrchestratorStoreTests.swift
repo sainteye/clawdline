@@ -252,6 +252,7 @@ private func taskFields(_ task: Orchestrator.Task?) -> [(String, String)] {
             ("schedule_id", fieldText(task.scheduleID)),
             ("schedule_close_tab", task.scheduleCloseTab.rawValue),
             ("schedule_notify_failure", String(task.scheduleNotifyFailure)),
+            ("session_root", String(task.sessionRoot)),
             ("serialize", task.serialize.joined(separator: "|")),
             ("claims", task.claims.joined(separator: "|")),
             ("claims_declared", String(task.claimsDeclared)),
@@ -718,6 +719,7 @@ func runOrchestratorStoreTests() {
         full.scheduleID = otherID
         full.scheduleCloseTab = .always
         full.scheduleNotifyFailure = false
+        full.sessionRoot = true
         full.serialize = ["opus"]
         full.claims = ["Sources/Orchestrator.swift", "Sources/OrchestratorStore.swift"]
         full.claimsDeclared = true

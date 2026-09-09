@@ -1979,7 +1979,7 @@ Dispatch refusals are closed and typed; a client should branch on every applicab
 | `forbidden` | 403 | the header is missing or wrong — or `orchestrator_enabled` is off |
 | `attach_session_not_found` | 404 | no watched session has that id. The resolver sees every session this Mac watches, which is wider than what `GET /v1/orchestrator/sessions` publishes: naming a plain shell resolves and is then refused `attach_unsupported`, not `404`. No task is created |
 | `attach_unsupported` | 409 | the named Session is a plain shell with no assistant to read a briefing |
-| `attach_not_managed` | 409 | the Session has no task role, or its recorded launch grant covers only the earlier task's own directory rather than `/tmp/.clawdline`. Both a user-opened session and a Clawdline-opened leaf fail this check: neither can read a new follow-up task's sibling `CHILD.md`, and `--add-dir` cannot be added to a running process. Only a task role whose persisted launch-time grant covers the whole task root can be attached to |
+| `attach_not_managed` | 409 | the Session has neither a managed task role nor a retained Root-task receipt, or its recorded launch grant covers only the earlier task's own directory rather than `/tmp/.clawdline`. A user-opened session and a Clawdline-opened leaf fail this check: neither can read a new follow-up task's sibling `CHILD.md`, and `--add-dir` cannot be added to a running process. A retained task Root with the persisted whole-root launch grant remains attachable without pretending to be a child |
 | `attach_assistant_mismatch` | 409 | the task's `assistant` differs from the assistant resident in the named Session |
 | `attach_session_occupied` | 409 | the Session already has one live Clawdline task; attached sessions are single-flight |
 | `attach_session_busy` | 409 | its cached state is `waiting` and `Targets.isChoosing` confirms a menu; nothing was typed and retrying the same task body is safe |
@@ -2325,11 +2325,11 @@ had nowhere to read the ids it takes.
 | `id` | the terminal-neutral session id — the same value `GET /v1/sessions` calls `id`, and exactly what `owner_session_id` and `waiter_session_id` take |
 | `assistant` | `claude` or `codex` |
 | `cwd` | the checkout the session is working in. **Absent** when this Mac could not resolve one, rather than empty |
-| `label` | one short line naming the session: a name a person typed for it, else the Clawdline task title when this app opened the tab, else what the conversation calls itself in the assistant's own records, else `⌘<window>-<tab>`. **Never the tab's title** — see [the Session object](#the-session-object) |
+| `label` | one short line naming the session: a name a person typed for it, else the Clawdline task title when this app opened the tab (`[Task] <title>` for every scheduled run), else what the conversation calls itself in the assistant's own records, else `⌘<window>-<tab>`. **Never the tab's title** — see [the Session object](#the-session-object) |
 | `state` | `working`, `waiting`, `idle` or `unknown` — the terminal state, so a caller knows whether anybody is home |
 | `work_state` | the closed, fail-closed broker projection documented on [the Session object](#the-session-object); always present |
 | `disposition` | structural receipt identity when `work_state` is a check: `scope`, typed `evidence`, receipt timestamps and verified Git fields. The Session-authored summary/title is deliberately omitted on this address-book route |
-| `taskId` | the Clawdline task this tab was opened for. **Absent** for a session a person opened themselves |
+| `taskId` | the Clawdline child task this tab belongs to. **Absent** for a session a person opened and for a task retained as an independently owned Root |
 | `coordinator` | present only on the one exact process-bound Session registered as coordinator; the closed row projection is `{"label":"Clawdfather","status":"online","commands":[…]}` |
 
 **What a caller may not learn from it.** Nothing a session said, showed or is running: no `line`
@@ -3858,6 +3858,7 @@ The record:
   },
   "attached": true,                 // present only for an attached follow-up task
   "attachSession": "9A1F…",       // terminal-neutral standing Session id
+  "session_root": true,             // present when this task's tab is an independent Root
   "summary": "…",               // finished tasks; the child's own sentence
   "artifacts": ["artifacts/project-portrait.svg"],
   "verification": {"runs": 2, "seconds": 940, "last": "pass",

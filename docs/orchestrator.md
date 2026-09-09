@@ -591,7 +591,7 @@ serialize tokens, timeout, usage, result signal, landing record and inflight vis
 difference is that Clawdline types the ordinary first line into the named existing session instead
 of opening a terminal tab. The public task record carries `attached: true` and `attachSession`.
 
-**The session needs a recorded task role and the right launch-time grant.** Clawdline gives the
+**The session needs a recorded task role or retained Root-task receipt, and the right launch-time grant.** Clawdline gives the
 whole `/tmp/.clawdline` task root to a session it opened for a task at or above the floor; a task
 below it opens no tab at all, and a user-opened assistant has no recorded task-root grant. A
 session holding only `/tmp/.clawdline/<its-original-task-id>` cannot read a new follow-up's sibling
@@ -613,8 +613,8 @@ the same narrow `Targets.isChoosing` screen proof as
 coordination-wait delivery; a confirmed menu refuses the dispatch before any line is typed or task
 record is created.
 
-An attached task keeps the standing session's existing depth — the depth of the task that session
-was opened for. Acceptance depends on the persisted task-root grant, not that number: a session
+An attached task keeps an older standing child's depth; a retained task Root hosts it at depth 1.
+Acceptance depends on the persisted task-root grant, not that number: a session
 launched with only its own task directory is refused. It opens no tab and therefore spends no
 child or machine tab-opening capacity, although it remains a live task, passes through
 the dispatch rate limiter and quota gate, and holds its ordinary claims and serialize reservations.
@@ -625,9 +625,10 @@ The task does not own the tab. Success, failure, timeout, cancellation, root-clo
 `orchestrator_child_linger` value leave the standing session open. Its briefing says that writing
 `result.json` completes this task but does not end the session, which can then receive a later
 complete follow-up assignment. It also does not own the session's *name*: an attached task
-publishes a live role on that session while it runs, so `GET /v1/orchestrator/sessions` shows the
-`taskId`, but it never renames the session. When it ends, the role and title of the earlier task
-that opened this standing child session are visible again.
+publishes a live role on an older standing child while it runs, so
+`GET /v1/orchestrator/sessions` shows the `taskId`, but it never renames the session. A retained
+Root stays a Root while hosting the task and exposes no child `taskId`. When an attached task ends,
+the standing Session's earlier role and title are visible again.
 
 **Clawdline never answers a menu on a session it did not open.** On a fresh tab there is one menu
 to answer — the trusted-folder dialog — and the root answered it by asking for work in that
@@ -2210,11 +2211,14 @@ dispatch policy — and updates the Artifact's diagrams, state words, source poi
 checklist. Root then verifies the standalone file against those sources. A green implementation or
 review verdict does not close a protocol change while the Artifact still describes the old rules.
 
-**The tab goes away afterwards.** A child that reported — `success` or `failure` — has nothing left
-to say, so `orchestrator_child_linger` decides how long its terminal tab hangs around: three minutes
-by default, `0` to close it the moment the task finalizes, `-1` to leave it to you. A `timeout`
-keeps its tab regardless, because whatever went wrong is written on that screen and closing it
-would throw away the only copy.
+**The tab goes away afterwards, or it is a Root.** A child that reported — `success` or `failure`
+— has nothing left to say, so `orchestrator_child_linger` decides how long its terminal tab hangs
+around: three minutes by default, `0` to close it the moment the task finalizes, `-1` to keep the
+Session as an independently owned Root from launch. Such a Root is not child lineage, does not
+consume child capacity, is not cancelled when the requesting Root closes, and may dispatch its own
+children. A `timeout` or another conditional outcome with no automatic close promotes the retained
+Session to Root ownership when the task finalizes, because a tab kept for a person is no longer a
+bounded child.
 
 **The deadline survives the restart that lands in the middle of it.** Three minutes is longer than
 this app stays running while it is being worked on, and a deadline that lived only in memory was

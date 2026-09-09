@@ -312,20 +312,20 @@ group("catch-up, active-task and close-tab policies are explicit") {
     check("always closes every terminal outcome",
           Orchestrator.scheduledCloseAt(policy: .always, outcome: .timeout,
                                         now: now, hasChild: true) == now)
-    expect("never uses the existing linger instead of closing immediately",
+    expect("never leaves the Session open regardless of child linger",
            Orchestrator.scheduledCloseAt(policy: .never, outcome: .success,
                                          now: now, hasChild: true, linger: 180),
-           now.addingTimeInterval(180))
+           nil)
     check("a schedule never closes a tab that was never opened",
           Orchestrator.scheduledCloseAt(policy: .always, outcome: .success,
                                         now: now, hasChild: false) == nil)
     check("never honours the global keep-tabs setting",
           Orchestrator.scheduledCloseAt(policy: .never, outcome: .success,
                                         now: now, hasChild: true, linger: -1) == nil)
-    check("never still closes an unbriefed failed spawn when linger is enabled",
+    check("never also retains an unbriefed failed spawn",
           Orchestrator.scheduledCloseAt(policy: .never, outcome: .spawnFailed,
                                         now: now, hasChild: true, linger: 180,
-                                        briefed: false) == now)
+                                        briefed: false) == nil)
     expect("zero-hour catch-up still has its one-minute floor",
            Orchestrator.scheduleAction(now: fire.addingTimeInterval(60), fire: fire,
                                        catchUpHours: 0, lastRunCreated: nil,

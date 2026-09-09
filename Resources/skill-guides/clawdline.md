@@ -1428,8 +1428,9 @@ Use this only when the user wants Clawdline itself to dispatch recurring work. W
 JSON file at `~/.config/clawdline/schedules/<lower-case-uuid>.json`; start from the complete schema
 in [`docs/schedules.md`](../../docs/schedules.md), and do not invent fields. `when.at` is the Mac's
 local `HH:MM`; `days` is `daily` or weekday names. Choose `close_tab` deliberately: `on_success`
-keeps a failed tab for takeover, `always` closes every outcome, and `never` keeps the existing
-orchestrator linger behavior.
+keeps a failed tab for takeover, `always` closes every outcome, and `never` opens a Root Session
+that does not auto-close and may dispatch children of its own. Every Session opened by a schedule
+is named with a `[Task] ` prefix; the stored schedule and task title remain unchanged.
 
 After writing the file, validate it through the read route: find its `id`, or stop and report the
 row whose `state` is `invalid` and read its `error`. Then manually run a valid schedule once:

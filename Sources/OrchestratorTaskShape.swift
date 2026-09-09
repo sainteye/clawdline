@@ -452,6 +452,10 @@ extension Orchestrator {
         var scheduleID: String?
         var scheduleCloseTab = ScheduleCloseTab.onSuccess
         var scheduleNotifyFailure = true
+        /// This task opened an independently owned Root Session rather than a child tab. The task
+        /// receipt still bounds its first piece of work, but the Session owns its tab and may
+        /// dispatch children of its own.
+        var sessionRoot = false
         /// Machine-global operation names acquired together when this task leaves `queued`.
         /// A queued task holds none; a spawning or briefed task holds every name in this list.
         var serialize: [String] = []
@@ -492,8 +496,9 @@ extension Orchestrator {
         var progressFileNote: String?
         var isolation = Isolation.none
         var worktree: Worktree?
-        /// The existing standing Session this task was delivered into. Nil means Clawdline
-        /// opened `childTerminalId` for this task and therefore owns that tab's lifecycle.
+        /// The existing standing Session this task was delivered into. Nil normally means
+        /// Clawdline opened `childTerminalId` for this task and owns that tab's lifecycle;
+        /// `sessionRoot` is the explicit independently-owned exception.
         var attachSessionId: String?
         var childTerminalId: String?
         var childBackend: Backend?
@@ -583,5 +588,50 @@ extension Orchestrator {
     struct TerminalIntervention: Equatable {
         let kind: TerminalInterventionKind
         let message: String
+    }
+
+    static func scheduledCloseAt(policy: ScheduleCloseTab, outcome: State,
+                                 now: Date, hasChild: Bool, linger: TimeInterval = 180,
+                                 briefed: Bool = true) -> Date? {
+        guard hasChild else { return nil }
+        switch policy {
+        case .always: return now
+        case .onSuccess: return outcome == .success ? now : nil
+        case .never: return nil
+        }
+    }
+
+    /// An explicitly retained task owns an independent Root Session from its first turn. A task
+    /// with a conditional close policy starts as a child and may be promoted after finalization.
+    static func opensRootSession(scheduleCloseTab: ScheduleCloseTab?, childLinger: Int) -> Bool {
+        if let scheduleCloseTab { return scheduleCloseTab == .never }
+        return childLinger < 0
+    }
+
+    /// Keep the task title as protocol data; the schedule marker belongs only to Session naming.
+    static func sessionTitle(taskTitle: String, scheduled: Bool) -> String {
+        guard scheduled, !taskTitle.hasPrefix("[Task]") else { return taskTitle }
+        return "[Task] \(taskTitle)"
+    }
+
+    static func automaticCloseAt(for task: Task, outcome: State, now: Date = Date(),
+                                 childLinger: Int) -> Date? {
+        guard task.attachSessionId == nil, !task.sessionRoot else { return nil }
+        if task.scheduleID != nil {
+            return scheduledCloseAt(policy: task.scheduleCloseTab, outcome: outcome, now: now,
+                                    hasChild: task.childTerminalId != nil,
+                                    linger: TimeInterval(childLinger),
+                                    briefed: task.briefedAt != nil)
+        }
+        guard task.childTerminalId != nil, childLinger >= 0 else { return nil }
+        if outcome == .success || outcome == .failure {
+            return now.addingTimeInterval(TimeInterval(childLinger))
+        }
+        return outcome == .spawnFailed && task.briefedAt == nil ? now : nil
+    }
+
+    static func retainedTaskOwnsRootSession(_ task: Task) -> Bool {
+        task.state != .cancelled && task.attachSessionId == nil
+            && task.childTerminalId != nil && task.closeAt == nil
     }
 }

@@ -174,9 +174,9 @@ system to correct.
 
 A session may stay open between jobs rather than being closed once it reports. Two roles are worth
 keeping alive: an **odd-jobs** session that takes the small batches above, and a **review** session
-that takes each finished feature or batch. Both hold their tab through
-`orchestrator_child_linger: -1`, and both carry the role in the task's `kind` (`odd-jobs`,
-`review`), so a reader can tell what a tab is for.
+that takes each finished feature or batch. With `orchestrator_child_linger: -1`, the task that
+opens either tab is briefed and classified as an independently owned Root Session rather than a
+child. The task's `kind` (`odd-jobs`, `review`) still records what its first bounded job was.
 
 **Work reaches a standing session only as an attached follow-up task** — a complete task record with
 its own id, secret, `claims`, `timeout_minutes` and `result.json`, dispatched into the existing

@@ -161,7 +161,7 @@ extension Orchestrator {
         }
     }
 
-    /// The words in ``firstLine(id:secret:announce:)`` that say what the session is, with the
+    /// The words in ``firstLine(id:secret:announce:sessionRoot:)`` that say what a child is, with the
     /// task id left off.
     ///
     /// Two things read it and they read it for different reasons. The delivery receipt below
@@ -175,6 +175,10 @@ extension Orchestrator {
     /// written. The test *"the mark the list filters on is the line a child is actually given"*
     /// is what keeps the two from drifting apart.
     static let briefingMark = "Clawdline CHILD agent for task"
+
+    /// A retained Root has a task delivery receipt too, but deliberately does not carry the child
+    /// opening: conversation pickers must keep showing it after the first bounded task ends.
+    static let rootBriefingMark = "Clawdline ROOT agent for task"
 
     /// The same words with the clause `firstLine` opens on, which is what a child's very first
     /// turn *begins* with.
@@ -193,9 +197,9 @@ extension Orchestrator {
     static func transcriptContainsBriefing(_ transcript: String?, assistant: Assistant,
                                            taskID: String) -> Bool {
         guard let transcript else { return false }
-        let marker = "\(briefingMark) \(taskID)"
+        let markers = [briefingMark, rootBriefingMark].map { "\($0) \(taskID)" }
         return Transcript.parse(transcript, assistant: assistant, limit: 100).contains { entry in
-            entry.kind == .user && entry.text.contains(marker)
+            entry.kind == .user && markers.contains { entry.text.contains($0) }
         }
     }
 
@@ -222,9 +226,9 @@ extension Orchestrator {
     private static var ownershipCache: [String: (signature: String,
                                                   ownership: TranscriptOwnership)] = [:]
     private static let ownershipCacheLimit = 1_024
-    /// A child is a fresh conversation and the briefing is its first user turn. One MiB leaves
-    /// ample room for startup bookkeeping while putting a hard ceiling on every main-thread
-    /// ownership check.
+    /// A freshly opened child or retained Root has the briefing as its first user turn. One MiB
+    /// leaves ample room for startup bookkeeping while putting a hard ceiling on every
+    /// main-thread ownership check.
     private static let ownershipScanBytes = 1_048_576
 
     /// A guessed or restored path becomes identity only when the child's own first turn names
@@ -248,10 +252,11 @@ extension Orchestrator {
         } catch {
             return .unavailable
         }
-        let marker = Data("\(briefingMark) \(taskID)".utf8)
+        let markers = [briefingMark, rootBriefingMark].map { Data("\($0) \(taskID)".utf8) }
         var from = data.startIndex
-        while from < data.endIndex,
-              let hit = data.range(of: marker, in: from..<data.endIndex) {
+        while from < data.endIndex {
+            let hits = markers.compactMap { data.range(of: $0, in: from..<data.endIndex) }
+            guard let hit = hits.min(by: { $0.lowerBound < $1.lowerBound }) else { break }
             var low = hit.lowerBound
             while low > data.startIndex, data[data.index(before: low)] != 0x0A {
                 low = data.index(before: low)

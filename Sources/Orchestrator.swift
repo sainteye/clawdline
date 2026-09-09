@@ -761,7 +761,7 @@ enum Orchestrator {
             $0.scheduleID != nil && $0.state.isTerminal && $0.assistant == assistant
                 && $0.projectDir == projectDir && $0.childSessionId == sessionID
                 && availableScheduledSessionID(of: $0) == sessionID
-        }?.title
+        }.map { sessionTitle(taskTitle: $0.title, scheduled: true) }
     }
 
     private static func availableScheduledSessionID(of task: Task) -> String? {
@@ -770,22 +770,6 @@ enum Orchestrator {
         guard let session = provenChildSessionID(of: task),
               OrchestratorDraft.isTaskID(session) else { return nil }
         return session
-    }
-
-    static func scheduledCloseAt(policy: ScheduleCloseTab, outcome: State,
-                                 now: Date, hasChild: Bool, linger: TimeInterval = 180,
-                                 briefed: Bool = true) -> Date? {
-        guard hasChild else { return nil }
-        switch policy {
-        case .always: return now
-        case .onSuccess: return outcome == .success ? now : nil
-        case .never:
-            guard linger >= 0 else { return nil }
-            if outcome == .success || outcome == .failure {
-                return now.addingTimeInterval(linger)
-            }
-            return outcome == .spawnFailed && !briefed ? now : nil
-        }
     }
 
     /// Read every source file independently. A malformed neighbor cannot hide a valid schedule.
@@ -1622,7 +1606,9 @@ enum Orchestrator {
     /// Select the receipt the projection may use. Contradictory duplicate matches are no more
     /// trustworthy than a missing one, so exact-count-one is part of the fail-closed contract.
     static func taskForCurrentSession(_ candidates: [Task], identity: SessionWorkIdentity) -> Task? {
-        let matches = candidates.filter { taskMatchesCurrentSession($0, identity: identity) }
+        let matches = candidates.filter {
+            !($0.state.isTerminal && ($0.sessionRoot || $0.attachSessionId != nil))
+            && taskMatchesCurrentSession($0, identity: identity) }
         return matches.count == 1 ? matches[0] : nil
     }
 
@@ -2789,7 +2775,7 @@ enum Orchestrator {
         return OrchestratorRegistry.withTransaction { $0.title(forTerminal: id) }
     }
 
-    /// Where that terminal sits in the tree. Nil for every session a person opened themselves.
+    /// Where that terminal sits in child lineage. Nil for person-opened and retained Root Sessions.
     ///
     /// `load()` first, because a role that is briefly missing is a child mistaken for a person —
     /// which is the one wrong answer this whole arrangement exists to avoid.
@@ -2887,6 +2873,7 @@ enum Orchestrator {
                 found[terminal] = only
             }
             var roles: [String: Role] = [:]
+            let rootTaskHosts = tasks.values.filter { $0.sessionRoot }
             // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
             // putting an assignment in it would make a fourth primitive a disguised task.
             for assignment in rootAssignments.values {
@@ -2905,16 +2892,21 @@ enum Orchestrator {
                 // An attached task is a guest in a session somebody else owns. It may say that the
                 // session is busy with broker work while it is running, and that is all: it never
                 // renames the session, and it leaves nothing behind when it ends. A tab this app
-                // opened is that task's for the record's whole life; a standing session wearing a
-                // finished task's name and a `live: false` role is the one shape it must not have,
-                // because "standing" is the whole reason it exists.
+                // opened normally belongs to that task; `sessionRoot` below is the explicit
+                // exception, where the task is only the Root Session's first bounded receipt.
                 if task.attachSessionId != nil {
+                    let retainedRoots = rootTaskHosts.filter {
+                        $0.childTerminalId == terminal && $0.childTTY == task.childTTY
+                            && $0.assistant == task.assistant
+                    }
+                    if retainedRoots.count == 1 { continue }
                     guard role.live else { continue }
                     if let existing = roles[terminal], existing.live { continue }
                     roles[terminal] = role
                     continue
                 }
-                found[terminal] = task.title
+                found[terminal] = sessionTitle(taskTitle: task.title, scheduled: task.scheduleID != nil)
+                if task.sessionRoot { continue }
                 // A tab is normally one task's for its whole life. When two records name the same
                 // one — a terminal id reused after a tab closed and another opened in its place —
                 // the live task is the one anything asking this question means.
@@ -3899,6 +3891,8 @@ enum Orchestrator {
         // `orchestratorMaxDescendants` sits over the whole machine either way.
         let depth = attachedDepth
             ?? depthOfNew(parentTask: made.parentTaskId, rootSession: made.rootSessionId)
+        let opensAsRoot = attachedSession == nil && opensRootSession(
+            scheduleCloseTab: schedule?.closeTab, childLinger: Config.shared.orchestratorChildLinger)
         if attachedSession == nil, !depthIsAllowed(depth) {
             return .refused(409, "depth_exceeded",
                             "A child session cannot dispatch tasks of its own. Work that needs "
@@ -3906,7 +3900,7 @@ enum Orchestrator {
         }
         // One level, so the only dispatcher a new tab can hang under is a root.
         let cap = Config.shared.orchestratorMaxChildren
-        if attachedSession == nil,
+        if attachedSession == nil, !opensAsRoot,
            activeCount(dispatchedBy: made.rootSessionId, parentTask: made.parentTaskId) >= cap {
             return .refused(status: 429, code: "over_capacity",
                             message: "All \(cap) child slots for this session are busy; "
@@ -3917,7 +3911,7 @@ enum Orchestrator {
         // this is what the Mac may, and it is the one a caller cannot talk its way around by
         // claiming to be somebody else.
         let ceiling = Config.shared.orchestratorMaxDescendants
-        if attachedSession == nil, activeCount() >= ceiling {
+        if attachedSession == nil, !opensAsRoot, activeCount() >= ceiling {
             return .refused(status: 429, code: "over_capacity",
                             message: "All \(ceiling) child sessions on this Mac are busy; "
                                    + "retry when one finishes.",
@@ -3991,6 +3985,7 @@ enum Orchestrator {
         task.scheduleID = schedule?.id
         task.scheduleCloseTab = schedule?.closeTab ?? .onSuccess
         task.scheduleNotifyFailure = schedule?.notifyOnFailure ?? true
+        task.sessionRoot = opensAsRoot
         task.respawnOf = respawn?.taskID
         task.respawnGeneration = respawn?.generation ?? 0
         task.isolation = made.isolation
@@ -4090,6 +4085,10 @@ enum Orchestrator {
                     task.buildCleanupAt = task.worktree == nil ? nil : reclaimDeadline(
                         minutes: Config.shared.orchestratorBuildGraceMinutes,
                         outcome: .spawnFailed)
+                    task.closeAt = automaticCloseAt(
+                        for: task, outcome: .spawnFailed,
+                        childLinger: Config.shared.orchestratorChildLinger)
+                    if retainedTaskOwnsRootSession(task) { task.sessionRoot = true }
                 }
                 _ = replaceTask(task, expecting: .queued,
                                 discardSecret: task.state.isTerminal)
@@ -4315,6 +4314,7 @@ enum Orchestrator {
         if let prepared = task.worktree {
             guard let worktree = OrchestratorDraft.resolveSpawnBase(in: prepared) else {
                 task.state = .spawnFailed
+                task.sessionRoot = false
                 task.summary = "The worktree base no longer resolves to a commit."
                 task.finishedAt = Date()
                 return task
@@ -4322,15 +4322,15 @@ enum Orchestrator {
             task.worktree = worktree
             if let failure = OrchestratorDraft.addWorktree(worktree, taskID: task.id) {
                 task.state = .spawnFailed
+                task.sessionRoot = false
                 task.summary = String(failure.prefix(500))
                 task.finishedAt = Date()
                 return task
             }
         }
         let workingDirectory = cwd(of: task)
-        let place = StartPoints.Place(id: StartPoints.id(for: workingDirectory),
-                                      path: workingDirectory,
-                                      label: task.title, at: Date())
+        let place = StartPoints.Place(id: StartPoints.id(for: workingDirectory), path: workingDirectory,
+            label: sessionTitle(taskTitle: task.title, scheduled: task.scheduleID != nil), at: Date())
         // A place this session may reach, because everything it was sent to do is outside the
         // project its tab was opened in. The briefing, the task file, the artifacts: all of it
         // lives under /tmp/.clawdline, and reaching outside the working directory is a boundary
@@ -4351,6 +4351,7 @@ enum Orchestrator {
                      taskRootGrant ? root.path : task.dir.path) {
         case .refused(_, let code, let message, _):
             task.state = .spawnFailed
+            task.sessionRoot = false
             task.summary = "\(code): \(message)"
             task.finishedAt = Date()
             if let worktree = task.worktree {
@@ -4393,7 +4394,8 @@ enum Orchestrator {
             return task
         }
         writeChildBrief(for: task)
-        let line = firstLine(id: task.id, secret: secret, announce: L.t.childAnnounce(task.title))
+        let line = firstLine(id: task.id, secret: secret, announce: L.t.childAnnounce(task.title),
+                             sessionRoot: task.sessionRoot)
         let sentAt = Date()
         let failure: String?
         if let sender = attachedSenderForTesting { failure = sender(line, session) }
@@ -4561,7 +4563,7 @@ enum Orchestrator {
 
     private static func activeCount() -> Int {
         lock.lock(); defer { lock.unlock() }
-        return tasks.values.filter { !$0.state.isTerminal }.count
+        return tasks.values.filter { !$0.state.isTerminal && !$0.sessionRoot }.count
     }
 
     struct CoordinatorSessionObservation {
@@ -4815,7 +4817,7 @@ enum Orchestrator {
     private static func activeCount(dispatchedBy session: String?, parentTask: String?) -> Int {
         lock.lock(); defer { lock.unlock() }
         return tasks.values.filter { task in
-            guard !task.state.isTerminal else { return false }
+            guard !task.state.isTerminal, !task.sessionRoot else { return false }
             if let parentTask, task.parentTaskId == parentTask { return true }
             if let session { return task.rootSessionId == session }
             return task.rootSessionId == nil && task.parentTaskId == nil
@@ -4835,7 +4837,7 @@ enum Orchestrator {
         for task in tasks.values where !task.state.isTerminal {
             let isParent = (parentTask != nil && task.id == parentTask)
                 || (rootSession != nil && task.childSessionId == rootSession)
-            if isParent { parent = max(parent, task.depth) }
+            if isParent { parent = max(parent, task.sessionRoot ? 0 : task.depth) }
         }
         return parent + 1
     }
@@ -6075,6 +6077,14 @@ enum Orchestrator {
     private static func cancelInPlace(_ task: Task) {
         let finish: (TerminalIntervention?) -> Void = { intervention in
             DispatchQueue.main.async {
+                if intervention != nil {
+                    lock.lock()
+                    if var retained = tasks[task.id], !retained.state.isTerminal {
+                        retained.sessionRoot = true
+                        tasks[task.id] = retained
+                    }
+                    lock.unlock()
+                }
                 finalize(task.id, as: .cancelled, summary: "Cancelled.")
                 if let intervention, var current = held(task.id) {
                     current.terminalIntervention = intervention
@@ -6089,7 +6099,8 @@ enum Orchestrator {
         }
         // An attached follow-up task borrows a standing session's tab. Cancelling the task must
         // never end that tab, so it takes the no-terminal path straight to the record.
-        guard task.attachSessionId == nil, let childID = task.childTerminalId,
+        guard task.attachSessionId == nil, !task.sessionRoot,
+              let childID = task.childTerminalId,
               let child = target(withID: childID) else {
             finish(nil); return
         }
@@ -6128,7 +6139,10 @@ enum Orchestrator {
         load()
         lock.lock(); defer { lock.unlock() }
         return tasks.values
-            .filter { !$0.state.isTerminal && $0.rootSessionId == rootSessionId }
+            .filter {
+                !$0.state.isTerminal && !$0.sessionRoot
+                    && $0.rootSessionId == rootSessionId
+            }
             .sorted { $0.created < $1.created }
             .map { $0.id }
     }
@@ -6154,6 +6168,7 @@ enum Orchestrator {
         return tasks.values
             .filter { $0.state.isTerminal && $0.childTerminalId != nil
                         && $0.attachSessionId == nil
+                        && !$0.sessionRoot
                         && $0.rootSessionId == rootSessionId }
             .sorted { $0.created < $1.created }
             .map { $0.id }
@@ -6429,10 +6444,15 @@ enum Orchestrator {
                 : "The app restarted before the child was briefed."
             dead.finishedAt = Date()
             dead.queuedSecret = nil
+            if dead.childTerminalId == nil { dead.sessionRoot = false }
             dead.workCleanupAt = reclaimDeadline(
                 minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: .spawnFailed)
             dead.buildCleanupAt = dead.worktree == nil ? nil : reclaimDeadline(
                 minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: .spawnFailed)
+            dead.closeAt = automaticCloseAt(
+                for: dead, outcome: .spawnFailed,
+                childLinger: Config.shared.orchestratorChildLinger)
+            if retainedTaskOwnsRootSession(dead) { dead.sessionRoot = true }
             tasks[id] = dead
             orphaned.append(id)
         }
@@ -6936,7 +6956,8 @@ enum Orchestrator {
             return false
         }
         writeChildBrief(for: task)
-        let line = firstLine(id: task.id, secret: secret, announce: L.t.childAnnounce(task.title))
+        let line = firstLine(id: task.id, secret: secret, announce: L.t.childAnnounce(task.title),
+                             sessionRoot: task.sessionRoot)
         task.injectAttempts += 1
         task.lastInjectAt = Date()
         if let failure = Targets.send(line, to: child) {
@@ -7483,7 +7504,9 @@ enum Orchestrator {
                 // The thread gets the task's name too, so `codex resume` lists it by what it did
                 // rather than by the first line it was handed.
                 if !threadID.isEmpty {
-                    CodexNaming.shared.name(task.title, thread: threadID, target: child)
+                    CodexNaming.shared.name(
+                        sessionTitle(taskTitle: task.title, scheduled: task.scheduleID != nil),
+                        thread: threadID, target: child)
                 }
             }
             changed = noteTranscriptProof(in: &task) || changed
@@ -7915,6 +7938,7 @@ enum Orchestrator {
         lock.lock()
         guard var task = tasks[taskID], !task.state.isTerminal else { lock.unlock(); return }
         task.state = outcome
+        if task.childTerminalId == nil { task.sessionRoot = false }
         task.finishedAt = Date()
         task.queuedSecret = nil
         if let summary { task.summary = summary }
@@ -7928,36 +7952,9 @@ enum Orchestrator {
         }
         if let verification { task.verification = verification }
         secrets.removeValue(forKey: taskID)
-        let linger = Config.shared.orchestratorChildLinger
-        if task.attachSessionId != nil {
-            task.closeAt = nil
-        } else if task.scheduleID != nil {
-            task.closeAt = scheduledCloseAt(policy: task.scheduleCloseTab, outcome: outcome,
-                                             now: Date(), hasChild: task.childTerminalId != nil,
-                                             linger: TimeInterval(linger),
-                                             briefed: task.briefedAt != nil)
-        } else {
-            // Only a child that reported gets its tab held open and then closed for it. One that
-            // timed out has something on its screen worth reading, and stays.
-            if outcome == .success || outcome == .failure, linger >= 0,
-               task.childTerminalId != nil {
-                task.closeAt = Date().addingTimeInterval(TimeInterval(linger))
-            }
-            // A spawn that never reached briefing is the exception, and it goes now rather than
-            // staying. There is nothing of this task on that screen — the session was opened and
-            // never spoken to, so what is on it is a fresh prompt, which explains nothing that the
-            // summary does not say better.
-            //
-            // **And leaving it is not free.** Each one is a live assistant holding a slot, and the
-            // usual cause of failing to reach a prompt is that too many sessions were starting at
-            // once. Keep them and the next spawn is slower for exactly the reason the last one
-            // failed, which is a failure that feeds itself: four dead tabs were still running when
-            // this was written, and the two spawns after them timed out too.
-            if outcome == .spawnFailed, task.briefedAt == nil, linger >= 0,
-               task.childTerminalId != nil {
-                task.closeAt = Date()
-            }
-        }
+        task.closeAt = automaticCloseAt(for: task, outcome: outcome,
+                                        childLinger: Config.shared.orchestratorChildLinger)
+        if retainedTaskOwnsRootSession(task) { task.sessionRoot = true }
         tasks[taskID] = task
         lock.unlock()
 
@@ -8110,7 +8107,7 @@ enum Orchestrator {
                          icon: RemoteIcon.projectPath(
                             for: ProjectIcon.grid(forCwd: task.projectDir)))
         }
-        endWorkHandedOnBy(task)
+        if !task.sessionRoot { endWorkHandedOnBy(task) }
         if pumpQueue { scheduleSerializePump() }
     }
 
@@ -9735,6 +9732,7 @@ enum Orchestrator {
         if let phase = task.workPhase { out["workPhase"] = phase }
         if let effort = task.reasoningEffort { out["reasoning_effort"] = effort.rawValue }
         if let scheduleID = task.scheduleID { out["schedule_id"] = scheduleID }
+        if task.sessionRoot { out["session_root"] = true }
         out["permission"] = task.permission.rawValue
         if task.state == .queued, !task.serialize.isEmpty {
             lock.lock()

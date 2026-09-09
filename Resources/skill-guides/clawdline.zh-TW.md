@@ -1260,7 +1260,8 @@ handoff 路由）。寄件者契約另外有九個：
 [`docs/schedules.md`](../../docs/schedules.md) 的完整 schema 開始，不要自創欄位。
 `when.at` 是這台 Mac 的本地 `HH:MM`，`days` 是 `daily` 或 weekday 名稱。
 `close_tab` 要明講選擇：`on_success` 會把失敗 tab 留給人接手，`always` 任何結果都收，
-`never` 不做排程專屬的立即關閉，沿用現有 orchestrator linger。
+`never` 會開一個不自動關閉、可自行派 child 的 Root Session。排程開出的每個 Session 名稱
+都以 `[Task] ` 開頭；這只改 Session 顯示名稱，不改 schedule 或 task title。
 
 寫完先用 read route 驗格式：要找到它的 `id`；若看到 `state` 是 `invalid`，先停下來回報該列的
 `error`。只有格式有效才手動跑一次：

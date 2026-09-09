@@ -1,9 +1,8 @@
 # Scheduled tasks
 
-A schedule is a task template Clawdline turns into an ordinary orchestrator dispatch at a local
-wall-clock time. It is for work that should open a real Claude Code or Codex session, inherit the
-same claims, serialization, capacity, depth, permission and trust checks, and leave the same task
-record as work dispatched by a session.
+A schedule is a task template Clawdline turns into an orchestrator dispatch at a local wall-clock
+time. It opens a real Claude Code or Codex session and leaves a task receipt. Runs that will close
+their tab are bounded children; `close_tab: never` opens an independently owned Root Session.
 
 Put one JSON file per schedule at:
 
@@ -87,8 +86,12 @@ that fallback in the audit log.
 - `close_tab` is `on_success` (the default), `always`, or `never`. `on_success` closes immediately
   after success but leaves failures, timeouts and spawn failures for takeover. `always` closes any
   terminal outcome, including cancellation. These two explicit per-schedule choices take priority
-  over the global child-linger preference, including across an app restart. `never` adds no
-  schedule-specific immediate close and follows the global orchestrator linger policy instead.
+  over the global child-linger preference, including across an app restart. `never` never closes
+  the tab and therefore launches the task in an independently owned Root Session. A conditional
+  child retained after failure or timeout is promoted to Root ownership when it finalizes.
+- Every Session created by a schedule is named with one `[Task] ` prefix. The schedule title and
+  task record keep their original text; the marker is Session presentation only and survives a
+  later resume.
 - `catch_up_hours` is an integer from `0` through `168`, default `6`.
 - `notify_on_failure` is a boolean, default `true`. It covers missed catch-up windows, dispatch
   refusals, failures, timeouts and spawn failures.

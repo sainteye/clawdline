@@ -1125,6 +1125,14 @@ group("session completion receipts are bound to the current process, not a reusa
           Orchestrator.taskForCurrentSession([task, task], identity: identity) == nil)
     check("a stale process has no selectable completion receipt",
           Orchestrator.taskForCurrentSession([task], identity: stale) == nil)
+    var rootTask = task
+    rootTask.sessionRoot = true
+    check("a finished first task no longer makes its retained Root Session a child receipt",
+          Orchestrator.taskForCurrentSession([rootTask], identity: identity) == nil)
+    var attached = task
+    attached.attachSessionId = identity.terminalID
+    check("a finished attached task likewise gives the standing Root Session back",
+          Orchestrator.taskForCurrentSession([attached], identity: identity) == nil)
 
     check("handoff source may be the exact terminal namespace",
           Orchestrator.handoffSource("TAB", matches: identity))

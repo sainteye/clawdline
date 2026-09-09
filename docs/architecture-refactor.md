@@ -584,7 +584,7 @@ is written, and this document is not that place for any of them.
 | ordered groups | 597 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 43 | `Tests/main.swift`, counted by the guard |
 | suite files | 56 | `Tests/*Tests.swift`, counted by the guard |
-| Swift checks | 10,810 | `expected_swift_receipt` in `test.sh`, set from a run |
+| Swift checks | 10,837 | `expected_swift_receipt` in `test.sh`, set from a run |
 | `Orchestrator.swift` ceiling | 10,750 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,885 | the receipt in `tools/check-architecture-boundaries.sh` |
 

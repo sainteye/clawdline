@@ -289,12 +289,18 @@ enum OrchestratorDraft {
             return .refused(status: 409, code: "attach_unsupported",
                             message: "attach_session names a plain shell with no assistant.")
         }
-        // A standing host needs two launch-time facts: Clawdline opened its tab for a task, and
-        // that process was given the whole task root. A leaf gets only its original task
-        // directory, so it cannot read a new follow-up's sibling CHILD.md even though Clawdline
-        // opened it. Persist the actual grant instead of inferring it from depth: the configured
-        // floor can change while a tab remains standing, but a process's `--add-dir` cannot.
-        guard let role = roles[sessionID], role.taskRootAccess else {
+        // A standing host needs two launch-time facts: Clawdline opened its tab for a task (as a
+        // child role or a retained Root), and that process was given the whole task root. A leaf
+        // gets only its original task directory, so it cannot read a new follow-up's sibling
+        // CHILD.md even though Clawdline opened it. Persist the actual grant instead of inferring
+        // it from depth: the configured floor can change while a tab remains standing, but a
+        // process's `--add-dir` cannot.
+        let role = roles[sessionID]
+        let rootHosts = tasks.filter {
+            $0.sessionRoot && $0.childTerminalId == sessionID && $0.childTTY == session.tty
+                && $0.assistant == assistant && $0.childTaskRootAccess
+        }
+        guard role?.taskRootAccess == true || rootHosts.count == 1 else {
             return .refused(status: 409, code: "attach_not_managed",
                             message: "attach_session names a session without Clawdline's "
                                    + "launch-time task-root access; it cannot read a new "
@@ -315,7 +321,7 @@ enum OrchestratorDraft {
             return .refused(status: 409, code: "attach_session_busy",
                             message: "That session is showing a menu; no briefing was typed.")
         }
-        return .accepted(session, depth: role.depth)
+        return .accepted(session, depth: role?.depth ?? 1)
     }
 
     static func draft(from obj: [String: Any], expecting id: String,

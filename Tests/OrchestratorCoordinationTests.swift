@@ -1038,6 +1038,23 @@ group("the wait session index says what a wait must name, and nothing off the sc
     expect("and is called by the title the dispatcher gave it",
            named.first?["label"] as? String, "the envelope work")
     check("a tab a person opened themselves carries no task id", named[1]["taskId"] == nil)
+
+    var rootRow = row
+    rootRow["session_root"] = true
+    rootRow["schedule_id"] = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let rootData = try! JSONSerialization.data(
+        withJSONObject: ["version": 1, "tasks": [rootRow]])
+    try! rootData.write(to: store, options: .atomic)
+    Orchestrator.forget()
+    Orchestrator.load(force: true)
+    let rootLabel = Orchestrator.title(forTerminal: claude.id)
+    let rooted = RemoteServer.coordinationSessionRows(
+        [claude, codex], states: states, publishedIdentities: publishedIdentities,
+        publishedLabels: [claude.id: rootLabel ?? "", codex.id: codex.coordinate])
+    check("a retained task Root exposes no child taskId",
+          rooted.first?["taskId"] == nil)
+    expect("a scheduled Root Session carries the Task prefix in the address book",
+           rooted.first?["label"] as? String, "[Task] the envelope work")
 }
 
 group("attached follow-up tasks are single-flight broker work in a standing session") {
@@ -1060,11 +1077,26 @@ group("attached follow-up tasks are single-flight broker work in a standing sess
     durableGrant.childTaskRootAccess = true
     check("the launch-time task-root grant survives a registry round trip",
           OrchestratorStore.task(from: OrchestratorStore.stored(durableGrant))?.childTaskRootAccess == true)
-
     func refusal(_ decision: OrchestratorDraft.AttachmentDecision) -> (Int, String)? {
         guard case .refused(let status, let code, _) = decision else { return nil }
         return (status, code)
     }
+    var retainedRoot = durableGrant
+    retainedRoot.state = .success
+    retainedRoot.attachSessionId = nil
+    retainedRoot.childTTY = standing.tty
+    retainedRoot.sessionRoot = true
+    check("a retained Root Session can receive a later attached task without a child Role",
+          refusal(OrchestratorDraft.attachmentDecision(
+            sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
+            tasks: [retainedRoot], roles: [:], isChoosing: { _ in false })) == nil)
+    var staleRoot = retainedRoot
+    staleRoot.childTTY = "/dev/ttys099"
+    expect("a stale Root receipt for a reused terminal id does not manage the new Session",
+           refusal(OrchestratorDraft.attachmentDecision(
+            sessionID: standing.id, assistant: .codex, sessions: [standing], states: [:],
+            tasks: [staleRoot], roles: [:], isChoosing: { _ in false }))?.1,
+           "attach_not_managed")
     expect("an unknown attachment is typed 404 before registration",
            refusal(OrchestratorDraft.attachmentDecision(
             sessionID: "UNKNOWN", assistant: .codex, sessions: [standing], states: [:],

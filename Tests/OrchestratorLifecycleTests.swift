@@ -835,6 +835,82 @@ group("a child is the bottom of the tree, and no setting can put a level under i
     // itself, and the honesty rule asked it to account for sessions it can no longer start.
     check("and nothing else in the briefing assumes it has tasks of its own",
           !brief.contains("any you dispatched") && !brief.contains("sessions you dispatched"))
+
+    var retained = child(depth: 1)
+    retained.childTerminalId = "retained-tab"
+    retained.closeAt = Orchestrator.automaticCloseAt(
+        for: retained, outcome: .success, childLinger: -1)
+    check("an ordinary keep-tabs task opens and finalizes as a Root",
+          Orchestrator.opensRootSession(scheduleCloseTab: nil, childLinger: -1)
+              && Orchestrator.retainedTaskOwnsRootSession(retained))
+    var closing = retained
+    closing.closeAt = Orchestrator.automaticCloseAt(
+        for: closing, outcome: .success, childLinger: 180)
+    check("an ordinary task with a deadline remains a child",
+          !Orchestrator.opensRootSession(scheduleCloseTab: nil, childLinger: 180)
+              && !Orchestrator.retainedTaskOwnsRootSession(closing))
+    var timedOut = closing
+    timedOut.state = .timeout
+    timedOut.closeAt = Orchestrator.automaticCloseAt(
+        for: timedOut, outcome: .timeout, childLinger: 180)
+    check("a conditional child retained after timeout becomes a Root",
+          Orchestrator.retainedTaskOwnsRootSession(timedOut))
+    var failedSchedule = closing
+    failedSchedule.state = .failure
+    failedSchedule.scheduleID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    failedSchedule.scheduleCloseTab = .onSuccess
+    failedSchedule.closeAt = Orchestrator.automaticCloseAt(
+        for: failedSchedule, outcome: .failure, childLinger: 180)
+    check("an on-success schedule retained after failure becomes a Root",
+          Orchestrator.retainedTaskOwnsRootSession(failedSchedule))
+    var cancelled = retained
+    cancelled.state = .cancelled
+    check("a child whose cancellation closed its tab is not promoted after that close",
+          !Orchestrator.retainedTaskOwnsRootSession(cancelled))
+    check("an explicit never-close schedule opens a Root regardless of child linger",
+          Orchestrator.opensRootSession(scheduleCloseTab: .never, childLinger: 180))
+    check("an on-success schedule starts as a child",
+          !Orchestrator.opensRootSession(scheduleCloseTab: .onSuccess, childLinger: -1))
+    expect("scheduled Session names carry one Task prefix",
+           Orchestrator.sessionTitle(taskTitle: "publish", scheduled: true), "[Task] publish")
+    expect("an existing Task prefix is not duplicated",
+           Orchestrator.sessionTitle(taskTitle: "[Task] publish", scheduled: true), "[Task] publish")
+    expect("ordinary task Session names are unchanged",
+           Orchestrator.sessionTitle(taskTitle: "publish", scheduled: false), "publish")
+
+    var rootTask = child(depth: 1)
+    rootTask.sessionRoot = true
+    let rootBrief = Orchestrator.childBrief(for: rootTask)
+    check("a task whose tab is retained is briefed as a genuine Root Session",
+          rootBrief.contains("You are an independently owned Clawdline Root Session")
+              && !rootBrief.contains("You are a CHILD session"))
+    check("the retained Root may dispatch Clawdline children of its own",
+          rootBrief.contains("You may dispatch Clawdline child tasks"))
+    let rootLine = Orchestrator.firstLine(id: taskID, secret: "secret", sessionRoot: true)
+    check("the retained Session's delivery line identifies it as Root rather than Child",
+          rootLine.contains("Clawdline ROOT agent for task")
+              && !rootLine.contains("Clawdline CHILD agent for task"))
+    check("the Root delivery marker is still a transcript receipt",
+          Orchestrator.transcriptContainsBriefing(
+            #"{"type":"user","message":{"role":"user","content":"\#(rootLine)"}}"#,
+            assistant: .claude, taskID: taskID))
+    check("the Root delivery is not hidden by the child-only conversation-list marker",
+          !rootLine.hasPrefix(Orchestrator.briefingOpening))
+    var scheduledRoot = rootTask
+    scheduledRoot.state = .queued
+    scheduledRoot.scheduleID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    var openedLabel: String?
+    _ = Orchestrator.spawn(scheduledRoot) { place, _, _, _, _, _ in
+        openedLabel = place.label
+        return .started(id: "scheduled-root", backend: .iterm, attach: nil)
+    }
+    expect("the scheduled Session opens with the Task-prefixed name",
+           openedLabel, "[Task] a task")
+    let refusedRoot = Orchestrator.spawn(scheduledRoot) { _, _, _, _, _, _ in
+        .refused(status: 503, code: "unavailable", message: "no terminal", app: "iTerm2")
+    }
+    check("a failed launch does not claim it opened a Root Session that does not exist",
+          refusedRoot.state == .spawnFailed && !refusedRoot.sessionRoot)
 }
 
 group("a codex child is briefed with channels it can actually reach") {

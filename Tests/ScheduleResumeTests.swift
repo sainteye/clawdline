@@ -106,7 +106,8 @@ func runScheduleResumeTests() throws -> Int {
                 sessionID: sessionID, assistant: .codex, projectDir: project.path) != nil)
     try expect("that resume carries the retained task title into its new terminal",
                Orchestrator.scheduledResumeTitle(
-                sessionID: sessionID, assistant: .codex, projectDir: project.path) == "publish")
+                sessionID: sessionID, assistant: .codex, projectDir: project.path)
+                    == "[Task] publish")
     try expect("another assistant cannot borrow the conversation",
                Orchestrator.scheduledResumeTitle(
                 sessionID: sessionID, assistant: .claude, projectDir: project.path) == nil)
