@@ -30,10 +30,15 @@ function executable(path, body) {
 
 try {
   const subject = readFileSync(source, "utf8");
+  const homeCard = subject.match(
+    /private final class HomeRouteCard[\s\S]*?final class HomeWindow/
+  )?.[0] || "";
   checkNode(subject.includes("enum OnboardingEvidencePolicy") &&
             subject.includes("enum PhoneCredentialIssuer") &&
-            subject.includes("enum CloudPreviewEvidencePolicy"),
-            "focused subject contains the production evidence seams");
+            subject.includes("enum CloudPreviewEvidencePolicy") &&
+            homeCard.includes(": Style.chipFill") &&
+            !homeCard.includes("Style.chipFill.withAlphaComponent"),
+            "focused subject preserves its policies and the secondary Home card surface alpha");
 
   const harness = join(work, "main.swift");
   const binary = join(work, "onboarding-focused");

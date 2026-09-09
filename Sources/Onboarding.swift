@@ -799,7 +799,7 @@ private final class HomeRouteCard: NSView, SelfSizing {
                                 xRadius: primary ? 12 : 9, yRadius: primary ? 12 : 9)
         let fill = primary
             ? Style.accent.withAlphaComponent(0.075)
-            : Style.chipFill.withAlphaComponent(0.72)
+            : Style.chipFill
         fill.setFill()
         path.fill()
         (primary ? Style.accent.withAlphaComponent(0.52) : Style.chipEdge).setStroke()
