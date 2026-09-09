@@ -1389,10 +1389,13 @@ const scheduleBody = { title: "Morning", at: "09:00", days: "daily",
 controlCloud.placeRoutes.set("portfolio", { machine: "mac-01", id: "local-portfolio",
     path: "/code/app" });
 const beforeResume = publishedReads(controlSocket).length;
-const resumed = controlCloud.resumePlace("portfolio", "past/session|一", "codex");
+const resumeActionID = "11111111-1111-4111-8111-111111111111";
+const resumed = controlCloud.resumePlace("portfolio", "past/session|一", "codex", resumeActionID);
 await until(function () { return publishedReads(controlSocket).length === beforeResume + 1; },
     "the Resume command to leave");
 controlRequest = await requestBody(publishedReads(controlSocket)[beforeResume]);
+assert.equal(controlRequest.request, resumeActionID,
+    "Board resume preserves the durable action request id in the encrypted command");
 assert.deepEqual({ type: controlRequest.type, place: controlRequest.place,
     past: controlRequest.past, assistant: controlRequest.assistant }, {
     type: "resume", place: "local-portfolio", past: "past/session|一", assistant: "codex"

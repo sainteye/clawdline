@@ -41,6 +41,24 @@ import Foundation
 /// read-level; starting is not.
 enum StartPoints {
 
+    /// The coverage statement shown by workflow adapters and managed launch surfaces. This is
+    /// evidence-shaped rather than aspirational: merely observing a native session never earns
+    /// the same label as an adapter handshake, and Board OFF disables all workflow recording.
+    enum WorkflowCoverage: String, Equatable {
+        case boardDisabled = "board_disabled"
+        case managedIngress = "managed_ingress"
+        case adapterHandshake = "adapter_handshake"
+        case observedUnintegrated = "observed_unintegrated"
+    }
+
+    static func workflowCoverage(boardEnabled: Bool, managedIngress: Bool,
+                                 adapterHandshake: Bool) -> WorkflowCoverage {
+        guard boardEnabled else { return .boardDisabled }
+        if managedIngress { return .managedIngress }
+        if adapterHandshake { return .adapterHandshake }
+        return .observedUnintegrated
+    }
+
     // MARK: - A place
 
     /// One directory a session can be started in.

@@ -33,19 +33,25 @@ final class ProjectBoardReadCache {
         let projects: [String: Envelope]
         let items: [String: Envelope]
         private let resolveItem: ItemResolver?
+        private let resolveSession: ((String) -> Envelope)?
 
         init(revision: Int, observedAt: Double, catalog: Envelope,
              projects: [String: Envelope], items: [String: Envelope],
-             resolveItem: ItemResolver? = nil) {
+             resolveItem: ItemResolver? = nil,
+             resolveSession: ((String) -> Envelope)? = nil) {
             self.revision = revision
             self.observedAt = observedAt
             self.catalog = catalog
             self.projects = projects
             self.items = items
             self.resolveItem = resolveItem
+            self.resolveSession = resolveSession
         }
 
         func envelope(project: String?, item: String?) -> Envelope {
+            if project == nil, let item, item.hasPrefix("session:"), let resolveSession {
+                return resolveSession(String(item.dropFirst("session:".count)))
+            }
             if let item {
                 if let value = items[item] ?? resolveItem?(item, project),
                    itemProject(in: value) == project || project == nil {

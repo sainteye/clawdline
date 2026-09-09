@@ -157,6 +157,7 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/plan.css">
 <link rel="stylesheet" href="/app/css/ledger.css">
 <link rel="stylesheet" href="/app/css/board.css">
+<link rel="stylesheet" href="/app/css/session-board.css">
 <link rel="stylesheet" href="/app/css/documents.css">
 
 <!-- Every module, named here so that all forty are asked for at once.
@@ -397,6 +398,7 @@ document.documentElement.className = "booting";
                 </div>
             </div>
         </div>
+        <aside id="session-board" class="session-board" aria-label="Related Board work" hidden></aside>
         <!-- The same pane, reading one of the session's background agents instead of the session.
              It replaces the header rather than stacking under it: two headers would leave the
              reader looking at two names and having to work out which transcript is below them.

@@ -7,6 +7,11 @@ const DOCUMENT_MAX_DEPTH = 6;
 const DOCUMENT_MAX_LIST = 200;
 const DOCUMENT_EXTENSIONS = new Set(["md", "markdown", "txt"]);
 const TASK_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const utf8 = new TextEncoder();
+
+function utf8Length(value) {
+    return utf8.encode(value).length;
+}
 
 function documentLinkError(code, message) {
     var error = new Error(message);
@@ -15,7 +20,7 @@ function documentLinkError(code, message) {
 }
 
 function textIdentity(value, name) {
-    if (typeof value !== "string" || !value || value.length > 128 ||
+    if (typeof value !== "string" || !value || utf8Length(value) > 128 ||
         /[\u0000-\u001f\u007f-\u009f]/.test(value)) {
         throw new TypeError("document locator has an invalid " + name);
     }
@@ -71,7 +76,7 @@ export function documentIdentityForSession(rows, id, transportKind) {
 }
 
 function documentPath(value) {
-    if (typeof value !== "string" || !value || value.length > DOCUMENT_MAX_PATH ||
+    if (typeof value !== "string" || !value || utf8Length(value) > DOCUMENT_MAX_PATH ||
         value.charAt(0) === "/" || /[\u0000-\u001f\u007f-\u009f]/.test(value)) {
         throw new TypeError("document locator has an invalid path");
     }

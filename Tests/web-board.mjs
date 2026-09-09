@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { bindBoardPage, boardProgress, resolveBoardSession } from "../Resources/web/app/js/view/board.js";
 import * as boardModule from "../Resources/web/app/js/view/board.js";
+const {bindSessionBoard, SessionBoard} = await import("../Resources/web/app/js/input/session-board.js");
 
 class Node {
     constructor(doc, tag = "div") {
@@ -155,6 +156,38 @@ function page(env = {}, lang = "zh-Hant") {
     };
 }
 const html = readFileSync(new URL("../Resources/web/index.html", import.meta.url), "utf8");
+{
+    const doc = document("zh-Hant"), container = new Node(doc);
+    let visible = true, ready = false, reads = 0;
+    const conversation = "11111111-1111-4111-8111-111111111111";
+    const destination = [];
+    bindSessionBoard(container, {
+        visible: () => visible, ready: () => ready,
+        read: async () => { reads++; return envelope({sessionId: conversation,
+            items: [{id:"linked",projectId:"a",title:"<script>只是文字</script>",sessionActivity:"declared"}],
+            readState: {status:"ready"}}); },
+        open: (...args) => destination.push(args)
+    });
+    SessionBoard.follow({id:"%late",sessionId:null});SessionBoard.setEnabled(true);
+    await flush();
+    check("Session relationship binder waits for provider identity and transcript", container.hidden && reads === 0);
+    ready = true;
+    SessionBoard.sync({id:"%late",sessionId:conversation});await flush();
+    check("late identity begins one optional relation read", !container.hidden && reads === 1);
+    check("Session relationship copy honors zh-Hant", container.textContent.includes("看板項目") && container.textContent.includes("更新關聯"));
+    const heading = container.children[0]; heading.click();
+    check("relationship disclosure exposes its accessible state", heading.getAttribute("aria-expanded") === "true" && !container.children[1].hidden);
+    check("relationship titles remain literal text", container.textContent.includes("<script>只是文字</script>") && !container.all(n => n.tagName === "SCRIPT").length);
+    container.children[1].all(n => n.tagName === "BUTTON")[0].click();
+    check("relationship click carries exact owning Project", destination[0][0] === "a" && destination[0][1] === "linked" && destination[0][2].id === "a");
+    SessionBoard.sync({id:"%late",sessionId:conversation});await flush();
+    check("ordinary Session redraw does not poll optional relationships", reads === 1);
+    visible = false;SessionBoard.sync({id:"%late",sessionId:conversation});
+    check("another page hides Session context", container.hidden);
+    SessionBoard.setEnabled(false);
+    visible = true;SessionBoard.sync({id:"%late",sessionId:conversation});await flush();
+    check("disabled Board stays hidden across navigation", container.hidden && reads === 1);
+}
 check("no manual New item entry exists", !html.includes('id="board-new"'));
 check("no lifecycle selector exists", !html.includes('id="board-state"'));
 const css = readFileSync(new URL("../Resources/web/app/css/board.css", import.meta.url), "utf8");
@@ -172,6 +205,8 @@ check("hidden search overrides its ID-level display rule", /display:\s*none/.tes
     }
 }
 check("completion report has a phone-width layout boundary", /@media\s*\(max-width:\s*640px\)[\s\S]*\.board-report-body\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/.test(css));
+check("bounded expansion controls keep a full-width phone tap target",
+    /@media\s*\(max-width:\s*640px\)[\s\S]*\.board-load-more\s*\{[^}]*width:\s*100%/.test(css));
 check("explicit server progress wins old backlog", boardProgress(rows[1]) === "landed");
 {
     const p = page({ read: async () => envelope({ projects: [], items: [], readState: { status: "error" } }) }, "en");
@@ -404,9 +439,44 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
             }
         ],
         artifacts: [
-            { title: "Safe result", url: "https://example.test/result" },
+            { title: "Safe result", url: "https://example.test/result", kind: "document" },
             { title: "Unsafe", url: "javascript:alert(1)" }
         ],
+        documentReferences: [
+            { id: "plan-v1", title: "Original Board plan", purpose: "plan",
+              documentId: "board-plan", version: 1, status: "superseded",
+              authority: "narrative_only",
+              url: "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=plan-v1.md" },
+            { id: "plan-v2", title: "Current Board plan", purpose: "plan",
+              documentId: "board-plan", version: 2, status: "current",
+              authority: "narrative_only", supersedesId: "plan-v1",
+              url: "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=plan-v2.md" },
+            { id: "decision-v1", title: "Approved interaction boundary", purpose: "decision",
+              documentId: "interaction-decision", version: 1, status: "current",
+              authority: "narrative_only",
+              url: "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=task&task=11111111-2222-4333-8444-555555555555&path=decision.md" }
+        ],
+        remainingWork: {
+            work: [
+                { kind: "checklist", title: "Keyboard works", status: "doing",
+                  disposition: "required", owner: "root" },
+                { kind: "checklist", title: "Optional polish", status: "todo",
+                  disposition: "optional", owner: "root" },
+                { kind: "child", title: "Canceled experiment", status: "canceled",
+                  disposition: "canceled", owner: "root" },
+                { kind: "obligation", title: "Unclassified older wait", status: "waiting",
+                  actorKind: "unknown", disposition: "unknown", owner: "unknown" }
+            ],
+            userDecisions: [
+                { kind: "obligation", title: "Choose AI policy", status: "waiting",
+                  actorKind: "user", disposition: "required", owner: "user",
+                  requiredAction: "Choose whether stored text may leave the Mac" }
+            ],
+            workCount: 5,
+            userDecisionCount: 2,
+            workOmittedCount: 1,
+            userDecisionOmittedCount: 1
+        },
         links: [
             {
                 kind: "session",
@@ -431,24 +501,51 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
             total: null,
             undeclaredRows: 1
         },
-        projection: { history: { omittedCount: 99 } },
+        projection: {
+            history: { omittedCount: 99 },
+            documentReferences: { retainedCount: 3, omittedCount: 1 }
+        },
         historyDroppedCount: 101
     };
+    const openedSessions = [], collectionReads = [];
     const p = page(
         {
-            read: () =>
-                Promise.resolve(
-                    envelope({
-                        item: detail,
-                        source: {
-                            ingestion: {
-                                issueCount: 1,
-                                reasons: ["link_capacity"]
-                            }
-                        }
-                    })
-                ),
-            openSession: () => ({ error: "session_unavailable" })
+            read: (_project, selector) => {
+                collectionReads.push(selector);
+                if (selector === "collection:active:remaining_work:4")
+                    return Promise.resolve(envelope({ collection: {
+                        kind: "remaining_work", itemId: "active", offset: 4,
+                        rows: [{ kind: "obligation", id: "late-blocker",
+                            title: "Late blocking proof", owner: "root", status: "waiting",
+                            actorKind: "agent", blocking: true, disposition: "required" }],
+                        totalCount: 5, nextOffset: null
+                    }}));
+                if (selector === "collection:active:user_decisions:1")
+                    return Promise.resolve(envelope({ collection: {
+                        kind: "user_decisions", itemId: "active", offset: 1,
+                        rows: [{ kind: "obligation", id: "late-decision",
+                            title: "Late user decision", owner: "user", status: "waiting",
+                            actorKind: "user", blocking: true, disposition: "required" }],
+                        totalCount: 2, nextOffset: null
+                    }}));
+                if (selector === "collection:active:document_references:3")
+                    return Promise.resolve(envelope({ collection: {
+                        kind: "document_references", itemId: "active", offset: 3,
+                        rows: [{ id: "reference-late", title: "Late reference", purpose: "reference",
+                            documentId: "late-reference", version: 1, status: "current",
+                            authority: "narrative_only",
+                            url: "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=late.md" }],
+                        totalCount: 4, nextOffset: null
+                    }}));
+                return Promise.resolve(envelope({
+                    item: detail,
+                    source: { ingestion: { issueCount: 1, reasons: ["link_capacity"] } }
+                }));
+            },
+            openSession: (...args) => {
+                openedSessions.push(args);
+                return { error: "session_unavailable" };
+            }
         },
         "en"
     );
@@ -468,17 +565,49 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
         "2 older records"
     ])
         check("detail retains " + value, target.textContent.includes(value));
+    check("first-screen remainder separates work from user decisions",
+        target.textContent.includes("What we will do next")
+        && target.textContent.includes("What you need to decide")
+        && target.textContent.includes("Choose whether stored text may leave the Mac"));
+    check("remaining rows preserve optional, canceled and unknown distinctions",
+        target.textContent.includes("Optional") && target.textContent.includes("Canceled")
+        && target.textContent.includes("Owner kind unknown"));
+    check("typed documents are separated into plan and decision sections",
+        target.textContent.includes("Original plan")
+        && target.textContent.includes("Decisions & changes")
+        && target.textContent.includes("Current Board plan")
+        && target.textContent.includes("Approved interaction boundary"));
+    const expansionButtons = target.all((n) => n.dataset.boardAction === "load-more");
+    check("omitted remaining work, decisions and documents expose bounded controls",
+        expansionButtons.length === 3);
+    expansionButtons.forEach(node => node.click());
+    await flush();
+    check("bounded collection reads append every omitted class without replacing detail",
+        target.textContent.includes("Late blocking proof")
+        && target.textContent.includes("Late user decision")
+        && target.textContent.includes("Late reference"));
+    check("collection selectors preserve item, kind and current offset",
+        ["collection:active:remaining_work:4", "collection:active:user_decisions:1",
+         "collection:active:document_references:3"].every(value => collectionReads.includes(value)));
+    check("superseded document metadata remains visible without loading a body",
+        target.textContent.includes("Earlier version") && !target.textContent.includes("document body"));
+    check("an old generic document artifact remains an output, not an approved plan",
+        target.all(".board-document-reference").every(row => !row.textContent.includes("Safe result"))
+        && target.all(".board-output-link").some(row => row.textContent.includes("Safe result")));
     check(
         "safe result has opener protection",
-        target.all((n) => n.tagName === "A")[0].rel === "noopener noreferrer"
+        target.all(".board-output-link")[0].rel === "noopener noreferrer"
     );
-    check("unsafe scheme is not an anchor", target.all((n) => n.tagName === "A").length === 1);
+    check("unsafe scheme is not an output anchor",
+        target.all(".board-output-link").filter(row => row.tagName === "A").length === 1);
     check("partial usage is not an exact total", target.textContent.includes("≥ 120"));
     check("source gaps remain visible with technical detail available",
         p.elements["board-status"].textContent.includes("source records still need matching")
         && p.elements["board-status"].title.includes("link_capacity"));
     target.all((n) => n.dataset.boardAction === "open-session")[0].click();
     await flush();
+    check("Session navigation receives the selected Project presentation",
+        openedSessions[0][0] === "conversation" && openedSessions[0][1].id === "a");
     check(
         "missing live session yields visible refusal",
         p.elements["board-status"].textContent.includes("no unique live Session")

@@ -1,4 +1,5 @@
 import { hasKeyboard } from "../core/env.js";
+import { Diagnostics } from "../core/layout-diagnostics.js";
 import { appendGap, appendedText } from "../core/compose-text.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
@@ -14,6 +15,7 @@ import { authoritativeSendTime, optimisticSendSnapshot } from "../view/optimisti
 import { atBottom, closeDetail, loadTranscript, toBottom } from "../session/open.js";
 import { carriesPicture, Shots } from "./shots.js";
 import { Voice } from "./voice.js";
+import { observeBoardWorkflowSend } from "./board-workflow-status.js";
 
 /* ---- the composer -------------------------------------------------------- */
 
@@ -332,6 +334,10 @@ function submit() {
     renderComposer();
     var request = quit ? api.end(sentID) : api.send(sentID, text, pictures);
     request.then(function (answer) {
+        observeBoardWorkflowSend(answer, {
+            note: function (event, data) { Diagnostics.note(event, data); },
+            toast: toast
+        });
         // Every child node goes, not just the words: the placeholder is drawn from what
         // `innerText` says, and a `<br>` the browser left behind would keep the box looking
         // like it still had something in it.

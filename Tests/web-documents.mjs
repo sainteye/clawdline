@@ -110,6 +110,31 @@ assert.deepEqual(documentLocatorFromHash(hash), task,
 assert.equal(/token|secret|authorization|bearer|\/Users\//i.test(hash), false,
     "the shared locator carries no credential or filesystem path");
 
+const utf8Boundary = Object.assign({}, project, {
+    machine: "😀".repeat(32), path: "界".repeat(169) + ".md"
+});
+assert.deepEqual(documentLocatorFromHash(documentHash(utf8Boundary)), utf8Boundary,
+    "identity and path bounds are measured in UTF-8 bytes at the shared boundary");
+for (const tooWide of [
+    Object.assign({}, utf8Boundary, { machine: "😀".repeat(33) }),
+    Object.assign({}, utf8Boundary, { path: "界".repeat(170) + ".md" })
+]) {
+    assert.throws(() => documentHash(tooWide), /invalid (machine|path)/,
+        "UTF-16-short but UTF-8-wide locators fail the common byte policy");
+}
+const reserved = Object.assign({}, project, {
+    machine: "Mac%356 & # +", session: "session+literal%",
+    path: "notes/%356 & # +.md"
+});
+assert.deepEqual(documentLocatorFromHash(documentHash(reserved)), reserved,
+    "percent, encoded separators, fragments, plus and Unicode decode exactly once");
+assert.equal(documentLocatorFromHash(
+    "#document=1&machine=m&session=s&scope=project&path=..%2Fa.md"), null,
+    "an encoded separator that decodes to real traversal is refused");
+assert.equal(documentLocatorFromHash(
+    "#document=1&machine=m&session=s&scope=project&path=%252E%252E%252Fa.md").path,
+    "%2E%2E%2Fa.md", "a literal encoded traversal spelling is not decoded twice");
+
 for (const [bad, why] of [
     ["#document=1&session=s&scope=project&path=a.md", "a bare session cannot choose a Mac"],
     [hash + "&token=secret", "an extra credential-like field is refused"],
@@ -404,5 +429,5 @@ assert.equal(await shareDocument(task, "Cloud review", {
 }), "copied", "a refused share sheet falls back to copying the direct URL");
 assert.equal(copied, sharedURL);
 
-console.log("web Cloud documents: 85 assertions passed");
+console.log("web Cloud documents: 91 assertions passed");
 process.exit(0);

@@ -62,8 +62,19 @@
 /* A Project with no mark keeps the same indent as one that has it: a list whose rows start in
    two different places reads as two lists. `drawIcon` draws nothing rather than a substitute. */
 .project-row-mark.none { background: var(--line); border-radius: 4px; }
-.project-row-text { display: grid; gap: 2px; min-width: 0; }
+.project-row-text { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.project-row-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; min-width: 0; }
 .project-row-name { overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.project-row-activity {
+    display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px;
+    color: var(--dim); font: 600 11px/1.35 var(--sans, sans-serif);
+    font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.project-row-activity::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+.project-row-activity.is-active { color: #91d7b5; border-color: rgba(103, 190, 145, .35); background: rgba(103, 190, 145, .12); }
+.project-row-activity.is-unknown { color: #e4c58e; border-color: rgba(176, 138, 74, .35); background: rgba(176, 138, 74, .08); }
+.project-row-activity.is-idle::before { background: transparent; border: 1px solid currentColor; }
 .project-row-path { overflow: hidden; color: var(--faint); font: 11px/1.3 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- one Project --------------------------------------------------------- */

@@ -389,6 +389,22 @@ function refusalText(error) {
     return (error && error.message) || T.webProjectFailed;
 }
 
+function projectActivity(place, chinese) {
+    var count = place.activeItemCount;
+    if (!Number.isSafeInteger(count) || count < 0) return {
+        text: chinese ? "進度尚未確認" : "Activity unknown", tone: "unknown"
+    };
+    var coverage = place.summaryCoverage;
+    var complete = !place.activitySourcePartial
+        && (coverage === "complete" || (coverage && coverage.status === "complete"));
+    var current = place.activityReadStatus === "ready";
+    var text = number(count) + (chinese ? " 項進行中" : " in progress");
+    if (!current) return { text: (chinese ? "上次紀錄：" : "Last known: ") + text, tone: "unknown" };
+    if (!complete) return { text: (chinese ? "部分紀錄：" : "Partial: ") + text, tone: "unknown" };
+    return { text: count ? text : (chinese ? "目前無進行中項目" : "None in progress"),
+        tone: count ? "active" : "idle" };
+}
+
 function renderPlaces(context, places) {
     var doc = context.document, elements = context.elements;
     var rows = elements["projects-rows"];
@@ -411,15 +427,21 @@ function renderPlaces(context, places) {
         button.appendChild(mark);
         var text = doc.createElement("span");
         text.className = "project-row-text";
-        var name = appendText(doc, text, "strong", place.label || place.path, "project-row-name");
+        var heading = appendText(doc, text, "span", "", "project-row-heading");
+        var name = appendText(doc, heading, "strong", place.label || place.path, "project-row-name");
         name.style.color = place.icon ? context.tint(place.icon.accent) : "";
+        var activity = place.boardProjectId ? projectActivity(place,
+            /^zh/i.test(doc.documentElement && doc.documentElement.lang || "")) : null;
+        if (activity) appendText(doc, heading, "span", activity.text,
+            "project-row-activity is-" + activity.tone);
         // The path is here for the one job `/v1/places` says it is for: telling two projects with
         // the same name apart. Nothing on this page is built out of it except the query below.
         appendText(doc, text, "span", place.path || "", "project-row-path");
         if (place.boardProjectId && Number.isInteger(place.itemCount) && place.itemCount >= 0) appendText(doc, text, "span", place.itemCount +
             (/^zh/i.test(doc.documentElement && doc.documentElement.lang || "") ? " 個工作項目 · 查看進度 →" : " work items · View progress →"), "project-row-path");
         button.appendChild(text);
-        button.setAttribute("aria-label", fill(T.webProjectOpenLabel, { name: place.label || place.path }));
+        button.setAttribute("aria-label", fill(T.webProjectOpenLabel, { name: place.label || place.path })
+            + (activity ? ", " + activity.text : ""));
         button.addEventListener("click", function () { context.open(place); });
         item.appendChild(button);
         rows.appendChild(item);
@@ -449,7 +471,11 @@ export async function readProjectPlaces(transport, onMode) {
                     && typeof project.displayPath === "string" && project.displayPath.length > 0);
             }).map(function (project) {
                 return { id: project.id, boardProjectId: project.id, label: project.label || project.name,
-                    icon: project.icon, path: project.displayPath || "", itemCount: project.itemCount };
+                    icon: project.icon, path: project.displayPath || "", itemCount: project.itemCount,
+                    activeItemCount: project.activeItemCount, summaryCoverage: project.summaryCoverage,
+                    activitySourcePartial: !!(board.source && (board.source.truncated
+                        || (board.source.ingestion && board.source.ingestion.status !== "complete"))),
+                    activityReadStatus: board.readState && board.readState.status };
             }), boardMode: true, readState: board.readState };
         } catch (error) {
             if (!baseline || !(/^(board_|http_503$)/.test(error.code || "") || error.status === 503)) throw error;
@@ -543,6 +569,8 @@ export function bindProjectsPage(elements, environment) {
             state.places = (data && data.places) || [];
             renderPlaces(context, state.places);
             var freshness = data && data.readState && data.readState.status;
+            // Poll only the lightweight Board catalog while visible, never every item's detail.
+            if (data && data.boardMode && freshness === "ready") laterCatalog(15000);
             if (freshness === "loading" || freshness === "stale" || freshness === "error") {
                 var chinese = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "");
                 elements["projects-status"].textContent = freshness === "loading"
@@ -564,6 +592,12 @@ export function bindProjectsPage(elements, environment) {
             if (background && state.places && state.places.length
                 && ![401, 403].includes(error.status)
                 && !/unauthorized|forbidden|permission/.test(error.code || "")) {
+                // The retained rows must lose their current activity claim together with the
+                // directory warning; a green zero after a failed refresh is a false reassurance.
+                state.places = state.places.map(function (place) {
+                    return Object.assign({}, place, { activityReadStatus: "stale" });
+                });
+                renderPlaces(context, state.places);
                 var chinese = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "");
                 elements["projects-status"].textContent = (chinese
                     ? "更新失敗，目前保留上次的專案目錄。"

@@ -1,4 +1,5 @@
 import { boardReportSelection } from "../net/client.js";
+import { CANONICAL_DOCUMENT_ORIGIN, documentLocatorFromHash } from "../net/document-links.js";
 
 // Conversations record facts. This reading surface never issues lifecycle commands.
 const STATUS = {
@@ -133,6 +134,17 @@ function safeURL(value) {
     try {
         const url = new URL(value);
         return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+    } catch {
+        return null;
+    }
+}
+function canonicalDocumentURL(value) {
+    try {
+        const url = new URL(value);
+        if (url.origin !== CANONICAL_DOCUMENT_ORIGIN || url.pathname !== "/" || url.search ||
+            url.username || url.password || url.port) return null;
+        const locator = documentLocatorFromHash(url.hash);
+        return locator && locator.machine !== "this-mac" ? url.href : null;
     } catch {
         return null;
     }
@@ -498,6 +510,115 @@ export function renderCompletionReport(ctx, parent, item, showHistory = true) {
     }
     return container;
 }
+function remainingStatus(ctx, row) {
+    const names = {
+        todo: ["Not started", "尚未開始"], doing: ["In progress", "進行中"],
+        failed: ["Needs correction", "待修正"], waiting: ["Waiting", "等待中"],
+        canceled: ["Canceled", "已取消"], unknown: ["Unknown", "未知"],
+        planning: ["Planning", "規劃中"], execution: ["In progress", "執行中"],
+        review_testing: ["Review & testing", "審查與測試"], correction: ["Correction", "修正中"],
+        verified: ["Verified", "已驗證"], delivered: ["Delivered only", "僅已交付"],
+        landed: ["Landed", "已落地"], blocked: ["Blocked", "受阻"]
+    };
+    return localized(ctx, names[row.status] || names.unknown);
+}
+function remainingDisposition(ctx, row) {
+    const names = {
+        required: ["Required", "必要"], optional: ["Optional", "可選"],
+        canceled: ["Canceled", "已取消"], unknown: ["Unknown", "未知"]
+    };
+    return localized(ctx, names[row.disposition] || names.required);
+}
+function remainingRow(ctx, parent, row, item) {
+    const line = row.kind === "child"
+        ? button(ctx, parent, null, "remaining-child", () =>
+            ctx.openProjectItem(row.projectId || item.projectId, row.id),
+            "board-remaining-row board-remaining-child")
+        : el(ctx, parent, "div", null, "board-remaining-row");
+    const copy = el(ctx, line, "div", null, "board-remaining-copy");
+    el(ctx, copy, "strong", row.title, "board-remaining-title");
+    if (row.requiredAction && row.requiredAction !== row.title)
+        el(ctx, copy, "span", row.requiredAction, "board-remaining-action");
+    const meta = [remainingStatus(ctx, row), remainingDisposition(ctx, row), row.owner].filter(Boolean);
+    if (row.actorKind === "unknown")
+        meta.push(words(ctx, "Owner kind unknown", "負責者類型未知"));
+    el(ctx, line, "span", meta.join(" · "), "board-remaining-meta");
+    return line;
+}
+function collectionSelection(item, kind, offset) {
+    return "collection:" + item + ":" + kind + ":" + offset;
+}
+function loadMore(ctx, parent, kind, count, omitted) {
+    if (!(omitted > 0)) return;
+    const control = button(ctx, parent,
+        words(ctx, "Load " + omitted + " more", "載入其餘 " + omitted + " 筆"),
+        "load-more", () => ctx.loadCollection(kind, count), "board-load-more");
+    control.setAttribute("aria-label", words(ctx,
+        "Load more retained Board records", "載入更多已保留的看板紀錄"));
+}
+function renderRemainingWork(ctx, parent, item) {
+    const remainder = item.remainingWork;
+    if (!remainder) return;
+    const work = remainder.work || [], decisions = remainder.userDecisions || [];
+    if (!work.length && !decisions.length) return;
+    const container = section(ctx, parent, words(ctx, "What remains", "還欠什麼"), false,
+        "remaining-work");
+    container.className += " board-remaining-work";
+    const columns = el(ctx, container, "div", null, "board-remaining-columns");
+    const workPart = el(ctx, columns, "section", null, "board-remaining-group");
+    el(ctx, workPart, "h3", words(ctx, "What we will do next", "接下來由我們處理"),
+        "board-remaining-group-title");
+    if (work.length) work.forEach(row => remainingRow(ctx, workPart, row, item));
+    else el(ctx, workPart, "p", words(ctx, "No recorded work remains.", "目前沒有記錄中的後續工作。"),
+        "board-section-help");
+    loadMore(ctx, workPart, "remaining_work", work.length,
+        remainder.workOmittedCount || 0);
+    const decisionPart = el(ctx, columns, "section", null,
+        "board-remaining-group board-user-decisions");
+    el(ctx, decisionPart, "h3", words(ctx, "What you need to decide", "需要你決定"),
+        "board-remaining-group-title");
+    if (decisions.length) decisions.forEach(row => remainingRow(ctx, decisionPart, row, item));
+    else el(ctx, decisionPart, "p", words(ctx, "No decision is waiting on you.", "目前沒有等待你決定的事項。"),
+        "board-section-help");
+    loadMore(ctx, decisionPart, "user_decisions", decisions.length,
+        remainder.userDecisionOmittedCount || 0);
+}
+function renderDocumentReferences(ctx, parent, item) {
+    const documents = item.documentReferences || [];
+    const groups = [
+        ["plan", "Original plan", "原始規劃"],
+        ["decision", "Decisions & changes", "決策與變更"],
+        ["reference", "Reference documents", "參考文件"]
+    ];
+    groups.forEach(([purpose, en, zh]) => {
+        const rows = documents.filter(row => row.purpose === purpose);
+        if (!rows.length) return;
+        const part = section(ctx, parent, words(ctx, en, zh));
+        rows.slice().sort((a, b) => (a.status === "current" ? -1 : 1)
+            - (b.status === "current" ? -1 : 1) || (b.version || 0) - (a.version || 0))
+            .forEach(row => {
+                const line = el(ctx, part, "div", null, "board-document-reference"),
+                    url = canonicalDocumentURL(row.url),
+                    link = el(ctx, line, url ? "a" : "span", row.title, "board-document-link");
+                if (url) {
+                    link.href = url;
+                    link.target = "_blank";
+                    link.rel = "noopener noreferrer";
+                }
+                el(ctx, line, "span",
+                    (row.status === "superseded"
+                        ? words(ctx, "Earlier version", "較早版本")
+                        : words(ctx, "Current", "目前版本")) + " · v" + row.version,
+                    "board-document-version");
+            });
+        el(ctx, part, "p", words(ctx,
+            "Narrative reference only; content opens when selected and does not establish acceptance.",
+            "僅為敘事參照；選取後才讀取內容，也不構成驗收。"), "board-section-help");
+    });
+    const projection = item.projection && item.projection.documentReferences;
+    loadMore(ctx, parent, "document_references", documents.length,
+        projection && projection.omittedCount || 0);
+}
 function detail(ctx) {
     const item = ctx.state.item,
         target = ctx.e["board-detail"];
@@ -541,7 +662,9 @@ function detail(ctx) {
             ),
             "board-section-help"
         );
+    renderRemainingWork(ctx, target, item);
     renderCompletionReport(ctx, target, item);
+    renderDocumentReferences(ctx, target, item);
     if (narrative.outcome && (!item.completionReport || item.completionReport.status === "absent")) {
         const outcomes = section(ctx, target, words(ctx, "What changed", "完成了什麼"));
         el(ctx, outcomes, "p", narrative.outcome, "board-detail-summary");
@@ -659,10 +782,11 @@ function detail(ctx) {
         );
     }
     if ((item.artifacts || []).length) {
-        const part = section(ctx, target, words(ctx, "What this produced", "產出了什麼"));
+        const part = section(ctx, target, words(ctx, "Outputs", "交付成果"));
         item.artifacts.forEach((row) => {
             const url = safeURL(row.url),
-                link = el(ctx, part, url ? "a" : "span", row.title || row.url, "board-artifact-link");
+                link = el(ctx, part, url ? "a" : "span", row.title || row.url,
+                    "board-artifact-link board-output-link");
             if (url) {
                 link.href = url;
                 link.target = "_blank";
@@ -707,7 +831,11 @@ function detail(ctx) {
         if (row.kind === "session")
             button(ctx, line, row.label || row.targetId, "open-session", () => {
                 Promise.resolve()
-                    .then(() => ctx.env.openSession && ctx.env.openSession(row.targetId))
+                    .then(() => ctx.env.openSession && ctx.env.openSession(
+                        row.targetId,
+                        ctx.state.projects.find(project => project.id === item.projectId)
+                            || ctx.state.projectPresentation
+                    ))
                     .then((answer) => {
                         if (answer && answer.error)
                             ctx.status(
@@ -831,6 +959,7 @@ export function bindBoardPage(elements, environment = {}) {
         active: false,
         readTicket: 0,
         reportTicket: 0,
+        collectionTickets: {},
         reportSelection: null
     });
     let timer = null,
@@ -1207,12 +1336,53 @@ export function bindBoardPage(elements, environment = {}) {
             });
     }
     ctx.openReport = loadReport;
+    ctx.loadCollection = function (kind, offset) {
+        const project = state.projectId, item = state.itemId, selected = state.item,
+            ticket = (state.collectionTickets[kind] || 0) + 1;
+        state.collectionTickets[kind] = ticket;
+        if (!environment.read || !project || !item || !selected) return Promise.resolve();
+        return Promise.resolve()
+            .then(() => environment.read(project, collectionSelection(item, kind, offset)))
+            .then((answer) => {
+                if (!state.active || ticket !== state.collectionTickets[kind]
+                    || item !== state.itemId || selected !== state.item) return;
+                const board = answer && answer.board, collection = board && board.collection;
+                if (!board || typeof board.revision !== "number" || board.revision < state.revision
+                    || !collection || collection.itemId !== item || collection.kind !== kind
+                    || collection.offset !== offset || !Array.isArray(collection.rows))
+                    throw new Error(words(ctx, "Board continuation is incomplete.",
+                        "看板續頁回應不完整。"));
+                if (kind === "document_references") {
+                    selected.documentReferences = (selected.documentReferences || []).concat(collection.rows);
+                    selected.projection ||= {};
+                    selected.projection.documentReferences = {
+                        retainedCount: selected.documentReferences.length,
+                        omittedCount: Math.max(0, collection.totalCount - selected.documentReferences.length)
+                    };
+                } else {
+                    const key = kind === "user_decisions" ? "userDecisions" : "work";
+                    selected.remainingWork[key] = (selected.remainingWork[key] || []).concat(collection.rows);
+                    const countKey = kind === "user_decisions" ? "userDecisionCount" : "workCount";
+                    const omittedKey = kind === "user_decisions"
+                        ? "userDecisionOmittedCount" : "workOmittedCount";
+                    selected.remainingWork[countKey] = collection.totalCount;
+                    selected.remainingWork[omittedKey] = Math.max(0,
+                        collection.totalCount - selected.remainingWork[key].length);
+                }
+                render();
+            })
+            .catch((error) => {
+                if (state.active && ticket === state.collectionTickets[kind])
+                    ctx.status((error && error.message) || String(error), true);
+            });
+    };
     function open(project, item, presentation) {
         state.active = true;
         if (state.projectId !== project) state.projectPresentation = null;
         if (state.projectId !== (project || null) || state.itemId !== (item || null)) {
             state.revision = -1;
             ++state.reportTicket;
+            state.collectionTickets = {};
             state.reportSelection = null;
         }
         if (presentation) state.projectPresentation = presentation;
@@ -1250,6 +1420,7 @@ export function bindBoardPage(elements, environment = {}) {
         state.active = false;
         ++state.readTicket;
         ++state.reportTicket;
+        state.collectionTickets = {};
         stopTimer();
         inflight = null;
         opened = null;

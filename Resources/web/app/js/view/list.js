@@ -19,6 +19,8 @@ import { SessionActions } from "../input/detail-actions.js";
 import { openWanted, setWantedSession, wantedSession } from "../input/route.js";
 import { Start } from "../input/start.js";
 import { StatusLine } from "../input/status-line.js";
+import { SessionBoard } from "../input/session-board.js";
+import { BoardSession } from "../input/board-session.js";
 import { Info } from "../input/info.js";
 import {
     CoordinatorControls,
@@ -143,6 +145,8 @@ export function render() {
     // The Session info card's buttons depend on whether the session is idle.
     if (typeof Info === "object" && Info) Info.follow();
     if (typeof StatusLine === "object" && StatusLine) StatusLine.follow();
+    SessionBoard.sync(S.openId ? byId(S.openId) : null);
+    BoardSession.observe();
     renderWaiting();
     renderAgents();
 }

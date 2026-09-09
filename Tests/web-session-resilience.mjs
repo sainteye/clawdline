@@ -387,15 +387,20 @@ const { Live } = await import("../Resources/web/app/js/net/live.js");
 const { S } = await import("../Resources/web/app/js/core/state.js");
 
 const requestPaths = [];
+const resumeHeaders = [];
 const resilienceFetch = globalThis.fetch;
-globalThis.fetch = function (path) {
+globalThis.fetch = function (path, options) {
     requestPaths.push(path);
+    resumeHeaders.push(options && options.headers);
     return Promise.resolve({ ok: true, text: function () {
         return Promise.resolve(JSON.stringify({ sessions: [] }));
     } });
 };
 await Live.pastSessions("place/one", "codex");
 await Live.resumePlace("place/one", "thread/two", "codex");
+await Live.resumePlace("place/one", "thread/two", "codex", "11111111-1111-4111-8111-111111111111");
+assert.equal(resumeHeaders[2]["Idempotency-Key"], "11111111-1111-4111-8111-111111111111",
+    "Board resume preserves the durable action request id in the direct transport");
 assert.equal(requestPaths[0], "/v1/places/place%2Fone/sessions/codex",
     "Codex history names the selected assistant in the read route");
 assert.equal(requestPaths[1], "/v1/places/place%2Fone/resume/codex/thread%2Ftwo",

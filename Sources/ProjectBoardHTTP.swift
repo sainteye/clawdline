@@ -11,11 +11,17 @@ enum ProjectBoardHTTP {
         let project: String?
         let item: String?
         let report: String?
+        let collection: (kind: String, offset: Int)?
         let store: ProjectBoardStore
 
         func execute() -> RemoteServer.Response {
             let result: (status: Int, envelope: [String: Any])
-            if let report, let item {
+            if let collection, let item {
+                let reply = store.collectionSnapshot(project: project, item: item,
+                                                     kind: collection.kind,
+                                                     offset: collection.offset)
+                result = (reply.status, reply.body)
+            } else if let report, let item {
                 let reply = store.reportSnapshot(project: project, item: item, report: report)
                 result = (reply.status, reply.body)
             } else {
@@ -116,6 +122,31 @@ enum ProjectBoardHTTP {
             }
             var item = request.query["item"]
             var report = request.query["report"]
+            var collection: (kind: String, offset: Int)?
+            // Reuse the existing authenticated Cloud selector slots for a bounded reverse read.
+            // This is a provider conversation UUID, never a terminal address or guessed title.
+            if let selector = item, selector.hasPrefix("session:") {
+                guard request.query["project"] == nil, report == nil,
+                      let conversation = UUID(uuidString: String(
+                        selector.dropFirst("session:".count))) else {
+                    return .response(.error(400, "invalid_session_selector",
+                                            "A Session relation read needs one conversation UUID and no Project or report."))
+                }
+                item = "session:" + conversation.uuidString.lowercased()
+            }
+            if let encoded = item, encoded.hasPrefix("collection:") {
+                let parts = encoded.split(separator: ":", maxSplits: 3,
+                                          omittingEmptySubsequences: false)
+                let kinds = Set(["document_references", "remaining_work", "user_decisions"])
+                guard report == nil, request.query["project"] != nil, parts.count == 4,
+                      !parts[1].isEmpty, kinds.contains(String(parts[2])),
+                      let offset = Int(parts[3]), offset >= 0 else {
+                    return .response(.error(400, "invalid_collection_selector",
+                                            "A continuation needs one item, known collection and bounded offset."))
+                }
+                item = String(parts[1])
+                collection = (String(parts[2]), offset)
+            }
             // Cloud's existing closed Board read carries two selector slots. Until that protocol
             // vocabulary is versioned, the view encodes this narrow third selector inside the
             // item slot; direct HTTP callers use the explicit `report` query field.
@@ -138,7 +169,7 @@ enum ProjectBoardHTTP {
                                         "A report version must be read with its selected item."))
             }
             return .read(.init(viewer: viewer, project: request.query["project"],
-                               item: item, report: report,
+                               item: item, report: report, collection: collection,
                                store: storeForTesting ?? ProjectBoardStore.shared))
         }
         guard request.method == "POST" else { return .response(.status(405)) }

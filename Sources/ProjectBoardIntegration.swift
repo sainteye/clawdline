@@ -496,6 +496,9 @@ enum ProjectBoardIntegration {
             }
             return projected(itemEnvelope, catalog: catalog,
                              coverage: coverage, sources: sources, observedAt: observedAt)
+        }, resolveSession: { sessionID in
+            projected(seed.envelope(item: "session:" + sessionID), catalog: catalog,
+                      coverage: coverage, sources: sources, observedAt: observedAt)
         }))
     }
 

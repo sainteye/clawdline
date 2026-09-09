@@ -273,6 +273,12 @@
     service locally and through encrypted Cloud. Root verification attestations are separate
     from broker-verified landing and administrative artifact acceptance. See
     <a href="project-board.md">the Project Board contract</a> for lifecycle and authority.</p>
+    <p>Managed sends keep a bounded local workflow journal before adding workflow context to the
+    assistant payload. Versioned supplements retain checklist or child scope, owner, acceptance
+    and source Session. Assistant-attested delivery never substitutes for verified landing.
+    A recording gap is reported without retrying a successfully sent message. Native helper
+    installation and a real Claude/Codex adapter handshake remain explicit follow-up work, not
+    coverage implied by observing a Session. See <a href="board-workflow.md">managed workflow</a>.</p>
   </aside>
   <h2 id="parties"><span class="n">01</span>Three parties, and the middle one is the app</h2>
   <p class="sub">A session you are talking to is a session you are waiting on.</p>

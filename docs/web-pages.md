@@ -162,6 +162,20 @@ returning to its list, or routing to any non-document address invalidates pendin
 the decrypted answer, locator, identity, title, metadata and document DOM; no plaintext survives
 in the hidden SPA page.
 
+#### Delivering a document to a person
+
+For a user reading through Clawdline Cloud, hand off the canonical
+`https://app.clawdline.com/` document link with the actual Cloud machine and Session identity.
+Use the document share helper and its strict locator contract above. Do not derive a delivery
+URL from `cloudflared.yml`, `remote_hostname`, a local preview address, or a remembered named
+tunnel. In particular, a successful local document read proves only local rendering and access;
+it does not prove that the user's phone can open that address through Cloud.
+
+If Cloud identity, pairing, or the document read is unavailable, report that specific gap and
+retain the Cloud locator. Do not silently substitute localhost, a LAN address, a named tunnel,
+an absolute file link, or `machine=this-mac` as the user's delivery link. Local preview remains
+valid for development verification, but is not a Cloud handoff or evidence of Cloud acceptance.
+
 ### The session id in the fragment is percent-encoded
 
 `#session=<id>` carries the id **encoded**, and the encoding is not decoration. The sessions this

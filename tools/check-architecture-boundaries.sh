@@ -403,7 +403,8 @@ fi
 #                                          `wc -l` on this tree says 5,898.
 # Board auth, routing and bounded-read wiring add three net lines to HEAD's 5,882;
 # take the previously unused headroom down to this candidate's measured size.
-remote_server_ceiling=5885
+# Managed Board send now lives in ProjectBoardWorkflowHTTP; retain the measured wire-up size.
+remote_server_ceiling=5797
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -464,7 +465,8 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # Project Board domain and integration each have a focused runner.
 # The bounded Board narrative worker has its own injected-clock/process-boundary runner.
 # Schedule Webhook has one cohesive binding/delivery runner beside scheduled dispatch.
-runner_count_expected=43
+# Personal Board Workflow has one cohesive durable ingress/outbox runner.
+runner_count_expected=44
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -661,7 +663,7 @@ done
 # 56 with Tests/ScheduleWebhookTests.swift, one cohesive durable binding/delivery suite beside
 # scheduled dispatch. This is feature coverage, not a split made only to move the guard.
 # One owner for the number, for the reason written above the runner count.
-suite_count_expected=56
+suite_count_expected=57
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts

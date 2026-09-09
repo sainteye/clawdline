@@ -175,6 +175,10 @@ final class RemoteServer: @unchecked Sendable {
     /// Runs after the first identity pass, for a fixture that changes real registry/rollout
     /// bytes between observations. It changes timing only and never supplies an identity.
     static var sessionIdentityPassDidFinishForTesting: ((Int) -> Void)?
+    /// Supplies only the managed-workflow identity after a route has resolved its terminal.
+    /// Production derives every field from one published process-bound Session observation.
+    static var workflowIdentityForTesting:
+        ((TargetSession) -> ProjectBoardWorkflow.Identity?)?
     /// Replaces only the final terminal handoff. Parsing, gates, lookup, reservation and response
     /// settlement still use the production path.
     static var terminalSendForTesting: ((String, TargetSession) -> String?)?
@@ -291,7 +295,8 @@ final class RemoteServer: @unchecked Sendable {
                 // and running the other terminal mutations there would hold this server queue.
                 if request.method == "POST", Self.isTerminalSend(request.path) {
                     self.sendTerminal(request) { continuation.resume(returning: $0) }
-                } else if request.method == "POST", Self.isTerminalWorkerRoute(request.path) || Self.isOrchestratorTerminalWorkerRoute(request.path) {
+                } else if request.method == "POST", Self.isTerminalWorkerRoute(request.path)
+                    || Self.isOrchestratorTerminalWorkerRoute(request.path) {
                     self.terminalMutation(request) { continuation.resume(returning: $0) }
                 } else if request.path == "/v1/board" { self.startBoardRequest(request) { continuation.resume(returning: $0) }
                 } else {
@@ -488,6 +493,7 @@ final class RemoteServer: @unchecked Sendable {
     /// Start, stop, or restart to match the config. Safe to call whenever anything changes.
     func apply() {
         ProjectBoardIntegration.prepare()
+        ProjectBoardWorkflow.shared.syncMode()
         // First, and outside the early return below: turning sending on or off must take effect
         // even when nothing about the listener changed, which is the usual case.
         syncWriteCapability()
@@ -786,6 +792,9 @@ final class RemoteServer: @unchecked Sendable {
         return (parts.count == 3 || parts.count == 4) && parts[1] == "resume"
     }
 
+    /// Orchestrator writes that may open a tab or deliver a coordination message. Their own task,
+    /// handoff and wait identifiers provide idempotency, so they need bounded isolation but not
+    /// the paired-device idempotency table used by session routes.
     static func isOrchestratorTerminalWorkerRoute(_ path: String) -> Bool {
         if path == "/v1/orchestrator/tasks"
             || path == "/v1/orchestrator/detached-tasks"
@@ -799,6 +808,7 @@ final class RemoteServer: @unchecked Sendable {
            !task.contains("/") { return true } // the DELETE cancel route
         return path.hasPrefix("/v1/orchestrator/waits/") && path.hasSuffix("/release")
     }
+
     private static func isManualScheduleRun(_ path: String) -> Bool {
         path.hasPrefix("/v1/orchestrator/schedules/") && path.hasSuffix("/run")
     }
@@ -814,7 +824,12 @@ final class RemoteServer: @unchecked Sendable {
         boardRequests.start(request, machine: machine, permission: permission(for: request),
             preAuthRefusal: crossOriginRefusal(request), postAuthRefusal: writeOriginRefusal(request),
             decorate: withCachePolicy, completeOnOwner: { [queue] in queue.async(execute: $0) },
-            deliver: deliver)
+            deliver: { response in
+                // A Board write may be the OFF/ON boundary. Observe it after the command has
+                // settled; an unavailable store is retained as a gap rather than treated as OFF.
+                ProjectBoardWorkflow.shared.syncMode()
+                deliver(response)
+            })
     }
 
     /// Everything that leaves here, with a cache policy applied at the door.
@@ -962,6 +977,19 @@ final class RemoteServer: @unchecked Sendable {
         if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) { return response }
         if let response = ProjectBoardHTTP.route(request, machine: orchestratorAuthed,
                                                  permission: permission(for: request)) { return response }
+        if request.path == ProjectBoardWorkflowHTTP.historicalGapsPath {
+            if let response = ProjectBoardWorkflowHTTP.route(
+                request, machine: orchestratorAuthed, identity: nil) { return response }
+        } else if let target = ProjectBoardWorkflowHTTP.target(request.path) {
+            let publication = SessionWatch.shared.publishedInventory()
+            let session = Self.session(withID: target.terminalID,
+                among: Self.sessionPayloadForTesting?.0 ?? publication.targets)
+            let identity = session.flatMap {
+                Self.workflowIdentity($0, publishedIdentity: publication.identities[$0.id])
+            }
+            if let response = ProjectBoardWorkflowHTTP.route(
+                request, machine: orchestratorAuthed, identity: identity) { return response }
+        }
 
         switch (request.method, request.path) {
 
@@ -3096,7 +3124,7 @@ final class RemoteServer: @unchecked Sendable {
         return nil
     }
 
-    private func permission(for request: Request) -> RemoteAuth.Verdict {
+    func permission(for request: Request) -> RemoteAuth.Verdict {
         if case .verifiedCloud(let sender) = request.source {
             // CloudTransport already verified this sender against the locally pinned device key,
             // decrypted it, and replay-checked its sequence. This is an in-process source only;
@@ -3286,7 +3314,7 @@ final class RemoteServer: @unchecked Sendable {
     /// deliberate: a concurrent retry with the same key joins this operation instead of entering
     /// iTerm2 a second time. This dictionary and the completed idempotency table are touched only
     /// on `queue`; admission for both HTTP and internal commands has its own small lock.
-    private var terminalPending: [String: [(Response) -> Void]] = [:]
+    var terminalPending: [String: [(Response) -> Void]] = [:]
     private static let terminalWorkerKey = DispatchSpecificKey<Bool>()
     private lazy var terminalQueue: DispatchQueue = {
         let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote.terminal")
@@ -3304,162 +3332,9 @@ final class RemoteServer: @unchecked Sendable {
     static let terminalDepth = 8
     static let terminalChannelDepth = 2
 
-    /// Production's asynchronous `/send` path. Every decision stays on the HTTP queue; only the
-    /// terminal handoff crosses to `terminalQueue`, and settlement crosses back before touching
-    /// idempotency or delivering any response.
-    private func sendTerminal(_ request: Request, deliver: @escaping (Response) -> Void) {
-        if let refusal = crossOriginRefusal(request) {
-            deliver(refusal); return
-        }
-        if case .denied = permission(for: request) {
-            deliver(.error(401, "unauthorized", "This needs a paired device.")); return
-        }
-        if let refusal = writeOriginRefusal(request) {
-            deliver(refusal); return
-        }
-
-        let device: String, key: String
-        switch writeGate(request) {
-        case .refused(let response), .replay(let response):
-            deliver(response); return
-        case .go(let allowed, let filed):
-            device = allowed
-            key = filed
-        }
-
-        // The reservation precedes every terminal observation, including the menu capture. A
-        // retry arriving while that capture or send is blocked joins the first request and cannot
-        // press Return a second time.
-        if terminalPending[key] != nil {
-            terminalPending[key, default: []].append(deliver)
-            return
-        }
-        if let refusal = terminalMaintenanceRefusal() {
-            deliver(refusal); return
-        }
-
-        let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any] ?? [:]
-        let text = (parsed["text"] as? String) ?? ""
-        let images = (parsed["images"] as? [String]) ?? []
-        guard !text.isEmpty || !images.isEmpty else {
-            let response = Response.error(400, "bad_request", "That needs some text or an image.")
-            remember(response, under: key, for: request, by: device)
-            deliver(response)
-            return
-        }
-        let id = String(request.path.dropFirst("/v1/sessions/".count).dropLast("/send".count))
-        let terminalPublication = SessionWatch.shared.publishedInventory()
-        let suppliedInventory = Self.sessionPayloadForTesting
-        let terminalTargets = suppliedInventory?.0 ?? terminalPublication.targets
-        let terminalStates = suppliedInventory?.1 ?? terminalPublication.states
-        guard let session = Self.session(
-            withID: id.removingPercentEncoding ?? id, among: terminalTargets) else {
-            let response = Response.error(404, "not_found", "No session named that")
-            remember(response, under: key, for: request, by: device)
-            deliver(response)
-            return
-        }
-
-        // Refuse before reservation/admission and before image files are materialised. A request
-        // that cannot run must not occupy a bounded slot or wait behind a blocked command. tmux
-        // remains independent of iTerm's circuit.
-        if let attention = ITerm.automationAttention, session.backend == .iterm {
-            let response = Self.terminalFailure(attention, backend: .iterm)
-            remember(response, under: key, for: request, by: device)
-            deliver(response)
-            return
-        }
-
-        var pieces: [Drop.Piece]?
-        var stored: [String] = []
-        if !images.isEmpty {
-            let made = Self.pieces(text: text, images: images)
-            guard made.pieces.contains(where: {
-                if case .image = $0 { return true }; return false
-            }) else {
-                let response = Response.error(400, "bad_request",
-                                              "None of those were images I could read.")
-                remember(response, under: key, for: request, by: device)
-                deliver(response)
-                return
-            }
-            pieces = made.pieces
-            stored = made.stored
-        }
-
-        terminalPending[key] = [deliver]
-        let shouldCheckMenu = terminalStates[session.id] == .waiting
-
-        let admitted = enqueueTerminalCommand(channel: session.id) { [weak self] in
-            guard let self else { return }
-            let response: Response
-            if let attention = ITerm.automationAttention, session.backend == .iterm {
-                Self.finishUploads(stored, sent: false)
-                response = Self.terminalFailure(attention, backend: .iterm)
-            } else if shouldCheckMenu && Targets.isChoosing(session) {
-                Self.finishUploads(stored, sent: false)
-                response = .error(409, "showing_a_menu",
-                                  "That session is showing a menu. Sending text would confirm "
-                                  + "whichever option is highlighted rather than typing. "
-                                  + "Answer it with POST /v1/sessions/<id>/key.")
-            } else {
-                // This timestamp shares the transcript row's Mac clock and is captured before the
-                // terminal handoff. The row may be visible while a slow osascript round trip is
-                // still running; a completion-only timestamp would put it outside reconciliation.
-                let acceptedAt = Int(Date().timeIntervalSince1970)
-                let problem: String?
-                if let pieces {
-                    problem = Targets.send(pieces, to: session)
-                    Self.finishUploads(stored, sent: problem == nil)
-                } else if let seam = Self.terminalSendForTesting {
-                    problem = seam(text, session)
-                } else {
-                    problem = Targets.send(text, to: session)
-                }
-                RemoteAuth.audit("session.send", ["id": session.id, "tty": session.tty,
-                                                   "chars": "\(text.count)",
-                                                   "images": "\(images.count)",
-                                                   "ok": problem == nil ? "1" : "0"])
-                response = problem.map { Self.terminalFailure($0, backend: session.backend) }
-                    ?? .json(["ok": true, "accepted_at": acceptedAt,
-                              "at": Int(Date().timeIntervalSince1970)])
-            }
-
-            self.queue.async {
-                let waiters = self.terminalPending.removeValue(forKey: key) ?? []
-                self.remember(response, under: key, for: request, by: device)
-                for waiter in waiters { waiter(response) }
-            }
-        }
-        if !admitted {
-            Self.finishUploads(stored, sent: false)
-            terminalPending.removeValue(forKey: key)
-            deliver(terminalMaintenanceRefusal() ?? .error(
-                429, "busy",
-                "This Mac already has \(Self.terminalDepth) terminal commands in hand. "
-                    + "Try again after they drain."))
-        }
-    }
-
-    private static func terminalFailure(_ problem: String, backend: Backend) -> Response {
-        if backend == .iterm, let attention = ITerm.automationAttention,
-           problem == attention {
-            return .error(502, "iterm_attention_required", attention,
-                          extra: ["app": "iTerm2", "action": "answer_dialog"])
-        }
-        return .error(502, "terminal_io_failed",
-                      "The terminal command did not complete: \(problem)")
-    }
-
-    private static func terminalFailure(_ failure: TerminalFailure) -> Response {
-        if failure.kind == .iTermAttention {
-            return .error(502, "iterm_attention_required", failure.message,
-                          extra: ["app": "iTerm2", "action": "answer_dialog"])
-        }
-        return .error(502, "terminal_io_failed",
-                      "The terminal command did not complete: \(failure.message)")
-    }
-
+    /// Asynchronous wrapper for `/key`, `/end` and `/start`. Validation, reservation and
+    /// idempotency stay on the server queue; only the existing route body enters the bounded
+    /// terminal worker. The queue-specific marker lets `writing` skip duplicate bookkeeping.
     private func terminalMutation(_ request: Request, deliver: @escaping (Response) -> Void) {
         if let refusal = crossOriginRefusal(request) { deliver(refusal); return }
         if case .denied = permission(for: request) {
@@ -3516,7 +3391,8 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
-    private func unfiledTerminalMutation(_ request: Request, deliver: @escaping (Response) -> Void) {
+    private func unfiledTerminalMutation(_ request: Request,
+                                         deliver: @escaping (Response) -> Void) {
         if request.method == "POST", Self.isManualScheduleRun(request.path),
            !Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"]) {
             terminalMutation(request, deliver: deliver); return
@@ -3536,9 +3412,12 @@ final class RemoteServer: @unchecked Sendable {
                     + "Try again after they drain."))
         }
     }
-    private static func keepsTerminalMutation(_ response: Response, for request: Request) -> Bool {
+
+    private static func keepsTerminalMutation(_ response: Response,
+                                              for request: Request) -> Bool {
         !isManualScheduleRun(request.path) || (response.status != 429 && response.status < 500)
     }
+
     private static func terminalChannels(for request: Request) -> [String] {
         if request.path.hasPrefix("/v1/sessions/") {
             let rest = request.path.dropFirst("/v1/sessions/".count)
@@ -3594,17 +3473,24 @@ final class RemoteServer: @unchecked Sendable {
     static func terminalChannelsForTesting(_ request: Request) -> [String] {
         terminalChannels(for: request)
     }
+
+    /// Deterministic queue seams. They submit to the production queues rather than imitating
+    /// them, so a blocked test command proves the actual server and reading lanes still move.
     func sendTerminalForTesting(_ request: Request,
                                 completion: @escaping (Response) -> Void) {
         queue.async { self.sendTerminal(request, deliver: completion) }
     }
 
-    func terminalMutationForTesting(_ request: Request, completion: @escaping (Response) -> Void) {
+    func terminalMutationForTesting(_ request: Request,
+                                    completion: @escaping (Response) -> Void) {
         queue.async { self.terminalMutation(request, deliver: completion) }
     }
-    func unfiledTerminalMutationForTesting(_ request: Request, completion: @escaping (Response) -> Void) {
+
+    func unfiledTerminalMutationForTesting(_ request: Request,
+                                           completion: @escaping (Response) -> Void) {
         queue.async { self.unfiledTerminalMutation(request, deliver: completion) }
     }
+
     func routeOnServerQueueForTesting(_ request: Request,
                                       completion: @escaping (Response) -> Void) {
         queue.async {
@@ -3646,7 +3532,8 @@ final class RemoteServer: @unchecked Sendable {
     ///
     /// Asked on the server's own queue and nowhere else — it only reads, but what it reads is
     /// written by `remember` on that queue, and that is the whole of the locking here.
-    private func writeGate(_ request: Request) -> WriteGate {
+    func writeGate(_ request: Request,
+                   keyNamespace: ((String, String) -> String)? = nil) -> WriteGate {
         if case .http = request.source {
             guard Config.shared.remoteWrite else {
                 return .refused(.error(403, "write_disabled",
@@ -3664,10 +3551,11 @@ final class RemoteServer: @unchecked Sendable {
         guard let key = request.headers["idempotency-key"], !key.isEmpty else {
             return .refused(.error(400, "bad_request", "That needs an Idempotency-Key header."))
         }
-        if let seen = idempotent[key], Date().timeIntervalSince(seen.at) < 600 {
+        let filedKey = keyNamespace?(device, key) ?? key
+        if let seen = idempotent[filedKey], Date().timeIntervalSince(seen.at) < 600 {
             return .replay(seen.response)
         }
-        return .go(device: device, key: key)
+        return .go(device: device, key: filedKey)
     }
 
     /// File an answer under its key, and write the line that says what happened.
@@ -3675,7 +3563,7 @@ final class RemoteServer: @unchecked Sendable {
     /// The sweep is here rather than on a timer because the only moment this table can grow is
     /// the moment something is written into it, so that is the moment to throw away what has
     /// expired.
-    private func remember(_ response: Response, under key: String,
+    func remember(_ response: Response, under key: String,
                           for request: Request, by device: String) {
         idempotent = idempotent.filter { Date().timeIntervalSince($0.value.at) < 600 }
         idempotent[key] = (Date(), response)
@@ -4745,6 +4633,30 @@ final class RemoteServer: @unchecked Sendable {
             pid: evidence?.pid, processStart: evidence?.processStart,
             conversationID: sessionIdentity(
                 assistant: session.assistant, processBound: evidence?.conversationID))
+    }
+
+    /// A managed run is accepted only from one coherent live-process observation. Terminal id,
+    /// provider, conversation, Project and process generation therefore come from the same
+    /// published row; a title, request body or cached hook note supplies none of them.
+    static func workflowIdentity(
+        _ session: TargetSession, publishedIdentity: SessionWatch.PublishedIdentity?
+    ) -> ProjectBoardWorkflow.Identity? {
+        if let supplied = workflowIdentityForTesting { return supplied(session) }
+        guard let observed = publishedIdentity,
+              observed.assistant == session.assistant,
+              observed.tty == session.tty,
+              let assistant = session.assistant,
+              let conversationID = observed.conversationID,
+              StartPoints.sessionName(conversationID) != nil,
+              let projectPath = observed.workingDirectory,
+              StartPoints.usable(projectPath), observed.pid > 0,
+              let processStart = observed.processStart else { return nil }
+        return ProjectBoardWorkflow.Identity(
+            terminalID: session.id, provider: assistant.rawValue,
+            conversationID: conversationID,
+            projectID: ProjectBoardIntegration.projectID(projectPath),
+            projectPath: projectPath,
+            processGeneration: "\(observed.pid):\(processStart.timeIntervalSince1970)")
     }
 
     /// What the SessionWatch reading that produced a row was worth. Closeability needs all

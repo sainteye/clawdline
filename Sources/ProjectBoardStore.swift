@@ -56,6 +56,7 @@ final class ProjectBoardStore {
     private static let maximumSummaryChildren = 8
     private static let maximumReportVersions = 16
     private static let maximumReportSources = 32
+    private static let maximumFirstScreenRemaining = 16
 
     private static let itemTypes = Set([
         "feature", "refactor", "task", "bug", "coordination", "epic",
@@ -78,6 +79,8 @@ final class ProjectBoardStore {
     private static let artifactKinds = Set([
         "document", "website", "deployment", "commit", "other",
     ])
+    private static let documentPurposes = Set(["plan", "decision", "reference"])
+    private static let obligationActorKinds = Set(["user", "agent", "external"])
     private static let linkKinds = Set([
         "session", "task", "worktree", "related", "blocks", "coordinates",
     ])
@@ -112,6 +115,20 @@ final class ProjectBoardStore {
         var kind: String
     }
 
+    /// A document is narrative context, not an output artifact or acceptance record.  The
+    /// logical document identity remains stable while immutable rows describe its versions.
+    private struct StoredDocumentReference: Codable {
+        var id: String
+        var documentId: String
+        var version: Int
+        var title: String
+        var url: String
+        var purpose: String
+        var supersedesId: String?
+        var addedAt: Double
+        var actor: String
+    }
+
     private struct StoredLink: Codable {
         var id: String
         var kind: String
@@ -141,6 +158,13 @@ final class ProjectBoardStore {
         var owner: String
         var blocking: Bool
         var resolved: Bool
+        /// Older rows deliberately remain `unknown` in the read projection rather than being
+        /// guessed from a display name such as "user" or "root".
+        var actorKind: String? = nil
+        var requiredAction: String? = nil
+        var blockingScope: String? = nil
+        var resolutionEvidence: String? = nil
+        var supersededBy: String? = nil
     }
 
     private struct StoredHistory: Codable {
@@ -285,6 +309,8 @@ final class ProjectBoardStore {
         var completionReports: [StoredCompletionReport]? = nil
         /// Reading aids never participate in evidence, scope or lifecycle reconciliation.
         var presentations: [StoredPresentation]? = nil
+        /// Optional so schema-v1 stores written before typed document references decode intact.
+        var documentReferences: [StoredDocumentReference]? = nil
     }
 
     private struct StoredReceipt: Codable {
@@ -346,6 +372,8 @@ final class ProjectBoardStore {
         let automaticMutation: [String: Any]
         let sourceIngestion: [String: Any]
         let error: [String: Any]?
+        var sessionItemIDs: [String: [String]] = [:]
+        var sessionActiveItemIDs: [String: Set<String>] = [:]
 
         func envelope(project: String? = nil, item: String? = nil) -> [String: Any] {
             var board: [String: Any] = [
@@ -366,7 +394,24 @@ final class ProjectBoardStore {
                 "sourceIngestion": sourceIngestion,
             ]
             if let error { board["error"] = error }
-            if let item {
+            if project == nil, let item, item.hasPrefix("session:") {
+                let session = ProjectBoardStore.canonicalConversationID(
+                    String(item.dropFirst("session:".count)))
+                let ids = sessionItemIDs[session] ?? []
+                board["sessionId"] = session
+                board["items"] = ids.prefix(100).compactMap { id -> [String: Any]? in
+                    guard let detail = itemDetailsByID[id] else { return nil }
+                    var row: [String: Any] = [:]
+                    for key in ["id", "key", "projectId", "title", "type", "state", "updatedAt", "progress"] {
+                        row[key] = detail[key]
+                    }
+                    row["sessionActivity"] = sessionActiveItemIDs[session]?.contains(id) == true
+                        ? "declared" : "related"
+                    return row
+                }
+                board["truncated"] = ids.count > 100
+                board["relationCoverage"] = ["total": ids.count, "omitted": max(0, ids.count - 100)]
+            } else if let item {
                 if let detail = itemDetailsByID[item],
                    project == nil || detail["projectId"] as? String == project {
                     board["item"] = detail
@@ -429,6 +474,7 @@ final class ProjectBoardStore {
     static var materializationPauseForTesting: (() -> Void)?
     static var seedPublicationPauseForTesting: (() -> Void)?
     static var persistencePauseForTesting: (() -> Void)?
+    static var materializationIndexOperationForTesting: (() -> Void)?
 
     init(url: URL, now: @escaping () -> Date = Date.init) {
         self.url = url
@@ -554,6 +600,105 @@ final class ProjectBoardStore {
             }
     }
 
+    /// Mirrors the hosted Documents locator contract without importing browser code into the
+    /// Foundation-only store.  The URL contains an opaque fleet identity and relative inert-text
+    /// path after the fragment boundary; it never contains a credential or local filesystem path.
+    private static func isCanonicalCloudDocumentURL(_ value: String) -> Bool {
+        guard let components = URLComponents(string: value),
+              components.scheme?.lowercased() == "https",
+              components.host?.lowercased() == "app.clawdline.com",
+              components.port == nil, components.user == nil, components.password == nil,
+              components.path == "/", components.query == nil,
+              let fragment = components.percentEncodedFragment,
+              let fields = formFields(fragment) else { return false }
+        guard fields["document"] == "1",
+              let machine = fields["machine"], validDocumentIdentity(machine),
+              machine != "this-mac",
+              let session = fields["session"], validDocumentIdentity(session),
+              let scope = fields["scope"], ["project", "task"].contains(scope),
+              let path = fields["path"], validDocumentPath(path) else { return false }
+        let expected = scope == "task"
+            ? Set(["document", "machine", "session", "scope", "task", "path"])
+            : Set(["document", "machine", "session", "scope", "path"])
+        guard Set(fields.keys) == expected else { return false }
+        return scope != "task" || validDocumentTaskID(fields["task"] ?? "")
+    }
+
+    /// WHATWG form decoding for a fragment payload: split before decoding, `+` means space,
+    /// valid percent triplets become bytes, and malformed percent signs remain literal. Each
+    /// component is decoded exactly once, matching URLSearchParams in the hosted reader.
+    private static func formFields(_ source: String) -> [String: String]? {
+        var fields: [String: String] = [:]
+        for pair in source.split(separator: "&", omittingEmptySubsequences: false) {
+            // URLSearchParams ignores empty pairs, including leading and trailing separators.
+            guard !pair.isEmpty else { continue }
+            let parts = pair.split(separator: "=", maxSplits: 1,
+                                   omittingEmptySubsequences: false)
+            let name = formDecode(String(parts[0]))
+            let value = formDecode(parts.count == 2 ? String(parts[1]) : "")
+            guard fields[name] == nil else { return nil }
+            fields[name] = value
+        }
+        return fields
+    }
+
+    private static func formDecode(_ source: String) -> String {
+        let bytes = Array(source.utf8)
+        var result: [UInt8] = []
+        result.reserveCapacity(bytes.count)
+        var index = 0
+        func hex(_ byte: UInt8) -> UInt8? {
+            switch byte {
+            case 48...57: return byte - 48
+            case 65...70: return byte - 55
+            case 97...102: return byte - 87
+            default: return nil
+            }
+        }
+        while index < bytes.count {
+            if bytes[index] == 43 {
+                result.append(32); index += 1
+            } else if bytes[index] == 37, index + 2 < bytes.count,
+                      let high = hex(bytes[index + 1]), let low = hex(bytes[index + 2]) {
+                result.append(high * 16 + low); index += 3
+            } else {
+                result.append(bytes[index]); index += 1
+            }
+        }
+        return String(decoding: result, as: UTF8.self)
+    }
+
+    private static func canonicalConversationID(_ value: String) -> String {
+        UUID(uuidString: value)?.uuidString.lowercased() ?? value
+    }
+
+    private static func validDocumentIdentity(_ value: String) -> Bool {
+        !value.isEmpty && value.utf8.count <= 128 && !value.unicodeScalars.contains {
+            CharacterSet.controlCharacters.contains($0)
+        }
+    }
+
+    private static func validDocumentPath(_ value: String) -> Bool {
+        guard !value.isEmpty, value.utf8.count <= 512, !value.hasPrefix("/") else { return false }
+        let parts = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard (1...6).contains(parts.count), parts.allSatisfy({
+            !$0.isEmpty && !$0.hasPrefix(".") && !$0.unicodeScalars.contains {
+                CharacterSet.controlCharacters.contains($0)
+            }
+        }), let name = parts.last, let dot = name.lastIndex(of: ".") else { return false }
+        return ["md", "markdown", "txt"].contains(name[name.index(after: dot)...].lowercased())
+    }
+
+    private static func validDocumentTaskID(_ value: String) -> Bool {
+        let chars = Array(value.lowercased())
+        guard chars.count == 36, [8, 13, 18, 23].allSatisfy({ chars[$0] == "-" }),
+              ["1", "2", "3", "4", "5"].contains(chars[14]),
+              ["8", "9", "a", "b"].contains(chars[19]) else { return false }
+        return chars.enumerated().allSatisfy { index, character in
+            [8, 13, 18, 23].contains(index) || character.isHexDigit
+        }
+    }
+
     /// `rebuild` is used only by the background reconciliation worker.  A request with no current
     /// model receives the startup seed immediately and lets that worker catch it up.
     func readSeed(rebuild: Bool) -> (seed: MaterializedReadSeed, stale: Bool) {
@@ -591,6 +736,64 @@ final class ProjectBoardStore {
     func snapshot(project: String? = nil, item: String? = nil) -> [String: Any] {
         lock.lock(); defer { lock.unlock() }
         return snapshotLocked(project: project, item: item)
+    }
+
+    /// Read one continuation page for a selected detail collection. The durable per-field caps
+    /// remain authoritative; this route never expands the all-Project projection.
+    func collectionSnapshot(project: String?, item itemID: String,
+                            kind: String, offset: Int) -> Reply {
+        lock.lock(); defer { lock.unlock() }
+        if let unavailable { return Self.errorReply(unavailable) }
+        guard ["document_references", "remaining_work", "user_decisions"].contains(kind),
+              offset >= 0, offset <= Self.maximumItems,
+              let itemID = Self.boundedText(itemID, maximum: 200) else {
+            return Self.errorReply(BoardError(
+                status: 400, code: "invalid_collection_selector",
+                message: "a collection read needs a known kind and bounded offset"))
+        }
+        guard let selected = state.items.first(where: { $0.id == itemID }) else {
+            return Self.errorReply(BoardError(
+                status: 404, code: "collection_item_not_found",
+                message: "the selected Board item does not exist"))
+        }
+        if let project, selected.projectId != project {
+            return Self.errorReply(BoardError(
+                status: 409, code: "collection_project_mismatch",
+                message: "the selected item does not belong to the selected Project"))
+        }
+        let rows: [[String: Any]]
+        if kind == "document_references" {
+            let references = selected.documentReferences ?? []
+            let superseded = Set(references.compactMap(\.supersedesId))
+            rows = orderedDocumentReferences(references).map {
+                documentReferenceObject($0, all: references, supersededIDs: superseded)
+            }
+        } else {
+            let remaining = remainingWorkRows(selected)
+            rows = kind == "user_decisions" ? remaining.decisions : remaining.work
+        }
+        guard offset <= rows.count else {
+            return Self.errorReply(BoardError(
+                status: 416, code: "collection_offset_out_of_range",
+                message: "the collection offset is beyond the retained rows"))
+        }
+        let end = min(rows.count, offset + 64)
+        let page = Array(rows[offset..<end])
+        let board: [String: Any] = [
+            "schemaVersion": Self.schemaVersion, "revision": state.revision,
+            "enabled": state.enabled, "mode": state.enabled ? "board" : "standard",
+            "narrativeConsent": state.narrativeConsent as Any? ?? NSNull(),
+            "entitlement": Self.entitlement, "projects": [] as [[String: Any]],
+            "items": [] as [[String: Any]], "item": NSNull(), "truncated": end < rows.count,
+            "updatedAt": state.updatedAt, "available": true,
+            "snapshotBudgetBytes": Self.maximumSnapshotBytes,
+            "collection": [
+                "kind": kind, "itemId": selected.id, "offset": offset,
+                "rows": page, "totalCount": rows.count,
+                "nextOffset": end < rows.count ? end as Any : NSNull(),
+            ] as [String: Any],
+        ]
+        return Reply(status: 200, body: ["board": board])
     }
 
     /// Retrieve exactly one durable report body. Catalog and ordinary item detail keep older
@@ -1562,6 +1765,59 @@ final class ProjectBoardStore {
                   at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
+        case "document_reference":
+            let index = try itemIndex(body, draft: draft)
+            var references = draft.items[index].documentReferences ?? []
+            guard references.count < Self.maximumChildren else {
+                throw BoardError(status: 409, code: "document_reference_capacity_reached",
+                                 message: "the document reference capacity is exhausted")
+            }
+            let documentID = try requiredText(body, "documentId", maximum: 200)
+            guard let version = Self.exactInt(body["version"]), version > 0 else {
+                throw BoardError(status: 400, code: "invalid_document_version",
+                                 message: "document version must be a positive integer")
+            }
+            let purpose = try requiredChoice(body, "purpose", choices: Self.documentPurposes)
+            let rawURL = try requiredText(body, "url", maximum: 2_000)
+            guard Self.isCanonicalCloudDocumentURL(rawURL) else {
+                throw BoardError(status: 400, code: "invalid_document_url",
+                                 message: "document references require a canonical app.clawdline.com document URL")
+            }
+            guard !references.contains(where: {
+                $0.documentId == documentID && $0.version == version
+            }) else {
+                throw BoardError(status: 409, code: "document_version_conflict",
+                                 message: "that stable document identity already has this version")
+            }
+            let earlier = references.filter { $0.documentId == documentID }
+            let supersedesID = try optionalText(body, "supersedesId", maximum: 200)
+            if earlier.isEmpty {
+                guard version == 1, supersedesID == nil else {
+                    throw BoardError(status: 409, code: "document_initial_version_required",
+                                     message: "a new document identity must begin at version 1 without a predecessor")
+                }
+            } else {
+                let superseded = Set(references.compactMap(\.supersedesId))
+                let heads = earlier.filter { !superseded.contains($0.id) }
+                guard let predecessorID = supersedesID,
+                      heads.count == 1, let predecessor = heads.first,
+                      predecessor.id == predecessorID,
+                      predecessor.purpose == purpose, predecessor.version < version else {
+                    throw BoardError(status: 409, code: "document_supersession_required",
+                                     message: "a later document version must supersede the current head of the same purpose")
+                }
+            }
+            references.append(StoredDocumentReference(
+                id: Self.newID(), documentId: documentID, version: version,
+                title: try requiredText(body, "title", maximum: 300), url: rawURL,
+                purpose: purpose, supersedesId: supersedesID, addedAt: timestamp, actor: actor))
+            draft.items[index].documentReferences = references
+            // This intentionally does not call reopenForInvalidatedEvidence: it changes the
+            // reading trail, never the work scope or the authority of existing receipts.
+            touch(&draft.items[index], actor: actor, kind: "document_reference_added",
+                  summary: "A narrative-only document reference was added.", at: timestamp)
+            return Applied(itemId: draft.items[index].id)
+
         case "link":
             let index = try itemIndex(body, draft: draft)
             try requireMutable(index, draft: draft)
@@ -1602,10 +1858,14 @@ final class ProjectBoardStore {
                 throw BoardError(status: 400, code: "invalid_blocking",
                                  message: "blocking must be a Boolean")
             }
+            let actorKind = try optionalChoice(body, "actorKind",
+                                               choices: Self.obligationActorKinds)
             draft.items[index].obligations.append(StoredObligation(
                 id: Self.newID(), title: try requiredText(body, "title", maximum: 500),
                 owner: try requiredText(body, "owner", maximum: 300),
-                blocking: blocking, resolved: false))
+                blocking: blocking, resolved: false, actorKind: actorKind,
+                requiredAction: try optionalText(body, "requiredAction", maximum: 1_000),
+                blockingScope: try optionalText(body, "blockingScope", maximum: 300)))
             touch(&draft.items[index], actor: actor, kind: "obligation_added",
                   summary: "A durable obligation was recorded.", at: timestamp)
             return Applied(itemId: draft.items[index].id)
@@ -1620,7 +1880,18 @@ final class ProjectBoardStore {
                 throw BoardError(status: 404, code: "obligation_not_found",
                                  message: "obligationId does not name an item obligation")
             }
+            let supersededBy = try optionalText(body, "supersededBy", maximum: 200)
+            if let supersededBy {
+                guard supersededBy != obligationID,
+                      draft.items[index].obligations.contains(where: { $0.id == supersededBy }) else {
+                    throw BoardError(status: 400, code: "invalid_obligation_successor",
+                                     message: "supersededBy must name another obligation on this item")
+                }
+            }
             draft.items[index].obligations[child].resolved = true
+            draft.items[index].obligations[child].resolutionEvidence = try optionalText(
+                body, "resolutionEvidence", maximum: 1_000)
+            draft.items[index].obligations[child].supersededBy = supersededBy
             touch(&draft.items[index], actor: actor, kind: "obligation_resolved",
                   summary: note, at: timestamp)
             return Applied(itemId: draft.items[index].id)
@@ -2373,6 +2644,31 @@ final class ProjectBoardStore {
         attempt.attemptState == "success" && attempt.landingDisposition == "nothing_to_land"
     }
 
+    private struct MaterializationIndex {
+        let childrenByParentID: [String: [StoredItem]]
+        let progressByItemID: [String: [String: Any]]
+        let itemsByID: [String: StoredItem]
+        let positionByID: [String: Int]
+    }
+
+    /// Build the relationships needed by every detail once. The hook counts actual index work so
+    /// the capacity proof can distinguish this linear pass from a hidden per-item global filter.
+    private func makeMaterializationIndex() -> MaterializationIndex {
+        var children: [String: [StoredItem]] = [:]
+        var items: [String: StoredItem] = [:]
+        var positions: [String: Int] = [:]
+        for (position, item) in state.items.enumerated() {
+            Self.materializationIndexOperationForTesting?()
+            items[item.id] = item
+            positions[item.id] = position
+            if let parent = item.parentId { children[parent, default: []].append(item) }
+        }
+        var progress: [String: [String: Any]] = [:]
+        for item in state.items { progress[item.id] = progressObject(item) }
+        return MaterializationIndex(childrenByParentID: children, progressByItemID: progress,
+                                    itemsByID: items, positionByID: positions)
+    }
+
     private func buildMaterializedReadSeedLocked() -> MaterializedReadSeed {
         Self.materializationPauseForTesting?()
         let header = ReadHeader(revision: state.revision,
@@ -2391,6 +2687,7 @@ final class ProjectBoardStore {
         }
 
         let grouped = Dictionary(grouping: state.items, by: \.projectId)
+        let index = makeMaterializationIndex()
         var summariesByProject: [String: [[String: Any]]] = [:]
         var detailsByID: [String: [String: Any]] = [:]
         var catalog: [[String: Any]] = []
@@ -2398,15 +2695,17 @@ final class ProjectBoardStore {
             let items = (grouped[project.id] ?? []).sorted { lhs, rhs in
                 lhs.updatedAt == rhs.updatedAt ? lhs.key < rhs.key : lhs.updatedAt > rhs.updatedAt
             }
-            let summaries = items.map { itemObject($0, detail: false) }
+            let summaries = items.map { itemObject($0, detail: false, index: index) }
             summariesByProject[project.id] = summaries
-            for item in items { detailsByID[item.id] = itemObject(item, detail: true) }
+            for item in items {
+                detailsByID[item.id] = itemObject(item, detail: true, index: index)
+            }
 
             var open = 0, needsClarity = 0, landed = 0, coordination = 0
             var active = 0, waiting = 0, history = 0, settled = 0
             for item in items {
                 if item.type == "coordination" { coordination += 1; continue }
-                let progress = progressObject(item)
+                let progress = index.progressByItemID[item.id] ?? progressObject(item)
                 let progressState = progress["state"] as? String ?? "unknown"
                 switch progress["group"] as? String {
                 case "active": active += 1
@@ -2457,11 +2756,24 @@ final class ProjectBoardStore {
         ]
         let mutation = lastAutomaticFailure?.jsonObject
             ?? ["status": "available", "persisted": true, "reason": NSNull()] as [String: Any]
-        return MaterializedReadSeed(header: header, catalog: catalog,
+        var seed = MaterializedReadSeed(header: header, catalog: catalog,
                                     itemSummariesByProject: summariesByProject,
                                     itemDetailsByID: detailsByID,
                                     automaticMutation: mutation,
                                     sourceIngestion: sourceIngestion, error: nil)
+        // Full durable associations, not truncated detail links or transcript scans. Build once
+        // on the existing reconciliation lane; Session reads only resolve a bounded ID slice.
+        for item in state.items.sorted(by: { $0.updatedAt == $1.updatedAt ? $0.id < $1.id : $0.updatedAt > $1.updatedAt }) {
+            let sessions = Set(item.links.filter { $0.kind == "session" }.map {
+                Self.canonicalConversationID($0.targetId)
+            }).union(item.spans.map { Self.canonicalConversationID($0.sessionId) })
+            for session in sessions { seed.sessionItemIDs[session, default: []].append(item.id) }
+            for span in item.spans where span.endedAt == nil {
+                let session = Self.canonicalConversationID(span.sessionId)
+                seed.sessionActiveItemIDs[session, default: []].insert(item.id)
+            }
+        }
+        return seed
     }
 
     private func snapshotLocked(project: String?, item selectedID: String?) -> [String: Any] {
@@ -2614,7 +2926,8 @@ final class ProjectBoardStore {
         return answer
     }
 
-    private func itemObject(_ item: StoredItem, detail: Bool) -> [String: Any] {
+    private func itemObject(_ item: StoredItem, detail: Bool,
+                            index: MaterializationIndex? = nil) -> [String: Any] {
         let childLimit = detail ? Self.maximumSelectedChildren : Self.maximumSummaryChildren
         let historyLimit = detail ? Self.maximumSelectedHistory : Self.maximumSummaryChildren
         let currentIDs = Set([
@@ -2639,6 +2952,9 @@ final class ProjectBoardStore {
         let retainedChecklist = Array(item.checklist.prefix(childLimit))
         let retainedMilestones = Array(item.milestones.prefix(childLimit))
         let retainedArtifacts = Array(item.artifacts.prefix(childLimit))
+        let documentReferences = item.documentReferences ?? []
+        let orderedDocumentReferences = orderedDocumentReferences(documentReferences)
+        let retainedDocumentReferences = Array(orderedDocumentReferences.prefix(childLimit))
         let retainedLinks = Array(item.links.prefix(childLimit))
         let retainedObligations = Array(item.obligations.prefix(childLimit))
         let retainedSpans = Array(item.spans.suffix(childLimit))
@@ -2698,9 +3014,18 @@ final class ProjectBoardStore {
                 value["phase"] = link.phase ?? NSNull()
                 return value
             },
-            "obligations": retainedObligations.map {
-                ["id": $0.id, "title": $0.title, "owner": $0.owner,
-                 "blocking": $0.blocking, "resolved": $0.resolved]
+            "obligations": retainedObligations.map { obligation in
+                var row: [String: Any] = [
+                    "id": obligation.id, "title": obligation.title,
+                    "owner": obligation.owner, "blocking": obligation.blocking,
+                    "resolved": obligation.resolved,
+                    "actorKind": obligation.actorKind ?? "unknown",
+                ]
+                row["requiredAction"] = obligation.requiredAction ?? NSNull()
+                row["blockingScope"] = obligation.blockingScope ?? NSNull()
+                row["resolutionEvidence"] = obligation.resolutionEvidence ?? NSNull()
+                row["supersededBy"] = obligation.supersededBy ?? NSNull()
+                return row
             },
             "history": retainedHistory.map {
                 ["id": $0.id, "at": $0.at, "actor": $0.actor,
@@ -2731,7 +3056,7 @@ final class ProjectBoardStore {
                 "artifactAcceptanceId": item.currentArtifactAcceptanceId ?? NSNull(),
                 "scopeRevision": item.scopeRevision ?? 0,
             ] as [String: Any],
-            "progress": progressObject(item),
+            "progress": index?.progressByItemID[item.id] ?? progressObject(item),
             "sourceIngestion": [
                 "status": coverage.isEmpty ? "complete" : "partial",
                 "droppedCount": coverage.reduce(0) { $0 + $1.sourceDigests.count },
@@ -2750,6 +3075,8 @@ final class ProjectBoardStore {
                                                      retained: retainedMilestones.count),
                 "artifacts": Self.projectionObject(total: item.artifacts.count,
                                                     retained: retainedArtifacts.count),
+                "documentReferences": Self.projectionObject(total: documentReferences.count,
+                                                             retained: retainedDocumentReferences.count),
                 "links": Self.projectionObject(total: item.links.count,
                                                 retained: retainedLinks.count),
                 "obligations": Self.projectionObject(total: item.obligations.count,
@@ -2762,13 +3089,39 @@ final class ProjectBoardStore {
                                                    retained: retainedEvidence.count),
             ] as [String: Any],
         ]
+        if detail {
+            let supersededIDs = Set(documentReferences.compactMap(\.supersedesId))
+            answer["documentReferences"] = retainedDocumentReferences.map {
+                documentReferenceObject($0, all: documentReferences,
+                                        supersededIDs: supersededIDs)
+            }
+            answer["remainingWork"] = remainingWorkObject(item, index: index)
+        }
         let reports = item.completionReports ?? []
         answer["presentation"] = presentationObject(item)
         if item.type == "epic" {
             let related = Set(item.links.filter { $0.kind == "related" }.map(\.targetId))
-            let members = state.items.filter {
-                $0.type != "epic" && ($0.parentId == item.id || related.contains($0.id))
+            var members = index.map { $0.childrenByParentID[item.id] ?? [] } ?? state.items.filter {
+                Self.materializationIndexOperationForTesting?()
+                return $0.parentId == item.id
             }
+            let existing = Set(members.map(\.id))
+            let relatedItems: [StoredItem]
+            if let index {
+                relatedItems = related.compactMap { id in
+                    Self.materializationIndexOperationForTesting?()
+                    return index.itemsByID[id]
+                }.sorted { (index.positionByID[$0.id] ?? 0) < (index.positionByID[$1.id] ?? 0) }
+            } else {
+                relatedItems = state.items.filter {
+                    Self.materializationIndexOperationForTesting?()
+                    return related.contains($0.id)
+                }
+            }
+            members.append(contentsOf: relatedItems.filter {
+                $0.type != "epic" && !existing.contains($0.id)
+            })
+            members.removeAll { $0.type == "epic" }
             answer["deliveryLaneCount"] = members.count
             answer["deliveryLanes"] = members.prefix(32).map { member -> [String: Any] in
                 let required = member.checklist.filter(\.required)
@@ -2776,7 +3129,7 @@ final class ProjectBoardStore {
                         "projectName": state.projects.first { $0.id == member.projectId }?.name ?? member.projectId,
                         "title": member.title, "owner": member.owner,
                         "presentation": presentationObject(member),
-                        "progress": progressObject(member), "updatedAt": member.updatedAt,
+                        "progress": index?.progressByItemID[member.id] ?? progressObject(member),
                         "checklistTotal": required.count,
                         "checklistDone": required.filter { $0.status == "passed" || $0.status == "not_applicable" }.count]
             }
@@ -2815,6 +3168,113 @@ final class ProjectBoardStore {
             answer["handoff"] = NSNull()
         }
         return answer
+    }
+
+    private func orderedDocumentReferences(
+        _ references: [StoredDocumentReference]
+    ) -> [StoredDocumentReference] {
+        let superseded = Set(references.compactMap(\.supersedesId))
+        let newer: (StoredDocumentReference, StoredDocumentReference) -> Bool = { lhs, rhs in
+            if lhs.addedAt != rhs.addedAt { return lhs.addedAt > rhs.addedAt }
+            if lhs.version != rhs.version { return lhs.version > rhs.version }
+            return lhs.id < rhs.id
+        }
+        let heads = references.filter { !superseded.contains($0.id) }.sorted(by: newer)
+        let history = references.filter { superseded.contains($0.id) }.sorted(by: newer)
+        return heads + history
+    }
+
+    private func documentReferenceObject(_ reference: StoredDocumentReference,
+                                         all references: [StoredDocumentReference],
+                                         supersededIDs: Set<String>) -> [String: Any] {
+        var row: [String: Any] = [
+            "id": reference.id, "documentId": reference.documentId,
+            "version": reference.version, "title": reference.title,
+            "url": reference.url, "purpose": reference.purpose,
+            "status": supersededIDs.contains(reference.id) ? "superseded" : "current",
+            "authority": "narrative_only", "addedAt": reference.addedAt,
+            "actor": reference.actor,
+        ]
+        row["supersedesId"] = reference.supersedesId ?? NSNull()
+        if let successor = references.first(where: { $0.supersedesId == reference.id }) {
+            row["supersededBy"] = successor.id
+        }
+        return row
+    }
+
+    private func remainingWorkRows(
+        _ item: StoredItem, index: MaterializationIndex? = nil
+    ) -> (work: [[String: Any]], decisions: [[String: Any]]) {
+        let completedChecklist = Set(["passed", "not_applicable"])
+        var rankedWork: [(rank: Int, order: Int, row: [String: Any])] = []
+        var order = 0
+        for row in item.checklist where !completedChecklist.contains(row.status) {
+            rankedWork.append((row.required ? 1 : 3, order, [
+                "id": row.id, "kind": "checklist", "title": row.title,
+                "status": row.status, "disposition": row.required ? "required" : "optional",
+                "owner": item.owner,
+            ]))
+            order += 1
+        }
+        let children = index.map { $0.childrenByParentID[item.id] ?? [] }
+            ?? state.items.filter {
+                Self.materializationIndexOperationForTesting?()
+                return $0.parentId == item.id
+            }
+        for child in children {
+            if index != nil { Self.materializationIndexOperationForTesting?() }
+            let progress = index?.progressByItemID[child.id] ?? progressObject(child)
+            let group = progress["group"] as? String ?? "history"
+            guard group != "completed" else { continue }
+            let status = progress["state"] as? String ?? "unknown"
+            let disposition = status == "canceled" || group == "canceled"
+                ? "canceled" : status == "unknown" ? "unknown" : "required"
+            let rank = ["blocked", "unknown"].contains(status) ? 1 : 2
+            rankedWork.append((rank, order, [
+                "id": child.id, "projectId": child.projectId, "kind": "child",
+                "title": child.title, "owner": child.owner, "status": status,
+                "disposition": disposition, "progress": progress,
+            ]))
+            order += 1
+        }
+        var userDecisions: [[String: Any]] = []
+        for obligation in item.obligations where !obligation.resolved {
+            let actorKind = obligation.actorKind ?? "unknown"
+            var row: [String: Any] = [
+                "id": obligation.id, "kind": "obligation", "title": obligation.title,
+                "owner": obligation.owner, "status": "waiting", "actorKind": actorKind,
+                "blocking": obligation.blocking,
+                "disposition": actorKind == "unknown" ? "unknown" : "required",
+            ]
+            row["requiredAction"] = obligation.requiredAction ?? NSNull()
+            row["blockingScope"] = obligation.blockingScope ?? NSNull()
+            if actorKind == "user" { userDecisions.append(row) }
+            else {
+                rankedWork.append((obligation.blocking ? 0 : 3, order, row))
+                order += 1
+            }
+        }
+        rankedWork.sort { lhs, rhs in
+            lhs.rank == rhs.rank ? lhs.order < rhs.order : lhs.rank < rhs.rank
+        }
+        return (rankedWork.map(\.row), userDecisions)
+    }
+
+    /// A mandatory-first first-screen projection. Full retained rows stay discoverable through
+    /// the bounded collection reader rather than turning an omitted count into a dead end.
+    private func remainingWorkObject(_ item: StoredItem,
+                                     index: MaterializationIndex? = nil) -> [String: Any] {
+        let rows = remainingWorkRows(item, index: index)
+        let work = rows.work, userDecisions = rows.decisions
+        let workCount = work.count
+        let decisionCount = userDecisions.count
+        return [
+            "work": Array(work.prefix(Self.maximumFirstScreenRemaining)),
+            "userDecisions": Array(userDecisions.prefix(Self.maximumFirstScreenRemaining)),
+            "workCount": workCount, "userDecisionCount": decisionCount,
+            "workOmittedCount": max(0, workCount - Self.maximumFirstScreenRemaining),
+            "userDecisionOmittedCount": max(0, decisionCount - Self.maximumFirstScreenRemaining),
+        ]
     }
 
     private func evidenceObject(_ row: StoredEvidence) -> [String: Any] {
@@ -3061,9 +3521,13 @@ final class ProjectBoardStore {
             "checklist": ["itemId", "title", "required", "checklistId", "status"],
             "milestone": ["itemId", "title", "milestoneId", "status"],
             "artifact": ["itemId", "title", "url", "kind"],
+            "document_reference": ["itemId", "title", "url", "purpose", "documentId",
+                                   "version", "supersedesId"],
             "link": ["itemId", "kind", "targetId", "label"],
-            "obligation": ["itemId", "title", "owner", "blocking"],
-            "resolve_obligation": ["itemId", "obligationId", "note"],
+            "obligation": ["itemId", "title", "owner", "blocking", "actorKind",
+                           "requiredAction", "blockingScope"],
+            "resolve_obligation": ["itemId", "obligationId", "note",
+                                    "resolutionEvidence", "supersededBy"],
             "span": ["itemId", "sessionId", "phase"],
             "handoff": ["itemId", "owner", "note"],
             "accept_handoff": ["itemId", "note"],
@@ -3270,6 +3734,12 @@ final class ProjectBoardStore {
                              message: "\(key) is not a supported value")
         }
         return value
+    }
+
+    private func optionalChoice(_ body: [String: Any], _ key: String,
+                                choices: Set<String>) throws -> String? {
+        guard body[key] != nil else { return nil }
+        return try requiredChoice(body, key, choices: choices)
     }
 
     private func validateParent(_ parentID: String, projectID: String,
@@ -3646,7 +4116,8 @@ final class ProjectBoardStore {
         guard item.inferredSourceKey != nil, item.links.isEmpty, item.spans.isEmpty,
               item.evidence.isEmpty, item.checklist.isEmpty, item.milestones.isEmpty,
               item.artifacts.isEmpty, item.obligations.isEmpty, item.pendingHandoff == nil,
-              item.typeDetails == nil, (item.completionReports ?? []).isEmpty else { return false }
+              item.typeDetails == nil, (item.completionReports ?? []).isEmpty,
+              (item.documentReferences ?? []).isEmpty else { return false }
         return !item.history.contains { $0.actor != "board" && $0.actor != "broker" }
     }
 
@@ -3740,6 +4211,35 @@ final class ProjectBoardStore {
                         && (source.resolvedAt.map { $0.isFinite && $0 >= 0 } ?? true)
                         && validURL
                 }
+        }
+    }
+
+    private static func validDocumentReferences(_ references: [StoredDocumentReference]?) -> Bool {
+        let references = references ?? []
+        guard references.count <= maximumChildren,
+              Set(references.map(\.id)).count == references.count else { return false }
+        let byID = Dictionary(uniqueKeysWithValues: references.map { ($0.id, $0) })
+        let predecessorIDs = references.compactMap(\.supersedesId)
+        guard Set(predecessorIDs).count == predecessorIDs.count else { return false }
+        for reference in references {
+            guard boundedText(reference.id, maximum: 200) != nil,
+                  boundedText(reference.documentId, maximum: 200) != nil,
+                  boundedText(reference.title, maximum: 300) != nil,
+                  documentPurposes.contains(reference.purpose), reference.version > 0,
+                  isCanonicalCloudDocumentURL(reference.url),
+                  reference.addedAt.isFinite, reference.addedAt >= 0,
+                  boundedText(reference.actor, maximum: 300) != nil else { return false }
+            if let predecessorID = reference.supersedesId {
+                guard let predecessor = byID[predecessorID],
+                      predecessor.documentId == reference.documentId,
+                      predecessor.purpose == reference.purpose,
+                      predecessor.version < reference.version else { return false }
+            }
+        }
+        return Dictionary(grouping: references, by: \.documentId).values.allSatisfy { versions in
+            versions.filter { $0.supersedesId == nil }.count == 1
+                && versions.map(\.version).min() == 1
+                && Set(versions.map(\.version)).count == versions.count
         }
     }
 
@@ -3873,6 +4373,7 @@ final class ProjectBoardStore {
                   item.checklist.count <= maximumChildren,
                   item.milestones.count <= maximumChildren,
                   item.artifacts.count <= maximumChildren,
+                  Self.validDocumentReferences(item.documentReferences),
                   item.links.count <= maximumChildren,
                   item.obligations.count <= maximumChildren,
                   item.spans.count <= maximumChildren,
@@ -3910,6 +4411,22 @@ final class ProjectBoardStore {
                           && (link.eventOrdinal.map { $0 >= 0 } ?? true)
                           && (link.landingDisposition.map { ["pending", "landed", "nothing_to_land", "abandoned"].contains($0) } ?? true)
                           && (link.landingDispositionAt.map { $0.isFinite && $0 >= 0 } ?? true)
+                  }),
+                  item.obligations.allSatisfy({ obligation in
+                      (obligation.actorKind.map(obligationActorKinds.contains) ?? true)
+                          && (obligation.requiredAction.map {
+                              boundedText($0, maximum: 1_000) != nil
+                          } ?? true)
+                          && (obligation.blockingScope.map {
+                              boundedText($0, maximum: 300) != nil
+                          } ?? true)
+                          && (obligation.resolutionEvidence.map {
+                              boundedText($0, maximum: 1_000) != nil
+                          } ?? true)
+                          && (obligation.supersededBy.map { successor in
+                              successor != obligation.id
+                                  && item.obligations.contains { $0.id == successor }
+                          } ?? true)
                   }),
                   item.evidence.allSatisfy({ evidence in
                       evidence.at.isFinite && evidence.at >= 0

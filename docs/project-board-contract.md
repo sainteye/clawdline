@@ -19,6 +19,9 @@ Project Board is **enabled by default and currently free**. This page describes 
 Adapter interface:
 
 - `snapshot(project: String? = nil, item: String? = nil) -> [String: Any]` returns complete envelope `{"board": ...}`. Bounded scan/pagination with honest truncation allowed; expose it.
+- `collectionSnapshot(project:item:kind:offset:) -> Reply` reads one 64-row continuation page for
+  `document_references`, `remaining_work` or `user_decisions`. It is selected-item only, reports
+  `totalCount` and `nextOffset`, and never materializes an unbounded all-Project response.
 - `reportSnapshot(project:item:report:) -> Reply` retrieves exactly one opaque report version with
   strict Project/item ownership checks. It does not add superseded bodies to the catalog or normal
   item materialization and remains under the Store snapshot budget.
@@ -65,7 +68,34 @@ header; OFF does not infer Projects, replay broker history, scan usage, or advan
 An unknown scoped Project is `status:"error"` with `error.code:"project_not_found"` and explicit
 unknown/incomplete scope, never an authoritative empty Project.
 
-Item fields: `id`, `key` (human readable), `projectId`, `title`, `type`, `state`, `summary`, `owner` (readable name/id string), `parentId` nullable, `createdAt`, `updatedAt`, `checklist:[{id,title,status,required,evidenceId?}]`, `milestones:[{id,title,status}]`, `artifacts:[{id,title,url,kind}]`, `links:[{id,kind,targetId,label}]`, `obligations:[{id,title,owner,blocking,resolved}]`, `history:[{id,at,actor,kind,summary}]`, `spans:[{id,sessionId,phase,startedAt,endedAt}]`. Include trustworthy findings/verification/landing separately from user claims. Item `usage` may be absent (unknown, never zero); root enriches from UsageLedger.
+Item fields: `id`, `key` (human readable), `projectId`, `title`, `type`, `state`, `summary`, `owner` (readable name/id string), `parentId` nullable, `createdAt`, `updatedAt`, `checklist:[{id,title,status,required,evidenceId?}]`, `milestones:[{id,title,status}]`, `artifacts:[{id,title,url,kind}]`, `documentReferences:[{id,documentId,version,title,url,purpose,status,supersedesId?,supersededBy?,addedAt,actor,authority:"narrative_only"}]`, `links:[{id,kind,targetId,label}]`, `obligations:[{id,title,owner,blocking,resolved,actorKind,requiredAction?,blockingScope?,resolutionEvidence?,supersededBy?}]`, `history:[{id,at,actor,kind,summary}]`, `spans:[{id,sessionId,phase,startedAt,endedAt}]`. Include trustworthy findings/verification/landing separately from user claims. Item `usage` may be absent (unknown, never zero); root enriches from UsageLedger.
+
+`documentReferences.purpose` is `plan`, `decision` or `reference`. `documentId` is the stable logical
+identity; versions are immutable positive integers beginning at 1, and every later version names the
+one current predecessor. URLs are strict canonical hosted-reader URLs rooted at
+`https://app.clawdline.com/` with the whole document locator in the fragment. No body is included in
+a Board snapshot. Schema-v1 stores without this optional collection decode unchanged. Generic
+`artifacts.kind:"document"` rows remain output artifacts and never become planning references.
+Both producers measure machine/Session identity (128) and relative path (512) in UTF-8 bytes. Swift
+reads `percentEncodedFragment` and performs one URL-form decode equivalent to `URLSearchParams`:
+split fields before decoding, convert `+` to space, and decode valid percent triplets exactly once.
+Actual decoded traversal is refused; a literal percent-encoded spelling is not decoded a second time.
+The first detail page retains current logical heads first, then newest historical versions.
+
+Selected detail adds bounded `remainingWork:{work,userDecisions,workCount,userDecisionCount,
+workOmittedCount,userDecisionOmittedCount}`. Rows name their source kind (`checklist`, `child` or
+`obligation`), owner, original status/progress and a disposition that preserves required, optional,
+canceled and unknown states. Children are the existing `parentId` members; no deeper hierarchy is
+introduced. Only explicit obligation `actorKind:"user"` enters `userDecisions`; missing actor kind
+projects as `unknown`.
+Blocking work and every explicit user decision are mandatory first-screen rows; stable nonblocking
+rows fill the remaining budget. Omitted rows are actionable through selectors
+`collection:<item-id>:remaining_work:<offset>`,
+`collection:<item-id>:user_decisions:<offset>` and
+`collection:<item-id>:document_references:<offset>`. Each reply carries
+`board.collection:{kind,itemId,offset,rows,totalCount,nextOffset}` and remains under the normal final
+wire limit. Materialization constructs `childrenByParentID` and the progress cache once, then uses
+those same dictionaries for summaries, details and remaining-work rows.
 
 Project list cards are an allowlisted compact projection, not hidden detail envelopes. They omit
 nested evidence, history, links, spans and checklist/milestone rows, replacing the latter with
@@ -133,9 +163,16 @@ Common fields: `operation`, `requestId`, `expectedRevision`; item operations use
 - `checklist`: `itemId`, `title` for add; or `checklistId`, `status` for update. Optional `required`.
 - `milestone`: `itemId`, `title` for add; or `milestoneId`, `status` for update.
 - `artifact`: `itemId`, `title`, `url`, `kind` (`document`, `website`, `deployment`, `commit`, `other`). Only http(s) URLs; no executable schemes. Source artifacts are references, not proof by themselves.
+- `document_reference`: `itemId`, `title`, `url`, `purpose` (`plan`, `decision`, `reference`), stable
+  `documentId`, positive `version`, and `supersedesId` after version 1. The URL must be the canonical
+  `app.clawdline.com` hosted-reader locator. This command appends narrative metadata and history but
+  never changes scope revision, lifecycle or current evidence.
 - `link`: `itemId`, `kind` (`session`, `task`, `worktree`, `related`, `blocks`, `coordinates`), `targetId`, `label`. Links not cost allocation; item relation cycles refused.
-- `obligation`: `itemId`, `title`, `owner`, `blocking:Bool`.
-- `resolve_obligation`: `itemId`, `obligationId`, `note`.
+- `obligation`: `itemId`, `title`, `owner`, `blocking:Bool`, optional `actorKind`
+  (`user`, `agent`, `external`), `requiredAction` and `blockingScope`. Missing actor kind remains
+  unknown for compatibility.
+- `resolve_obligation`: `itemId`, `obligationId`, `note`, optional `resolutionEvidence` and
+  same-item `supersededBy` obligation id.
 - `span`: `itemId`, `sessionId`, `phase`; one active per session. Timestamp labels are declarations, not exact measured token boundaries. Root will join only proven usage boundaries; unknown usage remains unknown.
 - `handoff`: `itemId`, `owner` (proposed receiver), `note`; records pending transfer, does not close or change effective owner.
 - `accept_handoff`: `itemId`, `note`; root must authenticate receiving identity. Atomically transfer owner and preserve item history.
@@ -195,23 +232,39 @@ If a command persisted but its response projection exceeds the byte budget, the 
 
 Browser `api.board(project?, item?) -> envelope` and `api.boardCommand(body) -> envelope`, using selected/owning machine (never arbitrary fleet machine). Mock supports same shape.
 
+A reverse Session selector is a UUID admitted case-insensitively and immediately normalized to
+lowercase for the materialized index and response. The reply's `sessionId` is canonical; different
+case never creates or selects a second relation.
+
 ## Web module contract
 
-Export `bindBoardPage(elements, environment)` returning `{enter,leave,refresh,escape,open,state}`. `elements` has `board`, `board-title`, `board-subtitle`, `board-items`, `board-detail`, `board-status`, `board-search`, `board-back`, `board-refresh`. `environment` has `read(project?,item?)`, `navigate`, `openSession(id)`, `onMode(board)` and optionally `onProjects(projects)` and injectable timers. The Session callback resolves a durable conversation ID to exactly one live terminal ID; zero or multiple matches return a visible typed refusal. Traditional Chinese and English copy is local to the view module. DOM uses safe textContent, not unsanitized HTML.
+Export `bindBoardPage(elements, environment)` returning `{enter,leave,refresh,escape,open,state}`. `elements` has `board`, `board-title`, `board-subtitle`, `board-items`, `board-detail`, `board-status`, `board-search`, `board-back`, `board-refresh`. `environment` has `read(project?,item?)`, `navigate`, `openSession(id,projectPresentation)`, `onMode(board)` and optionally `onProjects(projects)` and injectable timers. The Promise-compatible Session callback receives the selected Project presentation and resolves a durable conversation ID to exactly one live terminal ID; zero or multiple matches return a visible typed refusal. The view does not start resume by itself. Traditional Chinese and English copy is local to the view module. DOM uses safe textContent, not unsanitized HTML.
 
 The Projects page opens the board within one selected Project. Render an overview, visual lifecycle,
 scoped search and item cards; unresolved historical records and completed/canceled history are
 collapsed separately and render in batches on expansion. Detail leads with
-objective, progress and a prominent five-part report when present (absence is a collapsed note),
-then blockers and outputs, progressively disclosing token spending, Session and
+objective and progress, then a concise remaining-work/user-decision split and a prominent five-part
+report when present (absence is a collapsed note). Typed Original plan, Decisions & changes and
+Reference documents remain distinct from Outputs before progressively disclosing token spending, Session and
 worktree relations, evidence and history. No create/edit/transition command is emitted by this view.
 Assistants record objectives and facts through the existing authorized API; lifecycle advancement
 belongs to the store. Only the settings controller emits a browser mode mutation, using revision
 CAS and stable ambiguous-retry identity. Stale reads cannot overwrite newer selection. One bounded
 15-second refresh loop belongs to the active, visible board; off mode retains read-only history.
 Report text uses DOM `textContent`; only HTTP(S) source links become anchors with opener isolation.
+Document references use only a strict canonical `app.clawdline.com` locator and open their existing
+encrypted reader on selection; rendering detail does not fetch document bodies. A generic document
+artifact stays under Outputs.
 Superseded report metadata renders as explicit version controls. Loading, failure and ticket-fenced
 late replies are local to that reader and never replace the current selected item/report.
+
+Historical resume is a separate action boundary. The browser persists a bounded pending/unknown
+fence keyed by machine, place, provider, conversation and action, plus its original request UUID,
+and reuses that UUID in the local idempotency header or encrypted Cloud request after reload. Only
+unique matching live inventory or an explicit server refusal clears it. Time, a successful send
+response and a successful UI handoff are not execution evidence. Storage failure refuses resume.
+Manual browser-storage deletion and atomic cross-tab admission are explicitly outside this version's
+guarantee.
 
 ## Proof
 

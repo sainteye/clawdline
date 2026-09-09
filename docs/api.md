@@ -20,6 +20,14 @@ The Project Board service is documented in [Project Board](project-board.md) and
 revision-checked `POST /v1/board`, using the same service through local HTTP and encrypted Cloud.
 It is enabled by default, currently free, and optional; disabling it preserves records.
 
+Managed Session sends may attach a bounded Board workflow context. The machine-authenticated
+`GET/POST /v1/orchestrator/sessions/:terminal-id/workflow` route records assistant-attested
+begin/progress/supplement/delivery/handoff facts; it cannot attest verification or landing.
+`GET /v1/orchestrator/workflow/gaps` is a bounded machine-only history reader and does not require
+the old Session process to remain alive. Neither route is a paired-device mutation door.
+See [managed Board workflow](board-workflow.md) for exact fields, replay scope, coverage gaps
+and the explicitly not-yet-installed native helper/adapter boundary.
+
 ```console
 $ TOKEN=$(cat ~/.config/clawdline/remote-token)
 ```

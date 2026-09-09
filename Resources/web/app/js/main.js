@@ -42,7 +42,9 @@ import { renderTranscript } from "./view/transcript.js";
 import "./view/terminal.js";
 import { bindProjectsPage, readProjectPlaces } from "./view/projects.js";
 import { bindLedgerPage } from "./view/ledger.js";
-import { bindBoardPage, enterProjectBoard, resolveBoardSession } from "./view/board.js";
+import { bindBoardPage, enterProjectBoard } from "./view/board.js";
+import { bindSessionBoard, SessionBoard } from "./input/session-board.js";
+import { bindBoardSession } from "./input/board-session.js";
 import { BoardControls } from "./input/board-settings.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import { bindPlanPage } from "./view/plan.js";
@@ -69,7 +71,7 @@ import "./input/action-confirm.js";
 import { bindDocumentRoute, routeTo } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
-import "./input/start.js";
+import { Start } from "./input/start.js";
 import "./input/command.js";
 import "./input/schedule.js";
 import { ScheduleHistory } from "./input/schedule-history.js";
@@ -379,18 +381,31 @@ var boardElements = {};
  "board-search", "board-back", "board-refresh"].forEach(function (id) {
     boardElements[id] = byId(id);
 });
+var boardSession = bindBoardSession(document, {
+    sessions: function () { return S.sessions; }, canWrite: function () { return S.write; },
+    places: function () { return api.places(); },
+    history: function (place, assistant) { return api.pastSessions(place, assistant); },
+    resume: function (place, conversation, assistant, requestId) { return api.resumePlace(place, conversation, assistant, requestId); },
+    openLive: openSession,
+    began: function (answer, place) {
+        Pages.go(Pages.home()); Start.began(answer.id, place, false, answer.attach);
+    }
+});
 var board = bindBoardPage(boardElements, {
     read: function (project, item) { return api.board(project, item); },
     drawIcon: drawIcon, tint: tint,
     navigate: function (name) { Pages.go(name); },
-    openSession: function (id) {
-        var destination = resolveBoardSession(S.sessions, id);
-        if (destination.id) openSession(destination.id);
-        return destination;
-    },
+    openSession: function (id, project) { return boardSession.open(id, project); },
     onMode: function (snapshot) { BoardControls.apply(snapshot); }
 });
 BoardControls.escape = function () { return board.escape(); };
+bindSessionBoard(byId("session-board"), {
+    read: function (project, item) { return api.board(project, item); },
+    visible: function () { return Pages.current() === Pages.home() && !!S.openId && !S.agent; },
+    ready: function () { return !!S.openId && !S.tx.loading; },
+    open: function (project, item, presentation) { BoardControls.open(project, item, presentation); }
+});
+BoardControls.onChange = function (enabled) { SessionBoard.setEnabled(enabled); };
 BoardControls.open = function (project, item, presentation) {
     if (!project) { Pages.go("projects"); return; }
     board.open(project, item, presentation);
@@ -512,7 +527,10 @@ Pages.bind({
         { name: "settings", element: byId("settings"), focus: "settings-close",
           enter: function () { Settings.enter(); } }
     ],
-    onChange: markSidebarPage,
+    onChange: function (name, previous) {
+        markSidebarPage(name, previous);
+        if (name === Pages.home() && S.openId && !S.tx.loading) SessionBoard.resume();
+    },
     // Written with `replaceState` rather than by assigning to `location.hash`, because a page is
     // where you are and not a step you took: a reload lands back on it, and the Back button still
     // means the screen before this app rather than three menu presses ago. The fragment is

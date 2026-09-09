@@ -53,6 +53,46 @@ private final class CloudRouteResultBox: @unchecked Sendable {
 }
 
 func runSessionLaunchTests() {
+group("workflow coverage distinguishes managed ingress from native observation") {
+    expect("Board OFF records no workflow coverage",
+           StartPoints.workflowCoverage(
+            boardEnabled: false, managedIngress: true, adapterHandshake: true),
+           .boardDisabled)
+    expect("a Clawdline send is managed even without provider hooks",
+           StartPoints.workflowCoverage(
+            boardEnabled: true, managedIngress: true, adapterHandshake: false),
+           .managedIngress)
+    expect("a proved native adapter handshake is named separately",
+           StartPoints.workflowCoverage(
+            boardEnabled: true, managedIngress: false, adapterHandshake: true),
+           .adapterHandshake)
+    expect("an observed native session is not presented as fully integrated",
+           StartPoints.workflowCoverage(
+            boardEnabled: true, managedIngress: false, adapterHandshake: false),
+           .observedUnintegrated)
+    let helper = "Resources/clawdline-board-workflow.sh"
+    let helperSource = (try? String(contentsOfFile: helper, encoding: .utf8)) ?? ""
+    let helperMode = ((try? FileManager.default.attributesOfItem(atPath: helper)[.posixPermissions])
+        as? NSNumber)?.intValue ?? 0
+    check("the versioned common helper is present and executable",
+          helperSource.contains("clawdline-board-workflow protocol 1")
+            && helperMode & 0o111 != 0)
+    check("the helper resolves exact identity and forwards stdin without exposing the token",
+          helperSource.contains("/v1/orchestrator/whoami")
+            && helperSource.contains("%25${terminal_id#%}")
+            && helperSource.contains("--data-binary \"@$body\"")
+            && helperSource.contains("-H \"@$header\"")
+            && helperSource.contains("umask 077")
+            && !helperSource.contains("X-Clawdline-Orchestrator: $token")
+            && !helperSource.contains("token=$("))
+    let instructions = (try? String(
+        contentsOfFile: "Resources/board-workflow.md", encoding: .utf8)) ?? ""
+    check("the adapter instruction preserves evidence and coverage boundaries",
+          instructions.contains("does not mean")
+            && instructions.contains("independent verification")
+            && instructions.contains("observed_unintegrated"))
+}
+
 group("a browser token is adopted before its credential leaves the address bar") {
     let browser = RemoteAuth.addDevice(name: "browser adoption test", caps: [.read])
     defer { RemoteAuth.revoke(id: browser.id) }

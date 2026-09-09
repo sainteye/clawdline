@@ -289,6 +289,65 @@ const ok = {
 
 /* ---- the list ------------------------------------------------------------ */
 
+// Project activity is a persisted catalog fact, not a per-row detail request.
+{
+    let reads = 0, refresh;
+    const data = await module.readProjectPlaces({ board: async () => ({ board: {
+        enabled: true, readState: { status: "ready" }, source: { ingestion: { status: "partial" } },
+        projects: [{ id: "p", name: "Client", isStartPoint: true, activeItemCount: 0,
+            summaryCoverage: { status: "complete" } }]
+    } }) });
+    const h = harness({ ...ok, places: async () => {
+        if (++reads > 1) throw new Error("offline");
+        return data;
+    }, setTimeout: fn => { refresh = fn; return 42; }, clearTimeout: () => {} });
+    await h.page.enter();
+    equal(h.elements["projects-rows"].querySelectorAll(".project-row-activity")[0]?.textContent,
+        "Partial: 0 in progress", "complete local model cannot hide incomplete source ingestion");
+    check(typeof refresh === "function", "an open ready Board catalog refreshes without a detail scan");
+    if (refresh) { refresh(); await flush(); }
+    equal(h.elements["projects-rows"].querySelectorAll(".project-row-activity")[0]?.textContent,
+        "Last known: 0 in progress", "failed refresh qualifies the retained row as well as the banner");
+    h.page.leave();
+}
+for (const [count, status, coverage, expected, tone] of [
+    [4, "ready", "complete", "4 in progress", "active"],
+    [0, "ready", "complete", "None in progress", "idle"],
+    [undefined, "ready", "complete", "Activity unknown", "unknown"],
+    [-1, "ready", "complete", "Activity unknown", "unknown"],
+    [4, "stale", "complete", "Last known: 4 in progress", "unknown"],
+    [0, "ready", "partial", "Partial: 0 in progress", "unknown"],
+    [2, "error", "complete", "Last known: 2 in progress", "unknown"],
+]) {
+    const data = await module.readProjectPlaces({ board: async () => ({ board: {
+        enabled: true, readState: { status }, projects: [{ id: "p", name: "Client",
+            isStartPoint: true, displayPath: "/repo", itemCount: 9,
+            activeItemCount: count, summaryCoverage: { status: coverage } }]
+    } }) });
+    const h = harness({ ...ok, places: async () => data });
+    await h.page.enter();
+    const badge = h.elements["projects-rows"].querySelectorAll(".project-row-activity")[0];
+    equal(badge?.textContent, expected, "catalog activity distinguishes " + count + "/" + status + "/" + coverage);
+    check(badge?.className.includes("is-" + tone), "activity color never presents stale or missing as current");
+    check(h.elements["projects-rows"].querySelectorAll(".project-row")[0].getAttribute("aria-label").includes(expected),
+        "screen readers receive activity as well as the Project name");
+    equal(h.asked.length, 1, "Project activity causes no detail read");
+    h.page.leave();
+}
+
+{
+    const data = await module.readProjectPlaces({ board: async () => ({ board: {
+        enabled: true, readState: { status: "ready" }, projects: [{ id: "p", name: "Client",
+            isStartPoint: true, activeItemCount: 3, summaryCoverage: { status: "complete" } }]
+    } }) });
+    const h = harness({ ...ok, places: async () => data });
+    h.doc.documentElement = { lang: "zh-Hant" };
+    await h.page.enter();
+    equal(h.elements["projects-rows"].querySelectorAll(".project-row-activity")[0]?.textContent,
+        "3 項進行中", "activity follows the app Traditional Chinese locale");
+    h.page.leave();
+}
+
 {
     const { elements, page, asked } = harness(ok);
     equal(elements["projects-list-view"].hidden, false, "the page comes up on the list");
@@ -301,6 +360,8 @@ const ok = {
     equal(elements["projects-status"].textContent, "", "with nothing left of the loading line");
     const rows = elements["projects-rows"].querySelectorAll(".project-row");
     equal(rows.length, 2, "every row is a button");
+    equal(elements["projects-rows"].querySelectorAll(".project-row-activity").length, 0,
+        "standard mode does not invent Board activity");
     equal(rows[0].getAttribute("aria-label"), "Open clawdline",
           "a row says what pressing it opens, because its name alone is not a sentence");
     match(rows[0].textContent, /\/Users\/you\/code\/clawdline/,

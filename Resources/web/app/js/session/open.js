@@ -20,6 +20,7 @@ import { Snippets } from "../input/snippets.js";
 import { StatusLine } from "../input/status-line.js";
 import { Shots } from "../input/shots.js";
 import { SkillPicker } from "../input/composer.js";
+import { SessionBoard } from "../input/session-board.js";
 import {
     beginTranscriptLoad,
     createTranscriptRequests,
@@ -54,6 +55,7 @@ document.addEventListener("clawdline:meaningful-transcript-paint", function () {
     if (S.openId) {
         Diagnostics.note("session.extras.begin", {});
         StatusLine.resume(S.openId);
+        SessionBoard.resume();
     }
 });
 
@@ -227,6 +229,7 @@ export function openSession(id, keepFocus, forceRefresh) {
         // And a picture picked for one session is not a picture for the next one.
         Shots.clear();
         StatusLine.defer(id);
+        SessionBoard.follow(s);
         transcriptRequests.activate(id);
         observeTranscriptRevision(id, revisionOf(s), false);
         // These surfaces may draw immediately, so they follow the synchronous transcript issue.
@@ -272,6 +275,7 @@ export function closeDetail(silent) {
         delete transcriptFileSignatures[S.openId];
     }
     S.openId = null;
+    SessionBoard.follow(null);
     transcriptRequests.activate(null);
     S.agent = null;
     S.tx = {

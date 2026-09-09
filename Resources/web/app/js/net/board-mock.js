@@ -16,7 +16,7 @@ export function createBoardMock() {
             { id: "c2", title: "手機與桌面互動驗證", status: "doing", required: true }],
         milestones: [{ id: "m1", title: "首版整合", status: "doing" }],
         artifacts: [{ id: "a1", title: "設計說明", url: "https://linear.app/docs/conceptual-model", kind: "document" }],
-        links: [{ id: "l1", kind: "session", targetId: "8F3A-1C", label: "整合 Session" }],
+        links: [{ id: "l1", kind: "session", targetId: "a2937509-a3d4-4c31-87a7-cdb7ff073d38", label: "整合 Session" }],
         obligations: [{ id: "o1", title: "獨立審查", owner: "reviewer", blocking: true, resolved: false }],
         history: [{ id: "h1", at: now, actor: "preview", kind: "created", summary: "建立預覽項目" }],
         spans: [], evidence: [], usage: { state: "partial", rows: 2, measured: 14500, total: null,
@@ -74,6 +74,7 @@ export function createBoardMock() {
     updateProjects();
     function read(project, item) {
         var report = null;
+        var session = !project && item && item.startsWith("session:") ? item.slice(8) : null;
         if (item && item.startsWith("report:")) {
             var parts = item.split(":");
             if (parts.length === 3) {
@@ -85,7 +86,13 @@ export function createBoardMock() {
             mode: enabled ? "board" : "standard", entitlement: { state: "free_preview", label: "Currently free" },
             narrativeConsent: narrativeConsent,
             viewer: { id: "preview", canWrite: true, canManage: true, narrativeProvider: "codex" },
-            projects: projects, items: project && !item ? items.filter(function (row) { return row.projectId === project; }) : [],
+            projects: projects, sessionId: session,
+            items: session ? items.filter(function (row) {
+                return row.links.some(function (link) { return link.kind === "session" && link.targetId === session; });
+            }).map(function (row) { return { id: row.id, key: row.key, projectId: row.projectId,
+                title: row.title, type: row.type, state: row.state, progress: row.progress,
+                sessionActivity: "related" }; })
+                : project && !item ? items.filter(function (row) { return row.projectId === project; }) : [],
             item: items.find(function (row) { return row.id === item; }) || null,
             reportSelection: report,
             readState: { status: "ready" },

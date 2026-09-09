@@ -715,11 +715,11 @@ export var LocalClient = {
     /// for being a UUID *and* for being either one it just listed for that directory or the proven
     /// child conversation in a terminal schedule run that its detail route disclosed. Anything
     /// else is a 404 there rather than a string on a command line.
-    resumePlace: function (id, session, assistant) {
+    resumePlace: function (id, session, assistant, requestId) {
         var path = "/v1/places/" + encodeURIComponent(id) + "/resume/";
         if (assistant) path += encodeURIComponent(assistant) + "/";
         path += encodeURIComponent(session);
-        return jsonFetch(path, post({}, { "Idempotency-Key": uuid() }));
+        return jsonFetch(path, post({}, { "Idempotency-Key": requestId || uuid() }));
     },
 
     // The three doors. None of them carries the code: it is shown on the Mac, and this page is

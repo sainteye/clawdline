@@ -125,6 +125,62 @@ improvements and the receiving owner. Debug work records cause and reusable find
 Refactors and Epics retain their checklist and milestone obligations. This first release supplies
 the common record and evidence gates, not automatic extraction of those narratives from transcripts.
 
+### Planning documents and visible remaining work
+
+Planning and decision documents are typed references beside, not inside, delivery artifacts. A
+reference has purpose `plan`, `decision` or `reference`, a stable logical document id, an immutable
+positive version and an explicit predecessor when a later version supersedes the current head.
+The first version begins at 1. The reader labels current and earlier versions instead of replacing
+history. A bounded detail keeps every current logical head before filling the remaining first-page
+budget with newest earlier versions. A Load more control reads later retained versions in bounded
+pages, so an omitted count never makes a current document unreachable. A generic artifact whose
+kind happens to be `document` remains an output artifact; old
+rows are never reinterpreted as an approved plan.
+
+Every document reference uses the existing canonical hosted-reader address at
+`https://app.clawdline.com/#document=1&…`. The fragment names the explicit Mac, Session, scope and
+relative inert-text path without a credential or local filesystem root. Board snapshots carry only
+this bounded metadata. The document body crosses the existing encrypted document read only after
+the person selects its link. The hosted reader and Store apply the same UTF-8 byte limits (128 for
+machine/Session identities and 512 for the relative path) and decode the fragment as form data
+exactly once: `+` is a space, `%2B` is a literal plus, and encoded separators are validated only
+after that one decode. Safe Unicode remains valid within those byte bounds.
+
+Adding or superseding a reference is narrative maintenance: it does not increment the item's scope
+revision, clear verification or landing evidence, reopen a terminal lifecycle, or count as artifact
+acceptance. Actual objective/checklist/milestone changes and output artifacts retain their existing
+invalidation and acceptance safeguards.
+
+Selected detail includes a bounded `remainingWork` reading assembled from the item's unresolved
+checklist, its existing Epic `parentId` children, and unresolved obligations. It is split into
+**what we will do next** and **what you need to decide**. Only an obligation explicitly recorded
+with `actorKind:"user"` enters the user-decision column; older rows remain visibly `unknown` rather
+than guessing from an owner label. Required and optional checklist rows, canceled children,
+unknown progress and trusted child progress remain distinct. This is a first-screen reading of
+existing facts, not a nested task framework or a manual status control. Blocking work and explicit
+user decisions receive first-screen priority. Each column has a bounded Load more reader for all
+retained omitted rows; pagination applies only to the selected item and never expands an entire
+Project response.
+
+The Store materializer builds its parent-child index and per-item progress cache once per pass.
+Selected detail walks only that item's children; it does not rescan the global 2,000-item capacity
+for every item while holding the Store owner.
+
+### Session relation and resume boundary
+
+A Session relation selector accepts UUID spelling case-insensitively but canonicalizes it to the
+repository's lowercase spelling before both reverse-index admission and lookup. Uppercase and
+lowercase spellings therefore read the same stored conversation row, never two inferred rows.
+
+Historical Board resume keeps one bounded pending/unknown fence in browser local storage, keyed by
+machine, place, provider, conversation and action, together with the original request UUID. A page
+reload reuses that UUID for both local `Idempotency-Key` and the encrypted Cloud request instead of
+sending a second action. The fence clears only after unique matching live inventory is observed or
+the server returns an explicit refusal; elapsed time, terminal-send success, or successful UI
+handoff is not execution evidence and does not clear it. If storage is unavailable, admission fails
+closed. This release does not claim protection against a person manually clearing browser storage
+or atomic admission across concurrent tabs.
+
 ## Completion reports
 
 An item's short `summary` remains its objective or description. Its owning root can add a separate

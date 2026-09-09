@@ -16,6 +16,144 @@ private final class BoardCloudStatusBox: @unchecked Sendable {
 
 func runProjectBoardIntegrationTests() {
 group("broker live transitions reach the Board before task completion") {
+    do {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("board-session-index-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = ProjectBoardStore(url: file)
+        _ = store.ensureProject(id: "project-a", name: "A")
+        _ = store.ensureProject(id: "project-b", name: "B")
+        func send(_ operation: String, _ fields: [String: Any]) -> ProjectBoardStore.Reply {
+            var body = fields
+            body["operation"] = operation
+            body["requestId"] = UUID().uuidString
+            body["expectedRevision"] = store.readHeader().revision
+            return store.command(body, actor: "root")
+        }
+        let conversation = "abcdefab-cdef-4abc-8def-abcdefabcdef"
+        let a = send("create", ["projectId": "project-a", "title": "First", "type": "feature"]).body["itemId"] as! String
+        let b = send("create", ["projectId": "project-b", "title": "Second", "type": "task"]).body["itemId"] as! String
+        _ = send("link", ["itemId": a, "kind": "session", "targetId": conversation, "label": "Owner"])
+        _ = send("span", ["itemId": a, "sessionId": conversation, "phase": "planning"])
+        _ = send("link", ["itemId": b, "kind": "session", "targetId": conversation, "label": "Related"])
+        _ = send("link", ["itemId": b, "kind": "session", "targetId": "other-session", "label": "Other"])
+        let revision = store.readHeader().revision
+        let seed = store.readSeed(rebuild: true).seed
+        let result = seed.envelope(item: "session:" + conversation)["board"] as? [String: Any]
+        let rows = result?["items"] as? [[String: Any]] ?? []
+        expect("reverse Board lookup echoes exact conversation", result?["sessionId"] as? String, conversation)
+        expect("reverse lookup joins cross-Project links once per item", rows.count, 2)
+        check("reverse lookup preserves both owning Projects", Set(rows.compactMap { $0["projectId"] as? String }) == ["project-a", "project-b"])
+        expect("reverse lookup marks declarations rather than fabricating a primary item",
+               rows.first { $0["id"] as? String == a }?["sessionActivity"] as? String, "declared")
+        let missing = seed.envelope(item: "session:22222222-2222-4222-8222-222222222222")["board"] as? [String: Any]
+        expect("unrelated Session has no guessed association", (missing?["items"] as? [[String: Any]])?.count, 0)
+        check("reverse lookup stays compact", rows.allSatisfy { $0["history"] == nil && $0["links"] == nil && $0["spans"] == nil })
+        expect("reading relations changes no durable revision", store.readHeader().revision, revision)
+        let reloaded = ProjectBoardStore(url: file).readSeed(rebuild: true).seed
+        expect("reverse lookup reconstructs from durable links after restart",
+               ((reloaded.envelope(item: "session:" + conversation)["board"] as? [String: Any])?["items"] as? [[String: Any]])?.count, 2)
+        let uppercase = conversation.uppercased()
+        let uppercaseBoard = seed.envelope(item: "session:" + uppercase)["board"] as? [String: Any]
+        expect("the same uppercase conversation UUID reaches the canonical reverse-index row",
+               (uppercaseBoard?["items"] as? [[String: Any]])?.count, 2)
+        expect("reverse-index replies spell a conversation UUID canonically",
+               uppercaseBoard?["sessionId"] as? String, conversation)
+        let uppercaseAdmission = ProjectBoardHTTP.admit(
+            remoteRequest("GET", "/v1/board?item=session:" + uppercase),
+            machine: true, permission: .denied)
+        if case .some(.read(let read)) = uppercaseAdmission {
+            expect("HTTP admission canonicalizes uppercase UUID before lookup", read.item,
+                   "session:" + conversation)
+        } else { check("uppercase UUID reaches Board read admission", false) }
+
+        let reader = send("create", ["projectId": "project-a", "title": "Reader bounds",
+                                      "type": "feature"]).body["itemId"] as! String
+        var previousReferenceID: String?
+        for version in 1...129 {
+            var fields: [String: Any] = [
+                "itemId": reader, "title": "Plan v\(version)", "purpose": "plan",
+                "documentId": "long-plan", "version": version,
+                "url": "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=plan-v\(version).md",
+            ]
+            if let previousReferenceID { fields["supersedesId"] = previousReferenceID }
+            let reply = send("document_reference", fields)
+            expect("long document history version \(version) is admitted", reply.status, 200)
+            previousReferenceID = (((reply.body["board"] as? [String: Any])?["item"]
+                as? [String: Any])?["documentReferences"] as? [[String: Any]])?
+                .first { $0["version"] as? Int == version }?["id"] as? String
+        }
+        for number in 0..<20 {
+            _ = send("checklist", ["itemId": reader, "title": "Optional \(number)",
+                                    "required": false])
+        }
+        _ = send("obligation", ["itemId": reader, "title": "Late blocking proof",
+                                  "owner": "root", "blocking": true,
+                                  "actorKind": "agent", "requiredAction": "Run focused proof"])
+        let boundedSeed = store.readSeed(rebuild: true).seed
+        let boundedItem = ((boundedSeed.envelope(project: "project-a", item: reader)["board"]
+            as? [String: Any])?["item"] as? [String: Any]) ?? [:]
+        let visibleDocuments = boundedItem["documentReferences"] as? [[String: Any]] ?? []
+        check("a history beyond 128 retains the current logical document head",
+              visibleDocuments.count == 128
+                && visibleDocuments.contains { $0["version"] as? Int == 129
+                    && $0["status"] as? String == "current" })
+        let remaining = boundedItem["remainingWork"] as? [String: Any]
+        let firstWork = remaining?["work"] as? [[String: Any]] ?? []
+        check("blocking remaining work cannot be displaced by sixteen optional rows",
+              firstWork.contains { $0["title"] as? String == "Late blocking proof"
+                && $0["blocking"] as? Bool == true })
+        ProjectBoardHTTP.configureStoreForTesting(store)
+        defer { ProjectBoardHTTP.configureStoreForTesting(nil) }
+        func collection(_ kind: String, _ offset: Int) -> [String: Any] {
+            let selector = "collection:\(reader):\(kind):\(offset)"
+            let response = ProjectBoardHTTP.route(
+                remoteRequest("GET", "/v1/board?project=project-a&item=" + selector),
+                machine: true, permission: .denied)
+            let object = response.flatMap {
+                try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any]
+            }
+            return ((object?["board"] as? [String: Any])?["collection"]
+                as? [String: Any]) ?? [:]
+        }
+        let laterDocuments = collection("document_references", 128)
+        expect("document continuation is a bounded final page",
+               (laterDocuments["rows"] as? [[String: Any]])?.count, 1)
+        expect("document continuation names the complete retained count",
+               laterDocuments["totalCount"] as? Int, 129)
+        let laterWork = collection("remaining_work", 16)
+        expect("remaining-work continuation exposes every retained omitted row",
+               (laterWork["rows"] as? [[String: Any]])?.count, 5)
+
+        let unicodeItem = send("create", ["projectId": "project-a", "title": "URL parity",
+                                            "type": "task"]).body["itemId"] as! String
+        func documentStatus(_ documentID: String, url: String) -> Int {
+            send("document_reference", [
+                "itemId": unicodeItem, "title": documentID, "purpose": "reference",
+                "documentId": documentID, "version": 1, "url": url,
+            ]).status
+        }
+        let utf8Limit = "https://app.clawdline.com/#document=1&machine="
+            + String(repeating: "😀", count: 32)
+            + "&session=s&scope=project&path=" + String(repeating: "界", count: 169) + ".md"
+        expect("Swift accepts the same exact UTF-8 document boundary as the browser",
+               documentStatus("utf8-limit", url: utf8Limit), 200)
+        let utf8Overflow = "https://app.clawdline.com/#document=1&machine="
+            + String(repeating: "😀", count: 33)
+            + "&session=s&scope=project&path=a.md"
+        expect("Swift refuses a UTF-16-short identity beyond the shared UTF-8 bound",
+               documentStatus("utf8-overflow", url: utf8Overflow), 400)
+        let reservedURL = "https://app.clawdline.com/#document=1&machine=Mac%25356+%26+%23+%2B&session=session%2Bliteral%25&scope=project&path=notes%2F%25356+%26+%23+%2B.md"
+        expect("Swift form-decodes percent, ampersand, hash and plus exactly once",
+               documentStatus("reserved-once", url: reservedURL), 200)
+        expect("Swift refuses traversal after one form decode",
+               documentStatus("real-traversal", url: "https://app.clawdline.com/#document=1&machine=m&session=s&scope=project&path=..%2Fa.md"), 400)
+        expect("Swift does not decode a literal encoded traversal twice",
+               documentStatus("literal-encoded-traversal", url: "https://app.clawdline.com/#document=1&machine=m&session=s&scope=project&path=%252E%252E%252Fa.md"), 200)
+        expect("Swift ignores empty form pairs like URLSearchParams",
+               documentStatus("empty-form-pairs", url: "https://app.clawdline.com/#&document=1&&machine=m&session=s&scope=project&path=a.md&"), 200)
+        expect("an empty document fragment is refused without a trap",
+               documentStatus("empty-fragment", url: "https://app.clawdline.com/#"), 400)
+    }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("board-live-event-\(UUID().uuidString)")
     try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let registry = root.appendingPathComponent("registry.json")
@@ -404,6 +542,22 @@ group("board HTTP authority cannot be supplied by command content") {
     expect("machine auth preserves baseline local control", call("{}", machine: true)?.status, 400)
     let repeated = remoteRequest("GET", "/v1/board?item=a&item=b")
     expect("duplicate query is refused", ProjectBoardHTTP.route(repeated, machine: true, permission: .denied)?.status, 400)
+    for query in ["item=session:%251", "item=session:not-a-uuid",
+                  "project=p&item=session:11111111-1111-4111-8111-111111111111",
+                  "report=r&item=session:11111111-1111-4111-8111-111111111111"] {
+        let reply = ProjectBoardHTTP.route(remoteRequest("GET", "/v1/board?" + query),
+                                           machine: true, permission: .denied)
+        expect("reverse Session selector refuses malformed or mixed scope: \(query)", reply?.status, 400)
+        check("reverse Session selector refusal is typed: \(query)",
+              String(data: reply?.body ?? Data(), encoding: .utf8)?.contains("invalid_session_selector") == true)
+    }
+    let sessionSelector = "session:11111111-1111-4111-8111-111111111111"
+    let admitted = ProjectBoardHTTP.admit(remoteRequest("GET", "/v1/board?item=" + sessionSelector),
+                                         machine: false, permission: .allowed(device: "reader", caps: [.read]))
+    if case .some(.read(let read)) = admitted {
+        expect("reverse Session read preserves exact conversation selector", read.item, sessionSelector)
+        check("reverse Session read cannot carry a guessed Project", read.project == nil && read.report == nil)
+    } else { check("reverse Session read reaches the ordinary bounded read admission", false) }
     let reportWithoutItem = remoteRequest("GET", "/v1/board?report=report-a")
     expect("report reads require an independently selected item",
            ProjectBoardHTTP.route(reportWithoutItem, machine: true, permission: .denied)?.status,
@@ -897,5 +1051,45 @@ group("a held Store materialization cannot block Board HTTP or the interactive o
     }
     check("the background projection settles before fixture teardown",
           !ProjectBoardIntegration.readCacheStateForTesting.inFlight)
+
+    ProjectBoardStore.materializationPauseForTesting = nil
+    let capacityURL = root.appendingPathComponent("capacity.json")
+    let capacityStore = ProjectBoardStore(url: capacityURL)
+    _ = capacityStore.ensureProject(id: "capacity", name: "Capacity")
+    func capacitySend(_ operation: String, _ fields: [String: Any]) -> ProjectBoardStore.Reply {
+        var body = fields
+        body["operation"] = operation
+        body["requestId"] = UUID().uuidString
+        body["expectedRevision"] = capacityStore.readHeader().revision
+        return capacityStore.command(body, actor: "test")
+    }
+    let parent = capacitySend("create", ["projectId": "capacity", "title": "Parent",
+                                           "type": "epic"]).body["itemId"] as! String
+    _ = capacitySend("create", ["projectId": "capacity", "title": "Template",
+                                 "type": "task", "parentId": parent])
+    var capacityJSON = try! JSONSerialization.jsonObject(with: Data(contentsOf: capacityURL))
+        as! [String: Any]
+    let templates = capacityJSON["items"] as! [[String: Any]]
+    var items = [templates[0]]
+    for number in 0..<500 {
+        var child = templates[1]
+        child["id"] = "capacity-child-\(number)"
+        child["key"] = "CAP-\(number)"
+        child["title"] = "Child \(number)"
+        child["parentId"] = parent
+        items.append(child)
+    }
+    capacityJSON["items"] = items
+    try! JSONSerialization.data(withJSONObject: capacityJSON, options: [.sortedKeys])
+        .write(to: capacityURL, options: .atomic)
+    let indexedStore = ProjectBoardStore(url: capacityURL)
+    var indexOperations = 0
+    ProjectBoardStore.materializationIndexOperationForTesting = { indexOperations += 1 }
+    defer { ProjectBoardStore.materializationIndexOperationForTesting = nil }
+    let capacitySeed = indexedStore.readSeed(rebuild: true).seed
+    expect("capacity materialization retains every child", capacitySeed.itemDetailsByID.count, 501)
+    check("childrenByParent construction and traversal remain linear at capacity",
+          indexOperations <= items.count * 2,
+          "\(indexOperations) indexed operations for \(items.count) items")
 }
 }

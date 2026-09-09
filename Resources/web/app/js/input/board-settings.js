@@ -9,6 +9,7 @@ var latest = null, reading = null, pending = null, bound = false, saving = false
 function canManage() { return !!(latest && latest.viewer && latest.viewer.canManage === true); }
 
 export var BoardControls = {
+    onChange: function () {},
     escape: function () { Pages.goHome(); },
     open: function () { Pages.go("board"); },
     apply: function (board) {
@@ -16,6 +17,7 @@ export var BoardControls = {
         if (latest && board.revision < latest.revision) return;
         if (!board.viewer && latest) board = Object.assign({}, board, { viewer: latest.viewer });
         latest = board;
+        BoardControls.onChange(board.enabled);
         if (node("projects-lede")) node("projects-lede").textContent = board.enabled
             ? words("Choose a project to see its work, progress and results.", "選擇專案，了解正在進行的工作與已落地的成果。")
             : words("Directories an assistant has actually been run in, and that are still there.", "assistant 真的跑過、而且還在的目錄。");

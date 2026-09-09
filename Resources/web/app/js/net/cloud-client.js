@@ -663,8 +663,13 @@ export class CloudClient {
         }, "action");
     }
 
-    resumePlace(place, past, assistant) {
+    resumePlace(place, past, assistant, actionRequestId) {
         var route = this._place(place);
+        if (actionRequestId) {
+            return this._read({ machine: route.machine, session: MACHINE_REPLY_SESSION }, "resume", {
+                request: actionRequestId, place: route.id, past: String(past || ""), assistant: assistant || ""
+            }, "action:" + actionRequestId);
+        }
         return this._machineRequest(route.machine, "resume", {
             place: route.id, past: String(past || ""), assistant: assistant || ""
         }, "action");

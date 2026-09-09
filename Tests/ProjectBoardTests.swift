@@ -759,6 +759,49 @@ group("lifecycle promotion requires current trusted evidence of the right delive
     expect("matching landing ancestry is labelled broker", landing?["source"] as? String, "broker")
     expect("matching broker-verified landing closes safe code automatically",
            d.item(item)["state"] as? String, "closed")
+    let settledBeforeReference = d.item(item)
+    let planV1 = d.send("document_reference", [
+        "itemId": item, "title": "Board plan", "purpose": "plan",
+        "documentId": "board-plan", "version": 1,
+        "url": "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=board-plan.md",
+    ])
+    expect("a canonical planning reference can be attached after landing", planV1.status, 200)
+    let planV1ID = ((((planV1.body["board"] as? [String: Any])?["item"]
+        as? [String: Any])?["documentReferences"] as? [[String: Any]])?.first?["id"]
+        as? String) ?? ""
+    let settledAfterReference = d.item(item)
+    expect("reference maintenance does not reopen landed work",
+           settledAfterReference["state"] as? String,
+           settledBeforeReference["state"] as? String)
+    expect("reference maintenance does not create a new scope revision",
+           settledAfterReference["scopeRevision"] as? Int,
+           settledBeforeReference["scopeRevision"] as? Int)
+    expect("reference maintenance retains current landing evidence",
+           (settledAfterReference["currentEvidence"] as? [String: Any])?["landingId"] as? String,
+           (settledBeforeReference["currentEvidence"] as? [String: Any])?["landingId"] as? String)
+    expect("local and non-canonical document addresses are refused",
+           boardError(d.send("document_reference", [
+               "itemId": item, "title": "Local plan", "purpose": "plan",
+               "documentId": "local-plan", "version": 1,
+               "url": "http://127.0.0.1:7717/plan.md",
+           ])), "invalid_document_url")
+    expect("a later document version must name the prior head",
+           boardError(d.send("document_reference", [
+               "itemId": item, "title": "Board plan v2", "purpose": "plan",
+               "documentId": "board-plan", "version": 2,
+               "url": "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=board-plan-v2.md",
+           ])), "document_supersession_required")
+    expect("an explicit successor can extend the stable document identity",
+           d.send("document_reference", [
+               "itemId": item, "title": "Board plan v2", "purpose": "plan",
+               "documentId": "board-plan", "version": 2, "supersedesId": planV1ID,
+               "url": "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=board-plan-v2.md",
+           ]).status, 200)
+    let plans = d.item(item)["documentReferences"] as? [[String: Any]] ?? []
+    check("document versions retain one superseded row and one current head",
+          plans.count == 2 && plans[0]["status"] as? String == "current"
+              && plans[1]["status"] as? String == "superseded"
+              && plans.allSatisfy { $0["authority"] as? String == "narrative_only" })
     expect("conversation-recorded scope can reopen integrated work automatically",
            d.send("update", ["itemId": item, "summary": "new scope"]).status, 200)
     let afterEdit = d.item(item)
@@ -813,6 +856,35 @@ group("lifecycle promotion requires current trusted evidence of the right delive
                                        "note": "owner notified"])
     expect("settled non-code Task closes automatically",
            d.item(document)["state"] as? String, "closed")
+
+    let remaining = BoardTestDriver(name: "remaining-\(UUID().uuidString)")
+    remaining.createProject()
+    let epic = remaining.create(type: "epic", title: "Readable remainder")
+    _ = remaining.send("checklist", ["itemId": epic, "title": "Required acceptance",
+                                      "required": true])
+    _ = remaining.send("checklist", ["itemId": epic, "title": "Optional polish",
+                                      "required": false])
+    _ = remaining.create(type: "feature", title: "Current child", parent: epic)
+    let canceledChild = remaining.create(type: "task", title: "Canceled child", parent: epic)
+    _ = remaining.send("transition", ["itemId": canceledChild, "state": "canceled"])
+    _ = remaining.send("obligation", ["itemId": epic, "title": "Choose AI policy",
+        "owner": "user", "blocking": true, "actorKind": "user",
+        "requiredAction": "Choose whether stored text may leave the Mac"])
+    _ = remaining.send("obligation", ["itemId": epic, "title": "Prepare focused proof",
+        "owner": "root", "blocking": true, "actorKind": "agent"])
+    _ = remaining.send("obligation", ["itemId": epic, "title": "Legacy owner",
+        "owner": "unknown", "blocking": false])
+    let remainder = remaining.item(epic)["remainingWork"] as? [String: Any]
+    let workRows = remainder?["work"] as? [[String: Any]] ?? []
+    let decisions = remainder?["userDecisions"] as? [[String: Any]] ?? []
+    check("remaining work combines required, optional, canceled and unknown facts without collapsing them",
+          workRows.contains { $0["kind"] as? String == "checklist" && $0["disposition"] as? String == "required" }
+              && workRows.contains { $0["kind"] as? String == "checklist" && $0["disposition"] as? String == "optional" }
+              && workRows.contains { $0["kind"] as? String == "child" && $0["disposition"] as? String == "canceled" }
+              && workRows.contains { $0["kind"] as? String == "obligation" && $0["actorKind"] as? String == "unknown" })
+    check("only explicitly user-owned obligations become user decisions",
+          decisions.count == 1 && decisions[0]["title"] as? String == "Choose AI policy"
+              && decisions[0]["requiredAction"] as? String == "Choose whether stored text may leave the Mac")
 
     let renewed = d.create(type: "task", title: "Renewed guide")
     let requiredReply = d.send("checklist", ["itemId": renewed, "title": "manager review",

@@ -6,7 +6,7 @@
 # exercise the same code the app ships rather than a copy of it.
 set -euo pipefail
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:69,CloudAppBridge:152,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:101'
+expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:69,CloudAppBridge:154,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:101'
 # The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
 # executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
 # the typed planning graph adds 14, the Cloud bridge lifecycle adds 75, and the Usage mobile,
@@ -423,7 +423,11 @@ expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites
 # Retained task Root Session candidate bda9e1fac415e1f5121e913a0a8edeab3792fd5f measured
 # 10,837 checks and all twelve Cloud suites on 2026-09-09, with 8,826 assertion sites. Only the
 # seal and generated governance metadata changed after that exact candidate run.
-expected_swift_receipt='10837 checks passed'
+# Mac personal Board measurement tree 2f596934 on 2026-09-09 ran 11,135 checks and all twelve
+# Cloud suites, with 8,993 assertion sites. That measurement failed 14 checks (locale parity,
+# maintenance admission precedence and document display order); it is not acceptance. Corrections
+# preserve the check/site count; the final exact-tree run must produce this successful receipt.
+expected_swift_receipt='11135 checks passed'
 # Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
 # `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
 # against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
@@ -436,7 +440,7 @@ expected_swift_receipt='10837 checks passed'
 # about the tree it was measured on and neither correct about this one. The guard named 7,767
 # before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
 # the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=8826
+expected_swift_receipt_witness=8993
 
 count_exact_receipt_lines() {
   local receipt=$1
@@ -1074,6 +1078,9 @@ node Tests/web-waiting-card.mjs
 # its own so `browser_contract_suites`' sealed count stays the landing root's to move.
 node Tests/web-ledger.mjs
 node Tests/web-board.mjs
+node Tests/web-session-board.mjs
+node Tests/web-board-session.mjs
+node Tests/web-board-workflow.mjs
 node Tests/web-board-transport.mjs
 node Tests/board-request-capacity-focused.mjs
 node Resources/web/app/js/net/client.test.mjs
