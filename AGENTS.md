@@ -100,6 +100,23 @@ question, or child task. A child still finishes only through its authenticated `
 Clawdline consumes a root receipt when that same terminal begins its next observed turn, so an old
 check cannot reappear after newer unreported work.
 
+### A peer handoff is a status, not only a message
+
+Before a Session becomes idle because another Session must move the work, it records that handoff
+through `POST /v1/orchestrator/sessions/:terminal-id/state` with
+`state:"waiting_session"`, a one-line `note`, the exact mover in `moved_by`, and
+`person_needed:false`. This is the honest status for “finished my part; waiting for Clawdfather to
+integrate” and “waiting for another root to release its candidate”. It renders as self-reported;
+it is not broker proof that the work is complete.
+
+If the Session's whole assigned turn is genuinely delivered, use the root completion receipt
+instead: its one check is the stronger and more precise “delivered, awaiting approval”. If that
+receipt later receives broker-verified landing, it becomes two checks. Do not bury either handoff
+only in a prose message—the Session list cannot derive a durable state from transcript wording.
+
+A user decision is neither kind of peer wait. Record it in the persistent `owed` overlay and
+follow the notification rule below before waiting.
+
 ### Notify before waiting for the user
 
 When an agent can already tell that the next blocking step requires the user to return to a Mac or

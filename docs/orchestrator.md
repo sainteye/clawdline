@@ -294,12 +294,13 @@ edit reaches the next task, not the next launch — and composed into the `CHILD
 child.
 
 Every child, and not only a dispatcher, because the file carries more than rules about handing
-work out. The sentence in this Mac's own policy saying a Codex sandbox has no network is what
-stops a Codex leaf spending a turn on a `curl` that cannot connect: a leaf reads it and behaves
-differently, which is the test of whether a paragraph belongs in a briefing at all. When the tree
-lost its second level the section was briefly deleted along with the dispatch recipe it travelled
-with, on the reading that house rules are rules about dispatching. They are not, and this Mac
-would have lost its only channel for telling a child anything about itself.
+work out. A sentence in this Mac's own policy can name a local network constraint and tell a leaf
+to use the file fallback immediately rather than spending a turn on a `curl` that cannot connect:
+the leaf reads it and behaves differently, which is the test of whether a paragraph belongs in a
+briefing at all. When the tree lost its second level the section was briefly deleted along with
+the dispatch recipe it travelled with, on the reading that house rules are rules about
+dispatching. They are not, and this Mac would have lost its only channel for telling a child
+anything about itself.
 
 It ships with opinions rather than a comment saying "put your rules here", because a file with
 defensible rules already in it is one somebody edits and an empty one is a feature nobody finds.
@@ -955,19 +956,17 @@ a wrong direction be cancelled at minute three instead of minute twenty-six, and
 cancelled tasks on this machine burned 18.5M and 16.5M tokens before anybody could tell what they
 had set off to do.
 
-**And it only asks through channels the child can reach.** The progress ask was originally one
-curl for everybody, and for a Codex child that ask was physically impossible: its sandbox sets
-`CODEX_SANDBOX_NETWORK_DISABLED=1`, loopback `curl` exits 7 after 0 ms, DNS itself is off, and no
-approval prompt ever appears — measured on this machine by task be9a54c0, where 133 codex children
-were briefed to send the curl and 0 notes arrived, against 26 of 40 claude children. So the
-briefing is honest per assistant. A claude child keeps the HTTP fast path, with the file named as
-the fallback; a codex child is told to write `progress.json` in its task directory — the same
-whole-file-replace, task-secret-inside shape that has always made `result.json` work
-([`docs/api.md`](api.md#post-v1orchestratortasksidprogress) has the collection rules) — and is
-told its network is off rather than left to discover the failure by trying. The notify recipe, the
-`inflight` self-check and the optional completion announce are loopback calls too, so a codex
-briefing replaces each with what is true for it: nothing pushes, the plan it was dispatched with
-is what it has, and the file alone is the completion signal.
+**And it does not infer channels from the assistant name.** Loopback reachability belongs to the
+particular launched session and its sandbox. Codex and Claude can each run with or without it, and
+the task record has no capability receipt from inside the child when `CHILD.md` is written. Every
+briefing therefore offers the same HTTP fast paths for progress, notification, the `inflight`
+self-check and the optional completion announcement. Every command uses `--fail-with-body`, so a
+refusal cannot look delivered. Progress also names `progress.json` in the task directory as its
+fallback — the same whole-file-replace, task-secret-inside shape that has always made `result.json`
+work ([`docs/api.md`](api.md#post-v1orchestratortasksidprogress) has the collection rules). If the
+connection fails, the child does not retry it: progress falls back to that file, a notification is
+left in `result.json`, a failed `inflight` is reported as unknown rather than an empty board, and
+the result file remains the authoritative completion signal.
 
 **How to dispatch is in no briefing at all.** There was a `DISPATCHING.md` beside `CHILD.md`,
 holding the credential path, the `root.parent_task` rule and the `curl`, written for the children

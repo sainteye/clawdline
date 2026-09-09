@@ -1544,9 +1544,8 @@ enum Orchestrator {
 
     /// A session's authenticated declaration about its own quiet state, bound to the exact
     /// process like ``SessionDelivery``. Two independent halves with two lifecycles: `claim`
-    /// (`ready` or `holding`) describes one stopped turn and is consumed when the next turn
-    /// starts; `owed` survives turns until the session clears it, because a debt that vanished
-    /// the moment its owner did side work would be the axis collapse this record exists to fix.
+    /// (`ready`, `holding`, or `waiting_session`) describes one stopped turn and is consumed next
+    /// turn; `owed` survives until explicitly cleared, keeping quiet state and debt separate.
     /// A self declaration may never produce a check state; that boundary is enforced at the
     /// route, in the projection, and by test.
     struct SessionSelfState {
@@ -1628,9 +1627,9 @@ enum Orchestrator {
     /// during the child's linger (or if somebody keeps using its tab), and continuing to draw a
     /// check would claim the *current* work is over on evidence from the previous phase.
     ///
-    /// `selfClaim` is the session's own declared quiet state and is honoured only as `ready` or
-    /// `holding` — never a check, and never ahead of a question, a wait, live activity, or a
-    /// finished receipt. `holding` in particular has no other entrance and is no branch's
+    /// `selfClaim` is the session's own declared quiet state: `ready`, `holding`, or
+    /// `waiting_session` — never a check, and never ahead of a question, broker wait, live
+    /// activity, or finished receipt. `holding` has no other entrance and is no branch's
     /// default: it demands a declared next step with a mover that is not a person, because the
     /// old vocabulary's defect was precisely a fallback case (`needs_triage`) that anything
     /// unmatched fell into.
@@ -1668,7 +1667,9 @@ enum Orchestrator {
         }
         if hasSessionLanding { return .workComplete }
         if hasSessionDelivery { return .milestoneComplete }
-        if selfClaim == .ready || selfClaim == .holding { return selfClaim ?? .unknown }
+        if selfClaim == .ready || selfClaim == .holding || selfClaim == .waitingSession {
+            return selfClaim ?? .unknown
+        }
         if assignmentKnownAbsent { return .ready }
         // Idle is intentionally absent from the success rules. A prompt proves that activity
         // stopped; without a matching receipt it proves neither completion nor readiness. And
@@ -1875,11 +1876,8 @@ enum Orchestrator {
     /// provenance boundary. The route supplies identity from the current watched process, like
     /// ``reportSessionDelivery``, and only while the declaring turn is observably working.
     ///
-    /// What may be declared: `claim` of `ready` (an invitation: you can hand this session work)
-    /// or `holding` (it moves by itself). `holding` is deliberately hard to enter — it needs the
-    /// declared next step in `note`, a `movedBy`, and `personNeeded == false`, because a mover
-    /// who is a person or another session makes the truth a wait, not a hold. The check states
-    /// are refused by name: a self declaration may never produce ☑︎ or ✅.
+    /// Claims are `ready`, `holding` (moves itself), or `waiting_session` (a named peer moves it).
+    /// The latter two need `note`, `movedBy`, and false `personNeeded`; none can produce ☑︎/✅.
     ///
     /// The `owed` half is the second axis and survives turns. Redeclaring the same debt keeps
     /// its original `since` — age is the debt's whole risk, and a clock that reset on every
@@ -1908,14 +1906,14 @@ enum Orchestrator {
             switch SessionWorkState(rawValue: rawClaim) {
             case .some(.ready): claim = .ready
             case .some(.holding): claim = .holding
+            case .some(.waitingSession): claim = .waitingSession
             case .some(.milestoneComplete), .some(.workComplete):
                 return .refused(403, "self_completion_refused",
                                 "The check states are evidence-only: a session cannot declare "
                                     + "milestone_complete or work_complete about itself.")
             default:
-                return .refused(400, "bad_request",
-                                "state must be \"ready\" or \"holding\"; the broker projects "
-                                    + "every other state from evidence.")
+                return .refused(400, "bad_request", "state must be \"ready\", \"holding\", or "
+                    + "\"waiting_session\"; the broker projects every other state from evidence.")
             }
         }
         guard case .some(let note) = selfNote(rawNote) else {
@@ -1932,6 +1930,13 @@ enum Orchestrator {
                                 "holding requires its declared next step (note), a mover "
                                     + "(moved_by), and person_needed: false. A mover who is a "
                                     + "person or another session is a wait, not a hold.")
+            }
+        }
+        if claim == .waitingSession {
+            guard note != nil, movedBy != nil, personNeeded == false else {
+                return .refused(422, "waiting_session_needs_evidence",
+                    "waiting_session needs note, moved_by, and person_needed:false; user decisions "
+                        + "belong in owed.")
             }
         }
         var owed: OwedDebt?
@@ -2006,9 +2011,8 @@ enum Orchestrator {
     /// after reporting arms consumption; the next active state removes the old receipt before a
     /// later idle prompt could display it again.
     ///
-    /// A self-declared claim (`ready`/`holding`) lives on the same clock: it described one
-    /// stopped turn, and the turn after it starts a different story. The `owed` half is exempt
-    /// on purpose — a debt is not consumed by its owner doing side work; only an explicit
+    /// A self-declared claim (`ready`/`holding`/`waiting_session`) lives on that clock: it describes
+    /// one stopped turn. `owed` is exempt because side work does not clear debt; only an explicit
     /// declaration (or a different process in the terminal) clears it.
     static func noteSessionStateChange(terminalID: String, to state: SessionState) {
         load()
@@ -5989,15 +5993,13 @@ enum Orchestrator {
     /// Collect the file half of the progress channel: `progress.json` in the task directory,
     /// carrying the latest note and the task secret.
     ///
-    /// **This channel exists because the curl one measurably does not, for most children.** A
-    /// Codex child's sandbox sets `CODEX_SANDBOX_NETWORK_DISABLED=1`; a curl to loopback exits
-    /// 7 after 0 ms, DNS itself is off, and no approval prompt ever appears — measured on this
-    /// machine by task be9a54c0, where 133 codex children were briefed to send a note over
-    /// HTTP and 0 notes ever arrived, against 26 of 40 claude children. `result.json` never
-    /// had the problem, because it is a file the broker picks up. So progress gets the same
-    /// shape: the child replaces one file, the watch beat collects it, and the same secret
-    /// authenticates it. The route stays the fast path for whoever can reach it — a curl lands
-    /// immediately, the file on the next beat.
+    /// **This channel exists because the curl one can be unreachable from an individual child.**
+    /// Loopback reachability is a property of that launched session's sandbox, not its assistant
+    /// name, and the broker has no capability receipt from inside it when the briefing is written.
+    /// `result.json` avoids the problem because it is a file the broker picks up. Progress gets
+    /// the same shape: the child replaces one file, the watch beat collects it, and the same
+    /// secret authenticates it. The route stays the fast path for whoever can reach it — a curl
+    /// lands immediately, the file on the next beat.
     ///
     /// One file holding one sentence, replaced whole, rather than a log appended to or a file
     /// per note: the registry keeps only the newest ``progressKept`` — history is the
@@ -7357,8 +7359,8 @@ enum Orchestrator {
         // and a last note written moments before result.json still lands.
         _ = collectProgressFile(of: &task)
 
-        // The result file is the completion signal a sandboxed child can always give — writing
-        // to /tmp needs no network approval, where a curl to loopback does.
+        // The result file is the completion signal every child can give — writing to its task
+        // directory does not depend on the loopback capability an HTTP announcement needs.
         if let result = readResult(of: task) {
             guard replaceTask(task, expecting: .briefed) else { return false }
             finalize(task.id, as: result.status == "success" ? .success : .failure,

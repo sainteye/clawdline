@@ -192,9 +192,10 @@ enum Assistant: String, CaseIterable {
     /// session exports, which is exactly what a dispatching child is told to read back as its own.
     /// `CODEX_SANDBOX` and `CODEX_SANDBOX_NETWORK_DISABLED` are dropped for the same reason and
     /// not as sandbox policy: they are a claim to be running *inside* another Codex's sandbox,
-    /// they are false in a tab this app opened, and a child that believes the second one skips
-    /// the loopback half of its progress channel because this repository's own briefings tell it
-    /// to. Setting a sandbox is `--sandbox` on the command line, which is unaffected.
+    /// and they are false in a tab this app opened. A child's own runtime decides whether its
+    /// loopback call succeeds; an inherited value from the dispatching session must not decide
+    /// that before the child starts. Setting a sandbox is `--sandbox` on the command line, which
+    /// is unaffected.
     ///
     /// The Claude Code names were read off a live 2.1.250 session's environment and the Codex
     /// ones out of the shipped binary's strings; a version that invents another name will need

@@ -8,7 +8,8 @@ import { assistantLogo } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId, closeabilityLines, closeabilityPlainReasons, owedBadgeHTML,
          projectSessionCloseability, projectSessionWorkState, sessionCloseabilityHTML,
-         sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML } from "../view/derive.js";
+         selfReportedPeerWaitCopy, sessionCloseabilityShape, sessionStatusGlyphHTML,
+         sessionWorkStateHTML } from "../view/derive.js";
 import { GitPanel } from "./git-panel.js";
 import { SessionFacts, StatusLine } from "./status-line.js";
 import { isOpenableProjectLink, isServedProjectArtifact } from "./project-links.js";
@@ -288,7 +289,8 @@ export var Info = (function () {
                 return [wait.ownerLabel || wait.ownerSessionId, wait.releaseCondition]
                     .filter(Boolean).join(" · ");
             });
-            var waitingCopy = waits.join(" · ") || T.closeabilityMoverSession;
+            var waitingCopy = waits.join(" · ") || selfReportedPeerWaitCopy(s) ||
+                T.closeabilityMoverSession;
             workSaid = '<span class="session-work-copy" data-work-state="waiting_session">' +
                 sessionStatusGlyphHTML("⏳", waitingCopy) + "</span>" + owedBadgeHTML(s);
         } else {

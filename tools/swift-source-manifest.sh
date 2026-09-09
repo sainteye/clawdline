@@ -133,6 +133,7 @@ clawdline_production_sources=(
   Sources/UsageFeatureAttribution.swift
   Sources/UsageFeatureClassifier.swift
   Sources/UsageLedger.swift
+  Sources/VerificationRunLedger.swift
   Sources/VerificationLedgerRoute.swift
   Sources/Voice.swift
   Sources/WebPush.swift
@@ -188,6 +189,7 @@ clawdline_test_sources=(
   Tests/SessionImageMarkerTests.swift
   Tests/SessionLaunchTests.swift
   Tests/SessionRegistryTests.swift
+  Tests/SessionWorkStateTests.swift
   Tests/SessionWatchTests.swift
   Tests/SnippetStoreTests.swift
   Tests/TestGroupManifest.swift
@@ -204,6 +206,7 @@ clawdline_test_sources=(
   Tests/ProjectBoardNarrativeTests.swift
   Tests/ProjectBoardWorkflowTests.swift
   Tests/VerificationLedgerTests.swift
+  Tests/VerificationRunLedgerTests.swift
   Tests/main.swift
 )
 

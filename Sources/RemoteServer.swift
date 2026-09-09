@@ -974,7 +974,7 @@ final class RemoteServer: @unchecked Sendable {
                 return .error(401, "unauthorized", "This needs a paired device.")
             }
         }
-        if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) { return response }
+        if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) ?? VerificationRunLedgerHTTP.route(request, machine: orchestratorAuthed) { return response }
         if let response = ProjectBoardHTTP.route(request, machine: orchestratorAuthed,
                                                  permission: permission(for: request)) { return response }
         if request.path == ProjectBoardWorkflowHTTP.historicalGapsPath {
@@ -1786,7 +1786,9 @@ final class RemoteServer: @unchecked Sendable {
         // screen — the line a session is working on, the question a waiting one is showing, the
         // agents and shells it has out, its transcript id — and this credential exists to
         // dispatch work, not to read somebody's terminal. What comes back here is an address
-        // book. See `coordinationSessionRows` for where the line falls and why.
+        // book plus the bounded state note the Session explicitly authenticated, so a peer
+        // handoff is visible without transcript access. See `coordinationSessionRows` for where
+        // the line falls and why.
         case ("GET", "/v1/orchestrator/sessions"):
             guard orchestratorAuthed else {
                 return .error(403, "forbidden",
@@ -2134,8 +2136,9 @@ final class RemoteServer: @unchecked Sendable {
 
         // A session's declaration about its own quiet state — the `self` half of the work-state
         // provenance boundary (docs/session-states.md). Identity is resolved from the live
-        // watched process exactly as `/complete` does; the body may claim only `ready` or
-        // `holding`, may record or clear the `owed` debt, and can never produce a check.
+        // watched process exactly as `/complete` does; the body may claim only `ready`,
+        // `holding`, or a named `waiting_session`, may record or clear the `owed` debt, and can
+        // never produce a check.
         case ("POST", let path) where path.hasPrefix("/v1/orchestrator/sessions/")
             && path.hasSuffix("/state"):
             guard orchestratorAuthed else {
@@ -4939,8 +4942,11 @@ final class RemoteServer: @unchecked Sendable {
             let identity = identities[session.id] ?? sessionWorkIdentity(session)
             let work = Orchestrator.sessionWorkProjection(
                 identity: identity, terminalState: terminalState)
-            // The address book answers "can this one still be given work" and now also "can it
-            // be ended". Both are structural facts about a session; neither is screen content.
+            // The address book answers "can this one still be given work", "what named handoff
+            // is it waiting on", and "can it be ended". The self-authored wait note is bounded
+            // state evidence rather than screen or transcript content; without it every peer
+            // handoff collapses back to an unactionable `unknown` for the very Sessions that
+            // coordinate the work.
             let closeable = Orchestrator.sessionCloseability(
                 identity: identity, terminalState: terminalState,
                 inventoryComplete: evidence.complete, inventoryObservedAt: evidence.observedAt,
@@ -4954,10 +4960,18 @@ final class RemoteServer: @unchecked Sendable {
                 "work_state": work.state.rawValue,
                 "closeability": closeable.wire,
             ]
+            row["work_provenance"] = work.provenance
+            if let note = work.note { row["work_note"] = note }
+            if let since = work.since { row["work_since"] = Int(since.timeIntervalSince1970) }
+            if let movedBy = work.movedBy { row["work_moved_by"] = movedBy }
+            if let personNeeded = work.personNeeded {
+                row["work_person_needed"] = personNeeded
+            }
+            if let owed = work.owed { row["owed"] = owed }
             if var disposition = work.disposition {
-                // This address book deliberately carries no Session-authored prose. Receipt
-                // scope and broker evidence are structural; the summary/title remains on the
-                // paired-device Session surface where it was already published.
+                // Completion summaries are unconstrained prose and remain on the paired-device
+                // Session surface. The address book carries only the bounded work note above,
+                // because it is part of the authenticated state declaration itself.
                 disposition.removeValue(forKey: "title")
                 row["disposition"] = disposition
             }

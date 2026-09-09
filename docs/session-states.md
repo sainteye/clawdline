@@ -44,7 +44,7 @@ Chinese (the first-class copy; every other language translates it).
 | --- | --- | --- | --- |
 | `waiting_you` | 🙋 | **Answer now.** A turn is stopped on you; every second unnoticed costs something. The only state that pushes or lights the row. | `🙋 在等你回答` |
 | `owed` (overlay) | 📥 | **You owe this line a decision.** Nothing is stopped; it ages, and the age is the risk. Never pushes. | `📥 欠一個決定 · 3d`（通常帶 session 自己的字句） |
-| `waiting_session` | ⏳ | **Do nothing — but if it stays, another session is stuck.** A peer wait, an owed file release, or your own live child. It can wedge; you may have to go and unwedge it. | `⏳ Clawdfather · 檔案釋出` |
+| `waiting_session` | ⏳ | **Do nothing — but if it stays, another session is stuck.** A broker-proved peer/file wait, your own live child, or a session's explicitly self-reported named handoff. It can wedge; you may have to go and unwedge it. | `⏳ 已完成，等待 Clawdfather 整合 · 自述` |
 | `holding` | 🔜 | **Do nothing; it moves by itself.** The mover is an event, a clock, or something the session started — never a person or a session. It cannot wedge. | `🔜 自行推進中 · 自述`（帶宣告的下一步） |
 | `working` | *(spinner)* | Nothing — it is executing now. The live line says what. | `▸ 正在編譯 Orchestrator.swift…` |
 | `ready` | 📭 | **You can hand this one work.** An invitation, almost always the session's own declaration, marked as such. | `📭 可接新工作 · 自述` |
@@ -106,17 +106,19 @@ The `self` half of provenance. Machine token, identity resolved from the live wa
   "owed": { "note": "schedules 的取捨還是你的決定", "moved_by": "the user" } }
 ```
 
-- `state` may be **only** `ready` or `holding`. The check states are refused by name
+- `state` may be **only** `ready`, `holding` or `waiting_session`. The last two require a note,
+  mover and `person_needed:false`; `waiting_session` names a peer that can wedge, while `holding`
+  names an event or clock that cannot. The check states are refused by name
   (`403 self_completion_refused`): a self-declaration may never produce ☑︎ or ✅ — that boundary
   is the existing design's whole point, and the checks stay evidence-only.
-- A `ready`/`holding` claim lives one turn, like a delivery receipt: the first idle settles it,
-  the next working/waiting transition consumes it. Declare again at the end of the next turn if
-  it is still true.
+- A `ready`/`holding`/`waiting_session` claim lives one turn, like a delivery receipt: the first
+  idle settles it, the next working/waiting transition consumes it. Declare again at the end of
+  the next turn if it is still true.
 - `owed` sets the debt; `"owed": null` clears it; omitting it leaves it alone. The debt persists
   across turns until cleared.
 - All notes are one line of at most 200 characters.
 
-### `holding` is deliberately hard to enter
+### `holding` and `waiting_session` are deliberately hard to enter
 
 `needs_triage` went wrong by being the projection's default exit — the last line of the
 function, collecting everything no rule caught. `holding` must never inherit that role: **it is
@@ -134,14 +136,20 @@ for your build or a scheduled time is `holding`. On this Mac most "events" turn 
 sessions, so real holds are rare — if `holding` ever becomes common in live data, that is a spec
 problem to report, not a threshold to tune.
 
+A quiet Session may also declare `waiting_session`, but only with all three pieces that make the
+handoff actionable: a `note` saying what is waiting, `moved_by` naming the other Session (normally
+its terminal-neutral id or `Clawdfather`), and `person_needed:false`. The row always says `自述`;
+it never dresses the declaration as a broker-proved file wait. A user decision is not this state:
+it belongs in the persistent `owed` overlay and triggers the separate attention contract.
+
 ## How the broker projects (precedence)
 
-`waiting_you` (terminal question) → `waiting_session` (coordination wait, either side) →
+`waiting_you` (terminal question) → `waiting_session` (broker coordination wait, either side) →
 `unknown` (unreadable screen) → `working` (live activity) → `waiting_session` (own live child) →
 the task receipt (checks for finished success; `unknown` for finished non-success — the failure
 is on the row as the task's own word, and the *next action* belongs to the root that dispatched
 it, so it earns no demand here) → session delivery (milestone) → the self claim (`ready` /
-`holding`) → `ready` for a plain assistant-free prompt → `unknown`.
+`holding` / named `waiting_session`) → `ready` for a plain assistant-free prompt → `unknown`.
 
 Current activity still outranks old receipts, and an idle assistant prompt without evidence is
 still not `ready` — but `ready` is no longer structurally unreachable for assistant sessions:

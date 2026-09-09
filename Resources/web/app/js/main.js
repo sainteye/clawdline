@@ -76,7 +76,7 @@ import "./input/command.js";
 import "./input/schedule.js";
 import { ScheduleHistory } from "./input/schedule-history.js";
 import "./input/status-line.js";
-import "./input/info.js";
+import { Info } from "./input/info.js";
 import { Push } from "./input/push.js";
 import "./input/shots.js";
 import "./input/voice.js";
@@ -403,7 +403,7 @@ bindSessionBoard(byId("session-board"), {
     read: function (project, item) { return api.board(project, item); },
     visible: function () { return Pages.current() === Pages.home() && !!S.openId && !S.agent; },
     ready: function () { return !!S.openId && !S.tx.loading; },
-    open: function (project, item, presentation) { BoardControls.open(project, item, presentation); }
+    open: function (project, item, presentation) { Info.close(); BoardControls.open(project, item, presentation); }
 });
 BoardControls.onChange = function (enabled) { SessionBoard.setEnabled(enabled); };
 BoardControls.open = function (project, item, presentation) {

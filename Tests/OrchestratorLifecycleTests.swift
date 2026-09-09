@@ -913,13 +913,11 @@ group("a child is the bottom of the tree, and no setting can put a level under i
           refusedRoot.state == .spawnFailed && !refusedRoot.sessionRoot)
 }
 
-group("a codex child is briefed with channels it can actually reach") {
-    // Measured on this machine (task be9a54c0): CODEX_SANDBOX_NETWORK_DISABLED=1, curl to
-    // 127.0.0.1 exits 7 after 0 ms, example.com fails at DNS resolution, and no approval
-    // prompt ever appears. 133 codex children were briefed to curl a progress note; 0 notes
-    // arrived. The group above asserts the progress section is *present*; nothing asserted it
-    // was *reachable* for the assistant being briefed, which is how the impossible ask stayed
-    // green — so every reachability claim here is made against the codex briefing itself.
+group("a child briefing does not infer loopback reachability from its assistant") {
+    // Whether this particular session can connect to loopback is a runtime capability, not an
+    // Assistant property. Codex may be launched with network access, and Claude may run inside a
+    // sandbox that blocks it. The briefing therefore offers the same HTTP fast path to both and
+    // gives the child a file fallback when the connection itself proves unavailable.
     func fixture(_ assistant: Assistant) -> Orchestrator.Task {
         Orchestrator.Task(id: taskID, state: .briefed, kind: "custom", title: "a task",
                           assistant: assistant, projectDir: "/Users/me/code/thing",
@@ -929,32 +927,37 @@ group("a codex child is briefed with channels it can actually reach") {
     let codex = Orchestrator.childBrief(for: fixture(.codex))
     let claude = Orchestrator.childBrief(for: fixture(.claude))
 
-    check("a codex child is never handed a loopback recipe at all",
-          !codex.contains("http://127.0.0.1") && !codex.contains("curl -s"))
-    check("its progress channel is the file the broker collects",
+    check("a codex child receives the loopback fast path for all four operations",
+          codex.contains("/v1/orchestrator/tasks/\(taskID)/progress")
+            && codex.contains("/v1/orchestrator/tasks/\(taskID)/notify")
+            && codex.contains("/v1/orchestrator/tasks/\(taskID)/inflight")
+            && codex.contains("/v1/orchestrator/tasks/\(taskID)/complete"))
+    check("its progress channel keeps the file the broker collects as fallback",
           codex.contains("/tmp/.clawdline/\(taskID)/progress.json")
-            && codex.contains("\"task_secret\"") && codex.contains("\"note\""))
-    check("told as a whole-file replace, the write pattern result.json already proved",
-          codex.contains("replacing the whole file"))
-    check("the three-minute first note survives the channel change",
+            && codex.contains("\"task_secret\"") && codex.contains("\"note\"")
+            && codex.contains("cannot connect"))
+    check("the three-minute first note remains explicit",
           codex.contains("within about three minutes of starting")
             && codex.contains("before you begin the work"))
-    check("and it is told the network is off rather than left to discover it by trying",
-          codex.contains("exit") && codex.contains("no approval prompt"))
-    check("the push-notification recipe is gone with the network that carried it",
-          !codex.contains("/v1/orchestrator/tasks/\(taskID)/notify"))
-    check("the inflight self-check too, with the plan named as what it has instead",
-          !codex.contains("/v1/orchestrator/tasks/\(taskID)/inflight")
-            && codex.contains("the plan above"))
-    check("and the optional completion announce: the file is the whole signal",
-          !codex.contains("/v1/orchestrator/tasks/\(taskID)/complete"))
+    check("a failed notification is not retried or mistaken for delivery",
+          codex.contains("leave the content in `result.json`")
+            && codex.contains("do not retry"))
+    check("a failed inflight lookup is not rendered as an empty board",
+          codex.contains("If this one fails you have no answer")
+            && codex.contains("not the same as an empty"))
+    check("completion still names the file as the authoritative signal",
+          codex.contains("This is never required; the file alone is enough"))
+    check("the assistant name does not change the briefing's network contract", codex == claude)
+    check("neither briefing asserts a runtime network fact it did not measure",
+          !codex.contains("Notifications cannot leave your sandbox")
+            && !codex.contains("Your sandbox has no network"))
 
     check("a claude child keeps the HTTP fast path for all four",
           claude.contains("/v1/orchestrator/tasks/\(taskID)/progress")
             && claude.contains("/v1/orchestrator/tasks/\(taskID)/notify")
             && claude.contains("/v1/orchestrator/tasks/\(taskID)/inflight")
             && claude.contains("/v1/orchestrator/tasks/\(taskID)/complete"))
-    check("and is told about the file fallback, not left to meet a sandbox the hard way",
+    check("and both assistants receive the same file fallback",
           claude.contains("/tmp/.clawdline/\(taskID)/progress.json"))
 }
 
@@ -965,10 +968,10 @@ group("the graph and this Mac's own rules reach every child's briefing") {
     //
     // **The policy half was once delivered only to a child that could dispatch**, on the reading
     // that house rules are rules about handing work out. That reading is wrong, and the evidence
-    // is behavioural: the sentence in this Mac's own file saying a Codex sandbox has no network
-    // is what stops a Codex leaf spending a turn on a `curl` that cannot connect. The file
-    // carries facts about the machine and not only rules about dispatching, so it goes to every
-    // child — which, the tree being one level deep, is now the only kind there is.
+    // is behavioural: a sentence in this Mac's own file can tell a child about a local network
+    // constraint that changes how it uses the HTTP fast path. The file carries facts about the
+    // machine and not only rules about dispatching, so it goes to every child — which, the tree
+    // being one level deep, is now the only kind there is.
     let policyFile = Orchestrator.policyURL
     let localPolicyFile = Orchestrator.localPolicyURL
     let policyBefore = try? Data(contentsOf: policyFile)
@@ -1021,12 +1024,12 @@ group("the graph and this Mac's own rules reach every child's briefing") {
     // The nail this group carries. The machine-local file exists so facts about *this* Mac
     // survive edits and syncs of the shipped rules; composing it is worth nothing if the
     // composed text has no consumer, and the briefing is the consumer.
-    try? Data("Codex children here have no network.".utf8)
+    try? Data("Some sessions here cannot reach loopback.".utf8)
         .write(to: localPolicyFile, options: .atomic)
     let composedBrief = brief(plan: nil)
     check("the machine-local file reaches the child too, last and under its own heading",
           composedBrief.contains(Orchestrator.localPolicyHeading)
-            && composedBrief.contains("Codex children here have no network.")
+            && composedBrief.contains("Some sessions here cannot reach loopback.")
             && composedBrief.range(of: "Review runs on opus.")!.lowerBound
                 < composedBrief.range(of: Orchestrator.localPolicyHeading)!.lowerBound)
     try? FileManager.default.removeItem(at: localPolicyFile)

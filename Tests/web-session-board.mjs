@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const {createSessionBoardController} = await import(process.argv[2]
     ? pathToFileURL(process.argv[2]).href : '../Resources/web/app/js/input/session-board.js');
 let checks=0;
 function check(name, condition) { assert.ok(condition,name); checks++; }
+const html = fs.readFileSync(new URL('../Resources/web/index.html', import.meta.url), 'utf8');
+const infoStart = html.indexOf('id="info-sheet"');
+const infoEnd = html.indexOf('id="info-close"', infoStart);
+const boardPosition = html.indexOf('id="session-board"');
+check('Board relations live inside Session Info, not above the chat',
+    infoStart >= 0 && boardPosition > infoStart && boardPosition < infoEnd
+    && html.split('id="session-board"').length === 2);
+const main = fs.readFileSync(new URL('../Resources/web/app/js/main.js', import.meta.url), 'utf8');
+check('opening related work dismisses Session Info before navigating',
+    /open: function \(project, item, presentation\) \{ Info\.close\(\); BoardControls\.open\(project, item, presentation\); \}/.test(main));
 const a={id:'%1',sessionId:'11111111-1111-4111-8111-111111111111'};
 const b={id:'%2',sessionId:'22222222-2222-4222-8222-222222222222'};
 let calls=[], renders=[], opens=[], pending=[], visible=true;

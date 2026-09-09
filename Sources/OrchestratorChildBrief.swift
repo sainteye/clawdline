@@ -11,11 +11,10 @@ extension Orchestrator {
     /// The file was reasoned about as rules for *handing work out*, so when the tree lost its
     /// second level the section read as dead weight and was deleted with the recipe. It is not
     /// dead weight: the same file is where a person writes down what is true of this machine,
-    /// and one of those sentences — that a Codex child's sandbox has no network — is measurably
-    /// what stops a Codex child spending a turn on a `curl` that cannot connect. A leaf reads it
-    /// and behaves differently, which is the whole test of whether a paragraph belongs in a
-    /// briefing. So it goes to every child, dispatcher or not, and there is no longer any such
-    /// thing as the second kind.
+    /// and one of those sentences can name a network constraint that changes how a child uses its
+    /// HTTP fast path. A leaf reads it and behaves differently, which is the whole test of whether
+    /// a paragraph belongs in a briefing. So it goes to every child, dispatcher or not, and there
+    /// is no longer any such thing as the second kind.
     ///
     /// Read from disk at briefing time, so an edit reaches the next child rather than the next
     /// launch. Empty when nobody has written anything, rather than a heading with nothing under
@@ -188,30 +187,18 @@ extension Orchestrator {
         releases the standing session and its claims.
 
         """
-        // A Codex child's sandbox has no network at all — measured by task be9a54c0, not
-        // inferred: CODEX_SANDBOX_NETWORK_DISABLED=1 is set, a curl to 127.0.0.1 exits 7 after
-        // 0 ms, DNS itself is off, and no approval prompt ever appears. 133 codex children
-        // were briefed to curl a progress note and 0 notes arrived; result.json always worked
-        // because it is a file. So every loopback recipe below is per-assistant: HTTP stays
-        // the fast path for a child that can reach it, and a child that cannot is told what
-        // actually works instead of being left to discover the dead network by trying.
-        let sandboxed = task.assistant == .codex
+        // Loopback reachability belongs to this particular launched session, not to the assistant
+        // name. Both assistants can run with or without it, and Task has no durable capability
+        // receipt from inside the child. Offer the HTTP path to both; progress and completion keep
+        // their file signals, and every HTTP instruction says what a refusal or failed connection
+        // means instead of pretending the assistant name answered the runtime question.
         let progressFile = """
         ```json
         {"task_secret": "<the TASK_SECRET value from your first message>",
          "note": "<one sentence, at most \(progressLimit) characters>"}
         ```
         """
-        let timelySection = sandboxed
-            ? """
-              ## Notifications cannot leave your sandbox
-
-              Other briefings carry a push-notification recipe here; it is a loopback HTTP call
-              your sandbox cannot make, so it is not in yours. Anything the user needs to know
-              mid-flight goes in `progress.json` below, and the answer itself in `result.json`
-              — both are collected and read, so nothing timely is lost by not pushing.
-              """
-            : """
+        let timelySection = """
               ## Up to 5 timely notifications, when the user is waiting
 
               You may use your own TASK_SECRET to push one sentence the user needs to know now,
@@ -238,23 +225,10 @@ extension Orchestrator {
               values are refused. Each task may send at most 5 notifications, and this Mac
               accepts at most 30 per hour. The user may turn agent notifications off. A `409
               agent_notify_disabled` response is not your fault, and neither is any other
-              refusal here: leave the content in `result.json`, report failure honestly, and do
-              not retry.
+              refusal here: leave the content in `result.json`, report failure honestly,
+              and do not retry.
               """
-        let progressChannel = sandboxed
-            ? """
-              **Your sandbox has no network, so say it with a file.** A `curl` to 127.0.0.1
-              from here exits 7 after 0 ms — DNS is off too, and no approval prompt will
-              appear — so do not spend a turn discovering that. Write \(dir)/progress.json
-              with your file-writing tool, replacing the whole file each time:
-
-              \(progressFile)
-
-              The broker collects it within seconds, the way it collects `result.json`; a
-              half-written file simply fails to parse and is read again. Only the latest
-              sentence in the file is collected — overwrite, do not append.
-              """
-            : """
+        let progressChannel = """
               ```bash
               curl --fail-with-body -sS -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/progress \\
                 -H "X-Clawdline-Task-Secret: <TASK_SECRET>" \\
@@ -276,21 +250,7 @@ extension Orchestrator {
 
               and the broker collects it the way it collects `result.json`.
               """
-        let inflightSection = sandboxed
-            ? """
-              ## Before you start work you believe is new
-
-              Another session's isolated checkout is invisible from the shared tree: a finished
-              delivery sitting on a branch nobody has merged shows up in no `git status`, no
-              `git diff` and no file listing. So "nothing here does that yet" is not evidence.
-              Other briefings carry a live self-check against the broker's task list; your
-              sandbox cannot reach it, so what you have instead is the plan above, when the
-              dispatcher wrote one, and `task.json`. If part of your task looks like it may
-              already be somebody else's work, write that suspicion into `progress.json` now
-              and into your summary rather than silently building it twice — whoever reads
-              your result can see the whole board and settle it.
-              """
-            : """
+        let inflightSection = """
               ## Before you start work you believe is new, look
 
               Another session's isolated checkout is invisible from the shared tree: a finished
@@ -316,12 +276,7 @@ extension Orchestrator {
               at this moment — say in your result what you checked and what it told you,
               rather than reporting the ground as clear.
               """
-        let announceSection = sandboxed
-            ? """
-              There is no completion announcement to attempt from your sandbox: the file alone
-              is the completion signal, and it has always been enough.
-              """
-            : """
+        let announceSection = """
               Optionally, if outbound network is permitted in your sandbox, you may ALSO announce it:
               `curl --fail-with-body -sS -X POST http://127.0.0.1:\(Config.shared.remotePort)/v1/orchestrator/tasks/\(task.id)/complete \\
                  -H "X-Clawdline-Task-Secret: <TASK_SECRET>" -H 'Content-Type: application/json' \\

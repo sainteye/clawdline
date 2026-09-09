@@ -168,6 +168,9 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `GET` | `/v1/orchestrator/usage/analytics.json` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage/project-worktrees` | orchestrator token, **or** token | `read` |
 | `GET` | `/v1/orchestrator/usage/verification-ledger` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/orchestrator/verification-runs/reserve` | orchestrator token | — |
+| `GET` | `/v1/orchestrator/verification-runs/:receipt-id` | orchestrator token | — |
+| `POST` | `/v1/orchestrator/verification-runs/:receipt-id/complete` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/sessions` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/whoami` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/messages` | orchestrator token + key | — |
@@ -2314,6 +2317,10 @@ $ curl -s http://127.0.0.1:7717/v1/orchestrator/sessions \
    {"id":"35D87610-E7F4-4A9A-95A0-11947CF5115C","assistant":"claude",
     "cwd":"/Users/you/code/clawdline","label":"Clawdline structured messages","state":"working",
     "work_state":"working"},
+   {"id":"%handoff","assistant":"codex","cwd":"/Users/you/code/clawdline",
+    "label":"finished status work","state":"idle","work_state":"waiting_session",
+    "work_provenance":"self","work_note":"finished; waiting for Clawdfather integration",
+    "work_moved_by":"%426","work_person_needed":false},
    {"id":"B3ACDE0D-DE72-4E58-A99A-AB845A539C90","assistant":"claude",
     "cwd":"/Users/you/code/clawdline","label":"the envelope work","state":"idle",
     "work_state":"milestone_complete",
@@ -2336,18 +2343,21 @@ had nowhere to read the ids it takes.
 | `label` | one short line naming the session: a name a person typed for it, else the Clawdline task title when this app opened the tab (`[Task] <title>` for every scheduled run), else what the conversation calls itself in the assistant's own records, else `⌘<window>-<tab>`. **Never the tab's title** — see [the Session object](#the-session-object) |
 | `state` | `working`, `waiting`, `idle` or `unknown` — the terminal state, so a caller knows whether anybody is home |
 | `work_state` | the closed, fail-closed broker projection documented on [the Session object](#the-session-object); always present |
+| `work_provenance`, `work_note`, `work_since`, `work_moved_by`, `work_person_needed` | the bounded evidence beside a self-reported state. In particular, a `waiting_session` handoff says what is waiting and which non-person mover owns the next step, so other Sessions do not have to open its transcript. Absent when the projection has no such evidence |
+| `owed` | the separately declared user/action debt, when present; unlike a one-turn state it survives later activity until explicitly cleared |
 | `disposition` | structural receipt identity when `work_state` is a check: `scope`, typed `evidence`, receipt timestamps and verified Git fields. The Session-authored summary/title is deliberately omitted on this address-book route |
 | `taskId` | the Clawdline child task this tab belongs to. **Absent** for a session a person opened and for a task retained as an independently owned Root |
 | `coordinator` | present only on the one exact process-bound Session registered as coordinator; the closed row projection is `{"label":"Clawdfather","status":"online","commands":[…]}` |
 
-**What a caller may not learn from it.** Nothing a session said, showed or is running: no `line`
+**What a caller may not learn from it.** Nothing a session showed or is currently running: no `line`
 (what it is working on), no `menu` (the question a waiting session is asking), no `agents`, no
 `shells`, no transcript, and in particular no `sessionId` — the assistant's own conversation id,
 which is the *name of its transcript file*. This credential exists to dispatch work, not to read a
-terminal, and the exposure line is deliberately one short label short of that. `label` is the one
-field that is not purely structural; it is a phrase already drawn on the window title, in the
-Dock's window menu and in every switcher on this Mac, and without it two sessions in one checkout
-cannot be told apart — which is the case waits exist for.
+terminal. The exceptions are the short bounded `label`, self-state `work_note`, and `owed.note`:
+all three were explicitly authenticated as coordination state rather than scraped from the screen
+or transcript. Without the first, two sessions in one checkout cannot be told apart; without the
+second, “finished my part; waiting for Clawdfather” collapses to `unknown`; without the third, a
+user decision silently disappears from the address book.
 
 **Sessions with no assistant in them are not listed.** A wait is delivered by typing a line into
 the owner's session, so a plain shell prompt is an address that cannot answer. An empty
@@ -2631,15 +2641,18 @@ $ curl -s -X POST "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$SID/state" \
 ```
 
 The body may contain only `state`, `note`, `moved_by`, `person_needed`, and `owed`. `state` may
-be **only** `"ready"` or `"holding"`; `"milestone_complete"`/`"work_complete"` are refused
-`403 self_completion_refused` — the check states stay evidence-only — and anything else is
-`400 bad_request`. A `holding` claim additionally requires `note`, `moved_by`, and
-`person_needed: false` (`422 holding_needs_evidence`): holding is never a default, and a mover
-who is a person or a session makes the truth a wait. Notes are one line of at most 200
-characters.
+be **only** `"ready"`, `"holding"`, or `"waiting_session"`;
+`"milestone_complete"`/`"work_complete"` are refused `403 self_completion_refused` — the check
+states stay evidence-only — and anything else is `400 bad_request`. A `holding` claim
+additionally requires `note`, `moved_by`, and `person_needed: false` (`422
+holding_needs_evidence`): holding is never a default. A `waiting_session` claim requires the same
+three fields (`422 waiting_session_needs_evidence`) and is the explicit self-reported handoff for
+“finished my part; waiting for `%426` to integrate” or another named Session dependency. It is
+not a completion receipt. A person-owned decision belongs in `owed`, not `waiting_session`.
+Notes are one line of at most 200 characters.
 
-The `ready`/`holding` claim follows the delivery-receipt lifecycle — settled at the first idle,
-consumed when the terminal next enters `working` or `waiting`. The `owed` debt does not: it
+The `ready`/`holding`/`waiting_session` claim follows the delivery-receipt lifecycle — settled at
+the first idle, consumed when the terminal next enters `working` or `waiting`. The `owed` debt does not: it
 survives turns until this route clears it with `"owed": null`, and re-declaring the same debt
 note keeps the original `since`. Refusals `401/403/404/409 session_not_working/409
 session_unbound` match `/complete`.
@@ -4814,6 +4827,77 @@ Projects instead of drawing a list it cannot fill. It draws the branch as
 `clawdline/task/<worktree id>` under a label saying the value is this document's convention rather
 than a field of the payload.
 
+### Verification run reservations
+
+`POST /v1/orchestrator/verification-runs/reserve`,
+`GET /v1/orchestrator/verification-runs/:receipt-id`, and
+`POST /v1/orchestrator/verification-runs/:receipt-id/complete` form a closed,
+**orchestrator-token-only** protocol. A task secret and a paired-device capability both receive
+no authority: anonymous and task-secret requests are rejected by the outer authentication gate as
+`401 unauthorized`, while an authenticated paired device reaches the route's explicit `403
+forbidden`. Only the orchestrator token reaches the request parser. These routes reserve
+machine-wide compiler work and are not delegated writes.
+
+Reserve takes exactly this snake-case object (nullable optional fields may be omitted):
+
+```json
+{"request_id":"lowercase-uuid","repository_sha256":"64 lowercase hex","task_id":"lowercase-uuid",
+ "subject":{"kind":"commit_tree","tree_sha":"40 or 64 lowercase hex"},
+ "question_id":"stable.question-id","verification_kind":"full","variant":"baseline",
+ "mutation_id":null,"baseline_receipt_id":null,
+ "command_sha256":"64 lowercase hex","environment_sha256":"64 lowercase hex"}
+```
+
+`subject` is instead `{"kind":"working_overlay","base_commit":"…","overlay_sha256":"…"}`
+for dirty self-proof, and that form always requires a non-null `task_id`; the task id participates
+in the overlay producer identity. `verification_kind` is one of `static`, `typecheck`, `focused`,
+`mutation`, `full`, `build`, or `smoke`; `variant` is `baseline` or `mutation`. A mutation
+reservation must use kind and variant `mutation`, carry a stable `mutation_id`, and name a passed
+baseline receipt for the same repository, exact subject, question and environment. A
+working-overlay baseline also requires the same non-null task id. A full reservation must be
+baseline evidence about an exact commit tree. Unknown keys, wrong optional-field types and
+malformed identities are `400 malformed_receipt`.
+
+The answer's `decision` is `run_required` with a newly reserved receipt, `active` when another
+Session owns the exact tuple, or `reusable` when an exact passing receipt already answers it.
+`active` is a typed `409`, not a test failure. Repeating the same `request_id` and byte-for-byte
+reservation is idempotent; reusing it for another identity is `409 request_identity_conflict`.
+Only a commit-tree pass is reusable across task ids. A working-overlay pass is reusable solely by
+the same non-null task id. Failed and `inconclusive_environment` runs are retained and permit a new
+reservation. An expired reservation receives an append-only `reservation_expired` inconclusive
+outcome before new work may be reserved.
+
+Completion takes exactly `{"reservation":{…},"outcome":{…}}`; the reservation is repeated so the
+write can compare the whole immutable identity to the receipt named by the path. Outcome is:
+
+```json
+{"completion_id":"lowercase-uuid","state":"passed","exit_status":0,
+ "checks_passed":11135,"checks_failed":0,"duration_ms":288000,
+ "log_sha256":"64 lowercase hex","inconclusive_code":null,
+ "full_suite_receipt_sha256":"64 lowercase hex"}
+```
+
+State is `passed`, `failed`, or `inconclusive_environment`. Passed means exit zero and no failed
+checks; failed requires a nonzero exit or failed check; inconclusive requires a stable typed code.
+Only a passing full run may carry `full_suite_receipt_sha256`, and it must: this is the digest of
+the single complete `CLAWDLINE_TEST_SEAL` line retained from the unfiltered `test.sh` stdout/log.
+Set `CLAWDLINE_VERIFY_QUESTION_ID` when invoking `./test.sh` to use the canonical repo-native
+reserve/run/complete wrapper; its digest recipe and snapshot overrides are specified in
+`docs/verification-workflow.md`. Repeating one exact completion is idempotent. A changed
+reservation is `409 receipt_tuple_mismatch`; a changed outcome is `409 outcome_conflict`;
+completion without a reservation is `404 not_found`.
+
+GET returns `reserved`, `passed`, `failed`, `inconclusive_environment`, `malformed`, `absent`, or
+`unavailable`. Stored decode failures are never collapsed into absent and block reuse with
+`422 stored_receipt_malformed`; SQLite/open failures are `503 verification_ledger_unavailable`.
+Reservations and outcomes are separate append-only tables in the Observability SQLite store, so
+task-directory cleanup and broker restart remove neither one.
+
+The token authenticates the caller, not the physical measurement. Repository, command,
+environment, log and full-seal hashes are caller attestations: the broker validates and preserves
+their canonical relationships but does not independently observe Git, execute the command or hash
+the log.
+
 ### `GET /v1/orchestrator/usage/verification-ledger?graph=<id>`
 
 **What each Feature's reviews found, what proving it cost, and how its tokens divided between
@@ -5085,12 +5169,11 @@ appear as `progress` on the task record and on every `inflight` row. Sending the
 the newest one is accepted and ignored — a loop is not news, and refusing it would only cost the
 caller a retry. A terminal task is refused with `409 not_live`: what it did belongs in its summary.
 
-**The file half of the same channel.** Most children cannot make this call at all: a Codex child's
-sandbox sets `CODEX_SANDBOX_NETWORK_DISABLED=1`, `curl` to loopback exits 7 after 0 ms, DNS itself
-is off, and no approval prompt ever appears — measured on the machine this came from (task
-be9a54c0), where 133 codex children were briefed to send this curl and 0 notes ever arrived.
-`result.json` never had the problem, because it is a file the broker picks up. So progress has a
-file twin with the same authentication: the child writes `progress.json` in its own task directory,
+**The file half of the same channel.** An individual child's sandbox may make this call
+unreachable; that is a capability of the launched session, not something the broker can infer
+from whether its assistant is Codex or Claude. `result.json` avoids the problem because it is a
+file the broker picks up. So progress has a file twin with the same authentication: the child
+writes `progress.json` in its own task directory,
 
 ```json
 {"task_secret": "<TASK_SECRET>", "note": "<one sentence, at most 300 characters>"}
@@ -5476,7 +5559,7 @@ axes; clients must
 not infer it from `idle`. Precedence is: a question stopped on you, a durable peer/owed wait,
 unreadable or
 missing evidence, current activity, an idle root's live child, the finished task receipt,
-authenticated delivery, the session's own `ready`/`holding` claim, then an assistant-free
+authenticated delivery, the session's own `ready`/`holding`/`waiting_session` claim, then an assistant-free
 prompt's `ready`. Current
 activity outranks an older receipt. `ready` requires positive evidence — an assistant-free
 prompt, or the session's own authenticated declaration (provenance `self`); an idle assistant
@@ -5488,7 +5571,9 @@ Beside it ride `work_provenance` ("broker" or "self"), and — when a declaratio
 `work_person_needed`, plus the independent second axis `owed`
 (`{note, since, person_needed, moved_by?, provenance}`), a debt that survives turns until the
 session clears it. `holding` appears only with `self` provenance — it has no broker entrance and
-is never a fallback — and a self-declaration can never produce either check state.
+is never a fallback. A self-reported `waiting_session` must name both the wait and its non-person
+mover; clients render it as self-reported rather than broker-proven. A self-declaration can never
+produce either check state.
 
 Beside all of that rides the independent fourth projection, `closeability` — `ready` says this
 session can take work, `closeability` says whether it can end, and neither may be read off the

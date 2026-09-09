@@ -953,6 +953,11 @@ Root idle 且仍有 live Clawdline Child 時，broker 會投影成 `waiting_sess
 Child 工作；這是等待，不是待分流，也不是已交付。Root 同時做事仍顯示 `working`，Child 完成只會移除
 等待 evidence，不會替 Root 的整合工作宣告完成。
 
+部分 delivery 若是在等具名 peer，而不是等 live Child，owning root 要呼叫
+`POST /v1/orchestrator/sessions/:id/state`，用 `state:"waiting_session"`、有界單行 `note`、
+精確的 `moved_by` 與 `person_needed:false` 宣告 handoff。這不是 completion receipt；整輪完成才用
+`/complete`，需要人的決定則用 `owed` 加 `/v1/orchestrator/notify`。
+
 有 claims 的 child 成果回來時，root 要用該 task secret 在原 task 上登記尚未關閉的義務：呼叫
 `POST /v1/orchestrator/tasks/:id/landing`，body 是
 `{"state":"pending","target":"<目標 ref>"}`。具名 root 接受 handoff 後，也可比照 cancel 與
@@ -1021,6 +1026,14 @@ slug 唯一匹配 retained receipt 時才推導，缺失、衝突、任意路徑
 4. **一次落一份，而且每一份都由你自己在確切的 staged tree 上驗。** 不是交付者跑的那一次，是你
    在即將 commit 的那個 index 上跑的那一次，照上面「關閉一份 code delivery」的步驟。一次一份不是
    為了謹慎而謹慎：它讓失敗可以歸因，因為距離上一棵綠樹之間唯一變動的，就是你剛 stage 的那一份。
+   以 `CLAWDLINE_VERIFY_QUESTION_ID=<穩定問題代號> ./test.sh` 開始；repo-native wrapper 會用
+   canonical recipe 算出 repository/tree/command/environment tuple，並在取得 compile lock 前用
+   machine token 保留它。只有 exact commit-tree 的 `reusable` pass 可以直接沿用；`active` 就等待；
+   只有 `run_required` 才執行，之後完成同一張 receipt。focused 或 dirty overlay 的綠只算
+   self-proof，不能代替這一步。完整 unfiltered full pass 由 wrapper 保留並雜湊 stdout/log 裡的
+   `CLAWDLINE_TEST_SEAL` tuple，completion 綁定該 digest；本地三個 seal 只能用
+   `tools/apply-test-receipt-seal.sh` 一次更新。這些 machine-authenticated hashes 是 caller 的
+   attestation，不是 broker 自己重新觀測 Git、command 或 log 的證明。
 5. **Build**，最後做一次——在最後一份落地之後，中間不要 build。它會替換並重啟使用者正在用的 app，
    所以動手前先說一聲，而且要從 HEAD 建，不是從工作樹。
 6. **恢復，並且跟每條線要兩份清單。** 在任何東西重新開始之前，分開問每一條線：**(a) 它的技術下一步**、

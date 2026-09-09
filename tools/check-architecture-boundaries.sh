@@ -404,7 +404,9 @@ fi
 # Board auth, routing and bounded-read wiring add three net lines to HEAD's 5,882;
 # take the previously unused headroom down to this candidate's measured size.
 # Managed Board send now lives in ProjectBoardWorkflowHTTP; retain the measured wire-up size.
-remote_server_ceiling=5797
+# Session peer-handoff address-book evidence and the verification-run router add fourteen lines;
+# their bounded payload/protocol implementations remain outside this router. Measured on this tree.
+remote_server_ceiling=5811
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -466,7 +468,9 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # The bounded Board narrative worker has its own injected-clock/process-boundary runner.
 # Schedule Webhook has one cohesive binding/delivery runner beside scheduled dispatch.
 # Personal Board Workflow has one cohesive durable ingress/outbox runner.
-runner_count_expected=44
+# Exact per-run verification receipts and Session work-state projection each have one cohesive
+# runner, keeping both tests out of already frozen 2,000-line suites.
+runner_count_expected=46
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -662,8 +666,10 @@ done
 # lines from the limit.
 # 56 with Tests/ScheduleWebhookTests.swift, one cohesive durable binding/delivery suite beside
 # scheduled dispatch. This is feature coverage, not a split made only to move the guard.
+# 58 with Tests/VerificationRunLedgerTests.swift, the append-only per-run receipt boundary.
+# 59 with Tests/SessionWorkStateTests.swift, the bounded peer-handoff projection boundary.
 # One owner for the number, for the reason written above the runner count.
-suite_count_expected=57
+suite_count_expected=59
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts

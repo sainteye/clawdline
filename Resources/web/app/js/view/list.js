@@ -6,7 +6,7 @@ import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
 import { shortPath, tint } from "../core/util.js";
 import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
-import { byId, featureRootChip, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
+import { byId, featureRootChip, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, selfReportedPeerWaitCopy, sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
 import { renderDetailHead } from "./transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
@@ -634,13 +634,21 @@ function fillRow(node, s) {
     // a partial/old frame fails closed to readable triage rather than leaving an ambiguous gap.
     var work = projectSessionWorkState(s);
     if (work.state === "waiting_session" && !peerSaid) {
-        var liveRoots = roots.filter(taskLive);
-        if (liveRoots.length) {
-            var childWait = T.webTaskTasks + ": " + liveRoots.map(function (task) {
-                return task.title || task.id;
-            }).join(" · ");
-            peerSaid = '<span class="coordination-wait" title="' + esc(childWait) + '">' +
-                sessionStatusGlyphHTML("⏳", childWait) + "</span>";
+        if (s.work_provenance === "self" && s.work_note && s.work_moved_by &&
+            s.work_person_needed === false) {
+            var declaredWait = selfReportedPeerWaitCopy(s);
+            var declaredTitle = s.work_moved_by + " · " + s.work_note;
+            peerSaid = '<span class="coordination-wait" title="' + esc(declaredTitle) + '">' +
+                sessionStatusGlyphHTML("⏳", declaredWait) + "</span>";
+        } else {
+            var liveRoots = roots.filter(taskLive);
+            if (liveRoots.length) {
+                var childWait = T.webTaskTasks + ": " + liveRoots.map(function (task) {
+                    return task.title || task.id;
+                }).join(" · ");
+                peerSaid = '<span class="coordination-wait" title="' + esc(childWait) + '">' +
+                    sessionStatusGlyphHTML("⏳", childWait) + "</span>";
+            }
         }
     }
     var workSaid = sessionWorkStateHTML(s);
@@ -660,7 +668,10 @@ function fillRow(node, s) {
             wait.releaseCondition || ""].join(":");
     })).concat(roots.filter(taskLive).map(function (task) {
         return ["child", task.id || "", task.title || ""].join(":");
-    })).join("+");
+    })).concat(work.state === "waiting_session" && s.work_provenance === "self" ? [
+        ["declared", s.work_note || "", s.work_moved_by || "",
+            String(s.work_person_needed)].join(":")
+    ] : []).join("+");
     var shape = kind + "-" + s.state + "+ws" + work.state +
         (closeable.block ? "+cl" + sessionCloseabilityShape(s) : "") +
         (shells ? "+sh" + shells : "") + (waitShape ? "+cw" + waitShape : "");

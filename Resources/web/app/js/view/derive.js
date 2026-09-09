@@ -72,7 +72,9 @@ export function projectSessionWorkState(s) {
         return { state: "unknown", failedClosed: true };
     }
     if (s.work_state === "waiting_session") {
-        return tasksOfRoot(s.id).some(taskLive)
+        var declaredWait = s.work_provenance === "self" && !!s.work_note &&
+            !!s.work_moved_by && s.work_person_needed === false;
+        return (declaredWait || tasksOfRoot(s.id).some(taskLive))
             ? { state: "waiting_session", failedClosed: false }
             : { state: "unknown", failedClosed: true };
     }
@@ -102,6 +104,15 @@ export function projectSessionWorkState(s) {
         }
     }
     return { state: s.work_state, failedClosed: false };
+}
+
+/** The visible, bounded account of a Session-authored peer handoff. Both the compact list and
+ *  the unabridged Info sheet use this function so a phone never has to rely on hover text to
+ *  learn who moves the work. Empty means the declaration is not complete enough to trust. */
+export function selfReportedPeerWaitCopy(s) {
+    if (!s || s.work_provenance !== "self" || !s.work_note || !s.work_moved_by ||
+        s.work_person_needed !== false) return "";
+    return s.work_moved_by + " · " + s.work_note + " · " + T.sessionWorkSelfStated;
 }
 
 var CLOSEABILITY_STATES = {
@@ -336,9 +347,9 @@ export function sessionWorkStateHTML(s) {
         // so another independent axis (closeability, debt, or coordination) can only follow the
         // complete receipt and can never be inserted between its check and explanation.
         said = '<span class="session-work-completion" data-work-state="' + projected.state +
-            '"><span class="session-work-mark" role="img" aria-label="' + attr(label) +
+            '"><span class="session-work-mark" role="img" aria-label="' + attr(title) +
             '" title="' + attr(title) + '">' + checks + '</span><span class="session-work-copy"' +
-            ' data-work-state="' + projected.state + '" aria-hidden="true">' + attr(label) +
+            ' data-work-state="' + projected.state + '" aria-hidden="true">' + attr(title) +
             "</span></span>";
     } else if (projected.state === "ready" || projected.state === "holding") {
         // 📭 an empty, open box: you can hand this one work. 🔜 it moves by itself; nobody is

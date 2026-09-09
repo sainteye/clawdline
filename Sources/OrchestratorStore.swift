@@ -489,6 +489,16 @@ enum OrchestratorStore {
     }
 
     static func sessionSelfState(from obj: [String: Any]) -> Orchestrator.SessionSelfState? {
+        func boundedText(_ raw: Any?) -> String?? {
+            guard let raw else { return .some(nil) }
+            guard let value = raw as? String else { return .none }
+            let text = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text == value, !text.isEmpty,
+                  text.count <= Orchestrator.sessionSelfNoteLimit,
+                  !text.contains("\n"),
+                  !text.unicodeScalars.contains(where: { $0.value == 0 }) else { return .none }
+            return .some(text)
+        }
         guard let terminalID = obj["terminal_id"] as? String, !terminalID.isEmpty,
               terminalID.count <= 512,
               let assistantName = obj["assistant"] as? String,
@@ -501,19 +511,50 @@ enum OrchestratorStore {
               let claimSettled = obj["claim_settled"] as? Bool else { return nil }
         var claim: Orchestrator.SessionWorkState?
         if let rawClaim = obj["claim"] as? String {
-            // Only the two declarable states survive a reload; anything else in the store is a
+            // Only the declarable quiet states survive a reload; anything else in the store is a
             // record this code has no business believing.
             guard let parsed = Orchestrator.SessionWorkState(rawValue: rawClaim),
-                  parsed == .ready || parsed == .holding else { return nil }
+                  parsed == .ready || parsed == .holding || parsed == .waitingSession else {
+                return nil
+            }
             claim = parsed
+        }
+        guard case .some(let note) = boundedText(obj["note"]),
+              case .some(let movedBy) = boundedText(obj["moved_by"]) else { return nil }
+        let personNeeded: Bool?
+        if let raw = obj["person_needed"] {
+            guard let value = raw as? Bool else { return nil }
+            personNeeded = value
+        } else {
+            personNeeded = nil
+        }
+        let claimReportedAt: Date?
+        if claim == .waitingSession {
+            guard let raw = obj["claim_reported_at"] as? Double,
+                  raw.isFinite, raw > 0 else { return nil }
+            claimReportedAt = Date(timeIntervalSince1970: raw)
+        } else if let raw = obj["claim_reported_at"] {
+            guard let value = raw as? Double, value.isFinite, value > 0 else { return nil }
+            claimReportedAt = Date(timeIntervalSince1970: value)
+        } else {
+            claimReportedAt = nil
+            if claim == nil {
+                guard note == nil, movedBy == nil, personNeeded == nil else { return nil }
+            }
+        }
+        if claim == .holding || claim == .waitingSession {
+            guard note != nil, movedBy != nil, personNeeded == false else { return nil }
         }
         var owed: Orchestrator.OwedDebt?
         if let rawOwed = obj["owed"] as? [String: Any] {
-            guard let note = rawOwed["note"] as? String, !note.isEmpty,
-                  note.count <= Orchestrator.sessionSelfNoteLimit,
+            guard Set(rawOwed.keys).isSubset(of: ["note", "moved_by", "person_needed", "since"]),
+                  case .some(let decodedNote) = boundedText(rawOwed["note"]),
+                  let owedNote = decodedNote,
+                  case .some(let owedMovedBy) = boundedText(rawOwed["moved_by"]),
                   let personNeeded = rawOwed["person_needed"] as? Bool,
-                  let since = rawOwed["since"] as? Double else { return nil }
-            owed = Orchestrator.OwedDebt(note: note, movedBy: rawOwed["moved_by"] as? String,
+                  let since = rawOwed["since"] as? Double,
+                  since.isFinite, since > 0 else { return nil }
+            owed = Orchestrator.OwedDebt(note: owedNote, movedBy: owedMovedBy,
                             personNeeded: personNeeded,
                             since: Date(timeIntervalSince1970: since))
         }
@@ -523,11 +564,9 @@ enum OrchestratorStore {
             processStart: Date(timeIntervalSince1970: processStart),
             conversationID: conversation)
         return Orchestrator.SessionSelfState(
-            identity: identity, claim: claim, note: obj["note"] as? String,
-            movedBy: obj["moved_by"] as? String,
-            personNeeded: obj["person_needed"] as? Bool,
-            claimReportedAt: (obj["claim_reported_at"] as? Double)
-                .map { Date(timeIntervalSince1970: $0) },
+            identity: identity, claim: claim, note: note,
+            movedBy: movedBy, personNeeded: personNeeded,
+            claimReportedAt: claimReportedAt,
             claimSettled: claimSettled, owed: owed)
     }
 

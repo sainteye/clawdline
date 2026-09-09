@@ -19,8 +19,8 @@ globalThis.__workStateStrings = {
     sessionWorkSelfStated: "self-reported",
     sessionWaitedOnByOne: "1 waiting on you",
     sessionWaitedOnByMany: "{n} waiting on you",
-    sessionWorkMilestone: "Delivered; awaiting approval",
-    sessionWorkComplete: "Reviewed and approved",
+    sessionWorkMilestone: "Delivered; review or integration may remain",
+    sessionWorkComplete: "Broker-verified landed",
     webInfoCloseReasonWorking: "The agent is still working in this session.",
     webInfoCloseReasonWaitingYou: "This session is waiting for your answer.",
     webInfoCloseReasonTaskActive: "A task owned by this session is still running.",
@@ -52,6 +52,9 @@ const closed = [
     [{ state: "waiting", work_state: "waiting_you" }, "waiting_you"],
     [{ state: "idle", work_state: "waiting_session",
        coordination: { waitingOn: [{ id: "wait" }], waitedOnBy: [] } }, "waiting_session"],
+    [{ state: "idle", work_state: "waiting_session", work_provenance: "self",
+       work_note: "finished; waiting for Clawdfather integration", work_moved_by: "%426",
+       work_person_needed: false }, "waiting_session"],
     [{ state: "idle", work_state: "unknown" }, "unknown"],
     [{ state: "idle", work_state: "milestone_complete",
        disposition: { scope: "task", taskId: "one", evidence: "authenticated_task_delivery" } },
@@ -84,6 +87,13 @@ assert.equal(project({ state: "idle", work_state: "holding" }).state, "unknown",
     "holding without a declaring session behind it fails closed — it is never a fallback");
 assert.equal(project({ state: "idle", work_state: "holding", work_provenance: "broker" }).state,
     "unknown", "not even the broker may put a session into holding without a declaration");
+assert.equal(project({ state: "idle", work_state: "waiting_session", work_provenance: "self",
+    work_note: "waiting for integration", work_moved_by: "%426",
+    work_person_needed: false }).state, "waiting_session",
+    "a named self-reported peer handoff remains visible without a file-wait side effect");
+assert.equal(project({ state: "idle", work_state: "waiting_session", work_provenance: "self",
+    work_note: "waiting for integration", work_person_needed: false }).state, "unknown",
+    "a self-reported peer handoff without its mover fails closed");
 state.sessions = [{ id: "root", state: "idle", work_state: "waiting_session" }];
 state.tasks = [{ id: "live-child", state: "briefed", title: "review the patch",
     root: { terminalId: "root" }, child: { terminalId: "child" } }];
@@ -119,9 +129,14 @@ const hostile = {
 const single = html(hostile);
 assert.match(single, /class="session-work-mark"/);
 assert.match(single, /role="img"/);
-assert.match(single, /aria-label="Delivered; awaiting approval"/);
-assert.match(single, /title="Delivered; awaiting approval · &quot;&gt;&lt;img/,
+assert.match(single,
+    /aria-label="Delivered; review or integration may remain · &quot;&gt;&lt;img/,
+    "VoiceOver receives the full escaped delivery status and disposition summary");
+assert.match(single, /title="Delivered; review or integration may remain · &quot;&gt;&lt;img/,
     "receipt titles are escaped before entering an attribute");
+assert.match(single,
+    /session-work-copy[^>]+aria-hidden="true">Delivered; review or integration may remain · &quot;&gt;&lt;img/,
+    "the delivered summary is visible on a phone rather than trapped in a hover-only title");
 assert.doesNotMatch(single, /<img src=/, "receipt metadata cannot inject row markup");
 assert.equal((single.match(/session-work-check/g) || []).length, 1,
     "a milestone draws one CSS check, not a platform emoji");
@@ -136,6 +151,10 @@ assert.equal((html({ state: "idle", work_state: "work_complete",
     disposition: { scope: "session", evidence: "broker_verified_target_landing" } })
     .match(/session-work-check/g) || []).length, 2,
     "a broker-verified root landing draws exactly two CSS checks");
+assert.match(html({ state: "idle", work_state: "work_complete",
+    disposition: { scope: "session", evidence: "broker_verified_target_landing" } }),
+    /Broker-verified landed/,
+    "the double-check copy names landing rather than review or generic acceptance");
 const unknownHTML = html({ state: "idle" });
 assert.match(unknownHTML, />status unknown</,
     "the fail-closed state is readable text rather than an empty row");
@@ -159,6 +178,15 @@ const holdingHTML = html({ state: "idle", work_state: "holding", work_provenance
     work_note: "resumes when the release build finishes" });
 assert.match(holdingHTML, /🔜/, "holding reads as about to move by itself");
 assert.match(holdingHTML, /resumes when the release build finishes/);
+
+const peerWait = { state: "idle", work_state: "waiting_session", work_provenance: "self",
+    work_note: "finished; waiting for integration", work_moved_by: "%426",
+    work_person_needed: false };
+assert.equal(derive.selfReportedPeerWaitCopy(peerWait),
+    "%426 · finished; waiting for integration · self-reported",
+    "a phone-visible peer handoff leads with its exact mover and includes its reason");
+assert.equal(derive.selfReportedPeerWaitCopy({ ...peerWait, work_moved_by: "" }), "",
+    "an incomplete self wait never produces trusted visible copy");
 
 const owedHTML = html({ state: "idle", work_state: "unknown",
     owed: { note: "the schedules design is still your call",
@@ -264,8 +292,11 @@ assert.match(listSource,
 assert.doesNotMatch(listSource,
     /workSaid \+= '<span class="session-work-copy"/,
     "the row does not append a detached completion explanation after closeability");
-assert.match(listSource, /work\.state === "waiting_session"[^}]+webTaskTasks/s,
+assert.match(listSource, /work\.state === "waiting_session"[\s\S]+webTaskTasks/,
     "a root waiting for live children names that task wait on its state line");
+assert.match(listSource,
+    /work_provenance === "self"[\s\S]+work_note[\s\S]+work_moved_by[\s\S]+selfReportedPeerWaitCopy/,
+    "a named self-reported handoff is readable directly on the list row");
 assert.match(listSource, /sessionStatusGlyphHTML\("🙋", T\.sessionWaiting\)/,
     "the human-wait hand uses the same unclipped glyph box as the quiet status badges");
 assert.match(listSource, /sessionStatusGlyphHTML\("⏳", peerText\)/,
@@ -282,6 +313,9 @@ assert.match(infoSource, /class="session-title"/,
 assert.match(infoSource,
     /sessionWorkStateHTML\(s\)[\s\S]*sessionCloseabilityHTML\(s\)/,
     "Session info repeats both the work and closeability statuses from the list");
+assert.match(infoSource,
+    /waits\.join\(" · "\) \|\| selfReportedPeerWaitCopy\(s\)/,
+    "Session Info uses the same visible mover-and-reason account as the compact list");
 assert.match(infoSource,
     /<details class="session-status-detail"[^>]*data-status-kind=/,
     "each full status in Session info is a clickable explanation disclosure");
@@ -398,10 +432,10 @@ for (const key of ["sessionWorkReady", "sessionWorkUnknown", "sessionWorkHolding
     "sessionWorkMilestone", "sessionWorkComplete"]) {
     assert.match(i18n, new RegExp(key + ":"), `${key} is localizable`);
 }
-assert.match(i18n, /sessionWorkMilestone:\s*"Delivered; awaiting approval"/,
-    "the web fallback explains the single-check milestone state");
-assert.match(i18n, /sessionWorkComplete:\s*"Reviewed and approved"/,
-    "the web fallback explains the double-check accepted state");
+assert.match(i18n, /sessionWorkMilestone:\s*"Delivered; review or integration may remain"/,
+    "the web fallback explains that a single check still has downstream work");
+assert.match(i18n, /sessionWorkComplete:\s*"Broker-verified landed"/,
+    "the web fallback says the double check is verified landing, not merely review");
 assert.match(i18n, /webInfoWorkStatusMeaning:/,
     "the clickable work status has a localized explanation");
 assert.match(i18n, /webInfoCloseabilityMeaning:/,
@@ -409,14 +443,14 @@ assert.match(i18n, /webInfoCloseabilityMeaning:/,
 
 const chineseCopy = await readFile(
     new URL("../Sources/Copy+Chinese.swift", import.meta.url), "utf8");
-assert.match(chineseCopy, /sessionWorkMilestone = "已交付，等待驗收"/,
-    "Traditional Chinese explains that a single check still awaits acceptance");
-assert.match(chineseCopy, /sessionWorkComplete = "已驗收完成"/,
-    "Traditional Chinese explains that double checks mean acceptance is complete");
-assert.match(chineseCopy, /sessionWorkMilestone = "已交付，等待验收"/,
-    "Simplified Chinese explains that a single check still awaits acceptance");
-assert.match(chineseCopy, /sessionWorkComplete = "已验收完成"/,
-    "Simplified Chinese explains that double checks mean acceptance is complete");
+assert.match(chineseCopy, /sessionWorkMilestone = "已交付；審查或整合可能仍待完成"/,
+    "Traditional Chinese explains that a single check may still await review or integration");
+assert.match(chineseCopy, /sessionWorkComplete = "Clawdline 已驗證落地"/,
+    "Traditional Chinese says double checks mean verified landing");
+assert.match(chineseCopy, /sessionWorkMilestone = "已交付；审查或整合可能仍待完成"/,
+    "Simplified Chinese explains that a single check may still await review or integration");
+assert.match(chineseCopy, /sessionWorkComplete = "Clawdline 已验证落地"/,
+    "Simplified Chinese says double checks mean verified landing");
 assert.match(chineseCopy, /sessionWorkUnknown = "狀態未知"/,
     "Traditional Chinese names the absence, and does not issue an instruction");
 assert.doesNotMatch(chineseCopy, /分流/,

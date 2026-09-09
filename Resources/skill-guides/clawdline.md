@@ -1073,6 +1073,12 @@ names the child beside a quiet `⏳`; that is waiting, not triage and not delive
 still reads `working`, and a child finishing removes the wait without completing the root's own
 integration turn.
 
+When a partial delivery is waiting on a named peer rather than a live child, the owning root
+declares that handoff through `POST /v1/orchestrator/sessions/:id/state` with
+`state:"waiting_session"`, a bounded one-line `note`, the exact peer in `moved_by`, and
+`person_needed:false`. That is not a completion receipt. A whole completed turn uses `/complete`;
+a person-owned decision uses `owed` plus `/v1/orchestrator/notify`.
+
 When claimed child work comes back, root records the open obligation on that task with its task
 secret: `POST /v1/orchestrator/tasks/:id/landing` and `{"state":"pending","target":"<ref>"}`.
 A named root that accepted a handoff may use the machine-level orchestrator token instead, like
@@ -1155,6 +1161,14 @@ ordering step is the one that is skipped, and it is the one that prevents the me
    run — yours, on the index you are about to commit, by the "Close a code delivery" steps above.
    One at a time is not caution for its own sake: it is what makes a failure attributable, because
    the only thing that changed since the last green tree is the delivery you just staged.
+   Start that run with `CLAWDLINE_VERIFY_QUESTION_ID=<stable-question> ./test.sh`; its repo-native
+   wrapper computes the canonical repository/tree/command/environment tuple and reserves it with
+   the machine token before the compile lock. Reuse only a `reusable` exact commit-tree pass; wait
+   on `active`; run only on `run_required`, then complete the same receipt. A focused or
+   dirty-overlay pass is self-proof and cannot stand in for this step. For an unfiltered full pass,
+   the wrapper retains and hashes the printed `CLAWDLINE_TEST_SEAL` tuple and binds that digest in
+   completion; update all three local seals only with `tools/apply-test-receipt-seal.sh`. These
+   machine-authenticated hashes are caller attestations, not independent broker observation.
 5. **Build**, once, at the end — after the last landing, never between them. It replaces and
    restarts the user's running app, so say so before you do it and do it from HEAD, not from the
    working tree.

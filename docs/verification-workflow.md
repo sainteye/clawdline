@@ -1,12 +1,12 @@
 # Verification and review workflow
 
-Status: the typed graph frontier, review receipts and the durable receipt store are implemented.
+Status: the typed graph frontier, review receipts, per-task receipt store and exact per-run
+verification ledger are implemented.
 Review verdicts and verification records are kept in the Observability store
 (`~/Library/Application Support/Clawdline/Observability/usage.sqlite3`), keyed by task and by the
-graph they belong to, and they outlive both clocks that used to delete them. The per-run receipt
-tuple sketched under "Durable verification receipt" — one row per command, environment and variant
-— is not what shipped; what shipped is described there instead, with the sketch kept below it as
-the direction the tuple would extend in.
+graph they belong to, and they outlive both clocks that used to delete them. Exact run reservations
+and outcomes now live beside them in the same durable SQLite store. The remaining runner work is
+compile-once execution; focused selection exists but still pays for a fresh compile.
 
 ## Phase 0–1 repository guards
 
@@ -50,6 +50,15 @@ suite-file expectation. The entry point's size is an observation, not another ex
 limit is enforced. Change only the receipts affected by the approved behavior change, record the old
 guard going red, then record the updated guard green — and regenerate the governance table
 afterwards, because it is the one place all of them are written down at once.
+
+`test.sh` now emits one `CLAWDLINE_TEST_SEAL` JSON tuple only after an unfiltered successful run has
+produced exactly one Swift receipt and exactly one Cloud receipt. The tuple carries those two exact
+strings plus the measured assertion-site witness. It is appended to the internal log **and printed
+to stdout before that internal log is removed**, so an outer caller can retain the successful run.
+`tools/apply-test-receipt-seal.sh <retained-log>` is the only supported mechanical update: it
+rejects incomplete or red logs, duplicate/malformed tuples, more than one Swift or Cloud completion
+line, and missing Cloud suites, then atomically moves all three seal lines together. A focused run
+never emits this tuple and therefore cannot mint a full-suite receipt.
 
 **A child adding assertions does not reseal.** Adding a `check(` or `expect(` moves
 `expected_swift_receipt_witness`, and the architecture guard refuses to start a compile while the
@@ -178,40 +187,80 @@ writer produced, and the column was NULL on all 1,052 rows one machine had store
 before that, for a task the registry has since evicted, keeps an honest NULL — available is a
 statement about the producer, not about every row.
 
-### The per-run receipt tuple, not yet built
+### The per-run receipt tuple
 
-The broker should also append one receipt per *run*, outside task `work/`, keyed by repository
-identity, exact tree, question, command digest, environment fingerprint and variant. Only
-commit-tree receipts may be reused across tasks. That is the direction the tables above extend in;
-what they hold today is one receipt per task, which is what the task record carries.
+The broker appends one reservation and at most one outcome per *run* to
+`verification_run_reservations` and `verification_run_outcomes` in `usage.sqlite3`. The tuple key
+binds a canonical repository-identity digest, exact commit tree or working-overlay subject,
+question id, verification kind, baseline/mutation variant, command digest and environment digest.
+The reservation transaction is `BEGIN IMMEDIATE`: asking whether an exact producer already exists
+and inserting that producer are one atomic operation across Sessions and SQLite connections.
+
+The machine-token-only API is documented in `docs/api.md` under “Verification run reservations”.
+Its preflight answers `reusable`, `run_required`, or `active`; mismatched idempotency identities and
+unusable mutation baselines are typed conflicts. Outcomes are append-only and completion is
+idempotent only when the whole reservation and outcome identities match. A malformed stored row is
+reported as malformed and blocks reuse rather than disappearing as absent.
+
+Callers do not invent those three digests. Set one stable question id and run the ordinary suite:
+
+```bash
+CLAWDLINE_VERIFY_QUESTION_ID=landing.exact-tree CLAWDLINE_SUITE_JOBS=1 ./test.sh
+```
+
+`test.sh` delegates once to `tools/verified-test-run.mjs`, which reserves before entering the
+machine-wide compile lock, streams and retains the exact output, and completes the same receipt.
+`reusable` exits without compiling; `active` exits 75; only `run_required` starts the suite. A dirty
+overlay additionally requires `CLAWDLINE_VERIFICATION_TASK_ID`. An exported tree snapshot without
+its original Git remote may carry `CLAWDLINE_VERIFICATION_REPOSITORY_ID`; an index snapshot carries
+its exact `CLAWDLINE_VERIFICATION_TREE_SHA` from `git write-tree`.
+
+The canonical digest recipe is versioned length framing: for each field, append its unsigned
+eight-byte big-endian UTF-8 byte length and then its bytes, and SHA-256 the complete stream.
+Repository fields are `clawdline-verification-repository-v1` and the exact `remote.origin.url`
+(falling back to the real Git common-directory path). Command fields are
+`clawdline-verification-command-v1` followed by each argv element, preserving argument boundaries.
+Environment fields are `clawdline-verification-environment-v1`, then sorted key/value pairs for
+architecture, Node version, platform, Swift version, `CLAWDLINE_RESEAL`,
+`CLAWDLINE_SUITE_JOBS`, and `CLAWDLINE_TEST_GROUPS`; absent is the literal `<absent>` and differs
+from empty. `tools/verified-test-run.mjs` is the reference implementation.
+
+These values are **machine-authenticated caller attestations**. The broker validates their shape,
+canonical tuple relationship, exclusivity and append-only history; it does not independently run
+Git, inspect the command, fingerprint the environment, or re-hash the log. A receipt therefore
+proves what the local orchestrator-token holder attested and what the ledger preserved, not an
+independent observation by the broker.
 
 ```json
 {
-  "version": 1,
+  "schema_version": 1,
   "receipt_id": "uuid",
-  "feature_id": "session-coordinator-freshness",
   "task_id": "uuid",
-  "phase": "implementation | review | correction | confirmation | integration",
+  "repository_sha256": "...",
   "question_id": "coordinator.stale-fail-closed",
-  "subject": {"kind":"commit_tree","tree_sha":"...","overlay_sha256":null},
+  "subject": {"kind":"commit_tree","tree_sha":"..."},
   "verification_kind": "static | typecheck | focused | mutation | full | build | smoke",
   "variant": "baseline | mutation",
   "mutation_id": null,
   "command_sha256": "...",
-  "environment": {
-    "os_build":"...", "arch":"arm64", "swift_version":"...", "node_version":"...",
-    "sandbox":"native", "test_script_sha256":"...", "private_tmpdir":true
-  },
+  "baseline_receipt_id": null,
+  "environment_sha256": "...",
   "outcome": {
-    "exit_status":0, "checks_passed":6434, "checks_failed":0,
-    "expected":"pass", "duration_ms":252000, "log_sha256":"..."
+    "state":"passed", "exit_status":0, "checks_passed":6434, "checks_failed":0,
+    "duration_ms":252000, "log_sha256":"...", "full_suite_receipt_sha256":"..."
   }
 }
 ```
 
-A mutation receipt links to a baseline for the same question. A dirty overlay is explicitly local
-self-proof. The same exact tuple is not rerun after green. A second full suite is valid only after a
-typed `inconclusive_environment` result.
+A mutation receipt links to a passed baseline for the same repository, exact subject, question and
+environment; a working-overlay mutation additionally stays inside the baseline's task scope. A
+dirty overlay reservation requires a non-null task id, and that task id is part of its producer
+identity; active and passing overlay evidence cannot cross task boundaries. Only an exact
+commit-tree pass is reusable across tasks. Failed and typed `inconclusive_environment` outcomes
+permit a new reservation. Full runs require a commit-tree subject, and a passing full outcome
+additionally binds the SHA-256 of the complete `CLAWDLINE_TEST_SEAL` tuple. Focused evidence cannot
+be completed as full evidence because verification kind is part of the immutable reservation and
+focused runs cannot produce that seal.
 
 ### Reproducible working-overlay digest
 

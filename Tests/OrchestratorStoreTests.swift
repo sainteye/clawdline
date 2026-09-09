@@ -638,7 +638,7 @@ func runOrchestratorStoreTests() {
             processStart: epoch, conversationID: sessionID)
         let full = Orchestrator.SessionSelfState(
             identity: identity, claim: .holding, note: "waiting on the review",
-            movedBy: "root", personNeeded: true, claimReportedAt: later(11), claimSettled: true,
+            movedBy: "root", personNeeded: false, claimReportedAt: later(11), claimSettled: true,
             owed: Orchestrator.OwedDebt(note: "somebody owes an answer", movedBy: "root",
                                         personNeeded: false, since: later(12)))
         let minimal = Orchestrator.SessionSelfState(

@@ -780,9 +780,10 @@ items:
     cost: days
     who_hurts: us
     trigger: >-
-      Implement the invalid-vs-absent projection first, then the append-only receipt ledger and
-      compile-once focused runner. Each step needs a guard that proves duplicate exact receipts do
-      not execute again and a targeted run cannot mint a full receipt.
+      The append-only exact-run ledger, atomic reserve/complete API and atomic full-seal helper are
+      implemented in the current delivery, with guards for duplicate producers, malformed or
+      mismatched rows, mutation binding, focused-as-full refusal and incomplete/red/Cloud-omitted
+      logs. Remaining work is the invalid-vs-absent task projection and compile-once focused runner.
     opened: 2026-08-29
 
   - id: B-ROOT-CLOSEABILITY-IS-NOT-PROVABLE
