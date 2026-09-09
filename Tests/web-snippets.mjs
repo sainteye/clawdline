@@ -41,6 +41,8 @@ const clientSource = await readFile(
     new URL("../Resources/web/app/js/net/client.js", import.meta.url), "utf8");
 const cloudSource = await readFile(
     new URL("../Resources/web/app/js/net/cloud-client.js", import.meta.url), "utf8");
+const { CloudClient } = await import(
+    "../Resources/web/app/js/net/cloud-client.js");
 const styles = await readFile(
     new URL("../Resources/web/app/css/snippets.css", import.meta.url), "utf8");
 const headSource = await readFile(
@@ -124,15 +126,43 @@ for (const name of ["snippets", "createSnippet", "updateSnippet", "deleteSnippet
     assert.ok(liveSource.includes("LocalClient." + name + " = function"),
         "the direct transport carries " + name + "()");
 }
-assert.match(cloudSource, /\n    snippets\(\) \{/, "the cloud transport carries snippets()");
-// The method, not the word. `!cloudSource.includes("createSnippet(")` passed only because that
-// file happens to name these four in prose without parentheses; a comment written as
-// `createSnippet()` would have turned it into a false red. What is pinned is the definition
-// shape asserted one line above for `snippets()`.
+assert.match(cloudSource, /\n    snippets\([^)]*\) \{/, "the cloud transport carries snippets()");
 for (const name of ["createSnippet", "updateSnippet", "deleteSnippet", "orderSnippets"]) {
-    assert.doesNotMatch(cloudSource, new RegExp("\\n    " + name + "\\("),
-        "the cloud transport does not carry " + name + "() — absent, not rejecting");
+    assert.match(cloudSource, new RegExp("\\n    " + name + "\\("),
+        "the cloud transport carries " + name + "() through the command channel");
 }
+
+// A write goes to the Mac that owns the open Session. Snippet ids are UUIDs, but a fleet may
+// still contain the same id twice after restoring configuration; neither ids nor the currently
+// first snapshot are permission to guess which Mac should be changed.
+const cloud = new CloudClient({ relayURL: "wss://relay.example", deviceToken: "viewer-token" });
+assert.deepEqual(snippetControls(cloud),
+    { read: true, create: true, update: true, remove: true, order: true },
+    "the Cloud transport exposes the complete snippet control surface");
+const cloudWrites = [];
+const cloudProject = "/Users/you/code/clawdline";
+cloud._machineRequest = function (machine, type, extra, kind) {
+    cloudWrites.push({ machine, type, extra, kind });
+    return Promise.resolve({ ok: true });
+};
+const identity = { machine: "mac-01", session: "session-01" };
+await cloud.createSnippet({ title: "New", body: "Body", scope: "global" }, identity);
+await cloud.updateSnippet("snippet/one", { title: "Changed" }, identity);
+await cloud.deleteSnippet("snippet/one", identity);
+await cloud.orderSnippets("project", cloudProject, ["two", "one"], identity);
+await cloud.orderSnippets("global", null, ["one", "two"], identity);
+assert.deepEqual(cloudWrites, [
+    { machine: "mac-01", type: "snippet-create",
+      extra: { snippet: { title: "New", body: "Body", scope: "global" } }, kind: "action" },
+    { machine: "mac-01", type: "snippet-update",
+      extra: { id: "snippet/one", snippet: { title: "Changed" } }, kind: "action" },
+    { machine: "mac-01", type: "snippet-delete", extra: { id: "snippet/one" }, kind: "action" },
+    { machine: "mac-01", type: "snippet-order",
+      extra: { ordering: { scope: "project", project: cloudProject, order: ["two", "one"] } },
+      kind: "action" },
+    { machine: "mac-01", type: "snippet-order",
+      extra: { ordering: { scope: "global", order: ["one", "two"] } }, kind: "action" }
+], "all four mutations are closed commands routed by the open Session's machine identity");
 
 /* ---- grouping and ordering ------------------------------------------------ */
 
@@ -745,6 +775,20 @@ assert.match(sheetSource,
     "and every control this sheet draws asks one question about the transport and the switch");
 assert.match(sheetSource, /newButton\.hidden = !can\.create/,
     "the ＋ is the one writing control outside the list, so it is hidden by hand");
+assert.match(sheetSource,
+    /api\.snippets\(sessionID, opts\.fresh \? \{ fresh: true \} : undefined\)/,
+    "a post-write refresh asks the Mac rather than repainting the snapshot from before the write");
+assert.match(sheetSource, /refresh\(\{ keepScroll: opts\.keepScroll, fresh: true \}\)/,
+    "only a completed mutation forces that fresh read; an ordinary open keeps first paint free");
+for (const call of [
+    /api\.createSnippet\(body, sessionID\)/,
+    /api\.updateSnippet\(id, patch, sessionID\)/,
+    /api\.deleteSnippet\(row\.id, sessionID\)/,
+    /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order, sessionID\)/
+]) {
+    assert.match(sheetSource, call,
+        "every mutation carries the open Session identity into the Cloud transport");
+}
 // Three source-shape facts that no pure function can hold, each of them a mutation that left
 // the whole suite green. `snippetsListHTML` is tested *given* `readOnly: true`; until this line
 // nothing tested that the sheet ever passes it, so a read-only device's rows could be made
@@ -784,8 +828,9 @@ assert.match(sheetSource, /rememberSnippetProject\(sessionID, answer && answer\.
     + "fallback would be the raw cwd arriving by a longer route");
 assert.match(sheetSource, /problem === "long" \? T\.webSnippetTooLong : T\.webSnippetNeedsText/,
     "and a draft that is too long is told so, rather than told its fields are empty");
-assert.match(sheetSource, /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order\)/,
-    "reordering sends the full order of one scope");
+assert.match(sheetSource,
+    /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order, sessionID\)/,
+    "reordering sends the full order of one scope to the Mac owning this Session");
 assert.match(sheetSource, /userMessageEntries\(/,
     "'from my last message' asks the sheet next door rather than walking the transcript again");
 assert.ok(!/S\.tx\.entries\.filter/.test(sheetSource),
@@ -808,7 +853,7 @@ for (const name of ["createSnippet", "updateSnippet", "deleteSnippet", "orderSni
         "the mock carries " + name + "(), or the editor cannot be looked at with ?mock=1");
 }
 assert.match(mockSource, /snippets"\) === "readonly"/,
-    "and one URL takes the writing half away, which is the Cloud path's shape");
+    "and one URL takes the writing half away, preserving an older or read-only transport shape");
 // The rule and not the word. A first draft of this asserted that "snippet_scope_mismatch"
 // appeared somewhere in the fixture, and a mutation that took the refusal out of createSnippet
 // left it green — the string was still there, in the route next door. What is pinned now is the

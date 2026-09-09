@@ -254,11 +254,11 @@ Two things follow, and the second is the reason to do it this way:
   of the published `orch/<machine>` rows; snippets arrive the same way, so a phone on the relay —
   which speaks no HTTP to the Mac at all and may ask for only [seven
   reads](api.md#the-reads-a-browser-on-the-cloud-path-may-ask-for) — can still press one, because
-  `send` is already a command that path carries. **Editing** stays direct-path-only in v1: the
-  create/edit/delete calls are absent from the cloud transport and every call site is guarded with
-  `typeof api.createSnippet === "function"`, so the `編輯` and `＋` controls are not drawn there at
-  all rather than failing when pressed. That is the pattern this app already uses for `/v1/places`
-  and `/v1/push/key`.
+  `send` is already a command that path carries. Creation, editing, deletion and ordering use that
+  same encrypted command channel. Each mutation carries the open Session identity so the viewer
+  addresses the Mac that owns the sheet; neither a snippet UUID nor fleet inventory order chooses
+  a machine. After a successful write the sheet asks that Mac for a fresh list instead of repainting
+  the retained snapshot that existed before the write.
 
 ## What the web app gains
 
@@ -270,7 +270,7 @@ Two things follow, and the second is the reason to do it this way:
 | `app/css/detail.css` | the two buttons read as one block; the new button gets its 44px box and its no-mark placeholder. |
 | `app/js/view/transcript.js` | `renderDetailHead` sets `disabled`, `title` and `aria-label` on the new button the way it does for the two it already owns. |
 | `app/js/net/live.js` | `snippets()`, `createSnippet()`, `updateSnippet()`, `deleteSnippet()`, `orderSnippets()`, on `LocalClient`. **Not** added to `ClawdlineClient.methods` in `net/client.js`, which is the contract every transport must satisfy. ⚠ This row said `net/client.js`; that file is the contract, and the direct transport is `net/live.js`. |
-| `app/js/net/cloud-client.js` | `snippets()` only, from the published rows. |
+| `app/js/net/cloud-client.js` | `snippets()` from published rows plus four machine-routed mutation commands. |
 | `app/js/net/mock.js` | a fixture: a couple of global snippets and one project-scoped, so `?mock=1` exercises the sheet, the grouping and the empty state without a Mac. |
 | `app/js/view/project-mark.js` | new, and not in this table until the correction round. `generatedMark(key)` and `markForSession(session, projectKey)` — the mark a project has until somebody draws it one. Pure, importable into a bare Node process, and read by `Tests/web-snippets.mjs`. |
 | `app/js/view/snippets-data.js` | new. The sheet's arithmetic with no document in it, plus the one thing the header borrows: the project the Mac last resolved for the open session. |

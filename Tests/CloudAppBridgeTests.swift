@@ -434,6 +434,10 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
         #"{"type":"schedule-create","session":"__clawdline_machine__","request":"create-1","schedule":{"title":"Morning"}}"#,
         #"{"type":"schedule-update","session":"__clawdline_machine__","request":"update-1","id":"morning","schedule":{"title":"Later"}}"#,
         #"{"type":"schedule-delete","session":"__clawdline_machine__","request":"delete-1","id":"morning"}"#,
+        #"{"type":"snippet-create","session":"__clawdline_machine__","request":"snippet-create-1","snippet":{"title":"Deploy","body":"commit, push","scope":"global"}}"#,
+        #"{"type":"snippet-update","session":"__clawdline_machine__","request":"snippet-update-1","id":"snippet/one","snippet":{"title":"Ship"}}"#,
+        #"{"type":"snippet-delete","session":"__clawdline_machine__","request":"snippet-delete-1","id":"snippet/one"}"#,
+        #"{"type":"snippet-order","session":"__clawdline_machine__","request":"snippet-order-1","ordering":{"scope":"global","order":["two","one"]}}"#,
         #"{"type":"push-subscribe","session":"__clawdline_machine__","request":"push-1","subscription":{"endpoint":"https://push.example/one","keys":{"p256dh":"key","auth":"auth"}}}"#,
         #"{"type":"push-unsubscribe","session":"__clawdline_machine__","request":"push-2","id":"subscription-1"}"#,
         #"{"type":"push-test","session":"__clawdline_machine__","request":"push-3","target":"plain"}"#,
@@ -449,6 +453,43 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
             && transport.envelopes().count == featureEnvelopesBefore + featureBodies.count
     }
     let featureCommands = Array((await router.recorded()).suffix(featureBodies.count)).map(\.command)
+    let parsedSnippetCreate = featureCommands.contains { command in
+        guard case .snippetCreate(let data) = command,
+              let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return false }
+        return body["title"] as? String == "Deploy" && body["scope"] as? String == "global"
+    }
+    let parsedSnippetUpdate = featureCommands.contains { command in
+        guard case .snippetUpdate(let id, let data) = command,
+              let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return false }
+        return id == "snippet/one" && body["title"] as? String == "Ship"
+    }
+    let parsedSnippetOrder = featureCommands.contains { command in
+        guard case .snippetOrder(let data) = command,
+              let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return false }
+        return body["scope"] as? String == "global"
+            && body["order"] as? [String] == ["two", "one"]
+    }
+
+    let callsBeforeMalformedSnippets = await router.recorded().count
+    let malformedSnippets = [
+        #"{"type":"snippet-create","session":"__clawdline_machine__","request":"bad-1"}"#,
+        #"{"type":"snippet-update","session":"__clawdline_machine__","request":"bad-2","id":"","snippet":{"title":"x"}}"#,
+        #"{"type":"snippet-delete","session":"__clawdline_machine__","request":"bad-3","id":"snippet","extra":true}"#,
+        #"{"type":"snippet-order","session":"__clawdline_machine__","request":"bad-4","ordering":[]}"#,
+    ]
+    for (offset, body) in malformedSnippets.enumerated() {
+        transport.yield(body, sequence: UInt64(60 + offset))
+    }
+    try await waitForCloudAppBridge("malformed snippet commands to be refused") {
+        results.all().filter { $0.code == "malformed_command" }.count
+            >= malformedSnippets.count
+    }
+    let callsAfterMalformedSnippets = await router.recorded().count
+    try require(callsAfterMalformedSnippets == callsBeforeMalformedSnippets,
+                "no malformed snippet mutation reaches the local router")
 
     transport.yield("not json", sequence: 14)
     transport.yield(#"{"type":"erase","session":"plain"}"#, sequence: 15)
@@ -470,6 +511,9 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
                                                         session: "past/session|一",
                                                         assistant: "codex"))
                     && featureCommands.contains(.scheduleDelete(id: "morning"))
+                    && parsedSnippetCreate && parsedSnippetUpdate
+                    && featureCommands.contains(.snippetDelete(id: "snippet/one"))
+                    && parsedSnippetOrder
                     && featureCommands.contains(.pushUnsubscribe(id: "subscription-1"))
                     && featureCommands.contains(.pushTest(session: "plain"))
                     && featureCommands.contains(.voice(audio: "AAEC", rate: 16000))
@@ -1488,6 +1532,25 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
                                assistant: "codex"),
         sender: "viewer", idempotencyKey: "resume-key"
     )
+    let snippetCreateRequest = RemoteServer.Request(
+        verifiedCloud: .snippetCreate(body: Data(
+            #"{"title":"Deploy","body":"commit","scope":"global"}"#.utf8)),
+        sender: "viewer", idempotencyKey: "snippet-create-key"
+    )
+    let snippetUpdateRequest = RemoteServer.Request(
+        verifiedCloud: .snippetUpdate(
+            id: "snippet/一", body: Data(#"{"title":"Ship"}"#.utf8)),
+        sender: "viewer", idempotencyKey: "snippet-update-key"
+    )
+    let snippetDeleteRequest = RemoteServer.Request(
+        verifiedCloud: .snippetDelete(id: "snippet/一"),
+        sender: "viewer", idempotencyKey: "snippet-delete-key"
+    )
+    let snippetOrderRequest = RemoteServer.Request(
+        verifiedCloud: .snippetOrder(body: Data(
+            #"{"scope":"global","order":["two","one"]}"#.utf8)),
+        sender: "viewer", idempotencyKey: "snippet-order-key"
+    )
     try require(gitRequest.method == "GET" && gitRequest.headers["idempotency-key"] == nil
                     && scheduleListRequest.path == "/v1/orchestrator/schedules"
                     && snippetListRequest.path == "/v1/snippets"
@@ -1500,6 +1563,16 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
                         == "/v1/places/project%2Fone/resume/codex/past%2Fsession%7C%E4%B8%80",
                 "reads mint no key, while live screen, fresh schedules, snippets, Session close, "
                     + "and Resume map to the exact local routes")
+    try require(snippetCreateRequest.method == "POST"
+                    && snippetCreateRequest.path == "/v1/snippets"
+                    && snippetCreateRequest.headers["idempotency-key"] == "snippet-create-key"
+                    && snippetUpdateRequest.method == "PATCH"
+                    && snippetUpdateRequest.path == "/v1/snippets/snippet%2F%E4%B8%80"
+                    && snippetDeleteRequest.method == "DELETE"
+                    && snippetDeleteRequest.path == "/v1/snippets/snippet%2F%E4%B8%80"
+                    && snippetOrderRequest.method == "POST"
+                    && snippetOrderRequest.path == "/v1/snippets/order",
+                "all four Cloud snippet mutations map to the existing authenticated routes")
 
     // Where they queue, which is the shared queue — and that is not this door's decision, it is
     // the direct path's. Both lane predicates refuse these four paths over HTTP too, so sending

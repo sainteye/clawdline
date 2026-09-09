@@ -2171,9 +2171,9 @@ Mock.snippets = function (id) {
    copying a row and overwriting two fields takes, and a fixture that quietly accepted it would
    teach this page a habit `Sources/Snippets.swift` breaks on the first real Mac.
 
-   `?snippets=readonly` takes the four away and leaves `snippets()`, which is the Cloud path: the
-   list reads out of the published snapshot and there is no envelope class for a write. That is
-   the arrangement `snippetActions` exists for, and it is one URL away rather than one Mac away.
+   `?snippets=readonly` takes the four away and leaves `snippets()`, preserving an older or
+   read-only transport shape. That is the arrangement `snippetActions` exists for, and it is one
+   URL away rather than one Mac away.
    -------------------------------------------------------------------------- */
 var SNIPPET_MADE = [];
 

@@ -1068,8 +1068,9 @@ export class CloudClient {
     }
 
     /**
-     * The snippets every machine on this account published — the reading half of the feature,
-     * and the only half this transport has.
+     * The snippets every machine on this account published. A retained snapshot is first paint;
+     * `fresh` asks the Mac that owns the open Session, which is what a write completion needs in
+     * order not to repaint the row from the snapshot that existed before the write.
      *
      * Same two codes as `schedules()` above, and the same reason for there being two: waiting
      * helps for one of them and cannot help for the other. Neither resolves to an empty list,
@@ -1083,13 +1084,15 @@ export class CloudClient {
      * resolution rule — registry prefix, worktree folding — stays on the Mac where the registry
      * and the git directory are, so a relay reader sees a smaller list rather than a guessed one.
      *
-     * **There is no writing half.** `createSnippet`, `updateSnippet`, `deleteSnippet` and
-     * `orderSnippets` are absent from this class on purpose: the relay carries commands, not
-     * config writes, and every call site asks `typeof api.createSnippet === "function"` before
-     * drawing the control. Absent is the answer; a method that rejected would be a button that
-     * fails when pressed.
+     * The writing half below uses the same closed command channel as schedules. Every operation
+     * is routed by the open Session's machine identity: a snippet UUID or the first machine in a
+     * snapshot is not authority to choose which Mac's settings should change.
      */
-    snippets() {
+    snippets(value, options) {
+        if (options && options.fresh === true) {
+            try { return this._freshSnippets([this._sessionIdentity(value).machine]); }
+            catch (error) { return Promise.reject(error); }
+        }
         var answer = this._orchestratorRows("snippets");
         var missing = this._knownMachines().filter(function (machine) {
             var snapshot = this.orchestratorSnapshots.get(machine);
@@ -1123,6 +1126,32 @@ export class CloudClient {
             var answer = self._orchestratorRows("snippets");
             return { snippets: answer.rows, at: answer.at };
         });
+    }
+
+    /** One closed snippet mutation, addressed to the Mac that published the open Session. */
+    _snippetRequest(value, type, extra) {
+        try {
+            return this._machineRequest(this._sessionIdentity(value).machine, type, extra, "action");
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    createSnippet(snippet, value) {
+        return this._snippetRequest(value, "snippet-create", { snippet: snippet });
+    }
+
+    updateSnippet(id, snippet, value) {
+        return this._snippetRequest(value, "snippet-update",
+            { id: String(id || ""), snippet: snippet });
+    }
+
+    deleteSnippet(id, value) {
+        return this._snippetRequest(value, "snippet-delete", { id: String(id || "") });
+    }
+
+    orderSnippets(scope, project, order, value) {
+        var ordering = { scope: scope, order: order };
+        if (project) ordering.project = project;
+        return this._snippetRequest(value, "snippet-order", { ordering: ordering });
     }
 
     send(value, text, images) {

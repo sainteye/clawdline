@@ -812,9 +812,10 @@ LocalClient.deleteSchedule = function (id) {
    `send` capability, a non-empty `Idempotency-Key`. That is deliberately the same bar as typing
    into a session; a device that may only read must not be able to rewrite the owner's snippets.
 
-   **None of these is on `ClawdlineClient.methods`.** That frozen list is what every transport
-   must satisfy, and the cloud transport has the reading half only — see `snippets()` there.
-   Every call site asks `typeof api.createSnippet === "function"` rather than assuming.
+   **None of these is on `ClawdlineClient.methods`.** That frozen list is the minimum every
+   transport must satisfy; Cloud now carries these as encrypted commands while an older transport
+   may still omit them. Every call site asks `typeof api.createSnippet === "function"` rather
+   than assuming.
    -------------------------------------------------------------------------- */
 
 /// This session's snippets, already filtered to its project and already in order, with the

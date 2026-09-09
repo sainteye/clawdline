@@ -36,6 +36,10 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case scheduleCreate(body: Data)
     case scheduleUpdate(id: String, body: Data)
     case scheduleDelete(id: String)
+    case snippetCreate(body: Data)
+    case snippetUpdate(id: String, body: Data)
+    case snippetDelete(id: String)
+    case snippetOrder(body: Data)
     case scheduleWebhookBind(requestID: String, hookID: String, scheduleID: String,
                              replaceHookID: String?)
     case pushSubscribe(body: Data)
@@ -716,6 +720,61 @@ actor CloudAppBridge {
                 return
             }
             command = .scheduleDelete(id: id)
+            commandReply = (session, "action:" + request)
+        case "snippet-create", "snippet-update":
+            let wanted: Set<String> = type == "snippet-create"
+                ? ["type", "session", "request", "snippet"]
+                : ["type", "session", "request", "id", "snippet"]
+            guard inbound.commandClass == .ctl, Set(body.keys) == wanted,
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let snippet = body["snippet"] as? [String: Any],
+                  JSONSerialization.isValidJSONObject(snippet),
+                  let data = try? JSONSerialization.data(
+                    withJSONObject: snippet, options: [.withoutEscapingSlashes])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            if type == "snippet-create" {
+                command = .snippetCreate(body: data)
+            } else {
+                guard let id = body["id"] as? String, !id.isEmpty else {
+                    commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                    return
+                }
+                command = .snippetUpdate(id: id, body: data)
+            }
+            commandReply = (session, "action:" + request)
+        case "snippet-delete":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "id"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let id = body["id"] as? String, !id.isEmpty
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .snippetDelete(id: id)
+            commandReply = (session, "action:" + request)
+        case "snippet-order":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "ordering"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let ordering = body["ordering"] as? [String: Any],
+                  JSONSerialization.isValidJSONObject(ordering),
+                  let data = try? JSONSerialization.data(
+                    withJSONObject: ordering, options: [.withoutEscapingSlashes])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .snippetOrder(body: data)
             commandReply = (session, "action:" + request)
         case "schedule-webhook-bind-v1":
             guard inbound.commandClass == .ctl,

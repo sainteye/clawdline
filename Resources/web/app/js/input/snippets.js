@@ -39,15 +39,14 @@ import { SessionActions } from "./detail-actions.js";
    had to know how this sheet is built would be a header that breaks when it
    changes.
 
-   **Every writing control is drawn from `snippetControls`, or not drawn.** The
-   relay reads the list out of the published snapshot and has no envelope class
-   for a write, so on the Cloud path the `＋`, the row's `⋯` and the editor
-   simply are not there; a read-only device is the same question asked of
-   `S.write`. Both live in `snippetActions`, once, so the six call sites cannot
-   drift apart. The key that makes a retried write land once is minted inside
-   `net/live.js`, one per request — where a retry of *that* request is the
-   thing it has to be unrepeated against. Nothing in this file mints one,
-   which is the same sentence as: nothing in this file sends.
+   **Every writing control is drawn from `snippetControls`, or not drawn.** A
+   read-only device is still the same question asked of `S.write`; a Cloud
+   device with send permission now has all four mutation commands. Both live in
+   `snippetActions`, once, so the six call sites cannot drift apart. The key
+   that makes a retried write land once is minted in the transport, one per
+   request — where a retry of *that* request is the thing it has to be
+   unrepeated against. Nothing in this file mints one, which is the same
+   sentence as: nothing in this file sends by itself.
    ========================================================================== */
 
 /* The island's own elements. Declared here and built in `install`, because a module
@@ -308,7 +307,10 @@ function refresh(options) {
     if (!sessionID) return Promise.resolve();
     var opts = options && typeof options === "object" ? options : {};
     var ticket = ++reading;
-    return api.snippets(sessionID).then(function (answer) {
+    // A Cloud write can answer before its asynchronously republished snapshot arrives. After a
+    // write, ask the owning Mac; ordinary opens retain the snapshot-first path. The local
+    // transport ignores this optional argument.
+    return api.snippets(sessionID, opts.fresh ? { fresh: true } : undefined).then(function (answer) {
         // Two presses, or a session switched while the first read was out: only the newest one
         // may paint, the same ticket rule the transcript reads under.
         if (ticket !== reading || overlay.hidden) return;
@@ -356,9 +358,10 @@ function useStarter(starter) {
     if (S.write !== true) return;
     var press = starterPress(starter, { mayCreate: snippetControls(api).create });
     if (!press) return;
+    var route = sessionID;
     closeSnippets();
     appendMsg(press.body);
-    if (press.create) api.createSnippet(press.create).catch(function () {});
+    if (press.create) api.createSnippet(press.create, route).catch(function () {});
 }
 
 /* ---- writing ------------------------------------------------------------- */
@@ -379,7 +382,8 @@ function write(work, options) {
     return work().then(function () {
         busy = false;
         if (opts.thenClose) closeEditor();
-        return refresh({ keepScroll: opts.keepScroll }).then(function () { return true; });
+        return refresh({ keepScroll: opts.keepScroll, fresh: true })
+            .then(function () { return true; });
     }).catch(function (error) {
         busy = false;
         // Nothing was redrawn, so the button the press came from is still there holding focus.
@@ -395,7 +399,7 @@ function remove(row) {
     if (!row || !may().remove) return;
     menuFor = -1;
     wantFocus("data-snippet-more", row);
-    write(function () { return api.deleteSnippet(row.id); }, { thenClose: true });
+    write(function () { return api.deleteSnippet(row.id, sessionID); }, { thenClose: true });
 }
 
 function move(row, delta) {
@@ -412,7 +416,7 @@ function move(row, delta) {
     menuFor = shown.indexOf(row) + delta;
     wantFocus(delta < 0 ? "data-snippet-up" : "data-snippet-down", row);
     write(function () {
-        return api.orderSnippets(body.scope, body.project || null, body.order);
+        return api.orderSnippets(body.scope, body.project || null, body.order, sessionID);
     }, { keepScroll: true });
 }
 
@@ -423,7 +427,7 @@ function swapScope(row) {
     if (!patch) return;
     menuFor = -1;
     wantFocus("data-snippet-more", row);
-    write(function () { return api.updateSnippet(row.id, patch); });
+    write(function () { return api.updateSnippet(row.id, patch, sessionID); });
 }
 
 /* ---- the editor ---------------------------------------------------------- */
@@ -524,13 +528,13 @@ function save() {
         // there is nothing to save, so this is a sheet to close rather than a request to make.
         if (!Object.keys(patch).length) { closeEditor(); return; }
         var id = editing.id;
-        write(function () { return api.updateSnippet(id, patch); }, { thenClose: true });
+        write(function () { return api.updateSnippet(id, patch, sessionID); }, { thenClose: true });
         return;
     }
     if (!can.create) return;
     var body = snippetCreateBody(made);
     if (!body) return;
-    write(function () { return api.createSnippet(body); }, { thenClose: true });
+    write(function () { return api.createSnippet(body, sessionID); }, { thenClose: true });
 }
 
 /* Deleting asks once, in the button itself. A confirmation sheet over an editor over a sheet is
