@@ -92,6 +92,13 @@ clawdline_production_sources=(
   Sources/ProjectBoardHTTP.swift
   Sources/ProjectBoardWorkflow.swift
   Sources/ProjectBoardWorkflowHTTP.swift
+  Sources/ProjectTimelineGitImporter.swift
+  Sources/ProjectTimelineHTTP.swift
+  Sources/ProjectTimelineIntegration.swift
+  Sources/ProjectTimelineModel.swift
+  Sources/ProjectTimelineReadCache.swift
+  Sources/ProjectTimelineRequestCoordinator.swift
+  Sources/ProjectTimelineStore.swift
   Sources/ProjectIcon.swift
   Sources/ProjectStatus.swift
   Sources/ReadingFreshness.swift
@@ -204,7 +211,9 @@ clawdline_test_sources=(
   Tests/ProjectBoardTests.swift
   Tests/ProjectBoardIntegrationTests.swift
   Tests/ProjectBoardNarrativeTests.swift
+  Tests/ProjectBoardWorkflowPresentationTests.swift
   Tests/ProjectBoardWorkflowTests.swift
+  Tests/ProjectTimelineTests.swift
   Tests/VerificationLedgerTests.swift
   Tests/VerificationRunLedgerTests.swift
   Tests/main.swift

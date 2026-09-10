@@ -1,8 +1,12 @@
 /** Board -> Session uses observed identities; reading this sheet never starts a process. */
 export function createBoardSessionController(env) {
-    const state = { status: "closed", conversation: null, project: null, candidate: null, error: null };
+    const state = { status: "closed", conversation: null, project: null, machine: null,
+        candidate: null, error: null };
     let generation = 0, reading = null, sending = false;
     const storageKey = "clawdline.board.resume-fences.v1";
+    const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+    const conversationKey = value => uuid.test(String(value || ""))
+        ? String(value).toLowerCase() : String(value || "");
     const storage = () => env.storage || globalThis.localStorage;
     function fences() {
         try {
@@ -38,15 +42,19 @@ export function createBoardSessionController(env) {
         selected.place.machine || "", selected.place.id, selected.assistant, conversation.toLowerCase()
     ]);
     const draw = () => env.render(state);
-    const live = id => (env.sessions() || []).filter(row => row.sessionId === id);
+    const sessionMachine = row => row.machine || (row.identity && row.identity.machine) || null;
+    const live = (id, machine = state.machine) => (env.sessions() || []).filter(row =>
+        conversationKey(row.sessionId) === conversationKey(id)
+            && (!machine || sessionMachine(row) === machine));
     function observe() {
         try {
             const rows = fences(); let changed = false;
             for (const key of rows.keys()) {
                 const [machine, , provider, conversation] = JSON.parse(key);
-                const matches = live(conversation).filter(row => row.assistant === provider
-                    && (machine ? (row.machine || row.identity?.machine) === machine
-                        : !row.machine || row.machine === "this-mac"));
+                const matches = live(conversation, machine || null).filter(row =>
+                    row.assistant === provider && (machine
+                        ? sessionMachine(row) === machine
+                        : !sessionMachine(row) || sessionMachine(row) === "this-mac"));
                 if (matches.length === 1) { rows.delete(key); changed = true; }
             }
             if (changed) persist(rows);
@@ -59,12 +67,13 @@ export function createBoardSessionController(env) {
         close(); env.openLive(row.id);
     }
     function fail(code) { state.status = "error"; state.error = code; draw(); }
-    async function open(conversation, project) {
+    async function open(conversation, project, machine = null) {
         if (sending) return;
-        const matches = live(conversation);
+        const matches = live(conversation, machine);
         if (matches.length === 1) { openObserved(conversation, matches[0]); return; }
         const ticket = ++generation;
-        Object.assign(state, { status: "loading", conversation, project, candidate: null, error: null });
+        Object.assign(state, { status: "loading", conversation, project, machine,
+            candidate: null, error: null });
         draw();
         if (matches.length > 1) { fail("session_ambiguous"); return; }
         // Fence the previous result, but keep its physical read single-flight.
@@ -76,7 +85,8 @@ export function createBoardSessionController(env) {
             try {
                 const inventory = await env.places();
                 if (ticket !== generation) return;
-                const places = (inventory.places || []).filter(p => p.path === project.displayPath);
+                const places = (inventory.places || []).filter(p => p.path === project.displayPath
+                    && (!machine || p.machine === machine));
                 // A path on two Macs is not a unique destination. Never fall back to a label.
                 if (places.length !== 1) { fail(places.length ? "project_ambiguous" : "project_unavailable"); return; }
                 const providers = (inventory.assistants || []).map(a => a.id)
@@ -89,7 +99,8 @@ export function createBoardSessionController(env) {
                     if (ticket !== generation) return;
                     incomplete ||= answer.more === true;
                     for (const row of answer.sessions || []) {
-                        if (row.id === conversation) found.push({ row, assistant, place: places[0] });
+                        if (conversationKey(row.id) === conversationKey(conversation))
+                            found.push({ row, assistant, place: places[0] });
                     }
                 }
                 if (found.length !== 1) { fail(found.length ? "session_ambiguous" : incomplete ? "history_incomplete" : "history_unavailable"); return; }
@@ -105,7 +116,7 @@ export function createBoardSessionController(env) {
     }
     async function resume() {
         if (sending || state.status !== "ready" || !state.candidate || !env.canWrite()) return;
-        const matches = live(state.conversation);
+        const matches = live(state.conversation, state.machine);
         if (matches.length === 1) { openObserved(state.conversation, matches[0]); return; }
         if (matches.length > 1) { fail("session_ambiguous"); return; }
         const selected = state.candidate, conversation = state.conversation;

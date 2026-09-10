@@ -646,6 +646,17 @@ export var LocalClient = {
         return jsonFetch("/v1/board" + (query.size ? "?" + query.toString() : ""));
     },
     boardCommand: function (body) { return jsonFetch("/v1/board", post(body)); },
+    timeline: function (project, entry, cursor, environment, category, includeUpcoming) {
+        var query = new URLSearchParams();
+        if (project) query.set("project", project);
+        if (entry) query.set("entry", entry);
+        if (cursor) query.set("cursor", cursor);
+        if (environment) query.set("environment", environment);
+        if (category) query.set("category", category);
+        if (includeUpcoming) query.set("upcoming", "true");
+        return jsonFetch("/v1/timeline" + (query.size ? "?" + query.toString() : ""));
+    },
+    timelineCommand: function (body) { return jsonFetch("/v1/timeline", post(body)); },
 
     /// Which worktrees under one Project finished a Feature, and whether that delivery reached
     /// the branch. Not `git worktree list`: that answers a different question, and most of the

@@ -1,6 +1,8 @@
 import { boardReportSelection } from "../net/client.js";
 import { CANONICAL_DOCUMENT_ORIGIN, documentLocatorFromHash } from "../net/document-links.js";
 
+const UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
 // Conversations record facts. This reading surface never issues lifecycle commands.
 const STATUS = {
     planning: ["Planning", "規劃中", "Clarifying the objective and approach.", "正在釐清目標與執行步驟。"],
@@ -75,6 +77,40 @@ const PHASES = {
     correction: ["Correction", "修正"],
     integration: ["Integration", "整合"]
 };
+export const CANONICAL_BOARD_ORIGIN = "https://app.clawdline.com";
+const PROJECT_ID = /^project-[0-9a-f]{24}$/;
+const ITEM_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+export function boardLocatorFromHash(hash) {
+    const source = String(hash || "").replace(/^#/, "");
+    // URLSearchParams repairs malformed percent escapes with U+FFFD. Validate the wire first so
+    // a corrupt machine identity becomes a route error instead of a request to an invented Mac.
+    try {
+        source.split("&").forEach(part => part.split("=").forEach(component =>
+            decodeURIComponent(component.replace(/\+/g, " "))));
+    } catch (_) { return null; }
+    const params = new URLSearchParams(source);
+    const allowed = new Set(["page", "machine", "project", "item"]);
+    for (const key of params.keys()) if (!allowed.has(key)) return null;
+    for (const key of allowed) if (params.getAll(key).length > 1) return null;
+    const machine = params.get("machine"), project = params.get("project"), item = params.get("item");
+    if (params.get("page") !== "board" || !machine || machine === "this-mac"
+        || new TextEncoder().encode(machine).length > 200
+        || /[\u0000-\u001f\u007f]/.test(machine) || !PROJECT_ID.test(project || "")
+        || (item != null && !ITEM_ID.test(item))) return null;
+    return { machine, project, item: item || null };
+}
+
+export function boardShareURL(machine, project, item) {
+    const locator = boardLocatorFromHash("#page=board&machine=" + encodeURIComponent(machine || "")
+        + "&project=" + encodeURIComponent(project || "")
+        + (item ? "&item=" + encodeURIComponent(item) : ""));
+    if (!locator) return null;
+    const query = new URLSearchParams({ page: "board", machine: locator.machine,
+        project: locator.project });
+    if (locator.item) query.set("item", locator.item);
+    return CANONICAL_BOARD_ORIGIN + "/#" + query.toString();
+}
 function clear(node) {
     while (node && node.firstChild) node.removeChild(node.firstChild);
 }
@@ -149,13 +185,57 @@ function canonicalDocumentURL(value) {
         return null;
     }
 }
-export function resolveBoardSession(sessions, conversationID) {
-    const matches = (sessions || []).filter((row) => row.sessionId === conversationID);
+export function resolveBoardSession(sessions, conversationID, machine = null) {
+    const wanted = conversationKey(conversationID);
+    const matches = (sessions || []).filter((row) => conversationKey(row.sessionId) === wanted
+        && (!machine || (row.machine || row.identity?.machine) === machine));
     return matches.length === 1
         ? { id: matches[0].id }
         : {
               error: matches.length ? "session_ambiguous" : "session_unavailable"
           };
+}
+
+function conversationKey(value) {
+    const text = String(value || "");
+    return UUID_PATTERN.test(text) ? text.toLowerCase() : text;
+}
+
+export function boardSessionGroups(item, sessions, machine = null) {
+    const links = (item && item.links || []).filter(row => row.kind === "session"
+        && typeof row.targetId === "string" && row.targetId.length);
+    const unique = new Map();
+    links.forEach(link => {
+        const key = conversationKey(link.targetId);
+        if (!unique.has(key)) unique.set(key, {
+            conversationId: link.targetId, label: link.label || link.targetId, receipts: []
+        });
+        unique.get(key).receipts.push(link);
+    });
+    const rows = [...unique.values()].map(record => {
+        const key = conversationKey(record.conversationId);
+        const live = (sessions || []).filter(session =>
+            conversationKey(session.sessionId) === key
+                && (!machine || (session.machine || session.identity?.machine) === machine));
+        const owner = String(item && item.owner || "");
+        return {
+            ...record,
+            live,
+            activity: live.length > 1 ? "ambiguous" : live.length === 1 ? "live" : "history",
+            role: owner && (conversationKey(owner) === key || live.some(row => row.id === owner))
+                ? "owner" : "participant"
+        };
+    });
+    const owner = rows.filter(row => row.role === "owner");
+    return {
+        owner,
+        participants: rows.filter(row => row.role === "participant" && row.activity === "live"),
+        history: rows.filter(row => row.activity === "history"),
+        ambiguous: rows.filter(row => row.activity === "ambiguous"),
+        ownerMissing: !!(item && item.owner) && owner.length === 0,
+        receiptCount: links.length,
+        conversationCount: rows.length
+    };
 }
 export function boardProgress(item) {
     if (item.type === "coordination") return "not_applicable";
@@ -548,6 +628,56 @@ function remainingRow(ctx, parent, row, item) {
 function collectionSelection(item, kind, offset) {
     return "collection:" + item + ":" + kind + ":" + offset;
 }
+function supplementScope(value) {
+    const match = /^workflow_run=(run-[0-9a-f]{32});session=([^;]{1,200});disposition=(required|optional)$/.exec(
+        String(value || ""));
+    return match ? { run: match[1], session: match[2], disposition: match[3] } : null;
+}
+export function mergeBoardRemainingWork(item) {
+    let remainder = item && item.remainingWork;
+    if (!remainder && item) {
+        const pendingChecks = (item.checklist || [])
+            .filter(row => !["passed", "not_applicable", "canceled"].includes(row.status))
+            .map(row => ({ ...row, kind: "checklist",
+                disposition: row.required ? "required" : "optional" }));
+        const pendingObligations = (item.obligations || []).filter(row => !row.resolved)
+            .map(row => ({ ...row, kind: "obligation", status: row.status || "waiting",
+                disposition: row.disposition || (row.blocking ? "required" : "optional"),
+                actorKind: row.actorKind || "unknown" }));
+        remainder = {
+            work: pendingChecks.concat(pendingObligations.filter(row => row.actorKind !== "user")),
+            userDecisions: pendingObligations.filter(row => row.actorKind === "user"),
+            workOmittedCount: 0, userDecisionOmittedCount: 0
+        };
+    }
+    if (!remainder) return remainder;
+    const work = (remainder.work || []).map(row => ({ ...row }));
+    const checklists = work.filter(row => row.kind === "checklist");
+    const obligations = work.filter(row => row.kind === "obligation");
+    const consumed = new Set();
+    checklists.forEach(checklist => {
+        const relation = typeof checklist.supplementRelationId === "string"
+            && /^wfs-[0-9a-f]{64}$/.test(checklist.supplementRelationId)
+            ? checklist.supplementRelationId : null;
+        if (!relation) return;
+        const sameChecks = checklists.filter(row => row.supplementRelationId === relation);
+        const candidates = obligations.filter(row => row.supplementRelationId === relation);
+        if (sameChecks.length !== 1 || candidates.length !== 1) return;
+        const obligation = candidates[0], scope = supplementScope(obligation.blockingScope);
+        if (!scope || scope.disposition !== checklist.disposition
+            || obligation.owner !== scope.session || obligation.actorKind === "user") return;
+        checklist.requiredAction = obligation.requiredAction || checklist.requiredAction;
+        checklist.actorKind = obligation.actorKind;
+        checklist.sources = [
+            { kind: "checklist", id: checklist.id, supplementRelationId: relation },
+            { kind: "obligation", id: obligation.id, workflowRun: scope.run,
+              session: scope.session, supplementRelationId: relation }
+        ];
+        consumed.add(obligation.id);
+    });
+    return { ...remainder, work: work.filter(row =>
+        !(row.kind === "obligation" && consumed.has(row.id))) };
+}
 function loadMore(ctx, parent, kind, count, omitted) {
     if (!(omitted > 0)) return;
     const control = button(ctx, parent,
@@ -557,7 +687,7 @@ function loadMore(ctx, parent, kind, count, omitted) {
         "Load more retained Board records", "載入更多已保留的看板紀錄"));
 }
 function renderRemainingWork(ctx, parent, item) {
-    const remainder = item.remainingWork;
+    const remainder = mergeBoardRemainingWork(item);
     if (!remainder) return;
     const work = remainder.work || [], decisions = remainder.userDecisions || [];
     if (!work.length && !decisions.length) return;
@@ -619,6 +749,54 @@ function renderDocumentReferences(ctx, parent, item) {
     loadMore(ctx, parent, "document_references", documents.length,
         projection && projection.omittedCount || 0);
 }
+function openBoardConversation(ctx, item, record) {
+    return Promise.resolve().then(() => ctx.env.openSession && ctx.env.openSession(
+        record.conversationId,
+        ctx.state.projects.find(project => project.id === item.projectId)
+            || ctx.state.projectPresentation,
+        ctx.state.machine
+    )).then(answer => {
+        if (answer && answer.error)
+            ctx.status(words(ctx,
+                "This conversation has no unique Session to open. Nothing was resumed.",
+                "這段對話目前沒有可唯一開啟的 Session；未恢復任何對話。"), true);
+    }).catch(error => ctx.status(error.message || String(error), true));
+}
+function renderSessionOwnership(ctx, parent, item) {
+    const groups = boardSessionGroups(item,
+        ctx.env.sessions ? ctx.env.sessions() : [], ctx.state.machine);
+    const part = section(ctx, parent, words(ctx, "Owner & how to continue", "負責人與如何繼續"));
+    fact(ctx, part, words(ctx, "Recorded owner", "目前負責人"),
+        item.owner || words(ctx, "Not assigned", "尚未指派"));
+    const draw = (record, group) => {
+        const row = el(ctx, part, "div", null, "board-session-row");
+        row.dataset.sessionGroup = group;
+        const labels = record.activity === "live"
+            ? ["Open live Session", "開啟執行中 Session"]
+            : record.activity === "ambiguous"
+                ? ["Review matching Sessions", "檢查多個符合的 Session"]
+                : ["Review history / resume", "查看歷史／確認繼續"];
+        button(ctx, row, words(ctx, ...labels), "open-session",
+            () => openBoardConversation(ctx, item, record));
+        el(ctx, row, "span", record.label, "board-session-label");
+    };
+    groups.owner.forEach(row => draw(row, "owner"));
+    groups.participants.forEach(row => draw(row, "participant-live"));
+    groups.history.filter(row => row.role !== "owner").forEach(row => draw(row, "history"));
+    groups.ambiguous.filter(row => row.role !== "owner").forEach(row => draw(row, "ambiguous"));
+    if (groups.ownerMissing)
+        el(ctx, part, "p", words(ctx,
+            "The recorded owner has no exact conversation identity in this item.",
+            "目前負責人沒有可由本項目精確對應的 conversation identity。"), "board-section-help");
+    if (!groups.conversationCount)
+        el(ctx, part, "p", words(ctx,
+            "No responsible Session is linked yet.", "尚未連結負責 Session。"),
+            "board-section-help");
+    el(ctx, part, "p", words(ctx,
+        "Direct assignment is not available here. Open the candidate Session and let that Session confirm takeover; this view never sends or starts work by itself.",
+        "此處尚未提供可安全確認的直接指派。請開啟候選 Session，由該 Session 確認接手；本畫面不會自行送訊息或啟動工作。"),
+        "board-section-help board-handoff-gap");
+}
 function detail(ctx) {
     const item = ctx.state.item,
         target = ctx.e["board-detail"];
@@ -641,10 +819,13 @@ function detail(ctx) {
     badge(ctx, identity, item);
     const narrative = reading(ctx, item);
     el(ctx, head, "h2", narrative.title || item.title, "board-detail-title");
+    button(ctx, head, words(ctx, "Copy item link", "複製項目連結"),
+        "copy-item-link", () => ctx.copyLink(item.id), "board-button board-copy-link");
     if (narrative.summary) el(ctx, head, "p", narrative.summary, "board-detail-summary");
     if (narrative.locale) el(ctx, head, "p", words(ctx, "AI reading summary · progress follows recorded evidence", "AI 整理・進度仍以實際紀錄為準"), "board-narrative-provenance");
     journey(ctx, head, item);
     el(ctx, head, "p", say(ctx, item), "board-detail-summary");
+    renderSessionOwnership(ctx, target, item);
     if (
         !["landed", "not_applicable"].includes(boardProgress(item)) &&
         item.progress &&
@@ -742,13 +923,8 @@ function detail(ctx) {
         if (item.handoff)
             fact(ctx, part, words(ctx, "Handoff", "交接"), item.handoff.note || item.handoff.proposedOwner);
     }
-    const blockers = (item.obligations || []).filter((row) => !row.resolved);
-    if (blockers.length) {
-        const part = section(ctx, target, words(ctx, "What is holding this up", "目前需要處理"));
-        blockers.forEach((row) => fact(ctx, part, row.title, row.owner));
-    }
     if (item.type !== "coordination" && (item.checklist || []).length) {
-        const part = section(ctx, target, words(ctx, "Progress toward the objective", "目標完成進度"));
+        const part = section(ctx, target, words(ctx, "Completed checks", "已完成檢查"));
         const names = {
             todo: ["Not started", "尚未開始"],
             doing: ["In progress", "進行中"],
@@ -756,7 +932,9 @@ function detail(ctx) {
             failed: ["Needs correction", "待修正"],
             not_applicable: ["Not applicable", "不適用"]
         };
-        item.checklist.forEach((row) => {
+        const completed = item.checklist.filter(row =>
+            ["passed", "not_applicable"].includes(row.status));
+        completed.forEach((row) => {
             const line = el(ctx, part, "div", null, "board-check-row board-check-" + row.status);
             el(
                 ctx,
@@ -774,6 +952,14 @@ function detail(ctx) {
                 "board-check-status"
             );
         });
+        if (!completed.length)
+            el(ctx, part, "p", words(ctx,
+                "No checks are complete yet; remaining checks are listed above.",
+                "尚無已完成檢查；未完成項目已列在上方。"), "board-section-help");
+        else if (completed.length < item.checklist.length)
+            el(ctx, part, "p", words(ctx,
+                "Checks still awaiting work or acceptance are listed above.",
+                "仍待處理或驗收的檢查已列在上方。"), "board-section-help");
     }
     if (["feature", "refactor", "epic"].includes(item.type) && (item.milestones || []).length) {
         const part = section(ctx, target, words(ctx, "Milestones", "里程碑"));
@@ -824,43 +1010,40 @@ function detail(ctx) {
     ((item.usage && item.usage.costSeries) || []).forEach((row) =>
         fact(ctx, usage, words(ctx, "Cost", "費用"), number(row.value) + " " + row.unit + " · " + row.basis)
     );
-    const records = section(ctx, target, words(ctx, "Sessions & records", "相關對話與紀錄"), true);
-    (item.links || []).forEach((row) => {
+    const records = section(ctx, target, words(ctx, "Technical records", "技術紀錄"), true);
+    (item.checklist || []).forEach(row => fact(ctx, records,
+        words(ctx, "Checklist source", "Checklist 原始來源"),
+        (row.id || "(no id)") + " · " + row.title + " · " + row.status
+            + (row.supplementRelationId ? " · " + row.supplementRelationId : "")));
+    (item.obligations || []).forEach(row => fact(ctx, records,
+        words(ctx, "Obligation source", "Obligation 原始來源"),
+        (row.id || "(no id)") + " · " + row.title + " · "
+            + (row.blockingScope || row.owner || "unknown")
+            + (row.supplementRelationId ? " · " + row.supplementRelationId : "")));
+    (item.links || []).filter(row => row.kind !== "session").forEach((row) => {
         const line = el(ctx, records, "div", null, "board-link-row");
         line.dataset.boardLinkKind = row.kind;
-        if (row.kind === "session")
-            button(ctx, line, row.label || row.targetId, "open-session", () => {
-                Promise.resolve()
-                    .then(() => ctx.env.openSession && ctx.env.openSession(
-                        row.targetId,
-                        ctx.state.projects.find(project => project.id === item.projectId)
-                            || ctx.state.projectPresentation
-                    ))
-                    .then((answer) => {
-                        if (answer && answer.error)
-                            ctx.status(
-                                words(
-                                    ctx,
-                                    "This record has no unique live Session to open.",
-                                    "這段紀錄目前沒有可唯一對應的執行中對話。"
-                                ),
-                                true
-                            );
-                    })
-                    .catch((error) => ctx.status(error.message, true));
-            });
-        else
-            fact(
-                ctx,
-                line,
-                row.kind === "worktree"
-                    ? "Worktree"
-                    : row.kind === "task"
-                      ? words(ctx, "Attempt", "執行紀錄")
-                      : row.kind,
-                row.label || row.targetId
-            );
+        fact(
+            ctx,
+            line,
+            row.kind === "worktree"
+                ? "Worktree"
+                : row.kind === "task"
+                  ? words(ctx, "Attempt", "執行紀錄")
+                  : row.kind,
+            row.label || row.targetId
+        );
     });
+    const sessionReceipts = boardSessionGroups(item,
+        ctx.env.sessions ? ctx.env.sessions() : [], ctx.state.machine);
+    const receiptRows = new Map();
+    [...sessionReceipts.owner, ...sessionReceipts.participants,
+     ...sessionReceipts.history, ...sessionReceipts.ambiguous].forEach(row =>
+        receiptRows.set(conversationKey(row.conversationId), row));
+    receiptRows.forEach(row => fact(
+        ctx, records, words(ctx, "Conversation receipts", "Conversation 原始來源"),
+        row.conversationId + " · " + row.receipts.map(receipt => receipt.id || "(no id)").join(", ")
+    ));
     (item.spans || []).forEach((row) =>
         fact(
             ctx,
@@ -950,6 +1133,9 @@ export function bindBoardPage(elements, environment = {}) {
         items: [],
         item: null,
         projectId: null,
+        machine: null,
+        locatorBacked: false,
+        routeError: null,
         projectPresentation: null,
         selectionLoaded: false,
         readStatus: "loading",
@@ -971,11 +1157,28 @@ export function bindBoardPage(elements, environment = {}) {
         if (timer != null) unschedule(timer);
         timer = null;
     }
-    ctx.status = (message, error = false) => {
+    ctx.status = (message, error = false, retry = true) => {
         clear(elements["board-status"]);
         elements["board-status"].className = "board-status" + (error ? " board-status-error" : "");
         el(ctx, elements["board-status"], "span", message);
-        if (error) button(ctx, elements["board-status"], words(ctx, "Retry", "重試"), "retry", refresh);
+        if (error && retry)
+            button(ctx, elements["board-status"], words(ctx, "Retry", "重試"), "retry", refresh);
+    };
+    ctx.copyLink = (item) => {
+        const url = boardShareURL(state.machine, state.projectId, item);
+        if (!url || !environment.copy) {
+            ctx.status(words(ctx,
+                "A current Cloud machine is required before this Board link can be shared.",
+                "必須先確認目前的 Cloud machine，才能分享這個看板連結。"), true, false);
+            return Promise.resolve({ error: "board_machine_missing" });
+        }
+        return Promise.resolve(environment.copy(url)).then(() => {
+            ctx.status(words(ctx, "Board link copied.", "已複製看板連結。"));
+            return { ok: true, url };
+        }).catch(error => {
+            ctx.status((error && error.message) || String(error), true);
+            return { error: "copy_failed" };
+        });
     };
     function renderBody() {
         if (elements.board) elements.board.dataset.boardView = state.view;
@@ -1002,6 +1205,8 @@ export function bindBoardPage(elements, environment = {}) {
         elements["board-back"].textContent = state.itemId
             ? words(ctx, "← All work", "← 專案項目")
             : words(ctx, "← Projects", "← 專案");
+        if (elements["board-timeline-tab"])
+            elements["board-timeline-tab"].textContent = words(ctx, "Timeline", "時間軸");
         elements["board-refresh"].textContent = words(ctx, "Refresh", "重新整理");
         elements["board-search"].placeholder = words(
             ctx,
@@ -1054,6 +1259,9 @@ export function bindBoardPage(elements, environment = {}) {
                 );
             return;
         }
+        const share = el(ctx, target, "div", null, "board-share-row");
+        button(ctx, share, words(ctx, "Copy project link", "複製專案連結"),
+            "copy-project-link", () => ctx.copyLink(null));
         const all = state.items.filter((row) => row.projectId === state.projectId),
             query = elements["board-search"].value.trim().toLocaleLowerCase();
         const rows = all.filter(
@@ -1210,6 +1418,7 @@ export function bindBoardPage(elements, environment = {}) {
     }
     function load(quiet = false) {
         stopTimer();
+        if (state.routeError) return Promise.resolve({ error: "board_link_invalid" });
         const ticket = ++state.readTicket,
             project = state.projectId,
             item = state.itemId;
@@ -1217,7 +1426,8 @@ export function bindBoardPage(elements, environment = {}) {
         const promise = Promise.resolve()
             .then(() => {
                 if (!environment.read) throw new Error(words(ctx, "Board unavailable", "無法讀取看板"));
-                return environment.read(project || undefined, item || undefined);
+                return environment.read(
+                    project || undefined, item || undefined, state.machine || undefined);
             })
             .then((answer) => {
                 if (!state.active || ticket !== state.readTicket) return;
@@ -1311,7 +1521,8 @@ export function bindBoardPage(elements, environment = {}) {
             .then(() => {
                 if (!environment.read || !project || !item)
                     throw new Error(words(ctx, "Board unavailable", "無法讀取看板"));
-                return environment.read(project, boardReportSelection(item, report));
+                return environment.read(
+                    project, boardReportSelection(item, report), state.machine || undefined);
             })
             .then((answer) => {
                 if (!state.active || ticket !== state.reportTicket
@@ -1342,7 +1553,8 @@ export function bindBoardPage(elements, environment = {}) {
         state.collectionTickets[kind] = ticket;
         if (!environment.read || !project || !item || !selected) return Promise.resolve();
         return Promise.resolve()
-            .then(() => environment.read(project, collectionSelection(item, kind, offset)))
+            .then(() => environment.read(
+                project, collectionSelection(item, kind, offset), state.machine || undefined))
             .then((answer) => {
                 if (!state.active || ticket !== state.collectionTickets[kind]
                     || item !== state.itemId || selected !== state.item) return;
@@ -1376,7 +1588,8 @@ export function bindBoardPage(elements, environment = {}) {
                     ctx.status((error && error.message) || String(error), true);
             });
     };
-    function open(project, item, presentation) {
+    function open(project, item, presentation, machine, routeError, locatorBacked = false) {
+        const previousProject = state.projectId, previousMachine = state.machine;
         state.active = true;
         if (state.projectId !== project) state.projectPresentation = null;
         if (state.projectId !== (project || null) || state.itemId !== (item || null)) {
@@ -1391,12 +1604,24 @@ export function bindBoardPage(elements, environment = {}) {
         state.selectionLoaded = false;
         state.readStatus = "loading";
         state.projectId = project || null;
+        state.machine = machine || (presentation ? presentation.machine || null
+            : project && project === previousProject ? previousMachine : null);
+        state.locatorBacked = locatorBacked;
+        state.routeError = routeError || null;
         state.itemId = item || null;
         state.item = null;
         state.view = item ? "detail" : project ? "items" : "projects";
         elements["board-search"].value = "";
         render();
         if (elements.board) elements.board.scrollTop = 0;
+        if (state.routeError) {
+            state.readStatus = "error";
+            ctx.status(words(ctx,
+                "This Board link is invalid; no project or item was opened. ",
+                "這個看板連結無效；未開啟任何專案或項目。") + state.routeError,
+                true, false);
+            return Promise.resolve({ error: "board_link_invalid" });
+        }
         opened = load();
         const request = opened;
         request.finally(() => {
@@ -1404,10 +1629,24 @@ export function bindBoardPage(elements, environment = {}) {
         });
         return request;
     }
-    ctx.openItem = (item) => open(state.projectId, item);
-    ctx.openProjectItem = (project, item) => open(project, item);
+    function openLocator(locator, error) {
+        if (!locator)
+            return open(null, null, null, null, error || "board_link_invalid");
+        return open(locator.project, locator.item, null, locator.machine, null, true);
+    }
+    function select(project, item) {
+        const machine = state.machine, locatorBacked = state.locatorBacked;
+        const request = open(project, item, null, machine, null, locatorBacked);
+        if (locatorBacked && environment.replaceURL) {
+            const url = boardShareURL(machine, project, item);
+            if (url) environment.replaceURL(url);
+        }
+        return request;
+    }
+    ctx.openItem = (item) => select(state.projectId, item);
+    ctx.openProjectItem = (project, item) => select(project, item);
     function escape() {
-        if (state.itemId) return open(state.projectId);
+        if (state.itemId) return select(state.projectId, null);
         if (state.projectId) {
             if (environment.navigate) environment.navigate("projects");
             else return open();
@@ -1429,5 +1668,5 @@ export function bindBoardPage(elements, environment = {}) {
         if (opened) return opened;
         return arguments.length ? open(project, item) : open(state.projectId, state.itemId);
     }
-    return { enter, leave, refresh, escape, open, state };
+    return { enter, leave, refresh, escape, open, openLocator, state };
 }

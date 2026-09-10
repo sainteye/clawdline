@@ -118,6 +118,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var childType: String?
         var sourceRunID: String
         var sourceSessionID: String
+        // Optional for old journal events: never change a prepared legacy replay body.
+        var relationID: String? = nil
     }
 
     private struct Run: Codable {
@@ -236,7 +238,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                      result.reason)
          },
          boardCommand: @escaping ([String: Any], String) -> ProjectBoardStore.Reply = {
-             ProjectBoardStore.shared.command($0, actor: $1)
+             ProjectBoardStore.shared.command($0, actor: $1, workflowOrigin: true)
          },
          journalSynchronize: @escaping (URL) throws -> Void = ProjectBoardWorkflow.syncJournal,
          limits: Limits = Limits(), autoStart: Bool = true) {
@@ -706,7 +708,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 version: version, kind: kind, title: title, owner: owner,
                 acceptance: acceptance, required: disposition == "required",
                 actorKind: actorKind, childType: childType,
-                sourceRunID: run.id, sourceSessionID: run.identity.conversationID)
+                sourceRunID: run.id, sourceSessionID: run.identity.conversationID,
+                relationID: "wfs-" + Self.digest("\(run.identity.actor)\u{0}\(run.id)\u{0}\(eventID)"))
         case "handoff":
             guard run.itemID != nil,
                   let owner = boundedText(body["owner"], 300),
@@ -792,6 +795,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                              kind: "link", index: 0, draft: &draft)
                 appendIntent(id: "\(event.id)-span", run: run, event: event,
                              kind: "span", index: 0, draft: &draft)
+            }
+            if event.operation == "deliver" || event.operation == "handoff" {
+                appendIntent(id: "\(event.id)-end-span", run: run, event: event,
+                             kind: "end_span", index: 0, draft: &draft)
             }
             for (index, _) in event.outputs.enumerated() {
                 appendIntent(id: "\(event.id)-artifact-\(index)", run: run, event: event,
@@ -984,6 +991,15 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             guard let item = run.itemID, let phase = event.phase else { return nil }
             return ["operation": "span", "itemId": item,
                     "sessionId": run.identity.conversationID, "phase": phase]
+        case "end_span":
+            guard let item = run.itemID,
+                  let start = state.outbox.first(where: {
+                      $0.runID == run.id && $0.kind == "span" && $0.status == "complete"
+                  }), let startRequestID = start.preparedRequestID else { return nil }
+            return ["operation": "end_span", "itemId": item,
+                    "sessionId": run.identity.conversationID,
+                    "startRequestId": startRequestID,
+                    "note": event.summary ?? event.handoffNote ?? "Session interval ended."]
         case "artifact":
             guard let item = run.itemID, event.outputs.indices.contains(outbox.index) else {
                 return nil
@@ -1001,8 +1017,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     "blocking": remaining.blocking]
         case "supplement_checklist":
             guard let item = run.itemID, let supplement = event.supplement else { return nil }
-            return ["operation": "checklist", "itemId": item,
+            var body: [String: Any] = ["operation": "checklist", "itemId": item,
                     "title": supplement.title, "required": supplement.required]
+            if let relation = supplement.relationID { body["supplementRelationId"] = relation }
+            return body
         case "supplement_child_create":
             guard let parent = run.itemID, let supplement = event.supplement,
                   let type = supplement.childType else { return nil }
@@ -1023,7 +1041,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             guard let supplement = event.supplement,
                   let item = outbox.kind == "supplement_obligation"
                     ? run.itemID : outbox.createdItemID else { return nil }
-            return [
+            var body: [String: Any] = [
                 "operation": "obligation", "itemId": item,
                 "title": supplement.title, "owner": supplement.owner,
                 "blocking": supplement.required,
@@ -1031,6 +1049,12 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 "requiredAction": supplement.acceptance,
                 "blockingScope": Self.supplementSourceScope(supplement),
             ]
+            // Only checklist supplements have a counterpart on this same item. Child
+            // supplements retain their source trail without implying a checklist relation.
+            if outbox.kind == "supplement_obligation", let relation = supplement.relationID {
+                body["supplementRelationId"] = relation
+            }
+            return body
         case "handoff":
             guard let item = run.itemID, let owner = event.handoffOwner,
                   let note = event.handoffNote else { return nil }

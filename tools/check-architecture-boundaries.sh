@@ -406,7 +406,9 @@ fi
 # Managed Board send now lives in ProjectBoardWorkflowHTTP; retain the measured wire-up size.
 # Session peer-handoff address-book evidence and the verification-run router add fourteen lines;
 # their bounded payload/protocol implementations remain outside this router. Measured on this tree.
-remote_server_ceiling=5811
+# Combined Timeline/Board candidate on 9f115484: measured 5,831 lines. Timeline adds
+# only bounded-lane route wiring; Cloud backpressure/resync remains intact.
+remote_server_ceiling=5831
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -470,7 +472,8 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # Personal Board Workflow has one cohesive durable ingress/outbox runner.
 # Exact per-run verification receipts and Session work-state projection each have one cohesive
 # runner, keeping both tests out of already frozen 2,000-line suites.
-runner_count_expected=46
+# Combined Timeline and workflow-presentation runners, measured from Tests/main.swift.
+runner_count_expected=48
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -669,7 +672,8 @@ done
 # 58 with Tests/VerificationRunLedgerTests.swift, the append-only per-run receipt boundary.
 # 59 with Tests/SessionWorkStateTests.swift, the bounded peer-handoff projection boundary.
 # One owner for the number, for the reason written above the runner count.
-suite_count_expected=59
+# Combined Timeline and workflow-presentation suite files, measured from Tests/ inventory.
+suite_count_expected=61
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts

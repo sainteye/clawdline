@@ -157,6 +157,7 @@ document.documentElement.className = "booting";
 <link rel="stylesheet" href="/app/css/plan.css">
 <link rel="stylesheet" href="/app/css/ledger.css">
 <link rel="stylesheet" href="/app/css/board.css">
+<link rel="stylesheet" href="/app/css/timeline.css">
 <link rel="stylesheet" href="/app/css/session-board.css">
 <link rel="stylesheet" href="/app/css/documents.css">
 
@@ -573,6 +574,7 @@ document.documentElement.className = "booting";
 <section id="board" class="page board-page" data-page-view="board" hidden aria-label="Project Board">
     <header class="board-head">
         <button id="board-back" type="button">Back</button>
+        <button id="board-timeline-tab" class="board-button" type="button">Timeline</button>
         <button id="board-refresh" class="board-button" type="button">Refresh</button>
     </header>
     <div class="board-intro">
@@ -587,6 +589,26 @@ document.documentElement.className = "booting";
     <input id="board-search" type="search" aria-label="Search project work" hidden>
     <div id="board-items"></div>
     <div id="board-detail" hidden></div>
+</section>
+
+<section id="timeline" class="page timeline-page" data-page-view="timeline" hidden
+         aria-label="Project Timeline">
+    <header class="timeline-head">
+        <button id="timeline-back" type="button">Back</button>
+        <button id="timeline-board-tab" type="button">Board</button>
+        <button id="timeline-refresh" type="button">Refresh</button>
+    </header>
+    <div class="timeline-intro">
+        <canvas id="timeline-project-mark" hidden aria-hidden="true"></canvas>
+        <h1 id="timeline-title" tabindex="-1">Timeline</h1>
+        <p id="timeline-subtitle"></p>
+    </div>
+    <p id="timeline-status" role="status" aria-live="polite"></p>
+    <label><span id="timeline-environment-label">Environment</span> <select id="timeline-environment"></select></label>
+    <label><span id="timeline-category-label">Category</span> <select id="timeline-category"></select></label>
+    <label><input id="timeline-upcoming" type="checkbox"> <span id="timeline-upcoming-label">Include upcoming / Git history</span></label>
+    <div id="timeline-items"></div>
+    <div id="timeline-detail"></div>
 </section>
 
 <!-- The Projects page. Two questions on one screen, and the second one is the point.
@@ -838,6 +860,14 @@ document.documentElement.className = "booting";
             <b id="settings-board-ai-title">AI reading summaries</b>
             <p class="say" id="settings-board-ai-say">Off until you consent to sending stored Board titles, descriptions and documented outcomes to your selected AI provider. No transcript or attachment reading.</p>
             <button class="chip" id="settings-board-ai-toggle" type="button" aria-pressed="false" disabled>Loading…</button>
+        </div>
+        <div class="block" id="settings-timeline">
+            <b id="settings-timeline-title">Enable Project Timeline</b>
+            <p class="say" id="settings-timeline-say">Keep a retained, traceable view of rollout events.</p>
+            <button class="chip" id="settings-timeline-toggle" type="button"
+                    aria-pressed="false" disabled>Loading…</button>
+            <button class="chip" id="settings-timeline-history" type="button">Open timeline</button>
+            <p class="say" id="settings-timeline-status" role="status"></p>
         </div>
         <div class="foot"><span id="settings-version"></span></div>
         <button class="chip wide" id="settings-close" type="button" data-page-to="sessions">Close</button>

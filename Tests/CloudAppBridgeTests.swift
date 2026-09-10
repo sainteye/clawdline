@@ -1372,6 +1372,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         "documents": #"{"type":"documents","session":"typed"}"#,
         "document": #"{"type":"document","session":"typed","request":"p-doc","scope":"project","task":"","path":"notes.md"}"#,
         "board": #"{"type":"board","session":"__clawdline_machine__","request":"p-board","project":"project-1","item":"item-1"}"#,
+        "timeline": #"{"type":"timeline","session":"__clawdline_machine__","request":"p-timeline","project":"project-1","entry":"entry-1","cursor":"40","environment":"production","category":"feature","upcoming":true}"#,
         "places": #"{"type":"places","session":"__clawdline_machine__","request":"p-1"}"#,
         "project-worktrees": #"{"type":"project-worktrees","session":"__clawdline_machine__","request":"p-2","project":"/code/app"}"#,
         "past-sessions": #"{"type":"past-sessions","session":"__clawdline_machine__","request":"p-3","place":"portfolio","assistant":"claude"}"#,
@@ -1401,12 +1402,11 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         typedNames
             == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git", "screen",
                 "image.img-1", "documents", "read:p-doc", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
-                "read:p-5", "read:p-list", "read:p-snippets", "read:p-board"]
+                "read:p-5", "read:p-list", "read:p-snippets", "read:p-board", "read:p-timeline"]
             && typedReads.contains(CloudAppBridgeTestRouter.ReadCall(
                 read: .transcript(session: "typed", limit: 200, priority: .foreground),
                 sender: "viewer")),
         "each read parses into its own case, and an old interactive Cloud tab stays foreground")
-
     let readsBeforeMalformed = await router.recordedReads().count
     let envelopesBeforeMalformed = transport.envelopes().count
     let malformed = [

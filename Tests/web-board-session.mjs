@@ -8,7 +8,7 @@ const id='11111111-1111-4111-8111-111111111111', project={id:'p',displayPath:'/p
 function fixture(storage = new Map()) {
     const f={sessions:[],reads:[],resumes:[],opens:[],began:[],write:true,
         places:{places:[{id:'opaque',path:'/project'}],assistants:[{id:'claude'},{id:'codex'}]},
-        histories:{claude:{sessions:[]},codex:{sessions:[{id,title:'Known history',live:false}]}}};
+        histories:{claude:{sessions:[]},codex:{sessions:[{id:id.toUpperCase(),title:'Known history',live:false}]}}};
     f.env={render:()=>{},sessions:()=>f.sessions.map(row=>({assistant:'codex',...row})),canWrite:()=>f.write,
         storage: {getItem:key=>storage.get(key) ?? null,setItem:(key,value)=>storage.set(key,value)},
         places:async()=>{f.reads.push('places');return f.places;},
@@ -19,8 +19,8 @@ function fixture(storage = new Map()) {
     return f;
 }
 {
-    const f=fixture();f.sessions=[{id:'%1',sessionId:id}];await f.c.open(id,project);
-    check('unique live Session opens without history or resume',f.opens[0]==='%1'&&!f.reads.length&&!f.resumes.length);
+    const f=fixture();f.sessions=[{id:'%1',sessionId:id.toUpperCase()}];await f.c.open(id,project);
+    check('same UUID case opens one live Session without history or resume',f.opens[0]==='%1'&&!f.reads.length&&!f.resumes.length);
     f.sessions.push({id:'%2',sessionId:id});await f.c.open(id,project);
     check('ambiguous live identity never opens or resumes',f.c.state.error==='session_ambiguous'&&f.opens.length===1&&!f.resumes.length);
 }
@@ -36,6 +36,18 @@ function fixture(storage = new Map()) {
 {
     const f=fixture();f.places.places.push({id:'other-mac',path:'/project'});await f.c.open(id,project);
     check('same path on two Macs fails before history',f.c.state.error==='project_ambiguous'&&f.reads.length===1);
+}
+{
+    const f=fixture();f.places.places=[
+        {id:'mac-a-place',path:'/project',machine:'mac-a'},
+        {id:'mac-b-place',path:'/project',machine:'mac-b'}
+    ];
+    f.sessions=[{id:'%wrong',sessionId:id,machine:'mac-a'}];
+    await f.c.open(id,project,'mac-b');
+    check('an explicit Board machine ignores a same-conversation live Session on another Mac',
+        !f.opens.length&&f.c.state.status==='ready'&&f.c.state.candidate.place.id==='mac-b-place');
+    await f.c.resume();
+    check('explicit resume preserves the selected Mac place identity',f.resumes[0][0]==='mac-b-place');
 }
 {
     const f=fixture();f.histories.claude.sessions=[{id,title:'Duplicate'}];await f.c.open(id,project);

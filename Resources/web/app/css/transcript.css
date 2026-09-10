@@ -648,3 +648,37 @@
 
 .tx-note { color: var(--faint); font-size: 12.5px; padding: 26px 2px; }
 .tx-note.err { color: #c58472; }
+
+.board-workflow-record {
+    margin-top: 10px;
+    border: 1px solid var(--line, rgba(255, 255, 255, .12));
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .025);
+    overflow: hidden;
+}
+.board-workflow-record summary {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 11px;
+    cursor: pointer;
+    color: var(--muted, #9da3ae);
+}
+.board-workflow-record summary small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+    opacity: .72;
+}
+.board-workflow-record pre {
+    margin: 0;
+    padding: 10px 11px;
+    border-top: 1px solid var(--line, rgba(255, 255, 255, .12));
+    overflow-x: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 11px;
+    color: var(--muted, #9da3ae);
+}

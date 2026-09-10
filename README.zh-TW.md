@@ -729,6 +729,8 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 
 [Project Board](docs/project-board.md) 將工作項目、Session、用量與交付整合到各個 Project 下，預設開啟、目前免費；可在設定切回一般流程。整合方式見 [API 合約](docs/project-board-contract.md)。
 
+[Project Timeline](docs/project-timeline.md) 在專案內呈現 Git 歷史、部署與已驗證的上線狀態，支援環境篩選並連回看板項目。
+
 **[繁體中文公開使用手冊](https://clawdline.com/docs)** 是安裝與使用 Clawdline 的正式操作入口。
 下列頁面是開源技術契約與深入實作參考；原始碼、測試、skill 與整合仍會連到它們，因此繼續公開保留。
 
@@ -759,7 +761,7 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 純 AppKit、沒有相依套件、除了 `swiftc` 沒有 build 系統。
 
 ```sh
-./test.sh     # 11201 個檢查，是分鐘等級不是秒
+./test.sh     # 11358 個檢查，是分鐘等級不是秒
 ./build.sh    # 編譯，原本有在跑的話會自己接回來
 swift build   # 只是為了讓編輯器讀得懂程式碼
 ```

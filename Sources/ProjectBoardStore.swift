@@ -100,6 +100,7 @@ final class ProjectBoardStore {
         var status: String
         var required: Bool
         var evidenceId: String?
+        var supplementRelationId: String? = nil
     }
 
     private struct StoredMilestone: Codable {
@@ -165,6 +166,7 @@ final class ProjectBoardStore {
         var blockingScope: String? = nil
         var resolutionEvidence: String? = nil
         var supersededBy: String? = nil
+        var supplementRelationId: String? = nil
     }
 
     private struct StoredHistory: Codable {
@@ -926,7 +928,8 @@ final class ProjectBoardStore {
                                         droppedCount: 0, persisted: true, reason: nil)
     }
 
-    func command(_ body: [String: Any], actor: String, trusted: Bool = false) -> Reply {
+    func command(_ body: [String: Any], actor: String, trusted: Bool = false,
+                 workflowOrigin: Bool = false) -> Reply {
         lock.lock(); defer { lock.unlock() }
         if let unavailable { return Self.errorReply(unavailable) }
         guard let actor = Self.boundedText(actor, maximum: 300) else {
@@ -943,6 +946,21 @@ final class ProjectBoardStore {
                                               message: "operation, requestId and expectedRevision are required"))
         }
 
+        // This in-process origin is not an HTTP field and does not grant trusted evidence
+        // authority. Reject forged display relations even when an old receipt could replay.
+        if body["supplementRelationId"] != nil {
+            guard workflowOrigin else {
+                return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
+                    message: "Supplement relations are assigned only by the workflow producer"))
+            }
+            guard ["checklist", "obligation"].contains(operation),
+                  let relation = body["supplementRelationId"] as? String,
+                  Self.validSupplementRelationID(relation),
+                  body["checklistId"] == nil, body["status"] == nil else {
+                return Self.errorReply(BoardError(status: 400, code: "invalid_supplement_relation",
+                    message: "A supplement relation must identify one newly materialized row"))
+            }
+        }
         if let prior = state.receipts.first(where: {
             $0.actor == actor && $0.requestId == requestId
         }) {
@@ -974,7 +992,8 @@ final class ProjectBoardStore {
             let applied = try apply(operation: operation, body: body, actor: actor,
                                     trusted: trusted, timestamp: timestamp, draft: &draft)
             if let itemID = applied.itemId,
-               operation != "transition", operation != "create", operation != "record_report" {
+               operation != "transition", operation != "create", operation != "record_report",
+               operation != "end_span" {
                 reconcileLifecycle(around: itemID, actor: "board", timestamp: timestamp,
                                    draft: &draft)
             }
@@ -1704,7 +1723,7 @@ final class ProjectBoardStore {
                 }
                 draft.items[index].checklist.append(StoredChecklist(
                     id: Self.newID(), title: title, status: "todo", required: required,
-                    evidenceId: nil))
+                    evidenceId: nil, supplementRelationId: body["supplementRelationId"] as? String))
             }
             reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
             touch(&draft.items[index], actor: actor, kind: "checklist_updated",
@@ -1865,7 +1884,8 @@ final class ProjectBoardStore {
                 owner: try requiredText(body, "owner", maximum: 300),
                 blocking: blocking, resolved: false, actorKind: actorKind,
                 requiredAction: try optionalText(body, "requiredAction", maximum: 1_000),
-                blockingScope: try optionalText(body, "blockingScope", maximum: 300)))
+                blockingScope: try optionalText(body, "blockingScope", maximum: 300),
+                supplementRelationId: body["supplementRelationId"] as? String))
             touch(&draft.items[index], actor: actor, kind: "obligation_added",
                   summary: "A durable obligation was recorded.", at: timestamp)
             return Applied(itemId: draft.items[index].id)
@@ -1905,12 +1925,37 @@ final class ProjectBoardStore {
             }
             let sessionID = try requiredText(body, "sessionId", maximum: 300)
             let phase = try requiredChoice(body, "phase", choices: Self.phases)
+            let declarationID = try requiredText(body, "requestId", maximum: 200)
             closeActiveSpans(sessionID: sessionID, at: timestamp, items: &draft.items)
             draft.items[index].spans.append(StoredSpan(
-                id: Self.newID(), sessionId: sessionID, phase: phase,
+                id: Self.declaredSpanID(actor: actor, requestID: declarationID),
+                sessionId: sessionID, phase: phase,
                 startedAt: timestamp, endedAt: nil))
             touch(&draft.items[index], actor: actor, kind: "span_started",
                   summary: "Session \(sessionID) declared phase \(phase).", at: timestamp)
+            return Applied(itemId: draft.items[index].id)
+
+        case "end_span":
+            // Interval bookkeeping is permitted after delivery/closure, but cannot reopen,
+            // verify, land, or accept anything. Bind to one exact declaration, not whichever
+            // interval the Session happens to be running when a delayed receipt arrives.
+            let index = try itemIndex(body, draft: draft)
+            let sessionID = try requiredText(body, "sessionId", maximum: 300)
+            let startRequestID = try requiredText(body, "startRequestId", maximum: 200)
+            let note = try requiredText(body, "note", maximum: 1_000)
+            let spanID = Self.declaredSpanID(actor: actor, requestID: startRequestID)
+            guard let spanIndex = draft.items[index].spans.firstIndex(where: {
+                $0.id == spanID && $0.sessionId == sessionID && $0.source != "broker"
+            }) else {
+                throw BoardError(status: 409, code: "span_identity_unresolved",
+                                 message: "No exact declaration matches; legacy or foreign spans are not guessed")
+            }
+            if draft.items[index].spans[spanIndex].endedAt == nil {
+                draft.items[index].spans[spanIndex].endedAt = max(
+                    timestamp, draft.items[index].spans[spanIndex].startedAt)
+                touch(&draft.items[index], actor: actor, kind: "span_ended",
+                      summary: note, at: timestamp)
+            }
             return Applied(itemId: draft.items[index].id)
 
         case "handoff":
@@ -2984,6 +3029,7 @@ final class ProjectBoardStore {
                 var value: [String: Any] = ["id": row.id, "title": row.title,
                                                 "status": row.status, "required": row.required]
                 if let evidence = row.evidenceId { value["evidenceId"] = evidence }
+                value["supplementRelationId"] = row.supplementRelationId ?? NSNull()
                 return value
             },
             "milestones": retainedMilestones.map {
@@ -3025,6 +3071,7 @@ final class ProjectBoardStore {
                 row["blockingScope"] = obligation.blockingScope ?? NSNull()
                 row["resolutionEvidence"] = obligation.resolutionEvidence ?? NSNull()
                 row["supersededBy"] = obligation.supersededBy ?? NSNull()
+                row["supplementRelationId"] = obligation.supplementRelationId ?? NSNull()
                 return row
             },
             "history": retainedHistory.map {
@@ -3213,6 +3260,7 @@ final class ProjectBoardStore {
                 "id": row.id, "kind": "checklist", "title": row.title,
                 "status": row.status, "disposition": row.required ? "required" : "optional",
                 "owner": item.owner,
+                "supplementRelationId": row.supplementRelationId ?? NSNull(),
             ]))
             order += 1
         }
@@ -3248,6 +3296,7 @@ final class ProjectBoardStore {
             ]
             row["requiredAction"] = obligation.requiredAction ?? NSNull()
             row["blockingScope"] = obligation.blockingScope ?? NSNull()
+            row["supplementRelationId"] = obligation.supplementRelationId ?? NSNull()
             if actorKind == "user" { userDecisions.append(row) }
             else {
                 rankedWork.append((obligation.blocking ? 0 : 3, order, row))
@@ -3518,17 +3567,18 @@ final class ProjectBoardStore {
                        "typeDetails"],
             "update": ["itemId", "title", "summary", "owner", "type", "typeDetails"],
             "transition": ["itemId", "state", "note"],
-            "checklist": ["itemId", "title", "required", "checklistId", "status"],
+            "checklist": ["itemId", "title", "required", "checklistId", "status", "supplementRelationId"],
             "milestone": ["itemId", "title", "milestoneId", "status"],
             "artifact": ["itemId", "title", "url", "kind"],
             "document_reference": ["itemId", "title", "url", "purpose", "documentId",
                                    "version", "supersedesId"],
             "link": ["itemId", "kind", "targetId", "label"],
             "obligation": ["itemId", "title", "owner", "blocking", "actorKind",
-                           "requiredAction", "blockingScope"],
+                           "requiredAction", "blockingScope", "supplementRelationId"],
             "resolve_obligation": ["itemId", "obligationId", "note",
                                     "resolutionEvidence", "supersededBy"],
             "span": ["itemId", "sessionId", "phase"],
+            "end_span": ["itemId", "sessionId", "startRequestId", "note"],
             "handoff": ["itemId", "owner", "note"],
             "accept_handoff": ["itemId", "note"],
             "accept_artifact": ["itemId", "artifactId", "note"],
@@ -4143,6 +4193,16 @@ final class ProjectBoardStore {
         return retired.count
     }
 
+    private static func validSupplementRelationID(_ value: String) -> Bool {
+        value.utf8.count == 68 && value.hasPrefix("wfs-")
+            && value.dropFirst(4).allSatisfy { "0123456789abcdef".contains($0) }
+    }
+
+    private static func declaredSpanID(actor: String, requestID: String) -> String {
+        "span-" + String(SHA256.hash(data: Data((actor + "\u{0}" + requestID).utf8))
+            .map { String(format: "%02x", $0) }.joined())
+    }
+
     private func closeActiveSpans(sessionID: String, at: Double,
                                   items: inout [StoredItem]) {
         for itemIndex in items.indices {
@@ -4414,6 +4474,7 @@ final class ProjectBoardStore {
                   }),
                   item.obligations.allSatisfy({ obligation in
                       (obligation.actorKind.map(obligationActorKinds.contains) ?? true)
+                          && (obligation.supplementRelationId.map(validSupplementRelationID) ?? true)
                           && (obligation.requiredAction.map {
                               boundedText($0, maximum: 1_000) != nil
                           } ?? true)
@@ -4462,7 +4523,8 @@ final class ProjectBoardStore {
                   item.currentLandingEvidenceId.map(evidenceIDs.contains) ?? true,
                   item.currentArtifactAcceptanceId.map(evidenceIDs.contains) ?? true,
                   item.checklist.allSatisfy({ row in
-                      row.evidenceId.map(evidenceIDs.contains) ?? true
+                      (row.evidenceId.map(evidenceIDs.contains) ?? true)
+                          && (row.supplementRelationId.map(validSupplementRelationID) ?? true)
                   }) else {
                 throw BoardError(status: 503, code: "board_store_corrupt",
                                  message: "the Project Board current evidence index is invalid")

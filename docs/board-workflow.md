@@ -54,6 +54,10 @@ a JSON body no larger than 64 KiB. Accepted operations are:
   of verification or landing.
   Its exact-key body preserves owner, acceptance, required/optional disposition, actor kind, and
   source run/Session; changed content under the same semantic key conflicts.
+  New checklist supplements also persist one system-generated `supplementRelationId` per event.
+  Their checklist and obligation projections share that exact ID; neither the title nor the
+  run/Session pair alone identifies one supplement. Old events without an ID retain their exact
+  pending replay bodies and are not retroactively matched by text.
 - `handoff`: record the next owner and note for a run already bound to an item.
 
 There are deliberately no `verify`, `land`, `deploy`, `transition`, or `done` operations. Semantic
@@ -68,6 +72,15 @@ generation, enabled epoch, and confirmed terminal delivery. Schema-1 actor-only 
 explicitly through their retained run identity before they can replay.
 Duplicate request id plus duplicate body replays the original receipt. A changed body conflicts.
 `Stop` is not a delivery receipt and the endpoint rejects it as an unknown operation.
+
+An item-bound `deliver` (including waiting/interrupted/cancelled dispositions) or `handoff`
+also appends a durable `end_span` intent. It identifies the successful begin's exact Board
+request, actor, item and Session; it never closes whichever newer interval happens to be active.
+The end does not change scope, verify, land, accept a handoff or complete a Feature. Replays,
+restart and an uncertain Board response retain the same outbox identity. A missing/failed begin
+or a legacy span without an exact declaration identity stays a visible reconciliation gap,
+not a guessed end or a successful empty update. Historical gaps need source-specific repair;
+elapsed time and a dead Session alone are not completion evidence.
 
 ## Durability, queueing, and gaps
 

@@ -88,6 +88,15 @@ workOmittedCount,userDecisionOmittedCount}`. Rows name their source kind (`check
 canceled and unknown states. Children are the existing `parentId` members; no deeper hierarchy is
 introduced. Only explicit obligation `actorKind:"user"` enters `userDecisions`; missing actor kind
 projects as `unknown`.
+
+Checklist and obligation rows, including their `remainingWork` projections, carry nullable
+`supplementRelationId` (`wfs-` plus 64 lowercase hexadecimal characters). Only the internal
+workflow producer may assign it when materializing a new checklist supplement; public Board
+commands cannot forge it, even with evidence-writing authority. It identifies one persisted
+supplement event, not a title or an entire Session. Readers may fold a same-item checklist and
+obligation only when the non-null IDs match exactly and the relation is one-to-one, preserving
+both statuses, source rows and any user decision. Missing, legacy or ambiguous identities remain
+separate rows. This relation grants no verification, completion or handoff authority.
 Blocking work and every explicit user decision are mandatory first-screen rows; stable nonblocking
 rows fill the remaining budget. Omitted rows are actionable through selectors
 `collection:<item-id>:remaining_work:<offset>`,
@@ -174,6 +183,11 @@ Common fields: `operation`, `requestId`, `expectedRevision`; item operations use
 - `resolve_obligation`: `itemId`, `obligationId`, `note`, optional `resolutionEvidence` and
   same-item `supersededBy` obligation id.
 - `span`: `itemId`, `sessionId`, `phase`; one active per session. Timestamp labels are declarations, not exact measured token boundaries. Root will join only proven usage boundaries; unknown usage remains unknown.
+- `end_span`: `itemId`, `sessionId`, `startRequestId`, `note`. End only the declaration
+  made by this command actor under that exact start request. New declared spans have a stable
+  actor/request identity. Foreign, broker, wrong-item and unidentifiable legacy spans refuse
+  `span_identity_unresolved`; an already ended exact span is harmless. Closing an interval is
+  bookkeeping allowed on an otherwise closed item, never scope invalidation or lifecycle promotion.
 - `handoff`: `itemId`, `owner` (proposed receiver), `note`; records pending transfer, does not close or change effective owner.
 - `accept_handoff`: `itemId`, `note`; root must authenticate receiving identity. Atomically transfer owner and preserve item history.
 - `record_report`: ordinary items only when closed or their current progress is authoritatively

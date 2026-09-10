@@ -1,4 +1,5 @@
 import AppKit
+import CoreFoundation
 
 /// Reading a Claude Code session from the transcript it keeps on disk.
 ///
@@ -1601,6 +1602,122 @@ enum Transcript {
 
 extension Transcript {
 
+    struct BoardWorkflowPresentation {
+        let text: String
+        let raw: String
+        let foldKey: String
+        let provider: String
+        let coverage: String
+    }
+
+    /// Recognises only the exact metadata envelope emitted by managed Board ingress. This is a
+    /// presentation transform: the transcript Entry and every transport keep their original text.
+    /// Anything quoted, fenced, duplicated, malformed, or outside the closed schema remains
+    /// ordinary visible user text.
+    static func boardWorkflowPresentation(in text: String) -> BoardWorkflowPresentation? {
+        let opening = #"<clawdline-workflow version="1" authority="metadata-not-user">"#
+        let closing = "</clawdline-workflow>"
+        struct Line {
+            let value: String
+            let start: String.Index
+            let next: String.Index
+            let outsideFence: Bool
+        }
+        var lines: [Line] = []
+        var cursor = text.startIndex
+        var fence: (mark: Character, length: Int)?
+        while cursor <= text.endIndex {
+            let newline = text[cursor...].firstIndex(of: "\n")
+            let end = newline ?? text.endIndex
+            let next = newline.map { text.index(after: $0) } ?? text.endIndex
+            let value = String(text[cursor..<end])
+            let spaces = value.prefix(while: { $0 == " " }).count
+            let candidate = spaces <= 3 ? value.dropFirst(spaces) : value[...]
+            let marker = candidate.first
+            let run = marker.map { mark in candidate.prefix(while: { $0 == mark }).count } ?? 0
+            let rest = candidate.dropFirst(run)
+            let isFence = (marker == "`" || marker == "~") && run >= 3
+            let outside = fence == nil
+            lines.append(Line(value: value, start: cursor, next: next, outsideFence: outside))
+            if isFence {
+                if fence == nil, let marker { fence = (marker, run) }
+                else if let current = fence, marker == current.mark, run >= current.length,
+                        rest.allSatisfy({ $0 == " " || $0 == "\t" }) { fence = nil }
+            }
+            if newline == nil { break }
+            cursor = next
+        }
+
+        let openings = lines.indices.filter { lines[$0].outsideFence && lines[$0].value == opening }
+        guard openings.count == 1 else { return nil }
+        let index = openings[0]
+        guard lines.indices.contains(index + 2),
+              lines[index + 1].outsideFence,
+              lines[index + 2].outsideFence,
+              lines[index + 2].value == closing else { return nil }
+        let raw = lines[index + 1].value
+        guard let data = raw.data(using: .utf8),
+              let metadata = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              validBoardWorkflowMetadata(metadata) else { return nil }
+
+        var before = String(text[..<lines[index].start])
+        if before.hasSuffix("\n\n") { before.removeLast() }
+        let after = String(text[lines[index + 2].next...])
+        var visible = before + after
+        if after.isEmpty && visible.hasSuffix("\n") { visible.removeLast() }
+        let provider = metadata["provider"] as? String ?? ""
+        let coverage = metadata["coverage"] as? String ?? ""
+        return BoardWorkflowPresentation(
+            text: visible, raw: raw, foldKey: stableFoldKey("board-workflow\u{1}" + raw),
+            provider: provider, coverage: coverage)
+    }
+
+    private static func validBoardWorkflowMetadata(_ value: [String: Any]) -> Bool {
+        let keys: Set<String> = [
+            "authority", "board_epoch", "content_reference", "conversation_id", "coverage",
+            "helper", "input_kind", "mode_gap", "process_generation", "project_id", "provider",
+            "required_first_action", "run_id", "terminal_id", "version",
+        ]
+        guard Set(value.keys) == keys,
+              value["authority"] as? String == "clawdline_metadata_not_user_authorization",
+              value["coverage"] as? String == "managed_ingress",
+              value["helper"] as? String
+                == "clawdline-board-workflow <conversation-id> <stable-idempotency-key>",
+              value["required_first_action"] as? String == "begin",
+              let epoch = value["board_epoch"] as? NSNumber,
+              CFGetTypeID(epoch) != CFBooleanGetTypeID(),
+              epoch.doubleValue.rounded(.towardZero) == epoch.doubleValue,
+              epoch.doubleValue >= 1, epoch.doubleValue <= 9_007_199_254_740_991,
+              let version = value["version"] as? NSNumber,
+              CFGetTypeID(version) != CFBooleanGetTypeID(), version.doubleValue == 1,
+              value["mode_gap"] is NSNull || value["mode_gap"] is String,
+              let input = value["input_kind"] as? String,
+              ["image", "text_and_image", "text_or_transcribed_voice"].contains(input),
+              let provider = value["provider"] as? String,
+              ["claude", "codex"].contains(provider),
+              let terminal = value["terminal_id"] as? String,
+              terminal.range(of: #"^%[^\s]{1,126}$"#, options: .regularExpression) != nil,
+              let conversation = value["conversation_id"] as? String,
+              UUID(uuidString: conversation) != nil,
+              let reference = value["content_reference"] as? String,
+              reference.range(of: #"^terminal-request:[0-9a-f]{24}$"#,
+                              options: .regularExpression) != nil,
+              let generation = value["process_generation"] as? String, !generation.isEmpty,
+              let project = value["project_id"] as? String,
+              project.range(of: #"^project-[0-9a-f]{24}$"#,
+                            options: .regularExpression) != nil,
+              let run = value["run_id"] as? String,
+              run.range(of: #"^run-[0-9a-f]{32}$"#, options: .regularExpression) != nil
+        else { return false }
+        return true
+    }
+
+    private static func stableFoldKey(_ value: String) -> String {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for byte in value.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
+        return String(hash, radix: 36)
+    }
+
     /// Lay the conversation out as prose rather than as a picture of a terminal.
     ///
     /// This is the whole reason for reading the file instead of the screen: with real message
@@ -1716,7 +1833,26 @@ extension Transcript {
                 ])
                 // No trailing newline here: every Markdown block ends with one already, and
                 // the next entry's paragraphSpacingBefore is what sets the distance.
-                block.append(prose(entry.text, body: body, mono: mono))
+                let workflow = isUser ? boardWorkflowPresentation(in: entry.text) : nil
+                block.append(prose(workflow?.text ?? entry.text, body: body, mono: mono))
+                if let workflow {
+                    let open = expanded.contains(workflow.foldKey)
+                    let link = "clawdline://fold/" + workflow.foldKey
+                    add((open ? "⏷ " : "⏵ ") + "BOARD RECORD  "
+                        + workflow.coverage + " · " + workflow.provider + "\n", [
+                        .font: toolFont,
+                        .foregroundColor: NSColor.secondaryLabelColor,
+                        .paragraphStyle: foldStyle,
+                        .link: link,
+                    ])
+                    if open {
+                        add(workflow.raw + "\n", [
+                            .font: toolFont,
+                            .foregroundColor: NSColor.tertiaryLabelColor,
+                            .paragraphStyle: foldStyle,
+                        ])
+                    }
+                }
                 // An assistant turn carrying image markers is the one entry in this branch that
                 // can have artifacts, and it gets the same treatment `.message` gets below —
                 // including the explicit expired tile, which is what the store answers with once

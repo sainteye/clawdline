@@ -28,6 +28,7 @@ struct CloudAppIdentity: @unchecked Sendable {
 
 enum CloudHeadlessCommand: Equatable, Sendable {
     case board(body: Data)
+    case timeline(body: Data)
     case send(session: String, text: String, images: [String])
     case answer(session: String, key: String)
     case start(place: String, assistant: String, model: String)
@@ -66,6 +67,8 @@ enum CloudTranscriptPriority: String, Equatable, Sendable {
 
 enum CloudHeadlessRead: Equatable, Sendable {
     case board(session: String, request: String, project: String, item: String)
+    case timeline(session: String, request: String, project: String, entry: String,
+                  cursor: String, environment: String, category: String, upcoming: Bool)
     case transcript(session: String, limit: Int, priority: CloudTranscriptPriority)
     case info(session: String, parts: String)
     case agent(session: String, agent: String, limit: Int)
@@ -98,6 +101,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
     var session: String {
         switch self {
         case .board(let session, _, _, _): return session
+        case .timeline(let session, _, _, _, _, _, _, _): return session
         case .transcript(let session, _, _): return session
         case .info(let session, _): return session
         case .agent(let session, _, _): return session
@@ -148,7 +152,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .image(_, let id): return "image." + id
         case .documents: return "documents"
         case .document(_, let request, _, _, _): return "read:" + request
-        case .board(_, let request, _, _), .places(_, let request), .projectWorktrees(_, let request, _),
+        case .board(_, let request, _, _), .timeline(_, let request, _, _, _, _, _, _),
+             .places(_, let request), .projectWorktrees(_, let request, _),
              .pastSessions(_, let request, _, _), .schedule(_, let request, _),
              .schedules(_, let request), .snippets(_, let request),
              .pushKey(_, let request): return "read:" + request
@@ -758,6 +763,21 @@ actor CloudAppBridge {
             }
             command = .board(body: data)
             commandReply = (session, "action:" + request)
+        case "timeline-command":
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "command"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let object = body["command"] as? [String: Any],
+                  let data = try? JSONSerialization.data(withJSONObject: object),
+                  data.count <= 256 * 1024
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .timeline(body: data)
+            commandReply = (session, "action:" + request)
         case "schedule-create", "schedule-update":
             let wanted: Set<String> = type == "schedule-create"
                 ? ["type", "session", "request", "schedule"]
@@ -959,7 +979,7 @@ actor CloudAppBridge {
     static let readTypes: Set<String> = [
         "transcript", "info", "agent", "shell", "skills", "git", "image",
         "documents", "document",
-        "screen", "board", "places", "project-worktrees", "past-sessions", "schedules",
+        "screen", "board", "timeline", "places", "project-worktrees", "past-sessions", "schedules",
         "snippets", "schedule", "push-key",
     ]
 
@@ -1170,6 +1190,25 @@ actor CloudAppBridge {
                 return
             }
             read = .board(session: session, request: request, project: project, item: item)
+        case "timeline":
+            guard Set(body.keys) == ["type", "session", "request", "project", "entry",
+                                      "cursor", "environment", "category", "upcoming"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let project = body["project"] as? String, project.count <= 200,
+                  let entry = body["entry"] as? String, entry.count <= 200,
+                  let cursor = body["cursor"] as? String, cursor.count <= 20,
+                  let environment = body["environment"] as? String, environment.count <= 32,
+                  let category = body["category"] as? String, category.count <= 32,
+                  let upcoming = body["upcoming"] as? Bool
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .timeline(session: session, request: request, project: project, entry: entry,
+                             cursor: cursor, environment: environment, category: category,
+                             upcoming: upcoming)
         case "places":
             guard Set(body.keys) == ["type", "session", "request"],
                   let session = body["session"] as? String,

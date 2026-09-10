@@ -21,6 +21,9 @@ struct CloudLocalRoute: Sendable {
         case .board(let data):
             route = "/v1/board"
             encodedBody = data
+        case .timeline(let data):
+            route = "/v1/timeline"
+            encodedBody = data
         case .send(let session, let text, let images):
             route = "/v1/sessions/\(Self.segment(session))/send"
             object = ["text": text, "images": images]
@@ -102,6 +105,15 @@ struct CloudLocalRoute: Sendable {
             route = "/v1/board"
             if !project.isEmpty { parameters["project"] = project }
             if !item.isEmpty { parameters["item"] = item }
+        case .timeline(_, _, let project, let entry, let cursor, let environment,
+                       let category, let upcoming):
+            route = "/v1/timeline"
+            if !project.isEmpty { parameters["project"] = project }
+            if !entry.isEmpty { parameters["entry"] = entry }
+            if !cursor.isEmpty { parameters["cursor"] = cursor }
+            if !environment.isEmpty { parameters["environment"] = environment }
+            if !category.isEmpty { parameters["category"] = category }
+            if upcoming { parameters["upcoming"] = "true" }
         case .transcript(let session, let limit, let priority):
             route = "/v1/sessions/\(Self.segment(session))/transcript"
             parameters = ["limit": String(limit), "priority": priority.rawValue]

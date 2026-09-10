@@ -2,6 +2,7 @@ import { Pages, pageInHash } from "../core/pages.js";
 import { byId } from "../view/derive.js";
 import { openSession } from "../session/open.js";
 import { Diagnostics } from "../core/layout-diagnostics.js";
+import { boardLocatorFromHash } from "../view/board.js";
 
 /* ---- arriving at a session from somewhere else ---------------------------
  *
@@ -14,9 +15,12 @@ import { Diagnostics } from "../core/layout-diagnostics.js";
  */
 export var wantedSession = null;
 export var wantedDocument = null;
+export var wantedBoard = null;
 var openDocumentRoute = null;
 var parseDocumentRoute = null;
 var hideDocumentRoute = null;
+var openBoardRoute = null;
+var hideBoardRoute = null;
 
 /** Installed by the document page after the page registry and its transport thunks exist. */
 export function bindDocumentRoute(open, parse, hide) {
@@ -25,12 +29,27 @@ export function bindDocumentRoute(open, parse, hide) {
     hideDocumentRoute = hide;
 }
 
+/** Installed by the Board after its transport and page controller exist. */
+export function bindBoardRoute(open, hide) {
+    openBoardRoute = open;
+    hideBoardRoute = hide;
+}
+
 function documentIntent(hash) {
     var source = String(hash || "");
     if (!/(?:^|[#&])document=/.test(source)) return null;
     var locator = parseDocumentRoute ? parseDocumentRoute(source) : null;
     return locator ? { locator: locator, error: null }
         : { locator: null, error: "The document link is malformed or carries an unsupported field." };
+}
+
+function boardIntent(hash) {
+    var source = String(hash || "");
+    if (!/(?:^|[#&])page=board(?:&|$)/.test(source)) return null;
+    if (source === "#page=board" || source === "page=board") return null;
+    var locator = boardLocatorFromHash(source);
+    return locator ? { locator: locator, error: null }
+        : { locator: null, error: "The Board link is malformed or carries an unsupported field." };
 }
 
 /**
@@ -64,18 +83,34 @@ function sessionCandidates(hash) {
 export function routeTo(hash) {
     var candidates = sessionCandidates(hash);
     var documentRoute = documentIntent(hash);
+    var boardRoute = boardIntent(hash);
     Diagnostics.note("route.to", {
         fragment: !!hash,
         page: pageInHash(hash) || "",
         names: candidates ? candidates.length : 0,
         rescued: !!(candidates && candidates.length > 1),
-        document: !!documentRoute
+        document: !!documentRoute,
+        board: !!boardRoute
     });
+
+    if (boardRoute) {
+        wantedSession = null;
+        wantedSessionAsWritten = null;
+        wantedDocument = null;
+        wantedBoard = boardRoute.locator;
+        if (hideDocumentRoute) hideDocumentRoute();
+        if (openBoardRoute) openBoardRoute(boardRoute.locator, boardRoute.error);
+        return;
+    }
+
+    wantedBoard = null;
+    if (hideBoardRoute) hideBoardRoute();
 
     if (documentRoute) {
         wantedSession = null;
         wantedSessionAsWritten = null;
         wantedDocument = documentRoute.locator;
+        wantedBoard = null;
         if (openDocumentRoute) {
             openDocumentRoute(documentRoute.locator, documentRoute.error);
         }
@@ -83,7 +118,9 @@ export function routeTo(hash) {
     }
 
     wantedDocument = null;
+    wantedBoard = null;
     if (hideDocumentRoute) hideDocumentRoute();
+    if (hideBoardRoute) hideBoardRoute();
 
     var page = pageInHash(hash);
     if (page) {

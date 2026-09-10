@@ -93,7 +93,7 @@ final class RemoteServer: @unchecked Sendable {
         else { return 0 }
         return Int(at.timeIntervalSince1970)
     }()
-    private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote"), boardRequests = ProjectBoardRequestCoordinator()
+    private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote"), boardRequests = ProjectBoardRequestCoordinator(), timelineRequests = ProjectTimelineRequestCoordinator()
     private var listener: NWListener?
     private var streams: [ObjectIdentifier: Stream] = [:]
     private var nextEventID = 0
@@ -299,6 +299,7 @@ final class RemoteServer: @unchecked Sendable {
                     || Self.isOrchestratorTerminalWorkerRoute(request.path) {
                     self.terminalMutation(request) { continuation.resume(returning: $0) }
                 } else if request.path == "/v1/board" { self.startBoardRequest(request) { continuation.resume(returning: $0) }
+                } else if request.path == "/v1/timeline" { self.startTimelineRequest(request) { continuation.resume(returning: $0) }
                 } else {
                     continuation.resume(returning: self.dispatch(request))
                 }
@@ -339,6 +340,7 @@ final class RemoteServer: @unchecked Sendable {
                 } else if Self.isSlowReading(request.path) {
                     self.startSlowReading(request) { continuation.resume(returning: $0) }
                 } else if request.path == "/v1/board" { self.startBoardRequest(request) { continuation.resume(returning: $0) }
+                } else if request.path == "/v1/timeline" { self.startTimelineRequest(request) { continuation.resume(returning: $0) }
                 } else {
                     continuation.resume(returning: self.withCachePolicy(self.dispatch(request)))
                 }
@@ -493,6 +495,7 @@ final class RemoteServer: @unchecked Sendable {
     /// Start, stop, or restart to match the config. Safe to call whenever anything changes.
     func apply() {
         ProjectBoardIntegration.prepare()
+        ProjectTimelineIntegration.prepare()
         ProjectBoardWorkflow.shared.syncMode()
         // First, and outside the early return below: turning sending on or off must take effect
         // even when nothing about the listener changed, which is the usual case.
@@ -708,6 +711,13 @@ final class RemoteServer: @unchecked Sendable {
             }
             return
         }
+        if request.path == "/v1/timeline" {
+            startTimelineRequest(request) { [weak self] response in
+                guard let self else { conn.cancel(); return }
+                self.send(response, on: conn)
+            }
+            return
+        }
         // Analytics has its own bounded worker and admission budget: a full analytics queue must
         // never spend the depth reserved for a phone's /info, transcript or places refresh.
         if request.method == "GET", Self.isUsageAnalyticsReading(request.path) {
@@ -830,6 +840,14 @@ final class RemoteServer: @unchecked Sendable {
                 ProjectBoardWorkflow.shared.syncMode()
                 deliver(response)
             })
+    }
+
+    private func startTimelineRequest(_ request: Request, deliver: @escaping (Response) -> Void) {
+        let machine = Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
+        timelineRequests.start(request, machine: machine, permission: permission(for: request),
+            preAuthRefusal: crossOriginRefusal(request), postAuthRefusal: writeOriginRefusal(request),
+            decorate: withCachePolicy, completeOnOwner: { [queue] in queue.async(execute: $0) },
+            deliver: deliver)
     }
 
     /// Everything that leaves here, with a cache policy applied at the door.
@@ -956,7 +974,7 @@ final class RemoteServer: @unchecked Sendable {
         // reads from. The credential it takes is the same one, so the predicate that recognises
         // it has to be the same one too — a route gated only inside its handler would answer 401
         // here before it ever reached the 403 it means.
-        let orchestratorAuthed = (orchestrated || request.path == "/v1/board"
+        let orchestratorAuthed = (orchestrated || request.path == "/v1/board" || request.path == "/v1/timeline"
             || (request.method == "POST" && request.path == "/v1/artifacts/images"))
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
         let taskSecretRoute = orchestrated
@@ -977,6 +995,8 @@ final class RemoteServer: @unchecked Sendable {
         if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) ?? VerificationRunLedgerHTTP.route(request, machine: orchestratorAuthed) { return response }
         if let response = ProjectBoardHTTP.route(request, machine: orchestratorAuthed,
                                                  permission: permission(for: request)) { return response }
+        if let response = ProjectTimelineHTTP.route(request, machine: orchestratorAuthed,
+                                                    permission: permission(for: request)) { return response }
         if request.path == ProjectBoardWorkflowHTTP.historicalGapsPath {
             if let response = ProjectBoardWorkflowHTTP.route(
                 request, machine: orchestratorAuthed, identity: nil) { return response }
@@ -3498,6 +3518,7 @@ final class RemoteServer: @unchecked Sendable {
                                       completion: @escaping (Response) -> Void) {
         queue.async {
             if request.path == "/v1/board" { self.startBoardRequest(request, deliver: completion) }
+            else if request.path == "/v1/timeline" { self.startTimelineRequest(request, deliver: completion) }
             else { completion(self.route(request)) }
         }
     }
@@ -4341,7 +4362,7 @@ final class RemoteServer: @unchecked Sendable {
     /// answer.
     func slowReadingRefusal(_ request: Request) -> Response? {
         if let refusal = crossOriginRefusal(request) { return refusal }
-        let orchestratorAuthed = (request.path.hasPrefix("/v1/orchestrator/") || request.path == "/v1/board")
+        let orchestratorAuthed = (request.path.hasPrefix("/v1/orchestrator/") || request.path == "/v1/board" || request.path == "/v1/timeline")
             && Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"])
         if case .denied = permission(for: request), !orchestratorAuthed {
             return .error(401, "unauthorized", "This needs a paired device.")

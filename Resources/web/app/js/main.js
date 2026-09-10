@@ -68,7 +68,7 @@ import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
-import { bindDocumentRoute, routeTo } from "./input/route.js";
+import { bindBoardRoute, bindDocumentRoute, routeTo } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import { Start } from "./input/start.js";
@@ -378,7 +378,7 @@ var ledger = bindLedgerPage({
 
 var boardElements = {};
 ["board", "board-title", "board-project-mark", "board-subtitle", "board-items", "board-detail", "board-status",
- "board-search", "board-back", "board-refresh"].forEach(function (id) {
+ "board-search", "board-back", "board-timeline-tab", "board-refresh"].forEach(function (id) {
     boardElements[id] = byId(id);
 });
 var boardSession = bindBoardSession(document, {
@@ -392,10 +392,13 @@ var boardSession = bindBoardSession(document, {
     }
 });
 var board = bindBoardPage(boardElements, {
-    read: function (project, item) { return api.board(project, item); },
+    read: function (project, item, machine) { return api.board(project, item, null, machine); },
+    sessions: function () { return S.sessions; },
+    copy: function (value) { return navigator.clipboard.writeText(value); },
+    replaceURL: function (value) { history.replaceState(null, "", new URL(value).hash); },
     drawIcon: drawIcon, tint: tint,
     navigate: function (name) { Pages.go(name); },
-    openSession: function (id, project) { return boardSession.open(id, project); },
+    openSession: function (id, project, machine) { return boardSession.open(id, project, machine); },
     onMode: function (snapshot) { BoardControls.apply(snapshot); }
 });
 BoardControls.escape = function () { return board.escape(); };
@@ -406,11 +409,70 @@ bindSessionBoard(byId("session-board"), {
     open: function (project, item, presentation) { Info.close(); BoardControls.open(project, item, presentation); }
 });
 BoardControls.onChange = function (enabled) { SessionBoard.setEnabled(enabled); };
-BoardControls.open = function (project, item, presentation) {
+BoardControls.open = function (project, item, presentation, machine) {
     if (!project) { Pages.go("projects"); return; }
-    board.open(project, item, presentation);
+    board.open(project, item, presentation, machine);
     Pages.go("board");
 };
+bindBoardRoute(function (locator, error) {
+    board.openLocator(locator, error);
+    Pages.go("board", { hash: false });
+}, function () {});
+
+var timelineController = null;
+var timelineRequested = { project: null, presentation: null, machine: null };
+var timelineElements = {};
+["timeline", "timeline-back", "timeline-refresh", "timeline-board-tab", "timeline-title",
+ "timeline-project-mark", "timeline-subtitle", "timeline-status", "timeline-environment",
+ "timeline-category", "timeline-upcoming", "timeline-items", "timeline-detail",
+ "timeline-environment-label", "timeline-category-label", "timeline-upcoming-label",
+ "settings-timeline-title", "settings-timeline-say", "settings-timeline-toggle",
+ "settings-timeline-history", "settings-timeline-status"].forEach(function (id) {
+    timelineElements[id] = byId(id);
+});
+var timelineReady = import("./view/timeline.js").then(function (module) {
+    timelineController = module.bindTimelinePage(timelineElements, {
+        read: function (project, entry, cursor, environment, category, includeUpcoming) {
+            return api.timeline(project, entry, cursor, environment, category, includeUpcoming,
+                timelineRequested.machine || undefined);
+        },
+        command: function (body) { return api.timelineCommand(body, timelineRequested.machine || undefined); },
+        openBoard: function (project, item) {
+            BoardControls.open(project, item, null, timelineRequested.machine);
+        },
+        onMode: function (snapshot) { BoardControls.apply(snapshot); }
+    });
+    if (!timelineRequested.project) return timelineController;
+    return Promise.resolve(timelineController.enter(
+        timelineRequested.project, timelineRequested.presentation
+    )).then(function () { return timelineController; });
+}).catch(function (error) {
+    var chinese = /^zh/i.test(document.documentElement.lang || "");
+    timelineElements["timeline-status"].textContent =
+        (chinese ? "此版本無法使用時間軸。" : "Timeline is unavailable in this build. ")
+        + (error.message || String(error));
+    return null;
+});
+var timeline = {
+    enter: function (project, presentation, machine) {
+        if (project) timelineRequested = { project: project, presentation: presentation || null,
+            machine: machine || (presentation && presentation.machine) || null };
+        return timelineReady.then(function (controller) {
+            if (!controller) return;
+            return project ? controller.enter(project, presentation) : controller.enter();
+        });
+    },
+    leave: function () { if (timelineController) timelineController.leave(); },
+    escape: function () { return timelineController ? timelineController.escape() : Pages.go("projects"); }
+};
+byId("board-timeline-tab").addEventListener("click", function () {
+    if (!board.state.projectId) { Pages.go("projects"); return; }
+    timeline.enter(board.state.projectId, board.state.projectPresentation, board.state.machine);
+    Pages.go("timeline");
+});
+byId("settings-timeline-history").addEventListener("click", function () {
+    if (!timelineController || !timelineController.state.projectId) Pages.go("projects");
+});
 
 var usage = bindUsagePortfolio({
     "usage-analytics": byId("usage-analytics"),
@@ -507,6 +569,8 @@ Pages.bind({
           enter: function () { documents.enter(); }, leave: function () { documents.leave(); } },
         { name: "board", element: byId("board"), focus: "board-title",
           enter: function () { enterProjectBoard(board, function (name) { Pages.go(name); }); }, leave: function () { board.leave(); } },
+        { name: "timeline", element: byId("timeline"), focus: "timeline-title",
+          enter: function () { timeline.enter(); }, leave: function () { timeline.leave(); } },
         { name: "projects", element: byId("projects"), focus: "projects-title",
           enter: function () { projects.enter(); }, leave: function () { projects.leave(); } },
         { name: "usage", element: byId("usage-analytics"), focus: "usage-close",

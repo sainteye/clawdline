@@ -45,7 +45,7 @@ private func workflowSupplementStoreProof() {
             let h = store.readHeader(); return (h.enabled, h.revision, h.available)
         },
         boardCommand: { body, actor in
-            let reply = store.command(body, actor: actor)
+            let reply = store.command(body, actor: actor, workflowOrigin: true)
             if reply.status >= 400 {
                 failures.append("\(body["operation"] ?? "?"):\(reply.status)")
             }
@@ -65,7 +65,7 @@ private func workflowSupplementStoreProof() {
     for actor in ["assistant", "user", "external"] {
         let body: [String: Any] = [
             "operation": "supplement", "run_id": run.runID, "version": 1,
-            "kind": "checklist", "title": "Follow up \(actor)", "owner": actor,
+            "kind": "checklist", "title": "Same visible title", "owner": actor,
             "acceptance": "Observable outcome \(actor)", "disposition": "required",
             "actor_kind": actor,
         ]
@@ -96,6 +96,282 @@ private func workflowSupplementStoreProof() {
     let remaining = item["remainingWork"] as? [String: Any] ?? [:]
     expect("the real read model puts the user action in its own decision list",
            (remaining["userDecisions"] as? [[String: Any]])?.count, 1)
+    let checklist = item["checklist"] as? [[String: Any]] ?? []
+    let relationIDs = checklist.compactMap { $0["supplementRelationId"] as? String }
+    expect("F2 same-title supplements in one run have distinct event identities",
+           Set(relationIDs).count, 3)
+    check("F2 persisted counterpart relations use the closed system ID format",
+          relationIDs.count == 3 && relationIDs.allSatisfy {
+              $0.hasPrefix("wfs-") && $0.utf8.count == 68
+          })
+    expect("F2 checklist and obligation have exactly the same relation identities",
+           Set(obligations.compactMap { $0["supplementRelationId"] as? String }), Set(relationIDs))
+    let remainingRows = (remaining["work"] as? [[String: Any]] ?? [])
+        + (remaining["userDecisions"] as? [[String: Any]] ?? [])
+    expect("F2 both remaining projections preserve all six counterpart IDs",
+           remainingRows.compactMap { $0["supplementRelationId"] as? String }.count, 6)
+    expect("F2 remaining projections preserve the exact same identities",
+           Set(remainingRows.compactMap { $0["supplementRelationId"] as? String }), Set(relationIDs))
+    let attemptedRelation = relationIDs.first ?? "wfs-" + String(repeating: "a", count: 64)
+    for operation in ["checklist", "obligation"] {
+        var body: [String: Any] = ["operation": operation, "itemId": parent,
+            "requestId": "forged-\(operation)", "expectedRevision": reloaded.readHeader().revision,
+            "title": "Same visible title", "supplementRelationId": attemptedRelation]
+        if operation == "checklist" { body["required"] = true }
+        else { body["owner"] = "user"; body["blocking"] = true }
+        let beforeRevision = reloaded.readHeader().revision
+        let forged = reloaded.command(body, actor: identity.actor, trusted: true)
+        expect("F2 even evidence authority cannot forge a \(operation) workflow relation",
+               forged.status, 403)
+        expect("F2 \(operation) relation refusal names the missing producer origin",
+               (forged.body["error"] as? [String: Any])?["code"] as? String,
+               "workflow_origin_required")
+        expect("F2 forged \(operation) relation cannot change the durable revision",
+               reloaded.readHeader().revision, beforeRevision)
+    }
+    expect("F2 manual same-title checklist is still allowed without a relation", reloaded.command([
+        "operation": "checklist", "itemId": parent, "requestId": "manual-same-title",
+        "expectedRevision": reloaded.readHeader().revision, "title": "Same visible title",
+        "required": true,
+    ], actor: "human").status, 200)
+    let manualItem = (reloaded.snapshot(item: parent)["board"] as? [String: Any])?["item"]
+        as? [String: Any] ?? [:]
+    let manualRows = manualItem["checklist"] as? [[String: Any]] ?? []
+    check("F2 manual same-title row has no inferred supplement identity",
+          manualRows.count == 4 && manualRows.last?["supplementRelationId"] is NSNull)
+
+    // Simulate an old persisted journal whose pending commands never carried relation IDs.
+    // Retain its prepared keys: a software upgrade must not change the replay body.
+    do {
+        let journalURL = root.appendingPathComponent("workflow.json")
+        var journal = try JSONSerialization.jsonObject(with: Data(contentsOf: journalURL)) as! [String: Any]
+        var runs = journal["runs"] as! [[String: Any]]
+        var events = runs[0]["events"] as! [[String: Any]]
+        for index in events.indices {
+            if var supplement = events[index]["supplement"] as? [String: Any] {
+                supplement.removeValue(forKey: "relationID")
+                events[index]["supplement"] = supplement
+            }
+        }
+        runs[0]["events"] = events; journal["runs"] = runs
+        var outbox = journal["outbox"] as! [[String: Any]]
+        var preparedKeys = Set<String>()
+        for index in outbox.indices where ["supplement_checklist", "supplement_obligation"].contains(outbox[index]["kind"] as? String ?? "") {
+            outbox[index]["status"] = "pending"
+            if let key = outbox[index]["preparedRequestID"] as? String { preparedKeys.insert(key) }
+        }
+        journal["outbox"] = outbox
+        let legacyURL = root.appendingPathComponent("legacy-workflow.json")
+        try JSONSerialization.data(withJSONObject: journal).write(to: legacyURL, options: .atomic)
+        var replayBodies: [[String: Any]] = []
+        let legacy = ProjectBoardWorkflow(url: legacyURL,
+            boardHeader: { (true, reloaded.readHeader().revision, true) },
+            boardCommand: { body, _ in
+                replayBodies.append(body)
+                return ProjectBoardStore.Reply(status: 200, body: ["itemId": parent])
+            }, autoStart: false)
+        legacy.drainForTesting()
+        expect("F2 legacy pending supplements replay all six prepared commands", replayBodies.count, 6)
+        check("F2 legacy pending replay does not invent relation fields",
+              replayBodies.count == 6 && replayBodies.allSatisfy { $0["supplementRelationId"] == nil })
+        expect("F2 legacy replay retains its exact prepared request IDs",
+               Set(replayBodies.compactMap { $0["requestId"] as? String }), preparedKeys)
+    } catch { check("F2 legacy journal fixture remains decodable", false) }
+}
+
+/// A terminal turn finishing is an interval boundary, not Feature verification or landing.
+private func workflowActivityBoundaryProof() {
+    let root = workflowTestDirectory("activity-boundary")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let boardURL = root.appendingPathComponent("board.json")
+    let journalURL = root.appendingPathComponent("workflow.json")
+    let store = ProjectBoardStore(url: boardURL)
+    let identity = workflowIdentity()
+    _ = store.ensureProject(id: identity.projectID, name: "Activity boundary")
+    let created = store.command([
+        "operation": "create", "requestId": "boundary-item",
+        "expectedRevision": store.readHeader().revision, "projectId": identity.projectID,
+        "title": "Still needs acceptance", "type": "feature",
+    ], actor: "root")
+    guard let itemID = created.body["itemId"] as? String else {
+        check("activity boundary fixture creates its item", false); return
+    }
+    func makeWorkflow() -> ProjectBoardWorkflow {
+        ProjectBoardWorkflow(url: journalURL, boardHeader: {
+            let h = store.readHeader(); return (h.enabled, h.revision, h.available)
+        }, boardCommand: { store.command($0, actor: $1) }, autoStart: false)
+    }
+    var workflow = makeWorkflow()
+    func item() -> [String: Any] {
+        (store.snapshot(item: itemID)["board"] as? [String: Any])?["item"]
+            as? [String: Any] ?? [:]
+    }
+    func activeCount() -> Int {
+        store.readSeed(rebuild: true).seed.catalog.first?["activeItemCount"] as? Int ?? -1
+    }
+    func begin(_ key: String) -> String? {
+        guard case .managed(let run) = workflow.prepareIngress(
+            requestID: key, fingerprint: key, text: key, imageCount: 0, identity: identity)
+        else { return nil }
+        _ = workflow.markDelivery(runID: run.runID, identity: identity, delivered: true)
+        _ = workflow.record([
+            "operation": "begin", "run_id": run.runID, "classification": "existing_item",
+            "item_id": itemID, "phase": "integration",
+        ], requestID: key + "-begin", fingerprint: key + "-begin", identity: identity)
+        workflow.drainForTesting()
+        return run.runID
+    }
+    guard let old = begin("old"), let current = begin("current") else {
+        check("activity boundary creates two distinct runs", false); return
+    }
+    expect("a live declared run appears in the Project activity count", activeCount(), 1)
+    func deliver(_ run: String, _ disposition: String = "delivered") {
+        let body: [String: Any] = [
+            "operation": "deliver", "run_id": run, "disposition": disposition,
+            "summary": "This turn ended; acceptance is separate", "next_action": "review",
+        ]
+        _ = workflow.record(body, requestID: run + "-finish", fingerprint: run + "-finish",
+                            identity: identity)
+        workflow.drainForTesting()
+    }
+    deliver(old)
+    expect("an old run's late delivery cannot close a newer run", activeCount(), 1)
+    let scopeBefore = item()["scopeRevision"] as? Int
+    deliver(current)
+    expect("delivery ends its exact span and clears the Project activity count", activeCount(), 0)
+    expect("ending a turn does not mutate the Feature scope", item()["scopeRevision"] as? Int,
+           scopeBefore)
+    check("ending a turn never grants verified integrated or closed lifecycle",
+          !["verified", "integrated", "closed"].contains(item()["state"] as? String ?? ""))
+    let spansBefore = item()["spans"] as? [[String: Any]] ?? []
+    check("all delivered turn intervals retain concrete end boundaries",
+          spansBefore.count == 2 && spansBefore.allSatisfy { $0["endedAt"] is Double })
+    deliver(current)
+    expect("an identical delivery replay neither starts nor adds another span",
+           (item()["spans"] as? [[String: Any]])?.count, spansBefore.count)
+    workflow = makeWorkflow()
+    workflow.drainForTesting()
+    expect("restart cannot reactivate a completed interval", activeCount(), 0)
+    let reloaded = ProjectBoardStore(url: boardURL)
+    let saved = (reloaded.snapshot(item: itemID)["board"] as? [String: Any])?["item"]
+        as? [String: Any] ?? [:]
+    expect("the interval end is durable in the Board model",
+           (saved["progress"] as? [String: Any])?["active"] as? Bool, false)
+    for disposition in ["waiting_user", "waiting_external", "interrupted", "cancelled"] {
+        guard let run = begin(disposition) else { continue }
+        deliver(run, disposition)
+        expect("\(disposition) stops activity without completing the Feature", activeCount(), 0)
+    }
+    guard let handoff = begin("handoff") else { return }
+    _ = workflow.record([
+        "operation": "handoff", "run_id": handoff,
+        "owner": "next-owner", "note": "receiver must accept",
+    ], requestID: "handoff-boundary", fingerprint: "handoff-boundary", identity: identity)
+    workflow.drainForTesting()
+    expect("a proposed handoff ends only the sender's active interval", activeCount(), 0)
+    check("handoff keeps transfer pending instead of accepting on behalf of the receiver",
+          item()["handoff"] is [String: Any])
+}
+
+/// Sealed review F1/F2: real Store refusals and a state that *would* promote if reconciled.
+private func workflowEndSpanAuthorityProof() {
+    for variant in ["foreign_actor", "wrong_session", "broker", "legacy", "promotable"] {
+        let root = workflowTestDirectory("end-span-\(variant)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("board.json")
+        var store = ProjectBoardStore(url: file)
+        _ = store.ensureProject(id: "project", name: "End span authority")
+        func command(_ operation: String, _ fields: [String: Any],
+                     actor: String = "declaring-actor", key: String = UUID().uuidString,
+                     trusted: Bool = false) -> ProjectBoardStore.Reply {
+            var body = fields
+            body["operation"] = operation
+            body["requestId"] = key
+            body["expectedRevision"] = store.readHeader().revision
+            return store.command(body, actor: actor, trusted: trusted)
+        }
+        let created = command("create", ["projectId": "project", "type": "feature",
+                                         "title": variant, "owner": "owner"])
+        guard let id = created.body["itemId"] as? String else {
+            check("\(variant) fixture creates its item", false); continue
+        }
+        func item() -> [String: Any] {
+            (store.snapshot(item: id)["board"] as? [String: Any])?["item"]
+                as? [String: Any] ?? [:]
+        }
+        expect("\(variant) fixture creates one declared interval", command("span", [
+            "itemId": id, "sessionId": "declaring-session", "phase": "output",
+        ], key: "same-start-request").status, 200)
+        if variant == "promotable" {
+            expect("F2 fixture has real qualifying verification", command("record_evidence", [
+                "itemId": id, "kind": "verification", "status": "passed",
+                "summary": "exact fixture proof", "sourceId": "fixture-proof",
+                "subject": String(repeating: "a", count: 40),
+            ], trusted: true).status, 200)
+            expect("F2 evidence is strong enough to promote the fixture",
+                   item()["state"] as? String, "verified")
+        }
+        // Persisted input fixtures isolate each guard: broker keeps the matching declaration ID,
+        // legacy keeps actor/session but lacks that ID, and F2 retains all proof with stale state.
+        if ["broker", "legacy", "promotable"].contains(variant) {
+            do {
+                var saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file))
+                    as! [String: Any]
+                var items = saved["items"] as! [[String: Any]]
+                if variant == "promotable" {
+                    items[0]["state"] = "execution"
+                } else {
+                    var spans = items[0]["spans"] as! [[String: Any]]
+                    if variant == "broker" { spans[0]["source"] = "broker" }
+                    else { spans[0]["id"] = "legacy-unidentifiable-span" }
+                    items[0]["spans"] = spans
+                }
+                saved["items"] = items
+                try JSONSerialization.data(withJSONObject: saved, options: [.sortedKeys])
+                    .write(to: file, options: .atomic)
+                store = ProjectBoardStore(url: file)
+            } catch {
+                check("\(variant) persists a valid isolated input fixture", false); continue
+            }
+        }
+        let before = item()
+        let reply = command("end_span", [
+            "itemId": id,
+            "sessionId": variant == "wrong_session" ? "other-session" : "declaring-session",
+            "startRequestId": "same-start-request", "note": "only this interval may end",
+        ], actor: variant == "foreign_actor" ? "foreign-actor" : "declaring-actor")
+        let after = item()
+        let historyBefore = before["history"] as? [[String: Any]] ?? []
+        let historyAfter = after["history"] as? [[String: Any]] ?? []
+        if variant == "promotable" {
+            expect("F2 exact end is accepted on the promotable fixture", reply.status, 200)
+            expect("F2 end_span does not reconcile even when evidence can promote",
+                   after["state"] as? String, "execution")
+            expect("F2 end_span leaves current scope unchanged",
+                   after["scopeRevision"] as? Int, before["scopeRevision"] as? Int)
+            expect("F2 end_span adds only interval bookkeeping history",
+                   historyAfter.count, historyBefore.count + 1)
+            expect("F2 bookkeeping names an interval end, not lifecycle promotion",
+                   historyAfter.last?["kind"] as? String, "span_ended")
+            expect("F2 positive control invokes ordinary reconciliation", command("link", [
+                "itemId": id, "kind": "session", "targetId": "observer", "label": "Observer",
+            ]).status, 200)
+            expect("F2 the unchanged evidence really can still promote via an ordinary command",
+                   item()["state"] as? String, "verified")
+        } else {
+            expect("F1 \(variant) cannot close an interval", reply.status, 409)
+            expect("F1 \(variant) refusal names unresolved declaration identity",
+                   (reply.body["error"] as? [String: Any])?["code"] as? String,
+                   "span_identity_unresolved")
+            let spans = after["spans"] as? [[String: Any]] ?? []
+            check("F1 \(variant) leaves the target interval active",
+                  spans.count == 1 && spans[0]["endedAt"] is NSNull)
+            expect("F1 \(variant) leaves item history untouched", historyAfter.count,
+                   historyBefore.count)
+            expect("F1 \(variant) leaves scope untouched", after["scopeRevision"] as? Int,
+                   before["scopeRevision"] as? Int)
+        }
+    }
 }
 
 func runProjectBoardWorkflowTests() {
@@ -241,6 +517,8 @@ group("managed Board ingress is durable, bounded and identity-bound") {
 }
 
 group("workflow receipts stay attested and reconcile through a bounded durable outbox") {
+    workflowEndSpanAuthorityProof()
+    workflowActivityBoundaryProof()
     workflowSupplementStoreProof()
     let root = workflowTestDirectory("outbox")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -318,7 +596,7 @@ group("workflow receipts stay attested and reconcile through a bounded durable o
     workflow.drainForTesting()
     lock.lock(); let operations = commands.compactMap { $0["operation"] as? String }; lock.unlock()
     check("the worker uses only existing factual Board commands",
-          Set(operations).isSubset(of: ["create", "checklist", "link", "span", "artifact",
+          Set(operations).isSubset(of: ["create", "checklist", "link", "span", "end_span", "artifact",
                                        "obligation"]))
     check("no assistant receipt can forge verification or landing",
           !operations.contains("record_evidence") && !operations.contains("transition"))

@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { bindBoardPage, boardProgress, resolveBoardSession } from "../Resources/web/app/js/view/board.js";
 import * as boardModule from "../Resources/web/app/js/view/board.js";
+import {
+    boardWorkflowRecordHTML,
+    parseBoardWorkflowRecord
+} from "../Resources/web/app/js/view/board-workflow-record.js";
 const {bindSessionBoard, SessionBoard} = await import("../Resources/web/app/js/input/session-board.js");
 
 class Node {
@@ -610,7 +614,7 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
         openedSessions[0][0] === "conversation" && openedSessions[0][1].id === "a");
     check(
         "missing live session yields visible refusal",
-        p.elements["board-status"].textContent.includes("no unique live Session")
+        p.elements["board-status"].textContent.includes("no unique Session")
     );
     p.view.leave();
 }
@@ -986,4 +990,204 @@ check(
         "c"
     ).error === "session_ambiguous"
 );
+{
+    const project = "project-0123456789abcdef01234567";
+    const itemId = "11111111-2222-4333-8444-555555555555";
+    const url = boardModule.boardShareURL("mac with space", project, itemId);
+    check("Board share URL fixes Cloud origin and machine/project/item identity",
+        url === "https://app.clawdline.com/#page=board&machine=mac+with+space&project="
+            + project + "&item=" + itemId);
+    check("Board locator survives reload with the same exact identity",
+        JSON.stringify(boardModule.boardLocatorFromHash(new URL(url).hash))
+            === JSON.stringify({ machine: "mac with space", project, item: itemId }));
+    check("unknown fields, duplicate identity keys and malformed percent encoding fail closed",
+        boardModule.boardLocatorFromHash("#page=board&machine=mac&project=" + project
+            + "&item=" + itemId + "&other=x") === null
+        && boardModule.boardLocatorFromHash("#page=board&machine=mac&machine=other&project="
+            + project) === null
+        && boardModule.boardLocatorFromHash("#page=board&machine=%E0%A4%A&project="
+            + project) === null
+        && boardModule.boardLocatorFromHash("#page=board&machine=bad%&project="
+            + project) === null);
+    check("the local placeholder is never published as a Cloud machine identity",
+        boardModule.boardShareURL("this-mac", project, itemId) === null);
+    check("an invalid item cannot fall back to another Board item",
+        boardModule.boardLocatorFromHash("#page=board&machine=mac&project=" + project
+            + "&item=not-an-item") === null);
+
+    const shareItem = item(itemId, "execution", project);
+    const reads = [], copies = [], locations = [];
+    const p = page({
+        read: async (...args) => {
+            reads.push(args);
+            return envelope({ projects: [{ id: project, name: "Clawdline", itemCount: 1 }],
+                items: [shareItem], item: args[1] ? shareItem : null });
+        },
+        copy: async value => { copies.push(value); },
+        replaceURL: value => { locations.push(value); }
+    });
+    await p.view.openLocator({ project, item: itemId, machine: "mac with space" });
+    check("explicit Board machine reaches the transport without entering the URL as a token",
+        reads.length === 1 && reads[0][2] === "mac with space" && copies.length === 0);
+    p.elements["board-detail"].all(node => node.dataset.boardAction === "copy-item-link")[0].click();
+    await flush();
+    check("copy is user-click-only and retains exact machine/project/item identity",
+        copies.length === 1 && copies[0] === url);
+    p.elements["board-back"].click();
+    await flush();
+    check("Back keeps the exact machine while returning from an item to its Project",
+        reads.length === 2 && reads[1][0] === project && reads[1][1] === undefined
+            && reads[1][2] === "mac with space");
+    check("Back rewrites a shared item URL to the exact project locator used by reload",
+        locations.length === 1
+            && JSON.stringify(boardModule.boardLocatorFromHash(new URL(locations[0]).hash))
+                === JSON.stringify({ machine: "mac with space", project, item: null }));
+    p.view.leave();
+
+    let refusedReads = 0;
+    const refused = page({ read: async () => { refusedReads++; return envelope(); } });
+    await refused.view.openLocator(null, "unsupported field");
+    check("malformed reload stays an explicit error and never reads another Board item",
+        refusedReads === 0 && refused.elements["board-status"].textContent.includes("無效")
+            && !refused.elements["board-status"].all(node => node.dataset.boardAction === "retry").length);
+    refused.view.leave();
+}
+{
+    const conversation = "11111111-1111-4111-8111-111111111111";
+    const grouped = boardModule.boardSessionGroups({ owner: "%458", links: [
+        { id: "link-a", kind: "session", targetId: conversation, label: "first title" },
+        { id: "link-b", kind: "session", targetId: conversation.toUpperCase(), label: "renamed" }
+    ] }, [{ id: "%458", sessionId: conversation }]);
+    check("same conversation is deduplicated by identity rather than title",
+        grouped.conversationCount === 1 && grouped.receiptCount === 2
+            && grouped.owner.length === 1 && grouped.owner[0].receipts.length === 2);
+    const ambiguous = boardModule.boardSessionGroups({ owner: conversation, links: [
+        { id: "one", kind: "session", targetId: conversation }
+    ] }, [{ id: "%1", sessionId: conversation }, { id: "%2", sessionId: conversation }]);
+    check("multiple live Sessions stay explicitly ambiguous",
+        ambiguous.ambiguous.length === 1 && ambiguous.owner[0].activity === "ambiguous");
+    const missingOwner = boardModule.boardSessionGroups({ owner: "%owner", links: [
+        { id: "participant", kind: "session", targetId: conversation }
+    ] }, [{ id: "%other", sessionId: conversation }]);
+    check("another live participant does not become the recorded owner",
+        missingOwner.ownerMissing && missingOwner.owner.length === 0
+            && missingOwner.participants.length === 1);
+    const otherConversation = "22222222-2222-4222-8222-222222222222";
+    const fleet = boardModule.boardSessionGroups({ owner: "%same", links: [
+        { id: "mac-a", kind: "session", targetId: conversation },
+        { id: "mac-b", kind: "session", targetId: otherConversation }
+    ] }, [
+        { id: "%same", identity: { machine: "mac-a" }, sessionId: conversation },
+        { id: "%same", identity: { machine: "mac-b" }, sessionId: otherConversation }
+    ], "mac-a");
+    check("terminal owner identity and live matching stay inside the selected Board machine",
+        fleet.owner.length === 1 && fleet.owner[0].conversationId === conversation
+            && fleet.participants.length === 0 && fleet.history.length === 1);
+}
+{
+    const scope = "workflow_run=run-0123456789abcdef0123456789abcdef;session=%458;disposition=required";
+    const relation = "wfs-" + "a".repeat(64);
+    const exact = boardModule.mergeBoardRemainingWork({ remainingWork: { work: [
+        { id: "check-1", kind: "checklist", title: "手機驗收", status: "todo",
+          disposition: "required", owner: "%458", supplementRelationId: relation },
+        { id: "owe-1", kind: "obligation", title: "手機驗收", status: "waiting",
+          disposition: "required", owner: "%458", actorKind: "agent",
+          requiredAction: "使用手機確認", blockingScope: scope,
+          supplementRelationId: relation }
+    ], userDecisions: [{ id: "decision", kind: "obligation", title: "選擇方案",
+        actorKind: "user", requiredAction: "由使用者決定" }] } });
+    check("one supplement checklist and obligation become one readable row with both sources",
+        exact.work.length === 1 && exact.work[0].sources.length === 2
+            && exact.work[0].requiredAction === "使用手機確認");
+    check("user decisions are never consumed by supplement folding",
+        exact.userDecisions.length === 1 && exact.userDecisions[0].requiredAction === "由使用者決定");
+    const sameName = boardModule.mergeBoardRemainingWork({ remainingWork: { work: [
+        { id: "check-a", kind: "checklist", title: "同名", disposition: "required" },
+        { id: "check-b", kind: "checklist", title: "同名", disposition: "required" },
+        { id: "owe-a", kind: "obligation", title: "同名", owner: "%458",
+          actorKind: "agent", blockingScope: scope }
+    ], userDecisions: [] } });
+    check("same titles without unique supplement identity never merge",
+        sameName.work.length === 3 && sameName.work.every(row => !row.sources));
+    const differentSource = boardModule.mergeBoardRemainingWork({ remainingWork: { work: [
+        { id: "manual", kind: "checklist", title: "同名", disposition: "required",
+          supplementRelationId: "wfs-" + "b".repeat(64) },
+        { id: "managed", kind: "obligation", title: "同名", disposition: "required",
+          owner: "%458", actorKind: "agent", blockingScope: scope,
+          supplementRelationId: "wfs-" + "c".repeat(64) }
+    ], userDecisions: [] } });
+    check("one same-title pair with different exact source identity stays as two rows",
+        differentSource.work.length === 2 && differentSource.work.every(row => !row.sources));
+    const legacy = boardModule.mergeBoardRemainingWork({
+        checklist: [{ id: "todo", title: "保留待驗收", status: "doing", required: true },
+            { id: "done", title: "完成項", status: "passed", required: true }],
+        obligations: [{ id: "ask", title: "使用者選擇", resolved: false, blocking: true,
+            actorKind: "user", requiredAction: "決定公開範圍" }]
+    });
+    check("older details still expose pending checks separately from completed checks",
+        legacy.work.length === 1 && legacy.work[0].id === "todo"
+            && legacy.userDecisions.length === 1 && legacy.userDecisions[0].id === "ask");
+}
+
+const workflowMetadata = {
+    authority: "clawdline_metadata_not_user_authorization",
+    board_epoch: 7,
+    content_reference: "terminal-request:0123456789abcdef01234567",
+    conversation_id: "11111111-1111-4111-8111-111111111111",
+    coverage: "managed_ingress",
+    helper: "clawdline-board-workflow <conversation-id> <stable-idempotency-key>",
+    input_kind: "text_and_image",
+    mode_gap: null,
+    process_generation: "process-7",
+    project_id: "project-0123456789abcdef01234567",
+    provider: "codex",
+    required_first_action: "begin",
+    run_id: "run-0123456789abcdef0123456789abcdef",
+    terminal_id: "%458",
+    version: 1
+};
+const workflowWire = "<clawdline-workflow version=\"1\" authority=\"metadata-not-user\">\n"
+    + JSON.stringify(workflowMetadata) + "\n</clawdline-workflow>";
+const workflowImage = "<clawdline-image id=\"46cb6d40-c13f-4fea-9cf0-936f86b78da4\">";
+{
+    const source = "保留 <script>alert(1)</script> 與原句\n\n" + workflowWire + "\n" + workflowImage;
+    const parsed = parseBoardWorkflowRecord(source, "user");
+    check("exact managed envelope is recognized",
+        parsed && parsed.metadata.run_id === workflowMetadata.run_id);
+    check("all text before and after the envelope survives byte-for-byte",
+        parsed.text === "保留 <script>alert(1)</script> 與原句\n" + workflowImage);
+    check("raw metadata remains available for technical disclosure",
+        parsed.raw === JSON.stringify(workflowMetadata));
+    const html = boardWorkflowRecordHTML(parsed, {
+        label: "看板紀錄",
+        escape: value => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;").replaceAll('"', "&quot;")
+    });
+    check("record is collapsed by default and names its non-user authority",
+        html.includes("<details") && !html.includes("<details open")
+            && html.includes("看板紀錄") && html.includes("managed_ingress"));
+    check("raw JSON is escaped rather than executable",
+        html.includes("&lt;conversation-id&gt;") && !html.includes("<conversation-id>"));
+}
+for (const [name, source] of [
+    ["assistant turn", workflowWire],
+    ["quoted marker", "> " + workflowWire],
+    ["backtick fence", "```text\n" + workflowWire + "\n```"],
+    ["tilde fence", "~~~\n" + workflowWire + "\n~~~"],
+    ["malformed JSON", workflowWire.replace(JSON.stringify(workflowMetadata), "{not-json}")],
+    ["wrong authority", workflowWire.replace("metadata-not-user", "user")],
+    ["unknown metadata field", workflowWire.replace(/}\n<\/clawdline-workflow>/,
+        ',"extra":"field"}\n</clawdline-workflow>')],
+    ["indented prose marker", "quote: " + workflowWire + " end quote"]
+]) {
+    const role = name === "assistant turn" ? "assistant" : "user";
+    check(name + " stays untouched", parseBoardWorkflowRecord(source, role) === null);
+}
+check("multiple envelope candidates fail visible instead of partly hiding prose",
+    parseBoardWorkflowRecord(workflowWire + "\n" + workflowWire, "user") === null);
+{
+    const parsed = parseBoardWorkflowRecord("前段文字\n\n" + workflowWire + "\n後段文字", "user");
+    check("ordinary user text after exact metadata remains visible",
+        parsed?.text === "前段文字\n後段文字");
+}
 console.log(`${checks} web board behavioral checks passed`);

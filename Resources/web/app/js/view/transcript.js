@@ -25,6 +25,9 @@ import {
 import {
     planTranscriptRenderChunks, scheduleTranscriptRender
 } from "../session/transcript-requests.js";
+import {
+    boardWorkflowRecordHTML, parseBoardWorkflowRecord
+} from "./board-workflow-record.js";
 
 /* ---- the transcript ------------------------------------------------------ */
 
@@ -943,7 +946,15 @@ export function entryHTML(e) {
             '<div>' + richText(e.text) + '</div>' +
             '</div></div></div>';
     }
-    var body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "") + richText(e.text);
+    var workflowRecord = role === "user" && typeof parseBoardWorkflowRecord === "function"
+        ? parseBoardWorkflowRecord(e.text, role) : null;
+    var visibleText = workflowRecord ? workflowRecord.text : e.text;
+    var body = (e.tool ? '<span class="toolname">' + esc(e.tool) + "</span>" : "")
+        + richText(visibleText);
+    if (workflowRecord) body += boardWorkflowRecordHTML(workflowRecord, {
+        escape: esc,
+        label: /^zh/i.test(document.documentElement.lang || "") ? "看板紀錄" : "Board record"
+    });
     // An assistant turn carries artifacts when it wrote an image marker into its own reply. The
     // tiles are the same static, field-free markup the message card uses — the artifact never
     // reaches this string, only a queue slot — so nothing about the attachment can add HTML.

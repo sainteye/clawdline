@@ -2850,8 +2850,8 @@ enum Orchestrator {
     static func recordLandingInLedger(_ task: Task) {
         UsageLedger.shared.collect(taskRecord: ledgerRecord(of: task))
         ProjectBoardIntegration.observe(ledgerRecord(of: task))
+        ProjectTimelineIntegration.observeBrokerRecord(ledgerRecord(of: task))
     }
-
     /// Under the lock.
     private static func reindex() {
         OrchestratorRegistry.withTransactionOnHeldLock { registry in

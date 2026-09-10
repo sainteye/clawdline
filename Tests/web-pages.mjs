@@ -514,7 +514,9 @@ const routeStandalone =
         .replace('import { openSession } from "../session/open.js";',
             "const openSession = globalThis.__routeEnv.openSession;")
         .replace('import { Diagnostics } from "../core/layout-diagnostics.js";',
-            "const Diagnostics = globalThis.__routeEnv.Diagnostics;");
+            "const Diagnostics = globalThis.__routeEnv.Diagnostics;")
+        .replace('import { boardLocatorFromHash } from "../view/board.js";',
+            "const boardLocatorFromHash = globalThis.__routeEnv.boardLocatorFromHash;");
 check(!/^import /m.test(routeStandalone),
       "every import in route.js was replaced — one left behind would pull the whole app in and hang");
 
@@ -522,6 +524,7 @@ const listed = new Set();
 const opened = [];
 const routeListeners = {};
 const workerListeners = {};
+const routePageGoes = [];
 let legacyNotificationWant = null;
 const routeLocation = {
     value: "",
@@ -542,12 +545,16 @@ globalThis.caches = {
     delete: () => { legacyNotificationWant = null; return Promise.resolve(true); },
 };
 globalThis.__routeEnv = {
-    Pages: { knows: () => true, go: () => {}, goHome: () => {}, current: () => "sessions",
+    Pages: { knows: () => true, go: (name, options) => routePageGoes.push({ name, options }), goHome: () => {}, current: () => "sessions",
              home: () => "sessions" },
-    pageInHash: () => null,
+    pageInHash: (hash) => new URLSearchParams(String(hash || "").replace(/^#/, "")).get("page"),
     byId: (id) => (listed.has(id) ? { id: id } : null),
     openSession: (id) => { opened.push(id); },
     Diagnostics: { note: () => {} },
+    boardLocatorFromHash: (hash) => hash.includes("machine=mac-a") ? {
+        machine: "mac-a", project: "project-0123456789abcdef01234567",
+        item: hash.includes("item=") ? "11111111-2222-4333-8444-555555555555" : null
+    } : null,
     window: {
         addEventListener: (name, handler) => { (routeListeners[name] ||= []).push(handler); },
     },
@@ -563,6 +570,7 @@ const route = await import(
     "data:text/javascript;base64," + Buffer.from(routeStandalone).toString("base64"));
 
 const openedDocuments = [];
+const openedBoards = [];
 let hiddenDocuments = 0;
 route.bindDocumentRoute(
     (locator, error) => openedDocuments.push({ locator, error }),
@@ -570,14 +578,31 @@ route.bindDocumentRoute(
         ? { machine: "mac", session: "session", scope: "project", path: "report.md" } : null,
     () => { hiddenDocuments += 1; }
 );
+route.bindBoardRoute((locator, error) => openedBoards.push({ locator, error }), () => {});
+route.routeTo("#page=board");
+equal(routePageGoes.at(-1)?.name, "board",
+      "the ordinary in-app Board address stays a page route rather than a malformed share link");
+route.routeTo("#page=board&machine=mac-a&project=project-0123456789abcdef01234567"
+    + "&item=11111111-2222-4333-8444-555555555555");
+equal(openedBoards[0].locator.machine, "mac-a",
+      "a Board reload routes the explicit Cloud machine before page entry");
+equal(openedBoards[0].locator.item, "11111111-2222-4333-8444-555555555555",
+      "and retains the exact item rather than opening the Project root");
+route.routeTo("#page=board&project=missing-machine");
+check(!!openedBoards[1].error,
+      "a malformed Board locator reaches the page as an error instead of another item");
+equal(route.wantedBoard, null,
+      "an invalid Board locator cannot retain the preceding item identity");
 route.routeTo("#document=1&machine=mac&session=session&scope=project&path=report.md");
 equal(openedDocuments.length, 1,
       "a direct document fragment is handed to the registered document page");
 equal(openedDocuments[0].locator.machine, "mac",
       "with the explicit machine identity the fragment named");
 equal(openedDocuments[0].error, null, "a valid document route carries no invented error");
+const hiddenBeforeOrdinaryPage = hiddenDocuments;
 route.routeTo("#page=usage");
-equal(hiddenDocuments, 1, "a non-document route asks the document controller to clear itself");
+equal(hiddenDocuments, hiddenBeforeOrdinaryPage + 1,
+      "a non-document route asks the document controller to clear itself");
 equal(route.wantedDocument, null, "and the route no longer retains a hidden document locator");
 route.routeTo("#document=1&path=missing-identity.md");
 check(!!openedDocuments[1].error,

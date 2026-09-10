@@ -712,15 +712,40 @@ export class CloudClient {
             "read");
     }
 
-    board(project, item, report) {
+    board(project, item, report, machine) {
         if (report) item = boardReportSelection(item, report);
-        return this._machineRequest(this._onlyMachine("Project Board"), "board",
+        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+            throw cloudError("cloud_machine_unavailable",
+                "this Mac has not published a current Cloud inventory");
+        }
+        return this._machineRequest(machine || this._onlyMachine("Project Board"), "board",
             { project: project || "", item: item || "" }, "read");
     }
 
     boardCommand(body) {
         return this._machineRequest(this._onlyMachine("Project Board"), "board-command",
             { command: body }, "action");
+    }
+
+    timeline(project, entry, cursor, environment, category, includeUpcoming, machine) {
+        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+            throw cloudError("cloud_machine_unavailable",
+                "this Mac has not published a current Cloud inventory");
+        }
+        return this._machineRequest(machine || this._onlyMachine("Project Timeline"), "timeline", {
+            project: project || "", entry: entry || "", cursor: cursor ? String(cursor) : "",
+            environment: environment || "production", category: category || "",
+            upcoming: !!includeUpcoming
+        }, "read");
+    }
+
+    timelineCommand(body, machine) {
+        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+            throw cloudError("cloud_machine_unavailable",
+                "this Mac has not published a current Cloud inventory");
+        }
+        return this._machineRequest(machine || this._onlyMachine("Project Timeline"),
+            "timeline-command", { command: body }, "action");
     }
 
     pastSessions(place, assistant) {
