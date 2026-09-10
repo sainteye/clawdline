@@ -1181,6 +1181,9 @@ node Tests/web-close-confirm-explanation.mjs
 # before it starts queueing.
 node Tests/test-sh-streaming.mjs
 node Tests/test-sh-lock.mjs
+node Tests/platform-architecture-inventory.mjs
+node Tests/platform-reliability-characterization.mjs
+node Tests/cloud-contract-v1.mjs
 node Tests/swift-test-artifact.mjs
 # And that anything with a slow command to run can still say how far it has got. The helper both
 # this script and `build.sh` source is driven in both its forms — wrapping a whole command, and
