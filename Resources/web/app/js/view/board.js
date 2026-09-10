@@ -268,14 +268,26 @@ function needsAttention(item) {
     return item.state === "blocked" || boardProgress(item) === "blocked"
         || evidence?.blockingFindings > 0 || evidence?.failedVerifications > 0
         || item.remainingWork?.userDecisionCount > 0
-        || (item.obligations || []).some(row => row.blocking && !row.resolved);
+        || (item.obligations || []).some(row => !row.resolved
+            && (row.blocking || row.actorKind === "user"));
 }
 function planningOnly(item) {
     // Presentation partition only: never infer readiness from age, title, or parentage.
     // Explicit activity and unresolved attention take precedence over a planning label.
     return boardGroup(item) === "waiting" && boardProgress(item) === "planning"
         && item.progress?.active !== true && !(item.progress?.attemptCounts?.active > 0)
+        // Old compact servers omit obligations; absence cannot establish no current attention.
+        && Array.isArray(item.obligations) && !(item.projection?.obligations?.omittedCount > 0)
         && !needsAttention(item);
+}
+const LIST_GROUPS = ["active", "planning", "waiting", "history", "completed", "canceled", "coordination"];
+function listGroup(item) {
+    const model = item.listSummary;
+    if (model?.coverage === "complete" && LIST_GROUPS.includes(model.group)) return model.group;
+    const group = boardGroup(item);
+    if (["active", "completed", "canceled", "coordination"].includes(group)) return group;
+    if (needsAttention(item)) return "waiting";
+    return planningOnly(item) ? "planning" : group;
 }
 function say(ctx, item) {
     if (item.type === "coordination")
@@ -1285,17 +1297,24 @@ export function bindBoardPage(elements, environment = {}) {
         );
         const delivery = all.filter((row) => row.type !== "coordination"),
             coordinated = rows.filter((row) => row.type === "coordination");
-        const active = rows.filter(row => boardGroup(row) === "active"),
-            planned = rows.filter(planningOnly),
-            waiting = rows.filter(row => ["waiting", "history"].includes(boardGroup(row))
-                && (needsAttention(row) || (boardGroup(row) === "waiting" && !planningOnly(row)))),
-            unconfirmed = rows.filter(row => boardGroup(row) === "history" && !needsAttention(row)),
-            history = rows.filter(row => ["completed", "canceled"].includes(boardGroup(row)));
+        const active = rows.filter(row => listGroup(row) === "active"),
+            planned = rows.filter(row => listGroup(row) === "planning"),
+            waiting = rows.filter(row => listGroup(row) === "waiting"),
+            unconfirmed = rows.filter(row => listGroup(row) === "history"),
+            history = rows.filter(row => ["completed", "canceled"].includes(listGroup(row)));
         const overview = el(ctx, target, "div", null, "board-overview");
         const summary = project && project.summary;
+        const counts = summary?.listGroups;
+        const completeCounts = project?.summaryCoverage?.status === "complete"
+            && LIST_GROUPS.every(key => Number.isSafeInteger(counts?.[key]) && counts[key] >= 0);
         const modelCount = (key, loaded) => summary && Number.isInteger(summary[key]) && summary[key] >= 0
             ? summary[key] : loaded;
-        [
+        const stats = completeCounts ? [
+            [counts.active, "Active now", "正在進行"],
+            [counts.waiting, "Ready or needs attention", "等待推進／需要處理"],
+            [counts.planning, "Planning · not started", "規劃・尚未開始"],
+            [modelCount("landed", 0), "Landed", "已落地"]
+        ] : [
             [
                 modelCount("active", delivery.filter(row => boardGroup(row) === "active").length),
                 "Active now",
@@ -1307,11 +1326,22 @@ export function bindBoardPage(elements, environment = {}) {
                 "等待／規劃"
             ],
             [modelCount("landed", delivery.filter((row) => boardProgress(row) === "landed").length), "Landed", "已落地"]
-        ].forEach(([count, en, chinese]) => {
+        ];
+        stats.forEach(([count, en, chinese]) => {
             const stat = el(ctx, overview, "div", null, "board-overview-stat");
             el(ctx, stat, "strong", count);
             el(ctx, stat, "span", words(ctx, en, chinese));
         });
+        const total = Number.isSafeInteger(project?.itemCount) && project.itemCount >= all.length
+            ? project.itemCount : null;
+        el(ctx, target, "p", words(ctx,
+            `Loaded ${all.length}${total === null ? " / total unknown" : ` / ${total}`} items`,
+            `已載入 ${all.length}${total === null ? " / 總數未提供" : ` / ${total}`} 項`)
+            + (query ? words(ctx, ` · ${rows.length} search matches (loaded items only)`,
+                ` · 搜尋符合 ${rows.length} 項（僅搜尋已載入）`) : ""), "board-section-help");
+        const sectionCount = (group, loaded) => words(ctx, ` · ${loaded} ${query ? "matches" : "loaded"}`,
+            ` · ${loaded} ${query ? "項符合搜尋" : "項已載入"}`)
+            + (completeCounts ? words(ctx, ` / ${counts[group]} total`, ` / 共 ${counts[group]} 項`) : "");
         if (active.length) {
             const part = section(ctx, target, words(ctx, "In focus", "現在的工作")),
                 list = el(ctx, part, "div", null, "board-card-grid");
@@ -1339,18 +1369,22 @@ export function bindBoardPage(elements, environment = {}) {
                 "board-empty"
             );
         if (waiting.length) {
-            const part = section(ctx, target, words(ctx, "Ready or needs attention", "等待推進／需要處理")),
+            const part = section(ctx, target, words(ctx, "Ready or needs attention", "等待推進／需要處理")
+                + sectionCount("waiting", waiting.length)),
                 list = el(ctx, part, "div", null, "board-card-grid");
             waiting.forEach(row => list.appendChild(card(ctx, row)));
         }
-        if (planned.length) {
+        if (planned.length || (completeCounts && counts.planning > 0)) {
             const part = section(ctx, target,
-                words(ctx, "Planning · not started", "規劃區・尚未開始") + " · " + planned.length,
+                words(ctx, "Planning · not started", "規劃區・尚未開始") + sectionCount("planning", planned.length),
                 true, "planned-work");
             el(ctx, part, "p", words(ctx,
                 "Future work is kept here, separate from current execution. Expand to review plans and subtasks.",
                 "還沒開始的計畫與子項目集中在這裡，與目前工作分開。展開即可查看。"), "board-section-help");
             historicalCards(ctx, part, planned, !!query);
+            if (!planned.length) el(ctx, part, "p", query
+                ? words(ctx, "No matching plans in loaded items.", "已載入項目沒有符合搜尋的計畫。")
+                : words(ctx, "Plans exist but have not been loaded in this view.", "尚有計畫未載入此畫面。"), "board-section-help");
         }
         if (unconfirmed.length) {
             const part = section(ctx, target,

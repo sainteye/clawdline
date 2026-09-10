@@ -323,6 +323,46 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     p.view.leave();
 }
 {
+    // Real compact cards omit obligations/remainingWork; only the bounded model facts survive.
+    const compact = (title, group, attention = {}) => ({ id: title, projectId: "a", title,
+        type: "feature", state: "backlog", progress: { state: "planning", group: "waiting", active: false },
+        listSummary: { coverage: "complete", group, attention } });
+    const planned = compact("Future compact", "planning");
+    const blocked = compact("Late blocker compact", "waiting", { blockingObligations: 1 });
+    const decision = compact("User decision compact", "waiting", { userDecisions: 1 });
+    const legacy = { ...compact("Unknown legacy", "planning") }; delete legacy.listSummary;
+    const p = page({ read: async () => envelope({ items: [planned, blocked, decision, legacy], truncated: true,
+        projects: [{ id: "a", name: "Clawdline", itemCount: 20, summaryCoverage: { status: "complete" },
+            summary: { active: 0, waiting: 20, landed: 0,
+                listGroups: { active: 0, planning: 17, waiting: 3, history: 0, completed: 0, canceled: 0, coordination: 0 } } }] }) });
+    await p.view.open("a");
+    const visible = p.elements["board-items"].all(".board-card-title").map(x => x.textContent).join("|");
+    check("real compact blocking and user decisions remain visible", visible.includes("Late blocker compact") && visible.includes("User decision compact"));
+    check("missing compact facts cannot silently certify a legacy item as pure planning", visible.includes("Unknown legacy"));
+    check("pure compact plan is not mixed into attention", !visible.includes("Future compact"));
+    const stats = p.elements["board-items"].all(".board-overview-stat").map(x => x.textContent).join("|");
+    check("materialized planning total is separate from actual waiting", stats.includes("17規劃・尚未開始") && stats.includes("3等待推進／需要處理"));
+    check("bounded list states loaded coverage rather than presenting it as the total", p.elements["board-items"].textContent.includes("已載入 4 / 20"));
+    p.elements["board-search"].value = "Future compact"; p.elements["board-search"].dispatch("input");
+    check("search states its loaded-only scope without changing model totals", p.elements["board-items"].textContent.includes("搜尋符合 1") && p.elements["board-items"].textContent.includes("僅搜尋已載入") && p.elements["board-items"].textContent.includes("17規劃・尚未開始"));
+    p.view.leave();
+}
+{
+    const choice = item("Legacy optional choice", "planning");
+    choice.obligations = [{ actorKind: "user", blocking: false, resolved: false }];
+    choice.projection = { obligations: { omittedCount: 0 } };
+    const resolved = item("Resolved choice", "planning");
+    resolved.obligations = [{ actorKind: "user", blocking: false, resolved: true }];
+    const unknown = item("Unknown actor", "planning");
+    unknown.obligations = [{ blocking: false, resolved: false }];
+    const p = page({ read: async () => envelope({ items: [choice, resolved, unknown] }) });
+    await p.view.open("a");
+    const visible = p.elements["board-items"].all(".board-card-title").map(x => x.textContent).join("|");
+    check("F1 legacy nonblocking explicit user choice stays visible without remainingWork", visible.includes("Legacy optional choice"));
+    check("F1 resolved and unknown-actor nonblocking obligations do not invent user decisions", !visible.includes("Resolved choice") && !visible.includes("Unknown actor"));
+    p.view.leave();
+}
+{
     const epic = item("Program", "execution"); epic.type = "epic";
     epic.deliveryLanes = [{ id: "cloud-child", projectId: "b", projectName: "Cloud", title: "接收排程通知", owner: "%406", progress: { state: "execution" }, checklistDone: 2, checklistTotal: 4 }];
     const reads = [];

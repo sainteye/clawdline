@@ -308,6 +308,59 @@ group("board accounting allocates only broker task boundaries and preserves unkn
 }
 
 group("board list cards are compact summaries rather than hidden detail envelopes") {
+    // Exercise the real Store -> materialized seed -> compact boundary, not a detail-shaped mock.
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("board-partition-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let store = ProjectBoardStore(url: file)
+    _ = store.ensureProject(id: "partition", name: "Partition")
+    func send(_ op: String, _ fields: [String: Any]) -> ProjectBoardStore.Reply {
+        store.command(fields.merging(["operation": op, "requestId": UUID().uuidString,
+            "expectedRevision": store.readHeader().revision]) { _, new in new }, actor: "owner")
+    }
+    var ids: [String] = []
+    for title in ["Future", "Required scope", "Blocking", "Decision", "Active planning"] {
+        ids.append(send("create", ["projectId": "partition", "title": title,
+                                  "type": "feature", "owner": "owner"]).body["itemId"] as! String)
+    }
+    _ = send("checklist", ["itemId": ids[1], "title": "Future requirement", "required": true])
+    // An obligation beyond the bounded detail prefix must still be in the compact counts.
+    for i in 0..<20 {
+        _ = send("obligation", ["itemId": ids[2], "title": "Optional \(i)",
+                               "owner": "owner", "blocking": false, "actorKind": "agent"])
+    }
+    _ = send("obligation", ["itemId": ids[2], "title": "Actual blocker",
+                           "owner": "owner", "blocking": true, "actorKind": "agent"])
+    _ = send("obligation", ["itemId": ids[3], "title": "Optional user choice",
+                           "owner": "user", "blocking": false, "actorKind": "user"])
+    _ = send("span", ["itemId": ids[4], "sessionId": "planning-owner", "phase": "planning"])
+    let revision = store.readHeader().revision
+    let seed = store.readSeed(rebuild: true).seed
+    let snapshot = seed.envelope(project: "partition")["board"] as! [String: Any]
+    let modelRows = snapshot["items"] as! [[String: Any]]
+    let expectedGroups = ["planning", "planning", "waiting", "waiting", "active"]
+    for (i, id) in ids.enumerated() {
+        let row = modelRows.first { $0["id"] as? String == id }!
+        let compact = ProjectBoardIntegration.compactCard(row)
+        let detail = (seed.envelope(project: "partition", item: id)["board"] as! [String: Any])["item"] as! [String: Any]
+        let summary = compact["listSummary"] as? [String: Any]
+        expect("partition \(i) follows facts across compact projection", summary?["group"] as? String, expectedGroups[i])
+        check("partition \(i) compact and detail share exact classification facts",
+              summary != nil && NSDictionary(dictionary: summary!).isEqual(to: detail["listSummary"] as? [String: Any] ?? [:]))
+        check("partition \(i) does not ship raw obligations or remaining work", compact["obligations"] == nil && compact["remainingWork"] == nil)
+    }
+    let blockingSummary = modelRows.first { $0["id"] as? String == ids[2] }?["listSummary"] as? [String: Any]
+    expect("attention counts include late blockers beyond the display prefix",
+           (blockingSummary?["attention"] as? [String: Int])?["blockingObligations"], 1)
+    let project = (snapshot["projects"] as! [[String: Any]]).first { $0["id"] as? String == "partition" }!
+    let counts = (project["summary"] as? [String: Any])?["listGroups"] as? [String: Int]
+    expect("model counts separate all retained future plans", counts?["planning"], 2)
+    expect("model counts separate real attention", counts?["waiting"], 2)
+    expect("active planning remains actual declared activity", counts?["active"], 1)
+    expect("exclusive model partition accounts for every retained row", counts?.values.reduce(0, +), 5)
+    expect("classification reads never mutate lifecycle revision", store.readHeader().revision, revision)
+    let reloaded = ProjectBoardStore(url: file).readSeed(rebuild: true).seed.envelope(project: "partition")["board"] as! [String: Any]
+    let reloadedProject = (reloaded["projects"] as! [[String: Any]]).first!
+    check("partition is reconstructible after reload", NSDictionary(dictionary: (reloadedProject["summary"] as? [String: Any])?["listGroups"] as? [String: Int] ?? [:]).isEqual(to: counts ?? [:]))
     let checklist: [[String: Any]] = [
         ["id": "c1", "title": "Required", "status": "passed", "required": true,
          "evidenceId": "e1"],

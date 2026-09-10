@@ -2692,6 +2692,7 @@ final class ProjectBoardStore {
     private struct MaterializationIndex {
         let childrenByParentID: [String: [StoredItem]]
         let progressByItemID: [String: [String: Any]]
+        let listSummaryByItemID: [String: [String: Any]]
         let itemsByID: [String: StoredItem]
         let positionByID: [String: Int]
     }
@@ -2710,8 +2711,36 @@ final class ProjectBoardStore {
         }
         var progress: [String: [String: Any]] = [:]
         for item in state.items { progress[item.id] = progressObject(item) }
+        let listSummaries = Dictionary(uniqueKeysWithValues: state.items.map {
+            ($0.id, listSummary($0, progress: progress[$0.id]!))
+        })
         return MaterializationIndex(childrenByParentID: children, progressByItemID: progress,
+                                    listSummaryByItemID: listSummaries,
                                     itemsByID: items, positionByID: positions)
+    }
+
+    /// Read-model partition, not a lifecycle transition. Compute from full retained facts before
+    /// truncating detail collections; compact cards and Project totals consume the same result.
+    private func listSummary(_ item: StoredItem, progress: [String: Any]) -> [String: Any] {
+        let blocking = item.obligations.filter { !$0.resolved && $0.blocking }.count
+        let decisions = item.obligations.filter { !$0.resolved && $0.actorKind == "user" }.count
+        let evidence = progress["evidenceCounts"] as? [String: Int] ?? [:]
+        let attention = ["blockingObligations": blocking, "userDecisions": decisions,
+                         "blockingFindings": evidence["blockingFindings"] ?? 0,
+                         "failedVerifications": evidence["failedVerifications"] ?? 0]
+        let group = progress["group"] as? String ?? "history"
+        let phase = progress["state"] as? String ?? "unknown"
+        let displayGroup: String
+        if ["coordination", "completed", "canceled", "active"].contains(group) {
+            displayGroup = group
+        } else if item.state == "blocked" || phase == "blocked"
+            || attention.values.contains(where: { $0 > 0 }) {
+            displayGroup = "waiting"
+        } else if group == "waiting" && phase == "planning" {
+            // Required future checklist scope is not a present blocker or execution activity.
+            displayGroup = "planning"
+        } else { displayGroup = group }
+        return ["group": displayGroup, "coverage": "complete", "attention": attention]
     }
 
     private func buildMaterializedReadSeedLocked() -> MaterializedReadSeed {
@@ -2748,7 +2777,12 @@ final class ProjectBoardStore {
 
             var open = 0, needsClarity = 0, landed = 0, coordination = 0
             var active = 0, waiting = 0, history = 0, settled = 0
+            var listGroups = Dictionary(uniqueKeysWithValues:
+                ["active", "planning", "waiting", "history", "completed", "canceled", "coordination"].map { ($0, 0) })
             for item in items {
+                if let group = index.listSummaryByItemID[item.id]?["group"] as? String {
+                    listGroups[group, default: 0] += 1
+                }
                 if item.type == "coordination" { coordination += 1; continue }
                 let progress = index.progressByItemID[item.id] ?? progressObject(item)
                 let progressState = progress["state"] as? String ?? "unknown"
@@ -2779,7 +2813,7 @@ final class ProjectBoardStore {
                 "summary": ["open": open, "needsClarity": needsClarity,
                             "landed": landed, "coordination": coordination,
                             "active": active, "waiting": waiting, "history": history,
-                            "settled": settled],
+                            "settled": settled, "listGroups": listGroups],
                 "summaryCoverage": ["status": "complete", "retainedCount": items.count,
                                     "omittedCount": 0, "reasons": [] as [String]],
             ])
@@ -3104,6 +3138,8 @@ final class ProjectBoardStore {
                 "scopeRevision": item.scopeRevision ?? 0,
             ] as [String: Any],
             "progress": index?.progressByItemID[item.id] ?? progressObject(item),
+            "listSummary": index?.listSummaryByItemID[item.id]
+                ?? listSummary(item, progress: progressObject(item)),
             "sourceIngestion": [
                 "status": coverage.isEmpty ? "complete" : "partial",
                 "droppedCount": coverage.reduce(0) { $0 + $1.sourceDigests.count },

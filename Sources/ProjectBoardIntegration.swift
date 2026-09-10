@@ -533,6 +533,7 @@ enum ProjectBoardIntegration {
             "id", "key", "projectId", "title", "type", "state", "summary", "owner",
             "parentId", "createdAt", "updatedAt", "scopeRevision", "progress",
             "presentation", "deliveryLanes", "deliveryLaneCount",
+            "listSummary", // Complete bounded attention facts, never raw obligation/detail arrays.
         ]
         var card: [String: Any] = [:]
         for key in stableFields where item[key] != nil { card[key] = item[key] }

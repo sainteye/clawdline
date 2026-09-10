@@ -106,6 +106,27 @@ rows fill the remaining budget. Omitted rows are actionable through selectors
 wire limit. Materialization constructs `childrenByParentID` and the progress cache once, then uses
 those same dictionaries for summaries, details and remaining-work rows.
 
+`listSummary:{coverage:"complete",group,attention}` is a bounded materialized display projection
+shared by compact cards and selected details. `attention` counts unresolved `blockingObligations`,
+explicit `userDecisions` (including nonblocking choices), `blockingFindings` and
+`failedVerifications` from the complete retained item, not a truncated detail prefix. Missing
+actor kind stays unknown; titles do not establish a user decision. No raw obligation/remaining-work
+arrays are added to list payloads.
+
+The exclusive display groups are `active`, `planning`, `waiting`, `history`, `completed`, `canceled`
+and `coordination`. Existing active/terminal/coordination progress takes precedence. Non-active
+blocked progress or attention stays waiting; otherwise unstarted planning/backlog stays planning.
+A required future checklist is scope, not a present blocker. Active planning is still declared
+activity, never proof of implementation. This classification changes no lifecycle or evidence.
+Project `summary.listGroups` counts this same partition over all retained items, including zeros;
+legacy `summary.waiting` remains the old combined waiting/planning count for compatibility.
+
+The reader displays separate planning/waiting totals only when the complete category model and
+summary coverage are present, never by subtracting partial loaded rows from a project total.
+Section counts distinguish loaded/search matches from project totals; search covers loaded items
+only. On an older compact response, omitted obligations cannot certify pure planning. Detailed
+legacy rows with a complete obligation array may retain the old presentation fallback.
+
 Project list cards are an allowlisted compact projection, not hidden detail envelopes. They omit
 nested evidence, history, links, spans and checklist/milestone rows, replacing the latter with
 `cardSummary.checklist:{total,completed,required,requiredCompleted,retained,omitted,coverage}` and
