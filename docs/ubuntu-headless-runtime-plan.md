@@ -1,0 +1,354 @@
+# Clawdline Ubuntu / Google Cloud Headless Runtime Plan
+
+Status: proposed implementation plan  
+Plan version: 1  
+Date: 2026-09-10  
+Board item: CLA-296  
+Scope: one shared Clawdline product that can run either as the existing macOS app or as a headless Ubuntu service
+
+## Executive decision
+
+Clawdline should support Ubuntu by extracting a shared application core and adding platform adapters. It should **not** become a copied Linux fork.
+
+The first supported cloud shape should be a single-user daemon on one Google Compute Engine VM, backed by a persistent disk and `systemd`, with `tmux` as the only terminal backend. The existing encrypted Clawdline Cloud relay and hosted web UI remain the remote-access plane. Cloud Run is not the first target because Clawdline owns long-lived terminal processes, local repositories and durable host state; GKE is unnecessary until multi-node scheduling becomes a real requirement.
+
+This work can proceed while other Clawdline features are in development if it is delivered as a staged strangler refactor: preserve the current macOS facades, extract one ownership boundary at a time, and land small exact-tree changes. It must not begin as a wide rewrite of `Orchestrator.swift` and `RemoteServer.swift`.
+
+## What “runs on Ubuntu” means
+
+The MVP is complete when a user can:
+
+1. Provision a supported Ubuntu LTS VM on Google Compute Engine.
+2. Install one versioned Clawdline daemon package and its `systemd` unit.
+3. Pair that daemon with Clawdline Cloud without placing a machine credential in a URL or source tree.
+4. Register one or more project roots on a persistent disk.
+5. Create, observe, message, interrupt and close managed Codex or Claude sessions through the existing hosted UI.
+6. Run those sessions inside `tmux`, survive daemon restarts, and reconcile durable session/task state afterward.
+7. Apply bounded concurrency, backpressure, idempotency, receipts and typed errors across accepted, executed, delivered, observed and acknowledged states.
+8. Restore the service and its project/state disk from a documented backup without changing the public protocol.
+
+The MVP explicitly excludes iTerm2, AppKit UI, menu-bar controls, macOS Keychain, Apple Events, speech, local notifications, voice input, macOS/iOS build execution, multi-tenant hosting and automatic horizontal scaling.
+
+## Current feasibility assessment
+
+The current repository cannot compile or run as a normal Linux service without architectural work:
+
+- `Package.swift` declares macOS 13 as its platform and exposes a single executable product.
+- `build.sh` links macOS-only frameworks including AppKit, Carbon, ServiceManagement, Speech and AVFoundation.
+- The source tree contains direct AppKit, Darwin, Security/CommonCrypto and Network imports.
+- Terminal control mixes a portable `tmux` path with iTerm2 and Apple Event behavior.
+- The highest-risk state and protocol owners remain large and coupled: `Orchestrator.swift`, `RemoteServer.swift`, `SessionWatch.swift`, `Targets.swift` and `Tmux.swift`.
+- The existing architecture notes already identify an `Orchestrator` ↔ `RemoteServer` dependency cycle and define a compatible staged extraction direction.
+
+There is nevertheless a viable seam. `CloudAppBridge.swift` already names transport, headless command/read and command-routing protocols; the `tmux` backend is mostly process- and filesystem-oriented. These are useful extraction points, but their concrete implementations still depend on macOS-bound types and the monolithic server.
+
+The relevant Orca precedent is its headless Linux server mode: a long-running service exposes the product through a browser while using Linux service/process conventions. We should borrow that product shape, not its implementation wholesale. Clawdline’s distinguishing constraints are encrypted relay transport, managed terminal lifecycle, repository ownership, Board/task evidence and safe restart semantics.
+
+## Target architecture
+
+The intended dependency direction is:
+
+```text
+Hosted Clawdline Web / Cloud relay
+                |
+      encrypted protocol envelopes
+                |
+        ClawdlineApplication
+  commands, reads, policy, orchestration
+        /                    \
+ClawdlineCore             HostPorts
+domain/state/protocol     terminal, process, secrets,
+evidence/idempotency      storage, networking, notify
+        |                    |
+        +----------+---------+
+                   |
+          platform adapters
+          /                 \
+  macOS AppKit host      Ubuntu daemon host
+  iTerm2 + tmux          tmux + procfs + systemd
+  Keychain               protected file/secret manager
+  Apple APIs             POSIX/Linux APIs
+```
+
+### Shared modules
+
+`ClawdlineCore` owns platform-neutral value types and rules:
+
+- Session, task, graph, Board and evidence models.
+- State transitions and invariants.
+- Idempotency keys, receipts and typed failures.
+- Protocol serialization and validation.
+- Scheduling/backpressure policy that does not invoke a process itself.
+
+`ClawdlineApplication` owns use cases:
+
+- Create/send/interrupt/close/reconcile session operations.
+- Task dispatch and result ingestion.
+- Read models for sessions, projects, Board and Cloud publication.
+- Restart/recovery coordination through injected ports.
+
+### Host ports
+
+The shared application layer depends on small capabilities rather than platform globals:
+
+- `TerminalHost`: create, attach, send, interrupt, capture, close and enumerate terminals.
+- `ProcessInspector`: PID ownership, liveness and resource evidence.
+- `DurableStore`: atomic records, snapshots and migrations.
+- `SecretStore`: load/rotate/remove machine credentials without exposing bytes to logs.
+- `Clock`, `IDGenerator` and `FileSystem`: deterministic testing and bounded paths.
+- `LocalHTTPHost` and `CloudTransport`: protocol I/O, backpressure and reconnect behavior.
+- `AttentionNotifier`: optional host notification; unsupported capability is explicit.
+
+### Platform adapters
+
+The macOS target retains current behavior behind adapters for AppKit, iTerm2, Keychain, Apple Events, native notifications and launch/restart. Existing public types remain facades until callers have moved.
+
+The Ubuntu target supplies:
+
+- `tmux` terminal control and PTY/process inspection through Linux `/proc` and POSIX APIs.
+- A `systemd` service with explicit runtime and state directories.
+- File permissions or Google Secret Manager integration for machine credentials.
+- Swift Foundation networking or a server library with tested Linux support.
+- Structured journal logging with secret redaction.
+- A local listener bound to loopback by default; public access continues through Clawdline Cloud.
+
+## Google Cloud deployment baseline
+
+The first deployment profile is deliberately boring:
+
+- One Google Compute Engine VM in a named region and zone.
+- A supported Ubuntu LTS image and a pinned Swift toolchain/runtime.
+- A separate persistent disk for repositories and Clawdline durable state.
+- No inbound public application port; outbound TLS to the Cloud relay and model providers.
+- A least-privilege service account only for explicitly enabled Google services.
+- OS Login/IAP or another auditable administration path instead of password SSH.
+- Google Secret Manager is optional for bootstrap; the daemon still needs a local runtime secret boundary.
+- Snapshot/backup policy for the persistent disk, plus a restore drill.
+- Cloud Monitoring metrics for queue depth, terminal count, relay state, last durable write and reconciliation age.
+
+Cloud Run remains a future stateless edge option, not the execution host. Its instance lifecycle, ephemeral writable filesystem and bounded WebSocket requests are a poor match for durable local repositories and terminal processes. GKE becomes relevant only if we later require a scheduler spanning multiple isolated executors.
+
+## Security and trust boundary
+
+Moving the executor from a user-owned Mac to GCP changes the product’s trust claim even if relay encryption is unchanged. The VM necessarily sees plaintext repositories, prompts, transcripts and provider credentials while executing work.
+
+Before beta we must therefore define:
+
+- Who controls the GCP project and can inspect disks, snapshots, serial console and instance memory.
+- Whether one VM is dedicated to one user/account.
+- How provider tokens and the Clawdline machine credential are provisioned, rotated and revoked.
+- What is encrypted at rest, which principals can decrypt it, and what backups retain.
+- Which logs may contain repository paths or prompt fragments, and the redaction policy.
+- How OS/package updates, vulnerability response and incident revocation are handled.
+- Whether sensitive projects can require a Mac-only executor through capability-based routing.
+
+The default beta contract should be one user/account per VM, no shared Unix users, no public daemon port, and explicit warnings that GCP administrators are inside the execution trust boundary.
+
+## Delivery plan
+
+### Phase 0 — Contract, baseline and Linux probe
+
+Goal: establish what is portable before moving production ownership.
+
+Deliverables:
+
+- A capability matrix for macOS and Ubuntu, including unsupported operations.
+- A compile/import inventory and a dependency map from shared behavior to platform APIs.
+- Protocol fixtures proving Cloud command/read envelopes remain byte-compatible.
+- A minimal Linux CI job that compiles a deliberately small portability probe.
+- A benchmark/behavior baseline for create, send, interrupt, close and restart reconciliation.
+- A written acceptance matrix and exact module boundaries for Phase 1.
+
+Gate: approve the capability matrix and trust-boundary statement. No production owner moves before this gate.
+
+Estimated effort: 1–2 engineer-weeks.
+
+### Phase 1 — Finish state ownership and break the server cycle
+
+Goal: give mutable orchestration state one explicit owner while preserving current macOS facades.
+
+Deliverables:
+
+- Move one state family at a time behind registry/application operations.
+- Replace direct owner-lock manipulation with closed operations and atomic snapshots.
+- Move host side effects outside state-lock critical sections.
+- Remove the `Orchestrator` ↔ `RemoteServer` ownership cycle along the direction already defined in `docs/architecture-refactor.md`.
+- Add focused concurrency and failure-injection tests for each moved invariant.
+
+Gate: no adapter can mutate orchestration collections or acquire the state-owner lock directly.
+
+Estimated effort: 2–4 engineer-weeks.
+
+### Phase 2 — Introduce host ports and preserve macOS
+
+Goal: separate use cases from AppKit/iTerm2/Keychain/Apple Event implementations without changing user behavior.
+
+Deliverables:
+
+- Define the host-port interfaces listed above.
+- Wrap the current macOS behavior in adapters.
+- Keep compatibility facades thin and measurable.
+- Make unsupported capabilities typed rather than silently absent.
+- Run exact-tree macOS acceptance after each ownership slice.
+
+Gate: shared application code can run against in-memory/fake ports with no AppKit import.
+
+Estimated effort: 2–4 engineer-weeks; overlaps with the latter part of Phase 1 by disjoint ownership slices.
+
+### Phase 3 — Split Swift targets and make the core compile on Linux
+
+Goal: produce an actual Linux-buildable shared core and daemon entry point.
+
+Deliverables:
+
+- Split SwiftPM products/targets into core, application, macOS host and Linux daemon.
+- Replace unconditional Darwin imports with portable conditionals or adapter code.
+- Replace CommonCrypto/Security dependencies in shared code with a cross-platform audited crypto package or move them behind ports.
+- Select and validate the Linux HTTP/WebSocket implementation.
+- Add Ubuntu CI with pinned toolchain and dependency lock.
+
+Gate: Ubuntu CI compiles shared modules and passes protocol/state tests; macOS app still passes its acceptance suite.
+
+Estimated effort: 2–3 engineer-weeks.
+
+### Phase 4 — Ubuntu terminal and service runtime
+
+Goal: support the complete local managed-session lifecycle on Ubuntu.
+
+Deliverables:
+
+- Linux `tmux` adapter and process ownership checks.
+- Runtime/state directory layout, migrations and crash-safe writes.
+- `systemd` unit, install/upgrade/rollback scripts and health endpoint.
+- Startup reconciliation for terminals, task records, queues and in-flight commands.
+- Typed capacity/backpressure behavior and failure-injection tests.
+
+Gate: create → interact → restart daemon → reconcile → continue → close succeeds on a disposable Ubuntu VM.
+
+Estimated effort: 2–4 engineer-weeks.
+
+### Phase 5 — Cloud relay integration and GCE alpha
+
+Goal: operate the Ubuntu host remotely through the current Cloud product.
+
+Deliverables:
+
+- Headless device login/pairing flow.
+- Durable credential provisioning and rotation.
+- Cloud publication/reconnect/resume behavior equivalent to the Mac where capabilities match.
+- Terraform or reproducible `gcloud` provisioning for the baseline VM, disk, firewall and service account.
+- End-to-end test from hosted UI to an Ubuntu-managed terminal.
+
+Gate: a clean GCE VM can be provisioned, paired, exercised and destroyed/recreated while its persistent data restore is verified.
+
+Estimated effort: 2–3 engineer-weeks.
+
+### Phase 6 — Beta hardening
+
+Goal: make unattended operation safe enough for invited beta users.
+
+Deliverables:
+
+- Upgrade/rollback compatibility matrix and schema migration tests.
+- Backup/restore runbook and restore evidence.
+- Resource quotas, disk-full behavior, log rotation and secret redaction.
+- Fault injection for relay loss, daemon kill, VM reboot, stale `tmux`, provider failure and partial disk writes.
+- Operator alerts and support diagnostics that distinguish accepted, executed, delivered, observed and acknowledged states.
+- Security review and documented residual risks.
+
+Gate: seven-day soak with forced failures, no lost acknowledged command, and successful restore/rollback drills.
+
+Estimated effort: 4–8 engineer-weeks.
+
+## Working alongside current development
+
+This project should use one dedicated integration root and isolated worktrees for implementation tasks. Work is divided into 1–3 day ownership slices with exact path claims. A slice lands only after its old facade delegates to the new owner and the exact candidate tree is verified.
+
+Most product work can continue normally. The following hotspots need short serialized landing windows because they are likely to overlap active work:
+
+- `Package.swift`, `build.sh` and `test.sh`.
+- `Sources/Orchestrator.swift` and `Sources/RemoteServer.swift`.
+- `Sources/SessionWatch.swift`, `Sources/Targets.swift` and `Sources/Config.swift`.
+- Cloud bridge routing and credential persistence.
+
+Phase 0 intentionally writes new documentation, test fixtures and a new CI probe first. It need not modify the Board implementation files that other Sessions are currently editing.
+
+The expected elapsed program is:
+
+- architecture contract: 1–2 weeks;
+- internal Linux alpha: roughly 6–10 engineer-weeks;
+- GCE/Cloud beta: roughly 10–16 cumulative engineer-weeks;
+- hardened beta/production candidate: roughly 16–24 cumulative engineer-weeks.
+
+With other development continuing, a realistic calendar range is 3–5 months. This estimate assumes one primary implementer, periodic review, and small contributions from owners of Cloud, Board and orchestration seams.
+
+## Compatibility and migration rules
+
+- No repository or Board schema fork for Linux.
+- No copy of the orchestration core under a Linux-specific directory.
+- New interfaces enter behind existing macOS facades before callers move.
+- Every state-owner extraction has a red-before-green invariant test.
+- Cloud envelopes remain closed and versioned; new host capabilities are additive and explicit.
+- Existing macOS sessions, task records and Board evidence must remain readable across target splits.
+- A Linux-only shortcut cannot weaken task authorization, path containment, restart safety or delivery receipts.
+- Platform capability routing is explicit: a request needing Xcode, iTerm2, Apple Events or another Mac-only tool is rejected or routed to a Mac executor.
+
+## Acceptance matrix
+
+| Capability | macOS target | Ubuntu MVP | Acceptance evidence |
+|---|---|---|---|
+| Hosted Cloud session UI | Required | Required | Same protocol fixtures and end-to-end reads/writes |
+| Codex/Claude managed session | Required | Required | Lifecycle scenario with restart reconciliation |
+| `tmux` backend | Required | Required | Shared contract tests plus platform integration tests |
+| iTerm2 backend | Required | Not supported | Typed `capability_unavailable` on Ubuntu |
+| AppKit/menu bar/settings | Required | Not applicable | macOS acceptance only |
+| Voice/speech | Optional/current | Not supported | Capability matrix |
+| Project/Board/document reads | Required | Required | Cross-platform fixtures and hosted reader test |
+| Task dispatch/results | Required | Required | Idempotency, receipt and failure-injection suite |
+| Local secret storage | Keychain | Protected Linux adapter | Rotation/revocation and no-secret-log tests |
+| macOS/iOS builds | Required where available | Not supported | Route/reject based on declared host capability |
+| Upgrade/rollback | Existing app path | `systemd` package path | Exact-version rollback drill |
+
+## Initial Board structure
+
+The program should be represented as one Epic with these child work items:
+
+1. Phase 0: capability contract and Linux compile probe.
+2. Phase 1: orchestration state ownership and server-cycle removal.
+3. Phase 2: host-port interfaces and macOS adapters.
+4. Phase 3: Swift target split and Linux core CI.
+5. Phase 4: Ubuntu `tmux` daemon and `systemd` packaging.
+6. Phase 5: Clawdline Cloud integration and GCE alpha.
+7. Phase 6: beta security, failure injection, backup and operations.
+8. Independent architecture/security review.
+
+Dependencies are sequential at the phase level, but disjoint slices inside Phases 1–3 may overlap after their ownership boundaries are recorded. Phase 6 may begin operational threat modeling earlier, but its acceptance gate depends on the GCE alpha.
+
+## Board gaps exposed by this program
+
+The current Board can hold an Epic, children, `blocks` links, checklist, milestones, obligations and versioned plan references. It does not yet make a long-running architecture program easy or unambiguous:
+
+1. **The durable managed-work binding is difficult to see from the selected Board item.** The exact workflow receipts show that `run-f3816d670b1eeb34eaa0c5898cc1788f` correctly created new Epic CLA-297, while the later `run-08dc7654aa91f440c0b29f5b2e7b47f9` explicitly continued CLA-296. The initial contrary diagnosis was therefore disproved. The useful feature is a visible binding receipt—run, requested classification, effective item, created/reused reason, revision and replay state—not a silent change to version-1 `new_work` semantics.
+2. **Repeated begin boundaries duplicate Session links.** Work spans are legitimately separate, but the same canonical Session relation should be a source-aware upsert or render once with its activity intervals. A begin is not automatically a distinct execution attempt.
+3. **The semantic workflow helper cannot add a typed planning-document reference.** It supports begin/progress/supplement/deliver, while the existing durable `document_reference` operation is only available through a lower-level Board command. The helper should route a version-negotiated typed operation through the same bounded outbox and Store contract, without creating another document model or promoting narrative to evidence.
+4. **There is no atomic plan-structure import.** Creating seven phase children, gates, owners, acceptance criteria and dependency links requires many revision-sensitive calls and can leave a half-created roadmap. A bounded operation must validate the complete draft before one persist/revision and must never delete omitted existing children implicitly.
+5. **Dependency links do not produce a clear advisory planning frontier.** A large Epic needs `planning_ready`, `blocked` and `unknown` derived from plan dependencies and versioned gate authority. This must remain distinct from the broker’s execution frontier and must not claim a calculated critical path without a reliable duration model.
+6. **Planned write claims and collision zones are not visible at the program level.** They would be useful advisory scheduling data, but cannot reserve files or become execution authority; the broker must still validate real claims at dispatch.
+7. **Architecture approval gates are not first-class.** A checklist or obligation can approximate one, but cannot bind a decision, authority and released children to an exact plan revision. Approval of an older plan must not release a newer one.
+8. **Cross-host capabilities are narrative only.** A plan needs `supported`, `unsupported` or `unknown` capability requirements with an observation time. Capability-aware dispatch is a later step and must not create a second scheduling truth beside the broker.
+
+The minimum useful Board enhancement is a version-negotiated workflow document operation and a bounded, atomic, revision-checked Program Plan operation. It should upsert the Epic/children by stable logical keys, record advisory dependency/gate/capability/claim metadata, return exact binding receipts, and derive a conflict-aware planning frontier without treating narrative text as evidence or replacing broker authorization.
+
+## Sources and repository evidence
+
+- `Package.swift`, `build.sh`, `Sources/Orchestrator.swift`, `Sources/RemoteServer.swift`, `Sources/Targets.swift`, `Sources/Tmux.swift` and `Sources/CloudAppBridge.swift`, inspected 2026-09-10.
+- `docs/architecture-refactor.md`, `docs/cloud.md`, `docs/orchestrator.md`, `docs/project-board.md`, `docs/project-board-contract.md` and `docs/board-workflow.md`, inspected 2026-09-10.
+- Orca headless Linux server guide: <https://github.com/stablyai/orca/blob/main/docs/reference/headless-linux-server.md>
+- Google Compute Engine instance overview: <https://docs.cloud.google.com/compute/docs/instances/instance-creation-overview>
+- Google Compute Engine persistent disks: <https://docs.cloud.google.com/compute/docs/disks/persistent-disks>
+- Cloud Run container runtime contract: <https://docs.cloud.google.com/run/docs/container-contract>
+- Cloud Run WebSockets guidance: <https://docs.cloud.google.com/run/docs/triggering/websockets>
+
+## Immediate next action
+
+Phase 0 begins with a read-only portability inventory and an isolated Linux compile probe. No production behavior moves until the capability matrix, trust-boundary statement and target dependency direction are reviewed against this plan.
