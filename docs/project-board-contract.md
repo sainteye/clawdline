@@ -4,6 +4,24 @@ Project Board is **enabled by default and currently free**. This page describes 
 
 ## Component ownership
 
+### Session navigation and Info relationships
+
+Board Session titles are clickable. A shareable address uses the canonical hosted origin and
+`#session_ref=1&machine=...&conversation=...&project=...` (Project is optional). The closed,
+bounded locator carries stable machine and provider conversation identities, never a title or a
+reusable terminal ID. Cold links wait for inventory; a unique matching live Session opens without
+sending anything. A missing live Session may use its exact Project's bounded provider history;
+resume always requires an explicit click and retains its existing durable mutation fence.
+Unavailable, ambiguous, unauthorized and incomplete-history results remain visible refusals.
+Local `this-mac` aliases cannot become share URLs: their titles use local observed navigation
+until a canonical machine identity is available.
+
+Session Info contains the collapsed related-Board section; it is not a persistent chat banner.
+Cloud discovers Board mode and relationships from the selected Session's explicit machine read,
+independently of the boot-time settings request. Unknown mode, read failure and authoritative OFF
+are distinct. Switching machine/conversation fences late results. Inventory renders do not poll;
+an unavailable read offers explicit refresh and never gates transcript or message delivery.
+
 - `ProjectBoardStore` owns persistence, mode, work items, lifecycle gates and command receipts.
 - `ProjectBoardIntegration` projects trusted broker and UsageLedger facts without transferring their ownership to the board.
 - `ProjectBoardNarrative` schedules bounded background reading-text generation through the existing

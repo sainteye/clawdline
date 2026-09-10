@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {pathToFileURL} from 'node:url';
-const {createSessionBoardController} = await import(process.argv[2]
+const {createSessionBoardController,bindSessionBoard,SessionBoard} = await import(process.argv[2]
     ? pathToFileURL(process.argv[2]).href : '../Resources/web/app/js/input/session-board.js');
 let checks=0;
 function check(name, condition) { assert.ok(condition,name); checks++; }
@@ -14,7 +14,7 @@ check('Board relations live inside Session Info, not above the chat',
     && html.split('id="session-board"').length === 2);
 const main = fs.readFileSync(new URL('../Resources/web/app/js/main.js', import.meta.url), 'utf8');
 check('opening related work dismisses Session Info before navigating',
-    /open: function \(project, item, presentation\) \{ Info\.close\(\); BoardControls\.open\(project, item, presentation\); \}/.test(main));
+    /open: function \(project, item, presentation, machine\) \{ Info\.close\(\); BoardControls\.open\(project, item, presentation, machine\); \}/.test(main));
 const a={id:'%1',sessionId:'11111111-1111-4111-8111-111111111111'};
 const b={id:'%2',sessionId:'22222222-2222-4222-8222-222222222222'};
 let calls=[], renders=[], opens=[], pending=[], visible=true;
@@ -60,4 +60,58 @@ pending[7].resolve(answer({...upper,sessionId:upper.sessionId.toLowerCase()},[{i
 await canonical;
 check('uppercase provider UUID accepts the same canonical Board relationship',controller.state.status==='ready'&&controller.state.rows[0]?.id==='same-item');
 check('reverse selector uses canonical UUID without mutating inventory',calls[7][1]==='session:'+upper.sessionId.toLowerCase()&&upper.sessionId.startsWith('ABCDEF'));
+// Cold Cloud entry must discover the selected machine's mode, not depend on the
+// one boot-time global settings read which can precede inventory publication.
+{
+    const reads=[], opened=[]; let response, release;
+    const c=createSessionBoardController({discoverMode:true,requireMachine:true,
+        visible:()=>true,render:()=>{},read:(...args)=>{reads.push(args);return response();},
+        open:(...args)=>opened.push(args)});
+    c.follow(null); await c.load(); check('no inventory does not guess a machine',reads.length===0);
+    c.follow({...a,machine:'mac-a'});
+    response=async()=>answer(a,[{id:'a',projectId:'p'}]); await c.load();
+    check('late inventory discovers mode and relations without global enabled callback',c.state.enabled===true&&c.state.rows[0]?.id==='a');
+    check('relation read explicitly selects the Session machine',reads[0]?.[2]==='mac-a');
+    c.open('a');check('reverse navigation preserves machine',opened[0]?.[3]==='mac-a');
+    response=()=>new Promise(r=>release=r);const old=c.load(true);await flush();
+    c.follow({...a,machine:'mac-b'}); c.load();
+    response=async()=>({board:{enabled:false}});
+    release(answer(a,[{id:'late-a',projectId:'p'}]));await old;await flush();
+    check('same conversation on different Mac fences old rows and discovers OFF',c.state.enabled===false&&!c.state.rows.length&&reads.at(-1)[2]==='mac-b');
+    response=async()=>answer(a);await c.load(true);
+    check('deliberate same-Session revalidation can leave authoritative OFF',c.state.enabled===true&&c.state.status==='ready');
+    response=()=>new Promise(r=>release=r);const staleMode=c.load(true);await flush();
+    c.invalidateMode?.();c.load(true);response=async()=>({board:{enabled:false}});
+    release(answer(a,[{id:'before-mode-change',projectId:'p'}]));await staleMode;await flush();
+    check('mode invalidation fences in-flight enabled data and observes latest OFF',c.state.enabled===false&&!c.state.rows.length);
+    c.follow({...a,machine:'mac-c'});response=async()=>{throw Error('offline');};await c.load();
+    check('unknown mode failure stays visible rather than pretending OFF',c.state.enabled===null&&c.state.status==='error');
+    response=async()=>answer(a);await c.load(true);
+    check('explicit retry recovers mode after offline',c.state.enabled===true&&c.state.status==='ready');
+    c.follow({...a});await c.load();check('Cloud missing machine never uses default Mac',c.state.session===null);
+}
+{
+    class Element {
+        constructor(){this.children=[];this.hidden=false;this.events={};this.attrs={};this._text='';}
+        set textContent(value){this._text=value;this.children=[];}
+        get textContent(){return this._text+this.children.map(x=>x.textContent).join(' ');}
+        appendChild(node){this.children.push(node);}
+        setAttribute(key,value){this.attrs[key]=value;}
+        addEventListener(key,fn){this.events[key]=fn;}
+    }
+    const doc={documentElement:{lang:'zh-Hant'},createElement:()=>new Element()};
+    const container=new Element();container.ownerDocument=doc;
+    let calls=0, fail=false;
+    bindSessionBoard(container,{discoverMode:true,requireMachine:true,visible:()=>true,ready:()=>true,
+        read:async(p,i,m)=>{calls++;if(fail)throw Error('offline');return answer(a,[{id:m,projectId:'p',title:'Work'}]);},open:()=>{}});
+    SessionBoard.sync(null);await flush();check('cold inventory keeps invalid Session hidden',container.hidden&&calls===0);
+    SessionBoard.sync({...a,machine:'mac-a'});await flush();
+    check('inventory arrival alone reveals Info heading and reads once',!container.hidden&&container.textContent.includes('看板項目')&&calls===1);
+    SessionBoard.sync({...a,machine:'mac-a'});await flush();check('unchanged inventory does not poll Board',calls===1);
+    fail=true;SessionBoard.sync({...a,machine:'mac-b'});await flush();
+    check('machine-only switch is observed and failure remains readable',calls===2&&!container.hidden&&container.textContent.includes('暫時無法讀取'));
+    check('Info relation contents stay collapsed until a deliberate click',container.children[1].hidden===true);
+    fail=false;await SessionBoard.revalidateMode?.();await flush();
+    check('settings signal revalidates selected machine without adopting another machine mode',calls===3&&!container.hidden&&container.textContent.includes('Work'));
+}
 console.log('web Session Board: '+checks+' assertions passed');

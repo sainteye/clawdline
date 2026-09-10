@@ -1262,4 +1262,21 @@ check("multiple envelope candidates fail visible instead of partly hiding prose"
     check("ordinary user text after exact metadata remains visible",
         parsed?.text === "前段文字\n後段文字");
 }
+{
+    const conversation='11111111-1111-4111-8111-111111111111';
+    const projectId='project-0123456789abcdef01234567';
+    const selected={...item('locator-owner','execution',projectId),owner:conversation,
+        links:[{kind:'session',targetId:conversation,label:'Old recorded label'}]};
+    const p=page({read:async()=>envelope({items:[selected],item:selected,
+        projects:[{id:projectId,name:'Project',displayPath:'/project',machine:'mac-b'}]}),
+        sessions:()=>[{id:'%8',machine:'mac-b',sessionId:conversation,title:'Readable current title'}]});
+    await p.view.open(projectId,selected.id,{id:projectId,machine:'mac-b'});
+    const title=p.elements['board-detail'].all('.board-session-label')[0];
+    check('Session title itself is a stable clickable link, not a bare terminal id',
+        title?.tagName==='A'&&title.textContent==='Readable current title'
+        &&title.href.startsWith('https://app.clawdline.com/#session_ref=1&')
+        &&title.href.includes('machine=mac-b')&&title.href.includes('conversation='+conversation)
+        &&!title.href.includes('%258'));
+    p.view.leave();
+}
 console.log(`${checks} web board behavioral checks passed`);

@@ -1,8 +1,11 @@
+import { sessionShareURL, sessionLocatorFromHash } from "../net/session-links.js";
+
 /** Board -> Session uses observed identities; reading this sheet never starts a process. */
 export function createBoardSessionController(env) {
     const state = { status: "closed", conversation: null, project: null, machine: null,
         candidate: null, error: null };
     let generation = 0, reading = null, sending = false;
+    let pendingLocator = null, locatorIntent = null, locatorReading = false;
     const storageKey = "clawdline.board.resume-fences.v1";
     const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
     const conversationKey = value => uuid.test(String(value || ""))
@@ -47,6 +50,27 @@ export function createBoardSessionController(env) {
         conversationKey(row.sessionId) === conversationKey(id)
             && (!machine || sessionMachine(row) === machine));
     function observe() {
+        // Cloud inventory is incremental across Macs and rows. An unresolved address remains
+        // the user's intent until explicitly dismissed/replaced, even after a bounded read
+        // returned unavailable. Observation may open one live match, never resume or reread.
+        if (locatorIntent && !sending) {
+            const matches = live(locatorIntent.conversation, locatorIntent.machine);
+            if (matches.length === 1) {
+                const conversation = locatorIntent.conversation;
+                locatorIntent = null; pendingLocator = null;
+                openObserved(conversation, matches[0]); return;
+            }
+            if (matches.length > 1) {
+                pendingLocator = null;
+                if (state.error !== "session_ambiguous") fail("session_ambiguous");
+                return;
+            }
+        }
+        if (pendingLocator && env.inventoryReady && env.inventoryReady()) {
+            const locator = pendingLocator;
+            pendingLocator = null;
+            void openLocator(locator);
+        }
         try {
             const rows = fences(); let changed = false;
             for (const key of rows.keys()) {
@@ -63,12 +87,46 @@ export function createBoardSessionController(env) {
     function openObserved(conversation, row) {
         // Admission/UI handoff is not observation. Only a unique live inventory row can
         // settle this fence, allowing a later resume after that observed Session ends.
+        locatorIntent = null; pendingLocator = null;
         observe();
         close(); env.openLive(row.id);
     }
     function fail(code) { state.status = "error"; state.error = code; draw(); }
-    async function open(conversation, project, machine = null) {
+    async function openLocator(value, error = null) {
         if (sending) return;
+        const url = sessionShareURL(value);
+        const locator = url && sessionLocatorFromHash(new URL(url).hash);
+        const ticket = ++generation;
+        pendingLocator = null;
+        locatorIntent = error ? null : locator;
+        Object.assign(state, { status: "loading", conversation: locator?.conversation || null,
+            machine: locator?.machine || null, project: null, candidate: null, error: null });
+        if (error || !locator) { fail("session_link_invalid"); return; }
+        if (env.inventoryReady && !env.inventoryReady()) {
+            pendingLocator = locator;
+            state.status = "waiting_inventory"; draw(); return;
+        }
+        const matches = live(locator.conversation, locator.machine);
+        if (matches.length === 1) { openObserved(locator.conversation, matches[0]); return; }
+        if (matches.length > 1) { fail("session_ambiguous"); return; }
+        if (!locator.project || !env.project) { fail("session_not_observed"); return; }
+        if (locatorReading || reading) { fail("read_pending"); return; }
+        locatorReading = true; draw();
+        try {
+            const project = await env.project(locator.project, locator.machine);
+            if (ticket !== generation) return;
+            if (!project || project.id !== locator.project || !project.displayPath) {
+                fail("project_unavailable"); return;
+            }
+            await open(locator.conversation, project, locator.machine, true);
+        } catch (failure) {
+            if (ticket === generation) fail(failure.code || "read_failed");
+        } finally { locatorReading = false; }
+    }
+    async function open(conversation, project, machine = null, keepLocator = false) {
+        if (sending) return;
+        pendingLocator = null;
+        if (!keepLocator) locatorIntent = null;
         const matches = live(conversation, machine);
         if (matches.length === 1) { openObserved(conversation, matches[0]); return; }
         const ticket = ++generation;
@@ -148,9 +206,11 @@ export function createBoardSessionController(env) {
     }
     function close() {
         if (sending) return;
+        pendingLocator = null;
+        locatorIntent = null;
         generation++; state.status = "closed"; state.candidate = null; draw();
     }
-    return { state, open, resume, close, observe };
+    return { state, open, openLocator, resume, close, observe };
 }
 
 export const BoardSession = { observe: function () {} };
@@ -163,6 +223,7 @@ export function bindBoardSession(document, env) {
     let focusBefore = null;
     const words = (en, zh) => /^zh/i.test(document.documentElement.lang || "") ? zh : en;
     const messages = {
+        waiting_inventory: ["Waiting for the Session inventory. No conversation has been opened or resumed.", "正在等待 Session 清單；尚未開啟或恢復任何對話。"],
         loading: ["Finding this conversation…", "正在尋找這段對話…"],
         ready: ["This conversation is not running. Resume opens it on your Mac; nothing has started yet.", "這段對話目前沒有執行。按下「繼續對話」才會在 Mac 恢復；目前尚未啟動。"],
         resuming: ["Resume requested. Do not submit again.", "正在恢復對話，請勿重複提交。"],
@@ -170,6 +231,8 @@ export function bindBoardSession(document, env) {
         live_unobserved: ["The Mac reports this conversation is already running. Refresh the Session list to open it.", "Mac 回報這段對話正在執行；請更新 Session 列表後開啟，避免重複恢復。"]
     };
     const errors = {
+        session_link_invalid: ["This Session link is invalid or has no stable machine identity. No destination was guessed.", "這個 Session 連結無效或缺少穩定機器身分；未猜測目的地。"],
+        session_not_observed: ["This conversation is not in the current inventory. It may be closed, offline, or unavailable to this viewer; no Session was resumed.", "目前清單中找不到這段對話。它可能已關閉、離線，或此裝置無權讀取；未恢復任何 Session。"],
         session_ambiguous: ["More than one Session matches; no destination was guessed.", "有多個 Session 符合，未猜測或啟動任何對話。"],
         project_ambiguous: ["This Project exists on more than one Mac. Open it from the desired Mac's Session list.", "多台 Mac 有同一路徑的專案；請從目標 Mac 的 Session 列表開啟。"],
         project_unavailable: ["The original Project is unavailable in this Mac's inventory.", "目前的 Mac 專案清單中找不到原專案。"],

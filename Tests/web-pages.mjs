@@ -516,7 +516,9 @@ const routeStandalone =
         .replace('import { Diagnostics } from "../core/layout-diagnostics.js";',
             "const Diagnostics = globalThis.__routeEnv.Diagnostics;")
         .replace('import { boardLocatorFromHash } from "../view/board.js";',
-            "const boardLocatorFromHash = globalThis.__routeEnv.boardLocatorFromHash;");
+            "const boardLocatorFromHash = globalThis.__routeEnv.boardLocatorFromHash;")
+        .replace('import { sessionLocatorFromHash } from "../net/session-links.js";',
+            "const sessionLocatorFromHash = globalThis.__routeEnv.sessionLocatorFromHash;");
 check(!/^import /m.test(routeStandalone),
       "every import in route.js was replaced — one left behind would pull the whole app in and hang");
 
@@ -545,6 +547,7 @@ globalThis.caches = {
     delete: () => { legacyNotificationWant = null; return Promise.resolve(true); },
 };
 globalThis.__routeEnv = {
+    sessionLocatorFromHash: (await import('../Resources/web/app/js/net/session-links.js')).sessionLocatorFromHash,
     Pages: { knows: () => true, go: (name, options) => routePageGoes.push({ name, options }), goHome: () => {}, current: () => "sessions",
              home: () => "sessions" },
     pageInHash: (hash) => new URLSearchParams(String(hash || "").replace(/^#/, "")).get("page"),
@@ -579,7 +582,19 @@ route.bindDocumentRoute(
     () => { hiddenDocuments += 1; }
 );
 route.bindBoardRoute((locator, error) => openedBoards.push({ locator, error }), () => {});
+const openedStableSessions = [];
+let hiddenStableSessions = 0;
+route.bindSessionLocatorRoute?.((locator, error) => openedStableSessions.push({locator,error}),
+    () => { hiddenStableSessions++; });
+route.routeTo('#session_ref=1&machine=mac-a&conversation=11111111-1111-4111-8111-111111111111');
+check(openedStableSessions.length===1 && openedStableSessions[0].locator.machine==='mac-a',
+    'stable Session fragment reaches its exact-identity controller');
+check(route.openWanted()===true,'stable destination suppresses first-list default Session selection');
+route.routeTo('#session_ref=1&machine=mac-a&conversation=bad&session=ghost');
+check(openedStableSessions.at(-1)?.error && route.wantedSession===null,
+    'malformed stable link refuses instead of falling back to a terminal id');
 route.routeTo("#page=board");
+check(hiddenStableSessions>0,'leaving a Session locator closes its pending selection');
 equal(routePageGoes.at(-1)?.name, "board",
       "the ordinary in-app Board address stays a page route rather than a malformed share link");
 route.routeTo("#page=board&machine=mac-a&project=project-0123456789abcdef01234567"

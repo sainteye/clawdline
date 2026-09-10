@@ -3,6 +3,7 @@ import { byId } from "../view/derive.js";
 import { openSession } from "../session/open.js";
 import { Diagnostics } from "../core/layout-diagnostics.js";
 import { boardLocatorFromHash } from "../view/board.js";
+import { sessionLocatorFromHash } from "../net/session-links.js";
 
 /* ---- arriving at a session from somewhere else ---------------------------
  *
@@ -21,6 +22,14 @@ var parseDocumentRoute = null;
 var hideDocumentRoute = null;
 var openBoardRoute = null;
 var hideBoardRoute = null;
+var openSessionLocatorRoute = null;
+var hideSessionLocatorRoute = null;
+var sessionLocatorIntent = false;
+
+export function bindSessionLocatorRoute(open, hide) {
+    openSessionLocatorRoute = open;
+    hideSessionLocatorRoute = hide;
+}
 
 /** Installed by the document page after the page registry and its transport thunks exist. */
 export function bindDocumentRoute(open, parse, hide) {
@@ -81,6 +90,22 @@ function sessionCandidates(hash) {
  * an unknown page name is ignored.
  */
 export function routeTo(hash) {
+    if (/(?:^|[#&])session_ref=/.test(String(hash || ""))) {
+        sessionLocatorIntent = true;
+        wantedSession = null;
+        wantedSessionAsWritten = null;
+        wantedDocument = null;
+        wantedBoard = null;
+        if (hideDocumentRoute) hideDocumentRoute();
+        if (hideBoardRoute) hideBoardRoute();
+        const locator = sessionLocatorFromHash(hash);
+        Pages.goHome({ hash: false });
+        if (openSessionLocatorRoute)
+            openSessionLocatorRoute(locator, locator ? null : "session_link_invalid");
+        return;
+    }
+    sessionLocatorIntent = false;
+    if (hideSessionLocatorRoute) hideSessionLocatorRoute();
     var candidates = sessionCandidates(hash);
     var documentRoute = documentIntent(hash);
     var boardRoute = boardIntent(hash);
@@ -138,6 +163,9 @@ export function routeTo(hash) {
 
 /** Open the session the URL asked for, if it is in the list yet. */
 export function openWanted() {
+    // The stable controller owns this address, including missing/invalid destinations.
+    // Do not let the first-list convenience open an unrelated Session behind its error sheet.
+    if (sessionLocatorIntent) return true;
     if (!wantedSession) return false;
     var id = byId(wantedSession) ? wantedSession
         : (wantedSessionAsWritten && byId(wantedSessionAsWritten)
@@ -174,7 +202,8 @@ if ("serviceWorker" in navigator) {
 
         var cut = data.url.indexOf("#");
         var hash = cut < 0 ? "" : data.url.slice(cut);
-        if (!sessionCandidates(hash) && !documentIntent(hash)) return;
+        if (!sessionCandidates(hash) && !documentIntent(hash)
+            && !/(?:^|[#&])session_ref=/.test(hash)) return;
         if (hash === location.hash) routeTo(hash);
         else location.hash = hash;
     });

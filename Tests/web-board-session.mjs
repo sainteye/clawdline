@@ -4,7 +4,25 @@ const {createBoardSessionController,bindBoardSession} = await import(process.arg
     ? pathToFileURL(process.argv[2]).href : '../Resources/web/app/js/input/board-session.js');
 let checks=0, failures=0;
 const check=(name,condition)=>{checks++;if(!condition){failures++;console.error('FAIL: '+name);}};
+const locatorModule=await import('../Resources/web/app/js/net/session-links.js').catch(()=>({}));
 const id='11111111-1111-4111-8111-111111111111', project={id:'p',displayPath:'/project',label:'Project'};
+const stableProject='project-0123456789abcdef01234567';
+const locator={machine:'mac-b',conversation:id,project:stableProject};
+const stableURL=locatorModule.sessionShareURL?.(locator);
+check('stable locator is hosted and never carries a terminal id or title',
+    stableURL?.startsWith('https://app.clawdline.com/#session_ref=1&') && !stableURL.includes('%25'));
+check('stable machine/conversation/project locator roundtrips',
+    JSON.stringify(locatorModule.sessionLocatorFromHash?.(stableURL?.split('#')[1]))===JSON.stringify(locator));
+for(const suffix of ['&machine=other','&title=guess','&conversation=%zz','&project=bad'])
+    check('closed locator refuses '+suffix,locatorModule.sessionLocatorFromHash?.(stableURL?.split('#')[1]+suffix)==null);
+check('machine-local alias is not a shareable identity',locatorModule.sessionShareURL?.({...locator,machine:'this-mac'})==null);
+for(const machine of ['mac%zz','mac%FF','mac%00','mac+space','x'.repeat(201)])
+    check('standalone malformed/oversized machine fails closed '+machine.slice(0,12),
+        locatorModule.sessionLocatorFromHash?.('session_ref=1&machine='+machine+'&conversation='+id)==null);
+check('wire byte limit rejects oversized encoded input',locatorModule.sessionLocatorFromHash?.(
+    'session_ref=1&machine='+ '%61'.repeat(700)+'&conversation='+id)==null);
+check('optional Project is omitted without guessing',locatorModule.sessionLocatorFromHash?.(
+    'session_ref=1&machine=mac-a&conversation='+id)?.project===null);
 function fixture(storage = new Map()) {
     const f={sessions:[],reads:[],resumes:[],opens:[],began:[],write:true,
         places:{places:[{id:'opaque',path:'/project'}],assistants:[{id:'claude'},{id:'codex'}]},
@@ -17,6 +35,71 @@ function fixture(storage = new Map()) {
         openLive:id=>f.opens.push(id),began:(...args)=>{f.began.push(args);if(f.onBegan)f.onBegan();}};
     f.c=createBoardSessionController(f.env);
     return f;
+}
+{
+    const f=fixture(); f.env.inventoryReady=()=>false;
+    f.c=createBoardSessionController(f.env);
+    await f.c.openLocator?.(locator);
+    check('cold stable locator waits for inventory without starting history or resume',
+        f.c.state.status==='waiting_inventory'&&!f.reads.length&&!f.resumes.length);
+    f.sessions=[{id:'%wrong',sessionId:id,machine:'mac-a',title:'Same title'},
+        {id:'%right',sessionId:id,machine:'mac-b',title:'Same title'}];
+    f.env.inventoryReady=()=>true; f.c.observe();
+    await new Promise(r=>setImmediate(r));
+    check('observed inventory resolves exact machine and conversation, not title',f.opens[0]==='%right'&&!f.resumes.length);
+}
+{
+    const f=fixture();f.sessions=[{id:'%already',sessionId:id,machine:'mac-b'}];
+    f.env.inventoryReady=()=>true;f.c=createBoardSessionController(f.env);
+    await f.c.openLocator(locator);
+    check('already live locator opens exactly once without recursive observation',f.opens.length===1&&f.opens[0]==='%already');
+}
+{
+    const f=fixture();f.env.inventoryReady=()=>true;
+    f.env.project=async(p,m)=>{f.reads.push(['project',p,m]);return {...project,id:p};};
+    f.places.places=[{id:'opaque',path:'/project',machine:'mac-b'}];
+    f.c=createBoardSessionController(f.env);
+    await f.c.openLocator?.(locator);
+    check('closed stable link reads exact project and offers explicit resume only',
+        f.c.state.status==='ready'&&!f.resumes.length&&JSON.stringify(f.reads[0])===JSON.stringify(['project',stableProject,'mac-b']));
+}
+{
+    const f=fixture();let ready=false;
+    f.env.inventoryReady=()=>ready;f.c=createBoardSessionController(f.env);
+    await f.c.openLocator({...locator,project:null});
+    ready=true;f.sessions=[{id:'%unrelated',sessionId:id,machine:'mac-a'}];f.c.observe();
+    await new Promise(r=>setImmediate(r));
+    check('unrelated first inventory keeps a visible honest unresolved result',f.c.state.error==='session_not_observed'&&!f.opens.length);
+    f.sessions.push({id:'%target',sessionId:id,machine:'mac-b'});f.c.observe();
+    check('target arriving later resolves original stable intent without reads or resume',f.opens[0]==='%target'&&!f.reads.length&&!f.resumes.length);
+}
+{
+    const f=fixture();f.env.inventoryReady=()=>true;
+    f.env.project=async()=>{f.reads.push('project');throw {code:'offline'};};f.c=createBoardSessionController(f.env);
+    await f.c.openLocator(locator);
+    f.sessions=[{id:'%one',sessionId:id,machine:'mac-b'},{id:'%two',sessionId:id,machine:'mac-b'}];f.c.observe();
+    check('late ambiguous targets stay refused',!f.opens.length&&f.c.state.error==='session_ambiguous');
+    f.sessions.pop();f.c.observe();
+    check('later unique target resolves project-read failure without retrying history',f.opens[0]==='%one'&&f.reads.length===1&&!f.resumes.length);
+    await f.c.openLocator({...locator,conversation:'22222222-2222-4222-8222-222222222222'});f.c.close();
+    f.sessions=[{id:'%cancelled',sessionId:'22222222-2222-4222-8222-222222222222',machine:'mac-b'}];f.c.observe();
+    check('closing unresolved locator cancels later arrival intent',f.opens.length===1&&f.c.state.status==='closed');
+}
+{
+    const f=fixture();f.env.inventoryReady=()=>true;f.c=createBoardSessionController(f.env);
+    await f.c.openLocator?.({...locator,project:null});
+    check('missing historical project is honest and does not scan every project',
+        f.c.state.error==='session_not_observed'&&!f.reads.length&&!f.resumes.length);
+    await f.c.openLocator?.({...locator,machine:'this-mac'});
+    check('unresolved local alias cannot select a cloud or local Session',f.c.state.error==='session_link_invalid'&&!f.opens.length);
+}
+{
+    const f=fixture();let finish;
+    f.env.inventoryReady=()=>true;
+    f.env.project=()=>new Promise(resolve=>finish=resolve);
+    f.c=createBoardSessionController(f.env);
+    const waiting=f.c.openLocator(locator);f.c.close();finish({...project,id:stableProject});await waiting;
+    check('leaving a locator fences late project response before history',f.c.state.status==='closed'&&!f.reads.length&&!f.resumes.length);
 }
 {
     const f=fixture();f.sessions=[{id:'%1',sessionId:id.toUpperCase()}];await f.c.open(id,project);

@@ -68,7 +68,7 @@ import "./input/snippets.js";
 import "./input/git-panel.js";
 import "./input/shell-panel.js";
 import "./input/action-confirm.js";
-import { bindBoardRoute, bindDocumentRoute, routeTo } from "./input/route.js";
+import { bindBoardRoute, bindDocumentRoute, bindSessionLocatorRoute, routeTo } from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import { Start } from "./input/start.js";
@@ -383,6 +383,11 @@ var boardElements = {};
 });
 var boardSession = bindBoardSession(document, {
     sessions: function () { return S.sessions; }, canWrite: function () { return S.write; },
+    inventoryReady: function () { return S.arrived; },
+    project: async function (id, machine) {
+        const answer = await api.board(id, null, null, machine);
+        return answer?.board?.projects?.find(project => project.id === id) || null;
+    },
     places: function () { return api.places(); },
     history: function (place, assistant) { return api.pastSessions(place, assistant); },
     resume: function (place, conversation, assistant, requestId) { return api.resumePlace(place, conversation, assistant, requestId); },
@@ -391,6 +396,9 @@ var boardSession = bindBoardSession(document, {
         Pages.go(Pages.home()); Start.began(answer.id, place, false, answer.attach);
     }
 });
+bindSessionLocatorRoute(function (locator, error) {
+    boardSession.openLocator(locator, error);
+}, function () { boardSession.close(); });
 var board = bindBoardPage(boardElements, {
     read: function (project, item, machine) { return api.board(project, item, null, machine); },
     sessions: function () { return S.sessions; },
@@ -403,12 +411,19 @@ var board = bindBoardPage(boardElements, {
 });
 BoardControls.escape = function () { return board.escape(); };
 bindSessionBoard(byId("session-board"), {
-    read: function (project, item) { return api.board(project, item); },
+    discoverMode: transportKind === "cloud",
+    requireMachine: transportKind === "cloud",
+    read: function (project, item, machine) { return api.board(project, item, null, machine); },
     visible: function () { return Pages.current() === Pages.home() && !!S.openId && !S.agent; },
     ready: function () { return !!S.openId && !S.tx.loading; },
-    open: function (project, item, presentation) { Info.close(); BoardControls.open(project, item, presentation); }
+    open: function (project, item, presentation, machine) { Info.close(); BoardControls.open(project, item, presentation, machine); }
 });
-BoardControls.onChange = function (enabled) { SessionBoard.setEnabled(enabled); };
+BoardControls.onChange = function (enabled) {
+    // Cloud mode is learned from the selected Session's machine-scoped response.
+    // A global settings read (or another Mac's revision) is not its authority.
+    if (transportKind !== "cloud") SessionBoard.setEnabled(enabled);
+    else SessionBoard.revalidateMode();
+};
 BoardControls.open = function (project, item, presentation, machine) {
     if (!project) { Pages.go("projects"); return; }
     board.open(project, item, presentation, machine);

@@ -1,5 +1,6 @@
 import { boardReportSelection } from "../net/client.js";
 import { CANONICAL_DOCUMENT_ORIGIN, documentLocatorFromHash } from "../net/document-links.js";
+import { sessionShareURL } from "../net/session-links.js";
 
 const UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
@@ -220,6 +221,7 @@ export function boardSessionGroups(item, sessions, machine = null) {
         const owner = String(item && item.owner || "");
         return {
             ...record,
+            label: live.length === 1 && live[0].title ? live[0].title : record.label,
             live,
             activity: live.length > 1 ? "ambiguous" : live.length === 1 ? "live" : "history",
             role: owner && (conversationKey(owner) === key || live.some(row => row.id === owner))
@@ -793,7 +795,8 @@ function renderSessionOwnership(ctx, parent, item) {
         ctx.env.sessions ? ctx.env.sessions() : [], ctx.state.machine);
     const part = section(ctx, parent, words(ctx, "Owner & how to continue", "負責人與如何繼續"));
     fact(ctx, part, words(ctx, "Recorded owner", "目前負責人"),
-        item.owner || words(ctx, "Not assigned", "尚未指派"));
+        groups.owner.length === 1 ? groups.owner[0].label
+            : item.owner || words(ctx, "Not assigned", "尚未指派"));
     const draw = (record, group) => {
         const row = el(ctx, part, "div", null, "board-session-row");
         row.dataset.sessionGroup = group;
@@ -804,7 +807,19 @@ function renderSessionOwnership(ctx, parent, item) {
                 : ["Review history / resume", "查看歷史／確認繼續"];
         button(ctx, row, words(ctx, ...labels), "open-session",
             () => openBoardConversation(ctx, item, record));
-        el(ctx, row, "span", record.label, "board-session-label");
+        const url = sessionShareURL({ machine: ctx.state.machine,
+            conversation: record.conversationId, project: item.projectId });
+        if (url) {
+            const link = el(ctx, row, "a", record.label, "board-session-label");
+            link.href = url;
+            link.rel = "noopener noreferrer";
+        } else {
+            // A local alias is usable inside this page but cannot name a Mac in a shared URL.
+            const title = button(ctx, row, record.label, "open-session-title",
+                () => openBoardConversation(ctx, item, record), "board-session-label");
+            title.title = words(ctx, "Open locally; a stable machine identity is required to share.",
+                "在此開啟；分享連結需要穩定機器身分。");
+        }
     };
     groups.owner.forEach(row => draw(row, "owner"));
     groups.participants.forEach(row => draw(row, "participant-live"));
