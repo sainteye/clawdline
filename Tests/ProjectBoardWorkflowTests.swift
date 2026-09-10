@@ -374,15 +374,149 @@ private func workflowEndSpanAuthorityProof() {
     }
 }
 
+private func workflowOutputScopeProof() {
+    let root = workflowTestDirectory("output-scope")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let boardURL = root.appendingPathComponent("board.json")
+    var store = ProjectBoardStore(url: boardURL)
+    let identity = workflowIdentity()
+    _ = store.ensureProject(id: identity.projectID, name: "Output scope")
+    func command(_ op: String, _ fields: [String: Any], trusted: Bool = false,
+                 internalOrigin: Bool = false) -> ProjectBoardStore.Reply {
+        var body = fields
+        body["operation"] = op; body["requestId"] = UUID().uuidString
+        body["expectedRevision"] = store.readHeader().revision
+        return store.command(body, actor: "root", trusted: trusted, workflowOrigin: internalOrigin)
+    }
+    let created = command("create", ["projectId": identity.projectID, "title": "Verified work", "type": "feature", "owner": "root"])
+    guard let id = created.body["itemId"] as? String else { check("output fixture creates item", false); return }
+    func item() -> [String: Any] {
+        (store.snapshot(item: id)["board"] as? [String: Any])?["item"] as? [String: Any] ?? [:]
+    }
+    let workflowURL = root.appendingPathComponent("workflow.json")
+    func makeWorkflow() -> ProjectBoardWorkflow {
+        ProjectBoardWorkflow(url: workflowURL, boardHeader: {
+            let h = store.readHeader(); return (h.enabled, h.revision, h.available)
+        }, boardCommand: { store.command($0, actor: $1, workflowOrigin: true) }, autoStart: false)
+    }
+    var workflow = makeWorkflow()
+    guard case .managed(let run) = workflow.prepareIngress(requestID: "scope-run", fingerprint: "scope-run",
+        text: "deliver report", imageCount: 0, identity: identity) else { return }
+    _ = workflow.markDelivery(runID: run.runID, identity: identity, delivered: true)
+    _ = workflow.record(["operation": "begin", "run_id": run.runID,
+        "classification": "existing_item", "item_id": id, "phase": "output"],
+        requestID: "begin", fingerprint: "begin", identity: identity)
+    workflow.drainForTesting()
+    expect("output fixture installs qualifying verification", command("record_evidence", [
+        "itemId": id, "kind": "verification", "status": "passed", "summary": "Exact proof",
+        "sourceId": "output-proof", "subject": String(repeating: "b", count: 40),
+    ], trusted: true).status, 200)
+    let before = item()
+    expect("output fixture actually reaches verified", before["state"] as? String, "verified")
+    let delivery: [String: Any] = ["operation": "deliver", "run_id": run.runID,
+        "disposition": "delivered", "summary": "Report, not new scope", "next_action": "landing",
+        "outputs": [["title": "Report", "url": "https://app.clawdline.com/#document=1", "kind": "document"]]]
+    _ = workflow.record(delivery, requestID: "delivery", fingerprint: "delivery", identity: identity)
+    workflow.drainForTesting()
+    let after = item()
+    expect("delivery output never clears verified state", after["state"] as? String, "verified")
+    expect("delivery output preserves exact scope", after["scopeRevision"] as? Int, before["scopeRevision"] as? Int)
+    check("delivery output retains exact current evidence", NSDictionary(dictionary: after["currentEvidence"] as? [String: Any] ?? [:])
+        .isEqual(to: before["currentEvidence"] as? [String: Any] ?? [:]))
+    expect("delivery output closes activity", (after["progress"] as? [String: Any])?["active"] as? Bool, false)
+    let artifacts = after["artifacts"] as? [[String: Any]] ?? []
+    check("delivery reference is durable and not an acceptance artifact", artifacts.count == 1 && artifacts.first?["referenceOnly"] as? Bool == true)
+    let reference: [String: Any] = ["itemId": id, "title": "forged", "url": "https://example.test", "kind": "document"]
+    expect("public caller cannot forge output bookkeeping", command("record_output", reference, trusted: true).status, 403)
+    expect("a reference cannot become trusted artifact acceptance", command("accept_artifact", [
+        "itemId": id, "artifactId": artifacts.first?["id"] as? String ?? "missing",
+    ], trusted: true).status, 409)
+    workflow = makeWorkflow(); workflow.drainForTesting()
+    _ = workflow.record(delivery, requestID: "delivery", fingerprint: "delivery", identity: identity)
+    workflow.drainForTesting()
+    store = ProjectBoardStore(url: boardURL)
+    expect("reload and duplicate receipt retain exactly one output", (item()["artifacts"] as? [[String: Any]])?.count, 1)
+    expect("reload retains verified state", item()["state"] as? String, "verified")
+    // A promotable persisted fixture detects accidental lifecycle reconciliation by record_output.
+    do {
+        var saved = try JSONSerialization.jsonObject(with: Data(contentsOf: boardURL)) as! [String: Any]
+        var items = saved["items"] as! [[String: Any]]
+        items[0]["state"] = "execution"; saved["items"] = items
+        try JSONSerialization.data(withJSONObject: saved).write(to: boardURL)
+        store = ProjectBoardStore(url: boardURL)
+        expect("internal output bookkeeping succeeds on promotable fixture", command("record_output", reference, internalOrigin: true).status, 200)
+        expect("output bookkeeping does not reconcile lifecycle", item()["state"] as? String, "execution")
+    } catch { check("output fixture remains decodable", false) }
+    expect("ordinary scope artifact remains supported", command("artifact", reference).status, 200)
+    check("ordinary artifact still invalidates scope and proof", (item()["scopeRevision"] as? Int ?? 0) > (before["scopeRevision"] as? Int ?? 0)
+        && (item()["currentEvidence"] as? [String: Any])?["verificationId"] is NSNull)
+    // Unidentifiable legacy declarations are retained, not guessed closed or counted as live.
+    do {
+        var saved = try JSONSerialization.jsonObject(with: Data(contentsOf: boardURL)) as! [String: Any]
+        var items = saved["items"] as! [[String: Any]]
+        var spans = items[0]["spans"] as! [[String: Any]]
+        spans[0]["id"] = "legacy-span"; spans[0].removeValue(forKey: "endedAt")
+        items[0]["spans"] = spans; saved["items"] = items
+        try JSONSerialization.data(withJSONObject: saved).write(to: boardURL)
+        store = ProjectBoardStore(url: boardURL)
+        let progress = item()["progress"] as? [String: Any] ?? [:]
+        expect("legacy unproved interval does not claim current activity", progress["active"] as? Bool, false)
+        check("legacy interval has an explicit uncertainty warning", (progress["warningCodes"] as? [String] ?? []).contains("legacy_span_identity_unresolved"))
+        expect("legacy interval remains open rather than guessed complete", ((item()["spans"] as? [[String: Any]])?.first?["endedAt"] is NSNull), true)
+        expect("catalog activity agrees with detail after reload", store.readSeed(rebuild: true).seed.catalog.first?["activeItemCount"] as? Int, 0)
+        expect("a fresh declaration for the legacy Session is accepted", command("span", [
+            "itemId": id, "sessionId": identity.conversationID, "phase": "output",
+        ]).status, 200)
+        let freshSpans = item()["spans"] as? [[String: Any]] ?? []
+        check("F2 new activity never guesses an end for the legacy interval", freshSpans.first { $0["id"] as? String == "legacy-span" }?["endedAt"] is NSNull)
+        let freshProgress = item()["progress"] as? [String: Any] ?? [:]
+        expect("F2 only the new identifiable declaration counts as active", (freshProgress["coordinationContext"] as? [String: Any])?["activeSpans"] as? Int, 1)
+        check("F2 active work retains its legacy uncertainty", (freshProgress["warningCodes"] as? [String] ?? []).contains("legacy_span_identity_unresolved"))
+    } catch { check("legacy activity fixture remains decodable", false) }
+    for mode in ["code", "artifact"] {
+        let created = command("create", ["projectId": identity.projectID, "title": mode, "type": "task", "owner": "root"])
+        guard let taskID = created.body["itemId"] as? String else { continue }
+        func task() -> [String: Any] {
+            (store.snapshot(item: taskID)["board"] as? [String: Any])?["item"] as? [String: Any] ?? [:]
+        }
+        if mode == "code" {
+            expect("F1 code task installs verification", command("record_evidence", [
+                "itemId": taskID, "kind": "verification", "status": "passed", "summary": "Code proof",
+                "sourceId": "task-proof", "subject": String(repeating: "c", count: 40),
+            ], trusted: true).status, 200)
+        } else {
+            _ = command("artifact", ["itemId": taskID, "title": "Accepted document", "url": "https://example.test/doc", "kind": "document"])
+            let artifactID = (task()["artifacts"] as? [[String: Any]])?.first?["id"] as? String ?? "missing"
+            expect("F1 document task installs artifact acceptance", command("accept_artifact", [
+                "itemId": taskID, "artifactId": artifactID,
+            ], trusted: true).status, 200)
+        }
+        let beforeTask = task()
+        expect("F1 task has a meaningful progress regime before recording", (beforeTask["progress"] as? [String: Any])?["state"] as? String, mode == "code" ? "verified" : "landed")
+        expect("F1 opposite-kind reference records", command("record_output", [
+            "itemId": taskID, "title": "Informational output", "url": "https://example.test/reference",
+            "kind": mode == "code" ? "document" : "commit",
+        ], internalOrigin: true).status, 200)
+        store = ProjectBoardStore(url: boardURL)
+        expect("F1 reference cannot switch the task verification regime after reload", (task()["progress"] as? [String: Any])?["state"] as? String, (beforeTask["progress"] as? [String: Any])?["state"] as? String)
+        expect("F1 reference preserves task lifecycle", task()["state"] as? String, beforeTask["state"] as? String)
+    }
+}
+
 func runProjectBoardWorkflowTests() {
 group("managed Board ingress is durable, bounded and identity-bound") {
     let root = workflowTestDirectory("ingress")
     defer { try? FileManager.default.removeItem(at: root) }
     var enabled = true
     var revision = 7
+    let resources = root.appendingPathComponent("Moved App.app/Contents/Resources")
+    try! FileManager.default.createDirectory(at: resources, withIntermediateDirectories: true)
+    let helper = resources.appendingPathComponent("clawdline-board-workflow")
+    try! Data("#!/bin/sh\nexit 0\n".utf8).write(to: helper)
+    try! FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
     let workflow = ProjectBoardWorkflow(
         url: root.appendingPathComponent("workflow.json"),
-        boardHeader: { (enabled, revision, true) }, autoStart: false)
+        boardHeader: { (enabled, revision, true) }, autoStart: false, bundleResources: resources)
     workflow.syncMode()
     let identity = workflowIdentity()
     let first = workflow.prepareIngress(
@@ -398,6 +532,30 @@ group("managed Board ingress is durable, bounded and identity-bound") {
           prepared.wireText.contains("<clawdline-workflow")
             && prepared.wireText.utf8.count < 4_096)
     check("metadata contains no credential", !prepared.wireText.contains("orchestrator-token"))
+    let metadataLine = prepared.wireText.components(separatedBy: "\n").first { $0.hasPrefix("{") } ?? "{}"
+    let metadata = try! JSONSerialization.jsonObject(with: Data(metadataLine.utf8)) as! [String: Any]
+    expect("managed bootstrap supplies the installed absolute helper path", metadata["helper_path"] as? String, helper.path)
+    check("available bundle helper does not declare an installation gap", metadata["mode_gap"] is NSNull)
+    for variant in ["missing", "not_executable", "symlink", "directory"] {
+        let candidate = root.appendingPathComponent(variant)
+        try! FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: true)
+        let file = candidate.appendingPathComponent("clawdline-board-workflow")
+        if variant == "not_executable" {
+            try! Data("not executable".utf8).write(to: file)
+            try! FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        } else if variant == "symlink" {
+            try! FileManager.default.createSymbolicLink(at: file, withDestinationURL: helper)
+        } else if variant == "directory" {
+            try! FileManager.default.createDirectory(at: file, withIntermediateDirectories: true)
+        }
+        let absent = ProjectBoardWorkflow(url: candidate.appendingPathComponent("journal.json"),
+            boardHeader: { (true, 1, true) }, autoStart: false, bundleResources: candidate)
+        if case .managed(let value) = absent.prepareIngress(requestID: variant, fingerprint: variant,
+            text: "still send", imageCount: 0, identity: workflowIdentity()) {
+            check("\(variant) helper is a typed nonblocking bootstrap gap", value.wireText.hasPrefix("still send")
+                && value.wireText.contains("helper_unavailable") && !value.wireText.contains("helper_path"))
+        } else { check("\(variant) helper must not block the message", false) }
+    }
 
     let replay = workflow.prepareIngress(
         requestID: "phone-send-1", fingerprint: "body-a",
@@ -517,6 +675,7 @@ group("managed Board ingress is durable, bounded and identity-bound") {
 }
 
 group("workflow receipts stay attested and reconcile through a bounded durable outbox") {
+    workflowOutputScopeProof()
     workflowEndSpanAuthorityProof()
     workflowActivityBoundaryProof()
     workflowSupplementStoreProof()
@@ -596,12 +755,12 @@ group("workflow receipts stay attested and reconcile through a bounded durable o
     workflow.drainForTesting()
     lock.lock(); let operations = commands.compactMap { $0["operation"] as? String }; lock.unlock()
     check("the worker uses only existing factual Board commands",
-          Set(operations).isSubset(of: ["create", "checklist", "link", "span", "end_span", "artifact",
+          Set(operations).isSubset(of: ["create", "checklist", "link", "span", "end_span", "record_output",
                                        "obligation"]))
     check("no assistant receipt can forge verification or landing",
           !operations.contains("record_evidence") && !operations.contains("transition"))
     check("the output and unresolved obligation reach reconciliation",
-          operations.contains("artifact") && operations.contains("obligation"))
+          operations.contains("record_output") && operations.contains("obligation"))
     let checklistCommand = commands.first { $0["operation"] as? String == "checklist" }
     check("checklist supplements preserve required scope in the Board command",
           checklistCommand?["title"] as? String == "Confirm the export"

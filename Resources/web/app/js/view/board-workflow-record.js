@@ -25,8 +25,13 @@ function outsideFence(source, offset) {
 
 function validMetadata(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const keys = Object.keys(value).sort();
+    const keys = Object.keys(value).filter(key => key !== "helper_path").sort();
     if (keys.length !== KEYS.length || keys.some((key, index) => key !== KEYS[index])) return false;
+    if (Object.hasOwn(value, "helper_path") && (typeof value.helper_path !== "string"
+        || !value.helper_path.startsWith("/") || !value.helper_path.endsWith("/clawdline-board-workflow")
+        || new TextEncoder().encode(value.helper_path).length > 4096
+        || /[\x00-\x1f\x7f-\x9f]/.test(value.helper_path)
+        || value.helper_path.split("/").some(part => part === "." || part === ".."))) return false;
     return value.version === 1
         && value.authority === "clawdline_metadata_not_user_authorization"
         && Number.isSafeInteger(value.board_epoch) && value.board_epoch >= 1

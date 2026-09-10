@@ -220,6 +220,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     private let journalSynchronize: (URL) throws -> Void
     private let limits: Limits
     private let autoStart: Bool
+    private let helperPath: String?
     private let lock = NSLock()
     private let workerQueue = DispatchQueue(
         label: "com.tsunamiworks.clawdline.board.workflow", qos: .utility)
@@ -241,7 +242,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
              ProjectBoardStore.shared.command($0, actor: $1, workflowOrigin: true)
          },
          journalSynchronize: @escaping (URL) throws -> Void = ProjectBoardWorkflow.syncJournal,
-         limits: Limits = Limits(), autoStart: Bool = true) {
+         limits: Limits = Limits(), autoStart: Bool = true,
+         bundleResources: URL? = Bundle.main.resourceURL) {
         self.url = url
         self.now = now
         self.boardHeader = boardHeader
@@ -250,6 +252,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         self.journalSynchronize = journalSynchronize
         self.limits = limits
         self.autoStart = autoStart
+        self.helperPath = Self.installedHelper(in: bundleResources)
         load()
         if autoStart { kick() }
     }
@@ -313,7 +316,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             }
             return .managed(Prepared(
                 runID: existing.id,
-                wireText: Self.wireText(original: text, run: existing,
+                wireText: wireText(original: text, run: existing,
                                         modeGap: modeGap),
                 replay: true, epoch: existing.epoch))
         }
@@ -348,7 +351,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         }
         state = draft
         return .managed(Prepared(
-            runID: runID, wireText: Self.wireText(original: text, run: run, modeGap: modeGap),
+            runID: runID, wireText: wireText(original: text, run: run, modeGap: modeGap),
             replay: false, epoch: run.epoch))
     }
 
@@ -802,7 +805,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             }
             for (index, _) in event.outputs.enumerated() {
                 appendIntent(id: "\(event.id)-artifact-\(index)", run: run, event: event,
-                             kind: "artifact", index: index, draft: &draft)
+                             kind: "record_output", index: index, draft: &draft)
             }
             for (index, _) in event.remaining.enumerated() {
                 appendIntent(id: "\(event.id)-obligation-\(index)", run: run, event: event,
@@ -1000,12 +1003,12 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     "sessionId": run.identity.conversationID,
                     "startRequestId": startRequestID,
                     "note": event.summary ?? event.handoffNote ?? "Session interval ended."]
-        case "artifact":
+        case "artifact", "record_output":
             guard let item = run.itemID, event.outputs.indices.contains(outbox.index) else {
                 return nil
             }
             let output = event.outputs[outbox.index]
-            return ["operation": "artifact", "itemId": item, "title": output.title,
+            return ["operation": outbox.kind, "itemId": item, "title": output.title,
                     "url": output.url, "kind": output.kind]
         case "obligation":
             guard let item = run.itemID, event.remaining.indices.contains(outbox.index) else {
@@ -1288,8 +1291,21 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         fingerprint(Data(text.utf8))
     }
 
-    private static func wireText(original: String, run: Run, modeGap: String?) -> String {
-        let object: [String: Any] = [
+    // Resolve once at process bootstrap, never through PATH or the source checkout on a send.
+    private static func installedHelper(in resources: URL?) -> String? {
+        guard let resources, resources.isFileURL else { return nil }
+        let helper = resources.appendingPathComponent("clawdline-board-workflow")
+        let path = helper.path
+        guard path.utf8.count <= 4096,
+              !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+              let values = try? helper.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+              values.isRegularFile == true, values.isSymbolicLink != true,
+              FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        return path
+    }
+
+    private func wireText(original: String, run: Run, modeGap: String?) -> String {
+        var object: [String: Any] = [
             "version": 1,
             "authority": "clawdline_metadata_not_user_authorization",
             "run_id": run.id,
@@ -1306,8 +1322,9 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 adapterHandshake: false).rawValue,
             "required_first_action": "begin",
             "helper": "clawdline-board-workflow <conversation-id> <stable-idempotency-key>",
-            "mode_gap": modeGap ?? NSNull(),
+            "mode_gap": modeGap ?? (helperPath == nil ? "helper_unavailable" : nil) ?? NSNull(),
         ]
+        if let helperPath { object["helper_path"] = helperPath }
         let data = (try? JSONSerialization.data(withJSONObject: object,
                                                 options: [.sortedKeys])) ?? Data("{}".utf8)
         let metadata = String(data: data, encoding: .utf8) ?? "{}"

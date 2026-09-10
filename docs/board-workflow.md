@@ -2,7 +2,13 @@
 
 This slice gives Clawdline-managed terminal sends a durable, non-blocking workflow record. It does
 not install global Claude or Codex configuration, add a Settings control, or claim native-session
-coverage that has not handshaken. Those installation surfaces remain a separate, consented change.
+coverage that has not handshaken. The official App packages the protocol-1 helper and guide;
+managed Claude and Codex sends receive the same absolute, executable bundle `helper_path`.
+This optional v1 field is presentation-only data, not a shell expression or authorization. The
+path is resolved once at bootstrap from the App resource directory, not PATH or the source repo.
+Missing, non-executable, directory and symlink candidates produce `helper_unavailable` without
+blocking ordinary sends. No provider config or shell profile is rewritten. Legacy envelopes still
+render; native sessions without an adapter handshake remain `observed_unintegrated`.
 
 ## Ingress and identity
 
@@ -63,7 +69,7 @@ a JSON body no larger than 64 KiB. Accepted operations are:
 There are deliberately no `verify`, `land`, `deploy`, `transition`, or `done` operations. Semantic
 receipts have `assistant_attested` authority; terminal delivery acceptance or rejection has the
 separate `broker_observed` authority. They may materialize existing factual Project Board commands
-(`create` with `parentId`, `checklist`, `link`, `span`, `artifact`, and `obligation`), but cannot
+(`create` with `parentId`, `checklist`, `link`, `span`, `record_output`, and `obligation`), but cannot
 forge reviewer evidence. `delivered`
 remains distinct from verified, landed, deployed, and accepted.
 
@@ -81,6 +87,19 @@ restart and an uncertain Board response retain the same outbox identity. A missi
 or a legacy span without an exact declaration identity stays a visible reconciliation gap,
 not a guessed end or a successful empty update. Historical gaps need source-specific repair;
 elapsed time and a dead Session alone are not completion evidence.
+
+New workflow output references use the in-process-only `record_output` operation. These references
+retain URLs and titles but neither invalidate accepted scope nor reconcile lifecycle. They are
+marked `referenceOnly` and cannot be accepted as an artifact to manufacture verification. Public
+`artifact` commands still represent changed output scope and invalidate its proof. Old journal
+intents of kind `artifact` keep their exact replay body; an upgrade never rewrites an uncertain
+request into a different operation. Previously invalidated proof is not automatically restored.
+
+Legacy unended declarations without the actor/request-derived span identity stay open in history,
+with `legacy_span_identity_unresolved` and an unresolved-span count. They do not establish current
+activity or inflate Project active counts. Identifiable declarations and broker activity retain
+their existing semantics; neither elapsed time nor a missing Session closes an interval. Root
+Session landing projection and source-specific historical proof repair remain separate work.
 
 ## Durability, queueing, and gaps
 

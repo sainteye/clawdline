@@ -48,6 +48,37 @@ assert.match(composerSource, /Diagnostics\.note/,
     "an unrecorded workflow warning must also reach diagnostics");
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "clawdline-workflow-helper-"));
+// Exercise the actual build packaging fragment without compiling or installing an App.
+// A fresh bundle and an upgrade must both work from an arbitrary cwd and a minimal PATH.
+const bundleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clawdline-workflow-bundle-"));
+let bundleChecks = 0;
+try {
+    const build = fs.readFileSync(path.join(projectRoot, "build.sh"), "utf8");
+    const fragment = build.match(/# BEGIN BOARD WORKFLOW BUNDLE\n([\s\S]*?)# END BOARD WORKFLOW BUNDLE/);
+    assert.ok(fragment, "formal build must package the Board workflow executable and guide"); bundleChecks++;
+    const resources = path.join(bundleRoot, "A relocated App.app", "Contents", "Resources");
+    fs.mkdirSync(resources, { recursive: true });
+    for (const upgrade of [false, true]) {
+        const helper = path.join(resources, "clawdline-board-workflow");
+        if (upgrade) fs.writeFileSync(helper, "stale helper bytes\n", { mode: 0o600 });
+        const packaged = spawnSync("/bin/sh", ["-eu", "-c", fragment[1]], {
+            cwd: projectRoot, env: { ...process.env, RES: resources }, encoding: "utf8"
+        });
+        assert.equal(packaged.status, 0, packaged.stderr); bundleChecks++;
+        assert.equal(fs.readFileSync(helper, "utf8"),
+            fs.readFileSync(path.join(projectRoot, "Resources/clawdline-board-workflow.sh"), "utf8")); bundleChecks++;
+        assert.equal(fs.readFileSync(path.join(resources, "board-workflow.md"), "utf8"),
+            fs.readFileSync(path.join(projectRoot, "Resources/board-workflow.md"), "utf8")); bundleChecks++;
+        const invoked = spawnSync(helper, ["--version"], {
+            cwd: bundleRoot, env: { PATH: "/usr/bin:/bin", HOME: bundleRoot }, encoding: "utf8"
+        });
+        assert.equal(invoked.status, 0, invoked.stderr); bundleChecks++;
+        assert.equal(invoked.stdout.trim(), "clawdline-board-workflow 1"); bundleChecks++;
+        assert.equal(fs.existsSync(path.join(bundleRoot, ".claude")) ||
+            fs.existsSync(path.join(bundleRoot, ".codex")), false,
+            "packaging/invocation must not install global provider configuration"); bundleChecks++;
+    }
+} finally { fs.rmSync(bundleRoot, { recursive: true, force: true }); }
 try {
     const token = "a".repeat(64);
     const tokenFile = path.join(root, "token");
@@ -179,4 +210,4 @@ try {
     await new Promise(resolve => server.close(resolve));
     fs.rmSync(authRoot, { recursive: true, force: true });
 }
-console.log("web board workflow: " + (22 + helperChecks) + " checks passed");
+console.log("web board workflow: " + (22 + helperChecks + bundleChecks) + " checks passed");

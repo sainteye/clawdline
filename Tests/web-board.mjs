@@ -1222,6 +1222,17 @@ const workflowWire = "<clawdline-workflow version=\"1\" authority=\"metadata-not
     + JSON.stringify(workflowMetadata) + "\n</clawdline-workflow>";
 const workflowImage = "<clawdline-image id=\"46cb6d40-c13f-4fea-9cf0-936f86b78da4\">";
 {
+    const withPath = value => workflowWire.replace(JSON.stringify(workflowMetadata),
+        JSON.stringify({ ...workflowMetadata, helper_path: value }));
+    check("installed helper absolute path remains folded without PATH lookup",
+        parseBoardWorkflowRecord(withPath("/Applications/A relocated.app/Contents/Resources/clawdline-board-workflow"), "user") !== null);
+    for (const value of ["clawdline-board-workflow", "/tmp/other", "/tmp/../clawdline-board-workflow",
+        "/tmp/\nclawdline-board-workflow", null, "/" + "a".repeat(4096) + "/clawdline-board-workflow"]) {
+        check("invalid helper path fails visible: " + JSON.stringify(value).slice(0, 60),
+            parseBoardWorkflowRecord(withPath(value), "user") === null);
+    }
+}
+{
     const source = "保留 <script>alert(1)</script> 與原句\n\n" + workflowWire + "\n" + workflowImage;
     const parsed = parseBoardWorkflowRecord(source, "user");
     check("exact managed envelope is recognized",

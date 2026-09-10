@@ -954,6 +954,11 @@ cp -R Resources/skill-guides "$RES/"
 # it; this is the file that sentence resolves to on a Mac with no checkout.
 cp Resources/clawdline-progress.sh "$RES/"
 chmod +x "$RES/clawdline-progress.sh"
+# BEGIN BOARD WORKFLOW BUNDLE
+cp Resources/clawdline-board-workflow.sh "$RES/clawdline-board-workflow"
+chmod +x "$RES/clawdline-board-workflow"
+cp Resources/board-workflow.md "$RES/board-workflow.md"
+# END BOARD WORKFLOW BUNDLE
 cp -R Resources/mascots "$RES/"
 # The web interface, served by RemoteServer when it is switched on.
 [ -d Resources/web ] && cp -R Resources/web "$RES/"

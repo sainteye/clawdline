@@ -1678,7 +1678,14 @@ extension Transcript {
             "helper", "input_kind", "mode_gap", "process_generation", "project_id", "provider",
             "required_first_action", "run_id", "terminal_id", "version",
         ]
-        guard Set(value.keys) == keys,
+        if let raw = value["helper_path"] {
+            guard let path = raw as? String, path.hasPrefix("/"),
+                  path.hasSuffix("/clawdline-board-workflow"), path.utf8.count <= 4096,
+                  !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+                  !path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." })
+            else { return false }
+        }
+        guard Set(value.keys).subtracting(["helper_path"]) == keys,
               value["authority"] as? String == "clawdline_metadata_not_user_authorization",
               value["coverage"] as? String == "managed_ingress",
               value["helper"] as? String

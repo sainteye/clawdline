@@ -114,6 +114,7 @@ final class ProjectBoardStore {
         var title: String
         var url: String
         var kind: String
+        var referenceOnly: Bool? = nil
     }
 
     /// A document is narrative context, not an output artifact or acceptance record.  The
@@ -948,6 +949,10 @@ final class ProjectBoardStore {
 
         // This in-process origin is not an HTTP field and does not grant trusted evidence
         // authority. Reject forged display relations even when an old receipt could replay.
+        if operation == "record_output" && !workflowOrigin {
+            return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
+                message: "Delivery references are recorded only by the workflow producer"))
+        }
         if body["supplementRelationId"] != nil {
             guard workflowOrigin else {
                 return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
@@ -993,7 +998,7 @@ final class ProjectBoardStore {
                                     trusted: trusted, timestamp: timestamp, draft: &draft)
             if let itemID = applied.itemId,
                operation != "transition", operation != "create", operation != "record_report",
-               operation != "end_span" {
+               operation != "end_span", operation != "record_output" {
                 reconcileLifecycle(around: itemID, actor: "board", timestamp: timestamp,
                                    draft: &draft)
             }
@@ -1761,7 +1766,7 @@ final class ProjectBoardStore {
                   summary: "Milestone scope or status changed.", at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
-        case "artifact":
+        case "artifact", "record_output":
             let index = try itemIndex(body, draft: draft)
             try requireRecordable(index, draft: draft)
             guard draft.items[index].artifacts.count < Self.maximumChildren else {
@@ -1777,10 +1782,14 @@ final class ProjectBoardStore {
             }
             draft.items[index].artifacts.append(StoredArtifact(
                 id: Self.newID(), title: try requiredText(body, "title", maximum: 300),
-                url: rawURL, kind: try requiredChoice(body, "kind", choices: Self.artifactKinds)))
-            reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
-            touch(&draft.items[index], actor: actor, kind: "artifact_added",
-                  summary: "An artifact reference was added; it is not verification by itself.",
+                url: rawURL, kind: try requiredChoice(body, "kind", choices: Self.artifactKinds),
+                referenceOnly: operation == "record_output" ? true : nil))
+            if operation == "artifact" {
+                reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
+            }
+            touch(&draft.items[index], actor: actor,
+                  kind: operation == "record_output" ? "output_recorded" : "artifact_added",
+                  summary: "An output reference was recorded; it is not verification by itself.",
                   at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
@@ -2003,6 +2012,12 @@ final class ProjectBoardStore {
             guard draft.items[index].artifacts.contains(where: { $0.id == artifactID }) else {
                 throw BoardError(status: 404, code: "artifact_not_found",
                                  message: "artifactId does not name an item artifact")
+            }
+            guard !draft.items[index].artifacts.contains(where: {
+                $0.id == artifactID && $0.referenceOnly == true
+            }) else {
+                throw BoardError(status: 409, code: "output_reference_not_acceptance",
+                                 message: "A workflow output reference is not an acceptance artifact")
             }
             let note = try optionalText(body, "note", maximum: 1_000) ?? "Artifact accepted."
             let scopeRevision = draft.items[index].scopeRevision ?? 0
@@ -2297,8 +2312,9 @@ final class ProjectBoardStore {
     }
 
     private func usesArtifactAcceptance(_ item: StoredItem) -> Bool {
-        item.type == "task" && !item.artifacts.isEmpty
-            && !item.artifacts.contains(where: { $0.kind == "commit" })
+        let acceptanceArtifacts = item.artifacts.filter { $0.referenceOnly != true }
+        return item.type == "task" && !acceptanceArtifacts.isEmpty
+            && !acceptanceArtifacts.contains(where: { $0.kind == "commit" })
     }
 
     private func validateCurrentChecklistEvidence(_ item: StoredItem) throws {
@@ -2475,8 +2491,11 @@ final class ProjectBoardStore {
         }
         // A queued attempt names the phase it will perform, not an observed activity.
         let roundPhases = Set(roundActive.filter { $0.attemptState == "briefed" }.compactMap(\.phase))
+        let unresolvedSpans = item.spans.filter { span in
+            span.endedAt == nil && span.source != "broker" && !Self.identifiableDeclaration(span)
+        }
         let declaredActivity = item.spans.filter { span in
-            span.endedAt == nil && span.source != "broker"
+            span.endedAt == nil && span.source != "broker" && Self.identifiableDeclaration(span)
         }.max { $0.startedAt < $1.startedAt }
         let latestRoundAttempt = roundAttempts.max { eventOrder($0) < eventOrder($1) }
         let roundSucceeded = latestRoundAttempt?.attemptState == "success"
@@ -2504,9 +2523,12 @@ final class ProjectBoardStore {
         let scopeChangedAfterLanding = latestLanding.map {
             ($0.scopeRevision ?? 0) < (item.scopeRevision ?? 0)
         } ?? false
-        let activeSpanCount = item.spans.filter { $0.endedAt == nil }.count
+        let activeSpanCount = item.spans.filter {
+            $0.endedAt == nil && ($0.source == "broker" || Self.identifiableDeclaration($0))
+        }.count
         var isActive = !activeAttempts.isEmpty || activeSpanCount > 0
         var warningCodes: [String] = []
+        if !unresolvedSpans.isEmpty { warningCodes.append("legacy_span_identity_unresolved") }
         if !uncertainAttemptsAfterLanding.isEmpty {
             warningCodes.append("attempt_chronology_unresolved")
         }
@@ -2619,6 +2641,10 @@ final class ProjectBoardStore {
         } else if canceled > 0 && canceled == attempts.count {
             progress = ("canceled", "Canceled", "All retained attempts were canceled.",
                         ["all_attempts_canceled"])
+        } else if !unresolvedSpans.isEmpty {
+            progress = ("unknown", "Activity unconfirmed",
+                        "A retained interval has no verifiable declaration identity; it is not proof of current activity or completion.",
+                        ["legacy_span_identity_unresolved"])
         } else if item.state == "planning" || item.state == "backlog" {
             progress = ("planning", "Planning", "The item has not begun an execution attempt.",
                         [item.state == "backlog" ? "item_backlog" : "item_planning"])
@@ -2674,7 +2700,8 @@ final class ProjectBoardStore {
                 "artifactAcceptances": artifactAcceptances.count,
             ] as [String: Any],
             "coordinationContext": [
-                "activeSpans": activeSpanCount, "totalSpans": item.spans.count,
+                "activeSpans": activeSpanCount, "unresolvedSpans": unresolvedSpans.count,
+                "totalSpans": item.spans.count,
                 "pendingHandoff": item.pendingHandoff != nil,
                 "relatedItems": item.links.filter {
                     Self.itemLinkKinds.contains($0.kind)
@@ -3070,7 +3097,8 @@ final class ProjectBoardStore {
                 ["id": $0.id, "title": $0.title, "status": $0.status]
             },
             "artifacts": retainedArtifacts.map {
-                ["id": $0.id, "title": $0.title, "url": $0.url, "kind": $0.kind]
+                ["id": $0.id, "title": $0.title, "url": $0.url, "kind": $0.kind,
+                 "referenceOnly": $0.referenceOnly ?? false] as [String: Any]
             },
             "links": retainedLinks.map { link in
                 var value: [String: Any] = [
@@ -3606,6 +3634,7 @@ final class ProjectBoardStore {
             "checklist": ["itemId", "title", "required", "checklistId", "status", "supplementRelationId"],
             "milestone": ["itemId", "title", "milestoneId", "status"],
             "artifact": ["itemId", "title", "url", "kind"],
+            "record_output": ["itemId", "title", "url", "kind"],
             "document_reference": ["itemId", "title", "url", "purpose", "documentId",
                                    "version", "supersedesId"],
             "link": ["itemId", "kind", "targetId", "label"],
@@ -4234,6 +4263,11 @@ final class ProjectBoardStore {
             && value.dropFirst(4).allSatisfy { "0123456789abcdef".contains($0) }
     }
 
+    private static func identifiableDeclaration(_ span: StoredSpan) -> Bool {
+        span.id.utf8.count == 69 && span.id.hasPrefix("span-")
+            && span.id.dropFirst(5).allSatisfy { "0123456789abcdef".contains($0) }
+    }
+
     private static func declaredSpanID(actor: String, requestID: String) -> String {
         "span-" + String(SHA256.hash(data: Data((actor + "\u{0}" + requestID).utf8))
             .map { String(format: "%02x", $0) }.joined())
@@ -4245,6 +4279,8 @@ final class ProjectBoardStore {
             for spanIndex in items[itemIndex].spans.indices
             where items[itemIndex].spans[spanIndex].sessionId == sessionID
                 && items[itemIndex].spans[spanIndex].endedAt == nil
+                && items[itemIndex].spans[spanIndex].source != "broker"
+                && Self.identifiableDeclaration(items[itemIndex].spans[spanIndex])
                 && items[itemIndex].spans[spanIndex].startedAt <= at {
                 items[itemIndex].spans[spanIndex].endedAt = at
                 items[itemIndex].updatedAt = at

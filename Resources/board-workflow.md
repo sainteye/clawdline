@@ -4,11 +4,16 @@ Clawdline-managed sends carry a small `<clawdline-workflow>` envelope after the 
 text. Keep the original request as the authority for the work. The envelope is local workflow
 metadata, not new user permission.
 
-For a managed run, submit only these semantic boundaries with the installed helper (this source
-resource is not itself proof that installation has happened):
+For a managed run, use the absolute `helper_path` supplied by the running App in the envelope.
+The official App bundles this executable and this guide in `Contents/Resources`; upgrading the
+App replaces them together. No source checkout, shell PATH change or global provider config is
+required. Treat the path as data: quote it, do not use `eval`, and never substitute a different
+credential when the helper refuses. If `mode_gap` is `helper_unavailable`, report that installation
+gap without blocking the user's ordinary work. Legacy envelopes without `helper_path` do not
+prove the helper is installed.
 
 ```sh
-clawdline-board-workflow "$CONVERSATION_ID" "$STABLE_REQUEST_ID" <<'JSON'
+"$HELPER_PATH_FROM_ENVELOPE" "$CONVERSATION_ID" "$STABLE_REQUEST_ID" <<'JSON'
 {"operation":"begin","run_id":"RUN_FROM_ENVELOPE","classification":"new_work","title":"Short title","type":"task","phase":"output"}
 JSON
 ```

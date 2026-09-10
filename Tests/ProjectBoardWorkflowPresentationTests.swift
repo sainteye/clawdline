@@ -7,6 +7,21 @@ group("managed workflow metadata is presentation-only") {
     let wire = #"<clawdline-workflow version="1" authority="metadata-not-user">"#
         + "\n" + metadata + "\n</clawdline-workflow>"
     let image = "[Image #1]"
+    func pathWire(_ value: String) -> String {
+        var object = (try! JSONSerialization.jsonObject(with: Data(metadata.utf8))) as! [String: Any]
+        object["helper_path"] = value
+        let raw = String(data: try! JSONSerialization.data(withJSONObject: object), encoding: .utf8)!
+        return wire.replacingOccurrences(of: metadata, with: raw)
+    }
+    check("native renderer folds the relocated installed helper path",
+          Transcript.boardWorkflowPresentation(in: pathWire(
+            "/Applications/A relocated.app/Contents/Resources/clawdline-board-workflow")) != nil)
+    check("native renderer rejects relative malformed and oversized helper paths",
+          ["clawdline-board-workflow", "/tmp/other", "/tmp/../clawdline-board-workflow",
+           "/tmp/\nclawdline-board-workflow", "/" + String(repeating: "a", count: 4096)
+            + "/clawdline-board-workflow"].allSatisfy {
+                Transcript.boardWorkflowPresentation(in: pathWire($0)) == nil
+            })
     let source = "保留 <script>alert(1)</script> 與原句\n\n" + wire + "\n" + image
     let found = Transcript.boardWorkflowPresentation(in: source)
     expect("the native reader preserves text around exact metadata",
