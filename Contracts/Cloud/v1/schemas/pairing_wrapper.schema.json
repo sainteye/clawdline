@@ -1,0 +1,57 @@
+{
+  "$id": "urn:clawdline:cloud:contract:1:pairing_wrapper",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Seven-field grant wrapper for pairing_handover only. Other pairing phases are outside this candidate schema.",
+  "properties": {
+    "ct": {
+      "description": "Alphabet and trailing-padding filter only. Supplemental validation MUST decode standard base64, re-encode byte-for-byte to the identical spelling (full quanta, exact padding, zero unused bits), and require 16..25162752 decoded bytes. Do not use a repeated four-character regex for large input.",
+      "maxLength": 33550336,
+      "minLength": 24,
+      "pattern": "^[A-Za-z0-9+/]+={0,2}(?![\\s\\S])",
+      "type": "string"
+    },
+    "ephemeral_key": {
+      "maxLength": 44,
+      "minLength": 44,
+      "pattern": "^[A-Za-z0-9+/]{40}[A-Za-z0-9+/]{2}[AEIMQUYcgkosw048]=(?![\\s\\S])",
+      "type": "string"
+    },
+    "nonce": {
+      "maxLength": 16,
+      "minLength": 16,
+      "pattern": "^[A-Za-z0-9+/]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "pairing_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[\\x20-\\x7e]{1,128}(?![\\s\\S])",
+      "type": "string"
+    },
+    "phase": {
+      "const": "grant"
+    },
+    "sender_device_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[\\x20-\\x7e]{1,128}(?![\\s\\S])",
+      "type": "string"
+    },
+    "v": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "ct",
+    "ephemeral_key",
+    "nonce",
+    "pairing_id",
+    "phase",
+    "sender_device_id",
+    "v"
+  ],
+  "title": "pairing_wrapper",
+  "type": "object"
+}

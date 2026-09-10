@@ -1,0 +1,180 @@
+{
+  "$id": "urn:clawdline:cloud:contract:1:envelope",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Exact ten-field relay wire shape. ct is nonempty opaque bytes; AEAD authentication, tag minimum, caller identity, freshness, replay and entitlement caps are separate runtime gates.",
+  "oneOf": [
+    {
+      "properties": {
+        "ch": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^s/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}(?![\\s\\S])",
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "stream"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "ch": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^t/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}(?![\\s\\S])",
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "stream"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "ch": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^orch/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}(?![\\s\\S])",
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "stream"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "ch": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^ctl/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}(?![\\s\\S])",
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "ctl",
+            "dispatch"
+          ]
+        }
+      }
+    },
+    {
+      "properties": {
+        "ch": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^ctlr/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}(?![\\s\\S])",
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "ctl"
+          ]
+        },
+        "key_id": {
+          "maxLength": 25,
+          "minLength": 25,
+          "pattern": "^rk-[A-Za-z0-9_-]{22}(?![\\s\\S])",
+          "type": "string"
+        }
+      }
+    },
+    {
+      "properties": {
+        "ch": {
+          "maxLength": 300,
+          "minLength": 1,
+          "pattern": "^ho/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}/[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}(?![\\s\\S])",
+          "type": "string"
+        },
+        "class": {
+          "enum": [
+            "ho"
+          ]
+        }
+      }
+    }
+  ],
+  "properties": {
+    "ch": {
+      "maxLength": 300,
+      "minLength": 1,
+      "type": "string"
+    },
+    "class": {
+      "enum": [
+        "stream",
+        "ctl",
+        "dispatch",
+        "ho"
+      ],
+      "type": "string"
+    },
+    "ct": {
+      "description": "Alphabet and trailing-padding filter only. Supplemental validation MUST decode standard base64, re-encode byte-for-byte to the identical spelling (full quanta, exact padding, zero unused bits), and require 1..25162752 decoded bytes. Do not use a repeated four-character regex for large input.",
+      "maxLength": 33550336,
+      "minLength": 4,
+      "pattern": "^[A-Za-z0-9+/]+={0,2}(?![\\s\\S])",
+      "type": "string"
+    },
+    "key_id": {
+      "maxLength": 64,
+      "minLength": 1,
+      "pattern": "^[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}(?![\\s\\S])",
+      "type": "string"
+    },
+    "nonce": {
+      "maxLength": 16,
+      "minLength": 16,
+      "pattern": "^[A-Za-z0-9+/]{16}(?![\\s\\S])",
+      "type": "string"
+    },
+    "sender": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[\\x21-\\x2e\\x30-\\x7b\\x7d-\\x7e]{1,128}(?![\\s\\S])",
+      "type": "string"
+    },
+    "seq": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "sig": {
+      "maxLength": 88,
+      "minLength": 88,
+      "pattern": "^[A-Za-z0-9+/]{84}[A-Za-z0-9+/][AQgw]==(?![\\s\\S])",
+      "type": "string"
+    },
+    "ts": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "v": {
+      "const": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "ch",
+    "class",
+    "ct",
+    "key_id",
+    "nonce",
+    "sender",
+    "seq",
+    "sig",
+    "ts",
+    "v"
+  ],
+  "title": "envelope",
+  "type": "object"
+}
