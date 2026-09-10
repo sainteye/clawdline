@@ -95,8 +95,33 @@ history survive restart. Earlier settlements remain in bounded history. The same
 request replays its receipt; uncertain workflow delivery retains the exact outbox
 body rather than accepting twice. No assignment command promotes execution,
 verification, landing or deployment. Existing v1 workflows without the optional
-decision operation retain their prior behavior. This is the model/helper slice;
-the interactive Session picker and request-delivery UI are separate work.
+decision operation retain their prior behavior.
+
+### Session assignment picker
+
+The item detail's **Assign Session / view proposal** entry opens a separate sheet, not a
+permanent chat banner. It reads the selected Mac and Project before offering uniquely observed
+Claude/Codex conversation identities in that exact Project path. Titles are labels, never keys.
+Missing inventory, ambiguous identity, stale Board model, old runtime without `sessionAssignment`,
+or disabled writes refuses creation. Selection and an explicit note precede **Confirm proposal**.
+
+The sheet records a proposal only: **awaiting acceptance**. This picker does not send notifications;
+it cannot say whether somebody else has notified the receiver. It offers a deliberate
+open-receiver action, copyable takeover context, and exact-proposal withdrawal. Receiver navigation
+requires a currently observed exact provider/conversation/Project/Mac and unique UI address. An
+unavailable receiver is refused; this action never falls back to untyped history or resume. Opening or copying
+does not send, resume or accept on behalf of the receiver. Automatic request delivery is not in this
+slice; the receiver still uses the process-bound helper to accept or decline. The last durable
+settlement is shown independently from the current pending proposal.
+
+Before sending, the browser retains the exact target, request ID, revision and command in a bounded
+local intent journal (32 entries / 64 KiB), with a separate immutable key per request. A settlement
+removes only its own exact record, not a newer same-item intent or any unrelated scope. Concurrent
+intents remain individually retryable; none are silently overwritten by an aggregate journal update.
+Storage failure refuses before sending. Reload never
+resends automatically; explicit retry reuses that exact body and machine. A deterministic refusal
+clears the intent and requires a fresh read/user confirmation; uncertain delivery retains it.
+Neither the journal nor the UI is authority for lifecycle, verification or landing.
 
 There are deliberately no `verify`, `land`, `deploy`, `transition`, or `done` operations. Semantic
 receipts have `assistant_attested` authority; terminal delivery acceptance or rejection has the

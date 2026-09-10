@@ -833,10 +833,12 @@ function renderSessionOwnership(ctx, parent, item) {
         el(ctx, part, "p", words(ctx,
             "No responsible Session is linked yet.", "尚未連結負責 Session。"),
             "board-section-help");
+    if (ctx.env.assignSession) button(ctx, part, words(ctx, "Assign Session / view proposal", "指派 Session／查看提案"),
+        "assign-session", () => ctx.env.assignSession({ projectId: item.projectId,
+            itemId: item.id, machine: ctx.state.machine }), "board-button");
     el(ctx, part, "p", words(ctx,
-        "Direct assignment is not available here. Open the candidate Session and let that Session confirm takeover; this view never sends or starts work by itself.",
-        "此處尚未提供可安全確認的直接指派。請開啟候選 Session，由該 Session 確認接手；本畫面不會自行送訊息或啟動工作。"),
-        "board-section-help board-handoff-gap");
+        "Assignment requires the receiver's explicit acceptance. Opening the picker does not send or start work.",
+        "指派需要接收方明確接受；開啟選擇介面不會送訊息或啟動工作。"), "board-section-help");
 }
 function detail(ctx) {
     const item = ctx.state.item,

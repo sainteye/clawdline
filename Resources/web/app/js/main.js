@@ -45,6 +45,7 @@ import { bindLedgerPage } from "./view/ledger.js";
 import { bindBoardPage, enterProjectBoard } from "./view/board.js";
 import { bindSessionBoard, SessionBoard } from "./input/session-board.js";
 import { bindBoardSession } from "./input/board-session.js";
+import { bindBoardAssignment } from "./input/board-assignment.js";
 import { BoardControls } from "./input/board-settings.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import { bindPlanPage } from "./view/plan.js";
@@ -399,6 +400,16 @@ var boardSession = bindBoardSession(document, {
 bindSessionLocatorRoute(function (locator, error) {
     boardSession.openLocator(locator, error);
 }, function () { boardSession.close(); });
+var boardAssignment = bindBoardAssignment(document, {
+    requireMachine: transportKind === "cloud",
+    sessions: function () { return S.sessions; }, canWrite: function () { return S.write; },
+    inventoryReady: function () { return S.arrived; },
+    read: function (project, item, machine) { return api.board(project, item, null, machine); },
+    command: function (body, machine) { return api.boardCommand(body, machine); },
+    copy: function (text) { return navigator.clipboard.writeText(text); },
+    openLive: openSession,
+    changed: function () { board.refresh(); }
+});
 var board = bindBoardPage(boardElements, {
     read: function (project, item, machine) { return api.board(project, item, null, machine); },
     sessions: function () { return S.sessions; },
@@ -407,6 +418,7 @@ var board = bindBoardPage(boardElements, {
     drawIcon: drawIcon, tint: tint,
     navigate: function (name) { Pages.go(name); },
     openSession: function (id, project, machine) { return boardSession.open(id, project, machine); },
+    assignSession: function (target) { return boardAssignment.open(target); },
     onMode: function (snapshot) { BoardControls.apply(snapshot); }
 });
 BoardControls.escape = function () { return board.escape(); };

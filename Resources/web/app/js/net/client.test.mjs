@@ -1164,6 +1164,20 @@ await answerRead(projectCloud, projectSocket, {
 assert.equal((await startedAnswer).id, "new-session",
     "the sheet receives the new session id instead of merely an outbound envelope receipt");
 
+projectCloud.orchestratorSnapshots.set("mac-02", { tasks: [] });
+const assignmentBody = { operation: "assign_session", requestId: "retained-request", expectedRevision: 12,
+    itemId: "item-1", projectId: "project-1", provider: "codex", sessionId: "conversation-1", note: "intent" };
+const assignmentAnswer = projectCloud.boardCommand(assignmentBody, "mac-01");
+await until(() => publishedReads(projectSocket).length === 4, "explicit Board command to leave");
+const assignmentWire = JSON.parse(new TextDecoder().decode(await openEnvelope(
+    publishedReads(projectSocket)[3].envelope, masterKey, senderKey)));
+assert.deepEqual(assignmentWire.command, assignmentBody, "encrypted command preserves Board idempotency body");
+assert.equal(assignmentWire.type, "board-command");
+await answerRead(projectCloud, projectSocket, { read: "action:" + assignmentWire.request,
+    status: 409, error: { code: "item_closed", message: "closed" } }, "__clawdline_machine__");
+await assert.rejects(assignmentAnswer, error => error.code === "item_closed" && error.status === 409,
+    "typed deterministic command refusal keeps HTTP status for retry classification");
+
 // And a socket that goes on its own, which is the ordinary case rather than the deliberate one.
 // `stop()` and `onclose` are two paths and each has to sweep: with the sweep left only in
 // `stop()`, every check above still passed while a dropped connection stranded its reads.
@@ -1743,5 +1757,18 @@ assert.equal(typeof LocalClient.revalidate, "function",
         "an accepted reading is timestamped, so a quiet feed can be told from a dead one");
 }
 
+{
+    const c=makeReadingCloud();let routed;
+    c.orchestratorSnapshots.set('mac-a',{tasks:[]});c.orchestratorSnapshots.set('mac-b',{tasks:[]});
+    c._machineRequest=(...args)=>{routed=args;return Promise.resolve({ok:true});};
+    const proposal={operation:'assign_session',itemId:'item',requestId:'stable'};
+    await c.boardCommand(proposal,'mac-b');
+    assert.deepEqual(routed,['mac-b','board-command',{command:proposal},'action'],
+        'Board assignment uses selected Mac, not arbitrary inventory order');
+    for(const machine of [null,'','missing',{},['mac-b']]) {
+        assert.throws(()=>c.boardCommand(proposal,machine),e=>e.code==='cloud_machine_unavailable');
+    }
+    assert.throws(()=>c.boardCommand(proposal),e=>e.code==='cloud_machine_ambiguous');
+}
 console.log("web cloud client tests passed: golden vectors, mutations, identity, heartbeat, challenge, local seam, cloud reads, transcript images");
 process.exit(0);

@@ -179,3 +179,13 @@ details.board-section[open] > summary { margin-bottom: 14px; color: var(--ink); 
 .board-lane-project { font-size: 12px; color: var(--dim); }
 .board-state-settled { color: #81bfa1; }
 details.board-completion-report:not([open]) { padding: 12px 16px; border-color: var(--line); background: transparent; }
+/* A deliberate assignment sheet, separate from the chat surface. */
+.board-assignment-dialog { box-sizing: border-box; width: min(32rem, calc(100vw - 24px)); max-height: 85dvh; overflow: auto; border: 1px solid #77889955; border-radius: 16px; padding: 20px; color: inherit; background: var(--bg, #fff); }
+.board-assignment-dialog::backdrop { background: #0007; }
+.board-assignment-dialog h2 { margin-top: 0; }
+.board-assignment-dialog p { line-height: 1.5; overflow-wrap: anywhere; }
+.board-assignment-dialog label { display: block; margin: 16px 0; }
+.board-assignment-dialog select, .board-assignment-dialog textarea { display: block; box-sizing: border-box; width: 100%; min-width: 0; margin-top: 6px; padding: 10px; font: inherit; color: inherit; background: transparent; border: 1px solid #77889988; border-radius: 8px; }
+.board-assignment-dialog button { min-height: 44px; margin: 6px 8px 0 0; padding: 8px 12px; font: inherit; cursor: pointer; }
+.board-assignment-dialog button:disabled { opacity: .5; cursor: default; }
+.board-assignment-dialog code { overflow-wrap: anywhere; }

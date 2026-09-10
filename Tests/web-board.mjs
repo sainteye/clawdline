@@ -1290,4 +1290,15 @@ check("multiple envelope candidates fail visible instead of partly hiding prose"
         &&!title.href.includes('%258'));
     p.view.leave();
 }
+{
+    const selected={...item('assignable','execution','a'),sessionAssignment:null};let requested;
+    const p=page({read:async()=>envelope({items:[selected],item:selected}),
+        assignSession:target=>{requested=target;}});
+    await p.view.open('a',selected.id,{id:'a',machine:'mac-b'});
+    const action=p.elements['board-detail'].all(n=>n.dataset.boardAction==='assign-session')[0];
+    check('detail exposes a deliberate Session assignment entry',!!action);
+    action.click();check('assignment entry pins exact item Project and Mac',
+        requested?.itemId===selected.id&&requested.projectId==='a'&&requested.machine==='mac-b');
+    p.view.leave();
+}
 console.log(`${checks} web board behavioral checks passed`);

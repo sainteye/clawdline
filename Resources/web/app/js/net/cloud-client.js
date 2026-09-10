@@ -158,9 +158,13 @@ function readAnswer(payload) {
     if (typeof payload.read !== "string" || !payload.read) return null;
     var error = payload.error;
     if (error && typeof error === "object" && !Array.isArray(error)) {
-        return { read: payload.read, body: null,
-            error: cloudError(typeof error.code === "string" && error.code
-                ? error.code : "read_failed", error.message) };
+        const refusal = cloudError(typeof error.code === "string" && error.code
+            ? error.code : "read_failed", error.message);
+        // Preserve the authenticated Mac's typed refusal. A caller must distinguish a
+        // deterministic 4xx from an unknown delivery before releasing its retry intent.
+        if (Number.isInteger(payload.status) && payload.status >= 400 && payload.status <= 599)
+            refusal.status = payload.status;
+        return { read: payload.read, body: null, error: refusal };
     }
     return { read: payload.read, body: payload.body === undefined ? null : payload.body,
         error: null };
@@ -732,8 +736,12 @@ export class CloudClient {
             { project: project || "", item: item || "" }, "read");
     }
 
-    boardCommand(body) {
-        return this._machineRequest(this._onlyMachine("Project Board"), "board-command",
+    boardCommand(body, machine) {
+        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+            throw cloudError("cloud_machine_unavailable",
+                "this Mac has not published a current Cloud inventory");
+        }
+        return this._machineRequest(machine || this._onlyMachine("Project Board"), "board-command",
             { command: body }, "action");
     }
 
