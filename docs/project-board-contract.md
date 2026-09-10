@@ -243,6 +243,14 @@ Common fields: `operation`, `requestId`, `expectedRevision`; item operations use
 
 `accept_artifact` uses administrative user authority (Cloud's existing write authority). `record_evidence` with kind `verification` or `finding` and `record_report` are available only to the local machine credential. Evidence is labeled `root_attestation`, not broker-executed proof; report sources are narrative-only. Public landing evidence is always refused; only broker ingestion supplies it. All operations still require closed schemas, revision and request identity. Version/capability checks must not pretend unavailable backend features exist.
 
+Root Session landing is a separate broker-only producer, not a fabricated Task. The managed
+workflow journal binds the broker-verified receipt to an exact current run/item and canonical
+repository. Its internal `record_root_landing` command requires an in-process root-landing origin;
+public and ordinary workflow callers cannot replay that authority. The durable outbox and Store
+request receipts handle uncertain responses. Historical scope and unrelated verification subjects
+cannot receive a current landing pointer; no deployment or whole-project completion is inferred.
+See [workflow root landing](board-workflow.md#root-session-landing-projection) for gaps and recovery.
+
 ## HTTP / Cloud (root)
 
 `GET /v1/board?project=<id>&item=<id>`; add `report=<report-id>` only with the selected item to fetch

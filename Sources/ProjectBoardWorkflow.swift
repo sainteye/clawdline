@@ -51,6 +51,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         let runID: String?
         let itemID: String?
         let outboxPending: Int
+        var projectID: String? = nil
 
         var object: [String: Any] {
             [
@@ -60,6 +61,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 "run_id": runID ?? NSNull(),
                 "item_id": itemID ?? NSNull(),
                 "outbox_pending": outboxPending,
+                "project_id": projectID ?? NSNull(),
             ]
         }
     }
@@ -90,6 +92,14 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var supplement: Supplement?
         var handoffOwner: String?
         var handoffNote: String?
+        var rootLanding: RootLanding? = nil
+    }
+
+    private struct RootLanding: Codable {
+        let commit: String
+        let targetCommit: String
+        let target: String
+        let at: Double
     }
 
     private struct Output: Codable {
@@ -217,6 +227,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     private let boardHeader: () -> (enabled: Bool, revision: Int, available: Bool)
     private let ensureProject: (String, String) -> (persisted: Bool, reason: String?)
     private let boardCommand: ([String: Any], String) -> ProjectBoardStore.Reply
+    private let rootLandingCommand: ([String: Any], String) -> ProjectBoardStore.Reply
     private let journalSynchronize: (URL) throws -> Void
     private let limits: Limits
     private let autoStart: Bool
@@ -241,6 +252,11 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
          boardCommand: @escaping ([String: Any], String) -> ProjectBoardStore.Reply = {
              ProjectBoardStore.shared.command($0, actor: $1, workflowOrigin: true)
          },
+         rootLandingCommand: @escaping ([String: Any], String) -> ProjectBoardStore.Reply = {
+             let reply = ProjectBoardStore.shared.command($0, actor: $1, rootLandingOrigin: true)
+             if reply.status == 200 { ProjectBoardIntegration.didMutate() }
+             return reply
+         },
          journalSynchronize: @escaping (URL) throws -> Void = ProjectBoardWorkflow.syncJournal,
          limits: Limits = Limits(), autoStart: Bool = true,
          bundleResources: URL? = Bundle.main.resourceURL) {
@@ -249,6 +265,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         self.boardHeader = boardHeader
         self.ensureProject = ensureProject
         self.boardCommand = boardCommand
+        self.rootLandingCommand = rootLandingCommand
         self.journalSynchronize = journalSynchronize
         self.limits = limits
         self.autoStart = autoStart
@@ -449,9 +466,17 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
 
         var draft = state
         apply(parsed, to: &draft.runs[runIndex])
-        if draft.runs[runIndex].events.count >= limits.eventsPerRun {
-            draft.runs[runIndex].events.removeFirst(
-                draft.runs[runIndex].events.count - limits.eventsPerRun + 1)
+        let protectedEvents = Set(draft.outbox.filter {
+            $0.runID == runID && $0.status != "complete"
+        }.map(\.eventID))
+        while draft.runs[runIndex].events.count >= limits.eventsPerRun {
+            guard let evictable = draft.runs[runIndex].events.firstIndex(where: {
+                !protectedEvents.contains($0.id)
+            }) else {
+                let answer = outcome(429, "workflow_event_capacity", runID: runID)
+                lock.unlock(); return answer
+            }
+            draft.runs[runIndex].events.remove(at: evictable)
         }
         draft.runs[runIndex].events.append(parsed)
         materializeIntents(runIndex: runIndex, draft: &draft)
@@ -481,6 +506,95 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         lock.unlock()
         if autoStart { kick() }
         return answer
+    }
+
+    /// Called only with the broker's immutable Git-verified delivery, never from semantic POST.
+    /// Select the exact last managed ingress before that receipt, not the last *bound* item: a
+    /// newer question/unbound run must not borrow yesterday's binding. The persisted event freezes
+    /// that choice; replay never retargets it after another ingress or a restart.
+    func recordRootLanding(_ delivery: Orchestrator.SessionDelivery) -> Outcome {
+        guard let landing = delivery.landing,
+              Orchestrator.isBrokerVerifiedSessionLanding(landing),
+              landing.landedAt.timeIntervalSince1970.isFinite,
+              let provider = delivery.identity.assistant?.rawValue,
+              let conversation = delivery.identity.conversationID,
+              let pid = delivery.identity.pid, let start = delivery.identity.processStart else {
+            return Outcome(status: 409, code: "root_landing_unverified", authority: "broker_observed",
+                           runID: nil, itemID: nil, outboxPending: 0)
+        }
+        let generation = "\(pid):\(start.timeIntervalSince1970)"
+        let at = landing.landedAt.timeIntervalSince1970
+        let source = [delivery.identity.terminalID, provider, conversation, generation,
+                      landing.repositoryCommonDir, landing.target, landing.verifiedCommit,
+                      String(at)].joined(separator: "\u{0}")
+        let eventID = "root-landing-" + Self.digest(source)
+        lock.lock()
+        defer { lock.unlock() }
+        if storageFailure != nil { return outcome(503, "workflow_persistence_failed") }
+        let header = boardHeader()
+        guard header.available, header.enabled, state.observedEnabled == true else {
+            return outcome(409, "board_disabled")
+        }
+        if let prior = state.runs.first(where: { $0.events.contains { $0.id == eventID } }) {
+            return outcome(200, "root_landing_already_recorded", runID: prior.id,
+                           authority: "broker_observed")
+        }
+        let candidates = state.runs.indices.filter {
+            let run = state.runs[$0]
+            return run.identity.terminalID == delivery.identity.terminalID
+                && run.identity.provider == provider && run.identity.conversationID == conversation
+                && run.identity.processGeneration == generation && run.createdAt <= at
+        }
+        if candidates.isEmpty && !state.runs.contains(where: {
+            $0.identity.conversationID == conversation && $0.identity.provider == provider
+        }) {
+            return outcome(200, "root_landing_unmanaged", authority: "broker_observed")
+        }
+        guard let latestTime = candidates.map({ state.runs[$0].createdAt }).max(),
+              candidates.filter({ state.runs[$0].createdAt == latestTime }).count == 1,
+              let index = candidates.first(where: { state.runs[$0].createdAt == latestTime }) else {
+            return outcome(409, "root_landing_binding_unresolved")
+        }
+        let run = state.runs[index]
+        guard run.epoch == state.enabledEpoch, run.delivery == "delivered",
+              run.completion == "delivered", run.itemID != nil,
+              ["new_work", "existing_item"].contains(run.classification ?? ""),
+              run.events.contains(where: { $0.operation == "deliver" && $0.at <= at }) else {
+            return outcome(409, "root_landing_binding_unresolved", runID: run.id)
+        }
+        // Git identity lookup can wait on a filesystem; never hold the ingress journal lock.
+        lock.unlock()
+        let commonDirectory = OrchestratorDraft.gitCommonDirectory(at: run.identity.projectPath)
+        lock.lock()
+        let currentHeader = boardHeader()
+        guard currentHeader.available, currentHeader.enabled,
+              commonDirectory == landing.repositoryCommonDir,
+              let currentIndex = state.runs.firstIndex(where: { $0.id == run.id }),
+              state.runs[currentIndex].identity == run.identity,
+              state.runs[currentIndex].itemID == run.itemID,
+              state.runs[currentIndex].epoch == state.enabledEpoch,
+              state.runs[currentIndex].completion == "delivered", state.observedEnabled == true else {
+            return outcome(409, "root_landing_binding_unresolved", runID: run.id)
+        }
+        if state.runs[currentIndex].events.contains(where: { $0.id == eventID }) {
+            return outcome(200, "root_landing_already_recorded", runID: run.id, authority: "broker_observed")
+        }
+        guard state.runs[currentIndex].events.count < limits.eventsPerRun,
+              state.outbox.count < limits.outbox else {
+            return outcome(429, "workflow_outbox_full", runID: run.id)
+        }
+        var draft = state
+        let event = Event(id: eventID, operation: "broker_root_landing", at: at,
+            outputs: [], remaining: [], rootLanding: RootLanding(commit: landing.verifiedCommit,
+                targetCommit: landing.verifiedTargetCommit, target: landing.target, at: at))
+        draft.runs[currentIndex].events.append(event)
+        appendIntent(id: eventID, run: run, event: event, kind: "record_root_landing", index: 0,
+                     draft: &draft)
+        guard persist(draft) else { return outcome(503, "workflow_persistence_failed", runID: run.id) }
+        state = draft
+        // Schedule without executing a Board command under this journal lock.
+        if autoStart { workerQueue.async { [weak self] in self?.kick() } }
+        return outcome(202, "root_landing_recorded", runID: run.id, authority: "broker_observed")
     }
 
     func snapshot(runID: String) -> [String: Any]? {
@@ -890,7 +1004,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             }
             var command = prepared.body
             command.removeValue(forKey: "projectName")
-            let reply = boardCommand(command, prepared.actor)
+            let reply = prepared.kind == "record_root_landing"
+                ? rootLandingCommand(command, prepared.actor) : boardCommand(command, prepared.actor)
             let code = Self.errorCode(reply.body)
             if reply.status == 200 {
                 finishOutbox(prepared, status: "complete", code: nil,
@@ -975,6 +1090,13 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
 
     private func boardBody(outbox: Outbox, run: Run, event: Event) -> [String: Any]? {
         switch outbox.kind {
+        case "record_root_landing":
+            guard let item = run.itemID, let landing = event.rootLanding else { return nil }
+            return ["operation": "record_root_landing", "itemId": item,
+                    "projectId": run.identity.projectID, "runId": run.id,
+                    "sessionId": run.identity.conversationID, "commit": landing.commit,
+                    "targetCommit": landing.targetCommit, "target": landing.target,
+                    "landedAt": landing.at]
         case "create":
             guard let title = event.title, let type = event.itemType else { return nil }
             return [
@@ -1225,7 +1347,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                          authority: String = "assistant_attested") -> Outcome {
         let item = runID.flatMap { id in state.runs.first(where: { $0.id == id })?.itemID }
         return Outcome(status: status, code: code, authority: authority,
-                       runID: runID, itemID: item, outboxPending: pendingCount(state))
+                       runID: runID, itemID: item, outboxPending: pendingCount(state),
+                       projectID: runID.flatMap { id in state.runs.first { $0.id == id }?.identity.projectID })
     }
 
     private func pendingCount(_ value: State) -> Int {

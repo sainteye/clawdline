@@ -2643,6 +2643,16 @@ window is refused as `409 session_changed`, `session_repository_changed`,
 `root_assignment_changed`, `receipt_changed`, or `child_session`, naming which authorizing fact
 failed its second observation or CAS.
 
+The response also carries `boardProjection`, separate from `disposition`. The broker journals an
+exact managed-run binding after releasing its registry lock, before replying, then the durable
+workflow outbox materializes Board landing evidence asynchronously. `status:202` with
+`code:root_landing_recorded` means journaled, not already displayed or deployed; an identical
+projection is `root_landing_already_recorded`. An unavailable/disabled Board, exhausted outbox,
+failed persistence or unresolved exact binding returns its typed projection status/code without
+revoking the Git proof. Public Board and semantic workflow endpoints cannot mint this internal
+authority. Only a current exact verification SHA/scope may acquire the landing pointer; old
+receipts remain historical. See [the workflow contract](board-workflow.md#root-session-landing-projection).
+
 ### `POST /v1/orchestrator/sessions/:id/state`
 
 The `self` half of the work-state provenance boundary ([docs/session-states.md](session-states.md)):

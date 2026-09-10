@@ -930,7 +930,7 @@ final class ProjectBoardStore {
     }
 
     func command(_ body: [String: Any], actor: String, trusted: Bool = false,
-                 workflowOrigin: Bool = false) -> Reply {
+                 workflowOrigin: Bool = false, rootLandingOrigin: Bool = false) -> Reply {
         lock.lock(); defer { lock.unlock() }
         if let unavailable { return Self.errorReply(unavailable) }
         guard let actor = Self.boundedText(actor, maximum: 300) else {
@@ -949,6 +949,10 @@ final class ProjectBoardStore {
 
         // This in-process origin is not an HTTP field and does not grant trusted evidence
         // authority. Reject forged display relations even when an old receipt could replay.
+        if operation == "record_root_landing" && !rootLandingOrigin {
+            return Self.errorReply(BoardError(status: 403, code: "broker_root_origin_required",
+                message: "Root landing evidence requires the in-process verified broker producer"))
+        }
         if operation == "record_output" && !workflowOrigin {
             return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
                 message: "Delivery references are recorded only by the workflow producer"))
@@ -1764,6 +1768,56 @@ final class ProjectBoardStore {
             reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
             touch(&draft.items[index], actor: actor, kind: "milestone_updated",
                   summary: "Milestone scope or status changed.", at: timestamp)
+            return Applied(itemId: draft.items[index].id)
+
+        case "record_root_landing":
+            let index = try itemIndex(body, draft: draft)
+            let project = try requiredText(body, "projectId", maximum: 200)
+            let run = try requiredText(body, "runId", maximum: 200)
+            let session = try requiredText(body, "sessionId", maximum: 200)
+            let commit = try requiredText(body, "commit", maximum: 64)
+            let targetCommit = try requiredText(body, "targetCommit", maximum: 64)
+            let target = try requiredText(body, "target", maximum: 200)
+            guard draft.items[index].projectId == project,
+                  UUID(uuidString: session) != nil, run.hasPrefix("run-"),
+                  [commit, targetCommit].allSatisfy({ value in
+                      [40, 64].contains(value.count)
+                          && value.allSatisfy { ("a"..."f").contains($0) || ("0"..."9").contains($0) }
+                  }), let at = Self.exactDouble(body["landedAt"]), at >= 0 else {
+                throw BoardError(status: 409, code: "root_landing_binding_invalid",
+                                 message: "Root landing must retain exact project, run and Git identities")
+            }
+            let source = "root:\(session):\(run):landing:\(commit):\(target)"
+            if let existing = draft.items[index].evidence.first(where: {
+                $0.kind == "landing" && $0.sourceId == source
+            }) {
+                guard existing.subject == commit, existing.at == at else {
+                    throw BoardError(status: 409, code: "root_landing_conflict",
+                                     message: "This root run already carries different landing evidence")
+                }
+                return Applied(itemId: draft.items[index].id)
+            }
+            try requireEvidenceCapacity(draft.items[index])
+            let ordinal = nextEventOrdinal(&draft)
+            let order = StoredEventOrder(at: at, ordinal: ordinal, stableID: "evidence:\(source)")
+            let currentScope = draft.items[index].scopeRevision ?? 0
+            // A delayed receipt is history, not proof for a scope changed after it was verified.
+            let scope = scopeEventOrder(draft.items[index]).map { order < $0 } == true
+                ? max(0, currentScope - 1) : currentScope
+            let evidence = StoredEvidence(id: Self.newID(), kind: "landing",
+                summary: "Broker verified root Session landing on \(target) at \(commit).",
+                subject: commit, status: "passed", sourceId: source, checklistId: nil,
+                artifactId: nil, blocking: false, resolved: true, at: at,
+                actor: "broker", source: "broker_root", scopeRevision: scope,
+                eventAt: at, eventOrdinal: ordinal)
+            draft.items[index].evidence.append(evidence)
+            if scope == currentScope, draft.items[index].currentVerificationSubject == commit,
+               draft.items[index].currentVerificationEvidenceId != nil {
+                draft.items[index].currentLandingEvidenceId = evidence.id
+            }
+            touch(&draft.items[index], actor: "broker", kind: "root_landing_recorded",
+                  summary: "An exact root Session landing was recorded; deployment is not implied.",
+                  at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
         case "artifact", "record_output":
@@ -3635,6 +3689,8 @@ final class ProjectBoardStore {
             "milestone": ["itemId", "title", "milestoneId", "status"],
             "artifact": ["itemId", "title", "url", "kind"],
             "record_output": ["itemId", "title", "url", "kind"],
+            "record_root_landing": ["itemId", "projectId", "runId", "sessionId", "commit",
+                                    "targetCommit", "target", "landedAt"],
             "document_reference": ["itemId", "title", "url", "purpose", "documentId",
                                    "version", "supersedesId"],
             "link": ["itemId", "kind", "targetId", "label"],

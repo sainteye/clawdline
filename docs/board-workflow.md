@@ -98,8 +98,36 @@ request into a different operation. Previously invalidated proof is not automati
 Legacy unended declarations without the actor/request-derived span identity stay open in history,
 with `legacy_span_identity_unresolved` and an unresolved-span count. They do not establish current
 activity or inflate Project active counts. Identifiable declarations and broker activity retain
-their existing semantics; neither elapsed time nor a missing Session closes an interval. Root
-Session landing projection and source-specific historical proof repair remain separate work.
+their existing semantics; neither elapsed time nor a missing Session closes an interval.
+Source-specific historical proof repair remains separate work.
+
+## Root Session landing projection
+
+The broker's Git-verified Session landing has a separate, in-process producer. It is not a new
+helper operation and cannot be minted through public Board commands, even with machine authority.
+After releasing its registry lock, the broker journals the projection before replying; the reply's
+`boardProjection` gives the exact status, code, run/item identity and outbox count. The Board command
+itself runs later on the bounded workflow worker. A projection refusal does not undo a proved Git
+landing and must not be reported as successful Board reconciliation.
+
+Binding requires the same terminal, provider, conversation, process generation and canonical Git
+common directory as the latest managed ingress at the landing time. That ingress must have a
+delivered, item-bound work receipt in the current enabled epoch. A newer question or unbound run
+never falls back to an older item. Missing bindings produce `root_landing_binding_unresolved`;
+disabled mode, capacity and persistence failures keep their typed refusals. Retained broker receipts
+are retried at startup and on the bounded catalog timer. Once journaled, the exact outbox survives
+broker receipt consumption and retries with the same prepared request after uncertain replies.
+Unfinished outbox rows pin their source events; semantic recording returns
+`workflow_event_capacity` rather than evicting a still-needed event. Unmanaged roots are reported
+as `root_landing_unmanaged` and do not mark unrelated Projects incomplete. Managed failures have
+Project-scoped current coverage, bounded to 128 retained root sources. Consumed or capacity-evicted
+source gaps are counted separately as unproved history, not reported as repaired; this coverage
+is process-local, while an admitted root event and its outbox are durable.
+
+The Store records broker evidence without fabricating a Task. Only an exact canonical commit SHA
+matching the current verification subject and scope can supply its current landing pointer.
+Delayed evidence remains history; landing never implies deployment or resolves unrelated obligations.
+Old consumed broker receipts and missing historical workflow identities are not reconstructed.
 
 ## Durability, queueing, and gaps
 
@@ -140,10 +168,8 @@ retry a refused or uncertain request and never resends the person's terminal inp
 A successful terminal response whose workflow status is `unrecorded` produces a non-retrying UI
 warning and diagnostic; it does not pretend the terminal send failed.
 
-This change intentionally does not copy either resource into the app bundle or a global managed
-directory: `build.sh`, Settings, existing Claude hooks, and global AGENTS/CLAUDE files are outside
-this task's write scope. Until a later, consented installer owns that deployment, truthful coverage
-is:
+The official build packages the helper and guide in the App bundle. It does not install global
+hooks or edit user/provider configuration. Truthful coverage is:
 
 - `managed_ingress` for input sent through Clawdline's `/send` path;
 - `adapter_handshake` only for a future native adapter that actually reports a handshake;

@@ -2,6 +2,194 @@ import Foundation
 
 private enum WorkflowSyncFixtureError: Error { case refused }
 
+private func workflowRootLandingProof() {
+    let repository = makeLandingRepository()
+    defer { try? FileManager.default.removeItem(at: repository.url) }
+    let root = workflowTestDirectory("root-landing")
+    defer { try? FileManager.default.removeItem(at: root) }
+    var clock = 1000.0
+    let store = ProjectBoardStore(url: root.appendingPathComponent("board.json"),
+                                 now: { Date(timeIntervalSince1970: clock) })
+    let path = repository.url.resolvingSymlinksInPath().path
+    let identity = ProjectBoardWorkflow.Identity(terminalID: "%root-proof", provider: "codex",
+        conversationID: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        projectID: ProjectBoardIntegration.projectID(path), projectPath: path,
+        processGeneration: "100:200.0")
+    _ = store.ensureProject(id: identity.projectID, name: "Root projection")
+    let made = store.command(["operation": "create", "requestId": "root-item",
+        "expectedRevision": store.readHeader().revision, "projectId": identity.projectID,
+        "title": "Root work", "type": "feature", "owner": identity.conversationID], actor: "root")
+    let item = made.body["itemId"] as! String
+    let journal = root.appendingPathComponent("workflow.json")
+    var commands: [[String: Any]] = []
+    var loseFirstReply = true
+    func makeWorkflow(_ journalURL: URL? = nil, eventLimit: Int = 64,
+                      targetStore: ProjectBoardStore? = nil) -> ProjectBoardWorkflow {
+        var limits = ProjectBoardWorkflow.Limits(); limits.eventsPerRun = eventLimit
+        let subject = targetStore ?? store
+        return ProjectBoardWorkflow(url: journalURL ?? journal, now: { Date(timeIntervalSince1970: clock) },
+            boardHeader: { let h = subject.readHeader(); return (h.enabled, h.revision, h.available) },
+            boardCommand: { subject.command($0, actor: $1, workflowOrigin: true) },
+            rootLandingCommand: { body, actor in
+                commands.append(body)
+                let reply = subject.command(body, actor: actor, rootLandingOrigin: true)
+                if loseFirstReply { loseFirstReply = false
+                    return .init(status: 503, body: ["error": ["code": "lost_after_commit"]]) }
+                return reply
+            }, limits: limits, autoStart: false)
+    }
+    var workflow = makeWorkflow()
+    guard case .managed(let run) = workflow.prepareIngress(requestID: "root-send", fingerprint: "send",
+        text: "implement", imageCount: 0, identity: identity) else {
+        check("root projection fixture records ingress", false); return
+    }
+    _ = workflow.markDelivery(runID: run.runID, identity: identity, delivered: true)
+    expect("root fixture begin is admitted", workflow.record(["operation": "begin", "run_id": run.runID,
+        "classification": "existing_item", "item_id": item, "phase": "output"],
+        requestID: "root-begin", fingerprint: "begin", identity: identity).status, 202)
+    workflow.drainForTesting()
+    clock += 1
+    expect("root fixture delivery is admitted", workflow.record(["operation": "deliver", "run_id": run.runID,
+        "disposition": "delivered", "summary": "code ready", "next_action": "record Git landing"],
+        requestID: "root-deliver", fingerprint: "deliver", identity: identity).status, 202)
+    workflow.drainForTesting()
+    _ = store.command(["operation": "record_evidence", "requestId": "root-verification",
+        "expectedRevision": store.readHeader().revision, "itemId": item,
+        "kind": "verification", "status": "passed", "sourceId": "exact-proof",
+        "subject": repository.commit, "summary": "exact tree checked"], actor: "root", trusted: true)
+    clock += 1
+    let landing = Orchestrator.SessionLanding(repositoryCommonDir:
+        OrchestratorDraft.gitCommonDirectory(at: path)!, verificationOrigin: "local_target_branch",
+        target: "main", verifiedCommit: repository.commit, verifiedTargetCommit: repository.commit,
+        landedAt: Date(timeIntervalSince1970: clock))
+    let session = Orchestrator.SessionWorkIdentity(terminalID: identity.terminalID, assistant: .codex,
+        tty: "ttys-proof", pid: 100, processStart: Date(timeIntervalSince1970: 200),
+        conversationID: identity.conversationID)
+    let delivery = Orchestrator.SessionDelivery(identity: session, summary: "landed",
+        reportedAt: landing.landedAt, settled: false, landing: landing)
+    let brokerURL = Orchestrator.storeURL
+    let oldBroker = try? Data(contentsOf: brokerURL)
+    try? FileManager.default.removeItem(at: brokerURL)
+    Orchestrator.forget()
+    ProjectBoardWorkflow.configureSharedForTesting(workflow)
+    defer {
+        ProjectBoardIntegration.drainObservationsForTesting()
+        ProjectBoardWorkflow.configureSharedForTesting(nil)
+        if let oldBroker { try? oldBroker.write(to: brokerURL) }
+        else { try? FileManager.default.removeItem(at: brokerURL) }
+        Orchestrator.forget()
+    }
+    let observation = Orchestrator.SessionLandingObservation(identity: session,
+        terminalState: .working("root proof"), repositoryDirectory: path,
+        publicationGeneration: 1, publicationEpoch: "root-proof")
+    let brokerReply = Orchestrator.reportSessionLanding(
+        observation: observation, summary: "landed", target: "main", commit: repository.commit,
+        reobserve: { observation }, now: landing.landedAt)
+    if case .ok(let response) = brokerReply {
+        check("actual broker root landing is accepted", true)
+        expect("landing response names durable Board projection before acknowledgment",
+               (response["boardProjection"] as? [String: Any])?["code"] as? String,
+               "root_landing_recorded")
+    }
+    else { check("actual broker root landing is accepted", false) }
+    ProjectBoardIntegration.drainObservationsForTesting()
+    expect("actual broker callback enters a durable workflow outbox",
+        (workflow.snapshot(runID: run.runID)?["outbox"] as? [String: Any])?["pending"] as? Int, 1)
+    expect("root landing does not synchronously call the Board", commands.count, 0)
+    let pendingJournal = try! Data(contentsOf: journal)
+    let pendingBoard = try! Data(contentsOf: root.appendingPathComponent("board.json"))
+    workflow = makeWorkflow() // pending survives restart before it reaches the Board
+    workflow.drainForTesting()
+    let board = store.readSeed(rebuild: true).seed.envelope(item: item)["board"] as! [String: Any]
+    let row = board["item"] as! [String: Any]
+    let evidence = row["landings"] as? [[String: Any]] ?? []
+    expect("one root landing survives a committed-write lost reply", evidence.count, 1)
+    check("root landing is not a fabricated Task", (row["links"] as? [[String: Any]] ?? []).allSatisfy { $0["kind"] as? String != "task" })
+    check("root landing retains exact verification subject", (row["currentEvidence"] as? [String: Any])?["landingId"] is String)
+    check("lost reply reuses the same prepared root request", commands.count >= 2 && commands[0]["requestId"] as? String == commands[1]["requestId"] as? String)
+    let revision = store.readHeader().revision
+    expect("replayed root receipt is a no-op", workflow.recordRootLanding(delivery).code, "root_landing_already_recorded")
+    workflow.drainForTesting()
+    expect("replayed root does not change Board revision", store.readHeader().revision, revision)
+    if let body = commands.first {
+        expect("public trusted callers cannot replay broker root authority", store.command(body, actor: identity.actor, trusted: true).status, 403)
+        expect("ordinary workflow origin cannot forge root authority", store.command(body, actor: identity.actor, workflowOrigin: true).status, 403)
+    }
+    var wrong = session; wrong.pid = 101
+    let wrongDelivery = Orchestrator.SessionDelivery(identity: wrong, summary: "wrong process",
+        reportedAt: landing.landedAt, settled: false, landing: landing)
+    expect("same conversation on another process cannot bind", workflow.recordRootLanding(wrongDelivery).code, "root_landing_binding_unresolved")
+    var unmanagedSession = session
+    unmanagedSession.conversationID = "bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    let unmanagedDelivery = Orchestrator.SessionDelivery(identity: unmanagedSession, summary: "native root",
+        reportedAt: landing.landedAt, settled: false, landing: landing)
+    expect("unmanaged native root is not a failed Board write", workflow.recordRootLanding(unmanagedDelivery).code, "root_landing_unmanaged")
+    let unproved = Orchestrator.SessionDelivery(identity: session, summary: "merely delivered",
+        reportedAt: landing.landedAt, settled: false)
+    expect("plain delivery never becomes Git landing", workflow.recordRootLanding(unproved).code, "root_landing_unverified")
+    let secondLanding = Orchestrator.SessionLanding(repositoryCommonDir: landing.repositoryCommonDir,
+        verificationOrigin: landing.verificationOrigin, target: "main", verifiedCommit: repository.commit,
+        verifiedTargetCommit: repository.commit, landedAt: Date(timeIntervalSince1970: clock + 1))
+    let secondDelivery = Orchestrator.SessionDelivery(identity: session, summary: "retry boundary",
+        reportedAt: secondLanding.landedAt, settled: false, landing: secondLanding)
+    let failingJournal = root.appendingPathComponent("failed-workflow.json")
+    try! FileManager.default.copyItem(at: journal, to: failingJournal)
+    let failing = ProjectBoardWorkflow(url: failingJournal,
+        boardHeader: { let h = store.readHeader(); return (h.enabled, h.revision, h.available) },
+        journalSynchronize: { _ in throw WorkflowSyncFixtureError.refused }, autoStart: false)
+    expect("root projection cannot acknowledge failed journal synchronization",
+           failing.recordRootLanding(secondDelivery).code, "workflow_persistence_failed")
+    // The failed fsync may have atomically replaced bytes, so it uses a separate journal.
+    let persisted = try! JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as! [String: Any]
+    let persistedRun = (persisted["runs"] as! [[String: Any]]).first { $0["id"] as? String == run.runID }!
+    var small = ProjectBoardWorkflow.Limits()
+    small.eventsPerRun = (persistedRun["events"] as! [[String: Any]]).count
+    let bounded = ProjectBoardWorkflow(url: journal,
+        boardHeader: { let h = store.readHeader(); return (h.enabled, h.revision, h.available) },
+        limits: small, autoStart: false)
+    let thirdLanding = Orchestrator.SessionLanding(repositoryCommonDir: landing.repositoryCommonDir,
+        verificationOrigin: landing.verificationOrigin, target: "main", verifiedCommit: repository.commit,
+        verifiedTargetCommit: repository.commit, landedAt: Date(timeIntervalSince1970: clock + 2))
+    let thirdDelivery = Orchestrator.SessionDelivery(identity: session, summary: "capacity",
+        reportedAt: thirdLanding.landedAt, settled: false, landing: thirdLanding)
+    expect("root projection capacity is a typed refusal", bounded.recordRootLanding(thirdDelivery).status, 429)
+    _ = store.command(["operation": "set_enabled", "enabled": false,
+        "requestId": "root-disable", "expectedRevision": store.readHeader().revision], actor: "root")
+    expect("Board OFF does not record root evidence", workflow.recordRootLanding(thirdDelivery).code, "board_disabled")
+    _ = store.command(["operation": "set_enabled", "enabled": true,
+        "requestId": "root-enable", "expectedRevision": store.readHeader().revision], actor: "root")
+    let retainedURL = root.appendingPathComponent("retained-workflow.json")
+    let retainedBoardURL = root.appendingPathComponent("retained-board.json")
+    try! pendingJournal.write(to: retainedURL)
+    try! pendingBoard.write(to: retainedBoardURL)
+    let retainedStore = ProjectBoardStore(url: retainedBoardURL,
+        now: { Date(timeIntervalSince1970: clock) })
+    var retaining = makeWorkflow(retainedURL, eventLimit: 3, targetStore: retainedStore)
+    for index in 0..<8 {
+        expect("bounded progress keeps pending landing event \(index)", retaining.record([
+            "operation": "progress", "run_id": run.runID, "summary": "progress \(index)"],
+            requestID: "retained-\(index)", fingerprint: "retained-\(index)", identity: identity).status, 202)
+    }
+    retaining = makeWorkflow(retainedURL, eventLimit: 3, targetStore: retainedStore)
+    retaining.drainForTesting()
+    let retainedOutbox = retaining.snapshot(runID: run.runID)?["outbox"] as? [String: Any]
+    expect("pending root event survives retention and reload", retainedOutbox?["pending"] as? Int, 0)
+    expect("retention never loses an acknowledged landing subject", retainedOutbox?["failed"] as? Int, 0)
+    expect("retention has no hidden failure code", retainedOutbox?["failures"] as? [String], [])
+    let retainedRow = (retainedStore.readSeed(rebuild: true).seed.envelope(item: item)["board"] as? [String: Any])?["item"] as? [String: Any]
+    expect("retention retries keep exactly one root landing", (retainedRow?["landings"] as? [[String: Any]])?.count, 1)
+    clock += 10
+    guard case .managed(let newer) = workflow.prepareIngress(requestID: "question", fingerprint: "question",
+        text: "a question", imageCount: 0, identity: identity) else { return }
+    _ = workflow.markDelivery(runID: newer.runID, identity: identity, delivered: true)
+    let later = Orchestrator.SessionLanding(repositoryCommonDir: landing.repositoryCommonDir,
+        verificationOrigin: landing.verificationOrigin, target: "main", verifiedCommit: repository.commit,
+        verifiedTargetCommit: repository.commit, landedAt: Date(timeIntervalSince1970: clock + 1))
+    let latest = Orchestrator.SessionDelivery(identity: session, summary: "new turn",
+        reportedAt: later.landedAt, settled: false, landing: later)
+    expect("unbound latest ingress never falls back to an older item", workflow.recordRootLanding(latest).code, "root_landing_binding_unresolved")
+}
+
 private func workflowTestDirectory(_ name: String) -> URL {
     let url = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         .appendingPathComponent("clawdline-workflow-\(name)-\(UUID().uuidString)",
@@ -675,6 +863,7 @@ group("managed Board ingress is durable, bounded and identity-bound") {
 }
 
 group("workflow receipts stay attested and reconcile through a bounded durable outbox") {
+    workflowRootLandingProof()
     workflowOutputScopeProof()
     workflowEndSpanAuthorityProof()
     workflowActivityBoundaryProof()

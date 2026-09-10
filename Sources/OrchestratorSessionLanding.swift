@@ -1,6 +1,15 @@
 import Foundation
 
 extension Orchestrator {
+    /// A bounded immutable source snapshot for the utility-lane Board reconciler. It neither
+    /// re-verifies Git nor calls the Board while the broker lock is held.
+    static func boardRootLandingSnapshot() -> [SessionDelivery] {
+        load()
+        lock.lock(); defer { lock.unlock() }
+        return sessionDeliveries.values.filter {
+            $0.landing.map(isBrokerVerifiedSessionLanding) == true
+        }.sorted { $0.reportedAt < $1.reportedAt }
+    }
     /// Git evidence the broker proved for one root Session's current delivered turn. The
     /// repository path is the canonical common Git directory derived from the watched process's
     /// cwd, never a request field; keeping it in the durable receipt makes repository identity a
@@ -274,8 +283,9 @@ extension Orchestrator {
                 if same {
                     let disposition = sessionDeliveryDisposition(existing)
                     lock.unlock()
+                    let projection = ProjectBoardIntegration.observeRootLanding(existing)
                     return .ok(["ok": true, "created": false,
-                                "disposition": disposition])
+                                "disposition": disposition, "boardProjection": projection])
                 }
                 lock.unlock()
                 return .refused(status: 409, code: "landing_conflict",
@@ -288,12 +298,14 @@ extension Orchestrator {
             let disposition = sessionDeliveryDisposition(upgraded)
             lock.unlock()
             save()
+            let projection = ProjectBoardIntegration.observeRootLanding(upgraded)
             RemoteAuth.audit("orchestrator.session.landing", [
                 "session": identity.terminalID, "ok": "1", "target": target,
                 "verified_commit": verification.commit,
                 "verified_target_commit": verification.targetCommit,
             ])
-            return .ok(["ok": true, "created": true, "disposition": disposition])
+            return .ok(["ok": true, "created": true, "disposition": disposition,
+                        "boardProjection": projection])
         }
         let made = SessionDelivery(identity: identity, summary: summary,
                                    reportedAt: now, settled: false, landing: landing)
@@ -301,12 +313,14 @@ extension Orchestrator {
         let disposition = sessionDeliveryDisposition(made)
         lock.unlock()
         save()
+        let projection = ProjectBoardIntegration.observeRootLanding(made)
         RemoteAuth.audit("orchestrator.session.landing", [
             "session": identity.terminalID, "ok": "1", "target": target,
             "verified_commit": verification.commit,
             "verified_target_commit": verification.targetCommit,
         ])
         announceDelivery(made)
-        return .ok(["ok": true, "created": true, "disposition": disposition])
+        return .ok(["ok": true, "created": true, "disposition": disposition,
+                    "boardProjection": projection])
     }
 }

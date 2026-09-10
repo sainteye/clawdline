@@ -14,8 +14,76 @@ private final class BoardCloudStatusBox: @unchecked Sendable {
     }
 }
 
+private func boardRootLandingStoreProof() {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent("root-landing-store-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    var clock = 10.0
+    let store = ProjectBoardStore(url: file, now: { Date(timeIntervalSince1970: clock) })
+    _ = store.ensureProject(id: "root-project", name: "Root")
+    func command(_ op: String, _ fields: [String: Any], root: Bool = false) -> ProjectBoardStore.Reply {
+        var body = fields
+        body["operation"] = op; body["requestId"] = UUID().uuidString
+        body["expectedRevision"] = store.readHeader().revision
+        return store.command(body, actor: "test-root", trusted: true, rootLandingOrigin: root)
+    }
+    let item = command("create", ["projectId": "root-project", "type": "feature", "title": "Root scope"]).body["itemId"] as! String
+    let sha = String(repeating: "a", count: 40)
+    let fields: [String: Any] = ["itemId": item, "projectId": "root-project", "runId": "run-root",
+        "sessionId": "11111111-1111-4111-8111-111111111111", "commit": sha,
+        "targetCommit": sha, "target": "main", "landedAt": 20.0]
+    let forgedItem = command("create", ["projectId": "root-project", "type": "feature", "title": "Forgery target"]).body["itemId"] as! String
+    var forged = fields; forged["itemId"] = forgedItem
+    expect("root landing cannot be minted by trusted public command", command("record_root_landing", forged).status, 403)
+    var foreign = fields; foreign["projectId"] = "foreign-project"
+    expect("root landing exact project binding refuses foreign project", command("record_root_landing", foreign, root: true).status, 409)
+    clock = 30
+    _ = command("update", ["itemId": item, "summary": "scope changed after historical landing"])
+    clock = 31
+    expect("root Store fixture verification is admitted", command("record_evidence", ["itemId": item, "kind": "verification", "status": "passed",
+        "sourceId": "root-exact", "subject": sha, "summary": "verified current scope"]).status, 200)
+    func row(_ source: ProjectBoardStore) -> [String: Any] {
+        (source.readSeed(rebuild: true).seed.envelope(item: item)["board"] as! [String: Any])["item"] as! [String: Any]
+    }
+    let before = row(store)
+    expect("delayed root proof is retained as history", command("record_root_landing", fields, root: true).status, 200)
+    let historical = row(store)
+    check("old root landing cannot promote the newer same-SHA scope", (historical["currentEvidence"] as? [String: Any])?["landingId"] is NSNull)
+    expect("root history does not change accepted scope", historical["scopeRevision"] as? Int, before["scopeRevision"] as? Int)
+    expect("delayed root history does not change lifecycle", historical["state"] as? String, before["state"] as? String)
+    clock = 40
+    var current = fields; current["landedAt"] = clock; current["runId"] = "run-current"
+    expect("current exact root landing can satisfy delivery evidence", command("record_root_landing", current, root: true).status, 200)
+    let fresh = row(store)
+    check("current root proof has a current landing pointer", (fresh["currentEvidence"] as? [String: Any])?["landingId"] is String)
+    let reloaded = row(ProjectBoardStore(url: file))
+    expect("root evidence survives Store reload", (reloaded["landings"] as? [[String: Any]])?.count, 2)
+    expect("root evidence reload retains current pointer", (reloaded["currentEvidence"] as? [String: Any])?["landingId"] as? String, (fresh["currentEvidence"] as? [String: Any])?["landingId"] as? String)
+
+    var coverage = ProjectBoardIntegration.IngestionCoverage()
+    let unmanaged = ProjectBoardWorkflow.Outcome(status: 200, code: "root_landing_unmanaged",
+        authority: "broker_observed", runID: nil, itemID: nil, outboxPending: 0)
+    coverage.recordRootLanding(unmanaged, sourceID: "unmanaged")
+    expect("unmanaged root cannot poison Project A", coverage.reasons(projectID: "project-a"), [])
+    expect("unmanaged root cannot poison Project B", coverage.reasons(projectID: "project-b"), [])
+    let failed = ProjectBoardWorkflow.Outcome(status: 503, code: "workflow_persistence_failed",
+        authority: "broker_observed", runID: "run-managed", itemID: item, outboxPending: 0,
+        projectID: "project-a")
+    coverage.recordRootLanding(failed, sourceID: "managed")
+    expect("managed root failure is scoped to its own Project", coverage.reasons(projectID: "project-a"), ["workflow_persistence_failed"])
+    expect("another Project remains unaffected by managed root failure", coverage.reasons(projectID: "project-b"), [])
+    coverage.retainRootLandings([])
+    expect("consumed receipt leaves no stale current projection issue", coverage.issueCount, 0)
+    expect("retired gap is counted as unproved not repaired", coverage.retiredRootGapCount, 1)
+    for index in 0...ProjectBoardIntegration.IngestionCoverage.rootIssueLimit {
+        coverage.recordRootLanding(failed, sourceID: "bounded-\(index)")
+    }
+    expect("root projection coverage remains bounded", coverage.issueCount, ProjectBoardIntegration.IngestionCoverage.rootIssueLimit)
+    expect("coverage eviction remains an explicit unproved gap", coverage.evictedRootGapCount, 1)
+}
+
 func runProjectBoardIntegrationTests() {
 group("broker live transitions reach the Board before task completion") {
+    boardRootLandingStoreProof()
     do {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("board-session-index-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: file) }

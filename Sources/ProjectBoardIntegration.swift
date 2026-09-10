@@ -62,9 +62,37 @@ enum ProjectBoardIntegration {
 
         private var issuesBySource: [String: Issue] = [:]
         private var unscopedReasonsByProject: [String: Set<String>] = [:]
+        private var rootIssues: [String: Issue] = [:]
+        private(set) var retiredRootGapCount = 0
+        private(set) var evictedRootGapCount = 0
+        static let rootIssueLimit = 128
+
+        /// Current projection coverage, not an eternal failure ledger. Missing managed identity
+        /// is not evidence that any Project lost a write. Retired/evicted gaps remain explicitly
+        /// counted as unproved history; consuming a broker receipt is not a successful repair.
+        mutating func recordRootLanding(_ outcome: ProjectBoardWorkflow.Outcome, sourceID: String) {
+            guard let project = outcome.projectID else { return }
+            if outcome.status < 300 || outcome.code == "board_disabled" {
+                rootIssues.removeValue(forKey: sourceID)
+            } else {
+                if rootIssues[sourceID] == nil, rootIssues.count >= Self.rootIssueLimit,
+                   let oldest = rootIssues.keys.sorted().first {
+                    rootIssues.removeValue(forKey: oldest)
+                    evictedRootGapCount += 1
+                }
+                rootIssues[sourceID] = Issue(projectID: project, reason: outcome.code)
+            }
+        }
+
+        mutating func retainRootLandings(_ current: Set<String>) {
+            let retired = rootIssues.keys.filter { !current.contains($0) }
+            for key in retired { rootIssues.removeValue(forKey: key) }
+            retiredRootGapCount += retired.count
+        }
 
         var issueCount: Int {
-            issuesBySource.count + unscopedReasonsByProject.values.reduce(0) { $0 + $1.count }
+            issuesBySource.count + rootIssues.count
+                + unscopedReasonsByProject.values.reduce(0) { $0 + $1.count }
         }
 
         mutating func record(_ outcome: ProjectBoardStore.AutomaticMutationOutcome,
@@ -96,7 +124,7 @@ enum ProjectBoardIntegration {
 
         func reasons(projectID: String?) -> [String] {
             let project = projectID ?? "*"
-            let scoped = issuesBySource.values.filter {
+            let scoped = (Array(issuesBySource.values) + Array(rootIssues.values)).filter {
                 $0.projectID == project || $0.projectID == "*"
             }.map(\.reason)
             return Array(Set(scoped)
@@ -105,10 +133,14 @@ enum ProjectBoardIntegration {
         }
 
         var jsonObject: [String: Any] {
-            let reasons = Set(issuesBySource.values.map(\.reason)
+            let reasons = Set((Array(issuesBySource.values) + Array(rootIssues.values)).map(\.reason)
                 + unscopedReasonsByProject.values.flatMap { $0 })
             return ["status": issueCount == 0 ? "complete" : "partial",
-                    "issueCount": issueCount, "reasons": reasons.sorted()]
+                    "issueCount": issueCount, "reasons": reasons.sorted(),
+                    "rootProjection": ["retainedGapCount": rootIssues.count,
+                        "retiredUnprovenGapCount": retiredRootGapCount,
+                        "evictedUnprovenGapCount": evictedRootGapCount,
+                        "limit": Self.rootIssueLimit]]
         }
     }
 
@@ -210,6 +242,50 @@ enum ProjectBoardIntegration {
 
     static func drainObservationsForTesting() { queue.sync {} }
 
+    /// Root receipts are not Tasks. Journal the binding before returning the landing response,
+    /// after releasing the broker lock. Board writes still run only on the workflow worker.
+    /// A next turn can consume the broker receipt, so an unjournaled async callback is not durable.
+    @discardableResult
+    static func observeRootLanding(_ delivery: Orchestrator.SessionDelivery) -> [String: Any] {
+        let outcome = ProjectBoardWorkflow.shared.recordRootLanding(delivery)
+        queue.async { recordRootLandingCoverage(delivery, outcome: outcome) }
+        return outcome.object
+    }
+
+    private static func ingestRootLanding(_ delivery: Orchestrator.SessionDelivery) {
+        recordRootLandingCoverage(delivery,
+            outcome: ProjectBoardWorkflow.shared.recordRootLanding(delivery))
+    }
+
+    private static func recordRootLandingCoverage(_ delivery: Orchestrator.SessionDelivery,
+                                                  outcome: ProjectBoardWorkflow.Outcome) {
+        guard let landing = delivery.landing,
+              Orchestrator.isBrokerVerifiedSessionLanding(landing) else { return }
+        let source = rootLandingSourceID(delivery)
+        coverageLock.lock()
+        let previousCount = ingestionCoverage.issueCount
+        ingestionCoverage.recordRootLanding(outcome, sourceID: source)
+        let changed = previousCount != ingestionCoverage.issueCount
+        coverageLock.unlock()
+        if changed { didMutate() }
+    }
+
+    private static func rootLandingSourceID(_ delivery: Orchestrator.SessionDelivery) -> String {
+        "root:" + delivery.identity.terminalID + ":"
+            + String(delivery.landing?.landedAt.timeIntervalSince1970 ?? 0)
+    }
+
+    private static func reconcileRootLandings() {
+        let deliveries = Orchestrator.boardRootLandingSnapshot()
+        coverageLock.lock()
+        let before = ingestionCoverage.issueCount
+        ingestionCoverage.retainRootLandings(Set(deliveries.map(rootLandingSourceID)))
+        let changed = before != ingestionCoverage.issueCount
+        coverageLock.unlock()
+        for delivery in deliveries { ingestRootLanding(delivery) }
+        if changed { didMutate() }
+    }
+
     private static func sourceID(_ record: [String: Any]) -> String? {
         record["id"] as? String ?? record["task_id"] as? String
             ?? record["taskId"] as? String
@@ -267,6 +343,7 @@ enum ProjectBoardIntegration {
             timer.setEventHandler {
                 let header = ProjectBoardStore.shared.readHeader()
                 guard header.enabled else { return }
+                reconcileRootLandings()
                 let inventory = SessionWatch.shared.publishedInventory()
                 let paths = Set(inventory.identities.values.compactMap(\.workingDirectory))
                 guard catalogSignal.observe(enabled: header.enabled,
@@ -289,6 +366,7 @@ enum ProjectBoardIntegration {
                 reads.seed(retained)
             }
             guard current.enabled else { return }
+            reconcileRootLandings()
             reads.refresh(header: current,
                           reasons: [.modeCatchUp, .catalog, .durableModel, .usage],
                           work: { reconcile(store: store, reasons: $0) })
