@@ -101,6 +101,45 @@ activity or inflate Project active counts. Identifiable declarations and broker 
 their existing semantics; neither elapsed time nor a missing Session closes an interval.
 Source-specific historical proof repair remains separate work.
 
+## Historical criterion applicability repair
+
+`node tools/repair-board-criterion-proof.mjs manifest.json` previews an operator-authored repair.
+The version-1 manifest has exactly `version`, `itemId`, `projectId`, `scopeRevision`, `evidenceId`,
+`subject`, and `criteria:[{checklistId,reason}]` (1–32 unique rows). The operator must first inspect
+the retained test/review receipt and explicitly justify why its existing verification applies to
+each named criterion. The tool does not infer applicability from a title or a generic summary.
+Reason boundary whitespace is normalized before hashing and sending, so Store trimming cannot
+make a committed attestation unrecognizable on resume.
+It requires a complete ready snapshot, the exact same item/Project/current scope and subject,
+one retained passed verification, and already-passed criteria without other attached proof.
+
+After reading the preview, apply it with the returned digest and a private retry-state path:
+
+```sh
+node tools/repair-board-criterion-proof.mjs manifest.json --apply <digest> --state /private/tmp/criterion-repair-state.json
+```
+
+The existing machine-only `record_evidence` operation records an explicit **root applicability
+attestation**, citing the retained proof; this is not another test execution or broker proof.
+Each criterion has a deterministic source identity. It never sends a transition, landing, review
+resolution or span command. Ordinary Store reconciliation still applies to the newly linked
+criterion evidence; no new lifecycle or verification authority is introduced.
+
+Every write rechecks identity/scope and uses revision CAS. The exact request is fsynced to the
+private state before sending, and an uncertain response retains it for an identical retry.
+Only an observed matching proof is reported complete. A definite refusal stops the batch; changed
+scope, missing/truncated proof, an already-different link or a tampered retry file fails closed.
+This is a resumable sequence, not an atomic batch: earlier confirmed rows can remain applied.
+Keep the same manifest and state path when resuming; a busy/orphaned lock requires an operator
+to establish that no repair process remains before removing that lock. Do not run concurrent
+repairs of the same item. Neither elapsed time nor this tool repairs unidentified legacy spans,
+revives stale verification scope, or converts a review into a landing.
+
+Networking is limited to the local machine's loopback Board API (default port 7717,
+`CLAWDLINE_PORT` override); redirects are refused. The machine credential is read inside the
+process from the existing private token file, never from argv, manifest, checkpoint or output.
+Preview requires the same read credential but performs no command or checkpoint write.
+
 ## Root Session landing projection
 
 The broker's Git-verified Session landing has a separate, in-process producer. It is not a new

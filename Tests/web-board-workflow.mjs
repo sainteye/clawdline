@@ -210,4 +210,200 @@ try {
     await new Promise(resolve => server.close(resolve));
     fs.rmSync(authRoot, { recursive: true, force: true });
 }
-console.log("web board workflow: " + (22 + helperChecks + bundleChecks) + " checks passed");
+// Historical proof repair is an operator action, not an automatic promotion by title.
+const { planCriterionRepair, repairCriteria } = await import(pathToFileURL(path.join(
+    projectRoot, "tools/repair-board-criterion-proof.mjs")));
+let repairChecks = 0;
+const repairCheck = (actual, expected, label) => {
+    assert.deepEqual(actual, expected, label); repairChecks++;
+};
+const manifest = { version: 1, itemId: "item-a", projectId: "project-a", scopeRevision: 7,
+    evidenceId: "proof-a", subject: "a".repeat(40),
+    criteria: [{ checklistId: "criterion-a", reason: "Retained exact test case covers this criterion." },
+        { checklistId: "criterion-b", reason: "Retained review and exact suite cover this criterion." }] };
+const originalBoard = { enabled: true, available: true, revision: 10,
+    readState: { status: "ready", revision: 10 }, item: {
+        id: "item-a", projectId: "project-a", scopeRevision: 7,
+        currentEvidence: { subject: manifest.subject, scopeRevision: 7 },
+        projection: { checklist: { omittedCount: 0 }, evidence: { omittedCount: 0 } },
+        checklist: [{ id: "criterion-a", status: "passed" }, { id: "criterion-b", status: "passed" }],
+        verifications: [{ id: "proof-a", kind: "verification", status: "passed",
+            subject: manifest.subject, scopeRevision: 7, sourceId: "retained-proof" }] } };
+const copy = value => structuredClone(value);
+function repairHarness() {
+    let board = copy(originalBoard), state = null;
+    const writes = [];
+    return { writes, board: () => board, state: () => state,
+        deps: { read: async () => copy(board), loadState: async () => copy(state),
+            saveState: async value => { state = copy(value); },
+            write: async body => {
+                writes.push(copy(body));
+                assert.equal(body.expectedRevision, board.revision);
+                const proof = { id: "new-" + body.checklistId, kind: "verification", status: "passed",
+                    subject: body.subject, scopeRevision: 7, sourceId: body.sourceId,
+                    checklistId: body.checklistId, summary: body.summary };
+                board.item.verifications.push(proof);
+                board.item.checklist.find(c => c.id === body.checklistId).evidenceId = proof.id;
+                board.revision++; board.readState.revision++;
+                return { status: 200, body: {} };
+            } } };
+}
+const firstPlan = planCriterionRepair(manifest, originalBoard);
+repairCheck(firstPlan.rows.map(r => r.state), ["pending", "pending"], "preview shows only explicit criteria");
+{
+    const h = repairHarness();
+    await repairCriteria(manifest, h.deps);
+    repairCheck(h.writes.length, 0, "preview never writes or advances lifecycle");
+    repairCheck(h.state(), null, "preview never creates retry state");
+    await repairCriteria(manifest, h.deps, firstPlan.digest);
+    repairCheck(h.writes.length, 2, "apply records exactly one proof per explicit criterion");
+    repairCheck(h.writes.map(x => x.operation), ["record_evidence", "record_evidence"], "no transition or landing authority");
+    await repairCriteria(manifest, h.deps, firstPlan.digest);
+    repairCheck(h.writes.length, 2, "repeating an observed repair makes no duplicate proof");
+}
+for (const [name, mutate] of [
+    ["foreign item", b => b.item.id = "foreign"],
+    ["foreign project", b => b.item.projectId = "foreign"],
+    ["changed scope", b => b.item.scopeRevision++],
+    ["changed current subject", b => b.item.currentEvidence.subject = "b".repeat(40)],
+    ["old proof scope", b => b.item.verifications[0].scopeRevision--],
+    ["failed proof", b => b.item.verifications[0].status = "failed"],
+    ["missing criterion", b => b.item.checklist.pop()],
+    ["criterion not passed", b => b.item.checklist[0].status = "doing"],
+    ["other attached evidence", b => b.item.checklist[0].evidenceId = "foreign-proof"],
+    ["truncated evidence", b => b.item.projection.evidence.omittedCount = 1],
+    ["stale read", b => b.readState.status = "stale"],
+    ["mode off", b => b.enabled = false]
+]) {
+    const h = repairHarness(); mutate(h.board());
+    await assert.rejects(repairCriteria(manifest, h.deps, firstPlan.digest), /repair_/); repairChecks++;
+    repairCheck(h.writes.length, 0, name + " fails closed before mutation");
+}
+{
+    const h = repairHarness();
+    await assert.rejects(repairCriteria(manifest, h.deps, "bad-digest"), /repair_preview_mismatch/); repairChecks++;
+    repairCheck(h.writes.length, 0, "a different preview cannot authorize apply");
+    const bad = copy(manifest); bad.criteria.push(copy(bad.criteria[0]));
+    assert.throws(() => planCriterionRepair(bad, h.board()), /repair_manifest/); repairChecks++;
+}
+{
+    const h = repairHarness(); const write = h.deps.write;
+    h.deps.write = async body => { await write(body); throw new Error("transport lost after commit"); };
+    await assert.rejects(repairCriteria(manifest, h.deps, firstPlan.digest), /repair_transport_unknown/); repairChecks++;
+    repairCheck(!!h.state().pending, true, "ambiguous committed reply retains exact request");
+    h.deps.write = write;
+    await repairCriteria(manifest, h.deps, firstPlan.digest);
+    repairCheck(h.writes.length, 2, "restart observes the committed proof instead of resubmitting it");
+}
+{
+    const h = repairHarness(); const write = h.deps.write;
+    h.deps.write = async body => { h.writes.push(copy(body)); throw new Error("offline"); };
+    await assert.rejects(repairCriteria(manifest, h.deps, firstPlan.digest), /repair_transport_unknown/); repairChecks++;
+    const pending = copy(h.state().pending);
+    h.deps.write = write;
+    await repairCriteria(manifest, h.deps, firstPlan.digest);
+    repairCheck(h.writes[1], pending, "uncertain request replays identical body including revision and request ID");
+}
+{
+    const h = repairHarness();
+    h.deps.saveState = async () => { throw new Error("disk full"); };
+    await assert.rejects(repairCriteria(manifest, h.deps, firstPlan.digest), /repair_checkpoint/); repairChecks++;
+    repairCheck(h.writes.length, 0, "cannot send without durable retry identity");
+}
+{
+    const h = repairHarness(); h.deps.write = async () => ({ status: 409, body: { error: { code: "revision_conflict" } } });
+    await assert.rejects(repairCriteria(manifest, h.deps, firstPlan.digest), /repair_refused_revision_conflict/); repairChecks++;
+    repairCheck(h.state().pending, null, "deterministic revision refusal clears only this failed attempt");
+}
+{
+    const h = repairHarness(); const write = h.deps.write;
+    h.deps.write = async body => { const reply = await write(body); h.board().item.scopeRevision++; return reply; };
+    await assert.rejects(repairCriteria(manifest, h.deps, firstPlan.digest), /repair_identity_changed/); repairChecks++;
+    repairCheck(h.writes.length, 1, "concurrent scope change stops a partially applied batch");
+}
+{
+    const h = repairHarness();
+    h.deps.loadState = async () => ({ version: 1, digest: firstPlan.digest,
+        pending: { operation: "transition", checklistId: "criterion-a", requestId: "a".repeat(36), expectedRevision: 10 } });
+    await assert.rejects(repairCriteria(manifest, h.deps, firstPlan.digest), /repair_checkpoint_mismatch/); repairChecks++;
+    repairCheck(h.writes.length, 0, "tampered retry file cannot add a command authority");
+}
+const repairRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clawdline-criterion-repair-"));
+const repairHTTP = repairHarness();
+const repairToken = "b".repeat(64);
+let repairHTTPRequests = 0;
+const correctionFailures = [];
+const repairServer = http.createServer(async (req, res) => {
+    repairHTTPRequests++;
+    if (req.headers["x-clawdline-orchestrator"] !== repairToken) { res.writeHead(401); res.end("{}"); return; }
+    let answer;
+    if (req.method === "GET") answer = { status: 200, body: { board: repairHTTP.board() } };
+    else {
+        let body = ""; for await (const chunk of req) body += chunk;
+        answer = await repairHTTP.deps.write(JSON.parse(body));
+    }
+    res.writeHead(answer.status, { "Content-Type": "application/json" }); res.end(JSON.stringify(answer.body));
+});
+await new Promise(resolve => repairServer.listen(0, "127.0.0.1", resolve));
+try {
+    const file = path.join(repairRoot, "manifest.json"), state = path.join(repairRoot, "state.json");
+    const token = path.join(repairRoot, "token");
+    fs.writeFileSync(file, JSON.stringify(manifest)); fs.writeFileSync(token, repairToken);
+    const invoke = args => new Promise(resolve => {
+        const child = spawn(process.execPath, [path.join(projectRoot, "tools/repair-board-criterion-proof.mjs"), file, ...args], {
+            env: { ...process.env, CLAWDLINE_PORT: String(repairServer.address().port), CLAWDLINE_ORCHESTRATOR_TOKEN_FILE: token }
+        });
+        let stdout = "", stderr = "";
+        child.stdout.on("data", x => stdout += x); child.stderr.on("data", x => stderr += x);
+        child.on("exit", status => resolve({ status, stdout, stderr }));
+    });
+    const preview = await invoke([]);
+    repairCheck(preview.status, 0, "real CLI preview can read local authorized Board");
+    repairCheck(JSON.parse(preview.stdout).digest, firstPlan.digest, "CLI preview pins the same exact plan");
+    repairCheck(repairHTTP.writes.length, 0, "CLI preview makes no command");
+    const args = ["--apply", firstPlan.digest, "--state", state];
+    const applied = await invoke(args);
+    repairCheck(applied.status, 0, applied.stderr);
+    repairCheck(JSON.parse(applied.stdout).rows.every(r => r.state === "observed"), true, "CLI reports only observed repair");
+    repairCheck(fs.statSync(state).mode & 0o777, 0o600, "retry state is private");
+    repairCheck((await invoke(args)).status, 0, "CLI restart reads completed proof safely");
+    repairCheck(repairHTTP.writes.length, 2, "CLI restart has no duplicate writes");
+    fs.writeFileSync(state + ".lock", "");
+    repairCheck((await invoke(args)).stderr.trim(), "repair_checkpoint_busy", "concurrent or orphaned state lock refuses");
+    fs.unlinkSync(state + ".lock");
+    fs.writeFileSync(token, repairToken + "\n");
+    const refused = await invoke([]);
+    repairCheck(refused.stderr.trim(), "repair_credential_unavailable", "newline credential fails closed");
+    repairCheck([preview.stdout, applied.stdout, refused.stdout, refused.stderr].some(x => x.includes(repairToken)), false,
+        "credentials never enter CLI output");
+    for (const suffix of ["\n", "\r\n"]) {
+        fs.writeFileSync(token, "A".repeat(43) + suffix);
+        const before = repairHTTPRequests, result = await invoke([]);
+        if (result.stderr.trim() !== "repair_credential_unavailable" || repairHTTPRequests !== before)
+            correctionFailures.push("F1 minted token suffix " + JSON.stringify(suffix) + " code=" + result.stderr.trim()
+                + " HTTP=" + (repairHTTPRequests - before));
+        repairChecks++;
+    }
+} finally {
+    await new Promise(resolve => repairServer.close(resolve));
+    fs.rmSync(repairRoot, { recursive: true, force: true });
+}
+{
+    const h = repairHarness(), padded = copy(manifest);
+    padded.criteria[0].reason = "  " + padded.criteria[0].reason + "  ";
+    const write = h.deps.write;
+    h.deps.write = async body => {
+        const result = await write(body);
+        for (const proof of h.board().item.verifications) if (proof.summary) proof.summary = proof.summary.trim();
+        return result;
+    };
+    try {
+        const plan = planCriterionRepair(padded, h.board());
+        await repairCriteria(padded, h.deps, plan.digest);
+        await repairCriteria(padded, h.deps, plan.digest);
+        if (h.writes.length !== 2 || plan.digest !== firstPlan.digest) correctionFailures.push("F2 noncanonical reason identity");
+    } catch (error) { correctionFailures.push("F2 Store whitespace normalization: " + error.message); }
+    repairChecks++;
+}
+assert.deepEqual(correctionFailures, [], "sealed F1/F2 correction proof"); repairChecks++;
+console.log("web board workflow: " + (22 + helperChecks + bundleChecks + repairChecks) + " checks passed");
