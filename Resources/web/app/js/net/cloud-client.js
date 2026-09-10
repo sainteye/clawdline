@@ -540,6 +540,15 @@ export class CloudClient {
             }
             if (answer.read === "transcript" && answer.error && answer.error.code === "not_found") {
                 this.sessionSnapshots.delete(transcriptKey);
+                // A retained Session channel can realign after this answer even though its
+                // snapshot predates the process lookup that returned not_found. Remember the
+                // answer's sender sequence as an identity-scoped deletion barrier so that replay
+                // cannot resurrect the exact row; a genuinely new process must arrive in a later
+                // envelope (and authoritative inventory remains free to establish that fact).
+                var previousSessionSequence = this.sessionSequenceByKey.get(transcriptKey);
+                if (previousSessionSequence === undefined || envelope.seq > previousSessionSequence) {
+                    this.sessionSequenceByKey.set(transcriptKey, envelope.seq);
+                }
                 var healed = this._sessionResponse(envelope.ts);
                 if (this.handlers && this.handlers.sessions) {
                     this.handlers.sessions(healed.sessions, healed.at, healed.scan);

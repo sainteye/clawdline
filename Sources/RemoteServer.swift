@@ -147,7 +147,7 @@ final class RemoteServer: @unchecked Sendable {
     /// Set only through `attachCloudBridge`. It lives on `queue`, beside the SSE streams whose
     /// already-serialized readings it shares.
     private var cloudBridge: CloudAppBridge?
-    private var cloudPublishTail: Task<Void, Never>?
+    private let cloudPublications = CloudSnapshotPublicationQueue()
     private var cloudLifecycleTask: Task<Void, Never>?
     private var cloudLifecycleGeneration: UInt64 = 0
     /// Main-thread mirror used only to decide whether SessionWatch still needs its observer when
@@ -365,12 +365,8 @@ final class RemoteServer: @unchecked Sendable {
             self.cloudLifecycleGeneration &+= 1
             let generation = self.cloudLifecycleGeneration
             let predecessorLifecycle = self.cloudLifecycleTask
-            let predecessorPublication = self.cloudPublishTail
+            let predecessorPublication = self.cloudPublications.cancelAndReset()
             predecessorLifecycle?.cancel()
-            predecessorPublication?.cancel()
-            // Publications accepted after this point belong only to the new generation. They
-            // must never queue behind an invalidated predecessor tail.
-            self.cloudPublishTail = nil
             self.cloudBridge = bridge
             self.cloudLifecycleTask = Task { [weak self] in
                 // Stop the directly replaced bridge first: that is the signal which lets a
@@ -428,6 +424,20 @@ final class RemoteServer: @unchecked Sendable {
             }
         }
     }
+    /// Inject one already-serialized observation through the production Cloud publication lane.
+    /// Tests use this instead of mutating SessionWatch or the local SSE serializer.
+    func enqueueCloudSessionsForTesting(_ payload: Data) {
+        queue.async { [weak self] in
+            guard let self, let bridge = self.cloudBridge else { return }
+            self.enqueueCloudSessions(payload, bridge: bridge)
+        }
+    }
+    func enqueueCloudOrchestratorForTesting(_ payload: Data) {
+        queue.async { [weak self] in
+            guard let self, let bridge = self.cloudBridge else { return }
+            self.enqueueCloudPublication { try await bridge.publishOrchestrator(payload) }
+        }
+    }
     private func cloudBridgeIsCurrent(_ bridge: CloudAppBridge, generation: UInt64) async -> Bool {
         await withCheckedContinuation { continuation in
             queue.async { [weak self] in
@@ -478,9 +488,7 @@ final class RemoteServer: @unchecked Sendable {
                   self.cloudBridge === bridge
             else { return }
             _ = transportGeneration
-            self.enqueueCloudPublication {
-                try await bridge.publishSessions(sessions, force: true)
-            }
+            self.enqueueCloudSessions(sessions, force: true, bridge: bridge)
             self.enqueueCloudPublication {
                 try await bridge.publishOrchestrator(orchestrator)
             }
@@ -5547,9 +5555,7 @@ final class RemoteServer: @unchecked Sendable {
             for stream in self.streams.values { self.write(event: "sessions", data: payload, to: stream) }
             self.transcriptRevisionStream.sync(targets: targets, active: !self.streams.isEmpty)
             if let bridge = self.cloudBridge, let cloudPayload {
-                self.enqueueCloudPublication {
-                    try await bridge.publishSessions(cloudPayload)
-                }
+                self.enqueueCloudSessions(cloudPayload, bridge: bridge)
             }
         }
     }
@@ -5608,20 +5614,14 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
-    /// Preserve observation order before calls cross into the bridge actor. Full snapshots make
-    /// reconnect replay unnecessary, but an older reading must not acquire a newer sequence.
     private func enqueueCloudPublication(_ work: @escaping @Sendable () async throws -> Void) {
-        let previous = cloudPublishTail
-        cloudPublishTail = Task {
-            await withTaskCancellationHandler {
-                await previous?.value
-                guard !Task.isCancelled else { return }
-                try? await work()
-            } onCancel: {
-                // The tail owns the complete serial chain. Cancelling it recursively wakes queued
-                // predecessors, while bridge.stop() cancels and joins work already past entry.
-                previous?.cancel()
-            }
+        cloudPublications.enqueue(work)
+    }
+
+    private func enqueueCloudSessions(_ payload: Data, force: Bool = false,
+                                      bridge: CloudAppBridge) {
+        cloudPublications.enqueueSessions(payload) {
+            try await bridge.publishSessions(payload, force: force)
         }
     }
 

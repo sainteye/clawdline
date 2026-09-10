@@ -1068,6 +1068,14 @@ assert.deepEqual(healedSessions.map(function (row) {
     return [row.identity.machine, row.identity.session];
 }).sort(), [["mac-01", "session-sibling"], ["mac-02", "foreign-reading"]],
 "the exact stale-row repair preserves both its same-Mac sibling and another machine's row");
+// Retained channels are replayed independently and can arrive after the transcript answer that
+// proved this exact process is gone. The answer's sender sequence is therefore a deletion barrier:
+// a delayed retained row from before it must not resurrect the closed Session.
+readingSocket.receive({ type: "envelope", realign: true, envelope: routedSessionEnvelope });
+await readingCloud.messageChain;
+assert.equal((await readingCloud.sessions()).sessions.some(function (row) {
+    return row.identity.machine === "mac-01" && row.identity.session === "session-01";
+}), false, "a retained Session row older than transcript not_found cannot resurrect it");
 
 // The request has to be **on the wire** before the socket is stopped, and the count it waits for
 // has to be exact. Waiting for "more than before" left `_send` to throw `offline` on a socket

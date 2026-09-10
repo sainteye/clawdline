@@ -2,30 +2,23 @@ import Foundation
 #if CLOUD_APP_BRIDGE_STANDALONE
 import AppKit
 #endif
-
 private struct CloudAppBridgeTestFailure: Error, CustomStringConvertible {
     let description: String
 }
-
 private actor CloudAppBridgeTestSequence: CloudEnvelopeSequencing {
     private var value: UInt64 = 0
-
     func nextSequence(sender: String) async throws -> UInt64 {
         value += 1
         return value
     }
 }
-
 private struct CloudAppBridgeTestTokenProvider: CloudDeviceTokenProviding {
     let token: CloudDeviceToken
-
     func fetchDeviceToken() async throws -> CloudDeviceToken { token }
 }
-
 private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable {
     nonisolated let commands: AsyncStream<CloudInboundCommand>
     nonisolated let readyGenerations: AsyncStream<UInt64>
-
     private let lock = NSLock()
     private var continuation: AsyncStream<CloudInboundCommand>.Continuation!
     private var readyContinuation: AsyncStream<UInt64>.Continuation!
@@ -40,9 +33,8 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
     private let suspendPublication: Bool
     private let publicationContinuation: AsyncStream<Void>.Continuation
     private let publicationStream: AsyncStream<Void>
-    private var publicationStarted = false
+    private var publicationStarts = 0
     private var publicationCancelled = false
-
     init(suspendConnect: Bool = false, suspendPublication: Bool = false) {
         self.suspendConnect = suspendConnect
         self.suspendPublication = suspendPublication
@@ -56,7 +48,6 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
         publicationStream = AsyncStream { publicationContinuation = $0 }
         self.publicationContinuation = publicationContinuation
     }
-
     func connect(role: CloudTransportRole) async throws {
         if suspendConnect {
             await withCheckedContinuation { continuation in
@@ -71,13 +62,11 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
         setConnected(role == .machine)
         signalReady()
     }
-
     private func setConnected(_ value: Bool) {
         lock.lock()
         connected = value
         lock.unlock()
     }
-
     func publish(envelope: CloudEnvelope) async throws {
         if suspendPublication {
             markPublicationStarted()
@@ -91,26 +80,22 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
         }
         append(envelope)
     }
-
     private func markPublicationStarted() {
         lock.lock()
-        publicationStarted = true
+        publicationStarts += 1
         lock.unlock()
     }
-
     private func cancelPublication() {
         lock.lock()
         publicationCancelled = true
         lock.unlock()
         publicationContinuation.finish()
     }
-
     private func append(_ envelope: CloudEnvelope) {
         lock.lock()
         sent.append(envelope)
         lock.unlock()
     }
-
     func shutdown() async {
         markStopped()
         continuation.finish()
@@ -123,20 +108,17 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
             }
         }
     }
-
     private func markStopped() {
         lock.lock()
         stopped = true
         connected = false
         lock.unlock()
     }
-
     private func markConnectFinished() {
         lock.lock()
         connectFinished = true
         lock.unlock()
     }
-
     private func takeConnectContinuation() -> CheckedContinuation<Void, Never>? {
         lock.lock()
         defer { lock.unlock() }
@@ -144,7 +126,6 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
         connectContinuation = nil
         return suspended
     }
-
     func signalReady() {
         lock.lock()
         readyGeneration += 1
@@ -152,7 +133,7 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
         lock.unlock()
         readyContinuation.yield(generation)
     }
-
+    func releasePublications(_ count: Int = 1) { for _ in 0..<count { publicationContinuation.yield(()) } }
     func yield(_ plaintext: String, sequence: UInt64, commandClass: CloudEnvelopeClass = .ctl,
                channel: String = "ctl/Mac%20%2F%20%E5%8F%B0%E7%81%A3") {
         continuation.yield(CloudInboundCommand(
@@ -160,60 +141,49 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
             commandClass: commandClass, sender: "viewer", plaintext: Data(plaintext.utf8)
         ))
     }
-
     func envelopes() -> [CloudEnvelope] {
         lock.lock()
         defer { lock.unlock() }
         return sent
     }
-
     func state() -> (
         connected: Bool, stopped: Bool, connectStarted: Bool, connectFinished: Bool,
-        publicationStarted: Bool, publicationCancelled: Bool
+        publicationStarts: Int, publicationCancelled: Bool
     ) {
         lock.lock()
         defer { lock.unlock() }
-        return (
-            connected, stopped, connectStarted, connectFinished,
-            publicationStarted, publicationCancelled
-        )
+        return (connected, stopped, connectStarted, connectFinished,
+                publicationStarts, publicationCancelled)
     }
 }
-
 private actor CloudAppBridgeTestRouter: CloudCommandRouting {
     struct Call: Equatable {
         let command: CloudHeadlessCommand
         let sender: String
         let idempotencyKey: String
     }
-
     struct ReadCall: Equatable {
         let read: CloudHeadlessRead
         let sender: String
     }
-
     private var calls: [Call] = []
     private var reads: [ReadCall] = []
     private var readAnswer = CloudReadResult(status: 200, body: Data(#"{"ok":true}"#.utf8))
     private var blockedReadName: String?, blockedReadContinuation: CheckedContinuation<Void, Never>?
-
     func route(_ command: CloudHeadlessCommand, sender: String,
                idempotencyKey: String) async -> CloudCommandResult {
         calls.append(Call(command: command, sender: sender, idempotencyKey: idempotencyKey))
         return CloudCommandResult(status: 200, code: nil,
                                   body: Data(#"{"ok":true,"id":"opened"}"#.utf8))
     }
-
     func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult {
         reads.append(ReadCall(read: read, sender: sender))
         if read.name == blockedReadName { await withCheckedContinuation { blockedReadContinuation = $0 } }
         return readAnswer
     }
-
     func answerReadsWith(_ answer: CloudReadResult) { readAnswer = answer }
     func blockRead(named name: String) { blockedReadName = name }
     func releaseBlockedRead() { blockedReadName = nil; blockedReadContinuation?.resume(); blockedReadContinuation = nil }
-
     func recorded() -> [Call] { calls }
     func recordedReads() -> [ReadCall] { reads }
 }
@@ -221,13 +191,11 @@ private actor CloudAppBridgeTestRouter: CloudCommandRouting {
 private final class CloudAppBridgeTestGate: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
-
     func set(_ value: Bool) {
         lock.lock()
         self.value = value
         lock.unlock()
     }
-
     func get() -> Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -765,7 +733,7 @@ private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
         checks += 1
         if !condition() { throw CloudAppBridgeTestFailure(description: message) }
     }
-
+    func sessions(_ ids: [String], _ generation: Int, _ complete: Bool) throws -> Data { try JSONSerialization.data(withJSONObject: ["sessions": ids.map { ["id": $0] }, "at": generation, "scan": ["generation": generation, "complete": complete, "emptyAuthoritative": complete && ids.isEmpty]]) }
     let signingKey = CloudDeviceKeyPair()
     let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x57, count: 32))
     RemoteServer.cloudSnapshotDataForTesting = try cloudAppBridgeTestSnapshots(
@@ -782,7 +750,6 @@ private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
             sequencing: CloudAppBridgeTestSequence()
         )
     }
-
     var transportA: CloudAppBridgeTestTransport? = CloudAppBridgeTestTransport(
         suspendPublication: true
     )
@@ -791,9 +758,53 @@ private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
     weak var bridgeAReference = bridgeA
     await attachCloudBridgeForTest(bridgeA)
     try await waitForCloudAppBridge("A publication suspends after entry") {
-        transportA!.state().publicationStarted
+        transportA!.state().publicationStarts > 0
     }
-
+    RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions(["obsolete"], 2, false))
+    RemoteServer.shared.enqueueCloudOrchestratorForTesting(
+        Data(#"{"tasks":[{"id":"obsolete"}]}"#.utf8))
+    RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions([], 3, true))
+    RemoteServer.shared.enqueueCloudOrchestratorForTesting(
+        Data(#"{"tasks":[{"id":"latest"}]}"#.utf8))
+    RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions(["latest"], 4, false))
+    try await Task.sleep(nanoseconds: 30_000_000)
+    for _ in 0..<12 {
+        if transportA!.envelopes().contains(where: { $0.ch.hasSuffix("/latest") }) { break }
+        let startsBeforeStep = transportA!.state().publicationStarts
+        transportA!.releasePublications()
+        try await waitForCloudAppBridge("one bounded publication step advances") {
+            transportA!.envelopes().contains { $0.ch.hasSuffix("/latest") }
+                || transportA!.state().publicationStarts > startsBeforeStep
+        }
+    }
+    try await waitForCloudAppBridge("the bounded queue publishes its latest Session") {
+        transportA!.envelopes().contains { $0.ch.hasSuffix("/latest") }
+    }
+    let bounded = transportA!.envelopes()
+    try require(!bounded.contains { $0.ch.hasSuffix("/obsolete") },
+                "interleaved publications cannot preserve an obsolete Session FIFO entry")
+    let orchFrames = bounded.filter { $0.ch == "orch/publication" }
+    let orchBytes = try orchFrames.last?.open(masterSecret: masterSecret, publicKeyForSender: {
+        $0 == "machine-device" ? signingKey.publicKeyRaw : nil })
+    let orchObject = orchBytes.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+    let orchTasks = orchObject?["tasks"] as? [[String: Any]]
+    try require(orchFrames.count == 1 && orchTasks?.first?["id"] as? String == "latest",
+                "interleaved publications retain only the latest pending orchestrator snapshot")
+    let seedFrames = bounded.filter { $0.ch.hasSuffix("/publication-lifecycle") }
+    let deletion = try seedFrames.last?.open(masterSecret: masterSecret,
+        publicKeyForSender: { $0 == "machine-device" ? signingKey.publicKeyRaw : nil })
+    let deletionObject = deletion.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+    try require(seedFrames.count == 2 && deletionObject?["deleted"] as? Bool == true,
+                "the authoritative deletion barrier survives a newer incomplete snapshot")
+    let inventory = bounded.indices.filter { bounded[$0].ch.hasSuffix("/__clawdline_inventory_v1__") }
+    let latest = bounded.firstIndex { $0.ch.hasSuffix("/latest") }
+    try require(inventory.count == 2 && latest != nil && inventory.last! < latest!,
+                "the authoritative inventory is delivered before the latest incomplete row")
+    let startsBeforeCancellation = transportA!.state().publicationStarts
+    RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions(["cancelled"], 5, false))
+    try await waitForCloudAppBridge("the replacement target enters bridge publication") {
+        transportA!.state().publicationStarts > startsBeforeCancellation
+    }
     let transportB = CloudAppBridgeTestTransport()
     let bridgeB = makeBridge(transportB)
     await attachCloudBridgeForTest(bridgeB)
@@ -805,7 +816,7 @@ private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
         return channels.filter { $0.hasPrefix("s/publication/") }.count == 2
             && channels.filter { $0 == "orch/publication" }.count == 1
     }
-    try require(transportA!.envelopes().isEmpty,
+    try require(!transportA!.envelopes().contains { $0.ch.hasSuffix("/cancelled") },
                 "cancelled A publication emits no stale envelope")
     bridgeA = nil
     transportA = nil
@@ -815,7 +826,6 @@ private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
     await RemoteServer.shared.awaitCloudBridgeLifecycle()
     return checks
 }
-
 private func runCloudAppBridgeABATests() async throws -> Int {
     var checks = 0
     func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
@@ -985,18 +995,10 @@ private func runCloudAppBridgeConcreteReconnectTests() async throws -> Int {
     return checks
 }
 
-/// What a Cloud viewer is actually given, which no other check in this file looks at.
+/// Exercises the production `RemoteServer.orchestratorSnapshot()` bytes rather than the other
+/// suites' injected snapshots. It collects all failures because this Cloud suite is expensive and
+/// cannot be selected through `CLAWDLINE_TEST_GROUPS`.
 ///
-/// Every suite above hands the bridge `RemoteServer.cloudSnapshotDataForTesting`, so the bytes
-/// they publish are the test's own and would go on passing with the Mac publishing nothing at
-/// all. The body a real Mac sends comes from `RemoteServer.orchestratorSnapshot()`, and this is
-/// the only place that reads it.
-///
-/// **Failures are collected rather than thrown at the first one, and that is deliberate.**
-/// `CLAWDLINE_TEST_GROUPS` exits at `Tests/CloudTestRunner.swift:80`, before the `Task` at `:109`
-/// that starts the twelve Cloud suites, so nothing in this file can be selected and every red
-/// here costs a whole-tree compile. Stopping at the first failure would have made proving these
-/// six checks a six-compile battery on a machine that allows one compile at a time.
 private func runCloudAppBridgeSnapshotTests() async throws -> Int {
     var checks = 0
     var problems: [String] = []

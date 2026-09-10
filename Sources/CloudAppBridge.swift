@@ -255,6 +255,83 @@ enum CloudAppBridgeError: Error, LocalizedError, Equatable {
     }
 }
 
+/// Serializes the RemoteServer's full Cloud snapshots. Session observations are latest-value
+/// state, except that an authoritative inventory is a deletion barrier which must be delivered
+/// before a later incomplete observation. The pending suffix is therefore bounded to one such
+/// barrier plus the newest incomplete reading instead of growing a Task chain.
+final class CloudSnapshotPublicationQueue: @unchecked Sendable {
+    typealias Work = @Sendable () async throws -> Void
+    static let maximumPending = 3
+    private struct Item { let authoritative: Bool?; let work: Work }
+    private let lock = NSLock()
+    private var pending: [Item] = []
+    private var worker: Task<Void, Never>?
+    private var generation: UInt64 = 0
+
+    func enqueueSessions(_ payload: Data, work: @escaping Work) {
+        let authoritative = Self.authoritative(payload)
+        lock.lock()
+        let item = Item(authoritative: authoritative, work: work)
+        if authoritative {
+            pending.removeAll { $0.authoritative != nil }
+        } else {
+            pending.removeAll { $0.authoritative == false }
+        }
+        pending.append(item)
+        precondition(pending.count <= Self.maximumPending)
+        startWorkerLocked()
+        lock.unlock()
+    }
+
+    func enqueue(_ work: @escaping Work) {
+        lock.lock()
+        pending.removeAll { $0.authoritative == nil }
+        pending.append(Item(authoritative: nil, work: work))
+        precondition(pending.count <= Self.maximumPending)
+        startWorkerLocked()
+        lock.unlock()
+    }
+
+    @discardableResult
+    func cancelAndReset() -> Task<Void, Never>? {
+        lock.lock()
+        generation &+= 1
+        pending.removeAll()
+        let previous = worker
+        worker = nil
+        lock.unlock()
+        previous?.cancel()
+        return previous
+    }
+
+    private func startWorkerLocked() {
+        guard worker == nil else { return }
+        let ownedGeneration = generation
+        worker = Task { [weak self] in await self?.drain(generation: ownedGeneration) }
+    }
+
+    private func drain(generation ownedGeneration: UInt64) async {
+        while !Task.isCancelled, let item = take(generation: ownedGeneration) {
+            try? await item.work()
+        }
+    }
+
+    private func take(generation ownedGeneration: UInt64) -> Item? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard generation == ownedGeneration, !Task.isCancelled else { return nil }
+        guard !pending.isEmpty else { worker = nil; return nil }
+        return pending.removeFirst()
+    }
+
+    private static func authoritative(_ payload: Data) -> Bool {
+        guard let root = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              let scan = root["scan"] as? [String: Any] else { return false }
+        return scan["complete"] as? Bool == true
+            || scan["emptyAuthoritative"] as? Bool == true
+    }
+}
+
 /// Connects the app's existing full-snapshot and HTTP-command seams to CloudTransport.
 ///
 /// Construction has no side effects. `start()` is the explicit attachment/configuration point,
