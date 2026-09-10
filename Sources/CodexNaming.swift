@@ -112,13 +112,18 @@ final class CodexNaming {
 
     private func considerCodex(_ target: TargetSession) {
         guard let record = Transcript.record(of: target), record.assistant == .codex,
-              let head = Codex.head(of: record.url), !head.id.isEmpty,
-              let request = Codex.firstUserMessage(of: record.url), !request.isEmpty
+              let head = Codex.head(of: record.url), !head.id.isEmpty
         else { return }
 
         associate(targetID: target.id, assistant: .codex, with: head.id)
         let key = identityKey(.codex, head.id)
 
+        // Admit the thread before opening app-server or reading its request. `finishedThreads`
+        // and `retryAfter` are the only bounds on this path, and putting the two-megabyte opening
+        // read above them made every already-named Codex session pay for it on every 1.2-second
+        // inventory pass. The serial naming lane then stayed busy re-reading old sessions while
+        // a Codex started by hand in an existing terminal waited behind them with only its
+        // coordinate on screen.
         guard reserve(key) else { return }
 
         var done = false
@@ -147,6 +152,16 @@ final class CodexNaming {
             return
         }
 
+        // A native title needs no naming material. Only an actually unnamed thread pays to read
+        // the first request and, if it is usable, to ask the configured naming assistant.
+        guard let request = Codex.firstUserMessage(of: record.url), !request.isEmpty else {
+            // The rollout head can precede its first user item. This is startup, not a five-minute
+            // naming failure: come back after the same short interval used while Codex's native
+            // title is settling, so a request typed just after discovery is not left as a
+            // coordinate until the ordinary failure backoff expires.
+            retryDelay = 2
+            return
+        }
         guard Config.shared.codexAutoName,
               let made = generateTitle(request: request, target: target,
                                        codexExecutable: binary, codexServer: server)

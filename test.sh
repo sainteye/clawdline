@@ -1089,6 +1089,7 @@ node Tests/diagnostic-report-focused.mjs
 # version in that payload was a typed string that went on naming an old release for two releases
 # after it, with nothing in this suite comparing it to anything.
 node Tests/codex-client-identity.mjs
+node Tests/codex-naming-order.mjs
 # Whether there is a newer Clawdline, on exactly the same terms and for a sharper reason: a check
 # that answers "nothing newer" when it was in fact rate-limited is a silence that reads as an
 # all-clear, and the person on the old build never finds out. The decision block is lifted out of
