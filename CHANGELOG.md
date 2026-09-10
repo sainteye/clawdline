@@ -9,6 +9,18 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: background Session reads could fill the Cloud transcript lane
+
+Opening a conversation in the hosted Cloud console now carries an explicit interactive priority
+to the Mac. Agent reads, automatic revision refreshes and older clients remain background. The two
+classes execute on separate bounded serial workers, so an agent parsing another Session cannot
+stand in front of the conversation a person just opened, while total transcript concurrency stays
+capped at two.
+
+Transcript and Cloud bridge logs now record correlated admission, refusal, queue, parse and
+encrypted-publication timings, status and answer size. They identify the requesting transport and
+target Session without copying any conversation text into the log.
+
 ### Fixed: Cloud schedule edits and Live Screen could not reach the Mac
 
 Editing a scheduled task from the hosted Cloud console no longer fails by looking for its Project

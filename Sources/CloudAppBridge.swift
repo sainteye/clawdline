@@ -59,9 +59,14 @@ enum CloudHeadlessCommand: Equatable, Sendable {
 /// showing less than the same device sees over the tunnel — for no reason anybody chose.
 ///
 /// The vocabulary is closed on purpose: a viewer names one of these, never a route.
+enum CloudTranscriptPriority: String, Equatable, Sendable {
+    case background
+    case foreground
+}
+
 enum CloudHeadlessRead: Equatable, Sendable {
     case board(session: String, request: String, project: String, item: String)
-    case transcript(session: String, limit: Int)
+    case transcript(session: String, limit: Int, priority: CloudTranscriptPriority)
     case info(session: String, parts: String)
     case agent(session: String, agent: String, limit: Int)
     case shell(session: String, shell: String, bytes: Int)
@@ -93,7 +98,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
     var session: String {
         switch self {
         case .board(let session, _, _, _): return session
-        case .transcript(let session, _): return session
+        case .transcript(let session, _, _): return session
         case .info(let session, _): return session
         case .agent(let session, _, _): return session
         case .shell(let session, _, _): return session
@@ -254,6 +259,7 @@ actor CloudAppBridge {
     typealias CommandGate = @Sendable () -> Bool
     typealias Milliseconds = @Sendable () -> UInt64
     typealias CommandResultObserver = @Sendable (CloudCommandResult) -> Void
+    typealias DiagnosticLogger = @Sendable (String) -> Void
     typealias TransportReadyObserver = @Sendable (UInt64) -> Void
 
     private let transport: any CloudTransporting
@@ -263,6 +269,7 @@ actor CloudAppBridge {
     private let commandRouter: any CloudCommandRouting
     private let nowMilliseconds: Milliseconds
     private let commandResult: CommandResultObserver
+    private let diagnostic: DiagnosticLogger
 
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
@@ -283,7 +290,8 @@ actor CloudAppBridge {
         nowMilliseconds: @escaping Milliseconds = {
             UInt64(Date().timeIntervalSince1970 * 1_000)
         },
-        commandResult: @escaping CommandResultObserver = { _ in }
+        commandResult: @escaping CommandResultObserver = { _ in },
+        diagnostic: @escaping DiagnosticLogger = { _ in }
     ) {
         self.transport = transport
         self.identity = identity
@@ -292,6 +300,7 @@ actor CloudAppBridge {
         self.commandRouter = commandRouter
         self.nowMilliseconds = nowMilliseconds
         self.commandResult = commandResult
+        self.diagnostic = diagnostic
     }
 
     func start() async throws {
@@ -961,14 +970,28 @@ actor CloudAppBridge {
         let read: CloudHeadlessRead
         switch type {
         case "transcript":
-            guard Set(body.keys) == ["type", "session", "limit"],
+            let keys = Set(body.keys)
+            guard (keys == ["type", "session", "limit"]
+                    || keys == ["type", "session", "limit", "priority"]),
                   let session = body["session"] as? String, !session.isEmpty,
                   let limit = body["limit"] as? Int, (1...1000).contains(limit)
             else {
                 commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
                 return
             }
-            read = .transcript(session: session, limit: limit)
+            let priority: CloudTranscriptPriority
+            if let raw = body["priority"] as? String,
+               let parsed = CloudTranscriptPriority(rawValue: raw) {
+                priority = parsed
+            } else if body["priority"] == nil {
+                // Old hosted clients did not carry intent. Keep them in the bounded background
+                // lane so an upgrade cannot let a stale tab consume the interactive reserve.
+                priority = .background
+            } else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = .transcript(session: session, limit: limit, priority: priority)
         case "info":
             guard Set(body.keys) == ["type", "session", "parts"],
                   let session = body["session"] as? String, !session.isEmpty,
@@ -1164,8 +1187,18 @@ actor CloudAppBridge {
             return
         }
 
+        let traceID = String(UUID().uuidString.prefix(8)).lowercased()
+        let receivedAt = nowMilliseconds()
+        let safeSender = Self.channelSegment(inbound.sender)
+        let safeSession = Self.channelSegment(read.session)
+        diagnostic("cloud: read received id=\(traceID) read=\(read.name) "
+            + "sender=\(safeSender) session=\(safeSession)")
         let answer = await commandRouter.read(read, sender: inbound.sender)
+        let routedAt = nowMilliseconds()
         let outcome = Self.outcome(of: read, answer: answer)
+        diagnostic("cloud: read routed id=\(traceID) read=\(read.name) "
+            + "route_ms=\(Self.elapsedMilliseconds(from: receivedAt, to: routedAt)) "
+            + "status=\(outcome.status) bytes=\(answer.body.count)")
         commandResult(CloudCommandResult(status: outcome.status, code: outcome.code))
         guard running, lifecycleGeneration == ownedGeneration else { return }
         var payload: [String: Any] = ["read": read.name, "status": outcome.status]
@@ -1184,6 +1217,7 @@ actor CloudAppBridge {
             return
         }
         let channel = transcriptChannel(read.session)
+        let publishStartedAt = nowMilliseconds()
         do {
             try await runPublication { [weak self] in
                 guard let self else { throw CancellationError() }
@@ -1191,12 +1225,26 @@ actor CloudAppBridge {
                     bytes, channel: channel, lifecycleGeneration: ownedGeneration
                 )
             }
+            let deliveredAt = nowMilliseconds()
+            diagnostic("cloud: read delivered id=\(traceID) read=\(read.name) "
+                + "publish_ms=\(Self.elapsedMilliseconds(from: publishStartedAt, to: deliveredAt)) "
+                + "total_ms=\(Self.elapsedMilliseconds(from: receivedAt, to: deliveredAt)) "
+                + "status=\(outcome.status)")
         } catch {
             // The answer's own channel is the only way back to the asker, so a publication that
             // cannot leave has nothing to report with. It is recorded here and the viewer's read
             // ages out at its end, which is the honest end state for a bridge that is going down.
             commandResult(CloudCommandResult(status: 503, code: "read_answer_undeliverable"))
+            let failedAt = nowMilliseconds()
+            diagnostic("cloud: read delivery_failed id=\(traceID) read=\(read.name) "
+                + "publish_ms=\(Self.elapsedMilliseconds(from: publishStartedAt, to: failedAt)) "
+                + "total_ms=\(Self.elapsedMilliseconds(from: receivedAt, to: failedAt))")
         }
+    }
+
+    private static func elapsedMilliseconds(from start: UInt64, to end: UInt64) -> UInt64 {
+        guard end >= start else { return 0 }
+        return end - start
     }
 
     private func publishJSONAnswer(

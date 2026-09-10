@@ -536,12 +536,21 @@ Two files, and they answer different questions.
 08-18 17:27:40.875  remote: listening on http://127.0.0.1:7717/
 08-18 17:35:12.857  remote: listener failed — The operation couldn’t be completed. (Network.NWError error 48 - Address already in use)
 08-18 18:07:47.243  remote: POST /v1/places/3b9e26c1587facfd/start by 0f3c1d92-7a44-4c18-9b30-2e6f5a81c407 → 200
+09-10 10:12:03.204  transcript: completed id=91ac3f20 lane=interactive source=cloud:web-01 path=/v1/sessions/454/transcript queue_ms=0 work_ms=412 total_ms=412 status=200 bytes=18432
+09-10 10:12:03.411  cloud: read delivered id=4c8af231 read=transcript publish_ms=86 total_ms=501 status=200
 ```
 
 Error 48 is the common one and it means what it says: something else has `remote_port`. Change the
 port and the whole thing comes back. Tunnels write here too — `tunnel: refused — …` for an
 interlock, `tunnel: up at <url> — via <edge location>` when it registers, and
 `tunnel: cloudflared exited (status 1) after 0s — try 2 of 6 in 2s` while it is failing.
+
+Transcript lines make congestion inspectable without copying conversation text. An admission and
+completion share a local request id and name the `interactive` or `background` lane, requester,
+target path, outstanding counts, queue/run/total milliseconds, response status and byte count. A
+refusal records the same identity with `status=429` and its actual debt. `cloud: read` lines cover
+the second half of the trip—receive, local-route time and encrypted publication—under a bridge id,
+so a computed-but-undeliverable answer no longer looks like a slow parser.
 
 **`~/.config/clawdline/remote-audit.jsonl`** is *what was done, and by whom*. One JSON object per
 line, appended and never rewritten, mode `0600`. It is a security control rather than bookkeeping:

@@ -356,6 +356,8 @@ group("transcript backpressure is typed and independent") {
           backgroundRefused.wait(timeout: .now() + 1) == .success
             && backgroundCode == "transcript_busy")
     RemoteServer.shared.transcriptReadForTesting(request()) { _ in queueFinished.signal() }
+    check("the interactive worker starts while an agent/background read is still running",
+          queueEntered.wait(timeout: .now() + 1) == .success && outstanding() == [2, 1])
     let foregroundRefused = DispatchSemaphore(value: 0)
     var foregroundCode = ""
     RemoteServer.shared.transcriptReadForTesting(request()) {
@@ -365,8 +367,6 @@ group("transcript backpressure is typed and independent") {
           foregroundRefused.wait(timeout: .now() + 1) == .success
             && foregroundCode == "transcript_busy")
     queueRelease.signal()
-    check("the reserved foreground read runs after the active background read",
-          queueEntered.wait(timeout: .now() + 1) == .success)
     queueRelease.signal()
     check("active and trailing workers both settle",
           queueFinished.wait(timeout: .now() + 1) == .success

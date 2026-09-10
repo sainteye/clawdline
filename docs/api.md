@@ -357,10 +357,12 @@ $ curl -s "http://127.0.0.1:7717/v1/sessions/B3ACDE0D-DE72-4E58-A99A-AB845A539C9
 `limit` is the number of entries from the **end**, clamped to 1…1000, and anything unparseable
 falls back to 200 — `?limit=0` gives one entry and `?limit=9999` gives a thousand.
 
-This route has an independent serial worker and a depth of two (one active plus one trailing), so
-screen capture, Git and `/v1/places` can never stand in front of transcript bytes. Quiet/background
-refreshes may occupy only one slot; `?priority=foreground` identifies a first-open read and reserves
-the other slot, so two background refreshes cannot starve a newly opened session.
+This route has two independent serial workers: one interactive and one background. The combined
+depth remains two, and background work may occupy only one place. `?priority=foreground`
+identifies a first-open read; it can execute while an agent or quiet refresh is parsing another
+Session, rather than merely being admitted behind it. Two interactive reads remain serial and
+bounded, so separating the lanes does not turn one tap into an unbounded decoder fan-out. Screen
+capture, Git and `/v1/places` remain outside both transcript lanes.
 
 When the relevant share is full the route returns typed `429 transcript_busy`, with numeric
 `error.retry_after` seconds, `error.retry_debt` reads currently ahead and the same value in the
@@ -722,7 +724,7 @@ and what is reachable is a closed list named in `CloudHeadlessRead`:
 
 | asked as | answered by | the direct route it stands for |
 |---|---|---|
-| `{"type":"transcript","session":"…","limit":1‑1000}` | `read: "transcript"` | [`GET /v1/sessions/:id/transcript`](#get-v1sessionsidtranscriptlimit200) |
+| `{"type":"transcript","session":"…","limit":1‑1000,"priority":"foreground"|"background"}` | `read: "transcript"` | [`GET /v1/sessions/:id/transcript`](#get-v1sessionsidtranscriptlimit200) |
 | `{"type":"info","session":"…","parts":"full"}` | `read: "info.full"` | [`GET /v1/sessions/:id/info`](#get-v1sessionsidinfo) |
 | `{"type":"info","session":"…","parts":"summary"}` | `read: "info.summary"` | `GET /v1/sessions/:id/info?parts=summary` |
 | `{"type":"agent","session":"…","agent":"…","limit":1‑1000}` | `read: "agent:<agent>"` | [`GET /v1/sessions/:id/agents/:agentId`](#get-v1sessionsidagentsagentidlimit200) |
@@ -830,8 +832,9 @@ viewer that can see every row and not the messages inside one would be showing l
 device sees through the tunnel, for no reason anybody chose. `send`, `answer` and `key` still meet
 `cloud_commands_disabled` exactly where they always did.
 
-**They queue where a phone queues.** A cloud transcript read enters the same serial transcript
-worker and a cloud Info read the same eight-place reading lane, so both can come back
+**They queue where a phone queues.** A Cloud transcript explicitly carries `priority` into the
+same interactive/background transcript lanes; an older client that omits it is background, never
+silently interactive. A cloud Info read enters the same eight-place reading lane, so both can come back
 `429 transcript_busy` or `429 busy` with the same fields as above. A second door that skipped
 those lanes would put back the exclusivity they were built to remove. The other reads take the
 shared queue, and that is the same rule and not an exception to it: `isTranscriptReading` and
@@ -839,6 +842,13 @@ shared queue, and that is the same rule and not an exception to it: `isTranscrip
 lane for them here would be a second policy nobody measured. An image is in neither lane for the
 same reason and by the same precedent: `/v1/artifacts/images/:id` is a bounded read of one
 already-validated file, and it goes on the shared queue on the direct path too.
+
+Transcript observability is end-to-end on the Mac without logging message text. `transcript:`
+lines record admission or refusal, the interactive/background lane, HTTP or Cloud sender, target
+path, queue debt, queue/run/total milliseconds, response status and byte count under one local
+request id. `cloud: read` lines separately record receive, local routing and encrypted-answer
+publication time under one bridge id. Together they distinguish a slow parse, a saturated lane,
+and an answer that was computed promptly but delayed or lost during publication.
 
 **What a viewer cannot ask for.** The refusals below are the deliberate ones, and each has a code
 of its own so a page can say which it hit rather than showing the same empty view for all three:

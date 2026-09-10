@@ -1235,13 +1235,17 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     await router.answerReadsWith(CloudReadResult(
         status: 200, body: Data(#"{"messages":[{"role":"user"}],"revision":"7"}"#.utf8)
     ))
-    transport.yield(#"{"type":"transcript","session":"plain","limit":200}"#, sequence: 20)
+    transport.yield(
+        #"{"type":"transcript","session":"plain","limit":200,"priority":"foreground"}"#,
+        sequence: 20)
     try await waitForCloudAppBridge("a transcript read with the write switch off") {
         await router.recordedReads().count == 1
     }
     let transcriptReads = await router.recordedReads()
-    try require(transcriptReads.first?.read == .transcript(session: "plain", limit: 200),
-                "the transcript read reaches the broker with its own window")
+    try require(
+        transcriptReads.first?.read
+            == .transcript(session: "plain", limit: 200, priority: .foreground),
+        "the transcript read reaches the broker with its own window and interactive priority")
     try require(transcriptReads.first?.sender == "viewer",
                 "a read carries the verified sender the envelope was signed by")
     try require(!results.all().contains(where: { $0.code == "cloud_commands_disabled" }),
@@ -1416,11 +1420,15 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     }
     let typedReads = await router.recordedReads().suffix(wellFormed.count)
     let typedNames = Set(typedReads.map(\.read.name))
-    try require(typedNames
-                    == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git", "screen",
-                        "image.img-1", "documents", "read:p-doc", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
-                        "read:p-5", "read:p-list", "read:p-snippets", "read:p-board"],
-                "and each parses into the read it names rather than into the switch's last case")
+    try require(
+        typedNames
+            == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git", "screen",
+                "image.img-1", "documents", "read:p-doc", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
+                "read:p-5", "read:p-list", "read:p-snippets", "read:p-board"]
+            && typedReads.contains(CloudAppBridgeTestRouter.ReadCall(
+                read: .transcript(session: "typed", limit: 200, priority: .background),
+                sender: "viewer")),
+        "each read parses into its own case, and old transcript clients stay background")
 
     // Strictness, in the same shape the commands already have: an exact key set, a bounded
     // window, a session that is really there, a tier that is one of two, and the command class
@@ -1434,6 +1442,8 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         #"{"type":"transcript","session":"plain","limit":1001}"#,
         #"{"type":"transcript","session":"plain","limit":1.5}"#,
         #"{"type":"transcript","session":"","limit":200}"#,
+        #"{"type":"transcript","session":"plain","limit":200,"priority":"urgent"}"#,
+        #"{"type":"transcript","session":"plain","limit":200,"priority":1}"#,
         #"{"type":"info","session":"plain","parts":"everything"}"#,
         #"{"type":"info","session":"plain"}"#,
         // An agent is a transcript with a name on it, so it is refused everywhere a transcript
@@ -1486,13 +1496,14 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     // What a viewer may actually reach. The path and the query are built from the closed enum
     // rather than sent, so this is the whole surface a paired browser can ask for.
     let transcriptRequest = RemoteServer.Request(
-        verifiedCloudRead: .transcript(session: "session/一|?", limit: 50), sender: "viewer"
+        verifiedCloudRead: .transcript(
+            session: "session/一|?", limit: 50, priority: .foreground), sender: "viewer"
     )
     try require(transcriptRequest.method == "GET", "a read is a GET and carries no body")
     try require(transcriptRequest.path == "/v1/sessions/session%2F%E4%B8%80%7C%3F/transcript",
                 "the session id is encoded the same way the command door encodes it")
-    try require(transcriptRequest.query == ["limit": "50"],
-                "the window travels as the query the direct path uses")
+    try require(transcriptRequest.query == ["limit": "50", "priority": "foreground"],
+                "the window and interactive lane travel as the query the direct path uses")
     try require(transcriptRequest.headers["idempotency-key"] == nil,
                 "a read mints no idempotency key, because a retried GET is not a second anything")
     let fullInfoRequest = RemoteServer.Request(

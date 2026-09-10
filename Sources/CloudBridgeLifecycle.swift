@@ -271,6 +271,9 @@ final class CloudBridgeLifecycle {
         var commandRouter: @MainActor () -> any CloudCommandRouting
         var commandResult: @Sendable (CloudCommandResult) -> Void
         var log: @MainActor (String) -> Void
+        /// Bridge diagnostics are emitted off the main actor after routing or publication.
+        /// Tests leave this silent; production uses the thread-safe file logger.
+        var diagnostic: @Sendable (String) -> Void = { _ in }
         /// Lifecycle-owned companion to the relay bridge. Tests omit it; production starts one
         /// machine-credential webhook poller for exactly the restored signed-in identity.
         var scheduleWebhooks: @MainActor (
@@ -399,7 +402,8 @@ final class CloudBridgeLifecycle {
                 sequencing: services.sequencing(identity),
                 allowCloudCommands: services.allowCloudCommands,
                 commandRouter: services.commandRouter(),
-                commandResult: services.commandResult)
+                commandResult: services.commandResult,
+                diagnostic: services.diagnostic)
             attachedBridge = bridge
             services.attach(bridge)
             services.scheduleWebhooks(identity) { [weak self] in
@@ -540,6 +544,7 @@ extension CloudBridgeLifecycle.Services {
                 Log.write("cloud: command refused \(result.status) \(result.code ?? "-")")
             },
             log: { Log.write($0) },
+            diagnostic: { Log.write($0) },
             scheduleWebhooks: { identity, onUnauthorized in
                 Task {
                     if let identity {

@@ -31,8 +31,13 @@ final class TranscriptReadCoordinator {
         }
     }
 
-    private let worker = DispatchQueue(
-        label: "com.tsunamiworks.clawdline.remote.transcript-reading")
+    // Interactive reads and agent/background reads have separate serial executors. Each lane is
+    // bounded to one active parse, so an agent cannot make a person wait behind a large rollout,
+    // while neither class can fan out an unbounded number of JSON decoders on this Mac.
+    private let interactiveWorker = DispatchQueue(
+        label: "com.tsunamiworks.clawdline.remote.transcript-reading.interactive")
+    private let backgroundWorker = DispatchQueue(
+        label: "com.tsunamiworks.clawdline.remote.transcript-reading.background")
     private var limiter = Limiter()
 
     var counts: (total: Int, background: Int) {
@@ -43,6 +48,7 @@ final class TranscriptReadCoordinator {
     /// counter moves before `deliver`, so an ignored or interrupted delivery cannot strand debt.
     func start<Result>(foreground: Bool,
                executor override: Executor? = nil,
+               admitted: (_ total: Int, _ background: Int) -> Void = { _, _ in },
                refusal: (_ retryDebt: Int) -> Result,
                work: @escaping () -> Result,
                completeOnOwner: @escaping (@escaping () -> Void) -> Void,
@@ -54,7 +60,9 @@ final class TranscriptReadCoordinator {
             deliver(refusal(limiter.count))
             return
         }
-        let execute = override ?? { [worker] work in worker.async(execute: work) }
+        admitted(limiter.count, limiter.backgroundCount)
+        let worker = foreground ? interactiveWorker : backgroundWorker
+        let execute = override ?? { work in worker.async(execute: work) }
         execute {
             let result = work()
             completeOnOwner {
@@ -62,5 +70,53 @@ final class TranscriptReadCoordinator {
                 deliver(result)
             }
         }
+    }
+}
+
+/// One local trace joins admission, bounded queueing and parsing without copying transcript text.
+/// It is kept beside the coordinator so RemoteServer remains only the transport adapter.
+struct TranscriptReadDiagnostics: Sendable {
+    let foreground: Bool
+    private let id = String(UUID().uuidString.prefix(8)).lowercased()
+    private let lane: String
+    private let source: String
+    private let path: String
+    private let admittedAt = DispatchTime.now().uptimeNanoseconds
+
+    init(_ request: RemoteServer.Request) {
+        foreground = RemoteServer.isForegroundTranscript(request.query)
+        lane = foreground ? "interactive" : "background"
+        path = request.path
+        switch request.source {
+        case .http: source = "http"
+        case .verifiedCloud(let sender):
+            source = "cloud:\(CloudAppBridge.channelSegment(sender))"
+        }
+    }
+
+    func admitted(total: Int, background: Int) {
+        Log.write("transcript: admitted id=\(id) lane=\(lane) source=\(source) path=\(path) "
+            + "total=\(total) background=\(background)")
+    }
+
+    func refused(_ debt: Int) {
+        Log.write("transcript: refused id=\(id) lane=\(lane) source=\(source) path=\(path) "
+            + "status=429 debt=\(debt)")
+    }
+
+    func measure(_ work: () -> RemoteServer.Response) -> RemoteServer.Response {
+        let startedAt = DispatchTime.now().uptimeNanoseconds
+        let response = work()
+        let finishedAt = DispatchTime.now().uptimeNanoseconds
+        Log.write("transcript: completed id=\(id) lane=\(lane) source=\(source) path=\(path) "
+            + "queue_ms=\(Self.milliseconds(admittedAt, startedAt)) "
+            + "work_ms=\(Self.milliseconds(startedAt, finishedAt)) "
+            + "total_ms=\(Self.milliseconds(admittedAt, finishedAt)) "
+            + "status=\(response.status) bytes=\(response.body.count)")
+        return response
+    }
+
+    private static func milliseconds(_ start: UInt64, _ end: UInt64) -> UInt64 {
+        end >= start ? (end - start) / 1_000_000 : 0
     }
 }

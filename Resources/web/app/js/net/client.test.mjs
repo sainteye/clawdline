@@ -878,7 +878,8 @@ const routedSessionEnvelope = await sealEnvelope({
 readingSocket.receive({ type: "envelope", envelope: routedSessionEnvelope });
 await readingCloud.messageChain;
 
-const transcriptAnswer = readingCloud.transcript("session-01");
+const transcriptAnswer = readingCloud.transcript(
+    "session-01", null, { foreground: true });
 await until(function () { return publishedReads(readingSocket).length === 1; },
     "the transcript request to leave");
 const subscribed = readingSocket.sent.filter((frame) => frame.type === "subscribe");
@@ -892,8 +893,8 @@ assert.equal(published[0].envelope.class, "ctl",
     "a read is not a dispatch and is not billed as one");
 assert.deepEqual(JSON.parse(new TextDecoder().decode(
     await openEnvelope(published[0].envelope, masterKey, senderKey))),
-    { type: "transcript", session: "session-01", limit: 200 },
-    "the transcript request carries the same window the direct path asks for");
+    { type: "transcript", session: "session-01", limit: 200, priority: "foreground" },
+    "the transcript request carries the same window and interactive lane as the direct path");
 await answerRead(readingCloud, readingSocket,
     { read: "transcript", status: 200, body: { messages: [{ role: "user", text: "hi" }] } });
 assert.deepEqual(await transcriptAnswer, { messages: [{ role: "user", text: "hi" }] },
@@ -937,6 +938,10 @@ await assert.rejects(refusedInfo, function (error) {
 const unansweredRead = readingCloud.transcript({ machine: "mac-01", session: "slow" });
 await until(function () { return publishedReads(readingSocket).length === 5; },
     "the unanswered read to leave");
+const backgroundTranscriptRequest = JSON.parse(new TextDecoder().decode(await openEnvelope(
+    publishedReads(readingSocket).at(-1).envelope, masterKey, senderKey)));
+assert.equal(backgroundTranscriptRequest.priority, "background",
+    "a Cloud transcript read with no interactive demand cannot consume the person's lane");
 readTimers.at(-1)();
 await assert.rejects(unansweredRead, function (error) {
     return error.code === "cloud_read_timeout";

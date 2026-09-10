@@ -4,6 +4,10 @@ import Foundation
 /// An app with no window and no Dock icon says nothing at all when something breaks —
 /// without this file, "did it even receive that hotkey" can only be guessed at.
 enum Log {
+    // DateFormatter and the seek-to-end append are both shared mutable operations. Cloud reads
+    // now finish on two bounded workers, so serialize the complete line rather than allowing two
+    // individually valid messages to overwrite or interleave at the file tail.
+    private static let lock = NSLock()
     private static let url = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/Clawdline.log")
 
@@ -14,6 +18,8 @@ enum Log {
     }()
 
     static func write(_ message: String) {
+        lock.lock()
+        defer { lock.unlock() }
         let line = "\(fmt.string(from: Date()))  \(message)\n"
         guard let data = line.data(using: .utf8) else { return }
         if let handle = try? FileHandle(forWritingTo: url) {

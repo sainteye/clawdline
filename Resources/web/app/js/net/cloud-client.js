@@ -761,11 +761,13 @@ export class CloudClient {
      *
      * `phases` is the direct path's request/parse instrumentation and has no counterpart here —
      * there is no HTTP response to report the status of — so it is accepted and ignored rather
-     * than made a different signature. `demand.foreground` likewise: the Mac's transcript lane
-     * reads that off the query it builds itself.
+     * than made a different signature. `demand.foreground` does cross: opening a conversation is
+     * interactive, while revision refreshes and agent reads remain background work.
      */
-    transcript(value) {
-        return this._read(value, "transcript", { limit: TRANSCRIPT_LIMIT }, "transcript");
+    transcript(value, phases, demand) {
+        var priority = demand && demand.foreground ? "foreground" : "background";
+        return this._read(value, "transcript",
+            { limit: TRANSCRIPT_LIMIT, priority: priority }, "transcript");
     }
 
     /**

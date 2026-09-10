@@ -4237,17 +4237,16 @@ final class RemoteServer: @unchecked Sendable {
         }
     }
 
-    private func startTranscriptRead(_ request: Request,
-                                     deliver: @escaping (Response) -> Void) {
-        if let refusal = slowReadingRefusal(request) {
-            deliver(withCachePolicy(refusal))
-            return
-        }
+    private func startTranscriptRead(_ request: Request, deliver: @escaping (Response) -> Void) {
+        if let refusal = slowReadingRefusal(request) { deliver(withCachePolicy(refusal)); return }
+        let trace = TranscriptReadDiagnostics(request)
         transcriptReads.start(
-            foreground: Self.isForegroundTranscript(request.query),
+            foreground: trace.foreground,
             executor: Self.transcriptTestExecutor,
-            refusal: { self.withCachePolicy(Self.transcriptBusyResponse(retryDebt: $0)) },
-            work: { Self.transcriptTestRoute?(request) ?? self.route(request) },
+            admitted: trace.admitted,
+            refusal: { trace.refused($0); return self.withCachePolicy(
+                Self.transcriptBusyResponse(retryDebt: $0)) },
+            work: { trace.measure { Self.transcriptTestRoute?(request) ?? self.route(request) } },
             completeOnOwner: { self.serialized($0) },
             deliver: deliver)
     }

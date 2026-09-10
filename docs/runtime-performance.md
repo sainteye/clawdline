@@ -147,6 +147,13 @@ pass on one fast machine.
   Transcript title, custom-title and weak-title caches each retain at most 512 entries. A long-lived
   process therefore cannot retain one entry for every key or historical transcript it has ever
   seen.
+- Transcript reads have one serial interactive worker and one serial background worker, with a
+  combined bound of two and a background bound of one. A person opening a Session can therefore
+  parse concurrently with one agent/refresh read, while each class remains bounded and ordered.
+  Cloud carries this intent explicitly; an older client with no intent is background.
+- Every transcript admission/refusal/completion records its lane, source, target, queue debt,
+  queue time, parse time, total local time, status and answer size. Cloud additionally records
+  receive-to-route and encrypted-publication timing, without recording transcript text.
 - Session closeability uses an immutable read-side index. Settled historical tasks are absent from
   root and parent hot buckets; an exact child identity still retains all matching rows so duplicate
   identity evidence fails closed. The index rebuilds only after a closeability-relevant registry

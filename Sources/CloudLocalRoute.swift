@@ -102,9 +102,9 @@ struct CloudLocalRoute: Sendable {
             route = "/v1/board"
             if !project.isEmpty { parameters["project"] = project }
             if !item.isEmpty { parameters["item"] = item }
-        case .transcript(let session, let limit):
+        case .transcript(let session, let limit, let priority):
             route = "/v1/sessions/\(Self.segment(session))/transcript"
-            parameters = ["limit": String(limit)]
+            parameters = ["limit": String(limit), "priority": priority.rawValue]
         case .info(let session, let parts):
             route = "/v1/sessions/\(Self.segment(session))/info"
             if parts == "summary" { parameters = ["parts": "summary"] }
