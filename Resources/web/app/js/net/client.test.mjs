@@ -600,6 +600,12 @@ const snapshotEnvelope = await sealEnvelope({
     ch: "s/mac-01/session-01", seq: 10, ts: 1787817600000, class: "stream",
     key_id: "ms-1", sender: "device-vector-01"
 }, JSON.stringify({ id: "session-01", label: "cloud session" }), masterKey, signingKey);
+const firstInventoryEnvelope = await sealEnvelope({
+    ch: "s/mac-01/__clawdline_inventory_v1__", seq: 20, ts: 1787817599999, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ inventory: { version: 1, sessions: ["session-01"] } }),
+masterKey, signingKey);
+fakeSocket.receive({ type: "envelope", realign: true, envelope: firstInventoryEnvelope });
 fakeSocket.receive({ type: "envelope", realign: true, envelope: snapshotEnvelope });
 await connectedCloud.messageChain;
 assert.deepEqual((await connectedCloud.sessions()).sessions[0].identity,
@@ -608,13 +614,14 @@ assert.deepEqual((await connectedCloud.sessions()).sessions[0].identity,
 assert.equal(liveEvents.some(function (event) { return event.type === "sessions"; }), true);
 
 const secondSnapshotEnvelope = await sealEnvelope({
-    ch: "s/mac-01/session-02", seq: 11, ts: 1787817600001, class: "stream",
+    ch: "s/mac-01/session-02", seq: 21, ts: 1787817600001, class: "stream",
     key_id: "ms-1", sender: "device-vector-01"
 }, JSON.stringify({ id: "session-02", label: "second cloud session" }), masterKey, signingKey);
 fakeSocket.receive({ type: "envelope", envelope: secondSnapshotEnvelope });
 await connectedCloud.messageChain;
 
 const reconnectLists = [];
+const resumedEvents = [];
 const resumedCloud = new CloudClient({
     relayURL: "https://relay.example", deviceToken: "jwt-2", devicePrivateKey: signingKey,
     masterKey: masterKey, senderKeys: { "device-vector-01": senderKey },
@@ -625,6 +632,7 @@ const resumedCloud = new CloudClient({
         conn: function () {}, hello: function () {}
     }
 });
+resumedCloud.events(function (event) { resumedEvents.push(event); });
 await resumedCloud.start();
 const resumedSocket = FakeWebSocket.latest;
 resumedSocket.receive({ type: "challenge", v: 1, context: "clawdline-challenge-v1",
@@ -641,14 +649,89 @@ resumedSocket.receive({ type: "envelope", realign: true, envelope: secondSnapsho
 await resumedCloud.messageChain;
 assert.deepEqual(reconnectLists.at(-1), ["session-01", "session-02"],
     "a reconnect keeps sessions that have not replayed yet instead of publishing a partial list");
+const delayedNewEnvelope = await sealEnvelope({
+    ch: "s/mac-01/session-03", seq: 22, ts: 1787817600002, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ id: "session-03", label: "new after restart" }), masterKey, signingKey);
+const foreignEnvelope = await sealEnvelope({
+    ch: "s/mac-02/foreign", seq: 23, ts: 1787817600003, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ id: "foreign", label: "another Mac" }), masterKey, signingKey);
+resumedSocket.receive({ type: "envelope", envelope: delayedNewEnvelope });
+resumedSocket.receive({ type: "envelope", envelope: foreignEnvelope });
+await resumedCloud.messageChain;
+const inventoryEnvelope = await sealEnvelope({
+    ch: "s/mac-01/__clawdline_inventory_v1__", seq: 24, ts: 1787817600004, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ inventory: { version: 1, sessions: ["session-02", "session-03"] } }),
+masterKey, signingKey);
+resumedSocket.receive({ type: "envelope", envelope: inventoryEnvelope });
+await resumedCloud.messageChain;
+assert.deepEqual(reconnectLists.at(-1), ["session-02", "session-03", "foreign"],
+    "an authoritative inventory adds delayed rows, prunes restart-forgotten ids, and stays on its verified Mac");
+const newestRowEnvelope = await sealEnvelope({
+    ch: "s/mac-01/session-04", seq: 26, ts: 1787817600006, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ id: "session-04", label: "newer than inventory" }), masterKey, signingKey);
+const delayedInventoryEnvelope = await sealEnvelope({
+    ch: "s/mac-01/__clawdline_inventory_v1__", seq: 25, ts: 1787817600005, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ inventory: { version: 1, sessions: ["session-02", "session-03"] } }),
+masterKey, signingKey);
+resumedSocket.receive({ type: "envelope", envelope: newestRowEnvelope });
+resumedSocket.receive({ type: "envelope", realign: true, envelope: delayedInventoryEnvelope });
+await resumedCloud.messageChain;
+assert.deepEqual(reconnectLists.at(-1), ["session-02", "session-03", "foreign", "session-04"],
+    "an older retained inventory arriving late cannot prune a newer live row");
+resumedSocket.receive({ type: "envelope", envelope: newestRowEnvelope });
+await resumedCloud.messageChain;
+assert.equal(resumedEvents.filter(function (event) {
+    return event.type === "error" && event.error && event.error.code === "replay";
+}).length, 1, "live envelopes keep sender-wide replay protection after retained realignment");
 const removedFirstEnvelope = await sealEnvelope({
-    ch: "s/mac-01/session-01", seq: 12, ts: 1787817600002, class: "stream",
+    ch: "s/mac-01/session-02", seq: 27, ts: 1787817600007, class: "stream",
     key_id: "ms-1", sender: "device-vector-01"
 }, JSON.stringify({ session: null, deleted: true }), masterKey, signingKey);
 resumedSocket.receive({ type: "envelope", realign: true, envelope: removedFirstEnvelope });
 await resumedCloud.messageChain;
-assert.deepEqual(reconnectLists.at(-1), ["session-02"],
+assert.deepEqual(reconnectLists.at(-1), ["session-03", "foreign", "session-04"],
     "an explicit tombstone still removes a last-known-good session after reconnect");
+
+const inventoryChannel = { kind: "session", machine: "mac-03",
+    session: "__clawdline_inventory_v1__" };
+const inventoryMeta = { seq: 1, ts: 1787817600000 };
+const maximumInventory = Array.from({ length: 512 }, function (_, index) { return "s-" + index; });
+assert.doesNotThrow(function () {
+    connectedCloud._applySnapshot(inventoryChannel,
+        { inventory: { version: 1, sessions: maximumInventory } }, inventoryMeta, true);
+}, "an inventory accepts its exact 512-id wire bound");
+assert.equal((await connectedCloud.sessions()).sessions.some(function (row) {
+    return row.id === "__clawdline_inventory_v1__";
+}), false, "the reserved inventory sentinel never becomes a visible Session row");
+[
+    { version: 1, sessions: maximumInventory.concat("s-512") },
+    { version: 1, sessions: ["duplicate", "duplicate"] },
+    { version: 1, sessions: ["__clawdline_inventory_v1__"] },
+    { version: 2, sessions: [] },
+    { version: 1, sessions: [], extra: true }
+].forEach(function (inventory) {
+    assert.throws(function () {
+        connectedCloud._applySnapshot(inventoryChannel, { inventory: inventory },
+            { seq: inventoryMeta.seq + 1, ts: inventoryMeta.ts }, true);
+    }, function (error) { return error && error.code === "bad_payload"; },
+    "malformed, duplicate, reserved and 513-id inventories fail closed");
+});
+assert.equal((await connectedCloud.sessions()).sessions.some(function (row) {
+    return row.session === "__clawdline_inventory_v1__";
+}), false, "the reserved inventory channel is control data and never a visible Session row");
+for (const ids of [maximumInventory.concat("s-512"), ["same", "same"],
+    ["__clawdline_inventory_v1__"], ["ok", 7]]) {
+    assert.throws(function () {
+        connectedCloud._applySnapshot(inventoryChannel,
+            { inventory: { version: 1, sessions: ids } }, inventoryMeta, true);
+    }, function (error) { return error && error.code === "bad_payload"; },
+    "malformed, duplicate, reserved and 513-row inventories fail closed");
+}
 
 /* ---- the two fields the orch/ snapshot used to leave out ------------------
    Row 10 and row 17 of the Cloud enumeration are one defect twice: the Mac published a snapshot
@@ -868,6 +951,19 @@ async function answerRead(client, socket, payload, session = "session-01") {
 
 const readingCloud = makeReadingCloud();
 const readingSocket = await becomeReady(readingCloud);
+// Keep two unrelated rows beside the target so the not_found repair below proves it removes
+// one exact identity rather than making a broken whole-cache clear look correct.
+for (const seed of [
+    { machine: "mac-01", session: "session-sibling", label: "same Mac sibling", seq: 3997 },
+    { machine: "mac-02", session: "foreign-reading", label: "foreign Mac row", seq: 3998 }
+]) {
+    const seedEnvelope = await sealEnvelope({
+        ch: "s/" + seed.machine + "/" + seed.session, seq: seed.seq,
+        ts: 1787817600000, class: "stream", key_id: "ms-1", sender: "device-vector-01"
+    }, JSON.stringify({ id: seed.session, label: seed.label }), masterKey, signingKey);
+    readingSocket.receive({ type: "envelope", envelope: seedEnvelope });
+    await readingCloud.messageChain;
+}
 // The shared UI keys rows by `session.id` and hands that string back to every transport.  A
 // Cloud transport must recover the owning Mac from the snapshot it supplied; treating the
 // string like a local identity publishes to `ctl/this-mac`, where no Cloud machine can hear it.
@@ -947,13 +1043,28 @@ await assert.rejects(unansweredRead, function (error) {
     return error.code === "cloud_read_timeout";
 }, "a read nothing ever answers ends in a code rather than in a skeleton");
 
+const vanished = readingCloud.transcript("session-01", null, { foreground: true });
+await until(function () { return publishedReads(readingSocket).length === 6; },
+    "the vanished transcript read to leave");
+await answerRead(readingCloud, readingSocket, { read: "transcript", status: 404,
+    error: { code: "not_found", message: "No session named that" } });
+await assert.rejects(vanished, function (error) { return error.code === "not_found"; });
+const healedSessions = (await readingCloud.sessions()).sessions;
+assert.equal(healedSessions.some(function (row) {
+    return row.identity.machine === "mac-01" && row.identity.session === "session-01";
+}), false, "a typed transcript not_found self-heals the exact stale Session row");
+assert.deepEqual(healedSessions.map(function (row) {
+    return [row.identity.machine, row.identity.session];
+}).sort(), [["mac-01", "session-sibling"], ["mac-02", "foreign-reading"]],
+"the exact stale-row repair preserves both its same-Mac sibling and another machine's row");
+
 // The request has to be **on the wire** before the socket is stopped, and the count it waits for
 // has to be exact. Waiting for "more than before" left `_send` to throw `offline` on a socket
 // closed out from under a request that had never left — the right code for the wrong reason —
 // and this check stayed green with `_failAllReads` deleted from both `stop()` and `onclose`,
 // which is precisely the leak it exists to catch.
 const orphaned = readingCloud.info({ machine: "mac-01", session: "session-01" });
-await until(function () { return publishedReads(readingSocket).length === 6; },
+await until(function () { return publishedReads(readingSocket).length === 7; },
     "the orphaned read to reach the wire before its socket is stopped");
 readingCloud.stop();
 await assert.rejects(orphaned, function (error) { return error.code === "offline"; },

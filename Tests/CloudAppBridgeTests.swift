@@ -195,6 +195,7 @@ private actor CloudAppBridgeTestRouter: CloudCommandRouting {
     private var calls: [Call] = []
     private var reads: [ReadCall] = []
     private var readAnswer = CloudReadResult(status: 200, body: Data(#"{"ok":true}"#.utf8))
+    private var blockedReadName: String?, blockedReadContinuation: CheckedContinuation<Void, Never>?
 
     func route(_ command: CloudHeadlessCommand, sender: String,
                idempotencyKey: String) async -> CloudCommandResult {
@@ -205,10 +206,13 @@ private actor CloudAppBridgeTestRouter: CloudCommandRouting {
 
     func read(_ read: CloudHeadlessRead, sender: String) async -> CloudReadResult {
         reads.append(ReadCall(read: read, sender: sender))
+        if read.name == blockedReadName { await withCheckedContinuation { blockedReadContinuation = $0 } }
         return readAnswer
     }
 
     func answerReadsWith(_ answer: CloudReadResult) { readAnswer = answer }
+    func blockRead(named name: String) { blockedReadName = name }
+    func releaseBlockedRead() { blockedReadName = nil; blockedReadContinuation?.resume(); blockedReadContinuation = nil }
 
     func recorded() -> [Call] { calls }
     func recordedReads() -> [ReadCall] { reads }
@@ -309,9 +313,12 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
         "tasks": [["id": "task-one", "state": "working"]], "at": 124,
     ], options: [.sortedKeys])
     try await bridge.publishOrchestrator(orchestratorPayload)
+    var unchangedSessionPayload = sessionPayload; unchangedSessionPayload["at"] = 125
+    try await bridge.publishSessions(JSONSerialization.data(withJSONObject: unchangedSessionPayload))
 
     let published = transport.envelopes()
-    try require(published.count == 3, "two full sessions and one orchestrator snapshot publish")
+    try require(published.count == 4,
+                "an unchanged scan republishes nothing beside two rows, inventory and orchestrator")
     try require(
         published.map(\.ch).contains("s/Mac%20%2F%20%E5%8F%B0%E7%81%A3/session%2F%E4%B8%80%7C%3F"),
         "machine and session channel segments use encodeURIComponent-compatible encoding"
@@ -340,7 +347,7 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
         "scan": ["generation": 5, "complete": false, "emptyAuthoritative": false],
     ]
     try await bridge.publishSessions(JSONSerialization.data(withJSONObject: incompleteEmpty))
-    try require(transport.envelopes().count == 3,
+    try require(transport.envelopes().count == 4,
                 "an incomplete nonauthoritative scan never tombstones known sessions")
 
     let oneRemaining: [String: Any] = [
@@ -795,7 +802,7 @@ private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
                 "replacement cancels an in-flight bridge-owned publication")
     try await waitForCloudAppBridge("B fresh publications bypass A's invalidated tail") {
         let channels = transportB.envelopes().map(\.ch)
-        return channels.filter { $0.hasPrefix("s/publication/") }.count == 1
+        return channels.filter { $0.hasPrefix("s/publication/") }.count == 2
             && channels.filter { $0 == "orch/publication" }.count == 1
     }
     try require(transportA!.envelopes().isEmpty,
@@ -889,19 +896,19 @@ private func runCloudAppBridgeReconnectTests() async throws -> Int {
     await attachCloudBridgeForTest(bridge)
     try await waitForCloudAppBridge("initial ready generation publishes both snapshots") {
         let channels = transport.envelopes().map(\.ch)
-        return channels.filter { $0.hasPrefix("s/reconnect/") }.count == 1
+        return channels.filter { $0.hasPrefix("s/reconnect/") }.count == 2
             && channels.filter { $0 == "orch/reconnect" }.count == 1
     }
     transport.signalReady()
     try await waitForCloudAppBridge("reconnect republishes without a local observation") {
         let channels = transport.envelopes().map(\.ch)
-        return channels.filter { $0.hasPrefix("s/reconnect/") }.count == 2
+        return channels.filter { $0.hasPrefix("s/reconnect/") }.count == 4
             && channels.filter { $0 == "orch/reconnect" }.count == 2
     }
     try await Task.sleep(nanoseconds: 30_000_000)
     let channels = transport.envelopes().map(\.ch)
-    try require(channels.filter { $0.hasPrefix("s/reconnect/") }.count == 2,
-                "one reconnect generation has one session observer publication")
+    try require(channels.filter { $0.hasPrefix("s/reconnect/") }.count == 4,
+                "each reconnect republishes one row and its authoritative inventory")
     try require(channels.filter { $0 == "orch/reconnect" }.count == 2,
                 "one reconnect generation has one orchestrator publication")
     await attachCloudBridgeForTest(nil)
@@ -953,20 +960,20 @@ private func runCloudAppBridgeConcreteReconnectTests() async throws -> Int {
     await RemoteServer.shared.awaitCloudBridgeLifecycle()
     try await waitForCloudAppBridge("concrete initial ready publishes fresh snapshots") {
         let channels = await relay.publishedEnvelopes().map(\.ch)
-        return channels.filter { $0.hasPrefix("s/concrete/") }.count == 1
+        return channels.filter { $0.hasPrefix("s/concrete/") }.count == 2
             && channels.filter { $0 == "orch/concrete" }.count == 1
     }
     await relay.dropConnections()
     try await waitForCloudAppBridge("concrete reconnect republishes fresh snapshots") {
         let channels = await relay.publishedEnvelopes().map(\.ch)
-        return channels.filter { $0.hasPrefix("s/concrete/") }.count == 2
+        return channels.filter { $0.hasPrefix("s/concrete/") }.count == 4
             && channels.filter { $0 == "orch/concrete" }.count == 2
     }
     let handshakes = await relay.completedHandshakes()
     try require(handshakes >= 2,
                 "concrete CloudTransport reconnect completes a second signed handshake")
     let channels = await relay.publishedEnvelopes().map(\.ch)
-    try require(channels.filter { $0.hasPrefix("s/concrete/") }.count == 2
+    try require(channels.filter { $0.hasPrefix("s/concrete/") }.count == 4
                 && channels.filter { $0 == "orch/concrete" }.count == 2,
                 "concrete Transport to Bridge to RemoteServer path publishes one fresh pair per ready generation")
     await attachCloudBridgeForTest(nil)
@@ -1187,13 +1194,7 @@ private enum CloudAppBridgeTestMain {
 }
 #endif
 
-/// The reads a browser on the cloud path could not make.
-///
-/// The whole round trip, minus a relay: what the bridge accepts on the command channel, which
-/// door it sends it through, and what it publishes back. Nothing had ever published a `t/`
-/// envelope, so the two things being proved here are that one now exists and that a refusal
-/// becomes one too — a viewer that is told nothing waits behind a skeleton forever, which is
-/// exactly what a phone on this path used to do.
+/// The encrypted round trip for every read a Cloud browser can ask this Mac to perform.
 private func runCloudAppBridgeReadTests() async throws -> Int {
     var checks = 0
     func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
@@ -1228,9 +1229,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         return (try JSONSerialization.jsonObject(with: clear)) as? [String: Any] ?? [:]
     }
 
-    // The write switch is off for the whole of this suite. A transcript read is still answered:
-    // on the direct path a paired device reads one with that switch off, and the session rows
-    // this bridge publishes cross without consulting it either.
     try require(gate.get() == false, "the write switch is off for every read below")
     await router.answerReadsWith(CloudReadResult(
         status: 200, body: Data(#"{"messages":[{"role":"user"}],"revision":"7"}"#.utf8)
@@ -1268,8 +1266,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require((transcriptPayload["body"] as? [String: Any])?["revision"] as? String == "7",
                 "the answer carries the route's own body, unchanged")
 
-    // Full and summary Info are two answers, not one. A summary omits screen, Git and
-    // links/deploy, so a full request settled by a summary would be cached as complete.
     await router.answerReadsWith(CloudReadResult(
         status: 200, body: Data(#"{"info":{"session":{"id":"plain"}}}"#.utf8)
     ))
@@ -1284,7 +1280,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(summaryPayload["read"] as? String == "info.summary",
                 "the summary answer is named apart from the full one")
 
-    // A refusal is published too, and it is the route's own typed code rather than a new one.
     await router.answerReadsWith(CloudReadResult(
         status: 404,
         body: Data(#"{"error":{"code":"not_found","message":"No session named that"}}"#.utf8)
@@ -1304,9 +1299,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(results.all().contains(where: { $0.code == "not_found" }),
                 "the refusal is observable at the bridge as well as on the channel")
 
-    // And the other four, which were `cloud_read_unavailable` — a typed refusal, and not an
-    // answer. The Git panel first, because it is the one the person opens most and the one whose
-    // page already branches on a code of the Mac's.
     await router.answerReadsWith(CloudReadResult(
         status: 200, body: Data(#"{"git":{"branch":"main","clean":true,"files":[]}}"#.utf8)
     ))
@@ -1321,8 +1313,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
                     as? String == "main",
                 "and carries the route's own body, which is what lets git-panel.js keep its shape")
 
-    // A refusal the Git panel already has a sentence for. `not_a_repo` is not a cloud word and is
-    // not translated into one: the page branches on it over the tunnel and branches on it here.
     await router.answerReadsWith(CloudReadResult(
         status: 404,
         body: Data(#"{"error":{"code":"not_a_repo","message":"Not inside a Git repository"}}"#.utf8)
@@ -1356,9 +1346,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let shellName = try opened(transport.envelopes()[6])["read"] as? String
     try require(shellName == "shell:sh-9", "and its answer names the command, not the kind")
 
-    // The decisive one, and the reason `name` carries an id at all. Two agents in one session
-    // answer on that session's single channel; a viewer waiting on both can only tell the answers
-    // apart by the name, so the name has to be the agent and not the word "agent".
     await router.answerReadsWith(CloudReadResult(
         status: 200, body: Data(#"{"agent":{"id":"a-1"},"entries":[]}"#.utf8)
     ))
@@ -1373,9 +1360,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(secondAgentRead == .agent(session: "plain", agent: "a-2", limit: 200),
                 "and the second reaches the broker as its own agent with its own window")
 
-    // The two lists that have to agree: `readTypes` admits a word, and the switch in `serveRead`
-    // has to know it. A member of the set with no case would be refused by the `default` rather
-    // than read as the last one, and this is what would say so.
     let wellFormed: [String: String] = [
         "transcript": #"{"type":"transcript","session":"typed","limit":200}"#,
         "info": #"{"type":"info","session":"typed","parts":"full"}"#,
@@ -1384,11 +1368,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         "skills": #"{"type":"skills","session":"typed"}"#,
         "git": #"{"type":"git","session":"typed"}"#,
         "screen": #"{"type":"screen","session":"typed"}"#,
-        // The stub answers every read with the same JSON body and no `Content-Type`, so this one
-        // is refused 415 by `imageOutcome` rather than answered. That is the right fixture here:
-        // this table asks whether a word admitted by `readTypes` reaches its own case, and a read
-        // that is parsed and then refused has answered that question. The picture's own answer,
-        // its byte bound and its refusals are checked further down with a real PNG.
         "image": #"{"type":"image","session":"typed","id":"img-1"}"#,
         "documents": #"{"type":"documents","session":"typed"}"#,
         "document": #"{"type":"document","session":"typed","request":"p-doc","scope":"project","task":"","path":"notes.md"}"#,
@@ -1413,8 +1392,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try await waitForCloudAppBridge("every admitted read type to parse and route") {
         await router.recordedReads().count == readsBeforeTyped + wellFormed.count
     }
-    // Drained before the malformed table below counts envelopes: an answer still in flight would
-    // arrive during that count and be read as a malformed read having published one.
     try await waitForCloudAppBridge("every admitted read type to be answered") {
         transport.envelopes().count == envelopesBeforeTyped + wellFormed.count
     }
@@ -1426,13 +1403,10 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
                 "image.img-1", "documents", "read:p-doc", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
                 "read:p-5", "read:p-list", "read:p-snippets", "read:p-board"]
             && typedReads.contains(CloudAppBridgeTestRouter.ReadCall(
-                read: .transcript(session: "typed", limit: 200, priority: .background),
+                read: .transcript(session: "typed", limit: 200, priority: .foreground),
                 sender: "viewer")),
-        "each read parses into its own case, and old transcript clients stay background")
+        "each read parses into its own case, and an old interactive Cloud tab stays foreground")
 
-    // Strictness, in the same shape the commands already have: an exact key set, a bounded
-    // window, a session that is really there, a tier that is one of two, and the command class
-    // the relay bills. None of them may reach the broker.
     let readsBeforeMalformed = await router.recordedReads().count
     let envelopesBeforeMalformed = transport.envelopes().count
     let malformed = [
@@ -1446,25 +1420,18 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         #"{"type":"transcript","session":"plain","limit":200,"priority":1}"#,
         #"{"type":"info","session":"plain","parts":"everything"}"#,
         #"{"type":"info","session":"plain"}"#,
-        // An agent is a transcript with a name on it, so it is refused everywhere a transcript
-        // is and once more besides: without the name there is nothing to read and nothing to
-        // publish the answer under.
         #"{"type":"agent","session":"plain","limit":200}"#,
         #"{"type":"agent","session":"plain","agent":"","limit":200}"#,
         #"{"type":"agent","session":"plain","agent":"a-1"}"#,
         #"{"type":"agent","session":"plain","agent":"a-1","limit":0}"#,
         #"{"type":"agent","session":"plain","agent":"a-1","limit":1001}"#,
         #"{"type":"agent","session":"plain","agent":"a-1","limit":200,"parts":"full"}"#,
-        // A command's tail is bounded where its route bounds it — 1 KiB to 1 MiB — so a viewer
-        // cannot ask this Mac for more of a build log than a phone on the tunnel can.
         #"{"type":"shell","session":"plain","shell":"sh-9"}"#,
         #"{"type":"shell","session":"plain","shell":"","bytes":65536}"#,
         #"{"type":"shell","session":"plain","bytes":65536}"#,
         #"{"type":"shell","session":"plain","shell":"sh-9","bytes":1023}"#,
         #"{"type":"shell","session":"plain","shell":"sh-9","bytes":1048577}"#,
         #"{"type":"shell","session":"plain","shell":"sh-9","bytes":65536.5}"#,
-        // Neither of the last two takes a window, and a field they do not read is a field
-        // somebody believed they read.
         #"{"type":"skills","session":"plain","limit":200}"#,
         #"{"type":"skills","session":""}"#,
         #"{"type":"git","session":"plain","parts":"summary"}"#,
@@ -1485,21 +1452,100 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let readsAfterMalformed = await router.recordedReads().count
     try require(readsAfterMalformed == readsBeforeMalformed,
                 "no malformed read reaches the broker")
-    // The count this asks about is its own delta, not a total. A literal here — it was 15 — spells
-    // out every publication above it, so adding one admitted read type turns a check about
-    // refusals red for a reason that has nothing to do with refusals.
     try require(transport.envelopes().count == envelopesBeforeMalformed,
                 "a refused-before-routing read publishes nothing, having no answer to publish")
 
-    await bridge.stop()
+    let readsBeforeBlockedLane = await router.recordedReads().count
+    await router.blockRead(named: "git")
+    transport.yield(#"{"type":"git","session":"plain"}"#, sequence: 500)
+    try await waitForCloudAppBridge("background read enters its lane") {
+        await router.recordedReads().count == readsBeforeBlockedLane + 1 }
+    transport.yield(#"{"type":"transcript","session":"plain","limit":200,"priority":"foreground"}"#, sequence: 501)
+    try await waitForCloudAppBridge("foreground bypasses blocked background") {
+        await router.recordedReads().count == readsBeforeBlockedLane + 2 }
+    let laneReads = await router.recordedReads().suffix(2)
+    await router.releaseBlockedRead()
+    try await waitForCloudAppBridge("both lanes finish before capacity checks") {
+        transport.envelopes().count == envelopesBeforeMalformed + 2
+    }
 
-    // What a viewer may actually reach. The path and the query are built from the closed enum
-    // rather than sent, so this is the whole surface a paired browser can ask for.
+    func proveBusy(
+        _ name: String, limit: Int, sequence start: UInt64,
+        body: (Int) -> String
+    ) async throws -> (payload: [String: Any], channel: String) {
+        let beforeReads = await router.recordedReads().count
+        let beforeEnvelopes = transport.envelopes().count
+        let beforeBusy = results.all().filter { $0.code == "cloud_read_busy" }.count
+        await router.blockRead(named: name)
+        for index in 0...limit { transport.yield(body(index), sequence: start + UInt64(index)) }
+        try await waitForCloudAppBridge("\(name) lane reaches its bound") {
+            await router.recordedReads().count == beforeReads + 1
+                && results.all().filter { $0.code == "cloud_read_busy" }.count == beforeBusy + 1
+                && transport.envelopes().count == beforeEnvelopes + 1
+        }
+        let busyEnvelope = transport.envelopes()[beforeEnvelopes]
+        let busyPayload = try opened(busyEnvelope)
+        await router.releaseBlockedRead()
+        try await waitForCloudAppBridge("\(name) lane drains") {
+            await router.recordedReads().count == beforeReads + limit
+                && transport.envelopes().count == beforeEnvelopes + limit + 1
+        }
+        transport.yield(body(limit + 1), sequence: start + UInt64(limit + 1))
+        try await waitForCloudAppBridge("\(name) lane recovers") {
+            await router.recordedReads().count == beforeReads + limit + 1
+                && transport.envelopes().count == beforeEnvelopes + limit + 2
+        }
+        return (busyPayload, busyEnvelope.ch)
+    }
+    let backgroundBusy = try await proveBusy("git", limit: 16, sequence: 600) {
+        #"{"type":"git","session":"bg-\#($0)"}"#
+    }
+    let foregroundBusy = try await proveBusy("transcript", limit: 4, sequence: 700) {
+        #"{"type":"transcript","session":"fg-\#($0)","limit":200,"priority":"foreground"}"#
+    }
+
+    func inventoryData(_ ids: [String]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "sessions": ids.map { ["id": $0] }, "at": 800,
+            "scan": ["generation": 8, "complete": true, "emptyAuthoritative": false],
+        ])
+    }
+    let maximumIDs = (0..<512).map { "inventory-\($0)" }
+    try await bridge.publishSessions(inventoryData(maximumIDs))
+    let sentinel = try transport.envelopes().last { $0.ch.hasSuffix("/__clawdline_inventory_v1__") }!
+        .open(masterSecret: masterSecret, publicKeyForSender: {
+            $0 == "machine-device" ? signingKey.publicKeyRaw : nil
+        })
+    let sentinelObject = try JSONSerialization.jsonObject(with: sentinel) as? [String: Any]
+    let sentinelInventory = sentinelObject?["inventory"] as? [String: Any]
+    var malformedInventories = 0
+    for ids in [maximumIDs + ["inventory-512"], ["same", "same"],
+                [CloudAppBridge.sessionInventoryID]] {
+        do { try await bridge.publishSessions(inventoryData(ids)) }
+        catch CloudAppBridgeError.malformedSessions { malformedInventories += 1 }
+    }
+    guard sentinelInventory?["version"] as? Int == 1,
+          sentinelInventory?["sessions"] as? [String] == maximumIDs.sorted(),
+          malformedInventories == 3 else {
+        throw CloudAppBridgeTestFailure(description:
+            "Swift opens the 512-id sentinel and rejects 513, duplicate and reserved ids")
+    }
+    await bridge.stop()
     let transcriptRequest = RemoteServer.Request(
         verifiedCloudRead: .transcript(
             session: "session/一|?", limit: 50, priority: .foreground), sender: "viewer"
     )
-    try require(transcriptRequest.method == "GET", "a read is a GET and carries no body")
+    try require(transcriptRequest.method == "GET"
+                    && laneReads.map(\.read.name) == ["git", "transcript"]
+                    && backgroundBusy.channel.hasSuffix("/bg-16")
+                    && foregroundBusy.channel.hasSuffix("/fg-4")
+                    && [backgroundBusy.payload, foregroundBusy.payload].allSatisfy {
+                        $0["read"] as? String != nil && $0["status"] as? Int == 429
+                            && ($0["error"] as? [String: Any])?["code"] as? String
+                                == "cloud_read_busy"
+                    },
+                "reads are GETs; foreground bypasses background; both bounded lanes return "
+                    + "encrypted typed 429 on the refused Session channel and recover")
     try require(transcriptRequest.path == "/v1/sessions/session%2F%E4%B8%80%7C%3F/transcript",
                 "the session id is encoded the same way the command door encodes it")
     try require(transcriptRequest.query == ["limit": "50", "priority": "foreground"],
@@ -1521,8 +1567,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     try require(RemoteServer.isSlowReading(fullInfoRequest.path),
                 "a cloud Info read is classified into the bounded reading lane")
 
-    // The other four, built from the same closed enum. Their ids are escaped the way the direct
-    // path's own call sites escape them, so an id holding a slash is one path segment on both.
     let agentRequest = RemoteServer.Request(
         verifiedCloudRead: .agent(session: "plain", agent: "bg/一", limit: 200), sender: "viewer"
     )
@@ -1606,12 +1650,13 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
                     && snippetDeleteRequest.method == "DELETE"
                     && snippetDeleteRequest.path == "/v1/snippets/snippet%2F%E4%B8%80"
                     && snippetOrderRequest.method == "POST"
-                    && snippetOrderRequest.path == "/v1/snippets/order",
-                "all four Cloud snippet mutations map to the existing authenticated routes")
+                    && snippetOrderRequest.path == "/v1/snippets/order"
+                    && laneReads.map(\.read.name) == ["git", "transcript"],
+                "Cloud mutations map locally, and foreground reads bypass background work")
 
-    // Where they queue, which is the shared queue — and that is not this door's decision, it is
-    // the direct path's. Both lane predicates refuse these four paths over HTTP too, so sending
-    // them to a lane here would be a second policy nobody measured.
+    // Their local routes keep the direct path's classification. The Cloud bridge's separate
+    // background worker is an upstream admission boundary, not a claim that these HTTP paths
+    // belong to the local transcript or slow-read coordinator.
     for path in [agentRequest.path, shellRequest.path, skillsRequest.path, gitRequest.path] {
         try require(!RemoteServer.isTranscriptReading(path) && !RemoteServer.isSlowReading(path),
                     "\(path) is not a lane read here, because it is not one on the direct path")
@@ -1622,16 +1667,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
 
 /// A picture crossing the transport, and one that could not.
 ///
-/// Row 19 of the Cloud enumeration, and the only one whose failure was in the transport itself:
-/// `transcript-images.js` builds `<img src="/v1/artifacts/images/:id">`, which is same-origin and
-/// relative, and on this path the origin is a hosted console with no such route. So every image in
-/// every transcript was a broken-image icon — the worst answer available, because it looks like
-/// the reader's own fault.
-///
-/// What is proved here, in order: the bound is arithmetic rather than a preference; the real route
-/// answers a cloud image read with the stored bytes; those bytes reach the session's own channel
-/// as base64 under the picture's own name; and a picture over the bound is published as a typed
-/// refusal carrying both numbers, with the bytes left at home.
+/// Encrypted Cloud image reads, including their exact payload bound and typed refusals.
 private func runCloudAppBridgeImageTests() async throws -> Int {
     var checks = 0
     func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
@@ -1639,9 +1675,6 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
         if !condition() { throw CloudAppBridgeTestFailure(description: message) }
     }
 
-    // The bound, which is the only genuinely new decision in this feature. The relay caps one
-    // envelope's ciphertext at 16 MiB on every tier; AES-GCM adds a tag, base64 costs four bytes
-    // for three, and the JSON around it is measured rather than guessed. Everything else follows.
     let ceiling = CloudAppBridge.cloudImageMaxEncodedBytes
     try require(ceiling == 12_582_132,
                 "the image ceiling is derived from the relay's envelope cap, not chosen")
@@ -1654,8 +1687,6 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
                 "and it sits 780 bytes under the store's own, so all but the last kilobyte of "
                 + "what this Mac will ever hold does cross")
 
-    // The Mac side with nothing faked: a real artifact in the real store, read through the real
-    // route by the Request the closed enum builds.
     let directory = isolatedTestSessionImagesDirectory
     try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let source = directory.appendingPathComponent("cloud-image-source.png")
@@ -1707,8 +1738,6 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
         return (try JSONSerialization.jsonObject(with: clear)) as? [String: Any] ?? [:]
     }
 
-    // A picture crossing. The write switch is off throughout, exactly as it is for the other two
-    // reads: looking at a picture somebody already sent types into nothing.
     try require(gate.get() == false, "the write switch is off for every image read below")
     let first = "11111111-2222-4333-8444-555555555555"
     let second = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
@@ -1736,17 +1765,12 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
     try require(Data(base64Encoded: (body?["data"] as? String) ?? "") == fixture,
                 "and the bytes themselves are the picture, base64 and unchanged")
 
-    // Two pictures asked for together come back under two names. A transcript holds up to six per
-    // message across two hundred messages, and they are answered in whatever order the disk gives.
     transport.yield(#"{"type":"image","session":"plain","id":"\#(second)"}"#, sequence: 41)
     try await waitForCloudAppBridge("the second picture") { transport.envelopes().count == 2 }
     let secondPayload = try opened(transport.envelopes()[1])
     try require(secondPayload["read"] as? String == "image." + second,
                 "the second picture answers under its own name rather than settling the first")
 
-    // The refusal, which is the half that matters more: whatever the bound is, a picture that
-    // cannot cross says so. The ceiling is forced here because the real one sits 780 bytes under
-    // the largest artifact this Mac stores — the right number, and an impossible fixture.
     CloudAppBridge.cloudImageMaxEncodedBytesForTesting = fixture.count - 1
     transport.yield(#"{"type":"image","session":"plain","id":"\#(first)"}"#, sequence: 42)
     try await waitForCloudAppBridge("the refusal to be published") {
@@ -1766,7 +1790,6 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
                 "the refusal is observable at the bridge as well as on the channel")
     CloudAppBridge.cloudImageMaxEncodedBytesForTesting = nil
 
-    // A route that answered with something that is not a PNG never becomes a blob URL.
     await router.answerReadsWith(CloudReadResult(
         status: 200, body: Data("<svg/>".utf8), contentType: "image/svg+xml"))
     transport.yield(#"{"type":"image","session":"plain","id":"\#(second)"}"#, sequence: 43)
@@ -1779,8 +1802,6 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
                         == "image_media_type_unsupported",
                 "only a PNG crosses, because only a PNG is what this store writes")
 
-    // The route's own refusal is forwarded rather than restated, so an expired picture reads the
-    // same word on both transports.
     await router.answerReadsWith(CloudReadResult(
         status: 410,
         body: Data(#"{"error":{"code":"artifact_expired","message":"gone"}}"#.utf8),
@@ -1793,7 +1814,6 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
                         == "artifact_expired",
                 "expiry crosses as the route's own code, which the tile already has words for")
 
-    // Strictness, in the shape the other reads already have.
     let before = await router.recordedReads().count
     let malformed = [
         #"{"type":"image","session":"plain"}"#,
@@ -1817,7 +1837,6 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
 
     await bridge.stop()
 
-    // What a viewer may reach, built from the closed enum rather than sent.
     let request = RemoteServer.Request(
         verifiedCloudRead: .image(session: "plain", id: "a/../b"), sender: "viewer")
     try require(request.method == "GET" && request.query.isEmpty,
@@ -1831,9 +1850,7 @@ private func runCloudAppBridgeImageTests() async throws -> Int {
     return checks
 }
 
-/// Project/task documents cross only as closed encrypted reads. The existing local document
-/// router remains the authority for roots, containment, extensions, symlinks and the two MiB cap;
-/// this layer proves that the relay can name only that router and validates the bytes it encloses.
+/// Project/task documents cross only as closed encrypted reads through the existing local router.
 private func runCloudAppBridgeDocumentTests() async throws -> Int {
     var checks = 0
     func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {

@@ -12,10 +12,16 @@ somebody using this** — a commit log already exists and is better at being a c
 ### Fixed: background Session reads could fill the Cloud transcript lane
 
 Opening a conversation in the hosted Cloud console now carries an explicit interactive priority
-to the Mac. Agent reads, automatic revision refreshes and older clients remain background. The two
-classes execute on separate bounded serial workers, so an agent parsing another Session cannot
-stand in front of the conversation a person just opened, while total transcript concurrency stays
-capped at two.
+to the Mac. Agent reads and automatic revision refreshes remain background; an already-open older
+Cloud tab defaults to foreground until it reloads. Cloud command routing also has separate bounded
+foreground and background workers, so another Session's panels cannot hold the inbound stream in
+front of the conversation a person just opened. A full lane now answers the exact waiting Session
+with an encrypted typed 429 instead of leaving it to time out after a minute.
+
+Unchanged Session scans no longer republish every row. Each authoritative scan also publishes an
+encrypted, machine-scoped inventory, allowing a phone to remove closed rows even when the Mac
+restarted and forgot which old rows need tombstones. A typed transcript `not_found` removes that
+exact stale row immediately instead of requiring the person to revisit it.
 
 Transcript and Cloud bridge logs now record correlated admission, refusal, queue, parse and
 encrypted-publication timings, status and answer size. They identify the requesting transport and

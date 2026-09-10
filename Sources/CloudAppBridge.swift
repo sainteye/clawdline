@@ -256,11 +256,20 @@ enum CloudAppBridgeError: Error, LocalizedError, Equatable {
 /// and inbound commands have a second, separately injected gate whose default is always false.
 actor CloudAppBridge {
     static let machineReplySession = "__clawdline_machine__"
+    static let sessionInventoryID = "__clawdline_inventory_v1__"
+    static let sessionInventoryLimit = 512
     typealias CommandGate = @Sendable () -> Bool
     typealias Milliseconds = @Sendable () -> UInt64
     typealias CommandResultObserver = @Sendable (CloudCommandResult) -> Void
     typealias DiagnosticLogger = @Sendable (String) -> Void
     typealias TransportReadyObserver = @Sendable (UInt64) -> Void
+
+    private enum ReadLane: String { case foreground, background }
+    private struct PendingRead: Sendable {
+        let read: CloudHeadlessRead
+        let sender: String
+        let lifecycleGeneration: UInt64
+    }
 
     private let transport: any CloudTransporting
     private let identity: CloudAppIdentity
@@ -275,11 +284,19 @@ actor CloudAppBridge {
     private var readyTask: Task<Void, Never>?
     private var connectTask: Task<Void, Error>?
     private var publicationTasks: [UUID: Task<Void, Error>] = [:]
+    private var foregroundReadTask: Task<Void, Never>?
+    private var backgroundReadTask: Task<Void, Never>?
+    private var foregroundReadActive = false
+    private var backgroundReadActive = false
+    private var foregroundReads: [PendingRead] = []
+    private var backgroundReads: [PendingRead] = []
     private var transportReady: TransportReadyObserver = { _ in }
     private var lifecycleGeneration: UInt64 = 0
     private var starting = false
     private var running = false
     private var publishedSessionIDs = Set<String>()
+    private var publishedSessionRows: [String: Data] = [:]
+    private var publishedSessionInventory: Data?
 
     init(
         transport: any CloudTransporting,
@@ -356,6 +373,7 @@ actor CloudAppBridge {
 
     func stop() async {
         guard running || starting || connectTask != nil || commandTask != nil || readyTask != nil
+                || foregroundReadTask != nil || backgroundReadTask != nil
                 || !publicationTasks.isEmpty
         else { return }
         lifecycleGeneration &+= 1
@@ -365,14 +383,22 @@ actor CloudAppBridge {
         let ready = readyTask
         let connect = connectTask
         let publications = Array(publicationTasks.values)
+        let readTasks = [foregroundReadTask, backgroundReadTask].compactMap { $0 }
         commandTask = nil
         readyTask = nil
         connectTask = nil
         publicationTasks.removeAll()
+        foregroundReadTask = nil
+        backgroundReadTask = nil
+        foregroundReadActive = false
+        backgroundReadActive = false
+        foregroundReads.removeAll()
+        backgroundReads.removeAll()
         connect?.cancel()
         command?.cancel()
         ready?.cancel()
         publications.forEach { $0.cancel() }
+        readTasks.forEach { $0.cancel() }
         await transport.shutdown()
         _ = await connect?.result
         await command?.value
@@ -380,7 +406,10 @@ actor CloudAppBridge {
         for publication in publications {
             _ = await publication.result
         }
+        for task in readTasks { await task.value }
         publishedSessionIDs.removeAll()
+        publishedSessionRows.removeAll()
+        publishedSessionInventory = nil
     }
 
     func isRunning() -> Bool { running }
@@ -391,42 +420,58 @@ actor CloudAppBridge {
 
     /// Accepts the exact JSON bytes produced for local SSE, then fans its complete session rows
     /// out by channel. A complete authoritative scan also sends tombstones for rows that vanished.
-    func publishSessions(_ payload: Data) async throws {
+    func publishSessions(_ payload: Data, force: Bool = false) async throws {
         let ownedGeneration = lifecycleGeneration
         try await runPublication { [weak self] in
             guard let self else { throw CancellationError() }
             try await self.publishSessionsOwned(
-                payload, lifecycleGeneration: ownedGeneration
+                payload, force: force, lifecycleGeneration: ownedGeneration
             )
         }
     }
 
     private func publishSessionsOwned(
-        _ payload: Data, lifecycleGeneration ownedGeneration: UInt64
+        _ payload: Data, force: Bool, lifecycleGeneration ownedGeneration: UInt64
     ) async throws {
         try requireActivePublication(lifecycleGeneration: ownedGeneration)
         guard let root = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
               let sessions = root["sessions"] as? [[String: Any]],
               let at = root["at"], let scan = root["scan"] as? [String: Any]
         else { throw CloudAppBridgeError.malformedSessions }
+        let authoritative = (scan["complete"] as? Bool) == true
+            || (scan["emptyAuthoritative"] as? Bool) == true
+        let ids = sessions.compactMap { $0["id"] as? String }
+        guard ids.count == sessions.count,
+              ids.allSatisfy({ !$0.isEmpty && $0 != Self.sessionInventoryID }),
+              Set(ids).count == ids.count,
+              !authoritative || ids.count <= Self.sessionInventoryLimit else {
+            throw CloudAppBridgeError.malformedSessions
+        }
 
-        var current = Set<String>()
-        for session in sessions {
+        let startedAt = nowMilliseconds()
+        let current = Set(ids)
+        var changed = 0
+        var skipped = 0
+        for (session, id) in zip(sessions, ids) {
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
-            guard let id = session["id"] as? String, !id.isEmpty else {
-                throw CloudAppBridgeError.malformedSessions
+            let stable = try JSONSerialization.data(
+                withJSONObject: session, options: [.sortedKeys, .withoutEscapingSlashes]
+            )
+            if !force, publishedSessionRows[id] == stable {
+                skipped += 1
+                continue
             }
-            current.insert(id)
             let full: [String: Any] = ["session": session, "at": at, "scan": scan]
             try await publishJSON(
                 full, channel: sessionChannel(id), lifecycleGeneration: ownedGeneration
             )
+            publishedSessionRows[id] = stable
+            changed += 1
         }
 
-        let authoritative = (scan["complete"] as? Bool) == true
-            || (scan["emptyAuthoritative"] as? Bool) == true
+        let removed = authoritative ? publishedSessionIDs.subtracting(current) : []
         if authoritative {
-            for id in publishedSessionIDs.subtracting(current) {
+            for id in removed {
                 try requireActivePublication(lifecycleGeneration: ownedGeneration)
                 let tombstone: [String: Any] = [
                     "session": NSNull(), "deleted": true, "at": at, "scan": scan,
@@ -435,6 +480,7 @@ actor CloudAppBridge {
                     tombstone, channel: sessionChannel(id),
                     lifecycleGeneration: ownedGeneration
                 )
+                publishedSessionRows[id] = nil
             }
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
             publishedSessionIDs = current
@@ -442,6 +488,26 @@ actor CloudAppBridge {
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
             publishedSessionIDs.formUnion(current)
         }
+        var inventoryPublished = false
+        if authoritative {
+            let inventory: [String: Any] = [
+                "inventory": ["version": 1, "sessions": current.sorted()] as [String: Any],
+            ]
+            let stable = try JSONSerialization.data(
+                withJSONObject: inventory, options: [.sortedKeys, .withoutEscapingSlashes]
+            )
+            if force || stable != publishedSessionInventory {
+                try await publishJSON(
+                    inventory, channel: sessionChannel(Self.sessionInventoryID),
+                    lifecycleGeneration: ownedGeneration
+                )
+                publishedSessionInventory = stable
+                inventoryPublished = true
+            }
+        }
+        diagnostic("cloud: sessions published rows=\(sessions.count) changed=\(changed) "
+            + "skipped=\(skipped) tombstones=\(removed.count) inventory=\(inventoryPublished) "
+            + "force=\(force) total_ms=\(Self.elapsedMilliseconds(from: startedAt, to: nowMilliseconds()))")
     }
 
     /// The local SSE serializer has already made these bytes. Seal them unchanged so local and
@@ -984,9 +1050,9 @@ actor CloudAppBridge {
                let parsed = CloudTranscriptPriority(rawValue: raw) {
                 priority = parsed
             } else if body["priority"] == nil {
-                // Old hosted clients did not carry intent. Keep them in the bounded background
-                // lane so an upgrade cannot let a stale tab consume the interactive reserve.
-                priority = .background
+                // A stale hosted tab can only be a person-driven reader: automatic refreshes and
+                // agents learned to send `background` in the same release that added this field.
+                priority = .foreground
             } else {
                 commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
                 return
@@ -1187,13 +1253,120 @@ actor CloudAppBridge {
             return
         }
 
+        enqueueRead(read, sender: inbound.sender, lifecycleGeneration: ownedGeneration)
+    }
+
+    private func enqueueRead(
+        _ read: CloudHeadlessRead, sender: String, lifecycleGeneration ownedGeneration: UInt64
+    ) {
+        let lane: ReadLane
+        if case .transcript(_, _, .foreground) = read { lane = .foreground }
+        else { lane = .background }
+        let depth = lane == .foreground
+            ? foregroundReads.count + (foregroundReadActive ? 1 : 0)
+            : backgroundReads.count + (backgroundReadActive ? 1 : 0)
+        let limit = lane == .foreground ? 4 : 16
+        guard depth < limit else {
+            commandResult(CloudCommandResult(status: 429, code: "cloud_read_busy"))
+            diagnostic("cloud: read refused read=\(read.name) lane=\(lane.rawValue) "
+                + "depth=\(depth) limit=\(limit) code=cloud_read_busy")
+            Task { [weak self] in
+                await self?.publishBusyRead(
+                    read, lane: lane, limit: limit,
+                    lifecycleGeneration: ownedGeneration
+                )
+            }
+            return
+        }
+        let pending = PendingRead(
+            read: read, sender: sender, lifecycleGeneration: ownedGeneration
+        )
+        if lane == .foreground {
+            foregroundReads.append(pending)
+            if foregroundReadTask == nil {
+                foregroundReadTask = Task { [weak self] in
+                    await self?.drainReads(.foreground, lifecycleGeneration: ownedGeneration)
+                }
+            }
+        } else {
+            backgroundReads.append(pending)
+            if backgroundReadTask == nil {
+                backgroundReadTask = Task { [weak self] in
+                    await self?.drainReads(.background, lifecycleGeneration: ownedGeneration)
+                }
+            }
+        }
+        diagnostic("cloud: read admitted read=\(read.name) lane=\(lane.rawValue) "
+            + "depth=\(depth + 1) limit=\(limit)")
+    }
+
+    private func publishBusyRead(
+        _ read: CloudHeadlessRead, lane: ReadLane, limit: Int,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        let payload: [String: Any] = [
+            "read": read.name, "status": 429,
+            "error": [
+                "code": "cloud_read_busy",
+                "message": "That Cloud read lane is full; retry shortly.",
+                "lane": lane.rawValue, "limit": limit, "retry_after": 1,
+            ] as [String: Any],
+        ]
+        guard running, lifecycleGeneration == ownedGeneration,
+              let bytes = try? JSONSerialization.data(
+                  withJSONObject: payload, options: [.withoutEscapingSlashes]
+              )
+        else { return }
+        do {
+            try await runPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publish(
+                    bytes, channel: transcriptChannel(read.session),
+                    lifecycleGeneration: ownedGeneration
+                )
+            }
+            diagnostic("cloud: read refusal delivered read=\(read.name) lane=\(lane.rawValue) "
+                + "status=429 code=cloud_read_busy")
+        } catch {
+            commandResult(CloudCommandResult(status: 503, code: "read_answer_undeliverable"))
+        }
+    }
+
+    private func drainReads(
+        _ lane: ReadLane, lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        while running, lifecycleGeneration == ownedGeneration, !Task.isCancelled {
+            let next: PendingRead?
+            if lane == .foreground {
+                next = foregroundReads.isEmpty ? nil : foregroundReads.removeFirst()
+                foregroundReadActive = next != nil
+            } else {
+                next = backgroundReads.isEmpty ? nil : backgroundReads.removeFirst()
+                backgroundReadActive = next != nil
+            }
+            guard let next else { break }
+            await performRead(
+                next.read, sender: next.sender,
+                lifecycleGeneration: next.lifecycleGeneration
+            )
+            if lane == .foreground { foregroundReadActive = false }
+            else { backgroundReadActive = false }
+        }
+        if lane == .foreground { foregroundReadTask = nil }
+        else { backgroundReadTask = nil }
+    }
+
+    private func performRead(
+        _ read: CloudHeadlessRead, sender: String,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
         let traceID = String(UUID().uuidString.prefix(8)).lowercased()
         let receivedAt = nowMilliseconds()
-        let safeSender = Self.channelSegment(inbound.sender)
+        let safeSender = Self.channelSegment(sender)
         let safeSession = Self.channelSegment(read.session)
         diagnostic("cloud: read received id=\(traceID) read=\(read.name) "
             + "sender=\(safeSender) session=\(safeSession)")
-        let answer = await commandRouter.read(read, sender: inbound.sender)
+        let answer = await commandRouter.read(read, sender: sender)
         let routedAt = nowMilliseconds()
         let outcome = Self.outcome(of: read, answer: answer)
         diagnostic("cloud: read routed id=\(traceID) read=\(read.name) "

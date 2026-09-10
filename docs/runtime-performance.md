@@ -126,6 +126,22 @@ tombstone still removes a closed Session. Without that distinction, the first re
 reconnect looked like the complete inventory and the phone closed whichever conversation had not
 replayed yet, returning the reader to the list.
 
+The authoritative membership frame is wire version 1 on
+`s/<machine>/__clawdline_inventory_v1__`, with exactly `{"inventory":{"version":1,
+"sessions":[...]}}` and at most 512 unique, nonempty ids. The reserved id cannot itself appear in
+the list. Retained frames remain signed and encrypted, but their sender sequence is aligned per
+channel because relay delivery order is arbitrary; non-realignment traffic retains sender-wide
+replay protection. Session rows and inventories also retain their signed sequence as freshness:
+an older inventory cannot prune a newer row, and a row older than an inventory that excludes it
+cannot resurrect a closed Session. The inventory scopes membership only to the verified machine;
+it never trusts a title or tty and never prunes another Mac.
+
+This inventory version says which Session ids exist, not whether transcript bytes changed.
+Content-deduplicating identical Session rows therefore creates no transcript revision signal.
+Opening a conversation always makes a fresh foreground Cloud transcript read with no conditional
+revision, while automatic refresh remains background and follows the existing transcript demand
+signals. A typed transcript `not_found` removes only that exact `(machine, Session)` row.
+
 The task registry held about 400 records. That means 400 retained rows, not 400 filesystem scans.
 The defect was that Session-list projection repeatedly fingerprinted and sorted the whole registry,
 then selected one Session's obligations by walking it again. A compact rendering of that fact must
@@ -150,7 +166,15 @@ pass on one fast machine.
 - Transcript reads have one serial interactive worker and one serial background worker, with a
   combined bound of two and a background bound of one. A person opening a Session can therefore
   parse concurrently with one agent/refresh read, while each class remains bounded and ordered.
-  Cloud carries this intent explicitly; an older client with no intent is background.
+  Cloud carries this intent explicitly; a stale hosted tab with no field defaults to foreground,
+  while newer automatic callers explicitly remain background. The Cloud bridge separates those
+  classes before local routing too, with a four-read foreground bound and a sixteen-read background
+  bound. The limit+1 request bypasses the saturated worker and receives an encrypted typed
+  `cloud_read_busy` 429 on its own Session channel; capacity returns as soon as that lane drains.
+- Cloud Session snapshots are content-deduplicated, so a watcher tick publishes only changed rows.
+  An authoritative inventory of at most 512 exact Session ids is encrypted on a reserved
+  machine-scoped Session channel after each changed scan and on reconnect. It repairs retained
+  relay rows across a Mac restart without trusting labels or terminal names.
 - Every transcript admission/refusal/completion records its lane, source, target, queue debt,
   queue time, parse time, total local time, status and answer size. Cloud additionally records
   receive-to-route and encrypted-publication timing, without recording transcript text.

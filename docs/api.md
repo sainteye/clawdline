@@ -833,15 +833,22 @@ device sees through the tunnel, for no reason anybody chose. `send`, `answer` an
 `cloud_commands_disabled` exactly where they always did.
 
 **They queue where a phone queues.** A Cloud transcript explicitly carries `priority` into the
-same interactive/background transcript lanes; an older client that omits it is background, never
-silently interactive. A cloud Info read enters the same eight-place reading lane, so both can come back
+same interactive/background transcript lanes; a stale hosted tab that predates the field is
+treated as interactive because only newer automatic callers know to send `background`. A cloud
+Info read enters the same eight-place reading lane, so both can come back
 `429 transcript_busy` or `429 busy` with the same fields as above. A second door that skipped
-those lanes would put back the exclusivity they were built to remove. The other reads take the
-shared queue, and that is the same rule and not an exception to it: `isTranscriptReading` and
-`isSlowReading` both say no to `agents`, `shells`, `skills`, `git` and documents arriving over HTTP too, so a
-lane for them here would be a second policy nobody measured. An image is in neither lane for the
-same reason and by the same precedent: `/v1/artifacts/images/:id` is a bounded read of one
-already-validated file, and it goes on the shared queue on the direct path too.
+those lanes would put back the exclusivity they were built to remove. Before they reach those local
+lanes, the Cloud bridge itself has bounded foreground and background workers: all noninteractive
+panel, agent and refresh reads are ordered behind one background worker and cannot block the
+foreground transcript worker from consuming the command stream.
+
+Those bridge bounds count the active read plus queued reads: 4 foreground and 16 background. The
+next request never enters the full worker. Instead the bridge publishes an encrypted answer on
+that request's exact `t/<machine>/<session>` channel with `status: 429` and
+`error: {code:"cloud_read_busy", lane, limit, retry_after:1}`. The viewer therefore settles the
+right waiter promptly rather than reaching its 60-second `cloud_read_timeout`; draining either
+worker admits its next request normally. This bridge refusal is distinct from `transcript_busy`
+or `busy`, which can still be returned by the local route after a bridge slot was admitted.
 
 Transcript observability is end-to-end on the Mac without logging message text. `transcript:`
 lines record admission or refusal, the interactive/background lane, HTTP or Cloud sender, target
@@ -858,6 +865,7 @@ of its own so a page can say which it hit rather than showing the same empty vie
 | `cloud_read_needs_send_prompt` | this device may read but may not publish on `ctl/`, so it cannot ask | the relay's: PROTOCOL §12 requires `send_prompt` to publish on `ctl/` in either class |
 | `malformed_read` | the request had a missing, extra or wrongly typed field, an invalid document scope/task/path, or arrived with class `dispatch` | the bridge's, before anything reaches a route |
 | `cloud_read_timeout` | nothing answered within the client's window | the client's, and the honest end of a read nobody will answer |
+| `cloud_read_busy` | the named Cloud foreground/background bridge lane is full; `lane`, `limit`, and `retry_after` describe the bound | the bridge's, returned encrypted on the exact Session channel without entering that worker |
 | `image_too_large_for_cloud` | this picture is over one envelope's ciphertext cap | the relay's cap, this repository's arithmetic — and the tile says it in words with the size in it |
 | `document_listing_invalid` / `document_media_type_unsupported` / `document_not_utf8` / `document_too_large` | the local answer violated the closed document boundary | the bridge's, before plaintext is put into an answer envelope |
 

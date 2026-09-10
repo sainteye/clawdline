@@ -59,6 +59,8 @@ function missingSubject(what) {
 
 /** The transcript window the direct path asks for, so both transports show the same tail. */
 const TRANSCRIPT_LIMIT = 200;
+const SESSION_INVENTORY_ID = "__clawdline_inventory_v1__";
+const SESSION_INVENTORY_LIMIT = 512;
 
 /** An agent's window: the same number for the same reason — `live.js` asks for `?limit=200`. */
 const AGENT_LIMIT = 200;
@@ -231,6 +233,13 @@ export class CloudClient {
             && prior.account === this.account && prior.deviceID === this.deviceID;
         this.sessionSnapshots = sameViewer
             ? new Map(prior.sessionSnapshots) : new Map();
+        this.sessionSequenceByKey = sameViewer
+            ? new Map(prior.sessionSequenceByKey) : new Map();
+        this.sessionInventoryByMachine = new Map();
+        if (sameViewer) prior.sessionInventoryByMachine.forEach(function (inventory, machine) {
+            this.sessionInventoryByMachine.set(machine,
+                { sequence: inventory.sequence, ids: new Set(inventory.ids) });
+        }, this);
         this.transcriptSnapshots = new Map();
         this.orchestratorSnapshots = new Map();
         this.placeRoutes = new Map();
@@ -243,6 +252,7 @@ export class CloudClient {
         this.clearTimeout = options.clearTimeout || globalThis.clearTimeout.bind(globalThis);
         this.readyWaiters = [];
         this.sequenceBySender = new Map();
+        this.realignSequenceByChannel = new Map();
         this.messageChain = Promise.resolve();
     }
 
@@ -428,10 +438,21 @@ export class CloudClient {
         var key = await this._senderKey(envelope && envelope.sender, envelope);
         if (!key) throw cloudError("unknown_sender", "the envelope sender is not paired");
         var clear = await openEnvelope(envelope, await this._masterKey(envelope.key_id), key);
-        var previous = this.sequenceBySender.get(envelope.sender);
-        if (previous !== undefined && envelope.seq <= previous) throw cloudError("replay", "the envelope sequence did not advance");
-        this.sequenceBySender.set(envelope.sender, envelope.seq);
         var channel = parseEnvelopeChannel(envelope.ch);
+        var previous = this.sequenceBySender.get(envelope.sender);
+        if (realign) {
+            var realignKey = envelope.sender + "\n" + envelope.ch;
+            var channelPrevious = this.realignSequenceByChannel.get(realignKey);
+            if (channelPrevious !== undefined && envelope.seq <= channelPrevious) {
+                throw cloudError("replay", "the retained channel sequence did not advance");
+            }
+            this.realignSequenceByChannel.set(realignKey, envelope.seq);
+        } else if (previous !== undefined && envelope.seq <= previous) {
+            throw cloudError("replay", "the envelope sequence did not advance");
+        }
+        if (previous === undefined || envelope.seq > previous) {
+            this.sequenceBySender.set(envelope.sender, envelope.seq);
+        }
         var payload;
         try { payload = clear.length ? JSON.parse(textDecoder.decode(clear)) : null; }
         catch (e) { throw cloudError("bad_payload", "the decrypted stream payload is not JSON"); }
@@ -443,16 +464,59 @@ export class CloudClient {
             var identity = sessionIdentity({ machine: decodedChannelSegment(channel.machine),
                 session: decodedChannelSegment(channel.session) });
             var key = sessionIdentityKey(identity);
+            if (identity.session === SESSION_INVENTORY_ID) {
+                var inventory = payload && payload.inventory;
+                var inventoryKeys = inventory && typeof inventory === "object" &&
+                    !Array.isArray(inventory) ? Object.keys(inventory).sort() : [];
+                var ids = inventory && inventory.sessions;
+                if (inventoryKeys.join(",") !== "sessions,version" || inventory.version !== 1 ||
+                    !Array.isArray(ids) || ids.length > SESSION_INVENTORY_LIMIT ||
+                    ids.some(function (id, index) {
+                        return typeof id !== "string" || !id || id === SESSION_INVENTORY_ID ||
+                            ids.indexOf(id) !== index;
+                    })) throw cloudError("bad_payload", "the session inventory is malformed");
+                var earlierInventory = this.sessionInventoryByMachine.get(identity.machine);
+                if (earlierInventory && envelope.seq < earlierInventory.sequence) return;
+                var kept = new Set(ids.map(function (id) {
+                    return sessionIdentityKey({ machine: identity.machine, session: id });
+                }));
+                this.sessionSnapshots.forEach(function (row, storedKey) {
+                    var rowIdentity = row && row.identity;
+                    if (rowIdentity && rowIdentity.machine === identity.machine &&
+                        !kept.has(storedKey) &&
+                        (this.sessionSequenceByKey.get(storedKey) || 0) <= envelope.seq) {
+                        this.sessionSnapshots.delete(storedKey);
+                    }
+                }, this);
+                this.sessionInventoryByMachine.set(identity.machine,
+                    { sequence: envelope.seq, ids: kept });
+                var inventorySessions = this._sessionResponse(envelope.ts);
+                if (this.handlers && this.handlers.sessions) {
+                    this.handlers.sessions(inventorySessions.sessions, inventorySessions.at,
+                        inventorySessions.scan);
+                }
+                this._emit({ type: "sessions", data: inventorySessions, identity: identity,
+                    envelope: envelope, realign: realign, authoritative: true });
+                return;
+            }
             var row = payload && Object.prototype.hasOwnProperty.call(payload, "session")
                 ? payload.session : payload;
-            if (row === null || (payload && payload.deleted === true)) this.sessionSnapshots.delete(key);
-            else if (row && typeof row === "object" && !Array.isArray(row)) {
+            var previousRowSequence = this.sessionSequenceByKey.get(key);
+            if (previousRowSequence !== undefined && envelope.seq < previousRowSequence) return;
+            var knownInventory = this.sessionInventoryByMachine.get(identity.machine);
+            if (row === null || (payload && payload.deleted === true) ||
+                (knownInventory && envelope.seq <= knownInventory.sequence &&
+                    !knownInventory.ids.has(key))) {
+                this.sessionSnapshots.delete(key);
+                this.sessionSequenceByKey.set(key, envelope.seq);
+            } else if (row && typeof row === "object" && !Array.isArray(row)) {
                 this.sessionSnapshots.set(key, Object.assign({}, row, {
                     id: row.id || identity.session,
                     machine: identity.machine,
                     session: identity.session,
                     identity: identity
                 }));
+                this.sessionSequenceByKey.set(key, envelope.seq);
             } else throw cloudError("bad_payload", "a session snapshot must be an object");
             var sessions = this._sessionResponse(envelope.ts);
             if (this.handlers && this.handlers.sessions) this.handlers.sessions(sessions.sessions, sessions.at, sessions.scan);
@@ -473,6 +537,15 @@ export class CloudClient {
             if (!answer) throw cloudError("bad_payload", "the read answer names no read");
             if (answer.read === "transcript" && !answer.error) {
                 this.transcriptSnapshots.set(transcriptKey, answer.body);
+            }
+            if (answer.read === "transcript" && answer.error && answer.error.code === "not_found") {
+                this.sessionSnapshots.delete(transcriptKey);
+                var healed = this._sessionResponse(envelope.ts);
+                if (this.handlers && this.handlers.sessions) {
+                    this.handlers.sessions(healed.sessions, healed.at, healed.scan);
+                }
+                this._emit({ type: "sessions", data: healed, identity: transcriptIdentity,
+                    envelope: envelope, realign: realign, selfHealed: true });
             }
             this._settleRead(readKey(transcriptIdentity, answer.read), answer.body, answer.error);
             this._emit({ type: "read", read: answer.read, data: answer.body,
