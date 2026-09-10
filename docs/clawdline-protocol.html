@@ -1211,6 +1211,18 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
 
   <h3 id="restart-boundary">The restart boundary</h3>
 
+  <p><strong>Board responsibility is explicit, not inferred from a conversation.</strong>
+  A writable Board client may propose <code>assign_session</code> for an exact provider,
+  conversation UUID and Project. The old owner remains responsible while the proposal is
+  pending. It never sends, resumes or interrupts a Session, nor proves that the receiver is
+  online. Only the process-bound receiver workflow may record <code>assignment_decision</code>
+  for that proposal and item. Acceptance checks the captured owner and scope; decline or
+  an explicit exact-id withdrawal leaves ownership unchanged. Journal admission is not a
+  completed transfer: the matching durable Board receipt must say accepted. Replays preserve
+  request identity, and legacy generic handoff acceptance cannot bypass the receiver check.
+  No assignment action proves execution, verification, landing or deployment. See the
+  <a href="board-workflow.md">workflow contract</a> for the model/helper boundary.</p>
+
   <div class="note bad">
     <span class="tag">One observer is not proof</span>
     <p>An agent's execution sandbox may refuse or isolate loopback while the application is perfectly healthy. <strong>A refusal seen from a sandbox's loopback domain is only <code>observer_unreachable</code>, never <code>app_down</code>.</strong></p>

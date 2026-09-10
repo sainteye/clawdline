@@ -65,6 +65,38 @@ a JSON body no larger than 64 KiB. Accepted operations are:
   run/Session pair alone identifies one supplement. Old events without an ID retain their exact
   pending replay bodies and are not retroactively matched by text.
 - `handoff`: record the next owner and note for a run already bound to an item.
+- `assignment_decision`: for a run already bound to the assigned item, submit
+  `assignment_id`, `decision` (`accepted` or `declined`) and `note`. The receiver's
+  provider/conversation/Project come only from the process-bound run, never JSON.
+  Admission means journaled, not accepted responsibility: inspect the outbox and
+  Board's matching `sessionAssignment` receipt before declaring takeover complete.
+
+### Explicit Session responsibility
+
+A writable Board client may propose `assign_session` with the exact item, Project,
+provider and conversation UUID plus a note. The selected Mac's Board Store owns the
+proposal; a terminal address or title cannot identify its receiver. This records
+an intention, not proof that the Session exists, is online, idle or available.
+It does not send, resume, spawn or interrupt a Session. The current owner remains
+responsible until an explicit receiver decision is applied.
+
+The proposal captures current owner and scope. The receiver begins a managed run
+bound to that item, then explicitly calls `assignment_decision`; `begin` alone is
+not acceptance. Only the matching process-bound provider/conversation and Project
+can decide the exact proposal. Acceptance refuses a changed owner/scope and closed
+work; decline may release a stale proposal without taking ownership. A writable
+Board client may withdraw an exact pending proposal with `cancel_session_assignment`.
+After withdrawal or replacement, an old decision cannot settle another proposal.
+
+The legacy generic `accept_handoff` cannot accept a typed Session assignment.
+Receipts remain `pending`, `accepted`, `declined` or `cancelled`; accepted transfers
+owner and ensures a Session relation atomically. The last settled receipt and
+history survive restart. Earlier settlements remain in bounded history. The same
+request replays its receipt; uncertain workflow delivery retains the exact outbox
+body rather than accepting twice. No assignment command promotes execution,
+verification, landing or deployment. Existing v1 workflows without the optional
+decision operation retain their prior behavior. This is the model/helper slice;
+the interactive Session picker and request-delivery UI are separate work.
 
 There are deliberately no `verify`, `land`, `deploy`, `transition`, or `done` operations. Semantic
 receipts have `assistant_attested` authority; terminal delivery acceptance or rejection has the

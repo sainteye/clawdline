@@ -2,6 +2,172 @@ import Foundation
 
 private enum WorkflowSyncFixtureError: Error { case refused }
 
+private func workflowAssignmentLifecycleProof() {
+    for variant in ["propose", "accepted", "declined", "cancelled"] {
+        let root = workflowTestDirectory("assignment-lifecycle-\(variant)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("board.json")
+        var store = ProjectBoardStore(url: file)
+        let identity = workflowIdentity()
+        _ = store.ensureProject(id: identity.projectID, name: "Assignment lifecycle")
+        func command(_ op: String, _ fields: [String: Any], trusted: Bool = false) -> ProjectBoardStore.Reply {
+            var body = fields; body["operation"] = op; body["requestId"] = UUID().uuidString
+            body["expectedRevision"] = store.readHeader().revision
+            return store.command(body, actor: identity.actor, trusted: trusted, workflowOrigin: true)
+        }
+        let made = command("create", ["projectId": identity.projectID, "type": "feature",
+            "title": variant, "owner": "previous-owner"])
+        guard let id = made.body["itemId"] as? String else {
+            check("F1 \(variant) fixture creates item", false); continue
+        }
+        func item() -> [String: Any] {
+            (store.snapshot(item: id)["board"] as? [String: Any])?["item"] as? [String: Any] ?? [:]
+        }
+        let proposal: [String: Any] = ["itemId": id, "projectId": identity.projectID,
+            "sessionId": identity.conversationID, "provider": identity.provider, "note": "bounded work"]
+        if variant != "propose" { _ = command("assign_session", proposal) }
+        expect("F1 \(variant) installs qualifying evidence", command("record_evidence", [
+            "itemId": id, "kind": "verification", "status": "passed", "sourceId": "retained-proof",
+            "subject": String(repeating: "a", count: 40), "summary": "real fixture proof"], trusted: true).status, 200)
+        expect("F1 \(variant) proof can promote before fixture reset", item()["state"] as? String, "verified")
+        do {
+            var saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+            var rows = saved["items"] as! [[String: Any]]
+            rows[0]["state"] = "execution"; saved["items"] = rows
+            try JSONSerialization.data(withJSONObject: saved, options: [.sortedKeys]).write(to: file, options: .atomic)
+            store = ProjectBoardStore(url: file)
+        } catch { check("F1 \(variant) reloads promotable fixture", false); continue }
+        let before = item(), assignment = (before["handoff"] as? [String: Any])?["id"] as? String ?? "missing"
+        let reply: ProjectBoardStore.Reply
+        if variant == "propose" { reply = command("assign_session", proposal) }
+        else if variant == "cancelled" { reply = command("cancel_session_assignment", [
+            "itemId": id, "assignmentId": assignment, "note": "withdraw"])
+        } else { reply = command("decide_session_assignment", ["itemId": id,
+            "projectId": identity.projectID, "assignmentId": assignment, "decision": variant, "note": "receiver decision"]) }
+        let after = item()
+        expect("F1 \(variant) command succeeds", reply.status, 200)
+        expect("F1 \(variant) must not reconcile promotable lifecycle", after["state"] as? String, "execution")
+        expect("F1 \(variant) preserves scope", after["scopeRevision"] as? Int, before["scopeRevision"] as? Int)
+        check("F1 \(variant) preserves all evidence pointers",
+              (after["currentEvidence"] as? NSDictionary) == (before["currentEvidence"] as? NSDictionary))
+        let history = after["history"] as? [[String: Any]] ?? []
+        expect("F1 \(variant) appends only assignment bookkeeping", history.count,
+               (before["history"] as? [[String: Any]] ?? []).count + 1)
+        expect("F1 \(variant) history is not lifecycle promotion", history.last?["kind"] as? String,
+               "session_assignment_" + (variant == "propose" ? "proposed" : variant))
+        expect("F1 \(variant) changes only accepted ownership", after["owner"] as? String,
+               variant == "accepted" ? identity.conversationID : "previous-owner")
+        expect("F1 \(variant) ordinary operation positive control succeeds", command("link", [
+            "itemId": id, "kind": "session", "targetId": "observer", "label": "Observer"]).status, 200)
+        expect("F1 \(variant) unchanged evidence genuinely promotes", item()["state"] as? String, "verified")
+    }
+}
+
+private func workflowSessionAssignmentProof() {
+    let root = workflowTestDirectory("session-assignment")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let url = root.appendingPathComponent("board.json")
+    var store = ProjectBoardStore(url: url)
+    let identity = workflowIdentity()
+    _ = store.ensureProject(id: identity.projectID, name: "Assignment")
+    var serial = 0
+    func send(_ operation: String, _ fields: [String: Any], actor: String = "user",
+              internalOrigin: Bool = false) -> ProjectBoardStore.Reply {
+        serial += 1
+        var body = fields
+        body["operation"] = operation; body["requestId"] = "assignment-\(serial)"
+        body["expectedRevision"] = store.readHeader().revision
+        return store.command(body, actor: actor, workflowOrigin: internalOrigin)
+    }
+    let made = send("create", ["projectId": identity.projectID, "title": "Explicit work",
+        "type": "feature", "owner": "original-owner"])
+    let itemID = made.body["itemId"] as? String ?? "missing"
+    func item() -> [String: Any] {
+        (store.snapshot(item: itemID)["board"] as? [String: Any])?["item"] as? [String: Any] ?? [:]
+    }
+    func proposal() -> String {
+        expect("assignment proposal is durable", send("assign_session", ["itemId": itemID,
+            "projectId": identity.projectID, "sessionId": identity.conversationID,
+            "provider": identity.provider, "note": "Please take this bounded work"]).status, 200)
+        return (item()["handoff"] as? [String: Any])?["id"] as? String ?? "missing"
+    }
+    let before = item(), first = proposal()
+    expect("proposal does not silently transfer responsibility", item()["owner"] as? String, "original-owner")
+    expect("proposal does not start execution", item()["state"] as? String, before["state"] as? String)
+    expect("proposal preserves evidence scope", item()["scopeRevision"] as? Int, before["scopeRevision"] as? Int)
+    store = ProjectBoardStore(url: url)
+    expect("pending assignment survives reload", (item()["handoff"] as? [String: Any])?["id"] as? String, first)
+    expect("pending assignment names provider", (item()["handoff"] as? [String: Any])?["provider"] as? String, identity.provider)
+    expect("only one transfer may be pending", send("assign_session", ["itemId": itemID,
+        "projectId": identity.projectID, "sessionId": identity.conversationID,
+        "provider": identity.provider, "note": "duplicate"]).status, 409)
+    func decision(_ id: String, _ value: String = "accepted", project: String? = nil) -> [String: Any] {
+        ["itemId": itemID, "projectId": project ?? identity.projectID,
+         "assignmentId": id, "decision": value, "note": "receiver decision"]
+    }
+    expect("public command cannot forge receiving process", send("decide_session_assignment",
+        decision(first), actor: identity.actor).status, 403)
+    expect("another process cannot accept", send("decide_session_assignment", decision(first),
+        actor: "workflow:codex:ffffffff-ffff-4fff-8fff-ffffffffffff", internalOrigin: true).status, 403)
+    expect("wrong provider cannot accept same conversation", send("decide_session_assignment", decision(first),
+        actor: "workflow:claude:\(identity.conversationID)", internalOrigin: true).status, 403)
+    expect("wrong project cannot accept", send("decide_session_assignment", decision(first, project: "foreign"),
+        actor: identity.actor, internalOrigin: true).status, 409)
+    expect("superseded proposal cannot accept current pending work", send("decide_session_assignment", decision("old"),
+        actor: identity.actor, internalOrigin: true).status, 409)
+    expect("legacy accept cannot bypass Session identity", send("accept_handoff", ["itemId": itemID,
+        "note": "pretend"], actor: identity.conversationID).status, 403)
+    expect("receiver can decline without taking ownership", send("decide_session_assignment", decision(first, "declined"),
+        actor: identity.actor, internalOrigin: true).status, 200)
+    expect("decline preserves owner", item()["owner"] as? String, "original-owner")
+    expect("decline remains a typed durable receipt", (item()["sessionAssignment"] as? [String: Any])?["status"] as? String, "declined")
+    let second = proposal()
+    expect("requester can cancel exact pending assignment", send("cancel_session_assignment", ["itemId": itemID,
+        "assignmentId": second, "note": "withdrawn"]).status, 200)
+    expect("cancel cannot be followed by stale acceptance", send("decide_session_assignment", decision(second),
+        actor: identity.actor, internalOrigin: true).status, 409)
+    let third = proposal()
+    _ = send("checklist", ["itemId": itemID, "title": "new required scope", "required": true])
+    expect("changed acceptance scope refuses takeover", send("decide_session_assignment", decision(third),
+        actor: identity.actor, internalOrigin: true).status, 409)
+    expect("stale scope can still be withdrawn", send("cancel_session_assignment", ["itemId": itemID,
+        "assignmentId": third, "note": "re-propose current scope"]).status, 200)
+    let fourth = proposal()
+    _ = send("update", ["itemId": itemID, "owner": "changed-owner"])
+    expect("changed owner refuses stale takeover", send("decide_session_assignment", decision(fourth),
+        actor: identity.actor, internalOrigin: true).status, 409)
+    _ = send("cancel_session_assignment", ["itemId": itemID, "assignmentId": fourth, "note": "withdraw"])
+    let current = proposal()
+    let workflow = ProjectBoardWorkflow(url: root.appendingPathComponent("workflow.json"),
+        boardHeader: { let h = store.readHeader(); return (h.enabled, h.revision, h.available) },
+        boardCommand: { store.command($0, actor: $1, workflowOrigin: true) }, autoStart: false)
+    guard case .managed(let run) = workflow.prepareIngress(requestID: "assignment-send", fingerprint: "send",
+        text: "accept the assignment", imageCount: 0, identity: identity) else {
+        check("assignment workflow fixture records ingress", false); return
+    }
+    _ = workflow.markDelivery(runID: run.runID, identity: identity, delivered: true)
+    _ = workflow.record(["operation": "begin", "run_id": run.runID, "classification": "existing_item",
+        "item_id": itemID, "phase": "planning"], requestID: "assignment-begin", fingerprint: "begin", identity: identity)
+    workflow.drainForTesting()
+    expect("begin does not count as accepting assignment", item()["owner"] as? String, "changed-owner")
+    let body: [String: Any] = ["operation": "assignment_decision", "run_id": run.runID,
+        "assignment_id": current, "decision": "accepted", "note": "I accept this scope"]
+    expect("receiver helper journals explicit decision", workflow.record(body,
+        requestID: "assignment-accept", fingerprint: "accepted", identity: identity).status, 202)
+    workflow.drainForTesting()
+    expect("only explicit receiver decision transfers owner", item()["owner"] as? String, identity.conversationID)
+    expect("accepted assignment is not execution or verification", item()["state"] as? String, "backlog")
+    expect("accepted proposal is recorded by exact id", (item()["sessionAssignment"] as? [String: Any])?["id"] as? String, current)
+    expect("accepted receipt states accepted", (item()["sessionAssignment"] as? [String: Any])?["status"] as? String, "accepted")
+    check("accepted transfer clears pending handoff", item()["handoff"] is NSNull)
+    let count = (item()["history"] as? [[String: Any]])?.count
+    _ = workflow.record(body, requestID: "assignment-accept", fingerprint: "accepted", identity: identity)
+    workflow.drainForTesting()
+    expect("duplicate acceptance cannot produce a second transfer", (item()["history"] as? [[String: Any]])?.count, count)
+    store = ProjectBoardStore(url: url)
+    expect("accepted owner survives reload", item()["owner"] as? String, identity.conversationID)
+}
+
 private func workflowRootLandingProof() {
     let repository = makeLandingRepository()
     defer { try? FileManager.default.removeItem(at: repository.url) }
@@ -863,6 +1029,8 @@ group("managed Board ingress is durable, bounded and identity-bound") {
 }
 
 group("workflow receipts stay attested and reconcile through a bounded durable outbox") {
+    workflowSessionAssignmentProof()
+    workflowAssignmentLifecycleProof()
     workflowRootLandingProof()
     workflowOutputScopeProof()
     workflowEndSpanAuthorityProof()

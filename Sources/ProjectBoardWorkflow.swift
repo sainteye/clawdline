@@ -93,6 +93,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var handoffOwner: String?
         var handoffNote: String?
         var rootLanding: RootLanding? = nil
+        var assignmentID: String? = nil
+        var assignmentDecision: String? = nil
     }
 
     private struct RootLanding: Codable {
@@ -721,6 +723,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 .union(kind == "child" ? ["type"] : [])
         case "handoff":
             fields = common.union(["owner", "note"])
+        case "assignment_decision":
+            fields = common.union(["assignment_id", "decision", "note"])
         default:
             throw WorkflowRefusal(status: 400, code: "workflow_operation_unknown")
         }
@@ -827,6 +831,16 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 actorKind: actorKind, childType: childType,
                 sourceRunID: run.id, sourceSessionID: run.identity.conversationID,
                 relationID: "wfs-" + Self.digest("\(run.identity.actor)\u{0}\(run.id)\u{0}\(eventID)"))
+        case "assignment_decision":
+            guard run.itemID != nil,
+                  let assignmentID = boundedText(body["assignment_id"], 200),
+                  let decision = boundedText(body["decision"], 32),
+                  ["accepted", "declined"].contains(decision),
+                  let note = boundedText(body["note"], 1_000) else {
+                throw WorkflowRefusal(status: 400, code: "workflow_assignment_invalid")
+            }
+            result.assignmentID = assignmentID; result.assignmentDecision = decision
+            result.summary = note
         case "handoff":
             guard run.itemID != nil,
                   let owner = boundedText(body["owner"], 300),
@@ -950,6 +964,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             if event.operation == "handoff" {
                 appendIntent(id: "\(event.id)-handoff", run: run, event: event,
                              kind: "handoff", index: 0, draft: &draft)
+            }
+            if event.operation == "assignment_decision" {
+                appendIntent(id: "\(event.id)-assignment", run: run, event: event,
+                             kind: "decide_session_assignment", index: 0, draft: &draft)
             }
         }
     }
@@ -1090,6 +1108,12 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
 
     private func boardBody(outbox: Outbox, run: Run, event: Event) -> [String: Any]? {
         switch outbox.kind {
+        case "decide_session_assignment":
+            guard let item = run.itemID, let assignmentID = event.assignmentID,
+                  let decision = event.assignmentDecision, let note = event.summary else { return nil }
+            return ["operation": "decide_session_assignment", "itemId": item,
+                    "projectId": run.identity.projectID, "assignmentId": assignmentID,
+                    "decision": decision, "note": note]
         case "record_root_landing":
             guard let item = run.itemID, let landing = event.rootLanding else { return nil }
             return ["operation": "record_root_landing", "itemId": item,

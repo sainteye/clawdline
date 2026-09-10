@@ -195,6 +195,11 @@ final class ProjectBoardStore {
         var proposedOwner: String
         var note: String
         var proposedAt: Double
+        var provider: String? = nil
+        var scopeRevision: Int? = nil
+        var status: String? = nil
+        var settledAt: Double? = nil
+        var settledBy: String? = nil
     }
 
     private struct StoredEvidence: Codable {
@@ -297,6 +302,7 @@ final class ProjectBoardStore {
         var spans: [StoredSpan]
         var evidence: [StoredEvidence]
         var pendingHandoff: StoredHandoff?
+        var lastSessionAssignment: StoredHandoff? = nil
         var currentVerificationEvidenceId: String?
         var currentVerificationSubject: String?
         var currentLandingEvidenceId: String?
@@ -953,6 +959,10 @@ final class ProjectBoardStore {
             return Self.errorReply(BoardError(status: 403, code: "broker_root_origin_required",
                 message: "Root landing evidence requires the in-process verified broker producer"))
         }
+        if operation == "decide_session_assignment" && !workflowOrigin {
+            return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
+                message: "Only the process-bound receiver workflow may accept or decline an assignment"))
+        }
         if operation == "record_output" && !workflowOrigin {
             return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
                 message: "Delivery references are recorded only by the workflow producer"))
@@ -1002,7 +1012,8 @@ final class ProjectBoardStore {
                                     trusted: trusted, timestamp: timestamp, draft: &draft)
             if let itemID = applied.itemId,
                operation != "transition", operation != "create", operation != "record_report",
-               operation != "end_span", operation != "record_output" {
+               operation != "end_span", operation != "record_output",
+               !["assign_session", "decide_session_assignment", "cancel_session_assignment"].contains(operation) {
                 reconcileLifecycle(around: itemID, actor: "board", timestamp: timestamp,
                                    draft: &draft)
             }
@@ -2021,6 +2032,75 @@ final class ProjectBoardStore {
             }
             return Applied(itemId: draft.items[index].id)
 
+        case "assign_session":
+            let index = try itemIndex(body, draft: draft)
+            try requireMutable(index, draft: draft)
+            guard draft.items[index].projectId == (try requiredText(body, "projectId", maximum: 200)) else {
+                throw BoardError(status: 409, code: "assignment_project_changed", message: "The item belongs to another Project")
+            }
+            guard draft.items[index].pendingHandoff == nil else {
+                throw BoardError(status: 409, code: "handoff_pending", message: "A transfer is already pending")
+            }
+            let provider = try requiredChoice(body, "provider", choices: ["claude", "codex"])
+            guard let conversation = UUID(uuidString: try requiredText(body, "sessionId", maximum: 200)) else {
+                throw BoardError(status: 400, code: "assignment_identity_invalid", message: "A conversation UUID is required, not a title or terminal id")
+            }
+            let receiver = conversation.uuidString.lowercased()
+            guard draft.items[index].owner != receiver else {
+                throw BoardError(status: 409, code: "handoff_same_owner", message: "The proposed receiver already owns the item")
+            }
+            let note = try requiredText(body, "note", maximum: 1_000)
+            draft.items[index].pendingHandoff = StoredHandoff(id: Self.newID(),
+                fromOwner: draft.items[index].owner, proposedOwner: receiver, note: note,
+                proposedAt: timestamp, provider: provider,
+                scopeRevision: draft.items[index].scopeRevision ?? 0, status: "pending")
+            touch(&draft.items[index], actor: actor, kind: "session_assignment_proposed", summary: note, at: timestamp)
+            return Applied(itemId: draft.items[index].id)
+
+        case "decide_session_assignment", "cancel_session_assignment":
+            let index = try itemIndex(body, draft: draft)
+            let assignmentID = try requiredText(body, "assignmentId", maximum: 200)
+            guard var assignment = draft.items[index].pendingHandoff,
+                  let provider = assignment.provider, assignment.id == assignmentID else {
+                throw BoardError(status: 409, code: "assignment_not_pending", message: "The exact Session assignment is no longer pending")
+            }
+            let note = try requiredText(body, "note", maximum: 1_000)
+            let decision: String
+            if operation == "cancel_session_assignment" {
+                decision = "cancelled"
+            } else {
+                guard actor == "workflow:\(provider):\(assignment.proposedOwner)" else {
+                    throw BoardError(status: 403, code: "assignment_receiver_required", message: "Only the assigned Session may decide")
+                }
+                guard draft.items[index].projectId == (try requiredText(body, "projectId", maximum: 200)) else {
+                    throw BoardError(status: 409, code: "assignment_project_changed", message: "The receiving Session is in another Project")
+                }
+                decision = try requiredChoice(body, "decision", choices: ["accepted", "declined"])
+                if decision == "accepted" {
+                    try requireMutable(index, draft: draft)
+                    guard assignment.scopeRevision == (draft.items[index].scopeRevision ?? 0),
+                          assignment.fromOwner == draft.items[index].owner else {
+                        throw BoardError(status: 409, code: "assignment_scope_changed", message: "Scope or owner changed; withdraw and propose again")
+                    }
+                    if !draft.items[index].links.contains(where: { $0.kind == "session" && $0.targetId == assignment.proposedOwner }) {
+                        guard draft.items[index].links.count < Self.maximumChildren else {
+                            throw BoardError(status: 409, code: "link_capacity_reached", message: "Cannot retain the receiver relation")
+                        }
+                        draft.items[index].links.append(StoredLink(id: Self.newID(), kind: "session",
+                            targetId: assignment.proposedOwner, label: "Assigned \(provider) Session",
+                            source: "workflow", phase: nil, head: nil))
+                    }
+                    draft.items[index].owner = assignment.proposedOwner
+                    draft.items[index].ownerSourceTaskId = nil
+                }
+            }
+            assignment.status = decision; assignment.settledAt = timestamp; assignment.settledBy = actor
+            draft.items[index].lastSessionAssignment = assignment
+            draft.items[index].pendingHandoff = nil
+            touch(&draft.items[index], actor: actor, kind: "session_assignment_\(decision)",
+                  summary: "\(assignment.id): \(assignment.fromOwner) → \(provider):\(assignment.proposedOwner). \(note)", at: timestamp)
+            return Applied(itemId: draft.items[index].id)
+
         case "handoff":
             let index = try itemIndex(body, draft: draft)
             try requireMutable(index, draft: draft)
@@ -2047,6 +2127,9 @@ final class ProjectBoardStore {
             guard let handoff = draft.items[index].pendingHandoff else {
                 throw BoardError(status: 409, code: "handoff_not_pending",
                                  message: "the item has no pending handoff")
+            }
+            guard handoff.provider == nil else {
+                throw BoardError(status: 403, code: "assignment_receiver_required", message: "Session assignments require an exact workflow decision")
             }
             guard actor == handoff.proposedOwner else {
                 throw BoardError(status: 403, code: "handoff_receiver_required",
@@ -3324,14 +3407,26 @@ final class ProjectBoardStore {
             }
         }
         if let handoff = item.pendingHandoff {
-            answer["handoff"] = [
+            var object: [String: Any] = [
                 "id": handoff.id, "fromOwner": handoff.fromOwner,
                 "proposedOwner": handoff.proposedOwner, "note": handoff.note,
                 "proposedAt": handoff.proposedAt,
-            ] as [String: Any]
+            ]
+            if let provider = handoff.provider {
+                object["provider"] = provider; object["status"] = "pending"
+                object["scopeRevision"] = handoff.scopeRevision
+            }
+            answer["handoff"] = object
         } else {
             answer["handoff"] = NSNull()
         }
+        if let assignment = item.lastSessionAssignment {
+            answer["sessionAssignment"] = ["id": assignment.id, "fromOwner": assignment.fromOwner,
+                "proposedOwner": assignment.proposedOwner, "provider": assignment.provider ?? "",
+                "scopeRevision": assignment.scopeRevision ?? 0, "status": assignment.status ?? "unknown",
+                "proposedAt": assignment.proposedAt, "settledAt": assignment.settledAt as Any? ?? NSNull(),
+                "settledBy": assignment.settledBy as Any? ?? NSNull()] as [String: Any]
+        } else { answer["sessionAssignment"] = NSNull() }
         return answer
     }
 
@@ -3702,6 +3797,9 @@ final class ProjectBoardStore {
             "end_span": ["itemId", "sessionId", "startRequestId", "note"],
             "handoff": ["itemId", "owner", "note"],
             "accept_handoff": ["itemId", "note"],
+            "assign_session": ["itemId", "projectId", "sessionId", "provider", "note"],
+            "decide_session_assignment": ["itemId", "projectId", "assignmentId", "decision", "note"],
+            "cancel_session_assignment": ["itemId", "assignmentId", "note"],
             "accept_artifact": ["itemId", "artifactId", "note"],
             "record_evidence": ["itemId", "kind", "summary", "subject", "status",
                                 "sourceId", "checklistId", "blocking", "resolved"],

@@ -229,6 +229,27 @@ Common fields: `operation`, `requestId`, `expectedRevision`; item operations use
   bookkeeping allowed on an otherwise closed item, never scope invalidation or lifecycle promotion.
 - `handoff`: `itemId`, `owner` (proposed receiver), `note`; records pending transfer, does not close or change effective owner.
 - `accept_handoff`: `itemId`, `note`; root must authenticate receiving identity. Atomically transfer owner and preserve item history.
+- `assign_session`: `itemId`, `projectId`, `sessionId` (conversation UUID), `provider`
+  (`claude` or `codex`), `note`. Records one pending Session proposal with a generated
+  id, captured owner and scope; never assumes liveness, sends a message or changes owner.
+- `cancel_session_assignment`: `itemId`, `assignmentId`, `note`. Withdraws exactly
+  that pending Session proposal; permitted by ordinary Board write authority.
+- `decide_session_assignment`: internal workflow producer only; `itemId`, `projectId`,
+  `assignmentId`, `decision` (`accepted`/`declined`), `note`. Direct HTTP, including
+  machine-token callers, cannot provide the in-process origin. The actor must equal
+  the pending receiver's process-bound workflow provider/conversation. Acceptance
+  also compares captured owner/scope and refuses terminal work; decline never
+  changes owner. A same-request replay is idempotent and a different proposal id
+  fails closed. `accept_handoff` cannot bypass this typed receiver check.
+
+Typed pending `handoff` objects additionally expose `provider`, `scopeRevision` and
+`status:pending`. `sessionAssignment` is null or the last settled record with `id`,
+`fromOwner`, `proposedOwner`, `provider`, `scopeRevision`, `status`, `proposedAt`,
+`settledAt`, `settledBy`. Settlements also append bounded history including the exact
+proposal id and participants. Proposal, decision and cancellation bypass lifecycle
+promotion; they confer no verification or landing authority. Mac identity is the
+authenticated target Store, not an untrusted body field. Offline/busy availability
+is not inferred; there is no implicit terminal command or notification.
 - `record_report`: ordinary items only when closed or their current progress is authoritatively
   landed; `objective`, `deliveredOutcomes`, `verificationLanding`,
   `remainingWork`, `lessons`, `authorship` (`assistant` or `human`), optional assistant `model`, and
