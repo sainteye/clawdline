@@ -167,4 +167,27 @@ adapter.openBoard("project-one", "item-one");
 assert.equal(adapterCalls[0].at(-1), "mac-b", "Board to Timeline preserves the chosen Mac for reads");
 assert.equal(adapterCalls[1].at(-1), "mac-b", "Timeline mode commands target the chosen Mac");
 assert.equal(adapterCalls[2].at(-1), "mac-b", "Timeline to Board preserves the chosen Mac");
+{
+    const nodes = timelineElements(), requests = [];
+    let writes = 0;
+    const history = timelineRow("Git only", 200); history.projection.status = "landed_to_git";
+    const page = bindTimelinePage(nodes, {
+        read: async (...args) => { requests.push(args); return snapshot(1, true, args[5] ? [history] : []); },
+        command: async () => { writes++; }, openBoard() {}
+    });
+    page.state.environment = "staging"; page.state.category = "feature";
+    await page.enter("project-one");
+    const action = descendants(nodes["timeline-items"]).find(node => node.dataset.timelineAction === "show-git-history");
+    assert.ok(action, "empty availability view offers opt-in Git history instead of a dead end");
+    assert.equal(requests.length, 1, "empty view does not load or rebuild raw history automatically");
+    await action.fire("click");
+    assert.deepEqual(requests.at(-1), ["project-one", null, null, "staging", "feature", true], "history action preserves Project/environment/category");
+    assert.equal(nodes["timeline-upcoming"].checked, true, "checkbox reflects the chosen history filter");
+    assert.ok(descendants(nodes["timeline-items"]).some(node => node.textContent === "已進 Git"), "Git history never becomes available evidence");
+    assert.equal(writes, 0, "showing history performs no ingestion or lifecycle write");
+    const off = timelineElements();
+    const disabled = bindTimelinePage(off, { read: async () => snapshot(1, false), command() {}, openBoard() {} });
+    await disabled.enter("project-one");
+    assert.ok(!descendants(off["timeline-items"]).some(node => node.dataset.timelineAction === "show-git-history"), "disabled Timeline does not offer an active history action");
+}
 console.log("web timeline correction checks passed");

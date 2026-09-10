@@ -291,6 +291,38 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     p.view.leave();
 }
 {
+    const planned = item("Future phase", "planning"); planned.parentId = "program";
+    const livePlan = item("Live discovery", "planning");
+    livePlan.progress = { state: "planning", group: "active", active: true };
+    const queued = item("Ready now", "queued");
+    const attention = item("Decision needed", "planning");
+    attention.obligations = [{ blocking: true, resolved: false, actorKind: "user" }];
+    const reviewDebt = item("Blocked historical review", "blocked");
+    reviewDebt.progress = { state: "blocked", group: "history", evidenceCounts: { blockingFindings: 1 } };
+    const failed = item("Failed verification", "planning");
+    failed.progress = { state: "planning", group: "history", evidenceCounts: { failedVerifications: 1 } };
+    const blocked = item("Explicit blocked", "blocked");
+    blocked.progress = { state: "blocked", group: "history" };
+    const finding = item("Open finding", "planning");
+    finding.progress = { state: "planning", group: "waiting", evidenceCounts: { blockingFindings: 1 } };
+    const original = JSON.stringify([reviewDebt, failed, blocked, finding]);
+    const p = page({ read: async () => envelope({ items: [planned, livePlan, queued, attention, reviewDebt, failed, blocked, finding] }) });
+    await p.view.open("a");
+    const area = p.elements["board-items"].all(node => node.dataset.boardSection === "planned-work")[0];
+    check("unstarted planning has an independent collapsed region", area && area.tagName === "DETAILS" && !area.open);
+    check("planning region names its count without mounting future cards", area.textContent.includes("1") && !area.all(".board-item-card").length);
+    const visible = p.elements["board-items"].all(".board-card-title").map(node => node.textContent).join("|");
+    check("active planning, queued work and required attention remain visible", visible.includes("Live discovery") && visible.includes("Ready now") && visible.includes("Decision needed") && !visible.includes("Future phase"));
+    check("historical blocked work and verification debt stay expanded", ["Blocked historical review", "Failed verification", "Explicit blocked", "Open finding"].every(title => visible.includes(title)));
+    check("attention partition does not duplicate collapsed history or mutate authority", !p.elements["board-items"].all(".board-unconfirmed-history").length && JSON.stringify([reviewDebt, failed, blocked, finding]) === original);
+    area.open = true; area.dispatch("toggle");
+    check("expanding plans exposes the future subtask without changing its lifecycle", area.textContent.includes("Future phase") && planned.state === "backlog");
+    p.elements["board-search"].value = "Future phase"; p.elements["board-search"].dispatch("input");
+    const searched = p.elements["board-items"].all(node => node.dataset.boardSection === "planned-work")[0];
+    check("search makes matching planned work discoverable", searched?.open && searched.textContent.includes("Future phase"));
+    p.view.leave();
+}
+{
     const epic = item("Program", "execution"); epic.type = "epic";
     epic.deliveryLanes = [{ id: "cloud-child", projectId: "b", projectName: "Cloud", title: "接收排程通知", owner: "%406", progress: { state: "execution" }, checklistDone: 2, checklistTotal: 4 }];
     const reads = [];
@@ -320,7 +352,7 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     await p.view.open("a");
     check("Project totals come from its materialized summary, not loaded item rows",
         p.elements["board-items"].all(".board-overview-stat").map(row => row.textContent).join("|")
-            === "24正在進行|6等待處理|90已落地");
+            === "24正在進行|6等待／規劃|90已落地");
     check("partial item projection does not contradict a nonempty Project model",
         !p.elements["board-items"].textContent.includes("目前沒有待推進的項目"));
     p.view.leave();

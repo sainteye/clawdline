@@ -1383,18 +1383,16 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     ]
     try require(Set(wellFormed.keys) == CloudAppBridge.readTypes,
                 "every read type this bridge admits has a body written for it here")
-    let readsBeforeTyped = await router.recordedReads().count
-    let envelopesBeforeTyped = transport.envelopes().count
     var typedSequence: UInt64 = 60
     for type in CloudAppBridge.readTypes.sorted() {
+        let readsBeforeType = await router.recordedReads().count
+        let envelopesBeforeType = transport.envelopes().count
         transport.yield(wellFormed[type]!, sequence: typedSequence)
         typedSequence += 1
-    }
-    try await waitForCloudAppBridge("every admitted read type to parse and route") {
-        await router.recordedReads().count == readsBeforeTyped + wellFormed.count
-    }
-    try await waitForCloudAppBridge("every admitted read type to be answered") {
-        transport.envelopes().count == envelopesBeforeTyped + wellFormed.count
+        try await waitForCloudAppBridge("the \(type) read type to parse and route") {
+            await router.recordedReads().count == readsBeforeType + 1 }
+        try await waitForCloudAppBridge("the \(type) read type to be answered") {
+            transport.envelopes().count == envelopesBeforeType + 1 }
     }
     let typedReads = await router.recordedReads().suffix(wellFormed.count)
     let typedNames = Set(typedReads.map(\.read.name))

@@ -157,8 +157,23 @@ export function bindTimelinePage(elements, environment) {
         const entries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
         if (!entries.length) {
             parent.appendChild(element(doc, "p", state.enabled
-                ? words(locale(), "No delivery has production availability evidence for this view.", "這個篩選目前沒有具 production 可用性證據的交付。")
+                ? state.includeUpcoming
+                    ? words(locale(), "No records match these filters. Try another environment or category.", "目前篩選沒有符合的紀錄，可切換環境或類型。")
+                    : words(locale(), "No deployment or availability records match these filters. Git-only and not-yet-deployed work is hidden by default.", "目前篩選尚無部署或可用性紀錄；僅有 Git 提交、尚未上線的工作預設隱藏。")
                 : words(locale(), "Timeline is off. Earlier history is retained.", "Timeline 已關閉；既有歷史仍保留。"), "timeline-empty"));
+            if (state.enabled && !state.includeUpcoming) {
+                const show = element(doc, "button", words(locale(), "Show Git / not-yet-deployed history", "查看 Git 與未上線紀錄"), "timeline-more");
+                show.type = "button"; show.dataset.timelineAction = "show-git-history";
+                show.addEventListener("click", () => {
+                    state.includeUpcoming = true;
+                    if (elements["timeline-upcoming"]) elements["timeline-upcoming"].checked = true;
+                    return refresh();
+                });
+                parent.appendChild(show);
+                parent.appendChild(element(doc, "p", words(locale(),
+                    "Git history proves a code change, not a production release. This only changes the filter.",
+                    "Git 歷史代表程式碼變更，不代表已上線。這個操作只切換篩選，不會重建或修改紀錄。"), "timeline-empty"));
+            }
             return;
         }
         let last = null, section;
