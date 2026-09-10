@@ -259,7 +259,10 @@ print('5 rejected')
     failure(run(['--check', 'absent', '--health-port', '1']), 'invalid_probe');
   });
 
-  const health = { ok: true, build: 123, protocol: 1, version: '0.8.0', instance: '11111111-2222-4333-8444-555555555555' };
+  const stampedVersion = fs.readFileSync(path.join(root, 'build.sh'), 'utf8')
+    .match(/CFBundleShortVersionString<\/key><string>([^<]+)<\/string>/)?.[1];
+  assert.match(stampedVersion, /^\d+\.\d+\.\d+$/, 'fixture version must derive from the bundle stamp');
+  const health = { ok: true, build: 123, protocol: 1, version: stampedVersion, instance: '11111111-2222-4333-8444-555555555555' };
   // Keep the existing live fixture checks in the default run; --offline reports
   // their explicit omission and still runs all framing, source and F2 checks.
   if (!offline) {
