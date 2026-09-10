@@ -1,0 +1,85 @@
+# ADR 0001 — 平台邊界、狀態擁有者與證據分級
+
+狀態：W0-A 交付候選，待 CLA-296 root 的獨立 review／整合；本 ADR 不表示 production 已完成拆分。
+決策日期：2026-09-10。來源讀取時間：2026-09-10 13:19–14:10 UTC。
+來源 commit：`6f4411f1365258d1e1b41b76c85dcaa1dcb6b88a`；tree：
+`75314e95a17d901362c0d998477205606b9add5d`。本文行號只對這個版本成立。
+
+## 決策與適用範圍
+
+Local HTTP、Cloud relay 收到的輸入及 CLI 是 **inbound adapters**：解碼、認證後呼叫
+Application commands／queries。terminal、process、filesystem、durable store、secrets、
+clock/ID、event publication、optional notification 是 **outbound capability ports**：介面由
+Core／Application 所需行為定義，Mac／Linux 實作向內依賴它們。
+transport 不是 state owner，outbound port 也不是呼叫 Application 的入口。
+
+這個方向沿用 CLA-296 Plan v4，約束後續 extraction；W0-A 只新增文件和原始碼盤點工具。
+現有 Mac facade 必須繼續委派；每個 mutable fact、sequence epoch 與 admission lane 只能有
+一個寫入擁有者。不得因新 adapter 再建一套 task registry、terminal queue 或事件序號。
+對 ownership 的判斷必須讀宣告與寫入路徑，不能把下表變成另一套 runtime registry。
+
+```text
+inbound: local HTTP / Cloud relay input / CLI
+                    ↓ command or query
+            Application → Core transitions
+                    ↓ invokes application-defined outbound ports
+          terminal / process / persistence / secrets / publication
+                    ↑ implemented by
+              Mac or Linux composition
+```
+
+Core／Application 不得依賴 AppKit、Security、ServiceManagement、Speech、AVFoundation、
+Carbon、iTerm 型別、HTTP server singleton 或平台 executable。Mac／Linux composition 是
+依賴圖末端。不能用到處增加 `#if os(Linux)` 代替邊界，也不要求一個籠統 Infrastructure target。
+此方向是契約；目前尚未形成相應 compiler targets。
+
+## 固定版本的現有依賴與所有權
+
+| 邊界／資料 | 現有 owner 與來源 | 尚未完成的邊界 |
+|---|---|---|
+| build／package | [Package.swift](../../Package.swift):4–22 是 editor metadata、單一 macOS 13 executable；[build.sh](../../build.sh):918–925 直接編譯並 link Apple frameworks；[source manifest](../../tools/swift-source-manifest.sh) 列 production／test partitions | `ClawdlineCore`、`ClawdlineApplication`、`ClawdlineMac`、`ClawdlineLinux` 是後續契約名稱，不能寫成已存在產品；W0-F 證明非空 Core probe，W3 才建立正式圖 |
+| task／handoff／root assignment／Session facts | [Orchestrator.swift](../../Sources/Orchestrator.swift):1287、1313–1333 的 collections 與 lock alias，`:10194` load、`:10293` save | facade 仍混合 admission、state 與 effects；不能宣称 Registry 已接手全部資料 |
+| graph admission reservation、terminal title／role 與部分 label projection | [OrchestratorRegistry.swift](../../Sources/OrchestratorRegistry.swift):30–64 的 private collections；`:198` transaction，`:221` held-lock door，共用原有 NSLock | `Transaction` 還可能逸出 closure；held-lock door 仍依呼叫者持鎖慣例，不是型別系統的完整同步保證。新工作繼續既有 extraction 次序 |
+| orchestration disk codec | [OrchestratorStore.swift](../../Sources/OrchestratorStore.swift):3–18、`:79` stored task，包括 legacy decode／missing-field 語意 | 它是 serializer，並未擁有 collections、load/save 排程或 disk-health policy；不能藉搬移改 corruption／version 行為 |
+| HTTP／Cloud admission、terminal mutation | [RemoteServer.swift](../../Sources/RemoteServer.swift):96、`:3350–3355` 仍持有 transport queue、terminal queue/admission lock；[CloudAppBridge.swift](../../Sources/CloudAppBridge.swift):199–238 的 router 委派同一 server | `RemoteServerCloudCommandRouter` 仍有 concrete `RemoteServer`；不能把 `CloudCommandRouting` 協定誤認成已獨立的 portable Application module |
+| Session observation／restart maintenance | [SessionWatch.swift](../../Sources/SessionWatch.swift):113–114 發布 inventory；`:983` executor reconciliation、`:1154` restart phase | observation 與 task 持久事實分開；incomplete inventory 不推定 executor 消失。restart 細節見能力矩陣 |
+| Board、usage、verification data | [ProjectBoardStore.swift](../../Sources/ProjectBoardStore.swift):467–468 自有 locks；[UsageLedger.swift](../../Sources/UsageLedger.swift):885 自有 queue；[VerificationRunLedger.swift](../../Sources/VerificationRunLedger.swift):117–135 自有 store／serial queue | 是不同資料領域與 durability policy，不能合併成泛用 store，也不在 W0-A 修改範圍 |
+| Cloud transport／content keys／序號 | [CloudTransport.swift](../../Sources/CloudTransport.swift):875–896 驗證 paired key、解密、sequence gate，再送 inbound stream；[CloudAppBridge.swift](../../Sources/CloudAppBridge.swift):15–19、`:654–666` 由注入 sequencing 取號後 publish；[CloudKeys.swift](../../Sources/CloudKeys.swift):456 為 key storage seam | protocol 的存在不代表 Linux crypto／networking 已相容；配對 durable sequencing 與 transport 的 replay tracker 不能另造相互競爭的 epoch |
+| command ledger／outbound spool | [CloudCommandLedger.swift](../../Sources/CloudCommandLedger.swift)、[CloudOutboundSpool.swift](../../Sources/CloudOutboundSpool.swift) 有獨立型別與測試；bridge 的實際 publish 路徑仍直接呼叫 transport | 此固定 tree 對兩個型別的 production 文字引用集中在各自實作檔；這是未見 wiring 的搜尋證據。檔頭描述的全流量 durability 不能作為 production 已接線證明，後續 W5-1 負責 |
+
+`Orchestrator` ↔ `RemoteServer` 的依賴仍存在。盤點中的 basename crossings 是尋找呼叫路徑
+的索引，並非 compiler dependency graph；檔案較小、import 較少或協定較多都不能證明 owner 已移動。
+既有 [architecture-refactor.md](../architecture-refactor.md) 與 architecture guard 仍掌管 extraction
+與 ratchet，本 ADR 不重設其 ceiling、不授權跳過 W0 review 就開始 W1。
+
+## 可重現的盤點契約
+
+[工具](../../tools/platform-architecture-inventory.py) 只讀完整 Git commit/tree object ID 的 blob，
+不讀 index／working overlay、不執行來源中的 Package.swift 或 shell。輸出包括完整 selected
+file manifest、blob／content digest、line counts、imports、lock spellings 與 basename crossings。
+它拒絕空或缺少任一 Swift partition、缺 build reference、非 regular source、不可讀／損壞 blob、
+非 UTF-8、空檔與 NUL。stdout 在失敗時不會產生部分 inventory；stderr 是 typed JSON、exit 2。
+
+| 證據種類 | 可說的事 | 不能推論 |
+|---|---|---|
+| Git／source bytes | named tree 有哪些檔案、其 mode/blob/digest、文字行數 | deployed build、編譯輸入完整性、runtime 支援 |
+| lexical candidates | 哪些 import、basename token、lock spelling 出現在哪些行 | 符號解析、call graph、lock 是否持有、條件編譯生效；註解、字串及 inactive branch 可能被計入 |
+| 人工 source reading | 上述 declaration、委派與 mutation seam 在固定版本的責任 | 未觀察路徑的正確性；本文件不是獨立 review receipt |
+| compiler／focused runtime／exact-tree acceptance | 由相應命令、tree、環境、check count 與 receipt 限定其結論 | 不能由 lexical inventory 代發，也不能由 focused proof 升格成 full acceptance |
+
+[generated baseline](../generated/platform-architecture-inventory.md) 刻意固定於上述 tree；它不是
+HEAD freshness badge。`--check <file>` 比較完整 bytes，樹、generator digest、格式任一變動皆會
+拒絕舊輸出。JSON 是可解析的 evidence manifest；其中没有推測的 ownership 欄位、也沒有
+手填 dependency override。機器報告不分析 web、history/churn、resources、外部 repo；build
+references 只提供 bytes 身分，精確 compile artifact 的全輸入身分屬 W0-B。
+
+## 後續依賴、驗證與回退
+
+- W0-E 以 [ADR 0002](0002-cloud-authority-and-executor-trust.md) 的 authority 規則產出 contract candidate；須再等 W0-D。
+- W0-F 依本方向與 W0-B 的工具證明 Ubuntu 24.04 amd64 非空 Core boundary；Foundation import 不等於 Linux compile receipt。
+- W0-C 負責 reliability 測量；它的數字未回來以前，Plan v4 的 latency／recovery 數字仍是待批准目標。
+- CLA-296 root 收集獨立 review、合併 correction、exact candidate 驗證與 landing。W0-A 不建立 runtime、Cloud rollout 或新的 Board lifecycle。
+
+聚焦驗證：`node Tests/platform-architecture-inventory.mjs`（TMPDIR 應指向該任務的私有 work
+目錄）。新 guard 有空 inventory 紅燈證明及 mutation probes；沒有執行 Swift full suite。
+回退只需移除本組新增 docs/tool/test，不會變更 Mac behavior、wire authority、schema 或部署。
