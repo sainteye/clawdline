@@ -372,6 +372,231 @@ private func workflowIdentity(_ suffix: String = "1") -> ProjectBoardWorkflow.Id
         processGeneration: "pid-100-start-200")
 }
 
+private func workflowProgramBindingAndDocumentProof() {
+    let root = workflowTestDirectory("program-binding")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let boardURL = root.appendingPathComponent("board.json")
+    let journalURL = root.appendingPathComponent("workflow.json")
+    let replayJournalURL = root.appendingPathComponent("workflow-after-lost-reply.json")
+    var store = ProjectBoardStore(url: boardURL)
+    let identity = workflowIdentity("7")
+    _ = store.ensureProject(id: identity.projectID, name: "Program binding")
+    var serial = 0
+    func storeCommand(_ operation: String, _ fields: [String: Any],
+                      actor: String = "program-root") -> ProjectBoardStore.Reply {
+        serial += 1
+        var body = fields; body["operation"] = operation
+        body["requestId"] = "program-store-\(serial)"
+        body["expectedRevision"] = store.readHeader().revision
+        return store.command(body, actor: actor, workflowOrigin: true)
+    }
+    let made = storeCommand("create", ["projectId": identity.projectID, "type": "epic",
+        "title": "Canonical program", "owner": "program-root"])
+    let program = made.body["itemId"] as? String ?? "missing"
+    let programKey = ((store.snapshot(item: program)["board"] as? [String: Any])?["item"]
+        as? [String: Any])?["key"] as? String ?? ""
+    let planURL = "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=workflow-program.md"
+    expect("workflow binding fixture imports its exact Program Plan", storeCommand("plan_structure", [
+        "schemaVersion": 1, "itemId": program, "programKey": programKey,
+        "planId": "workflow-plan", "planVersion": 1, "graphId": "workflow-graph",
+        "destination": "Bind exact managed work",
+        "document": ["documentId": "workflow-plan-document", "version": 1,
+                     "title": "Workflow plan", "url": planURL],
+        "nodes": [["key": "delivery", "graphNodeId": "delivery", "title": "Delivery node",
+            "type": "task", "summary": "Implement the node.", "owner": "implementer",
+            "dependsOn": [], "gateKeys": [], "capabilityKeys": [],
+            "claims": ["Sources/ProjectBoardWorkflow.swift"]]],
+        "gates": [], "capabilities": [],
+    ]).status, 200)
+    let programPlan = (((store.snapshot(item: program)["board"] as? [String: Any])?["item"]
+        as? [String: Any])?["programPlan"] as? [String: Any])
+    let effectiveItem = (programPlan?["nodes"] as? [[String: Any]])?.first?["itemId"]
+        as? String ?? "missing"
+    var captureCommittedBinding = true
+    var originalStoreReceipt: [String: Any]?
+    func makeWorkflow(_ url: URL = journalURL) -> ProjectBoardWorkflow {
+        ProjectBoardWorkflow(url: url,
+            boardHeader: { let h = store.readHeader(); return (h.enabled, h.revision, h.available) },
+            boardCommand: { body, actor in
+                let reply = store.command(body, actor: actor, workflowOrigin: true)
+                if captureCommittedBinding,
+                   body["operation"] as? String == "program_binding", reply.status == 200 {
+                    captureCommittedBinding = false
+                    originalStoreReceipt = reply.body["programBindingReceipt"] as? [String: Any]
+                    try? FileManager.default.removeItem(at: replayJournalURL)
+                    try? FileManager.default.copyItem(at: journalURL, to: replayJournalURL)
+                }
+                return reply
+            }, autoStart: false)
+    }
+    var workflow = makeWorkflow()
+    guard case .managed(let prepared) = workflow.prepareIngress(
+        requestID: "program-turn", fingerprint: "program-turn-body", text: "implement node",
+        imageCount: 0, identity: identity) else {
+        check("program workflow fixture creates a managed run", false); return
+    }
+    _ = workflow.markDelivery(runID: prepared.runID, identity: identity, delivered: true)
+    let binding: [String: Any] = [
+        "program_item_id": program, "program_key": programKey,
+        "plan_id": "workflow-plan", "plan_version": 1,
+        "graph_id": "workflow-graph", "node_id": "delivery",
+    ]
+    let admitted = workflow.record(["operation": "begin", "run_id": prepared.runID,
+        "classification": "existing_item", "item_id": program, "phase": "output",
+        "program_binding": binding], requestID: "program-begin", fingerprint: "program-begin-body",
+        identity: identity)
+    expect("Program binding initially reports durable admission, not settlement", admitted.status, 202)
+    expect("an undrained Program binding remains pending",
+           (workflow.snapshot(runID: prepared.runID)?["binding"] as? [String: Any])?["status"]
+            as? String, "pending")
+    let pendingBinding = workflow.snapshot(runID: prepared.runID)?["binding"] as? [String: Any]
+    expect("a pending binding preserves the requested classification",
+           pendingBinding?["requested_classification"] as? String, "existing_item")
+    expect("a pending binding preserves the requested Program item",
+           pendingBinding?["requested_item_id"] as? String, program)
+    workflow.drainForTesting()
+    let settled = workflow.snapshot(runID: prepared.runID)?["binding"] as? [String: Any]
+    expect("the settled receipt names the exact effective node item",
+           settled?["effective_item_id"] as? String, effectiveItem)
+    expect("the settled receipt retains the requested canonical Program",
+           settled?["program_item_id"] as? String, program)
+    expect("the binding receipt is process-bound",
+           (settled?["process"] as? [String: Any])?["generation"] as? String,
+           identity.processGeneration)
+    expect("the binding receipt explicitly resolves to a reused imported node",
+           settled?["resolution"] as? String, "reused_imported_program_node")
+    expect("a direct first settlement is not mislabeled as replay",
+           settled?["settlement_replay"] as? Bool, false)
+    expect("the workflow preserves the Store's original receipt identity",
+           settled?["receipt_id"] as? String,
+           originalStoreReceipt?["receiptId"] as? String)
+    expect("the binding receipt cannot claim broker execution authority",
+           settled?["authority"] as? String, "advisory_only")
+
+    var replayWorkflow = makeWorkflow(replayJournalURL)
+    replayWorkflow.drainForTesting()
+    let replaySettled = replayWorkflow.snapshot(runID: prepared.runID)?["binding"]
+        as? [String: Any]
+    expect("a restart replay preserves the original binding receipt identity",
+           replaySettled?["receipt_id"] as? String, settled?["receipt_id"] as? String)
+    expect("a restart replay durably records Store settlement provenance",
+           replaySettled?["settlement_replay"] as? Bool, true)
+    replayWorkflow = makeWorkflow(replayJournalURL)
+    expect("settlement replay provenance survives another workflow restart",
+           (replayWorkflow.snapshot(runID: prepared.runID)?["binding"]
+            as? [String: Any])?["settlement_replay"] as? Bool, true)
+
+    let v1DocumentReference = programPlan?["documentReferenceId"] as? String ?? "missing"
+    expect("a bound v1 Program accepts its exact v2 successor", storeCommand("plan_structure", [
+        "schemaVersion": 1, "itemId": program, "programKey": programKey,
+        "planId": "workflow-plan", "planVersion": 2, "predecessorVersion": 1,
+        "graphId": "workflow-graph", "destination": "Bind exact managed work",
+        "document": ["documentId": "workflow-plan-document", "version": 2,
+                     "title": "Workflow plan v2",
+                     "url": planURL.replacingOccurrences(of: ".md", with: "-v2.md"),
+                     "supersedesId": v1DocumentReference],
+        "nodes": [["key": "delivery", "graphNodeId": "delivery", "title": "Delivery node",
+            "type": "task", "summary": "Implement the node.", "owner": "implementer",
+            "dependsOn": [], "gateKeys": [], "capabilityKeys": [],
+            "claims": ["Sources/ProjectBoardWorkflow.swift"]]],
+        "gates": [], "capabilities": [],
+    ]).status, 200)
+    store = ProjectBoardStore(url: boardURL)
+    let restartedPlan = (((store.snapshot(item: program)["board"] as? [String: Any])?["item"]
+        as? [String: Any])?["programPlan"] as? [String: Any])
+    expect("restart keeps the successor as the current Program Plan",
+           restartedPlan?["planVersion"] as? Int, 2)
+    let historicalBinding = (restartedPlan?["bindingReceipts"] as? [[String: Any]])?.first
+    expect("restart retains the historical v1 binding under the v2 Plan",
+           historicalBinding?["planVersion"] as? Int, 1)
+    expect("successor import and Store restart preserve the receipt identity",
+           historicalBinding?["receiptId"] as? String, settled?["receipt_id"] as? String)
+    workflow = makeWorkflow()
+    expect("workflow restart preserves its original settled receipt after Plan evolution",
+           (workflow.snapshot(runID: prepared.runID)?["binding"]
+            as? [String: Any])?["receipt_id"] as? String, settled?["receipt_id"] as? String)
+
+    let documentBody: [String: Any] = ["operation": "document", "run_id": prepared.runID,
+        "version": 1, "document_id": "node-notes", "document_version": 1,
+        "title": "Delivery notes", "url": planURL.replacingOccurrences(of: "program", with: "node"),
+        "purpose": "reference"]
+    let document = workflow.record(documentBody, requestID: "document-v1",
+        fingerprint: "document-v1-body", identity: identity)
+    expect("a version-negotiated document is only journal-admitted initially", document.status, 202)
+    workflow = makeWorkflow()
+    expect("a pending document intent survives workflow restart",
+           (workflow.snapshot(runID: prepared.runID)?["outbox"] as? [String: Any])?["pending"]
+            as? Int, 1)
+    workflow.drainForTesting()
+    let node = (store.snapshot(item: effectiveItem)["board"] as? [String: Any])?["item"]
+        as? [String: Any]
+    expect("the durable outbox settles the typed document on the effective item",
+           (node?["documentReferences"] as? [[String: Any]])?.first?["documentId"] as? String,
+           "node-notes")
+    let documentReplay = workflow.record(documentBody, requestID: "document-v1",
+        fingerprint: "document-v1-body", identity: identity)
+    expect("document replay returns the original admission receipt", documentReplay.status, 202)
+    expect("document replay preserves the original typed code", documentReplay.code, document.code)
+    var newerProtocol = documentBody; newerProtocol["version"] = 2
+    expect("an unsupported document protocol version is refused",
+           workflow.record(newerProtocol, requestID: "document-v2", fingerprint: "document-v2-body",
+                           identity: identity).code, "workflow_document_version_unsupported")
+    var escalated = documentBody; escalated["authority"] = "trusted"
+    expect("document metadata cannot escalate its authority",
+           workflow.record(escalated, requestID: "document-authority",
+                           fingerprint: "document-authority-body", identity: identity).code,
+           "workflow_command_fields")
+    var forgedProcess = documentBody; forgedProcess["process_generation"] = "forged"
+    expect("document metadata cannot replace process identity",
+           workflow.record(forgedProcess, requestID: "document-process",
+                           fingerprint: "document-process-body", identity: identity).code,
+           "workflow_command_fields")
+
+    guard case .managed(let second) = workflow.prepareIngress(
+        requestID: "program-turn-two", fingerprint: "program-turn-two-body", text: "continue",
+        imageCount: 0, identity: identity) else {
+        check("second Program workflow run is managed", false); return
+    }
+    _ = workflow.markDelivery(runID: second.runID, identity: identity, delivered: true)
+    var successorBinding = binding
+    successorBinding["plan_version"] = 2
+    expect("the second exact binding is admitted", workflow.record([
+        "operation": "begin", "run_id": second.runID, "classification": "existing_item",
+        "item_id": program, "phase": "correction", "program_binding": successorBinding,
+    ], requestID: "program-begin-two", fingerprint: "program-begin-two-body",
+       identity: identity).status, 202)
+    workflow.drainForTesting()
+    let repeatedNode = (store.snapshot(item: effectiveItem)["board"] as? [String: Any])?["item"]
+        as? [String: Any]
+    expect("repeated begin boundaries render one canonical Session relation",
+           (repeatedNode?["links"] as? [[String: Any]])?.filter {
+               $0["kind"] as? String == "session" && $0["targetId"] as? String == identity.conversationID
+           }.count, 1)
+    expect("repeated begin boundaries retain distinct activity spans",
+           (repeatedNode?["spans"] as? [[String: Any]])?.filter {
+               $0["sessionId"] as? String == identity.conversationID
+           }.count, 2)
+
+    guard case .managed(let disabledRun) = workflow.prepareIngress(
+        requestID: "program-turn-disabled", fingerprint: "program-turn-disabled-body",
+        text: "wait for Board", imageCount: 0, identity: identity) else {
+        check("disabled Board fixture creates a managed run before the mode change", false); return
+    }
+    _ = workflow.markDelivery(runID: disabledRun.runID, identity: identity, delivered: true)
+    expect("a Program binding can be admitted before Board is disabled", workflow.record([
+        "operation": "begin", "run_id": disabledRun.runID,
+        "classification": "existing_item", "item_id": program, "phase": "correction",
+        "program_binding": successorBinding,
+    ], requestID: "program-begin-disabled", fingerprint: "program-begin-disabled-body",
+       identity: identity).status, 202)
+    expect("the Board disable command succeeds after workflow admission", storeCommand(
+        "set_enabled", ["enabled": false]).status, 200)
+    workflow.drainForTesting()
+    let disabledOutbox = workflow.snapshot(runID: disabledRun.runID)?["outbox"] as? [String: Any]
+    expect("post-admission Board disable is classified separately",
+           disabledOutbox?["failures"] as? [String], ["board_disabled"])
+}
+
 private func workflowJSON(_ response: RemoteServer.Response) -> [String: Any] {
     (try? JSONSerialization.jsonObject(with: response.body)) as? [String: Any] ?? [:]
 }
@@ -1029,6 +1254,7 @@ group("managed Board ingress is durable, bounded and identity-bound") {
 }
 
 group("workflow receipts stay attested and reconcile through a bounded durable outbox") {
+    workflowProgramBindingAndDocumentProof()
     workflowSessionAssignmentProof()
     workflowAssignmentLifecycleProof()
     workflowRootLandingProof()

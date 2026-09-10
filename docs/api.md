@@ -28,6 +28,20 @@ the old Session process to remain alive. Neither route is a paired-device mutati
 See [managed Board workflow](board-workflow.md) for exact fields, replay scope, coverage gaps
 and the explicitly not-yet-installed native helper/adapter boundary.
 
+The additive CLA-306 Board vocabulary is `plan_structure`, `approve_program_gate`, and the
+in-process-only `program_binding`. A Program import is one revision and atomic persist after
+complete Plan, DAG, document, capacity and graph-index validation. Its binding receipt names the
+stable receipt id, requested classification/item, explicit reused-node resolution, exact Program
+key, Plan version, graph/node, effective item, run, Session/provider/process generation, Board
+revision, settlement time and whether outbox settlement used a Store replay. Historical receipts
+survive successor Plans but cannot authorize a mismatched current node; the receipt is advisory and
+grants no dispatch authority.
+The semantic workflow adds `program_binding` only inside `begin`, plus a closed `document`
+operation whose protocol `version` is currently 1. Both initially return durable-admission `202`
+and settle through the outbox; unsupported document versions and caller-supplied authority/process
+fields are typed refusals. See the [Program contract](project-board-contract.md#canonical-program-plan-boundary)
+and [workflow negotiation](board-workflow.md#program-bound-runs-and-versioned-documents).
+
 ```console
 $ TOKEN=$(cat ~/.config/clawdline/remote-token)
 ```

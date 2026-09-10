@@ -14,6 +14,275 @@ private final class BoardCloudStatusBox: @unchecked Sendable {
     }
 }
 
+func boardProgramPlanProof() {
+    let d = BoardTestDriver(name: "program-plan-\(UUID().uuidString)")
+    d.createProject()
+    let program = d.create(type: "epic", title: "Ubuntu runtime program", owner: "program-root")
+    let programKey = d.item(program)["key"] as? String ?? ""
+    let initialRevision = d.revision
+    let initialScope = d.item(program)["scopeRevision"] as? Int
+    let initialEvidence = d.item(program)["currentEvidence"] as? NSDictionary
+    let documentURL = "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=program-v1.md"
+    let firstFields: [String: Any] = [
+        "schemaVersion": 1, "itemId": program, "programKey": programKey,
+        "planId": "ubuntu-runtime", "planVersion": 1,
+        "graphId": "ubuntu-runtime-graph", "destination": "Deliver the Ubuntu runtime",
+        "document": ["documentId": "ubuntu-runtime-plan", "version": 1,
+                     "title": "Ubuntu runtime plan", "url": documentURL],
+        "nodes": [
+            ["key": "w0", "graphNodeId": "w0-contract", "title": "Contract baseline",
+             "type": "task", "summary": "Freeze the portable contract.", "owner": "architecture",
+             "dependsOn": [], "gateKeys": ["architecture"],
+             "capabilityKeys": ["linux-core"], "claims": ["Sources/Core.swift"]],
+            ["key": "w1", "graphNodeId": "w1-state", "title": "State ownership",
+             "type": "refactor", "summary": "Move one state owner.", "owner": "state-owner",
+             "dependsOn": ["w0"], "gateKeys": [],
+             "capabilityKeys": ["linux-core"], "claims": ["Sources/Orchestrator.swift"]],
+        ],
+        "gates": [["key": "architecture", "title": "Architecture approval",
+                    "authority": "architect"]],
+        "capabilities": [["key": "linux-core", "status": "supported", "observedAt": 100.0]],
+    ]
+    let imported = d.send("plan_structure", firstFields, requestId: "plan-v1")
+    expect("a closed Program Plan imports successfully", imported.status, 200)
+    expect("the whole Program draft consumes one Board revision", d.revision, initialRevision + 1)
+    let first = d.item(program)
+    let plan = first["programPlan"] as? [String: Any]
+    expect("the canonical Program and plan identity are explicit", plan?["programKey"] as? String,
+           programKey)
+    expect("the plan persists its exact graph identity", plan?["graphId"] as? String,
+           "ubuntu-runtime-graph")
+    expect("the planning document is added in the same mutation",
+           (first["documentReferences"] as? [[String: Any]])?.first?["documentId"] as? String,
+           "ubuntu-runtime-plan")
+    expect("plan import does not change lifecycle", first["state"] as? String, "backlog")
+    expect("plan import does not change scope revision", first["scopeRevision"] as? Int, initialScope)
+    check("plan import does not rewrite verification, landing, or acceptance pointers",
+          (first["currentEvidence"] as? NSDictionary) == initialEvidence)
+    let firstNodes = plan?["nodes"] as? [[String: Any]] ?? []
+    expect("stable logical keys create exactly two bounded children", firstNodes.count, 2)
+    expect("an unappproved current gate blocks its node",
+           firstNodes.first { $0["key"] as? String == "w0" }?["planningState"] as? String,
+           "blocked")
+    expect("a dependency blocks its successor",
+           firstNodes.first { $0["key"] as? String == "w1" }?["planningState"] as? String,
+           "blocked")
+    expect("the planning projection declares advisory authority",
+           (plan?["frontier"] as? [String: Any])?["authority"] as? String, "advisory_only")
+    check("planning output cannot masquerade as broker execution authority",
+          (plan?["frontier"] as? [String: Any])?["executionAuthority"] as? Bool == false)
+
+    let approved = d.send("approve_program_gate", [
+        "itemId": program, "planId": "ubuntu-runtime", "planVersion": 1,
+        "gateKey": "architecture", "decision": "approved", "note": "Approved for W0.",
+    ], actor: "architect")
+    expect("the named gate authority can approve the exact plan revision", approved.status, 200)
+    let approvedW0 = ((d.item(program)["programPlan"] as? [String: Any])?["nodes"]
+        as? [[String: Any]])?.first { $0["key"] as? String == "w0" }
+    expect("a supported dependency-free node enters only the planning frontier",
+           approvedW0?["planningState"] as? String, "planning_ready")
+
+    let documentID = (d.item(program)["documentReferences"] as? [[String: Any]])?.first?["id"]
+        as? String ?? ""
+    var secondFields = firstFields
+    secondFields["planVersion"] = 2
+    secondFields["predecessorVersion"] = 1
+    secondFields["document"] = ["documentId": "ubuntu-runtime-plan", "version": 2,
+        "title": "Ubuntu runtime plan v2",
+        "url": documentURL.replacingOccurrences(of: "v1", with: "v2"),
+        "supersedesId": documentID]
+    secondFields["nodes"] = [
+        ["key": "w0", "graphNodeId": "w0-contract", "title": "Contract baseline revised",
+         "type": "task", "summary": "Freeze the portable contract.", "owner": "architecture-2",
+         "dependsOn": [], "gateKeys": ["architecture"],
+         "capabilityKeys": ["linux-core"], "claims": ["Sources/Core.swift"]],
+        ["key": "w2", "graphNodeId": "w2-host", "title": "Host boundary",
+         "type": "task", "summary": "Add the host seam.", "owner": "platform",
+         "dependsOn": [], "gateKeys": [],
+         "capabilityKeys": ["linux-core"], "claims": ["Sources/Linux.swift"]],
+        ["key": "w3", "graphNodeId": "w3-cloud", "title": "Cloud boundary",
+         "type": "task", "summary": "Keep missing observations closed.", "owner": "cloud",
+         "dependsOn": [], "gateKeys": [],
+         "capabilityKeys": ["unobserved-capability"], "claims": ["Sources/Cloud.swift"]],
+    ]
+    secondFields["gates"] = []
+    secondFields["capabilities"] = []
+    let second = d.send("plan_structure", secondFields, requestId: "plan-v2")
+    expect("a monotonic successor Program Plan imports", second.status, 200)
+    let secondPlan = d.item(program)["programPlan"] as? [String: Any]
+    let secondNodes = secondPlan?["nodes"] as? [[String: Any]] ?? []
+    expect("omitting an existing logical key never deletes it", secondNodes.count, 4)
+    expect("a stable logical-key upsert preserves the child identity",
+           secondNodes.first { $0["key"] as? String == "w0" }?["itemId"] as? String,
+           firstNodes.first { $0["key"] as? String == "w0" }?["itemId"] as? String)
+    expect("a stable logical-key upsert updates its bounded fields",
+           secondNodes.first { $0["key"] as? String == "w0" }?["title"] as? String,
+           "Contract baseline revised")
+    expect("a retained capability omitted by the successor fails closed as unknown",
+           secondNodes.first { $0["key"] as? String == "w2" }?["planningState"] as? String,
+           "unknown")
+    expect("an unobserved required capability defaults to unknown",
+           secondNodes.first { $0["key"] as? String == "w3" }?["planningState"] as? String,
+           "unknown")
+    expect("a new plan revision cannot inherit an old gate approval",
+           secondNodes.first { $0["key"] as? String == "w0" }?["planningState"] as? String,
+           "blocked")
+    expect("a stale gate approval is refused",
+           boardError(d.send("approve_program_gate", [
+               "itemId": program, "planId": "ubuntu-runtime", "planVersion": 1,
+               "gateKey": "architecture", "decision": "approved", "note": "stale",
+           ], actor: "architect")), "program_gate_revision_conflict")
+    expect("a retained gate omitted by the successor cannot be approved",
+           boardError(d.send("approve_program_gate", [
+               "itemId": program, "planId": "ubuntu-runtime", "planVersion": 2,
+               "gateKey": "architecture", "decision": "approved", "note": "stale evidence",
+           ], actor: "architect")), "program_gate_stale")
+
+    let beforeRefusals = d.revision
+    var stale = secondFields
+    stale["planVersion"] = 3; stale["predecessorVersion"] = 1
+    expect("a stale plan predecessor is refused",
+           boardError(d.send("plan_structure", stale)), "program_plan_predecessor_conflict")
+    var duplicate = secondFields
+    duplicate["planVersion"] = 3; duplicate["predecessorVersion"] = 2
+    var duplicateNodes = duplicate["nodes"] as! [[String: Any]]
+    duplicateNodes.append(duplicateNodes[0]); duplicate["nodes"] = duplicateNodes
+    expect("duplicate logical keys are refused before mutation",
+           boardError(d.send("plan_structure", duplicate)), "program_plan_duplicate_key")
+    var cyclic = duplicate
+    var cyclicNodes = secondFields["nodes"] as! [[String: Any]]
+    cyclicNodes[0]["dependsOn"] = ["w2"]; cyclicNodes[1]["dependsOn"] = ["w0"]
+    cyclic["nodes"] = cyclicNodes
+    cyclic["gates"] = [["key": "architecture", "title": "Architecture approval",
+                         "authority": "architect"]]
+    cyclic["document"] = ["documentId": "ubuntu-runtime-plan", "version": 3,
+        "title": "Ubuntu runtime plan v3",
+        "url": documentURL.replacingOccurrences(of: "v1", with: "v3"),
+        "supersedesId": secondPlan?["documentReferenceId"] as? String ?? ""]
+    expect("a Program Plan cycle is refused before mutation",
+           boardError(d.send("plan_structure", cyclic)), "program_plan_cycle")
+    var lateInvalid = duplicate
+    var lateNodes = secondFields["nodes"] as! [[String: Any]]
+    lateNodes.append(["key": "late", "graphNodeId": "late", "title": "Late invalid",
+        "type": "not-a-board-type", "summary": "invalid after valid rows", "owner": "root",
+        "dependsOn": [], "gateKeys": [], "capabilityKeys": [], "claims": []])
+    lateInvalid["nodes"] = lateNodes
+    expect("a late invalid node rejects the complete draft atomically",
+           boardError(d.send("plan_structure", lateInvalid)), "program_plan_node_invalid")
+    var importedApproval = duplicate
+    importedApproval["gates"] = [["key": "architecture", "title": "Architecture approval",
+        "authority": "architect", "status": "approved"]]
+    expect("plan import cannot smuggle a gate approval",
+           boardError(d.send("plan_structure", importedApproval)), "program_plan_gate_invalid")
+    expect("all invalid drafts leave revision and children untouched", d.revision, beforeRefusals)
+
+    let replay = d.send("plan_structure", firstFields, expected: initialRevision,
+                        requestId: "plan-v1")
+    expect("an old exact replay returns its original Program receipt", replay.status, 200)
+    let replayReceipt = replay.body["programPlanReceipt"] as? [String: Any]
+    expect("replay does not recompute the receipt from the current plan",
+           replayReceipt?["planVersion"] as? Int, 1)
+    expect("the original Program receipt is explicitly a replay",
+           replayReceipt?["replay"] as? Bool, true)
+    expect("replaying a settled import never advances revision", d.revision, beforeRefusals)
+    expect("schema-v1 stores without Program fields remain readable",
+           ProjectBoardStore(url: d.file).readHeader().available, true)
+
+    let corruptFile = d.root.appendingPathComponent("corrupt-program.json")
+    if let data = try? Data(contentsOf: d.file),
+       var object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+       var items = object["items"] as? [[String: Any]],
+       let position = items.firstIndex(where: { $0["id"] as? String == program }),
+       var persistedPlan = items[position]["programPlan"] as? [String: Any],
+       var capabilities = persistedPlan["capabilities"] as? [[String: Any]],
+       !capabilities.isEmpty {
+        capabilities[0]["status"] = "future_status"
+        persistedPlan["capabilities"] = capabilities
+        items[position]["programPlan"] = persistedPlan
+        object["items"] = items
+        if let corruptData = try? JSONSerialization.data(withJSONObject: object,
+                                                          options: [.sortedKeys]) {
+            try? corruptData.write(to: corruptFile, options: .atomic)
+        }
+    }
+    let corruptStore = ProjectBoardStore(url: corruptFile)
+    check("a persisted Program Record with unknown closed state makes Board unavailable",
+          corruptStore.readHeader().available == false)
+    expect("corrupt persisted Program state returns the typed Store failure",
+           boardError(corruptStore.command([
+               "operation": "set_enabled", "requestId": "corrupt-probe",
+               "expectedRevision": 0, "enabled": true,
+           ], actor: "owner")), "board_store_corrupt")
+}
+
+
+func boardProgramGraphBindingProof() {
+    let file = FileManager.default.temporaryDirectory
+        .appendingPathComponent("program-graph-binding-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: file) }
+    let store = ProjectBoardStore(url: file)
+    _ = store.ensureProject(id: "program-project", name: "Program")
+    var serial = 0
+    func command(_ operation: String, _ fields: [String: Any]) -> ProjectBoardStore.Reply {
+        serial += 1
+        var body = fields; body["operation"] = operation
+        body["requestId"] = "program-integration-\(serial)"
+        body["expectedRevision"] = store.readHeader().revision
+        return store.command(body, actor: "program-root")
+    }
+    let program = command("create", ["projectId": "program-project", "type": "epic",
+        "title": "Canonical program", "owner": "program-root"]).body["itemId"] as? String ?? ""
+    func item(_ id: String) -> [String: Any] {
+        (store.snapshot(item: id)["board"] as? [String: Any])?["item"]
+            as? [String: Any] ?? [:]
+    }
+    let key = item(program)["key"] as? String ?? ""
+    let url = "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=integration-plan.md"
+    expect("Program integration fixture imports", command("plan_structure", [
+        "schemaVersion": 1, "itemId": program, "programKey": key,
+        "planId": "integration-plan", "planVersion": 1,
+        "graphId": "integration-graph", "destination": "Exact integration",
+        "document": ["documentId": "integration-document", "version": 1,
+                     "title": "Integration plan", "url": url],
+        "nodes": [
+            ["key": "first", "graphNodeId": "node-a", "title": "Same title",
+             "type": "task", "summary": "First", "owner": "a", "dependsOn": [],
+             "gateKeys": [], "capabilityKeys": [], "claims": []],
+            ["key": "second", "graphNodeId": "node-b", "title": "Same title",
+             "type": "task", "summary": "Second", "owner": "b", "dependsOn": [],
+             "gateKeys": [], "capabilityKeys": [], "claims": []],
+        ], "gates": [], "capabilities": [],
+    ]).status, 200)
+    let nodes = (item(program)["programPlan"] as? [String: Any])?["nodes"]
+        as? [[String: Any]] ?? []
+    let target = nodes.first { $0["key"] as? String == "second" }?["itemId"] as? String ?? ""
+    let task: [String: Any] = ["id": "exact-node-task", "title": "unrelated title",
+        "state": "briefed", "workItemId": program, "workPhase": "output",
+        "graph": ["id": "integration-graph", "destination": "Exact integration",
+                  "current_node": "node-b", "kind": "delivery"]]
+    expect("broker ingestion accepts the exact Program graph node",
+           store.ingest(task: task, projectID: "program-project").status, .accepted)
+    let targetLinks = item(target)["links"] as? [[String: Any]] ?? []
+    check("graph node identity, never a repeated title, owns the broker attempt",
+          targetLinks.contains { $0["kind"] as? String == "task"
+              && $0["targetId"] as? String == "exact-node-task" })
+    check("the Program remains a container rather than a second execution truth",
+          !(item(program)["links"] as? [[String: Any]] ?? []).contains {
+              $0["targetId"] as? String == "exact-node-task"
+          })
+    var unknown = task
+    unknown["id"] = "unknown-node-task"
+    unknown["graph"] = ["id": "integration-graph", "destination": "Exact integration",
+                        "current_node": "not-imported", "kind": "delivery"]
+    expect("a Program cannot guess an unimported graph node from title or membership",
+           store.ingest(task: unknown, projectID: "program-project").reason,
+           "program_node_binding_unresolved")
+    check("a refused unknown node creates no Program task relation",
+          !(item(program)["links"] as? [[String: Any]] ?? []).contains {
+              $0["targetId"] as? String == "unknown-node-task"
+          })
+}
+
 private func boardRootLandingStoreProof() {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("root-landing-store-\(UUID().uuidString).json")
     defer { try? FileManager.default.removeItem(at: file) }

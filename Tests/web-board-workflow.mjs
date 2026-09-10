@@ -54,6 +54,21 @@ const bundleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clawdline-workflow-bun
 let bundleChecks = 0;
 try {
     const build = fs.readFileSync(path.join(projectRoot, "build.sh"), "utf8");
+    const guide = fs.readFileSync(path.join(projectRoot, "Resources/board-workflow.md"), "utf8");
+    assert.match(guide, /Allowed operations are .*`document`/,
+        "the bundled adapter guide advertises the typed document operation"); bundleChecks++;
+    assert.match(guide, /Only operation\s+version 1 is supported/,
+        "the bundled guide requires explicit document protocol negotiation"); bundleChecks++;
+    assert.match(guide, /initial `202` records durable admission only/i,
+        "the bundled guide keeps admission distinct from binding settlement"); bundleChecks++;
+    assert.match(guide, /requested\s+classification and Program item/,
+        "the bundled guide preserves the original binding request"); bundleChecks++;
+    assert.match(guide, /stable\s+receipt id, `reused_imported_program_node` resolution/,
+        "the bundled guide names durable binding identity and resolution"); bundleChecks++;
+    assert.match(guide, /settlement replay provenance/,
+        "the bundled guide makes restart replay provenance visible"); bundleChecks++;
+    assert.match(guide, /Planning\s+frontier and binding metadata are advisory/,
+        "the bundled guide cannot confer broker execution authority"); bundleChecks++;
     const fragment = build.match(/# BEGIN BOARD WORKFLOW BUNDLE\n([\s\S]*?)# END BOARD WORKFLOW BUNDLE/);
     assert.ok(fragment, "formal build must package the Board workflow executable and guide"); bundleChecks++;
     const resources = path.join(bundleRoot, "A relocated App.app", "Contents", "Resources");
@@ -193,6 +208,17 @@ try {
     proof("the stable key is forwarded unchanged", replay.calls[1].key, "same-request");
     const conflict = await invoke(credential, "same-request", '{"operation":"progress","summary":"changed"}');
     proof("changed-body same-key conflict is not retried", [conflict.status, conflict.calls.length, receipts.size], [22, 2, 1]);
+    const documentBody = JSON.stringify({ operation: "document", run_id: "run-fixture",
+        version: 1, document_id: "delivery-notes", document_version: 1,
+        title: "Delivery notes",
+        url: "https://app.clawdline.com/#document=1&machine=m&session=s&scope=project&path=notes.md",
+        purpose: "reference" });
+    const document = await invoke(credential, "document-v1", documentBody);
+    proof("the helper forwards the negotiated document body byte-for-byte",
+        receipts.get("document-v1"), documentBody);
+    proof("the versioned document uses one semantic POST after identity lookup",
+        document.calls.map(row => row.url.split('?')[0]),
+        ["/v1/orchestrator/whoami", "/v1/orchestrator/sessions/%25fixture/workflow"]);
     const denied = await invoke(Buffer.alloc(32, 252).toString("base64url"));
     proof("identity auth refusal never reaches semantic POST", [denied.status, denied.calls.length], [22, 1]);
     for (const value of [null, "", credential + "\n", " " + credential, credential + " ",

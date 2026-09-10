@@ -97,6 +97,35 @@ body rather than accepting twice. No assignment command promotes execution,
 verification, landing or deployment. Existing v1 workflows without the optional
 decision operation retain their prior behavior.
 
+### Program-bound runs and versioned documents
+
+An `existing_item` begin may carry `program_binding` with exactly
+`program_item_id`, `program_key`, `plan_id`, `plan_version`, `graph_id`, and `node_id`.
+The selected `item_id` must be the same canonical Program. The durable outbox first sends an
+in-process-only `program_binding` Store command containing those identities plus the journal's
+run, Session, provider, Project, and process generation. Until the Store returns its exact durable
+receipt, the run has no effective item and reports `binding.status:"pending"`; the semantic POST's
+`202` means only that this request and outbox intent were fsynced. Settlement records the exact
+requested classification/item, stable receipt id, `reused_imported_program_node` resolution,
+effective child item, process generation and `settlement_replay` provenance, then derives that
+node's canonical Session link and a distinct activity span. Store replay and workflow restart retain
+the original receipt identity. A later run upserts the same source-aware Session relation but retains
+its own span.
+
+The Store refuses a stale Plan version or an unknown graph node. Retained historical binding
+receipts survive a valid successor Plan, but they neither match nor authorize a different current
+Plan/node request. It never resolves by Program, node, or Session title. The receipt and planning
+frontier say `advisory_only`; neither can dispatch broker work or replace broker execution authority.
+
+`document` has a separate closed schema: `version` (currently exactly 1), `document_id`,
+`document_version`, `title`, canonical `app.clawdline.com` document `url`, `purpose`, and optional
+`supersedes_id`. Unknown fields—including authority or process identity supplied by the caller—are
+refused. The workflow journals it before returning `202`, and the outbox materializes the ordinary
+Store `document_reference` on the effective item. Restart replays the exact original request.
+Unsupported operation versions return `workflow_document_version_unsupported`; they are never
+silently interpreted as the current format. This reference does not mutate scope, lifecycle,
+evidence, landing, or acceptance.
+
 ### Session assignment picker
 
 The item detail's **Assign Session / view proposal** entry opens a separate sheet, not a

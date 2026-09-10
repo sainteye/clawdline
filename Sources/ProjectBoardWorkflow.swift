@@ -95,6 +95,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var rootLanding: RootLanding? = nil
         var assignmentID: String? = nil
         var assignmentDecision: String? = nil
+        var programBinding: ProgramBinding? = nil
+        var document: WorkflowDocument? = nil
     }
 
     private struct RootLanding: Codable {
@@ -102,6 +104,46 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         let targetCommit: String
         let target: String
         let at: Double
+    }
+
+    private struct ProgramBinding: Codable {
+        var programItemID: String
+        var programKey: String
+        var planID: String
+        var planVersion: Int
+        var graphID: String
+        var nodeID: String
+    }
+
+    private struct WorkflowDocument: Codable {
+        var version: Int
+        var documentID: String
+        var documentVersion: Int
+        var title: String
+        var url: String
+        var purpose: String
+        var supersedesID: String?
+    }
+
+    private struct BindingReceipt: Codable {
+        var receiptID: String
+        var programItemID: String
+        var programKey: String
+        var planID: String
+        var planVersion: Int
+        var graphID: String
+        var nodeID: String
+        var effectiveItemID: String
+        var runID: String
+        var sessionID: String
+        var provider: String
+        var boardRevision: Int
+        var settledAt: Double
+        var processGeneration: String
+        var requestedClassification: String
+        var requestedItemID: String
+        var resolution: String
+        var settlementReplay: Bool
     }
 
     private struct Output: Codable {
@@ -154,6 +196,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var nextAction: String?
         var missingFollowUp: [String]
         var events: [Event]
+        var bindingReceipt: BindingReceipt? = nil
     }
 
     private struct Receipt: Codable {
@@ -603,7 +646,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard let run = state.runs.first(where: { $0.id == runID }) else { return nil }
         let rows = state.outbox.filter { $0.runID == runID }
-        return [
+        var answer: [String: Any] = [
             "run_id": run.id,
             "epoch": run.epoch,
             "delivery": run.delivery,
@@ -626,6 +669,23 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             ],
             "authority": "mixed_observed_and_assistant_attested",
         ]
+        if let receipt = run.bindingReceipt {
+            answer["binding"] = bindingObject(receipt)
+        } else if let binding = run.events.first(where: {
+            $0.operation == "begin" && $0.programBinding != nil
+        }), let programBinding = binding.programBinding {
+            answer["binding"] = ["status": "pending",
+                "program_item_id": programBinding.programItemID,
+                "program_key": programBinding.programKey, "plan_id": programBinding.planID,
+                "plan_version": programBinding.planVersion, "graph_id": programBinding.graphID,
+                "node_id": programBinding.nodeID,
+                "requested_classification": binding.classification ?? NSNull(),
+                "requested_item_id": binding.title ?? NSNull(),
+                "resolution": ProjectBoardProgramPlan.reusedNodeResolution,
+                "settlement_replay": NSNull(),
+                "authority": "advisory_only"] as [String: Any]
+        }
+        return answer
     }
 
     func snapshot(identity: Identity) -> [String: Any] {
@@ -710,7 +770,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         switch operation {
         case "begin":
             fields = common.union(["classification", "item_id", "title", "type",
-                                   "summary", "owner", "phase"])
+                                   "summary", "owner", "phase", "program_binding"])
+        case "document":
+            fields = common.union(["version", "document_id", "document_version", "title",
+                                   "url", "purpose", "supersedes_id"])
         case "progress":
             fields = common.union(["summary", "outputs", "remaining"])
         case "deliver":
@@ -762,8 +825,29 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     throw WorkflowRefusal(status: 400, code: "workflow_item_required")
                 }
                 result.title = item // carried as the selected opaque item until apply()
+                if let bindingObject = body["program_binding"] as? [String: Any] {
+                    let exact = Set(["program_item_id", "program_key", "plan_id",
+                                     "plan_version", "graph_id", "node_id"])
+                    guard Set(bindingObject.keys) == exact,
+                          let programItem = boundedText(bindingObject["program_item_id"], 200),
+                          programItem == item,
+                          let programKey = boundedText(bindingObject["program_key"], 64),
+                          let planID = boundedText(bindingObject["plan_id"], 80),
+                          let planVersion = Self.exactInt(bindingObject["plan_version"]),
+                          planVersion > 0,
+                          let graphID = boundedText(bindingObject["graph_id"], 80),
+                          let nodeID = boundedText(bindingObject["node_id"], 80) else {
+                        throw WorkflowRefusal(status: 400, code: "workflow_program_binding_invalid")
+                    }
+                    result.programBinding = ProgramBinding(
+                        programItemID: programItem, programKey: programKey,
+                        planID: planID, planVersion: planVersion,
+                        graphID: graphID, nodeID: nodeID)
+                } else if body["program_binding"] != nil {
+                    throw WorkflowRefusal(status: 400, code: "workflow_program_binding_invalid")
+                }
             } else if classification == "new_work" {
-                guard body["item_id"] == nil,
+                guard body["item_id"] == nil, body["program_binding"] == nil,
                       let title = boundedText(body["title"], 300),
                       let type = boundedText(body["type"], 32),
                       ["feature", "refactor", "task", "bug", "coordination", "epic"]
@@ -776,10 +860,39 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 result.owner = optionalText(body["owner"], 300) ?? run.identity.conversationID
             } else {
                 guard body["item_id"] == nil, body["title"] == nil,
-                      body["type"] == nil else {
+                      body["type"] == nil, body["program_binding"] == nil else {
                     throw WorkflowRefusal(status: 400, code: "workflow_nonwork_has_item")
                 }
             }
+        case "document":
+            guard run.itemID != nil else {
+                throw WorkflowRefusal(status: 409, code: "workflow_begin_required")
+            }
+            guard let version = Self.exactInt(body["version"]) else {
+                throw WorkflowRefusal(status: 400, code: "workflow_document_invalid")
+            }
+            guard version == 1 else {
+                throw WorkflowRefusal(status: 400, code: "workflow_document_version_unsupported")
+            }
+            guard let documentID = boundedText(body["document_id"], 200),
+                  let documentVersion = Self.exactInt(body["document_version"]),
+                  documentVersion > 0,
+                  let title = boundedText(body["title"], 300),
+                  let url = boundedText(body["url"], 2_000),
+                  let purpose = boundedText(body["purpose"], 32),
+                  ["plan", "decision", "reference"].contains(purpose),
+                  let components = URLComponents(string: url),
+                  components.scheme?.lowercased() == "https",
+                  components.host?.lowercased() == "app.clawdline.com" else {
+                throw WorkflowRefusal(status: 400, code: "workflow_document_invalid")
+            }
+            let supersedes = optionalText(body["supersedes_id"], 200)
+            if body["supersedes_id"] != nil && supersedes == nil {
+                throw WorkflowRefusal(status: 400, code: "workflow_document_invalid")
+            }
+            result.document = WorkflowDocument(
+                version: version, documentID: documentID, documentVersion: documentVersion,
+                title: title, url: url, purpose: purpose, supersedesID: supersedes)
         case "progress":
             guard run.classification != nil,
                   let summary = boundedText(body["summary"], 1_000) else {
@@ -895,7 +1008,9 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         case "begin":
             run.classification = event.classification
             run.phase = event.phase
-            if event.classification == "existing_item" { run.itemID = event.title }
+            if event.classification == "existing_item", event.programBinding == nil {
+                run.itemID = event.title
+            }
             run.missingFollowUp.removeAll { $0 == "begin" }
             if !run.missingFollowUp.contains("deliver") { run.missingFollowUp.append("deliver") }
         case "deliver":
@@ -913,6 +1028,12 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     private func materializeIntents(runIndex: Int, draft: inout State) {
         let run = draft.runs[runIndex]
         for event in run.events {
+            if event.operation == "begin", event.programBinding != nil,
+               run.itemID == nil {
+                appendIntent(id: "\(event.id)-program-binding", run: run, event: event,
+                             kind: "program_binding", index: 0, draft: &draft)
+                continue
+            }
             if event.operation == "begin", event.classification == "new_work",
                run.itemID == nil {
                 appendIntent(id: "\(event.id)-create", run: run, event: event,
@@ -968,6 +1089,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             if event.operation == "assignment_decision" {
                 appendIntent(id: "\(event.id)-assignment", run: run, event: event,
                              kind: "decide_session_assignment", index: 0, draft: &draft)
+            }
+            if event.operation == "document", event.document != nil {
+                appendIntent(id: "\(event.id)-document", run: run, event: event,
+                             kind: "document_reference", index: 0, draft: &draft)
             }
         }
     }
@@ -1027,7 +1152,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             let code = Self.errorCode(reply.body)
             if reply.status == 200 {
                 finishOutbox(prepared, status: "complete", code: nil,
-                             createdItemID: reply.body["itemId"] as? String)
+                             createdItemID: reply.body["itemId"] as? String,
+                             replyBody: reply.body)
             } else if code == "revision_conflict" {
                 retryOutbox(prepared,
                             terminalCode: code ?? "revision_conflict", resetPrepared: true)
@@ -1065,8 +1191,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
               state.runs[runIndex].epoch == state.enabledEpoch else {
             var draft = state
             draft.outbox[index].status = "failed"
-            draft.outbox[index].failureCode = header.available
-                ? "workflow_epoch_stale" : "board_unavailable"
+            draft.outbox[index].failureCode = !header.available ? "board_unavailable"
+                : (!header.enabled ? "board_disabled" : "workflow_epoch_stale")
             draft.outbox[index].updatedAt = now().timeIntervalSince1970
             if persist(draft) { state = draft }
             return nil
@@ -1108,6 +1234,25 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
 
     private func boardBody(outbox: Outbox, run: Run, event: Event) -> [String: Any]? {
         switch outbox.kind {
+        case "program_binding":
+            guard let binding = event.programBinding else { return nil }
+            return ["operation": "program_binding", "projectId": run.identity.projectID,
+                    "programItemId": binding.programItemID,
+                    "programKey": binding.programKey, "planId": binding.planID,
+                    "planVersion": binding.planVersion, "graphId": binding.graphID,
+                    "nodeId": binding.nodeID, "runId": run.id,
+                    "sessionId": run.identity.conversationID,
+                    "provider": run.identity.provider,
+                    "processGeneration": run.identity.processGeneration,
+                    "requestedClassification": event.classification ?? "existing_item",
+                    "requestedItemId": event.title ?? binding.programItemID]
+        case "document_reference":
+            guard let item = run.itemID, let document = event.document else { return nil }
+            var body: [String: Any] = ["operation": "document_reference", "itemId": item,
+                "documentId": document.documentID, "version": document.documentVersion,
+                "title": document.title, "url": document.url, "purpose": document.purpose]
+            if let predecessor = document.supersedesID { body["supersedesId"] = predecessor }
+            return body
         case "decide_session_assignment":
             guard let item = run.itemID, let assignmentID = event.assignmentID,
                   let decision = event.assignmentDecision, let note = event.summary else { return nil }
@@ -1214,7 +1359,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     }
 
     private func finishOutbox(_ prepared: PreparedOutbox, status: String, code: String?,
-                              createdItemID: String? = nil) {
+                              createdItemID: String? = nil,
+                              replyBody: [String: Any]? = nil) {
         lock.lock(); defer { lock.unlock() }
         var draft = state
         guard let index = settlementIndex(prepared, draft: &draft) else {
@@ -1225,12 +1371,30 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         draft.outbox[index].status = status
         draft.outbox[index].failureCode = code
         draft.outbox[index].updatedAt = now().timeIntervalSince1970
-        if status == "complete", let createdItemID,
-           let runIndex = draft.runs.firstIndex(where: { $0.id == runID }) {
-            if draft.outbox[index].kind == "create" {
-                draft.runs[runIndex].itemID = createdItemID
-            } else if draft.outbox[index].kind == "supplement_child_create" {
-                draft.outbox[index].createdItemID = createdItemID
+        let runIndex = draft.runs.firstIndex(where: { $0.id == runID })
+        let settledBinding = (replyBody?["programBindingReceipt"] as? [String: Any])
+            .flatMap(bindingReceipt)
+        if status == "complete", draft.outbox[index].kind == "program_binding" {
+            guard let runIndex, let settledBinding,
+                  bindingReceiptMatches(settledBinding, run: draft.runs[runIndex]) else {
+                draft.outbox[index].status = "failed"
+                draft.outbox[index].failureCode = "workflow_binding_receipt_invalid"
+                guard persist(draft) else { return }
+                state = draft
+                return
+            }
+        }
+        if status == "complete", let runIndex {
+            if draft.outbox[index].kind == "program_binding",
+               let receipt = settledBinding {
+                draft.runs[runIndex].itemID = receipt.effectiveItemID
+                draft.runs[runIndex].bindingReceipt = receipt
+            } else if let createdItemID {
+                if draft.outbox[index].kind == "create" {
+                    draft.runs[runIndex].itemID = createdItemID
+                } else if draft.outbox[index].kind == "supplement_child_create" {
+                    draft.outbox[index].createdItemID = createdItemID
+                }
             }
             materializeIntents(runIndex: runIndex, draft: &draft)
         }
@@ -1329,6 +1493,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 return receipt.actor == run.identity.actor
                     && receipt.requestScope == Self.receiptScope(
                         identity: run.identity, runID: run.id)
+            }), decoded.runs.allSatisfy({ run in
+                run.bindingReceipt.map { bindingReceiptMatches($0, run: run) } ?? true
             }) else {
                 storageFailure = "workflow_store_invalid"; return
             }
@@ -1377,6 +1543,78 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
 
     private func pendingCount(_ value: State) -> Int {
         value.outbox.filter { $0.status == "pending" || $0.status == "inflight" }.count
+    }
+
+    private func bindingReceipt(_ object: [String: Any]) -> BindingReceipt? {
+        guard let receiptID = boundedText(object["receiptId"], 80),
+              UUID(uuidString: receiptID) != nil,
+              let programItemID = boundedText(object["programItemId"], 200),
+              let programKey = boundedText(object["programKey"], 64),
+              let planID = boundedText(object["planId"], 80),
+              let planVersion = Self.exactInt(object["planVersion"]), planVersion > 0,
+              let graphID = boundedText(object["graphId"], 80),
+              let nodeID = boundedText(object["nodeId"], 80),
+              let effectiveItemID = boundedText(object["effectiveItemId"], 200),
+              let runID = boundedText(object["runId"], 200),
+              let sessionID = boundedText(object["sessionId"], 200),
+              let provider = boundedText(object["provider"], 32),
+              ["codex", "claude"].contains(provider),
+              let boardRevision = Self.exactInt(object["boardRevision"]), boardRevision >= 0,
+              let settledAt = (object["settledAt"] as? NSNumber)?.doubleValue,
+              settledAt.isFinite, settledAt >= 0,
+              let processGeneration = boundedText(object["processGeneration"], 300),
+              object["requestedClassification"] as? String == "existing_item",
+              let requestedItemID = boundedText(object["requestedItemId"], 200),
+              object["resolution"] as? String == ProjectBoardProgramPlan.reusedNodeResolution,
+              let settlementReplay = object["replay"] as? Bool,
+              object["authority"] as? String == "advisory_only" else { return nil }
+        return BindingReceipt(receiptID: receiptID,
+            programItemID: programItemID, programKey: programKey,
+            planID: planID, planVersion: planVersion, graphID: graphID, nodeID: nodeID,
+            effectiveItemID: effectiveItemID, runID: runID, sessionID: sessionID,
+            provider: provider, boardRevision: boardRevision,
+            settledAt: settledAt, processGeneration: processGeneration,
+            requestedClassification: "existing_item", requestedItemID: requestedItemID,
+            resolution: ProjectBoardProgramPlan.reusedNodeResolution,
+            settlementReplay: settlementReplay)
+    }
+
+    private func bindingObject(_ receipt: BindingReceipt) -> [String: Any] {
+        ["status": "settled", "receipt_id": receipt.receiptID,
+         "program_item_id": receipt.programItemID,
+         "program_key": receipt.programKey, "plan_id": receipt.planID,
+         "plan_version": receipt.planVersion, "graph_id": receipt.graphID,
+         "node_id": receipt.nodeID, "effective_item_id": receipt.effectiveItemID,
+         "run_id": receipt.runID, "session_id": receipt.sessionID,
+         "provider": receipt.provider,
+         "board_revision": receipt.boardRevision, "settled_at": receipt.settledAt,
+         "requested_classification": receipt.requestedClassification,
+         "requested_item_id": receipt.requestedItemID,
+         "resolution": receipt.resolution,
+         "settlement_replay": receipt.settlementReplay,
+         "process": ["generation": receipt.processGeneration] as [String: Any],
+         "authority": "advisory_only"]
+    }
+
+    private func bindingReceiptMatches(_ receipt: BindingReceipt, run: Run) -> Bool {
+        guard UUID(uuidString: receipt.receiptID) != nil,
+              receipt.runID == run.id, receipt.sessionID == run.identity.conversationID,
+              receipt.provider == run.identity.provider,
+              receipt.processGeneration == run.identity.processGeneration,
+              receipt.boardRevision >= 0,
+              receipt.settledAt.isFinite, receipt.settledAt >= 0,
+              let requested = run.events.first(where: {
+                  $0.operation == "begin" && $0.programBinding != nil
+              })?.programBinding else { return false }
+        return receipt.programItemID == requested.programItemID
+            && receipt.programKey == requested.programKey
+            && receipt.planID == requested.planID
+            && receipt.planVersion == requested.planVersion
+            && receipt.graphID == requested.graphID
+            && receipt.nodeID == requested.nodeID
+            && receipt.requestedClassification == "existing_item"
+            && receipt.requestedItemID == receipt.programItemID
+            && receipt.resolution == ProjectBoardProgramPlan.reusedNodeResolution
     }
 
     private func valid(_ identity: Identity) -> Bool {

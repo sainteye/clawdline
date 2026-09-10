@@ -320,6 +320,37 @@ final class ProjectBoardStore {
         var presentations: [StoredPresentation]? = nil
         /// Optional so schema-v1 stores written before typed document references decode intact.
         var documentReferences: [StoredDocumentReference]? = nil
+        /// Optional keeps stores written before atomic Program planning loadable.
+        var programPlan: ProjectBoardProgramPlan.Record? = nil
+    }
+
+    private struct StoredProgramPlanReceipt: Codable {
+        var itemId: String
+        var programKey: String
+        var planId: String
+        var planVersion: Int
+        var graphId: String
+        var documentReferenceId: String
+    }
+
+    private struct StoredProgramBindingReceipt: Codable {
+        var receiptId: String
+        var programItemId: String
+        var programKey: String
+        var planId: String
+        var planVersion: Int
+        var graphId: String
+        var nodeId: String
+        var effectiveItemId: String
+        var runId: String
+        var sessionId: String
+        var provider: String
+        var processGeneration: String
+        var requestedClassification: String
+        var requestedItemId: String
+        var resolution: String
+        var boardRevision: Int
+        var settledAt: Double
     }
 
     private struct StoredReceipt: Codable {
@@ -331,6 +362,8 @@ final class ProjectBoardStore {
         var message: String?
         var itemId: String?
         var revision: Int
+        var programPlanReceipt: StoredProgramPlanReceipt? = nil
+        var programBindingReceipt: StoredProgramBindingReceipt? = nil
     }
 
     private struct StoredState: Codable {
@@ -466,6 +499,8 @@ final class ProjectBoardStore {
 
     private struct Applied {
         var itemId: String?
+        var programPlanReceipt: StoredProgramPlanReceipt? = nil
+        var programBindingReceipt: StoredProgramBindingReceipt? = nil
     }
 
     private let url: URL
@@ -959,7 +994,7 @@ final class ProjectBoardStore {
             return Self.errorReply(BoardError(status: 403, code: "broker_root_origin_required",
                 message: "Root landing evidence requires the in-process verified broker producer"))
         }
-        if operation == "decide_session_assignment" && !workflowOrigin {
+        if ["decide_session_assignment", "program_binding"].contains(operation) && !workflowOrigin {
             return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
                 message: "Only the process-bound receiver workflow may accept or decline an assignment"))
         }
@@ -1009,10 +1044,13 @@ final class ProjectBoardStore {
         let timestamp = now().timeIntervalSince1970
         do {
             let applied = try apply(operation: operation, body: body, actor: actor,
-                                    trusted: trusted, timestamp: timestamp, draft: &draft)
+                                    trusted: trusted, workflowOrigin: workflowOrigin,
+                                    timestamp: timestamp, draft: &draft)
             if let itemID = applied.itemId,
                operation != "transition", operation != "create", operation != "record_report",
                operation != "end_span", operation != "record_output",
+               !["document_reference", "plan_structure", "approve_program_gate",
+                 "program_binding"].contains(operation),
                !["assign_session", "decide_session_assignment", "cancel_session_assignment"].contains(operation) {
                 reconcileLifecycle(around: itemID, actor: "board", timestamp: timestamp,
                                    draft: &draft)
@@ -1021,7 +1059,9 @@ final class ProjectBoardStore {
             draft.updatedAt = timestamp
             appendReceipt(StoredReceipt(
                 actor: actor, requestId: requestId, digest: digest, status: 200,
-                code: nil, message: nil, itemId: applied.itemId, revision: draft.revision),
+                code: nil, message: nil, itemId: applied.itemId, revision: draft.revision,
+                programPlanReceipt: applied.programPlanReceipt,
+                programBindingReceipt: applied.programBindingReceipt),
                 to: &draft)
             if let persistenceError = persist(draft) {
                 return Self.errorReply(persistenceError)
@@ -1029,6 +1069,12 @@ final class ProjectBoardStore {
             state = draft
             var answer = snapshotLocked(project: nil, item: applied.itemId)
             if let itemId = applied.itemId { answer["itemId"] = itemId }
+            if let receipt = applied.programPlanReceipt {
+                answer["programPlanReceipt"] = programPlanReceiptObject(receipt, replay: false)
+            }
+            if let receipt = applied.programBindingReceipt {
+                answer["programBindingReceipt"] = programBindingReceiptObject(receipt, replay: false)
+            }
             return Reply(status: 200, body: answer)
         } catch let error as BoardError {
             return rememberErrorLocked(actor: actor, requestId: requestId, digest: digest, error)
@@ -1080,6 +1126,19 @@ final class ProjectBoardStore {
         }
         let nodeOwner = nodeKey.flatMap { draft.graphNodeItems?[$0] }.flatMap { known in
             draft.items.firstIndex { $0.id == known && $0.projectId == projectID }
+        }
+        if let graphKey, let ownerID = draft.graphItems[graphKey],
+           draft.items.contains(where: { $0.id == ownerID && $0.programPlan != nil }),
+           nodeOwner == nil {
+            return AutomaticMutationOutcome(status: .refused, acceptedCount: 0,
+                droppedCount: 1, persisted: true, reason: "program_node_binding_unresolved")
+        }
+        if let explicit,
+           let program = draft.items.first(where: { $0.id == explicit && $0.projectId == projectID }),
+           let plan = program.programPlan,
+           (graphID != plan.graphId || graphNode == nil || nodeOwner == nil) {
+            return AutomaticMutationOutcome(status: .refused, acceptedCount: 0,
+                droppedCount: 1, persisted: true, reason: "program_node_binding_unresolved")
         }
         if let explicit {
             itemIndex = draft.items.firstIndex { $0.id == explicit && $0.projectId == projectID }
@@ -1585,7 +1644,8 @@ final class ProjectBoardStore {
     // MARK: - Commands
 
     private func apply(operation: String, body: [String: Any], actor: String, trusted: Bool,
-                       timestamp: Double, draft: inout StoredState) throws -> Applied {
+                       workflowOrigin: Bool, timestamp: Double,
+                       draft: inout StoredState) throws -> Applied {
         switch operation {
         case "set_ai_consent":
             guard let enabled = Self.exactBool(body["enabled"]),
@@ -1858,6 +1918,279 @@ final class ProjectBoardStore {
                   at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
+        case "plan_structure":
+            let index = try itemIndex(body, draft: draft)
+            guard draft.items[index].type == "epic", draft.items[index].parentId == nil else {
+                throw BoardError(status: 409, code: "program_item_required",
+                                 message: "itemId must name a top-level Epic Program")
+            }
+            let incoming: ProjectBoardProgramPlan.Draft
+            do { incoming = try ProjectBoardProgramPlan.parse(body) }
+            catch let refusal as ProjectBoardProgramPlan.Refusal {
+                throw BoardError(status: refusal.status, code: refusal.code, message: refusal.message)
+            }
+            let program = draft.items[index]
+            guard incoming.programKey == program.key else {
+                throw BoardError(status: 409, code: "program_key_conflict",
+                                 message: "programKey does not name the selected Program")
+            }
+            let prior = program.programPlan
+            if let prior {
+                guard prior.planId == incoming.planId, prior.graphId == incoming.graphId,
+                      incoming.planVersion == prior.planVersion + 1,
+                      incoming.predecessorVersion == prior.planVersion else {
+                    throw BoardError(status: 409, code: "program_plan_predecessor_conflict",
+                                     message: "the Program Plan must extend the exact current predecessor")
+                }
+            } else {
+                guard incoming.planVersion == 1, incoming.predecessorVersion == nil else {
+                    throw BoardError(status: 409, code: "program_plan_predecessor_conflict",
+                                     message: "a Program Plan must begin at version 1 without a predecessor")
+                }
+            }
+            let documentReference = try validatedDocumentReference(
+                incoming.document, purpose: "plan", references: program.documentReferences ?? [],
+                actor: actor, timestamp: timestamp)
+
+            var mergedNodes = prior?.nodes ?? []
+            let incomingNodeKeys = Set(incoming.nodes.map(\.key))
+            var newNodeCount = 0
+            for node in incoming.nodes {
+                if let old = mergedNodes.first(where: { $0.key == node.key }) {
+                    guard old.graphNodeId == node.graphNodeId else {
+                        throw BoardError(status: 409, code: "program_plan_node_identity_conflict",
+                                         message: "a logical node key cannot change graph identity")
+                    }
+                } else { newNodeCount += 1 }
+            }
+            guard draft.items.count + newNodeCount <= Self.maximumItems else {
+                throw BoardError(status: 409, code: "item_capacity_reached",
+                                 message: "the Program Plan exceeds Board item capacity")
+            }
+            for var node in incoming.nodes {
+                if let position = mergedNodes.firstIndex(where: { $0.key == node.key }) {
+                    node.itemId = mergedNodes[position].itemId
+                    mergedNodes[position] = node
+                } else {
+                    node.itemId = Self.newID()
+                    mergedNodes.append(node)
+                }
+            }
+            var mergedGates = prior?.gates ?? []
+            for gate in incoming.gates {
+                if let position = mergedGates.firstIndex(where: { $0.key == gate.key }) {
+                    mergedGates[position] = gate
+                } else { mergedGates.append(gate) }
+            }
+            // A successor document never carries forward an authorization decision.
+            for position in mergedGates.indices { mergedGates[position].approval = nil }
+            var mergedCapabilities = prior?.capabilities ?? []
+            for capability in incoming.capabilities {
+                if let position = mergedCapabilities.firstIndex(where: { $0.key == capability.key }) {
+                    mergedCapabilities[position] = capability
+                } else { mergedCapabilities.append(capability) }
+            }
+            do {
+                try ProjectBoardProgramPlan.validateMerged(nodes: mergedNodes, gates: mergedGates,
+                                                           capabilities: mergedCapabilities)
+            } catch let refusal as ProjectBoardProgramPlan.Refusal {
+                throw BoardError(status: refusal.status, code: refusal.code, message: refusal.message)
+            }
+            let graphKey = Self.graphKey(projectID: program.projectId, graphID: incoming.graphId)
+            if let owner = draft.graphItems[graphKey], owner != program.id {
+                throw BoardError(status: 409, code: "program_graph_binding_conflict",
+                                 message: "the graph is already owned by another Board item")
+            }
+            var nodeBindings = draft.graphNodeItems ?? [:]
+            for node in mergedNodes {
+                guard let key = Self.stringDigest(graphKey + "\u{0}" + node.graphNodeId) else {
+                    throw BoardError(status: 500, code: "board_internal_error",
+                                     message: "the graph-node identity could not be derived")
+                }
+                if let owner = nodeBindings[key], owner != node.itemId {
+                    throw BoardError(status: 409, code: "program_graph_binding_conflict",
+                                     message: "a graph node is already owned by another Board item")
+                }
+                nodeBindings[key] = node.itemId
+            }
+
+            // Every fallible validation precedes this point; the remaining edits are one draft.
+            for node in mergedNodes where incomingNodeKeys.contains(node.key) {
+                if let child = draft.items.firstIndex(where: { $0.id == node.itemId }) {
+                    guard draft.items[child].parentId == program.id,
+                          draft.items[child].projectId == program.projectId else {
+                        throw BoardError(status: 409, code: "program_plan_node_identity_conflict",
+                                         message: "the retained node item left its Program boundary")
+                    }
+                    draft.items[child].title = node.title
+                    draft.items[child].type = node.type
+                    draft.items[child].summary = node.summary
+                    draft.items[child].owner = node.owner
+                    touch(&draft.items[child], actor: actor, kind: "program_plan_node_upserted",
+                          summary: "Program Plan fields were updated without changing work authority.",
+                          at: timestamp)
+                } else {
+                    var child = makeItem(projectID: program.projectId, title: node.title,
+                                         type: node.type, summary: node.summary, owner: node.owner,
+                                         parentID: program.id, timestamp: timestamp,
+                                         projects: draft.projects, items: draft.items)
+                    child.id = node.itemId
+                    draft.items.append(child)
+                }
+            }
+            var references = draft.items[index].documentReferences ?? []
+            references.append(documentReference)
+            draft.items[index].documentReferences = references
+            draft.items[index].programPlan = ProjectBoardProgramPlan.Record(
+                schemaVersion: ProjectBoardProgramPlan.schemaVersion,
+                programKey: incoming.programKey, planId: incoming.planId,
+                planVersion: incoming.planVersion, predecessorVersion: incoming.predecessorVersion,
+                graphId: incoming.graphId, destination: incoming.destination,
+                document: incoming.document, documentReferenceId: documentReference.id,
+                nodes: mergedNodes, gates: mergedGates, capabilities: mergedCapabilities,
+                bindings: prior?.bindings, importedAt: timestamp, actor: actor)
+            draft.graphItems[graphKey] = program.id
+            var explicitGraphs = draft.explicitGraphItems ?? [:]
+            explicitGraphs[graphKey] = program.id
+            draft.explicitGraphItems = explicitGraphs
+            draft.graphNodeItems = nodeBindings
+            touch(&draft.items[index], actor: actor, kind: "program_plan_imported",
+                  summary: "A versioned Program Plan was imported as advisory structure.",
+                  at: timestamp)
+            return Applied(itemId: program.id, programPlanReceipt: StoredProgramPlanReceipt(
+                itemId: program.id, programKey: incoming.programKey, planId: incoming.planId,
+                planVersion: incoming.planVersion, graphId: incoming.graphId,
+                documentReferenceId: documentReference.id))
+
+        case "approve_program_gate":
+            let index = try itemIndex(body, draft: draft)
+            guard var plan = draft.items[index].programPlan,
+                  let version = Self.exactInt(body["planVersion"]),
+                  body["planId"] as? String == plan.planId,
+                  version == plan.planVersion else {
+                throw BoardError(status: 409, code: "program_gate_revision_conflict",
+                                 message: "the gate decision must name the current Program Plan")
+            }
+            let gateKey = try requiredText(body, "gateKey", maximum: 80)
+            guard let gate = plan.gates.firstIndex(where: { $0.key == gateKey }) else {
+                throw BoardError(status: 404, code: "program_gate_not_found",
+                                 message: "gateKey does not name a retained Program gate")
+            }
+            guard plan.gates[gate].lastImportedVersion == plan.planVersion else {
+                throw BoardError(status: 409, code: "program_gate_stale",
+                                 message: "a retained gate omitted by the current plan cannot be decided")
+            }
+            guard plan.gates[gate].authority == actor else {
+                throw BoardError(status: 403, code: "program_gate_authority_required",
+                                 message: "only the named gate authority may decide this gate")
+            }
+            let decision = try requiredChoice(body, "decision", choices: Set(["approved", "rejected"]))
+            plan.gates[gate].approval = ProjectBoardProgramPlan.GateApproval(
+                decision: decision, planVersion: plan.planVersion, actor: actor,
+                note: try requiredText(body, "note", maximum: 1_000), decidedAt: timestamp)
+            draft.items[index].programPlan = plan
+            touch(&draft.items[index], actor: actor, kind: "program_gate_decided",
+                  summary: "A gate authority recorded a decision for the exact plan version.", at: timestamp)
+            return Applied(itemId: draft.items[index].id)
+
+        case "program_binding":
+            guard workflowOrigin else {
+                throw BoardError(status: 403, code: "workflow_origin_required",
+                                 message: "Program run binding requires the durable workflow producer")
+            }
+            let programID = try requiredText(body, "programItemId", maximum: 200)
+            guard let index = draft.items.firstIndex(where: { $0.id == programID }),
+                  var plan = draft.items[index].programPlan,
+                  draft.items[index].projectId == body["projectId"] as? String,
+                  plan.programKey == body["programKey"] as? String,
+                  plan.planId == body["planId"] as? String,
+                  plan.graphId == body["graphId"] as? String,
+                  let version = Self.exactInt(body["planVersion"]), version == plan.planVersion else {
+                throw BoardError(status: 409, code: "program_binding_revision_conflict",
+                                 message: "the run binding must name the exact current Program Plan")
+            }
+            let nodeID = try requiredText(body, "nodeId", maximum: 80)
+            guard let node = plan.nodes.first(where: { $0.graphNodeId == nodeID }) else {
+                throw BoardError(status: 409, code: "program_node_binding_unresolved",
+                                 message: "nodeId is not an imported node in the named Program graph")
+            }
+            let runID = try requiredText(body, "runId", maximum: 200)
+            let sessionID = try requiredText(body, "sessionId", maximum: 200)
+            guard UUID(uuidString: sessionID) != nil else {
+                throw BoardError(status: 400, code: "program_binding_invalid",
+                                 message: "sessionId must be a UUID")
+            }
+            let provider = try requiredChoice(body, "provider", choices: Set(["codex", "claude"]))
+            let processGeneration = try requiredText(body, "processGeneration", maximum: 300)
+            guard actor == "workflow:\(provider):\(sessionID)" else {
+                throw BoardError(status: 409, code: "program_binding_identity_conflict",
+                                 message: "the workflow actor does not match the bound Session")
+            }
+            let requestedClassification = try requiredChoice(
+                body, "requestedClassification", choices: Set(["existing_item"]))
+            let requestedItemID = try requiredText(body, "requestedItemId", maximum: 200)
+            guard requestedItemID == programID else {
+                throw BoardError(status: 409, code: "program_binding_item_conflict",
+                                 message: "the requested item must be the canonical Program")
+            }
+            if let existing = (plan.bindings ?? []).first(where: { $0.runId == runID }) {
+                guard existing.effectiveItemId == node.itemId,
+                      existing.requestedClassification == requestedClassification,
+                      existing.requestedItemId == requestedItemID,
+                      existing.sessionId == sessionID,
+                      existing.provider == provider,
+                      existing.processGeneration == processGeneration,
+                      existing.planVersion == plan.planVersion,
+                      existing.graphId == plan.graphId,
+                      existing.nodeId == nodeID else {
+                    throw BoardError(status: 409, code: "program_binding_conflict",
+                                     message: "the run already has a different Program binding")
+                }
+                return Applied(itemId: node.itemId,
+                    programBindingReceipt: StoredProgramBindingReceipt(
+                        receiptId: existing.receiptId,
+                        programItemId: programID, programKey: plan.programKey,
+                        planId: plan.planId, planVersion: existing.planVersion,
+                        graphId: existing.graphId, nodeId: existing.nodeId,
+                        effectiveItemId: existing.effectiveItemId, runId: existing.runId,
+                        sessionId: existing.sessionId, provider: existing.provider,
+                        processGeneration: existing.processGeneration,
+                        requestedClassification: existing.requestedClassification,
+                        requestedItemId: existing.requestedItemId,
+                        resolution: existing.resolution,
+                        boardRevision: existing.boardRevision, settledAt: existing.settledAt))
+            }
+            guard (plan.bindings ?? []).count < ProjectBoardProgramPlan.maximumBindings else {
+                throw BoardError(status: 409, code: "program_binding_capacity_reached",
+                                 message: "the Program binding receipt capacity is exhausted")
+            }
+            let receiptID = Self.newID()
+            let receipt = StoredProgramBindingReceipt(
+                receiptId: receiptID,
+                programItemId: programID, programKey: plan.programKey, planId: plan.planId,
+                planVersion: plan.planVersion, graphId: plan.graphId, nodeId: nodeID,
+                effectiveItemId: node.itemId, runId: runID, sessionId: sessionID,
+                provider: provider, processGeneration: processGeneration,
+                requestedClassification: requestedClassification,
+                requestedItemId: requestedItemID,
+                resolution: ProjectBoardProgramPlan.reusedNodeResolution,
+                boardRevision: draft.revision + 1, settledAt: timestamp)
+            var bindings = plan.bindings ?? []
+            bindings.append(ProjectBoardProgramPlan.Binding(
+                receiptId: receiptID, runId: runID,
+                requestedClassification: requestedClassification,
+                requestedItemId: requestedItemID, effectiveItemId: node.itemId,
+                sessionId: sessionID, provider: provider, processGeneration: processGeneration,
+                planVersion: plan.planVersion, graphId: plan.graphId, nodeId: nodeID,
+                boardRevision: receipt.boardRevision, settledAt: timestamp,
+                resolution: ProjectBoardProgramPlan.reusedNodeResolution))
+            plan.bindings = bindings
+            draft.items[index].programPlan = plan
+            touch(&draft.items[index], actor: actor, kind: "program_run_bound",
+                  summary: "A process-bound workflow run was settled on an exact Program node.",
+                  at: timestamp)
+            return Applied(itemId: node.itemId, programBindingReceipt: receipt)
+
         case "document_reference":
             let index = try itemIndex(body, draft: draft)
             var references = draft.items[index].documentReferences ?? []
@@ -1914,12 +2247,23 @@ final class ProjectBoardStore {
         case "link":
             let index = try itemIndex(body, draft: draft)
             try requireMutable(index, draft: draft)
+            let kind = try requiredChoice(body, "kind", choices: Self.linkKinds)
+            let target = try requiredText(body, "targetId", maximum: 300)
+            let label = try requiredText(body, "label", maximum: 300)
+            if workflowOrigin, kind == "session",
+               let existing = draft.items[index].links.firstIndex(where: {
+                   $0.kind == kind && $0.targetId == target && $0.source == "workflow"
+               }) {
+                draft.items[index].links[existing].label = label
+                draft.items[index].links[existing].source = "workflow"
+                touch(&draft.items[index], actor: actor, kind: "session_relation_confirmed",
+                      summary: "The canonical workflow Session relation was confirmed.", at: timestamp)
+                return Applied(itemId: draft.items[index].id)
+            }
             guard draft.items[index].links.count < Self.maximumChildren else {
                 throw BoardError(status: 409, code: "link_capacity_reached",
                                  message: "the link capacity is exhausted")
             }
-            let kind = try requiredChoice(body, "kind", choices: Self.linkKinds)
-            let target = try requiredText(body, "targetId", maximum: 300)
             if Self.itemLinkKinds.contains(kind) {
                 guard target != draft.items[index].id,
                       draft.items.contains(where: { $0.id == target }) else {
@@ -1934,8 +2278,8 @@ final class ProjectBoardStore {
             }
             draft.items[index].links.append(StoredLink(
                 id: Self.newID(), kind: kind, targetId: target,
-                label: try requiredText(body, "label", maximum: 300),
-                source: "user", phase: nil, head: nil))
+                label: label, source: workflowOrigin ? "workflow" : "user",
+                phase: nil, head: nil))
             touch(&draft.items[index], actor: actor, kind: "link_added",
                   summary: "A \(kind) relation was added.", at: timestamp)
             return Applied(itemId: draft.items[index].id)
@@ -3345,6 +3689,15 @@ final class ProjectBoardStore {
             }
             answer["remainingWork"] = remainingWorkObject(item, index: index)
         }
+        if let plan = item.programPlan {
+            let progressByItemID = Dictionary(uniqueKeysWithValues: plan.nodes.map { node in
+                let progress = index?.progressByItemID[node.itemId]
+                    ?? state.items.first(where: { $0.id == node.itemId }).map(progressObject)
+                return (node.itemId, progress?["state"] as? String ?? "unknown")
+            })
+            answer["programPlan"] = ProjectBoardProgramPlan.projection(
+                plan, progressByItemID: progressByItemID)
+        }
         let reports = item.completionReports ?? []
         answer["presentation"] = presentationObject(item)
         if item.type == "epic" {
@@ -3788,6 +4141,15 @@ final class ProjectBoardStore {
                                     "targetCommit", "target", "landedAt"],
             "document_reference": ["itemId", "title", "url", "purpose", "documentId",
                                    "version", "supersedesId"],
+            "plan_structure": ["schemaVersion", "itemId", "programKey", "planId",
+                               "planVersion", "predecessorVersion", "graphId", "destination",
+                               "document", "nodes", "gates", "capabilities"],
+            "approve_program_gate": ["itemId", "planId", "planVersion", "gateKey",
+                                     "decision", "note"],
+            "program_binding": ["projectId", "programItemId", "programKey", "planId",
+                                "planVersion", "graphId", "nodeId", "runId", "sessionId",
+                                "provider", "processGeneration", "requestedClassification",
+                                "requestedItemId"],
             "link": ["itemId", "kind", "targetId", "label"],
             "obligation": ["itemId", "title", "owner", "blocking", "actorKind",
                            "requiredAction", "blockingScope", "supplementRelationId"],
@@ -3818,6 +4180,47 @@ final class ProjectBoardStore {
                              message: "itemId does not name a board item")
         }
         return index
+    }
+
+    private func validatedDocumentReference(
+        _ document: ProjectBoardProgramPlan.Document, purpose: String,
+        references: [StoredDocumentReference], actor: String, timestamp: Double
+    ) throws -> StoredDocumentReference {
+        guard references.count < Self.maximumChildren else {
+            throw BoardError(status: 409, code: "document_reference_capacity_reached",
+                             message: "the document reference capacity is exhausted")
+        }
+        guard Self.isCanonicalCloudDocumentURL(document.url) else {
+            throw BoardError(status: 400, code: "invalid_document_url",
+                             message: "document references require a canonical app.clawdline.com document URL")
+        }
+        guard !references.contains(where: {
+            $0.documentId == document.documentId && $0.version == document.version
+        }) else {
+            throw BoardError(status: 409, code: "document_version_conflict",
+                             message: "that stable document identity already has this version")
+        }
+        let earlier = references.filter { $0.documentId == document.documentId }
+        if earlier.isEmpty {
+            guard document.version == 1, document.supersedesId == nil else {
+                throw BoardError(status: 409, code: "document_initial_version_required",
+                                 message: "a new document identity must begin at version 1 without a predecessor")
+            }
+        } else {
+            let superseded = Set(references.compactMap(\.supersedesId))
+            let heads = earlier.filter { !superseded.contains($0.id) }
+            guard let predecessorID = document.supersedesId,
+                  heads.count == 1, let predecessor = heads.first,
+                  predecessor.id == predecessorID, predecessor.purpose == purpose,
+                  predecessor.version < document.version else {
+                throw BoardError(status: 409, code: "document_supersession_required",
+                                 message: "a later document version must supersede the current head of the same purpose")
+            }
+        }
+        return StoredDocumentReference(id: Self.newID(), documentId: document.documentId,
+            version: document.version, title: document.title, url: document.url,
+            purpose: purpose, supersedesId: document.supersedesId,
+            addedAt: timestamp, actor: actor)
     }
 
     private func requiredText(_ body: [String: Any], _ key: String,
@@ -4386,7 +4789,7 @@ final class ProjectBoardStore {
               item.evidence.isEmpty, item.checklist.isEmpty, item.milestones.isEmpty,
               item.artifacts.isEmpty, item.obligations.isEmpty, item.pendingHandoff == nil,
               item.typeDetails == nil, (item.completionReports ?? []).isEmpty,
-              (item.documentReferences ?? []).isEmpty else { return false }
+              (item.documentReferences ?? []).isEmpty, item.programPlan == nil else { return false }
         return !item.history.contains { $0.actor != "board" && $0.actor != "broker" }
     }
 
@@ -4648,7 +5051,51 @@ final class ProjectBoardStore {
               }),
               state.updatedAt.isFinite, state.updatedAt >= 0,
               Set(state.projects.map(\.id)).count == state.projects.count,
-              Set(state.items.map(\.id)).count == state.items.count else {
+              Set(state.items.map(\.id)).count == state.items.count,
+              state.receipts.allSatisfy({ receipt in
+                  guard let binding = receipt.programBindingReceipt else { return true }
+                  guard receipt.status == 200, receipt.itemId == binding.effectiveItemId,
+                        UUID(uuidString: binding.receiptId) != nil,
+                        boundedText(binding.programItemId, maximum: 200) != nil,
+                        boundedText(binding.programKey, maximum: 64) != nil,
+                        boundedText(binding.planId, maximum: 80) != nil,
+                        binding.planVersion > 0,
+                        boundedText(binding.graphId, maximum: 80) != nil,
+                        boundedText(binding.nodeId, maximum: 80) != nil,
+                        boundedText(binding.effectiveItemId, maximum: 200) != nil,
+                        boundedText(binding.runId, maximum: 200) != nil,
+                        UUID(uuidString: binding.sessionId) != nil,
+                        ["codex", "claude"].contains(binding.provider),
+                        boundedText(binding.processGeneration, maximum: 300) != nil,
+                        binding.requestedClassification == "existing_item",
+                        binding.requestedItemId == binding.programItemId,
+                        binding.resolution == ProjectBoardProgramPlan.reusedNodeResolution,
+                        binding.boardRevision >= 0, binding.boardRevision <= state.revision,
+                        binding.settledAt.isFinite, binding.settledAt >= 0,
+                        let program = state.items.first(where: {
+                            $0.id == binding.programItemId
+                        })?.programPlan else { return false }
+                  return program.programKey == binding.programKey
+                      && program.planId == binding.planId
+                      && program.graphId == binding.graphId
+                      && (program.bindings ?? []).contains(where: { durable in
+                          durable.receiptId == binding.receiptId
+                              && durable.runId == binding.runId
+                              && durable.requestedClassification
+                                == binding.requestedClassification
+                              && durable.requestedItemId == binding.requestedItemId
+                              && durable.effectiveItemId == binding.effectiveItemId
+                              && durable.sessionId == binding.sessionId
+                              && durable.provider == binding.provider
+                              && durable.processGeneration == binding.processGeneration
+                              && durable.planVersion == binding.planVersion
+                              && durable.graphId == binding.graphId
+                              && durable.nodeId == binding.nodeId
+                              && durable.boardRevision == binding.boardRevision
+                              && durable.settledAt == binding.settledAt
+                              && durable.resolution == binding.resolution
+                      })
+              }) else {
             throw BoardError(status: 503, code: "board_store_corrupt",
                              message: "the Project Board store violates its bounds")
         }
@@ -4735,6 +5182,34 @@ final class ProjectBoardStore {
                                      message: "the Project Board hierarchy violates its lifecycle boundary")
                 }
             }
+            if let plan = item.programPlan {
+                let references = item.documentReferences ?? []
+                let planReference = references.first { $0.id == plan.documentReferenceId }
+                guard item.type == "epic", item.parentId == nil, plan.programKey == item.key,
+                      ProjectBoardProgramPlan.validRecord(
+                        plan, programItemID: item.id, itemIDs: itemIDs,
+                        maximumBoardRevision: state.revision),
+                      planReference?.documentId == plan.document.documentId,
+                      planReference?.version == plan.document.version,
+                      planReference?.title == plan.document.title,
+                      planReference?.url == plan.document.url,
+                      planReference?.supersedesId == plan.document.supersedesId,
+                      planReference?.purpose == "plan",
+                      plan.nodes.allSatisfy({ node in
+                          state.items.contains(where: {
+                              $0.id == node.itemId && $0.parentId == item.id
+                                  && $0.projectId == item.projectId && $0.type != "epic"
+                          })
+                      }), (plan.bindings ?? []).allSatisfy({ binding in
+                          plan.nodes.contains(where: {
+                              $0.itemId == binding.effectiveItemId
+                                  && $0.graphNodeId == binding.nodeId
+                          })
+                      }) else {
+                    throw BoardError(status: 503, code: "board_store_corrupt",
+                                     message: "the durable Program Plan boundary is invalid")
+                }
+            }
             if item.state == "closed" {
                 guard item.obligations.allSatisfy(\.resolved),
                       item.milestones.allSatisfy({
@@ -4819,11 +5294,41 @@ final class ProjectBoardStore {
         if receipt.status == 200 {
             var answer = snapshotLocked(project: nil, item: receipt.itemId)
             if let item = receipt.itemId { answer["itemId"] = item }
+            if let plan = receipt.programPlanReceipt {
+                answer["programPlanReceipt"] = programPlanReceiptObject(plan, replay: true)
+            }
+            if let binding = receipt.programBindingReceipt {
+                answer["programBindingReceipt"] = programBindingReceiptObject(binding, replay: true)
+            }
             return Reply(status: 200, body: answer)
         }
         return Self.errorReply(BoardError(status: receipt.status,
                                           code: receipt.code ?? "request_refused",
                                           message: receipt.message ?? "the request was refused"))
+    }
+
+    private func programPlanReceiptObject(_ receipt: StoredProgramPlanReceipt,
+                                          replay: Bool) -> [String: Any] {
+        ["itemId": receipt.itemId, "programKey": receipt.programKey,
+         "planId": receipt.planId, "planVersion": receipt.planVersion,
+         "graphId": receipt.graphId, "documentReferenceId": receipt.documentReferenceId,
+         "replay": replay, "authority": "advisory_only"]
+    }
+
+    private func programBindingReceiptObject(_ receipt: StoredProgramBindingReceipt,
+                                             replay: Bool) -> [String: Any] {
+        ["receiptId": receipt.receiptId,
+         "programItemId": receipt.programItemId, "programKey": receipt.programKey,
+         "planId": receipt.planId, "planVersion": receipt.planVersion,
+         "graphId": receipt.graphId, "nodeId": receipt.nodeId,
+         "effectiveItemId": receipt.effectiveItemId, "runId": receipt.runId,
+         "sessionId": receipt.sessionId, "provider": receipt.provider,
+         "processGeneration": receipt.processGeneration,
+         "requestedClassification": receipt.requestedClassification,
+         "requestedItemId": receipt.requestedItemId,
+         "resolution": receipt.resolution,
+         "boardRevision": receipt.boardRevision, "settledAt": receipt.settledAt,
+         "authority": "advisory_only", "replay": replay]
     }
 
     private func appendReceipt(_ receipt: StoredReceipt, to draft: inout StoredState) {

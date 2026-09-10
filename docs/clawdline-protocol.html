@@ -262,6 +262,16 @@
     retaining read-only history; this never cancels tasks or removes claims, permissions, review,
     landing or machine-lock safeguards. A work item belongs to a Project and may span several
     tasks, Sessions and worktrees. Task success is delivery, not item closure.</p>
+    <p>A canonical Program is one top-level Epic with one atomic, versioned Plan. Stable logical
+    node keys preserve their child-item identities across imports; omitted nodes are retained.
+    Dependencies, gates, observed capabilities and file claims produce only
+    <code>planning_ready</code>, <code>blocked</code> or <code>unknown</code>. This frontier is
+    advisory: it cannot authorize dispatch or become a second execution truth. A run binds only
+    after the durable workflow outbox settles the requested classification/item, stable receipt id,
+    explicit reused-node resolution, exact Program, Plan version, graph node, Session and process
+    generation. Replay provenance and the original receipt identity survive restart; historical
+    receipts survive successor Plans without authorizing a mismatched current node. Titles are never
+    keys. Retained gates and capabilities omitted by the current Plan fail closed as stale evidence.</p>
     <p>The owning root supplies optional <code>work_item_id</code> and <code>work_phase</code> in
     <code>task.json</code>. Phases are <code>planning</code>, <code>output</code>,
     <code>review_testing</code>, <code>correction</code> and <code>integration</code>.
@@ -276,6 +286,9 @@
     <p>Managed sends keep a bounded local workflow journal before adding workflow context to the
     assistant payload. Versioned supplements retain checklist or child scope, owner, acceptance
     and source Session. Assistant-attested delivery never substitutes for verified landing.
+    Version-1 document receipts settle canonical Cloud references through the same outbox; a
+    <code>202</code> is durable admission, not settlement, and unsupported document versions or
+    caller-supplied authority/process metadata are refused.
     A recording gap is reported without retrying a successfully sent message. Native helper
     installation and a real Claude/Codex adapter handshake remain explicit follow-up work, not
     coverage implied by observing a Session. See <a href="board-workflow.md">managed workflow</a>.</p>

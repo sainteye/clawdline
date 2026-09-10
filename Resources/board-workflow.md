@@ -18,7 +18,29 @@ prove the helper is installed.
 JSON
 ```
 
-Allowed operations are `begin`, `progress`, `supplement`, `deliver`, and `handoff`. Capture a later
+Allowed operations are `begin`, `progress`, `document`, `supplement`, `deliver`, and `handoff`.
+When an existing item is a canonical Program, copy the exact binding supplied by the planning
+record into `begin`; names and titles are never binding keys:
+
+```json
+{"operation":"begin","run_id":"RUN_FROM_ENVELOPE","classification":"existing_item","item_id":"PROGRAM_ITEM_ID","phase":"output","program_binding":{"program_item_id":"PROGRAM_ITEM_ID","program_key":"CLA-296","plan_id":"ubuntu-runtime","plan_version":1,"graph_id":"ubuntu-runtime-graph","node_id":"w0-contract"}}
+```
+
+The initial `202` records durable admission only. Pending and settled status retain the requested
+classification and Program item. Do not report the run as bound until its status shows a stable
+receipt id, `reused_imported_program_node` resolution, effective node item, current process
+generation and settlement replay provenance. Planning frontier and binding metadata are advisory
+and never authorize dispatch.
+
+Record a canonical Cloud document through the version-negotiated operation below. Only operation
+version 1 is supported; an unsupported version is a refusal, not permission to omit the version or
+fall back to a generic output.
+
+```json
+{"operation":"document","run_id":"RUN_FROM_ENVELOPE","version":1,"document_id":"delivery-notes","document_version":1,"title":"Delivery notes","url":"https://app.clawdline.com/#document=1&machine=...&session=...&scope=project&path=notes.md","purpose":"reference"}
+```
+
+Capture a later
 explicit scope item with an exact version-1 supplement, choosing checklist or child and preserving
 its owner, acceptance, disposition, and actor kind:
 

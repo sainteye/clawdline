@@ -55,6 +55,37 @@ uses the ordinary item capacity and reports a refused import when capacity is ex
 
 Automatic outcomes expose `status` (`accepted`, `unchanged`, `partial`, `refused`, `unavailable`), `acceptedCount`, `droppedCount`, `persisted` and an optional typed `reason`. The adapter publishes incomplete ingestion through `board.source.ingestion`, qualifies affected Project usage, and keeps successful `observedAt` separate from `attemptedAt`. A failed attempt retries after the bounded refresh interval; it is never stamped successful merely because its read completed.
 
+### Canonical Program Plan boundary
+
+`plan_structure` is the single Store write for a canonical top-level Epic Program. Its closed
+schema names the Program key, monotonically versioned plan and predecessor, graph, destination,
+versioned canonical Cloud planning document, bounded logical nodes, gates, capabilities,
+dependencies, and file claims. The Store parses every row, checks duplicate logical and graph-node
+keys, references, bounds, the complete DAG, document supersession, item capacity, and graph-index
+collisions before changing its draft. Success creates or upserts node items, adds the document,
+updates graph ownership, advances one Board revision, and performs one atomic persist.
+
+Node logical keys are durable identities: a later version preserves their item IDs and updates
+only declared bounded fields. Omitting an old node, gate, or capability never deletes it, but a gate
+or capability omitted from the current version is stale evidence: stale gates stay blocked and
+cannot be approved, while stale capabilities project `unknown`. A new Plan version clears all prior
+gate decisions. `approve_program_gate` binds the named authority's decision to a gate imported by
+the exact current Plan version; import cannot carry a decision. Missing capability observations
+yield `unknown`; unsupported capabilities, incomplete dependencies, pending gates, and colliding
+ready claims yield `blocked`. The only planning states are `planning_ready`,
+`blocked`, and `unknown`. The frontier is explicitly `advisory_only`, has no critical-path claim,
+and cannot authorize broker execution.
+
+`program_binding` is accepted only from the process-bound workflow producer. It binds one durable
+run, Session/provider/process generation and requested Program to the exact current
+Program/Plan/graph/node tuple, then returns a stable receipt id, requested classification/item,
+explicit `reused_imported_program_node` resolution, effective child item, revision, settlement time
+and replay provenance. Historical receipts remain durable across successor Plans without matching a
+different current Plan/node request. Broker
+ingestion uses that same graph-node index and refuses an unknown Program node instead of falling
+back to a title or Program container. Program imports, gate decisions, binding receipts and
+document references do not reconcile lifecycle or change scope/evidence/landing/acceptance.
+
 Intentional standard mode and an unavailable Board store are different states. On a typed Board
 unavailability refusal, a transport carrying both baseline Project readers may fall back to them
 with a visible warning; it must not change the persisted setting. A transport without those readers

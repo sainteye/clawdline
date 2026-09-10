@@ -84,6 +84,7 @@ clawdline_production_sources=(
   Sources/Planner.swift
   Sources/Project.swift
   Sources/ProjectArtifact.swift
+  Sources/ProjectBoardProgramPlan.swift
   Sources/ProjectBoardStore.swift
   Sources/ProjectBoardNarrative.swift
   Sources/ProjectBoardIntegration.swift

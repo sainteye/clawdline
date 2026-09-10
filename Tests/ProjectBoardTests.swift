@@ -1,6 +1,6 @@
 import Foundation
 
-private final class BoardTestDriver {
+final class BoardTestDriver {
     let root: URL
     let file: URL
     let store: ProjectBoardStore
@@ -53,7 +53,7 @@ private final class BoardTestDriver {
     }
 }
 
-private func boardError(_ reply: ProjectBoardStore.Reply) -> String {
+func boardError(_ reply: ProjectBoardStore.Reply) -> String {
     ((reply.body["error"] as? [String: Any])?["code"] as? String) ?? ""
 }
 
@@ -240,6 +240,8 @@ group("Project Board seed publication cannot roll durable mode or revision backw
 }
 
 group("Project Board commands are closed, CAS-serialized, and durably idempotent") {
+    boardProgramPlanProof()
+    boardProgramGraphBindingProof()
     let d = BoardTestDriver(name: "cas-\(UUID().uuidString)")
     d.createProject()
     let revision = d.revision
