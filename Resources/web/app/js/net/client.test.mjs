@@ -194,11 +194,15 @@ const { Live, LocalClient } = await import("./live.js");
 assert.equal(LocalClient, Live, "the compatibility Live export is the exact LocalClient");
 assert.equal(assertClawdlineClient(LocalClient), LocalClient, "the real local client satisfies the seam");
 await LocalClient.transcript("session one");
-await LocalClient.transcript({ machine: LOCAL_MACHINE, session: "session one" });
+const localTranscript = await LocalClient.transcript(
+    { machine: "untrusted-remote-label", session: "session one" });
 assert.deepEqual(requests.map(function (request) { return request.path; }), [
     "/v1/sessions/session%20one/transcript?limit=200",
     "/v1/sessions/session%20one/transcript?limit=200"
 ], "string and (machine, session) local identities make byte-identical requests");
+assert.deepEqual(localTranscript.optimisticIdentity,
+    { machine: LOCAL_MACHINE, session: "session one" },
+    "the direct transport proves this-mac instead of echoing an object supplied by its caller");
 
 assert.equal(typeof LocalClient.refreshSessionEvidence, "function",
     "the local client exposes a session-evidence retry distinct from reconnect refresh");
@@ -940,9 +944,12 @@ async function becomeReady(client) {
     await client.messageChain;
     return socket;
 }
-async function answerRead(client, socket, payload, session = "session-01") {
+let answerSequence = 4000;
+async function answerRead(client, socket, payload, session = "session-01", sequence) {
+    answerSequence = Math.max(answerSequence + 1, Number(sequence) || 0);
     const envelope = await sealEnvelope({
-        ch: "t/mac-01/" + session, seq: 4000 + readTimers.length, ts: 1787817600000,
+        ch: "t/mac-01/" + session, seq: answerSequence,
+        ts: 1787817600000,
         class: "stream", key_id: "ms-1", sender: "device-vector-01"
     }, JSON.stringify(payload), masterKey, signingKey);
     socket.receive({ type: "envelope", envelope: envelope });
@@ -993,8 +1000,12 @@ assert.deepEqual(JSON.parse(new TextDecoder().decode(
     "the transcript request carries the same window and interactive lane as the direct path");
 await answerRead(readingCloud, readingSocket,
     { read: "transcript", status: 200, body: { messages: [{ role: "user", text: "hi" }] } });
-assert.deepEqual(await transcriptAnswer, { messages: [{ role: "user", text: "hi" }] },
+const settledTranscript = await transcriptAnswer;
+assert.deepEqual(settledTranscript.messages, [{ role: "user", text: "hi" }],
     "the answer on t/ settles the transcript the direct path would have fetched");
+assert.deepEqual(settledTranscript.optimisticIdentity,
+    { machine: "mac-01", session: "session-01" },
+    "the transcript answer carries the same exact reconciliation scope as its channel");
 
 const infoAnswer = readingCloud.info("session-01");
 const summaryAnswer = readingCloud.infoSummary("session-01");
@@ -1375,6 +1386,28 @@ await answerPicture(pacedCloud, pacedSocket, pngAnswer("11111111-2222-4333-8444-
 assert.equal((await Promise.all(paced)).length, 3, "and every picture is delivered in the end");
 pacedCloud.stop();
 
+// A page reload constructs a fresh transport. An already accepted request identity is evidence for
+// optimistic reconciliation only; it is never a command journal that may resend the user's text.
+const reloadSourceCloud = makeReadingCloud();
+const reloadSourceSocket = await becomeReady(reloadSourceCloud);
+const acceptedBeforeReload = reloadSourceCloud.send(
+    { machine: "mac-01", session: "session-01" }, "accepted before reload", []);
+await until(function () { return publishedReads(reloadSourceSocket).length === 1; },
+    "the pre-reload prompt to leave once");
+const reloadRequest = await requestBody(publishedReads(reloadSourceSocket)[0]);
+await answerRead(reloadSourceCloud, reloadSourceSocket, {
+    read: "action:" + reloadRequest.request, status: 200, body: { ok: true }
+}, "session-01", 5201);
+assert.equal((await acceptedBeforeReload).optimisticRequest, reloadRequest.request,
+    "the accepted pre-reload send has one durable request identity");
+reloadSourceCloud.stop();
+const reloadedCloud = makeReadingCloud();
+const reloadedSocket = await becomeReady(reloadedCloud);
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.equal(publishedReads(reloadedSocket).length, 0,
+    "reload and reconnect do not infer or resend an already accepted user prompt");
+reloadedCloud.stop();
+
 /* Cloud controls that used to disappear at the transport seam. Every write waits for the Mac's
  * action answer: accepting a relay envelope is not evidence that it was executed. */
 const controlCloud = makeReadingCloud();
@@ -1403,7 +1436,42 @@ assert.match(controlRequest.request, /^[0-9a-f-]{36}$/,
 await answerRead(controlCloud, controlSocket, {
     read: "action:" + controlRequest.request, status: 200, body: { ok: true }
 });
-assert.equal((await sentPrompt).ok, true, "send resolves only after the Mac accepted the prompt");
+const sentPromptAnswer = await sentPrompt;
+assert.equal(sentPromptAnswer.ok, true, "send resolves only after the Mac accepted the prompt");
+assert.deepEqual(sentPromptAnswer.optimisticIdentity,
+    { machine: "mac-01", session: "session-01" },
+    "the accepted receipt keeps the exact Mac and Session used for optimistic reconciliation");
+assert.equal(sentPromptAnswer.optimisticRequest, controlRequest.request,
+    "the accepted receipt keeps the request identity that makes a replay one pending turn");
+
+const beforeReordered = publishedReads(controlSocket).length;
+const reorderedFirst = controlCloud.send("session-01", "first accepted prompt", []);
+const reorderedSecond = controlCloud.send("session-01", "second accepted prompt", []);
+await until(function () {
+    return publishedReads(controlSocket).length === beforeReordered + 2;
+}, "both independently identified prompts to leave");
+const reorderedRequests = await Promise.all(publishedReads(controlSocket)
+    .slice(beforeReordered, beforeReordered + 2).map(requestBody));
+const firstRequest = reorderedRequests.find(function (request) {
+    return request.text === "first accepted prompt";
+});
+const secondRequest = reorderedRequests.find(function (request) {
+    return request.text === "second accepted prompt";
+});
+assert.ok(firstRequest && secondRequest,
+    "concurrent sends retain their authored text and distinct request identities");
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + secondRequest.request, status: 200, body: { ok: true }
+}, "session-01", 5101);
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + firstRequest.request, status: 200, body: { ok: true }
+}, "session-01", 5102);
+const reorderedAnswers = await Promise.all([reorderedFirst, reorderedSecond]);
+assert.deepEqual(reorderedAnswers.map(function (answer) { return answer.optimisticRequest; }),
+    [firstRequest.request, secondRequest.request],
+    "out-of-order Mac answers settle only their own pending receipt");
+assert.equal(publishedReads(controlSocket).length, beforeReordered + 2,
+    "answer order never republishes either user prompt");
 
 const beforeScreen = publishedReads(controlSocket).length;
 const liveScreen = controlCloud.screen("session-01");

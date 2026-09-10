@@ -12,7 +12,9 @@ import { renderDetailHead, renderTranscript } from "../view/transcript.js";
 import { renderComposer } from "../view/composer.js";
 import { Optimistic } from "../view/waits.js";
 import { authoritativeSendTime, optimisticSendSnapshot } from "../view/optimistic-data.js";
-import { atBottom, closeDetail, loadTranscript, toBottom } from "../session/open.js";
+import {
+    atBottom, closeDetail, followPendingTranscript, loadTranscript, toBottom
+} from "../session/open.js";
 import { carriesPicture, Shots } from "./shots.js";
 import { Voice } from "./voice.js";
 import { observeBoardWorkflowSend } from "./board-workflow-status.js";
@@ -351,7 +353,10 @@ function submit() {
         else if (S.openId === sentID) {
             if (!S.agent) {
                 Optimistic.add(sentID, text, pictures.length, snapshot.known,
-                    authoritativeSendTime(answer, snapshot.startedAt));
+                    authoritativeSendTime(answer, snapshot.startedAt),
+                    answer && answer.optimisticIdentity,
+                    answer && answer.optimisticRequest);
+                followPendingTranscript(sentID);
                 renderTranscript();
                 if (stick) toBottom();
             }

@@ -14,6 +14,9 @@ import {
 var eventSubscribers = new Set();
 
 function localSessionID(value) { return sessionIdentity(value, LOCAL_MACHINE).session; }
+function localIdentity(value) {
+    return { machine: LOCAL_MACHINE, session: localSessionID(value) };
+}
 
 export var LocalClient = {
     es: null,
@@ -434,7 +437,12 @@ export var LocalClient = {
     transcript: function (id, phases, demand) {
         var priority = demand && demand.foreground ? "&priority=foreground" : "";
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) +
-                         "/transcript?limit=200" + priority, undefined, phases);
+                         "/transcript?limit=200" + priority, undefined, phases)
+            .then(function (body) {
+                return Object.assign({}, body, {
+                    optimisticIdentity: localIdentity(id)
+                });
+            });
     },
 
     documents: function (value) {
@@ -523,8 +531,15 @@ export var LocalClient = {
         var body = {};
         if (text) body.text = text;
         if (images && images.length) body.images = images;
+        var request = uuid();
         return jsonFetch("/v1/sessions/" + encodeURIComponent(localSessionID(id)) + "/send",
-                         post(body, { "Idempotency-Key": uuid() }));
+                         post(body, { "Idempotency-Key": request }))
+            .then(function (answer) {
+                return Object.assign({}, answer, {
+                    optimisticIdentity: localIdentity(id),
+                    optimisticRequest: request
+                });
+            });
     },
 
     /// Give this session a local display name, or clear it with an empty string.

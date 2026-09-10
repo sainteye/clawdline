@@ -23,6 +23,7 @@ import { SkillPicker } from "../input/composer.js";
 import { SessionBoard } from "../input/session-board.js";
 import {
     beginTranscriptLoad,
+    createPendingTranscriptFollower,
     createTranscriptRequests,
     createTranscriptRevisionObserver
 } from "./transcript-requests.js";
@@ -47,6 +48,16 @@ var transcriptRequests = createTranscriptRequests(function (id, demand) {
         Diagnostics.note("transcript." + name, data);
     }
 });
+
+var pendingTranscriptFollower = createPendingTranscriptFollower(function (id) {
+    return loadTranscript(id, true);
+}, function (id) {
+    return Optimistic.entries(id).length > 0;
+});
+
+export function followPendingTranscript(id) {
+    return pendingTranscriptFollower.start(id);
+}
 
 // The renderer emits this only after content has reached a paint opportunity. It contains no
 // session id or prose; the currently open session is the only one whose optional hydration can
@@ -124,7 +135,7 @@ function settleTranscript(id, ticket, outcome, revision) {
         // correctly says the file is unchanged; that must preserve the echo, while an eventual
         // matching entry must retire it even if an older server reports a stale signature.
         var reconciled = reconcileOptimisticBeforeSignature(function (sessionID, entries) {
-            return Optimistic.reconcile(sessionID, entries);
+            return Optimistic.reconcile(sessionID, entries, d.optimisticIdentity);
         }, id, received);
         // The signature is the server's own answer to "is this the same transcript". Trusting it
         // is what keeps a refetch from throwing the reader's scroll position away every few seconds.
@@ -212,6 +223,7 @@ export function openSession(id, keepFocus, forceRefresh) {
     S.selectedId = id;
     if (S.openId !== id) {
         if (S.openId) {
+            pendingTranscriptFollower.stop(S.openId);
             transcriptRevisions.stop(S.openId);
             delete transcriptFileSignatures[S.openId];
         }
@@ -271,6 +283,7 @@ export function closeDetail(silent) {
     if (closingID && S.openId === closingID) return;
     ActionConfirm.close();
     if (S.openId) {
+        pendingTranscriptFollower.stop(S.openId);
         transcriptRevisions.stop(S.openId);
         delete transcriptFileSignatures[S.openId];
     }

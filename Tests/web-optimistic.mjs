@@ -2,15 +2,91 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-    authoritativeSendTime, knownOccurrences, matchesOptimistic, optimisticKey,
-    optimisticSendSnapshot, reconcileOptimisticBeforeSignature
+    acceptOptimisticReceipt, authoritativeSendTime, knownOccurrences,
+    matchesOptimistic as matchesOptimisticRaw,
+    optimisticKey, optimisticScopeKey, optimisticSendSnapshot,
+    reconcileOptimisticBeforeSignature
 } from "../Resources/web/app/js/view/optimistic-data.js";
 import { createTranscriptRequests } from
     "../Resources/web/app/js/session/transcript-requests.js";
+import { createPendingTranscriptFollower } from
+    "../Resources/web/app/js/session/transcript-requests.js";
 
+const TEST_SCOPE = "mac-a\u0000session-1";
 const pending = function (text, imageCount, at, known = {}) {
-    return { text, imageCount, at, known };
+    return { text, imageCount, at, known, scopeKey: TEST_SCOPE };
 };
+const matchesOptimistic = function (wanted, actual, scopeKey = TEST_SCOPE, now) {
+    return matchesOptimisticRaw(wanted, actual, scopeKey, now);
+};
+
+const workflowMetadata = {
+    authority: "clawdline_metadata_not_user_authorization",
+    board_epoch: 1,
+    content_reference: "terminal-request:0123456789abcdef01234567",
+    conversation_id: "11111111-1111-4111-8111-111111111111",
+    coverage: "managed_ingress",
+    helper: "clawdline-board-workflow <conversation-id> <stable-idempotency-key>",
+    input_kind: "text_or_transcribed_voice",
+    mode_gap: null,
+    process_generation: "93029:1789026720.0",
+    project_id: "project-0123456789abcdef01234567",
+    provider: "codex",
+    required_first_action: "begin",
+    run_id: "run-0123456789abcdef0123456789abcdef",
+    terminal_id: "%480",
+    version: 1
+};
+const workflowTurn = "same words\n\n" +
+    '<clawdline-workflow version="1" authority="metadata-not-user">\n' +
+    JSON.stringify(workflowMetadata) + "\n</clawdline-workflow>";
+
+assert.equal(matchesOptimistic(
+    pending("same words", 0, 100),
+    { role: "user", text: workflowTurn, imageCount: 0, at: 100 }
+), true, "a validated Board workflow record is presentation metadata, not authored text");
+
+assert.equal(matchesOptimistic(
+    pending("same words", 0, 100),
+    { role: "user", text: "same words", imageCount: 0, at: 100 },
+    "mac-b\u0000session-1", 100
+), false, "the same words and timestamp on another Mac cannot retire this pending turn");
+
+assert.equal(matchesOptimistic(
+    { ...pending("same words", 0, 100), expiresAt: 700 },
+    { role: "user", text: "same words", imageCount: 0, at: 100 },
+    "mac-a\u0000session-1", 701
+), false, "a backgrounded timer cannot extend reconciliation beyond ten minutes");
+
+assert.equal(matchesOptimistic(
+    { ...pending("same words", 0, 100), expiresAt: 1200 },
+    { role: "user", text: "same words", imageCount: 0, at: 100 },
+    TEST_SCOPE, 701
+), true, "Mac accepted_at never acts as a browser-local expiry clock");
+assert.equal(matchesOptimisticRaw(
+    { text: "same words", imageCount: 0, at: 100 },
+    { role: "user", text: "same words", imageCount: 0, at: 100 },
+    null, 100
+), false, "missing reconciliation identity fails closed");
+
+const scopedReceipt = {
+    token: "pending-one", receiptKey: "mac-a\u0000session-1\u0000request-1"
+};
+const firstReceipt = acceptOptimisticReceipt([], scopedReceipt);
+const replayedReceipt = acceptOptimisticReceipt(firstReceipt.entries, { ...scopedReceipt });
+assert.equal(firstReceipt.inserted, true, "the first accepted receipt creates one pending turn");
+assert.equal(replayedReceipt.inserted, false, "a duplicate receipt cannot create a second turn");
+assert.equal(replayedReceipt.entry, scopedReceipt,
+    "a replay resolves to the original pending identity instead of replacing it");
+assert.equal(replayedReceipt.entries.length, 1,
+    "duplicate and out-of-order receipt delivery never grows the pending ledger");
+assert.deepEqual(acceptOptimisticReceipt([], { token: "unscoped" }),
+    { entries: [], entry: null, inserted: false },
+    "a receipt without machine, Session and request identity is not admitted");
+assert.notEqual(
+    optimisticScopeKey({ machine: "mac-a", session: "session-1" }),
+    optimisticScopeKey({ machine: "mac-a", session: "session-2" }),
+    "two Sessions on one Mac have distinct pending scopes");
 
 const transcriptSource = readFileSync(new URL(
     "../Resources/web/app/js/view/transcript.js", import.meta.url), "utf8");
@@ -83,6 +159,105 @@ const reconciled = reconcileOptimisticBeforeSignature(function (id, entries) {
 assert.equal(reconciled, true, "reconciliation returns whether an optimistic row retired");
 assert.deepEqual(ordering, [{ id: "same", entries: [duplicate] }],
     "same-signature handling invokes reconciliation before deciding whether to repaint");
+
+const followTimers = [];
+const followReads = [];
+let followNow = 0;
+let followPending = true;
+let failFollowRead = true;
+function scheduleFollowTimer(work, delay) {
+    const timer = { work, delay, cancelled: false };
+    followTimers.push(timer);
+    return timer;
+}
+function takeFollowTimer(delay) {
+    const timer = followTimers.find(function (candidate) {
+        return !candidate.cancelled && candidate.delay === delay;
+    });
+    assert.ok(timer, "a live " + delay + "ms follower timer exists");
+    timer.cancelled = true;
+    return timer;
+}
+function liveFollowTimers() {
+    return followTimers.filter(function (timer) { return !timer.cancelled; });
+}
+const follower = createPendingTranscriptFollower(function (id) {
+    followReads.push(id);
+    if (failFollowRead) return Promise.reject(Object.assign(new Error("offline"), {
+        code: "offline"
+    }));
+    followPending = false;
+    return Promise.resolve();
+}, function () { return followPending; }, {
+    now: function () { return followNow; },
+    setTimeout: scheduleFollowTimer,
+    clearTimeout: function (timer) { timer.cancelled = true; }
+});
+follower.start("mac-a\u0000session-1");
+follower.start("mac-a\u0000session-1");
+assert.deepEqual(liveFollowTimers().map(function (timer) { return timer.delay; }).sort(),
+    [1000, 600000],
+    "duplicate receipts share one bounded transcript follow-up lane");
+followNow = 1000;
+takeFollowTimer(1000).work();
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.deepEqual(followReads, ["mac-a\u0000session-1"],
+    "a follow-up is a transcript read for the exact accepted scope");
+assert.ok(liveFollowTimers().some(function (timer) { return timer.delay === 2000; }),
+    "a temporary offline failure backs off without becoming a prompt retry");
+failFollowRead = false;
+followNow = 3000;
+takeFollowTimer(2000).work();
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.equal(followReads.length, 2,
+    "reconnect performs one read-only retry and lets its authoritative answer reconcile");
+assert.equal(liveFollowTimers().length, 0,
+    "no timer survives after the pending turn retires");
+
+const expiredTimers = [];
+let expiredNow = 0;
+let expiredReads = 0;
+const expiredFollower = createPendingTranscriptFollower(function () {
+    expiredReads += 1;
+}, function () { return true; }, {
+    now: function () { return expiredNow; },
+    setTimeout: function (work, delay) {
+        const timer = { work, delay, cancelled: false };
+        expiredTimers.push(timer);
+        return timer;
+    },
+    clearTimeout: function (timer) { timer.cancelled = true; }, lifetimeMs: 600000
+});
+expiredFollower.start("mac-a\u0000session-1");
+expiredNow = 600001;
+expiredTimers.find(function (timer) { return timer.delay === 600000; }).work();
+await new Promise(function (resolve) { setImmediate(resolve); });
+assert.equal(expiredReads, 0, "a throttled background timer cannot read past its lifetime");
+assert.equal(expiredFollower.active("mac-a\u0000session-1"), false,
+    "the independent deadline removes the bounded follow-up lane");
+assert.equal(expiredTimers.filter(function (timer) { return !timer.cancelled; }).length, 0,
+    "the bounded follow-up leaves no permanent timer");
+
+const hungTimers = [];
+const hungFollower = createPendingTranscriptFollower(function () {
+    return new Promise(function () {});
+}, function () { return true; }, {
+    now: function () { return expiredNow; }, lifetimeMs: 600000,
+    setTimeout: function (work, delay) {
+        const timer = { work, delay, cancelled: false };
+        hungTimers.push(timer);
+        return timer;
+    },
+    clearTimeout: function (timer) { timer.cancelled = true; }
+});
+hungFollower.start("mac-a\u0000hung");
+hungTimers.find(function (timer) { return timer.delay === 1000; }).work();
+await new Promise(function (resolve) { setImmediate(resolve); });
+hungTimers.find(function (timer) { return timer.delay === 600000; }).work();
+assert.equal(hungFollower.active("mac-a\u0000hung"), false,
+    "a transcript read that never settles cannot outlive the hard deadline");
+assert.equal(hungFollower.start("mac-a\u0000hung"), true,
+    "a later accepted send can start a fresh follower after a hung read is retired");
 
 const reads = [];
 const accepts = [];

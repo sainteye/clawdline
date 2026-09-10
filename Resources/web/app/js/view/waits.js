@@ -7,7 +7,10 @@ import { render, renderList } from "./list.js";
 import { renderTranscript } from "./transcript.js";
 import { ActionConfirm } from "../input/action-confirm.js";
 import { Start } from "../input/start.js";
-import { knownOccurrences, matchesOptimistic, optimisticKey } from "./optimistic-data.js";
+import {
+    acceptOptimisticReceipt, knownOccurrences, matchesOptimistic, optimisticExpired,
+    optimisticClockSeconds, optimisticKey, optimisticScopeKey, OPTIMISTIC_LIFETIME_SECONDS
+} from "./optimistic-data.js";
 
 /* ---- waiting on the network ---------------------------------------------- */
 
@@ -97,15 +100,28 @@ export var Waits = {
  * letting the next transcript fetch speak for itself.
  */
 export var Optimistic = {
-    add: function (id, text, imageCount, known, sentAt) {
+    add: function (id, text, imageCount, known, sentAt, identity, request) {
+        var scopeKey = optimisticScopeKey(identity);
+        var requestKey = typeof request === "string" && request ? request : null;
+        // A pending card is a delivery claim. Without the exact transport receipt, keep the
+        // transcript authoritative instead of admitting a card that could match another scope.
+        if (!scopeKey || !requestKey || !identity || identity.session !== id) return null;
+        var receiptKey = scopeKey + "\u0000" + requestKey;
+        var bucket = optimisticBySession[id] || [];
+        var localNow = optimisticClockSeconds();
         var entry = {
             role: "user", text: text,
             at: Number(sentAt) > 0 ? Math.floor(Number(sentAt)) : Math.floor(Date.now() / 1000),
             pending: true, imageCount: imageCount || 0, token: uuid(), wait: null,
-            known: known || this.known(S.tx.id === id ? S.tx.entries : [])
+            known: known || this.known(S.tx.id === id ? S.tx.entries : []),
+            scopeKey: scopeKey, receiptKey: receiptKey,
+            expiresAt: localNow + OPTIMISTIC_LIFETIME_SECONDS
         };
-        entry.wait = Waiting(function () { Optimistic.expire(id, entry.token); }, 10 * 60 * 1000, 0);
-        (optimisticBySession[id] || (optimisticBySession[id] = [])).push(entry);
+        var accepted = acceptOptimisticReceipt(bucket, entry);
+        if (!accepted.inserted) return accepted.entry;
+        entry.wait = Waiting(function () { Optimistic.expire(id, entry.token); },
+            OPTIMISTIC_LIFETIME_SECONDS * 1000, 0);
+        optimisticBySession[id] = accepted.entries;
         entry.wait.start();
         renderList();
         return entry;
@@ -121,18 +137,27 @@ export var Optimistic = {
         return knownOccurrences(entries);
     },
 
-    matches: function (pending, actual) {
-        return matchesOptimistic(pending, actual);
+    matches: function (pending, actual, scopeKey, now) {
+        return matchesOptimistic(pending, actual, scopeKey, now);
     },
 
-    reconcile: function (id, actual) {
+    reconcile: function (id, actual, identity, now) {
         var pending = optimisticBySession[id];
         if (!pending || !pending.length) return false;
-        var used = {}, kept = [], matched = false;
+        var scopeKey = optimisticScopeKey(identity);
+        var observedAt = Number.isFinite(Number(now)) ? Number(now) : optimisticClockSeconds();
+        var used = {}, kept = [], changed = false;
         for (var i = 0; i < pending.length; i++) {
+            // Browsers throttle timers in background tabs. Enforce the same lifetime again at
+            // the authoritative-read boundary so waking a phone cannot revive an old promise.
+            if (optimisticExpired(pending[i], observedAt)) {
+                pending[i].wait.settle();
+                changed = true;
+                continue;
+            }
             var found = -1;
             for (var j = 0; j < actual.length; j++) {
-                if (used[j] || !this.matches(pending[i], actual[j])) continue;
+                if (used[j] || !this.matches(pending[i], actual[j], scopeKey, observedAt)) continue;
                 var key = this.key(actual[j]), occurrence = 0;
                 for (var k = 0; k <= j; k++) if (this.key(actual[k]) === key) occurrence += 1;
                 if ((pending[i].known[key] || 0) >= occurrence) continue;
@@ -141,7 +166,7 @@ export var Optimistic = {
             }
             if (found < 0) { kept.push(pending[i]); continue; }
             used[found] = true;
-            matched = true;
+            changed = true;
             // A later identical local turn must not claim this same real occurrence on the next
             // fetch, after the earlier pending turn has already left the container.
             var matchedKey = this.key(actual[found]), matchedOccurrence = 0;
@@ -153,8 +178,8 @@ export var Optimistic = {
         }
         if (kept.length) optimisticBySession[id] = kept;
         else delete optimisticBySession[id];
-        if (matched) renderList();
-        return matched;
+        if (changed) renderList();
+        return changed;
     },
 
     clear: function (id) {

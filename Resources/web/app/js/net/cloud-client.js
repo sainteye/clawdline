@@ -863,9 +863,13 @@ export class CloudClient {
      * interactive, while revision refreshes and agent reads remain background work.
      */
     transcript(value, phases, demand) {
+        var identity = this._sessionIdentity(value);
         var priority = demand && demand.foreground ? "foreground" : "background";
-        return this._read(value, "transcript",
-            { limit: TRANSCRIPT_LIMIT, priority: priority }, "transcript");
+        return this._read(identity, "transcript",
+            { limit: TRANSCRIPT_LIMIT, priority: priority }, "transcript")
+            .then(function (body) {
+                return Object.assign({}, body, { optimisticIdentity: identity });
+            });
     }
 
     /**
@@ -1276,7 +1280,11 @@ export class CloudClient {
         var request = requestID();
         return this._read(identity, "send", {
             request: request, text: text || "", images: images || []
-        }, "action:" + request);
+        }, "action:" + request).then(function (body) {
+            return Object.assign({}, body, {
+                optimisticIdentity: identity, optimisticRequest: request
+            });
+        });
     }
 
     answer(value, answer) {

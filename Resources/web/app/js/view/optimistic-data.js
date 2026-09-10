@@ -1,7 +1,53 @@
+import { parseBoardWorkflowRecord } from "./board-workflow-record.js";
+
+export const OPTIMISTIC_LIFETIME_SECONDS = 10 * 60;
+
+/** Browser-local monotonic time. Mac transcript timestamps live in a different clock domain. */
+export function optimisticClockSeconds() {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
+        return performance.now() / 1000;
+    }
+    return Date.now() / 1000;
+}
+
+/** The transport-proved Mac/Session pair. Null means the evidence is insufficient. */
+export function optimisticScopeKey(identity) {
+    if (!identity || typeof identity.machine !== "string" || !identity.machine ||
+        typeof identity.session !== "string" || !identity.session) return null;
+    return identity.machine + "\u0000" + identity.session;
+}
+
+export function optimisticExpired(entry, now) {
+    var deadline = Number(entry && entry.expiresAt);
+    var observed = Number(now);
+    return Number.isFinite(deadline) && deadline > 0 && Number.isFinite(observed) &&
+        observed > deadline;
+}
+
+/** Idempotently admit one successful transport receipt into a browser-local pending ledger. */
+export function acceptOptimisticReceipt(entries, candidate) {
+    var held = Array.isArray(entries) ? entries : [];
+    var key = candidate && candidate.receiptKey;
+    if (!key) return { entries: held, entry: null, inserted: false };
+    for (var i = 0; i < held.length; i++) {
+        if (held[i] && held[i].receiptKey === key) {
+            return { entries: held, entry: held[i], inserted: false };
+        }
+    }
+    return { entries: held.concat([candidate]), entry: candidate, inserted: true };
+}
+
 /** Pure canonical contract shared by optimistic bookkeeping and its Node fixture. */
 export function canonicalOptimisticEntry(entry) {
     entry = entry || {};
     var text = String(entry.text == null ? "" : entry.text);
+    // The transcript keeps the broker-authored Board record losslessly, while the renderer
+    // presents only the words the person supplied. Reconciliation must compare that same
+    // validated presentation or a successfully delivered managed message can never converge.
+    // The parser is closed-schema and user-role-only, so quoted or malformed lookalikes remain
+    // authored text and cannot make a merely similar turn disappear.
+    var workflow = parseBoardWorkflowRecord(text, "user");
+    if (workflow) text = workflow.text;
     var explicitCount = Object.prototype.hasOwnProperty.call(entry, "imageCount");
     var imageCount = Number(entry.imageCount || 0);
     var markers = text.match(/\[Image #\d+\]/g) || [];
@@ -30,8 +76,10 @@ export function knownOccurrences(entries) {
     return found;
 }
 
-export function matchesOptimistic(pending, actual) {
+export function matchesOptimistic(pending, actual, scopeKey, now) {
     if (!actual || actual.role !== "user") return false;
+    if (!pending || !pending.scopeKey || !scopeKey || pending.scopeKey !== scopeKey) return false;
+    if (optimisticExpired(pending, now)) return false;
     var at = Number(actual.at || 0);
     if (!at || at < pending.at - 10 || at > pending.at + 10 * 60) return false;
     var wanted = canonicalOptimisticEntry(pending);

@@ -130,6 +130,78 @@ export function beginTranscriptLoad(request, renderLoading) {
     return result;
 }
 
+/**
+ * Bounded read-only confirmation after a successful send.
+ *
+ * This lane never owns the prompt and cannot resend it. It asks only for the authoritative
+ * transcript, coalesces duplicate receipt/start calls by Session, survives temporary read
+ * failures with capped backoff, and stops on reconciliation or at the optimistic lifetime.
+ */
+export function createPendingTranscriptFollower(readTranscript, hasPending, options) {
+    options = options || {};
+    var now = options.now || function () { return Date.now(); };
+    var schedule = options.setTimeout || function (work, delay) { return setTimeout(work, delay); };
+    var cancel = options.clearTimeout || function (token) { clearTimeout(token); };
+    var lifetime = Math.max(1, Number(options.lifetimeMs) || 10 * 60 * 1000);
+    var delays = (options.delays || [1000, 2000, 4000, 8000, 16000, 30000])
+        .map(Number).filter(function (delay) { return Number.isFinite(delay) && delay > 0; });
+    if (!delays.length) delays = [1000];
+    var lanes = {};
+
+    function stop(id) {
+        var lane = lanes[id];
+        if (!lane) return false;
+        if (lane.timer !== null) cancel(lane.timer);
+        if (lane.deadline !== null) cancel(lane.deadline);
+        delete lanes[id];
+        return true;
+    }
+
+    function plan(lane) {
+        if (lanes[lane.id] !== lane) return;
+        if (!hasPending(lane.id) || now() - lane.startedAt > lifetime) {
+            stop(lane.id);
+            return;
+        }
+        var delay = delays[Math.min(lane.attempt, delays.length - 1)];
+        lane.timer = schedule(function () {
+            if (lanes[lane.id] !== lane) return;
+            lane.timer = null;
+            if (!hasPending(lane.id) || now() - lane.startedAt > lifetime) {
+                stop(lane.id);
+                return;
+            }
+            lane.attempt += 1;
+            Promise.resolve().then(function () {
+                return readTranscript(lane.id);
+            }).catch(function () {
+                // A refused/offline read changes no delivery fact. Keep the accepted pending row
+                // and let the next bounded read, reconnect, or ordinary revision settle it.
+            }).then(function () { plan(lane); });
+        }, delay);
+    }
+
+    return {
+        start: function (id) {
+            if (!id || lanes[id]) return false;
+            var lane = {
+                id: id, startedAt: now(), attempt: 0, timer: null, deadline: null
+            };
+            lanes[id] = lane;
+            // This timer is independent of the read promise. A half-open fetch may never settle;
+            // it still cannot keep the lane alive or block a later accepted send past the bound.
+            lane.deadline = schedule(function () {
+                if (lanes[id] === lane) stop(id);
+            }, lifetime);
+            plan(lane);
+            return true;
+        },
+        stop: stop,
+        stopAll: function () { Object.keys(lanes).forEach(stop); },
+        active: function (id) { return !!lanes[id]; }
+    };
+}
+
 /** A generation-aware cache in which a full Info answer outranks the automatic summary tier for
  *  as long as it is fresh, and no longer than that — see the note in the summary branch. */
 export function createTieredSessionFacts(readFull, readSummary, options) {

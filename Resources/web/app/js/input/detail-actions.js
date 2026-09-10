@@ -7,7 +7,7 @@ import { closingID, render, renderList, setClosingID } from "../view/list.js";
 import { renderTranscript } from "../view/transcript.js";
 import { Optimistic, Waits } from "../view/waits.js";
 import { authoritativeSendTime, optimisticSendSnapshot } from "../view/optimistic-data.js";
-import { closeDetail, loadTranscript } from "../session/open.js";
+import { closeDetail, followPendingTranscript, loadTranscript } from "../session/open.js";
 import { closeAgent, openAgent } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
 
@@ -126,7 +126,10 @@ export var SessionActions = {
         this.close();
         api.send(id, action, []).then(function (answer) {
             Optimistic.add(id, action, 0, snapshot.known,
-                authoritativeSendTime(answer, snapshot.startedAt));
+                authoritativeSendTime(answer, snapshot.startedAt),
+                answer && answer.optimisticIdentity,
+                answer && answer.optimisticRequest);
+            followPendingTranscript(id);
             if (S.openId === id && !S.agent) {
                 renderTranscript();
                 loadTranscript(id, true);
