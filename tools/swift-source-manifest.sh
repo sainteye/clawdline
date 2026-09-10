@@ -227,6 +227,17 @@ for clawdline_source in "${clawdline_production_sources[@]}"; do
 done
 unset clawdline_source
 
+# Conservative compile-resource closure for the opt-in test artifact. Resources are also read
+# at runtime, but hashing the entire tree prevents a newly compile-relevant file being omitted.
+# The helper and manifest are inputs themselves: changing the recipe cannot reuse its old output.
+clawdline_swift_test_target=arm64-apple-macos13.0
+clawdline_swift_test_compile_resources=(
+  tools/swift-source-manifest.sh
+  tools/swift-test-artifact.sh
+  test.sh
+  Resources
+)
+
 verify_swift_source_manifest() {
   local mode="${1:-full}"
   local manifest_tmp_root="${TMPDIR:-/tmp}"

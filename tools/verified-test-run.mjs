@@ -66,14 +66,28 @@ const overlayDigest = (cwd) => {
   return hash.digest("hex");
 };
 
-const environmentFacts = (env) => ({
+const artifactEnvironmentDigest = (cwd, env) => {
+  const result = spawnSync("/bin/bash", ["-c",
+    "set -euo pipefail\n. tools/swift-test-artifact.sh\nclawdline_swift_test_artifact_environment"],
+  { cwd, env, encoding: "utf8", maxBuffer: 1024 * 1024 });
+  if (result.status !== 0 || !/^[a-f0-9]{64}\n$/.test(result.stdout ?? "")) {
+    // Never reserve, or answer reusable, with an absent/unknown inner compiler identity.
+    // Do not leak paths or raw compiler output through the durable wrapper's diagnostics.
+    throw new Error("artifact_preflight_identity_unavailable");
+  }
+  return result.stdout.trim();
+};
+
+const environmentFacts = (cwd, env) => ({
   architecture: arch(),
   node: process.version,
   platform: platform(),
-  swift: spawnSync("swiftc", ["--version"], { encoding: "utf8" }).stdout?.trim() ?? "unavailable",
+  swift: spawnSync("swiftc", ["--version"], { env, encoding: "utf8" }).stdout?.trim() ?? "unavailable",
   CLAWDLINE_RESEAL: env.CLAWDLINE_RESEAL,
   CLAWDLINE_SUITE_JOBS: env.CLAWDLINE_SUITE_JOBS,
   CLAWDLINE_TEST_GROUPS: env.CLAWDLINE_TEST_GROUPS,
+  ...(env.CLAWDLINE_SWIFT_TEST_ARTIFACT === "reuse"
+    ? { swift_artifact_environment_sha256: artifactEnvironmentDigest(cwd, env) } : {}),
 });
 
 export const canonicalIdentity = (cwd, argv, env = process.env) => {
@@ -102,7 +116,7 @@ export const canonicalIdentity = (cwd, argv, env = process.env) => {
     question_id: env.CLAWDLINE_VERIFY_QUESTION_ID,
     verification_kind: kind, variant: "baseline",
     command_sha256: canonicalCommandDigest(argv),
-    environment_sha256: canonicalEnvironmentDigest(environmentFacts(env)),
+    environment_sha256: canonicalEnvironmentDigest(environmentFacts(cwd, env)),
   };
 };
 

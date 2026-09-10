@@ -664,6 +664,10 @@ report_cloud_receipt_reseal_line() {
 
 verify_test_completion_receipts() {
   local log=$1
+  if [ -n "${CLAWDLINE_TEST_GROUPS:-}" ]; then
+    echo 'test.sh: focused_run_cannot_verify_full_receipt' >&2
+    return 125
+  fi
   local cloud_receipt_count swift_receipt_count reported_swift_receipts cloud_receipt_stale=0
   cloud_receipt_count=$(count_exact_receipt_lines "$expected_cloud_receipt" "$log")
   if [ "$cloud_receipt_count" -ne 1 ]; then
@@ -704,6 +708,10 @@ verify_test_completion_receipts() {
 # JSON object and never reconstructs a missing Cloud field or a Swift total by arithmetic.
 emit_complete_test_seal_receipt() {
   local log=$1 cloud swift witness cloud_count swift_count
+  if [ -n "${CLAWDLINE_TEST_GROUPS:-}" ]; then
+    echo 'test.sh: focused_run_cannot_emit_full_receipt' >&2
+    return 125
+  fi
   cloud=$(cloud_receipt_lines "$log")
   cloud_count=$(printf '%s\n' "$cloud" | awk 'NF { c++ } END { print c + 0 }')
   swift=$(awk '/^[0-9]+ checks passed$/ { line=$0; count++ } END { if (count == 1) print line }' "$log")
@@ -806,6 +814,26 @@ if [ "${1:-}" = "--verify-suite-roster" ]; then
   exit $?
 fi
 
+# >>> clawdline focused entry >>>
+# Opt-in skips unrelated node/browser suites; the original no-argument full entry is unchanged.
+# Validate before guards or compilation, including explicitly empty/newline-only selections.
+. tools/swift-test-artifact.sh
+clawdline_swift_focused_only=0
+case "${1:-}" in
+  "") [ "$#" -eq 0 ] || exit 2 ;;
+  --swift-focused)
+    [ "$#" -eq 1 ] || exit 2
+    clawdline_swift_focused_only=1
+    clawdline_validate_swift_test_selection required ;;
+  *) echo 'test.sh: unknown_test_mode' >&2; exit 2 ;;
+esac
+clawdline_validate_swift_test_selection
+case "${CLAWDLINE_SWIFT_TEST_ARTIFACT:-off}" in
+  off|reuse) ;;
+  *) echo 'test.sh: unknown_swift_artifact_mode' >&2; exit 2 ;;
+esac
+# <<< clawdline focused entry <<<
+
 # Everything above this line is either a definition or one of the two narrow modes, which run
 # nothing and must therefore say nothing. From here down this is a run, and the two lines below are
 # how it says so. They sit after the `cd` because the file is keyed by the working directory.
@@ -844,6 +872,7 @@ progress_phase guards
 verify_swift_source_manifest full
 bash tools/check-architecture-boundaries.sh
 
+if [ "$clawdline_swift_focused_only" -eq 0 ]; then
 # Trailing commas in an argument list are Swift 6.1 syntax. The toolchain here is usually
 # newer than CI's, so code that compiles locally can fail to parse on the runner — and the
 # error arrives ten minutes later, in a log, attached to a push that is already public.
@@ -1152,6 +1181,7 @@ node Tests/web-close-confirm-explanation.mjs
 # before it starts queueing.
 node Tests/test-sh-streaming.mjs
 node Tests/test-sh-lock.mjs
+node Tests/swift-test-artifact.mjs
 # And that anything with a slow command to run can still say how far it has got. The helper both
 # this script and `build.sh` source is driven in both its forms — wrapping a whole command, and
 # sourced by a script with phases of its own — against a scratch directory, with a copy of it
@@ -1163,6 +1193,7 @@ node Tests/progress-helper.mjs
 # before the lock is taken, so a checkout whose producer is broken is told so before it starts
 # queueing for a compiler.
 node Tests/run-file-producer.mjs
+fi
 
 # >>> clawdline suite lock >>>
 # One machine, one suite run — and this block is the whole of that promise. It is bounded by the two
@@ -2188,6 +2219,17 @@ clawdline_suite_jobs_flags=(-j "$clawdline_compile_jobs")
 echo "test.sh: compile job ceiling: ${clawdline_compile_jobs}, ${clawdline_compile_jobs_source}"
 # <<< clawdline compile ceiling <<<
 
+# >>> clawdline swift artifact invocation >>>
+if [ "${CLAWDLINE_SWIFT_TEST_ARTIFACT:-off}" = "reuse" ]; then
+  progress_phase compiling
+  clawdline_suite_lock_phase compiling
+  clawdline_swift_test_artifact "$BIN" \
+    -swift-version 5 -target "$clawdline_swift_test_target" \
+    ${clawdline_suite_jobs_flags[@]+"${clawdline_suite_jobs_flags[@]}"} \
+    -framework AppKit -framework Carbon -framework ServiceManagement \
+    -framework Speech -framework AVFoundation -framework Network \
+    -- "${clawdline_library_sources[@]}" "${clawdline_test_sources[@]}"
+else
 progress_phase compiling
 clawdline_suite_lock_phase compiling
 swiftc \
@@ -2198,6 +2240,8 @@ swiftc \
   "${clawdline_library_sources[@]}" \
   "${clawdline_test_sources[@]}" \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
+fi
+# <<< clawdline swift artifact invocation <<<
 
 # Between the two halves of the guarded section. The compile is the long unattended stretch, so this
 # is where a lock that changed hands underneath the run has to be noticed — before the second
@@ -2308,6 +2352,8 @@ fi
 # complete full-suite tuple. Its own `N focused checks passed` receipt is the only one it emits.
 if is_unfiltered_test_run; then
   emit_complete_test_seal_receipt "$LOG" || exit $?
+else
+  clawdline_verify_focused_test_receipt "$LOG" || exit $?
 fi
 
 # The guarded section is over: the compile and the run are both behind us and only receipt checking
