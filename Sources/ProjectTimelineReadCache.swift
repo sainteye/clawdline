@@ -107,6 +107,23 @@ final class ProjectTimelineReadCache {
     private func select(_ source: Envelope, query: Query) -> Envelope {
         guard var timeline = source["timeline"] as? Envelope else { return source }
         let all = timeline["entries"] as? [Envelope] ?? []
+        let checkpoints = timeline["checkpoints"] as? [Envelope] ?? []
+        let selectedCheckpoints = checkpoints.filter {
+            query.project == nil || $0["projectId"] as? String == query.project
+        }
+        timeline["checkpoints"] = selectedCheckpoints
+        let issues = (timeline["historySourceIssues"] as? [Envelope] ?? []).filter {
+            query.project == nil || $0["projectId"] as? String == query.project
+        }
+        timeline["historySourceIssues"] = issues
+        let reasons = selectedCheckpoints.compactMap { $0["reason"] as? String }
+            + issues.compactMap { $0["code"] as? String }
+        // A checkpoint subset cannot establish the complete Project domain on this Mac.
+        let complete = query.project != nil && !selectedCheckpoints.isEmpty && selectedCheckpoints.allSatisfy {
+            $0["historyStatus"] as? String == "complete"
+        } && issues.isEmpty
+        timeline["coverage"] = ["status": selectedCheckpoints.isEmpty ? "unknown" : complete ? "complete" : "partial",
+                                "reasons": Array(Set(reasons)).sorted()]
         let projected = all.map { projectedRow($0, environment: query.environment) }
             .sorted(by: projectedOrder)
         let matching = projected.filter { row in

@@ -126,6 +126,27 @@ export function bindTimelinePage(elements, environment) {
         elements["timeline-title"].textContent = project.label || project.name || words(locale(), "Project Timeline", "專案時間軸");
         if (elements["timeline-subtitle"]) elements["timeline-subtitle"].textContent = words(locale(), "Production availability, backed by receipts", "以來源憑證核對 production 是否真正可用");
     }
+    function historyCoverage(snapshot) {
+        const rows = (Array.isArray(snapshot.checkpoints) ? snapshot.checkpoints : [])
+            .filter(row => row.projectId === state.projectId);
+        const names = {
+            pending: ["Older Git history remains; bounded background batches will continue.", "仍有較早 Git 歷史，背景會分批接續。"],
+            complete: ["The observed first-parent history is covered; this is not deployment evidence.", "已涵蓋本次觀測的 first-parent 歷史；這不代表已部署。"],
+            capacity: ["Git backfill paused at storage capacity; retained history was not removed.", "Git 回填因容量限制暫停；保留的歷史沒有被刪除。"],
+            unavailable: ["Git history could not be read or saved; the cursor was not advanced past unconfirmed work.", "Git 歷史讀取或保存失敗；游標不會跳過未確認的紀錄。"],
+            shallow: ["Only shallow-clone history is available; older history coverage is unknown.", "目前只有淺層複製的歷史；更早紀錄的涵蓋範圍未知。"],
+            unknown: ["Git history coverage is not yet known for this Project.", "此專案的 Git 歷史涵蓋範圍尚未確認。"],
+        };
+        const messages = [...new Set((rows.length ? rows : [{ historyStatus: "unknown" }])
+            .map(row => words(locale(), ...(names[row.historyStatus] || names.unknown))))];
+        if ((snapshot.historySourceIssues || []).some(row => row.projectId === state.projectId))
+            messages.push(words(locale(), "History checkpoint was not saved; coverage may be stale.", "歷史游標未成功保存；涵蓋資訊可能過期。"));
+        if (!snapshot.enabled) messages.push(words(locale(), "Background history ingestion is paused while Timeline is off.", "Timeline 關閉期間，背景歷史匯入暫停。"));
+        const cap = snapshot.capacity;
+        if (cap && Number.isSafeInteger(cap.entryCount) && cap.entryCount >= 0 && Number.isSafeInteger(cap.entryLimit) && cap.entryLimit > 0)
+            messages.push(words(locale(), `Mac-wide Timeline storage: ${cap.entryCount}/${cap.entryLimit} entries.`, `此 Mac 共用 Timeline 容量：${cap.entryCount}/${cap.entryLimit} 筆。`));
+        return messages.join(" ");
+    }
     function boardPills(parent, entry) {
         const ids = Array.isArray(entry.boardItemIds) ? entry.boardItemIds : [];
         ids.slice(0, 2).forEach(id => {
@@ -236,7 +257,7 @@ export function bindTimelinePage(elements, environment) {
             }
             const rendered = Object.assign({}, snapshot, { entries: state.entries });
             apply(snapshot); drawProject(snapshot); drawEntries(rendered); drawDetail(snapshot.selected);
-            status(snapshot.status === "stale" ? words(locale(), "Showing retained history while sources refresh.", "來源更新中，先顯示保留的歷史。") : "");
+            status((snapshot.status === "stale" ? words(locale(), "Showing retained history while sources refresh. ", "來源更新中，先顯示保留的歷史。") : "") + historyCoverage(snapshot));
             return snapshot;
         } catch (error) { status(error.message || words(locale(), "Timeline unavailable", "Timeline 無法讀取")); return null; }
         finally { state.loading = false; apply({ enabled: state.enabled, revision: state.revision }); }

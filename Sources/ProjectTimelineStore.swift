@@ -60,12 +60,14 @@ final class ProjectTimelineStore {
     private let lock = NSLock()
     private let url: URL
     private let now: () -> Date
+    private let persistFault: (() -> Bool)?
     private var state: StoredState
     private var unavailable: (code: String, message: String)?
 
-    init(url: URL, now: @escaping () -> Date = Date.init) {
+    init(url: URL, now: @escaping () -> Date = Date.init, persistFault: (() -> Bool)? = nil) {
         self.url = url
         self.now = now
+        self.persistFault = persistFault
         let empty = StoredState(schemaVersion: Self.schemaVersion, revision: 0, enabled: true,
             updatedAt: now().timeIntervalSince1970, entries: [], events: [], requestReceipts: [],
             eventReceipts: [], checkpoints: [], coverageIssues: [])
@@ -79,7 +81,8 @@ final class ProjectTimelineStore {
             guard decoded.schemaVersion == Self.schemaVersion,
                   decoded.entries.count <= Self.maximumEntries,
                   decoded.events.count <= Self.maximumEvents,
-                  decoded.requestReceipts.count <= Self.maximumReceipts else {
+                  decoded.requestReceipts.count <= Self.maximumReceipts,
+                  decoded.checkpoints.count <= 128 else {
                 state = empty; unavailable = ("timeline_store_invalid", "Timeline store violates its schema or capacity."); return
             }
             state = decoded
@@ -116,10 +119,18 @@ final class ProjectTimelineStore {
             "schemaVersion": Self.schemaVersion, "available": true,
             "enabled": state.enabled, "revision": state.revision,
             "updatedAt": state.updatedAt, "entries": entries,
-            "coverage": ["status": state.coverageIssues.isEmpty ? "complete" : "partial",
+            "coverage": ["status": state.coverageIssues.isEmpty ? "unknown" : "partial",
                          "reasons": state.coverageIssues.sorted()],
             "checkpoints": state.checkpoints.map(checkpointObject),
+            "capacity": ["entryCount": state.entries.count, "entryLimit": Self.maximumEntries,
+                "eventCount": state.events.count, "eventLimit": Self.maximumEvents,
+                "byteLimit": Self.maximumStoreBytes],
         ]]
+    }
+
+    func historyCheckpoint(projectID: String) -> ProjectTimelineCheckpoint? {
+        lock.lock(); defer { lock.unlock() }
+        return state.checkpoints.first { $0.source == "local_git_history" && $0.projectID == projectID }
     }
 
     func command(_ body: [String: Any], actor: String, trusted: Bool) -> Reply {
@@ -202,7 +213,17 @@ final class ProjectTimelineStore {
                                    reason: unavailable?.code ?? "timeline_disabled")
         }
         var draft = state
-        draft.checkpoints.removeAll { $0.source == checkpoint.source && $0.repositoryID == checkpoint.repositoryID }
+        if draft.checkpoints.contains(checkpoint) {
+            return MutationOutcome(status: "unchanged", accepted: 0, dropped: 0, persisted: true, reason: checkpoint.reason)
+        }
+        draft.checkpoints.removeAll {
+            $0.source == checkpoint.source && $0.repositoryID == checkpoint.repositoryID
+                && ($0.projectID == checkpoint.projectID || $0.projectID == nil)
+        }
+        guard draft.checkpoints.count < 128 else {
+            return MutationOutcome(status: "capacity", accepted: 0, dropped: 1, persisted: true,
+                                   reason: "timeline_checkpoint_capacity")
+        }
         draft.checkpoints.append(checkpoint)
         if let reason = checkpoint.reason { draft.coverageIssues = Array(Set(draft.coverageIssues + [reason])) }
         draft.revision += 1; draft.updatedAt = now().timeIntervalSince1970
@@ -365,6 +386,7 @@ final class ProjectTimelineStore {
     }
 
     private func persist(_ draft: StoredState) -> (code: String, message: String)? {
+        if persistFault?() == true { return ("timeline_store_write_failed", "Injected persistence failure.") }
         do {
             let data = try JSONEncoder().encode(draft)
             guard data.count <= Self.maximumStoreBytes else {
@@ -420,7 +442,11 @@ final class ProjectTimelineStore {
         ["source": value.source, "repositoryId": value.repositoryID,
          "throughRevision": value.throughRevision as Any? ?? NSNull(),
          "observedAt": value.observedAt, "imported": value.imported, "omitted": value.omitted,
-         "reason": value.reason as Any? ?? NSNull()]
+         "reason": value.reason as Any? ?? NSNull(),
+         "projectId": value.projectID as Any? ?? NSNull(),
+         "nextRevision": value.nextRevision as Any? ?? NSNull(),
+         "historyStatus": value.historyStatus ?? "unknown",
+         "headRevision": value.headRevision as Any? ?? NSNull()]
     }
 
     private func entryOrder(_ lhs: [String: Any], _ rhs: [String: Any]) -> Bool {

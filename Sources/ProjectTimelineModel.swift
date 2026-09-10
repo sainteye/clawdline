@@ -77,6 +77,10 @@ struct ProjectTimelineCheckpoint: Codable, Equatable {
     let imported: Int
     let omitted: Int
     let reason: String?
+    var projectID: String? = nil
+    var nextRevision: String? = nil
+    var historyStatus: String? = nil
+    var headRevision: String? = nil
 }
 
 struct ProjectTimelineProjection: Equatable {

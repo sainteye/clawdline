@@ -424,5 +424,155 @@ group("Project Timeline ingests a real broker landing through persistence and re
         projectID: "project-history", store: reopenedHistory, observedAt: 1_788_969_900)
     expect("reopened Git history remains fully covered", reopenedCheckpoint.imported, 1)
     expect("reopened Git history does not invent omissions", reopenedCheckpoint.omitted, 0)
+    // Startup must make progress beyond its first forty commits, without manufacturing
+    // deployment evidence or restarting from HEAD after a durable reopen.
+    check("older-history fixture has more than one bounded page", (0..<42).allSatisfy {
+        timelineGit(repository, ["commit", "--allow-empty", "-q", "-m", "Older history \($0)"])
+    })
+    let older = ProjectTimelineGitImporter.importHistory(path: repository.path,
+        projectID: "project-history", store: historyStore)
+    _ = historyStore.recordCheckpoint(older)
+    let envelope = historyStore.materializedEnvelope()["timeline"] as? [String: Any]
+    let coverage = envelope?["capacity"] as? [String: Any]
+    expect("Timeline exposes its durable entry capacity", coverage?["entryLimit"] as? Int, 2_000)
+    let checkpointRows = envelope?["checkpoints"] as? [[String: Any]]
+    expect("bounded initial history explicitly has older work", checkpointRows?.last?["historyStatus"] as? String, "pending")
+    let resumedStore = ProjectTimelineStore(url: d.root.appendingPathComponent("history.json"))
+    let resumed = ProjectTimelineGitImporter.importHistory(path: repository.path,
+        projectID: "project-history", store: resumedStore)
+    _ = resumedStore.recordCheckpoint(resumed)
+    let resumedModel = resumedStore.materializedEnvelope()["timeline"] as? [String: Any]
+    expect("reopen resumes the older page rather than the same forty", (resumedModel?["entries"] as? [[String: Any]])?.count, 43)
+    expect("reaching first-parent root is explicit complete coverage", (resumedModel?["checkpoints"] as? [[String: Any]])?.last?["historyStatus"] as? String, "complete")
+    let cache = ProjectTimelineReadCache(execute: { $0() })
+    cache.seed(.init(revision: 1, observedAt: 1, envelope: resumedStore.materializedEnvelope()))
+    let foreign = cache.read(.init(project: "other-project", entry: nil, cursor: 0, environment: "all", category: nil, includeUpcoming: true), header: .init(enabled: true, revision: 1), loading: [:]) { .failure(.init(code: "unused", message: "unused")) }
+    expect("Project history coverage does not borrow another Project checkpoint", ((foreign["timeline"] as? [String: Any])?["checkpoints"] as? [[String: Any]])?.count, 0)
+    let stableCount = (resumedModel?["entries"] as? [[String: Any]])?.count
+    let stable = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "project-history", store: resumedStore)
+    _ = resumedStore.recordCheckpoint(stable)
+    expect("completed history replay does not create duplicate entries", ((resumedStore.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, stableCount)
+    check("new HEAD fixture commits", timelineGit(repository, ["commit", "--allow-empty", "-q", "-m", "New after completion"]))
+    let newHead = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "project-history", store: resumedStore)
+    _ = resumedStore.recordCheckpoint(newHead)
+    expect("a new HEAD is ingested after completed historical coverage", ((resumedStore.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 44)
+    var broken = newHead
+    broken.nextRevision = String(repeating: "f", count: 40)
+    broken.historyStatus = "pending"
+    _ = resumedStore.recordCheckpoint(broken)
+    let failedCursor = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "project-history", store: resumedStore)
+    expect("missing pinned cursor is an explicit failure", failedCursor.historyStatus, "unavailable")
+    expect("unreadable history cannot silently advance its cursor", failedCursor.nextRevision, broken.nextRevision)
+    expect("unreadable history cannot erase its covered boundary", failedCursor.throughRevision, broken.throughRevision)
+    let off = resumedStore.command(["operation": "set_enabled", "requestId": "backfill-off", "expectedRevision": resumedStore.readHeader().revision, "enabled": false], actor: "machine", trusted: true)
+    expect("backfill disabled fixture switches off", off.status, 200)
+    let disabled = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "project-history", store: resumedStore)
+    expect("disabled Store refuses checkpoint writes", resumedStore.recordCheckpoint(disabled).reason, "timeline_disabled")
+    let capacityFile = d.root.appendingPathComponent("capacity-history.json")
+    var fullState = (try? JSONSerialization.jsonObject(with: Data(contentsOf: d.root.appendingPathComponent("history.json")))) as? [String: Any] ?? [:]
+    let seedEntry = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(timelineEntry("capacity-seed")))) as? [String: Any] ?? [:]
+    fullState["entries"] = (0..<ProjectTimelineStore.maximumEntries).map { n -> [String: Any] in
+        var row = seedEntry; row["id"] = "capacity-\(n)"; row["deliveryKey"] = "capacity-\(n)"; return row
+    }
+    fullState["events"] = []; fullState["eventReceipts"] = []; fullState["checkpoints"] = []; fullState["enabled"] = true
+    try? JSONSerialization.data(withJSONObject: fullState).write(to: capacityFile)
+    let capacityStore = ProjectTimelineStore(url: capacityFile)
+    let capacityPage = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "project-history", store: capacityStore)
+    expect("capacity stops the page explicitly", capacityPage.historyStatus, "capacity")
+    expect("capacity does not acknowledge an unpersisted entry", capacityPage.imported, 0)
+    expect("capacity pins the first refused commit for retry", capacityPage.nextRevision, ProjectTimelineGitImporter.read(path: repository.path, limit: 1).through)
+    expect("capacity does not delete older retained entries", ((capacityStore.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 2_000)
+    let shallowFile = repository.appendingPathComponent(".git/shallow")
+    if let tip = ProjectTimelineGitImporter.read(path: repository.path, limit: 1).through {
+        try? Data((tip + "\n").utf8).write(to: shallowFile)
+    }
+    let shallowStore = ProjectTimelineStore(url: d.root.appendingPathComponent("shallow-history.json"))
+    let shallowPage = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "project-history", store: shallowStore)
+    expect("a shallow root never claims complete older coverage", shallowPage.historyStatus, "shallow")
+    try? FileManager.default.removeItem(at: shallowFile)
+
+    // F1: pause precisely between resolving HEAD and reading the log.
+    let headA = ProjectTimelineGitImporter.read(path: repository.path, limit: 1).through ?? ""
+    check("race fixture creates independent branch", timelineGit(repository, ["checkout", "--orphan", "race-b"]))
+    check("race fixture commits independent chain", timelineGit(repository, ["commit", "--allow-empty", "-q", "-m", "Independent B"]))
+    let headB = ProjectTimelineGitImporter.read(path: repository.path, limit: 1).through ?? ""
+    check("race fixture returns to A", timelineGit(repository, ["checkout", "--detach", headA]))
+    let raceStore = ProjectTimelineStore(url: d.root.appendingPathComponent("head-race.json"))
+    let raced = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "race-project", store: raceStore,
+        afterResolvingHeadForTesting: { _ = timelineGit(repository, ["checkout", "--detach", headB]) })
+    _ = raceStore.recordCheckpoint(raced)
+    expect("HEAD race imports the resolved A page, not short B", raced.imported, 40)
+    expect("HEAD race cannot mark incomplete A complete", raced.historyStatus, "pending")
+    expect("HEAD race checkpoint names the scanned anchor", raced.headRevision, headA)
+    check("race fixture restores A for resume", timelineGit(repository, ["checkout", "--detach", headA]))
+    let racedResume = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "race-project", store: raceStore)
+    expect("return to A cannot conceal unimported A commits", racedResume.imported, 4)
+
+    // F2/F4 use the exact startup/Integration path with private repositories only.
+    let nested = repository.appendingPathComponent("nested/deeper")
+    try? FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+    let duplicateStore = ProjectTimelineStore(url: d.root.appendingPathComponent("duplicate-starts.json"))
+    ProjectTimelineIntegration.configureStoreForTesting(duplicateStore)
+    let slots = ProjectTimelineIntegration.startupForTesting([repository.path, nested.path, repository.path])
+    expect("canonical duplicate Start Points share one scheduler slot", slots.count, 1)
+    expect("canonical duplicate Start Points import one startup page", ((duplicateStore.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 40)
+    let beforeRead = duplicateStore.readHeader().revision
+    _ = ProjectTimelineIntegration.read(.init(project: nil, entry: nil, cursor: 0, environment: "all", category: nil, includeUpcoming: true))
+    ProjectTimelineIntegration.drainObservationsForTesting()
+    expect("GET does not start another import", duplicateStore.readHeader().revision, beforeRead)
+    let secondRepository = d.root.appendingPathComponent("second-history")
+    try? FileManager.default.createDirectory(at: secondRepository, withIntermediateDirectories: true)
+    check("distinct repository fixture initializes", timelineGit(secondRepository, ["init", "-q"]))
+    check("distinct repository fixture commits", timelineGit(secondRepository, ["commit", "--allow-empty", "-q", "-m", "Second repository"]))
+    let separateStore = ProjectTimelineStore(url: d.root.appendingPathComponent("separate-starts.json"))
+    ProjectTimelineIntegration.configureStoreForTesting(separateStore)
+    expect("distinct repositories retain independent scheduler slots", ProjectTimelineIntegration.startupForTesting([repository.path, nested.path, secondRepository.path]).count, 2)
+    expect("distinct repositories each retain their bounded startup page", ((separateStore.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 41)
+    _ = separateStore.command(["operation": "set_enabled", "requestId": "startup-off", "expectedRevision": separateStore.readHeader().revision, "enabled": false], actor: "machine", trusted: true)
+    _ = ProjectTimelineIntegration.startupForTesting([repository.path, secondRepository.path])
+    expect("OFF prevents background startup ingestion", ((separateStore.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 41)
+
+    // F3: one covered Project never establishes the global Project domain.
+    let aggregateCache = ProjectTimelineReadCache(execute: { $0() })
+    aggregateCache.seed(.init(revision: 1, observedAt: 1, envelope: ["timeline": [
+        "entries": [["id": "other", "projectId": "uncheckpointed"]],
+        "checkpoints": [["projectId": "covered", "historyStatus": "complete"]]]]))
+    func aggregateCoverage(_ project: String?) -> String? {
+        let answer = aggregateCache.read(.init(project: project, entry: nil, cursor: 0, environment: "all", category: nil, includeUpcoming: true), header: .init(enabled: true, revision: 1), loading: [:]) { .failure(.init(code: "unused", message: "unused")) }
+        return ((answer["timeline"] as? [String: Any])?["coverage"] as? [String: Any])?["status"] as? String
+    }
+    check("aggregate checkpoint subset never claims complete", aggregateCoverage(nil) != "complete")
+    expect("known covered Project keeps complete coverage", aggregateCoverage("covered"), "complete")
+    expect("known uncheckpointed Project keeps unknown coverage", aggregateCoverage("uncheckpointed"), "unknown")
+
+    // F4: actual persistence refusal after a prefix, then restart at the durable cursor.
+    var prefixWrites = 0
+    let prefixFile = d.root.appendingPathComponent("prefix-failure.json")
+    let prefixStore = ProjectTimelineStore(url: prefixFile, persistFault: { prefixWrites += 1; return prefixWrites == 2 })
+    let prefix = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "prefix", store: prefixStore)
+    expect("entry write failure preserves exactly the successful prefix", prefix.imported, 1)
+    expect("entry write failure is not capacity or success", prefix.historyStatus, "unavailable")
+    expect("entry write failure preserves its failed commit for retry", prefix.nextRevision, ProjectTimelineGitImporter.read(path: repository.path).commits[1].sha)
+    _ = prefixStore.recordCheckpoint(prefix)
+    let prefixReopen = ProjectTimelineStore(url: prefixFile)
+    expect("restart reads only a durable prefix cursor", prefixReopen.historyCheckpoint(projectID: "prefix")?.throughRevision, prefix.throughRevision)
+    _ = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: "prefix", store: prefixReopen)
+    expect("retry neither loses nor duplicates the persisted prefix", ((prefixReopen.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 41)
+    var checkpointWrites = 0
+    let checkpointFile = d.root.appendingPathComponent("checkpoint-failure.json")
+    let checkpointStore = ProjectTimelineStore(url: checkpointFile, persistFault: { checkpointWrites += 1; return checkpointWrites == 41 })
+    ProjectTimelineIntegration.configureStoreForTesting(checkpointStore)
+    _ = ProjectTimelineIntegration.startupForTesting([repository.path])
+    let canonicalHistoryProject = ProjectBoardIntegration.projectID(slots[0])
+    expect("failed checkpoint cannot become a durable acknowledgment", checkpointStore.historyCheckpoint(projectID: canonicalHistoryProject), nil)
+    let checkpointRead = ProjectTimelineIntegration.read(.init(project: canonicalHistoryProject, entry: nil, cursor: 0, environment: "all", category: nil, includeUpcoming: true))["timeline"] as? [String: Any]
+    expect("real Integration exposes failed checkpoint persistence", (checkpointRead?["historySourceIssues"] as? [[String: Any]])?.first?["code"] as? String, "timeline_store_write_failed")
+    let checkpointReopen = ProjectTimelineStore(url: checkpointFile)
+    expect("checkpoint-write failure still retains persisted entries", ((checkpointReopen.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 40)
+    let checkpointRetry = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: canonicalHistoryProject, store: checkpointReopen)
+    _ = checkpointReopen.recordCheckpoint(checkpointRetry)
+    expect("checkpoint retry replays the exact forty without duplication", ((checkpointReopen.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 40)
+    _ = ProjectTimelineGitImporter.importHistory(path: repository.path, projectID: canonicalHistoryProject, store: checkpointReopen)
+    expect("checkpoint retry can resume every older commit", ((checkpointReopen.materializedEnvelope()["timeline"] as? [String: Any])?["entries"] as? [[String: Any]])?.count, 44)
 }
 }

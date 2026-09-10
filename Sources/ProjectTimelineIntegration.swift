@@ -8,6 +8,9 @@ enum ProjectTimelineIntegration {
     private static var prepared = false
     private static var storeForTesting: ProjectTimelineStore?
     private static var presentations: [String: ProjectBoardIntegration.ProjectPresentation] = [:]
+    private static var generation: UInt64 = 0
+    private static var checkpointFailures: [String: String] = [:]
+    private static let checkpointFailuresLock = NSLock()
 
     static func prepare() {
         queue.async {
@@ -17,15 +20,58 @@ enum ProjectTimelineIntegration {
             let places = StartPoints.places(limit: ProjectTimelineGitImporter.maximumRepositories)
             presentations = ProjectBoardIntegration.projectPresentations(places)
             reads.seed(model(store))
-            guard store.enabled else { return }
-            for place in places {
-                guard let canonical = UsageLedger.canonicalProjectKey(projectDir: place.path) else { continue }
-                let checkpoint = ProjectTimelineGitImporter.importHistory(
-                    path: canonical, projectID: ProjectBoardIntegration.projectID(canonical), store: store)
-                _ = store.recordCheckpoint(checkpoint)
-            }
+            let paths = importStartup(places.map(\.path), store: store)
             refresh(store)
+            scheduleBackfill(paths, index: 0, owned: generation)
         }
+    }
+
+    private static func importStartup(_ rawPaths: [String], store: ProjectTimelineStore) -> [String] {
+        var seen = Set<String>()
+        let paths = rawPaths.compactMap { UsageLedger.canonicalProjectKey(projectDir: $0) }
+            .filter { seen.insert($0).inserted }.prefix(ProjectTimelineGitImporter.maximumRepositories)
+        for path in paths {
+            guard store.enabled else { break }
+            importPage(path, store: store)
+        }
+        return Array(paths)
+    }
+
+    static func startupForTesting(_ paths: [String]) -> [String] {
+        queue.sync {
+            guard let store = storeForTesting else { return [] }
+            let slots = importStartup(paths, store: store)
+            refresh(store)
+            return slots
+        }
+    }
+
+    // One repository / forty commits per minute; no GET, refresh button or filter starts Git.
+    private static func scheduleBackfill(_ paths: [String], index: Int, owned: UInt64) {
+        guard !paths.isEmpty else { return }
+        queue.asyncAfter(deadline: .now() + 60) {
+            guard generation == owned else { return }
+            let store = storeForTesting ?? .shared
+            if store.enabled {
+                let path = paths[index % paths.count]
+                let project = ProjectBoardIntegration.projectID(path)
+                if store.historyCheckpoint(projectID: project)?.historyStatus != "capacity" {
+                    importPage(path, store: store)
+                    refresh(store)
+                }
+            }
+            scheduleBackfill(paths, index: (index + 1) % paths.count, owned: owned)
+        }
+    }
+
+    private static func importPage(_ path: String, store: ProjectTimelineStore) {
+        let project = ProjectBoardIntegration.projectID(path)
+        let checkpoint = ProjectTimelineGitImporter.importHistory(path: path, projectID: project, store: store)
+        let result = store.recordCheckpoint(checkpoint)
+        checkpointFailuresLock.lock()
+        if result.persisted && ["accepted", "unchanged"].contains(result.status) { checkpointFailures.removeValue(forKey: project) }
+        else { checkpointFailures[project] = result.reason ?? "git_checkpoint_not_persisted" }
+        checkpointFailuresLock.unlock()
     }
 
     /// Existing broker landing producer. A verified target landing creates only `landed_to_git`.
@@ -87,6 +133,8 @@ enum ProjectTimelineIntegration {
     static func configureStoreForTesting(_ store: ProjectTimelineStore?) {
         queue.sync {
             storeForTesting = store
+            generation &+= 1
+            checkpointFailuresLock.lock(); checkpointFailures = [:]; checkpointFailuresLock.unlock()
             prepared = false
             presentations = [:]
             reads = store == nil ? ProjectTimelineReadCache()
@@ -106,6 +154,9 @@ enum ProjectTimelineIntegration {
         var envelope = store.materializedEnvelope()
         if var timeline = envelope["timeline"] as? [String: Any] {
             timeline["projects"] = presentations.mapValues(\.jsonObject)
+            checkpointFailuresLock.lock()
+            timeline["historySourceIssues"] = checkpointFailures.map { ["projectId": $0.key, "code": $0.value] }
+            checkpointFailuresLock.unlock()
             envelope["timeline"] = timeline
         }
         let timeline = envelope["timeline"] as? [String: Any]

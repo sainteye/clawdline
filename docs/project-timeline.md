@@ -60,14 +60,41 @@ The initial automatic sources are deliberately conservative:
 
 1. Broker-verified target-branch landing creates `landed_to_git` and retains its
    stable Board item relation. It does not create a deployment receipt.
-2. Startup imports read-only first-parent Git history for at most eight Start Points,
-   with at most forty commits per repository. Re-reading an existing identical commit
+2. Startup imports one read-only first-parent Git page for at most eight Start Points,
+   with at most forty commits per canonical repository (nested or linked-worktree
+   Start Points share one slot). A low-priority round-robin worker then
+   resumes one repository per minute, at most forty commits plus one look-ahead commit
+   per page. It never fetches Git remotes. Re-reading an existing identical commit
    counts as covered, not as an omission. GitHub remotes are normalized to
    `github:owner/repo`; other remotes keep local history without invented URLs.
 
 Deployment and availability evidence must be supplied by a trusted local producer.
 Automatic GitStory integration is deferred until its API, owner, authorization and
 retention contract are defined. No private Git data is sent to an external AI service.
+
+### Older history and coverage
+
+Project-scoped checkpoints pin the repository identity, observed head, last covered
+revision and next unprocessed revision. Each scan resolves a full commit SHA once and
+passes that exact SHA to Git; a concurrent checkout cannot substitute another chain.
+Entry persistence precedes checkpoint persistence:
+an interruption can replay an identical entry but cannot skip it. The first rejected entry
+stops a page; capacity never evicts retained history. A missing object, changed repository
+identity, malformed read or failed checkpoint write is a named gap, not an empty success.
+Legacy checkpoints without Project/cursor metadata start a bounded scan using the existing
+idempotent entry identities. A completed scan can observe a newer HEAD on a later round;
+an unfinished scan stays on its pinned older chain. Shallow clones explicitly retain unknown
+older coverage. Git commits never establish deployment or availability.
+
+The header separates pending older history, complete observed first-parent coverage, shallow
+history, capacity and unavailable sources. Projects outside the bounded startup set show unknown
+coverage, not zero remaining commits. Storage counts/limits describe the whole Mac Timeline,
+not the number of matching cards or a count of unimported Git commits. No total Git-history count
+is inferred. An unscoped response never claims global complete coverage from only the
+checkpointed subset; per-Project complete and unknown remain distinct.
+Timeline OFF pauses background ingestion; GET, Refresh and the Git filter only
+read the materialized view and never start an import. Checkpoints survive restart. A capacity
+stop remains paused in the background; no automatic deletion or retention expansion is performed.
 
 ## API and browser contract
 

@@ -190,4 +190,29 @@ assert.equal(adapterCalls[2].at(-1), "mac-b", "Timeline to Board preserves the c
     await disabled.enter("project-one");
     assert.ok(!descendants(off["timeline-items"]).some(node => node.dataset.timelineAction === "show-git-history"), "disabled Timeline does not offer an active history action");
 }
+{
+    const nodes = timelineElements();
+    const response = snapshot(9, true);
+    response.timeline.checkpoints = [{ projectId: "project-one", historyStatus: "pending", imported: 40 }];
+    response.timeline.capacity = { entryCount: 2000, entryLimit: 2000, eventCount: 2000, eventLimit: 20000 };
+    const page = bindTimelinePage(nodes, { read: async () => response, command() { throw Error("read must not import"); }, openBoard() {} });
+    await page.enter("project-one");
+    assert.match(nodes["timeline-status"].textContent, /較早|較舊/, "coverage names remaining older history");
+    assert.match(nodes["timeline-status"].textContent, /2,000|2000/, "capacity remains visible even in an empty production filter");
+    response.timeline.checkpoints[0].historyStatus = "capacity";
+    await page.refresh();
+    assert.match(nodes["timeline-status"].textContent, /容量限制暫停/, "capacity stop is not successful completion");
+    response.timeline.checkpoints[0].historyStatus = "unavailable";
+    await page.refresh();
+    assert.match(nodes["timeline-status"].textContent, /失敗/, "read failure is explicit");
+    response.timeline.checkpoints[0].historyStatus = "shallow";
+    await page.refresh();
+    assert.match(nodes["timeline-status"].textContent, /淺層/, "shallow history never claims repository completeness");
+    response.timeline.checkpoints[0].projectId = "foreign-project";
+    await page.refresh();
+    assert.match(nodes["timeline-status"].textContent, /尚未確認/, "other Project coverage is not borrowed");
+    response.timeline.historySourceIssues = [{ projectId: "project-one", code: "timeline_store_write_failed" }];
+    await page.refresh();
+    assert.match(nodes["timeline-status"].textContent, /游標未成功保存/, "checkpoint persistence failure remains visible");
+}
 console.log("web timeline correction checks passed");
