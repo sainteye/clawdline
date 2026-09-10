@@ -24,6 +24,16 @@ jobs:
       - run: swift --version
       - run: ./test.sh
 
+  ubuntu-core-probe:
+    name: Ubuntu 24.04 amd64 Core probe
+    runs-on: ubuntu-24.04
+    container:
+      image: swift:6.1.3-noble@sha256:1d10836ca929943d70b2254e555b17247b132f6eed984654351cb6a8cc531613
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run the listed Core boundary
+        run: ./tools/ubuntu-core-probe.sh
+
   build:
     name: App builds
     runs-on: macos-14
