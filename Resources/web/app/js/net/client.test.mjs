@@ -1076,6 +1076,24 @@ await readingCloud.messageChain;
 assert.equal((await readingCloud.sessions()).sessions.some(function (row) {
     return row.identity.machine === "mac-01" && row.identity.session === "session-01";
 }), false, "a retained Session row older than transcript not_found cannot resurrect it");
+// The inverse reorder is possible for the same reason: a retained answer can trail a newer row
+// on another channel. It still settles the read, but cannot prune what its own sequence predates.
+const renewedSessionEnvelope = await sealEnvelope({
+    ch: "s/mac-01/session-renewed", seq: 4102, ts: 1787817600000, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ id: "session-renewed", label: "new process" }), masterKey, signingKey);
+const staleNotFoundEnvelope = await sealEnvelope({
+    ch: "t/mac-01/session-renewed", seq: 4101, ts: 1787817600000, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ read: "transcript", status: 404,
+    error: { code: "not_found", message: "Old process was gone" } }), masterKey, signingKey);
+readingSocket.receive({ type: "envelope", realign: true, envelope: renewedSessionEnvelope });
+await readingCloud.messageChain;
+readingSocket.receive({ type: "envelope", realign: true, envelope: staleNotFoundEnvelope });
+await readingCloud.messageChain;
+assert.equal((await readingCloud.sessions()).sessions.some(function (row) {
+    return row.identity.machine === "mac-01" && row.identity.session === "session-renewed";
+}), true, "a retained transcript not_found older than a Session row cannot prune the new process");
 
 // The request has to be **on the wire** before the socket is stopped, and the count it waits for
 // has to be exact. Waiting for "more than before" left `_send` to throw `offline` on a socket

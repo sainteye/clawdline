@@ -767,7 +767,7 @@ private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
     RemoteServer.shared.enqueueCloudOrchestratorForTesting(
         Data(#"{"tasks":[{"id":"latest"}]}"#.utf8))
     RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions(["latest"], 4, false))
-    try await Task.sleep(nanoseconds: 30_000_000)
+    _ = await RemoteServer.shared.cloudLifecycleStateForTesting(bridge: bridgeA)
     for _ in 0..<12 {
         if transportA!.envelopes().contains(where: { $0.ch.hasSuffix("/latest") }) { break }
         let startsBeforeStep = transportA!.state().publicationStarts

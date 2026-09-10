@@ -539,22 +539,23 @@ export class CloudClient {
                 this.transcriptSnapshots.set(transcriptKey, answer.body);
             }
             if (answer.read === "transcript" && answer.error && answer.error.code === "not_found") {
-                this.sessionSnapshots.delete(transcriptKey);
                 // A retained Session channel can realign after this answer even though its
                 // snapshot predates the process lookup that returned not_found. Remember the
                 // answer's sender sequence as an identity-scoped deletion barrier so that replay
-                // cannot resurrect the exact row; a genuinely new process must arrive in a later
-                // envelope (and authoritative inventory remains free to establish that fact).
+                // cannot resurrect the exact row. The inverse reorder is equally important: an
+                // older retained answer cannot delete a Session row already seen at a later
+                // sequence. The read itself still settles below in either case.
                 var previousSessionSequence = this.sessionSequenceByKey.get(transcriptKey);
-                if (previousSessionSequence === undefined || envelope.seq > previousSessionSequence) {
+                if (previousSessionSequence === undefined || envelope.seq >= previousSessionSequence) {
+                    this.sessionSnapshots.delete(transcriptKey);
                     this.sessionSequenceByKey.set(transcriptKey, envelope.seq);
+                    var healed = this._sessionResponse(envelope.ts);
+                    if (this.handlers && this.handlers.sessions) {
+                        this.handlers.sessions(healed.sessions, healed.at, healed.scan);
+                    }
+                    this._emit({ type: "sessions", data: healed, identity: transcriptIdentity,
+                        envelope: envelope, realign: realign, selfHealed: true });
                 }
-                var healed = this._sessionResponse(envelope.ts);
-                if (this.handlers && this.handlers.sessions) {
-                    this.handlers.sessions(healed.sessions, healed.at, healed.scan);
-                }
-                this._emit({ type: "sessions", data: healed, identity: transcriptIdentity,
-                    envelope: envelope, realign: realign, selfHealed: true });
             }
             this._settleRead(readKey(transcriptIdentity, answer.read), answer.body, answer.error);
             this._emit({ type: "read", read: answer.read, data: answer.body,
