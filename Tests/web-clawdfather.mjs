@@ -482,6 +482,40 @@ for (const guide of ["../Resources/skill-guides/clawdline.md",
     assert.match(text, /docs\/orchestrator\.md/, `${guide} points at the long form`);
 }
 
+// A batch audit has two readers with different needs. The raw handoff belongs to the
+// coordinator; the Session's last visible message belongs to the person. Keep the human layer
+// explicit on every instruction surface so a technically complete inventory cannot regress into
+// a pasted wall of SHAs, paths and test receipts.
+for (const [surface, headings] of [
+    ["../Resources/skill-guides/clawdline.md",
+     [/✅ What was completed/, /🧭 What remains/, /🙋 What you need to decide/,
+      /📌 Project Board/, /🚀 Release status/, /🔒 Can this Session close/]],
+    ["../Resources/skill-guides/clawdline.zh-TW.md",
+     [/✅ 完成了什麼/, /🧭 還沒完成/, /🙋 需要你決定什麼/,
+      /📌 Project 看板/, /🚀 上線狀態/, /🔒 這個 Session 可以關閉嗎/]],
+    ["../AGENTS.md",
+     [/✅ What was completed/, /🧭 What remains/, /🙋 What you need to decide/,
+      /📌 Project Board/, /🚀 Release status/, /🔒 Can this Session close/]],
+]) {
+    const text = await readFile(new URL(surface, import.meta.url), "utf8");
+    for (const heading of headings) {
+        assert.match(text, heading, `${surface} keeps the human audit heading ${heading}`);
+    }
+    assert.match(text, /plain(?:-| )language/i,
+        `${surface} says the final Session message is written in plain language`);
+    assert.match(text, /technical (?:handoff|appendix)/i,
+        `${surface} separates coordinator evidence from the human-facing summary`);
+}
+for (const [surface, titleRule, idRule] of [
+    ["../Resources/skill-guides/clawdline.md", /Session title/, /ID[^\n]*technical appendix/i],
+    ["../Resources/skill-guides/clawdline.zh-TW.md", /Session 標題/, /ID[^\n]*技術附錄/],
+    ["../AGENTS.md", /Session title/, /ID[^\n]*technical appendix/i],
+]) {
+    const text = await readFile(new URL(surface, import.meta.url), "utf8");
+    assert.match(text, titleRule, `${surface} names Sessions for the person by title`);
+    assert.match(text, idRule, `${surface} keeps unclickable Session ids out of the human summary`);
+}
+
 // The two lines a handoff sender writes into the package, held here because the package is the only
 // carrier that reaches a receiver in a project where nothing of this project is installed. On
 // 2026-09-05 only the naming line existed: a receiver made that call on arrival and finished

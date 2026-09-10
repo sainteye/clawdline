@@ -1172,12 +1172,28 @@ ordering step is the one that is skipped, and it is the one that prevents the me
 5. **Build**, once, at the end — after the last landing, never between them. It replaces and
    restarts the user's running app, so say so before you do it and do it from HEAD, not from the
    working tree.
-6. **Resume, and ask each line for two lists.** Before anything restarts, ask every line —
-   separately — for **(a) its technical next steps** and **(b) the decisions only the user can
-   make.** Two questions, two lists, always. Asked as one they come back as one, and it is reliably
-   the user's half that is lost inside a paragraph of to-dos. Those decisions then go to the user
-   as options, one at a time, each carrying its consequence and your recommendation — the shape is
-   in [`AGENTS.md`](../../AGENTS.md#decisions-that-are-the-users-go-to-the-user-as-options).
+6. **Resume, and ask each line for an internal audit plus a human ending.** Before anything
+   restarts, ask every line separately for **(a) its technical next steps**, **(b) the decisions
+   only the user can make**, **(c) what it completed**, **(d) whether completed and remaining work
+   is registered on the Project Board**, **(e) release status**, and **(f) whether it believes it
+   can close**. The exact branch/path/test/receipt inventory is the technical handoff to
+   Clawdfather. Require a second, plain-language ending for the person; never make the person read
+   the raw audit reply. User decisions remain a separate list and then go to the user as options,
+   one at a time, each carrying its consequence and your recommendation — the shape is in
+   [`AGENTS.md`](../../AGENTS.md#decisions-that-are-the-users-go-to-the-user-as-options).
+
+   The Session's last user-facing message uses short bullets and exactly these six scan points:
+   **✅ What was completed**, **🧭 What remains**, **🙋 What you need to decide**,
+   **📌 Project Board**, **🚀 Release status**, and **🔒 Can this Session close?** `Nothing` is an
+   answer; omission is not. It distinguishes written, committed, installed on the Mac, published
+   to Cloud and verified there. It names the owner of every remaining item and says when a Board
+   row is stale. Exact SHAs, paths, commands, check counts and log locations belong in a separate
+   technical appendix only when requested or needed as a short audit receipt. Clawdfather verifies
+   and synthesizes these human endings; it does not paste the technical handoffs into its report.
+   Name every line by its **Session title**, the label the person can recognize in the UI. Put an
+   internal Session ID only in the technical appendix when correlation is necessary; an ID that is
+   not a clickable link must never be the human summary's primary name. Track clickable Session
+   references as a product follow-up rather than asking the person to search tabs by ID.
 
 Then close: only the lines that actually landed are `landed`, everything else keeps its obligation
 with a named owner, and closing your own session is the act described above under "To end one

@@ -117,6 +117,43 @@ only in a prose message—the Session list cannot derive a durable state from tr
 A user decision is neither kind of peer wait. Record it in the persistent `owed` overlay and
 follow the notification rule below before waiting.
 
+### A status audit has a technical handoff and a human ending
+
+When Clawdfather asks several Sessions what they have done, the evidence reply and the last message
+the person reads are two different products. The **technical handoff** may name paths, commits,
+trees, test receipts, broker rows and closeability versions. Keep it complete so Clawdfather can
+verify and combine the work. Do not paste that handoff back to the user as the Session's ending.
+
+Before a Session says it is ready to close, its final user-facing message summarizes its whole
+assigned line of work in plain language. Use short bullets and these headings, with Emoji as scan
+markers rather than decoration:
+
+- **✅ What was completed** — outcomes the person can recognize; mention implementation versus
+  release only when that distinction matters.
+- **🧭 What remains** — unfinished, planned, blocked, awaiting integration and awaiting release are
+  different states. Name the current owner. Write `Nothing` when there is none.
+- **🙋 What you need to decide** — decisions or physical actions only the person can supply. Write
+  `Nothing` when there is none; never hide a question in another section.
+- **📌 Project Board** — say whether the work and remaining items are registered, name the visible
+  item when useful, and call out a stale Board row instead of treating it as product truth.
+- **🚀 Release status** — say plainly whether the result is only written, committed, installed on
+  the Mac, published to Cloud, or actually checked there. Do not let `landed` read as `deployed`.
+- **🔒 Can this Session close?** — yes or no, and the one human reason. Clawdfather still verifies
+  broker closeability before closing; this sentence is not authority by itself.
+
+Put exact SHAs, paths, command lines, counts and log locations in a clearly separated technical
+appendix only when the user asked for them or when one short receipt is needed to make the claim
+auditable. The summary is written for the person, not for Clawdfather. It must be understandable
+without opening every Session, reading a screenshot of terminal output, or knowing the difference
+between a tree hash and a build stamp. Clawdfather synthesizes these human endings across Sessions;
+it does not forward the raw audit replies unchanged.
+
+Name each line by its **Session title**, because that is what the person can recognize in the UI.
+An internal terminal ID such as `%123` is not a title and is not currently a usable navigation
+link; keep the ID in the technical appendix when correlation is necessary. If the product cannot
+turn a referenced Session into a clickable jump, register that as a UI follow-up instead of making
+the person hunt through tabs by ID.
+
 ### Notify before waiting for the user
 
 When an agent can already tell that the next blocking step requires the user to return to a Mac or
