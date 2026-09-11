@@ -1,9 +1,20 @@
 import { T, fill } from "../core/i18n.js";
+import { bindWorktreeLifecycle } from "./worktrees.js";
+
+/** The local places route has an authenticated implicit machine. Attach it at the UI adapter
+    boundary so historical Session lookup uses the same strict (machine, conversation) locator
+    as Cloud, without teaching a Cloud response with a missing identity to masquerade as local. */
+export function localProjectPlaces(answer, machine) {
+    if (!answer || !Array.isArray(answer.places) || typeof machine !== "string" || !machine)
+        return answer;
+    return { ...answer, places: answer.places.map(place => place && typeof place === "object"
+        ? { ...place, machine } : place) };
+}
 
 /* ==========================================================================
    The Projects page
 
-   Two questions, one page. The first is "where could I start a session" and
+   Three questions, one page. The first is "where could I start a session" and
    it is answered by `/v1/places` — directories an assistant has actually been
    run in and that are still on the disk. The second is asked in front of one
    of them: **which of this Project's worktrees finished a Feature, and did it
@@ -11,6 +22,12 @@ import { T, fill } from "../core/i18n.js";
    `GET /v1/orchestrator/usage/project-worktrees`, and the reason it is not
    `git worktree list` is that this Mac carries 58 managed checkouts and the
    ledger remembers 150, most of which produced nothing anybody kept.
+
+   The third is an explicit secondary action on a Board Project: **what is the
+   lifecycle of the repository's actual worktrees now?** That answer comes from
+   the bounded ProjectWorktreeLifecycle read model. It keeps active, dirty,
+   landed, temporary and unknown evidence as separate facts. Refresh is an
+   explicit observation; the browser has no cleanup route or credential.
 
    **The screen has one subject and it is `delivered`.** Eighteen of this
    repository's hundred and eighteen Feature-carrying worktrees finished their
@@ -51,8 +68,8 @@ import { T, fill } from "../core/i18n.js";
    same grey "nothing here" for both would put that work back where it was, so
    the receipt is on screen whenever there is one and never when there is not.
 
-   This module imports nothing but the words, so `Tests/web-projects.mjs` can
-   drive the whole of it against a stand-in document. The transport arrives
+   This module imports only the words and the DOM-injected lifecycle renderer, so
+   `Tests/web-projects.mjs` can drive the whole of it against a stand-in document. The transport arrives
    through `bindProjectsPage`'s second argument, guarded by its caller: neither
    of these two reads exists on the Cloud path, so over that transport the page
    says so rather than drawing controls that cannot answer.
@@ -417,6 +434,7 @@ function renderPlaces(context, places) {
     elements["projects-status"].textContent = "";
     places.forEach(function (place) {
         var item = doc.createElement("li");
+        item.className = "project-row-wrap";
         var button = doc.createElement("button");
         button.type = "button";
         button.className = "project-row";
@@ -446,6 +464,17 @@ function renderPlaces(context, places) {
             + (activity ? ", " + activity.text : ""));
         button.addEventListener("click", function () { context.open(place); });
         item.appendChild(button);
+        if (place.boardProjectId && context.lifecycleAvailable()) {
+            var worktrees = doc.createElement("button");
+            worktrees.type = "button";
+            worktrees.className = "project-row-worktrees";
+            worktrees.textContent = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "")
+                ? "工作樹" : "Worktrees";
+            worktrees.setAttribute("aria-label", (worktrees.textContent + ": "
+                + (place.label || place.path)));
+            worktrees.addEventListener("click", function () { context.openLifecycle(place); });
+            item.appendChild(worktrees);
+        }
         rows.appendChild(item);
     });
 }
@@ -521,14 +550,31 @@ export function bindProjectsPage(elements, environment) {
         document: doc, elements: elements, state: state,
         drawIcon: environment.drawIcon || function () { return false; },
         tint: environment.tint || function () { return ""; },
-        open: function (place) { openProject(place); }
+        open: function (place) { openProject(place); },
+        openLifecycle: function (place) { openLifecycle(place); },
+        lifecycleAvailable: function () {
+            return typeof environment.lifecycleAvailable === "function"
+                ? environment.lifecycleAvailable() : false;
+        }
     };
-    /* Both reads are absent on the Cloud path — see the note at the top of this file and the
-       Cloud section of `docs/api.md`. They arrive as functions or as nothing at all, and nothing
-       at all is a sentence rather than a button that fails when pressed. */
+    /* The legacy places/delivery join and the lifecycle model are separate reads. The lifecycle
+       read is available locally and through Cloud's closed machine vocabulary; neither exposes
+       cleanup. Availability is asked when the row is drawn because Cloud boots in two phases. */
     var readPlaces = typeof environment.places === "function" ? environment.places : null;
     var readWorktrees = typeof environment.projectWorktrees === "function"
         ? environment.projectWorktrees : null;
+    var lifecycle = bindWorktreeLifecycle({
+        "project-worktree-lifecycle": elements["project-worktree-lifecycle"],
+        "project-worktree-status": elements["project-worktree-status"],
+        "project-worktree-summary": elements["project-worktree-summary"],
+        "project-worktree-rows": elements["project-worktree-rows"],
+        "project-worktree-refresh": elements["project-worktree-refresh"]
+    }, {
+        document: doc,
+        read: environment.projectWorktreeLifecycle,
+        refresh: environment.projectWorktreeLifecycleRefresh,
+        openOwner: environment.openWorktreeOwner
+    });
     /* **Whether this transport carries them is asked when the page is used, not when it is
        bound.** `net/api.js` holds a live binding that the entry point fills in, and on the Cloud
        path it fills it in twice — once with an idle client and again when the relay handshake
@@ -622,6 +668,7 @@ export function bindProjectsPage(elements, environment) {
      * from another Project is worse than no receipt at all.
      */
     function openProject(place) {
+        lifecycle.leave();
         if (place.boardProjectId && environment.openBoard) {
             stopCatalogTimer();
             environment.openBoard(place);
@@ -653,18 +700,34 @@ export function bindProjectsPage(elements, environment) {
         });
     }
 
+    /** The lifecycle view is an explicit secondary action; the row's primary Board action stays. */
+    function openLifecycle(place) {
+        stopCatalogTimer();
+        state.place = place;
+        showView("detail");
+        elements["project-name"].textContent = place.label || place.path;
+        elements["project-path"].textContent = place.path || "";
+        var mark = elements["project-mark"];
+        mark.className = "project-mark" + (context.drawIcon(mark, place.icon, 5) ? "" : " none");
+        clearAnswer(context);
+        elements["project-status"].textContent = "";
+        return lifecycle.enter(place);
+    }
+
     /** Arriving. The list, every time — the detail is a view rather than an address. */
     function enter() {
         active = true;
+        lifecycle.leave();
         showView("list");
         state.place = null;
         return loadPlaces();
     }
 
     /** Nothing to put back: the page that follows draws itself. Kept as the seam a page has. */
-    function leave() { active = false; ++state.loading; stopCatalogTimer(); }
+    function leave() { active = false; ++state.loading; stopCatalogTimer(); lifecycle.leave(); }
 
     function backToList() {
+        lifecycle.leave();
         showView("list");
         state.place = null;
         // The keyboard goes back to the heading of the list it has returned to, not to a control
@@ -688,5 +751,6 @@ export function bindProjectsPage(elements, environment) {
 
     showView("list");
     return { enter: enter, leave: leave, loadPlaces: loadPlaces, openProject: openProject,
+             openLifecycle: openLifecycle,
              escape: Projects.escape, state: state };
 }

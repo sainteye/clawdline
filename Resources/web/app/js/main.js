@@ -40,7 +40,8 @@ import "./view/derive.js";
 import { render, renderConn } from "./view/list.js";
 import { renderTranscript } from "./view/transcript.js";
 import "./view/terminal.js";
-import { bindProjectsPage, readProjectPlaces } from "./view/projects.js";
+import { bindProjectsPage, localProjectPlaces, readProjectPlaces } from "./view/projects.js";
+import { LOCAL_MACHINE } from "./net/client.js";
 import { bindLedgerPage } from "./view/ledger.js";
 import { bindBoardPage, enterProjectBoard } from "./view/board.js";
 import { bindSessionBoard, SessionBoard } from "./input/session-board.js";
@@ -325,11 +326,10 @@ byId("session-documents").addEventListener("click", function () {
 // `usage-open` is not in this table any more. It is the drawer's Usage row now, and reaching the
 // page is the drawer's business; the portfolio module stopped having an opinion about how somebody
 // got to it. The id stays on that row — `usage.css` styles it and the Usage guard looks for it.
-/* The Projects page. Two reads, and both of them are absent on the Cloud path — `/v1/places`
-   already was, and the worktree join is deliberately not in the paired viewer's read vocabulary
-   because its subject is a Project and every read there carries a session. So the transport is
-   handed over as thunks and a `carries` question, all three asked when the page is used: `api` is
-   a live binding the entry point fills in, and on the Cloud path it is filled in twice. */
+/* The Projects page. Its legacy directory/delivery join remains separate from the new bounded
+   lifecycle snapshot. Cloud carries lifecycle read+refresh on its authenticated machine channel;
+   no browser transport carries cleanup. Every capability is asked when the page is used because
+   `api` is a live binding filled twice while Cloud starts. */
 var projects = bindProjectsPage({
     "projects": byId("projects"),
     "projects-list-view": byId("projects-list-view"),
@@ -351,7 +351,12 @@ var projects = bindProjectsPage({
     "project-unattributed": byId("project-unattributed"),
     "project-unattributed-title": byId("project-unattributed-title"),
     "project-unattributed-say": byId("project-unattributed-say"),
-    "project-read": byId("project-read")
+    "project-read": byId("project-read"),
+    "project-worktree-lifecycle": byId("project-worktree-lifecycle"),
+    "project-worktree-status": byId("project-worktree-status"),
+    "project-worktree-summary": byId("project-worktree-summary"),
+    "project-worktree-rows": byId("project-worktree-rows"),
+    "project-worktree-refresh": byId("project-worktree-refresh")
 }, {
     carries: function () {
         return typeof api.board === "function" || typeof api.places === "function" && typeof api.projectWorktrees === "function";
@@ -361,6 +366,21 @@ var projects = bindProjectsPage({
     },
     openBoard: function (place) { BoardControls.open(place.boardProjectId, null, place); },
     projectWorktrees: function (place) { return api.projectWorktrees(place); },
+    lifecycleAvailable: function () {
+        return typeof api.projectWorktreeLifecycle === "function"
+            && typeof api.projectWorktreeLifecycleRefresh === "function";
+    },
+    projectWorktreeLifecycle: function (place) {
+        return api.projectWorktreeLifecycle(place.boardProjectId || place.id);
+    },
+    projectWorktreeLifecycleRefresh: function (place) {
+        return api.projectWorktreeLifecycleRefresh(place.boardProjectId || place.id);
+    },
+    openWorktreeOwner: function (locator, place) {
+        return boardSession.open(locator.session, {
+            id: place.boardProjectId || place.id, displayPath: place.path
+        }, locator.machine);
+    },
     // The same seam the Feature table uses, and for the same reason: `view/projects.js` imports
     // nothing but the words, because `core/pixels.js` reaches `window` while it is being
     // evaluated and this module is exercised whole in Node by Tests/web-projects.mjs.
@@ -400,7 +420,10 @@ var boardSession = bindBoardSession(document, {
         const answer = await api.board(id, null, null, machine);
         return answer?.board?.projects?.find(project => project.id === id) || null;
     },
-    places: function () { return api.places(); },
+    places: async function () {
+        const answer = await api.places();
+        return api === Live ? localProjectPlaces(answer, LOCAL_MACHINE) : answer;
+    },
     history: function (place, assistant) { return api.pastSessions(place, assistant); },
     resume: function (place, conversation, assistant, requestId) { return api.resumePlace(place, conversation, assistant, requestId); },
     openLive: openSession,

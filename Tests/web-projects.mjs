@@ -278,6 +278,15 @@ function harness(options = {}) {
     if (options.worktrees !== null) {
         environment.projectWorktrees = (path) => { asked.push(path); return options.worktrees(path); };
     }
+    if (options.lifecycleAvailable) environment.lifecycleAvailable = options.lifecycleAvailable;
+    if (options.lifecycle) environment.projectWorktreeLifecycle = (place) => {
+        asked.push("lifecycle:" + (place.boardProjectId || place.id)); return options.lifecycle(place);
+    };
+    if (options.lifecycleRefresh) environment.projectWorktreeLifecycleRefresh = (place) => {
+        asked.push("refresh:" + (place.boardProjectId || place.id)); return options.lifecycleRefresh(place);
+    };
+    if (options.openBoard) environment.openBoard = options.openBoard;
+    if (options.openWorktreeOwner) environment.openWorktreeOwner = options.openWorktreeOwner;
     const page = module.bindProjectsPage(elements, environment);
     return { doc, elements, page, asked, navigated };
 }
@@ -873,6 +882,8 @@ check(/id="nav-projects"[^>]*data-page-to="projects"/.test(page),
       "the drawer names it, with the same attribute every other row uses");
 check(/id="projects"[\s\S]{0,200}?data-page-view="projects"/.test(page),
       "and the document carries the section the router shows");
+check(/id="project-worktree-lifecycle"[\s\S]{0,900}?Read-only overview/.test(page),
+      "the lifecycle view states its browser read-only boundary once in static markup");
 check(/hidden/.test(/<section class="page projects"[^>]*>/.exec(page)?.[0] || ""),
       "which comes up hidden, because the document is not the router");
 check(/enter:\s*function\s*\(\)\s*\{\s*projects\.enter\(\)/.test(mainSource),
@@ -887,8 +898,8 @@ for (const [id, key] of [["nav-projects", "webProjects"], ["projects-title", "we
 }
 
 const imports = [...moduleSource.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
-equal(imports.join(","), "../core/i18n.js",
-      "view/projects.js imports the words and nothing else, so Node can drive the whole of it");
+equal(imports.join(","), "../core/i18n.js,./worktrees.js",
+      "view/projects.js imports only words and the DOM-injected lifecycle renderer, so Node can drive it");
 check(!/document\.getElementById/.test(moduleSource),
       "and reaches for no element of its own: the table arrives from main.js");
 /* Where the words come from. `tools/check-web-strings.py` holds `T.<name>` against the fallback
@@ -920,8 +931,11 @@ for (const key of readsHere) {
 
 const linked = [...page.matchAll(/href="\/app\/css\/([^"]+)"/g)].map((m) => m[1]);
 check(linked.includes("projects.css"), "the page's stylesheet is linked");
+check(linked.includes("worktrees.css"), "the worktree lifecycle stylesheet is linked");
 check(linked.indexOf("pages.css") < linked.indexOf("projects.css"),
       "after pages.css, which owns the frame this page sits in");
+check(linked.indexOf("projects.css") < linked.indexOf("worktrees.css"),
+      "worktree lifecycle styles extend the Project page after its base styles");
 
 const liveSource = read("Resources/web/app/js/net/live.js");
 check(liveSource.includes("/v1/orchestrator/usage/project-worktrees?project="),
@@ -929,6 +943,13 @@ check(liveSource.includes("/v1/orchestrator/usage/project-worktrees?project="),
 const cloudSource = read("Resources/web/app/js/net/cloud-client.js");
 check(/projectWorktrees\(project\)/.test(cloudSource),
       "and the Cloud transport asks the owning Mac on its reserved machine answer channel");
+check(/api\.projectWorktreeLifecycle\(place\.boardProjectId \|\| place\.id\)/.test(mainSource),
+      "the Project page consumes the new lifecycle read without repurposing the legacy join");
+check(/api\.projectWorktreeLifecycleRefresh\(place\.boardProjectId \|\| place\.id\)/.test(mainSource),
+      "refresh is a separate explicit observation read");
+check(!read("Resources/web/app/js/view/worktrees.js").includes("cleanup/preview")
+      && !read("Resources/web/app/js/view/worktrees.js").includes("cleanup/apply"),
+      "the browser renderer contains no cleanup route or hidden privileged fallback");
 check(/typeof api\.projectWorktrees === "function"/.test(mainSource),
       "so the page asks before it draws, rather than offering a control that fails when pressed");
 check(read("Resources/web/app/js/net/mock.js").includes("projectWorktrees:"),
@@ -1027,6 +1048,235 @@ if (placesBody) {
         "re-entering cannot click stale rows from the previous workflow mode");
     release({ places: [] }); await next;
     h.page.leave();
+}
+
+/* ==========================================================================
+   The Project worktree lifecycle read model
+   ========================================================================== */
+
+{
+    let lifecycle;
+    try {
+        lifecycle = await import(pathToFileURL(join(root,
+            "Resources/web/app/js/view/worktrees.js")).href);
+    } catch (_) {
+        check(false, "the worktree lifecycle presentation module is available");
+    }
+    if (lifecycle) {
+        const row = {
+            worktreeId: "wt-111111111111111111111111", path: "/repo/work", branch: "feature/one",
+            base: "aaa", head: "bbb", target: "main",
+            owner: { taskId: "task-one",
+                sessionId: "11111111-1111-4111-8111-111111111111",
+                terminalId: "%123", title: "Finish the Board",
+                evidence: "exact_task_worktree_record" },
+            active: true, status: { complete: true, staged: 0, modified: 2, untracked: 1 },
+            classifications: ["active_in_use", "genuinely_unlanded"],
+            localObservation: { state: "current", observedAt: "2026-09-11T12:00:00Z",
+                head: "bbb", error: null },
+            canonicalTargetObservation: { state: "stale", observedAt: "2026-09-11T11:00:00Z",
+                ref: "refs/heads/main", oid: "ccc", error: null },
+            cleanup: { eligible: false,
+                blockers: [{ code: "active_worktree", message: "Session is active." }],
+                nextOwner: "Finish the Board" }
+        };
+        const view = lifecycle.worktreeRowPresentation(row, {
+            machine: "authenticated-mac-one", local: false, language: "en"
+        });
+        equal(view.classifications.length, 2, "overlapping lifecycle facts are preserved");
+        equal(view.owner, "Finish the Board", "owner title takes precedence over internal ID");
+        equal(view.ownerLocator.machine, "authenticated-mac-one",
+            "owner locator uses authenticated transport context, not snapshot data");
+        equal(view.ownerLocator.session, "11111111-1111-4111-8111-111111111111",
+            "owner locator uses the process-bound conversation UUID");
+        equal(view.counts.staged, "0", "observed zero remains a genuine zero");
+        equal(view.counts.modified, "2", "modified count is not combined with staged");
+        equal(view.counts.untracked, "1", "untracked count stays independent");
+        equal(view.canClean, false, "browser never converts eligible into cleanup authority");
+        check(view.active, "active is an independent fact");
+
+        const unknown = lifecycle.worktreeRowPresentation({ ...row, active: null,
+            status: { complete: false, staged: null, modified: -1, untracked: "0" },
+            classifications: ["future_classification"], localObservation: {
+                state: "failed", observedAt: null, head: null,
+                error: { code: "git_failed", message: "Git did not answer" }
+            } }, { machine: "authenticated-mac-one", local: false, language: "en" });
+        equal(unknown.counts.staged, "—", "missing count is not zero");
+        equal(unknown.counts.modified, "—", "invalid negative count is unknown");
+        equal(unknown.counts.untracked, "—", "string zero is not an observed count");
+        check(unknown.classifications.includes("unknown_incomplete_evidence"),
+            "new classification is explicitly unknown rather than silently dropped");
+        equal(unknown.active, null, "missing activity does not become inactive");
+        equal(lifecycle.worktreeRowPresentation({ ...row,
+            status: { complete: false, staged: 0, modified: 2, untracked: 1 }
+        }, { machine: "authenticated-mac-one", language: "en" }).counts.staged, "—",
+        "row counts stay unknown until that row's status observation is complete");
+
+        const independent = lifecycle.worktreeRowPresentation({ ...row, active: true,
+            classifications: ["landed_identical_residue"] }, {
+                machine: "authenticated-mac-one", local: false, language: "en"
+            });
+        check(independent.classifications.includes("active_in_use"),
+            "positive live evidence remains visible beside landed residue");
+        check(independent.classifications.includes("landed_identical_residue"),
+            "live evidence does not erase the backend comparison fact");
+        equal(lifecycle.worktreeRowPresentation({ ...row, owner: null }, {
+            machine: "authenticated-mac-one", local: false, language: "en"
+        }).owner, "Owner not identified", "missing owner is not inferred from branch");
+
+        const doc = new FakeDocument();
+        doc.documentElement = { lang: "en" };
+        const elements = {};
+        for (const id of ["project-worktree-lifecycle", "project-worktree-status",
+            "project-worktree-summary", "project-worktree-rows", "project-worktree-refresh"])
+            elements[id] = new FakeNode(doc, id.includes("refresh") ? "button" : "div", id);
+        elements["project-worktree-lifecycle"].appendChild(elements["project-worktree-refresh"]);
+        elements["project-worktree-lifecycle"].appendChild(elements["project-worktree-summary"]);
+        elements["project-worktree-lifecycle"].appendChild(elements["project-worktree-status"]);
+        elements["project-worktree-lifecycle"].appendChild(elements["project-worktree-rows"]);
+        const opened = [];
+        let refreshes = 0;
+        let refreshAnswer = async () => { throw Object.assign(new Error("busy"), {
+            code: "worktree_lifecycle_busy", status: 429
+        }); };
+        const snapshot = {
+            schemaVersion: 1,
+            project: { id: "project-0123456789abcdef01234567", label: "clawdline" },
+            repository: { id: "repository-sha256:one", label: "clawdline",
+                canonicalPath: "/repo" },
+            observedAt: "2026-09-11T12:00:00Z", complete: true, error: null,
+            truncated: false,
+            counts: { rows: 2, active: 1, staged: 0, modified: 2, untracked: 1, unknown: 1 },
+            rows: [row, { ...row, worktreeId: "wt-222222222222222222222222", active: null,
+                status: { complete: false, staged: null, modified: null, untracked: null },
+                owner: null, classifications: ["unknown_incomplete_evidence"],
+                localObservation: { state: "unknown", observedAt: null, head: null, error: null },
+                canonicalTargetObservation: { state: "unknown", observedAt: null,
+                    ref: null, oid: null, error: null } }]
+        };
+        const controller = lifecycle.bindWorktreeLifecycle(elements, {
+            document: doc,
+            read: async () => ({ projectWorktreeLifecycle: snapshot,
+                machine: "authenticated-mac-one" }),
+            refresh: async () => { refreshes++; return refreshAnswer(); },
+            openOwner: (locator) => opened.push(locator)
+        });
+        await controller.enter({ id: snapshot.project.id, boardProjectId: snapshot.project.id,
+            label: "clawdline", path: "/repo" });
+        equal(elements["project-worktree-rows"].querySelectorAll(".worktree-card").length, 2,
+            "same branch and title never merge distinct worktree identities");
+        match(elements["project-worktree-status"].textContent, /Last observed/i,
+            "the successful read reports its own observation freshness");
+        equal(elements["project-worktree-lifecycle"].querySelectorAll(
+            ".worktree-cleanup-action").length, 0,
+            "no cleanup button is rendered for any paired browser");
+        match(elements["project-worktree-lifecycle"].textContent, /Local observation/i,
+            "local observation freshness is labelled separately");
+        match(elements["project-worktree-lifecycle"].textContent, /Canonical target/i,
+            "canonical target freshness is labelled separately");
+        const ownerButtons = elements["project-worktree-lifecycle"].querySelectorAll(
+            ".worktree-owner-link");
+        equal(ownerButtons.length, 1, "only the exact owner locator becomes clickable");
+        ownerButtons[0].click();
+        equal(opened[0].machine, "authenticated-mac-one",
+            "owner click retains the authenticated machine");
+        equal(opened[0].session, row.owner.sessionId,
+            "owner click retains the conversation UUID");
+        elements["project-worktree-refresh"].click();
+        await flush();
+        equal(refreshes, 1, "refresh is one explicit observation request");
+        equal(elements["project-worktree-rows"].querySelectorAll(".worktree-card").length, 2,
+            "failed refresh retains the previous rows");
+        match(elements["project-worktree-status"].textContent, /busy|429/i,
+            "failed refresh exposes the typed refusal beside retained rows");
+
+        refreshAnswer = async () => ({ projectWorktreeLifecycle: {
+            ...snapshot, project: { id: "project-fedcba9876543210fedcba98", label: "other" }
+        }, machine: "authenticated-mac-one" });
+        elements["project-worktree-refresh"].click(); await flush();
+        equal(elements["project-worktree-rows"].querySelectorAll(".worktree-card").length, 2,
+            "a wrong-Project refresh cannot replace the last accepted observation");
+        match(elements["project-worktree-status"].textContent, /project_mismatch/i,
+            "a wrong-Project refresh is a typed refusal");
+
+        refreshAnswer = async () => ({ projectWorktreeLifecycle: {
+            ...snapshot, rows: [row, { ...row }]
+        }, machine: "authenticated-mac-one" });
+        elements["project-worktree-refresh"].click(); await flush();
+        equal(elements["project-worktree-rows"].querySelectorAll(".worktree-card").length, 2,
+            "duplicate worktree identities cannot replace the accepted rows");
+        match(elements["project-worktree-status"].textContent, /row_identity_invalid/i,
+            "duplicate worktree identities are a typed refusal");
+
+        refreshAnswer = async () => ({ projectWorktreeLifecycle: {
+            ...snapshot, rows: [{ ...row, worktreeId: [row.worktreeId] }]
+        }, machine: "authenticated-mac-one" });
+        elements["project-worktree-refresh"].click(); await flush();
+        equal(elements["project-worktree-rows"].querySelectorAll(".worktree-card").length, 2,
+            "a coercible non-string identity cannot replace the accepted rows");
+        match(elements["project-worktree-status"].textContent, /row_identity_invalid/i,
+            "non-string worktree identities are a typed refusal");
+
+        const partialElements = {};
+        for (const id of ["project-worktree-lifecycle", "project-worktree-status",
+            "project-worktree-summary", "project-worktree-rows", "project-worktree-refresh"])
+            partialElements[id] = new FakeNode(doc, id.includes("refresh") ? "button" : "div", id);
+        const partial = { ...snapshot, complete: false,
+            error: { code: "not_observed", message: "Active inventory was not observed." },
+            counts: { rows: 2, active: null, staged: 0, modified: 2, untracked: 1, unknown: 1 } };
+        const partialController = lifecycle.bindWorktreeLifecycle(partialElements, {
+            document: doc,
+            read: async () => ({ projectWorktreeLifecycle: partial,
+                machine: "authenticated-mac-one" }),
+            refresh: async () => { throw Object.assign(new Error("Refresh is busy"), {
+                code: "worktree_lifecycle_busy", status: 429
+            }); }
+        });
+        await partialController.enter({ id: snapshot.project.id, boardProjectId: snapshot.project.id,
+            label: "clawdline", path: "/repo" });
+        match(partialElements["project-worktree-summary"].textContent,
+            /2 worktrees · — active · 0 staged · 2 modified · 1 untracked · 1 unknown/,
+            "partial snapshots retain every independently known count");
+        partialElements["project-worktree-refresh"].click(); await flush();
+        match(partialElements["project-worktree-status"].textContent, /Refresh is busy.*not observed/i,
+            "latest refresh refusal remains visible beside the prior incomplete condition");
+
+        const localPlaces = module.localProjectPlaces({ places: [{ id: "local-place",
+            path: "/repo" }] }, "this-mac");
+        equal(localPlaces.places[0].machine, "this-mac",
+            "the authenticated local adapter attaches its machine to historical Project rows");
+        equal(localPlaces.places.filter(place => place.path === "/repo"
+            && place.machine === "this-mac").length, 1,
+            "a non-live local owner has one exact historical Project destination");
+        check(/api === Live \? localProjectPlaces\(answer, LOCAL_MACHINE\) : answer/.test(mainSource),
+            "only the local transport normalizes Project machine identity; Cloud stays strict");
+
+        let boardOpens = 0;
+        const placeData = { places: [{ id: snapshot.project.id,
+            boardProjectId: snapshot.project.id, label: "clawdline", path: "/repo" }] };
+        const pageHarness = harness({ ...ok, places: async () => placeData,
+            lifecycleAvailable: () => true,
+            lifecycle: async () => ({ projectWorktreeLifecycle: snapshot,
+                machine: "authenticated-mac-one" }),
+            lifecycleRefresh: async () => ({ projectWorktreeLifecycle: snapshot,
+                machine: "authenticated-mac-one" }),
+            openBoard: () => { boardOpens++; }, openWorktreeOwner: () => {} });
+        await pageHarness.page.enter();
+        equal(pageHarness.elements["projects-rows"].querySelectorAll(
+            ".project-row-worktrees").length, 1,
+            "a Board Project exposes one explicit Worktrees secondary action");
+        pageHarness.elements["projects-rows"].querySelectorAll(".project-row")[0].click();
+        equal(boardOpens, 1, "the Project row keeps its existing primary Board action");
+        pageHarness.elements["projects-rows"].querySelectorAll(
+            ".project-row-worktrees")[0].click();
+        await flush();
+        equal(pageHarness.elements["projects-detail-view"].hidden, false,
+            "the secondary action opens the Project lifecycle detail");
+        check(pageHarness.asked.includes("lifecycle:" + snapshot.project.id),
+            "the detail reads the exact Board Project id");
+        equal(pageHarness.elements["project-worktree-rows"].querySelectorAll(
+            ".worktree-card").length, 2, "the integrated Project detail renders lifecycle rows");
+    }
 }
 
 console.log(`${failed ? "not ok" : "ok"}: web projects page, ${checks} checks`);

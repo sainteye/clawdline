@@ -153,6 +153,7 @@ document.documentElement.className = "booting";
      it goes last and wins where they overlap. -->
 <link rel="stylesheet" href="/app/css/pages.css">
 <link rel="stylesheet" href="/app/css/projects.css">
+<link rel="stylesheet" href="/app/css/worktrees.css">
 <link rel="stylesheet" href="/app/css/usage.css">
 <link rel="stylesheet" href="/app/css/plan.css">
 <link rel="stylesheet" href="/app/css/ledger.css">
@@ -651,6 +652,23 @@ document.documentElement.className = "booting";
             </div>
             <p class="projects-status" id="project-status" role="status" aria-live="polite"></p>
             <p class="projects-warning" id="project-truncated" role="alert" hidden></p>
+
+            <section class="project-worktree-lifecycle" id="project-worktree-lifecycle" hidden
+                     aria-labelledby="project-worktree-title">
+                <div class="project-worktree-heading">
+                    <div>
+                        <p class="project-worktree-eyebrow">Repository lifecycle</p>
+                        <h2 id="project-worktree-title">Worktrees</h2>
+                    </div>
+                    <button id="project-worktree-refresh" type="button">Refresh observation</button>
+                </div>
+                <p class="project-worktree-boundary">Read-only overview. Refresh asks the owning Mac
+                    for one bounded observation. Cleanup is intentionally unavailable in a browser.</p>
+                <p class="project-worktree-summary" id="project-worktree-summary"></p>
+                <p class="project-worktree-status" id="project-worktree-status" role="status"
+                   aria-live="polite"></p>
+                <div class="project-worktree-rows" id="project-worktree-rows"></div>
+            </section>
 
             <!-- The one block on this page that is open by default, and the reason the page
                  exists. Thirty-eight of this repository's seventy-nine Feature-carrying
