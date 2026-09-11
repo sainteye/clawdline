@@ -398,6 +398,12 @@ back with `200`, because a session that has not spoken yet and a session that co
 different things and only the second is a `404`. A shell that is not running an assistant answers
 the same way, and so does a session whose record could not be matched to it.
 
+Since Claude Code 2.1.241 some models write the assistant's interim prose — the short lines between
+tool calls — as `thinking` content blocks rather than `text`. The route returns those as ordinary
+`role: "assistant"` entries, the same shape that prose had before. Reasoning is still omitted: a
+`thinking` block whose signature marks its kind as `thinking`, or whose text is empty, is never an
+entry.
+
 Codex file-edit entries carry a `fileChanges` array in addition to their summary `text`. Each row
 always has `path` and `kind`; `unifiedDiff`, `content`, and `movePath` are present only when Codex
 recorded them. Clients that understand the field can render an inline patch, while older clients

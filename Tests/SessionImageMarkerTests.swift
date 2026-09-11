@@ -225,6 +225,72 @@ group("an assistant turn's image markers become that entry's own attachments") {
     expect("and the other reader answers with the same number, which is what one function is for",
            codexSplit.reduce(0) { $0 + $1.artifacts.count }, cap)
 
+    // Since Claude Code 2.1.241 the prose between tool calls can arrive as a `thinking` block whose
+    // signature names its kind — see `case "thinking"` in `Transcript.entries(inRow:)`. These live
+    // here rather than beside "transcript parsing" because `Tests/TranscriptTests.swift` is at the
+    // 2,000-line suite limit. The signatures are synthetic: a byte prefix carrying the kind token,
+    // base64-encoded. Nothing below is copied from a real transcript.
+    let narrationSignature =
+        "CAQSQAoRCBEYAjgBQgluYXJyYXRpb24gISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0+P0BBQkNERUZH"
+    let reasoningSignature =
+        "CAQSQAoRCBEYAjgBQgh0aGlua2luZyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkc="
+    let unmarkedSignature =
+        "CAISgAEKpgEIERgCICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj9AQUJDREVGRw=="
+    func thinkingBlock(_ text: String, _ signature: String?) -> [String: Any] {
+        var block: [String: Any] = ["type": "thinking", "thinking": text]
+        if let signature { block["signature"] = signature }
+        return block
+    }
+    // One row per block, which is how Claude Code writes them.
+    func claudeRows(_ blocks: [[String: Any]]) -> [Transcript.Entry] {
+        let lines = blocks.compactMap { block -> String? in
+            let row: [String: Any] = ["type": "assistant",
+                                      "message": ["role": "assistant", "content": [block]]]
+            return (try? JSONSerialization.data(withJSONObject: row))
+                .flatMap { String(data: $0, encoding: .utf8) }
+        }
+        return Transcript.parse(lines.joined(separator: "\n"), assistant: .claude,
+                                imageStore: fixture.store, now: fixture.now)
+    }
+    let shell: [String: Any] = ["type": "tool_use", "name": "Bash", "input": ["command": "ls"]]
+
+    let narrated = claudeRows([thinkingBlock("A", narrationSignature), shell,
+                               thinkingBlock("B", narrationSignature), shell])
+    expect("narration between tool calls becomes prose, in the order it was written",
+           narrated.map(\.kind), [.assistant, .tool, .assistant, .tool])
+    expect("and keeps its words", narrated.map(\.text), ["A", "ls", "B", "ls"])
+    expect("a block its signature calls reasoning stays hidden, even holding words",
+           claudeRows([thinkingBlock("working it out", reasoningSignature)]).count, 0)
+    expect("an empty thinking block is nothing, whatever its signature says",
+           claudeRows([thinkingBlock("", narrationSignature),
+                       thinkingBlock(" \n\t ", narrationSignature),
+                       thinkingBlock("", unmarkedSignature),
+                       thinkingBlock("", nil)]).count, 0)
+    let unmarked = claudeRows([thinkingBlock("Checking the log next.", unmarkedSignature),
+                               thinkingBlock("Then the config.", nil),
+                               thinkingBlock("And the tests.", "not base64 at all")])
+    expect("words under a signature that names no kind are prose — every one observed was",
+           unmarked.map(\.kind), [.assistant, .assistant, .assistant])
+    expect("whether the signature is unmarked, missing or unreadable",
+           unmarked.map(\.text), ["Checking the log next.", "Then the config.", "And the tests."])
+
+    // Narration is prose all the way down, so a marker in it spends the turn's one budget.
+    let narratedTurn: [String: Any] = [
+        "type": "assistant",
+        "message": ["role": "assistant", "content": [
+            thinkingBlock("First half.\n\n" + fourMarkers, narrationSignature),
+            ["type": "text", "text": "Second half.\n\n" + fourMarkers],
+        ]],
+    ]
+    let narratedSplit = Transcript.parse(
+        (try? JSONSerialization.data(withJSONObject: narratedTurn))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "",
+        assistant: .claude, imageStore: fixture.store, now: fixture.now)
+    expect("narration and text in one turn share one turn's worth of pictures",
+           narratedSplit.reduce(0) { $0 + $1.artifacts.count }, cap)
+    expect("rather than narration bringing an allowance of its own",
+           narratedSplit.reduce(0) { $0 + $1.text.components(separatedBy: marker).count - 1 }, 2)
+
     // The person may quote the tag. A user turn is not where a marker is honoured.
     let userRow: [String: Any] = [
         "type": "user",

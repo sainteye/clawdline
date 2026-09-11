@@ -1166,6 +1166,17 @@ enum Transcript {
         // and both documents said "in one turn". The budget is what makes one function answer
         // the same way for both readers rather than only looking as though it does.
         var imagesHonoured = 0
+        // Everything the assistant says in prose comes through here, whichever block carried it,
+        // so narration written as a `thinking` block spends the same budget a `text` block does.
+        func appendAssistantProse(_ raw: String) {
+            let remaining = SessionImageArtifactStore.productionPolicy.maxImagesPerMessage
+                - imagesHonoured
+            if let entry = assistantEntry(text: raw, at: time, imageStore: imageStore,
+                                          now: now, limit: max(0, remaining)) {
+                imagesHonoured += entry.artifacts.count
+                out.append(entry)
+            }
+        }
         for block in blocks {
             switch block["type"] as? String {
             case "text":
@@ -1173,13 +1184,7 @@ enum Transcript {
                 // An assistant turn is the one place an image marker is honoured. A person may
                 // quote the tag, and a quoted tag is a quotation.
                 if type != "user" {
-                    let remaining = SessionImageArtifactStore.productionPolicy.maxImagesPerMessage
-                        - imagesHonoured
-                    if let entry = assistantEntry(text: raw, at: time, imageStore: imageStore,
-                                                  now: now, limit: max(0, remaining)) {
-                        imagesHonoured += entry.artifacts.count
-                        out.append(entry)
-                    }
+                    appendAssistantProse(raw)
                     continue
                 }
                 // A slash command is the one piece of tagged machinery somebody did type, so it
@@ -1228,11 +1233,58 @@ enum Transcript {
                 let text = firstLine(of: block["content"])
                 guard !text.isEmpty else { continue }
                 out.append(Entry(kind: .toolResult, text: text, tool: nil, time: time))
+            case "thinking":
+                // Claude Code began writing the assistant's short prose between tool calls — the
+                // `⏺` lines in a terminal — as a `thinking` block instead of `text`: Fable 5 from
+                // 2.1.241 (2026-08-24), Opus 5 from 2.1.267 (2026-09-11). Its signature carries a
+                // kind token, so there are three states, with emptiness beside them:
+                //
+                //   kind `narration`, with words                    → prose, exactly as `text`
+                //   no kind token (or no readable signature), words → prose
+                //   kind `thinking`, even with words                → nothing
+                //   empty after trimming, whatever the kind         → nothing
+                //
+                // **Empirical, not documented.** A census of ~/.claude/projects on 2026-09-11 —
+                // 3,883 transcripts modified in the last 120 days — found narration with words 688,
+                // narration empty 114, `thinking` empty 1,400 and `thinking` with words 0. That
+                // zero is why the label is trusted: nothing marked as reasoning has ever held
+                // words, so excluding it costs no prose. Unmarked with words was 210, all Fable 5 on
+                // 2.1.245–2.1.251, every one followed by a `tool_use` and every one sampled a
+                // progress note addressed to the user — narration written without the token —
+                // which is why unmarked words are shown. Unmarked and empty was about 92,000
+                // across every model: reasoning itself is stored as an empty string.
+                guard type != "user",
+                      let raw = block["thinking"] as? String,
+                      !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      thinkingSignatureKind(block["signature"]) != .thinking
+                else { continue }
+                appendAssistantProse(raw)
             default:
-                continue   // thinking blocks, images, anything added later
+                continue   // images, anything added later
             }
         }
         return out
+    }
+
+    /// What a Claude `thinking` block's signature says the block is. See `case "thinking"` above.
+    private enum ThinkingSignatureKind { case narration, thinking, unmarked }
+
+    /// The kind token out of a signature, read from its first 64 base64 characters and never from
+    /// the whole thing: a signature is kilobytes, and the token sits in roughly the first thirty
+    /// decoded bytes — `… 0x42 0x09 "narration"` or `… 0x42 0x08 "thinking"`. A byte match on that
+    /// length-prefixed token is all of it; this is not a protobuf parser. The older signature
+    /// format carries no token, and a missing or malformed signature has none to carry, so all
+    /// three answer `.unmarked` rather than an error.
+    private static func thinkingSignatureKind(_ signature: Any?) -> ThinkingSignatureKind {
+        guard let signature = signature as? String else { return .unmarked }
+        // Whole base64 quanta only: a prefix ending mid-quantum would fail to decode at all, and
+        // take the token at its front down with the partial byte at its end.
+        let head = signature.prefix(64)
+        guard let bytes = Data(base64Encoded: String(head.prefix(head.count - head.count % 4)))
+        else { return .unmarked }
+        if bytes.range(of: Data([0x42, 0x09] + Array("narration".utf8))) != nil { return .narration }
+        if bytes.range(of: Data([0x42, 0x08] + Array("thinking".utf8))) != nil { return .thinking }
+        return .unmarked
     }
 
     /// Claude Code's queued form of a message sent by another session.

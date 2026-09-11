@@ -44,7 +44,7 @@ let sampleTranscript = #"""
 {"type":"user","timestamp":"2026-08-16T04:00:07.000Z","message":{"role":"user","content":[{"type":"tool_result","content":"upload.rb:42: no retry\nupload.rb:99: none"}]}}
 {"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"subagent chatter"}]}}
 {"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"bookkeeping"}]}}
-{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"Done."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden","signature":"CAQSQAoRCBEYAjgBQgh0aGlua2luZyAhIiMkJSYnKCkqKywtLi8wMTIzNDU2Nzg5Ojs8PT4/QEFCQ0RFRkc="},{"type":"text","text":"Done."}]}}
 {"type":"user","message":{"role":"user","content":"plain string content"}}
 not json at all
 """#
@@ -147,7 +147,7 @@ group("transcript parsing") {
 
     check("sidechains are skipped", !entries.contains { $0.text == "subagent chatter" })
     check("meta records are skipped", !entries.contains { $0.text == "bookkeeping" })
-    check("thinking blocks are skipped", !entries.contains { $0.text == "hidden" })
+    check("reasoning blocks are skipped", !entries.contains { $0.text == "hidden" })
     check("a string content still parses", entries.contains { $0.text == "plain string content" })
     check("unparseable lines are ignored rather than fatal", true)
 
