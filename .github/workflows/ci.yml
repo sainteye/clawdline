@@ -46,8 +46,18 @@ jobs:
       # materialized probe. This runner is real amd64 hardware, not the QEMU emulation a Clawdline
       # dev Mac uses to reach amd64 — see tools/swift-core-application-linux-build.sh's own comment
       # for why local runs there default to -c debug -j 1.
-      - name: Compile and execute the real ClawdlineLinux product contract
-        run: SWIFT_CORE_APPLICATION_LINUX_BUILD_CONFIGURATION=release SWIFT_CORE_APPLICATION_LINUX_BUILD_JOBS=2 ./tools/swift-core-application-linux-build.sh
+      - name: Install the real PTY runtime fixture
+        run: apt-get update && apt-get install -y --no-install-recommends tmux nodejs python3
+      - name: Compile and execute the real ClawdlineLinux product contract as a non-root service identity
+        run: |
+          useradd --create-home --shell /bin/bash clawdline-ci
+          chown -R clawdline-ci:clawdline-ci "$GITHUB_WORKSPACE"
+          runuser -u clawdline-ci -- env \
+            HOME=/home/clawdline-ci \
+            GITHUB_SHA="$GITHUB_SHA" \
+            SWIFT_CORE_APPLICATION_LINUX_BUILD_CONFIGURATION=release \
+            SWIFT_CORE_APPLICATION_LINUX_BUILD_JOBS=2 \
+            bash tools/with-compile-lock.sh ./tools/swift-core-application-linux-build.sh
 
   build:
     name: App builds

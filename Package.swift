@@ -30,9 +30,9 @@ import PackageDescription
 // pinned toolchain as the W0-F probe (`tools/ubuntu-core-probe/README.md`); see
 // `tools/swift-core-application-linux-build.sh` and the `swift-core-application-linux` CI job.
 // `ClawdlineApplication` depends only on `ClawdlineCore`. `Clawdline`, the Mac composition
-// target, and `ClawdlineLinux`, the deliberately not-ready W3 daemon skeleton, each depend only
-// on `ClawdlineApplication` — real, compiler-checked edges pointing inward. W4 owns Linux host
-// adapters; the W3 executable reports those capabilities as unavailable instead of faking them.
+// target, and `ClawdlineLinux` each depend only on `ClawdlineApplication` — real,
+// compiler-checked edges pointing inward. W4-1 adds Linux host adapters and shared admission
+// policy; diagnostic health remains not ready until W4-2 supplies the long-running service gate.
 //
 // **W3-1 correction (`spec-mac-does-not-consume-application`).** The original delivery stopped
 // there: the edge existed in the manifest, but `Clawdline`'s own recursive scan of `Sources/`
@@ -58,31 +58,51 @@ import PackageDescription
 // crypto behavior. `Packages/README.md`'s correction note and
 // `artifacts/W3_1_CORRECTION.md` carry the full before/after and the verification that ran
 // against it.
-let package = Package(
-    name: "Clawdline",
-    platforms: [.macOS(.v13)],
-    products: [
-        .executable(name: "Clawdline", targets: ["Clawdline"]),
-        .executable(name: "ClawdlineLinux", targets: ["ClawdlineLinux"]),
-    ],
-    targets: [
+var products: [Product] = [
+    .executable(name: "ClawdlineLinux", targets: ["ClawdlineLinux"]),
+]
+var targets: [Target] = [
         .target(name: "ClawdlineCore", path: "Packages/ClawdlineCore"),
         .target(name: "ClawdlineApplication", dependencies: ["ClawdlineCore"], path: "Packages/ClawdlineApplication"),
+        .executableTarget(
+            name: "ClawdlineLinux",
+            dependencies: ["ClawdlineApplication"],
+            path: "Packages/ClawdlineLinux"
+        ),
+        .testTarget(
+            name: "ClawdlineLinuxTests",
+            dependencies: ["ClawdlineApplication", "ClawdlineLinux"],
+            path: "Packages/ClawdlineLinuxTests"
+        ),
+]
+
+// Linux's package test command must not discover and attempt to compile the AppKit composition.
+// On macOS the graph remains byte-for-byte the shipped executable product and source boundary.
+#if os(macOS)
+products.insert(.executable(name: "Clawdline", targets: ["Clawdline"]), at: 0)
+targets.insert(
         .executableTarget(
             name: "Clawdline",
             dependencies: ["ClawdlineApplication"],
             path: "Sources",
             exclude: [
                 "HostPorts.swift",
+                "ProjectRootPolicy.swift",
+                "ProviderLifecyclePolicy.swift",
+                "SessionLaunchPolicy.swift",
+                "TerminalCommandScheduler.swift",
                 "Assistant.swift",
                 "CloudCanonicalJSON.swift",
                 "CloudClock.swift",
             ]
         ),
-        .executableTarget(
-            name: "ClawdlineLinux",
-            dependencies: ["ClawdlineApplication"],
-            path: "Packages/ClawdlineLinux"
-        ),
-    ]
+    at: 2
+)
+#endif
+
+let package = Package(
+    name: "Clawdline",
+    platforms: [.macOS(.v13)],
+    products: products,
+    targets: targets
 )

@@ -124,9 +124,34 @@ group("a browser token is adopted before its credential leaves the address bar")
         "GET", "/v1/events", headers: ["Cookie": cookie])
     check("the event stream accepts the same cookie authentication",
           RemoteServer.shared.eventStreamRefusal(eventRequest) == nil)
+    expect("event-stream reliability admission never precedes authentication",
+           RemoteServer.shared.eventStreamRefusal(remoteRequest("GET", "/v1/events"))
+               .map(remoteErrorCode), "unauthorized")
 
-    expect("plain health remains public", RemoteServer.shared.route(
-        remoteRequest("GET", "/v1/health")).status, 200)
+    let health = RemoteServer.shared.route(remoteRequest("GET", "/v1/health"))
+    expect("plain health remains public", health.status, 200)
+    let healthObject = (try? JSONSerialization.jsonObject(with: health.body)) as? [String: Any]
+    let reliability = healthObject?["http_reliability"] as? [String: Any]
+    let limits = reliability?["limits"] as? [String: Any]
+    let metrics = reliability?["metrics"] as? [String: Any]
+    check("health publishes bounded HTTP and SSE implementation defaults",
+          limits?["connections"] as? Int == HTTPReliability.connectionLimit
+            && limits?["connection_refusals"] as? Int == HTTPReliability.connectionRefusalLimit
+            && limits?["aggregate_request_bytes"] as? Int
+                == HTTPReliability.aggregateRequestByteLimit
+            && limits?["streams"] as? Int == HTTPReliability.streamLimit
+            && limits?["deadline_tasks"] as? Int == HTTPReliability.deadlineTaskLimit
+            && limits?["approval"] as? String == "implementation_default_pending_w6")
+    check("health publishes aggregate current, peak, refusal, and eviction counters",
+          metrics?["connections"] is [String: Any]
+            && metrics?["capacity_responses"] is [String: Any]
+            && metrics?["request_bytes"] is [String: Any]
+            && metrics?["streams"] is [String: Any]
+            && metrics?["stream_bytes"] is [String: Any]
+            && metrics?["deadline_tasks"] is [String: Any]
+            && reliability?["fresh_read_waiters"] is [String: Any])
+    check("reliability health contains no per-connection identity",
+          !String(data: health.body, encoding: .utf8)!.contains("connection_id"))
 }
 
 group("the expensive remote reads take exactly one bounded side door") {

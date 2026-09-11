@@ -247,7 +247,7 @@ is talking to, and whether it is allowed in, before it can act on either.
 
 ```console
 $ curl -s http://127.0.0.1:7717/v1/health
-{"ok":true,"version":"0.5.0","build":1787096354,"instance":"9af84fc1-…","protocol":1,"write":false,"auth":false,"password":false,"authed":false}
+{"ok":true,"version":"0.5.0","build":1787096354,"instance":"9af84fc1-…","protocol":1,"write":false,"auth":false,"password":false,"authed":false,"http_reliability":{"limits":{"connections":128,"connection_refusals":16,"aggregate_request_bytes":67108864,"request_read_seconds":15,"streams":16,"stream_bytes":4194304,"aggregate_stream_bytes":16777216,"stream_write_seconds":20,"deadline_tasks":144,"approval":"implementation_default_pending_w6"},"metrics":{"connections":{"current":1,"peak":4,"refused":0},"capacity_responses":{"current":0,"peak":1,"dropped":0},"request_bytes":{"current":0,"peak":8192,"refused":0,"read_timeouts":0},"streams":{"current":0,"peak":1,"refused":0,"evicted":0},"stream_bytes":{"current":0,"peak":4096,"capacity_evictions":0,"aggregate_capacity_evictions":0,"timeout_evictions":0,"write_error_evictions":0,"snapshot_coalesces":0},"deadline_tasks":{"current":1,"peak":4,"refused":0},"unknown_identity_refusals":0},"fresh_read_waiters":{"limits":{"per_key":16,"total":256,"approval":"implementation_default_pending_w6"},"metrics":{"current":0,"peak":1,"refused":0,"cancelled":0}}}}
 ```
 
 | field | |
@@ -260,6 +260,7 @@ $ curl -s http://127.0.0.1:7717/v1/health
 | `auth` | has anybody paired a device or set a password. The local token does not count |
 | `password` | is there a password to offer at all — separate from `auth`, so a page can decide whether to draw that door rather than offering it blind and letting somebody learn from a 401 that it was never set |
 | `authed` | did *this* request carry a credential that works |
+| `http_reliability` | process-lifetime safety limits and current/peak/refusal/eviction counters for admitted HTTP connections, the separate bounded capacity-response lane, retained request bytes, SSE consumers/output bytes, the shared deadline owner, and parked same-key fresh-read replies. It contains no route, request, Session or credential identity. `implementation_default_pending_w6` means the values are explicit implementation rails, not measured workload adequacy or an approved service budget |
 
 ### `GET /v1/sessions`
 
@@ -6164,6 +6165,9 @@ it draws them, and that is a drawing decision which does not travel over the wir
 | `iterm_attention_required` | 502 | an iTerm Apple Event timed out or returned a malformed list; `app` is `iTerm2`, `action` is `answer_dialog`, and a well-formed later list response re-enables automation. The timed-out event may still execute later |
 | `internal` | 500, 502 | another internal operation failed, including a tab that would not open |
 | `no_whisper` | 503 | `/v1/voice` only: this Mac has nothing to transcribe with. `reason` is `no_binary` or `no_model` |
+| `http_connection_capacity` | 503 | the process-wide admitted HTTP connection ceiling is full. Up to 16 such sockets enter a separately accounted capacity-response lane and receive this typed response without parsing a route; further sockets are closed immediately. `limit`, `retry_after`, and `Retry-After` describe the admitted-request bound |
+| `http_request_capacity` | 503 | retaining the next received chunk would cross the aggregate request-byte ceiling. The chunk is refused before the server appends it; `current`, `limit`, `retry_after`, and `Retry-After` describe the decision |
+| `sse_capacity` | 503 | an authenticated `/v1/events` request reached the SSE connection ceiling. Authentication and origin checks happen first; `limit`, `retry_after`, and `Retry-After` describe the bound |
 
 A client that has handled one of these has handled all of them. Branch on `code` — the status is
 there for the layers between you and this, and `message` is a sentence for a person that may be
@@ -6209,6 +6213,29 @@ contains only a session id and file signature when that assistant's transcript f
 client fetches the authenticated transcript route for content, so conversation text never rides
 the event stream. Transcript events are not replayed; after reconnect, quietly refetch the
 currently open transcript once to cover bytes written while offline.
+
+The server holds at most one completion-tracked Network.framework write per SSE consumer. Pending
+full `sessions` and `orchestrator` snapshots are coalesced independently to the newest complete
+snapshot; transcript/screen events are not renamed into snapshots and no snapshot is a command or
+effect acknowledgement. A write completion error, a completion that does not arrive within 20
+seconds, or per-consumer outstanding-byte overflow evicts that consumer. Aggregate overflow evicts
+and accounts the consumer holding the largest existing outstanding debt (oldest active frame breaks
+a tie), then admits the healthy producer if enough debt was reclaimed. Reconnect
+does not request or invent replay: after authentication it receives a new `hello`, current full
+sessions, and current full orchestrator state. This leaves health and unrelated request lanes able
+to run while one consumer is suspended.
+
+HTTP request reads are admitted process-wide, charged by all bytes the server retains, and limited
+to 15 seconds from accept until a complete request exists. A slowloris connection has no complete
+request to bind an error envelope to, so expiry closes it and increments `request_bytes.read_timeouts`.
+The body remains charged after parsing while an asynchronous route holds it, and is reclaimed when
+the response or SSE stream begins; disconnect reclaims it on every earlier path.
+
+Read, SSE-write, and ordinary-response deadlines share one queue-owned timer with at most 144 live
+jobs: the 128 admitted connections plus the 16 capacity-response slots. Normal completion removes
+the job and captured closure immediately instead of leaving a cancelled `asyncAfter` work item
+retained until its old deadline. Scheduling exhaustion fails closed and is counted in
+`deadline_tasks.refused`.
 
 A `screen` frame carries a session id and the revision of that session's captured screen, and never
 the screen itself — for the reason `transcript` carries only a signature: this frame reaches

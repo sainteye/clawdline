@@ -24,7 +24,13 @@ import time
 import uuid
 
 
-BASE_COMMIT = "7a785fc15c34cdbfd2de8f6960a038f78c90132c"
+BASE_COMMIT = "a6e2785ca1993538b7792aab69c9bfc73da854c0"
+SOURCE_OVERLAY = "R-2 sealed HTTP/SSE reliability correction overlay"
+OVERLAY_SOURCES = {
+    "Sources/HTTPReliability.swift",
+    "Sources/ReadingFreshness.swift",
+    "Sources/RemoteServer.swift",
+}
 # Measurement safety bound, not a production HTTP budget or SLA.
 HEALTH_BODY_LIMIT = 16384
 # Whole-file seals prevent an unchanged matching line from concealing a changed caller,
@@ -32,7 +38,8 @@ HEALTH_BODY_LIMIT = 16384
 SOURCE_SEALS = {
     "Sources/CloudTransport.swift": "00ccd9952ec29abfc408c9cfc3904074e9776163070c40a9b0f014efe4350f09",
     "Sources/CloudAppBridge.swift": "6c302234a33d414c4b40d845c1008b39b04f961cb9fa8efd2de5632cfb2fc1dc",
-    "Sources/RemoteServer.swift": "4fbed488debf5bf879c220ca08e3f003ed98e1b6f53136ece90e47a5c6fcaa38",
+    "Sources/RemoteServer.swift": "124657b7181e7527ee8013420d4150999524935fda5cd051390b0b458c12c0e8",
+    "Sources/HTTPReliability.swift": "221438295bb065f810de9d5ef8fb37a417042bf27e5bd7e9b1cd9c05512011fb",
     "Sources/TerminalCommandScheduler.swift": "81ca5981fee4900fca40edea3e050de7b88c66982d745e6f51b6f1c5ecce7e4f",
     "Sources/Orchestrator.swift": "f3e1ab68b2b75b9769ab2993afbec41430a90ea54c9de7fd6cba88d2af94cf72",
     "Sources/OrchestratorPersistence.swift": "375628d34df7a2b7679b1e5519d2cfd81f92a3ba86df62b12ae95dfd43d9482c",
@@ -41,7 +48,7 @@ SOURCE_SEALS = {
     "Sources/Coordinator.swift": "9540466f054e1e686b2087f511901af49f3364b0164525cb369f7f1d8133d0a6",
     "Sources/SessionWatch.swift": "57271981d56e9a24ad2eda992392369563eda504c5f0e455b3554ea162badf21",
     "Sources/TranscriptReadCoordinator.swift": "61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371",
-    "Sources/ReadingFreshness.swift": "4592b2a84c03d196707626df2876f3ef4e5274149addf361b7738a2888ed672f",
+    "Sources/ReadingFreshness.swift": "54f9665b53de0d31a798ab9bc0e4e5e6e71c0f5d16441d1ba403d509dc850c2f",
     "Sources/CloudOutboundSpool.swift": "1653423609868c4903529194ca74344d755b560d453a65951edf06d1d855f2aa",
     "Sources/CloudCommandLedger.swift": "a7a2161c8023710d79b36b1bf8dc452c1a52d6050045d61044df8f55bc3b83d4",
     "Sources/CloudBridgeLifecycle.swift": "5030614169a6389f6189045e9cdf98f52ea8434beb3ce5ab0e9c03eec9f2eef8",
@@ -84,7 +91,9 @@ class SourceEvidence:
             if observed != expected:
                 raise MeasurementError("source_drift", name + ": re-characterize before resealing")
             self.text[name] = text
-            self.manifest.append({"path": name, "sha256": observed, "bytes": len(data)})
+            provenance = ("working-overlay:" if name in OVERLAY_SOURCES else "commit:") + BASE_COMMIT
+            self.manifest.append({"path": name, "sha256": observed, "bytes": len(data),
+                                  "provenance": provenance})
         require(bool(self.manifest), "zero_observations", "source manifest is empty")
 
     def ref(self, name, anchor, end=None):
@@ -137,6 +146,7 @@ def characterize(source):
     t, b, h, o = ("Sources/" + name + ".swift" for name in
                   ("CloudTransport", "CloudAppBridge", "RemoteServer", "Orchestrator"))
     terminal = "Sources/TerminalCommandScheduler.swift"
+    reliability = "Sources/HTTPReliability.swift"
     c, w, p, l = ("Sources/" + name + ".swift" for name in
                   ("Coordinator", "SessionWatch", "CloudOutboundSpool", "CloudCommandLedger"))
     op = "Sources/OrchestratorPersistence.swift"
@@ -181,38 +191,58 @@ def characterize(source):
          ref(t, "            switch readyContinuation.yield(UInt64(currentGeneration)) {", "            return (authenticated, currentGeneration)")],
         ["沒有執行 ready-generation 消費／丟棄測試；不能把此策略當成 command 可丟棄政策。"],
         "R-1 transport reliability owner", {"pending_generations": 1})
-    row("http-admission", "accept 直接 start/receive；這條 accept/receive 路徑沒有全域連線、"
-        "aggregate body bytes 或 request-read deadline admission。response close grace 是另一階段。",
-        [ref(h, "    private func accept(_ conn:", "    /// Read until the headers"),
-         ref(h, "    private func receive(_ conn:", "    /// The largest request body"),
-         ref(h, "    private static let responseCloseGraceSeconds = 30")],
-        ["NWListener/kernel 上限、同時連線數、記憶體峰值與 slowloris 行為未量測。",
-         "64 KiB 是未找到 header terminator 時的條件檢查，不能稱所有完整 header 的嚴格上限。"],
-        "R-2 HTTP reliability owner", constants(h, "bodyLimit", "responseCloseGraceSeconds"))
-    row("sse-output", "Stream 只保存 connection；openStream 登錄串流，授權檢查沒有容量條件；"
-        "write 與 heartbeat 的 contentProcessed 忽略 error，沒有此層 outstanding-byte 計數、"
-        "slow-consumer eviction 或待送 snapshot 合併。",
-        [ref(h, "    private final class Stream {", "    static func restartHelloPayload()"),
+    row("http-admission", "HTTPReliability 先計 process-wide admitted connection；超額 socket 只有"
+        "固定 capacity-response lane 可送 typed 503，其後直接 close。receive 在保留 chunk 前比較"
+        "aggregate request bytes；read、SSE write、response close 共用可取消且有界的 deadline owner。",
+        [ref(reliability, "final class BoundedHTTPDeadlineScheduler {",
+             "/// Owns the memory and lifetime debt created at the local HTTP door."),
+         ref(reliability, "    func acceptNetworkConnection", "    private func receiveNetworkRequest"),
+         ref(reliability, "    func admitConnection(", "    func admitCapacityResponse("),
+         ref(reliability, "    func admitCapacityResponse(",
+             "    /// Replace this connection's charged byte count"),
+         ref(reliability, "    func sendResponse(", "    private func sendNext("),
+         ref(h, "    private func accept(_ conn:", "    private func connectionClosed("),
+         ref(h, "    private static func response(for refusal:",
+             "    private static func retryableCapacity(")],
+        ["數字是 implementation defaults，沒有 reference workload/RSS/kernel backlog adequacy 測量。",
+         "capacity-response lane 之外的 socket 直接 close，因此 typed 503 只保證在該 lane 內。"],
+        "W6 workload approval owner", {
+            **constants(h, "bodyLimit"),
+            **constants(reliability, "connectionLimit", "connectionRefusalLimit",
+                        "aggregateRequestByteLimit", "requestReadSecondLimit",
+                        "responseCloseGraceSecondLimit", "deadlineTaskLimit")})
+    row("sse-output", "HTTPReliability 對已授權 stream 限制 connection、per-stream/process outstanding bytes；"
+        "一次只送一個 completion-tracked frame。per-stream overflow 淘汰 producer；aggregate overflow"
+        "依最大既有 debt、再依最舊 active frame 淘汰實際 owner。sessions/orchestrator pending full snapshot 依 channel 保留最新。",
+        [ref(reliability, "    func openStream(", "    @discardableResult\n    func enqueueStreamFrame("),
+         ref(reliability, "    func enqueueStreamFrame(", "    func closeStream("),
+         ref(reliability, "    private func sendNext(", "    private func streamWriteCompleted("),
+         ref(reliability, "    private func slowestStreamDebtOwner(",
+             "    private func makeDeadline("),
          ref(h, "    private func openStream(on", "    /// A comment line every fifteen seconds"),
-         ref(h, "    func eventStreamRefusal(", "    /// A JSON object body"),
-         ref(h, "    private func startHeartbeat()", "    /// Called on the main thread by the watch"),
          ref(h, "    private func write(event:", "    // MARK: - Writing a response out")],
-        ["未開 authenticated SSE 或使真實 consumer 停讀；連線／待送 bytes、kernel buffer 與 callback 延遲未知。",
-         "Network 可能有下層背壓，來源不能證明本層已受保護；publication 合併不是 local SSE 合併。"],
-        "R-2 HTTP reliability owner", {"connection_cap": None, "outstanding_byte_cap": None})
-    row("sse-reconnect", "openStream 送 hello 與當前 sessions/orchestrator 全量 snapshot；"
-        "write 分配 event id。重連以當前狀態 realign，這些路徑沒有 Last-Event-ID replay。",
+        ["未用真實 authenticated socket 暫停 consumer；kernel buffer、真實 callback latency/RSS 與 defaults adequacy 未量測。",
+         "source test 是 failure injection，不是 deployed runtime receipt。"],
+        "W6 workload approval owner", constants(
+            reliability, "streamLimit", "streamByteLimit", "aggregateStreamByteLimit",
+            "streamWriteSecondLimit"))
+    row("sse-reconnect", "授權後 openStream 仍排 hello，再排當前 sessions/orchestrator 全量 snapshot；"
+        "只合併尚未送的全量 observation，沒有 Last-Event-ID replay，也沒有把 snapshot 稱為 effect ACK。",
         [ref(h, "    private func openStream(on", "    /// A comment line every fifteen seconds"),
-         ref(h, "    private func write(event:", "    // MARK: - Writing a response out")],
-        ["未測斷線重連、遺失事件與 viewer 觀察；snapshot 送出不等於 command effect 完成／ACK。"],
-        "R-2 HTTP reliability owner")
+         ref(h, "    private func write(event:", "    // MARK: - Writing a response out"),
+         ref(reliability, "    enum FrameKind:", "    enum EnqueueResult:")],
+        ["未在真實 viewer 上量斷線視窗或遺失 transcript/screen event；client 仍須 refetch open content。"],
+        "W6 runtime failure owner")
     row("terminal-queue", "同一 serial terminal worker 在入列前計 total/per-channel outstanding；"
-        "HTTP 容量拒絕為 429 busy，maintenance 為 503 restart_maintenance；nested inline 仍計新增 channel。",
+        "HTTPReliability 另計進入此 lane 前的 connection/retained-request debt。容量拒絕仍為 429 busy，"
+        "maintenance 仍為 503 restart_maintenance；nested inline 仍計新增 channel。",
         [ref(terminal, "    @discardableResult\n    func enqueue(channels rawChannels:",
              "    /// Test receipt for the production admission counters"),
          ref(h, "    func enqueueTerminalCommand(channels", "    /// Test receipt for the production admission counters"),
          ref(h, "    private func terminalMutation(", "    private static func keepsTerminalMutation("),
-         ref(c, "    func terminalMaintenanceRefusal()", "    func beginRestartMaintenance(requestID:")],
+         ref(c, "    func terminalMaintenanceRefusal()", "    func beginRestartMaintenance(requestID:"),
+         ref(reliability, "    func retainRequestBytes(",
+             "    /// The complete request may enter a route")],
         ["count 是 queued+active，不是 byte cap；8/2 為現行常數，沒有量到負載適足性。",
          "同 key terminalPending waiters 另外 append，沒有此路徑的 waiter count/byte cap；重試可增加連線債務。"],
         "W2-1 application owner / R-1 / R-2", {
@@ -221,22 +251,28 @@ def characterize(source):
         })
     row("read-queues", "slow reads/analytics、transcript、voice/planner 有獨立 admission；"
         "overflow 分別為 429 busy/usage_analytics_busy/transcript_busy，voice/planner 亦回 429 busy。"
-        "列出的 depth 都是 request 數量；沒有把單一 body cap 當 aggregate queued-byte cap。",
+        "HTTPReliability 在這些 lane 前另計 aggregate retained-request bytes；列出的 depth 仍是 request 數量。",
         [ref(h, "    struct ReadingLimiter {", "    /// Eight, shared only"),
          ref(h, "    static func transcriptBusyResponse(", "    /// Authenticate and encode at the transport boundary"),
          ref(h, "        guard voiceQueued < Self.voiceDepth else {"),
          ref(h, "        guard planQueued < Self.planDepth else {"),
-         ref("Sources/TranscriptReadCoordinator.swift", "    struct Limiter {", "    // Interactive reads and agent/background")],
+         ref("Sources/TranscriptReadCoordinator.swift", "    struct Limiter {", "    // Interactive reads and agent/background"),
+         ref(reliability, "    func retainRequestBytes(",
+             "    /// The complete request may enter a route")],
         ["未測 queue wait/work、current debt 或 bytes；count ceiling 不是延遲保證。"],
         "R-2 HTTP reliability owner", {
             **constants(h, "readingDepth", "usageAnalyticsDepth", "voiceDepth", "planDepth"),
             **constants("Sources/TranscriptReadCoordinator.swift", "depth", "backgroundDepth")})
-    row("coalesced-read-waiters", "FreshReadings 對同 key 共用一次 refresh，但會 append 每個 waiter；"
-        "因此 worker count cap 不能證明 parked replies 有界。",
-        [ref("Sources/ReadingFreshness.swift", "        waiters[key, default: []].append(deliver)"),
-         ref("Sources/ReadingFreshness.swift", "    private func revalidate(", "    /// Called on the owner queue with a completed read")],
-        ["waiter 數量、closure 持有 bytes、disconnect 後回收及重複 retry 負載未測。"],
-        "R-2 HTTP reliability owner")
+    row("coalesced-read-waiters", "FreshReadings 對同 key 共用一次 refresh，並在 append closure 前檢查"
+        "per-key/total waiter ceiling；token cancellation 與 settle 都減 current debt。HTTP disconnect 接回 cancellation。",
+        [ref("Sources/ReadingFreshness.swift", "    struct WaiterLimits:", "    /// How old a reading may be"),
+         ref("Sources/ReadingFreshness.swift", "        guard (waiters[key]?.count ?? 0)",
+             "    /// Start a read unless one is already running for this key."),
+         ref("Sources/ReadingFreshness.swift", "    func cancel(_ token:", "    private func takeWaiters("),
+         ref(h, "    private func connectionClosed(", "    private static func response(for refusal:")],
+        ["closure/RSS 大小與真實 duplicate retry/disconnect 分布未量測；defaults adequacy 待 W6。"],
+        "W6 workload approval owner", constants(
+            "Sources/ReadingFreshness.swift", "waiterPerKeyLimit", "waiterTotalLimit"))
     row("cloud-read-queues", "Cloud read 的 foreground/background 分別按 queued+active 計 4/16；"
         "超額回 429 cloud_read_busy，拒絕回覆交給共用的有界 publication lane。",
         [ref(b, "    private func enqueueRead(", "    private func finishLifecycleRefresh(")],
@@ -524,10 +560,11 @@ def make_report(root, health_port=None, samples=3, scratch=None):
     if scratch is not None:
         by_id["filesystem-fixture"]["executable-test-derived"] = filesystem_probe(scratch)
     report = {"schema": 1, "canonical_program": "CLA-296", "question": "W0-C reliability characterization",
-              "scope": "reviewed source baseline plus explicitly requested safe probes; no production policy change",
+              "scope": "reviewed source baseline re-characterized for the R-2 correction overlay plus explicitly requested safe probes",
               "source_reference_commit": "base:" + BASE_COMMIT
                   + "+candidate-overlay:" + source_scope_sha256,
               "source_manifest": source.manifest,
+              "source_overlay": SOURCE_OVERLAY,
               "measurement_tool_sha256": digest(Path(__file__).read_bytes()),
               "source_scope_sha256": source_scope_sha256,
               "source_file_count": len(source.manifest), "row_count": len(rows), "rows": rows,
@@ -544,6 +581,7 @@ def markdown(report):
     lines = ["# 平台可靠性基準（W0-C）", "", "此文件由 `tools/measure-platform-reliability.py` 產生；CLA-296 Plan v4 的量測輸入。",
              "`source_reference_commit`：`" + report["source_reference_commit"] + "`；"
              "這表示指定 base 加上由 source manifest 封存的 candidate overlay，base commit 本身不含 overlay bytes。",
+             "來源 overlay：`" + report["source_overlay"] + "`。",
              "來源範圍 SHA-256：`" + report["source_scope_sha256"] + "`。",
              "工具 SHA-256：`" + report["measurement_tool_sha256"] + "`。", "",
              f"{report['source_file_count']} 個非空來源檔、{report['row_count']} 列。這是範圍摘要，並非整棵 commit-tree 驗證。",
@@ -580,8 +618,9 @@ def markdown(report):
               "Plan v4 的 restart 60s p95、reboot 120s、RPO/RTO 是提案目標；本基準沒有實測或批准它們。",
               "沒有新增全管線 count/byte budget：需 reference workload、樣本數、duration、環境、拒絕／丟棄與 peak debt，再由具名 owner/approver 決定。",
               "health liveness、fixture 通過、source seal 相符，都不構成 restart、durability、Ubuntu 或 Cloud 發布驗收。", "",
-              "## 來源檔案 seal", "", "| 檔案 | bytes | SHA-256 |", "|---|---:|---|"]
-    lines.extend(f"| `{r['path']}` | {r['bytes']} | `{r['sha256']}` |" for r in report["source_manifest"])
+              "## 來源檔案 seal", "", "| 檔案 | provenance | bytes | SHA-256 |", "|---|---|---:|---|"]
+    lines.extend(f"| `{r['path']}` | `{r['provenance']}` | {r['bytes']} | `{r['sha256']}` |"
+                 for r in report["source_manifest"])
     return "\n".join(lines) + "\n"
 
 

@@ -690,6 +690,17 @@ enum Tmux {
         return run(["kill-pane", "-t", paneID]).ok ? nil : "that tmux pane is gone"
     }
 
+    /// Resize one pane through tmux's PTY owner. The bounds match the shared Linux lifecycle and
+    /// keep an accidentally huge remote value from becoming unbounded terminal state.
+    static func resize(_ paneID: String, columns: Int, rows: Int) -> String? {
+        guard binary != nil else { return "tmux not found — set \"tmux_path\" in the config" }
+        guard (20...500).contains(columns), (5...300).contains(rows) else {
+            return "terminal dimensions are outside the supported bounds"
+        }
+        return run(["resize-pane", "-t", paneID, "-x", String(columns), "-y", String(rows)]).ok
+            ? nil : "that tmux pane could not be resized"
+    }
+
     static func submit(_ paneID: String) -> String? {
         run(["send-keys", "-t", paneID, "Enter"]).ok ? nil : "pasted, but Enter did not land"
     }

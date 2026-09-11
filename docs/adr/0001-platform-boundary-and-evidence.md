@@ -1,6 +1,6 @@
 # ADR 0001 — 平台邊界、狀態擁有者與證據分級
 
-狀態：W0-A 決策已由 W3-1/W3-2 建立首批正式 targets 與 composition；Linux daemon runtime 仍待 W4。
+狀態：W0-A 決策已由 W3-1/W3-2 建立正式 targets；W4-1 已實作 Linux runtime adapters 與 Application admission，service／Cloud lifecycle 仍待 W4-2/W4-3。
 決策日期：2026-09-10。來源讀取時間：2026-09-10 13:19–14:10 UTC。
 來源 commit：`6f4411f1365258d1e1b41b76c85dcaa1dcb6b88a`；tree：
 `75314e95a17d901362c0d998477205606b9add5d`。本文行號只對這個版本成立。
@@ -32,19 +32,23 @@ Core／Application 不得依賴 AppKit、Security、ServiceManagement、Speech�
 Carbon、iTerm 型別、HTTP server singleton 或平台 executable。Mac／Linux composition 是
 依賴圖末端。不能用到處增加 `#if os(Linux)` 代替邊界，也不要求一個籠統 Infrastructure target。
 此方向現由 `ClawdlineCore -> ClawdlineApplication -> Clawdline`／`ClawdlineLinux` 的 SwiftPM
-target graph 實作並由 resolved-source/edge guard 固定。Linux executable 在 W3-2 仍刻意
-`ready=false`；它只建立 fail-closed composition、config／secret boundary 與 health identity，
-沒有藉空 adapter 宣稱 W4 runtime 已存在。
+target graph 實作並由 resolved-source/edge guard 固定。W4-1 在 Application 加入 project-root、
+provider launch/menu 與 terminal lifecycle policy，並由 Linux composition 注入 tmux、procfs、
+contained filesystem 與 protected-file secret adapters。既有 Mac facade 與 Linux composition
+共同使用 Application 的 `TerminalCommandScheduler`，沒有第二套 admission owner。health 仍刻意
+`ready=false`：未配置時是 `w4_runtime_not_configured`，配置並驗證 executable／Landlock／seccomp
+後是 `w4_provider_authentication_not_proven`；它不把 fixture、尚未存在的 real-provider auth、
+service supervision、listener 或 Cloud lifecycle 宣稱為 ready。
 
 ## 固定版本的現有依賴與所有權
 
 | 邊界／資料 | 現有 owner 與來源 | 尚未完成的邊界 |
 |---|---|---|
-| build／package | [Package.swift](../../Package.swift) 定義 Core／Application 與 Mac／Linux executable products；[architecture guard](../../tools/check-architecture-boundaries.sh) 讀 SwiftPM resolved sources／edges／products；[build.sh](../../build.sh) 在 machine lock 內編譯 `Clawdline` product，再以 digest-checked copy 組 bundle／sign／install | macOS focused proof 已執行 skeleton 的 protected config／secret 與 health contract；pinned Ubuntu job 現在也會執行同一 contract，但 Linux 支援仍須等該 job 的 exact-tree receipt。terminal/process/persistence/listener/service runtime 仍由 W4 實作。Mac bundle wrapper 不是 Ubuntu package provenance |
+| build／package | [Package.swift](../../Package.swift) 定義 Core／Application、Mac／Linux executable products與 Linux runtime test target；[architecture guard](../../tools/check-architecture-boundaries.sh) 讀 SwiftPM resolved sources／edges／products；[build.sh](../../build.sh) 在 machine lock 內編譯 `Clawdline` product，再以 digest-checked copy 組 bundle／sign／install | W4-1 的 macOS focused proof只回答 shared policy／Linux target 可編譯與平台中立 contracts；pinned Ubuntu job 才執行 non-root real-tmux lifecycle。service listener、restart reconciliation、package upgrade／rollback 與 Cloud lifecycle 仍分屬 W4-2/W4-3。Mac bundle wrapper 不是 Ubuntu package provenance |
 | task／handoff／root assignment／Session facts | [Orchestrator.swift](../../Sources/Orchestrator.swift):1287、1313–1333 的 collections 與 lock alias，`:10194` load、`:10293` save | facade 仍混合 admission、state 與 effects；不能宣称 Registry 已接手全部資料 |
 | graph admission reservation、terminal title／role 與部分 label projection | [OrchestratorRegistry.swift](../../Sources/OrchestratorRegistry.swift):30–64 的 private collections；`:198` transaction，`:221` held-lock door，共用原有 NSLock | `Transaction` 還可能逸出 closure；held-lock door 仍依呼叫者持鎖慣例，不是型別系統的完整同步保證。新工作繼續既有 extraction 次序 |
 | orchestration disk codec | [OrchestratorStore.swift](../../Sources/OrchestratorStore.swift):3–18、`:79` stored task，包括 legacy decode／missing-field 語意 | 它是 serializer，並未擁有 collections、load/save 排程或 disk-health policy；不能藉搬移改 corruption／version 行為 |
-| HTTP／Cloud admission、terminal mutation | [RemoteServer.swift](../../Sources/RemoteServer.swift):96、`:3350–3355` 仍持有 transport queue、terminal queue/admission lock；[CloudAppBridge.swift](../../Sources/CloudAppBridge.swift):199–238 的 router 委派同一 server | `RemoteServerCloudCommandRouter` 仍有 concrete `RemoteServer`；不能把 `CloudCommandRouting` 協定誤認成已獨立的 portable Application module |
+| HTTP／Cloud admission、terminal mutation | [RemoteServer.swift](../../Sources/RemoteServer.swift) 的 legacy facade 委派 [TerminalCommandScheduler.swift](../../Sources/TerminalCommandScheduler.swift)；Linux lifecycle 也由同一 Application owner 實作包住 tmux preflight/effect；[CloudAppBridge.swift](../../Sources/CloudAppBridge.swift):199–238 的 router 委派同一 server | `RemoteServerCloudCommandRouter` 仍有 concrete `RemoteServer`；不能把 `CloudCommandRouting` 協定誤認成已獨立的 portable Application module |
 | Session observation／restart maintenance | [SessionWatch.swift](../../Sources/SessionWatch.swift):113–114 發布 inventory；`:983` executor reconciliation、`:1154` restart phase | observation 與 task 持久事實分開；incomplete inventory 不推定 executor 消失。restart 細節見能力矩陣 |
 | Board、usage、verification data | [ProjectBoardStore.swift](../../Sources/ProjectBoardStore.swift):467–468 自有 locks；[UsageLedger.swift](../../Sources/UsageLedger.swift):885 自有 queue；[VerificationRunLedger.swift](../../Sources/VerificationRunLedger.swift):117–135 自有 store／serial queue | 是不同資料領域與 durability policy，不能合併成泛用 store，也不在 W0-A 修改範圍 |
 | Cloud transport／content keys／序號 | [CloudTransport.swift](../../Sources/CloudTransport.swift):875–896 驗證 paired key、解密、sequence gate，再送 inbound stream；[CloudAppBridge.swift](../../Sources/CloudAppBridge.swift):15–19、`:654–666` 由注入 sequencing 取號後 publish；[CloudKeys.swift](../../Sources/CloudKeys.swift):456 為 key storage seam | protocol 的存在不代表 Linux crypto／networking 已相容；配對 durable sequencing 與 transport 的 replay tracker 不能另造相互競爭的 epoch |
@@ -80,8 +84,11 @@ references 只提供 bytes 身分，精確 compile artifact 的全輸入身分�
 
 - W0-E 以 [ADR 0002](0002-cloud-authority-and-executor-trust.md) 的 authority 規則產出 contract candidate；須再等 W0-D。
 - W0-F 依本方向與 W0-B 的工具證明 Ubuntu 24.04 amd64 非空 Core boundary；Foundation import 不等於 Linux compile receipt。
-- W3-2 的 Ubuntu CI 編譯真實 `ClawdlineLinux -> ClawdlineApplication -> ClawdlineCore` product；
-  health 固定回 `ready=false`／`w4_runtime_not_composed`，因此 compile receipt 不會被升格成 daemon support。
+- W4-1 的 Ubuntu CI 編譯真實 `ClawdlineLinux -> ClawdlineApplication -> ClawdlineCore` product，
+  再以 non-root uid/gid、真 tmux、Landlock/seccomp containment probes 執行
+  create/send/observe/resize/enumerate/close；health 固定 `ready=false`，並區分
+  `w4_runtime_not_configured` 與 `w4_provider_authentication_not_proven`，因此 compiled/configured
+  adapter receipt 不會被升格成 provider、service 或 Cloud support。
 - W0-C 負責 reliability 測量；它的數字未回來以前，Plan v4 的 latency／recovery 數字仍是待批准目標。
 - CLA-296 root 收集獨立 review、合併 correction、exact candidate 驗證與 landing。W0-A 不建立 runtime、Cloud rollout 或新的 Board lifecycle。
 

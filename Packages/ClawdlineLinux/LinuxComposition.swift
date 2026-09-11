@@ -5,7 +5,7 @@ enum LinuxCompositionError: Error, Equatable {
     case badArguments(String)
     case configuration(String)
     case secret(String)
-    case runtimeUnavailable
+    case runtime(LinuxRuntimeFailure)
     case internalFailure
 
     var code: String {
@@ -13,7 +13,7 @@ enum LinuxCompositionError: Error, Equatable {
         case .badArguments: return "bad_arguments"
         case .configuration: return "invalid_configuration"
         case .secret: return "invalid_secret_file"
-        case .runtimeUnavailable: return "w4_runtime_not_composed"
+        case .runtime(let failure): return failure.code.rawValue
         case .internalFailure: return "internal_failure"
         }
     }
@@ -22,8 +22,7 @@ enum LinuxCompositionError: Error, Equatable {
         switch self {
         case .badArguments(let message), .configuration(let message), .secret(let message):
             return message
-        case .runtimeUnavailable:
-            return "The W3 Linux composition is intentionally not a daemon yet; W4 owns terminal, process, persistence, transport, and listener adapters."
+        case .runtime(let failure): return failure.message
         case .internalFailure:
             return "unexpected startup failure"
         }
@@ -124,6 +123,19 @@ struct LinuxListenConfiguration: Codable, Equatable {
     let port: Int
 }
 
+struct LinuxProviderExecutablesConfiguration: Codable, Equatable {
+    let claude: String
+    let codex: String
+}
+
+struct LinuxRuntimeConfiguration: Codable, Equatable {
+    let uid: UInt32
+    let gid: UInt32
+    let projectRoots: [String]
+    let tmuxExecutable: String
+    let providers: LinuxProviderExecutablesConfiguration
+}
+
 struct LinuxDaemonConfiguration: Codable, Equatable {
     static let schemaVersion = 1
 
@@ -131,6 +143,7 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
     let listen: LinuxListenConfiguration
     let stateDirectory: String
     let secretFile: String
+    let runtime: LinuxRuntimeConfiguration?
 
     static func load(from path: String) throws -> LinuxDaemonConfiguration {
         let bytes: Data
@@ -149,9 +162,10 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
         guard let fields = object as? [String: Any] else {
             throw LinuxCompositionError.configuration("config root must be an object")
         }
-        let expectedFields = Set(["version", "listen", "stateDirectory", "secretFile"])
-        guard Set(fields.keys) == expectedFields else {
-            throw LinuxCompositionError.configuration("config fields must be exactly version, listen, stateDirectory, and secretFile")
+        let requiredFields = Set(["version", "listen", "stateDirectory", "secretFile"])
+        let allowedFields = requiredFields.union(["runtime"])
+        guard requiredFields.isSubset(of: Set(fields.keys)), Set(fields.keys).isSubset(of: allowedFields) else {
+            throw LinuxCompositionError.configuration("config fields must be version, listen, stateDirectory, secretFile, and optional runtime")
         }
         guard let listen = fields["listen"] as? [String: Any],
               Set(listen.keys) == Set(["host", "port"]) else {
@@ -179,6 +193,23 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
         guard configuration.stateDirectory != "/", configuration.secretFile != "/" else {
             throw LinuxCompositionError.configuration("stateDirectory and secretFile may not be the filesystem root")
         }
+        if let runtime = configuration.runtime {
+            guard let runtimeObject = fields["runtime"] as? [String: Any],
+                  Set(runtimeObject.keys) == Set(["uid", "gid", "projectRoots", "tmuxExecutable", "providers"]),
+                  let providers = runtimeObject["providers"] as? [String: Any],
+                  Set(providers.keys) == Set(["claude", "codex"]) else {
+                throw LinuxCompositionError.configuration("runtime fields or provider fields are not the exact supported shape")
+            }
+            guard runtime.uid > 0, runtime.gid > 0,
+                  !runtime.projectRoots.isEmpty, runtime.projectRoots.count <= 32,
+                  Set(runtime.projectRoots).count == runtime.projectRoots.count,
+                  runtime.projectRoots.allSatisfy(ProjectRootPolicy.isLexicallySafeAbsolute),
+                  ProjectRootPolicy.isLexicallySafeAbsolute(runtime.tmuxExecutable),
+                  ProjectRootPolicy.isLexicallySafeAbsolute(runtime.providers.claude),
+                  ProjectRootPolicy.isLexicallySafeAbsolute(runtime.providers.codex) else {
+                throw LinuxCompositionError.configuration("runtime identity, roots, or executable paths are invalid")
+            }
+        }
         return configuration
     }
 }
@@ -197,6 +228,15 @@ struct LinuxUnsupportedCapability: Codable, Equatable {
     let refusal: String
 }
 
+struct LinuxCapabilityState: Codable, Equatable {
+    let capability: String
+    let compiled: Bool
+    let configured: Bool
+    let usable: Bool
+    let owner: String?
+    let refusal: String?
+}
+
 struct LinuxRuntimeIdentity: Codable, Equatable {
     static var current: LinuxRuntimeIdentity { LinuxRuntimeIdentity(
         service: "clawdline-daemon",
@@ -205,12 +245,57 @@ struct LinuxRuntimeIdentity: Codable, Equatable {
         buildIdentity: ProcessInfo.processInfo.environment["CLAWDLINE_BUILD_IDENTITY"] ?? "unknown",
         configurationSchemaVersion: LinuxDaemonConfiguration.schemaVersion,
         ready: false,
-        readinessCode: "w4_runtime_not_composed",
+        readinessCode: "w4_runtime_not_configured",
         applicationRefusalCode: HostCapabilityUnavailable.code,
-        unsupportedCapabilities: HostCapability.allCases.map {
-            LinuxUnsupportedCapability(capability: $0.rawValue, owner: "W4-1", refusal: HostCapabilityUnavailable.code)
-        }
+        supportedCapabilities: [],
+        unsupportedCapabilities: HostCapability.allCases.map { capability in
+            LinuxUnsupportedCapability(
+                capability: capability.rawValue,
+                owner: capability == .terminalITerm ? "Mac composition" : "Linux protected configuration",
+                refusal: HostCapabilityUnavailable.code)
+        },
+        capabilityStates: HostCapability.allCases.map { capability in
+            LinuxCapabilityState(
+                capability: capability.rawValue,
+                compiled: capability != .terminalITerm,
+                configured: false, usable: false,
+                owner: capability == .terminalITerm ? "Mac composition" : "Linux protected configuration",
+                refusal: HostCapabilityUnavailable.code)
+        },
+        lifecycleStages: [TerminalEffectStage.accepted.rawValue,
+                          TerminalEffectStage.executed.rawValue,
+                          TerminalEffectStage.delivered.rawValue,
+                          TerminalEffectStage.observed.rawValue],
+        providers: Assistant.allCases.map { LinuxProviderCapability.unconfigured(provider: $0.rawValue) }
     ) }
+
+    static func configured() -> LinuxRuntimeIdentity {
+        let usable = HostCapability.allCases.filter { $0 != .terminalITerm }
+        return LinuxRuntimeIdentity(
+            service: "clawdline-daemon", executable: "ClawdlineLinux",
+            identityKind: "configured_runtime",
+            buildIdentity: ProcessInfo.processInfo.environment["CLAWDLINE_BUILD_IDENTITY"] ?? "unknown",
+            configurationSchemaVersion: LinuxDaemonConfiguration.schemaVersion,
+            ready: false,
+            readinessCode: "w4_provider_authentication_not_proven",
+            applicationRefusalCode: HostCapabilityUnavailable.code,
+            supportedCapabilities: usable.map(\.rawValue),
+            unsupportedCapabilities: [LinuxUnsupportedCapability(
+                capability: HostCapability.terminalITerm.rawValue,
+                owner: "Mac composition", refusal: HostCapabilityUnavailable.code)],
+            capabilityStates: HostCapability.allCases.map { capability in
+                let isUsable = capability != .terminalITerm
+                return LinuxCapabilityState(
+                    capability: capability.rawValue,
+                    compiled: isUsable, configured: isUsable, usable: isUsable,
+                    owner: isUsable ? nil : "Mac composition",
+                    refusal: isUsable ? nil : HostCapabilityUnavailable.code)
+            },
+            lifecycleStages: TerminalEffectStage.allCases.map(\.rawValue),
+            providers: Assistant.allCases.map {
+                LinuxProviderCapability.configuredAuthenticationPending(provider: $0.rawValue)
+            })
+    }
 
     let service: String
     let executable: String
@@ -220,13 +305,66 @@ struct LinuxRuntimeIdentity: Codable, Equatable {
     let ready: Bool
     let readinessCode: String
     let applicationRefusalCode: String
+    let supportedCapabilities: [String]
     let unsupportedCapabilities: [LinuxUnsupportedCapability]
+    let capabilityStates: [LinuxCapabilityState]
+    let lifecycleStages: [String]
+    let providers: [LinuxProviderCapability]
+}
+
+struct LinuxProviderCapability: Codable, Equatable {
+    let provider: String
+    let executableConfigured: Bool
+    let authenticated: Bool
+    let usable: Bool
+    let terminal: String?
+    let lifecycle: [String]
+    let credentialBoundary: String
+    let owner: String
+    let refusal: String
+
+    static func unconfigured(provider: String) -> LinuxProviderCapability {
+        LinuxProviderCapability(
+            provider: provider, executableConfigured: false, authenticated: false,
+            usable: false, terminal: nil, lifecycle: [],
+            credentialBoundary: "landlock_seccomp_required",
+            owner: "Linux protected configuration",
+            refusal: HostCapabilityUnavailable.code)
+    }
+
+    static func configuredAuthenticationPending(provider: String) -> LinuxProviderCapability {
+        LinuxProviderCapability(
+            provider: provider, executableConfigured: true, authenticated: false,
+            usable: false, terminal: nil, lifecycle: [],
+            credentialBoundary: "landlock_seccomp_enforced",
+            owner: "W4-2 real-provider authentication gate",
+            refusal: HostCapabilityUnavailable.code)
+    }
 }
 
 struct LinuxConfigurationReceipt: Codable {
     let configuration: String
     let secretBytes: Int
     let identity: LinuxRuntimeIdentity
+}
+
+struct LinuxRuntimeCompositionReceipt: Codable {
+    let configuration: String
+    let uid: UInt32
+    let gid: UInt32
+    let umask: String
+    let homeDirectory: String
+    let runtimeDirectory: String
+    let projectRoots: [String]
+    let terminalLimits: LinuxTerminalLimitsReceipt
+    let identity: LinuxRuntimeIdentity
+}
+
+struct LinuxTerminalLimitsReceipt: Codable {
+    let total: Int
+    let perChannel: Int
+    let maximumInputBytes: Int
+    let maximumInventory: Int
 }
 
 struct LinuxErrorEnvelope: Codable {
@@ -272,7 +410,12 @@ enum LinuxComposition {
         case .run(let path):
             let config = try LinuxDaemonConfiguration.load(from: path)
             _ = try LinuxProtectedSecretFile.load(from: config.secretFile)
-            throw LinuxCompositionError.runtimeUnavailable
+            do {
+                let runtime = try LinuxProviderRuntime.compose(configuration: config)
+                return try encode(runtime.compositionReceipt)
+            } catch let failure as LinuxRuntimeFailure {
+                throw LinuxCompositionError.runtime(failure)
+            }
         }
     }
 

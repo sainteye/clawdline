@@ -18,7 +18,243 @@ private struct FakeReading {
     let refusal: String?
 }
 
+private final class ReliabilityConnection {}
+private final class ReliabilityScheduler {
+    final class Job {
+        let action: () -> Void
+        var cancelled = false
+        init(_ action: @escaping () -> Void) { self.action = action }
+    }
+    let limit: Int
+    private(set) var jobs: [Job] = []
+    init(limit: Int = .max) { self.limit = limit }
+    func schedule(_ after: TimeInterval, _ action: @escaping () -> Void) -> (() -> Void)? {
+        _ = after
+        guard jobs.count < limit else { return nil }
+        let job = Job(action); jobs.append(job)
+        return { [weak self, weak job] in
+            guard let self, let job, !job.cancelled else { return }
+            job.cancelled = true
+            self.jobs.removeAll { $0 === job }
+        }
+    }
+    func fireUncancelled() {
+        let ready = jobs.filter { !$0.cancelled }; jobs.removeAll()
+        for job in ready where !job.cancelled { job.action() }
+    }
+}
+private enum ReliabilityWriteFailure: Error { case injected }
+private func reliabilityLimits(connections: Int = 3, connectionRefusals: Int = 2,
+                               requestBytes: Int = 10,
+                               streams: Int = 2, streamBytes: Int = 100,
+                               aggregateStreamBytes: Int = 200) -> HTTPReliability.Limits {
+    HTTPReliability.Limits(
+        connections: connections, connectionRefusals: connectionRefusals,
+        aggregateRequestBytes: requestBytes,
+        requestReadSeconds: 1, streams: streams, streamBytes: streamBytes,
+        aggregateStreamBytes: aggregateStreamBytes, streamWriteSeconds: 1)
+}
+
+private func runHTTPReliabilityTests() {
+    group("HTTP admission bounds connections, bytes, and slow request lifetime") {
+        let scheduler = ReliabilityScheduler()
+        let owner = HTTPReliability(
+            limits: reliabilityLimits(connections: 2, connectionRefusals: 1),
+            schedule: scheduler.schedule)
+        let first = ReliabilityConnection(), second = ReliabilityConnection()
+        let firstID = ObjectIdentifier(first), secondID = ObjectIdentifier(second)
+        var timedOut: [String] = []
+        expect("two connections reach the ceiling",
+               owner.admitConnection(firstID) { timedOut.append("first") }, .admitted)
+        _ = owner.admitConnection(secondID) { timedOut.append("second") }
+        expect("the connection above it is refused",
+               owner.admitConnection(ObjectIdentifier(ReliabilityConnection())) {},
+               .refused(limit: 2))
+        let refusalOne = ReliabilityConnection(), refusalTwo = ReliabilityConnection()
+        expect("one over-capacity response enters its own bounded lane",
+               owner.admitCapacityResponse(ObjectIdentifier(refusalOne)), .admitted)
+        expect("the refusal lane drops work beyond its hard cap",
+               owner.admitCapacityResponse(ObjectIdentifier(refusalTwo)), .dropped(limit: 1))
+        check("the refusal lane is accounted independently",
+              owner.metrics.capacityResponsesCurrent == 1
+                && owner.metrics.capacityResponseDrops == 1)
+        owner.closeCapacityResponse(ObjectIdentifier(refusalOne))
+        expect("one request body is charged", owner.retainRequestBytes(6, for: firstID), .retained)
+        expect("aggregate debt refuses before retaining the chunk",
+               owner.retainRequestBytes(5, for: secondID), .refused(limit: 10, current: 6))
+        check("a complete read cancels only its slowloris timer", owner.finishRequestRead(for: firstID))
+        expect("normal completion removes deadline closure retention immediately", scheduler.jobs.count, 1)
+        scheduler.fireUncancelled()
+        expect("only the incomplete read expires", timedOut, ["second"])
+        owner.finishRequest(for: firstID); owner.closeConnection(firstID)
+        check("response and close reclaim charged debt",
+              owner.metrics.requestBytesCurrent == 0 && owner.metrics.connectionsCurrent == 1)
+        expect("missing identity fails closed", owner.retainRequestBytes(1, for: nil), .unknownIdentity)
+    }
+
+    group("SSE output coalesces snapshots while unrelated HTTP work continues") {
+        let scheduler = ReliabilityScheduler()
+        let owner = HTTPReliability(
+            limits: reliabilityLimits(requestBytes: 32, streamBytes: 256,
+                                      aggregateStreamBytes: 512), schedule: scheduler.schedule)
+        let stream = ReliabilityConnection(), health = ReliabilityConnection()
+        let id = ObjectIdentifier(stream)
+        var writes: [String] = [], completions: [(Error?) -> Void] = []
+        _ = owner.admitConnection(id) {}
+        _ = owner.openStream(id, send: { bytes, done in
+            writes.append(String(data: bytes, encoding: .utf8) ?? ""); completions.append(done)
+        }, evict: { _ in })
+        _ = owner.enqueueStreamFrame(Data("hello".utf8), kind: .control, for: id)
+        _ = owner.enqueueStreamFrame(Data("sessions-old".utf8),
+                                     kind: .fullSnapshot("sessions"), for: id)
+        expect("new current sessions replaces the pending old snapshot",
+               owner.enqueueStreamFrame(Data("sessions-current".utf8),
+                                        kind: .fullSnapshot("sessions"), for: id), .coalesced)
+        _ = owner.enqueueStreamFrame(Data("orchestrator-current".utf8),
+                                     kind: .fullSnapshot("orchestrator"), for: id)
+        expect("a suspended completion keeps one write in flight", writes, ["hello"])
+        check("health/other lanes still admit and retain independently",
+              owner.admitConnection(ObjectIdentifier(health)) {} == .admitted
+                && owner.retainRequestBytes(4, for: ObjectIdentifier(health)) == .retained)
+        completions.removeFirst()(nil); completions.removeFirst()(nil); completions.removeFirst()(nil)
+        expect("drain sends only newest full snapshots",
+               writes, ["hello", "sessions-current", "orchestrator-current"])
+        check("completion reclaims output debt and records coalescing",
+              owner.metrics.streamBytesCurrent == 0 && owner.metrics.snapshotCoalesces == 1)
+        check("completed frames leave no scheduled closure debt",
+              scheduler.jobs.count == 1 && owner.metrics.deadlineTasksCurrent == 1)
+        owner.closeConnection(ObjectIdentifier(health))
+        check("closing the last read releases the deadline owner", scheduler.jobs.isEmpty
+              && owner.metrics.deadlineTasksCurrent == 0)
+    }
+
+    group("SSE completion failures and ceilings evict only the slow consumer") {
+        let capacityScheduler = ReliabilityScheduler()
+        let capacity = HTTPReliability(
+            limits: reliabilityLimits(streams: 1, streamBytes: 8, aggregateStreamBytes: 8),
+            schedule: capacityScheduler.schedule)
+        let slow = ReliabilityConnection(), extra = ReliabilityConnection()
+        let slowID = ObjectIdentifier(slow), extraID = ObjectIdentifier(extra)
+        var evictions: [HTTPReliability.EvictionReason] = []
+        _ = capacity.admitConnection(slowID) {}; _ = capacity.admitConnection(extraID) {}
+        _ = capacity.openStream(slowID, send: { _, _ in }, evict: { evictions.append($0) })
+        expect("the SSE count ceiling refuses only the extra consumer",
+               capacity.openStream(extraID, send: { _, _ in }, evict: { _ in }),
+               .refused(limit: 1))
+        expect("oversized outstanding bytes evict their consumer",
+               capacity.enqueueStreamFrame(Data(repeating: 1, count: 9), kind: .event, for: slowID),
+               .evicted)
+        expect("capacity eviction reclaims bytes", (evictions.first?.logName ?? "")
+               + ":" + String(capacity.metrics.streamBytesCurrent), "capacity:0")
+
+        let errorScheduler = ReliabilityScheduler()
+        let errorOwner = HTTPReliability(
+            limits: reliabilityLimits(streams: 1), schedule: errorScheduler.schedule)
+        let broken = ReliabilityConnection(), brokenID = ObjectIdentifier(broken)
+        var completion: ((Error?) -> Void)?, errorReason: HTTPReliability.EvictionReason?
+        _ = errorOwner.admitConnection(brokenID) {}
+        _ = errorOwner.openStream(brokenID, send: { _, done in completion = done },
+                                  evict: { errorReason = $0 })
+        _ = errorOwner.enqueueStreamFrame(Data("frame".utf8), kind: .event, for: brokenID)
+        completion?(ReliabilityWriteFailure.injected)
+        expect("completion error evicts instead of retaining silently", errorReason, .writeError)
+
+        let timeoutScheduler = ReliabilityScheduler()
+        let timeoutOwner = HTTPReliability(
+            limits: reliabilityLimits(streams: 1), schedule: timeoutScheduler.schedule)
+        let stalled = ReliabilityConnection(), stalledID = ObjectIdentifier(stalled)
+        var timeoutReason: HTTPReliability.EvictionReason?
+        _ = timeoutOwner.admitConnection(stalledID) {}
+        _ = timeoutOwner.openStream(stalledID, send: { _, _ in }, evict: { timeoutReason = $0 })
+        _ = timeoutOwner.enqueueStreamFrame(Data("frame".utf8), kind: .event, for: stalledID)
+        timeoutScheduler.fireUncancelled()
+        expect("missing completion evicts at the slow-consumer deadline",
+               timeoutReason, .completionTimeout)
+        check("eviction leaves that connection's unrelated HTTP accounting live",
+              timeoutOwner.metrics.connectionsCurrent == 1 && timeoutOwner.metrics.streamsCurrent == 0)
+
+        let aggregateScheduler = ReliabilityScheduler()
+        let aggregate = HTTPReliability(
+            limits: reliabilityLimits(streams: 2, streamBytes: 10, aggregateStreamBytes: 12),
+            schedule: aggregateScheduler.schedule)
+        let slowDebt = ReliabilityConnection(), healthy = ReliabilityConnection()
+        let slowDebtID = ObjectIdentifier(slowDebt), healthyID = ObjectIdentifier(healthy)
+        var aggregateEvictions: [String] = [], healthyWrites = 0
+        _ = aggregate.admitConnection(slowDebtID) {}
+        _ = aggregate.admitConnection(healthyID) {}
+        _ = aggregate.openStream(slowDebtID, send: { _, _ in },
+                                 evict: { aggregateEvictions.append("slow:" + $0.logName) })
+        _ = aggregate.openStream(healthyID, send: { _, done in
+            healthyWrites += 1; done(nil)
+        }, evict: { aggregateEvictions.append("healthy:" + $0.logName) })
+        _ = aggregate.enqueueStreamFrame(Data(repeating: 1, count: 8),
+                                         kind: .event, for: slowDebtID)
+        expect("aggregate overflow evicts the actual largest slow debt owner",
+               aggregate.enqueueStreamFrame(Data(repeating: 2, count: 5),
+                                            kind: .event, for: healthyID), .enqueued)
+        expect("the healthy producer survives after the slow owner is accounted",
+               aggregateEvictions, ["slow:aggregate_capacity"])
+        check("the healthy frame drains and aggregate debt is reclaimed",
+              healthyWrites == 1 && aggregate.metrics.streamBytesCurrent == 0
+                && aggregate.metrics.streamAggregateCapacityEvictions == 1)
+    }
+
+    group("HTTP deadlines are one cancellable bounded owner") {
+        let queue = DispatchQueue(label: "clawdline.tests.http-deadlines")
+        queue.sync {
+            let deadlines = BoundedHTTPDeadlineScheduler(queue: queue, limit: 2)
+            let first = deadlines.schedule(after: 60) {}
+            let second = deadlines.schedule(after: 60) {}
+            check("the single timer owner accounts its explicit ceiling",
+                  first != nil && second != nil && deadlines.pendingCount == 2)
+            check("work above the deadline ceiling is refused",
+                  deadlines.schedule(after: 60) {} == nil)
+            first?()
+            expect("cancellation removes the retained closure immediately",
+                   deadlines.pendingCount, 1)
+            second?()
+            expect("normal cleanup leaves no deadline closure debt", deadlines.pendingCount, 0)
+        }
+
+        let refusing = ReliabilityScheduler(limit: 1)
+        let owner = HTTPReliability(
+            limits: reliabilityLimits(connections: 2), schedule: refusing.schedule)
+        let first = ReliabilityConnection(), second = ReliabilityConnection()
+        _ = owner.admitConnection(ObjectIdentifier(first)) {}
+        expect("scheduler exhaustion fails closed without admitting another connection",
+               owner.admitConnection(ObjectIdentifier(second)) {}, .refused(limit: 2))
+        check("deadline refusal rolls back connection accounting",
+              owner.metrics.connectionsCurrent == 1 && owner.metrics.deadlineTaskRefusals == 1)
+    }
+
+    group("SSE reconnect starts from hello and current full snapshots without replay") {
+        let scheduler = ReliabilityScheduler()
+        let owner = HTTPReliability(
+            limits: reliabilityLimits(streams: 1), schedule: scheduler.schedule)
+        func connect(_ connection: ReliabilityConnection, generation: String) -> [String] {
+            let id = ObjectIdentifier(connection); var frames: [String] = []
+            _ = owner.admitConnection(id) {}
+            _ = owner.openStream(id, send: { bytes, done in
+                frames.append(String(data: bytes, encoding: .utf8) ?? ""); done(nil)
+            }, evict: { _ in })
+            for (name, kind) in [("hello-" + generation, HTTPReliability.FrameKind.control),
+                                 ("sessions-" + generation, .fullSnapshot("sessions")),
+                                 ("orchestrator-" + generation, .fullSnapshot("orchestrator"))] {
+                _ = owner.enqueueStreamFrame(Data(name.utf8), kind: kind, for: id)
+            }
+            owner.closeConnection(id); return frames
+        }
+        _ = connect(ReliabilityConnection(), generation: "one")
+        let reconnected = connect(ReliabilityConnection(), generation: "two")
+        expect("reconnect realigns hello then current full snapshots",
+               reconnected, ["hello-two", "sessions-two", "orchestrator-two"])
+        check("it invents no replay from the disconnected generation",
+              !reconnected.contains { $0.contains("one") })
+    }
+}
+
 func runReadingFreshnessTests() {
+    runHTTPReliabilityTests()
     let clock = FrozenReadingClock()
     clock.install()
     defer { FrozenReadingClock.uninstall() }
@@ -34,6 +270,7 @@ func runReadingFreshnessTests() {
 
     /// Every read in this suite goes through here, so the admission trio is stated once and any
     /// group that cares about backpressure can replace just that part.
+    @discardableResult
     func read(_ readings: FreshReadings<FakeReading>,
               _ key: String = "info:A",
               policy: FreshReadings<FakeReading>.Policy? = nil,
@@ -42,7 +279,8 @@ func runReadingFreshnessTests() {
               execute: @escaping FreshReadings<FakeReading>.Executor,
               release: @escaping () -> Void = {},
               compute: @escaping () -> FakeReading,
-              deliver: @escaping (FreshReadings<FakeReading>.Answer) -> Void) {
+              deliver: @escaping (FreshReadings<FakeReading>.Answer) -> Void)
+        -> FreshReadings<FakeReading>.WaiterToken? {
         readings.read(key, policy: policy ?? quick, admit: admit, refusal: refusal,
                       execute: execute, compute: compute, classify: classify,
                       completeOnOwner: onOwner, release: release, deliver: deliver)
@@ -310,6 +548,57 @@ func runReadingFreshnessTests() {
               admissions == admittedBefore + 1)
         release?()
         check("and return it once", releases == 2)
+    }
+
+    group("same-key retries have a bounded parked waiter set") {
+        let readings = FreshReadings<FakeReading>(
+            waiterLimits: .init(perKey: 2, total: 3))
+        var finish: (() -> Void)?
+        let parked: FreshReadings<FakeReading>.Executor = { work in finish = work }
+        var answers: [String] = []
+        func ask() -> FreshReadings<FakeReading>.WaiterToken? {
+            read(readings, execute: parked,
+                 compute: { FakeReading(body: "card", refusal: nil) },
+                 deliver: { answers.append($0.value.body) })
+        }
+
+        let owner = ask(), duplicate = ask(), refused = ask()
+        check("one owner and one duplicate retry are parked",
+              owner != nil && duplicate != nil && readings.waiterCountForTesting("info:A") == 2)
+        check("the retry above the same-key ceiling is refused immediately", refused == nil)
+        expect("the bounded refusal uses the lane's existing answer", answers, ["429"])
+        expect("waiter refusal is observable", readings.waiterMetrics.refused, 1)
+        finish?()
+        expect("the admitted owner and joiner share the completed reading",
+               answers, ["429", "card", "card"])
+        expect("settlement reclaims all parked waiter debt", readings.waiterMetrics.current, 0)
+    }
+
+    group("cancelling a disconnected fresh-read waiter reclaims its debt") {
+        let readings = FreshReadings<FakeReading>(
+            waiterLimits: .init(perKey: 2, total: 2))
+        var finish: (() -> Void)?
+        let parked: FreshReadings<FakeReading>.Executor = { work in finish = work }
+        var disconnectedDelivered = false
+        var retryAnswer: String?
+        let disconnected = read(
+            readings, execute: parked,
+            compute: { FakeReading(body: "card", refusal: nil) },
+            deliver: { _ in disconnectedDelivered = true })
+
+        check("a cold connection receives a cancellation identity", disconnected != nil)
+        let cancelled = disconnected.map { readings.cancel($0) } ?? false
+        check("disconnect removes the closure it would otherwise retain", cancelled)
+        expect("disconnect accounting reaches zero", readings.waiterMetrics.current, 0)
+        let retry = read(
+            readings, execute: parked,
+            compute: { FakeReading(body: "card", refusal: nil) },
+            deliver: { retryAnswer = $0.value.body })
+        check("the reclaimed same-key place admits a duplicate retry", retry != nil)
+        finish?()
+        check("the disconnected callback is never invoked", !disconnectedDelivered)
+        expect("the live retry receives the shared result", retryAnswer, "card")
+        expect("cancellation remains observable", readings.waiterMetrics.cancelled, 1)
     }
 
     group("the trace separates waiting from working") {

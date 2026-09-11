@@ -97,6 +97,8 @@ selected.useApi({
     }
 });
 
+const { bindSessionUI } = await import("../Resources/web/app/js/session/ui.js");
+bindSessionUI({ redrawPush: noop });
 const { Settings } = await import("../Resources/web/app/js/input/settings.js");
 assert.equal(typeof Settings.test, "function", "the settings page still owns the button");
 

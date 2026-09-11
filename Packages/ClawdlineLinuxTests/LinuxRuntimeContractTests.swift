@@ -1,0 +1,478 @@
+import Foundation
+import XCTest
+@testable import ClawdlineApplication
+@testable import ClawdlineLinux
+
+private final class LockedStrings: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String] = []
+
+    func append(_ value: String) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    func snapshot() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
+final class LinuxRuntimeContractTests: XCTestCase {
+    func testProjectRootPolicyRejectsTraversalAndSymlink() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-root-\(UUID().uuidString)")
+        let root = scratch.appendingPathComponent("project")
+        let linked = scratch.appendingPathComponent("linked")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: root)
+        var metadata = stat()
+        XCTAssertEqual(lstat(root.path, &metadata), 0)
+        let policy = ProjectRootPolicy(allowedCanonicalRoots: [root.path],
+                                       expectedUID: metadata.st_uid, expectedGID: metadata.st_gid)
+        #if os(Linux)
+        let inspector: any ProjectRootInspecting = LinuxProjectRootInspector()
+        #else
+        // macOS rewrites its public `/var` alias inconsistently between URL canonicalization and
+        // lstat. The shared policy is still exercised here with fixed host evidence; Ubuntu uses
+        // the real descriptor/lstat inspector in this test and the lifecycle test below.
+        let inspector: any ProjectRootInspecting = FixedProjectRootInspector(
+            canonical: root.path, linked: linked.path,
+            uid: metadata.st_uid, gid: metadata.st_gid)
+        #endif
+        guard case .success = policy.admit(root.path, inspector: inspector) else {
+            return XCTFail("a canonical owned root should be admitted")
+        }
+        guard case .failure(let linkedRefusal) = policy.admit(linked.path, inspector: inspector) else {
+            return XCTFail("a symlink root should be refused")
+        }
+        XCTAssertEqual(linkedRefusal.code, .symbolicLink)
+        XCTAssertNil(try? ProjectRootPolicy.relativePath(
+            of: root.appendingPathComponent("../escape").path,
+            beneath: CanonicalProjectRoot(path: root.path, ownerUID: metadata.st_uid,
+                                          ownerGID: metadata.st_gid)).get())
+        XCTAssertTrue(ProjectRootPolicy.pathsOverlap("/srv/clawdline", "/srv/clawdline/secrets"))
+        XCTAssertTrue(ProjectRootPolicy.pathsOverlap("/srv", "/srv/clawdline"))
+        XCTAssertFalse(ProjectRootPolicy.pathsOverlap("/srv/projects", "/srv/clawdline"))
+    }
+
+    func testProcIdentityUsesExactStartTokenAndGroup() throws {
+        var fields = Array(repeating: "0", count: 20)
+        fields[0] = "S"
+        fields[2] = "4242"
+        fields[19] = "998877"
+        let identity = try XCTUnwrap(LinuxProcfs.parseStat("71 (claude) " + fields.joined(separator: " "),
+                                                           pid: 71))
+        XCTAssertEqual(identity.pid, 71)
+        XCTAssertEqual(identity.processGroupID, 4242)
+        XCTAssertEqual(identity.startToken, "998877")
+
+        fields[19] = "998878" // representative PID-reuse mutation
+        let replacement = try XCTUnwrap(LinuxProcfs.parseStat(
+            "71 (claude) " + fields.joined(separator: " "), pid: 71))
+        XCTAssertNotEqual(identity, replacement)
+
+        let credentials = try XCTUnwrap(LinuxProcfs.parseCredentials("""
+        Name:\tclaude
+        Uid:\t1000\t1001\t1002\t1003
+        Gid:\t2000\t2001\t2002\t2003
+        Groups:\t2001 3000
+        """))
+        XCTAssertEqual(credentials.effectiveUID, 1001)
+        XCTAssertEqual(credentials.effectiveGID, 2001)
+        XCTAssertEqual(credentials.supplementaryGroups, [2001, 3000])
+        let host = LinuxProcessHost(serviceUID: 1001, serviceGID: 2001,
+                                    supplementaryGroups: [2001, 3000])
+        XCTAssertTrue(host.credentialsMatch(credentials))
+        XCTAssertFalse(host.credentialsMatch(.init(
+            effectiveUID: 1001, effectiveGID: 2999,
+            supplementaryGroups: [2001, 3000]))) // changed effective GID
+        XCTAssertFalse(host.credentialsMatch(.init(
+            effectiveUID: 1001, effectiveGID: 2001,
+            supplementaryGroups: [2001, 3999]))) // changed supplementary group
+        let sameTickDifferentPID = HostProcessIdentity(
+            pid: 72, processStart: identity.processStart,
+            startToken: identity.startToken, processGroupID: identity.processGroupID)
+        XCTAssertNotEqual(identity, sameTickDifferentPID)
+        let changedGroup = HostProcessIdentity(
+            pid: identity.pid, processStart: identity.processStart,
+            startToken: identity.startToken, processGroupID: 4343)
+        XCTAssertNotEqual(identity, changedGroup)
+    }
+
+    func testClosedProviderEnvironmentCannotLeakInheritedCredentials() throws {
+        setenv("CLAUDE_CODE_MESSAGING_TOKEN", "must-not-cross", 1)
+        setenv("OPENAI_API_KEY", "must-not-cross", 1)
+        defer {
+            unsetenv("CLAUDE_CODE_MESSAGING_TOKEN")
+            unsetenv("OPENAI_API_KEY")
+        }
+        let environment = try ProviderEnvironmentPolicy.closed(
+            home: "/var/lib/clawdline/home", temporaryDirectory: "/var/lib/clawdline/tmp").get()
+        XCTAssertEqual(Set(environment.keys), ProviderEnvironmentPolicy.allowedKeys)
+        XCTAssertNil(environment["CLAUDE_CODE_MESSAGING_TOKEN"])
+        XCTAssertNil(environment["OPENAI_API_KEY"])
+        XCTAssertFalse(environment.values.contains("must-not-cross"))
+    }
+
+    func testUnavailableCapabilityRefusesBeforeLaunchAndMenuEffects() throws {
+        let request = ProviderLaunchRequest(
+            commandID: "contract-1", projectRoot: "/var/lib/clawdline/projects/demo",
+            assistant: .codex, terminalMode: .tmuxDetachedSession)
+        guard case .failure(.capabilityUnavailable(let launch)) = SessionLaunchPolicy.admit(
+            request, terminalCapabilities: []) else {
+            return XCTFail("missing tmux must be a typed refusal")
+        }
+        XCTAssertEqual(launch.capability, .terminalTmux)
+        guard case .failure(.capabilityUnavailable(let answer)) = TerminalMenuAnswerPolicy.admit(
+            [0x31], backend: .tmux, terminalCapabilities: []) else {
+            return XCTFail("missing tmux must refuse menu input before a key effect")
+        }
+        XCTAssertEqual(answer.capability, .terminalTmux)
+        XCTAssertEqual(HostCapabilityUnavailable.code, "capability_unavailable")
+    }
+
+    func testMenuAllowlistAndLifecycleStagesStayClosed() throws {
+        XCTAssertEqual(try TerminalMenuAnswerPolicy.admit(
+            [0x31], backend: .tmux, terminalCapabilities: [.terminalTmux]).get(), .digit(1))
+        XCTAssertEqual(try TerminalMenuAnswerPolicy.admit(
+            TerminalMenuAnswerPolicy.backTab, backend: .tmux,
+            terminalCapabilities: [.terminalTmux]).get(), .key([0x1b, 0x5b, 0x5a]))
+        XCTAssertThrowsError(try TerminalMenuAnswerPolicy.admit(
+            [0x1b, 0x5b, 0x41], backend: .tmux,
+            terminalCapabilities: [.terminalTmux]).get())
+
+        var progress = TerminalEffectProgress(commandID: "stages-1", operation: .send,
+                                              channel: "%1")
+        XCTAssertThrowsError(try progress.advance(to: .observed))
+        try progress.advance(to: .executed)
+        try progress.advance(to: .delivered)
+        try progress.advance(to: .observed)
+        XCTAssertEqual(progress.stages, [.accepted, .executed, .delivered, .observed])
+    }
+
+    func testSharedSchedulerSerializesSameChannelSendCloseNestedAndMaintenance() throws {
+        let owner = TerminalCommandScheduler(
+            label: "linux-scheduler-\(UUID().uuidString)",
+            limits: TerminalWorkLimits(total: 3, perChannel: 2,
+                                       maximumInputBytes: 32, maximumInventory: 4))
+        let firstEntered = DispatchSemaphore(value: 0)
+        let releaseFirst = DispatchSemaphore(value: 0)
+        let closeFinished = DispatchSemaphore(value: 0)
+        let group = DispatchGroup()
+        let order = LockedStrings()
+
+        group.enter()
+        DispatchQueue.global().async {
+            defer { group.leave() }
+            _ = try? owner.run(commandID: "send-one", channel: "%1", operation: .send) {
+                order.append("send-preflight")
+                firstEntered.signal()
+                releaseFirst.wait()
+                order.append("send-effect")
+            }
+        }
+        XCTAssertEqual(firstEntered.wait(timeout: .now() + 1), .success)
+        group.enter()
+        DispatchQueue.global().async {
+            defer { group.leave() }
+            _ = try? owner.run(commandID: "close-one", channel: "%1", operation: .close) {
+                order.append("close-preflight")
+                closeFinished.signal()
+            }
+        }
+        XCTAssertEqual(closeFinished.wait(timeout: .now() + 0.05), .timedOut,
+                       "same-channel close preflight must wait behind send")
+        XCTAssertEqual(owner.drainSnapshot().outstanding, 2)
+        owner.setRestartMaintenance(active: true, requestID: "restart-one")
+        XCTAssertThrowsError(try owner.run(
+            commandID: "observe-refused", channel: "%2", operation: .observe) {}) {
+            XCTAssertEqual(($0 as? TerminalLifecycleFailure)?.code, .maintenance)
+        }
+        releaseFirst.signal()
+        XCTAssertEqual(group.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(order.snapshot(), ["send-preflight", "send-effect", "close-preflight"])
+        XCTAssertEqual(owner.drainSnapshot().outstanding, 0)
+        owner.setRestartMaintenance(active: false, requestID: "wrong-restart")
+        XCTAssertNotNil(owner.maintenanceRefusal(), "stale reopen must not clear maintenance")
+        owner.setRestartMaintenance(active: false, requestID: "restart-one")
+
+        try owner.run(commandID: "outer", channel: "%1", operation: .close) {
+            try owner.run(commandID: "nested", channel: "%1", operation: .enumerate) {
+                XCTAssertTrue(owner.isCurrentlyOnWorkerQueue)
+                XCTAssertEqual(owner.drainSnapshot().outstanding, 1)
+            }
+        }
+        XCTAssertEqual(owner.drainSnapshot().outstanding, 0)
+    }
+
+    func testCommandRunnerEnforcesAggregateOutputAndStdinDeadline() throws {
+        let runner = LinuxCommandRunner(environment: ["PATH": "/usr/bin:/bin"])
+        func expect(_ code: LinuxRuntimeFailureCode, script: String,
+                    input: Data? = nil, timeout: TimeInterval = 1) {
+            XCTAssertThrowsError(try runner.run(
+                executable: "/bin/sh", arguments: ["-c", script], input: input,
+                timeout: timeout, maximumOutputBytes: 1024)) {
+                XCTAssertEqual(($0 as? LinuxRuntimeFailure)?.code, code)
+            }
+        }
+        expect(.outputLimit, script: "i=0; while [ $i -lt 300 ]; do printf 12345678; i=$((i+1)); done")
+        expect(.outputLimit, script: "i=0; while [ $i -lt 300 ]; do printf 12345678 >&2; i=$((i+1)); done")
+        expect(.outputLimit, script: "i=0; while [ $i -lt 80 ]; do printf 12345678; printf 12345678 >&2; i=$((i+1)); done")
+        let started = ProcessInfo.processInfo.systemUptime
+        expect(.commandTimeout, script: "sleep 5",
+               input: Data(repeating: 0x61, count: 65_536), timeout: 0.1)
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1,
+                          "a child that refuses stdin must remain deadline bounded")
+    }
+
+    func testSecretCoordinatorSerializesMixedOperationsAcrossInstances() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-secrets-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        var metadata = stat()
+        XCTAssertEqual(lstat(scratch.path, &metadata), 0)
+        let root = CanonicalProjectRoot(path: scratch.path,
+                                        ownerUID: metadata.st_uid, ownerGID: metadata.st_gid)
+        let first = LinuxProtectedFileSecretStore(root: root)
+        let second = LinuxProtectedFileSecretStore(root: root)
+        try first.set(Data("initial".utf8), for: "account")
+        let rotateEntered = DispatchSemaphore(value: 0)
+        let releaseRotate = DispatchSemaphore(value: 0)
+        let setFinished = DispatchSemaphore(value: 0)
+        let group = DispatchGroup()
+        group.enter()
+        DispatchQueue.global().async {
+            defer { group.leave() }
+            _ = try? first.rotate("account") { old in
+                XCTAssertEqual(old, Data("initial".utf8))
+                rotateEntered.signal()
+                releaseRotate.wait()
+                return Data("rotated".utf8)
+            }
+        }
+        XCTAssertEqual(rotateEntered.wait(timeout: .now() + 1), .success)
+        group.enter()
+        DispatchQueue.global().async {
+            defer { group.leave() }
+            try? second.set(Data("set-after-rotate".utf8), for: "account")
+            setFinished.signal()
+        }
+        XCTAssertEqual(setFinished.wait(timeout: .now() + 0.05), .timedOut,
+                       "plain set must share the closed-operation account coordinator")
+        releaseRotate.signal()
+        XCTAssertEqual(group.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(try first.data(for: "account"), Data("set-after-rotate".utf8))
+    }
+
+    func testHealthSeparatesCompiledConfiguredUsableAndAuthenticated() throws {
+        let health = LinuxRuntimeIdentity.current
+        XCTAssertFalse(health.ready)
+        XCTAssertEqual(health.readinessCode, "w4_runtime_not_configured")
+        XCTAssertTrue(health.supportedCapabilities.isEmpty)
+        XCTAssertTrue(health.capabilityStates.contains {
+            $0.capability == HostCapability.terminalTmux.rawValue
+                && $0.compiled && !$0.configured && !$0.usable
+        })
+        XCTAssertTrue(health.providers.allSatisfy {
+            !$0.executableConfigured && !$0.authenticated && !$0.usable && $0.lifecycle.isEmpty
+        })
+    }
+
+    #if os(Linux)
+    func testRealTmuxProviderLifecycleOnLinux() throws {
+        let tmux = try XCTUnwrap(ProcessInfo.processInfo.environment["CLAWDLINE_TEST_TMUX"],
+                                 "Linux contract requires its pinned tmux executable")
+        let linuxExecutable = try XCTUnwrap(
+            ProcessInfo.processInfo.environment["CLAWDLINE_TEST_LINUX_EXECUTABLE"],
+            "Linux contract requires the exact sandbox launcher executable")
+        XCTAssertNotEqual(geteuid(), 0, "the provider lifecycle contract must run non-root")
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-runtime-\(UUID().uuidString)")
+        let state = scratch.appendingPathComponent("state")
+        let project = scratch.appendingPathComponent("project")
+        let provider = scratch.appendingPathComponent("claude-fixture")
+        let outside = scratch.appendingPathComponent("outside-provider-write")
+        let machineSecret = state.appendingPathComponent("secrets/machine.secret")
+        let controlSocket = state.appendingPathComponent("runtime/clawdline.sock")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let quotedSecret = SessionLaunchPolicy.shellQuoted(machineSecret.path)
+        let quotedSocket = SessionLaunchPolicy.shellQuoted(controlSocket.path)
+        let quotedOutside = SessionLaunchPolicy.shellQuoted(outside.path)
+        let script = """
+        #!/bin/sh
+        if /bin/cat \(quotedSecret) >/dev/null 2>&1; then
+          printf 'SECRET-READABLE\\n'
+        else
+          printf 'SECRET-DENIED\\n'
+        fi
+        if /usr/bin/python3 -c "import socket; s=socket.socket(socket.AF_UNIX); s.connect(\(quotedSocket))" >/dev/null 2>&1; then
+          printf 'SOCKET-CONNECTED\\n'
+        else
+          printf 'SOCKET-DENIED\\n'
+        fi
+        if printf escaped > \(quotedOutside) 2>/dev/null; then
+          printf 'OUTSIDE-WRITABLE\\n'
+        else
+          printf 'OUTSIDE-DENIED\\n'
+        fi
+        printf 'READY\\n'
+        while IFS= read -r line; do
+          if [ "$line" = /exit ]; then exit 0; fi
+          printf 'ECHO:%s\\n' "$line"
+        done
+        """
+        try Data(script.utf8).write(to: provider)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700],
+                                              ofItemAtPath: provider.path)
+        let runtimeConfig = LinuxRuntimeConfiguration(
+            uid: geteuid(), gid: getegid(), projectRoots: [project.path],
+            tmuxExecutable: tmux,
+            providers: LinuxProviderExecutablesConfiguration(
+                claude: provider.path, codex: provider.path))
+        let config = LinuxDaemonConfiguration(
+            version: 1, listen: LinuxListenConfiguration(host: "127.0.0.1", port: 7718),
+            stateDirectory: state.path,
+            secretFile: scratch.appendingPathComponent("unused.secret").path,
+            runtime: runtimeConfig)
+        let runtime = try LinuxProviderRuntime.compose(
+            configuration: config, sandboxExecutablePath: linuxExecutable)
+        XCTAssertEqual(runtime.compositionReceipt.configuration,
+                       "runtime_adapters_configured_provider_auth_pending")
+        XCTAssertFalse(runtime.compositionReceipt.identity.ready)
+        XCTAssertTrue(runtime.compositionReceipt.identity.providers.allSatisfy {
+            $0.executableConfigured && !$0.authenticated && !$0.usable && $0.lifecycle.isEmpty
+        })
+        try Data("machine-secret-must-not-cross".utf8).write(to: machineSecret)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: machineSecret.path)
+        let created = try runtime.create(commandID: "create-1", projectRoot: project.path,
+                                         assistant: .claude)
+        let pane = try XCTUnwrap(created.sessionID)
+        XCTAssertEqual(created.progress.stages, [.accepted, .executed, .delivered, .observed])
+        var observed = ""
+        for attempt in 0..<40 where !observed.contains("READY") {
+            usleep(50_000)
+            observed = try runtime.observe(commandID: "observe-\(attempt)", sessionID: pane).output ?? ""
+        }
+        XCTAssertTrue(observed.contains("SECRET-DENIED"))
+        XCTAssertTrue(observed.contains("SOCKET-DENIED"))
+        XCTAssertTrue(observed.contains("OUTSIDE-DENIED"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
+
+        _ = try runtime.send(commandID: "send-1", sessionID: pane, text: "hello")
+        for attempt in 40..<80 where !observed.contains("ECHO:hello") {
+            usleep(50_000)
+            observed = try runtime.observe(commandID: "observe-\(attempt)", sessionID: pane).output ?? ""
+        }
+        XCTAssertTrue(observed.contains("ECHO:hello"))
+
+        runtime.terminal.failSubmitAfterPasteForTesting = true
+        XCTAssertThrowsError(try runtime.send(
+            commandID: "partial-send", sessionID: pane, text: "partial")) {
+            let receipt = $0 as? LinuxLifecycleFailure
+            XCTAssertEqual(receipt?.certainty, .partial)
+            XCTAssertEqual(receipt?.lastConfirmedEffect, .textPasted)
+            XCTAssertEqual(receipt?.progress.stages, [.accepted, .executed, .delivered])
+            XCTAssertEqual(receipt?.reconciliationRequired, true)
+        }
+        runtime.terminal.failSubmitAfterPasteForTesting = false
+        _ = try runtime.interrupt(commandID: "clear-partial", sessionID: pane)
+
+        runtime.failPostCreateReadinessForTesting = true
+        XCTAssertThrowsError(try runtime.create(
+            commandID: "post-create-failure", projectRoot: project.path, assistant: .claude)) {
+            let receipt = $0 as? LinuxLifecycleFailure
+            XCTAssertEqual(receipt?.certainty, .compensated)
+            XCTAssertEqual(receipt?.lastConfirmedEffect, .sessionCreated)
+            XCTAssertEqual(receipt?.reconciliationRequired, false)
+        }
+        runtime.failPostCreateReadinessForTesting = false
+
+        let resized = try runtime.resize(commandID: "resize-1", sessionID: pane,
+                                         columns: 90, rows: 25)
+        XCTAssertEqual(resized.output, "90x25")
+        let enumerated = try runtime.enumerate(commandID: "enumerate-1")
+        XCTAssertTrue(enumerated.1.contains(where: { $0.id == pane }))
+        let closed = try runtime.close(commandID: "close-1", sessionID: pane)
+        XCTAssertEqual(closed.progress.stages, [.accepted, .executed, .delivered, .observed])
+        XCTAssertFalse(try runtime.enumerate(commandID: "enumerate-2").1
+            .contains(where: { $0.id == pane }))
+    }
+
+    func testComposeRefusesReservedRootsAndMissingExecutablesBeforeEffect() throws {
+        let tmux = try XCTUnwrap(ProcessInfo.processInfo.environment["CLAWDLINE_TEST_TMUX"])
+        let linuxExecutable = try XCTUnwrap(
+            ProcessInfo.processInfo.environment["CLAWDLINE_TEST_LINUX_EXECUTABLE"])
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-capability-\(UUID().uuidString)")
+        let project = scratch.appendingPathComponent("project")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        func configuration(state: URL, roots: [String], provider: String) -> LinuxDaemonConfiguration {
+            LinuxDaemonConfiguration(
+                version: 1, listen: .init(host: "127.0.0.1", port: 7718),
+                stateDirectory: state.path,
+                secretFile: scratch.appendingPathComponent("unused.secret").path,
+                runtime: LinuxRuntimeConfiguration(
+                    uid: geteuid(), gid: getegid(), projectRoots: roots,
+                    tmuxExecutable: tmux,
+                    providers: .init(claude: provider, codex: provider)))
+        }
+        let firstState = scratch.appendingPathComponent("first-state")
+        XCTAssertThrowsError(try LinuxProviderRuntime.compose(
+            configuration: configuration(
+                state: firstState, roots: [firstState.appendingPathComponent("secrets").path],
+                provider: linuxExecutable),
+            sandboxExecutablePath: linuxExecutable)) {
+            XCTAssertEqual(($0 as? LinuxRuntimeFailure)?.code, .unsafePath)
+        }
+        let secondState = scratch.appendingPathComponent("second-state")
+        XCTAssertThrowsError(try LinuxProviderRuntime.compose(
+            configuration: configuration(
+                state: secondState, roots: [project.path],
+                provider: scratch.appendingPathComponent("missing-provider").path),
+            sandboxExecutablePath: linuxExecutable)) {
+            XCTAssertEqual(($0 as? LinuxRuntimeFailure)?.code, .capabilityUnavailable)
+        }
+    }
+    #endif
+
+    private func canonicalTemporaryDirectory() -> URL {
+        let path = FileManager.default.temporaryDirectory.path
+        #if os(macOS)
+        // Foundation preserves the public `/var` spelling even though macOS implements it as a
+        // symlink to `/private/var`; the Linux policy correctly treats that spelling as linked.
+        if path == "/var" || path.hasPrefix("/var/") {
+            return URL(fileURLWithPath: "/private" + path, isDirectory: true)
+        }
+        #endif
+        return URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath()
+    }
+
+    private struct FixedProjectRootInspector: ProjectRootInspecting {
+        let canonical: String
+        let linked: String
+        let uid: UInt32
+        let gid: UInt32
+
+        func inspectProjectRoot(at path: String) throws -> ProjectRootEvidence {
+            ProjectRootEvidence(
+                requestedPath: path,
+                canonicalPath: path == linked ? canonical : path,
+                isDirectory: true,
+                containsSymbolicLink: path == linked,
+                ownerUID: uid,
+                ownerGID: gid)
+        }
+    }
+}

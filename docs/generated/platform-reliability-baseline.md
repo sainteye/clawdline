@@ -1,11 +1,12 @@
 # 平台可靠性基準（W0-C）
 
 此文件由 `tools/measure-platform-reliability.py` 產生；CLA-296 Plan v4 的量測輸入。
-`source_reference_commit`：`base:7a785fc15c34cdbfd2de8f6960a038f78c90132c+candidate-overlay:c588c071eec39a0796a9135c7ab814914d11be63f35a7153b60f370557bc2be5`；這表示指定 base 加上由 source manifest 封存的 candidate overlay，base commit 本身不含 overlay bytes。
-來源範圍 SHA-256：`c588c071eec39a0796a9135c7ab814914d11be63f35a7153b60f370557bc2be5`。
-工具 SHA-256：`35ee1089ae4652c4f2c6606a182927bacbe196262c244cad8758be263bf1944d`。
+`source_reference_commit`：`base:a6e2785ca1993538b7792aab69c9bfc73da854c0+candidate-overlay:b39f9a476c0eba91e6f3270fe1041284c0ce17209297a3d6497e8f83b076c68e`；這表示指定 base 加上由 source manifest 封存的 candidate overlay，base commit 本身不含 overlay bytes。
+來源 overlay：`R-2 sealed HTTP/SSE reliability correction overlay`。
+來源範圍 SHA-256：`b39f9a476c0eba91e6f3270fe1041284c0ce17209297a3d6497e8f83b076c68e`。
+工具 SHA-256：`6adc1810214db81a5b81d5ac82b2d3b3cfe460ec081afece0c73f6b425095d27`。
 
-17 個非空來源檔、19 列。這是範圍摘要，並非整棵 commit-tree 驗證。
+18 個非空來源檔、19 列。這是範圍摘要，並非整棵 commit-tree 驗證。
 整檔 seal 拒絕來源漂移；本工具不解析或編譯 Swift。更新 seal 前須重讀受影響行為。
 未提供 probe 時保留 unknown；要求 probe 卻無資料、輸入缺失或 parse 失敗則非零退出。
 existing test source 一律屬 source-derived；本工具未執行 Swift tests。數值是現行常數或該次觀測，沒有批准新預算。
@@ -51,55 +52,62 @@ readyGenerations 明定 bufferingNewest(1)，dropped 計數；與 commands 是�
 
 ## http-admission
 
-accept 直接 start/receive；這條 accept/receive 路徑沒有全域連線、aggregate body bytes 或 request-read deadline admission。response close grace 是另一階段。
+HTTPReliability 先計 process-wide admitted connection；超額 socket 只有固定 capacity-response lane 可送 typed 503，其後直接 close。receive 在保留 chunk 前比較aggregate request bytes；read、SSE write、response close 共用可取消且有界的 deadline owner。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:558–563`；slice SHA-256 `809c25ceafa41dcf951f1a64aed7b8de55b5d7d97e2198ebd2e7ce86950a1c42`。
-  - `Sources/RemoteServer.swift:568–621`；slice SHA-256 `a36633fb23f30d6079fca2bb082b6d35050af66525a3192f968ce1a6f5cb74b0`。
-  - `Sources/RemoteServer.swift:5569–5569`；slice SHA-256 `f51d92d14db18adf58729af5350df5b81ae3ccfee46a076b7cbd7796bd31e283`。
-- **來源數值／屬性**：`{"bodyLimit":20971520,"responseCloseGraceSeconds":30}`。
+  - `Sources/HTTPReliability.swift:8–82`；slice SHA-256 `e778ed95e5a52bf99e11f0c43cb55fd4cac1c04437a1edf2d1ee3f0c48d238e7`。
+  - `Sources/HTTPReliability.swift:322–370`；slice SHA-256 `60726a6d0e9b8f155e9454c716697d506cf09572c0f870ea9f86c1ec055b1b31`。
+  - `Sources/HTTPReliability.swift:429–458`；slice SHA-256 `92ef3305aa056252c96459c88ca4cabac2d39ec3da3fa9f249785f4c972a22c9`。
+  - `Sources/HTTPReliability.swift:458–480`；slice SHA-256 `b2256988059c773377981061f102cea9139296d62a75a19463636d25cdbd651d`。
+  - `Sources/HTTPReliability.swift:664–698`；slice SHA-256 `ed34da3e16ccf140f22ef93213fa7db60509272c4449f3ebf561846e2bb8ba7e`。
+  - `Sources/RemoteServer.swift:567–582`；slice SHA-256 `d31254902238e2a899e2022fc0c414f6b66b9a82a827470946ed03721910ce10`。
+  - `Sources/RemoteServer.swift:589–604`；slice SHA-256 `78c0d546a18212c439dccb8209b3a1ea2c55e771d11b1a7b25b480f6b70dddd3`。
+- **來源數值／屬性**：`{"aggregateRequestByteLimit":67108864,"bodyLimit":20971520,"connectionLimit":128,"connectionRefusalLimit":16,"deadlineTaskLimit":144,"requestReadSecondLimit":15,"responseCloseGraceSecondLimit":30}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
-- **unknown**：NWListener/kernel 上限、同時連線數、記憶體峰值與 slowloris 行為未量測。 64 KiB 是未找到 header terminator 時的條件檢查，不能稱所有完整 header 的嚴格上限。
-- **接手 owner**：R-2 HTTP reliability owner。
+- **unknown**：數字是 implementation defaults，沒有 reference workload/RSS/kernel backlog adequacy 測量。 capacity-response lane 之外的 socket 直接 close，因此 typed 503 只保證在該 lane 內。
+- **接手 owner**：W6 workload approval owner。
 
 ## sse-output
 
-Stream 只保存 connection；openStream 登錄串流，授權檢查沒有容量條件；write 與 heartbeat 的 contentProcessed 忽略 error，沒有此層 outstanding-byte 計數、slow-consumer eviction 或待送 snapshot 合併。
+HTTPReliability 對已授權 stream 限制 connection、per-stream/process outstanding bytes；一次只送一個 completion-tracked frame。per-stream overflow 淘汰 producer；aggregate overflow依最大既有 debt、再依最舊 active frame 淘汰實際 owner。sessions/orchestrator pending full snapshot 依 channel 保留最新。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:5430–5435`；slice SHA-256 `aa83071c47cfb0303bcd1ac0652e35be5e485d5fc876cd63b03ccbe31da608ba`。
-  - `Sources/RemoteServer.swift:5445–5492`；slice SHA-256 `0c9d26aef7affa2aa56381c1b4e02f643d6e0e810772abeb5f143fb69953292f`。
-  - `Sources/RemoteServer.swift:734–742`；slice SHA-256 `7f6beca1780fb6921227aff809fa9a9aa1a78be02872dc41f3a825c1fde71452`。
-  - `Sources/RemoteServer.swift:5495–5511`；slice SHA-256 `1ea4c0fb7c2d0ba698647d66baef5d0f91e8a66da781e98b17dd6a4a26d9482c`。
-  - `Sources/RemoteServer.swift:5558–5567`；slice SHA-256 `3fef466150f294172022c48b80a119ce8d4c048ba552e0dd620fdce6b779ea95`。
-- **來源數值／屬性**：`{"connection_cap":null,"outstanding_byte_cap":null}`。
+  - `Sources/HTTPReliability.swift:551–569`；slice SHA-256 `6c31144e73684b93e954be5ea66fe4167993326956433943f81bc6f3dbffaf77`。
+  - `Sources/HTTPReliability.swift:570–628`；slice SHA-256 `64a7e1f6a2a59c8e5a23309d9f6d60095971e644c6ac529c1ad77abda58f308c`。
+  - `Sources/HTTPReliability.swift:698–719`；slice SHA-256 `aa0c5b9613de56f22adbe1fa0ae1f41e31704bbd4cafccc0fecf24964c6f5551`。
+  - `Sources/HTTPReliability.swift:753–769`；slice SHA-256 `f10ec4f42afb6871f7cb14f5f323991b4c2f3e077b8589b659992a3eee069d0e`。
+  - `Sources/RemoteServer.swift:5451–5517`；slice SHA-256 `7affbb6144f0c981aa7ddc7717776bfd2b7e6b9c25fdf11d653a68c001269acc`。
+  - `Sources/RemoteServer.swift:5586–5602`；slice SHA-256 `a1b6ddd839b4b230e6bff99175a5e47b5dc15729c86c61305fa0cf70aeb182bd`。
+- **來源數值／屬性**：`{"aggregateStreamByteLimit":16777216,"streamByteLimit":4194304,"streamLimit":16,"streamWriteSecondLimit":20}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
-- **unknown**：未開 authenticated SSE 或使真實 consumer 停讀；連線／待送 bytes、kernel buffer 與 callback 延遲未知。 Network 可能有下層背壓，來源不能證明本層已受保護；publication 合併不是 local SSE 合併。
-- **接手 owner**：R-2 HTTP reliability owner。
+- **unknown**：未用真實 authenticated socket 暫停 consumer；kernel buffer、真實 callback latency/RSS 與 defaults adequacy 未量測。 source test 是 failure injection，不是 deployed runtime receipt。
+- **接手 owner**：W6 workload approval owner。
 
 ## sse-reconnect
 
-openStream 送 hello 與當前 sessions/orchestrator 全量 snapshot；write 分配 event id。重連以當前狀態 realign，這些路徑沒有 Last-Event-ID replay。
+授權後 openStream 仍排 hello，再排當前 sessions/orchestrator 全量 snapshot；只合併尚未送的全量 observation，沒有 Last-Event-ID replay，也沒有把 snapshot 稱為 effect ACK。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:5445–5492`；slice SHA-256 `0c9d26aef7affa2aa56381c1b4e02f643d6e0e810772abeb5f143fb69953292f`。
-  - `Sources/RemoteServer.swift:5558–5567`；slice SHA-256 `3fef466150f294172022c48b80a119ce8d4c048ba552e0dd620fdce6b779ea95`。
+  - `Sources/RemoteServer.swift:5451–5517`；slice SHA-256 `7affbb6144f0c981aa7ddc7717776bfd2b7e6b9c25fdf11d653a68c001269acc`。
+  - `Sources/RemoteServer.swift:5586–5602`；slice SHA-256 `a1b6ddd839b4b230e6bff99175a5e47b5dc15729c86c61305fa0cf70aeb182bd`。
+  - `Sources/HTTPReliability.swift:253–261`；slice SHA-256 `c2cde933b43f208c9fc873209295a2be1bf378c9a54d7604b05515f60abefe18`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
-- **unknown**：未測斷線重連、遺失事件與 viewer 觀察；snapshot 送出不等於 command effect 完成／ACK。
-- **接手 owner**：R-2 HTTP reliability owner。
+- **unknown**：未在真實 viewer 上量斷線視窗或遺失 transcript/screen event；client 仍須 refetch open content。
+- **接手 owner**：W6 runtime failure owner。
 
 ## terminal-queue
 
-同一 serial terminal worker 在入列前計 total/per-channel outstanding；HTTP 容量拒絕為 429 busy，maintenance 為 503 restart_maintenance；nested inline 仍計新增 channel。
+同一 serial terminal worker 在入列前計 total/per-channel outstanding；HTTPReliability 另計進入此 lane 前的 connection/retained-request debt。容量拒絕仍為 429 busy，maintenance 仍為 503 restart_maintenance；nested inline 仍計新增 channel。
 
 - **source-derived**：
   - `Sources/TerminalCommandScheduler.swift:59–116`；slice SHA-256 `1be76532d1e427d0f28d471102818ef7c6eb780c3065ad75110f3c8af248eeb0`。
-  - `Sources/RemoteServer.swift:218–222`；slice SHA-256 `cba9be1ea79d0e721081d4be089af146435c807cbbace83a9be21d4918bd07c0`。
+  - `Sources/RemoteServer.swift:225–229`；slice SHA-256 `cba9be1ea79d0e721081d4be089af146435c807cbbace83a9be21d4918bd07c0`。
   - `Sources/RemoteServer.swift:3335–3413`；slice SHA-256 `1bc144ead388a794abd1e6bd79486b57de72aa07b181c88874b07f95a7855048`。
   - `Sources/Coordinator.swift:1471–1479`；slice SHA-256 `ec85bdb9cfc055b8bfec1e596f3a3ff56ca60ba955f1e4d41710927ef314709b`。
+  - `Sources/HTTPReliability.swift:482–501`；slice SHA-256 `9f74ef87c98720177db47f36301d336761b3580ea19d0c014bff6d6894557d31`。
 - **來源數值／屬性**：`{"terminalChannelDepth":2,"terminalDepth":8}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -108,14 +116,15 @@ openStream 送 hello 與當前 sessions/orchestrator 全量 snapshot；write 分
 
 ## read-queues
 
-slow reads/analytics、transcript、voice/planner 有獨立 admission；overflow 分別為 429 busy/usage_analytics_busy/transcript_busy，voice/planner 亦回 429 busy。列出的 depth 都是 request 數量；沒有把單一 body cap 當 aggregate queued-byte cap。
+slow reads/analytics、transcript、voice/planner 有獨立 admission；overflow 分別為 429 busy/usage_analytics_busy/transcript_busy，voice/planner 亦回 429 busy。HTTPReliability 在這些 lane 前另計 aggregate retained-request bytes；列出的 depth 仍是 request 數量。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:4365–4402`；slice SHA-256 `3c055438cd43c41fe9d256ec8a771c0b62e71bfc233b48bbf775bb9df3364b91`。
+  - `Sources/RemoteServer.swift:4371–4408`；slice SHA-256 `3c055438cd43c41fe9d256ec8a771c0b62e71bfc233b48bbf775bb9df3364b91`。
   - `Sources/RemoteServer.swift:4218–4227`；slice SHA-256 `b46c966611141380b7924027284015f38af80ca5fd2231c4cb8b9095a6332540`。
   - `Sources/RemoteServer.swift:3704–3704`；slice SHA-256 `303a1dbde79ba7cd428db85803635dba2e8ce2e855d8ac88384d27b1d483fbfe`。
   - `Sources/RemoteServer.swift:3967–3967`；slice SHA-256 `553b36a769437f0e44673f2311acfd0d6e462d4b97781827b7a1b7193f0961db`。
   - `Sources/TranscriptReadCoordinator.swift:12–34`；slice SHA-256 `061f580f9b5fea41396571a90799dde22c3c5001c446285d1eb683e20d2e2df4`。
+  - `Sources/HTTPReliability.swift:482–501`；slice SHA-256 `9f74ef87c98720177db47f36301d336761b3580ea19d0c014bff6d6894557d31`。
 - **來源數值／屬性**：`{"backgroundDepth":1,"depth":2,"planDepth":2,"readingDepth":8,"usageAnalyticsDepth":2,"voiceDepth":2}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -124,15 +133,18 @@ slow reads/analytics、transcript、voice/planner 有獨立 admission；overflow
 
 ## coalesced-read-waiters
 
-FreshReadings 對同 key 共用一次 refresh，但會 append 每個 waiter；因此 worker count cap 不能證明 parked replies 有界。
+FreshReadings 對同 key 共用一次 refresh，並在 append closure 前檢查per-key/total waiter ceiling；token cancellation 與 settle 都減 current debt。HTTP disconnect 接回 cancellation。
 
 - **source-derived**：
-  - `Sources/ReadingFreshness.swift:180–180`；slice SHA-256 `85a198925bf6c326fbbfb72b18f2c5c690e780b8797e11c3e84af4c3947d04a1`。
-  - `Sources/ReadingFreshness.swift:200–220`；slice SHA-256 `49b625454d301621dd39989d7d0cf80c36a60e168f75ef1908fe7fabdcd5f7fa`。
+  - `Sources/ReadingFreshness.swift:43–76`；slice SHA-256 `41ac2eb3952cf1d476f576a3de88b425f673c78ff0a67500ac6f909530a6ed05`。
+  - `Sources/ReadingFreshness.swift:225–271`；slice SHA-256 `ce544bbf3f62cad117a0f1ed6b11dfb714bebe333ed4e74f3eaa5e57346cceee`。
+  - `Sources/ReadingFreshness.swift:254–265`；slice SHA-256 `66aaa3cc1bf4a764a4a1a9ede698004f142f1279e835f91f818b4273a67595b5`。
+  - `Sources/RemoteServer.swift:582–589`；slice SHA-256 `bef4806fb81d1c7fedfd62e1847808d2604fe1e617308c4064559e8514fedcc2`。
+- **來源數值／屬性**：`{"waiterPerKeyLimit":16,"waiterTotalLimit":256}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
-- **unknown**：waiter 數量、closure 持有 bytes、disconnect 後回收及重複 retry 負載未測。
-- **接手 owner**：R-2 HTTP reliability owner。
+- **unknown**：closure/RSS 大小與真實 duplicate retry/disconnect 分布未量測；defaults adequacy 待 W6。
+- **接手 owner**：W6 workload approval owner。
 
 ## cloud-read-queues
 
@@ -262,7 +274,7 @@ restart receipt 以 instance 與 total/per-channel drain 決定 ready；spawning
 可選 probe 僅 GET loopback /v1/health，記錄同一 instance/build/protocol與單次 request 耗時；它不重啟、不讀 store、不證明 recovery 或 Cloud acceptance。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:5435–5445`；slice SHA-256 `8e7fc3414149906a3b5cb277b25f5ec9ce9857903d27b670c9b1ef73c0387b1d`。
+  - `Sources/RemoteServer.swift:5441–5451`；slice SHA-256 `8e7fc3414149906a3b5cb277b25f5ec9ce9857903d27b670c9b1ef73c0387b1d`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
 - **unknown**：未量測 restart/reconcile time、terminal preservation 或 storage readiness；health 不回 schema/read-health。 installed build 與來源 checkout 的 commit 關係未驗證。
@@ -294,22 +306,23 @@ health liveness、fixture 通過、source seal 相符，都不構成 restart、d
 
 ## 來源檔案 seal
 
-| 檔案 | bytes | SHA-256 |
-|---|---:|---|
-| `Sources/CloudAppBridge.swift` | 110733 | `6c302234a33d414c4b40d845c1008b39b04f961cb9fa8efd2de5632cfb2fc1dc` |
-| `Sources/CloudBridgeLifecycle.swift` | 25322 | `5030614169a6389f6189045e9cdf98f52ea8434beb3ce5ab0e9c03eec9f2eef8` |
-| `Sources/CloudCommandLedger.swift` | 28891 | `a7a2161c8023710d79b36b1bf8dc452c1a52d6050045d61044df8f55bc3b83d4` |
-| `Sources/CloudOutboundSpool.swift` | 42742 | `1653423609868c4903529194ca74344d755b560d453a65951edf06d1d855f2aa` |
-| `Sources/CloudTransport.swift` | 53894 | `00ccd9952ec29abfc408c9cfc3904074e9776163070c40a9b0f014efe4350f09` |
-| `Sources/Coordinator.swift` | 96509 | `9540466f054e1e686b2087f511901af49f3364b0164525cb369f7f1d8133d0a6` |
-| `Sources/Orchestrator.swift` | 588316 | `f3e1ab68b2b75b9769ab2993afbec41430a90ea54c9de7fd6cba88d2af94cf72` |
-| `Sources/OrchestratorPersistence.swift` | 19385 | `375628d34df7a2b7679b1e5519d2cfd81f92a3ba86df62b12ae95dfd43d9482c` |
-| `Sources/OrchestratorRegistry.swift` | 71277 | `9af6a0fecd32f73afb57ccd8963a15c7ade878336c8e3c044d96d0254f2c4523` |
-| `Sources/OrchestratorStore.swift` | 56885 | `a15c0d900f79a09406a7b4594fd77047ed9d62347a3d15f6bdb19eb6c6100af8` |
-| `Sources/ReadingFreshness.swift` | 25220 | `4592b2a84c03d196707626df2876f3ef4e5274149addf361b7738a2888ed672f` |
-| `Sources/RemoteServer.swift` | 331376 | `4fbed488debf5bf879c220ca08e3f003ed98e1b6f53136ece90e47a5c6fcaa38` |
-| `Sources/SessionWatch.swift` | 68334 | `57271981d56e9a24ad2eda992392369563eda504c5f0e455b3554ea162badf21` |
-| `Sources/TerminalCommandScheduler.swift` | 7866 | `81ca5981fee4900fca40edea3e050de7b88c66982d745e6f51b6f1c5ecce7e4f` |
-| `Sources/TranscriptReadCoordinator.swift` | 5111 | `61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371` |
-| `Tests/CloudOutboundSpoolTests.swift` | 66799 | `da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244` |
-| `Tests/OrchestratorRecoveryTests.swift` | 111776 | `725f8b579b9980ee5a4de7b1f865a5882eed28d20f27b2949d0ab8e548aa047f` |
+| 檔案 | provenance | bytes | SHA-256 |
+|---|---|---:|---|
+| `Sources/CloudAppBridge.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 110733 | `6c302234a33d414c4b40d845c1008b39b04f961cb9fa8efd2de5632cfb2fc1dc` |
+| `Sources/CloudBridgeLifecycle.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 25322 | `5030614169a6389f6189045e9cdf98f52ea8434beb3ce5ab0e9c03eec9f2eef8` |
+| `Sources/CloudCommandLedger.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 28891 | `a7a2161c8023710d79b36b1bf8dc452c1a52d6050045d61044df8f55bc3b83d4` |
+| `Sources/CloudOutboundSpool.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 42742 | `1653423609868c4903529194ca74344d755b560d453a65951edf06d1d855f2aa` |
+| `Sources/CloudTransport.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 53894 | `00ccd9952ec29abfc408c9cfc3904074e9776163070c40a9b0f014efe4350f09` |
+| `Sources/Coordinator.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 96509 | `9540466f054e1e686b2087f511901af49f3364b0164525cb369f7f1d8133d0a6` |
+| `Sources/HTTPReliability.swift` | `working-overlay:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 34298 | `221438295bb065f810de9d5ef8fb37a417042bf27e5bd7e9b1cd9c05512011fb` |
+| `Sources/Orchestrator.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 588316 | `f3e1ab68b2b75b9769ab2993afbec41430a90ea54c9de7fd6cba88d2af94cf72` |
+| `Sources/OrchestratorPersistence.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 19385 | `375628d34df7a2b7679b1e5519d2cfd81f92a3ba86df62b12ae95dfd43d9482c` |
+| `Sources/OrchestratorRegistry.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 71277 | `9af6a0fecd32f73afb57ccd8963a15c7ade878336c8e3c044d96d0254f2c4523` |
+| `Sources/OrchestratorStore.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 56885 | `a15c0d900f79a09406a7b4594fd77047ed9d62347a3d15f6bdb19eb6c6100af8` |
+| `Sources/ReadingFreshness.swift` | `working-overlay:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 28597 | `54f9665b53de0d31a798ab9bc0e4e5e6e71c0f5d16441d1ba403d509dc850c2f` |
+| `Sources/RemoteServer.swift` | `working-overlay:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 331016 | `124657b7181e7527ee8013420d4150999524935fda5cd051390b0b458c12c0e8` |
+| `Sources/SessionWatch.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 68334 | `57271981d56e9a24ad2eda992392369563eda504c5f0e455b3554ea162badf21` |
+| `Sources/TerminalCommandScheduler.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 7866 | `81ca5981fee4900fca40edea3e050de7b88c66982d745e6f51b6f1c5ecce7e4f` |
+| `Sources/TranscriptReadCoordinator.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 5111 | `61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371` |
+| `Tests/CloudOutboundSpoolTests.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 66799 | `da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244` |
+| `Tests/OrchestratorRecoveryTests.swift` | `commit:a6e2785ca1993538b7792aab69c9bfc73da854c0` | 111776 | `725f8b579b9980ee5a4de7b1f865a5882eed28d20f27b2949d0ab8e548aa047f` |

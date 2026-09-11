@@ -39,6 +39,8 @@ const stubs = [
         "const Diagnostics = { note() {} };"],
     ['import { createTieredSessionFacts } from "../session/transcript-requests.js";',
         "const createTieredSessionFacts = () => ({ tier: () => null, peek: () => null });"],
+    ['import { SessionSelection } from "../session/selection.js";',
+        "const SessionSelection = { resolve: () => null };"],
 ];
 let standalone = source;
 for (const [from, to] of stubs) {

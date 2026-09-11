@@ -1075,6 +1075,22 @@ done < <(grep -vE '^[[:space:]]*(#|$)' "$core_candidates_file" || true)
 # compile set and dependency edges: exactly what a nested, extra, replaced or moved source, or a
 # direct/extra Mac edge, would change.
 core_application_packages_root=Packages
+application_policy_sources='Sources/ProjectRootPolicy.swift
+Sources/ProviderLifecyclePolicy.swift
+Sources/SessionLaunchPolicy.swift
+Sources/TerminalCommandScheduler.swift'
+while IFS= read -r candidate; do
+  [ -n "$candidate" ] || continue
+  [ -f "$candidate" ] \
+    || architecture_guard_fail "W4-1 Application policy source $candidate is missing"
+  candidate_imports=$(swift_import_modules "$candidate" || true)
+  forbidden_hit=$(printf '%s\n' "$candidate_imports" | grep -E "^($core_forbidden_imports)\$" || true)
+  [ -z "$forbidden_hit" ] \
+    || architecture_guard_fail "$candidate imports ${forbidden_hit//$'\n'/, }, which an Application policy source may not import"
+  candidate_effect_lines=$(host_code_lines "$candidate" | grep -cE "$host_effect_re" || true)
+  [ "${candidate_effect_lines:-0}" -eq 0 ] \
+    || architecture_guard_fail "$candidate names a platform effect on ${candidate_effect_lines} code line(s); Application policy reaches the host only through an injected port"
+done <<< "$application_policy_sources"
 core_application_package_graph=$(swift package --disable-sandbox describe --type json 2>/dev/null) \
   || architecture_guard_fail "swift package describe failed; the real Core/Application/Mac/Linux target graph cannot be checked"
 . tools/swift-source-manifest.sh
@@ -1104,8 +1120,10 @@ for package_target in ClawdlineCore ClawdlineApplication; do
       || architecture_guard_fail "$member's filename does not match its symlink target's basename ($resolved_basename); a real package member must be named after the source file it mirrors"
     [ -f "$member" ] \
       || architecture_guard_fail "$member's symlink target does not resolve to a regular file; it is dangling"
-    grep -qxF "Sources/$resolved_basename" "$core_candidates_file" \
-      || architecture_guard_fail "$member mirrors Sources/$resolved_basename, which is not listed in $core_candidates_file — every real Core/Application package member must also be a checked lexical candidate, so a new target member cannot skip the forbidden-import/platform-effect scan above"
+    if ! grep -qxF "Sources/$resolved_basename" "$core_candidates_file" \
+        && ! printf '%s\n' "$application_policy_sources" | grep -qxF "Sources/$resolved_basename"; then
+      architecture_guard_fail "$member mirrors Sources/$resolved_basename, which is neither in $core_candidates_file nor W4-1's exact Application policy set"
+    fi
   done < <(find "$package_dir" -maxdepth 1 -name '*.swift' | LC_ALL=C sort)
   [ "$package_target_member_count" -gt 0 ] \
     || architecture_guard_fail "$package_dir has no .swift members; an empty target is not the boundary this checks"
@@ -1113,7 +1131,7 @@ done
 
 # The exact expected membership of each real target, and of the Mac target's dependency set — not
 # a floor or a contains-check, a pinned set. This is what W3-1 shipped (`Packages/README.md`):
-# three files in ClawdlineCore, one in ClawdlineApplication, and exactly one Mac-to-Application
+# three files in ClawdlineCore, five in ClawdlineApplication, and exactly one Mac-to-Application
 # edge. Growing real membership stays possible and stays deliberate — `core-application-candidates.txt`
 # above may only grow on its own — but *this* pinned list may only be edited in the same change
 # that adds the matching symlink(s), never as a side effect of something else moving a file
@@ -1121,18 +1139,28 @@ done
 core_expected_members='Assistant.swift
 CloudCanonicalJSON.swift
 CloudClock.swift'
-application_expected_members='HostPorts.swift'
+application_expected_members='HostPorts.swift
+ProjectRootPolicy.swift
+ProviderLifecyclePolicy.swift
+SessionLaunchPolicy.swift
+TerminalCommandScheduler.swift'
 mac_expected_dependencies='ClawdlineApplication'
 linux_expected_members='LinuxComposition.swift
+LinuxContainedFileSystem.swift
+LinuxProviderRuntime.swift
+LinuxRuntimeAdapters.swift
 main.swift'
 linux_expected_dependencies='ClawdlineApplication'
+linux_tests_expected_members='LinuxRuntimeContractTests.swift'
+linux_tests_expected_dependencies='ClawdlineApplication
+ClawdlineLinux'
 
 core_application_exactness=$(printf '%s' "$core_application_package_graph" | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
 targets = {t["name"]: t for t in data.get("targets", [])}
 products = {p["name"]: p for p in data.get("products", [])}
-for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline", "ClawdlineLinux"):
+for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline", "ClawdlineLinux", "ClawdlineLinuxTests"):
     if name not in targets:
         print("missing:" + name)
         sys.exit(0)
@@ -1141,7 +1169,7 @@ def sources(name):
 def deps(name):
     return sorted(targets[name].get("target_dependencies") or [])
 print("package.external-dependencies=" + str(len(data.get("dependencies") or [])))
-for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline", "ClawdlineLinux"):
+for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline", "ClawdlineLinux", "ClawdlineLinuxTests"):
     print(name + ".sources=" + ",".join(sources(name)))
     print(name + ".deps=" + ",".join(deps(name)))
     print(name + ".external-products=" + str(len(targets[name].get("product_dependencies") or [])))
@@ -1199,10 +1227,19 @@ actual_linux_deps=$(graph_field 'ClawdlineLinux\.deps')
 [ "$actual_linux_deps" = "$expected_linux_deps" ] \
   || architecture_guard_fail "ClawdlineLinux's target dependencies are [$actual_linux_deps], not exactly [$expected_linux_deps] — Linux composition must depend inward through Application, never directly on Core or Mac"
 
+expected_linux_test_sources=$(sorted_csv "$linux_tests_expected_members")
+actual_linux_test_sources=$(graph_field 'ClawdlineLinuxTests\.sources')
+[ "$actual_linux_test_sources" = "$expected_linux_test_sources" ] \
+  || architecture_guard_fail "ClawdlineLinuxTests resolves [$actual_linux_test_sources], not the pinned [$expected_linux_test_sources]"
+expected_linux_test_deps=$(sorted_csv "$linux_tests_expected_dependencies")
+actual_linux_test_deps=$(graph_field 'ClawdlineLinuxTests\.deps')
+[ "$actual_linux_test_deps" = "$expected_linux_test_deps" ] \
+  || architecture_guard_fail "ClawdlineLinuxTests depends on [$actual_linux_test_deps], not exactly [$expected_linux_test_deps]"
+
 actual_package_dependencies=$(graph_field 'package\.external-dependencies')
 [ "$actual_package_dependencies" = 0 ] \
   || architecture_guard_fail "Package.swift declares $actual_package_dependencies external package dependency/dependencies; the production graph is closed and requires an explicit reviewed allowlist before adding one"
-for graph_target in ClawdlineCore ClawdlineApplication Clawdline ClawdlineLinux; do
+for graph_target in ClawdlineCore ClawdlineApplication Clawdline ClawdlineLinux ClawdlineLinuxTests; do
   actual_external_products=$(graph_field "$graph_target\.external-products")
   [ "$actual_external_products" = 0 ] \
     || architecture_guard_fail "$graph_target has $actual_external_products external product dependency/dependencies; the production graph is closed and requires an explicit reviewed allowlist before adding one"
@@ -1223,8 +1260,8 @@ linux_disallowed_imports=$(printf '%s\n' "$linux_imports" | grep -Ev '^(Foundati
 [ -z "$linux_disallowed_imports" ] \
   || architecture_guard_fail "ClawdlineLinux imports ${linux_disallowed_imports//$'\n'/, }; its closed import allowlist is Foundation and ClawdlineApplication"
 linux_application_imports=$(printf '%s\n' "$linux_imports" | grep -cx 'ClawdlineApplication' || true)
-[ "${linux_application_imports:-0}" -eq 1 ] \
-  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected exactly once so its inward edge is consumed"
+[ "${linux_application_imports:-0}" -eq 4 ] \
+  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected once in each of its four runtime/composition source files"
 swift_code_without_comments Packages/ClawdlineLinux/LinuxComposition.swift | grep -q 'HostCapabilityUnavailable\.code' \
   || architecture_guard_fail "ClawdlineLinux does not consume the Application target's typed capability-unavailable vocabulary; a declared edge alone is inert"
 

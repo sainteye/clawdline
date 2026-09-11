@@ -325,6 +325,54 @@ invokes `TerminalHost`; Linux must return `capability_unavailable` for an unavai
 must not copy the route/menu policy into its composition. This is a named W4-1 dependency, not
 residual W2 work or an implied follow-up.
 
+**W4-1 runtime adapters and containment (implementation status, 2026-09-12).** The bound handoff
+above is now implemented in `ClawdlineApplication`: `SessionLaunchPolicy` produces one structured
+provider plan consumed by Mac and Linux before `TerminalHost.create`, while
+`TerminalMenuAnswerPolicy` owns the complete digit/Tab/back-Tab byte allowlist before any key
+effect. Linux and the existing Mac facade now consume the same Application-owned
+`TerminalCommandScheduler`: it serially executes create, send, observe, interrupt, resize, close and
+enumerate, with inventory/pane preflights inside admission and the established nested/maintenance
+semantics intact. Its tmux leaf uses one explicit socket, concurrently drains stdout/stderr under one
+aggregate ceiling, writes stdin nonblockingly under the same deadline and bounds termination/reap.
+Its procfs leaf binds observation and signals to pid, effective uid/gid, complete supplementary
+groups, process group and the exact `/proc/<pid>/stat` start token.
+
+Provider processes run non-root under the configured uid/gid, with process umask `0077`, an
+isolated durable HOME, and an environment constructed from the exact HOME/PATH/LANG/LC_ALL/TERM/
+TMPDIR allowlist. That is no longer treated as containment: the provider launcher requires Landlock
+ABI 3+, installs a filesystem allowlist for the admitted projects/HOME/tmp, then installs a seccomp
+filter denying AF_UNIX socket creation and same-uid process-inspection syscalls before `execve`.
+Daemon secrets/runtime/socket paths have no provider rule. Project roots are outside the control
+state, protected-config allowlisted, canonical, owner-bound, symlink/traversal refusing, and rejected
+for overlap with any reserved control path in either ancestor direction. File effects walk
+descriptors from `/` with `O_DIRECTORY | O_NOFOLLOW`, and atomic writes use a same-directory 0600
+temporary file, `fsync` and `renameat`. All operations on one secret account share a process-wide
+coordinator across store instances. Secrets never enter provider argv/environment or receipts.
+
+The four lifecycle receipt words are deliberately different: admission begins at `accepted`, a
+successful adapter call adds `executed`, PTY delivery adds `delivered`, and only a fresh capture,
+dimension readback, inventory or proved absence adds `observed`. Total/per-channel work, input,
+inventory, output and timeout bounds produce typed failures. A post-create failure either removes
+the exact identity it created or returns an `unknown` reconciliation obligation; paste-before-submit
+returns a `partial/text_pasted` receipt. Health is `w4_runtime_not_configured` until protected
+configuration proves executable descriptors and kernel containment, then
+`w4_provider_authentication_not_proven`: provider lifecycle rows remain unusable and empty until the
+named W4-2 real-provider authentication gate supplies a controlled receipt. W4-2 also owns service
+supervision, restart/reconciliation and package upgrade/rollback, while W4-3 owns Cloud lifecycle.
+W4-1 does not open a listener, install, restart or publish anything.
+
+The pinned Ubuntu job now builds the Linux-only manifest graph, runs the SwiftPM contracts as a
+non-root service identity with a real tmux binary, and retains the protected-startup shell cases.
+The macOS focused question compiles the same Application/Linux/test targets and runs the
+platform-neutral policies and failure injections; only Ubuntu executes the `#if os(Linux)` real PTY,
+Landlock, secret/socket/outside-write, compensation and partial-send lifecycle. This
+focused evidence is not the release-train exact full.
+
+Current Linux-only residuals are explicit: the final procfs-to-`kill(-pgid, …)` gap remains without
+pidfd group signalling; Landlock/seccomp support is pinned to Ubuntu amd64; AF_UNIX denial may refuse
+provider extensions that require local sockets; apt package versions are recorded but not pinned;
+and real Claude/Codex authentication remains W4-2-owned rather than inferred from a shell fixture.
+
 Estimated effort: 2–3 engineer-weeks.
 
 ### Phase 4 — Ubuntu terminal and service runtime
@@ -333,11 +381,13 @@ Goal: support the complete local managed-session lifecycle on Ubuntu.
 
 Deliverables:
 
-- Linux `tmux` adapter and process ownership checks.
-- Runtime/state directory layout, migrations and crash-safe writes.
+- Linux `tmux` adapter and process ownership checks. **Implemented by W4-1.**
+- Runtime/state directory layout and crash-safe contained writes. **Implemented by W4-1; durable
+  record migrations remain W4-2.**
 - `systemd` unit, install/upgrade/rollback scripts and health endpoint.
 - Startup reconciliation for terminals, task records, queues and in-flight commands.
-- Typed capacity/backpressure behavior and failure-injection tests.
+- Typed terminal capacity/backpressure behavior and failure-injection tests. **Implemented by
+  W4-1; transport/Cloud backpressure remains with its owning later slice.**
 
 Gate: create → interact → restart daemon → reconcile → continue → close succeeds on a disposable Ubuntu VM.
 

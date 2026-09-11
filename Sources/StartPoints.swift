@@ -116,10 +116,22 @@ enum StartPoints {
                           model: String? = nil, reasoningEffort: ReasoningEffort? = nil,
                           permission: Permission = .ask,
                           addDir: String? = nil, resume: String? = nil) -> String {
-        "cd " + Project.shellQuoted(cwd) + " && "
-            + assistant.command(model: modelName(model), reasoningEffort: reasoningEffort,
-                                permission: permission,
-                                addDir: extraDir(addDir), resume: sessionName(resume))
+        let request = ProviderLaunchRequest(
+            commandID: "legacy-start", projectRoot: cwd, assistant: assistant,
+            model: modelName(model), reasoningEffort: reasoningEffort, permission: permission,
+            additionalDirectory: extraDir(addDir), resumeSessionID: sessionName(resume),
+            terminalMode: .iTermTab)
+        switch SessionLaunchPolicy.admit(request, terminalCapabilities: [.terminalITerm]) {
+        case .success(let plan): return plan.shellLine
+        case .failure:
+            // This helper predates typed route admission and is still called by pure formatting
+            // tests. `start` rejects an unusable path before this point; retain a deterministic
+            // string here without opening a host effect.
+            return "cd " + SessionLaunchPolicy.shellQuoted(cwd) + " && "
+                + assistant.command(model: modelName(model), reasoningEffort: reasoningEffort,
+                                    permission: permission,
+                                    addDir: extraDir(addDir), resume: sessionName(resume))
+        }
     }
 
     /// A directory a session may be given reach over, or nil for anything that is not one.
@@ -136,12 +148,7 @@ enum StartPoints {
     /// silent for the same reason `modelName` is — a session that has to ask about its own task
     /// directory beats no session at all.
     static func extraDir(_ raw: String?) -> String? {
-        guard let raw, raw.hasPrefix("/"), raw.count <= 256, !raw.contains("..") else { return nil }
-        let ok = raw.allSatisfy {
-            ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0)
-                || $0 == "." || $0 == "_" || $0 == "-" || $0 == "/"
-        }
-        return ok ? raw : nil
+        SessionLaunchPolicy.extraDirectory(raw)
     }
 
     /// A model name, or nil for anything that is not one.
@@ -158,12 +165,7 @@ enum StartPoints {
     /// upstream, where somebody is still holding the request: `OrchestratorDraft.draft`
     /// runs the same check and answers `bad_task`.
     static func modelName(_ raw: String?) -> String? {
-        guard let raw, !raw.isEmpty, raw.count <= 64, !raw.hasPrefix("-") else { return nil }
-        let ok = raw.allSatisfy {
-            ("a"..."z").contains($0) || ("0"..."9").contains($0)
-                || $0 == "." || $0 == "_" || $0 == "-"
-        }
-        return ok ? raw : nil
+        SessionLaunchPolicy.modelName(raw)
     }
 
     /// A conversation id, or nil for anything that is not one.
@@ -184,12 +186,7 @@ enum StartPoints {
     /// refusal is upstream in ``past(withID:in:)``, where an unknown id is a `404` while
     /// somebody is still holding the request.
     static func sessionName(_ raw: String?) -> String? {
-        guard let raw, raw.count == 36 else { return nil }
-        let groups = raw.split(separator: "-", omittingEmptySubsequences: false)
-        guard groups.map(\.count) == [8, 4, 4, 4, 12] else { return nil }
-        let hex = groups.joined()
-        let ok = hex.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
-        return ok ? raw : nil
+        SessionLaunchPolicy.sessionID(raw)
     }
 
     // MARK: - Which terminal
@@ -391,11 +388,29 @@ enum StartPoints {
         let chosen = plan(terminal: fixture?.terminal ?? Config.shared.terminal,
                           running: fixture?.running ?? runningApps(),
                           tmux: fixture?.tmux ?? tmuxReach())
+
+        func admitted(_ mode: ProviderTerminalMode) -> Result<ProviderLaunchPlan, SessionLaunchRefusal> {
+            SessionLaunchPolicy.admit(ProviderLaunchRequest(
+                commandID: HostPorts.mac.identity.newIdentifier(), projectRoot: place.path,
+                assistant: assistant, model: modelName(model), reasoningEffort: reasoningEffort,
+                permission: permission, additionalDirectory: extraDir(addDir),
+                resumeSessionID: sessionName(resume), terminalMode: mode
+            ), terminalCapabilities: HostPorts.mac.terminal.capabilities)
+        }
+
+        func refused(_ refusal: SessionLaunchRefusal) -> Outcome {
+            .refused(status: refusal.code == HostCapabilityUnavailable.code ? 501 : 400,
+                     code: refusal.code, message: refusal.message, app: nil)
+        }
+
         switch chosen {
         case .iterm:
-            let tab = itermLine(cwd: place.path, assistant: assistant, model: model,
-                                reasoningEffort: reasoningEffort, permission: permission,
-                                addDir: addDir, resume: resume)
+            let admission: ProviderLaunchPlan
+            switch admitted(.iTermTab) {
+            case .success(let plan): admission = plan
+            case .failure(let refusal): return refused(refusal)
+            }
+            let tab = admission.shellLine
             // **A fixture stands in for every opening this file does, not only tmux's.** An
             // `.iterm` plan reached with one set would otherwise drive real AppleScript from a
             // test that believed it had described a Mac — which is a seam with a hole in exactly
@@ -410,7 +425,10 @@ enum StartPoints {
             }
             let made: TerminalCreated
             do {
-                made = try HostPorts.mac.terminal.create(.iTermTab(line: tab))
+                made = try HostPorts.mac.terminal.create(.managedProvider(admission))
+            } catch let unavailable as HostCapabilityUnavailable {
+                return .refused(status: 501, code: HostCapabilityUnavailable.code,
+                                message: unavailable.message, app: nil)
             } catch {
                 let failure = (error as? TerminalFailure)
                     ?? TerminalFailure(kind: .io, message: String(describing: error))
@@ -428,21 +446,22 @@ enum StartPoints {
             // directory name to break out of. The command reaching a shell one level down is why
             // `modelName` is a closed alphabet rather than an escaping rule — there is nothing
             // in a name it admits for that shell to read.
-            let line = assistant.command(model: modelName(model),
-                                         reasoningEffort: reasoningEffort,
-                                         permission: permission,
-                                         addDir: extraDir(addDir),
-                                         resume: sessionName(resume))
+            let admission: ProviderLaunchPlan
+            switch admitted(chosen == .tmuxDetached ? .tmuxDetachedSession : .tmuxWindow) {
+            case .success(let plan): admission = plan
+            case .failure(let refusal): return refused(refusal)
+            }
+            let line = admission.shellCommand
             let opened: Result<String, TerminalFailure>
             if let fixture {
                 opened = fixture.open(chosen, place.path, line)
             } else {
                 do {
-                    let request: TerminalCreateRequest = chosen == .tmuxDetached
-                        ? .tmuxDetachedSession(cwd: place.path, command: line)
-                        : .tmuxWindow(cwd: place.path, command: line)
-                    let created = try HostPorts.mac.terminal.create(request)
+                    let created = try HostPorts.mac.terminal.create(.managedProvider(admission))
                     opened = .success(created.id)
+                } catch let unavailable as HostCapabilityUnavailable {
+                    return .refused(status: 501, code: HostCapabilityUnavailable.code,
+                                    message: unavailable.message, app: nil)
                 } catch let failure as TerminalFailure {
                     opened = .failure(failure)
                 } catch {

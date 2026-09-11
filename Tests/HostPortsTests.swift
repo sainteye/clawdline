@@ -84,6 +84,11 @@ private final class FakeTerminalHost: TerminalHost {
         return nil
     }
 
+    func resize(_ session: TargetSession, columns: Int, rows: Int) throws {
+        try requireBackend(session, "resize")
+        journal.events.append("resize \(columns)x\(rows) -> \(session.id)")
+    }
+
     private func requireBackend(_ session: TargetSession, _ operation: String) throws {
         let capability = HostCapability.terminal(session.backend)
         guard capabilities.contains(capability) else {
@@ -626,6 +631,13 @@ func runHostPortsTests() {
         expect("interrupt is journalled with the bytes it sent", journal.events,
                ["interrupt [3] -> %80"])
 
+        journal.events = []
+        var resizeThrew = false
+        do { try terminal.resize(session, columns: 90, rows: 25) } catch { resizeThrew = true }
+        check("resize does not throw when the fake supports the session's backend", !resizeThrew)
+        expect("resize is journalled with bounded dimensions", journal.events,
+               ["resize 90x25 -> %80"])
+
         // The capability gate applies to the new leaves the same way it already does to
         // sendLine/close: a backend this fake does not support is refused, not silently ignored.
         let tmuxOnlyJournal = HostPortsJournal()
@@ -648,6 +660,9 @@ func runHostPortsTests() {
         check("interrupt refuses a backend this host does not provide",
               refusedCapability { _ = try tmuxOnly.interrupt([0x03], to: itermSession) }
                   == .terminalITerm)
+        check("resize refuses a backend this host does not provide",
+              refusedCapability { try tmuxOnly.resize(itermSession, columns: 90, rows: 25) }
+                  == .terminalITerm)
 
         // UnsupportedHost's answer to every one of the four new leaves is the same typed refusal
         // every other port operation already gives, never an empty value that means something
@@ -665,5 +680,40 @@ func runHostPortsTests() {
               refused { try none.reveal(session, activate: true) })
         check("interrupt refuses by type on a host with no terminal capability",
               refused { _ = try none.interrupt([0x03], to: session) })
+        check("resize refuses by type on a host with no terminal capability",
+              refused { try none.resize(session, columns: 90, rows: 25) })
+    }
+
+    group("host ports: W4-1 start and menu admission are shared Application policy") {
+        let request = ProviderLaunchRequest(
+            commandID: "mac-policy-1", projectRoot: "/tmp/project", assistant: .codex,
+            model: "gpt-5", reasoningEffort: .high, permission: .edits,
+            additionalDirectory: "/tmp/task", terminalMode: .tmuxWindow)
+        let plan = try? SessionLaunchPolicy.admit(
+            request, terminalCapabilities: [.terminalTmux]).get()
+        expect("the shared launch policy keeps structured argv for a host adapter",
+               plan?.arguments ?? [],
+               ["--model", "gpt-5", "--config", "model_reasoning_effort=high",
+                "--add-dir", "/tmp/task", "--ask-for-approval", "on-request",
+                "--sandbox", "workspace-write"])
+        expect("the same plan preserves the Mac shell facade's established line",
+               plan?.shellLine,
+               "cd '/tmp/project' && env -u CODEX_THREAD_ID -u CODEX_SESSION_ID "
+                + "-u CODEX_SANDBOX -u CODEX_SANDBOX_NETWORK_DISABLED codex --model gpt-5 "
+                + "--config model_reasoning_effort=high --add-dir /tmp/task "
+                + "--ask-for-approval on-request --sandbox workspace-write")
+
+        let unavailable = SessionLaunchPolicy.admit(
+            request, terminalCapabilities: [])
+        if case .failure(.capabilityUnavailable(let refusal)) = unavailable {
+            expect("missing tmux is the shared typed capability refusal",
+                   refusal.capability, .terminalTmux)
+        } else {
+            check("missing tmux is the shared typed capability refusal", false)
+        }
+        check("an arbitrary escape sequence never becomes a terminal effect",
+              (try? TerminalMenuAnswerPolicy.admit(
+                [0x1b, 0x5b, 0x41], backend: .tmux,
+                terminalCapabilities: [.terminalTmux]).get()) == nil)
     }
 }

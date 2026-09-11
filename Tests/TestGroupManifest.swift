@@ -579,6 +579,11 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a manual session refresh has coherent evidence and bounded backpressure",
     "what a terminal's spend is filed under, and what the backfill hands over",
     "an incomplete inventory publishes nothing it can see, and its probe sits behind ps",
+    "HTTP admission bounds connections, bytes, and slow request lifetime",
+    "SSE output coalesces snapshots while unrelated HTTP work continues",
+    "SSE completion failures and ceilings evict only the slow consumer",
+    "HTTP deadlines are one cancellable bounded owner",
+    "SSE reconnect starts from hello and current full snapshots without replay",
     "a warm reading is answered without asking the Mac again",
     "a stale reading goes out first and the refresh happens behind it",
     "a refused refresh ages the reading it could not replace",
@@ -589,6 +594,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "finished readings have a lifetime memory bound",
     "a full lane refuses only a request it had nothing to answer",
     "an admitted read is released exactly once",
+    "same-key retries have a bounded parked waiter set",
+    "cancelling a disconnected fresh-read waiter reclaims its debt",
     "the trace separates waiting from working",
     "percentiles answer for an empty lane instead of crashing",
     "a tmux control-mode client is what makes a pty-less iTerm2 row explicable",
@@ -604,6 +611,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "a screen nobody is watching costs nothing, and a signal is what buys the next one",
     "no pipe-pane survives a watcher that stopped watching",
     "an iTerm2 screen says what it cannot do rather than doing less silently",
+    "tmux PTY resize is bounded before the backend effect",
     "the landing codec keeps every field, and its verification stays fail-closed",
     "the progress codec keeps its bound and re-applies the kept cap on the way in",
     "the completion delivery codec keeps every clock and its legacy flag",
@@ -659,6 +667,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "host ports: the Mac file, identity and secret leaves keep absence and failure apart",
     "host ports: W2-3 correction F3 — loadOrCreate and rotate are closed against real races",
     "host ports: W2-3 correction F1 — create/capture/reveal/interrupt on fake ports",
+    "host ports: W4-1 start and menu admission are shared Application policy",
 ]
 
 func validateExecutedTestGroupManifest() {

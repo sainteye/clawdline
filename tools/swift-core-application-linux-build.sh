@@ -29,9 +29,19 @@ fail() {
 [ -f Package.swift ] || fail "Package.swift is missing"
 for member in Packages/ClawdlineCore/CloudCanonicalJSON.swift Packages/ClawdlineCore/CloudClock.swift \
   Packages/ClawdlineCore/Assistant.swift Packages/ClawdlineApplication/HostPorts.swift \
-  Packages/ClawdlineLinux/LinuxComposition.swift Packages/ClawdlineLinux/main.swift; do
+  Packages/ClawdlineApplication/ProjectRootPolicy.swift \
+  Packages/ClawdlineApplication/ProviderLifecyclePolicy.swift \
+  Packages/ClawdlineApplication/SessionLaunchPolicy.swift \
+  Packages/ClawdlineApplication/TerminalCommandScheduler.swift \
+  Packages/ClawdlineLinux/LinuxComposition.swift \
+  Packages/ClawdlineLinux/LinuxContainedFileSystem.swift \
+  Packages/ClawdlineLinux/LinuxProviderRuntime.swift \
+  Packages/ClawdlineLinux/LinuxRuntimeAdapters.swift Packages/ClawdlineLinux/main.swift \
+  Packages/ClawdlineLinuxTests/LinuxRuntimeContractTests.swift; do
   [ -e "$member" ] || fail "expected real target member missing: $member"
 done
+command -v tmux >/dev/null 2>&1 || fail "tmux is required for the real Linux provider lifecycle contract"
+command -v python3 >/dev/null 2>&1 || fail "python3 is required for the AF_UNIX containment fixture"
 
 # A read-only bind mount (the safe default for running an unfamiliar script under Docker) cannot
 # hold SwiftPM's .build directory. The caller's own docker invocation should have already copied
@@ -43,6 +53,10 @@ rm -f .swift-core-application-linux-build.write-probe
 
 echo "swift-core-application-linux-build: os=$PRETTY_NAME arch=$(uname -m)"
 swift --version
+dpkg-query -W -f='swift-core-application-linux-build: package=${binary:Package} version=${Version}\n' \
+  tmux nodejs python3
+echo "swift-core-application-linux-build: runtime fixtures"
+dpkg-query -W -f='${Package}=${Version}\n' tmux nodejs python3
 
 build_log=$(mktemp)
 contract_root=""
@@ -90,6 +104,14 @@ linux_bin_dir=$(swift build -c "$swift_build_configuration" --show-bin-path)
 linux_binary="$linux_bin_dir/ClawdlineLinux"
 [ -x "$linux_binary" ] || fail "compiled ClawdlineLinux executable missing at $linux_binary"
 
+# This test target imports the real executable module and drives one actual tmux PTY lifecycle.
+# `Package.swift` omits the AppKit product only while its manifest is evaluated on Linux, so this
+# command cannot quietly turn into a lexical or mock-only proof on Ubuntu.
+CLAWDLINE_TEST_TMUX=$(command -v tmux) \
+CLAWDLINE_TEST_LINUX_EXECUTABLE="$linux_binary" swift test \
+  -c "$swift_build_configuration" -j "$swift_build_jobs" \
+  --filter LinuxRuntimeContractTests
+
 # Execute the protected-input and not-ready contract on the Linux runtime that CI ships. This is
 # POSIX-shell driven so the job does not rely on Node being present in the Swift container.
 contract_root=$(mktemp -d)
@@ -125,7 +147,9 @@ expect_contract_error() {
 }
 
 expect_contract_status 0 health env CLAWDLINE_BUILD_IDENTITY="${GITHUB_SHA:-unknown}" "$linux_binary" health
-grep -q '"ready":false' "$contract_stdout" || fail "health did not report ready=false"
+grep -q '"ready":false' "$contract_stdout" || fail "health claimed the later daemon service gate"
+grep -q '"readinessCode":"w4_runtime_not_configured"' "$contract_stdout" \
+  || fail "health did not separate compiled adapters from configured capability"
 grep -q '"service":"clawdline-daemon"' "$contract_stdout" || fail "health service identity is not clawdline-daemon"
 
 write_contract_config
@@ -165,7 +189,23 @@ expect_contract_status 78 writable-config "$linux_binary" check-config --config 
 expect_contract_error invalid_configuration writable-config
 
 write_contract_config
-expect_contract_status 69 run-not-composed "$linux_binary" run --config "$contract_config"
-expect_contract_error w4_runtime_not_composed run-not-composed
+expect_contract_status 69 run-unconfigured "$linux_binary" run --config "$contract_config"
+expect_contract_error capability_unavailable run-unconfigured
 
-echo "swift-core-application-linux-build: PASS — ClawdlineLinux graph compiled and 9 runtime contract cases passed on Ubuntu 24.04 amd64"
+contract_project="$contract_root/project"
+mkdir -m 0700 "$contract_project"
+printf '{"version":1,"listen":{"host":"127.0.0.1","port":7718},"stateDirectory":"%s/state","secretFile":"%s","runtime":{"uid":%s,"gid":%s,"projectRoots":["%s"],"tmuxExecutable":"%s","providers":{"claude":"%s","codex":"%s"}}}\n' \
+  "$contract_root" "$contract_secret" "$(id -u)" "$(id -g)" "$contract_project" \
+  "$(command -v tmux)" "$linux_binary" "$linux_binary" > "$contract_config"
+chmod 0644 "$contract_config"
+expect_contract_status 0 run-configured "$linux_binary" run --config "$contract_config"
+grep -q '"configuration":"runtime_adapters_configured_provider_auth_pending"' "$contract_stdout" \
+  || fail "run did not return the truthful configured/auth-pending receipt"
+grep -q '"readinessCode":"w4_provider_authentication_not_proven"' "$contract_stdout" \
+  || fail "configured runtime claimed provider authentication readiness"
+grep -q '"umask":"0077"' "$contract_stdout" || fail "run did not report the closed service umask"
+if grep -q 'linux-contract-secret-sentinel' "$contract_stdout"; then
+  fail "runtime composition receipt exposed secret content"
+fi
+
+echo "swift-core-application-linux-build: PASS — ClawdlineLinux graph compiled; focused Swift runtime and protected-startup contracts passed on Ubuntu 24.04 amd64"

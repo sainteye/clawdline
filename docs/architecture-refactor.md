@@ -300,6 +300,38 @@ restart recovery and exactly one event publication per committed transition.
 
 ## Phase 4 — typed HTTP route families
 
+### Plan-v4 R-2 reliability owner (approved narrow exception)
+
+R-2 extracts only admission/debt policy into `HTTPReliability`; it does not begin the route-family
+split below. `RemoteServer` still owns `NWListener`, request parsing, authentication, routing,
+response encoding and SSE payload serialization. `HTTPReliability` owns the admitted
+`NWConnection` read/write lifetime, a separate bounded lane for typed connection-capacity replies,
+and the one serial decision domain for connection admission,
+aggregate retained request bytes, request-read lifetime, SSE admission, completion-tracked output,
+outstanding bytes, debt-owner eviction and pending full-snapshot coalescing. Thus
+Network.framework remains an adapter and the safety policy has one testable owner without creating
+a second HTTP server.
+
+The implementation defaults are 128 HTTP connections, 16 capacity-response connections,
+64 MiB aggregate retained request bytes,
+15 seconds to finish reading a request, 16 SSE connections, 4 MiB outstanding per SSE consumer,
+16 MiB outstanding across SSE, 20 seconds for one SSE write completion, and 144 live HTTP deadline
+jobs. One queue-owned timer stores those jobs; cancellation removes a completed read/frame/response
+closure immediately. `FreshReadings` parks
+at most 16 replies per key and 256 total. These are conservative operational rails exposed by
+`GET /v1/health`; they remain explicitly `implementation_default_pending_w6` until a W6 reference
+workload approves adequacy.
+
+Only full current `sessions` and `orchestrator` observations coalesce. Control and transcript/screen
+events retain their identity, and no observation is a command/effect ACK. Reconnect realigns from
+`hello` plus current full snapshots and never claims replay. Connection cancellation removes any
+parked fresh-read callback, so a duplicate retry can neither grow an unbounded same-key waiter set
+nor leave debt after its socket disappears. Aggregate SSE pressure reclaims the largest actual
+outstanding debt owner (then the oldest active frame on a tie), rather than sacrificing each current
+producer and allowing slow owners to starve healthy streams. Terminal admission remains wholly owned by
+`TerminalCommandScheduler` (W2-1), and this extraction adds no Cloud command ingress path or R-1
+retry semantics.
+
 Keep connection lifecycle, parsing, response writing and SSE ownership in `RemoteServer`. Extract
 a `RemoteRouter`, authentication middleware, the terminal mutation broker, payload builders and
 cohesive route handlers for Sessions, Orchestrator, schedules, media and pairing.
@@ -997,7 +1029,7 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 651 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered groups | 660 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 53 | `Tests/main.swift`, counted by the guard |
 | suite files | 67 | `Tests/*Tests.swift`, counted by the guard |
 | `Orchestrator.swift` ceiling | 10,687 | the ratchet in `tools/check-architecture-boundaries.sh` |

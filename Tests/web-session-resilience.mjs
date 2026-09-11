@@ -369,6 +369,30 @@ globalThis.MutationObserver = class { observe() { } disconnect() { } };
 globalThis.ResizeObserver = MutationObserver;
 globalThis.IntersectionObserver = MutationObserver;
 
+const { bindSessionUI } = await import("../Resources/web/app/js/session/ui.js");
+const noopSessionUI = function () { };
+bindSessionUI({
+    resetSwipeRows: noopSessionUI,
+    renderDetailHead: noopSessionUI,
+    renderAgentHead: noopSessionUI,
+    renderComposer: noopSessionUI,
+    followInfo: noopSessionUI,
+    followStatusLine: noopSessionUI,
+    syncSessionBoard: noopSessionUI,
+    observeBoardSession: noopSessionUI,
+    renderWaiting: noopSessionUI,
+    renderAgents: noopSessionUI,
+    agentsRev: function () { return ""; },
+    arrangeStartRows: function (rows) { return rows; },
+    startArriving: function () { return false; },
+    startPlaceholder: noopSessionUI,
+    checkStart: noopSessionUI,
+    openWanted: noopSessionUI,
+    wantedSession: function () { return false; },
+    setWantedSession: noopSessionUI,
+    openSession: noopSessionUI
+});
+
 let fetchCalls = 0;
 globalThis.fetch = function () {
     fetchCalls += 1;

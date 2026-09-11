@@ -1249,4 +1249,22 @@ group("an iTerm2 screen says what it cannot do rather than doing less silently")
            tmuxPayload["lines"] as? Int, 1)
 }
 
+group("tmux PTY resize is bounded before the backend effect") {
+    let fake = makeFakeTmux()
+    defer {
+        fake.cleanup()
+        Tmux.binaryForTesting = nil
+    }
+    Tmux.binaryForTesting = fake.binary
+
+    expect("an admitted resize reaches exactly one addressed pane",
+           Tmux.resize("%5", columns: 90, rows: 25), nil)
+    expect("the adapter sends both dimensions as separate tmux arguments",
+           fake.calls, ["resize-pane -t %5 -x 90 -y 25"])
+    expect("an oversized width is refused by policy",
+           Tmux.resize("%5", columns: 501, rows: 25),
+           "terminal dimensions are outside the supported bounds")
+    expect("a refused resize performs no second backend call", fake.calls.count, 1)
+}
+
 }

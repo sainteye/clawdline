@@ -26,8 +26,8 @@ const info = await readFile(
     new URL("../Resources/web/app/js/input/info.js", import.meta.url), "utf8");
 assert.match(info, /data-fast-mode=/,
     "Session info renders Fast mode as an explicit control");
-assert.match(info, /api\.send\(id, fastModeCommand\(\), \[\]\)/,
-    "the control sends /fast through the ordinary authenticated Session write");
+assert.match(info, /api\.send\(route, fastModeCommand\(\), \[\]\)/,
+    "the control sends /fast through the selected Session's authenticated route");
 assert.match(info, /readFastModeBack\(id, 5\)/,
     "the send receipt is followed by rollout read-back instead of being called confirmation");
 assert.match(info, /fastModePending \|\| nextFastMode\(current\) !== target/,

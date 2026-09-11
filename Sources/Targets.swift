@@ -64,6 +64,9 @@ enum Targets {
         func interrupt(_ bytes: [UInt8], to session: TargetSession) throws -> String? {
             try real.interrupt(bytes, to: session)
         }
+        func resize(_ session: TargetSession, columns: Int, rows: Int) throws {
+            try real.resize(session, columns: columns, rows: rows)
+        }
     }
 
     /// ``MacProcessHost`` for observation; `signal` checks
@@ -351,14 +354,14 @@ enum Targets {
     }
 
     static func answer(_ bytes: [UInt8], to session: TargetSession) -> String? {
-        let digit = bytes.count == 1 && (0x31...0x39).contains(bytes[0])
-        let menuKey = digit || (bytes.count == 1 && bytes[0] == 0x09)
-        let backTab: [UInt8] = [0x1b, 0x5b, 0x5a]       // ESC [ Z
-        guard menuKey || bytes == backTab else {
-            return "That is not a key this can send."
+        let admitted: TerminalMenuAnswer
+        switch TerminalMenuAnswerPolicy.admit(
+            bytes, backend: session.backend,
+            terminalCapabilities: HostPorts.mac.terminal.capabilities) {
+        case .success(let answer): admitted = answer
+        case .failure(let refusal): return refusal.message
         }
-        guard digit else { return keystroke(bytes, to: session) }
-        let want = Int(bytes[0] - 0x30)
+        guard case .digit(let want) = admitted else { return keystroke(bytes, to: session) }
 
         // **Which kind of picker is this, before anything is typed at it.** A dialog drawn without
         // numbers has numeric selection switched off in the same breath, so the digit is not

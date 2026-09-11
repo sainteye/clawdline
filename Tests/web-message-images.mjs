@@ -390,8 +390,8 @@ const hydrator = transcriptSource.split("function hydrateArtifactImages")[1]
     .split("\n}")[0];
 assert.ok(hydrator.includes("source: source") && hydrator.includes("describeFailure:"),
     "every fresh tile is given the transport's delivery and its vocabulary together");
-assert.ok(transcriptSource.includes("artifactRenderSession = S.openId"),
-    "and the pictures are asked of the session whose transcript is on screen");
+assert.ok(transcriptSource.includes("artifactRenderSession = selection.open ? selection.open.key : null"),
+    "and the pictures are pinned to the exact identity of the transcript on screen");
 
 /*
  * An assistant's own turn, which is the one entry that can carry a picture without anybody

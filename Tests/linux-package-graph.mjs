@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -9,6 +9,14 @@ const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const read = (path) => readFileSync(join(root, path), 'utf8');
 const manifest = read('Package.swift');
 const composition = read('Packages/ClawdlineLinux/LinuxComposition.swift');
+const adapters = read('Packages/ClawdlineLinux/LinuxRuntimeAdapters.swift');
+const containedFiles = read('Packages/ClawdlineLinux/LinuxContainedFileSystem.swift');
+const providerRuntime = read('Packages/ClawdlineLinux/LinuxProviderRuntime.swift');
+const applicationLaunch = read('Sources/SessionLaunchPolicy.swift');
+const applicationLifecycle = read('Sources/ProviderLifecyclePolicy.swift');
+const applicationRoots = read('Sources/ProjectRootPolicy.swift');
+const applicationScheduler = read('Sources/TerminalCommandScheduler.swift');
+const linuxTests = read('Packages/ClawdlineLinuxTests/LinuxRuntimeContractTests.swift');
 const entry = read('Packages/ClawdlineLinux/main.swift');
 const build = read('build.sh');
 const linuxBuild = read('tools/swift-core-application-linux-build.sh');
@@ -27,6 +35,7 @@ function inspectPackage(packageText, buildText) {
   return {
     linuxProduct: /\.executable\(name: "ClawdlineLinux", targets: \["ClawdlineLinux"\]\)/.test(packageText),
     linuxEdge: /name: "ClawdlineLinux",\s*dependencies: \["ClawdlineApplication"\],\s*path: "Packages\/ClawdlineLinux"/s.test(packageText),
+    linuxTests: /name: "ClawdlineLinuxTests",\s*dependencies: \["ClawdlineApplication", "ClawdlineLinux"\],\s*path: "Packages\/ClawdlineLinuxTests"/s.test(packageText),
     macProductBuild: productBuild >= 0 && productArgument > productBuild
       && productArgument - productBuild < 240,
     noFlatCompiler: !/^swiftc\s/m.test(buildText),
@@ -58,11 +67,11 @@ check(/HostCapabilityUnavailable\.code/.test(composition),
   'Linux composition must reuse the Application capability refusal vocabulary');
 check(!/^(?:@\w+\s+)?import\s+(?:AppKit|Security|ServiceManagement|Speech|AVFoundation|Carbon|Darwin)$/m.test(composition + entry),
   'Linux composition must have no Apple platform import');
-check(/ready: false/.test(composition) && /readinessCode: "w4_runtime_not_composed"/.test(composition),
-  'W3 health identity must be explicitly not ready');
-check(/O_NOFOLLOW/.test(composition) && /O_NONBLOCK/.test(composition)
-  && /O_CLOEXEC/.test(composition) && /fstat\(/.test(composition),
-  'config and secret inputs must bind validation and bounded reads to one safe descriptor');
+check(/ready: false/.test(composition) && /readinessCode: "w4_runtime_not_configured"/.test(composition),
+  'W4-1 health must separate compiled code from configured/usable capability');
+check(/O_NOFOLLOW/.test(composition + containedFiles) && /O_NONBLOCK/.test(composition + containedFiles)
+  && /O_CLOEXEC/.test(composition + containedFiles) && /fstat\(/.test(composition + containedFiles),
+  'protected and contained inputs must bind validation and bounded reads to safe descriptors');
 check(/st_uid/.test(composition) && /st_mode/.test(composition) && /st_size/.test(composition)
   && /read\(descriptor/.test(composition),
   'protected inputs must fail closed on unavailable owner, mode, size, type, or read evidence');
@@ -71,13 +80,82 @@ check(/case \.internalFailure/.test(composition) && /"internal_failure"/.test(co
   'unexpected failures must report internal_failure with EX_SOFTWARE');
 check(/--product ClawdlineLinux/.test(linuxBuild),
   'Ubuntu compiler check must build the Linux executable product');
+check(/swift test/.test(linuxBuild) && /CLAWDLINE_TEST_TMUX/.test(linuxBuild),
+  'Ubuntu compiler check must execute the real Linux SwiftPM runtime contracts with tmux');
 check(/swift:6\.1\.3-noble@sha256:/.test(workflow) && /swift-core-application-linux-build\.sh/.test(workflow),
   'CI must keep the pinned real Ubuntu compiler check');
+check(/public final class TerminalCommandScheduler/.test(applicationScheduler)
+  && /let scheduling: TerminalCommandScheduler/.test(providerRuntime)
+  && /scheduling\.run/.test(providerRuntime)
+  && !/TerminalWorkSchedulingOwner/.test(applicationLifecycle + providerRuntime),
+  'the established Application serial scheduler must be the sole Mac/Linux admission owner');
+check(/envArguments/.test(adapters) && /"\/usr\/bin\/env", "-i"/.test(adapters)
+  && /allowedKeys/.test(applicationLifecycle),
+  'Linux provider launch must construct a closed environment instead of filtering inheritance');
+check(/O_DIRECTORY \| O_NOFOLLOW/.test(containedFiles) && /AT_SYMLINK_NOFOLLOW/.test(containedFiles)
+  && /isLexicallySafeAbsolute/.test(applicationRoots),
+  'project and file containment must reject traversal and linked components');
+check(/SessionLaunchPolicy\.admit/.test(providerRuntime) && /TerminalMenuAnswerPolicy\.admit/.test(providerRuntime)
+  && /public enum SessionLaunchPolicy/.test(applicationLaunch)
+  && /public enum TerminalMenuAnswerPolicy/.test(applicationLaunch),
+  'Linux create and answer must consume the shared Application admission policies before effects');
+check(/testRealTmuxProviderLifecycleOnLinux/.test(linuxTests)
+  && /testProcIdentityUsesExactStartTokenAndGroup/.test(linuxTests)
+  && /testClosedProviderEnvironmentCannotLeakInheritedCredentials/.test(linuxTests),
+  'the Linux SwiftPM target must keep real lifecycle and containment mutation contracts');
+
+function inspectCorrectionWave({ scheduler, runtime, adaptersText, compositionText, containedText }) {
+  return {
+    sharedScheduler: /queue\.sync/.test(scheduler) && /setRestartMaintenance/.test(scheduler)
+      && /scheduling\.run/.test(runtime) && /requiredSession\(sessionID\)/.test(runtime),
+    osContainment: /landlockABIVersion/.test(adaptersText) && /installSeccomp/.test(adaptersText)
+      && /pathsOverlap/.test(runtime),
+    boundedRunner: /O_NONBLOCK/.test(adaptersText) && /poll\(&descriptors/.test(adaptersText)
+      && /aggregateOutputBytes \+ count <= maximumOutputBytes/.test(adaptersText)
+      && /terminateAndReap/.test(adaptersText),
+    effectReceipt: /struct LinuxLifecycleFailure/.test(runtime)
+      && /pastedNotSubmitted/.test(runtime) && /compensateCreated/.test(runtime),
+    truthfulReadiness: /struct LinuxCapabilityState/.test(compositionText)
+      && /w4_provider_authentication_not_proven/.test(compositionText)
+      && /authenticated: false/.test(compositionText),
+    fullIdentity: /effectiveGID/.test(adaptersText) && /supplementaryGroups/.test(adaptersText)
+      && /current\.identity == identity/.test(adaptersText),
+    secretCoordinator: /static let shared = LinuxSecretStoreCoordinator/.test(containedText)
+      && /coordinator\.withAccount/.test(containedText) && /readUnlocked/.test(containedText)
+  };
+}
+
+const correctionSubject = {
+  scheduler: applicationScheduler,
+  runtime: providerRuntime,
+  adaptersText: adapters,
+  compositionText: composition,
+  containedText: containedFiles
+};
+const correction = inspectCorrectionWave(correctionSubject);
+check(Object.values(correction).every(Boolean),
+  `sealed W4-1 correction classes are incomplete: ${JSON.stringify(correction)}`);
+
+// One representative in-memory red mutation per sealed failure class. Each removes the exact
+// mechanism the corresponding assertion needs; no mutation writes into the checkout.
+const mutations = [
+  ['sharedScheduler', { scheduler: applicationScheduler.replace('queue.sync', 'queue.async') }],
+  ['osContainment', { adaptersText: adapters.replaceAll('landlockABIVersion', 'removedLandlockABI') }],
+  ['boundedRunner', { adaptersText: adapters.replace('O_NONBLOCK', 'O_RDONLY') }],
+  ['effectReceipt', { runtime: providerRuntime.replaceAll('pastedNotSubmitted', 'lostPartialStage') }],
+  ['truthfulReadiness', { compositionText: composition.replaceAll('authenticated: false', 'authenticated: true') }],
+  ['fullIdentity', { adaptersText: adapters.replaceAll('effectiveGID', 'discardedGID') }],
+  ['secretCoordinator', { containedText: containedFiles.replaceAll('coordinator.withAccount', 'uncoordinated') }]
+];
+for (const [name, changed] of mutations) {
+  const mutated = inspectCorrectionWave({ ...correctionSubject, ...changed });
+  check(mutated[name] === false, `${name} representative mutation must make its guard red`);
+}
 }
 
 const binary = process.env.CLAWDLINE_LINUX_BINARY;
 if (binary) {
-  const scratch = mkdtempSync(join(tmpdir(), 'clawdline-linux-contract-'));
+  const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'clawdline-linux-contract-')));
   try {
     const secret = join(scratch, 'daemon.secret');
     const config = join(scratch, 'daemon.json');
@@ -111,14 +189,11 @@ if (binary) {
       && health.identityKind === 'diagnostic' && health.buildIdentity === 'linux-contract-test'
       && !Object.hasOwn(health, 'protocolVersion'),
       'health must carry diagnostic service/build identity without prematurely defining a wire protocol');
-    check(health.ready === false && health.readinessCode === 'w4_runtime_not_composed',
-      'health must distinguish alive skeleton from ready daemon');
-    check(JSON.stringify(health.unsupportedCapabilities.map((row) => row.capability).sort())
-      === JSON.stringify(['files', 'process.observe', 'process.signal', 'secrets', 'terminal.iterm', 'terminal.tmux']),
-      'health capability rows must derive from the canonical HostCapability vocabulary');
-    check(health.unsupportedCapabilities.every((row) => row.owner === 'W4-1'
-      && row.refusal === 'capability_unavailable'),
-      'health must bind each unavailable host capability to the documented W4-1 adapter owner');
+    check(health.ready === false && health.readinessCode === 'w4_runtime_not_configured',
+      'health must distinguish compiled W4-1 adapters from configuration and readiness');
+    check(health.supportedCapabilities.length === 0
+      && health.capabilityStates.every((row) => row.configured === false && row.usable === false),
+      'unconfigured health must not promote compiled adapters into usable capabilities');
 
     writeConfig();
     result = run('check-config', '--config', config);
@@ -170,8 +245,14 @@ if (binary) {
 
     writeConfig();
     result = run('run', '--config', config);
-    check(result.status === 69 && errorCode(result) === 'w4_runtime_not_composed',
-      'run must validate its protected inputs and then refuse before any daemon effect');
+    if (process.platform === 'linux') {
+      check(result.status === 69 && errorCode(result) === 'capability_unavailable',
+        'run without validated provider/tmux descriptors must refuse before an effect');
+    } else {
+      check(result.status === 69 && errorCode(result) === 'unsafe_runtime_path',
+        'a non-Linux execution must not soften Linux canonical-path evidence to make a local probe green');
+      check(result.stdout === '', 'a refused non-Linux composition emits no partial runtime receipt');
+    }
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

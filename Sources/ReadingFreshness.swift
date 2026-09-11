@@ -38,6 +38,41 @@ final class FreshReadings<Value> {
 
     typealias Executor = (@escaping () -> Void) -> Void
 
+    /// A parked response is memory and a live connection, even though coalescing means it is not
+    /// another expensive read. These explicit implementation defaults await W6 workload approval.
+    struct WaiterLimits: Equatable {
+        let perKey: Int
+        let total: Int
+
+        static var implementationDefault: WaiterLimits {
+            WaiterLimits(perKey: FreshReadingWaiterDefaults.waiterPerKeyLimit,
+                         total: FreshReadingWaiterDefaults.waiterTotalLimit)
+        }
+
+        init(perKey: Int, total: Int) {
+            precondition(perKey > 0 && total >= perKey)
+            self.perKey = perKey
+            self.total = total
+        }
+    }
+
+    struct WaiterToken: Hashable {
+        fileprivate let id: UInt64
+        fileprivate let key: String
+    }
+
+    struct WaiterMetrics: Equatable {
+        fileprivate(set) var current = 0
+        fileprivate(set) var peak = 0
+        fileprivate(set) var refused = 0
+        fileprivate(set) var cancelled = 0
+
+        var object: [String: Any] {
+            ["current": current, "peak": peak, "refused": refused,
+             "cancelled": cancelled]
+        }
+    }
+
     /// How old a reading may be before it is refreshed, and before it stops being servable.
     ///
     /// The two numbers answer different questions. `freshFor` is *when is it worth asking again*
@@ -106,15 +141,24 @@ final class FreshReadings<Value> {
         var staleReason: String?
     }
 
+    private struct Waiter {
+        let token: WaiterToken
+        let deliver: (Answer) -> Void
+    }
+
     private var readings: [String: Reading] = [:]
     private var inFlight: Set<String> = []
-    private var waiters: [String: [(Answer) -> Void]] = [:]
+    private var waiters: [String: [Waiter]] = [:]
     private var readingOrder: [String] = []
     private let capacity: Int
+    let waiterLimits: WaiterLimits
+    private var nextWaiterID: UInt64 = 0
+    private(set) var waiterMetrics = WaiterMetrics()
 
-    init(capacity: Int = 128) {
+    init(capacity: Int = 128, waiterLimits: WaiterLimits = .implementationDefault) {
         precondition(capacity > 0)
         self.capacity = capacity
+        self.waiterLimits = waiterLimits
     }
 
     private func touch(_ key: String) {
@@ -142,6 +186,7 @@ final class FreshReadings<Value> {
     ///
     /// `release` balances an admitted read and is called on the owner queue once it settles.
     /// `deliver` is always called exactly once, also on the owner queue.
+    @discardableResult
     func read(_ key: String,
               policy: Policy,
               admit: () -> Bool,
@@ -151,7 +196,7 @@ final class FreshReadings<Value> {
               classify: @escaping (Value) -> Verdict,
               completeOnOwner: @escaping (@escaping () -> Void) -> Void,
               release: @escaping () -> Void,
-              deliver: @escaping (Answer) -> Void) {
+              deliver: @escaping (Answer) -> Void) -> WaiterToken? {
         let now = Self.clock()
         if let reading = readings[key] {
             let age = max(0, now - reading.bornAt)
@@ -171,13 +216,23 @@ final class FreshReadings<Value> {
                                classify: classify, completeOnOwner: completeOnOwner,
                                release: release)
                 }
-                return
+                return nil
             }
         }
         // Nothing servable. One read, however many requests are asking: a cold `/info` asked by
         // eight tabs at once is eight `lsof` runs, eight `git status` and eight Apple events for
         // one answer, and the eighth of those is the one that makes the other seven slow.
-        waiters[key, default: []].append(deliver)
+        guard (waiters[key]?.count ?? 0) < waiterLimits.perKey,
+              waiterMetrics.current < waiterLimits.total else {
+            waiterMetrics.refused += 1
+            deliver(Answer(value: refusal(), age: 0, staleReason: nil, provenance: .read))
+            return nil
+        }
+        nextWaiterID &+= 1
+        let token = WaiterToken(id: nextWaiterID, key: key)
+        waiters[key, default: []].append(Waiter(token: token, deliver: deliver))
+        waiterMetrics.current += 1
+        waiterMetrics.peak = max(waiterMetrics.peak, waiterMetrics.current)
         guard revalidate(key, admit: admit, execute: execute, compute: compute,
                          classify: classify, completeOnOwner: completeOnOwner,
                          release: release) else {
@@ -185,11 +240,32 @@ final class FreshReadings<Value> {
             // it takes every waiter with it rather than leaving them parked on a read that was
             // never started.
             let refused = refusal()
-            for hand in waiters.removeValue(forKey: key) ?? [] {
-                hand(Answer(value: refused, age: 0, staleReason: nil, provenance: .read))
+            for waiter in takeWaiters(for: key) {
+                waiter.deliver(Answer(value: refused, age: 0, staleReason: nil, provenance: .read))
             }
-            return
+            return nil
         }
+        return waiters[key]?.contains(where: { $0.token == token }) == true ? token : nil
+    }
+
+    /// Disconnecting a request removes only its parked reply. The shared expensive read may still
+    /// finish and seed the cache for another request; it no longer retains this connection.
+    @discardableResult
+    func cancel(_ token: WaiterToken) -> Bool {
+        guard var parked = waiters[token.key],
+              let index = parked.firstIndex(where: { $0.token == token }) else { return false }
+        parked.remove(at: index)
+        if parked.isEmpty { waiters.removeValue(forKey: token.key) }
+        else { waiters[token.key] = parked }
+        waiterMetrics.current -= 1
+        waiterMetrics.cancelled += 1
+        return true
+    }
+
+    private func takeWaiters(for key: String) -> [Waiter] {
+        let parked = waiters.removeValue(forKey: key) ?? []
+        waiterMetrics.current -= parked.count
+        return parked
     }
 
     /// Start a read unless one is already running for this key. Waiters, if any, are settled when
@@ -233,7 +309,8 @@ final class FreshReadings<Value> {
             readings[key]?.staleReason = verdict.reason
             touch(key)
         }
-        guard let parked = waiters.removeValue(forKey: key), !parked.isEmpty else { return }
+        let parked = takeWaiters(for: key)
+        guard !parked.isEmpty else { return }
         // Whoever was waiting gets the value that was just read, even when it was a refusal:
         // there was nothing to serve, so the refusal is the honest answer for them.
         let answer: Answer
@@ -248,10 +325,11 @@ final class FreshReadings<Value> {
         // The first waiter is the one that asked for the read; the rest joined it. They get the
         // same bytes and a different provenance, so a trace can tell one expensive read shared by
         // eight requests from eight expensive reads.
-        for (index, hand) in parked.enumerated() {
-            hand(index == 0 ? answer
-                            : Answer(value: answer.value, age: answer.age,
-                                     staleReason: answer.staleReason, provenance: .joined))
+        for (index, waiter) in parked.enumerated() {
+            waiter.deliver(index == 0 ? answer
+                                      : Answer(value: answer.value, age: answer.age,
+                                               staleReason: answer.staleReason,
+                                               provenance: .joined))
         }
     }
 
@@ -269,7 +347,15 @@ final class FreshReadings<Value> {
     func waiterCountForTesting(_ key: String) -> Int { waiters[key]?.count ?? 0 }
     func forgetForTesting() {
         readings.removeAll(); inFlight.removeAll(); waiters.removeAll(); readingOrder.removeAll()
+        waiterMetrics.current = 0
     }
+}
+
+/// Non-generic storage for the parked-reply defaults; Swift generic types cannot own static
+/// stored properties. These are implementation safety rails pending W6 workload approval.
+enum FreshReadingWaiterDefaults {
+    static let waiterPerKeyLimit = 16
+    static let waiterTotalLimit = 256
 }
 
 /// The freshness policy for the optional reads — `/info`, `/live`, `/places`.

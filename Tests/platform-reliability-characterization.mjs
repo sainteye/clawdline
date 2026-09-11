@@ -144,11 +144,14 @@ try {
   });
   const report = JSON.parse(first.stdout);
   const byID = Object.fromEntries(report.rows.map(row => [row.id, row]));
-  checked('精確覆蓋 19 列與 17 個來源，未知沒有變成零', () => {
+  checked('精確覆蓋 19 列與 18 個來源，未知沒有變成零', () => {
     assert.deepEqual(report.rows.map(row => row.id), expectedIDs);
     assert.equal(report.row_count, 19);
-    assert.equal(report.source_file_count, 17);
-    assert.equal(report.source_manifest.length, 17);
+    assert.equal(report.source_file_count, 18);
+    assert.equal(report.source_manifest.length, 18);
+    assert.match(report.source_reference_commit,
+      /^base:a6e2785ca1993538b7792aab69c9bfc73da854c0\+candidate-overlay:[a-f0-9]{64}$/);
+    assert.equal(report.source_overlay, 'R-2 sealed HTTP/SSE reliability correction overlay');
     assert.equal(report.swift_tests_executed, false);
     assert.equal(report.approved_new_budgets, null);
     assert.equal(report.production_readiness, 'not-established');
@@ -165,6 +168,8 @@ try {
       const bytes = fs.readFileSync(path.join(root, entry.path));
       assert.equal(entry.bytes, bytes.length);
       assert.equal(entry.sha256, sha(bytes));
+      assert.match(entry.provenance,
+        /^(?:commit|working-overlay):a6e2785ca1993538b7792aab69c9bfc73da854c0$/);
     }
     assert.equal(byID['terminal-queue'].values.terminalDepth.value, 8);
     assert.equal(byID['terminal-queue'].values.terminalChannelDepth.value, 2);
@@ -172,7 +177,12 @@ try {
     assert.equal(byID['read-queues'].values.voiceDepth.value, 2);
     assert.equal(byID['read-queues'].values.planDepth.value, 2);
     assert.equal(byID['spool-component'].values.globalByteCap.value, 16 * 1024 * 1024);
-    assert.equal(byID['sse-output'].values.outstanding_byte_cap, null);
+    assert.equal(byID['http-admission'].values.connectionLimit.value, 128);
+    assert.equal(byID['http-admission'].values.connectionRefusalLimit.value, 16);
+    assert.equal(byID['http-admission'].values.deadlineTaskLimit.value, 144);
+    assert.equal(byID['sse-output'].values.streamLimit.value, 16);
+    assert.equal(byID['sse-output'].values.streamByteLimit.value, 4 * 1024 * 1024);
+    assert.equal(byID['sse-output'].values.aggregateStreamByteLimit.value, 16 * 1024 * 1024);
     assert.equal(byID['store-read-health'].values.top_level_version_gate, true);
     assert.equal(byID['store-read-health'].values.read_health_fence_in_load, true);
     assert.ok(byID['spool-component'].unknown.some(text => text.includes('production')));
@@ -235,7 +245,7 @@ print('5 rejected')
     fs.writeFileSync(file, rendered.stdout);
     const good = run(['--check', file]);
     assert.equal(good.status, 0, good.stderr);
-    assert.deepEqual(JSON.parse(good.stdout), { status: 'pass', row_count: 19, source_file_count: 17 });
+    assert.deepEqual(JSON.parse(good.stdout), { status: 'pass', row_count: 19, source_file_count: 18 });
     fs.appendFileSync(file, '\nstale\n');
     failure(run(['--check', file]), 'baseline_stale');
     fs.unlinkSync(file);

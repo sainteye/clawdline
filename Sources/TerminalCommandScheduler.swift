@@ -15,41 +15,45 @@ import Foundation
 /// `RestartRecordsTransaction`): that is Registry-owned after W2-2. What
 /// this type owns is only the admission flag those routes flip and the counters they read to
 /// decide when the drain is complete — the terminal lane's own half of that handshake.
-final class TerminalCommandScheduler: @unchecked Sendable {
+public final class TerminalCommandScheduler: @unchecked Sendable {
     /// One Mac, eight terminal commands in flight at once — iTerm automation alone may wait 15
     /// seconds, so this is a real ceiling and not a formality.
-    static let depth = 8
+    public static let depth = 8
     /// One session, two commands in flight at once — enough for a nested cascade to make forward
     /// progress without letting one terminal starve every other channel's slot.
-    static let channelDepth = 2
+    public static let channelDepth = 2
 
-    private static let workerKey = DispatchSpecificKey<Bool>()
+    public let limits: TerminalWorkLimits
+    private let workerKey = DispatchSpecificKey<String>()
+    private let workerIdentity = UUID().uuidString
     private let queue: DispatchQueue
     private let admissionLock = NSLock()
     private var outstanding = 0
     private var outstandingByChannel: [String: Int] = [:]
     private var maintenanceRequestID: String?
+    private var activeCommandIDs: Set<String> = []
     /// Touched only on the serial terminal queue. It lets nested inline work inherit an outer
     /// reservation without double-counting that same terminal while still accounting a newly
     /// discovered child/coordination recipient.
     private var activeChannels: Set<String> = []
 
-    init(label: String) {
+    public init(label: String, limits: TerminalWorkLimits = .production) {
+        self.limits = limits
         queue = DispatchQueue(label: label)
-        queue.setSpecific(key: Self.workerKey, value: true)
+        queue.setSpecific(key: workerKey, value: workerIdentity)
     }
 
     /// `true` when the caller is already running inside this lane's own worker — the seam
     /// `RemoteServer.writing(_:keeping:_:)` uses to skip duplicate idempotency bookkeeping for a
     /// nested command.
-    var isCurrentlyOnWorkerQueue: Bool {
-        DispatchQueue.getSpecific(key: Self.workerKey) == true
+    public var isCurrentlyOnWorkerQueue: Bool {
+        DispatchQueue.getSpecific(key: workerKey) == workerIdentity
     }
 
     /// Asynchronous wrapper for a single-channel command. Validation, reservation and idempotency
     /// stay with the caller; only the work itself enters the bounded worker.
     @discardableResult
-    func enqueue(channel: String? = nil, _ work: @escaping () -> Void) -> Bool {
+    public func enqueue(channel: String? = nil, _ work: @escaping () -> Void) -> Bool {
         enqueue(channels: channel.map { [$0] } ?? [], work)
     }
 
@@ -57,7 +61,7 @@ final class TerminalCommandScheduler: @unchecked Sendable {
     /// release out to several waiter terminals; reserving every known recipient before enqueue
     /// makes the documented per-session depth true for those production paths too.
     @discardableResult
-    func enqueue(channels rawChannels: [String], _ work: @escaping () -> Void) -> Bool {
+    public func enqueue(channels rawChannels: [String], _ work: @escaping () -> Void) -> Bool {
         let channels = Array(Set(rawChannels.filter { !$0.isEmpty })).sorted()
         // Nested terminal work is already inside the single broker ordering domain. Execute it
         // inline so a root `/end` can finish children deepest-first without deadlocking behind
@@ -65,7 +69,7 @@ final class TerminalCommandScheduler: @unchecked Sendable {
         if isCurrentlyOnWorkerQueue {
             let added = channels.filter { !activeChannels.contains($0) }
             admissionLock.lock()
-            guard added.allSatisfy({ (outstandingByChannel[$0] ?? 0) < Self.channelDepth }) else {
+            guard added.allSatisfy({ (outstandingByChannel[$0] ?? 0) < limits.perChannel }) else {
                 admissionLock.unlock()
                 return false
             }
@@ -88,8 +92,8 @@ final class TerminalCommandScheduler: @unchecked Sendable {
         }
         admissionLock.lock()
         guard maintenanceRequestID == nil,
-              outstanding < Self.depth,
-              channels.allSatisfy({ (outstandingByChannel[$0] ?? 0) < Self.channelDepth }) else {
+              outstanding < limits.total,
+              channels.allSatisfy({ (outstandingByChannel[$0] ?? 0) < limits.perChannel }) else {
             admissionLock.unlock()
             return false
         }
@@ -113,21 +117,116 @@ final class TerminalCommandScheduler: @unchecked Sendable {
         return true
     }
 
+    /// Synchronous Application-layer entry point used by platform lifecycle compositions. The
+    /// complete operation closure — including terminal inventory/preflight — runs on the same
+    /// serial worker as the Mac facade. A nested lifecycle inherits its outer reservation and
+    /// executes inline, retaining the existing deepest-first semantics.
+    public func run<T>(commandID: String, channel: String,
+                       operation: TerminalEffectOperation,
+                       _ work: () throws -> T) throws -> T {
+        guard SessionLaunchPolicy.opaqueCommandID(commandID) != nil,
+              !channel.isEmpty, channel.utf8.count <= 128 else {
+            throw TerminalLifecycleFailure(
+                code: .invalidCommand,
+                message: "Terminal scheduling requires bounded opaque command and channel ids.")
+        }
+
+        if isCurrentlyOnWorkerQueue {
+            let addedChannel = !activeChannels.contains(channel)
+            admissionLock.lock()
+            guard !activeCommandIDs.contains(commandID) else {
+                admissionLock.unlock()
+                throw TerminalLifecycleFailure(
+                    code: .duplicateCommand,
+                    message: "That terminal command identity is already active.")
+            }
+            guard !addedChannel || (outstandingByChannel[channel] ?? 0) < limits.perChannel else {
+                admissionLock.unlock()
+                throw TerminalLifecycleFailure(
+                    code: .channelCapacity,
+                    message: "The terminal channel has reached its capacity of \(limits.perChannel).")
+            }
+            activeCommandIDs.insert(commandID)
+            if addedChannel { outstandingByChannel[channel, default: 0] += 1 }
+            admissionLock.unlock()
+            let previous = activeChannels
+            activeChannels.insert(channel)
+            defer {
+                activeChannels = previous
+                admissionLock.lock()
+                activeCommandIDs.remove(commandID)
+                if addedChannel {
+                    let remaining = (outstandingByChannel[channel] ?? 1) - 1
+                    if remaining == 0 { outstandingByChannel.removeValue(forKey: channel) }
+                    else { outstandingByChannel[channel] = remaining }
+                }
+                admissionLock.unlock()
+            }
+            return try work()
+        }
+
+        admissionLock.lock()
+        if let requestID = maintenanceRequestID {
+            admissionLock.unlock()
+            throw TerminalLifecycleFailure(
+                code: .maintenance,
+                message: "Terminal admission is closed for restart maintenance \(requestID).")
+        }
+        guard !activeCommandIDs.contains(commandID) else {
+            admissionLock.unlock()
+            throw TerminalLifecycleFailure(
+                code: .duplicateCommand,
+                message: "That terminal command identity is already active.")
+        }
+        guard outstanding < limits.total else {
+            admissionLock.unlock()
+            throw TerminalLifecycleFailure(
+                code: .totalCapacity,
+                message: "The terminal lane has reached its total capacity of \(limits.total).")
+        }
+        guard (outstandingByChannel[channel] ?? 0) < limits.perChannel else {
+            admissionLock.unlock()
+            throw TerminalLifecycleFailure(
+                code: .channelCapacity,
+                message: "The terminal channel has reached its capacity of \(limits.perChannel).")
+        }
+        outstanding += 1
+        outstandingByChannel[channel, default: 0] += 1
+        activeCommandIDs.insert(commandID)
+        admissionLock.unlock()
+
+        return try queue.sync { [self] in
+            let previous = activeChannels
+            activeChannels.insert(channel)
+            defer {
+                activeChannels = previous
+                admissionLock.lock()
+                outstanding -= 1
+                activeCommandIDs.remove(commandID)
+                let remaining = (outstandingByChannel[channel] ?? 1) - 1
+                if remaining == 0 { outstandingByChannel.removeValue(forKey: channel) }
+                else { outstandingByChannel[channel] = remaining }
+                admissionLock.unlock()
+            }
+            return try work()
+        }
+    }
+
     /// Test receipt for the production admission counters, read under the same lock that mutates
     /// them. A nested terminal cascade must finish with both totals back at zero.
-    func outstandingForTesting() -> (total: Int, channels: Int) {
+    public func outstandingForTesting() -> (total: Int, channels: Int) {
         admissionLock.lock(); defer { admissionLock.unlock() }
         return (outstanding, outstandingByChannel.values.reduce(0, +))
     }
 
     /// What `build.sh`'s restart-maintenance drain reads: how much of the lane is still occupied,
     /// globally and per channel.
-    struct DrainSnapshot: Equatable {
-        let outstanding: Int
-        let channels: [String: Int]
+    public struct DrainSnapshot: Equatable {
+        public let outstanding: Int
+        public let channels: [String: Int]
     }
 
-    func drainSnapshot() -> DrainSnapshot {
+    public func drainSnapshot() -> DrainSnapshot {
         admissionLock.lock(); defer { admissionLock.unlock() }
         return DrainSnapshot(outstanding: outstanding, channels: outstandingByChannel)
     }
@@ -136,7 +235,7 @@ final class TerminalCommandScheduler: @unchecked Sendable {
     /// Closing (`active: true`) always adopts the given id; opening back up only clears the flag
     /// when the caller is the one who closed it (or no id is given), so a stale reopen from a
     /// superseded request cannot reopen admission underneath the request that is still active.
-    func setRestartMaintenance(active: Bool, requestID: String?) {
+    public func setRestartMaintenance(active: Bool, requestID: String?) {
         admissionLock.lock()
         if active { maintenanceRequestID = requestID }
         else if requestID == nil || maintenanceRequestID == requestID {
@@ -147,11 +246,11 @@ final class TerminalCommandScheduler: @unchecked Sendable {
 
     /// One retryable fact about *this lane*: it is closed, and to which request. Building the
     /// actual HTTP response stays with the caller, which owns the wire shape.
-    struct MaintenanceRefusal: Equatable {
-        let requestID: String
+    public struct MaintenanceRefusal: Equatable {
+        public let requestID: String
     }
 
-    func maintenanceRefusal() -> MaintenanceRefusal? {
+    public func maintenanceRefusal() -> MaintenanceRefusal? {
         admissionLock.lock(); defer { admissionLock.unlock() }
         return maintenanceRequestID.map(MaintenanceRefusal.init)
     }

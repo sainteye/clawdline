@@ -89,6 +89,30 @@ struct MacTerminalHost: TerminalHost {
             case .failure(let failure):
                 throw failure
             }
+        case .managedProvider(let plan):
+            switch plan.terminalMode {
+            case .iTermTab:
+                switch ITerm.newTabResult(line: plan.shellLine) {
+                case .success(let made):
+                    return TerminalCreated(id: made.id, backend: .iterm, tty: made.tty,
+                                           attachCommand: nil)
+                case .failure(let failure): throw failure
+                }
+            case .tmuxWindow:
+                switch Tmux.newWindowResult(cwd: plan.projectRoot, command: plan.shellCommand) {
+                case .success(let pane):
+                    return TerminalCreated(id: pane, backend: .tmux, tty: nil,
+                                           attachCommand: nil)
+                case .failure(let failure): throw failure
+                }
+            case .tmuxDetachedSession:
+                switch Tmux.newSessionResult(cwd: plan.projectRoot, command: plan.shellCommand) {
+                case .success(let pane):
+                    return TerminalCreated(id: pane, backend: .tmux, tty: nil,
+                                           attachCommand: Tmux.attachCommand)
+                case .failure(let failure): throw failure
+                }
+            }
         }
     }
 
@@ -118,6 +142,15 @@ struct MacTerminalHost: TerminalHost {
         switch session.backend {
         case .iterm: return ITerm.keystroke(bytes, to: session.id)
         case .tmux: return Tmux.keystroke(bytes, to: session.id)
+        }
+    }
+
+    func resize(_ session: TargetSession, columns: Int, rows: Int) throws {
+        guard session.backend == .tmux else {
+            throw HostCapabilityUnavailable(capability: .terminalITerm, operation: "resize")
+        }
+        if let failure = Tmux.resize(session.id, columns: columns, rows: rows) {
+            throw TerminalFailure(kind: .io, message: failure)
         }
     }
 }

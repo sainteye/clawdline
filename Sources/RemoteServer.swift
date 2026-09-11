@@ -97,15 +97,22 @@ final class RemoteServer: @unchecked Sendable {
         return Int(at.timeIntervalSince1970)
     }()
     private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote"), boardRequests = ProjectBoardRequestCoordinator(), timelineRequests = ProjectTimelineRequestCoordinator()
+    private lazy var httpDeadlineScheduler = BoundedHTTPDeadlineScheduler(
+        queue: queue, limit: HTTPReliability.deadlineTaskLimit)
+    private lazy var httpReliability = HTTPReliability { [weak self] after, action in
+        self?.httpDeadlineScheduler.schedule(after: after, action: action)
+    }
     private var listener: NWListener?
     private var streams: [ObjectIdentifier: Stream] = [:]
+    private var pendingFreshWaiters:
+        [ObjectIdentifier: SlowReadings.Readings.WaiterToken] = [:]
     private var nextEventID = 0
     private lazy var transcriptRevisionStream = TranscriptRevisionStream { [weak self] id, signature in
         self?.queue.async { [weak self] in
             guard let self else { return }
             let payload: [String: Any] = ["id": id, "signature": signature,
                                           "at": Int(Date().timeIntervalSince1970)]
-            for stream in self.streams.values {
+            for stream in Array(self.streams.values) {
                 self.write(event: "transcript", data: payload, to: stream)
             }
         }
@@ -139,7 +146,7 @@ final class RemoteServer: @unchecked Sendable {
             let payload: [String: Any] = ["id": id, "revision": revision,
                                           "at": Int(Date().timeIntervalSince1970)]
             self.queue.async {
-                for stream in self.streams.values {
+                for stream in Array(self.streams.values) {
                     self.write(event: "screen", data: payload, to: stream)
                 }
             }
@@ -532,8 +539,10 @@ final class RemoteServer: @unchecked Sendable {
         syncSnapshotObserver()
         queue.async { [weak self] in
             guard let self else { return }
-            for stream in self.streams.values { stream.connection.cancel() }
+            for token in self.pendingFreshWaiters.values { self.slowReadings.cancel(token) }
+            self.pendingFreshWaiters.removeAll()
             self.streams.removeAll()
+            self.httpReliability.resetActive()
             self.transcriptRevisionStream.stop()
         }
         // Not on `queue`, and not asynchronously: this is the one place where a `pipe-pane` has to
@@ -556,66 +565,49 @@ final class RemoteServer: @unchecked Sendable {
     // MARK: - Connections
 
     private func accept(_ conn: NWConnection) {
-        conn.start(queue: queue)
-        receive(conn, buffer: Data())
+        httpReliability.acceptNetworkConnection(
+            conn, queue: queue, headerLimit: 64 << 10, bodyLimit: Self.bodyLimit,
+            parse: { Request(head: $0) }, contentLength: { $0.contentLength },
+            handle: { [weak self, weak conn] request, body in
+                guard let self, let conn else { return }
+                var request = request; request.body = body
+                self.handle(request, on: conn)
+            },
+            refuse: { [weak self] refusal, connection in
+                self?.send(Self.response(for: refusal), on: connection)
+            },
+            didClose: { [weak self] in self?.connectionClosed($0) })
     }
 
-    /// Read until the headers are complete, then answer.
-    ///
-    /// The body is read only when a `Content-Length` says there is one, and it is capped — this
-    /// listens on loopback, but "on loopback" is not a reason to let anything on the machine hand
-    /// it a gigabyte.
-    private func receive(_ conn: NWConnection, buffer: Data) {
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, done, error in
-            guard let self else { return }
-            var buffer = buffer
-            if let data { buffer.append(data) }
-            if error != nil || (done && buffer.isEmpty) { conn.cancel(); return }
-
-            guard let headEnd = Self.range(of: Data("\r\n\r\n".utf8), in: buffer) else {
-                if buffer.count > 64 * 1024 { self.send(.status(431), on: conn); return }
-                if done { conn.cancel(); return }
-                self.receive(conn, buffer: buffer)
-                return
-            }
-            guard var request = Request(head: buffer[buffer.startIndex..<headEnd.lowerBound]) else {
-                self.send(.error(400, "bad_request", "Could not read that request"), on: conn)
-                return
-            }
-            let bodyStart = headEnd.upperBound
-            // **Refuse a body that is too big; never trim one to fit.**
-            //
-            // This used to be `min(contentLength, 1 << 20)`, which is not a limit — it is a pair
-            // of scissors. A larger request was cut to a megabyte and handed on, so what reached
-            // the route was the first megabyte of a JSON document, `JSONSerialization` returned
-            // nil, the parsed body became `[:]`, and `/send` answered **"That needs some text or
-            // an image."** about a message that had both. Which is the worst kind of wrong
-            // answer: it describes the request rather than the limit, so the person retries with
-            // the same picture and gets the same sentence.
-            //
-            // It also disagreed with the page by a factor of twenty. `Shots` in index.html sizes
-            // its own limits against a comment saying the server refuses a body over 20MB — so a
-            // phone photograph was shrunk to something the client believed was comfortable and
-            // then silently beheaded here. A 1600px screenshot kept as PNG, which is what the
-            // attach button produces for anything text-shaped, clears a megabyte on its own.
-            //
-            // So: the number the page already assumes, and a 413 that says which limit was hit.
-            if request.contentLength > Self.bodyLimit {
-                self.send(.error(413, "too_large",
-                                 "That was \(request.contentLength) bytes and the limit is "
-                                 + "\(Self.bodyLimit). Send fewer or smaller pictures."), on: conn)
-                return
-            }
-            let want = request.contentLength
-            let have = buffer.count - (bodyStart - buffer.startIndex)
-            if have < want {
-                if done { conn.cancel(); return }
-                self.receive(conn, buffer: buffer)
-                return
-            }
-            request.body = buffer[bodyStart..<(bodyStart + want)]
-            self.handle(request, on: conn)
+    private func connectionClosed(_ id: ObjectIdentifier) {
+        if let token = pendingFreshWaiters.removeValue(forKey: id) {
+            slowReadings.cancel(token)
         }
+        streams.removeValue(forKey: id)
+        if streams.isEmpty { transcriptRevisionStream.stop() }
+    }
+    private static func response(for refusal: HTTPReliability.NetworkRefusal) -> Response {
+        switch refusal {
+        case .headersTooLarge: return .status(431)
+        case .badRequest: return .error(400, "bad_request", "Could not read that request")
+        case .bodyTooLarge(let length, let limit):
+            return .error(413, "too_large", "That was \(length) bytes and the limit is \(limit). Send fewer or smaller pictures.")
+        case .connectionCapacity(let limit):
+            return retryableCapacity("http_connection_capacity", limit: limit,
+                current: nil, message: "This Mac already has \(limit) HTTP connections. Try again after they drain.")
+        case .requestCapacity(let limit, let current):
+            return retryableCapacity("http_request_capacity", limit: limit,
+                current: current, message: "This Mac is retaining \(current) request bytes; the aggregate limit is \(limit).")
+        }
+    }
+
+    private static func retryableCapacity(_ code: String, limit: Int, current: Int?,
+                                          message: String) -> Response {
+        var extra: [String: Any] = ["limit": limit, "retry_after": 1]
+        if let current { extra["current"] = current }
+        var response = Response.error(503, code, message, extra: extra)
+        response.headers["Retry-After"] = "1"
+        return response
     }
 
     /// The largest request body this will assemble in memory.
@@ -626,10 +618,6 @@ final class RemoteServer: @unchecked Sendable {
     /// It listens on loopback, but "on loopback" is not a reason to let anything on the machine
     /// hand it a gigabyte — the cap is about memory, and the refusal above is about honesty.
     static let bodyLimit = 20 << 20
-
-    private static func range(of needle: Data, in haystack: Data) -> Range<Data.Index>? {
-        haystack.range(of: needle)
-    }
 
     // MARK: - Routing
 
@@ -1059,6 +1047,18 @@ final class RemoteServer: @unchecked Sendable {
                 // offering it blind and letting somebody learn from a 401 that it was never set.
                 "password": RemoteAuth.hasPassword,
                 "authed": { if case .allowed = permission(for: request) { return true }; return false }(),
+                // Counts and implementation limits only: no session, route, identity or credential.
+                // These are safety rails pending W6 workload approval, not capacity claims.
+                "http_reliability": {
+                    var object = httpReliability.healthObject
+                    object["fresh_read_waiters"] = [
+                        "limits": ["per_key": slowReadings.waiterLimits.perKey,
+                                   "total": slowReadings.waiterLimits.total,
+                                   "approval": "implementation_default_pending_w6"],
+                        "metrics": slowReadings.waiterMetrics.object,
+                    ]
+                    return object
+                }(),
             ])
 
         case ("GET", "/v1/strings"):
@@ -4276,24 +4276,30 @@ final class RemoteServer: @unchecked Sendable {
     /// The optional reads, answered from the last good reading while the next one is taken. The
     /// lane's depth now refuses only a request that had nothing to serve; policy in `SlowReadings`.
     private func readSlowly(_ request: Request, on conn: NWConnection) {
-        startSlowReading(request) { [weak self] response in
+        let id = ObjectIdentifier(conn)
+        let token = startSlowReading(request) { [weak self] response in
             guard let self else { conn.cancel(); return }
+            self.pendingFreshWaiters.removeValue(forKey: id)
             self.send(response, on: conn)
         }
+        if let token { pendingFreshWaiters[id] = token }
     }
 
     /// The same lane, delivered to a closure instead of a socket. A cloud viewer's `/info` is the
     /// second caller and must share this budget rather than open a second one: the measurement
     /// that produced the lane — five `/info` in flight answering `/v1/health` in 3.143 seconds —
     /// is about the Mac, not about which transport asked.
-    private func startSlowReading(_ request: Request, deliver: @escaping (Response) -> Void) {
+    @discardableResult
+    private func startSlowReading(_ request: Request,
+                                  deliver: @escaping (Response) -> Void)
+        -> SlowReadings.Readings.WaiterToken? {
         if let refusal = slowReadingRefusal(request) {
             deliver(withCachePolicy(refusal))
-            return
+            return nil
         }
         let arrived = Date()
         let key = SlowReadings.key(for: request)
-        slowReadings.read(
+        return slowReadings.read(
             key, policy: SlowReadings.policy(for: request.path),
             admit: { self.readingLimiter.admit(request.path, depth: Self.readingDepth) },
             refusal: { SlowReadings.busy(depth: Self.readingDepth) },
@@ -5443,6 +5449,36 @@ final class RemoteServer: @unchecked Sendable {
     }
 
     private func openStream(on conn: NWConnection) {
+        let id = ObjectIdentifier(conn)
+        let stream = Stream(conn)
+        switch httpReliability.openStream(
+            id,
+            send: { [weak conn] bytes, completion in
+                guard let conn else { completion(HTTPStreamWriteError.connectionGone); return }
+                conn.send(content: bytes, completion: .contentProcessed { completion($0) })
+            },
+            evict: { [weak self, weak conn] reason in
+                guard let self else { conn?.cancel(); return }
+                self.streams.removeValue(forKey: id)
+                if self.streams.isEmpty { self.transcriptRevisionStream.stop() }
+                Log.write("remote: evicted SSE consumer — \(reason.logName)")
+                conn?.cancel()
+            }
+        ) {
+        case .admitted:
+            streams[id] = stream
+        case .refused(let limit):
+            var response = Response.error(
+                503, "sse_capacity",
+                "This Mac already has \(limit) event streams. Reconnect after one closes.",
+                extra: ["limit": limit, "retry_after": 1])
+            response.headers["Retry-After"] = "1"
+            send(response, on: conn)
+            return
+        case .unknownIdentity:
+            conn.cancel()
+            return
+        }
         let head = """
         HTTP/1.1 200 OK\r
         Content-Type: text/event-stream; charset=utf-8\r
@@ -5450,18 +5486,7 @@ final class RemoteServer: @unchecked Sendable {
         Connection: keep-alive\r
         \r\n
         """
-        conn.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
-        let stream = Stream(conn)
-        streams[ObjectIdentifier(stream)] = stream
-        conn.stateUpdateHandler = { [weak self, weak stream] state in
-            switch state {
-            case .cancelled, .failed:
-                guard let stream else { return }
-                self?.streams.removeValue(forKey: ObjectIdentifier(stream))
-                if self?.streams.isEmpty == true { self?.transcriptRevisionStream.stop() }
-            default: break
-            }
-        }
+        httpReliability.enqueueStreamFrame(Data(head.utf8), kind: .control, for: id)
 
         // Hello, then the current state — so a client that has just reconnected is level without
         // asking, and never has to replay anything it missed. That is the whole reason the stream
@@ -5499,9 +5524,10 @@ final class RemoteServer: @unchecked Sendable {
         timer.setEventHandler { [weak self] in
             guard let self else { return }
             guard !self.streams.isEmpty else { self.heartbeat?.cancel(); self.heartbeat = nil; return }
-            for stream in self.streams.values {
-                stream.connection.send(content: Data(": ping\n\n".utf8),
-                                       completion: .contentProcessed { _ in })
+            for stream in Array(self.streams.values) {
+                self.httpReliability.enqueueStreamFrame(
+                    Data(": ping\n\n".utf8), kind: .heartbeat,
+                    for: ObjectIdentifier(stream.connection))
             }
         }
         timer.resume()
@@ -5517,7 +5543,9 @@ final class RemoteServer: @unchecked Sendable {
                                                         options: [.withoutEscapingSlashes])
         queue.async { [weak self] in
             guard let self else { return }
-            for stream in self.streams.values { self.write(event: "sessions", data: payload, to: stream) }
+            for stream in Array(self.streams.values) {
+                self.write(event: "sessions", data: payload, to: stream)
+            }
             self.transcriptRevisionStream.sync(targets: targets, active: !self.streams.isEmpty)
             if let bridge = self.cloudBridge, let cloudPayload {
                 self.enqueueCloudSessions(cloudPayload, bridge: bridge)
@@ -5533,7 +5561,7 @@ final class RemoteServer: @unchecked Sendable {
                                                         options: [.withoutEscapingSlashes])
         queue.async { [weak self] in
             guard let self else { return }
-            for stream in self.streams.values {
+            for stream in Array(self.streams.values) {
                 self.write(event: "orchestrator", data: payload, to: stream)
             }
             if let bridge = self.cloudBridge, let cloudPayload {
@@ -5561,48 +5589,20 @@ final class RemoteServer: @unchecked Sendable {
               let text = String(data: json, encoding: .utf8) else { return }
         nextEventID += 1
         let frame = "event: \(event)\nid: \(nextEventID)\ndata: \(text)\n\n"
-        stream.connection.send(content: Data(frame.utf8), completion: .contentProcessed { _ in })
+        let kind: HTTPReliability.FrameKind
+        switch event {
+        case "sessions", "orchestrator": kind = .fullSnapshot(event)
+        case "hello": kind = .control
+        default: kind = .event
+        }
+        httpReliability.enqueueStreamFrame(
+            Data(frame.utf8), kind: kind, for: ObjectIdentifier(stream.connection))
     }
 
     // MARK: - Writing a response out
 
-    private static let responseCloseGraceSeconds = 30
-
     private func send(_ response: Response, on conn: NWConnection) {
-        // `cancel()` is an abort, not HTTP's `Connection: close`. Curl accepted the complete
-        // bytes it had already read, but Chrome treated the reset that followed a token-adoption
-        // 303 as ERR_FAILED and never followed it. A complete final context asks TCP for the
-        // write-close (FIN) that the header promises. Afterwards, drain through the peer's FIN
-        // before releasing the connection; the backstop bounds a client that never closes.
-        let backstop = DispatchWorkItem { conn.cancel() }
-        queue.asyncAfter(deadline: .now() + .seconds(Self.responseCloseGraceSeconds),
-                         execute: backstop)
-        conn.send(content: response.wire,
-                  contentContext: .finalMessage,
-                  isComplete: true,
-                  completion: .contentProcessed { [weak self] error in
-                      guard error == nil, let self else {
-                          backstop.cancel()
-                          conn.cancel()
-                          return
-                      }
-                      self.awaitPeerClose(on: conn, backstop: backstop)
-                  })
-    }
-
-    private func awaitPeerClose(on conn: NWConnection, backstop: DispatchWorkItem) {
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) {
-            [weak self] _, _, done, error in
-            guard error == nil, !done, let self else {
-                backstop.cancel()
-                conn.cancel()
-                return
-            }
-            // `Connection: close` makes another request on this socket invalid, but drain any
-            // bytes already in flight so local cancellation cannot turn the completed response
-            // back into the reset Chrome rejected.
-            self.awaitPeerClose(on: conn, backstop: backstop)
-        }
+        httpReliability.sendResponse(response.wire, on: conn)
     }
 }
 

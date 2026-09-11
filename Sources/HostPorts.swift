@@ -77,6 +77,11 @@ public struct HostCapabilityUnavailable: Error, Equatable {
     /// What was asked, in the asker's words: `end`, `observe`, `read secret`.
     public let operation: String
 
+    public init(capability: HostCapability, operation: String) {
+        self.capability = capability
+        self.operation = operation
+    }
+
     public var message: String {
         "\(operation) needs \(capability.rawValue), which this host does not provide (\(Self.code))."
     }
@@ -210,13 +215,31 @@ public struct TerminalInventory {
 /// is this type under its old name.
 public struct TerminalProcessObservation {
     public let running: Assistant.Running?
+    /// Cross-platform identity supplied directly by adapters that do not construct the legacy
+    /// macOS `Assistant.Running` value. Linux preserves `/proc/<pid>/stat`'s start token here.
+    public let processIdentity: HostProcessIdentity?
+    public let assistant: Assistant?
     public let error: String?
     public var isComplete: Bool {
-        error == nil && (running == nil || running?.processStart != nil)
+        error == nil && (!isPresent || processIdentity != nil)
     }
+
+    public var isPresent: Bool { running != nil || assistant != nil || processIdentity != nil }
 
     public init(running: Assistant.Running?, error: String?) {
         self.running = running
+        self.processIdentity = running.flatMap {
+            guard let start = $0.processStart else { return nil }
+            return HostProcessIdentity(pid: $0.pid, processStart: start)
+        }
+        self.assistant = running?.assistant
+        self.error = error
+    }
+
+    public init(assistant: Assistant?, processIdentity: HostProcessIdentity?, error: String?) {
+        self.running = nil
+        self.processIdentity = processIdentity
+        self.assistant = assistant
         self.error = error
     }
 }
@@ -244,6 +267,20 @@ public enum HostProcessSignal: Equatable {
 public struct HostProcessIdentity: Equatable {
     public let pid: pid_t
     public let processStart: Date
+    /// A platform-native start identity. Linux uses the exact clock-tick field from procfs so
+    /// PID reuse inside one wall-clock second cannot compare equal.
+    public let startToken: String?
+    /// The process group owned by the provider PTY. Linux signals this group only after checking
+    /// `startToken` again; Mac leaves it absent and preserves its established single-PID signal.
+    public let processGroupID: pid_t?
+
+    public init(pid: pid_t, processStart: Date, startToken: String? = nil,
+                processGroupID: pid_t? = nil) {
+        self.pid = pid
+        self.processStart = processStart
+        self.startToken = startToken
+        self.processGroupID = processGroupID
+    }
 }
 
 /// What a ``ProcessHost`` throws from ``ProcessHost/signal(_:_:)`` when the process it was asked
@@ -291,6 +328,9 @@ public enum TerminalCreateRequest {
     case tmuxWindow(cwd: String, command: String)
     /// Start a brand-new detached tmux session nothing is attached to yet.
     case tmuxDetachedSession(cwd: String, command: String)
+    /// A start admitted by `SessionLaunchPolicy`. New Mac and Linux start routes use this
+    /// structured form so the Linux adapter never has to parse a shell command back into argv.
+    case managedProvider(ProviderLaunchPlan)
 }
 
 /// What creating a session hands back: enough to address it on later port calls, and — only for
@@ -305,12 +345,15 @@ public struct TerminalCreated: Equatable {
     /// Set only for a brand-new detached tmux session; `nil` for a session drawn on screen
     /// already (an iTerm2 tab, or a window on a server something is attached to).
     public let attachCommand: String?
+    public let processIdentity: HostProcessIdentity?
 
-    public init(id: String, backend: Backend, tty: String?, attachCommand: String?) {
+    public init(id: String, backend: Backend, tty: String?, attachCommand: String?,
+                processIdentity: HostProcessIdentity? = nil) {
         self.id = id
         self.backend = backend
         self.tty = tty
         self.attachCommand = attachCommand
+        self.processIdentity = processIdentity
     }
 }
 
@@ -355,6 +398,9 @@ public protocol TerminalHost: HostCapabilityProviding {
     /// byte such as the interrupt byte a caller sends to stop a turn without closing the tab.
     /// `nil` is delivery, the same contract as ``sendLine(_:to:)``.
     func interrupt(_ bytes: [UInt8], to session: TargetSession) throws -> String?
+    /// Resize a PTY and verify the dimensions the backend reports. A backend without a resize
+    /// surface returns a typed capability refusal rather than silently accepting the request.
+    func resize(_ session: TargetSession, columns: Int, rows: Int) throws
 }
 
 /// The process table, as far as safe close needs it: one exact tty, and one identified process.
@@ -471,6 +517,10 @@ public struct UnsupportedHost: TerminalHost, ProcessHost, FileSystemHost, Secret
 
     public func interrupt(_ bytes: [UInt8], to session: TargetSession) throws -> String? {
         throw HostCapabilityUnavailable(capability: .terminal(session.backend), operation: "interrupt")
+    }
+
+    public func resize(_ session: TargetSession, columns: Int, rows: Int) throws {
+        throw HostCapabilityUnavailable(capability: .terminal(session.backend), operation: "resize")
     }
 
     public func observeAssistant(onTTY tty: String) throws -> TerminalProcessObservation {
@@ -750,7 +800,7 @@ public enum TerminalSafeClose {
                     return .refused(observation.error
                         ?? "Could not verify whether the assistant left the tty.")
                 }
-                guard observation.running == nil else {
+                guard !observation.isPresent else {
                     return .refused("An assistant appeared on \(closing.tty); the tab was left open.")
                 }
                 return try ports.terminal.close(closing).map(TerminalSafeCloseRefusal.refused)
@@ -781,7 +831,7 @@ public enum TerminalSafeClose {
                 return .refused(observation.error
                     ?? "Could not verify whether the assistant left the tty.")
             }
-            guard observation.running == nil else {
+            guard !observation.isPresent else {
                 return .refused("An assistant is still running on \(current.tty); the tab was left open.")
             }
             let after = try ports.terminal.inventory()
@@ -825,12 +875,8 @@ public enum TerminalSafeClose {
                 return .refused(observation.error
                     ?? "Could not verify whether the assistant left the tty.")
             }
-            let running = observation.running
-            let identity = running.flatMap { running -> Farewell.ProcessIdentity? in
-                guard let processStart = running.processStart else { return nil }
-                return Farewell.ProcessIdentity(pid: running.pid, processStart: processStart)
-            }
-            guard running == nil || identity != nil else {
+            let identity = observation.processIdentity
+            guard !observation.isPresent || identity != nil else {
                 return .refused("Could not verify the assistant process start on \(session.tty).")
             }
             let elapsed = ports.clock.monotonicNow() - started

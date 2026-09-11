@@ -51,20 +51,29 @@ latter, which was never true and is not what this layout needs.
 
 `tools/swift-core-application-linux-build.sh` on the pinned Ubuntu 24.04 image compiles the Linux
 executable and its inward `ClawdlineApplication -> ClawdlineCore` dependencies as the real product
-graph, then executes nine health/config/secret/not-ready contract cases. The Mac
+graph, executes the Linux XCTest runtime contracts (including a real tmux PTY lifecycle on
+Ubuntu), then executes nine health/config/secret/composition contract cases. The Mac
 `Clawdline` product also depends inward through Application, and `build.sh` now bundles that exact
 SwiftPM product rather than compiling a second flat source graph. Resolved sources, dependency
 sets and executable-product mappings are checked mechanically in
 `tools/check-architecture-boundaries.sh`, not only asserted here.
 
-This still does not prove a working Ubuntu daemon. `Packages/ClawdlineLinux` is deliberately a
-fail-closed composition skeleton: its diagnostic health identity says `ready=false`, validates a
-versioned loopback-only configuration and owner/mode/type/size for config and secret on the same
-non-following descriptor used for bounded reads, and refuses `run` with
-`w4_runtime_not_composed`. Terminal/process adapters, persistence, HTTP, service management and
-reconciliation remain W4 work; listing those unsupported capabilities is not an implementation.
-The wider candidate manifest remains a lexical ratchet, not proof that every candidate has moved
-into one of the real library targets.
+This still does not prove a working Ubuntu daemon. W4-1 composes real tmux, procfs, contained-file
+and protected-secret leaves behind the Application ports; `run` validates protected inputs and
+returns a non-root runtime-composition receipt. Its diagnostic health identity remains
+`ready=false`, with `w4_runtime_not_configured` before protected configuration and
+`w4_provider_authentication_not_proven` after executable/kernel validation: real-provider auth,
+service supervision, a durable listener, restart reconciliation and Cloud lifecycle remain
+W4-2/W4-3 gates. Capability rows distinguish compiled, configured and usable; fixture success is
+not provider readiness. The wider candidate manifest remains a lexical ratchet, not proof that every
+candidate has moved into one of the real library targets.
+
+W4-1 also adds four Application-owned policy/ownership members — `ProjectRootPolicy.swift`,
+`ProviderLifecyclePolicy.swift`, `SessionLaunchPolicy.swift` and `TerminalCommandScheduler.swift`.
+The last is the existing Mac serial/nested/maintenance owner moved behind the real Application
+boundary, not a second Linux counter. Mac `StartPoints.start` and
+`Targets.answer`, plus Linux lifecycle entry points, consume those policies before a terminal
+effect. Their symlinks follow the same one-source-of-truth rule above.
 
 ### Correction: the edge is now consumed, not only declared
 

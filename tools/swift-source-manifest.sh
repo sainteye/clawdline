@@ -57,6 +57,7 @@ clawdline_production_sources=(
   Sources/GitChanges.swift
   Sources/HookBridge.swift
   Sources/HostPorts.swift
+  Sources/HTTPReliability.swift
   Sources/HotKey.swift
   Sources/ITerm.swift
   Sources/LiveScreen.swift
@@ -109,7 +110,9 @@ clawdline_production_sources=(
   Sources/ProjectWorktreeHTTP.swift
   Sources/ProjectWorktreeLifecycle.swift
   Sources/ProjectIcon.swift
+  Sources/ProjectRootPolicy.swift
   Sources/ProjectStatus.swift
+  Sources/ProviderLifecyclePolicy.swift
   Sources/ReadingFreshness.swift
   Sources/QuestionSteps.swift
   Sources/RemoteAuth.swift
@@ -128,6 +131,7 @@ clawdline_production_sources=(
   Sources/SessionImageMarker.swift
   Sources/SessionImagePreview.swift
   Sources/SessionInfo.swift
+  Sources/SessionLaunchPolicy.swift
   Sources/SessionRegistry.swift
   Sources/SessionState.swift
   Sources/SessionWatch.swift
