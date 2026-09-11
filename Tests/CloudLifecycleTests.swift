@@ -27,9 +27,14 @@ private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendab
     private var shutdownCount = 0
     private var published: [CloudEnvelope] = []
     let connectError: Error?
+    let publicationEffect: (@Sendable () throws -> Void)?
+    let buffersPublication: Bool
 
-    init(connectError: Error? = nil) {
+    init(connectError: Error? = nil, buffersPublication: Bool = false,
+         publicationEffect: (@Sendable () throws -> Void)? = nil) {
         self.connectError = connectError
+        self.buffersPublication = buffersPublication
+        self.publicationEffect = publicationEffect
         var commandContinuation: AsyncStream<CloudInboundCommand>.Continuation!
         commands = AsyncStream { commandContinuation = $0 }
         self.commandContinuation = commandContinuation
@@ -52,6 +57,8 @@ private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendab
     }
 
     func publish(envelope: CloudEnvelope) async throws {
+        try publicationEffect?()
+        if buffersPublication { return } // Models CloudTransport's reconnect buffer, no socket send.
         record(envelope)
     }
 
@@ -67,6 +74,51 @@ private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendab
     func shutdowns() -> Int { lock.lock(); defer { lock.unlock() }; return shutdownCount }
     func publishedEnvelopes() -> [CloudEnvelope] {
         lock.lock(); defer { lock.unlock() }; return published
+    }
+}
+
+/// Deterministic stage time: no wall-clock sleep and no credentials/content in diagnostics.
+private final class LifecyclePublicationClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 10_000
+    private var lines: [String] = []
+    func now() -> UInt64 { lock.lock(); defer { lock.unlock() }; return value }
+    func advance(_ amount: UInt64) { lock.lock(); value += amount; lock.unlock() }
+    func record(_ line: String) { lock.lock(); lines.append(line); lock.unlock() }
+    func logs() -> [String] { lock.lock(); defer { lock.unlock() }; return lines }
+}
+
+private actor LifecycleTimedSequence: CloudEnvelopeSequencing {
+    let clock: LifecyclePublicationClock
+    let gate: LifecycleSequenceCancellationGate?
+    init(_ clock: LifecyclePublicationClock, gate: LifecycleSequenceCancellationGate? = nil) {
+        self.clock = clock; self.gate = gate
+    }
+    func nextSequence(sender: String) async throws -> UInt64 {
+        clock.advance(1_200)
+        if let gate {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { gate.install($0) }
+            } onCancel: { gate.release() }
+        }
+        return 1
+    }
+}
+
+private final class LifecycleSequenceCancellationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var released = false
+    func install(_ next: CheckedContinuation<Void, Never>) {
+        lock.lock()
+        if released { lock.unlock(); next.resume(); return }
+        continuation = next; lock.unlock()
+    }
+    func waiting() -> Bool { lock.lock(); defer { lock.unlock() }; return continuation != nil }
+    func release() {
+        lock.lock(); released = true
+        let next = continuation; continuation = nil; lock.unlock()
+        next?.resume()
     }
 }
 
@@ -1034,6 +1086,75 @@ private struct CloudLifecycleTests {
 
     // MARK: - The Mac's half of pairing, end to end
 
+    static func testReadPublicationTiming() async {
+        for mode in ["sent", "failed", "buffered", "cancelled"] {
+            let failSend = mode == "failed", cancelled = mode == "cancelled"
+            let buffered = mode == "buffered"
+            let gate = cancelled ? LifecycleSequenceCancellationGate() : nil
+            let clock = LifecyclePublicationClock()
+            let transport = LifecycleTestTransport(buffersPublication: buffered, publicationEffect: {
+                clock.advance(3_400)
+                if failSend { throw ForcedLifecycleFailure() }
+            })
+            guard let secret = try? CloudMasterSecret() else {
+                check("publication timing fixture creates its secret", false); return
+            }
+            let bridge = CloudAppBridge(transport: transport,
+                identity: CloudAppIdentity(machineID: "mac-timing", deviceID: "mac-timing",
+                    keyID: "ms-1", masterSecret: secret, signingKey: CloudDeviceKeyPair()),
+                sequencing: LifecycleTimedSequence(clock, gate: gate), commandRouter: LifecycleTestRouter(),
+                nowMilliseconds: { clock.now() }, diagnostic: { clock.record($0) })
+            do { try await bridge.start() } catch {
+                check("publication timing fixture starts", false); return
+            }
+            let body: [String: Any] = ["type": "board", "session": "__clawdline_machine__",
+                "request": "timing-request", "project": "private-project", "item": "private-item"]
+            transport.deliver(CloudInboundCommand(channel: "ctl/mac-timing", sequence: 1,
+                timestamp: 10_000, commandClass: .ctl, sender: "viewer-timing",
+                plaintext: (try? JSONSerialization.data(withJSONObject: body)) ?? Data()))
+            if let gate {
+                let waiting = await eventually { gate.waiting() }
+                check("cancellation happens while the exact sequence call is suspended", waiting)
+                await bridge.stop()
+            }
+            let finished = await eventually {
+                clock.logs().contains { $0.contains(failSend || cancelled ? "read delivery_failed" : "read delivered") }
+            }
+            check("publication diagnostic fixture finishes on both success and failure", finished)
+            let logs = clock.logs()
+            check("Board reads identify their type and queue wait without a payload",
+                logs.contains { $0.contains("kind=board") && $0.contains("queue_ms=0") })
+            let stages = logs.filter { $0.contains("publication_stage=") }
+            let expected = cancelled ? [("task_wait", 0), ("sequence", 1200), ("lifecycle_check", 0)]
+                : [("task_wait", 0), ("sequence", 1200), ("seal", 0), ("transport_publish", 3400)]
+            for (stage, duration) in expected {
+                let outcome = (stage == "transport_publish" && failSend) || stage == "lifecycle_check" ? "failed" : "complete"
+                check("\(stage) duration is separately measured (\(mode))",
+                    stages.contains { $0.contains("publication_stage=\(stage) ")
+                        && $0.contains("duration_ms=\(duration) ") && $0.contains("outcome=\(outcome)") })
+            }
+            if cancelled {
+                check("a completed sequence is not falsely classified as failed on cancellation",
+                    !stages.contains { $0.contains("publication_stage=sequence ") && $0.contains("outcome=failed") })
+                check("cancellation never reaches sealing or transport publication",
+                    !stages.contains { $0.contains("publication_stage=seal ") || $0.contains("publication_stage=transport_publish ") })
+            } else {
+                check("transport return never claims socket-send completion or relay acknowledgement (\(mode))",
+                    stages.contains { $0.contains("publication_stage=transport_publish ")
+                        && $0.contains("socket_send=not_observed ack=not_observed") })
+                check("buffered returns cannot masquerade as a completed socket send",
+                    !stages.contains { $0.contains("publication_stage=transport_send ") })
+            }
+            let ids = Set(stages.compactMap { $0.split(separator: " ").first { $0.hasPrefix("id=") } })
+            check("every publication stage correlates to one opaque trace", !stages.isEmpty && ids.count == 1)
+            check("stage diagnostics never expose Project/item or plaintext",
+                !logs.joined().contains("private-project") && !logs.joined().contains("private-item"))
+            check("instrumentation leaves publication outcome unchanged",
+                transport.publishedEnvelopes().count == (failSend || cancelled || buffered ? 0 : 1))
+            await bridge.stop()
+        }
+    }
+
     static func testPairingCompleter() async {
         guard let fixture = try? makeFixture() else {
             check("the completer fixture builds", false)
@@ -1314,6 +1435,7 @@ private struct CloudLifecycleTests {
         await testIdentityReadTimeoutRetainsTerminalReconciliation()
         await testRevocationStopsReconnecting()
         await testWriteGateAndCommandSeam()
+        await testReadPublicationTiming()
         await testPairingCompleter()
         await testBrowserPairingWorkflow()
 

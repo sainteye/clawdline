@@ -351,6 +351,7 @@ actor CloudAppBridge {
         let read: CloudHeadlessRead
         let sender: String
         let lifecycleGeneration: UInt64
+        let admittedAt: UInt64
     }
 
     private let transport: any CloudTransporting
@@ -652,18 +653,44 @@ actor CloudAppBridge {
     }
 
     private func publish(
-        _ plaintext: Data, channel: String, lifecycleGeneration ownedGeneration: UInt64
+        _ plaintext: Data, channel: String, lifecycleGeneration ownedGeneration: UInt64,
+        readTraceID: String? = nil, scheduledAt: UInt64? = nil
     ) async throws {
         try requireActivePublication(lifecycleGeneration: ownedGeneration)
-        let sequence = try await sequencing.nextSequence(sender: identity.deviceID)
-        try requireActivePublication(lifecycleGeneration: ownedGeneration)
-        let envelope = try CloudEnvelope.seal(
-            plaintext, ch: channel, seq: sequence, ts: nowMilliseconds(),
-            envelopeClass: .stream, keyID: identity.keyID, sender: identity.deviceID,
-            masterSecret: identity.masterSecret, signingKey: identity.signingKey
-        )
-        try requireActivePublication(lifecycleGeneration: ownedGeneration)
-        try await transport.publish(envelope: envelope)
+        var stage = "task_wait"
+        var startedAt = scheduledAt ?? nowMilliseconds()
+        // Only a solicited read supplies this opaque trace. Never log payload, channel, keys,
+        // envelope sequence, or raw errors. The transport may buffer during reconnect; neither
+        // socket-send completion nor a relay ACK is observed at this interface.
+        func trace(_ outcome: String) {
+            guard let readTraceID else { return }
+            diagnostic("cloud: publication id=\(readTraceID) publication_stage=\(stage) "
+                + "duration_ms=\(Self.elapsedMilliseconds(from: startedAt, to: nowMilliseconds())) "
+                + "outcome=\(outcome) socket_send=not_observed ack=not_observed")
+        }
+        trace("complete")
+        do {
+            stage = "sequence"; startedAt = nowMilliseconds(); trace("begin")
+            let sequence = try await sequencing.nextSequence(sender: identity.deviceID)
+            trace("complete")
+            stage = "lifecycle_check"; startedAt = nowMilliseconds()
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            stage = "seal"; startedAt = nowMilliseconds(); trace("begin")
+            let envelope = try CloudEnvelope.seal(
+                plaintext, ch: channel, seq: sequence, ts: nowMilliseconds(),
+                envelopeClass: .stream, keyID: identity.keyID, sender: identity.deviceID,
+                masterSecret: identity.masterSecret, signingKey: identity.signingKey
+            )
+            trace("complete")
+            stage = "lifecycle_check"; startedAt = nowMilliseconds()
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            stage = "transport_publish"; startedAt = nowMilliseconds(); trace("begin")
+            try await transport.publish(envelope: envelope)
+            trace("complete")
+        } catch {
+            trace("failed")
+            throw error
+        }
     }
 
     private func runPublication(
@@ -1395,7 +1422,8 @@ actor CloudAppBridge {
             return
         }
         let pending = PendingRead(
-            read: read, sender: sender, lifecycleGeneration: ownedGeneration
+            read: read, sender: sender, lifecycleGeneration: ownedGeneration,
+            admittedAt: nowMilliseconds()
         )
         if lane == .foreground {
             foregroundReads.append(pending)
@@ -1463,7 +1491,7 @@ actor CloudAppBridge {
             guard let next else { break }
             await performRead(
                 next.read, sender: next.sender,
-                lifecycleGeneration: next.lifecycleGeneration
+                lifecycleGeneration: next.lifecycleGeneration, admittedAt: next.admittedAt
             )
             if lane == .foreground { foregroundReadActive = false }
             else { backgroundReadActive = false }
@@ -1474,14 +1502,17 @@ actor CloudAppBridge {
 
     private func performRead(
         _ read: CloudHeadlessRead, sender: String,
-        lifecycleGeneration ownedGeneration: UInt64
+        lifecycleGeneration ownedGeneration: UInt64, admittedAt: UInt64
     ) async {
         let traceID = String(UUID().uuidString.prefix(8)).lowercased()
         let receivedAt = nowMilliseconds()
         let safeSender = Self.channelSegment(sender)
         let safeSession = Self.channelSegment(read.session)
+        let kind: String
+        if case .board = read { kind = "board" } else { kind = "other" }
         diagnostic("cloud: read received id=\(traceID) read=\(read.name) "
-            + "sender=\(safeSender) session=\(safeSession)")
+            + "sender=\(safeSender) session=\(safeSession) kind=\(kind) "
+            + "queue_ms=\(Self.elapsedMilliseconds(from: admittedAt, to: receivedAt))")
         let answer = await commandRouter.read(read, sender: sender)
         let routedAt = nowMilliseconds()
         let outcome = Self.outcome(of: read, answer: answer)
@@ -1511,7 +1542,8 @@ actor CloudAppBridge {
             try await runPublication { [weak self] in
                 guard let self else { throw CancellationError() }
                 try await self.publish(
-                    bytes, channel: channel, lifecycleGeneration: ownedGeneration
+                    bytes, channel: channel, lifecycleGeneration: ownedGeneration,
+                    readTraceID: traceID, scheduledAt: publishStartedAt
                 )
             }
             let deliveredAt = nowMilliseconds()
