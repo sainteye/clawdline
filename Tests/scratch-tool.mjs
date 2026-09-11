@@ -87,10 +87,12 @@ const within = (path) => {
     return resolved === sandbox || resolved.startsWith(`${sandbox}/`);
 };
 // The only door to the tool. A root or working directory outside the sandbox is a bug in this file,
-// not a result, so it throws instead of running anything.
+// not a result, so it throws instead of running anything. A relative root is judged where a tool
+// that resolved it would put it — under the directory the tool runs in — and every --root argument
+// is judged as well as CLAWDLINE_SCRATCH_ROOT.
 let refusedOutside = 0;
 const toolDoor = (scratchRoot, cwd, foreign = false) => {
-    if (!foreign && !within(scratchRoot)) {
+    if (!foreign && !within(resolve(cwd, scratchRoot))) {
         refusedOutside += 1;
         throw new Error(`refusing to point tools/scratch.sh at ${scratchRoot}: outside the sandbox`);
     }
@@ -99,14 +101,17 @@ const toolDoor = (scratchRoot, cwd, foreign = false) => {
         throw new Error(`refusing to run tools/scratch.sh in ${cwd}: outside the sandbox`);
     }
 };
-const runTool = (args, { scratchRoot = root, cwd = repo, input, foreign = false } = {}) => {
+// `path` is the PATH the tool sees, which is how "owners" below puts a process table in front of it;
+// every other run gets this runner's own.
+const runTool = (args, { scratchRoot = root, cwd = repo, input, foreign = false, path = process.env.PATH } = {}) => {
     toolDoor(scratchRoot, cwd, foreign);
+    args.forEach((arg, at) => { if (arg === "--root" && at + 1 < args.length) toolDoor(args[at + 1], cwd, foreign); });
     return spawnSync("/bin/bash", [TOOL, ...args], {
         cwd,
         input,
         encoding: "utf8",
         timeout: 60_000,
-        env: env({ CLAWDLINE_SCRATCH_ROOT: scratchRoot }),
+        env: env({ CLAWDLINE_SCRATCH_ROOT: scratchRoot, PATH: path }),
     });
 };
 const git = (cwd, args) => {
@@ -268,7 +273,6 @@ check("outside a repository the run is refused as scratch_not_in_git",
 console.log("signals");
 const signalled = (signal) => new Promise((done) => {
     toolDoor(root, repo);
-    const spawnedAt = Math.floor(Date.now() / 1000);
     const child = spawn("/bin/bash", [TOOL, "snapshot-run", "--subject", "worktree", "--",
         "/bin/sh", "-c", 'echo "command=$$"; exec sleep 60'], {
         cwd: repo, env: env({ CLAWDLINE_SCRATCH_ROOT: root }), stdio: ["ignore", "pipe", "pipe"],
@@ -293,15 +297,16 @@ const signalled = (signal) => new Promise((done) => {
     child.on("exit", (code, sig) => {
         clearTimeout(timer);
         lingering.delete(child.pid);
-        done({ code, sig, commandPid, marker, spawnedAt, pid: child.pid });
+        done({ code, sig, commandPid, marker });
     });
 });
 for (const [signal, number] of [["SIGINT", 2], ["SIGTERM", 15], ["SIGHUP", 1]]) {
     const run = await signalled(signal);
     check(`${signal}: the command was running when it arrived`, run.commandPid !== null, "the command never started");
-    check(`${signal}: while it ran, the marker named the tool process as owner, started when it was spawned`,
-        run.marker?.owner?.pid === run.pid && Math.abs(run.marker.owner.process_start - run.spawnedAt) <= 2
-            && run.marker.keep_until === null,
+    // Whose entry it is — and what that looks like when the process table cannot be read — is held in
+    // "owners" below, on every runner. Here it is enough that the marker was there while the command ran.
+    check(`${signal}: while it ran, the entry already carried its version-1 marker`,
+        run.marker?.clawdline_scratch === 1 && run.marker.purpose === "snapshot-worktree",
         JSON.stringify(run.marker));
     check(`${signal} ends the run by that same signal`, run.sig === signal || run.code === 128 + number,
         `code ${run.code}, signal ${run.sig}`);
@@ -363,49 +368,6 @@ check("its marker is version 1 with keep_until three hours out",
     JSON.stringify(deployMarker));
 const deployRemoved = runTool(["remove", deployPath]);
 check("remove takes it away", deployRemoved.status === 0 && !existsSync(deployPath), said(deployRemoved));
-
-// An owner is the nearest process started as `claude` or `codex`. Starting a shell under that name
-// makes one without depending on which assistant, if any, is running this suite.
-toolDoor(root, repo);
-const owned = spawnSync("/bin/bash", ["-c", '/bin/bash "$1" new creds; exit $?', "claude", TOOL], {
-    argv0: "claude", cwd: repo, encoding: "utf8", env: env({ CLAWDLINE_SCRATCH_ROOT: root }),
-});
-const credsPath = owned.stdout.trim();
-const credsMarker = readMarker(credsPath);
-check("under a claude process, new needs no time to live and records that process as the owner",
-    owned.status === 0 && markerShape(credsMarker, "creds") && credsMarker.owner?.pid === owned.pid
-        && credsMarker.owner?.command === "claude" && credsMarker.keep_until === null,
-    `${said(owned)} marker ${JSON.stringify(credsMarker)}`);
-if (existsSync(credsPath)) runTool(["remove", credsPath]);
-
-// With no assistant anywhere above it — a process whose parent has exited and been reparented to
-// launchd — nothing can own an entry, and a time to live is mandatory.
-const orphan = async (label, extra) => {
-    const state = join(sandbox, `orphan-${label}`);
-    toolDoor(root, repo);
-    spawnSync("/bin/sh", ["-c", `/bin/sh -c '
-        i=0
-        while [ "$(ps -o ppid= -p $$ | tr -d " ")" != 1 ] && [ $i -lt 400 ]; do sleep 0.05; i=$((i+1)); done
-        /bin/bash "$1" new orphan ${extra} > "$2.out" 2> "$2.err"
-        echo $? > "$2.rc"
-    ' orphan "$1" "$2" &`, "outer", TOOL, state], {
-        cwd: repo, env: env({ CLAWDLINE_SCRATCH_ROOT: root }), stdio: "ignore",
-    });
-    const finished = await waitFor(() => existsSync(`${state}.rc`) && readFileSync(`${state}.rc`, "utf8").endsWith("\n"), 30_000);
-    const read = (suffix) => (existsSync(`${state}.${suffix}`) ? readFileSync(`${state}.${suffix}`, "utf8").trim() : "");
-    return { finished, rc: read("rc"), out: read("out"), err: read("err") };
-};
-const unowned = await orphan("bare", "");
-check("with no assistant above it, new without --ttl-hours is refused as scratch_ttl_required and makes nothing",
-    unowned.finished && unowned.rc === "64" && unowned.err.includes("scratch_ttl_required") && entries().length === 0,
-    JSON.stringify(unowned));
-const timed = await orphan("timed", "--ttl-hours 1");
-const timedMarker = readMarker(timed.out);
-check("with no assistant above it and --ttl-hours 1, the owner is null and keep_until an hour out",
-    timed.finished && timed.rc === "0" && markerShape(timedMarker, "orphan") && timedMarker.owner === null
-        && Math.abs(timedMarker.keep_until - (Math.floor(Date.now() / 1000) + 3600)) <= 60,
-    `${JSON.stringify(timed)} marker ${JSON.stringify(timedMarker)}`);
-if (existsSync(timed.out)) runTool(["remove", timed.out]);
 
 // ---- Roots that are refused -----------------------------------------------------------------------
 
@@ -473,26 +435,254 @@ check("remove refuses a link named like an entry, and what it points at is untou
     said(throughLink));
 unlinkSync(disguised);
 
-// An entry whose owner is still running and is not above the caller belongs to another session.
-toolDoor(root, repo);
-const holdOut = join(sandbox, "held.out");
-const holder = spawn("/bin/bash", ["-c", '/bin/bash "$1" new held > "$2"; exec sleep 60', "claude", TOOL, holdOut], {
-    argv0: "claude", cwd: repo, env: env({ CLAWDLINE_SCRATCH_ROOT: root }), stdio: "ignore",
+// ---- Relative roots -------------------------------------------------------------------------------
+
+// The broker's sweep refuses a root that is not an absolute path as root_not_absolute. A tool that
+// resolved one against its working directory would make entries no sweep ever lists, so a relative
+// root, from CLAWDLINE_SCRATCH_ROOT or from --root, is refused on every subcommand before anything is
+// created. Each case is set up where resolving it would have worked: inside a repository, with
+// --ttl-hours, and for remove with a real root holding a removable entry where the spelling points.
+console.log("relative roots");
+const relativeRepo = join(sandbox, "relative-repo");
+mkdirSync(relativeRepo);
+git(relativeRepo, ["init", "-q"]);
+writeFileSync(join(relativeRepo, "f.txt"), "f\n");
+git(relativeRepo, ["add", "f.txt"]);
+git(relativeRepo, ["commit", "-qm", "f"]);
+const refusedAsRelative = (result) => result.status === 73 && result.stderr.includes("scratch_root_not_absolute");
+for (const source of ["CLAWDLINE_SCRATCH_ROOT", "--root"]) {
+    const spelled = source === "--root" ? "relative-flag" : "relative-env";
+    const named = join(relativeRepo, spelled);
+    const flag = source === "--root" ? ["--root", spelled] : [];
+    const options = { cwd: relativeRepo, scratchRoot: source === "--root" ? root : spelled };
+    const snapshot = runTool(["snapshot-run", "--subject", "worktree", ...flag, "--", "true"], options);
+    check(`snapshot-run refuses a relative root from ${source} as scratch_root_not_absolute, and creates nothing`,
+        refusedAsRelative(snapshot) && !existsSync(named), said(snapshot));
+    const made = runTool(["new", "deploy", ...flag, "--ttl-hours", "1"], options);
+    check(`new refuses a relative root from ${source} as scratch_root_not_absolute, and creates nothing`,
+        refusedAsRelative(made) && !existsSync(named), said(made));
+    const entry = join(named, "deploy.relaEFGH");
+    mkdirSync(entry, { recursive: true, mode: 0o700 });
+    writeFileSync(join(entry, ".clawdline-scratch.json"), goodMarker);
+    const removed = runTool(["remove", entry, ...flag], options);
+    check(`remove refuses a relative root from ${source} as scratch_root_not_absolute, and the entry it names stays`,
+        refusedAsRelative(removed) && existsSync(entry), said(removed));
+    rmSync(named, { recursive: true, force: true });
+}
+
+// ---- Owners, on every process table ---------------------------------------------------------------
+
+// Whose an entry is comes from the process table, and whether that table can be read is a fact about
+// the runner, not the tool: a Codex sandbox answers `ps` with "Operation not permitted". The tool has a
+// legal answer for each case — the exact owner when it can read one, `owner: null` with a mandatory
+// keep_until when it cannot — so both are driven here on every runner, through a `ps` put first on
+// the PATH the tool sees:
+//
+//   - a stand-in table, which answers the one form the tool asks (`ps -o <field>= -p <pid>`) from facts
+//     this file controls, printed in the caller's own LC_ALL and TZ as ps does — so a tool that stopped
+//     pinning LC_ALL=C and TZ=UTC would read a Chinese date, or one eight hours off, here as well;
+//   - an unreadable table, which refuses every question the way that sandbox's shell did.
+//
+// This machine's own table is driven too when it can be read, and the run says so when it cannot.
+// Each stand-in logs every question it is asked, and its checks end by requiring that it was asked.
+console.log("owners");
+const STAND_IN_START = 1_000_000_000;  // 2001-09-09T01:46:40Z: no process a real table lists started then
+const standIn = (name, script) => {
+    const dir = join(sandbox, name);
+    for (const sub of ["bin", "named", "gone"]) mkdirSync(join(dir, sub), { recursive: true });
+    writeFileSync(join(dir, "bin", "ps"), script, { mode: 0o755 });
+    return dir;
+};
+const questions = (dir) => {
+    const lines = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean) : []);
+    return { asked: lines("asked").length, unmodelled: lines("unmodelled") };
+};
+const tableDir = standIn("ps-table", `#!/bin/sh
+# A stand-in for ps, written by Tests/scratch-tool.mjs ("owners"): a process table the suite controls.
+# Every pid is running, started at one fixed moment, named /bin/bash and parented by launchd, unless
+# the suite has entered another name for it under named/ or recorded under gone/ that it has exited.
+dir=$(cd -P -- "$(dirname -- "$0")/.." && pwd -P) || exit 70
+printf '%s\\n' "$*" >> "$dir/asked"
+if [ $# -ne 4 ] || [ "$1" != -o ] || [ "$3" != -p ]; then printf '%s\\n' "$*" >> "$dir/unmodelled"; exit 2; fi
+case $4 in ''|*[!0-9]*) exit 1 ;; esac
+[ ! -e "$dir/gone/$4" ] || exit 1
+comm=/bin/bash
+[ ! -f "$dir/named/$4" ] || comm=$(cat -- "$dir/named/$4")
+case $2 in
+  lstart=) date -r ${STAND_IN_START} '+%a %b %e %H:%M:%S %Y' ;;
+  comm=) printf '%s\\n' "$comm" ;;
+  ucomm=) printf 'bash\\n' ;;
+  ppid=) printf '1\\n' ;;
+  *) printf '%s\\n' "$*" >> "$dir/unmodelled"; exit 2 ;;
+esac
+`);
+const unreadableDir = standIn("ps-unreadable", `#!/bin/sh
+# A stand-in for ps, written by Tests/scratch-tool.mjs ("owners"): the process table a Codex sandbox
+# shows, which is none. It logs every question and refuses it the way that sandbox's shell did.
+dir=$(cd -P -- "$(dirname -- "$0")/.." && pwd -P) || exit 70
+printf '%s\\n' "$*" >> "$dir/asked"
+echo "/bin/sh: /bin/ps: Operation not permitted" >&2
+exit 126
+`);
+const machineProbe = spawnSync("ps", ["-o", "lstart=", "-p", String(process.pid)], {
+    encoding: "utf8", env: env({ LC_ALL: "C", TZ: "UTC" }),
 });
-lingering.add(holder.pid);
-const holderExited = new Promise((done) => holder.on("exit", done));
-const heldReady = await waitFor(() => existsSync(holdOut) && readFileSync(holdOut, "utf8").endsWith("\n"), 15_000);
-const heldPath = heldReady ? readFileSync(holdOut, "utf8").trim() : "";
-const whileHeld = heldReady ? runTool(["remove", heldPath]) : null;
-check("remove refuses an entry whose owner is running and is not above the caller",
-    whileHeld !== null && whileHeld.status === 77 && whileHeld.stderr.includes("scratch_owner_live") && existsSync(heldPath),
-    whileHeld ? said(whileHeld) : "the holder never made its entry");
-holder.kill("SIGKILL");
-await holderExited;
-lingering.delete(holder.pid);
-const afterHolder = heldReady ? runTool(["remove", heldPath]) : null;
-check("once that owner has exited, remove takes the entry away",
-    afterHolder !== null && afterHolder.status === 0 && !existsSync(heldPath), afterHolder ? said(afterHolder) : "no entry");
+const machineReadable = machineProbe.status === 0 && machineProbe.stdout.trim() !== "";
+const readableTables = [{ label: "stand-in table", path: `${join(tableDir, "bin")}:${process.env.PATH}`, table: tableDir }];
+if (machineReadable) {
+    readableTables.push({ label: "this machine's table", path: process.env.PATH, table: null });
+} else {
+    const why = String(machineProbe.error?.message || machineProbe.stderr || `exit ${machineProbe.status}`).trim().split("\n")[0];
+    console.log(`  – this machine's process table cannot be read here (${why}): its owner checks do not run, and the stand-in and unreadable tables below drive both branches in its place`);
+}
+const unreadable = { label: "unreadable table", path: `${join(unreadableDir, "bin")}:${process.env.PATH}`, table: null };
+// The stand-in's start is exact; on this machine's table a process started within two seconds of
+// the moment the suite spawned it.
+const startedAsTableSays = (t, start, spawnedAt) => (t.table ? start === STAND_IN_START : Math.abs(start - spawnedAt) <= 2);
+
+// The marker as the command sees it while the run is live: it sits one level above the copy.
+const snapshotMarker = (t) => {
+    const before = Math.floor(Date.now() / 1000);
+    const run = runTool(["snapshot-run", "--subject", "worktree", "--", "/bin/cat", "../.clawdline-scratch.json"], { path: t.path });
+    let marker = null;
+    try { marker = JSON.parse(run.stdout); } catch { /* the check below prints what came back */ }
+    return { run, marker, before, after: Math.floor(Date.now() / 1000) };
+};
+// A shell started as `claude` is an assistant without depending on which one, if any, runs this
+// suite. On the stand-in table it is also entered under that name, and marked gone once it has
+// exited, which a real table learns by itself.
+const newUnderClaude = (t, extra = []) => {
+    toolDoor(root, repo);
+    const spawnedAt = Math.floor(Date.now() / 1000);
+    const result = spawnSync("/bin/bash", ["-c",
+        '[ -z "$2" ] || printf "claude\\n" > "$2/$$"; /bin/bash "$1" new creds "${@:3}"; exit $?',
+        "claude", TOOL, t.table ? join(t.table, "named") : "", ...extra], {
+        argv0: "claude", cwd: repo, encoding: "utf8", env: env({ CLAWDLINE_SCRATCH_ROOT: root, PATH: t.path }),
+    });
+    if (t.table) writeFileSync(join(t.table, "gone", String(result.pid)), "");
+    return { result, spawnedAt, entry: result.stdout.trim() };
+};
+// An entry whose owner is still running and is not above the caller belongs to another session.
+const heldByClaude = async (t) => {
+    toolDoor(root, repo);
+    const out = join(sandbox, `held-${t.table ? "stand-in" : "machine"}.out`);
+    const holder = spawn("/bin/bash", ["-c",
+        '[ -z "$3" ] || printf "claude\\n" > "$3/$$"; /bin/bash "$1" new held > "$2"; exec sleep 60',
+        "claude", TOOL, out, t.table ? join(t.table, "named") : ""], {
+        argv0: "claude", cwd: repo, env: env({ CLAWDLINE_SCRATCH_ROOT: root, PATH: t.path }), stdio: "ignore",
+    });
+    lingering.add(holder.pid);
+    const holderExited = new Promise((done) => holder.on("exit", done));
+    const ready = await waitFor(() => existsSync(out) && readFileSync(out, "utf8").endsWith("\n"), 15_000);
+    const heldPath = ready ? readFileSync(out, "utf8").trim() : "";
+    const whileHeld = ready ? runTool(["remove", heldPath], { path: t.path }) : null;
+    check(`${t.label}: remove refuses an entry whose owner is running and is not above the caller`,
+        whileHeld !== null && whileHeld.status === 77 && whileHeld.stderr.includes("scratch_owner_live") && existsSync(heldPath),
+        whileHeld ? said(whileHeld) : "the holder never made its entry");
+    holder.kill("SIGKILL");
+    await holderExited;
+    lingering.delete(holder.pid);
+    if (t.table) writeFileSync(join(t.table, "gone", String(holder.pid)), "");
+    const afterHolder = ready ? runTool(["remove", heldPath], { path: t.path }) : null;
+    check(`${t.label}: once that owner has exited, remove takes the entry away`,
+        afterHolder !== null && afterHolder.status === 0 && !existsSync(heldPath), afterHolder ? said(afterHolder) : "no entry");
+};
+// With no assistant anywhere above it, nothing can own an entry and a time to live is mandatory. On
+// the stand-in table no process is one. On this machine's table the suite may itself be running under
+// one, so the tool is started from a process whose parent has exited and been reparented to launchd.
+const newWithoutAssistant = async (t, extra) => {
+    if (t.table) {
+        const result = runTool(["new", "orphan", ...extra], { path: t.path });
+        return { finished: true, rc: String(result.status), out: result.stdout.trim(), err: result.stderr.trim() };
+    }
+    const state = join(sandbox, `orphan-${extra.length > 0 ? "timed" : "bare"}`);
+    toolDoor(root, repo);
+    spawnSync("/bin/sh", ["-c", `/bin/sh -c '
+        i=0
+        while [ "$(ps -o ppid= -p $$ | tr -d " ")" != 1 ] && [ $i -lt 400 ]; do sleep 0.05; i=$((i+1)); done
+        /bin/bash "$1" new orphan ${extra.join(" ")} > "$2.out" 2> "$2.err"
+        echo $? > "$2.rc"
+    ' orphan "$1" "$2" &`, "outer", TOOL, state], {
+        cwd: repo, env: env({ CLAWDLINE_SCRATCH_ROOT: root }), stdio: "ignore",
+    });
+    const finished = await waitFor(() => existsSync(`${state}.rc`) && readFileSync(`${state}.rc`, "utf8").endsWith("\n"), 30_000);
+    const read = (suffix) => (existsSync(`${state}.${suffix}`) ? readFileSync(`${state}.${suffix}`, "utf8").trim() : "");
+    return { finished, rc: read("rc"), out: read("out"), err: read("err") };
+};
+
+for (const t of readableTables) {
+    const { run, marker, before } = snapshotMarker(t);
+    check(`${t.label}: a snapshot run's marker names the tool process as owner, started when the table says, with no keep_until`,
+        run.status === 0 && markerShape(marker, "snapshot-worktree") && marker.owner?.pid === run.pid
+            && marker.owner.command === "bash" && startedAsTableSays(t, marker.owner.process_start, before)
+            && marker.keep_until === null,
+        `${said(run)} marker ${run.stdout.trim()}`);
+    leavesNothing(`${t.label}: that run leaves nothing`);
+
+    const owned = newUnderClaude(t);
+    const ownedMarker = readMarker(owned.entry);
+    check(`${t.label}: under a claude process, new needs no time to live and records that process as the owner`,
+        owned.result.status === 0 && markerShape(ownedMarker, "creds") && ownedMarker.owner?.pid === owned.result.pid
+            && ownedMarker.owner.command === "claude" && startedAsTableSays(t, ownedMarker.owner.process_start, owned.spawnedAt)
+            && ownedMarker.keep_until === null,
+        `${said(owned.result)} marker ${JSON.stringify(ownedMarker)}`);
+    if (owned.entry && existsSync(owned.entry)) runTool(["remove", owned.entry], { path: t.path });
+
+    await heldByClaude(t);
+
+    const bare = await newWithoutAssistant(t, []);
+    check(`${t.label}: with no assistant above it, new without --ttl-hours is refused as scratch_ttl_required and makes nothing`,
+        bare.finished && bare.rc === "64" && bare.err.includes("scratch_ttl_required") && entries().length === 0,
+        JSON.stringify(bare));
+    const timed = await newWithoutAssistant(t, ["--ttl-hours", "1"]);
+    const timedMarker = readMarker(timed.out);
+    check(`${t.label}: with no assistant above it and --ttl-hours 1, the owner is null and keep_until an hour after created_at`,
+        timed.finished && timed.rc === "0" && markerShape(timedMarker, "orphan") && timedMarker.owner === null
+            && timedMarker.keep_until === timedMarker.created_at + 3600,
+        `${JSON.stringify(timed)} marker ${JSON.stringify(timedMarker)}`);
+    if (timed.out && existsSync(timed.out)) runTool(["remove", timed.out], { path: t.path });
+    leavesNothing(`${t.label}: nothing is left under the root`);
+    if (t.table) {
+        const { asked, unmodelled } = questions(t.table);
+        check(`${t.label}: the stand-in answered ${asked} questions, every one in the form it models`,
+            asked > 0 && unmodelled.length === 0, `unmodelled: ${unmodelled.join(" | ")}`);
+    }
+}
+
+{
+    const u = unreadable;
+    const { run, marker, before, after } = snapshotMarker(u);
+    check(`${u.label}: a snapshot run that cannot prove its owner records owner null and keep_until six hours after created_at`,
+        run.status === 0 && markerShape(marker, "snapshot-worktree") && marker.owner === null
+            && marker.created_at >= before && marker.created_at <= after && marker.keep_until === marker.created_at + 6 * 3600,
+        `${said(run)} marker ${run.stdout.trim()}`);
+    leavesNothing(`${u.label}: and it still removes its own entry when it exits`);
+
+    const refusedOwner = newUnderClaude(u);
+    check(`${u.label}: under a claude process new cannot prove that owner, so without --ttl-hours it is refused as scratch_ttl_required and makes nothing`,
+        refusedOwner.result.status === 64 && refusedOwner.result.stderr.includes("scratch_ttl_required") && entries().length === 0,
+        said(refusedOwner.result));
+    const timed = newUnderClaude(u, ["--ttl-hours", "5"]);
+    const timedMarker = readMarker(timed.entry);
+    check(`${u.label}: with --ttl-hours 5 the owner is null and keep_until five hours after created_at`,
+        timed.result.status === 0 && markerShape(timedMarker, "creds") && timedMarker.owner === null
+            && timedMarker.keep_until === timedMarker.created_at + 5 * 3600,
+        `${said(timed.result)} marker ${JSON.stringify(timedMarker)}`);
+    if (timed.entry && existsSync(timed.entry)) runTool(["remove", timed.entry], { path: u.path });
+
+    const keptUnowned = runTool(["snapshot-run", "--subject", "worktree", "--keep", "--ttl-hours", "2", "--", "true"], { path: u.path });
+    const keptUnownedAt = Math.floor(Date.now() / 1000);
+    const keptUnownedNames = entries();
+    const keptUnownedMarker = keptUnownedNames.length === 1 ? readMarker(join(rootReal, keptUnownedNames[0])) : null;
+    check(`${u.label}: --keep records owner null and keep_until --ttl-hours from now`,
+        keptUnowned.status === 0 && markerShape(keptUnownedMarker, "snapshot-worktree") && keptUnownedMarker.owner === null
+            && Math.abs(keptUnownedMarker.keep_until - (keptUnownedAt + 7200)) <= 60,
+        `${said(keptUnowned)} entries ${keptUnownedNames.join(", ")} marker ${JSON.stringify(keptUnownedMarker)}`);
+    if (keptUnownedNames.length === 1) runTool(["remove", join(rootReal, keptUnownedNames[0])], { path: u.path });
+    leavesNothing(`${u.label}: nothing is left under the root`);
+    const { asked } = questions(unreadableDir);
+    check(`${u.label}: the stand-in refused ${asked} questions, so these checks ran with no process table at all`, asked > 0);
+}
 leavesNothing("nothing is left under the root at the end");
 
 // ---- The shape of the tool itself -----------------------------------------------------------------
@@ -503,14 +693,18 @@ const rmLines = toolText.split("\n").filter((line) => !/^\s*#/.test(line) && /(^
 const unguarded = rmLines.filter((line) => /\$(?!\{[A-Za-z_][A-Za-z0-9_]*:\?)/.test(line.slice(line.search(/rm\s+-/))));
 check(`every rm in the tool expands nothing but \${var:?} (${rmLines.length} found)`,
     rmLines.length > 0 && unguarded.length === 0, unguarded.join(" | "));
+// Every run above sets CLAWDLINE_SCRATCH_ROOT, so the default is the one root no run can show; the
+// refusal a relative root meets must never be able to meet it.
+check("the default root is an absolute path", /^readonly SCRATCH_DEFAULT_ROOT=\/\S*$/m.test(toolText));
 const help = runTool(["--help"]);
 check("--help says the index subject is for a root only",
     help.status === 0 && /--subject index[\s\S]*ROOT ONLY/.test(help.stdout), said(help));
 check("the one refusal made for being outside the sandbox was the deliberate one", refusedOutside === 1,
     `${refusedOutside} refusals`);
 
+const tables = machineReadable ? "stand-in, unreadable and this machine's" : "stand-in and unreadable; this machine's could not be read here";
 if (failures > 0) {
-    console.log(`scratch tool: ${failures} of ${checks} checks failed`);
+    console.log(`scratch tool: ${failures} of ${checks} checks failed (process tables: ${tables})`);
     process.exit(1);
 }
-console.log(`scratch tool: ${checks} checks passed`);
+console.log(`scratch tool: ${checks} checks passed (process tables: ${tables})`);

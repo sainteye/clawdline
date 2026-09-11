@@ -60,13 +60,14 @@ snapshot-run  Copy the repository you are standing in into a new entry, run COMM
               The staged index, through git write-tree: "will HEAD still build after this commit?".
               ROOT ONLY. It writes a tree object into the shared .git, and only the session that is
               staging may ask that question.
-  --root DIR  Make the entry under DIR instead. A child passes /tmp/.clawdline/<task-id>/work.
+  --root DIR  Make the entry under DIR instead. DIR is an absolute path, as CLAWDLINE_SCRATCH_ROOT
+              is; a relative one is refused. A child passes /tmp/.clawdline/<task-id>/work.
   --keep      Keep the entry after COMMAND exits and print its path. It is then held like an entry
               made by `new`, with keep_until --ttl-hours from now (default 4).
 
 new           Make an entry a session keeps across tool calls — a deploy copy, a credential copy —
               and print its path. Its owner is the nearest claude or codex process above this one;
-              when there is none, --ttl-hours (1-24) is required.
+              when there is none, or the process table cannot be read, --ttl-hours (1-24) is required.
 
 remove        Remove one entry. Refuses anything that is not a directory directly under the root, a
               symbolic link, an entry with no version-1 marker, and an entry whose owner is still
@@ -76,7 +77,8 @@ exit status   COMMAND's own for snapshot-run, otherwise 0; a signal ends snapsho
               signal once the entry is gone. Refusals, with the typed code on stderr:
   64  scratch_usage, scratch_ttl_required
   70  scratch_not_in_git, scratch_snapshot_failed
-  73  scratch_root_symlink, scratch_root_not_directory, scratch_root_not_owned, scratch_root_uncreatable
+  73  scratch_root_not_absolute, scratch_root_symlink, scratch_root_not_directory, scratch_root_not_owned,
+      scratch_root_uncreatable
   74  scratch_cleanup_failed
   77  scratch_not_under_root, scratch_not_an_entry, scratch_marker_missing, scratch_marker_unknown,
       scratch_owner_live
@@ -106,13 +108,20 @@ check_ttl() {
 # ---- The root ------------------------------------------------------------------------------------
 
 # Sets SCRATCH_ROOT (as spelled) and SCRATCH_ROOT_REAL (physical). $2 is `create` or `existing`.
-# A root that is a link, not a directory, or somebody else's is refused — never replaced, and never
-# worked around by choosing another place, because a sweep of the place that was chosen instead is
-# a sweep nobody agreed to.
+# A root that is relative, a link, not a directory, or somebody else's is refused — never resolved,
+# never replaced, and never worked around by choosing another place, because a sweep of the place
+# that was chosen instead is a sweep nobody agreed to.
 open_root() {
   local root=${1-} mode=${2:-create}
   [ -n "$root" ] || die $EX_USAGE scratch_usage "the scratch root is an empty string"
-  case $root in /*) ;; *) root="$PWD/$root" ;; esac
+  # Whichever of the default, CLAWDLINE_SCRATCH_ROOT and --root it came from. The broker's sweep
+  # refuses a relative root as root_not_absolute, so resolving one against this process's working
+  # directory would make entries no sweep ever lists. Refused here, before anything is created.
+  case $root in
+    /*) ;;
+    *) die $EX_ROOT scratch_root_not_absolute \
+         "the scratch root '$root' is not an absolute path; refusing it rather than resolving it against $PWD" ;;
+  esac
   while [ "$root" != / ] && [ "${root%/}" != "$root" ]; do root=${root%/}; done
   if [ ! -e "$root" ] && [ ! -L "$root" ]; then
     [ "$mode" = create ] \
