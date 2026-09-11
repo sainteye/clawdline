@@ -5436,8 +5436,13 @@ verification, and the exact closed review receipt (verdict, all three unique axe
 agreement, unique bounded findings, and finding keys). On failure the command never runs `mv`,
 leaves the tmp file for correction, and never prints the task-secret value. Thus preflight adds no second
 completion channel: only the renamed `result.json` is observable to the broker. The repository
-copy is runnable as `node tools/validate-task-result.mjs <task.json> <result.json.tmp>`; it is a
+copy is runnable as `node tools/validate-task-result.mjs <task.json> <result.json.tmp> [result.json.ready]`; it is a
 development/diagnostic entry point, not a path assumed to exist in every dispatched project.
+When the optional third path is present, successful validation writes a `0600` recovery receipt
+binding the task id to the exact tmp SHA-256. The child removes it after its normal atomic rename.
+If that shell stalls, the broker requires the marker, the stored task-secret identity and unchanged
+marker/tmp bytes across two observations at least 30 seconds apart before a create-if-absent
+publication. Restart resets the observation interval, and file age alone is never sufficient.
 
 | `code` | status | |
 |---|---|---|

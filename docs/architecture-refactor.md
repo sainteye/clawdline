@@ -760,7 +760,7 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 622 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered groups | 623 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 48 | `Tests/main.swift`, counted by the guard |
 | suite files | 61 | `Tests/*Tests.swift`, counted by the guard |
 | `Orchestrator.swift` ceiling | 10,718 | the ratchet in `tools/check-architecture-boundaries.sh` |

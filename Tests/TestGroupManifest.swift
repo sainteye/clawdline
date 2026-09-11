@@ -435,6 +435,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "cleanup documentation describes the API and runtime contract, not registry spelling",
     "an attached follow-up goes through dispatch, and survives its own single-flight check",
     "a result's verification is read even when the summary and artifacts are already known",
+    "a validated stalled result is recovered only after an explicit stable ready receipt",
     "Clawdline answers a menu only on a tab it opened itself",
     "dispatch answers an immediate tab refusal; the later pump finalizes its refusal",
     "a tab that never opened is retried from its own task file, twice and no further",

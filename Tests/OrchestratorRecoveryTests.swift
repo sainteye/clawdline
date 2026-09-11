@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CryptoKit
 import Foundation
 import SQLite3
 
@@ -75,6 +76,113 @@ group("a result's verification is read even when the summary and artifacts are a
            "swift suite + web-schedules")
     expect("and the route's own summary still wins over the file's",
            record?["summary"] as? String, "the route's sentence")
+}
+
+group("a validated stalled result is recovered only after an explicit stable ready receipt") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var directories: [URL] = []
+    defer {
+        for directory in directories { try? manager.removeItem(at: directory) }
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    func digest(_ data: Data) -> String {
+        RemoteAuth.hex(SHA256.hash(data: data))
+    }
+    func seed(secret: String, summary: String = "ready") -> (Orchestrator.Task, Data) {
+        let id = UUID().uuidString.lowercased()
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        directories.append(directory)
+        try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        var task = Orchestrator.Task(
+            id: id, state: .briefed, kind: "code", title: "ready result fixture",
+            assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+            secretHash: Orchestrator.hash(ofSecret: secret))
+        task.briefedAt = Date()
+        Orchestrator.holdScheduleTaskForTesting(task)
+        let data = try! JSONSerialization.data(withJSONObject: [
+            "clawdline_protocol": 1, "task_id": id, "task_secret": secret,
+            "status": "success", "summary": summary, "artifacts": [],
+        ], options: [.sortedKeys])
+        return (task, data)
+    }
+    func writeReady(_ task: Orchestrator.Task, _ result: Data) {
+        try! result.write(to: task.dir.appendingPathComponent("result.json.tmp"), options: .atomic)
+        let marker = try! JSONSerialization.data(withJSONObject: [
+            "clawdline_protocol": 1, "task_id": task.id, "finalization_ready": true,
+            "result_sha256": digest(result),
+        ], options: [.sortedKeys])
+        let path = task.dir.appendingPathComponent("result.json.ready")
+        try! marker.write(to: path, options: .atomic)
+        try! manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path.path)
+    }
+
+    let start = Date(timeIntervalSince1970: 1_789_100_000)
+    let (good, goodData) = seed(secret: String(repeating: "a", count: 64))
+    writeReady(good, goodData)
+    check("the first valid observation does not publish", !Orchestrator.recoverReadyResultForTesting(good.id, at: start))
+    check("age below the stability interval does not publish",
+          !Orchestrator.recoverReadyResultForTesting(good.id, at: start.addingTimeInterval(29)))
+    check("the same authenticated bytes publish after thirty seconds",
+          Orchestrator.recoverReadyResultForTesting(good.id, at: start.addingTimeInterval(30)))
+    check("recovery creates the only completion signal and removes its working receipts",
+          manager.fileExists(atPath: good.dir.appendingPathComponent("result.json").path)
+            && !manager.fileExists(atPath: good.dir.appendingPathComponent("result.json.tmp").path)
+            && !manager.fileExists(atPath: good.dir.appendingPathComponent("result.json.ready").path))
+
+    let secret = String(repeating: "b", count: 64)
+    let (changed, firstData) = seed(secret: secret, summary: "first")
+    writeReady(changed, firstData)
+    check("a changing candidate begins with observation only",
+          !Orchestrator.recoverReadyResultForTesting(changed.id, at: start))
+    let secondData = try! JSONSerialization.data(withJSONObject: [
+        "clawdline_protocol": 1, "task_id": changed.id, "task_secret": secret,
+        "status": "success", "summary": "second", "artifacts": [],
+    ], options: [.sortedKeys])
+    writeReady(changed, secondData)
+    check("changed bytes reset rather than inherit the old deadline",
+          !Orchestrator.recoverReadyResultForTesting(changed.id, at: start.addingTimeInterval(31)))
+    check("only the replacement's own stable interval can publish it",
+          Orchestrator.recoverReadyResultForTesting(changed.id, at: start.addingTimeInterval(61)))
+
+    let (wrongSecret, wrongData) = seed(secret: String(repeating: "c", count: 64))
+    let forged = try! JSONSerialization.data(withJSONObject: [
+        "clawdline_protocol": 1, "task_id": wrongSecret.id,
+        "task_secret": String(repeating: "d", count: 64), "status": "success",
+    ], options: [.sortedKeys])
+    writeReady(wrongSecret, forged)
+    check("a ready marker cannot substitute for the task secret",
+          !Orchestrator.recoverReadyResultForTesting(wrongSecret.id, at: start)
+            && !Orchestrator.recoverReadyResultForTesting(wrongSecret.id,
+                                                          at: start.addingTimeInterval(60)))
+    _ = wrongData
+
+    let (unmarked, unmarkedData) = seed(secret: String(repeating: "e", count: 64))
+    try! unmarkedData.write(to: unmarked.dir.appendingPathComponent("result.json.tmp"), options: .atomic)
+    check("mtime and age alone never authorize publication",
+          !Orchestrator.recoverReadyResultForTesting(unmarked.id, at: start.addingTimeInterval(600)))
+
+    let (linked, linkedData) = seed(secret: String(repeating: "f", count: 64))
+    let outside = linked.dir.appendingPathComponent("outside.json")
+    try! linkedData.write(to: outside)
+    try! manager.createSymbolicLink(at: linked.dir.appendingPathComponent("result.json.tmp"),
+                                    withDestinationURL: outside)
+    let marker = try! JSONSerialization.data(withJSONObject: [
+        "clawdline_protocol": 1, "task_id": linked.id, "finalization_ready": true,
+        "result_sha256": digest(linkedData),
+    ], options: [.sortedKeys])
+    let markerPath = linked.dir.appendingPathComponent("result.json.ready")
+    try! marker.write(to: markerPath)
+    try! manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: markerPath.path)
+    check("a symlinked tmp file is never followed outside the task receipt",
+          !Orchestrator.recoverReadyResultForTesting(linked.id, at: start)
+            && !Orchestrator.recoverReadyResultForTesting(linked.id,
+                                                          at: start.addingTimeInterval(60)))
 }
 
 group("Clawdline answers a menu only on a tab it opened itself") {

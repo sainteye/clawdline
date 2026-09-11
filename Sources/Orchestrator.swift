@@ -7404,6 +7404,8 @@ enum Orchestrator {
 
         // The result file is the completion signal every child can give — writing to its task
         // directory does not depend on the loopback capability an HTTP announcement needs.
+        _ = OrchestratorResultFinalizer.recover(
+            taskID: task.id, secretHash: task.secretHash, directory: task.dir, now: Date())
         if let result = readResult(of: task) {
             guard replaceTask(task, expecting: .briefed) else { return false }
             finalize(task.id, as: result.status == "success" ? .success : .failure,
@@ -7945,33 +7947,26 @@ enum Orchestrator {
         var review: ReviewReceipt?
     }
 
+    @discardableResult
+    static func recoverReadyResultForTesting(_ taskID: String, at now: Date) -> Bool {
+        guard let task = held(taskID), task.state == .briefed else { return false }
+        return OrchestratorResultFinalizer.recover(
+            taskID: task.id, secretHash: task.secretHash, directory: task.dir, now: now)
+    }
+
     /// The child's `result.json`, if it exists and can prove it came from the child.
     private static func readResult(of task: Task) -> ChildResult? {
         let file = task.dir.appendingPathComponent("result.json")
-        guard let data = try? Data(contentsOf: file),
-              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            return nil
-        }
-        guard let secret = obj["task_secret"] as? String,
-              RemoteAuth.constantTimeEquals(task.secretHash, hash(ofSecret: secret)) else {
-            // Somebody wrote a result they could not have been asked for. Once in the log is
-            // enough — the file is left alone so the evidence is where the log says it is.
-            lock.lock()
-            let first = badResults.insert(task.id).inserted
-            lock.unlock()
-            if first {
-                RemoteAuth.audit("orchestrator.result", ["task": task.id, "ok": "0", "why": "bad_secret"])
-            }
-            return nil
-        }
-        return ChildResult(status: obj["status"] as? String ?? "failure",
+        guard let data = OrchestratorResultFinalizer.regularFileData(file, maximumBytes: 2 * 1024 * 1024),
+              let obj = OrchestratorResultFinalizer.authenticatedObject(
+                data, taskID: task.id, secretHash: task.secretHash, auditFailure: true),
+              let status = obj["status"] as? String else { return nil }
+        return ChildResult(status: status,
                            summary: (obj["summary"] as? String).map { String($0.prefix(2000)) },
                            artifacts: (obj["artifacts"] as? [String] ?? []).map { String($0.prefix(300)) },
                            verification: verification(from: obj["verification"]),
                            review: review(from: obj["review"]))
     }
-
-    private static var badResults: Set<String> = []
 
     // MARK: - Finalize
 
@@ -8021,7 +8016,7 @@ enum Orchestrator {
         // The result file can carry words the finalizer was not handed — the HTTP route sends
         // only a sentence, the file has the artifact list and the verification record too. Asked
         // only when a core field or required review receipt is missing. `readResult` is a disk
-        // read and secret comparison that files `badResults`; running it for a cancelled task that
+        // read and secret comparison that audits a refused receipt; running it for a cancelled task that
         // never wrote a result is a cost with no answer at the end of it.
         if task.summary == nil || task.artifacts.isEmpty || task.verification == nil
             || (requiresTypedReview(task) && task.review == nil),
@@ -10650,7 +10645,7 @@ enum Orchestrator {
             cachedCloseabilityRegistryIndex = nil
             records.registry.removeAllHandoffTitles()
             records.sessionRecords.removeAllTaskSecrets()
-            badResults = []
+            OrchestratorResultFinalizer.reset()
             handledScheduleFires = [:]
             pendingScheduleFires = [:]
             lastMissedScheduleFires = [:]

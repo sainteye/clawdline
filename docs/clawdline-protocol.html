@@ -676,7 +676,7 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
   "finished_at": "2026-01-14T10:41:55Z"
 }</code></pre>
 
-  <p>Written atomically — to a temporary name and then moved — so the watcher never sees half of it. The app checks once a beat for every briefed task, hashes the supplied secret and compares it against what it stored at dispatch, in constant time. <strong>A file whose secret does not match is ignored and logged once</strong>: a wrong secret in a task directory is either a bug or somebody poking, and neither is a reason to finalize somebody's task.</p>
+  <p>Written atomically — to a temporary name and then moved — so the watcher never sees half of it. The preflight also writes a private <code>result.json.ready</code> receipt that binds the task id to the exact validated temporary bytes, then removes that receipt after the normal move. If the child's shell stalls between those operations, the broker may recover only when the receipt and authenticated temporary result remain byte-for-byte unchanged across two observations at least 30 seconds apart. Restart begins that interval again; file age alone is never consent. Recovery publishes create-if-absent, so it cannot replace a result that completed normally. The app checks once a beat for every briefed task, hashes the supplied secret and compares it against what it stored at dispatch, in constant time. <strong>A file whose secret does not match is ignored and logged once</strong>: a wrong secret in a task directory is either a bug or somebody poking, and neither is a reason to finalize somebody's task.</p>
 
   <dl class="kv">
     <dt><code>status</code></dt>

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,14 +75,29 @@ function publish(name, task, result, payload) {
     const taskPath = join(scratch, `${name}-task.json`);
     const tmpPath = join(scratch, `${name}-result.json.tmp`);
     const finalPath = join(scratch, `${name}-result.json`);
+    const readyPath = join(scratch, `${name}-result.json.ready`);
     writeFileSync(taskPath, JSON.stringify(task));
     writeFileSync(tmpPath, JSON.stringify(result));
     const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
     const loader = "eval(\"(async()=>{\"+Buffer.from(process.argv[1],\"base64\").toString(\"utf8\")+\"\\n})()\")";
     const command = [quote(process.execPath), "-e", quote(loader), quote(payload),
-        quote(taskPath), quote(tmpPath), "&&", "mv", "--", quote(tmpPath), quote(finalPath)].join(" ");
+        quote(taskPath), quote(tmpPath), quote(readyPath), "&&", "mv", "--", quote(tmpPath),
+        quote(finalPath), "&&", "rm", "-f", "--", quote(readyPath)].join(" ");
     const answer = spawnSync("/bin/sh", ["-c", command], { encoding: "utf8", cwd: foreignProject });
-    return { answer, tmpPath, finalPath };
+    return { answer, tmpPath, finalPath, readyPath };
+}
+
+function markReady(name, task, result) {
+    const taskPath = join(scratch, `${name}-task.json`);
+    const resultPath = join(scratch, `${name}-result.json.tmp`);
+    const readyPath = join(scratch, `${name}-result.json.ready`);
+    const resultBytes = Buffer.from(JSON.stringify(result));
+    writeFileSync(taskPath, JSON.stringify(task));
+    writeFileSync(resultPath, resultBytes);
+    const answer = spawnSync(process.execPath, [validator, taskPath, resultPath, readyPath], {
+        encoding: "utf8",
+    });
+    return { answer, resultBytes, readyPath };
 }
 
 function accepts(name, task, result) {
@@ -118,6 +134,21 @@ try {
     assert.equal(acceptedPublish.answer.status, 0, `valid tmp receipt was not published: ${acceptedPublish.answer.stderr}`);
     assert.ok(!existsSync(acceptedPublish.tmpPath) && existsSync(acceptedPublish.finalPath),
         "successful preflight did not atomically move tmp to the completion signal");
+    assert.ok(!existsSync(acceptedPublish.readyPath),
+        "ordinary successful publication left its recovery marker behind");
+    checks += 1;
+
+    const marked = markReady("explicit recovery marker", ordinaryTask, ordinaryResult);
+    assert.equal(marked.answer.status, 0, `valid tmp did not receive a ready marker: ${marked.answer.stderr}`);
+    const marker = JSON.parse(readFileSync(marked.readyPath, "utf8"));
+    assert.deepEqual(Object.keys(marker).sort(), [
+        "clawdline_protocol", "finalization_ready", "result_sha256", "task_id",
+    ]);
+    assert.equal(marker.task_id, id);
+    assert.equal(marker.finalization_ready, true);
+    assert.equal(marker.result_sha256, createHash("sha256").update(marked.resultBytes).digest("hex"));
+    assert.equal(statSync(marked.readyPath).mode & 0o077, 0,
+        "ready marker is readable outside its task owner");
     checks += 1;
 
     const { verification: _omittedVerification, ...ordinaryWithoutVerification } = ordinaryResult;

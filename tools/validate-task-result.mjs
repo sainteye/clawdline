@@ -5,7 +5,8 @@
 // test extracts both copies. The compiled copy makes CHILD.md self-contained in every project,
 // while this repository-local entry point makes the contract directly runnable and testable.
 // >>> child-result-validator-program >>>
-const { readFileSync } = await import("node:fs");
+const { chmodSync, readFileSync, renameSync, writeFileSync } = await import("node:fs");
+const { createHash } = await import("node:crypto");
 
 const invalid = (reason) => {
     console.error(`task result preflight: invalid — ${reason}`);
@@ -25,18 +26,24 @@ const slug = (value) => typeof value === "string" && value.length > 0 && value.l
 
 const readJSON = (path, label) => {
     try {
-        const value = JSON.parse(readFileSync(path, "utf8"));
+        const bytes = readFileSync(path);
+        const value = JSON.parse(bytes.toString("utf8"));
         if (!object(value)) invalid(`${label} must contain one JSON object`);
-        return value;
+        return { value, bytes };
     } catch {
         invalid(`${label} is not readable JSON`);
     }
 };
 
-const [taskPath, resultPath] = process.argv.slice(-2);
-if (!taskPath || !resultPath || taskPath === resultPath) invalid("usage: validator task.json result.json.tmp");
-const task = readJSON(taskPath, "task.json");
-const result = readJSON(resultPath, "result.json.tmp");
+const args = process.argv.slice(2);
+const hasReadyPath = args.length >= 3;
+const [taskPath, resultPath, readyPath] = hasReadyPath ? args.slice(-3) : [...args.slice(-2), undefined];
+if (!taskPath || !resultPath || taskPath === resultPath
+    || (readyPath && (readyPath === taskPath || readyPath === resultPath))) {
+    invalid("usage: validator task.json result.json.tmp [result.json.ready]");
+}
+const { value: task } = readJSON(taskPath, "task.json");
+const { value: result, bytes: resultBytes } = readJSON(resultPath, "result.json.tmp");
 
 if (task.clawdline_protocol !== 1 || !taskID(task.task_id)) {
     invalid("task.json has no valid protocol identity");
@@ -113,6 +120,23 @@ if (requiresReview && result.status === "success" && !Object.hasOwn(result, "rev
     invalid("a successful review task requires a closed review receipt");
 }
 if (Object.hasOwn(result, "review")) validateReview(result.review);
+
+// A child normally renames the result immediately. If its shell stalls after validation, this
+// task-owned marker lets the broker recover later without treating age as consent. It binds the
+// exact bytes that passed validation; the broker additionally checks the stored task-secret hash
+// and requires an unchanged observation window before publishing the final result.
+if (readyPath) {
+    const marker = {
+        clawdline_protocol: 1,
+        task_id: task.task_id,
+        finalization_ready: true,
+        result_sha256: createHash("sha256").update(resultBytes).digest("hex"),
+    };
+    const temporary = `${readyPath}.writing-${process.pid}`;
+    writeFileSync(temporary, `${JSON.stringify(marker)}\n`, { flag: "wx", mode: 0o600 });
+    chmodSync(temporary, 0o600);
+    renameSync(temporary, readyPath);
+}
 
 console.log("task result preflight: valid");
 // <<< child-result-validator-program <<<

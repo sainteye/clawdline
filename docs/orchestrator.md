@@ -1051,8 +1051,15 @@ prints only schema locations and reasons, never the `task_secret` value, and lea
 place for correction. The watcher therefore sees neither a partial nor a knowingly malformed
 receipt; `result.json` remains the one completion signal.
 
+The successful preflight also writes a private `result.json.ready` recovery receipt containing the
+task id and SHA-256 of the exact validated tmp bytes. The ordinary command removes it immediately
+after the rename. If that shell stalls, the broker may create `result.json` itself only after the
+marker and authenticated tmp bytes remain identical across two observations at least 30 seconds
+apart. A restart starts that interval again; mtime or age alone never authorizes recovery. The
+publication is create-if-absent and cannot replace a result that won the race normally.
+
 The same validator is available to contributors as the dependency-free
-`node tools/validate-task-result.mjs <task.json> <result.json.tmp>` command. That repository-local
+`node tools/validate-task-result.mjs <task.json> <result.json.tmp> [result.json.ready]` command. That repository-local
 entry point and the self-contained briefing payload are held byte-for-byte equal by
 `Tests/task-result-validator.mjs`; the project-local path is not what a dispatched child depends on.
 After the rename, the app checks the result once a beat for every briefed task, hashes
