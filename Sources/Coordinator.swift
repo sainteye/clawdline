@@ -1456,28 +1456,21 @@ extension RemoteServer {
     }
 
     func terminalDrainSnapshot() -> TerminalDrainSnapshot {
-        terminalAdmissionLock.lock(); defer { terminalAdmissionLock.unlock() }
-        return TerminalDrainSnapshot(outstanding: terminalOutstanding,
-                                     channels: terminalOutstandingByChannel)
+        let snapshot = terminalScheduler.drainSnapshot()
+        return TerminalDrainSnapshot(outstanding: snapshot.outstanding, channels: snapshot.channels)
     }
 
     /// Work already admitted may finish its nested cascade; its counters are the drain receipt.
     func setRestartMaintenance(active: Bool, requestID: String?) {
-        terminalAdmissionLock.lock()
-        if active { terminalMaintenanceRequestID = requestID }
-        else if requestID == nil || terminalMaintenanceRequestID == requestID {
-            terminalMaintenanceRequestID = nil
-        }
-        terminalAdmissionLock.unlock()
+        terminalScheduler.setRestartMaintenance(active: active, requestID: requestID)
     }
 
     func terminalMaintenanceRefusal() -> Response? {
-        terminalAdmissionLock.lock(); defer { terminalAdmissionLock.unlock() }
-        guard let requestID = terminalMaintenanceRequestID else { return nil }
+        guard let refusal = terminalScheduler.maintenanceRefusal() else { return nil }
         return .error(503, "restart_maintenance",
                       "Terminal mutations are paused while restart maintenance drains; retry "
                         + "after the replacement process reconciles.",
-                      extra: ["retryable": true, "request_id": requestID, "retry_after": 1])
+                      extra: ["retryable": true, "request_id": refusal.requestID, "retry_after": 1])
     }
 
     func beginRestartMaintenance(requestID: String) -> Response {

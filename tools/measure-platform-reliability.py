@@ -24,7 +24,7 @@ import time
 import uuid
 
 
-BASE_COMMIT = "9d1676e9a1b55e948d3c390fb6da67e382f56659"
+BASE_COMMIT = "e9939b55b0ca4705b3b880ddaaccc9921363d689"
 # Measurement safety bound, not a production HTTP budget or SLA.
 HEALTH_BODY_LIMIT = 16384
 # Whole-file seals prevent an unchanged matching line from concealing a changed caller,
@@ -32,12 +32,13 @@ HEALTH_BODY_LIMIT = 16384
 SOURCE_SEALS = {
     "Sources/CloudTransport.swift": "1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d",
     "Sources/CloudAppBridge.swift": "853c4431771550175c6c485b9da648edb72ef1d24b350030402dee74785aaabc",
-    "Sources/RemoteServer.swift": "b27f9e1e2e2203d73e58bdc43aa30a4a1db64296d1f1258e56ab24658f97748e",
-    "Sources/Orchestrator.swift": "302e10029b6fc761f2c4d3b4bb1616462f032d44c7ee61fb3ef9d41b0f75d8fa",
+    "Sources/RemoteServer.swift": "1386d9decd40ae711116bdd3cdad22a34fb490dda314938f5c62523b178a0d36",
+    "Sources/TerminalCommandScheduler.swift": "c9a423b31b8e8d374c26ea97b999a73f3e6cbceed00e31519147f9b28fafcd7a",
+    "Sources/Orchestrator.swift": "1b9b54e96d3608faa4e6e761020548b2904cd7e812c1ea42267fdd687fdde928",
     "Sources/OrchestratorPersistence.swift": "375628d34df7a2b7679b1e5519d2cfd81f92a3ba86df62b12ae95dfd43d9482c",
     "Sources/OrchestratorRegistry.swift": "f0022c5cefc99a26e7ae278f1e286025e693c32ffdf0c286fa7361142e9ec27b",
     "Sources/OrchestratorStore.swift": "ed31e8ceb7aab18aee23efdf8c3a20805e61a576f89673a4b79deeffd58bcfcc",
-    "Sources/Coordinator.swift": "923c97e24b64947a218c9b308165174bb2d71d90bf9e78e02a804d658fccc588",
+    "Sources/Coordinator.swift": "8c465b30b97aacd421de00db92416712e7b16f556ade97d0ebb16d39ea3f69ae",
     "Sources/SessionWatch.swift": "d1d47930535b2e79bea14d13d56482885adeff09fcaa0326b84f8a60701beb5c",
     "Sources/TranscriptReadCoordinator.swift": "61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371",
     "Sources/ReadingFreshness.swift": "4592b2a84c03d196707626df2876f3ef4e5274149addf361b7738a2888ed672f",
@@ -45,7 +46,6 @@ SOURCE_SEALS = {
     "Sources/CloudCommandLedger.swift": "def726c029d4fb17e0d096c3187d87b2ea89fdc413e69b95bb02cf0a27862fcf",
     "Sources/CloudBridgeLifecycle.swift": "07f585fd60b4e99abe42d89ca72087c6339456cb844b088718c503cd9ef6b663",
     "Tests/OrchestratorRecoveryTests.swift": "c15ff1acdc556cdf914ad774892c4818117a60709be06086810ce014db3ea753",
-    "Tests/OrchestratorCompletionTests.swift": "d2258c60bd16287345470da810a3ec720c14886fe49da132ff6d92da6054699b",
     "Tests/CloudOutboundSpoolTests.swift": "da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244",
 }
 
@@ -135,6 +135,7 @@ def characterize(source):
     rows = []
     t, b, h, o = ("Sources/" + name + ".swift" for name in
                   ("CloudTransport", "CloudAppBridge", "RemoteServer", "Orchestrator"))
+    terminal = "Sources/TerminalCommandScheduler.swift"
     c, w, p, l = ("Sources/" + name + ".swift" for name in
                   ("Coordinator", "SessionWatch", "CloudOutboundSpool", "CloudCommandLedger"))
     op = "Sources/OrchestratorPersistence.swift"
@@ -194,12 +195,17 @@ def characterize(source):
         "R-2 HTTP reliability owner")
     row("terminal-queue", "同一 serial terminal worker 在入列前計 total/per-channel outstanding；"
         "HTTP 容量拒絕為 429 busy，maintenance 為 503 restart_maintenance；nested inline 仍計新增 channel。",
-        [ref(h, "    func enqueueTerminalCommand(channels", "    /// Test receipt for the production admission counters"),
+        [ref(terminal, "    @discardableResult\n    func enqueue(channels rawChannels:",
+             "    /// Test receipt for the production admission counters"),
+         ref(h, "    func enqueueTerminalCommand(channels", "    /// Test receipt for the production admission counters"),
          ref(h, "    private func terminalMutation(", "    private static func keepsTerminalMutation("),
          ref(c, "    func terminalMaintenanceRefusal()", "    func beginRestartMaintenance(requestID:")],
         ["count 是 queued+active，不是 byte cap；8/2 為現行常數，沒有量到負載適足性。",
          "同 key terminalPending waiters 另外 append，沒有此路徑的 waiter count/byte cap；重試可增加連線債務。"],
-        "W2-1 application owner / R-1 / R-2", constants(h, "terminalDepth", "terminalChannelDepth"))
+        "W2-1 application owner / R-1 / R-2", {
+            "terminalDepth": constants(terminal, "depth")["depth"],
+            "terminalChannelDepth": constants(terminal, "channelDepth")["channelDepth"],
+        })
     row("read-queues", "slow reads/analytics、transcript、voice/planner 有獨立 admission；"
         "overflow 分別為 429 busy/usage_analytics_busy/transcript_busy，voice/planner 亦回 429 busy。"
         "列出的 depth 都是 request 數量；沒有把單一 body cap 當 aggregate queued-byte cap。",
@@ -273,7 +279,6 @@ def characterize(source):
          ref("Sources/OrchestratorRegistry.swift",
              "        func withdrawRootAssignmentActivation(",
              "        // MARK: Coordination waits"),
-         ref("Tests/OrchestratorCompletionTests.swift", 'group("ACK save failure rolls back only its delivery transition")'),
          ref("Tests/OrchestratorRecoveryTests.swift", 'group("restart reconciliation is bounded, fail-closed on corruption, and rolls back atomically")')],
         ["EACCES/ENOSPC/EROFS、partial write、rename、chmod、fsync/power-loss 與雙 writer 未實測。",
          "direct dispatch 與一般 terminal briefing lane 的更廣 ordering 仍由 W2-1 接手。"],

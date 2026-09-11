@@ -214,67 +214,12 @@ final class RemoteServer: @unchecked Sendable {
     @discardableResult
     func enqueueTerminalCommand(channels rawChannels: [String],
                                 _ work: @escaping () -> Void) -> Bool {
-        let channels = Array(Set(rawChannels.filter { !$0.isEmpty })).sorted()
-        // Nested terminal work is already inside the single broker ordering domain. Execute it
-        // inline so a root `/end` can finish children deepest-first without deadlocking behind
-        // itself or reversing the safety order.
-        if DispatchQueue.getSpecific(key: Self.terminalWorkerKey) == true {
-            let added = channels.filter { !terminalActiveChannels.contains($0) }
-            terminalAdmissionLock.lock()
-            guard added.allSatisfy({ (terminalOutstandingByChannel[$0] ?? 0)
-                                        < Self.terminalChannelDepth }) else {
-                terminalAdmissionLock.unlock()
-                return false
-            }
-            for channel in added {
-                terminalOutstandingByChannel[channel, default: 0] += 1
-            }
-            terminalAdmissionLock.unlock()
-            let previous = terminalActiveChannels
-            terminalActiveChannels.formUnion(added)
-            work()
-            terminalActiveChannels = previous
-            terminalAdmissionLock.lock()
-            for channel in added {
-                let remaining = (terminalOutstandingByChannel[channel] ?? 1) - 1
-                if remaining == 0 { terminalOutstandingByChannel.removeValue(forKey: channel) }
-                else { terminalOutstandingByChannel[channel] = remaining }
-            }
-            terminalAdmissionLock.unlock()
-            return true
-        }
-        terminalAdmissionLock.lock()
-        guard terminalMaintenanceRequestID == nil,
-              terminalOutstanding < Self.terminalDepth,
-              channels.allSatisfy({ (terminalOutstandingByChannel[$0] ?? 0)
-                                      < Self.terminalChannelDepth }) else {
-            terminalAdmissionLock.unlock()
-            return false
-        }
-        terminalOutstanding += 1
-        for channel in channels { terminalOutstandingByChannel[channel, default: 0] += 1 }
-        terminalAdmissionLock.unlock()
-        terminalQueue.async {
-            let previous = self.terminalActiveChannels
-            self.terminalActiveChannels.formUnion(channels)
-            work()
-            self.terminalActiveChannels = previous
-            self.terminalAdmissionLock.lock()
-            self.terminalOutstanding -= 1
-            for channel in channels {
-                let remaining = (self.terminalOutstandingByChannel[channel] ?? 1) - 1
-                if remaining == 0 { self.terminalOutstandingByChannel.removeValue(forKey: channel) }
-                else { self.terminalOutstandingByChannel[channel] = remaining }
-            }
-            self.terminalAdmissionLock.unlock()
-        }
-        return true
+        terminalScheduler.enqueue(channels: rawChannels, work)
     }
     /// Test receipt for the production admission counters, read under the same lock that mutates
     /// them. A nested terminal cascade must finish with both totals back at zero.
     func terminalOutstandingForTesting() -> (total: Int, channels: Int) {
-        terminalAdmissionLock.lock(); defer { terminalAdmissionLock.unlock() }
-        return (terminalOutstanding, terminalOutstandingByChannel.values.reduce(0, +))
+        terminalScheduler.outstandingForTesting()
     }
     /// Enter a verified cloud command through the same route transaction local HTTP uses. The
     /// bridge supplies an idempotency key derived from the already replay-checked sender/sequence.
@@ -3355,22 +3300,14 @@ final class RemoteServer: @unchecked Sendable {
     /// iTerm2 a second time. This dictionary and the completed idempotency table are touched only
     /// on `queue`; admission for both HTTP and internal commands has its own small lock.
     var terminalPending: [String: [(Response) -> Void]] = [:]
-    private static let terminalWorkerKey = DispatchSpecificKey<Bool>()
-    private lazy var terminalQueue: DispatchQueue = {
-        let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.remote.terminal")
-        queue.setSpecific(key: Self.terminalWorkerKey, value: true)
-        return queue
-    }()
-    let terminalAdmissionLock = NSLock()
-    var terminalOutstanding = 0
-    var terminalOutstandingByChannel: [String: Int] = [:]
-    var terminalMaintenanceRequestID: String?
-    /// Touched only on the serial terminal queue. It lets nested inline work inherit an outer
-    /// reservation without double-counting that same terminal while still accounting a newly
-    /// discovered child/coordination recipient.
-    private var terminalActiveChannels: Set<String> = []
-    static let terminalDepth = 8
-    static let terminalChannelDepth = 2
+    /// Sole owner of the bounded terminal mutation lane's serial worker, depth and reservation
+    /// accounting. See `Sources/TerminalCommandScheduler.swift`; every name below stays as an
+    /// unchanged facade over it, since `ProjectBoardWorkflowHTTP.swift` and every test file call
+    /// these directly.
+    let terminalScheduler = TerminalCommandScheduler(
+        label: "com.tsunamiworks.clawdline.remote.terminal")
+    static let terminalDepth = TerminalCommandScheduler.depth
+    static let terminalChannelDepth = TerminalCommandScheduler.channelDepth
 
     /// Asynchronous wrapper for `/key`, `/end` and `/start`. Validation, reservation and
     /// idempotency stay on the server queue; only the existing route body enters the bounded
@@ -3624,7 +3561,7 @@ final class RemoteServer: @unchecked Sendable {
     /// see the note in `transcribe` about `429` and `503`, which is the same argument.
     private func writing(_ request: Request, keeping keep: (Response) -> Bool = { _ in true },
                          _ body: ([String: Any]) -> Response) -> Response {
-        if DispatchQueue.getSpecific(key: Self.terminalWorkerKey) == true {
+        if terminalScheduler.isCurrentlyOnWorkerQueue {
             let parsed = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
                 ?? [:]
             return body(parsed)

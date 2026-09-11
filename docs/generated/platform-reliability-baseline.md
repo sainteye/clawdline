@@ -1,9 +1,9 @@
 # 平台可靠性基準（W0-C）
 
 此文件由 `tools/measure-platform-reliability.py` 產生；CLA-296 Plan v4 的量測輸入。
-來源引用提交：`9d1676e9a1b55e948d3c390fb6da67e382f56659`。
-來源範圍 SHA-256：`63d88690d22e9dd1d183837afa08e67d5ba361d4b4427d34ae2219f9d6273ea0`。
-工具 SHA-256：`ed0d230bba6dfe3613989b790df8e684b63da94d12b20807f63e997db6b6b5aa`。
+來源引用提交：`e9939b55b0ca4705b3b880ddaaccc9921363d689`。
+來源範圍 SHA-256：`e57f00edec4e63d150ab7454946f63ccf05a2de633dc3528250ef5792c8a6937`。
+工具 SHA-256：`01463c6f48004fc8dedd9367607ce1f6d838ecc1fe8c27b3c53e2a98dc594096`。
 
 17 個非空來源檔、19 列。這是範圍摘要，並非整棵 commit-tree 驗證。
 整檔 seal 拒絕來源漂移；本工具不解析或編譯 Swift。更新 seal 前須重讀受影響行為。
@@ -52,9 +52,9 @@ readyGenerations 明定 bufferingNewest(1)，dropped 計數；與 commands 是�
 accept 直接 start/receive；這條 accept/receive 路徑沒有全域連線、aggregate body bytes 或 request-read deadline admission。response close grace 是另一階段。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:609–614`；slice SHA-256 `809c25ceafa41dcf951f1a64aed7b8de55b5d7d97e2198ebd2e7ce86950a1c42`。
-  - `Sources/RemoteServer.swift:619–672`；slice SHA-256 `a36633fb23f30d6079fca2bb082b6d35050af66525a3192f968ce1a6f5cb74b0`。
-  - `Sources/RemoteServer.swift:5612–5612`；slice SHA-256 `f51d92d14db18adf58729af5350df5b81ae3ccfee46a076b7cbd7796bd31e283`。
+  - `Sources/RemoteServer.swift:554–559`；slice SHA-256 `809c25ceafa41dcf951f1a64aed7b8de55b5d7d97e2198ebd2e7ce86950a1c42`。
+  - `Sources/RemoteServer.swift:564–617`；slice SHA-256 `a36633fb23f30d6079fca2bb082b6d35050af66525a3192f968ce1a6f5cb74b0`。
+  - `Sources/RemoteServer.swift:5549–5549`；slice SHA-256 `f51d92d14db18adf58729af5350df5b81ae3ccfee46a076b7cbd7796bd31e283`。
 - **來源數值／屬性**：`{"bodyLimit":20971520,"responseCloseGraceSeconds":30}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -66,11 +66,11 @@ accept 直接 start/receive；這條 accept/receive 路徑沒有全域連線、a
 Stream 只保存 connection；openStream 登錄串流，授權檢查沒有容量條件；write 與 heartbeat 的 contentProcessed 忽略 error，沒有此層 outstanding-byte 計數、slow-consumer eviction 或待送 snapshot 合併。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:5473–5478`；slice SHA-256 `aa83071c47cfb0303bcd1ac0652e35be5e485d5fc876cd63b03ccbe31da608ba`。
-  - `Sources/RemoteServer.swift:5488–5535`；slice SHA-256 `0c9d26aef7affa2aa56381c1b4e02f643d6e0e810772abeb5f143fb69953292f`。
-  - `Sources/RemoteServer.swift:778–786`；slice SHA-256 `7f6beca1780fb6921227aff809fa9a9aa1a78be02872dc41f3a825c1fde71452`。
-  - `Sources/RemoteServer.swift:5538–5554`；slice SHA-256 `1ea4c0fb7c2d0ba698647d66baef5d0f91e8a66da781e98b17dd6a4a26d9482c`。
-  - `Sources/RemoteServer.swift:5601–5610`；slice SHA-256 `3fef466150f294172022c48b80a119ce8d4c048ba552e0dd620fdce6b779ea95`。
+  - `Sources/RemoteServer.swift:5410–5415`；slice SHA-256 `aa83071c47cfb0303bcd1ac0652e35be5e485d5fc876cd63b03ccbe31da608ba`。
+  - `Sources/RemoteServer.swift:5425–5472`；slice SHA-256 `0c9d26aef7affa2aa56381c1b4e02f643d6e0e810772abeb5f143fb69953292f`。
+  - `Sources/RemoteServer.swift:723–731`；slice SHA-256 `7f6beca1780fb6921227aff809fa9a9aa1a78be02872dc41f3a825c1fde71452`。
+  - `Sources/RemoteServer.swift:5475–5491`；slice SHA-256 `1ea4c0fb7c2d0ba698647d66baef5d0f91e8a66da781e98b17dd6a4a26d9482c`。
+  - `Sources/RemoteServer.swift:5538–5547`；slice SHA-256 `3fef466150f294172022c48b80a119ce8d4c048ba552e0dd620fdce6b779ea95`。
 - **來源數值／屬性**：`{"connection_cap":null,"outstanding_byte_cap":null}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -82,8 +82,8 @@ Stream 只保存 connection；openStream 登錄串流，授權檢查沒有容量
 openStream 送 hello 與當前 sessions/orchestrator 全量 snapshot；write 分配 event id。重連以當前狀態 realign，這些路徑沒有 Last-Event-ID replay。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:5488–5535`；slice SHA-256 `0c9d26aef7affa2aa56381c1b4e02f643d6e0e810772abeb5f143fb69953292f`。
-  - `Sources/RemoteServer.swift:5601–5610`；slice SHA-256 `3fef466150f294172022c48b80a119ce8d4c048ba552e0dd620fdce6b779ea95`。
+  - `Sources/RemoteServer.swift:5425–5472`；slice SHA-256 `0c9d26aef7affa2aa56381c1b4e02f643d6e0e810772abeb5f143fb69953292f`。
+  - `Sources/RemoteServer.swift:5538–5547`；slice SHA-256 `3fef466150f294172022c48b80a119ce8d4c048ba552e0dd620fdce6b779ea95`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
 - **unknown**：未測斷線重連、遺失事件與 viewer 觀察；snapshot 送出不等於 command effect 完成／ACK。
@@ -94,9 +94,10 @@ openStream 送 hello 與當前 sessions/orchestrator 全量 snapshot；write 分
 同一 serial terminal worker 在入列前計 total/per-channel outstanding；HTTP 容量拒絕為 429 busy，maintenance 為 503 restart_maintenance；nested inline 仍計新增 channel。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:215–273`；slice SHA-256 `0719c79016208248b2d666ec43ad4ca63ffc63e2d8ec3f48d1dfda9278bdffc5`。
-  - `Sources/RemoteServer.swift:3378–3456`；slice SHA-256 `1bc144ead388a794abd1e6bd79486b57de72aa07b181c88874b07f95a7855048`。
-  - `Sources/Coordinator.swift:1474–1483`；slice SHA-256 `bdc06b1fe15fe64ebb3be0fdb456f6da1317ae33f0d84d033762237566ea8018`。
+  - `Sources/TerminalCommandScheduler.swift:59–116`；slice SHA-256 `1be76532d1e427d0f28d471102818ef7c6eb780c3065ad75110f3c8af248eeb0`。
+  - `Sources/RemoteServer.swift:215–219`；slice SHA-256 `cba9be1ea79d0e721081d4be089af146435c807cbbace83a9be21d4918bd07c0`。
+  - `Sources/RemoteServer.swift:3315–3393`；slice SHA-256 `1bc144ead388a794abd1e6bd79486b57de72aa07b181c88874b07f95a7855048`。
+  - `Sources/Coordinator.swift:1468–1476`；slice SHA-256 `ec85bdb9cfc055b8bfec1e596f3a3ff56ca60ba955f1e4d41710927ef314709b`。
 - **來源數值／屬性**：`{"terminalChannelDepth":2,"terminalDepth":8}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -108,10 +109,10 @@ openStream 送 hello 與當前 sessions/orchestrator 全量 snapshot；write 分
 slow reads/analytics、transcript、voice/planner 有獨立 admission；overflow 分別為 429 busy/usage_analytics_busy/transcript_busy，voice/planner 亦回 429 busy。列出的 depth 都是 request 數量；沒有把單一 body cap 當 aggregate queued-byte cap。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:4408–4445`；slice SHA-256 `3c055438cd43c41fe9d256ec8a771c0b62e71bfc233b48bbf775bb9df3364b91`。
-  - `Sources/RemoteServer.swift:4261–4270`；slice SHA-256 `b46c966611141380b7924027284015f38af80ca5fd2231c4cb8b9095a6332540`。
-  - `Sources/RemoteServer.swift:3747–3747`；slice SHA-256 `303a1dbde79ba7cd428db85803635dba2e8ce2e855d8ac88384d27b1d483fbfe`。
-  - `Sources/RemoteServer.swift:4010–4010`；slice SHA-256 `553b36a769437f0e44673f2311acfd0d6e462d4b97781827b7a1b7193f0961db`。
+  - `Sources/RemoteServer.swift:4345–4382`；slice SHA-256 `3c055438cd43c41fe9d256ec8a771c0b62e71bfc233b48bbf775bb9df3364b91`。
+  - `Sources/RemoteServer.swift:4198–4207`；slice SHA-256 `b46c966611141380b7924027284015f38af80ca5fd2231c4cb8b9095a6332540`。
+  - `Sources/RemoteServer.swift:3684–3684`；slice SHA-256 `303a1dbde79ba7cd428db85803635dba2e8ce2e855d8ac88384d27b1d483fbfe`。
+  - `Sources/RemoteServer.swift:3947–3947`；slice SHA-256 `553b36a769437f0e44673f2311acfd0d6e462d4b97781827b7a1b7193f0961db`。
   - `Sources/TranscriptReadCoordinator.swift:12–34`；slice SHA-256 `061f580f9b5fea41396571a90799dde22c3c5001c446285d1eb683e20d2e2df4`。
 - **來源數值／屬性**：`{"backgroundDepth":1,"depth":2,"planDepth":2,"readingDepth":8,"usageAnalyticsDepth":2,"voiceDepth":2}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
@@ -191,7 +192,7 @@ readStore 將 absent、ready、corrupt、unsupported-version 與 unreadable 分�
 
 - **source-derived**：
   - `Sources/OrchestratorPersistence.swift:70–102`；slice SHA-256 `0e67153e791fe0a72cb8676730d66548eb6d643fadc6fb81260a0f94bdc92a92`。
-  - `Sources/Orchestrator.swift:10065–10250`；slice SHA-256 `617565345dba6c3dfefe4e5328b1a5fcae337a4a7db8acaff070bf7dc89f0048`。
+  - `Sources/Orchestrator.swift:10015–10200`；slice SHA-256 `abbc9ced992cd9b15e2c7f42ca536237b8afe0c988d11c678641981323ec6830`。
   - `Sources/OrchestratorStore.swift:788–788`；slice SHA-256 `74c88e090505f191185f5eee7940757b1adc9e66a50bc0d40a64314a54d0f8cb`。
 - **來源數值／屬性**：`{"read_health_fence_in_load":true,"top_level_version_gate":true}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
@@ -204,7 +205,7 @@ readStore 將 absent、ready、corrupt、unsupported-version 與 unreadable 分�
 save 以 storeSaveLock 序列化 snapshot/write，輸出 version 1 原子替換，並拒絕 non-authoritative read health。Readable rejected bytes 保留在 canonical path 且另作content-addressed quarantine；不存在才是 authoritative empty。
 
 - **source-derived**：
-  - `Sources/Orchestrator.swift:10254–10326`；slice SHA-256 `07a2d392ecc54342a540ca4137c7d125ef21af56913a77c313449f23f3c7d309`。
+  - `Sources/Orchestrator.swift:10204–10277`；slice SHA-256 `018b2eb6e766b7276691c36c574fc2d68132db211de7c11c7b72b26148102db7`。
   - `Sources/OrchestratorPersistence.swift:102–109`；slice SHA-256 `05268545ae0daa005e78519332887d7ce7929239fe9282bffcdd4524898948c8`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -216,10 +217,9 @@ save 以 storeSaveLock 序列化 snapshot/write，輸出 version 1 原子替換�
 save 的 serializer/write/chmod 失敗回 false；write 後 chmod 失敗可能已換檔，因此 false 不等於磁碟完全沒變。Root Assignment、startup recovery 與cleanup 現在 gate effect；storeSaveInterceptorForTesting 可攔截寫入。
 
 - **source-derived**：
-  - `Sources/Orchestrator.swift:10254–10326`；slice SHA-256 `07a2d392ecc54342a540ca4137c7d125ef21af56913a77c313449f23f3c7d309`。
+  - `Sources/Orchestrator.swift:10204–10277`；slice SHA-256 `018b2eb6e766b7276691c36c574fc2d68132db211de7c11c7b72b26148102db7`。
   - `Sources/OrchestratorPersistence.swift:286–320`；slice SHA-256 `850444b1a62bfd5bce49d47a0020daef8bf7171b8c88edd884a708029bb5e96e`。
   - `Sources/OrchestratorRegistry.swift:712–825`；slice SHA-256 `2836dc415e0e6db01e22d767304d031d89cc28736ab80e7ceff6490ab94992e0`。
-  - `Tests/OrchestratorCompletionTests.swift:691–691`；slice SHA-256 `722a8705a2b47caccc42f514cb4c59808be09c627a2090544fdb78054a4b7d4b`。
   - `Tests/OrchestratorRecoveryTests.swift:1489–1489`；slice SHA-256 `afdb101b2116a038b7267f771c1bfd3f9189395c2b0a4184d0ae16244645a938`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -248,7 +248,7 @@ restart receipt 以 instance 與 total/per-channel drain 決定 ready；spawning
 - **source-derived**：
   - `Sources/SessionWatch.swift:1164–1187`；slice SHA-256 `64b42da82c87bb07f6939ce908f5be1f518826f31eb357f075f133785b038b49`。
   - `Sources/SessionWatch.swift:1189–1207`；slice SHA-256 `6cde2caba502ddeb6dfc97a392ea32be6e7991b163c9a7b190cbed08fa021e0d`。
-  - `Sources/Coordinator.swift:1671–1734`；slice SHA-256 `6f9a90ca3d41eda4166224ac39ae6d22453d6bf9a2ee955d0abe4b47a84fc1d1`。
+  - `Sources/Coordinator.swift:1664–1727`；slice SHA-256 `6f9a90ca3d41eda4166224ac39ae6d22453d6bf9a2ee955d0abe4b47a84fc1d1`。
   - `Tests/OrchestratorRecoveryTests.swift:1307–1307`；slice SHA-256 `f827616029d4f063b25655e9997ee192fb5c2732b7d3d1f542eebc4b137496a3`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -260,7 +260,7 @@ restart receipt 以 instance 與 total/per-channel drain 決定 ready；spawning
 可選 probe 僅 GET loopback /v1/health，記錄同一 instance/build/protocol與單次 request 耗時；它不重啟、不讀 store、不證明 recovery 或 Cloud acceptance。
 
 - **source-derived**：
-  - `Sources/RemoteServer.swift:5478–5488`；slice SHA-256 `8e7fc3414149906a3b5cb277b25f5ec9ce9857903d27b670c9b1ef73c0387b1d`。
+  - `Sources/RemoteServer.swift:5415–5425`；slice SHA-256 `8e7fc3414149906a3b5cb277b25f5ec9ce9857903d27b670c9b1ef73c0387b1d`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
 - **unknown**：未量測 restart/reconcile time、terminal preservation 或 storage readiness；health 不回 schema/read-health。 installed build 與來源 checkout 的 commit 關係未驗證。
@@ -271,7 +271,7 @@ restart receipt 以 instance 與 total/per-channel drain 決定 ready；spawning
 可選 probe 在指定 scratch 的私人目錄測 byte round-trip、corrupt JSON、missing read、ENOTDIR write 與 replace failure；這是 Python/host filesystem fixture，不是 Swift Orchestrator.load/save。
 
 - **source-derived**：
-  - `Sources/Orchestrator.swift:10313–10313`；slice SHA-256 `6df2ea3a6d16d84234b2ec21b002e4067370f5932d516041633e841882c83db4`。
+  - `Sources/Orchestrator.swift:10264–10264`；slice SHA-256 `6df2ea3a6d16d84234b2ec21b002e4067370f5932d516041633e841882c83db4`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
 - **unknown**：真實 store 的 disk-full、permission failure、atomic rename 與 power-loss durability 仍未知。
@@ -299,15 +299,15 @@ health liveness、fixture 通過、source seal 相符，都不構成 restart、d
 | `Sources/CloudCommandLedger.swift` | 28746 | `def726c029d4fb17e0d096c3187d87b2ea89fdc413e69b95bb02cf0a27862fcf` |
 | `Sources/CloudOutboundSpool.swift` | 42597 | `aef545decd4c7c95b5c566cb60cb11455eaadf6b52f84c3707b76df165459485` |
 | `Sources/CloudTransport.swift` | 41195 | `1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d` |
-| `Sources/Coordinator.swift` | 94621 | `923c97e24b64947a218c9b308165174bb2d71d90bf9e78e02a804d658fccc588` |
-| `Sources/Orchestrator.swift` | 589947 | `302e10029b6fc761f2c4d3b4bb1616462f032d44c7ee61fb3ef9d41b0f75d8fa` |
+| `Sources/Coordinator.swift` | 94299 | `8c465b30b97aacd421de00db92416712e7b16f556ade97d0ebb16d39ea3f69ae` |
+| `Sources/Orchestrator.swift` | 588529 | `1b9b54e96d3608faa4e6e761020548b2904cd7e812c1ea42267fdd687fdde928` |
 | `Sources/OrchestratorPersistence.swift` | 19385 | `375628d34df7a2b7679b1e5519d2cfd81f92a3ba86df62b12ae95dfd43d9482c` |
 | `Sources/OrchestratorRegistry.swift` | 68464 | `f0022c5cefc99a26e7ae278f1e286025e693c32ffdf0c286fa7361142e9ec27b` |
 | `Sources/OrchestratorStore.swift` | 56740 | `ed31e8ceb7aab18aee23efdf8c3a20805e61a576f89673a4b79deeffd58bcfcc` |
 | `Sources/ReadingFreshness.swift` | 25220 | `4592b2a84c03d196707626df2876f3ef4e5274149addf361b7738a2888ed672f` |
-| `Sources/RemoteServer.swift` | 333310 | `b27f9e1e2e2203d73e58bdc43aa30a4a1db64296d1f1258e56ab24658f97748e` |
+| `Sources/RemoteServer.swift` | 330200 | `1386d9decd40ae711116bdd3cdad22a34fb490dda314938f5c62523b178a0d36` |
 | `Sources/SessionWatch.swift` | 68189 | `d1d47930535b2e79bea14d13d56482885adeff09fcaa0326b84f8a60701beb5c` |
+| `Sources/TerminalCommandScheduler.swift` | 7892 | `c9a423b31b8e8d374c26ea97b999a73f3e6cbceed00e31519147f9b28fafcd7a` |
 | `Sources/TranscriptReadCoordinator.swift` | 5111 | `61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371` |
 | `Tests/CloudOutboundSpoolTests.swift` | 66799 | `da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244` |
-| `Tests/OrchestratorCompletionTests.swift` | 63864 | `d2258c60bd16287345470da810a3ec720c14886fe49da132ff6d92da6054699b` |
 | `Tests/OrchestratorRecoveryTests.swift` | 97866 | `c15ff1acdc556cdf914ad774892c4818117a60709be06086810ce014db3ea753` |

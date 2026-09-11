@@ -1358,12 +1358,13 @@ group("restart maintenance HTTP is machine-only, closed, idempotent and abortabl
     let directory = manager.temporaryDirectory
         .appendingPathComponent("clawdline-restart-route-\(UUID().uuidString)", isDirectory: true)
     try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    let previousStoreURL = Orchestrator.storeURLOverrideForTesting
     Orchestrator.storeURLOverrideForTesting = directory.appendingPathComponent("orchestrator.json")
     Orchestrator.forget()
     defer {
         RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
         Orchestrator.storeSaveInterceptorForTesting = nil
-        Orchestrator.storeURLOverrideForTesting = nil
+        Orchestrator.storeURLOverrideForTesting = previousStoreURL
         Orchestrator.forget()
         try? manager.removeItem(at: directory)
     }
@@ -1493,12 +1494,13 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
                                 isDirectory: true)
     try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
     let store = directory.appendingPathComponent("orchestrator.json")
+    let previousStoreURL = Orchestrator.storeURLOverrideForTesting
     Orchestrator.storeURLOverrideForTesting = store
     Orchestrator.forget()
     defer {
         RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
         Orchestrator.storeSaveInterceptorForTesting = nil
-        Orchestrator.storeURLOverrideForTesting = nil
+        Orchestrator.storeURLOverrideForTesting = previousStoreURL
         Orchestrator.forget()
         try? manager.removeItem(at: directory)
     }

@@ -80,6 +80,7 @@ clawdline_production_sources=(
   Sources/OrchestratorRootAssignmentShape.swift
   Sources/OrchestratorSessionLanding.swift
   Sources/OrchestratorStore.swift
+  Sources/OrchestratorEventPublisher.swift
   Sources/OwnedStorage.swift
   Sources/Panel.swift
   Sources/Paths.swift
@@ -114,6 +115,7 @@ clawdline_production_sources=(
   Sources/RemoteServerSessionLanding.swift
   Sources/RemoteTunnel.swift
   Sources/Schedules.swift
+  Sources/ScheduleService.swift
   Sources/ScheduleWebhook.swift
   Sources/Scratch.swift
   Sources/SessionClosePolicy.swift
@@ -135,6 +137,7 @@ clawdline_production_sources=(
   Sources/Subagents.swift
   Sources/Subprocess.swift
   Sources/Targets.swift
+  Sources/TerminalCommandScheduler.swift
   Sources/Tmux.swift
   Sources/Transcript.swift
   Sources/TranscriptReadCoordinator.swift
@@ -220,6 +223,7 @@ clawdline_test_sources=(
   Tests/ProjectTimelineTests.swift
   Tests/VerificationLedgerTests.swift
   Tests/VerificationRunLedgerTests.swift
+  Tests/W2ApplicationOwnershipTests.swift
   Tests/main.swift
 )
 

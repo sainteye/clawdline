@@ -637,6 +637,13 @@ let expectedOrderedTestGroupTitles: [String] = [
     "delivery-ref observation keeps absent separate from unreadable at the production git seam",
     "a sweep that cannot prove it leaves the record exactly as it found it",
     "a settled landing is replayed, corrected against the same target, or refused — never ok in vain",
+    "ScheduleService owns the schedule-beat tables and their limits/order",
+    "ScheduleService's beat-overlap counter and inventory fingerprints",
+    "OrchestratorEventPublisher coalesces the completion pump and cancels stale generations",
+    "OrchestratorEventPublisher's activity-turn clock advances only on a new working/waiting turn",
+    "TerminalCommandScheduler enforces total depth, per-channel depth and nested reservation",
+    "Orchestrator and RemoteServer keep every W2-1 legacy facade name, delegating to its new owner",
+    "Orchestrator.swift no longer declares the W2-1 state it handed to its new owners",
 ]
 
 func validateExecutedTestGroupManifest() {

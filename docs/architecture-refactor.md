@@ -604,10 +604,6 @@ move it; the counts may only fall.
 
 | Region (function) | State it guards | Next boundary |
 |---|---|---|
-| schedule removal, schedule inventory ×2, manual run, terminal-admission retry, stale-fire skip, dispatch settlement, `handledScheduleFireForTesting` — 8 | `handledScheduleFires`, `pendingScheduleFires`, `lastMissedScheduleFires`, `dispatchingSchedules`, `invalidScheduleFingerprints` | W2-1 scheduling (Cut 3's schedule owner) |
-| `scheduleCompletionPump`, `completionPump` ×3, `completionAttempt`'s generation check — 5 | `completionPumpScheduled`, `completionPumpGeneration` | W2-1 event publication |
-| `beat`'s in-flight counter — 1 | `beatsInFlight` | W2-1 scheduling |
-| `activityGeneration(ofTerminal:)` — 1 | `sessionActivityGenerations` (also written by `noteActivityLocked` inside other holds) | W2-1 event publication |
 | closeability read counter ×2 — 2 | `closeabilityRegistryReadCountForTesting` | W2-2 command admission (the closeability query) |
 | `readResult`'s bad-secret record — 1 | `badResults` | W2-2 command admission (result intake) |
 | `dispatchToken()`, `archiveKey()` — 2, **reading and writing their files inside the hold** | the orchestrator token and archive-key files | W1-5 persistence health: an unreadable file is replaced by a fresh mint today |
@@ -615,6 +611,36 @@ move it; the counts may only fall.
 | `Coordinator.swift` restart maintenance: begin ×2, advance ×2, abort ×2, current record, admission check, resume — 9 | `restartReceipt` | W2-2 command admission (restart maintenance) |
 | `scheduledResumeTitle` → `availableScheduledSessionID`: `fileExists`, transcript ownership, `Codex.head` — **inside the task door** | task rows | W2-2 command admission (the place-resume query): take rows in the door, probe outside, revalidate |
 | `tasksUnder` (root-close cascade) → `provenChildSessionID` — **inside the task door** | task rows | W2-2 command admission (session close): the same shape |
+
+**W2-1 closed its fifteen rows (`Sources/ScheduleService.swift`, `Sources/OrchestratorEventPublisher.swift`).**
+The nine scheduling regions (schedule removal, schedule inventory ×2, manual run,
+terminal-admission retry, stale-fire skip, dispatch settlement, `handledScheduleFireForTesting`,
+`beat`'s in-flight counter) and six event-publication regions (`scheduleCompletionPump`,
+`completionPump` ×3, `completionAttempt`'s generation check, `activityGeneration(ofTerminal:)`)
+moved with their six collections — `handledScheduleFires`, `pendingScheduleFires`,
+`lastMissedScheduleFires`, `dispatchingSchedules`, `invalidScheduleFingerprints`, `beatsInFlight`
+to `ScheduleService`; `completionPumpScheduled`, `completionPumpGeneration`,
+`sessionActivityGenerations`, `sessionActivityClasses` to `OrchestratorEventPublisher` — both
+still reached through the same `OrchestratorRegistry.lock`, via named transitions where a bare
+`lock.lock()` used to sit and `Locked`-suffixed passthroughs (the same unchecked convention
+`noteActivityLocked` already used) where a call site was already inside
+`OrchestratorRegistry.withTaskRecords`/`withSessionRecords`. Every schedule route, `beat`'s control
+flow, every audit line and every test-facing name (`Orchestrator.handledScheduleFireForTesting`,
+`Orchestrator.activityGeneration(ofTerminal:)`, `Orchestrator.scheduleRunnerForTesting`, …) is
+unchanged. `direct_registry_lock_sites` in `tools/check-architecture-boundaries.sh` fell from 17 to
+2 — both remaining sites are the closeability read counter above, explicitly W2-2's.
+
+**The pre-existing bounded terminal mutation lane also gained an owner, outside that count.**
+`Sources/TerminalCommandScheduler.swift` takes over `RemoteServer`'s admission state (total depth
+8, per-channel depth 2, nested-inline reservation accounting) and its restart-maintenance
+rejection/drain wrapper (`setRestartMaintenance`, `terminalMaintenanceRefusal`,
+`terminalDrainSnapshot`), which used their own dedicated `terminalAdmissionLock` rather than the
+shared registry lock and so were never counted among the 30 above. Every legacy facade name on
+`RemoteServer` is unchanged; `ProjectBoardWorkflowHTTP.swift` and every existing test call them the
+same way. The restart-*receipt* persistence this wrapper calls into
+(`Orchestrator.beginRestartMaintenance`/`advanceRestartMaintenance`/`abortRestartMaintenance`,
+`restartReceipt`, the nine `Coordinator.swift` `extension Orchestrator` sites in the table above)
+stays W2-2's; this slice did not touch it.
 
 Schema v1, the `tasks` key and its codec, the single `NSLock`, the rate and capacity limits,
 idempotent replays and every `Orchestrator` facade are unchanged, so rollback is reverting the
@@ -723,6 +749,19 @@ Expected end state: `Orchestrator.swift` near 11,000 lines, and — more importa
 schedules, handoffs and coordination waits each have somewhere to go, so the next feature stops
 paying rent in the frozen file.
 
+**W2-1 landed a narrower slice of this, not the whole of Cut 3.** `handledScheduleFires`,
+`pendingScheduleFires`, `lastMissedScheduleFires`, `dispatchingSchedules`,
+`invalidScheduleFingerprints` and `beatsInFlight` moved to `ScheduleService.swift`, closing the
+nine bare-lock regions the table above names for them. `scheduleWriteTimes` and the other 33
+schedule functions (route bodies, the parser, the inventory scan's filesystem walk, `dispatch(_:)`,
+`sendSchedulePush`, …) did not move: none of them was a bare-lock region on its own — most already
+reach state through `OrchestratorRegistry.withTaskRecords` or touch no shared state at all — and
+moving them was explicitly out of this slice's scope (`docs/architecture-refactor.md`'s own bare-lock
+table is what bounded it, not a line count). `Orchestrator.swift` fell to 10,661 lines from this
+slice alone; the further ~600 a full Cut 3 would move remain a follow-on, tracked by
+`ScheduleService.swift` currently declaring state and nine transitions rather than the full
+34-function section.
+
 ### Splittability is a property of variable scope, not of size
 
 `tools/` gained a mechanical splitter during the CloudAccountTests work: it takes a run of
@@ -784,11 +823,11 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 629 | `Tests/TestGroupManifest.swift`, counted by the guard |
-| ordered runners | 49 | `Tests/main.swift`, counted by the guard |
-| suite files | 62 | `Tests/*Tests.swift`, counted by the guard |
-| `Orchestrator.swift` ceiling | 10,718 | the ratchet in `tools/check-architecture-boundaries.sh` |
-| `RemoteServer.swift` ceiling | 5,831 | the receipt in `tools/check-architecture-boundaries.sh` |
+| ordered groups | 636 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered runners | 50 | `Tests/main.swift`, counted by the guard |
+| suite files | 63 | `Tests/*Tests.swift`, counted by the guard |
+| `Orchestrator.swift` ceiling | 10,661 | the ratchet in `tools/check-architecture-boundaries.sh` |
+| `RemoteServer.swift` ceiling | 5,741 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->
 

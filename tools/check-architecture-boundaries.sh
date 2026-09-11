@@ -217,7 +217,15 @@ main_lines=$(line_count Tests/main.swift)
 # the serialize/claims/root-key queries and the terminal index (`reindex`) into the owner, where
 # the brief put them, took 103 back, and restoring the one-line `records()` spelling the guard
 # below pins took one more. 10,718 is measured on this candidate, without headroom.
-orchestrator_ceiling=10718
+# W2-1 closes the nine scheduling and six event-publication bare-lock regions the table below
+# names, moving `handledScheduleFires`/`pendingScheduleFires`/`lastMissedScheduleFires`/
+# `dispatchingSchedules`/`invalidScheduleFingerprints`/`beatsInFlight` to `ScheduleService` and
+# `completionPumpScheduled`/`completionPumpGeneration`/`sessionActivityGenerations`/
+# `sessionActivityClasses` to `OrchestratorEventPublisher`, both reached through the same shared
+# `OrchestratorRegistry.lock`. Every schedule route, `beat`'s control flow and every audit line
+# stay here, now calling the new owners instead of the state directly. Relocation, not a feature,
+# so the ceiling falls: 10,661 is measured on this candidate, without headroom.
+orchestrator_ceiling=10661
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -419,7 +427,13 @@ fi
 # their bounded payload/protocol implementations remain outside this router. Measured on this tree.
 # Combined Timeline/Board candidate on 9f115484: measured 5,831 lines. Timeline adds
 # only bounded-lane route wiring; Cloud backpressure/resync remains intact.
-remote_server_ceiling=5831
+# W2-1 moves the bounded terminal mutation lane's state and admission logic out into
+# `Sources/TerminalCommandScheduler.swift`, leaving every route body and every legacy facade name
+# (`enqueueTerminalCommand`, `terminalOutstandingForTesting`, `terminalDrainSnapshot`,
+# `setRestartMaintenance`, `terminalMaintenanceRefusal`) as a thin delegating wrapper. A
+# relocation, so the ceiling falls with it rather than being absorbed as headroom: 5,741 is
+# measured on this candidate.
+remote_server_ceiling=5741
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -485,7 +499,10 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # runner, keeping both tests out of already frozen 2,000-line suites.
 # Combined Timeline and workflow-presentation runners, measured from Tests/main.swift.
 # 49 with W1-5's cohesive store-health/corruption runner, kept out of the frozen recovery suite.
-runner_count_expected=49
+# 50 with W2-1's owner-uniqueness runner: `ScheduleService`, `OrchestratorEventPublisher` and
+# `TerminalCommandScheduler` each get proved directly rather than only through whatever paths the
+# suites that already existed happened to exercise.
+runner_count_expected=50
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -686,7 +703,8 @@ done
 # One owner for the number, for the reason written above the runner count.
 # Combined Timeline and workflow-presentation suite files, measured from Tests/ inventory.
 # 62 with W1-5's store-health/corruption suite.
-suite_count_expected=62
+# 63 with Tests/W2ApplicationOwnershipTests.swift, W2-1's owner-uniqueness suite.
+suite_count_expected=63
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's held-lock doors are closed. `withTransactionOnHeldLock` and its two adapters,
@@ -722,11 +740,15 @@ task_door_control=$(cat Sources/*.swift | grep -vE '^[[:space:]]*(//|/\*|\*)' \
 # docs/architecture-refactor.md names every region's owner and next boundary (W1-5, W2-1 or W2-2).
 # W1-3 took the count from 160 to 123 across the three files that took the registry lock directly
 # (Orchestrator 153 -> 116, Planning 4, SessionLanding 3); W1-4 took it to 21, all in
-# Orchestrator.swift. It may only fall.
+# Orchestrator.swift. By this measurement the count had already fallen to 17 before W2-1 (a prior
+# delivery's own reduction this history was not updated for). W2-1 closes the nine scheduling and
+# six event-publication regions the docs/architecture-refactor.md table names for it, taking bare
+# `lock.lock()` in these three files from 17 to 2 — both remaining sites are
+# `closeabilityRegistryReadCountForTesting`, explicitly W2-2's. It may only fall.
 direct_registry_lock_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift Sources/OrchestratorSessionLanding.swift \
   | grep -c 'lock\.lock()' || true)
-[ "$direct_registry_lock_sites" -le 21 ] \
-  || architecture_guard_fail "the files that take the registry lock directly have $direct_registry_lock_sites bare lock.lock() sites; the ratchet is 21 and may only fall — reach registry state through an OrchestratorRegistry door, and move residual state to the owner docs/architecture-refactor.md names for it"
+[ "$direct_registry_lock_sites" -le 2 ] \
+  || architecture_guard_fail "the files that take the registry lock directly have $direct_registry_lock_sites bare lock.lock() sites; the ratchet is 2 and may only fall — reach registry state through an OrchestratorRegistry door, and move residual state to the owner docs/architecture-refactor.md names for it"
 [ "$direct_registry_lock_sites" -gt 0 ] \
   || architecture_guard_fail "no bare lock.lock() site was found; either the last residual region is gone (delete this ratchet with it) or the pattern stopped matching"
 

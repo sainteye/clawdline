@@ -70,7 +70,9 @@ enum Orchestrator {
         case bad(String)
     }
 
-    private struct InvalidSchedule {
+    // Internal rather than private: `ScheduleService.recordInvalidFingerprints(_:)` takes this
+    // type across the file boundary now that it owns the fingerprint table. Nothing else widens.
+    struct InvalidSchedule {
         let file: String
         let error: String
         let kind: String
@@ -632,12 +634,7 @@ enum Orchestrator {
         // an entry out of them — the id was a filename, and filenames used to only appear. An id
         // that comes back later, from a file somebody restores, would otherwise inherit a
         // handled occurrence and a "last missed" from a schedule that is not this one.
-        lock.lock()
-        handledScheduleFires.removeValue(forKey: id)
-        pendingScheduleFires.removeValue(forKey: id)
-        lastMissedScheduleFires.removeValue(forKey: id)
-        invalidScheduleFingerprints.removeValue(forKey: filename)
-        lock.unlock()
+        ScheduleService.forgetSchedule(id: id, filename: filename)
         RemoteAuth.audit("orchestrator.schedule.deleted", ["schedule": id, "ok": "1"])
         return .ok(["ok": true, "deleted": id])
     }
@@ -686,7 +683,7 @@ enum Orchestrator {
             out["next_fire"] = Int(next.timeIntervalSince1970)
         }
         let (snapshots, missed) = OrchestratorRegistry.withTaskRecords { records in
-            (records.taskValues(), lastMissedScheduleFires[schedule.id])
+            (records.taskValues(), ScheduleService.lastMissedLocked(schedule.id))
         }
         let runs = snapshots.filter { $0.scheduleID == schedule.id }
             .sorted { $0.created > $1.created }
@@ -773,7 +770,7 @@ enum Orchestrator {
         let manager = FileManager.default
         guard let files = try? manager.contentsOfDirectory(at: scheduleDirectory,
             includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else {
-            lock.lock(); invalidScheduleFingerprints = [:]; lock.unlock()
+            ScheduleService.clearInvalidFingerprints()
             return ScheduleInventory(valid: [], invalid: [])
         }
         var found: [Schedule] = []
@@ -810,11 +807,7 @@ enum Orchestrator {
                     notifyOnFailure: scheduleBool(obj["notify_on_failure"]) ?? true))
             }
         }
-        let fingerprints = Dictionary(uniqueKeysWithValues: invalid.map { ($0.file, $0.fingerprint) })
-        lock.lock()
-        let newlyInvalid = invalid.filter { invalidScheduleFingerprints[$0.file] != $0.fingerprint }
-        invalidScheduleFingerprints = fingerprints
-        lock.unlock()
+        let newlyInvalid = ScheduleService.recordInvalidFingerprints(invalid)
         for item in newlyInvalid {
             RemoteAuth.audit("orchestrator.schedule.invalid",
                              ["file": item.file, "why": item.error, "kind": item.kind])
@@ -856,7 +849,7 @@ enum Orchestrator {
     static func scheduleRecords(now: Date = Date()) -> [[String: Any]] {
         let inventory = scheduleInventory()
         let (snapshots, missedSnapshots) = OrchestratorRegistry.withTaskRecords { records in
-            (records.taskValues(), lastMissedScheduleFires)
+            (records.taskValues(), ScheduleService.lastMissedTableLocked())
         }
         let valid = inventory.valid.map { schedule -> [String: Any] in
             var out: [String: Any] = ["id": schedule.id, "title": schedule.title,
@@ -946,12 +939,8 @@ enum Orchestrator {
                             + "\(Int(fired.timeIntervalSince1970)). Make a new one.")
         }
         let admitted = OrchestratorRegistry.withTaskRecords { records -> Bool in
-            if records.hasActiveScheduleTask(id) || dispatchingSchedules.contains(id)
-                || pendingScheduleFires[id] != nil {
-                return false
-            }
-            dispatchingSchedules.insert(id)
-            return true
+            ScheduleService.admitManualRunLocked(
+                id: id, hasActiveScheduleTask: records.hasActiveScheduleTask(id))
         }
         guard admitted else {
             return .refused(409, "schedule_active",
@@ -959,14 +948,10 @@ enum Orchestrator {
         }
         RemoteAuth.audit("orchestrator.schedule.run", ["schedule": id, "how": "manual"])
         let reply = scheduleRunnerForTesting?(schedule) ?? dispatch(schedule)
-        lock.lock()
-        dispatchingSchedules.remove(id)
-        var consumed: Date?
-        if case .ok = reply, let fire = latestFire(of: schedule, at: Date()) {
-            handledScheduleFires[id] = fire
-            consumed = fire
-        }
-        lock.unlock()
+        let succeeded: Bool
+        if case .ok = reply { succeeded = true } else { succeeded = false }
+        let consumed = ScheduleService.settleManualRun(
+            id: id, succeeded: succeeded, fire: latestFire(of: schedule, at: Date()))
         // Outside the lock, and only for an occurrence a run really consumed: a validation press
         // before the scheduled time does not consume the upcoming one, so it does not spend a
         // one-shot either.
@@ -979,14 +964,13 @@ enum Orchestrator {
         for schedule in schedules() where schedule.enabled {
             guard let fire = latestFire(of: schedule, at: now) else { continue }
             let decided = OrchestratorRegistry.withTaskRecords { records -> ScheduleAction? in
-                if handledScheduleFires[schedule.id] == fire
-                    || pendingScheduleFires[schedule.id] == fire {
+                if ScheduleService.alreadyDecidedLocked(scheduleID: schedule.id, fire: fire) {
                     return nil
                 }
                 let matching = records.taskValues().filter { $0.scheduleID == schedule.id }
                 let latest = matching.max(by: { $0.created < $1.created })
                 let active = matching.contains { !$0.state.isTerminal }
-                    || dispatchingSchedules.contains(schedule.id)
+                    || ScheduleService.isDispatchingLocked(schedule.id)
                 let action = scheduleAction(now: now, fire: fire,
                                             catchUpHours: schedule.catchUpHours,
                                             lastRunCreated: latest?.created,
@@ -999,10 +983,10 @@ enum Orchestrator {
                 // is not one of them: nothing missed it, so it leaves no `last_missed_at` behind
                 // for the list to draw and nothing to audit.
                 if action == .run {
-                    pendingScheduleFires[schedule.id] = fire
+                    ScheduleService.recordRunDecidedLocked(scheduleID: schedule.id, fire: fire)
                 } else if action == .active || action == .missed {
-                    handledScheduleFires[schedule.id] = fire
-                    if action == .missed { lastMissedScheduleFires[schedule.id] = fire }
+                    ScheduleService.recordHandledLocked(
+                        scheduleID: schedule.id, fire: fire, missed: action == .missed)
                 }
                 return action
             }
@@ -1015,11 +999,8 @@ enum Orchestrator {
                     let admitted = RemoteServer.shared.enqueueTerminalCommand(
                         channel: "schedule:\(schedule.id)", work)
                     if !admitted {
-                        lock.lock()
-                        if pendingScheduleFires[schedule.id] == fire {
-                            pendingScheduleFires.removeValue(forKey: schedule.id)
-                        }
-                        lock.unlock()
+                        ScheduleService.releasePendingFireIfCurrent(
+                            scheduleID: schedule.id, fire: fire)
                         RemoteAuth.audit("orchestrator.schedule.retry",
                                          ["schedule": schedule.id, "why": "terminal_busy"])
                     }
@@ -1055,23 +1036,16 @@ enum Orchestrator {
         // wait can move this occurrence off the file, and dispatching it then runs a time nobody
         // is scheduled for and stamps the old day onto the new one.
         guard let fresh = scheduleNamed(schedule.id), !scheduleFireIsStale(fresh, fire: fire) else {
-            lock.lock()
-            pendingScheduleFires.removeValue(forKey: schedule.id)
-            lock.unlock()
+            ScheduleService.clearPendingFire(scheduleID: schedule.id)
             RemoteAuth.audit("orchestrator.schedule.skipped",
                              ["schedule": schedule.id,
                               "why": scheduleNamed(schedule.id) == nil ? "removed" : "retimed"])
             return
         }
         let admitted = OrchestratorRegistry.withTaskRecords { records -> Bool in
-            pendingScheduleFires.removeValue(forKey: schedule.id)
-            if records.hasActiveScheduleTask(schedule.id)
-                || dispatchingSchedules.contains(schedule.id) {
-                handledScheduleFires[schedule.id] = fire
-                return false
-            }
-            dispatchingSchedules.insert(schedule.id)
-            return true
+            ScheduleService.admitTimerFireLocked(
+                scheduleID: schedule.id,
+                hasActiveScheduleTask: records.hasActiveScheduleTask(schedule.id), fire: fire)
         }
         guard admitted else {
             RemoteAuth.audit("orchestrator.schedule.skipped",
@@ -1087,10 +1061,7 @@ enum Orchestrator {
         if case .refused(_, let code, _, _) = reply { overCapacity = code == "over_capacity" }
         else { overCapacity = false }
 
-        lock.lock()
-        dispatchingSchedules.remove(schedule.id)
-        if !overCapacity { handledScheduleFires[schedule.id] = fire }
-        lock.unlock()
+        ScheduleService.settleDispatch(scheduleID: schedule.id, fire: fire, overCapacity: overCapacity)
 
         // Only a session that really opened spends a one-shot. A dispatch this Mac refused
         // consumes the occurrence in memory exactly as it does for a recurring schedule and
@@ -1330,17 +1301,14 @@ enum Orchestrator {
     static var restartReceipt: RestartReceipt?
     // Handoff envelopes, handoff labels, Root Assignments and coordination waits are owned by
     // `OrchestratorRegistry` and reached through its coordination-record capability.
-    /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
-    /// overlap that should not be possible; neither changes what a walk does.
-    private static var beatsInFlight = 0
+    /// Which walk this is. Exists to catch the overlap that should not be possible; it does not
+    /// change what a walk does. The in-flight counter itself is `ScheduleService.beatsInFlight`,
+    /// which closes over this same clock's beat sequence via `beginBeatLocked()`/`endBeat()`.
     private static var beatSequence = 0
-    /// A skipped or missed occurrence has no task row to remember it. This prevents one audit and
-    /// push per minute while the process stays up; a restart deliberately re-evaluates catch-up.
-    private static var handledScheduleFires: [String: Date] = [:]
-    private static var pendingScheduleFires: [String: Date] = [:]
-    private static var lastMissedScheduleFires: [String: Date] = [:]
-    private static var dispatchingSchedules: Set<String> = []
-    private static var invalidScheduleFingerprints: [String: String] = [:]
+    // The five schedule-beat collections (`handledScheduleFires`, `pendingScheduleFires`,
+    // `lastMissedScheduleFires`, `dispatchingSchedules`, `invalidScheduleFingerprints`) are owned
+    // by `ScheduleService`; see its header for why and `docs/architecture-refactor.md`'s W2-1
+    // scheduling row for the nine bare-lock regions it closed.
     private static let scheduleQueue = DispatchQueue(
         label: "com.tsunamiworks.clawdline.orchestrator.schedules", qos: .utility)
     static var scheduleRunnerForTesting: ((Schedule) -> Reply)?
@@ -2229,8 +2197,9 @@ enum Orchestrator {
     /// Deliberately never reset when the process in a terminal changes: a monotone counter that
     /// is never reused cannot make an old attestation match a new process by arithmetic, and the
     /// full identity comparison refuses that case anyway.
-    private static var sessionActivityGenerations: [String: Int] = [:]
-    private static var sessionActivityClasses: [String: String] = [:]
+    // The activity-turn clock (`sessionActivityGenerations`/`sessionActivityClasses`) is owned by
+    // `OrchestratorEventPublisher`; see its header for why and `docs/architecture-refactor.md`'s
+    // W2-1 event-publication row for the bare-lock region it closed.
     private static var closureAttestations: [String: ClosureAttestation] = [:]
     /// Machine-wide obligation clock. It advances only when the *content* of the obligation
     /// evidence changes — see ``obligationEvidenceFingerprint(in:)`` — so writing an attestation,
@@ -2273,19 +2242,13 @@ enum Orchestrator {
     /// Caller holds `lock`.
     @discardableResult
     private static func noteActivityLocked(terminalID: String, state: SessionState) -> Bool {
-        let now = activityClass(of: state)
-        let before = sessionActivityClasses[terminalID]
-        guard before != now else { return false }
-        sessionActivityClasses[terminalID] = now
-        guard now == "working" || now == "waiting" else { return true }
-        sessionActivityGenerations[terminalID] = (sessionActivityGenerations[terminalID] ?? 0) + 1
-        return true
+        OrchestratorEventPublisher.noteActivityLocked(
+            terminalID: terminalID, activityClass: activityClass(of: state))
     }
 
     static func activityGeneration(ofTerminal terminalID: String) -> Int {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return sessionActivityGenerations[terminalID] ?? 0
+        return OrchestratorEventPublisher.activityGeneration(ofTerminal: terminalID)
     }
 
     static func currentObligationGeneration() -> Int {
@@ -2617,7 +2580,7 @@ enum Orchestrator {
                 index: index,
                 selfStates: records.sessionRecords.sessionSelfStatesSnapshot(),
                 attestations: closureAttestations,
-                activityGenerations: sessionActivityGenerations,
+                activityGenerations: OrchestratorEventPublisher.activitySnapshotLocked().generations,
                 obligationGeneration: obligationGeneration)
         }
     }
@@ -2722,7 +2685,8 @@ enum Orchestrator {
         }
         let outcome = OrchestratorRegistry.withTaskRecords { records -> Outcome in
             settleObligationGeneration(records)
-            let currentActivity = sessionActivityGenerations[identity.terminalID] ?? 0
+            let currentActivity = OrchestratorEventPublisher.activityGenerationLocked(
+                ofTerminal: identity.terminalID)
             guard let claimedGeneration, claimedGeneration == currentActivity else {
                 return .answered(.refused(
                     status: 409, code: "closure_generation_stale",
@@ -6566,8 +6530,7 @@ enum Orchestrator {
                 snapshot: watchSnapshot, identities: executorIdentities, in: records)
             beatSequence += 1
             let sequence = beatSequence
-            let overlapping = beatsInFlight > 0
-            beatsInFlight += 1
+            let overlapping = ScheduleService.beginBeatLocked()
             let liveIDs = records.taskValues()
                 .filter {
                     !$0.state.isTerminal || $0.closeAt != nil
@@ -6586,7 +6549,7 @@ enum Orchestrator {
         let liveHandoffs = walk.liveHandoffs
         let liveRootAssignments = walk.liveRootAssignments
         defer {
-            lock.lock(); beatsInFlight -= 1; lock.unlock()
+            ScheduleService.endBeat()
         }
         // A tab that has just been seen for the first time is a durable fact, and it is the one
         // that turns a reusable terminal id into an identity. It is written here rather than
@@ -8445,8 +8408,8 @@ enum Orchestrator {
         }
     }
 
-    private static var completionPumpScheduled = false
-    private static var completionPumpGeneration = 0
+    // The pump's coalescing flag and cancellation generation are owned by
+    // `OrchestratorEventPublisher`; see its header for why.
 
     private static func markCompletionEnvelopePersisted(taskID: String, noticeID: String) {
         OrchestratorRegistry.withTaskRecords { records in
@@ -8465,11 +8428,7 @@ enum Orchestrator {
     }
 
     static func scheduleCompletionPump() {
-        lock.lock()
-        guard !completionPumpScheduled else { lock.unlock(); return }
-        completionPumpScheduled = true
-        let generation = completionPumpGeneration
-        lock.unlock()
+        guard let generation = OrchestratorEventPublisher.admitCompletionPump() else { return }
         let work = { completionPump(generation: generation) }
         if let enqueue = completionPumpEnqueuerForTesting {
             enqueue(work)
@@ -8479,13 +8438,9 @@ enum Orchestrator {
     }
 
     private static func completionPump(generation: Int, now: Date = Date()) {
-        lock.lock()
-        guard generation == completionPumpGeneration else { lock.unlock(); return }
-        lock.unlock()
+        guard OrchestratorEventPublisher.isLivePumpGeneration(generation) else { return }
         defer {
-            lock.lock()
-            if generation == completionPumpGeneration { completionPumpScheduled = false }
-            lock.unlock()
+            OrchestratorEventPublisher.clearPumpScheduledIfLive(generation)
         }
         guard Config.shared.orchestratorNotifyRoot else { return }
         // Every scheduling site already has a loaded registry. Calling `load()` here would let a
@@ -8507,10 +8462,7 @@ enum Orchestrator {
         }
         let inventory = due.isEmpty ? [] : rootTargets()
         for (id, noticeID) in due {
-            lock.lock()
-            let currentGeneration = completionPumpGeneration
-            lock.unlock()
-            guard currentGeneration == generation else { break }
+            guard OrchestratorEventPublisher.isLivePumpGeneration(generation) else { break }
             let attempt = {
                 _ = completionAttempt(
                     taskID: id, now: Date(), expectedNoticeID: noticeID,
@@ -8547,10 +8499,9 @@ enum Orchestrator {
                                   expectedPumpGeneration: Int? = nil,
                                   deliver: (Task, String) -> CompletionTransportResult) -> Bool {
         if let expectedPumpGeneration {
-            lock.lock()
-            let isCurrentPump = expectedPumpGeneration == completionPumpGeneration
-            lock.unlock()
-            guard isCurrentPump else { return false }
+            guard OrchestratorEventPublisher.isLivePumpGeneration(expectedPumpGeneration) else {
+                return false
+            }
         }
         let task: Task?
         if let expectedPumpGeneration {
@@ -8558,7 +8509,8 @@ enum Orchestrator {
             // Result receipts are reconciled at finalization, startup, and the explicit endpoint;
             // delivery itself only consumes the already-loaded durable envelope.
             task = OrchestratorRegistry.withTaskRecords { records -> Task? in
-                expectedPumpGeneration == completionPumpGeneration ? records.task(taskID) : nil
+                OrchestratorEventPublisher.isLivePumpGenerationLocked(expectedPumpGeneration)
+                    ? records.task(taskID) : nil
             }
         } else {
             if !reconcileResultReceipts(taskID: taskID, limit: 1).isEmpty { _ = save() }
@@ -8579,8 +8531,7 @@ enum Orchestrator {
                 message: "No root acknowledgement arrived within the bounded retry budget.",
                 at: now)
             let exhaustedStored = OrchestratorRegistry.withTaskRecords { records -> Bool in
-                guard expectedPumpGeneration == nil
-                        || expectedPumpGeneration == completionPumpGeneration,
+                guard OrchestratorEventPublisher.matchesCurrentPumpGenerationLocked(expectedPumpGeneration),
                       let current = records.task(taskID),
                       current.completionDelivery?.noticeID == delivery.noticeID,
                       current.completionDelivery?.state != .acknowledged else { return false }
@@ -8599,7 +8550,7 @@ enum Orchestrator {
         let advanced = completionTransition(delivery, at: now, result: result)
         let advancedStored = OrchestratorRegistry.withTaskRecords { records -> Bool in
             if let expectedPumpGeneration,
-               expectedPumpGeneration != completionPumpGeneration {
+               !OrchestratorEventPublisher.isLivePumpGenerationLocked(expectedPumpGeneration) {
                 return false
             }
             guard let current = records.task(taskID),
@@ -9629,8 +9580,7 @@ enum Orchestrator {
     }
 
     static func handledScheduleFireForTesting(_ id: String) -> Date? {
-        lock.lock(); defer { lock.unlock() }
-        return handledScheduleFires[id]
+        ScheduleService.handledFireForTesting(id)
     }
 
     /// The terminal a task belongs under. Supplying the process-bound identity reader keeps the
@@ -10226,8 +10176,8 @@ enum Orchestrator {
             records.sessionRecords.replacePersistentRecords(
                 .init(deliveries: deliveries, selfStates: selfStates))
             closureAttestations = attestations
-            sessionActivityGenerations = activity
-            sessionActivityClasses = activityClasses
+            OrchestratorEventPublisher.installActivityLocked(
+                generations: activity, classes: activityClasses)
             restartReceipt = restart
             obligationGeneration = loadedGeneration
             obligationFingerprint = loadedFingerprint
@@ -10282,10 +10232,11 @@ enum Orchestrator {
                 .map { OrchestratorStore.stored($0) }
             let closureRows = closureAttestations.values
                 .sorted { $0.identity.terminalID < $1.identity.terminalID }.map { stored($0) }
-            let activityRows = sessionActivityGenerations.keys.sorted().map { terminalID in
+            let activitySnapshot = OrchestratorEventPublisher.activitySnapshotLocked()
+            let activityRows = activitySnapshot.generations.keys.sorted().map { terminalID in
                 ["terminal_id": terminalID,
-                 "generation": sessionActivityGenerations[terminalID] ?? 0,
-                 "class": sessionActivityClasses[terminalID] ?? "unknown"] as [String: Any]
+                 "generation": activitySnapshot.generations[terminalID] ?? 0,
+                 "class": activitySnapshot.classes[terminalID] ?? "unknown"] as [String: Any]
             }
             var obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
                                       "handoff_labels": handoffLabelRows,
@@ -10637,8 +10588,6 @@ enum Orchestrator {
             records.sessionRecords.removeAllHandoffDeliveries()
             records.sessionRecords.removeAllPersistentRecords()
             closureAttestations = [:]
-            sessionActivityGenerations = [:]
-            sessionActivityClasses = [:]
             obligationGeneration = 0; obligationFingerprint = ""; obligationFingerprintDirty = true
             observedTaskMutationGeneration = -1
             observedSessionSelfStateMutationGeneration = -1
@@ -10648,11 +10597,7 @@ enum Orchestrator {
             records.registry.removeAllHandoffTitles()
             records.sessionRecords.removeAllTaskSecrets()
             OrchestratorResultFinalizer.reset()
-            handledScheduleFires = [:]
-            pendingScheduleFires = [:]
-            lastMissedScheduleFires = [:]
-            dispatchingSchedules = []
-            invalidScheduleFingerprints = [:]
+            ScheduleService.resetForTestingLocked()
             scheduleRunnerForTesting = nil
             scheduleDispatchEnqueuerForTesting = nil
             completionPumpEnqueuerForTesting = nil
@@ -10660,8 +10605,7 @@ enum Orchestrator {
             storeProtectionInterceptorForTesting = nil
             childIdentityRefreshForTesting = nil
             rootIdentityEvidenceForTesting = nil
-            completionPumpScheduled = false
-            completionPumpGeneration += 1
+            OrchestratorEventPublisher.resetForTestingLocked()
             workspaceOverlapObserverForTesting = nil
             rootNotificationObserverForTesting = nil
             rootAssignmentAuditObserverForTesting = nil
