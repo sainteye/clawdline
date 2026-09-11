@@ -652,6 +652,13 @@ let expectedOrderedTestGroupTitles: [String] = [
     "worktree cleanup rechecks exact destructive targets immediately before each effect",
     "worktree cleanup preserves verifiable bytes first, stops on failed preservation, and replays",
     "worktree lifecycle routes keep cleanup machine-only and Cloud reads settle the closed vocabulary",
+    "host ports: the safe-close lifecycle runs on fake ports and closes only on proved absence",
+    "host ports: TERM and KILL follow one fake process and a replacement is never signalled",
+    "host ports: an unsupported capability is refused by type before any terminal effect",
+    "host ports: the Mac composition keeps every legacy safe-close seam and facade name",
+    "host ports: the Mac file, identity and secret leaves keep absence and failure apart",
+    "host ports: W2-3 correction F3 — loadOrCreate and rotate are closed against real races",
+    "host ports: W2-3 correction F1 — create/capture/reveal/interrupt on fake ports",
 ]
 
 func validateExecutedTestGroupManifest() {

@@ -1,0 +1,19 @@
+# Core/Application candidate manifest — W2-3 correction (F2).
+#
+# Every non-comment, non-blank path below is a file `tools/check-architecture-boundaries.sh`
+# holds to the Core/Application boundary: it must not import AppKit, Security,
+# ServiceManagement, Speech, AVFoundation or Carbon, and it must not spell a platform effect
+# (iTerm2, tmux, the Mac facade, the pasteboard or workspace, the Keychain, a file manager, a
+# subprocess, a signal, a sleep or the wall clock) on a code line. Sources/HostPorts.swift keeps
+# its own stricter check too — imports Foundation and nothing else — because it is where the
+# port contracts and the safe-close lifecycle live; that check is unchanged by this file.
+#
+# This manifest only grows. The guard reads its line count against a floor recorded beside the
+# check; lowering the floor is a decision made in the same change that removes an entry, not a
+# side effect of one going stale. Do not delete a line to make a shrunk candidate set pass —
+# raise the floor next to a stated reason, or restore the entry.
+#
+# What this proves: that the listed files are lexically free of the platform spellings above, on
+# this tree, right now. It does not prove they compile on Linux, and it is not a substitute for
+# tools/ubuntu-core-probe.sh's own manifest or for a real second target/CI once W3 adds one.
+Sources/HostPorts.swift

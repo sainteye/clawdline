@@ -405,11 +405,12 @@ enum StartPoints {
                                     message: problem.message, app: nil)
                 }
             }
-            let opened = ITerm.newTabResult(line: tab)
-            guard case .success(let made) = opened else {
-                let failure: TerminalFailure
-                if case .failure(let problem) = opened { failure = problem }
-                else { fatalError("unreachable terminal result") }
+            let made: TerminalCreated
+            do {
+                made = try HostPorts.mac.terminal.create(.iTermTab(line: tab))
+            } catch {
+                let failure = (error as? TerminalFailure)
+                    ?? TerminalFailure(kind: .io, message: String(describing: error))
                 let modal = failure.kind == .iTermAttention
                 return .refused(status: 502,
                                 code: modal ? "iterm_attention_required" : "terminal_io_failed",
@@ -429,10 +430,23 @@ enum StartPoints {
                                          permission: permission,
                                          addDir: extraDir(addDir),
                                          resume: sessionName(resume))
-            let opened = fixture?.open(chosen, place.path, line)
-                ?? (chosen == .tmuxDetached
-                    ? Tmux.newSessionResult(cwd: place.path, command: line)
-                    : Tmux.newWindowResult(cwd: place.path, command: line))
+            let opened: Result<String, TerminalFailure>
+            if let fixture {
+                opened = fixture.open(chosen, place.path, line)
+            } else {
+                do {
+                    let request: TerminalCreateRequest = chosen == .tmuxDetached
+                        ? .tmuxDetachedSession(cwd: place.path, command: line)
+                        : .tmuxWindow(cwd: place.path, command: line)
+                    let created = try HostPorts.mac.terminal.create(request)
+                    opened = .success(created.id)
+                } catch let failure as TerminalFailure {
+                    opened = .failure(failure)
+                } catch {
+                    opened = .failure(TerminalFailure(kind: .io,
+                                                       message: String(describing: error)))
+                }
+            }
             guard case .success(let pane) = opened else {
                 let message: String
                 if case .failure(let failure) = opened { message = failure.message }

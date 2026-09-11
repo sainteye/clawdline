@@ -513,7 +513,9 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # suites that already existed happened to exercise.
 # 52 with W2-2: `runW2CommandAdmissionTests` (the owner seams) and `runProjectWorktreeLifecycleTests`
 # (the lifecycle owner and its codec), two independent boundaries run after W2-1's owner suite.
-runner_count_expected=52
+# 53 with W2-3's `runHostPortsTests`: the safe-close lifecycle on fake host ports and the Mac
+# composition held to the same decisions, a boundary independent of W2-2's two runners.
+runner_count_expected=53
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -716,7 +718,8 @@ done
 # 62 with W1-5's store-health/corruption suite.
 # 63 with Tests/W2ApplicationOwnershipTests.swift, W2-1's owner-uniqueness suite.
 # 66 with Tests/CloudCommandRefusalTests.swift closing W2-2's typed Cloud refusal proof.
-suite_count_expected=66
+# 67 with Tests/HostPortsTests.swift, W2-3's fake host-port lifecycle suite.
+suite_count_expected=67
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's held-lock doors are closed. `withTransactionOnHeldLock` and its two adapters,
@@ -871,6 +874,105 @@ done
 # governance number into the doc any more; `tools/generate-governance-table.sh` writes what
 # `--emit-governance-table` prints. Every row is now a value against its own rendering, which is a
 # comparison that cannot be satisfied by two people making the same mistake twice.
+# W2-3's host boundary, checked rather than promised. `Sources/HostPorts.swift` is the application
+# side — the port contracts and the safe-close lifecycle that runs only on them — so it imports
+# Foundation and nothing else, and none of its code names a platform effect: iTerm2, tmux, the Mac
+# facade, the pasteboard or workspace, the Keychain, a file manager, a subprocess, a signal, a sleep
+# or the wall clock. Those spellings belong in `Sources/MacHostAdapters.swift`, and the scan is
+# calibrated against that file before its zero for the ports is believed: a pattern that stopped
+# matching would find nothing in either file, and the control is what refuses that.
+#
+# An enum case declaration such as `case kill(pid_t)` names a step, not a call, so declarations are
+# skipped; `case .iterm: return ITerm.close(…)` still starts with a dot and is still counted.
+#
+# The second half pins the migration itself. `Targets.end`, `closeIfAssistantGone` and
+# `waitToBeGoneForTesting` delegate to `TerminalSafeClose` on `HostPorts.mac`; the exact-tty
+# observation, the signal and the backend close they used to perform inline must not come back to
+# `Sources/Targets.swift`, where they would bypass the ports the fake-lifecycle tests prove.
+host_ports_file=Sources/HostPorts.swift
+mac_host_adapters_file=Sources/MacHostAdapters.swift
+{ [ -f "$host_ports_file" ] && [ -f "$mac_host_adapters_file" ]; } \
+  || architecture_guard_fail "$host_ports_file or $mac_host_adapters_file is missing; the host boundary cannot be checked in a file that is not there"
+host_ports_imports=$(grep -E '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]' "$host_ports_file" \
+  | sed -E 's/^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+//; s/[[:space:]]+$//' \
+  | sort -u | tr '\n' ' ')
+[ "$host_ports_imports" = "Foundation " ] \
+  || architecture_guard_fail "$host_ports_file imports '${host_ports_imports% }'; the application side of the host boundary imports Foundation only — put the platform dependency in $mac_host_adapters_file"
+host_code_lines() {
+  grep -vE '^[[:space:]]*(//|/\*|\*)' "$1" | grep -vE '^[[:space:]]*case[[:space:]]+[A-Za-z_][A-Za-z0-9_]*\(' || true
+}
+host_effect_re='(^|[^A-Za-z0-9_])(ITerm|Tmux|Targets|Thread)\.|(^|[^A-Za-z0-9_.])(kill|usleep|shell|osa|Process)\(|(^|[^A-Za-z0-9_.])Date\(\)|(^|[^A-Za-z0-9_])(NSPasteboard|NSWorkspace|FileManager|CloudKeychainStore|SecItem[A-Za-z]*)([^A-Za-z0-9_]|$)'
+host_adapter_effect_lines=$(host_code_lines "$mac_host_adapters_file" | grep -cE "$host_effect_re" || true)
+[ "${host_adapter_effect_lines:-0}" -ge 10 ] \
+  || architecture_guard_fail "the host-effect scan found only ${host_adapter_effect_lines:-0} effect line(s) in $mac_host_adapters_file, which is where they all live; the pattern has stopped recognising them, so its zero for $host_ports_file would mean nothing"
+host_port_effect_lines=$(host_code_lines "$host_ports_file" | grep -cE "$host_effect_re" || true)
+[ "${host_port_effect_lines:-0}" -eq 0 ] \
+  || architecture_guard_fail "$host_ports_file names a platform effect on ${host_port_effect_lines} code line(s); the ports and the lifecycle on them reach the host only through an injected port — move the effect into $mac_host_adapters_file"
+safe_close_effect_re='ITerm\.assistantObservation\(|ITerm\.close\(|Tmux\.close\(|(^|[^A-Za-z0-9_.])kill\('
+safe_close_adapter_lines=$(host_code_lines "$mac_host_adapters_file" | grep -cE "$safe_close_effect_re" || true)
+[ "${safe_close_adapter_lines:-0}" -ge 4 ] \
+  || architecture_guard_fail "the safe-close effect scan found ${safe_close_adapter_lines:-0} of the four Mac leaves (exact-tty observation, kill, iTerm2 close, tmux close) in $mac_host_adapters_file; it no longer recognises them, so its zero for Sources/Targets.swift would mean nothing"
+safe_close_facade_effects=$(host_code_lines Sources/Targets.swift | grep -cE "$safe_close_effect_re" || true)
+[ "${safe_close_facade_effects:-0}" -eq 0 ] \
+  || architecture_guard_fail "Sources/Targets.swift performs a safe-close effect inline on ${safe_close_facade_effects} code line(s); the lifecycle is TerminalSafeClose on HostPorts.mac, and an inline observation, signal or close bypasses the ports its tests prove"
+safe_close_delegations=$(host_code_lines Sources/Targets.swift \
+  | grep -cE 'TerminalSafeClose\.(end|closeIfAssistantGone|waitToBeGone)\(' || true)
+[ "${safe_close_delegations:-0}" -eq 3 ] \
+  || architecture_guard_fail "Sources/Targets.swift delegates to TerminalSafeClose at ${safe_close_delegations:-0} site(s), expected 3 (end, closeIfAssistantGone, waitToBeGoneForTesting)"
+
+# The remaining W2-3 terminal crossings are creation and raw answer/interrupt bytes. Admission,
+# menu parsing and refusal policy stay in StartPoints/Targets, but an admitted platform effect
+# must cross TerminalHost. Calibrate the spellings against the Mac leaf before trusting a zero in
+# application/facade code, then pin the three real delegations (two create branches, one answer
+# byte channel) so a future direct backend call cannot quietly reopen the boundary.
+terminal_migration_effect_re='ITerm\.newTabResult\(|Tmux\.new(Window|Session)Result\(|ITerm\.keystroke\(|Tmux\.keystroke\('
+terminal_migration_adapter_lines=$(host_code_lines "$mac_host_adapters_file" | grep -cE "$terminal_migration_effect_re" || true)
+[ "${terminal_migration_adapter_lines:-0}" -ge 5 ] \
+  || architecture_guard_fail "the terminal create/interrupt effect scan found ${terminal_migration_adapter_lines:-0} Mac leaf line(s), expected at least 5; its zero outside the adapter would not be credible"
+terminal_migration_facade_effects=$(cat Sources/StartPoints.swift Sources/Targets.swift \
+  | host_code_lines /dev/stdin | grep -cE "$terminal_migration_effect_re" || true)
+[ "${terminal_migration_facade_effects:-0}" -eq 0 ] \
+  || architecture_guard_fail "StartPoints/Targets perform ${terminal_migration_facade_effects} terminal create/interrupt effect(s) inline; preserve policy there but delegate admitted effects through TerminalHost"
+terminal_migration_delegations=$(cat Sources/StartPoints.swift Sources/Targets.swift \
+  | grep -cE 'HostPorts\.mac\.terminal\.(create|interrupt)\(' || true)
+[ "${terminal_migration_delegations:-0}" -eq 3 ] \
+  || architecture_guard_fail "StartPoints/Targets delegate create/interrupt through TerminalHost at ${terminal_migration_delegations:-0} site(s), expected 3"
+
+# W2-3 correction, F2: the block above hard-codes one file. That was real coverage for
+# Sources/HostPorts.swift and no ratchet at all for whatever Core/Application candidate is added
+# next — nothing here stopped a reintroduced AppKit/Security/ServiceManagement/Speech/AVFoundation/
+# Carbon import in a new candidate, because nothing knew it was supposed to be one. The fix is a
+# checked-in list this guard walks, with a floor that can only be raised: removing or emptying the
+# manifest is exactly as unguarded as never having it, so both fail closed here rather than
+# quietly measuring zero files and calling that clean.
+#
+# This is a lexical ratchet over import statements and the same platform-effect spellings
+# Sources/HostPorts.swift is already held to above — it proves nothing about Linux, and does not
+# claim to. A real Ubuntu compile receipt is W3's, from a genuine second target or CI, not from
+# this script reading source text.
+core_candidates_file=tools/core-application-candidates.txt
+core_candidate_floor=1
+[ -f "$core_candidates_file" ] \
+  || architecture_guard_fail "$core_candidates_file is missing; the Core/Application candidate manifest must be checked in for this guard to protect anything"
+core_candidate_count=$(grep -vcE '^[[:space:]]*(#|$)' "$core_candidates_file" || true)
+core_candidate_count=${core_candidate_count:-0}
+[ "$core_candidate_count" -ge "$core_candidate_floor" ] \
+  || architecture_guard_fail "$core_candidates_file lists $core_candidate_count candidate(s), below the checked-in floor of $core_candidate_floor; this manifest may only grow — restore the missing entries, or raise the floor in the same change that removes one and say why"
+core_forbidden_imports='AppKit|Security|ServiceManagement|Speech|AVFoundation|Carbon'
+while IFS= read -r candidate; do
+  [ -n "$candidate" ] || continue
+  [ -f "$candidate" ] \
+    || architecture_guard_fail "$core_candidates_file names $candidate, which does not exist in this tree"
+  candidate_imports=$(grep -E '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]' "$candidate" \
+    | sed -E 's/^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+//; s/[[:space:]]+$//' || true)
+  forbidden_hit=$(printf '%s\n' "$candidate_imports" | grep -E "^($core_forbidden_imports)\$" || true)
+  [ -z "$forbidden_hit" ] \
+    || architecture_guard_fail "$candidate imports ${forbidden_hit//$'\n'/, }, which the Core/Application candidate manifest forbids (AppKit/Security/ServiceManagement/Speech/AVFoundation/Carbon); move the platform dependency to a Mac leaf in $mac_host_adapters_file"
+  candidate_effect_lines=$(host_code_lines "$candidate" | grep -cE "$host_effect_re" || true)
+  [ "${candidate_effect_lines:-0}" -eq 0 ] \
+    || architecture_guard_fail "$candidate names a platform effect on ${candidate_effect_lines} code line(s); a Core/Application candidate reaches the host only through an injected port"
+done < <(grep -vE '^[[:space:]]*(#|$)' "$core_candidates_file" || true)
+
 governance_doc=docs/architecture-refactor.md
 governance_marker_open='<!-- clawdline-governance-table:v1 -->'
 governance_marker_close='<!-- /clawdline-governance-table:v1 -->'

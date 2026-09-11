@@ -676,6 +676,101 @@ one set of pins, and splitting the executor from the pins it rechecks would crea
 authority the design exists to prevent. The next cohesive seam is the idempotency ledger, which has
 its own persistence lifetime. `RemoteServer.swift` holds only the lane registration (+17 lines).
 
+**W2-3 introduced the host ports and moved the first lifecycle onto them.** `Sources/HostPorts.swift`
+imports Foundation only and is the application side of the host boundary: the closed
+`HostCapability` vocabulary and its typed `HostCapabilityUnavailable` refusal (code
+`capability_unavailable` — a diagnostic spelling on this machine, not a Cloud wire value); six small
+contracts, `TerminalHost`, `ProcessHost`, `FileSystemHost`, `SecretStore`, `HostClock` and
+`IdentityHost`; the `HostPorts` composition, whose optional ports default to `UnsupportedHost`; and
+`TerminalSafeClose`, the safe-close lifecycle that used to be `Targets.end`,
+`Targets.closeIfAssistantGone` and the private `waitToBeGone`. `Backend`, `TerminalFailure`, the
+inventory value (`TerminalInventory`) and the exact-tty reading (`TerminalProcessObservation`) moved
+with it as the terminal port's vocabulary. `Sources/MacHostAdapters.swift` holds this Mac's leaves —
+`MacTerminalHost`, `MacProcessHost`, `MacFileSystemHost`, `MacHostClock`, `MacIdentityHost`, and
+`CloudKeychainStore` as the secret leaf — and the `HostPorts.mac` composition.
+
+Every facade name is unchanged. `Targets.end`, `closeIfAssistantGone`, `waitToBeGoneForTesting` and
+`stableTerminal` forward; `Targets.Snapshot`, `Targets.Farewell` and `ITerm.TTYAssistantObservation`
+are typealiases for the moved types. No caller changed, and neither did the four suites that drive
+safe close through the legacy `…ForTesting` seams: the Mac leaves read those seams at call time, and
+production never sets one. `CloudKeychainStore` gains its `SecretStore` conformance in the adapter
+file rather than in `Sources/CloudKeys.swift`, because `Tests/keychain-rebuild-focused.mjs` compiles
+that file on its own.
+
+Two behaviours are new, and neither is reachable on this Mac's composition. A lifecycle operation
+asks its composition for every capability it needs before its first effect, so a host that could
+type the quit word but not observe or signal the process is refused with nothing typed; and a port
+that throws `HostCapabilityUnavailable` mid-operation becomes a typed refusal, never a close.
+`HostPorts.mac` provides every capability, so the Mac sequence — inventory, word, wait and
+escalation, inventory, exact-tty proof, close — and every sentence it returns are what the facade
+returned before. One test seam had widened — the Mac terminal leaf's close honoured
+`Targets.terminalCloseForTesting` for `end` as well as for `closeIfAssistantGone`, which it had not
+before this port existed — and the W2-3 correction below restored it to its original scope.
+
+`tools/check-architecture-boundaries.sh` holds the boundary. `HostPorts.swift` may import only
+Foundation and may name no platform effect on a code line, calibrated against the adapter file so a
+pattern that stopped matching cannot report a clean zero; `Targets.swift` may not perform the
+exact-tty observation, the signal or the backend close inline, and must delegate at its three sites.
+
+**A sealed review (`/tmp/.clawdline/5f1b0a94-cb1c-44b7-99f3-4684a2155d98/artifacts/W2_3_REVIEW.md`)
+found eight findings in the paragraphs above, and the correction wave that follows closes all eight
+in `artifacts/W2_3_CORRECTION.md`.** In order of what changed:
+
+- **F1 — the terminal surface was safe-close-sized, not application-sized.** `TargetSession`'s
+  portable identity (the stored properties, `isAssistant`, `isClaude`, `coordinate`) moved from
+  `Sources/ITerm.swift` into `Sources/HostPorts.swift`; its display/naming vocabulary
+  (`label`, `displayLabel` and the rest, which reach `SessionWatch`/`CodexNaming`/`Config`/
+  `Orchestrator`) stays behind as an `extension TargetSession`. `TerminalHost` gained
+  `create(_:)`, `capture(_:)`, `reveal(_:activate:)` and `interrupt(_:to:)` — the rest of the
+  verbs `docs/ubuntu-headless-runtime-plan.md` already named as this port's target shape — each
+  with a real Mac leaf and a deterministic fake in `Tests/HostPortsTests.swift`.
+  `Sources/Targets.swift`'s `send(_:to:)`, `visibleScreen(of:)`/`capture(_:)` and
+  `reveal(_:activate:)` — three real, already-used production paths — now call down into
+  `HostPorts.mac.terminal` instead of `ITerm`/`Tmux` directly, the same move `close(_:)` made in
+  the original W2-3 delivery. Root acceptance then closed the remaining two crossings without
+  moving policy: `StartPoints.start` keeps its fixtures, refusal codes and attach affordance but
+  delegates an admitted iTerm/tmux creation to `create(_:)`; `Targets.answer` keeps the menu
+  parser and allowlist while its admitted byte sequence crosses `interrupt(_:to:)`.
+- **F2 — the architecture guard protected one hard-coded file.** `tools/check-architecture-boundaries.sh`
+  now also walks `tools/core-application-candidates.txt`, a checked-in list that rejects
+  AppKit/Security/ServiceManagement/Speech/AVFoundation/Carbon imports and the same platform-effect
+  spellings for every file it names, and fails closed if the manifest is missing, empty, or shrinks
+  below its checked-in floor. Lexical ratchet only, proved red on both an emptied manifest and a
+  forbidden-import candidate.
+- **F3 — `SecretStore` let a caller compose read-then-write.** `loadOrCreate(_:create:)` and
+  `rotate(_:replace:)` are closed operations, serialized through the same
+  `CloudKeyStoreCoordinator` `CloudKeys`'s device-key/master-secret operations already use, with a
+  real-concurrency (`DispatchQueue.concurrentPerform`) proof that `create()` runs exactly once and
+  no `rotate` produces a torn final write.
+- **F4 — `ProcessHost.signal` trusted a caller's earlier proof.** It now takes the full
+  `HostProcessIdentity` (pid + `processStart`), and `MacProcessHost` revalidates it immediately
+  before `kill(2)`, throwing the new `HostProcessIdentityChanged` rather than signalling whatever
+  now holds that pid. Narrows the race; does not close it — Mac has no atomic-signal primitive,
+  which the type's own doc says plainly, alongside why Linux's `pidfd_send_signal` can.
+- **F5 — the Mac adapters read process-global test seams.** `HostPorts.mac` reads none of the
+  three legacy `Targets.*ForTesting` seams (terminal close, process signal, clock/sleep) any more;
+  `Sources/Targets.swift` gained a private seam-adapted composition used only by
+  `closeIfAssistantGone`/`waitToBeGoneForTesting`, the two entry points the legacy suites actually
+  drive through them — which is also how the widened seam above was restored to its original scope.
+- **F6 — `removeItem` treated every metadata-read failure as absence.** No more
+  `try? attributesOfItem` pre-check; `removeItem` is attempted directly and only a genuine
+  no-such-file error maps to success, with a real (write-protected directory) proof that any other
+  failure is rethrown and the file survives.
+- **F7 — the bounded close used the wall clock.** `HostClock.now() -> Date` became
+  `HostClock.monotonicNow() -> TimeInterval`; `MacHostClock` uses `ProcessInfo.systemUptime`, so
+  NTP or a manual clock change can no longer stretch or skip the TERM/KILL escalation.
+- **F8 — the capability matrix and this file disagreed with themselves.** `docs/platform-capability-matrix.md`'s
+  "Mac-only capability routing" row said `capability_unavailable` had zero hits; it has had one
+  since the original W2-3 delivery. Corrected to match this file and
+  `docs/ubuntu-headless-runtime-plan.md`, with the same caution repeated in all three: a lexical
+  hit on this Mac tree is not Linux runtime or Ubuntu MVP support.
+
+What the correction wave did **not** do, still named rather than implied: no `Package.swift` or
+target change (W3), no Cloud wire change, and the route/menu policies themselves remain in their
+current application/Mac facades. Their admitted terminal effects now cross `TerminalHost`.
+`SessionWatch` publication and remaining display/history helpers are later composition families;
+they do not reopen the create/send/observe/interrupt/close lifecycle boundary completed here.
+
 Schema v1, the `tasks` key and its codec, the single `NSLock`, the rate and capacity limits,
 idempotent replays and every `Orchestrator` facade are unchanged, so rollback is reverting the
 slice, and a store written by either side is read by the other. What the correction changed is
@@ -857,9 +952,9 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 644 | `Tests/TestGroupManifest.swift`, counted by the guard |
-| ordered runners | 52 | `Tests/main.swift`, counted by the guard |
-| suite files | 66 | `Tests/*Tests.swift`, counted by the guard |
+| ordered groups | 651 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered runners | 53 | `Tests/main.swift`, counted by the guard |
+| suite files | 67 | `Tests/*Tests.swift`, counted by the guard |
 | `Orchestrator.swift` ceiling | 10,684 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,758 | the receipt in `tools/check-architecture-boundaries.sh` |
 

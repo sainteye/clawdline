@@ -55,11 +55,13 @@ clawdline_production_sources=(
   Sources/Drop.swift
   Sources/GitChanges.swift
   Sources/HookBridge.swift
+  Sources/HostPorts.swift
   Sources/HotKey.swift
   Sources/ITerm.swift
   Sources/LiveScreen.swift
   Sources/LocalBrowserReadiness.swift
   Sources/Log.swift
+  Sources/MacHostAdapters.swift
   Sources/Markdown.swift
   Sources/Mascot.swift
   Sources/NotchIsland.swift
@@ -177,6 +179,7 @@ clawdline_test_sources=(
   Tests/CoordinatorTests.swift
   Tests/DevStackTests.swift
   Tests/HookTests.swift
+  Tests/HostPortsTests.swift
   Tests/LandingCurrencyTests.swift
   Tests/MarkdownTests.swift
   Tests/MascotTests.swift

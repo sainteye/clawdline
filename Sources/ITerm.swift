@@ -1,38 +1,12 @@
 import Foundation
 
-/// Somewhere text can be sent.
-struct TargetSession: Equatable, Identifiable {
-    let backend: Backend
-    let id: String          // iTerm2 session UUID, or tmux pane id
-    let name: String        // tab title (Claude Code sets it to the current task)
-    let tty: String         // /dev/ttysNNN
-    let windowIndex: Int
-    let tabIndex: Int
-    /// Which assistant is running here, or nothing when it is an ordinary shell.
-    ///
-    /// This was `isClaude`, a boolean, for as long as there was only one thing it could be
-    /// about. It is still asked as one — see ``isAssistant`` — everywhere the question is
-    /// "can I send work to this", because that answer has not changed; what changed is that
-    /// how to read its screen, where to find its record and what word ends it are now three
-    /// answers rather than three assumptions. See ``Assistant``.
-    let assistant: Assistant?
-    var cwd: String?
-
-    /// Somewhere work can be sent, as opposed to a shell somebody left open.
-    var isAssistant: Bool { assistant != nil }
-
-    /// Kept because Claude Code genuinely is a special case in two places — the Ctrl-V paste
-    /// that turns a clipboard image into `[Image #3]`, and the transcripts under `~/.claude`.
-    /// Everywhere else that used to ask this wanted ``isAssistant`` and now says so.
-    var isClaude: Bool { assistant == .claude }
-
-    /// Where the tab is: the keystroke that would bring it to the front.
-    ///
-    /// The last thing a row can say when nothing knows what the session is *called* — and it is
-    /// still a true statement about this session, which is what makes it the right last thing.
-    /// A profile name is not: eleven tabs reading `Default` at once name nothing.
-    var coordinate: String { "⌘\(windowIndex + 1)-\(tabIndex + 1)" }
-
+// W2-3 correction, F1: `TargetSession`'s stored properties and its portable computed properties
+// (`isAssistant`, `isClaude`, `coordinate`) moved to `Sources/HostPorts.swift` — the identity
+// every terminal port call carries has to be readable from a Foundation-only Core file, and it
+// was not, while it lived only here. What stays here is display and naming: it reaches into this
+// app's own live state (``SessionWatch``, ``CodexNaming``, ``Config``, ``Orchestrator``) rather
+// than into the host, so it is not portable vocabulary in the same sense.
+extension TargetSession {
     /// The tab's own title, tidied — **for looking at, not for naming a session by.**
     ///
     /// Two things get taken off. iTerm appends " (job name)", which helps nobody pick a tab. And
@@ -1192,20 +1166,11 @@ enum ITerm {
     }
 
     /// What assistant, if any, is still running on one tty — asked now rather than remembered.
-    ///
-    /// ``assistantPIDs()`` answers the same question for every tty at once and holds the answer
-    /// for a couple of seconds, which is right for a status display and wrong here: this is
-    /// asked in a loop by ``Targets/end(_:)`` while it waits for a session to finish leaving,
-    /// and a two-second-old "still there" is exactly the difference between closing a quiet tab
-    /// and closing one that is still working. The result is scoped to the exact tty after a fresh
-    /// whole-process read, whose success/failure status is unambiguous.
-    struct TTYAssistantObservation {
-        let running: Assistant.Running?
-        let error: String?
-        var isComplete: Bool {
-            error == nil && (running == nil || running?.processStart != nil)
-        }
-    }
+    /// ``assistantPIDs()`` answers for every tty at once and holds the answer for a couple of
+    /// seconds; this must not. The type is the process port's ``TerminalProcessObservation``,
+    /// where the reason is written out; this is its name here, where
+    /// ``assistantObservation(onTTY:)`` makes one.
+    typealias TTYAssistantObservation = TerminalProcessObservation
 
     /// Replaces only the exact-tty subprocess in tests. Callers still exercise the production
     /// safe-close guards and can prove that each decision asks for a fresh observation.

@@ -193,6 +193,29 @@ Deliverables:
 
 Gate: shared application code can run against in-memory/fake ports with no AppKit import.
 
+Status, 2026-09-11 (W2-3, corrected — see the sealed review and correction wave below):
+`TerminalHost`, `ProcessHost` (the `ProcessInspector` role), `FileSystemHost`, `SecretStore`,
+`HostClock` and `IdentityHost` (the `IDGenerator` role) exist in `Sources/HostPorts.swift`, which
+imports Foundation only; this Mac's leaves are `Sources/MacHostAdapters.swift`, and safe close is
+the first lifecycle that runs only on them, proved against fakes in `Tests/HostPortsTests.swift`.
+Unsupported capabilities are a typed `capability_unavailable` refusal returned before the first
+effect (`Sources/HostPorts.swift`'s `HostCapabilityUnavailable.code` — a real Swift-text hit on
+this Mac tree since the original W2-3 delivery, not Linux runtime or Ubuntu MVP support).
+`TerminalHost` now also has `create`, `capture`, `reveal` and `interrupt` — the rest of the row
+above — each with a real Mac leaf and a fake proof; `send`/`capture`/`reveal` in
+`Sources/Targets.swift`, admitted creation in `Sources/StartPoints.swift`, and the allowlisted
+answer-byte channel run through them as real production paths. Route admission and menu parsing
+remain application policy, while their platform effects are adapter-owned. `SecretStore`'s
+`loadOrCreate`/`rotate` close the read-then-write race a caller could otherwise compose out of
+`data`/`set`. `ProcessHost.signal` takes a full process identity and is revalidated at the Mac
+effect boundary rather than trusted from the caller alone. A checked-in, monotonically expandable
+Core/Application candidate manifest (`tools/core-application-candidates.txt`) now backs the
+architecture guard instead of one hard-coded file. `DurableStore`, `LocalHTTPHost`,
+`CloudTransport` and `AttentionNotifier` are not ports yet; they are separate W3/W4 composition
+families, not hidden terminal effects. The full finding set and disposition are in
+`/tmp/.clawdline/5f1b0a94-cb1c-44b7-99f3-4684a2155d98/artifacts/W2_3_REVIEW.md`; the boundary and
+what remains are recorded in [`architecture-refactor.md`](architecture-refactor.md).
+
 Estimated effort: 2–4 engineer-weeks; overlaps with the latter part of Phase 1 by disjoint ownership slices.
 
 ### Phase 3 — Split Swift targets and make the core compile on Linux

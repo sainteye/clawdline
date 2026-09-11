@@ -568,6 +568,29 @@ final class CloudInMemoryKeyStore: CloudKeyStoring {
     func remove(_ account: String) throws {
         _ = values.withLock { $0.removeValue(forKey: account) }
     }
+
+    // W2-3 correction, F3: `values`' own lock already makes each of `data`/`set`/`remove`
+    // individually atomic, but a caller composing "read, then set if absent" out of them can
+    // still race a second caller doing the same thing — the lock only ever covers one call. These
+    // two go through `coordinator` instead, the same closed region the Keychain-backed
+    // `SecretStore` conformance in `Sources/MacHostAdapters.swift` uses, so this fake gives the
+    // same atomicity guarantee it is standing in for.
+    func loadOrCreate(_ account: String, create: @Sendable () throws -> Data) throws -> Data {
+        try coordinator.withCriticalRegion {
+            if let existing = try data(for: account) { return existing }
+            let created = try create()
+            try set(created, for: account)
+            return created
+        }
+    }
+
+    func rotate(_ account: String, replace: @Sendable (Data?) throws -> Data) throws -> Data {
+        try coordinator.withCriticalRegion {
+            let replacement = try replace(try data(for: account))
+            try set(replacement, for: account)
+            return replacement
+        }
+    }
 }
 
 struct CloudKeys: Sendable {

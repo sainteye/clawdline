@@ -1,29 +1,10 @@
 import AppKit
 import Foundation
 
-/// Where a session lives, and therefore how text gets into it.
-enum Backend: String {
-    case iterm
-    case tmux
-}
-
-/// A failure returned by the terminal operation that produced it. The kind travels with the
-/// message so an HTTP response or orchestrator record never has to sample unrelated global state
-/// later and guess whether this particular operation met an iTerm modal, a timeout, or ordinary
-/// terminal I/O failure.
-struct TerminalFailure: Error, Equatable {
-    enum Kind: Equatable {
-        case io
-        case timeout
-        case iTermAttention
-        case incompleteInventory
-        case identityChanged
-        case unknownActivity
-    }
-
-    let kind: Kind
-    let message: String
-}
+// `Backend`, `TerminalFailure`, the inventory behind `Targets.Snapshot` and the safe-close
+// lifecycle are the terminal port's vocabulary and live in `Sources/HostPorts.swift`, which imports
+// Foundation only. This file is the Mac facade over them: every name its callers spell is still
+// here, and the effects behind the ported paths are in `Sources/MacHostAdapters.swift`.
 
 /// The one list the panel works from, merged out of every backend.
 ///
@@ -43,23 +24,85 @@ enum Targets {
     static var safeCloseSleepForTesting: ((TimeInterval) -> Void)?
     static var safeCloseNowForTesting: (() -> Date)?
 
+    // W2-3 correction, F5: `HostPorts.mac` — what `end(_:)` and every other caller gets — no
+    // longer reads any of the three seams above. `Tests/MascotTests.swift` still drives
+    // `closeIfAssistantGone(_:)` and `waitToBeGoneForTesting(_:)` through them, so those two
+    // entry points, and only those two, run on this composition instead: the real Mac leaves
+    // with the seam checked first. This restores each seam to the scope it originally had —
+    // `terminalCloseForTesting` affects the shell-only close again, not `end(_:)` too — rather
+    // than the general host boundary carrying test-only global mutable state that production
+    // never sets but every future Application composition would still have to reason about.
+    private static var seamAdaptedPorts: HostPorts {
+        HostPorts(terminal: SeamAdaptedTerminalHost(), process: SeamAdaptedProcessHost(),
+                  files: HostPorts.mac.files, secrets: HostPorts.mac.secrets,
+                  clock: SeamAdaptedClock(), identity: HostPorts.mac.identity)
+    }
+
+    /// ``MacTerminalHost`` for everything except `close`, which checks
+    /// ``Targets/terminalCloseForTesting`` first.
+    private struct SeamAdaptedTerminalHost: TerminalHost {
+        private let real = MacTerminalHost()
+        var capabilities: Set<HostCapability> { real.capabilities }
+        func inventory() throws -> TerminalInventory { try real.inventory() }
+        func sendLine(_ text: String, to session: TargetSession) throws -> String? {
+            try real.sendLine(text, to: session)
+        }
+        func close(_ session: TargetSession) throws -> String? {
+            if let seam = Targets.terminalCloseForTesting { return seam(session) }
+            return try real.close(session)
+        }
+        func create(_ request: TerminalCreateRequest) throws -> TerminalCreated {
+            try real.create(request)
+        }
+        func capture(_ session: TargetSession) throws -> String? { try real.capture(session) }
+        func reveal(_ session: TargetSession, activate: Bool) throws {
+            try real.reveal(session, activate: activate)
+        }
+        func interrupt(_ bytes: [UInt8], to session: TargetSession) throws -> String? {
+            try real.interrupt(bytes, to: session)
+        }
+    }
+
+    /// ``MacProcessHost`` for observation; `signal` checks
+    /// ``Targets/safeCloseSignalForTesting`` first.
+    private struct SeamAdaptedProcessHost: ProcessHost {
+        private let real = MacProcessHost()
+        var capabilities: Set<HostCapability> { real.capabilities }
+        func observeAssistant(onTTY tty: String) throws -> TerminalProcessObservation {
+            try real.observeAssistant(onTTY: tty)
+        }
+        func signal(_ identity: HostProcessIdentity, _ signal: HostProcessSignal) throws {
+            guard let seam = Targets.safeCloseSignalForTesting else {
+                try real.signal(identity, signal)
+                return
+            }
+            seam(identity.pid, signal == .terminate ? SIGTERM : SIGKILL)
+        }
+    }
+
+    /// The real monotonic clock, unless ``Targets/safeCloseNowForTesting`` /
+    /// ``Targets/safeCloseSleepForTesting`` are set. The seams stayed `Date`-typed on purpose —
+    /// every suite that sets them keeps doing so unchanged — and are converted to the port's
+    /// monotonic `TimeInterval` here, at the one place that still has to know both.
+    private struct SeamAdaptedClock: HostClock {
+        func monotonicNow() -> TimeInterval {
+            (Targets.safeCloseNowForTesting?() ?? Date()).timeIntervalSince1970
+        }
+        func sleep(for seconds: TimeInterval) {
+            if let seam = Targets.safeCloseSleepForTesting { seam(seconds) }
+            else { Thread.sleep(forTimeInterval: seconds) }
+        }
+    }
+
     enum SafeCloseActivity: Equatable {
         case busy
         case idle
         case unknown
     }
 
-    struct Snapshot {
-        var sessions: [TargetSession] = []
-        var currentID: String?
-        var error: String?
-        /// True only when every source needed to decide absence was actually enumerated.
-        /// A partial snapshot may add or refresh rows, but it has no authority to remove one.
-        var isComplete = true
-
-        /// The ones with an assistant in them, whichever assistant that is.
-        var assistantSessions: [TargetSession] { sessions.filter { $0.isAssistant } }
-    }
+    /// One combined iTerm2/tmux reading. The type is the terminal port's ``TerminalInventory``;
+    /// this is its name on the facade, kept for every caller that already spells it.
+    typealias Snapshot = TerminalInventory
 
     struct Reconciliation {
         let sessions: [TargetSession]
@@ -163,31 +206,14 @@ enum Targets {
     }
 
     /// Require a fresh, complete inventory to preserve the exact terminal id/backend/tty tuple.
-    /// The assistant label is included too: a tab now occupied by another assistant is not the
-    /// terminal operation the caller admitted.
+    /// The rule belongs to the safe-close lifecycle; see
+    /// ``TerminalSafeClose/stableTerminal(_:in:allowAssistantGone:)``.
     static func stableTerminal(_ expected: TargetSession,
                                in snapshot: Snapshot,
                                allowAssistantGone: Bool = false)
         -> Result<TargetSession, TerminalFailure> {
-        guard snapshot.isComplete else {
-            return .failure(TerminalFailure(
-                kind: .incompleteInventory,
-                message: snapshot.error ?? "The terminal inventory was incomplete; nothing was closed."))
-        }
-        guard let observed = snapshot.sessions.first(where: { $0.id == expected.id }) else {
-            return .failure(TerminalFailure(
-                kind: .incompleteInventory,
-                message: "The terminal is no longer present in the fresh inventory; nothing was closed."))
-        }
-        let assistantStable = observed.assistant == expected.assistant
-            || (allowAssistantGone && expected.assistant != nil && observed.assistant == nil)
-        guard observed.backend == expected.backend, observed.tty == expected.tty,
-              assistantStable else {
-            return .failure(TerminalFailure(
-                kind: .identityChanged,
-                message: "The terminal identity changed before close; nothing was closed."))
-        }
-        return .success(observed)
+        TerminalSafeClose.stableTerminal(expected, in: snapshot,
+                                         allowAssistantGone: allowAssistantGone)
     }
 
     /// Fresh screen classification performed in the broker immediately before an automatic
@@ -213,10 +239,17 @@ enum Targets {
         }
     }
 
+    // W2-3 correction, F1: this used to switch on `session.backend` and call `ITerm.send`/
+    // `Tmux.send` itself. `MacTerminalHost.sendLine` in `Sources/MacHostAdapters.swift` now does
+    // that switch instead — the same move `close(_:)` already made — so this, a real production
+    // path every plain-text send in the app goes through, runs on the port rather than around it.
     static func send(_ text: String, to session: TargetSession) -> String? {
-        switch session.backend {
-        case .iterm: return ITerm.send(text, to: session.id)
-        case .tmux:  return Tmux.send(text, to: session.id)
+        do {
+            return try HostPorts.mac.terminal.sendLine(text, to: session)
+        } catch let unavailable as HostCapabilityUnavailable {
+            return unavailable.message
+        } catch {
+            return String(describing: error)
         }
     }
 
@@ -569,235 +602,41 @@ enum Targets {
         return SessionState.isChoosing(screen, assistant: session.assistant ?? .claude)
     }
 
-    /// End a session and close the tab it was in.
+    /// End a session and close the tab it was in: the quit word, a wait that escalates to TERM
+    /// and KILL on one proven process, and a close only once a fresh exact-tty reading shows the
+    /// assistant gone.
     ///
-    /// **Two steps, in this order, and the order is the whole of it.** `/exit` first, so Claude
-    /// Code leaves the way it would if somebody typed it — flushing its transcript rather than
-    /// being killed in the middle of writing one. Then the tab, once the process it was holding
-    /// is actually gone.
-    ///
-    /// Closing straight away would work and would be worse: the session's own record of the
-    /// conversation is the thing you would still want tomorrow, and it is being appended to right
-    /// up to the moment the process ends.
-    ///
-    /// **This used to be a fixed pause, and the fixed pause is what broke.** It waited 1.2
-    /// seconds and closed regardless — which is fine when the word lands at an idle prompt and
-    /// wrong the moment it does not. A session in the middle of a tool call queues `/exit` and
-    /// keeps working, so the tab still had a job in it when the close arrived, and iTerm2 does
-    /// what a terminal should do about that: it puts up a sheet and asks. A sheet is modal.
-    /// The Apple event never returns, `osascript` never exits, and because every remote request
-    /// is answered on one serial queue, a phone that pressed End froze every page in the house
-    /// until somebody walked to the Mac and clicked a button they could not see.
-    ///
-    /// So the pause is now an answer instead of a guess — see ``Farewell``. The ordinary case
-    /// got faster too: `/exit` at an idle prompt is done in a few hundred milliseconds, and this
-    /// no longer sits out the rest of the second and a bit.
-    ///
-    /// A deadline never becomes permission to close a busy tab. After the polite word and bounded
-    /// TERM/KILL attempts, a fresh exact-tty scan must positively prove the assistant absent.
-    /// If the process remains, or that scan fails, the tab stays open and the caller records a
-    /// terminal intervention.
+    /// The lifecycle is ``TerminalSafeClose/end(_:ports:)`` running on this Mac's ports
+    /// (``HostPorts/mac``), and why each step is there is written beside it. What this returns is
+    /// the sentence it has always returned, so the orchestrator and the `/end` route read it as
+    /// before.
     static func end(_ session: TargetSession) -> String? {
-        let current: TargetSession
-        switch stableTerminal(session, in: safeCloseInventory()) {
-        case .success(let observed): current = observed
-        case .failure(let failure): return failure.message
-        }
-        // Typed as a line, not as a keystroke: the word is text at a prompt, and `send` already
-        // knows how to put text in front of an assistant and press Return. Which word depends on
-        // which assistant — Claude Code leaves on `/exit`, Codex on `/quit`, and each refuses the
-        // other's, which would leave the session open with the tab closing under it.
-        let word = (current.assistant ?? .claude).quitLine
-        if let failure = send(word, to: current) { return failure }
-        if let failure = waitToBeGone(current) { return failure }
-        switch stableTerminal(current, in: safeCloseInventory(), allowAssistantGone: true) {
-        case .failure(let failure): return failure.message
-        case .success(let closing):
-            // The inventory and exact-tty process observation are independent proofs. Ask the
-            // tty once more after the final inventory so a process that appeared during the quit
-            // sequence cannot be hung up by the backend close.
-            let observation = ITerm.assistantObservation(onTTY: closing.tty)
-            guard observation.isComplete else {
-                return observation.error ?? "Could not verify whether the assistant left the tty."
-            }
-            guard observation.running == nil else {
-                return "An assistant appeared on \(closing.tty); the tab was left open."
-            }
-            switch closing.backend {
-            case .iterm: return ITerm.close(closing.id)
-            case .tmux:  return Tmux.close(closing.id)
-            }
-        }
+        TerminalSafeClose.end(session, ports: .mac)?.message
     }
 
-    /// What to do next while waiting for a session to finish leaving.
-    ///
-    /// Split out from the loop that runs it because this is the part with the decisions in it,
-    /// and a decision that can only be exercised by ending somebody's real session is a decision
-    /// with no tests. The loop below is three lines of sleeping; everything that could be wrong
-    /// about *when to stop being polite* is here, and is checked against a clock that is passed
-    /// in rather than one that has to pass.
-    enum Farewell {
-        struct ProcessIdentity: Equatable {
-            let pid: pid_t
-            let processStart: Date
-        }
+    /// The policy that decides when to stop being polite. It is the lifecycle's; this is its name
+    /// on the facade.
+    typealias Farewell = TerminalSafeClose.Farewell
 
-        enum Step: Equatable {
-            /// Still leaving on its own. Look again in a moment.
-            case wait
-            /// Ask the process to go.
-            case term(pid_t)
-            /// Stop asking.
-            case kill(pid_t)
-            /// Nothing is holding the tab. Take it.
-            case close
-            /// The bounded attempts are over, but a process is still positively present.
-            case refuse
-        }
-
-        /// How long the word gets before anything harsher happens.
-        ///
-        /// Three seconds, and short on purpose. A session at its prompt reads `/exit` and is gone
-        /// inside one; a session in the middle of a tool call has *queued* the word and will not
-        /// read it until the tool returns, which is not a thing three more seconds fixes. Waiting
-        /// longer would only be waiting — and this runs on the queue that answers every other
-        /// request, so every second here is a second the page does not repaint.
-        ///
-        /// It can afford to be short because the next rung is not violence. `SIGTERM` is how a
-        /// program is asked to leave; both assistants handle it and flush on the way out. The
-        /// thing this replaced — closing the tab regardless — hung up the tty underneath them,
-        /// which is less notice than any step below.
-        static let polite: TimeInterval = 3
-        /// After `SIGTERM`. Claude Code and Codex both handle it and leave; this is the room to.
-        static let afterTerm: TimeInterval = 1.5
-        /// After `SIGKILL`. Only the kernel's own bookkeeping happens in here.
-        static let afterKill: TimeInterval = 1
-
-        static func step(elapsed: TimeInterval, pid: pid_t?,
-                         termed: Bool, killed: Bool) -> Step {
-            // Gone is gone, at any point — including before the first sleep, which is the
-            // common case and the reason this is faster than what it replaces.
-            guard let pid else { return .close }
-            if elapsed < polite { return .wait }
-            if !termed { return .term(pid) }
-            if elapsed < polite + afterTerm { return .wait }
-            if !killed { return .kill(pid) }
-            if elapsed < polite + afterTerm + afterKill { return .wait }
-            // A process still visible after SIGKILL is exactly the case where a tab close is not
-            // safe. Preserve it for a person; elapsed time is never evidence of absence.
-            return .refuse
-        }
-
-        /// Identity-bearing form used by production safe close. Kept as its own seam so tests
-        /// can replace a process between TERM and KILL without signalling a real process.
-        static func step(elapsed: TimeInterval, identity: ProcessIdentity?,
-                         termed: ProcessIdentity?, killed: ProcessIdentity?) -> Step {
-            // Once a signal has been sent, the next rung belongs only to the same kernel
-            // process. A different PID is plainly different; the same PID with a different
-            // start instant is PID reuse and is just as different. In either case fail closed —
-            // a new process must never inherit the old one's TERM/KILL history.
-            if let identity, let termed, identity != termed { return .refuse }
-            if let identity, let killed, identity != killed { return .refuse }
-            return step(elapsed: elapsed, pid: identity?.pid,
-                        termed: termed != nil, killed: killed != nil)
-        }
-    }
-
-    /// Block until nothing is running on that session's tty, or until it has been made so.
-    ///
-    /// The tty and not the session id, because this is a question about processes and iTerm2's
-    /// idea of a session is not one. It works the same for a tmux pane, which is why it is here
-    /// rather than in ``ITerm``: `kill-pane` does not put up a sheet, but it does send a `SIGHUP`
-    /// to whatever is still running, and a transcript half-written is no better on that side.
-    private static func waitToBeGone(_ session: TargetSession) -> String? {
-        let now = { safeCloseNowForTesting?() ?? Date() }
-        let pause: (TimeInterval) -> Void = { seconds in
-            if let seam = safeCloseSleepForTesting { seam(seconds) }
-            else { Thread.sleep(forTimeInterval: seconds) }
-        }
-        let signal: (pid_t, Int32) -> Void = { pid, value in
-            if let seam = safeCloseSignalForTesting { seam(pid, value) }
-            else { kill(pid, value) }
-        }
-        let started = now()
-        var termed: Farewell.ProcessIdentity?
-        var killed: Farewell.ProcessIdentity?
-        while true {
-            let observation = ITerm.assistantObservation(onTTY: session.tty)
-            guard observation.isComplete else {
-                return observation.error ?? "Could not verify whether the assistant left the tty."
-            }
-            let running = observation.running
-            let identity = running.flatMap { running -> Farewell.ProcessIdentity? in
-                guard let processStart = running.processStart else { return nil }
-                return Farewell.ProcessIdentity(pid: running.pid, processStart: processStart)
-            }
-            guard running == nil || identity != nil else {
-                return "Could not verify the assistant process start on \(session.tty)."
-            }
-            let elapsed = now().timeIntervalSince(started)
-            switch Farewell.step(elapsed: elapsed, identity: identity,
-                                 termed: termed, killed: killed) {
-            case .close:
-                return nil
-            case .refuse:
-                return "The assistant is still running on \(session.tty); the tab was left open."
-            case .wait:
-                pause(0.2)
-            case .term(let pid):
-                guard let identity, identity.pid == pid else {
-                    return "The assistant identity changed before TERM; the tab was left open."
-                }
-                termed = identity
-                signal(pid, SIGTERM)
-                pause(0.2)
-            case .kill(let pid):
-                guard let identity, identity == termed, identity.pid == pid else {
-                    return "The assistant identity changed after TERM; the tab was left open."
-                }
-                killed = identity
-                signal(pid, SIGKILL)
-                pause(0.2)
-            }
-        }
-    }
-
+    /// The wait-and-escalate half of ``end(_:)`` on this Mac's ports, for the suites that drive it
+    /// through the `safeClose…ForTesting` seams above.
     static func waitToBeGoneForTesting(_ session: TargetSession) -> String? {
-        waitToBeGone(session)
+        TerminalSafeClose.waitToBeGone(session, ports: seamAdaptedPorts)?.message
     }
 
     /// Close a shell-only tab only after a fresh exact-tty process observation proves there is no
-    /// assistant left in it. Inventory labels can be nil while a scan is degraded; they are not
-    /// authority to hang up a tty.
+    /// assistant left in it. See ``TerminalSafeClose/closeIfAssistantGone(_:ports:)``.
     static func closeIfAssistantGone(_ session: TargetSession) -> String? {
-        let current: TargetSession
-        switch stableTerminal(session, in: safeCloseInventory(), allowAssistantGone: true) {
-        case .success(let observed): current = observed
-        case .failure(let failure): return failure.message
-        }
-        let observation = ITerm.assistantObservation(onTTY: current.tty)
-        guard observation.isComplete else {
-            return observation.error ?? "Could not verify whether the assistant left the tty."
-        }
-        guard observation.running == nil else {
-            return "An assistant is still running on \(current.tty); the tab was left open."
-        }
-        switch stableTerminal(current, in: safeCloseInventory(), allowAssistantGone: true) {
-        case .failure(let failure): return failure.message
-        case .success(let closing):
-            if let seam = terminalCloseForTesting { return seam(closing) }
-            switch closing.backend {
-            case .iterm: return ITerm.close(closing.id)
-            case .tmux:  return Tmux.close(closing.id)
-            }
-        }
+        TerminalSafeClose.closeIfAssistantGone(session, ports: seamAdaptedPorts)?.message
     }
 
     private static func keystroke(_ bytes: [UInt8], to session: TargetSession) -> String? {
-        switch session.backend {
-        case .iterm: return ITerm.keystroke(bytes, to: session.id)
-        case .tmux:  return Tmux.keystroke(bytes, to: session.id)
+        do {
+            return try HostPorts.mac.terminal.interrupt(bytes, to: session)
+        } catch let unavailable as HostCapabilityUnavailable {
+            return unavailable.message
+        } catch {
+            return String(describing: error)
         }
     }
 
@@ -846,11 +685,13 @@ enum Targets {
 
     /// What is visible now, without tmux scrollback. A current mode cannot be read from history:
     /// after somebody cycles, an older status line is still true text and a false current answer.
+    ///
+    /// W2-3 correction, F1: routed through ``HostPorts/mac``'s new `capture` leaf instead of
+    /// switching on `session.backend` here — the no-history reading is exactly what that port
+    /// method promises, so every caller of ``capture(_:)`` (activity classification, menu
+    /// answering, the composer-ready check) is now a real path running on the port.
     static func visibleScreen(of session: TargetSession) -> String? {
-        switch session.backend {
-        case .iterm: return ITerm.capture(session.id)
-        case .tmux:  return Tmux.capture(session.id, scrollback: 0)
-        }
+        try? HostPorts.mac.terminal.capture(session)
     }
 
     /// The screen and what scrolled off the top of it, for the one thing that is showing a person
@@ -1094,11 +935,22 @@ enum Targets {
     /// keyboard is left in the box being typed into — and it costs one Apple Event in both cases,
     /// because the identity check that is four round trips is the permission to *raise* an
     /// application and nothing here raises one. See ``Tmux/followMirrorTab(_:)``.
+    ///
+    /// W2-3 correction, F1: routed through ``HostPorts/mac``'s new `reveal` leaf, which throws
+    /// the backend's own ``TerminalFailure`` — including its `iTermAttention` kind — rather than
+    /// flattening it, so this keeps returning the exact structured failure every existing caller
+    /// of `reveal(_:activate:)` already switches on.
     @discardableResult
     static func reveal(_ session: TargetSession, activate: Bool = true) -> TerminalFailure? {
-        switch session.backend {
-        case .iterm: return ITerm.reveal(session.id, activate: activate)
-        case .tmux:  return Tmux.reveal(session.id, activate: activate)
+        do {
+            try HostPorts.mac.terminal.reveal(session, activate: activate)
+            return nil
+        } catch let failure as TerminalFailure {
+            return failure
+        } catch let unavailable as HostCapabilityUnavailable {
+            return TerminalFailure(kind: .io, message: unavailable.message)
+        } catch {
+            return TerminalFailure(kind: .io, message: String(describing: error))
         }
     }
 }
