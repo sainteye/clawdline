@@ -387,4 +387,51 @@ func runOrchestratorRegistryTests() {
         }
         Orchestrator.forget()
     }
+
+    group("session records have one registry owner and preserve their lifetimes") {
+        Orchestrator.forget()
+        let at = Date(timeIntervalSince1970: 1_800_000_500)
+        let identity = Orchestrator.SessionWorkIdentity(
+            terminalID: "%session-records", assistant: .codex, tty: "/dev/ttys077",
+            pid: 7_777, processStart: at.addingTimeInterval(-30),
+            conversationID: "conversation-session-records")
+        let delivery = Orchestrator.SessionDelivery(
+            identity: identity, summary: "registry-owned delivery", reportedAt: at,
+            settled: false)
+        let selfState = Orchestrator.SessionSelfState(
+            identity: identity, claim: .holding, note: "registry-owned state",
+            movedBy: "%owner", personNeeded: false, claimReportedAt: at,
+            claimSettled: false, owed: nil)
+        let handoff = OrchestratorRegistry.HandoffDelivery(
+            id: "handoff-session-records", assistant: .codex, model: nil,
+            terminalID: "%handoff-session-records", backend: .tmux, spawnedAt: at)
+
+        OrchestratorRegistry.withSessionRecords { records in
+            records.setTaskSecret("ephemeral-secret", for: "task-session-records")
+            records.setSessionDelivery(delivery, forTerminal: identity.terminalID)
+            records.setSessionSelfState(selfState, forTerminal: identity.terminalID)
+            records.setHandoffDelivery(handoff, for: handoff.id)
+        }
+        let persistentBeforeRestart = OrchestratorRegistry.withSessionRecords {
+            $0.persistentSnapshot()
+        }
+        check("the persistent projection contains only durable session records",
+              persistentBeforeRestart.deliveries[identity.terminalID] == delivery
+                && persistentBeforeRestart.selfStates[identity.terminalID]?.note == selfState.note)
+
+        Orchestrator.saveForTesting()
+        Orchestrator.forget()
+        Orchestrator.load()
+        OrchestratorRegistry.withSessionRecords { records in
+            check("durable session records survive a save and reload through the registry",
+                  records.sessionDelivery(forTerminal: identity.terminalID) == delivery)
+            expect("the durable self-state survives the same save and reload",
+                   records.sessionSelfState(forTerminal: identity.terminalID)?.note,
+                   "registry-owned state")
+            check("plaintext secrets and in-flight handoffs do not cross a restart",
+                  records.taskSecret(for: "task-session-records") == nil
+                    && records.handoffDelivery(for: handoff.id) == nil)
+        }
+        Orchestrator.forget()
+    }
 }

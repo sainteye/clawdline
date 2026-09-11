@@ -489,6 +489,19 @@ rewrites. Counts are identifier occurrences in `Sources/Orchestrator.swift` at t
 | 6 | tasks | 167 | last, alone, and only once the door has survived five stages |
 | 7 | close the second door | — | the ratchet reaches zero, or Cut 2 did not happen |
 
+**Stage 3 is one reversible capability boundary.** The original per-collection rule was written
+before the four per-session families were traced through restart and projection. That trace showed
+one atomic shape with two deliberate lifetimes: `sessionDeliveries` and `sessionSelfStates` persist,
+while plaintext task secrets and in-flight handoff deliveries do not. Splitting the move would
+temporarily give one Session two state owners and make those lifetime assertions weaker. Under the
+project's large-slice policy, the root therefore moved all four behind one closed
+`SessionRecordsTransaction`, kept schema v1 and the existing facade, and retained one-commit
+rollback. The focused proof performs a real save / forget / load round trip across both lifetimes.
+A mutation removing the self-state removal generation made three closeability checks fail; the
+restored candidate passed all 53 selected checks. The held-lock adapter still represents migration
+debt, not a new lock: its 48 call sites are counted by the guard, may only fall, and must disappear
+with the adapter at Stage 7.
+
 **Stage 2 is the one that is not a relocation.** `dispatchTimes`, `notifyTimes`,
 `notifyCredentialFailureTimes` and `scheduleWriteTimes` are four `[Date]` arrays carrying the same
 five operations verbatim — expire by window, check room, take one, give one back (two of the four),
@@ -581,7 +594,7 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 618 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered groups | 619 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 48 | `Tests/main.swift`, counted by the guard |
 | suite files | 61 | `Tests/*Tests.swift`, counted by the guard |
 | `Orchestrator.swift` ceiling | 10,723 | the ratchet in `tools/check-architecture-boundaries.sh` |

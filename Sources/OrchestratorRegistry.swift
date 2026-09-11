@@ -5,10 +5,9 @@ import Foundation
 /// `Orchestrator` had no owner. It had one `NSLock`, about 160 bare `lock.lock()` sites, roughly
 /// nineteen `static var` collections behind them, and ten `…Locked()` functions whose contract was
 /// enforced by nothing but the suffix in their names. This type is where that convention becomes a
-/// boundary: the collections below are `private` to this file, so no other file can name them, and
-/// the only way to reach one is through a ``Transaction`` — a token whose initializer is
-/// `fileprivate`, so no other file can make one either. `Orchestrator` can no longer write
-/// `titlesByTerminal[x] = y` outside a transaction; that line does not compile anywhere else.
+/// boundary: the collections below are `private` to this file, so no other file can name them.
+/// Callers receive a domain capability whose initializer is `fileprivate`; `Orchestrator` can no
+/// longer write `titlesByTerminal[x] = y` or `sessionDeliveries[x] = y` outside the registry.
 ///
 /// It is a separate namespace rather than an `extension Orchestrator` in a second file, for the
 /// reason `docs/architecture-refactor.md` gives: an extension moves text without moving the
@@ -22,13 +21,28 @@ import Foundation
 /// concurrency primitive does not move at all. No actor, no queue, no lock splitting: a second
 /// lock would be a behavior change even where it looks safer.
 ///
-/// **Two doors, and the second one is the migration showing.** ``withTransaction(_:)`` acquires
-/// the lock; ``withTransactionOnHeldLock(_:)`` does not, because its callers are the bare
-/// `lock.lock()` regions this stage has not converged yet. Neither door lets a caller past the
-/// collections' `private`, which is what makes bypass impossible rather than discouraged; what the
-/// second door still trusts a caller for is the *acquisition*, exactly as the `…Locked()` suffix
-/// did. Later cuts move those regions onto the first door and the second one goes away.
+/// **Two synchronization doors, with domain capabilities behind them.** ``withTransaction(_:)``
+/// acquires the lock; ``withTransactionOnHeldLock(_:)`` does not, because its callers are the bare
+/// `lock.lock()` regions this stage has not converged yet. Session records use a narrower
+/// ``SessionRecordsTransaction`` capability, but its held-lock adapter delegates to that same
+/// second door rather than introducing another synchronization primitive. Later cuts move those
+/// regions onto the acquiring door and the held-lock adapter goes away.
 enum OrchestratorRegistry {
+
+    /// Everything needed only while a handoff line is in flight. Losing this on restart is
+    /// deliberate: the durable envelope prevents a second tab and startup settles an interrupted
+    /// opening as failed.
+    struct HandoffDelivery {
+        let id: String
+        let assistant: Assistant
+        let model: String?
+        let terminalID: String
+        let backend: Backend
+        let spawnedAt: Date
+        var attempts = 0
+        var lastInjectAt: Date?
+        var answeredMenu = false
+    }
 
     /// The one lock. Every collection in this file, and every collection still declared in
     /// `Orchestrator`, is behind this exact instance.
@@ -92,9 +106,37 @@ enum OrchestratorRegistry {
     private static var invalidTaskSecretNotificationRateWindow = RateWindow(duration: 10 * 60)
     private static var scheduleWriteRateWindow = RateWindow(duration: 10 * 60)
 
+    // MARK: Session records
+
+    /// Plaintext child secrets exist only between dispatch and briefing. They are intentionally
+    /// process-local and never participate in a persistent projection.
+    private static var taskSecrets: [String: String] = [:]
+
+    /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
+    /// this durable receipt is consumed when the same tab begins another observed turn.
+    /// Persistence keeps the existing schema-v1 keys; ownership is the only thing moving here.
+    private static var sessionDeliveries: [String: Orchestrator.SessionDelivery] = [:]
+    private static var sessionSelfStates: [String: Orchestrator.SessionSelfState] = [:]
+    /// Monotonic invalidation source for closeability. The Registry owns both the collection and
+    /// its mutation clock; the higher-level facade observes the clock instead of being called by
+    /// its storage layer.
+    private static var sessionSelfStateMutationGeneration = 0
+
+    /// In-flight handoff delivery state is process-local. Startup settles interrupted openings;
+    /// persisting these values would instead create a duplicate-delivery risk.
+    private static var handoffDeliveries: [String: HandoffDelivery] = [:]
+
+    /// The immutable persistent half used by store snapshots. Returning copies prevents a save
+    /// caller from retaining a mutable registry collection after the lock is released.
+    struct PersistentSessionRecords {
+        let deliveries: [String: Orchestrator.SessionDelivery]
+        let selfStates: [String: Orchestrator.SessionSelfState]
+    }
+
     // MARK: - The transaction
 
-    /// The only handle to the collections above.
+    /// The general orchestration-state capability. Session records use the narrower capability
+    /// below; both are manufactured only by this file's synchronization doors.
     ///
     /// It carries no state of its own: it is a capability, and its whole job is that holding one
     /// is the difference between code that compiles and code that does not. `init` is
@@ -274,10 +316,105 @@ enum OrchestratorRegistry {
         func scheduleWriteRateCountForTesting() -> Int {
             OrchestratorRegistry.scheduleWriteRateWindow.tickets.count
         }
+
     }
 
-    /// Run `body` under the lock. The transaction it is handed is the only way to reach the
-    /// collections, and it is released with the lock.
+    /// A capability limited to the four session-record collections migrated in W1-2. Keeping it
+    /// distinct from ``Transaction`` prevents a delivery call site from reaching graph, title,
+    /// or rate-window state merely because both domains currently share one lock.
+    struct SessionRecordsTransaction {
+        fileprivate init() {}
+
+        func taskSecret(for id: String) -> String? { taskSecrets[id] }
+        func setTaskSecret(_ secret: String, for id: String) { taskSecrets[id] = secret }
+        func removeTaskSecret(for id: String) { taskSecrets.removeValue(forKey: id) }
+        func removeAllTaskSecrets() { taskSecrets = [:] }
+
+        func sessionDelivery(forTerminal id: String) -> Orchestrator.SessionDelivery? {
+            sessionDeliveries[id]
+        }
+        func sessionDeliveriesSnapshot() -> [String: Orchestrator.SessionDelivery] {
+            sessionDeliveries
+        }
+        func setSessionDelivery(_ delivery: Orchestrator.SessionDelivery,
+                                forTerminal id: String) {
+            sessionDeliveries[id] = delivery
+        }
+        func removeSessionDelivery(forTerminal id: String) {
+            sessionDeliveries.removeValue(forKey: id)
+        }
+        func replaceSessionDeliveries(_ deliveries: [String: Orchestrator.SessionDelivery]) {
+            sessionDeliveries = deliveries
+        }
+        func removeAllSessionDeliveries() { sessionDeliveries = [:] }
+
+        func handoffDelivery(for id: String) -> HandoffDelivery? {
+            handoffDeliveries[id]
+        }
+        func handoffDeliveriesSnapshot() -> [String: HandoffDelivery] {
+            handoffDeliveries
+        }
+        func setHandoffDelivery(_ delivery: HandoffDelivery, for id: String) {
+            handoffDeliveries[id] = delivery
+        }
+        @discardableResult
+        func setHandoffDeliveryIfPresent(_ delivery: HandoffDelivery, for id: String) -> Bool {
+            guard handoffDeliveries[id] != nil else { return false }
+            handoffDeliveries[id] = delivery
+            return true
+        }
+        func removeHandoffDelivery(for id: String) { handoffDeliveries.removeValue(forKey: id) }
+        func removeAllHandoffDeliveries() { handoffDeliveries = [:] }
+
+        func sessionSelfState(forTerminal id: String) -> Orchestrator.SessionSelfState? {
+            sessionSelfStates[id]
+        }
+        func sessionSelfStatesSnapshot() -> [String: Orchestrator.SessionSelfState] {
+            sessionSelfStates
+        }
+        func setSessionSelfState(_ state: Orchestrator.SessionSelfState,
+                                 forTerminal id: String) {
+            sessionSelfStates[id] = state
+            sessionSelfStateMutationGeneration &+= 1
+        }
+        func removeSessionSelfState(forTerminal id: String) {
+            sessionSelfStates.removeValue(forKey: id)
+            sessionSelfStateMutationGeneration &+= 1
+        }
+        func replaceSessionSelfStates(_ states: [String: Orchestrator.SessionSelfState]) {
+            sessionSelfStates = states
+            sessionSelfStateMutationGeneration &+= 1
+        }
+        func removeAllSessionSelfStates() {
+            sessionSelfStates = [:]
+            sessionSelfStateMutationGeneration &+= 1
+        }
+
+        func consumeSelfStateMutation(after observed: inout Int) -> Bool {
+            let current = sessionSelfStateMutationGeneration
+            guard current != observed else { return false }
+            observed = current
+            return true
+        }
+
+        func replacePersistentRecords(_ records: PersistentSessionRecords) {
+            replaceSessionDeliveries(records.deliveries)
+            replaceSessionSelfStates(records.selfStates)
+        }
+
+        func removeAllPersistentRecords() {
+            removeAllSessionDeliveries()
+            removeAllSessionSelfStates()
+        }
+
+        func persistentSnapshot() -> PersistentSessionRecords {
+            PersistentSessionRecords(deliveries: sessionDeliveries, selfStates: sessionSelfStates)
+        }
+    }
+
+    /// Run `body` under the lock. The transaction is the only way to reach the primary registry
+    /// collections; per-session records use their narrower capability below. Both are released
+    /// with the lock.
     static func withTransaction<R>(_ body: (Transaction) -> R) -> R {
         lock.lock()
         defer { lock.unlock() }
@@ -303,5 +440,22 @@ enum OrchestratorRegistry {
     /// Each one is a site a later cut converges onto ``withTransaction(_:)``.
     static func withTransactionOnHeldLock<R>(_ body: (Transaction) -> R) -> R {
         body(Transaction())
+    }
+
+    /// Session-record migration door for callers that still own the shared legacy lock. Its
+    /// capability is domain-limited; W1-7 removes this door when the remaining lock regions move.
+    static func withSessionRecordsOnHeldLock<R>(
+        _ body: (SessionRecordsTransaction) -> R
+    ) -> R {
+        withTransactionOnHeldLock { _ in body(SessionRecordsTransaction()) }
+    }
+
+    /// Acquire the registry lock and expose only the per-session record capability.
+    /// Production code currently enters through the held-lock adapter above; focused tests use
+    /// this acquiring door to exercise the owner without reaching unrelated registry state.
+    static func withSessionRecords<R>(_ body: (SessionRecordsTransaction) -> R) -> R {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(SessionRecordsTransaction())
     }
 }

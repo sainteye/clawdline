@@ -1175,20 +1175,6 @@ enum Orchestrator {
         var identity: RootAssignmentIdentity
     }
 
-    /// Everything needed only while the line is in flight. Losing this on restart is deliberate:
-    /// the durable row prevents a second tab; startup settles an interrupted opening as failed.
-    private struct HandoffDelivery {
-        let id: String
-        let assistant: Assistant
-        let model: String?
-        let terminalID: String
-        let backend: Backend
-        let spawnedAt: Date
-        var attempts = 0
-        var lastInjectAt: Date?
-        var answeredMenu = false
-    }
-
     // MARK: - Independent feature roots
 
     /// Persist the audit receipt before emitting the event. That deliberately chooses at-most-once
@@ -1315,23 +1301,14 @@ enum Orchestrator {
     /// Handoff id → the tab that handoff was delivered into and what it is called. Durable, and
     /// the only thing that gives a handed-off root its job title back after a restart.
     private static var handoffLabels: [String: HandoffLabel] = [:]
-    private static var handoffDeliveries: [String: HandoffDelivery] = [:]
     static var rootAssignments: [String: RootAssignment] = [:]
     private static var coordinationWaits: [String: CoordinationWait] = [:] {
-        didSet { obligationFingerprintDirty = true }
-    }
-    /// Root terminal id → the last turn that root explicitly delivered. Unlike a child result,
-    /// this receipt is consumed when the same tab begins another observed turn.
-    static var sessionDeliveries: [String: SessionDelivery] = [:]
-    private static var sessionSelfStates: [String: SessionSelfState] = [:] {
         didSet { obligationFingerprintDirty = true }
     }
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
     private static var beatsInFlight = 0
     private static var beatSequence = 0
-    /// Plaintext secrets, held only between dispatch and briefing. Never on disk.
-    private static var secrets: [String: String] = [:]
     /// A skipped or missed occurrence has no task row to remember it. This prevents one audit and
     /// push per minute while the process stays up; a restart deliberately re-evaluates catch-up.
     private static var handledScheduleFires: [String: Date] = [:]
@@ -1678,7 +1655,7 @@ enum Orchestrator {
                                                     terminalState: SessionState)
         -> SessionWorkProjection {
         let task = taskForCurrentSession(Array(tasks.values), identity: identity)
-        let sessionDelivery = sessionDeliveries[identity.terminalID].flatMap {
+        let sessionDelivery = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDelivery(forTerminal: identity.terminalID) }.flatMap {
             sessionDeliveryMatchesCurrentSession($0, identity: identity) ? $0 : nil
         }
         let sessionLanding = sessionDelivery?.landing.flatMap {
@@ -1702,7 +1679,7 @@ enum Orchestrator {
         let hasOpenHandoff = handoffs.values.contains {
             $0.state != .delivered && handoffSource($0.fromSession, matches: identity)
         }
-        let selfState = sessionSelfStates[identity.terminalID].flatMap {
+        let selfState = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionSelfState(forTerminal: identity.terminalID) }.flatMap {
             recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
         }
         let owed: [String: Any]? = selfState?.owed.map { debt in
@@ -1805,14 +1782,18 @@ enum Orchestrator {
             return .refused(409, "child_session",
                             "A Clawdline child reports through its task result, not this route.")
         }
-        if let existing = sessionDeliveries[identity.terminalID],
+        if let existing = OrchestratorRegistry.withSessionRecordsOnHeldLock({
+            $0.sessionDelivery(forTerminal: identity.terminalID)
+        }),
            sessionDeliveryMatchesCurrentSession(existing, identity: identity),
            existing.summary == summary, !existing.settled {
             let disposition = sessionDeliveryDisposition(existing)
             lock.unlock()
             return .ok(["ok": true, "created": false, "disposition": disposition])
         }
-        if let existing = sessionDeliveries[identity.terminalID],
+        if let existing = OrchestratorRegistry.withSessionRecordsOnHeldLock({
+            $0.sessionDelivery(forTerminal: identity.terminalID)
+        }),
            sessionDeliveryMatchesCurrentSession(existing, identity: identity),
            existing.landing != nil, !existing.settled {
             lock.unlock()
@@ -1822,7 +1803,7 @@ enum Orchestrator {
         }
         let made = SessionDelivery(identity: identity, summary: summary,
                                    reportedAt: now, settled: false)
-        sessionDeliveries[identity.terminalID] = made
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionDelivery(made, forTerminal: identity.terminalID) }
         let disposition = sessionDeliveryDisposition(made)
         lock.unlock()
         save()
@@ -1943,7 +1924,7 @@ enum Orchestrator {
         }
 
         lock.lock()
-        let existing = sessionSelfStates[identity.terminalID].flatMap {
+        let existing = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionSelfState(forTerminal: identity.terminalID) }.flatMap {
             recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
         }
         var made = SessionSelfState(
@@ -1973,9 +1954,9 @@ enum Orchestrator {
             made.claimSettled = existing?.claimSettled ?? false
         }
         if made.claim == nil, made.owed == nil {
-            sessionSelfStates.removeValue(forKey: identity.terminalID)
+            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionSelfState(forTerminal: identity.terminalID) }
         } else {
-            sessionSelfStates[identity.terminalID] = made
+            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionSelfState(made, forTerminal: identity.terminalID) }
         }
         var payload: [String: Any] = ["ok": true]
         if let claim = made.claim { payload["state"] = claim.rawValue }
@@ -2006,24 +1987,28 @@ enum Orchestrator {
         // The observed-turn clock the closure attestation names. It moves before any receipt is
         // settled, so an attestation cannot survive the next active transition SessionWatch sees.
         if noteActivityLocked(terminalID: terminalID, state: state) { changed = true }
-        if var delivery = sessionDeliveries[terminalID] {
+        if var delivery = OrchestratorRegistry.withSessionRecordsOnHeldLock({
+            $0.sessionDelivery(forTerminal: terminalID)
+        }) {
             switch state {
             case .idle where !delivery.settled:
                 delivery.settled = true
-                sessionDeliveries[terminalID] = delivery
+                OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionDelivery(delivery, forTerminal: terminalID) }
                 changed = true
             case .working where delivery.settled, .waiting where delivery.settled:
-                sessionDeliveries.removeValue(forKey: terminalID)
+                OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionDelivery(forTerminal: terminalID) }
                 changed = true
             default:
                 break
             }
         }
-        if var selfState = sessionSelfStates[terminalID], selfState.claim != nil {
+        if var selfState = OrchestratorRegistry.withSessionRecordsOnHeldLock({
+            $0.sessionSelfState(forTerminal: terminalID)
+        }), selfState.claim != nil {
             switch state {
             case .idle where !selfState.claimSettled:
                 selfState.claimSettled = true
-                sessionSelfStates[terminalID] = selfState
+                OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionSelfState(selfState, forTerminal: terminalID) }
                 changed = true
             case .working where selfState.claimSettled, .waiting where selfState.claimSettled:
                 selfState.claim = nil
@@ -2033,9 +2018,9 @@ enum Orchestrator {
                 selfState.claimReportedAt = nil
                 selfState.claimSettled = false
                 if selfState.owed == nil {
-                    sessionSelfStates.removeValue(forKey: terminalID)
+                    OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionSelfState(forTerminal: terminalID) }
                 } else {
-                    sessionSelfStates[terminalID] = selfState
+                    OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionSelfState(selfState, forTerminal: terminalID) }
                 }
                 changed = true
             default:
@@ -2216,6 +2201,8 @@ enum Orchestrator {
     /// settled fingerprint and indexed snapshot; history size is paid once per change, not once
     /// per Session-list poll or SSE publication.
     private static var obligationFingerprintDirty = true
+    /// Last Registry-owned self-state mutation this facade incorporated into closeability.
+    private static var observedSessionSelfStateMutationGeneration = -1
     private static var closeabilityIndexDirty = true
     private static var cachedCloseabilityRegistryIndex: CloseabilityRegistryIndex?
     private static var closeabilityRegistryReadCountForTesting = 0
@@ -2304,7 +2291,9 @@ enum Orchestrator {
             parts.append([handoff.id, handoff.state.rawValue, handoff.fromSession ?? "-"]
                 .joined(separator: "\u{1}"))
         }
-        for selfState in sessionSelfStates.values
+        for selfState in OrchestratorRegistry.withSessionRecordsOnHeldLock({
+            $0.sessionSelfStatesSnapshot()
+        }).values
             .sorted(by: { $0.identity.terminalID < $1.identity.terminalID }) {
             parts.append([selfState.identity.terminalID,
                           selfState.owed?.note ?? "-"].joined(separator: "\u{1}"))
@@ -2317,6 +2306,10 @@ enum Orchestrator {
     /// Caller holds `lock`. Returns whether it moved.
     @discardableResult
     private static func settleObligationGenerationLocked() -> Bool {
+        if OrchestratorRegistry.withSessionRecordsOnHeldLock({ $0.consumeSelfStateMutation(
+            after: &observedSessionSelfStateMutationGeneration) }) {
+            obligationFingerprintDirty = true
+        }
         guard obligationFingerprintDirty else { return false }
         let current = obligationFingerprintLocked()
         obligationFingerprintDirty = false
@@ -2564,7 +2557,8 @@ enum Orchestrator {
             closeabilityIndexDirty = false
         }
         let snapshot = CloseabilityRegistrySnapshot(
-            index: index, selfStates: sessionSelfStates,
+            index: index,
+            selfStates: OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionSelfStatesSnapshot() },
             attestations: closureAttestations,
             activityGenerations: sessionActivityGenerations,
             obligationGeneration: obligationGeneration)
@@ -2922,7 +2916,7 @@ enum Orchestrator {
     static func pruneClosedHandoffTitles(visible: Set<String>,
                                          identities: [SessionWorkIdentity]? = nil,
                                          inventoryComplete: Bool = true) {
-        let delivering = Set(handoffDeliveries.values.map(\.terminalID))
+        let delivering = Set(OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.handoffDeliveriesSnapshot() }.values.map(\.terminalID))
         OrchestratorRegistry.withTransactionOnHeldLock { registry in
             registry.setHandoffTitles(registry.handoffTitles().filter {
                 visible.contains($0.key) || delivering.contains($0.key)
@@ -3038,7 +3032,9 @@ enum Orchestrator {
             return false
         }
         tasks[candidate.id] = candidate
-        if discardSecret { secrets.removeValue(forKey: candidate.id) }
+        if discardSecret {
+            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeTaskSecret(for: candidate.id) }
+        }
         if current.state != candidate.state || current.childSessionId != candidate.childSessionId {
             boardRecord = ledgerRecord(of: candidate)
         }
@@ -3398,11 +3394,12 @@ enum Orchestrator {
             return .refused(status: status, code: code, message: message,
                             extra: app.map { ["app": $0] } ?? [:])
         case .started(let terminalID, let backend, _):
-            let delivery = HandoffDelivery(id: id, assistant: draft.assistant,
+            let delivery = OrchestratorRegistry.HandoffDelivery(
+                                           id: id, assistant: draft.assistant,
                                            model: draft.model, terminalID: terminalID,
                                            backend: backend, spawnedAt: Date())
             lock.lock()
-            handoffDeliveries[id] = delivery
+            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setHandoffDelivery(delivery, for: id) }
             // Only a title the sender actually supplied earns a durable record. `place.label`
             // falls back to `handoff <first eight of the id>`, which says less about the work
             // than the name the conversation will generate for itself, so storing that would
@@ -4021,7 +4018,7 @@ enum Orchestrator {
                             extra: OrchestratorDraft.workspaceBusyExtra(blocker))
         }
         tasks[taskID] = task
-        secrets[taskID] = secret
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setTaskSecret(secret, for: taskID) }
         lock.unlock()
         ProjectBoardIntegration.observe(ledgerRecord(of: task))
         RemoteAuth.audit("orchestrator.dispatch", ["task": taskID, "assistant": made.assistant.rawValue,
@@ -4419,7 +4416,7 @@ enum Orchestrator {
             lock.unlock()
             return nil
         }
-        let inMemorySecret = secrets[id]
+        let inMemorySecret = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.taskSecret(for: id) }
         lock.unlock()
 
         let clear = inMemorySecret ?? snapshot.queuedSecret.flatMap(openQueuedSecret)
@@ -4443,7 +4440,7 @@ enum Orchestrator {
         starting.state = .spawning
         starting.queuedSecret = nil
         tasks[id] = starting
-        secrets[id] = clear
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setTaskSecret(clear, for: id) }
         lock.unlock()
         save()
 
@@ -6410,7 +6407,7 @@ enum Orchestrator {
         lock.lock()
         for (id, task) in tasks where task.state == .queued || task.state == .spawning {
             if task.state == .queued, let secret = recovered[id] {
-                secrets[id] = secret
+                OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setTaskSecret(secret, for: id) }
                 continue
             }
             var dead = task
@@ -6585,7 +6582,7 @@ enum Orchestrator {
                     || $0.workCleanupAt != nil || $0.buildCleanupAt != nil
             }
             .map(\.id)
-        let liveHandoffs = Array(handoffDeliveries.keys)
+        let liveHandoffs = Array(OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.handoffDeliveriesSnapshot() }.keys)
         let liveRootAssignments = rootAssignments.values.filter {
             ![.failed, .inactive].contains($0.state)
         }.map(\.id)
@@ -6693,7 +6690,7 @@ enum Orchestrator {
         guard !handoffStepsInFlight.contains(id) else { return }
         handoffStepsInFlight.insert(id)
         lock.lock()
-        let channel = handoffDeliveries[id]?.terminalID
+        let channel = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.handoffDelivery(for: id)?.terminalID }
         lock.unlock()
         let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: channel) {
             handoffStep(id)
@@ -7208,9 +7205,11 @@ enum Orchestrator {
     /// deliberately not a task watcher: the entry disappears the instant delivery settles.
     private static func handoffStep(_ id: String) {
         lock.lock()
-        guard var delivery = handoffDeliveries[id], let envelope = handoffs[id],
+        guard var delivery = OrchestratorRegistry.withSessionRecordsOnHeldLock({
+            $0.handoffDelivery(for: id)
+        }), let envelope = handoffs[id],
               envelope.state == .opening else {
-            handoffDeliveries.removeValue(forKey: id)
+            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: id) }
             lock.unlock()
             return
         }
@@ -7262,7 +7261,7 @@ enum Orchestrator {
             if !delivery.answeredMenu {
                 delivery.answeredMenu = true
                 lock.lock()
-                if handoffDeliveries[id] != nil { handoffDeliveries[id] = delivery }
+                _ = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setHandoffDeliveryIfPresent(delivery, for: id) }
                 lock.unlock()
                 _ = Targets.answer(0x31, to: child)
                 RemoteAuth.audit("handoff.menu", ["handoff": id, "answer": "1"])
@@ -7284,7 +7283,7 @@ enum Orchestrator {
         let failure = Targets.send(line, to: child)
         if failure != nil { delivery.lastInjectAt = nil }
         lock.lock()
-        if handoffDeliveries[id] != nil { handoffDeliveries[id] = delivery }
+        _ = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setHandoffDeliveryIfPresent(delivery, for: id) }
         lock.unlock()
         RemoteAuth.audit("handoff.inject", ["handoff": id,
                                              "attempt": String(delivery.attempts),
@@ -7304,7 +7303,7 @@ enum Orchestrator {
         }
         envelope.state = delivered ? .delivered : .spawnFailed
         handoffs[id] = envelope
-        handoffDeliveries.removeValue(forKey: id)
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: id) }
         lock.unlock()
         save()
         RemoteAuth.audit(delivered ? "handoff.delivered" : "handoff.undelivered",
@@ -7927,7 +7926,7 @@ enum Orchestrator {
                 state: .pending, attempts: 0, nextRetryAt: now, persisted: false)
         }
         if let verification { task.verification = verification }
-        secrets.removeValue(forKey: taskID)
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeTaskSecret(for: taskID) }
         task.closeAt = automaticCloseAt(for: task, outcome: outcome,
                                         childLinger: Config.shared.orchestratorChildLinger)
         if retainedTaskOwnsRootSession(task) { task.sessionRoot = true }
@@ -10240,8 +10239,8 @@ enum Orchestrator {
         handoffLabels = foundLabels
         rootAssignments = foundRootAssignments
         coordinationWaits = foundWaits
-        sessionDeliveries = foundSessionDeliveries
-        sessionSelfStates = foundSelfStates
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.replacePersistentRecords(
+            .init(deliveries: foundSessionDeliveries, selfStates: foundSelfStates)) }
         closureAttestations = foundAttestations
         sessionActivityGenerations = foundActivity
         sessionActivityClasses = foundActivityClasses
@@ -10282,9 +10281,10 @@ enum Orchestrator {
             .map { OrchestratorStore.stored($0) }
         let waitRows = coordinationWaits.values.sorted { $0.created < $1.created }
             .map { OrchestratorStore.stored($0) }
-        let sessionDeliveryRows = sessionDeliveries.values
+        let persistentSessionRecords = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.persistentSnapshot() }
+        let sessionDeliveryRows = persistentSessionRecords.deliveries.values
             .sorted { $0.reportedAt < $1.reportedAt }.map { OrchestratorStore.stored($0) }
-        let sessionSelfStateRows = sessionSelfStates.values
+        let sessionSelfStateRows = persistentSessionRecords.selfStates.values
             .sorted { $0.identity.terminalID < $1.identity.terminalID }
             .map { OrchestratorStore.stored($0) }
         let closureRows = closureAttestations.values
@@ -10476,16 +10476,18 @@ enum Orchestrator {
         lock.lock()
         for envelope in expiredHandoffs {
             handoffs.removeValue(forKey: envelope.id)
-            handoffDeliveries.removeValue(forKey: envelope.id)
+            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: envelope.id) }
         }
-        let oldSessionDeliveryIDs = sessionDeliveries.values
+        let oldSessionDeliveryIDs = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDeliveriesSnapshot() }.values
             .sorted { $0.reportedAt > $1.reportedAt }.dropFirst(200)
             .map { $0.identity.terminalID }
         let oldRootAssignmentIDs = rootAssignmentCleanupIDs(rootAssignments.values.map {
             RootAssignmentCleanupCandidate(id: $0.id, state: $0.state, created: $0.created)
         })
         for id in sweep.records { tasks.removeValue(forKey: id) }
-        for id in oldSessionDeliveryIDs { sessionDeliveries.removeValue(forKey: id) }
+        for id in oldSessionDeliveryIDs {
+            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionDelivery(forTerminal: id) }
+        }
         for id in oldRootAssignmentIDs { rootAssignments.removeValue(forKey: id) }
         for id in forgottenLabels { handoffLabels.removeValue(forKey: id) }
         let retained = Set(tasks.keys)
@@ -10519,7 +10521,7 @@ enum Orchestrator {
 
     private static func heldSecret(_ id: String) -> String? {
         lock.lock(); defer { lock.unlock() }
-        return secrets[id]
+        return OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.taskSecret(for: id) }
     }
 
     private static func target(withID id: String) -> TargetSession? {
@@ -10638,21 +10640,19 @@ enum Orchestrator {
         restartReceipt = nil
         handoffs = [:]
         handoffLabels = [:]
-        handoffDeliveries = [:]
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeAllHandoffDeliveries() }
         rootAssignments = [:]
         coordinationWaits = [:]
-        sessionDeliveries = [:]
-        sessionSelfStates = [:]
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeAllPersistentRecords() }
         closureAttestations = [:]
         sessionActivityGenerations = [:]
         sessionActivityClasses = [:]
-        obligationGeneration = 0
-        obligationFingerprint = ""
-        obligationFingerprintDirty = true
+        obligationGeneration = 0; obligationFingerprint = ""; obligationFingerprintDirty = true
+        observedSessionSelfStateMutationGeneration = -1
         closeabilityIndexDirty = true
         cachedCloseabilityRegistryIndex = nil
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllHandoffTitles() }
-        secrets = [:]
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeAllTaskSecrets() }
         badResults = []
         handledScheduleFires = [:]
         pendingScheduleFires = [:]

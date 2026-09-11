@@ -492,6 +492,23 @@ group("a closure attestation is bound to one process and one turn, and survives 
           RemoteServer.closeIsProven(reproven, expected: reproven.version, acceptLoss: false)
               && reproven.version != provenVersion)
 
+    _ = Orchestrator.declareSessionState(
+        identity: neighbour, terminalState: .working("debt cleared"), claim: nil, note: nil,
+        movedBy: nil, personNeeded: nil, owed: nil, clearOwed: true)
+    let cleared = closeability()
+    expect("removing the neighbouring debt also supersedes the attestation", cleared.state,
+           .needsAttestation)
+    expect("and reports the same precise invalidation reason",
+           cleared.reasons.map(\.code.rawValue), ["attestation_superseded"])
+    check("the removal advances the closeability version",
+          cleared.version != reproven.version)
+    guard case .ok = Orchestrator.attestClosure(
+        identity: identity, status: "clear", activityGeneration: 0, note: nil,
+        auditID: nil) else {
+        check("the session can attest after an obligation is removed", false); return
+    }
+    expect("the cleared obligation returns the session to safe", closeability().state, .safe)
+
     // A new turn is the other invalidation, and it is per terminal rather than machine-wide.
     Orchestrator.noteSessionStateChange(terminalID: identity.terminalID, to: .idle)
     Orchestrator.noteSessionStateChange(terminalID: identity.terminalID,

@@ -2,8 +2,8 @@
 
 此文件由 `tools/measure-platform-reliability.py` 產生；CLA-296 Plan v4 的量測輸入。
 來源引用提交：`de9745104daed03bf9f49ff1fb4522e2a275d145`。
-來源範圍 SHA-256：`95747576472a7502b79626585cee1e030ee40c5180a6def37b2ce036656f524c`。
-工具 SHA-256：`800c5fad55a36284dabe5f29cd09465a4b091a14ab469b3924731ed920ca7ef5`。
+來源範圍 SHA-256：`d853ad3eadc7282102ffacf6d39c290e51c8a71172c9f63b3fee8120d3a6fa49`。
+工具 SHA-256：`d1a3ed542e713d9ea64a1d0b88ada1abb9dff7ddf39795306f7e52479136eb90`。
 
 15 個非空來源檔、19 列。這是範圍摘要，並非整棵 commit-tree 驗證。
 整檔 seal 拒絕來源漂移；本工具不解析或編譯 Swift。更新 seal 前須重讀受影響行為。
@@ -190,7 +190,7 @@ CloudCommandLedger 元件有 global/actor/fairness row caps，refuseCapacity 計
 load 先設 loaded=true，unreadable/corrupt/non-object JSON 直接 return；既有記憶體不在此分支清除，但 fresh process 的空狀態沒有 read-health fence。load 未檢查頂層 version；tasks 缺漏／型別不符變 []，無法 decode 的 row 被 skip 後發布 found。
 
 - **source-derived**：
-  - `Sources/Orchestrator.swift:10168–10263`；slice SHA-256 `99c15586bd21b68e4f6511cc8ea3bc18193267cbf40eadef21e831a74eb764d6`。
+  - `Sources/Orchestrator.swift:10167–10262`；slice SHA-256 `26eabe367c6e8b42ddb0ee8b39ea4737c921651c84072774b00e185b0dab1a89`。
   - `Sources/OrchestratorStore.swift:738–738`；slice SHA-256 `74c88e090505f191185f5eee7940757b1adc9e66a50bc0d40a64314a54d0f8cb`。
 - **來源數值／屬性**：`{"read_health_fence_in_load":false,"top_level_version_gate":false}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
@@ -203,8 +203,8 @@ load 先設 loaded=true，unreadable/corrupt/non-object JSON 直接 return；既
 save 以 storeSaveLock 序列化 snapshot/write，輸出 version 1 原子替換；沒有以先前 load health 阻止 save。fresh empty／部分 decode 後再 save 可能覆蓋原證據。read failure 後未改變記憶體，不能概括為每次 failure 都清空。
 
 - **source-derived**：
-  - `Sources/Orchestrator.swift:10267–10338`；slice SHA-256 `0e128b989988f99b6ff0fca95734bd3f8b5fbf8a911be2df4fd81a1143905616`。
-  - `Sources/Orchestrator.swift:10168–10263`；slice SHA-256 `99c15586bd21b68e4f6511cc8ea3bc18193267cbf40eadef21e831a74eb764d6`。
+  - `Sources/Orchestrator.swift:10266–10338`；slice SHA-256 `e8be01acf1996ea3ba10a0383eea5990f9feccba33f8e50ee0bca6237c7a4882`。
+  - `Sources/Orchestrator.swift:10167–10262`；slice SHA-256 `26eabe367c6e8b42ddb0ee8b39ea4737c921651c84072774b00e185b0dab1a89`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
 - **unknown**：authoritative-empty overwrite 為可達路徑風險；沒有實際 overwrite/restart 或 power-loss 測試。 後續要保留原檔、typed read-health、unsupported version policy、legacy compatibility，分離 best-effort/persist-before-effect。
@@ -215,7 +215,7 @@ save 以 storeSaveLock 序列化 snapshot/write，輸出 version 1 原子替換�
 save 的 serializer/write/chmod 失敗回 false；write 後 chmod 失敗可能已換檔，因此 false 不等於磁碟完全沒變。storeSaveInterceptorForTesting 可攔截寫入。completion/restart 測試已有指定 rollback seam，但本次不執行 Swift。
 
 - **source-derived**：
-  - `Sources/Orchestrator.swift:10267–10338`；slice SHA-256 `0e128b989988f99b6ff0fca95734bd3f8b5fbf8a911be2df4fd81a1143905616`。
+  - `Sources/Orchestrator.swift:10266–10338`；slice SHA-256 `e8be01acf1996ea3ba10a0383eea5990f9feccba33f8e50ee0bca6237c7a4882`。
   - `Tests/OrchestratorCompletionTests.swift:691–691`；slice SHA-256 `722a8705a2b47caccc42f514cb4c59808be09c627a2090544fdb78054a4b7d4b`。
   - `Tests/OrchestratorRecoveryTests.swift:1381–1381`；slice SHA-256 `afdb101b2116a038b7267f771c1bfd3f9189395c2b0a4184d0ae16244645a938`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
@@ -297,7 +297,7 @@ health liveness、fixture 通過、source seal 相符，都不構成 restart、d
 | `Sources/CloudOutboundSpool.swift` | 42597 | `aef545decd4c7c95b5c566cb60cb11455eaadf6b52f84c3707b76df165459485` |
 | `Sources/CloudTransport.swift` | 41195 | `1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d` |
 | `Sources/Coordinator.swift` | 93345 | `bf400471dce7fe381aea8608d5d96b8710e33035c0d98fbaea30b493040345ad` |
-| `Sources/Orchestrator.swift` | 579632 | `9873ab23a71d4c7ae786754a5e8c7d8e6f010016f25f816f4537bc7092fa38ce` |
+| `Sources/Orchestrator.swift` | 581811 | `5316c8a21199c7efd4449053ad35f7ccc153811a9e8b9218e5499cb11b8eda57` |
 | `Sources/OrchestratorStore.swift` | 53358 | `38ce38e310d8d995445b4b05ece41dcb5fb85d1775f0f3ec3d3f162766262037` |
 | `Sources/ReadingFreshness.swift` | 25220 | `4592b2a84c03d196707626df2876f3ef4e5274149addf361b7738a2888ed672f` |
 | `Sources/RemoteServer.swift` | 334971 | `5f88bad83081fdd6984f26ae48507975b2a4c825223d17950ec5e5be761ebfdd` |

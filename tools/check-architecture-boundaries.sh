@@ -692,6 +692,18 @@ held_lock_door_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanni
 [ "$held_lock_door_sites" -gt 0 ] \
   || architecture_guard_fail "withTransactionOnHeldLock has no call sites left; delete the door and this ratchet together"
 
+# Stage 3 moves the four per-session record families behind a narrower capability while preserving
+# the same registry lock. Its held-lock adapter delegates to the transaction door above, so it is
+# migration surface rather than a second synchronization primitive. Count it independently across
+# every production file that may use it, allow no growth, and delete the adapter with this ratchet
+# when the last session-record caller moves into the owner.
+session_records_held_lock_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift Sources/OrchestratorSessionLanding.swift \
+  | grep -c 'withSessionRecordsOnHeldLock' || true)
+[ "$session_records_held_lock_sites" -le 48 ] \
+  || architecture_guard_fail "withSessionRecordsOnHeldLock has $session_records_held_lock_sites call sites; the migration ratchet is 48 and may only fall"
+[ "$session_records_held_lock_sites" -gt 0 ] \
+  || architecture_guard_fail "withSessionRecordsOnHeldLock has no call sites left; delete the adapter and this ratchet together"
+
 # Cut 4 chose its two files by measuring, and what it measured was that neither of them touches
 # the registry lock. That is the whole reason they were cheap: eleven candidates were scored on
 # lines, private symbols crossing the proposed boundary, and lock acquisitions, and the two that
@@ -709,7 +721,7 @@ held_lock_door_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanni
 # clean zero for the two files because it can no longer recognise what it is looking for. That is
 # the failure this repository has shipped before: a guard that stopped matching read exactly like a
 # guard that passed.
-lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|withTransaction(OnHeldLock)?[[:space:]]*[({])'
+lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|with(Transaction|SessionRecords)(OnHeldLock)?[[:space:]]*[({])'
 count_lock_sites() {
   grep -vE '^[[:space:]]*(//|/\*|\*)' "$1" | grep -cE "$lock_acquisition_re" || true
 }
@@ -897,4 +909,4 @@ if [ "$documented_governance_table" != "$(render_governance_table)" ]; then
   architecture_guard_fail "run tools/generate-governance-table.sh — the table is generated, so the fix is never to retype a number into it"
 fi
 
-echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
+echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, held-lock door=$held_lock_door_sites, session-record door=$session_records_held_lock_sites, max suspension=$suspension_max, parsed=$scanner_funcs"

@@ -612,6 +612,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the per-terminal facts keep the semantics the projection had before",
     "a graph admission is one reservation, and its release is a transaction of its own",
     "the four registry rate windows keep their limits, boundaries and identities",
+    "session records have one registry owner and preserve their lifetimes",
     "a root id that is really a terminal id is refused, and only when the evidence agrees",
     "the dispatch door sorts owned children from detached automation before anything opens",
     "a task.json is read whole, or refused naming the field that was wrong",

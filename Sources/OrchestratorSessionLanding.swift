@@ -6,7 +6,7 @@ extension Orchestrator {
     static func boardRootLandingSnapshot() -> [SessionDelivery] {
         load()
         lock.lock(); defer { lock.unlock() }
-        return sessionDeliveries.values.filter {
+        return OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDeliveriesSnapshot() }.values.filter {
             $0.landing.map(isBrokerVerifiedSessionLanding) == true
         }.sorted { $0.reportedAt < $1.reportedAt }
     }
@@ -177,7 +177,7 @@ extension Orchestrator {
         let assignments = Array(rootAssignments.values)
         let expectedAssignments = landingAssignmentSnapshot(
             for: identity.terminalID, assignments: assignments)
-        let expectedReceipt = sessionDeliveries[identity.terminalID]
+        let expectedReceipt = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDelivery(forTerminal: identity.terminalID) }
         lock.unlock()
 
         guard let repositoryCommonDir = OrchestratorDraft.gitCommonDirectory(
@@ -254,13 +254,17 @@ extension Orchestrator {
                 return .refused(409, "root_assignment_changed",
                                 "The Session's durable Root Assignment changed during Git verification.")
             }
-            guard sessionDeliveries[identity.terminalID] == expectedReceipt else {
+            guard OrchestratorRegistry.withSessionRecordsOnHeldLock({
+                $0.sessionDelivery(forTerminal: identity.terminalID)
+            }) == expectedReceipt else {
                 lock.unlock()
                 return .refused(409, "receipt_changed",
                                 "The Session delivery receipt changed during Git verification.")
             }
         }
-        if let existing = sessionDeliveries[identity.terminalID],
+        if let existing = OrchestratorRegistry.withSessionRecordsOnHeldLock({
+            $0.sessionDelivery(forTerminal: identity.terminalID)
+        }),
            sessionDeliveryMatchesCurrentSession(existing, identity: identity) {
             if existing.settled {
                 lock.unlock()
@@ -294,7 +298,7 @@ extension Orchestrator {
             }
             var upgraded = existing
             upgraded.landing = landing
-            sessionDeliveries[identity.terminalID] = upgraded
+            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionDelivery(upgraded, forTerminal: identity.terminalID) }
             let disposition = sessionDeliveryDisposition(upgraded)
             lock.unlock()
             save()
@@ -309,7 +313,7 @@ extension Orchestrator {
         }
         let made = SessionDelivery(identity: identity, summary: summary,
                                    reportedAt: now, settled: false, landing: landing)
-        sessionDeliveries[identity.terminalID] = made
+        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionDelivery(made, forTerminal: identity.terminalID) }
         let disposition = sessionDeliveryDisposition(made)
         lock.unlock()
         save()

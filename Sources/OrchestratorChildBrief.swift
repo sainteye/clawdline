@@ -338,9 +338,9 @@ extension Orchestrator {
         unit. Accumulate related edits first, then compile and run the relevant groups once near the
         end; do not pay a Swift compile for each assertion, file, finding or small correction. Use
         one representative red-before-green or failure-injection proof for each materially new
-        failure class when the test could otherwise pass without the behavior. Pure prose,
-        generated-count transcription, mechanical moves and test-fixture-only corrections do not
-        need a synthetic mutation. Until the repository ships a
+        failure class when the test could otherwise pass without the behavior. Pure prose and
+        generated-count transcription do not need a synthetic mutation. Mechanical moves and
+        test-fixture-only corrections do not need one either. Until the repository ships a
         focused Swift runner, an implementer whose behavior cannot be exercised more narrowly may
         use one full-suite run and record `focused_runner_unavailable`; a reviewer does not repeat
         it.
