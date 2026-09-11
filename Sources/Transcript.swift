@@ -1730,6 +1730,16 @@ extension Transcript {
             "helper", "input_kind", "mode_gap", "process_generation", "project_id", "provider",
             "required_first_action", "run_id", "terminal_id", "version",
         ]
+        let optional: Set<String> = ["begin_template", "helper_path", "previous_item"]
+        // Optional in v1: an advisory settled item id only beside the template, and the template
+        // held to its structural v1 contract rather than to the producer's current text.
+        if let raw = value["previous_item"] {
+            guard value["begin_template"] != nil, let item = raw as? String,
+                  ProjectBoardWorkflow.exactItemID(item) else { return false }
+        }
+        if let raw = value["begin_template"] {
+            guard validBoardWorkflowBeginTemplate(raw, runID: value["run_id"]) else { return false }
+        }
         if let raw = value["helper_path"] {
             guard let path = raw as? String, path.hasPrefix("/"),
                   path.hasSuffix("/clawdline-board-workflow"), path.utf8.count <= 4096,
@@ -1737,7 +1747,7 @@ extension Transcript {
                   !path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." })
             else { return false }
         }
-        guard Set(value.keys).subtracting(["helper_path"]) == keys,
+        guard Set(value.keys).subtracting(optional) == keys,
               value["authority"] as? String == "clawdline_metadata_not_user_authorization",
               value["coverage"] as? String == "managed_ingress",
               value["helper"] as? String
@@ -1769,6 +1779,27 @@ extension Transcript {
               run.range(of: #"^run-[0-9a-f]{32}$"#, options: .regularExpression) != nil
         else { return false }
         return true
+    }
+
+    /// The structural v1 contract for `begin_template`, identical in `board-workflow-record.js`:
+    /// an object of 2–16 fields named `[a-z_]{1,64}`, each a string of at most 256 UTF-8 bytes,
+    /// whose `operation` is `begin` and whose `run_id` is the envelope's own. Placeholder text and
+    /// which optional fields appear are the producer's to change, so a later template edit keeps
+    /// historical envelopes folding. Key spelling is compared byte by byte because an ICU `$` also
+    /// matches before a trailing newline, which the web reader's pattern does not.
+    private static func validBoardWorkflowBeginTemplate(_ raw: Any, runID: Any?) -> Bool {
+        guard let template = raw as? [String: Any], (2...16).contains(template.count),
+              template["operation"] as? String == "begin",
+              let run = runID as? String, template["run_id"] as? String == run
+        else { return false }
+        return template.allSatisfy { field in
+            guard (1...64).contains(field.key.utf8.count),
+                  field.key.utf8.allSatisfy({ $0 == UInt8(ascii: "_")
+                      || (UInt8(ascii: "a")...UInt8(ascii: "z")).contains($0) }),
+                  let text = field.value as? String
+            else { return false }
+            return text.utf8.count <= 256
+        }
     }
 
     private static func stableFoldKey(_ value: String) -> String {

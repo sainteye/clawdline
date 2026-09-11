@@ -62,6 +62,91 @@ another route or Session neither replays nor joins the first send. Board OFF byp
 all workflow creation and leaves the terminal payload unchanged. An OFF→ON boundary increments a
 durable epoch, so a receipt from an older enabled period is refused.
 
+## Begin assistance in the envelope
+
+Version-1 envelopes may carry two optional fields, following the `helper_path` precedent: optional
+in v1, strictly validated, and absent when not applicable. Both are advisory data for the
+assistant. Neither is a command, a binding or an authorization, and neither changes the run, its
+classification, the helper or server validation. `begin` still requires an explicit
+`classification` and, for `existing_item`, an exact `item_id`; no turn skips it.
+
+- `begin_template` is present on every run admitted by a producer that knows it. It is this run's
+  ordinary `begin` with `run_id` filled in: `operation:"begin"`, a `classification` holding the
+  choice list `existing_item|new_work|question|clarification`, the placeholders
+  `item_id:"<existing_item>"`, `title:"<new_work>"` and
+  `type:"<new_work:task|feature|bug|refactor|coordination|epic>"`, and `phase:"output"`. It is not
+  postable as it stands: the server refuses the choice list as `workflow_begin_invalid`, and every
+  real classification also requires deleting the fields that do not belong to it. With it, an
+  ordinary `begin` needs no contract read. The contract (`--help` or `get board-workflow`, the same
+  bytes) is read once, only for a Program binding, a document, a supplement, a handoff, an
+  assignment decision, or after a typed refusal.
+- `previous_item` appears only beside `begin_template`, and only when there is one. It is the exact
+  item id of the latest earlier run with the same provider, conversation id and Project id in the
+  current enabled epoch whose effective item is settled. `Run.itemID` is that settled effective
+  item: a plain `existing_item` begin binds its exact id at admission, while `new_work` and a
+  Program binding leave it nil until the Store receipt settles it, so a pending create or a pending
+  or failed Program binding is never offered. An item whose Board `link` was refused (for example
+  `item_not_found`), or whose id is not a lowercase UUID (a human key such as `CLA-395` passed as an
+  id), is unresolved and skipped. Only the id is sent: the journal holds no label for a plain
+  `existing_item` begin, a `new_work` title may be 300 bytes, and titles are never keys. It is never
+  drawn from another conversation, provider, Project or epoch.
+
+The derivation reads only the in-memory journal inside `prepareIngress`, under its existing lock
+and before capacity eviction. There is no Board Store read, no file or network I/O, no new lock and
+no model call. **The hint is frozen on the run at admission** (`Run.beginHint`, an optional journal
+field with no schema-version change and no migration), because an identical retry can reach the
+terminal again. A `429 busy` or maintenance refusal is not stored in the ten-minute `/send` replay
+cache, and that cache lives only in memory, so a retry after such a refusal, after the cache
+expires, or after an App restart re-enters `prepareIngress`. That call rebuilds `wireText` for the
+existing run, and the rebuilt text is typed. Rebuilding from the frozen hint keeps it byte-identical
+even if another run settled or was evicted in between. A run admitted before the field existed has
+no `beginHint` and replays the legacy envelope it was first sent with. Together the two fields add
+a constant 337 bytes to a hinted envelope.
+
+**Byte identity lasts only as long as the retried run is retained.** The journal holds at most 256
+runs. At that capacity a new admission evicts the earliest run whose delivery is no longer
+`pending` (it is `delivered` or `rejected`), whose `missingFollowUp` is empty, and which no outbox
+row short of `complete` protects; its outbox rows and receipts go with it. Once the retried run has
+been evicted, a later identical retry finds no run. It is a new admission: it derives the hint again
+from the journal as it is at that moment, under the same deterministic run id, so its
+`previous_item` can differ from the original send. When the original was delivered, that retry
+types the prompt into the terminal a second time. That is the pre-existing `/send` idempotency gap,
+not something this field introduced: the replay cache lives only in memory for ten minutes, so once
+it forgets, even a retained run's retry is typed again. Root owns that gap as a separate line of
+work. No tombstone or other durable state is kept for an evicted run.
+
+**A downgrade drops the frozen hint.** `beginHint` is an optional field on schema-3 runs, not a
+schema bump. An older App that reads schema 3 loads a journal containing it, ignores the field, and
+drops it the next time it persists, because every persist re-encodes the whole journal from that
+App's own types. After re-upgrading, those runs have no `beginHint`, so a retry of one replays the
+legacy envelope, which both decoders still accept. A schema bump was the alternative and was
+rejected: the older App would refuse the whole journal as `workflow_store_invalid`, and every
+managed send would then go out unrecorded (`workflow_persistence_failed`) until the upgrade came
+back. Failing closed would stop Board workflow recording on a downgrade to protect an advisory
+field.
+
+Compatibility: the native (`Transcript.swift`) and web (`board-workflow-record.js`) decoders accept a
+legacy envelope without either key and a new envelope with valid values. They still reject unknown
+top-level keys, and a `previous_item` that is not a lowercase UUID or that appears without the
+template. `begin_template` is held to a structural v1 contract, identical in both decoders, rather
+than to the producer's current text: it is a JSON object with 2 to 16 keys, each spelled
+`[a-z_]{1,64}`; every value is a string of at most 256 UTF-8 bytes; `operation` is exactly `begin`;
+and `run_id` equals the envelope's own `run_id`. Nothing else is required, so a later producer can
+reword a placeholder, change the choice list, or add or drop an optional field, and the envelopes
+already in transcripts keep folding. A rejected envelope stays visible prose.
+`Tests/board-workflow-metadata-v1.json` is one exact producer line: the Swift producer test must
+emit it and the web decoder test must accept it.
+
+Rollout: publish the hosted console at app.clawdline.com, which renders with the same web bundle,
+completely first, and release the Mac App that starts emitting these fields only after that. A
+console page loaded after the publish has the new decoder, and it also folds the legacy envelopes an
+older Mac App still sends. The order does not protect a page that is already open. A standalone PWA
+keeps the decoder it loaded and never reloads itself (`Resources/web/app/js/net/build.js`); once
+the Mac build changes it shows the stale-build notice, and until the person reloads it, every new
+envelope appears as raw prose. The structural template contract does not help such a page: it
+governs only decoders that ship with it, and a decoder built before these fields existed rejects
+both of them as unknown keys.
+
 ## Semantic receipts
 
 The machine-only endpoint is:

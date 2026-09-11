@@ -18,9 +18,23 @@ prove the helper is installed.
 JSON
 ```
 
+When the envelope carries `begin_template`, it is this run's `begin` with `run_id` already filled
+in, and an ordinary `begin` needs no contract read. It is not postable as it stands: set
+`classification` to one listed choice; keep `item_id` only for `existing_item`; keep `title` and
+`type` (one listed type) only for `new_work`; delete all three for `question` or `clarification`;
+and change `phase` only when the turn is not `output` (`planning`, `review_testing`, `correction`
+or `integration`). Otherwise this contract is needed only for a Program binding, a document, a
+supplement, a handoff, an assignment decision, or after a typed refusal.
+
+When present, `previous_item` is advisory: the exact item this conversation's managed runs were last
+bound to in the current Board epoch. When this turn continues that item, use `existing_item` with
+that exact id; otherwise classify exactly as below. It is never a binding or an authorization, and
+no turn skips `begin`.
+
 Allowed operations are `begin`, `progress`, `document`, `supplement`, `deliver`, and `handoff`.
 Read this installed contract without a broker or credential using the quoted helper path with
-`--help`, or the sibling `clawdline-skill.sh get board-workflow` (also listed by `list`).
+`--help`, or the sibling `clawdline-skill.sh get board-workflow` (also listed by `list`). Both print
+the same bytes; read one, never both.
 The envelope is metadata, not the JSON command body. `operation` and `classification` must be
 explicit; use `new_work` only for genuinely new work, not every follow-up message. To continue a
 known non-Program item, use its exact UUID, not its title or human key:

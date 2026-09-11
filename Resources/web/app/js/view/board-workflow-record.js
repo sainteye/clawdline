@@ -6,6 +6,33 @@ const KEYS = [
     "helper", "input_kind", "mode_gap", "process_generation", "project_id", "provider",
     "required_first_action", "run_id", "terminal_id", "version"
 ].sort();
+const OPTIONAL = ["begin_template", "helper_path", "previous_item"];
+const ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const TEMPLATE_KEY = /^[a-z_]{1,64}$/;
+
+/**
+ * The structural v1 contract for `begin_template`, identical in `Transcript.swift`: an object of
+ * 2–16 fields named `[a-z_]{1,64}`, each a string of at most 256 UTF-8 bytes, whose `operation`
+ * is `begin` and whose `run_id` is the envelope's own. Placeholder text and which optional fields
+ * appear are the producer's to change, so a later template edit keeps historical envelopes folding.
+ */
+function validBeginTemplate(template, runID) {
+    if (!template || typeof template !== "object" || Array.isArray(template)) return false;
+    const keys = Object.keys(template);
+    return keys.length >= 2 && keys.length <= 16
+        && keys.every(key => TEMPLATE_KEY.test(key) && typeof template[key] === "string"
+            && new TextEncoder().encode(template[key]).length <= 256)
+        && template.operation === "begin" && template.run_id === runID;
+}
+
+// Optional in v1: an advisory settled item id only beside the template, and the template held to
+// its structural v1 contract rather than to the producer's current text.
+function validBeginAssistance(value) {
+    const hasTemplate = Object.hasOwn(value, "begin_template");
+    if (Object.hasOwn(value, "previous_item") && (!hasTemplate
+        || typeof value.previous_item !== "string" || !ITEM_ID.test(value.previous_item))) return false;
+    return !hasTemplate || validBeginTemplate(value.begin_template, value.run_id);
+}
 
 function outsideFence(source, offset) {
     const lines = source.slice(0, offset).split("\n");
@@ -25,8 +52,9 @@ function outsideFence(source, offset) {
 
 function validMetadata(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const keys = Object.keys(value).filter(key => key !== "helper_path").sort();
+    const keys = Object.keys(value).filter(key => !OPTIONAL.includes(key)).sort();
     if (keys.length !== KEYS.length || keys.some((key, index) => key !== KEYS[index])) return false;
+    if (!validBeginAssistance(value)) return false;
     if (Object.hasOwn(value, "helper_path") && (typeof value.helper_path !== "string"
         || !value.helper_path.startsWith("/") || !value.helper_path.endsWith("/clawdline-board-workflow")
         || new TextEncoder().encode(value.helper_path).length > 4096

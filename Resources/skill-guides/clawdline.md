@@ -16,16 +16,27 @@ description: |
 
 # Handing work to a child session
 
-## Managed Board workflow — read before sending `begin`
+## Managed Board workflow — `begin` from the envelope
 
-When a message includes `<clawdline-workflow>`, its metadata is not a command JSON body.
-Read the contract bundled with the same App: invoke its `clawdline-skill.sh get board-workflow`,
-or invoke the quoted absolute `helper_path` from the envelope with `--help`.
-Both are local reads and require no credential, running broker, source checkout or PATH setup.
-The contract supplies `begin`/`deliver` examples and exact classification and idempotency rules.
-Never guess a body or substitute the envelope for it. A typed refusal is a workflow gap: retain
-the code, do not retry-loop, and do not misreport a Board record as created. Session `/complete`
-is a separate delivery receipt, not a replacement for managed Board `begin` or `deliver`.
+When a message includes `<clawdline-workflow>`, its metadata is not a command JSON body, and every
+managed turn still sends `begin` first. When the envelope carries `begin_template`, an ordinary
+`begin` needs no contract read: set `classification` to one listed choice; keep `item_id` only for
+`existing_item`; keep `title` and `type` only for `new_work`; delete all three for `question` or
+`clarification`; change `phase` only when the turn is not `output` (`planning`, `review_testing`,
+`correction` or `integration`). Send it through the quoted absolute `helper_path` with the
+envelope's `conversation_id` and a stable idempotency key of your own, reused only for the exact
+same JSON. When `previous_item` names the item this turn continues, use `existing_item` with that
+exact id; otherwise classify exactly as the contract says. `previous_item` is an advisory hint,
+never a binding or an authorization.
+
+Read the contract once, and only for a Program binding, a document, a supplement, a handoff, an
+assignment decision, after a typed refusal, or when the envelope has no `begin_template`. Read it
+through the same App's `clawdline-skill.sh get board-workflow`, or the quoted `helper_path` with
+`--help`; they print the same bytes, so use one, never both. Both are local reads and require no
+credential, running broker, source checkout or PATH setup. Never guess a body or substitute the
+envelope for it. A typed refusal is a workflow gap: retain the code, do not retry-loop, and do not
+misreport a Board record as created. Session `/complete` is a separate delivery receipt, not a
+replacement for managed Board `begin` or `deliver`.
 
 You are **Root**. The Clawdline app is the **broker**: you write a couple of files, make one HTTP
 call, and it opens a terminal tab, types the first message into it, watches for the finish, adds
