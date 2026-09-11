@@ -6,7 +6,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { toast } from "../core/util.js";
 import { api } from "../net/api.js";
-import { byId } from "../view/derive.js";
+import { byId, sessionSuggestedReply, replySessionIdentity } from "../view/derive.js";
 import { closingID } from "../view/list.js";
 import { renderDetailHead, renderTranscript } from "../view/transcript.js";
 import { renderComposer } from "../view/composer.js";
@@ -33,6 +33,25 @@ function rawMsgText() {
     return String(els.msg.innerText || "").replace(/\u00A0/g, " ");
 }
 export function msgText() { return rawMsgText().trim(); }
+
+/** A click may edit this empty draft, never perform the requested action. */
+export function fillSuggestedReply(sid, expectedKey) {
+    if (S.write !== true || S.conn !== "live" || S.openId !== sid || S.agent
+        || S.tx.id !== sid || sending || closingID === sid || Shots.busy() || Voice.busy()) return false;
+    if (rawMsgText().length > 0 || Shots.urls().length > 0) {
+        toast((document.documentElement.lang || "").toLowerCase().startsWith("zh")
+            ? "已保留現有草稿；請先處理草稿再填入建議回覆。" : "Your draft was kept. Clear it before filling a suggested reply.");
+        return false;
+    }
+    const current = byId(sid), identity = replySessionIdentity(current, S.sessions);
+    if (!identity || identity !== S.replyComposerIdentity) return false;
+    const reply = sessionSuggestedReply(current);
+    if (!reply || reply.key !== expectedKey) return false;
+    els.msg.textContent = reply.text;
+    blankness();
+    renderComposer();
+    return true;
+}
 
 /** Whether the placeholder should be showing. See the note on `.composer .msg.blank`. */
 function blankness() {

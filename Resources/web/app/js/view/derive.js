@@ -316,6 +316,58 @@ function owedAge(since) {
  * once, so this is an appended badge, never a replacement — and it ages in plain sight,
  * because a debt's failure mode is "nobody remembers in three days", not "not seen now".
  */
+/** The inventory transport, not the suggested text, supplies the machine identity. */
+export function sessionSuggestedReply(s, now = Date.now() / 1000) {
+    const debt = s && s.owed, reply = debt && debt.suggestedReply;
+    const machine = s && (s.machine || (s.identity && s.identity.machine));
+    if (!debt || debt.person_needed !== true || !reply || Array.isArray(reply)
+        || reply.version !== 1 || !Number.isFinite(now)) return null;
+    const bounded = (v, max) => typeof v === "string" && v.trim().length > 0 && v.length <= max;
+    if (Object.keys(reply).sort().join(",") !== "conversationId,expiresAt,id,text,version"
+        || !bounded(reply.id, 200) || !/^[A-Za-z0-9_.:-]+$/.test(reply.id)
+        || !bounded(reply.text, 4000) || new TextEncoder().encode(reply.text).length > 4000
+        || !bounded(machine, 200) || !bounded(reply.conversationId, 512)
+        || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(reply.text)
+        || !Number.isSafeInteger(reply.expiresAt) || reply.expiresAt <= now
+        || (s.identity && s.identity.machine && s.identity.machine !== machine)
+        || reply.conversationId !== s.sessionId) return null;
+    return { text: reply.text, key: JSON.stringify([reply.version, reply.id, reply.text,
+        machine, reply.conversationId, reply.expiresAt]) };
+}
+
+/** Keep native button activation; do not let global Enter shortcuts open/resume a Session. */
+export function suggestedReplyKeydown(event) {
+    if ((event.key === "Enter" || event.key === " ") && event.target.closest
+        && event.target.closest("button[data-reply-key]")) event.stopPropagation();
+}
+
+/** This is a composer pin, not a fallback lookup: duplicate bare IDs are not addressable. */
+export function replySessionIdentity(s, rows = S.sessions) {
+    if (!s || !Array.isArray(rows) || rows.filter(row => row.id === s.id).length !== 1) return null;
+    const live = rows.find(row => row.id === s.id);
+    const machine = s.machine || (s.identity && s.identity.machine);
+    const liveMachine = live.machine || (live.identity && live.identity.machine);
+    if (typeof s.id !== "string" || !s.id || typeof machine !== "string" || !machine
+        || typeof s.sessionId !== "string" || !s.sessionId
+        || liveMachine !== machine || live.sessionId !== s.sessionId
+        || (s.identity && s.identity.machine && s.identity.machine !== machine)) return null;
+    return JSON.stringify([s.id, machine, s.sessionId]);
+}
+
+export function suggestedReplyButtonHTML(s, options = {}) {
+    const reply = sessionSuggestedReply(s, options.now);
+    if (!reply) return "";
+    const identity = replySessionIdentity(s, options.rows);
+    const enabled = options.writable === true && options.openId === s.id
+        && identity !== null && options.composerIdentity === identity;
+    const label = options.zh ? "填入建議回覆" : "Fill suggested reply";
+    const destination = s.label || s.title || s.id;
+    const explanation = options.zh ? "僅填入草稿，請檢查後自行送出" : "Draft only; review and send yourself";
+    return '<button type="button" class="session-suggested-reply" data-reply-session="' + attr(s.id) +
+        '" data-reply-key="' + attr(reply.key) + '" title="' + attr(destination + " — " + explanation) +
+        '"' + (enabled ? "" : " disabled") + '>' + label + '</button>';
+}
+
 export function owedBadgeHTML(s) {
     var owed = s && s.owed;
     if (!owed || typeof owed !== "object" || Array.isArray(owed)) return "";

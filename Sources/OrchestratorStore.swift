@@ -483,6 +483,7 @@ enum OrchestratorStore {
                                        "person_needed": debt.personNeeded,
                                        "since": debt.since.timeIntervalSince1970]
             if let movedBy = debt.movedBy { owed["moved_by"] = movedBy }
+            if let reply = debt.suggestedReply { owed["suggestedReply"] = stored(reply) }
             out["owed"] = owed
         }
         return out
@@ -547,7 +548,7 @@ enum OrchestratorStore {
         }
         var owed: Orchestrator.OwedDebt?
         if let rawOwed = obj["owed"] as? [String: Any] {
-            guard Set(rawOwed.keys).isSubset(of: ["note", "moved_by", "person_needed", "since"]),
+            guard Set(rawOwed.keys).isSubset(of: ["note", "moved_by", "person_needed", "since", "suggestedReply"]),
                   case .some(let decodedNote) = boundedText(rawOwed["note"]),
                   let owedNote = decodedNote,
                   case .some(let owedMovedBy) = boundedText(rawOwed["moved_by"]),
@@ -557,6 +558,10 @@ enum OrchestratorStore {
             owed = Orchestrator.OwedDebt(note: owedNote, movedBy: owedMovedBy,
                             personNeeded: personNeeded,
                             since: Date(timeIntervalSince1970: since))
+            if let raw = rawOwed["suggestedReply"] {
+                guard personNeeded, let reply = suggestedReply(from: raw, conversationID: conversation) else { return nil }
+                owed?.suggestedReply = reply
+            }
         }
         guard claim != nil || owed != nil else { return nil }
         let identity = Orchestrator.SessionWorkIdentity(
@@ -568,6 +573,51 @@ enum OrchestratorStore {
             movedBy: movedBy, personNeeded: personNeeded,
             claimReportedAt: claimReportedAt,
             claimSettled: claimSettled, owed: owed)
+    }
+
+    /// Shared wire/durable codec. Expiry is checked on admission/projection, not while loading
+    /// an old debt: its answer can expire without silently clearing what the user still owes.
+    static func suggestedReply(from raw: Any, conversationID: String?, now: Date? = nil)
+        -> Orchestrator.SuggestedReply? {
+        guard let row = raw as? [String: Any],
+              Set(row.keys) == ["version", "id", "text", "conversationId", "expiresAt"],
+              let version = row["version"] as? NSNumber,
+              CFGetTypeID(version) != CFBooleanGetTypeID(), version.doubleValue == 1,
+              let id = row["id"] as? String, !id.isEmpty, id.utf8.count <= 200,
+              id.unicodeScalars.allSatisfy({ CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.:").contains($0) }),
+              let text = row["text"] as? String, text.utf8.count <= 4_000,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !text.unicodeScalars.contains(where: { ($0.value < 32 && ![9, 10, 13].contains($0.value)) || $0.value == 127 }),
+              let conversation = row["conversationId"] as? String,
+              conversation == conversationID, !conversation.isEmpty, conversation.utf8.count <= 512,
+              let expiry = row["expiresAt"] as? NSNumber, CFGetTypeID(expiry) != CFBooleanGetTypeID(),
+              expiry.doubleValue.isFinite, expiry.doubleValue > 0,
+              expiry.doubleValue <= 9_007_199_254_740_991, expiry.doubleValue.rounded(.down) == expiry.doubleValue else { return nil }
+        if let now, !(expiry.doubleValue > now.timeIntervalSince1970 && expiry.doubleValue <= now.timeIntervalSince1970 + 86_400) { return nil }
+        return Orchestrator.SuggestedReply(id: id, text: text, conversationID: conversation, expiresAt: expiry.doubleValue)
+    }
+
+    static func stored(_ reply: Orchestrator.SuggestedReply) -> [String: Any] {
+        ["version": 1, "id": reply.id, "text": reply.text,
+         "conversationId": reply.conversationID, "expiresAt": reply.expiresAt]
+    }
+
+    static func selfStateReply(_ state: Orchestrator.SessionSelfState) -> [String: Any] {
+        var row: [String: Any] = ["ok": true]
+        if let claim = state.claim { row["state"] = claim.rawValue }
+        if let debt = state.owed { row["owed"] = ["note": debt.note, "since": Int(debt.since.timeIntervalSince1970)] }
+        return row
+    }
+
+    static func owedPayload(_ debt: Orchestrator.OwedDebt, conversationID: String?, now: Date) -> [String: Any] {
+        var row: [String: Any] = ["note": debt.note, "since": Int(debt.since.timeIntervalSince1970),
+            "person_needed": debt.personNeeded, "provenance": "self"]
+        if let mover = debt.movedBy { row["moved_by"] = mover }
+        if debt.personNeeded, let reply = debt.suggestedReply,
+           reply.conversationID == conversationID, reply.expiresAt > now.timeIntervalSince1970 {
+            row["suggestedReply"] = stored(reply)
+        }
+        return row
     }
 
     static func coordinationWait(from obj: [String: Any]) -> Orchestrator.CoordinationWait? {

@@ -486,5 +486,68 @@ assert.match(mock, /function setSessionState\(id, state\)/,
 assert.doesNotMatch(mock, /find\([^\n]+\)\.state\s*=/,
     "mock transitions cannot bypass the closed work-state helper");
 
+// CLA-370 private adapter contract: runtime producer is coordinated separately.
+let replyChecks = 0;
+function replyCheck(actual, expected, why) { replyChecks++; assert.deepEqual(actual, expected, why); }
+const reply = { version: 1, id: "decision-1", text: "允許這個 exact candidate\n保留說明。",
+    conversationId: "conversation-one", expiresAt: 2000 };
+const replySession = { id: "row-one", label: "部署 Clawdline", machine: "mac-one",
+    sessionId: "conversation-one", state: "waiting", owed: { person_needed: true, suggestedReply: reply } };
+globalThis.__workStateState.sessions = [replySession];
+replyCheck(typeof derive.sessionSuggestedReply, "function", "typed reply model exists");
+replyCheck(derive.sessionSuggestedReply(replySession, 1000)?.text, reply.text, "literal reply remains exact");
+for (const suggestedReply of [undefined, "允許", {}, { ...reply, version: 2 },
+    { ...reply, text: " " }, { ...reply, text: "x".repeat(4001) }, { ...reply, text: "中".repeat(1400) },
+    { ...reply, machineId: "mac-two" }, { ...reply, conversationId: "another" },
+    { ...reply, expiresAt: 999 }, { ...reply, expiresAt: Infinity }, { ...reply, id: "" }]) {
+    replyCheck(derive.sessionSuggestedReply({ ...replySession, owed: {
+        person_needed: true, note: "允許", suggestedReply } }, 1000), null, "malformed/absent/foreign/expired never guesses");
+}
+for (const person_needed of [false, undefined, "true"]) {
+    replyCheck(derive.sessionSuggestedReply({ ...replySession, owed: { person_needed, suggestedReply: reply } }, 1000),
+        null, "only explicit person-needed debt offers a reply");
+}
+replyCheck(derive.sessionSuggestedReply({ ...replySession, machine: null }, 1000), null, "no local-machine guess");
+replyCheck(derive.sessionSuggestedReply({ ...replySession, identity: { machine: "foreign" } }, 1000), null,
+    "contradictory transport identity cannot fill a draft");
+replyCheck(derive.sessionSuggestedReply({ ...replySession, machine: "this-mac" }, 1000)?.text, reply.text,
+    "same typed wire shape works through authenticated local transport");
+replyCheck(derive.sessionSuggestedReply({ ...replySession, machine: "mac-two" }, 1000)?.key ===
+    derive.sessionSuggestedReply(replySession, 1000)?.key, false, "displayed key binds authenticated machine");
+let stopped = 0;
+for (const key of ["Enter", " "]) derive.suggestedReplyKeydown({ key,
+    target: { closest: () => ({}) }, stopPropagation() { stopped++; } });
+replyCheck(stopped, 2, "button keyboard activation never reaches global navigation shortcuts");
+replyCheck(derive.sessionSuggestedReply(replySession, 2000), null, "expiry boundary is exclusive");
+const replyHTML = derive.suggestedReplyButtonHTML(replySession, { now: 1000, writable: true, openId: "row-one", zh: true,
+    composerIdentity: derive.replySessionIdentity(replySession, [replySession]), rows: [replySession] });
+replyCheck(replyHTML.includes("填入建議回覆"), true, "clear fill-only action");
+replyCheck(replyHTML.includes("部署 Clawdline"), true, "Session title identifies destination");
+replyCheck(replyHTML.includes("disabled"), false, "current matching writable session can fill");
+replyCheck(derive.suggestedReplyButtonHTML(replySession, { now: 1000, writable: true, openId: "other" }).includes("disabled"),
+    true, "foreign session cannot navigate or fill");
+replyCheck(derive.suggestedReplyButtonHTML(replySession, { now: 1000, writable: false, openId: "row-one" }).includes("disabled"),
+    true, "read-only button is disabled");
+console.log(`CLA-370 suggested-reply model: ${replyChecks} checks passed`);
+// The actual LocalClient ingress receives server rows without machine/identity fields.
+const localSource = await readFile(new URL("../Resources/web/app/js/net/live.js", import.meta.url), "utf8");
+const normalizeSource = localSource.match(/export function localInventoryRows\(rows\) \{[\s\S]*?\n\}/)?.[0];
+const receiveSource = localSource.match(/receiveSessions: function \(data\) \{[\s\S]*?\n    \},/)?.[0];
+assert.ok(normalizeSource && receiveSource, "actual local ingress boundary is present");
+const normalize = new Function("LOCAL_MACHINE", normalizeSource.replace("export ", "") + ";return localInventoryRows;")("this-mac");
+let receivedRows;
+const receive = new Function("handlers", "localInventoryRows", "LOCAL_MACHINE",
+    "return (" + receiveSource.slice(receiveSource.indexOf("function"), -1) + ");")(
+    {sessions(rows) {receivedRows=rows;return true;}}, normalize, "this-mac");
+const rawLocal = {...replySession}; delete rawLocal.machine;
+await receive.call({sessionGeneration:null,completedScanSequence:null,sessionRevision:0,emit(){}}, {sessions:[rawLocal]});
+assert.equal(receivedRows[0].machine,"this-mac");
+assert.equal(rawLocal.machine,undefined,"transport enrichment does not mutate the source payload");
+assert.equal(derive.sessionSuggestedReply(receivedRows[0],1000)?.text,reply.text);
+const localPin=derive.replySessionIdentity(receivedRows[0],receivedRows);
+assert.ok(derive.suggestedReplyButtonHTML(receivedRows[0],{now:1000,writable:true,openId:"row-one",
+    composerIdentity:localPin,rows:receivedRows}).includes('data-reply-key'));
+assert.equal(derive.replySessionIdentity(rawLocal,[rawLocal]),null,"unenriched ambiguous Cloud rows cannot borrow local identity");
+console.log("CLA-370 actual local transport: 6 checks passed");
 console.log("web session disposition tests passed");
 process.exit(0);

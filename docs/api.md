@@ -2699,6 +2699,19 @@ survives turns until this route clears it with `"owed": null`, and re-declaring 
 note keeps the original `since`. Refusals `401/403/404/409 session_not_working/409
 session_unbound` match `/complete`.
 
+`owed.suggestedReply` is an optional v1 literal draft suggestion, not permission or execution:
+`{"version":1,"id":"decision-1","text":"the exact proposed reply","conversationId":"current-conversation","expiresAt":1800000600}`.
+Only a person-needed debt can carry it. The current watched process supplies the conversation
+binding; a foreign conversation, unknown key/version, blank/control text, text over 4,000 UTF-8
+bytes, or expiry not an integer in the next 24 hours is `400 suggested_reply_invalid`. IDs are
+1–200 ASCII letters/digits/`_-.:`. The optional field survives restart; expired suggestions disappear
+from projection without clearing the debt. Redeclaring owed without this field removes the suggestion.
+The receiving authenticated inventory channel supplies machine identity (`this-mac` locally, the
+verified machine channel in Cloud); the suggestion cannot supply or override it. The UI action is
+**Fill suggested reply**: only the currently open matching machine/conversation, with an empty
+composer and no attachments, may receive the literal text. It never sends, resumes, grants consent,
+mutates remote state, or clears `owed`; the user must review and explicitly submit.
+
 ### `POST /v1/orchestrator/sessions/:id/closure`
 
 Evidence about a Session that the broker cannot observe, and the second half of

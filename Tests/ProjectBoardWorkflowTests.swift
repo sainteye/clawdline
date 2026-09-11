@@ -2,6 +2,148 @@ import Foundation
 
 private enum WorkflowSyncFixtureError: Error { case refused }
 
+private func workflowSettledCapacityProof() {
+    let root = workflowTestDirectory("settled-capacity")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("journal.json"), identity = workflowIdentity()
+    var calls: [String] = [], bodies: [[String: Any]] = []
+    func make(_ capacity: Int = 3) -> ProjectBoardWorkflow {
+        ProjectBoardWorkflow(url: file, boardHeader: { (true, 1, true) },
+            boardCommand: { body, _ in
+                calls.append(body["requestId"] as? String ?? "missing")
+                bodies.append(body)
+                return ProjectBoardStore.Reply(status: 200, body: ["itemId": "item-settled"])
+            }, limits: ProjectBoardWorkflow.Limits(runs: 16, eventsPerRun: 64,
+                receipts: 128, outbox: capacity, maximumBytes: 2 * 1024 * 1024), autoStart: false)
+    }
+    var workflow = make()
+    guard case .managed(let run) = workflow.prepareIngress(requestID: "settled-turn",
+        fingerprint: "settled-turn-body", text: "work", imageCount: 0, identity: identity) else {
+        check("capacity fixture admits its run", false); return
+    }
+    _ = workflow.markDelivery(runID: run.runID, identity: identity, delivered: true)
+    let begin: [String: Any] = ["operation": "begin", "run_id": run.runID,
+        "classification": "new_work", "title": "capacity work", "type": "feature", "phase": "output"]
+    expect("create reserves its future link and span", workflow.record(begin,
+        requestID: "settled-begin", fingerprint: "settled-begin-body", identity: identity).status, 202)
+    workflow.drainForTesting()
+    expect("create dependency executes exactly three initial commands", calls.count, 3)
+    for i in 0..<6 {
+        let body: [String: Any] = ["operation": "progress", "run_id": run.runID,
+            "summary": "step", "outputs": [["title": "proof", "url": "https://example.test/\(i)", "kind": "website"]]]
+        let result = workflow.record(body, requestID: "settled-progress-\(i)",
+            fingerprint: "settled-body-\(i)", identity: identity)
+        expect("settled capacity admits later work \(i)", result.status, 202)
+        workflow.drainForTesting()
+        workflow = make()
+        expect("same request replays after restart \(i)", workflow.record(body,
+            requestID: "settled-progress-\(i)", fingerprint: "settled-body-\(i)", identity: identity).status, 202)
+        workflow.drainForTesting()
+    }
+    expect("compacted intent identities never re-execute", calls.count, 9)
+    expect("every executed Board request identity is unique", Set(calls).count, calls.count)
+    if let data = try? Data(contentsOf: file),
+       let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        expect("completed payload rows no longer consume outbox", (saved["outbox"] as? [Any])?.count, 0)
+    } else { check("compacted journal remains readable", false) }
+
+    // A capacity of two must reject a create before any of its three dependent writes execute.
+    let smallFile = root.appendingPathComponent("small.json")
+    var smallCalls = 0
+    let small = ProjectBoardWorkflow(url: smallFile, boardHeader: { (true, 1, true) },
+        boardCommand: { _, _ in smallCalls += 1; return ProjectBoardStore.Reply(status: 200, body: ["itemId": "small"]) },
+        limits: ProjectBoardWorkflow.Limits(runs: 16, eventsPerRun: 64, receipts: 128,
+            outbox: 2, maximumBytes: 2 * 1024 * 1024), autoStart: false)
+    guard case .managed(let smallRun) = small.prepareIngress(requestID: "small",
+        fingerprint: "small", text: "work", imageCount: 0, identity: identity) else {
+        check("small capacity fixture admits ingress", false); return
+    }
+    _ = small.markDelivery(runID: smallRun.runID, identity: identity, delivered: true)
+    var smallBegin = begin; smallBegin["run_id"] = smallRun.runID
+    expect("fanout capacity refuses before side effects", small.record(smallBegin,
+        requestID: "small-begin", fingerprint: "small-begin", identity: identity).code, "workflow_outbox_full")
+    small.drainForTesting()
+    expect("capacity refusal does not execute partial create", smallCalls, 0)
+
+    // Reconstruct a bounded legacy v2 journal with 514 real identity-linked rows, not a
+    // production-file edit. Completed creates carry downstream item identity across migration.
+    do {
+        var saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+        let template = (saved["runs"] as! [[String: Any]])[0]
+        let beginEvent = (template["events"] as! [[String: Any]])[0]
+        var runs: [[String: Any]] = [], rows: [[String: Any]] = []
+        for i in 0..<171 {
+            var copy = template, event = beginEvent
+            let rid = "legacy-run-\(i)", eid = "legacy-event-\(i)"
+            event["id"] = eid; event.removeValue(forKey: "settledIntents")
+            // v2 predates the run-level span identity; do not copy this v3 fixture's identity.
+            copy.removeValue(forKey: "spanStart")
+            copy["id"] = rid; copy["events"] = [event]; runs.append(copy)
+            for kind in ["create", "link", "span"] {
+                rows.append(["id": "\(eid)-\(kind)", "version": 1, "runID": rid, "eventID": eid,
+                    "kind": kind, "index": 0, "status": "complete", "attempts": 1,
+                    "createdItemID": "item-settled", "updatedAt": 1,
+                    "preparedRequestID": "workflow-\(eid)-\(kind)-1"])
+            }
+        }
+        var failedEvent = beginEvent
+        failedEvent["id"] = "failed-event"; failedEvent["operation"] = "progress"
+        failedEvent.removeValue(forKey: "settledIntents")
+        failedEvent["outputs"] = [["title": "output", "url": "https://example.test/failed", "kind": "website"]]
+        var events = runs[0]["events"] as! [[String: Any]]; events.append(failedEvent); runs[0]["events"] = events
+        // Real old event retention removes settled sources but leaves their outbox payloads.
+        runs[0]["events"] = [failedEvent]
+        rows.append(["id": "failed-event-artifact-0", "version": 1, "runID": "legacy-run-0",
+            "eventID": "failed-event", "kind": "record_output", "index": 0, "status": "failed",
+            "attempts": 3, "failureCode": "retained_refusal", "updatedAt": 1])
+        saved["schemaVersion"] = 2; saved["runs"] = runs; saved["outbox"] = rows; saved["receipts"] = []
+        let legacyFile = root.appendingPathComponent("legacy.json")
+        try JSONSerialization.data(withJSONObject: saved).write(to: legacyFile)
+        var legacyCalls = 0
+        func legacy() -> ProjectBoardWorkflow {
+            ProjectBoardWorkflow(url: legacyFile, boardHeader: { (true, 1, true) },
+                boardCommand: { _, _ in legacyCalls += 1; return ProjectBoardStore.Reply(status: 200, body: [:]) }, autoStart: false)
+        }
+        var reopened = legacy()
+        expect("514-row legacy completed overflow migrates before live-capacity validation", reopened.syncMode(), nil)
+        reopened.drainForTesting(); reopened = legacy(); reopened.drainForTesting()
+        expect("migration and second restart never replay old completed mutations", legacyCalls, 0)
+        let migrated = try JSONSerialization.jsonObject(with: Data(contentsOf: legacyFile)) as! [String: Any]
+        let retained = migrated["outbox"] as! [[String: Any]]
+        expect("failed-visible rows remain pinned, not erased by compaction", retained.count, 1)
+        expect("failed identity/reason survives migration", retained.first?["failureCode"] as? String, "retained_refusal")
+        let migratedRuns = migrated["runs"] as! [[String: Any]]
+        let legacyStart = migratedRuns[0]["spanStart"] as? [String: Any]
+        expect("legacy evicted begin retains exact successful span request",
+               legacyStart?["requestID"] as? String, "workflow-legacy-event-0-span-1")
+        var conflicted = migrated
+        var conflictRows = retained
+        conflictRows.append(["id": "legacy-event-1-link", "version": 1, "runID": "legacy-run-1",
+            "eventID": "legacy-event-1", "kind": "link", "index": 0, "status": "pending",
+            "attempts": 0, "updatedAt": 1])
+        conflicted["outbox"] = conflictRows
+        try JSONSerialization.data(withJSONObject: conflicted).write(to: legacyFile)
+        let conflict = legacy()
+        expect("pending identity overlapping settled tombstone fails closed", conflict.syncMode(), "workflow_persistence_failed")
+        conflict.drainForTesting()
+        expect("conflicting pending row cannot replay a settled mutation", legacyCalls, 0)
+    } catch { check("legacy overflow fixture is decodable", false) }
+
+    // Event retention must not discard the one exact identity needed to end this run's span.
+    for i in 0..<65 {
+        _ = workflow.record(["operation": "progress", "run_id": run.runID, "summary": "quiet update"],
+            requestID: "trim-\(i)", fingerprint: "trim-\(i)", identity: identity)
+    }
+    workflow = make()
+    expect("delivery after begin eviction is admitted", workflow.record([
+        "operation": "deliver", "run_id": run.runID, "disposition": "delivered", "summary": "done", "next_action": "review"
+    ], requestID: "trim-deliver", fingerprint: "trim-deliver", identity: identity).status, 202)
+    workflow.drainForTesting()
+    let start = bodies.first { $0["operation"] as? String == "span" }?["requestId"] as? String
+    let end = bodies.last { $0["operation"] as? String == "end_span" }?["startRequestId"] as? String
+    check("end_span preserves exact source identity after compaction, eviction and restart", start != nil && end == start)
+}
+
 private func workflowAssignmentLifecycleProof() {
     for variant in ["propose", "accepted", "declined", "cancelled"] {
         let root = workflowTestDirectory("assignment-lifecycle-\(variant)")
@@ -732,9 +874,23 @@ private func workflowSupplementStoreProof() {
                 events[index]["supplement"] = supplement
             }
         }
-        runs[0]["events"] = events; journal["runs"] = runs
         var outbox = journal["outbox"] as! [[String: Any]]
         var preparedKeys = Set<String>()
+        // Build genuine legacy pending rows explicitly: current journals compact successful
+        // payload rows, so flipping whatever rows remain would test zero replays.
+        for index in events.indices {
+            let settled = events[index]["settledIntents"] as? [[String: Any]] ?? []
+            let replay = settled.filter { ["supplement_checklist", "supplement_obligation"].contains($0["kind"] as? String ?? "") }
+            for entry in replay {
+                let id = entry["id"] as! String
+                outbox.append(["id": id, "version": 1, "runID": runs[0]["id"]!,
+                    "eventID": events[index]["id"]!, "kind": entry["kind"]!, "index": entry["index"]!,
+                    "status": "pending", "attempts": 1, "preparedRequestID": "legacy-prepared-\(id)",
+                    "preparedRevision": reloaded.readHeader().revision, "updatedAt": 1])
+            }
+            events[index]["settledIntents"] = settled.filter { !["supplement_checklist", "supplement_obligation"].contains($0["kind"] as? String ?? "") }
+        }
+        runs[0]["events"] = events; journal["runs"] = runs
         for index in outbox.indices where ["supplement_checklist", "supplement_obligation"].contains(outbox[index]["kind"] as? String ?? "") {
             outbox[index]["status"] = "pending"
             if let key = outbox[index]["preparedRequestID"] as? String { preparedKeys.insert(key) }
@@ -1254,6 +1410,7 @@ group("managed Board ingress is durable, bounded and identity-bound") {
 }
 
 group("workflow receipts stay attested and reconcile through a bounded durable outbox") {
+    workflowSettledCapacityProof()
     workflowProgramBindingAndDocumentProof()
     workflowSessionAssignmentProof()
     workflowAssignmentLifecycleProof()
@@ -1441,7 +1598,7 @@ group("workflow receipts stay attested and reconcile through a bounded durable o
            migratedReplay.code, "workflow_begin_recorded")
     let migratedText = (try? String(contentsOf: journalURL, encoding: .utf8)) ?? ""
     check("receipt migration is explicit and writes schema 2 with requestScope",
-          migratedText.contains("\"schemaVersion\":2")
+          migratedText.contains("\"schemaVersion\":3")
             && migratedText.contains("\"requestScope\":"))
 
     var transientBodies: [[String: Any]] = []

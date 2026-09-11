@@ -1501,7 +1501,14 @@ enum Orchestrator {
         let note: String
         let movedBy: String?
         let personNeeded: Bool
-        let since: Date
+        var since: Date
+        var suggestedReply: SuggestedReply? = nil
+    }
+    struct SuggestedReply: Equatable {
+        let id: String
+        let text: String
+        let conversationID: String
+        let expiresAt: Double
     }
 
     /// A session's authenticated declaration about its own quiet state, bound to the exact
@@ -1682,16 +1689,7 @@ enum Orchestrator {
         let selfState = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionSelfState(forTerminal: identity.terminalID) }.flatMap {
             recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
         }
-        let owed: [String: Any]? = selfState?.owed.map { debt in
-            var row: [String: Any] = [
-                "note": debt.note,
-                "since": Int(debt.since.timeIntervalSince1970),
-                "person_needed": debt.personNeeded,
-                "provenance": "self",
-            ]
-            if let movedBy = debt.movedBy { row["moved_by"] = movedBy }
-            return row
-        }
+        let owed = selfState?.owed.map { OrchestratorStore.owedPayload($0, conversationID: identity.conversationID, now: Date()) }
 
         // A non-assistant prompt is a terminal waiting for a command. For an assistant, absence
         // of a broker task is not proof that its human-authored assignment ended; fail closed.
@@ -1917,6 +1915,13 @@ enum Orchestrator {
             owed = OwedDebt(note: owedNote, movedBy: owedMovedBy,
                             personNeeded: rawOwed["person_needed"] as? Bool ?? true,
                             since: now)
+            if let raw = rawOwed["suggestedReply"] {
+                guard owed?.personNeeded == true, let reply = OrchestratorStore.suggestedReply(
+                    from: raw, conversationID: identity.conversationID, now: now) else {
+                    return .refused(400, "suggested_reply_invalid", "Use a bounded, current, conversation-bound v1 suggestedReply.")
+                }
+                owed?.suggestedReply = reply
+            }
         }
         guard claim != nil || owed != nil || clearOwed else {
             return .refused(400, "bad_request",
@@ -1936,8 +1941,7 @@ enum Orchestrator {
         } else if let owed {
             // The same debt keeps its first clock; only a different note is a new debt.
             if let held = existing?.owed, held.note == owed.note {
-                made.owed = OwedDebt(note: owed.note, movedBy: owed.movedBy,
-                                     personNeeded: owed.personNeeded, since: held.since)
+                var same = owed; same.since = held.since; made.owed = same
             } else {
                 made.owed = owed
             }
@@ -1958,12 +1962,7 @@ enum Orchestrator {
         } else {
             OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionSelfState(made, forTerminal: identity.terminalID) }
         }
-        var payload: [String: Any] = ["ok": true]
-        if let claim = made.claim { payload["state"] = claim.rawValue }
-        if let debt = made.owed {
-            payload["owed"] = ["note": debt.note,
-                               "since": Int(debt.since.timeIntervalSince1970)]
-        }
+        let payload = OrchestratorStore.selfStateReply(made)
         lock.unlock()
         save()
         RemoteAuth.audit("orchestrator.session.declared", [

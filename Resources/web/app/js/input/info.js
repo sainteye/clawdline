@@ -14,6 +14,8 @@ import { GitPanel } from "./git-panel.js";
 import { SessionFacts, StatusLine } from "./status-line.js";
 import { isOpenableProjectLink, isServedProjectArtifact } from "./project-links.js";
 import { fastModeCommand, nextFastMode, settledFastMode } from "./fast-mode.js";
+import { suggestedReplyButtonHTML, suggestedReplyKeydown } from "../view/derive.js";
+import { fillSuggestedReply } from "./composer.js";
 
 /**
  * The Session info card — the status line at the bottom of a Claude Code terminal, for somebody
@@ -303,6 +305,10 @@ export var Info = (function () {
             workSaid + tap + '</summary><div class="status-explanation"><p>' +
             esc(T.webInfoWorkStatusMeaning) + "</p>" + context + "</div></details>";
 
+        out += suggestedReplyButtonHTML(s, { openId: S.openId,
+            composerIdentity: S.replyComposerIdentity,
+            writable: S.write === true && S.conn === "live" && !S.agent,
+            zh: (document.documentElement.lang || "").toLowerCase().startsWith("zh") });
         var closeable = projectSessionCloseability(s);
         if (closeable.block) {
             var reasons = closeabilityLines(s);
@@ -797,7 +803,14 @@ els.info.addEventListener("click", function () { Info.close(); });
 els["info-sheet"].addEventListener("click", function (ev) { ev.stopPropagation(); });
 els["info-close"].addEventListener("click", function () { Info.close(); });
 els["info-refresh"].addEventListener("click", function () { Info.refresh(); });
+els["info-body"].addEventListener("keydown", suggestedReplyKeydown);
 els["info-body"].addEventListener("click", function (ev) {
+    const reply = ev.target.closest && ev.target.closest("button[data-reply-key]");
+    if (reply) {
+        ev.preventDefault(); ev.stopPropagation();
+        if (!reply.disabled && fillSuggestedReply(reply.dataset.replySession, reply.dataset.replyKey)) Info.close();
+        return;
+    }
     var t = ev.target;
     var chip = t.closest ? t.closest("button[data-model]") : null;
     if (chip) { if (!chip.disabled) Info.switchTo(chip.dataset.model, chip.dataset.name); return; }

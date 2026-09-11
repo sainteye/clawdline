@@ -5,7 +5,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
 import { api } from "../net/api.js";
-import { byId, revisionOf } from "../view/derive.js";
+import { byId, revisionOf, replySessionIdentity } from "../view/derive.js";
 import { closingID, render, rowNodes } from "../view/list.js";
 import { renderTranscript } from "../view/transcript.js";
 import { Optimistic, Waits } from "../view/waits.js";
@@ -234,6 +234,8 @@ export function openSession(id, keepFocus, forceRefresh) {
         // session's name, which is the one thing this pane must never do.
         closeAgent(true);
         S.openId = id;
+        // Inventory/quiet refresh cannot rebind this pin; an explicit close/open establishes it.
+        S.replyComposerIdentity = replySessionIdentity(s);
         // Which runs were open is where a reader had got to in that transcript, not a setting.
         // Fold keys come from content and so would not collide across sessions, but carrying
         // them over means arriving in a new transcript with something already open.
@@ -288,6 +290,7 @@ export function closeDetail(silent) {
         delete transcriptFileSignatures[S.openId];
     }
     S.openId = null;
+    S.replyComposerIdentity = null;
     SessionBoard.follow(null);
     transcriptRequests.activate(null);
     S.agent = null;

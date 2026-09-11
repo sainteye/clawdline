@@ -48,6 +48,7 @@ group("the coordination address book carries a bounded self-reported peer handof
 }
 
 group("a peer handoff is bounded across declaration, restart, and projection") {
+    suggestedReplyProof()
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
     defer {
@@ -116,4 +117,74 @@ group("a peer handoff is bounded across declaration, restart, and projection") {
     check("an unbounded durable debt cannot enter the coordination address book",
         OrchestratorStore.sessionSelfState(from: debt) == nil)
 }
+}
+
+private func suggestedReplyProof() {
+    let store = Orchestrator.storeURL, before = try? Data(contentsOf: Orchestrator.storeURL)
+    defer {
+        if let before { try? before.write(to: store, options: .atomic) }
+        else { try? FileManager.default.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+    let now = Date(), expires = floor(now.timeIntervalSince1970) + 600
+    let identity = Orchestrator.SessionWorkIdentity(terminalID: "%reply", assistant: .codex,
+        tty: "/dev/ttys071", pid: 8_123, processStart: now.addingTimeInterval(-60),
+        conversationID: "conversation-reply")
+    let suggestion: [String: Any] = ["version": 1, "id": "decision-1",
+        "text": "允許這個 exact candidate\n保留我的補充。", "conversationId": "conversation-reply", "expiresAt": expires]
+    func declare(_ reply: Any?, person: Bool = true) -> Orchestrator.Reply {
+        var owed: [String: Any] = ["note": "請檢查候選", "person_needed": person]
+        if let reply { owed["suggestedReply"] = reply }
+        return Orchestrator.declareSessionState(identity: identity, terminalState: .working("requesting"),
+            claim: nil, note: nil, movedBy: nil, personNeeded: nil, owed: owed, clearOwed: false, now: now)
+    }
+    guard case .ok = declare(suggestion) else { check("typed reply is admitted", false); return }
+    let projected = Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+    expect("typed literal suggested reply is projected without note inference",
+        (projected.owed?["suggestedReply"] as? [String: Any])?["text"] as? String, suggestion["text"] as? String)
+    expect("declaring a suggestion keeps the decision owed", projected.owed?["person_needed"] as? Bool, true)
+    Orchestrator.saveForTesting(); Orchestrator.forget()
+    let restored = Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+    expect("suggestion identity survives registry persistence and restart",
+        (restored.owed?["suggestedReply"] as? [String: Any])?["id"] as? String, "decision-1")
+    if let decoded = OrchestratorStore.suggestedReply(from: suggestion, conversationID: identity.conversationID) {
+        let debt = Orchestrator.OwedDebt(note: "still owed", movedBy: nil, personNeeded: true,
+            since: now, suggestedReply: decoded)
+        let expired = OrchestratorStore.owedPayload(debt, conversationID: identity.conversationID,
+            now: Date(timeIntervalSince1970: expires))
+        check("expired suggestions disappear without clearing debt",
+            expired["suggestedReply"] == nil && expired["note"] as? String == "still owed")
+        let row = Orchestrator.SessionSelfState(identity: identity, claim: nil, note: nil,
+            movedBy: nil, personNeeded: nil, claimReportedAt: nil, claimSettled: false, owed: debt)
+        expect("durable codec retains the exact literal suggestion",
+            OrchestratorStore.sessionSelfState(from: OrchestratorStore.stored(row))?.owed?.suggestedReply, decoded)
+    } else { check("valid suggestion decodes for durable expiry proof", false) }
+    var foreign = identity; foreign.conversationID = "another-conversation"
+    check("suggestions never cross a reused terminal identity",
+        Orchestrator.sessionWorkProjection(identity: foreign, terminalState: .idle).owed == nil)
+    let invalid: [(String, Any)] = [
+        ("untyped", "允許"), ("unknown version", suggestion.merging(["version": 2]) { _, n in n }),
+        ("boolean version", suggestion.merging(["version": true]) { _, n in n }),
+        ("empty text", suggestion.merging(["text": " "]) { _, n in n }),
+        ("unbounded text", suggestion.merging(["text": String(repeating: "中", count: 1400)]) { _, n in n }),
+        ("control text", suggestion.merging(["text": "allow\u{0}"]) { _, n in n }),
+        ("foreign conversation", suggestion.merging(["conversationId": "another"]) { _, n in n }),
+        ("expired", suggestion.merging(["expiresAt": now.timeIntervalSince1970 - 1]) { _, n in n }),
+        ("too distant", suggestion.merging(["expiresAt": expires + 86_400]) { _, n in n }),
+        ("fractional expiry", suggestion.merging(["expiresAt": expires + 0.5]) { _, n in n }),
+        ("unknown field", suggestion.merging(["autoSend": true]) { _, n in n }),
+    ]
+    for (name, raw) in invalid {
+        if case .refused(_, let code, _, _) = declare(raw) {
+            expect("\(name) typed suggestion is refused", code, "suggested_reply_invalid")
+        } else { check("\(name) typed suggestion is refused", false) }
+    }
+    if case .refused(_, let code, _, _) = declare(suggestion, person: false) {
+        expect("non-person debt cannot offer approval text", code, "suggested_reply_invalid")
+    } else { check("non-person debt cannot offer approval text", false) }
+    _ = declare(nil)
+    let legacy = Orchestrator.sessionWorkProjection(identity: identity, terminalState: .idle)
+    check("old debt without a typed suggestion remains visible without a fabricated action",
+        legacy.owed?["note"] as? String == "請檢查候選" && legacy.owed?["suggestedReply"] == nil)
 }

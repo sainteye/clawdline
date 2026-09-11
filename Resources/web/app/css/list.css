@@ -178,6 +178,15 @@
     display: inline-flex; align-items: center; gap: 4px;
     white-space: nowrap; font: 11.5px/1 var(--mono); color: var(--faint);
 }
+.session-suggested-reply {
+    min-height: 32px; max-width: 100%; padding: 5px 9px;
+    border: 1px solid var(--faint); border-radius: 6px;
+    background: transparent; color: var(--ink); font: inherit;
+    white-space: normal; cursor: pointer;
+}
+.row > .session-suggested-reply { grid-column: 2 / -1; justify-self: start; }
+.session-suggested-reply:disabled { opacity: .5; cursor: default; }
+.session-suggested-reply:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The fourth projection. Same shrink-and-ellipsise contract as every other badge on this row,
    which is what makes 320 and 390 hold: the row never grows, the least important badge loses
    its characters first, and the whole sentence stays reachable through `title`. It is never

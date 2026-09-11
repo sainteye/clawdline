@@ -265,6 +265,24 @@ command is itself persisted with its exact body, request id, and expected Board 
 execution; retry uses the Board store's idempotency contract. Slow or failed Board consumption
 therefore does not occupy terminal-send admission.
 
+Completed intents are atomically compacted into identity-bound tombstones on their source event.
+The tombstone retains the kind, index and created-child identity needed by downstream commands;
+materialization consults it before creating another outbox row. It grants no verification or
+landing authority. Tombstones leave only when their bounded source event/run is safely evicted.
+The exact successful span request ID is additionally retained on its immutable run binding, so
+ending an interval still works after begin-event retention and restart; no span identity is guessed.
+Legacy completed rows whose source event was already evicted can leave without rematerialization,
+but their exact span-start identity is preserved. Conflicting live rows and settled IDs are refused.
+Admission reserves deferred create/binding/child fanout before any Board mutation executes, so
+settlement cannot silently exceed live outbox capacity. Failed-visible rows still occupy capacity;
+`outbox_pending: 0` is not a claim that failed rows or deferred intents are absent.
+
+Journal schema 3 reads legacy schema 1/2 within the existing byte limit, validates source identity,
+and compacts proven completed rows before testing live capacity. This includes legacy 514-row
+journals created by the former post-create fanout overflow. Migration must be durably synchronized
+before it is installed in memory. Unknown/conflicting settlement identity, unresolved over-capacity
+work, and persistence errors remain explicit refusals; no journal clearing or blind resend is used.
+
 Pending, in-flight, and failed-visible outbox subjects protect their run from capacity eviction;
 settlement re-finds an immutable outbox id and verifies its version, run, event, and kind instead of
 using an array position held across an unlocked Board call. Failed reconciliation remains visible

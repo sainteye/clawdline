@@ -221,4 +221,60 @@ for (const property of ["min-width: 0", "overflow: hidden"]) {
         "the row's state cell keeps `" + property + "`, which is what clips the badge");
 }
 
+const composerSource = await readFile(new URL("../Resources/web/app/js/input/composer.js", import.meta.url), "utf8");
+const fillSource = composerSource.match(/export function fillSuggestedReply\(sid, expectedKey\) \{[\s\S]*?\n\}/)?.[0];
+assert.ok(fillSource, "a separate fill-only boundary exists");
+let draft = "", inserts = 0, renders = 0, replyChecks = 0;
+const current = { id: "one", machine: "mac", sessionId: "conversation", owed: { note: "original" } };
+const ui = { openId: "one", write: true, conn: "live", agent: null, tx: { id: "one" } };
+ui.sessions = [current]; ui.replyComposerIdentity = derive.replySessionIdentity(current, ui.sessions);
+const box = { get textContent() { return draft; }, set textContent(v) { inserts++; draft = v; } };
+let model = { key: "exact-key", text: "允許\nexact candidate" }, attachments = [];
+const fillReply = new Function("S", "els", "byId", "sessionSuggestedReply", "rawMsgText", "Shots", "Voice",
+    "blankness", "renderComposer", "sending", "closingID", "toast", "document", "replySessionIdentity",
+    fillSource.replace("export ", "") + "\nreturn fillSuggestedReply;")(
+    ui, { msg: box }, id => id === "one" ? current : null, () => model, () => draft,
+    { urls: () => attachments, busy: () => false }, { busy: () => false }, () => {}, () => renders++, false, null,
+    () => {}, { documentElement: { lang: "zh-Hant" } }, derive.replySessionIdentity);
+function proof(condition, why) { replyChecks++; assert.ok(condition, why); }
+proof(fillReply("one", "exact-key") === true && draft === model.text, "only exact literal reply fills");
+proof(inserts === 1 && renders === 1 && current.owed.note === "original", "only draft/render changes; owed preserved");
+for (const existing of ["original draft", " ", "\n"]) {
+    draft = existing; proof(fillReply("one", "exact-key") === false && draft === existing, "even whitespace draft is preserved");
+}
+draft = "";
+proof(fillReply("one", "stale-key") === false && draft === "", "stale displayed suggestion is rejected");
+proof(fillReply("other", "exact-key") === false && draft === "", "other row cannot touch current composer");
+attachments = ["photo"];
+proof(fillReply("one", "exact-key") === false && draft === "", "attachment-only draft is protected");
+attachments = [];
+ui.replyComposerIdentity = JSON.stringify([current.id, current.machine, current.sessionId]);
+ui.sessions = [current];
+current.machine = "foreign-machine";
+proof(fillReply("one", "exact-key") === false && draft === "",
+    "same row id from another machine cannot fill the already-open composer");
+current.machine = "mac";
+current.sessionId = "new-conversation";
+proof(fillReply("one", "exact-key") === false && draft === "", "replacement before quiet refresh cannot rebind composer");
+ui.tx.error = "refresh failed";
+proof(fillReply("one", "exact-key") === false && draft === "", "failed refresh does not authorize a replacement conversation");
+delete ui.tx.error; current.sessionId = "conversation";
+ui.sessions = [current, { ...current, machine: "other-mac" }];
+proof(fillReply("one", "exact-key") === false && draft === "", "duplicate terminal ids across machines fail closed");
+ui.sessions = [current]; const pin = ui.replyComposerIdentity; ui.replyComposerIdentity = null;
+proof(fillReply("one", "exact-key") === false && draft === "", "closed or unbound composer cannot fill");
+ui.replyComposerIdentity = pin;
+for (const [key, value] of [["write", false], ["conn", "offline"], ["agent", { id: "child" }], ["openId", "other"]]) {
+    const before = ui[key]; ui[key] = value;
+    proof(fillReply("one", "exact-key") === false && draft === "", "unsafe composer context refuses"); ui[key] = before;
+}
+model = null;
+proof(fillReply("one", "exact-key") === false && draft === "", "withdrawn/expired suggestion refuses at click time");
+proof(!/api\.|send\(|resume|appendMsg|dispatchEvent/.test(fillSource), "fill boundary has no send/resume/remote event path");
+const openSource = await readFile(new URL("../Resources/web/app/js/session/open.js", import.meta.url), "utf8");
+proof(openSource.includes("S.replyComposerIdentity = replySessionIdentity(s)") &&
+    openSource.includes("S.replyComposerIdentity = null"), "actual open/close code owns composer pin");
+proof(!openSource.slice(openSource.indexOf("export function loadTranscript"), openSource.indexOf("export function openSession"))
+    .includes("S.replyComposerIdentity ="), "quiet/loading/failed transcript refresh cannot rebind the composer");
+console.log(`CLA-370 draft-only boundary: ${replyChecks} checks passed`);
 console.log("web session closeability: ok");

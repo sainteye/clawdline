@@ -22,6 +22,8 @@ import { StatusLine } from "../input/status-line.js";
 import { SessionBoard } from "../input/session-board.js";
 import { BoardSession } from "../input/board-session.js";
 import { Info } from "../input/info.js";
+import { suggestedReplyButtonHTML, suggestedReplyKeydown } from "./derive.js";
+import { fillSuggestedReply } from "../input/composer.js";
 import {
     CoordinatorControls,
     coordinatorRoute,
@@ -378,7 +380,14 @@ function buildRow(s) {
         '<span class="task-chip" hidden></span></div>' +
         '<div class="state"></div>' +
         '<button class="swipe-end" type="button" hidden>' + esc(T.webEndSession) + '</button>';
-    li.addEventListener("click", function () {
+    li.addEventListener("keydown", suggestedReplyKeydown);
+    li.addEventListener("click", function (event) {
+        const reply = event.target.closest && event.target.closest("button[data-reply-key]");
+        if (reply) {
+            event.preventDefault(); event.stopPropagation();
+            if (!reply.disabled) fillSuggestedReply(reply.dataset.replySession, reply.dataset.replyKey);
+            return;
+        }
         var current = li._session || s;
         if (closingID === current.id) return;
         if (coordinatorRoute(current, "row") === "session") openSession(current.id);
@@ -458,6 +467,16 @@ function fillCoordinatorMark(node, s) {
 }
 
 function fillRow(node, s) {
+    const oldReply = node.querySelector(".session-suggested-reply");
+    const replyHTML = suggestedReplyButtonHTML(s, { openId: S.openId,
+        composerIdentity: S.replyComposerIdentity,
+        writable: S.write === true && S.conn === "live" && !S.agent,
+        zh: (document.documentElement.lang || "").toLowerCase().startsWith("zh") });
+    if (node._replyHTML !== replyHTML) {
+        if (oldReply) oldReply.remove();
+        if (replyHTML) node.insertAdjacentHTML("beforeend", replyHTML);
+        node._replyHTML = replyHTML;
+    }
     var closing = closingID === s.id;
     var closingVisible = closing && Waits.end.visible;
     var pending = Optimistic.entries(s.id).length > 0;

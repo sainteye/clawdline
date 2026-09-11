@@ -97,6 +97,21 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var assignmentDecision: String? = nil
         var programBinding: ProgramBinding? = nil
         var document: WorkflowDocument? = nil
+        var settledIntents: [SettledIntent]? = nil
+    }
+
+    private struct SettledIntent: Codable, Equatable {
+        var id: String
+        var kind: String
+        var index: Int
+        var createdItemID: String?
+    }
+
+    private struct SpanStart: Codable, Equatable {
+        var outboxID: String
+        var eventID: String
+        var requestID: String
+        var itemID: String
     }
 
     private struct RootLanding: Codable {
@@ -197,6 +212,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var missingFollowUp: [String]
         var events: [Event]
         var bindingReceipt: BindingReceipt? = nil
+        var spanStart: SpanStart? = nil
     }
 
     private struct Receipt: Codable {
@@ -244,7 +260,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     }
 
     private struct State: Codable {
-        var schemaVersion = 2
+        var schemaVersion = 3
         var enabledEpoch = 0
         var observedEnabled: Bool?
         var observedRevision = 0
@@ -513,7 +529,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         apply(parsed, to: &draft.runs[runIndex])
         let protectedEvents = Set(draft.outbox.filter {
             $0.runID == runID && $0.status != "complete"
-        }.map(\.eventID))
+        }.map(\.eventID)).union(draft.runs[runIndex].events.filter {
+            !plannedIntentIDs($0, run: draft.runs[runIndex])
+                .subtracting(Set(($0.settledIntents ?? []).map(\.id))).isEmpty
+        }.map(\.id))
         while draft.runs[runIndex].events.count >= limits.eventsPerRun {
             guard let evictable = draft.runs[runIndex].events.firstIndex(where: {
                 !protectedEvents.contains($0.id)
@@ -536,7 +555,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             draft.receipts.removeFirst(draft.receipts.count - limits.receipts + 1)
         }
         draft.receipts.append(receipt)
-        guard draft.outbox.count <= limits.outbox else {
+        guard reservedOutboxCount(draft) <= limits.outbox else {
             let answer = outcome(429, "workflow_outbox_full", runID: runID)
             lock.unlock(); return answer
         }
@@ -625,7 +644,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             return outcome(200, "root_landing_already_recorded", runID: run.id, authority: "broker_observed")
         }
         guard state.runs[currentIndex].events.count < limits.eventsPerRun,
-              state.outbox.count < limits.outbox else {
+              reservedOutboxCount(state) < limits.outbox else {
             return outcome(429, "workflow_outbox_full", runID: run.id)
         }
         var draft = state
@@ -1072,6 +1091,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                                  kind: "supplement_child_create", index: 0, draft: &draft)
                     if let childID = draft.outbox.first(where: {
                         $0.id == createID && $0.status == "complete"
+                    })?.createdItemID ?? event.settledIntents?.first(where: {
+                        $0.id == createID && $0.kind == "supplement_child_create"
                     })?.createdItemID {
                         appendIntent(id: "\(event.id)-supplement-child-link", run: run,
                                      event: event, kind: "supplement_child_link", index: 0,
@@ -1099,12 +1120,126 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
 
     private func appendIntent(id: String, run: Run, event: Event, kind: String, index: Int,
                               draft: inout State, targetItemID: String? = nil) {
-        guard !draft.outbox.contains(where: { $0.id == id }) else { return }
+        guard !draft.outbox.contains(where: { $0.id == id }),
+              !(event.settledIntents ?? []).contains(where: { $0.id == id }) else { return }
         draft.outbox.append(Outbox(
             id: id, version: 1, runID: run.id, eventID: event.id, kind: kind, index: index,
             status: "pending", attempts: 0, preparedRequestID: nil,
             preparedRevision: nil, failureCode: nil, createdItemID: targetItemID,
             updatedAt: now().timeIntervalSince1970))
+    }
+
+    /// Reserve deferred dependency fanout at semantic admission, not after a create has already
+    /// succeeded. Completed identities live with their bounded source event, not in the queue.
+    private func plannedIntentIDs(_ event: Event, run: Run) -> Set<String> {
+        if event.operation == "broker_root_landing" { return [event.id] }
+        var ids = Set<String>()
+        if event.operation == "begin", event.programBinding != nil { ids.insert("\(event.id)-program-binding") }
+        else if event.operation == "begin", event.classification == "new_work" { ids.insert("\(event.id)-create") }
+        let willBind = run.itemID != nil || run.events.contains {
+            $0.operation == "begin" && ($0.classification == "new_work" || $0.programBinding != nil)
+        }
+        guard willBind else { return ids }
+        if event.operation == "begin", ["new_work", "existing_item"].contains(event.classification ?? "") {
+            ids.formUnion(["\(event.id)-link", "\(event.id)-span"])
+        }
+        if ["deliver", "handoff"].contains(event.operation) { ids.insert("\(event.id)-end-span") }
+        for i in event.outputs.indices { ids.insert("\(event.id)-artifact-\(i)") }
+        for i in event.remaining.indices { ids.insert("\(event.id)-obligation-\(i)") }
+        if let supplement = event.supplement {
+            let suffixes = supplement.kind == "checklist"
+                ? ["supplement-checklist", "supplement-obligation"]
+                : ["supplement-child-create", "supplement-child-link", "supplement-child-obligation"]
+            ids.formUnion(suffixes.map { "\(event.id)-\($0)" })
+        }
+        if event.operation == "handoff" { ids.insert("\(event.id)-handoff") }
+        if event.operation == "assignment_decision" { ids.insert("\(event.id)-assignment") }
+        if event.operation == "document", event.document != nil { ids.insert("\(event.id)-document") }
+        return ids
+    }
+
+    private func reservedOutboxCount(_ value: State) -> Int {
+        var ids = Set(value.outbox.filter { $0.status != "complete" }.map(\.id))
+        for run in value.runs {
+            for event in run.events {
+                let settled = Set((event.settledIntents ?? []).map(\.id))
+                ids.formUnion(plannedIntentIDs(event, run: run).subtracting(settled))
+            }
+        }
+        return ids.count
+    }
+
+    private func settledID(_ entry: SettledIntent, eventID: String) -> String? {
+        let suffix: String
+        switch entry.kind {
+        case "record_root_landing": suffix = ""
+        case "record_output": suffix = "-artifact-\(entry.index)"
+        case "obligation": suffix = "-obligation-\(entry.index)"
+        case "program_binding": suffix = "-program-binding"
+        case "end_span": suffix = "-end-span"
+        case "supplement_checklist": suffix = "-supplement-checklist"
+        case "supplement_obligation": suffix = "-supplement-obligation"
+        case "supplement_child_create": suffix = "-supplement-child-create"
+        case "supplement_child_link": suffix = "-supplement-child-link"
+        case "supplement_child_obligation": suffix = "-supplement-child-obligation"
+        case "decide_session_assignment": suffix = "-assignment"
+        case "document_reference": suffix = "-document"
+        case "create", "link", "span", "handoff": suffix = "-\(entry.kind)"
+        default: return nil
+        }
+        guard entry.index >= 0 else { return nil }
+        if !["record_output", "obligation"].contains(entry.kind), entry.index != 0 { return nil }
+        return eventID + suffix
+    }
+
+    private func validSettled(_ entry: SettledIntent, event: Event, run: Run) -> Bool {
+        guard entry.id == settledID(entry, eventID: event.id),
+              plannedIntentIDs(event, run: run).contains(entry.id) else { return false }
+        return entry.kind != "supplement_child_create" || boundedText(entry.createdItemID, 200) != nil
+    }
+
+    /// Atomic with settlement/migration. A tombstone retains the exact dependency result so
+    /// replay cannot create another child or retarget its link. Unknown identities fail closed.
+    private func compactCompleted(_ draft: inout State) -> Bool {
+        var settledIDs = Set<String>()
+        for run in draft.runs {
+            for event in run.events {
+                for entry in event.settledIntents ?? [] {
+                    guard settledIDs.insert(entry.id).inserted,
+                          validSettled(entry, event: event, run: run) else { return false }
+                }
+            }
+        }
+        var seen = Set<String>()
+        for row in draft.outbox {
+            guard seen.insert(row.id).inserted else { return false }
+            guard row.status == "complete" else {
+                guard !settledIDs.contains(row.id) else { return false }
+                continue
+            }
+            guard row.version == nil || row.version == 1,
+                  let r = draft.runs.firstIndex(where: { $0.id == row.runID }) else { return false }
+            let entry = SettledIntent(id: row.id, kind: row.kind, index: row.index, createdItemID: row.createdItemID)
+            guard row.id == settledID(entry, eventID: row.eventID) else { return false }
+            if row.kind == "span" {
+                guard let item = draft.runs[r].itemID,
+                      let request = boundedText(row.preparedRequestID, 300) else { return false }
+                let start = SpanStart(outboxID: row.id, eventID: row.eventID, requestID: request, itemID: item)
+                if let prior = draft.runs[r].spanStart, prior != start { return false }
+                draft.runs[r].spanStart = start
+            }
+            // Legacy event retention already removed this completed source. With no event to
+            // rematerialize, its payload can leave; preserve a span's exact close identity above.
+            guard let e = draft.runs[r].events.firstIndex(where: { $0.id == row.eventID }) else { continue }
+            guard validSettled(entry, event: draft.runs[r].events[e], run: draft.runs[r]) else { return false }
+            var settled = draft.runs[r].events[e].settledIntents ?? []
+            if let old = settled.first(where: { $0.id == row.id }) {
+                guard old == entry else { return false }
+            } else { settled.append(entry) }
+            draft.runs[r].events[e].settledIntents = settled
+        }
+        draft.outbox.removeAll { $0.status == "complete" }
+        return true
     }
 
     private func kick() {
@@ -1287,12 +1422,11 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     "sessionId": run.identity.conversationID, "phase": phase]
         case "end_span":
             guard let item = run.itemID,
-                  let start = state.outbox.first(where: {
-                      $0.runID == run.id && $0.kind == "span" && $0.status == "complete"
-                  }), let startRequestID = start.preparedRequestID else { return nil }
+                  let start = run.spanStart, start.itemID == item,
+                  start.outboxID == start.eventID + "-span" else { return nil }
             return ["operation": "end_span", "itemId": item,
                     "sessionId": run.identity.conversationID,
-                    "startRequestId": startRequestID,
+                    "startRequestId": start.requestID,
                     "note": event.summary ?? event.handoffNote ?? "Session interval ended."]
         case "artifact", "record_output":
             guard let item = run.itemID, event.outputs.indices.contains(outbox.index) else {
@@ -1396,7 +1530,13 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     draft.outbox[index].createdItemID = createdItemID
                 }
             }
+            guard compactCompleted(&draft) else {
+                storageFailure = "workflow_store_invalid"; return
+            }
             materializeIntents(runIndex: runIndex, draft: &draft)
+        }
+        guard reservedOutboxCount(draft) <= limits.outbox else {
+            storageFailure = "workflow_outbox_reservation_invalid"; return
         }
         guard persist(draft) else { return }
         state = draft
@@ -1466,14 +1606,18 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 storageFailure = "workflow_store_too_large"; return
             }
             var decoded = try JSONDecoder().decode(State.self, from: data)
-            guard [1, 2].contains(decoded.schemaVersion),
+            guard [1, 2, 3].contains(decoded.schemaVersion),
                   decoded.runs.count <= limits.runs,
                   decoded.receipts.count <= limits.receipts,
-                  decoded.outbox.count <= limits.outbox,
                   decoded.runs.allSatisfy({ $0.events.count <= limits.eventsPerRun }) else {
                 storageFailure = "workflow_store_invalid"; return
             }
-            var migrated = decoded.schemaVersion == 1
+            var migrated = decoded.schemaVersion != 3 || decoded.outbox.contains { $0.status == "complete" }
+            // Legacy producers could write 514 rows after deferred create fanout. The byte cap
+            // still bounds decoding; compact proven completions BEFORE validating live capacity.
+            guard compactCompleted(&decoded), reservedOutboxCount(decoded) <= limits.outbox else {
+                storageFailure = "workflow_store_invalid"; return
+            }
             for index in decoded.receipts.indices where decoded.receipts[index].requestScope == nil {
                 let candidates = decoded.runs.filter {
                     $0.id == decoded.receipts[index].runID
@@ -1508,7 +1652,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     decoded.outbox[index].status = "pending"; migrated = true
                 }
             }
-            decoded.schemaVersion = 2
+            decoded.schemaVersion = 3
             if migrated, !persist(decoded) { return }
             state = decoded
         } catch {

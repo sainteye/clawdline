@@ -14,6 +14,15 @@ import {
 var eventSubscribers = new Set();
 
 function localSessionID(value) { return sessionIdentity(value, LOCAL_MACHINE).session; }
+/** Only the authenticated same-origin transport may attach this local machine identity. */
+export function localInventoryRows(rows) {
+    if (!Array.isArray(rows)) return rows;
+    return rows.map(function (row) {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return row;
+        return Object.assign({}, row, { machine: LOCAL_MACHINE,
+            identity: { machine: LOCAL_MACHINE, session: row.id } });
+    });
+}
 function localIdentity(value) {
     return { machine: LOCAL_MACHINE, session: localSessionID(value) };
 }
@@ -222,6 +231,7 @@ export var LocalClient = {
      */
     receiveSessions: function (data) {
         data = data || {};
+        data = Object.assign({}, data, { sessions: localInventoryRows(data.sessions) });
         var scan = data.scan || {};
         var generation = Number(scan.generation);
         var completed = scan.completed || {};

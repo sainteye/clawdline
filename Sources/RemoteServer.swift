@@ -2199,9 +2199,9 @@ final class RemoteServer: @unchecked Sendable {
                 if rawOwed is NSNull {
                     clearOwed = true
                 } else if let dict = rawOwed as? [String: Any] {
-                    guard Set(dict.keys).isSubset(of: ["note", "moved_by", "person_needed"]) else {
+                    guard Set(dict.keys).isSubset(of: ["note", "moved_by", "person_needed", "suggestedReply"]) else {
                         return .error(400, "bad_request",
-                                      "owed may contain only note, moved_by and person_needed.")
+                                      "owed may contain only note, moved_by, person_needed and suggestedReply.")
                     }
                     owed = dict
                 } else {
