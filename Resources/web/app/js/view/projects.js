@@ -432,7 +432,9 @@ function renderPlaces(context, places) {
         name.style.color = place.icon ? context.tint(place.icon.accent) : "";
         var activity = place.boardProjectId ? projectActivity(place,
             /^zh/i.test(doc.documentElement && doc.documentElement.lang || "")) : null;
-        if (activity) appendText(doc, heading, "span", activity.text,
+        // Zero is visual silence, not removal of the Project or proof of complete coverage.
+        // Keep its qualified accessible description below; unknown is never coerced to zero.
+        if (activity && place.activeItemCount !== 0) appendText(doc, heading, "span", activity.text,
             "project-row-activity is-" + activity.tone);
         // The path is here for the one job `/v1/places` says it is for: telling two projects with
         // the same name apart. Nothing on this page is built out of it except the query below.

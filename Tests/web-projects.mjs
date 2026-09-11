@@ -302,12 +302,16 @@ const ok = {
         return data;
     }, setTimeout: fn => { refresh = fn; return 42; }, clearTimeout: () => {} });
     await h.page.enter();
-    equal(h.elements["projects-rows"].querySelectorAll(".project-row-activity")[0]?.textContent,
-        "Partial: 0 in progress", "complete local model cannot hide incomplete source ingestion");
+    equal(h.elements["projects-rows"].querySelectorAll(".project-row-activity").length,
+        0, "partial zero does not create a distracting visual activity badge");
+    match(h.elements["projects-rows"].querySelectorAll(".project-row")[0].getAttribute("aria-label"),
+        /Partial: 0/, "hiding the zero badge does not claim complete source ingestion");
     check(typeof refresh === "function", "an open ready Board catalog refreshes without a detail scan");
     if (refresh) { refresh(); await flush(); }
-    equal(h.elements["projects-rows"].querySelectorAll(".project-row-activity")[0]?.textContent,
-        "Last known: 0 in progress", "failed refresh qualifies the retained row as well as the banner");
+    equal(h.elements["projects-rows"].querySelectorAll(".project-row-activity").length,
+        0, "failed refresh does not restore the zero badge");
+    match(h.elements["projects-rows"].querySelectorAll(".project-row")[0].getAttribute("aria-label"),
+        /Last known: 0/, "failed refresh retains the stale qualification for accessible activity");
     h.page.leave();
 }
 for (const [count, status, coverage, expected, tone] of [
@@ -317,6 +321,9 @@ for (const [count, status, coverage, expected, tone] of [
     [-1, "ready", "complete", "Activity unknown", "unknown"],
     [4, "stale", "complete", "Last known: 4 in progress", "unknown"],
     [0, "ready", "partial", "Partial: 0 in progress", "unknown"],
+    [0, "stale", "complete", "Last known: 0 in progress", "unknown"],
+    [0, "error", "partial", "Last known: 0 in progress", "unknown"],
+    [null, "ready", "complete", "Activity unknown", "unknown"],
     [2, "error", "complete", "Last known: 2 in progress", "unknown"],
 ]) {
     const data = await module.readProjectPlaces({ board: async () => ({ board: {
@@ -327,11 +334,20 @@ for (const [count, status, coverage, expected, tone] of [
     const h = harness({ ...ok, places: async () => data });
     await h.page.enter();
     const badge = h.elements["projects-rows"].querySelectorAll(".project-row-activity")[0];
-    equal(badge?.textContent, expected, "catalog activity distinguishes " + count + "/" + status + "/" + coverage);
-    check(badge?.className.includes("is-" + tone), "activity color never presents stale or missing as current");
+    if (count === 0) {
+        equal(badge, undefined, "zero activity has no badge regardless of freshness or coverage");
+        equal(h.elements["projects-rows"].children.length, 1, "zero activity keeps the useful Project card");
+        equal(h.elements["projects-count"].textContent, "1", "hiding a badge does not alter Project totals");
+        h.elements["projects-rows"].querySelectorAll(".project-row")[0].click();
+        await flush();
+        equal(h.page.state.place?.boardProjectId, "p", "a Project with zero activity is still reachable");
+    } else {
+        equal(badge?.textContent, expected, "catalog activity distinguishes " + count + "/" + status + "/" + coverage);
+        check(badge?.className.includes("is-" + tone), "activity color never presents stale or missing as current");
+    }
     check(h.elements["projects-rows"].querySelectorAll(".project-row")[0].getAttribute("aria-label").includes(expected),
         "screen readers receive activity as well as the Project name");
-    equal(h.asked.length, 1, "Project activity causes no detail read");
+    equal(h.asked.length, count === 0 ? 2 : 1, "Project activity causes no detail read until clicked");
     h.page.leave();
 }
 
