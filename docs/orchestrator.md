@@ -1561,7 +1561,22 @@ it** — that was the gap this closed. Disposing a checkout requires `landing.st
 five open landings on this machine were holding 814 MB of object files that no landing has ever
 needed: what a landing needs is the source and the delivery branch, and both are left untouched.
 The deadline's own removal is `.build` and nothing else; a directory already absent settles the
-deadline, a refusal keeps it for the next beat.
+deadline, a refusal keeps it for the next beat. **It waits for the task's recorded process as well.**
+A successful finalize used to remove `.build` at once while a Root Session — terminal from its first
+report — could still be building in that checkout, and the dependency directories beside it already
+waited for that process. A live or unreadable process now keeps the deadline outstanding, and the
+first beat after the process has gone removes the directory.
+
+**Every reclaim removal proves its path immediately before it runs.**
+`OwnedStorage.containedDirectory` walks the path from its root down — `/tmp/.clawdline` for `work/`,
+the worktree root for `.build`, dependency directories and checkouts, the preservation root for
+preserved deltas, the owned scratch root for scratch entries and their payload — with `lstat` on each
+component, so a symlink at any level is seen rather than followed, and then requires the resolved
+path to lie inside that root. `lstat` on the last component alone is not this check: the kernel
+follows every component above it, so a task directory replaced by a symlink hands a recursive
+removal a real `work/` somewhere else. A path that fails is kept and audited with its reason
+(`symlink`, `root_symlink`, `not_directory`, `outside_root`, `unreadable`); the root's own ancestors,
+such as `/tmp`, may be symlinks.
 
 **Dependency directories go on that deadline too, once the task's process is gone.** Re-measured on
 2026-09-11, 13 `node_modules` directories held 3,492 MB of the 5,167 MB under the worktree root.
@@ -1581,14 +1596,20 @@ each with its path.
 directory lives in `${CLAWDLINE_SCRATCH_ROOT:-/tmp/clawdline-scratch}` under
 [scratch contract v1](scratch.md), which is written there once. The six-hourly pass reads that root
 and its direct children and nothing else — never `/tmp` itself — which keeps to the boundary above:
-an entry's marker is its receipt. `OwnedStorage.evaluateScratch` applies the contract as written and
-then holds an entry some live process has as its working directory (one `lsof -d cwd` per pass, read
-only when something is releasable), because a `snapshot-run` killed with `SIGKILL` can leave its
-command running inside the entry while the marker names a dead owner. A file merely held open from
-elsewhere is not seen; `orchestrator_scratch_grace_minutes` (default 60, `-1…1440`, counted from the
-later of `created_at` and `keep_until`) is what covers that. `unknown` is never removed. A removal
-re-reads the entry's facts first, removes the payload before the marker, and is audited as
-`orchestrator.scratch.reclaimed`; `GET /v1/orchestrator/storage` lists every entry under `scratch`.
+an entry's marker is its receipt. **Every direct child is judged on every pass, however many there
+are**; a limit on what is judged would leave an entry sorting after a thousand held or unknown ones
+unlisted and unswept on every pass, so the 1,000 limit bounds only how many entries
+`GET /v1/orchestrator/storage` puts in its body. `OwnedStorage.evaluateScratch` applies the contract
+as written and then holds an entry some live process has as its working directory (one
+`lsof -d cwd` per listing, read only when something is releasable), because a `snapshot-run` killed
+with `SIGKILL` can leave its command running inside the entry while the marker names a dead owner. A
+file merely held open from elsewhere is not seen; `orchestrator_scratch_grace_minutes` (default 60,
+`-1…1440`, counted from the later of `created_at` and `keep_until`) is what covers that. `unknown` is
+never removed. A removal reads again, at the removal itself, the entry's facts and the working
+directories — a process that entered the entry after the listing looked keeps it, and a table that
+cannot be read then keeps it too — proves the entry from the root down before each read and removal
+inside it, removes the payload before the marker, and is audited as `orchestrator.scratch.reclaimed`;
+`GET /v1/orchestrator/storage` lists the entries under `scratch`.
 
 ### File release waits belong to Clawdline
 
@@ -2417,7 +2438,12 @@ input and `cleanup()` removed every directory it named, so a day after that repo
 directory — the `work/` it was still writing included — went whether or not the Session was alive,
 while the after-finish `work/` rule below waited for the same process. On 2026-09-11 three finished
 tasks on this Mac still had their recorded process running 7 to 21 hours after finishing. Liveness is
-`child_pid` with `child_proc_start`; an unreadable answer holds.
+`child_pid` with `child_proc_start`; an unreadable answer holds. **That holds whichever limit reaches
+the row.** The record count can drop a row an hour after its task finished, long before the
+directory's hours are up, so the process is read for every terminal row the directory window, the
+record age or the record count could remove — not only for rows past the directory cutoff, which is
+how a still-working Root Session's row could once be counted out — and a row that became removable
+after that reading is held for the pass.
 
 Heavyweight `work/` storage has a shorter, separate life. It is removed during a successful
 finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md` and

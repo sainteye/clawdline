@@ -785,8 +785,24 @@ extension Orchestrator {
         return ownerGoneDecision(owner, due: due, now: now, why: "after_finish")
     }
 
-    /// Dependency directories fall due on `.build`'s deadline and additionally wait for the
-    /// task's process to be gone: a reinstall costs minutes, and a Session still running in the
+    /// `.build` on its own deadline: the deadline says when, and the task's process says whether.
+    /// It is the gate the dependency directories beside it use, because a Session still building in
+    /// its checkout — a Root Session's task is terminal from its first report — would otherwise
+    /// lose its build output mid-build while its `node_modules` waited. A live or unreadable owner
+    /// keeps the deadline outstanding, so the beat asks again and the directory goes on the first
+    /// beat after that process has gone.
+    static func buildDeadlineDecision(state: State, buildCleanupAt: Date?,
+                                      owner: OwnedStorage.ProcessStatus,
+                                      now: Date) -> OwnedStorage.Decision {
+        guard state.isTerminal else { return .init(state: .held, why: "task_not_terminal", eligibleAt: nil) }
+        guard let due = buildCleanupAt else {
+            return .init(state: .held, why: "no_deadline", eligibleAt: nil)
+        }
+        return ownerGoneDecision(owner, due: due, now: now, why: "build_deadline")
+    }
+
+    /// Dependency directories fall due on `.build`'s deadline and wait, as `.build` now does, for
+    /// the task's process to be gone: a reinstall costs minutes, and a Session still running in the
     /// checkout may be using them. A live owner is not refused, only deferred — the six-hourly
     /// pass asks again with no deadline outstanding, which is also how a task that never received
     /// a build deadline gets its `.build` and dependencies reclaimed.
@@ -846,22 +862,58 @@ extension Orchestrator {
     /// Session goes on writing; before this, the day-old sweep deleted that directory — `work/`
     /// included — under the live Session, while the after-finish `work/` rule waited for the
     /// same process to be gone. Both now say the same thing. The record is held with it so the
-    /// directory is never left with nothing to sweep it.
+    /// directory is never left with nothing to sweep it. **That holds whichever limit reaches the
+    /// row, the count included**: `taskRetentionOwnerQuestions` names every row whose owner has to
+    /// be known, from the same reach this answers from.
     static func taskRetentionSweep(_ rows: [TaskRetentionCandidate], now: Date = Date(),
                                    directoryHours: Int, recordLimit: Int, recordDays: Int)
         -> (directories: [String], records: [String]) {
+        let reach = taskRetentionReach(rows, now: now, directoryHours: directoryHours,
+                                       recordLimit: recordLimit, recordDays: recordDays)
+        return (rows.filter { reach.directories.contains($0.id) && !$0.ownerLive }.map(\.id),
+                rows.filter {
+                    reach.records.contains($0.id) && !($0.terminal && $0.ownerLive)
+                }.map(\.id))
+    }
+
+    /// Every terminal row either limit reaches before any owner is consulted — the directory's
+    /// hours, the record's age, **or the record count**, which reaches a task that finished an
+    /// hour ago as readily as one that finished last year. These are the rows whose owner the
+    /// sweep has to know. Asking only the rows past the directory cutoff is how a Root Session
+    /// that finished an hour ago, still working, could lose its registry row to the count.
+    static func taskRetentionOwnerQuestions(_ rows: [TaskRetentionCandidate], now: Date,
+                                            directoryHours: Int, recordLimit: Int, recordDays: Int)
+        -> Set<String> {
+        let reach = taskRetentionReach(rows, now: now, directoryHours: directoryHours,
+                                       recordLimit: recordLimit, recordDays: recordDays)
+        return Set(rows.filter {
+            $0.terminal && (reach.directories.contains($0.id) || reach.records.contains($0.id))
+        }.map(\.id))
+    }
+
+    /// What each limit reaches with no owner consulted. The sweep and the owner questions both
+    /// answer from this one reading, so which rows are asked about cannot drift from which rows go.
+    private static func taskRetentionReach(_ rows: [TaskRetentionCandidate], now: Date,
+                                           directoryHours: Int, recordLimit: Int, recordDays: Int)
+        -> (directories: Set<String>, records: Set<String>) {
         let directoryCutoff = now.addingTimeInterval(-Double(directoryHours) * 3600)
         let recordCutoff = now.addingTimeInterval(-Double(recordDays) * 86_400)
         let overCount = Set(rows.sorted { $0.created > $1.created }
                                 .dropFirst(recordLimit).map(\.id))
-        return (rows.filter {
-                    $0.terminal && !$0.landingPending && !$0.ownerLive
-                        && $0.settledAt < directoryCutoff
-                }.map(\.id),
-                rows.filter {
-                    !$0.landingPending && !($0.terminal && $0.ownerLive)
-                        && (overCount.contains($0.id)
-                            || ($0.terminal && $0.settledAt < recordCutoff))
-                }.map(\.id))
+        return (Set(rows.filter {
+                    $0.terminal && !$0.landingPending && $0.settledAt < directoryCutoff
+                }.map(\.id)),
+                Set(rows.filter {
+                    !$0.landingPending
+                        && (overCount.contains($0.id) || ($0.terminal && $0.settledAt < recordCutoff))
+                }.map(\.id)))
+    }
+
+    /// One registry row as the sweep sees it.
+    static func retentionCandidate(_ task: Task, ownerLive: Bool = false) -> TaskRetentionCandidate {
+        TaskRetentionCandidate(id: task.id, terminal: task.state.isTerminal,
+                               landingPending: task.landing?.state == .pending,
+                               created: task.created, settledAt: task.finishedAt ?? task.created,
+                               ownerLive: ownerLive)
     }
 }

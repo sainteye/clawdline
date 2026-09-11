@@ -8075,14 +8075,20 @@ enum Orchestrator {
 
     /// Remove only the heavyweight task-owned scratch directory. A missing directory is already
     /// the desired result; a real filesystem refusal keeps the deadline so a later beat retries.
+    /// The path is proved from the task root down first, because `lstat` on `work` alone follows
+    /// the task directory above it: one that became a symlink settles the deadline, removing nothing.
     @discardableResult
     static func reclaimTaskWorkIfDue(_ taskID: String, now: Date = Date()) -> Bool {
         guard let snapshot = held(taskID), snapshot.state.isTerminal,
               let due = snapshot.workCleanupAt, due <= now else { return false }
         let work = snapshot.dir.appendingPathComponent("work", isDirectory: true)
-        let manager = FileManager.default
-        if manager.fileExists(atPath: work.path) { try? manager.removeItem(at: work) }
-        guard !manager.fileExists(atPath: work.path) else { return false }
+        var audit = ("orchestrator.work.reclaimed", ["task": taskID])
+        switch OwnedStorage.containedDirectory(work.path, under: root.path) {
+        case .proven: guard (try? FileManager.default.removeItem(at: work)) != nil else { return false }
+        case .missing: break
+        case .refused(let why):
+            audit = ("orchestrator.work.kept", ["task": taskID, "path": work.path, "why": why])
+        }
         let cleared = OrchestratorRegistry.withTaskRecords { records -> Bool in
             guard let current = records.task(taskID), current.state.isTerminal,
                   current.workCleanupAt == due else { return false }
@@ -8090,7 +8096,7 @@ enum Orchestrator {
         }
         guard cleared else { return false }
         save()
-        RemoteAuth.audit("orchestrator.work.reclaimed", ["task": taskID])
+        RemoteAuth.audit(audit.0, audit.1)
         return true
     }
 
@@ -8105,19 +8111,16 @@ enum Orchestrator {
     /// it has never needed the object files, and this deliberately does not consult it.
     ///
     /// The checkout, its tracked files and the delivery branch are untouched: the only path this
-    /// will ever remove is `<child cwd>/.build`, and only for a task that owns that checkout. The
-    /// registry decoder proves `worktree.path` is the task-id-derived checkout and `cwd` is inside
-    /// it before a restored record can reach this function.
+    /// will ever remove is `<child cwd>/.build`, and only once
+    /// ``OrchestratorDraft/reclaimBuildAtDeadline(_:roots:now:ownerStatus:)`` has found the task's
+    /// process gone and proved that directory inside the checkout the task owns, from the worktree
+    /// root down. A process still running keeps the deadline for a later beat — the same gate the
+    /// dependency directories scheduled below already had.
     @discardableResult
     static func reclaimTaskBuildIfDue(_ taskID: String, now: Date = Date()) -> Bool {
         guard let snapshot = held(taskID), snapshot.state.isTerminal,
-              let due = snapshot.buildCleanupAt, due <= now,
-              let worktree = snapshot.worktree else { return false }
-        let build = URL(fileURLWithPath: worktree.cwd, isDirectory: true)
-            .appendingPathComponent(".build", isDirectory: true)
-        let manager = FileManager.default
-        if manager.fileExists(atPath: build.path) { try? manager.removeItem(at: build) }
-        guard !manager.fileExists(atPath: build.path) else { return false }
+              let due = snapshot.buildCleanupAt, due <= now, snapshot.worktree != nil,
+              OrchestratorDraft.reclaimBuildAtDeadline(snapshot, now: now) else { return false }
         let cleared = OrchestratorRegistry.withTaskRecords { records -> Bool in
             guard let current = records.task(taskID), current.state.isTerminal,
                   current.buildCleanupAt == due else { return false }
@@ -8125,8 +8128,6 @@ enum Orchestrator {
         }
         guard cleared else { return false }
         save()
-        RemoteAuth.audit("orchestrator.build.reclaimed",
-                         ["task": taskID, "path": build.path])
         OrchestratorDraft.scheduleDependencyReclaim(snapshot)
         return true
     }
@@ -10357,7 +10358,13 @@ enum Orchestrator {
         let recordDays = Config.shared.orchestratorTaskRecordRetentionDays
         let cutoff = now.addingTimeInterval(-Double(directoryHours) * 3600)
         let finished = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
-        let liveOwners = OrchestratorDraft.liveOwnerTaskIDs(finished, settledBefore: cutoff)
+        // Owners are read here, outside the region below, and only for the rows either limit could
+        // remove — the count's included. A row that became one after this reading is held for this
+        // pass rather than removed without its owner having been asked.
+        let asked = taskRetentionOwnerQuestions(finished.map { retentionCandidate($0) }, now: now,
+                                                directoryHours: directoryHours,
+                                                recordLimit: recordLimit, recordDays: recordDays)
+        let liveOwners = OrchestratorDraft.liveOwnerTaskIDs(finished.filter { asked.contains($0.id) })
         // Read before the region below, because this one acquires the lock for itself. A handoff
         // label is reclaimed on the tab rather than on its envelope's 24-hour clock: suppressed
         // means a beat holding a live reading of this machine could not find the process the
@@ -10370,11 +10377,7 @@ enum Orchestrator {
         }
         let swept = OrchestratorRegistry.withTaskRecords { records -> (sweep: (directories: [String], records: [String]), done: [Task], expiredHandoffs: [HandoffEnvelope]) in
             let sweep = taskRetentionSweep(records.taskValues().map {
-                TaskRetentionCandidate(id: $0.id, terminal: $0.state.isTerminal,
-                                       landingPending: $0.landing?.state == .pending,
-                                       created: $0.created,
-                                       settledAt: $0.finishedAt ?? $0.created,
-                                       ownerLive: liveOwners.contains($0.id))
+                retentionCandidate($0, ownerLive: !asked.contains($0.id) || liveOwners.contains($0.id))
             }, now: now, directoryHours: directoryHours, recordLimit: recordLimit,
                recordDays: recordDays)
             return (sweep: sweep, done: sweep.directories.compactMap { records.task($0) },

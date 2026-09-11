@@ -1106,6 +1106,16 @@ enum OrchestratorDraft {
             }
             removal.insert("--force", at: 2)
         }
+        // Proved from the worktree root down at the removal itself: `git worktree remove` resolves
+        // the path it is handed, so a slug directory swapped for a symlink would take it elsewhere.
+        let roots = Orchestrator.reclaimRoots
+        guard OwnedStorage.containedDirectory(worktree.path, under: roots.worktrees.path) == .proven,
+              ownedCheckoutDirectory(worktree.path, taskID: taskID, root: roots.worktrees) else {
+            RemoteAuth.audit("orchestrator.worktree.kept", [
+                "task": taskID, "branch": worktree.branch, "why": "path_not_owned",
+            ])
+            return
+        }
         let removed = git(removal, cwd: worktree.repository, timeout: 60)
         pruneWorktrees(in: worktree.repository)
         guard removed?.status == 0 else {
@@ -1206,6 +1216,13 @@ enum OrchestratorDraft {
                 .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
             return text
         }
+        /// A removal inside one attempt, made only once that attempt is proved again from the
+        /// preservation root down; otherwise it is left where it is.
+        func discard(_ url: URL, inside attempt: URL) {
+            guard OwnedStorage.containedDirectory(attempt.path, under: roots.preserved.path) == .proven
+            else { return }
+            try? manager.removeItem(at: url)
+        }
         guard worktree.branch == worktreeBranch(for: taskID),
               ownedCheckoutDirectory(path, taskID: taskID, root: roots.worktrees) else {
             return kept("path_not_owned")
@@ -1254,7 +1271,7 @@ enum OrchestratorDraft {
             return kept("preservation_unwritable")
         }
         var removedCheckout = false
-        defer { if !removedCheckout { try? manager.removeItem(at: attempt) } }
+        defer { if !removedCheckout { discard(attempt, inside: attempt) } }
         let patch = attempt.appendingPathComponent("delta.patch")
         guard run(["diff", "--binary", "--full-index", "--no-ext-diff", "--no-textconv",
                    "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
@@ -1267,7 +1284,7 @@ enum OrchestratorDraft {
         let pathspecs = attempt.appendingPathComponent("tracked.pathspecs")
         defer {
             for file in [verify["GIT_INDEX_FILE"] ?? "", expect["GIT_INDEX_FILE"] ?? "", pathspecs.path] {
-                try? manager.removeItem(atPath: file)
+                discard(URL(fileURLWithPath: file), inside: attempt)
             }
         }
         guard run(["read-tree", head], verify) != nil else { return kept("patch_unverified") }
@@ -1295,7 +1312,7 @@ enum OrchestratorDraft {
         if !untracked.isEmpty {
             let list = attempt.appendingPathComponent("untracked.list")
             let tarball = attempt.appendingPathComponent("untracked.tar")
-            defer { try? manager.removeItem(at: list) }
+            defer { discard(list, inside: attempt) }
             // A UTF-8 locale, because `tar -t` in the C locale escapes every non-ASCII byte and a
             // file named in Chinese would never match its own listing.
             let locale = ["LC_ALL": "en_US.UTF-8", "PATH": "/usr/bin:/bin"]
@@ -1334,6 +1351,13 @@ enum OrchestratorDraft {
         // Nothing moved while all of that ran; otherwise what was proved is not what would go.
         guard worktreeStatus(at: path)?.filter({ !Orchestrator.isWorktreeToolNoise($0) }) == delta else {
             return kept("status_changed")
+        }
+        // And the checkout is still where it was proved to be, through real directories from the
+        // worktree root down: `git worktree remove` resolves the path it is handed, and every step
+        // above took time.
+        guard OwnedStorage.containedDirectory(path, under: roots.worktrees.path) == .proven,
+              ownedCheckoutDirectory(path, taskID: taskID, root: roots.worktrees) else {
+            return kept("path_not_owned")
         }
         guard git(["worktree", "remove", "--force", path], cwd: worktree.repository,
                   timeout: 120)?.status == 0 else {
@@ -1441,6 +1465,12 @@ enum OrchestratorDraft {
             case .refused(let why):
                 audit("orchestrator.dependency.kept", path, why)
             case .reclaim:
+                // Proved again from the worktree root down at the removal itself: the verdict ran
+                // two git commands after its own walk, and the listing before it can take minutes.
+                if let why = OwnedStorage.containedDirectory(path, under: roots.worktrees.path).refusal {
+                    audit("orchestrator.dependency.kept", path, why)
+                    continue
+                }
                 do {
                     try FileManager.default.removeItem(atPath: path)
                     removed.append(path)
@@ -1453,19 +1483,63 @@ enum OrchestratorDraft {
         return removed
     }
 
+    /// `<worktree.cwd>/.build` for a task's own checkout, proved immediately before a removal: a
+    /// real directory at every level from the worktree root down, still inside that root once
+    /// resolved, and inside the `<root>/<slug>/<task-id>` checkout the task owns.
+    static func buildOutputContainment(_ worktree: Orchestrator.Worktree, taskID: String,
+                                       roots: Orchestrator.ReclaimRoots)
+        -> OwnedStorage.ContainedDirectory {
+        let build = worktree.cwd + "/.build"
+        let contained = OwnedStorage.containedDirectory(build, under: roots.worktrees.path)
+        guard contained == .proven else { return contained }
+        guard ownedCheckoutDirectory(worktree.path, taskID: taskID, root: roots.worktrees),
+              build.hasPrefix(worktree.path + "/") else { return .refused("path_not_owned") }
+        return .proven
+    }
+
+    /// `.build` on its deadline, answering whether that deadline is now settled. It waits for the
+    /// task's process first (``Orchestrator/buildDeadlineDecision(state:buildCleanupAt:owner:now:)``):
+    /// a live or unreadable one keeps the deadline outstanding for the next beat. Then it removes
+    /// only what ``buildOutputContainment(_:taskID:roots:)`` proves. A path that is not the task's
+    /// to remove settles the deadline with nothing removed; a removal the filesystem refuses keeps it.
+    static func reclaimBuildAtDeadline(
+        _ task: Orchestrator.Task, roots: Orchestrator.ReclaimRoots = Orchestrator.reclaimRoots,
+        now: Date,
+        ownerStatus: (Orchestrator.Task) -> OwnedStorage.ProcessStatus = {
+            OwnedStorage.processStatus(pid: $0.childPID, recordedStart: $0.childProcStart)
+        }) -> Bool {
+        guard let worktree = task.worktree,
+              Orchestrator.buildDeadlineDecision(state: task.state, buildCleanupAt: task.buildCleanupAt,
+                                                 owner: ownerStatus(task), now: now).mayCollect
+        else { return false }
+        let build = worktree.cwd + "/.build"
+        switch buildOutputContainment(worktree, taskID: task.id, roots: roots) {
+        case .missing:
+            break
+        case .refused(let why):
+            RemoteAuth.audit("orchestrator.build.kept", ["task": task.id, "path": build, "why": why])
+            return true
+        case .proven:
+            guard (try? FileManager.default.removeItem(atPath: build)) != nil else { return false }
+        }
+        RemoteAuth.audit("orchestrator.build.reclaimed", ["task": task.id, "path": build])
+        return true
+    }
+
     /// `<worktree.cwd>/.build` for a task with no build deadline outstanding — one never set, or
-    /// set before the checkout was built in again. The same single directory the deadline removes;
-    /// a symlink in its place is refused.
+    /// set before the checkout was built in again. The same single directory the deadline removes,
+    /// proved the same way immediately before it goes.
     private static func reclaimBuildOutput(_ task: Orchestrator.Task, worktree: Orchestrator.Worktree,
                                            roots: Orchestrator.ReclaimRoots) {
-        guard ownedCheckoutDirectory(worktree.path, taskID: task.id, root: roots.worktrees) else { return }
         let build = worktree.cwd + "/.build"
-        var info = stat()
-        guard lstat(build, &info) == 0 else { return }
-        guard (info.st_mode & S_IFMT) == S_IFDIR,
-              canonicalFilesystemPath(build).hasPrefix(canonicalFilesystemPath(worktree.path) + "/") else {
-            RemoteAuth.audit("orchestrator.build.kept", ["task": task.id, "path": build, "why": "not_directory"])
+        switch buildOutputContainment(worktree, taskID: task.id, roots: roots) {
+        case .missing:
             return
+        case .refused(let why):
+            RemoteAuth.audit("orchestrator.build.kept", ["task": task.id, "path": build, "why": why])
+            return
+        case .proven:
+            break
         }
         do {
             try FileManager.default.removeItem(atPath: build)
@@ -1478,13 +1552,17 @@ enum OrchestratorDraft {
 
     /// A `work/` that exists with no deadline outstanding, removed once
     /// ``Orchestrator/afterFinishWorkDecision(state:workCleanupAt:settledAt:owner:graceMinutes:now:)``
-    /// allows it — asked twice, the second time immediately before the removal, so a process that
-    /// took the pid in between still holds the directory.
+    /// allows it — asked twice, so a process that took the pid in between still holds the
+    /// directory — and once `<tasksRoot>/<task-id>/work` is proved, immediately before the removal,
+    /// a real directory at every level from `tasksRoot` down. `lstat` on `work` alone follows the
+    /// task directory above it, so one replaced by a symlink would hand this a real `work/` elsewhere.
     @discardableResult
-    static func reclaimAfterFinishWork(_ task: Orchestrator.Task, at work: URL, graceMinutes: Int,
+    static func reclaimAfterFinishWork(_ task: Orchestrator.Task, tasksRoot: URL, graceMinutes: Int,
                                        now: Date,
                                        ownerStatus: (Orchestrator.Task) -> OwnedStorage.ProcessStatus)
         -> Bool {
+        let work = tasksRoot.appendingPathComponent(task.id, isDirectory: true)
+            .appendingPathComponent("work", isDirectory: true)
         func decision() -> OwnedStorage.Decision {
             Orchestrator.afterFinishWorkDecision(
                 state: task.state, workCleanupAt: task.workCleanupAt,
@@ -1497,11 +1575,12 @@ enum OrchestratorDraft {
         }
         let first = decision()
         if first.state == .unknown { return kept(first.why) }
-        guard first.mayCollect else { return false }
-        var info = stat()
-        guard lstat(work.path, &info) == 0 else { return false }
-        guard (info.st_mode & S_IFMT) == S_IFDIR else { return kept("not_directory") }
-        guard decision().mayCollect else { return false }
+        guard first.mayCollect, decision().mayCollect else { return false }
+        switch OwnedStorage.containedDirectory(work.path, under: tasksRoot.path) {
+        case .missing: return false
+        case .refused(let why): return kept(why)
+        case .proven: break
+        }
         do { try FileManager.default.removeItem(at: work) } catch { return kept("remove_failed") }
         RemoteAuth.audit("orchestrator.work.reclaimed",
                          ["task": task.id, "path": work.path, "why": "after_finish"])
@@ -1545,16 +1624,12 @@ enum OrchestratorDraft {
         }
     }
 
-    /// Which finished tasks' directories the day-old sweep must hold, because the task's recorded
-    /// process is still running or could not be ruled out. Asked only about a directory the sweep
-    /// would otherwise remove — terminal, settled before the cutoff, still present — so the process
-    /// table is read for a handful of rows rather than every record.
-    static func liveOwnerTaskIDs(_ tasks: [Orchestrator.Task], settledBefore cutoff: Date)
-        -> Set<String> {
+    /// Which of `tasks` the retention sweep must hold, because the task's recorded process is still
+    /// running or could not be ruled out. The caller passes exactly the rows a limit could remove —
+    /// `Orchestrator.taskRetentionOwnerQuestions`, the record count's reach included — so the process
+    /// table is read for those rows and no others.
+    static func liveOwnerTaskIDs(_ tasks: [Orchestrator.Task]) -> Set<String> {
         Set(tasks.filter { task in
-            guard task.state.isTerminal, task.childPID != nil,
-                  (task.finishedAt ?? task.created) < cutoff,
-                  FileManager.default.fileExists(atPath: task.dir.path) else { return false }
             let owner = OwnedStorage.processStatus(pid: task.childPID,
                                                    recordedStart: task.childProcStart)
             return owner == .alive || owner == .unreadable
@@ -1586,8 +1661,8 @@ enum OrchestratorDraft {
             let work = roots.tasks.appendingPathComponent(task.id, isDirectory: true)
                 .appendingPathComponent("work", isDirectory: true)
             if manager.fileExists(atPath: work.path) {
-                reclaimAfterFinishWork(task, at: work, graceMinutes: graces.work, now: now,
-                                       ownerStatus: ownerStatus)
+                reclaimAfterFinishWork(task, tasksRoot: roots.tasks, graceMinutes: graces.work,
+                                       now: now, ownerStatus: ownerStatus)
             }
             guard let worktree = task.worktree, manager.fileExists(atPath: worktree.path) else {
                 continue
@@ -1640,11 +1715,14 @@ enum OrchestratorDraft {
                       manifest["task"] as? String == task,
                       let created = manifest["created_at"] as? Double,
                       Date(timeIntervalSince1970: created) < cutoff,
+                      // Proved from the root down at the removal, not only when it was listed.
+                      OwnedStorage.containedDirectory(directory, under: root.path) == .proven,
                       (try? manager.removeItem(atPath: directory)) != nil else { continue }
                 RemoteAuth.audit("orchestrator.worktree.preservation_expired",
                                  ["task": task, "path": directory])
             }
-            if (try? manager.contentsOfDirectory(atPath: taskDirectory))?.isEmpty == true {
+            if (try? manager.contentsOfDirectory(atPath: taskDirectory))?.isEmpty == true,
+               OwnedStorage.containedDirectory(taskDirectory, under: root.path) == .proven {
                 try? manager.removeItem(atPath: taskDirectory)
             }
         }

@@ -474,13 +474,15 @@ enum OwnedStorage {
     struct ScratchListing {
         let root: String
         let state: ScratchRootState
+        /// Every direct child, each one judged. Nothing limits this: a limit on what is judged
+        /// leaves whatever sorts past it unlisted and unswept on every pass for ever.
         let rows: [ScratchRow]
-        let truncated: Bool
     }
 
     static let scratchMarkerName = ".clawdline-scratch.json"
-    /// Direct children read per pass; past it the listing says `truncated` and the rest wait.
-    static let scratchEntryLimit = 1_000
+    /// Entries `GET /v1/orchestrator/storage` puts in its body, first by name. It bounds that
+    /// response and nothing else: every direct child is judged, counted and swept whatever it says.
+    static let scratchListedEntryLimit = 1_000
 
     /// `[a-z0-9][a-z0-9-]{0,39}`.
     static func isScratchPurpose(_ value: String) -> Bool {
@@ -565,6 +567,71 @@ enum OwnedStorage {
         var path = root
         while path.count > 1, path.hasSuffix("/") { path.removeLast() }
         return path
+    }
+
+    enum ContainedDirectory: Equatable {
+        /// Every component from the root down, the root included, is a real directory, and the
+        /// path still resolves inside the root.
+        case proven
+        /// A component is not there, so there is nothing to remove.
+        case missing
+        /// Anything else, with its reason. Never removed.
+        case refused(String)
+
+        /// The reason an audit names, or `nil` when the path was proved.
+        var refusal: String? {
+            switch self {
+            case .proven: return nil
+            case .missing: return "missing"
+            case .refused(let why): return why
+            }
+        }
+    }
+
+    /// The check every reclaim removal makes immediately before it removes: `path` lies below
+    /// `root` as spelled, is reached from the root through real directories only — `lstat` on
+    /// each component in turn, so a symlink at any level is seen rather than followed — and is
+    /// still inside the root once resolved. The root's own ancestors may be symlinks (`/tmp`,
+    /// `/var`); the root itself may not.
+    ///
+    /// `lstat` on the last component alone is not this check. The kernel follows every component
+    /// above it, so a task directory replaced by a symlink hands that `lstat` a real `work/`
+    /// somewhere else, and the recursive removal after it lands there too.
+    static func containedDirectory(_ path: String, under root: String) -> ContainedDirectory {
+        let rootPath = trimmedScratchRoot(root)
+        let target = trimmedScratchRoot(path)
+        guard rootPath.hasPrefix("/"), rootPath != "/" else { return .refused("root_not_absolute") }
+        let canonicalRoot = OrchestratorDraft.canonicalFilesystemPath(rootPath)
+        var walked: String
+        if target.hasPrefix(rootPath + "/") {
+            walked = rootPath
+        } else if target.hasPrefix(canonicalRoot + "/") {
+            walked = canonicalRoot
+        } else {
+            return .refused("outside_root")
+        }
+        let components = target.dropFirst(walked.count + 1)
+            .split(separator: "/", omittingEmptySubsequences: false)
+        guard !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
+            return .refused("outside_root")
+        }
+        let steps: [Substring?] = [nil] + components.map { Optional($0) }
+        var info = stat()
+        for step in steps {
+            if let step { walked += "/" + step }
+            guard lstat(walked, &info) == 0 else {
+                return errno == ENOENT ? .missing : .refused("unreadable")
+            }
+            switch info.st_mode & S_IFMT {
+            case S_IFDIR: continue
+            case S_IFLNK: return .refused(step == nil ? "root_symlink" : "symlink")
+            default: return .refused(step == nil ? "root_not_directory" : "not_directory")
+            }
+        }
+        guard OrchestratorDraft.canonicalFilesystemPath(walked).hasPrefix(canonicalRoot + "/") else {
+            return .refused("outside_root")
+        }
+        return .proven
     }
 
     static func scratchEntryFacts(root: String, name: String,
@@ -672,9 +739,11 @@ enum OwnedStorage {
         return answer.status == 0 || !paths.isEmpty ? paths : nil
     }
 
-    /// Every direct child of the root with its decision. A releasable entry is then asked one more
-    /// question the marker cannot answer — is a live process working inside it — and the process
-    /// table is read at most once per listing, only when something is releasable.
+    /// Every direct child of the root with its decision — every one, however many there are, so an
+    /// entry never waits behind a thousand others that are held or unknown. A releasable entry is
+    /// then asked one more question the marker cannot answer — is a live process working inside
+    /// it — and the process table is read at most once per listing, only when something is
+    /// releasable.
     static func scratchListing(root: String, now: Date, graceMinutes: Int, uid: uid_t = getuid(),
                                ownerStatus: (ScratchOwner) -> ProcessStatus = scratchOwnerStatus,
                                workingDirectories: () -> Set<String>? = processWorkingDirectories)
@@ -682,15 +751,13 @@ enum OwnedStorage {
         let path = trimmedScratchRoot(root)
         let state = scratchRootState(path, uid: uid)
         guard state == .present else {
-            return ScratchListing(root: path, state: state, rows: [], truncated: false)
+            return ScratchListing(root: path, state: state, rows: [])
         }
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: path) else {
-            return ScratchListing(root: path, state: .refused("root_unreadable"), rows: [],
-                                  truncated: false)
+            return ScratchListing(root: path, state: .refused("root_unreadable"), rows: [])
         }
-        let sorted = names.sorted()
         var cwds: Set<String>?? = nil
-        let rows = sorted.prefix(scratchEntryLimit).map { name -> ScratchRow in
+        let rows = names.sorted().map { name -> ScratchRow in
             let facts = scratchEntryFacts(root: path, name: name, ownerStatus: ownerStatus)
             var decision = evaluateScratch(facts, uid: uid, now: now, graceMinutes: graceMinutes)
             let entry = path + "/" + name
@@ -711,8 +778,7 @@ enum OwnedStorage {
             return ScratchRow(name: name, path: entry, isDirectory: isDirectory, marker: marker,
                               decision: decision)
         }
-        return ScratchListing(root: path, state: state, rows: rows,
-                              truncated: sorted.count > scratchEntryLimit)
+        return ScratchListing(root: path, state: state, rows: rows)
     }
 
     /// Whether any of `directories` is `entry` or inside it, compared both as spelled and through
@@ -728,9 +794,19 @@ enum OwnedStorage {
         }
     }
 
-    /// Remove every releasable entry, re-reading its facts immediately before it goes. The payload
-    /// goes first and the marker last, so an entry a removal only half finished is still a
-    /// releasable entry the next pass retries, rather than an `unknown` one nothing will touch.
+    /// Why a removal inside the owned root stopped before removing anything more.
+    private struct ScratchRemovalRefused: Error {
+        let why: String
+    }
+
+    /// Remove every releasable entry, reading again at the removal itself everything the listing
+    /// decided from: the entry's facts; the working directories of this user's processes, so a
+    /// process that entered the entry after the listing looked holds it and a table that cannot be
+    /// read now keeps it; and, before every read and removal inside the entry, its path from the
+    /// root down, so a root or entry swapped for a symlink since the listing is refused, never
+    /// followed. The payload goes first and the marker last, so an entry a removal only half
+    /// finished is still a releasable entry the next pass retries, rather than an `unknown` one
+    /// nothing will touch.
     @discardableResult
     static func sweepScratch(root: String, now: Date, graceMinutes: Int, uid: uid_t = getuid(),
                              ownerStatus: (ScratchOwner) -> ProcessStatus = scratchOwnerStatus,
@@ -745,6 +821,12 @@ enum OwnedStorage {
         }
         let manager = FileManager.default
         var removed: [String] = []
+        func proved(_ entry: String) throws -> String {
+            if let why = containedDirectory(entry, under: listing.root).refusal {
+                throw ScratchRemovalRefused(why: why)
+            }
+            return entry
+        }
         for row in listing.rows {
             switch row.decision.state {
             case .held:
@@ -756,12 +838,17 @@ enum OwnedStorage {
                     scratchEntryFacts(root: listing.root, name: row.name, ownerStatus: ownerStatus),
                     uid: uid, now: now, graceMinutes: graceMinutes)
                 guard again.mayCollect else { continue }
+                guard let working = workingDirectories() else {
+                    RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": "cwd_unreadable"])
+                    continue
+                }
+                guard !workingInside(row.path, working) else { continue }
                 do {
-                    for child in try manager.contentsOfDirectory(atPath: row.path)
+                    for child in try manager.contentsOfDirectory(atPath: proved(row.path))
                     where child != scratchMarkerName {
-                        try manager.removeItem(atPath: row.path + "/" + child)
+                        try manager.removeItem(atPath: proved(row.path) + "/" + child)
                     }
-                    try manager.removeItem(atPath: row.path)
+                    try manager.removeItem(atPath: proved(row.path))
                     removed.append(row.path)
                     RemoteAuth.audit("orchestrator.scratch.reclaimed", [
                         "path": row.path, "purpose": row.marker?.purpose ?? "", "why": again.why,
@@ -774,17 +861,25 @@ enum OwnedStorage {
         return removed
     }
 
-    /// The owned scratch root as `GET /v1/orchestrator/storage` lists it: every direct child with
-    /// its decision and reason, beside the ledger rows and never folded into their totals.
+    /// The owned scratch root as `GET /v1/orchestrator/storage` lists it: every direct child judged
+    /// and counted by state in `totals`, beside the ledger rows and never folded into their totals.
+    /// The body lists and sizes the first ``scratchListedEntryLimit`` entries by name and says
+    /// `truncated` past that; an entry beyond it still counts by state, and in `unknown_size_items`,
+    /// because this response did not size it.
     static func scratchInventory(root: String = Orchestrator.reclaimRoots.scratch, now: Date,
-                                 graceMinutes: Int = Config.shared.orchestratorScratchGraceMinutes)
+                                 graceMinutes: Int = Config.shared.orchestratorScratchGraceMinutes,
+                                 workingDirectories: () -> Set<String>? = processWorkingDirectories)
         -> [String: Any] {
-        let listing = scratchListing(root: root, now: now, graceMinutes: graceMinutes)
+        let listing = scratchListing(root: root, now: now, graceMinutes: graceMinutes,
+                                     workingDirectories: workingDirectories)
+        let listed = listing.rows.prefix(scratchListedEntryLimit)
         var totals = ["items": 0, "bytes": 0, "held_items": 0, "releasable_items": 0,
-                      "unknown_items": 0, "unknown_size_items": 0]
-        let entries = listing.rows.map { row -> [String: Any] in
+                      "unknown_items": 0, "unknown_size_items": listing.rows.count - listed.count]
+        for row in listing.rows {
             totals["items", default: 0] += 1
             totals["\(row.decision.state.rawValue)_items", default: 0] += 1
+        }
+        let entries = listed.map { row -> [String: Any] in
             var bytes: Any = NSNull()
             if row.isDirectory, case .known(let size) = directorySize(at: row.path) {
                 bytes = size
@@ -814,6 +909,6 @@ enum OwnedStorage {
         case .refused(let reason): state = "refused"; why = reason
         }
         return ["root": listing.root, "root_state": state, "why": why, "grace_minutes": graceMinutes,
-                "entries": entries, "totals": totals, "truncated": listing.truncated]
+                "entries": entries, "totals": totals, "truncated": listed.count < listing.rows.count]
     }
 }
