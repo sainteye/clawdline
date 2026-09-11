@@ -21,6 +21,7 @@ final class ProjectBoardNarrative {
         let outcome: String
         let locale: String
         let progressMeasurement: [String: Any]?
+        let progressContext: [String: Any]?
 
         var retryKey: String { id + "\u{1f}" + sourceFingerprint + "\u{1f}" + locale }
 
@@ -42,6 +43,7 @@ final class ProjectBoardNarrative {
             self.outcome = outcome
             self.locale = locale
             progressMeasurement = value["progressMeasurement"] as? [String: Any]
+            progressContext = value["progressContext"] as? [String: Any]
         }
 
         private static func string(_ key: String, in value: [String: Any],
@@ -267,9 +269,12 @@ final class ProjectBoardNarrative {
             return
         }
         if narrative.progressEstimate != nil {
+            let hasLifecycleOrientation = candidate.progressContext?["lifecycleEstimate"]
+                as? [String: Any] != nil
             guard ["epic", "refactor"].contains(candidate.type),
-                  candidate.progressMeasurement?["status"] as? String == "available",
-                  (candidate.progressMeasurement?["denominator"] as? Int ?? 0) > 0 else {
+                  candidate.progressMeasurement != nil,
+                  candidate.progressMeasurement?["status"] as? String == "available"
+                    || hasLifecycleOrientation else {
                 failed(candidate: candidate, at: environment.now())
                 return
             }
@@ -340,6 +345,7 @@ final class ProjectBoardNarrative {
             "sourceType": candidate.type,
             "documentedOutcome": candidate.outcome,
             "recordedProgress": candidate.progressMeasurement ?? NSNull(),
+            "observedProgress": candidate.progressContext ?? NSNull(),
         ]
         let data = (try? JSONSerialization.data(withJSONObject: source, options: [.sortedKeys]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
@@ -358,11 +364,13 @@ final class ProjectBoardNarrative {
         outcome. `nextStep` is empty unless the source explicitly documents one; never guess it.
 
         `progressEstimate` is an optional AI estimate for a large Epic or Refactor, not a status
-        transition. Return null unless recordedProgress has status `available`, a fixed scope and
-        a non-zero denominator. When present, give an integer estimate plus a non-zero uncertainty
-        interval, name the scope and briefly state the source basis. Do not copy recordedPercent
-        as if it were an AI estimate, claim certainty, or treat the estimate as completion,
-        verification, landing or release evidence.
+        transition. When observedProgress contains a lifecycleEstimate, return a bounded integer
+        estimate with a non-zero uncertainty interval, name exactly what the partial scope covers,
+        and briefly state the recorded basis. A missing acceptance denominator requires `low`
+        confidence and a wider range; it does not require returning null. For other item types,
+        return null. Do not copy recordedPercent or the lifecycle midpoint as if either were an AI
+        judgment, claim certainty, or treat the estimate as completion, verification, landing or
+        release evidence.
         """
         return CodexNaming.StructuredRequest(
             assistant: assistant, model: model, system: system, data: data, schema: schema,

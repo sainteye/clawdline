@@ -396,17 +396,34 @@ function journey(ctx, parent, item) {
 function boundedPercent(value) {
     return Number.isSafeInteger(value) && value >= 0 && value <= 100 ? value : null;
 }
+function boundedEstimate(value) {
+    if (!value) return null;
+    const percent = boundedPercent(value.percent), lower = boundedPercent(value.lowerBound),
+        upper = boundedPercent(value.upperBound);
+    return percent != null && lower != null && upper != null
+        && lower <= percent && percent <= upper ? value : null;
+}
 function renderLargeProgress(ctx, parent, item, compact = false) {
     const measurement = item.progress && item.progress.measurement;
     if (!measurement || !["epic", "refactor"].includes(item.type)) return null;
     const node = el(ctx, parent, compact ? "span" : "section", null,
         compact ? "board-progress-compact" : "board-large-progress");
-    const recorded = boundedPercent(measurement.recordedPercent);
+    const recorded = boundedPercent(measurement.recordedPercent),
+        aiEstimate = boundedEstimate(reading(ctx, item).progressEstimate),
+        lifecycleEstimate = boundedEstimate(item.progress && item.progress.lifecycleEstimate),
+        orientation = aiEstimate || lifecycleEstimate;
     if (compact) {
-        el(ctx, node, "strong", recorded == null ? "—" : recorded + "%");
-        el(ctx, node, "span", recorded == null
-            ? words(ctx, "Scope needed", "進度分母待補")
-            : words(ctx, "Recorded acceptance", "實際驗收紀錄"));
+        el(ctx, node, "strong", orientation ? orientation.percent + "%"
+            : (recorded == null ? "—" : recorded + "%"));
+        const source = aiEstimate
+            ? words(ctx, "AI estimate", "AI 粗估")
+            : lifecycleEstimate
+              ? words(ctx, "Stage estimate", "階段粗估")
+              : recorded == null
+                ? words(ctx, "Scope needed", "進度分母待補")
+                : words(ctx, "Recorded acceptance", "實際驗收紀錄");
+        el(ctx, node, "span", source + (orientation && recorded != null
+            ? words(ctx, " · acceptance ", "・驗收 ") + recorded + "%" : ""));
         return node;
     }
     el(ctx, node, "h2", words(ctx, "Overall progress", "整體進度"), "board-section-title");
@@ -445,9 +462,26 @@ function renderLargeProgress(ctx, parent, item, compact = false) {
     el(ctx, node, "p", scope + " · " + measurement.completed + "/" + measurement.denominator
         + words(ctx, " passed · updated ", " 通過・更新於 ") + date(measurement.measuredAt),
         "board-progress-basis");
-    const estimate = reading(ctx, item).progressEstimate;
-    if (estimate && boundedPercent(estimate.percent) != null
-        && boundedPercent(estimate.lowerBound) != null && boundedPercent(estimate.upperBound) != null) {
+    if (lifecycleEstimate) {
+        const estimate = el(ctx, node, "div", null, "board-progress-estimate");
+        el(ctx, estimate, "strong", words(ctx, "Stage estimate ", "階段粗估 ")
+            + lifecycleEstimate.percent + "%");
+        el(ctx, estimate, "span", lifecycleEstimate.lowerBound + "–"
+            + lifecycleEstimate.upperBound + "% · "
+            + words(ctx, "low confidence", "低信心"));
+        const scope = lifecycleEstimate.scope === "program_plan_nodes"
+            ? words(ctx, "Program Plan nodes", "Program Plan 節點")
+            : lifecycleEstimate.scope === "epic_members"
+              ? words(ctx, "Epic members", "Epic 子項")
+              : words(ctx, "This item's current stage", "此項目的目前階段");
+        el(ctx, estimate, "p", scope + " · " + lifecycleEstimate.sampleCount
+            + words(ctx, " observed unit(s)", " 個觀測單位"));
+        el(ctx, estimate, "p", words(ctx,
+            "Orientation from recorded lifecycle stages; this is not acceptance or release evidence.",
+            "依已記錄的生命週期階段提供方向；不代表驗收或發布。"));
+    }
+    if (aiEstimate) {
+        const estimate = aiEstimate;
         const ai = el(ctx, node, "div", null, "board-progress-ai");
         el(ctx, ai, "strong", words(ctx, "AI estimate ", "AI 估計 ") + estimate.percent + "%");
         const confidence = { low: words(ctx, "low", "低"), medium: words(ctx, "medium", "中"),

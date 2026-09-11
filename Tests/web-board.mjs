@@ -399,14 +399,27 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     p.view.leave();
 }
 {
-    const epic = item("Unscoped program", "planning"); epic.type = "epic";
+    const epic = item("Unscoped program", "execution"); epic.type = "epic";
     epic.progress.measurement = { status: "insufficient_scope", authority: "recorded_evidence",
         recordedPercent: null, denominator: 0, leafCount: 3, unmeasuredLeafCount: 2,
         measuredAt: 1700000000, scope: "epic_leaf_acceptance", stages: {} };
-    const p = page({ read: async () => envelope({ item: epic }) });
+    epic.progress.lifecycleEstimate = { authority: "lifecycle_projection", percent: 45,
+        lowerBound: 25, upperBound: 65, confidence: "low", scope: "epic_members",
+        sampleCount: 3, measuredAt: 1700000000,
+        basisCodes: ["bounded_phase_weights", "not_acceptance_evidence", "not_release_evidence"] };
+    const p = page({ read: async (_project, id) => envelope(id ? { item: epic } : { items: [epic] }) });
+    await p.view.open("a");
+    const compact = p.elements["board-items"].all(".board-progress-compact")[0];
+    check("large cards show the qualified estimate instead of universal denominator debt",
+        compact && compact.textContent.includes("45%") && compact.textContent.includes("階段粗估")
+        && !compact.textContent.includes("進度分母待補"));
     await p.view.open("a", epic.id);
     const progress = p.elements["board-detail"].all(".board-large-progress")[0];
     check("missing leaf scope is explicit instead of a guessed zero", progress && progress.textContent.includes("目前無法精確計算") && !progress.textContent.includes("0% 完成"));
+    check("missing acceptance scope still shows a visibly qualified lifecycle estimate",
+        progress && progress.textContent.includes("階段粗估 45%")
+        && progress.textContent.includes("25–65%")
+        && progress.textContent.includes("不代表驗收或發布"));
     p.view.leave();
 }
 {

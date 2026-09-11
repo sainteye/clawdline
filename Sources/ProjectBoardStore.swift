@@ -608,6 +608,17 @@ final class ProjectBoardStore {
             if let measurement = projectedProgressMeasurement(item) {
                 row["progressMeasurement"] = measurement
             }
+            if item.type == "epic" || item.type == "refactor" {
+                let progress = progressObject(item)
+                row["progressContext"] = [
+                    "state": progress["state"] ?? "unknown",
+                    "group": progress["group"] ?? "history",
+                    "active": progress["active"] ?? false,
+                    "lifecycleEstimate": progress["lifecycleEstimate"] ?? NSNull(),
+                    "attemptCounts": progress["attemptCounts"] ?? [:],
+                    "evidenceCounts": progress["evidenceCounts"] ?? [:],
+                ] as [String: Any]
+            }
             result.append(row)
             if result.count >= min(limit, 8) { break }
         }
@@ -634,8 +645,11 @@ final class ProjectBoardStore {
               nextStep.count <= 200, nextStep.utf8.count <= 800,
               let model = Self.boundedText(model, maximum: 200) else { return false }
         if let estimate = progressEstimate {
-            guard ["epic", "refactor"].contains(state.items[index].type),
-                  progressMeasurement(state.items[index])?["status"] as? String == "available",
+            let item = state.items[index]
+            let measurement = progressMeasurement(item)
+            let hasLifecycleOrientation = progressObject(item)["lifecycleEstimate"] != nil
+            guard ["epic", "refactor"].contains(item.type), measurement != nil,
+                  measurement?["status"] as? String == "available" || hasLifecycleOrientation,
                   (0...100).contains(estimate.percent), (0...100).contains(estimate.lowerBound),
                   (0...100).contains(estimate.upperBound),
                   estimate.lowerBound <= estimate.percent, estimate.percent <= estimate.upperBound,
@@ -701,6 +715,7 @@ final class ProjectBoardStore {
 
     private func presentationFingerprint(_ item: StoredItem) -> String {
         Self.digest(["title": item.title, "summary": item.summary, "type": item.type,
+                     "readingContract": ["epic", "refactor"].contains(item.type) ? 2 : 1,
                      "scopeRevision": item.scopeRevision ?? 0,
                      "report": item.completionReports?.last?.id ?? "",
                      "progressMeasurement": progressMeasurement(item) ?? NSNull()])!
@@ -3368,6 +3383,13 @@ final class ProjectBoardStore {
                 }.count,
             ] as [String: Any],
         ]
+        let orientationState = progress.state == "unknown" ? item.state : progress.state
+        if (item.type == "epic" || item.type == "refactor"),
+           let estimate = Self.lifecycleEstimate(
+               states: [orientationState], scope: "item_lifecycle",
+               measuredAt: item.updatedAt) {
+            result["lifecycleEstimate"] = estimate
+        }
         if includeMeasurement, let measurement = projectedProgressMeasurement(item) {
             result["measurement"] = measurement
         }
@@ -3497,6 +3519,86 @@ final class ProjectBoardStore {
                 "release": ["percent": NSNull(), "completed": NSNull(),
                             "total": leaves.count, "status": "insufficient_evidence"],
             ] as [String: Any]]
+    }
+
+    /// A reader-facing fallback for large work whose acceptance denominator has not yet been
+    /// authored. It deliberately projects only the already-derived lifecycle state. The broad
+    /// interval is the contract: this is useful orientation, never acceptance or release proof.
+    private static func lifecycleEstimate(states: [String], scope: String,
+                                          measuredAt: Double) -> [String: Any]? {
+        let bands = states.compactMap { state -> (percent: Int, lower: Int, upper: Int)? in
+            switch state {
+            case "planning": return (10, 0, 20)
+            case "ready", "queued": return (15, 5, 25)
+            case "blocked": return (35, 10, 60)
+            case "execution": return (45, 25, 65)
+            case "correction": return (60, 40, 80)
+            case "delivered": return (70, 55, 85)
+            case "review_testing": return (75, 60, 90)
+            case "verified": return (90, 80, 98)
+            case "settled": return (90, 80, 100)
+            case "integrated", "closed", "landed": return (100, 95, 100)
+            case "unknown": return (0, 0, 100)
+            default: return nil // Canceled work is not a progress estimate.
+            }
+        }
+        guard !bands.isEmpty else { return nil }
+        func mean(_ values: [Int]) -> Int {
+            Int((Double(values.reduce(0, +)) / Double(values.count)).rounded())
+        }
+        return [
+            "authority": "lifecycle_projection",
+            "percent": mean(bands.map { $0.percent }),
+            "lowerBound": mean(bands.map { $0.lower }),
+            "upperBound": mean(bands.map { $0.upper }),
+            "confidence": "low",
+            "scope": scope,
+            "sampleCount": bands.count,
+            "measuredAt": measuredAt,
+            "basisCodes": ["bounded_phase_weights", "current_board_projection",
+                           "not_acceptance_evidence", "not_release_evidence"],
+        ] as [String: Any]
+    }
+
+    private func lifecycleEstimate(_ item: StoredItem, index: MaterializationIndex?,
+                                   fallback: [String: Any]) -> [String: Any]? {
+        guard item.type == "epic" || item.type == "refactor" else { return nil }
+        guard item.type == "epic" else {
+            return fallback["lifecycleEstimate"] as? [String: Any]
+        }
+        let itemsByID = index?.itemsByID
+            ?? Dictionary(uniqueKeysWithValues: state.items.map { ($0.id, $0) })
+        let childrenByParentID = index?.childrenByParentID
+            ?? Dictionary(grouping: state.items.compactMap { stored -> StoredItem? in
+                stored.parentId == nil ? nil : stored
+            }, by: { $0.parentId! })
+        var memberIDs: [String]
+        let scope: String
+        if let plan = item.programPlan {
+            memberIDs = plan.nodes.map(\.itemId)
+            scope = "program_plan_nodes"
+        } else {
+            memberIDs = (childrenByParentID[item.id] ?? []).map(\.id)
+                + item.links.filter { $0.kind == "related" }.map(\.targetId)
+            scope = "epic_members"
+        }
+        var seen = Set<String>()
+        memberIDs = memberIDs.filter { $0 != item.id && seen.insert($0).inserted }
+        guard !memberIDs.isEmpty else {
+            return fallback["lifecycleEstimate"] as? [String: Any]
+        }
+        let states = memberIDs.map { memberID -> String in
+            if let indexed = index?.progressByItemID[memberID]?["state"] as? String {
+                return indexed
+            }
+            guard let member = itemsByID[memberID] else { return "unknown" }
+            let projected = progressObject(member)
+            let state = projected["state"] as? String ?? "unknown"
+            return state == "unknown" ? member.state : state
+        }
+        let measuredAt = memberIDs.compactMap { itemsByID[$0]?.updatedAt }
+            .reduce(item.updatedAt, max)
+        return Self.lifecycleEstimate(states: states, scope: scope, measuredAt: measuredAt)
     }
 
     // MARK: - Snapshot
@@ -3870,6 +3972,10 @@ final class ProjectBoardStore {
         ]
         let accountingLinks = item.links.filter { $0.kind == "task" && $0.source == "broker" }
         let coverage = item.ingestionCoverage ?? []
+        var projectedProgress = index?.progressByItemID[item.id] ?? progressObject(item)
+        if let estimate = lifecycleEstimate(item, index: index, fallback: projectedProgress) {
+            projectedProgress["lifecycleEstimate"] = estimate
+        }
         var answer: [String: Any] = [
             "id": item.id, "key": item.key, "projectId": item.projectId,
             "keyStatus": (index?.keyCountsByProject[item.projectId]?[item.key]
@@ -3961,7 +4067,7 @@ final class ProjectBoardStore {
                 "artifactAcceptanceId": item.currentArtifactAcceptanceId ?? NSNull(),
                 "scopeRevision": item.scopeRevision ?? 0,
             ] as [String: Any],
-            "progress": index?.progressByItemID[item.id] ?? progressObject(item),
+            "progress": projectedProgress,
             "listSummary": index?.listSummaryByItemID[item.id]
                 ?? listSummary(item, progress: progressObject(item)),
             "sourceIngestion": [

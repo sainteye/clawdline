@@ -348,8 +348,20 @@ is shown as unknown (`—`), even when every leaf is landed or settled; a Git la
 An existing nested Epic is retained as a scope member, so an unscoped nested program makes the total
 unavailable instead of silently disappearing from a 100% result.
 
+That strict answer is no longer the only orientation on the card. Every non-canceled Epic and
+Refactor with a recognizable Board lifecycle also carries a low-confidence `lifecycleEstimate`.
+It maps the already-derived planning, queued, execution, correction, delivery, review, verification
+and landing states into a bounded range; an Epic averages its current Program Plan nodes or explicit
+members. Unknown members widen the range instead of disappearing. The browser labels this as a
+stage estimate and may show it beside a separate exact acceptance percentage. It does not create
+scope, pass a checklist row, verify work, prove landing or claim release. This fallback is available
+without enabling an external AI provider, so a Board whose acceptance rows are still being authored
+does not reduce every large card to the same “scope needed” placeholder.
+
 When Board reading AI is explicitly enabled, its current presentation variant may include a separate
-AI estimate with a bounded range, confidence label, named scope, basis, model and timestamp. The
+AI estimate with a bounded range, confidence label, named scope, basis, model and timestamp. A
+missing exact acceptance denominator requires low confidence and an honestly partial scope; it no
+longer forces the AI field to be null when lifecycle orientation exists. The
 estimate is `narrative_only`: it never changes lifecycle, verification, landing, release, checklist or
 milestone state. The browser labels recorded evidence and AI estimation separately and hides stale AI
 variants after the underlying progress fingerprint changes.

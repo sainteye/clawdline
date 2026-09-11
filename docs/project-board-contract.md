@@ -277,6 +277,20 @@ exists; `landed`, `settled` and `nothing_to_land` are not release evidence.
 part of a current `narrative_only` variant, uses an explicit non-zero uncertainty interval, and has
 no workflow, lifecycle, verification, landing or release authority. Its source fingerprint includes
 the recorded measurement, so a changed denominator or leaf status makes the old estimate stale.
+An incomplete denominator is allowed only as an uncertain partial-scope estimate; the exact
+`recordedPercent` remains null.
+
+Large-item `progress.lifecycleEstimate` is
+`{authority:"lifecycle_projection",percent,lowerBound,upperBound,confidence:"low",scope,sampleCount,measuredAt,basisCodes}`.
+It is present for a non-canceled Epic or Refactor whose current Board lifecycle can be oriented.
+The fixed phase bands are planning 0–20 (midpoint 10), queued 5–25 (15), blocked 10–60 (35),
+execution 25–65 (45), correction 40–80 (60), delivered 55–85 (70), review/testing 60–90 (75),
+verified 80–98 (90), settled 80–100 (90), and landed 95–100 (100). An Epic averages current
+Program Plan nodes when present, otherwise its explicit children and related members; unknown
+members contribute the deliberately wide 0–100 band and are never dropped from the sample.
+`basisCodes` always includes `not_acceptance_evidence` and `not_release_evidence`. This projection
+is orientation available without external-AI consent. It never changes or substitutes for the
+recorded acceptance measurement, AI narrative, lifecycle, verification, landing or deployment.
 
 Optional `typeDetails` is accepted by create/update and returned with the item. Bug supports only
 `rootCause` and `lessons`; Coordination supports only `outcomes`, `difficulties`, `improvements`.
