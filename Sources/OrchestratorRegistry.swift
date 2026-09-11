@@ -34,6 +34,30 @@ enum OrchestratorRegistry {
     /// `Orchestrator`, is behind this exact instance.
     static let lock = NSLock()
 
+    /// One process-local sliding window. Tickets stay as `Date`s so a caller can return the
+    /// exact admission it received; removing the last exact match preserves the old behavior
+    /// when a deterministic test clock (or a coarse real clock) produces duplicate timestamps.
+    private struct RateWindow {
+        let duration: TimeInterval
+        private(set) var tickets: [Date] = []
+
+        mutating func take(now: Date, limit: Int) -> Date? {
+            tickets = tickets.filter { now.timeIntervalSince($0) < duration }
+            guard tickets.count < limit else { return nil }
+            tickets.append(now)
+            return now
+        }
+
+        mutating func giveBack(_ ticket: Date) {
+            guard let index = tickets.lastIndex(of: ticket) else { return }
+            tickets.remove(at: index)
+        }
+
+        mutating func removeAll() {
+            tickets = []
+        }
+    }
+
     // MARK: - The collections
 
     /// Graph node key → the dispatch currently admitting it. A reservation held between the
@@ -60,6 +84,13 @@ enum OrchestratorRegistry {
 
     /// Terminal id → where that tab sits in the tree. Rebuilt beside ``titlesByTerminal``.
     private static var rolesByTerminal: [String: Orchestrator.Role] = [:]
+
+    /// These windows are deliberately absent from the store. A restart and `forget()` both
+    /// restore their empty process-local state, exactly as before ownership moved here.
+    private static var dispatchRateWindow = RateWindow(duration: 10 * 60)
+    private static var notificationRateWindow = RateWindow(duration: 60 * 60)
+    private static var invalidTaskSecretNotificationRateWindow = RateWindow(duration: 10 * 60)
+    private static var scheduleWriteRateWindow = RateWindow(duration: 10 * 60)
 
     // MARK: - The transaction
 
@@ -190,6 +221,58 @@ enum OrchestratorRegistry {
 
         func removeAllSuppressedHandoffLabels() {
             OrchestratorRegistry.suppressedHandoffLabels = []
+        }
+
+        // MARK: Rate windows
+
+        /// Dispatch capacity is dynamic, so the caller supplies the ceiling read for this take.
+        func takeDispatchRate(now: Date, limit: Int) -> Date? {
+            OrchestratorRegistry.dispatchRateWindow.take(now: now, limit: limit)
+        }
+
+        func refundDispatchRate(_ ticket: Date) {
+            OrchestratorRegistry.dispatchRateWindow.giveBack(ticket)
+        }
+
+        func takeNotificationRate(now: Date) -> Date? {
+            OrchestratorRegistry.notificationRateWindow.take(now: now, limit: 30)
+        }
+
+        func refundNotificationRate(_ ticket: Date) {
+            OrchestratorRegistry.notificationRateWindow.giveBack(ticket)
+        }
+
+        func takeInvalidTaskSecretNotificationRate(now: Date) -> Bool {
+            OrchestratorRegistry.invalidTaskSecretNotificationRateWindow
+                .take(now: now, limit: 3) != nil
+        }
+
+        func takeScheduleWriteRate(now: Date) -> Bool {
+            OrchestratorRegistry.scheduleWriteRateWindow.take(now: now, limit: 10) != nil
+        }
+
+        func removeAllRateWindows() {
+            OrchestratorRegistry.dispatchRateWindow.removeAll()
+            OrchestratorRegistry.notificationRateWindow.removeAll()
+            OrchestratorRegistry.invalidTaskSecretNotificationRateWindow.removeAll()
+            OrchestratorRegistry.scheduleWriteRateWindow.removeAll()
+        }
+
+        /// Test receipts retain the ticket order so duplicate-ticket refunds are observable.
+        func dispatchRateTicketsForTesting() -> [Date] {
+            OrchestratorRegistry.dispatchRateWindow.tickets
+        }
+
+        func notificationRateTicketsForTesting() -> [Date] {
+            OrchestratorRegistry.notificationRateWindow.tickets
+        }
+
+        func invalidTaskSecretNotificationRateCountForTesting() -> Int {
+            OrchestratorRegistry.invalidTaskSecretNotificationRateWindow.tickets.count
+        }
+
+        func scheduleWriteRateCountForTesting() -> Int {
+            OrchestratorRegistry.scheduleWriteRateWindow.tickets.count
         }
     }
 

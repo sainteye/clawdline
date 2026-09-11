@@ -206,7 +206,9 @@ main_lines=$(line_count Tests/main.swift)
 # Board live-transition correction: replaceTask captures one credential-free source record and
 # publishes it after unlocking. Registry state ownership remains here; Board projection stays out.
 # Schedule Webhook adds one projection call; binding authority remains in ScheduleWebhook.swift.
-orchestrator_ceiling=10750
+# Cut 2 Stage 2 moves the four process-local rate windows behind Registry transactions. The
+# 10,723-line ceiling is measured on this candidate; the shared lock and route facades remain.
+orchestrator_ceiling=10723
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"

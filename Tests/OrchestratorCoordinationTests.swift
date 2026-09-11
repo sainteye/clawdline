@@ -1973,4 +1973,28 @@ group("an agent notification is narrow, scarce and audited") {
         check("the task route consumes one hourly notification slot", false)
     }
 }
+
+group("a task notification commits and refunds its two counters together") {
+    Orchestrator.forget(); defer { Orchestrator.forget() }
+    Orchestrator.storeSaveInterceptorForTesting = { _ in true }
+    let id = "44444444-5555-4666-8777-888888888888", secret = String(repeating: "f6", count: 32)
+    var task = Orchestrator.Task(id: id, state: .briefed, kind: "custom", title: "atomic notice",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: Orchestrator.hash(ofSecret: secret)); task.notifyCount = 4
+    Orchestrator.holdScheduleTaskForTesting(task)
+    var seen = -1
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in
+        seen = OrchestratorRegistry.withTransaction { $0.notificationRateTicketsForTesting().count }; return WebPush.Delivery(sent: 1, failed: 0)
+    }
+    _ = Orchestrator.agentNotify(taskID: id, secret: secret, title: "ready", body: "done")
+    check("the task count and global ticket commit before push and outside the lock",
+          Orchestrator.held(id)?.notifyCount == 5 && seen == 1)
+    Orchestrator.forget(); Orchestrator.storeSaveInterceptorForTesting = { _ in true }
+    task.notifyCount = 4; Orchestrator.holdScheduleTaskForTesting(task)
+    Orchestrator.agentPushForTesting = { _, _, _, _, _ in WebPush.Delivery(sent: 0, failed: 0) }
+    _ = Orchestrator.agentNotify(taskID: id, secret: secret, title: "ready", body: "done")
+    let ticketWasRefunded = OrchestratorRegistry.withTransaction { $0.notificationRateTicketsForTesting().isEmpty }
+    check("a delivery with no subscriber refunds both counters",
+          Orchestrator.held(id)?.notifyCount == 4 && ticketWasRefunded)
+}
 }

@@ -653,12 +653,7 @@ enum Orchestrator {
     /// spending the tree's tickets on it would have a phone's form quietly stopping a root
     /// session from opening children.
     private static func takeScheduleWriteRate() -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        let now = Date()
-        scheduleWriteTimes = scheduleWriteTimes.filter { now.timeIntervalSince($0) < 600 }
-        guard scheduleWriteTimes.count < 10 else { return false }
-        scheduleWriteTimes.append(now)
-        return true
+        OrchestratorRegistry.withTransaction { $0.takeScheduleWriteRate(now: Date()) }
     }
 
     /// Everything one schedule is, including the task template and retained run history the list
@@ -1337,13 +1332,6 @@ enum Orchestrator {
     private static var beatSequence = 0
     /// Plaintext secrets, held only between dispatch and briefing. Never on disk.
     private static var secrets: [String: String] = [:]
-    private static var dispatchTimes: [Date] = []
-    /// Accepted agent-authored notifications in the last hour. Deliberately separate from the
-    /// dispatch brake: telling somebody what a child found must not consume a child slot ticket.
-    private static var notifyTimes: [Date] = []
-    /// Failed task-secret attempts share the public pairing route's three-in-ten-minutes shape.
-    /// Successful notifications never enter this window.
-    private static var notifyCredentialFailureTimes: [Date] = []
     /// A skipped or missed occurrence has no task row to remember it. This prevents one audit and
     /// push per minute while the process stays up; a restart deliberately re-evaluates catch-up.
     private static var handledScheduleFires: [String: Date] = [:]
@@ -1351,9 +1339,6 @@ enum Orchestrator {
     private static var lastMissedScheduleFires: [String: Date] = [:]
     private static var dispatchingSchedules: Set<String> = []
     private static var invalidScheduleFingerprints: [String: String] = [:]
-    /// When the last ten schedules were written through the HTTP route — see
-    /// ``takeScheduleWriteRate()``.
-    private static var scheduleWriteTimes: [Date] = []
     private static let scheduleQueue = DispatchQueue(
         label: "com.tsunamiworks.clawdline.orchestrator.schedules", qos: .utility)
     static var scheduleRunnerForTesting: ((Schedule) -> Reply)?
@@ -4539,30 +4524,23 @@ enum Orchestrator {
     /// the work the caps just permitted teaches people to retry, which is the behaviour it exists
     /// to discourage.
     static func takeDispatchRate() -> Date? {
-        lock.lock(); defer { lock.unlock() }
-        let now = Date()
-        let allowed = max(10, Config.shared.orchestratorMaxDescendants)
-        dispatchTimes = dispatchTimes.filter { now.timeIntervalSince($0) < 600 }
-        guard dispatchTimes.count < allowed else { return nil }
-        dispatchTimes.append(now)
-        return now
+        return OrchestratorRegistry.withTransaction {
+            $0.takeDispatchRate(
+                now: Date(), limit: max(10, Config.shared.orchestratorMaxDescendants))
+        }
     }
 
     /// A claims refusal registered no work, so its provisional rate entry is returned. Every real
     /// dispatch, including a scheduled one, is served on the remote serial queue; matching the
     /// exact timestamp also keeps direct unit-test calls safe.
     static func refundDispatchRate(_ ticket: Date) {
-        lock.lock(); defer { lock.unlock() }
-        if let index = dispatchTimes.lastIndex(of: ticket) {
-            dispatchTimes.remove(at: index)
-        }
+        OrchestratorRegistry.withTransaction { $0.refundDispatchRate(ticket) }
     }
 
     /// Test-only: how many dispatch-rate tickets are currently held, so a test can confirm a
     /// refusal actually gave its ticket back rather than trusting the code path ran unobserved.
     static func dispatchRateCountForTesting() -> Int {
-        lock.lock(); defer { lock.unlock() }
-        return dispatchTimes.count
+        OrchestratorRegistry.withTransaction { $0.dispatchRateTicketsForTesting().count }
     }
 
     private static func activeCount() -> Int {
@@ -4942,11 +4920,12 @@ enum Orchestrator {
     // MARK: - Agent-authored push notifications
 
     static let notifyTaskLimit = 5
-    private static let notifyHourlyLimit = 30
-    private static let notifyWindow: TimeInterval = 60 * 60
     private static let notifyTerminalGrace: TimeInterval = 60
-    private static let notifyCredentialFailureLimit = 3
-    private static let notifyCredentialFailureWindow: TimeInterval = 10 * 60
+
+    private enum AgentNotifyAdmission {
+        case admitted(Task, Date)
+        case refused(String, Reply)
+    }
 
     /// One audit row per attempted agent notification. `task_id` and `root` are deliberately
     /// mutually exclusive so a reader can distinguish a child's narrow credential from a local
@@ -4967,13 +4946,9 @@ enum Orchestrator {
     private static func unverifiedAgentNotify(taskID: String, secret: String, result: String,
                                               now: Date, status: Int, code: String,
                                               message: String) -> Reply {
-        lock.lock()
-        notifyCredentialFailureTimes = notifyCredentialFailureTimes.filter {
-            now.timeIntervalSince($0) < notifyCredentialFailureWindow
+        let allowed = OrchestratorRegistry.withTransaction {
+            $0.takeInvalidTaskSecretNotificationRate(now: now)
         }
-        let allowed = notifyCredentialFailureTimes.count < notifyCredentialFailureLimit
-        if allowed { notifyCredentialFailureTimes.append(now) }
-        lock.unlock()
 
         let finalResult = allowed ? result : "rate_limited"
         RemoteAuth.audit("orchestrator.notify", [
@@ -5028,13 +5003,13 @@ enum Orchestrator {
     }
 
     private static func refundAgentNotify(taskID: String?, ticket: Date) {
-        lock.lock()
-        if let index = notifyTimes.lastIndex(of: ticket) { notifyTimes.remove(at: index) }
-        if let taskID, var task = tasks[taskID] {
-            task.notifyCount = max(0, task.notifyCount - 1)
-            tasks[taskID] = task
+        OrchestratorRegistry.withTransaction { registry in
+            registry.refundNotificationRate(ticket)
+            if let taskID, var task = tasks[taskID] {
+                task.notifyCount = max(0, task.notifyCount - 1)
+                tasks[taskID] = task
+            }
         }
-        lock.unlock()
         if taskID != nil { save() }
     }
 
@@ -5097,37 +5072,40 @@ enum Orchestrator {
                             "No device has asked for notifications yet.")
         }
 
-        lock.lock()
-        guard var current = tasks[taskID] else {
-            lock.unlock()
-            auditAgentNotify(taskID: taskID, title: title, result: "not_found")
-            return .refused(404, "not_found", "No task named that")
+        let admission = OrchestratorRegistry.withTransaction { registry -> AgentNotifyAdmission in
+            guard var current = tasks[taskID] else {
+                return .refused("not_found", .refused(404, "not_found", "No task named that"))
+            }
+            if current.state.isTerminal,
+               current.finishedAt == nil || now.timeIntervalSince(
+                    current.finishedAt ?? .distantPast) > notifyTerminalGrace {
+                return .refused("expired", .refused(
+                    409, "notify_expired", "That task's notification window has expired."))
+            }
+            let ticket = registry.takeNotificationRate(now: now)
+            guard current.notifyCount < notifyTaskLimit else {
+                if let ticket { registry.refundNotificationRate(ticket) }
+                return .refused("notify_limit", .refused(
+                    429, "notify_limit", "That task has sent its five notifications."))
+            }
+            guard let ticket else {
+                return .refused("rate_limited", .refused(429, "rate_limited",
+                    "Too many agent notifications; wait for the hourly window."))
+            }
+            current.notifyCount += 1
+            tasks[taskID] = current
+            return .admitted(current, ticket)
         }
-        if current.state.isTerminal,
-           current.finishedAt == nil
-                || now.timeIntervalSince(current.finishedAt ?? .distantPast) > notifyTerminalGrace {
-            lock.unlock()
-            auditAgentNotify(taskID: taskID, title: title, result: "expired")
-            return .refused(409, "notify_expired",
-                            "That task's notification window has expired.")
+        let current: Task
+        let ticket: Date
+        switch admission {
+        case .refused(let result, let refusal):
+            auditAgentNotify(taskID: taskID, title: title, result: result)
+            return refusal
+        case .admitted(let admittedTask, let admittedTicket):
+            current = admittedTask
+            ticket = admittedTicket
         }
-        notifyTimes = notifyTimes.filter { now.timeIntervalSince($0) < notifyWindow }
-        if current.notifyCount >= notifyTaskLimit {
-            lock.unlock()
-            auditAgentNotify(taskID: taskID, title: title, result: "notify_limit")
-            return .refused(429, "notify_limit", "That task has sent its five notifications.")
-        }
-        if notifyTimes.count >= notifyHourlyLimit {
-            lock.unlock()
-            auditAgentNotify(taskID: taskID, title: title, result: "rate_limited")
-            return .refused(429, "rate_limited",
-                            "Too many agent notifications; wait for the hourly window.")
-        }
-        current.notifyCount += 1
-        tasks[taskID] = current
-        let ticket = now
-        notifyTimes.append(ticket)
-        lock.unlock()
         save()
 
         let source = current.scheduleID == nil ? current.title : (current.rootLabel ?? current.title)
@@ -5164,17 +5142,13 @@ enum Orchestrator {
             return .refused(409, "not_subscribed",
                             "No device has asked for notifications yet.")
         }
-        lock.lock()
-        notifyTimes = notifyTimes.filter { now.timeIntervalSince($0) < notifyWindow }
-        guard notifyTimes.count < notifyHourlyLimit else {
-            lock.unlock()
+        guard let ticket = OrchestratorRegistry.withTransaction({
+            $0.takeNotificationRate(now: now)
+        }) else {
             auditAgentNotify(taskID: nil, title: title, result: "rate_limited")
             return .refused(429, "rate_limited",
                             "Too many agent notifications; wait for the hourly window.")
         }
-        let ticket = now
-        notifyTimes.append(ticket)
-        lock.unlock()
         let delivery = sendAgentPush(source: "Clawdline", title: title, body: body,
                                      projectDir: nil, sessionID: sessionID, tag: "agent-root")
         return agentDeliveryReply(taskID: nil, title: title, delivery: delivery,
@@ -10657,7 +10631,10 @@ enum Orchestrator {
     static func forget() {
         lock.lock()
         tasks = [:]
-        OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllGraphAdmissions() }
+        OrchestratorRegistry.withTransactionOnHeldLock {
+            $0.removeAllGraphAdmissions()
+            $0.removeAllRateWindows()
+        }
         restartReceipt = nil
         handoffs = [:]
         handoffLabels = [:]
@@ -10676,16 +10653,12 @@ enum Orchestrator {
         cachedCloseabilityRegistryIndex = nil
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllHandoffTitles() }
         secrets = [:]
-        dispatchTimes = []
-        notifyTimes = []
-        notifyCredentialFailureTimes = []
         badResults = []
         handledScheduleFires = [:]
         pendingScheduleFires = [:]
         lastMissedScheduleFires = [:]
         dispatchingSchedules = []
         invalidScheduleFingerprints = [:]
-        scheduleWriteTimes = []
         scheduleRunnerForTesting = nil
         scheduleDispatchEnqueuerForTesting = nil
         completionPumpEnqueuerForTesting = nil

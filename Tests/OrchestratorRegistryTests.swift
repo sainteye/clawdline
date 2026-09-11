@@ -270,4 +270,121 @@ func runOrchestratorRegistryTests() {
         expect("and clearing them takes the rest", cleared, 0)
         Orchestrator.forget()
     }
+
+    group("the four registry rate windows keep their limits, boundaries and identities") {
+        Orchestrator.forget()
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+
+        OrchestratorRegistry.withTransaction { registry in
+            check("the dynamic dispatch ceiling admits exactly the supplied capacity",
+                  registry.takeDispatchRate(now: start, limit: 2) != nil
+                    && registry.takeDispatchRate(now: start, limit: 2) != nil
+                    && registry.takeDispatchRate(now: start, limit: 2) == nil)
+            let notifications = (0..<30).compactMap { _ in
+                registry.takeNotificationRate(now: start)
+            }
+            expect("dispatch saturation does not spend the ordinary notification window",
+                   notifications.count, 30)
+            check("the ordinary notification window admits thirty and no more",
+                  registry.takeNotificationRate(now: start) == nil)
+            let invalidSecrets = (0..<3).filter { _ in
+                registry.takeInvalidTaskSecretNotificationRate(now: start)
+            }
+            expect("notification saturation does not spend the invalid-secret window",
+                   invalidSecrets.count, 3)
+            check("the invalid-secret window admits three and no more",
+                  !registry.takeInvalidTaskSecretNotificationRate(now: start))
+            let scheduleWrites = (0..<10).filter { _ in
+                registry.takeScheduleWriteRate(now: start)
+            }
+            expect("the other three windows do not spend the schedule-write window",
+                   scheduleWrites.count, 10)
+            check("the schedule-write window admits ten and no more",
+                  !registry.takeScheduleWriteRate(now: start))
+
+            check("dispatch entries expire at the exact ten-minute boundary",
+                  registry.takeDispatchRate(now: start.addingTimeInterval(600), limit: 2) != nil)
+            check("notification entries expire at the exact one-hour boundary",
+                  registry.takeNotificationRate(now: start.addingTimeInterval(3_600)) != nil)
+            check("invalid-secret entries expire at the exact ten-minute boundary",
+                  registry.takeInvalidTaskSecretNotificationRate(
+                    now: start.addingTimeInterval(600)))
+            check("schedule-write entries expire at the exact ten-minute boundary",
+                  registry.takeScheduleWriteRate(now: start.addingTimeInterval(600)))
+        }
+
+        Orchestrator.forget()
+        OrchestratorRegistry.withTransaction { registry in
+            _ = registry.takeDispatchRate(now: start, limit: 4)
+            _ = registry.takeDispatchRate(now: start.addingTimeInterval(1), limit: 4)
+            _ = registry.takeDispatchRate(now: start, limit: 4)
+            registry.refundDispatchRate(start)
+            expect("a duplicate dispatch refund removes the last exact ticket",
+                   registry.dispatchRateTicketsForTesting(),
+                   [start, start.addingTimeInterval(1)])
+
+            _ = registry.takeNotificationRate(now: start)
+            _ = registry.takeNotificationRate(now: start.addingTimeInterval(1))
+            _ = registry.takeNotificationRate(now: start)
+            registry.refundNotificationRate(start)
+            expect("a duplicate notification refund removes the last exact ticket",
+                   registry.notificationRateTicketsForTesting(),
+                   [start, start.addingTimeInterval(1)])
+            _ = registry.takeInvalidTaskSecretNotificationRate(now: start)
+            _ = registry.takeScheduleWriteRate(now: start)
+        }
+
+        Orchestrator.forget()
+        OrchestratorRegistry.withTransaction { registry in
+            check("forget clears all four windows through the existing transaction",
+                  registry.dispatchRateTicketsForTesting().isEmpty
+                    && registry.notificationRateTicketsForTesting().isEmpty
+                    && registry.invalidTaskSecretNotificationRateCountForTesting() == 0
+                    && registry.scheduleWriteRateCountForTesting() == 0)
+        }
+
+        let taskID = "44444444-5555-4666-8777-888888888888"
+        let secret = String(repeating: "f6", count: 32)
+        var limitedTask = Orchestrator.Task(
+            id: taskID, state: .briefed, kind: "custom", title: "prune order",
+            assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: start,
+            secretHash: Orchestrator.hash(ofSecret: secret))
+        limitedTask.notifyCount = 5
+        func installLimitedTask() {
+            Orchestrator.storeSaveInterceptorForTesting = { _ in true }
+            Orchestrator.agentPushForTesting = { _, _, _, _, _ in
+                WebPush.Delivery(sent: 1, failed: 0)
+            }
+            Orchestrator.holdScheduleTaskForTesting(limitedTask)
+        }
+
+        Orchestrator.forget(); installLimitedTask()
+        OrchestratorRegistry.withTransaction { _ = $0.takeNotificationRate(now: start) }
+        let expiredReply = Orchestrator.agentNotify(
+            taskID: taskID, secret: secret, title: "ready", body: "done",
+            now: start.addingTimeInterval(3_600))
+        let expiredTickets = OrchestratorRegistry.withTransaction {
+            $0.notificationRateTicketsForTesting()
+        }
+        if case .refused(let status, let code, _, _) = expiredReply {
+            check("a task-limit refusal still prunes expired global notification tickets",
+                  status == 429 && code == "notify_limit" && expiredTickets.isEmpty)
+        } else {
+            check("a task-limit refusal still prunes expired global notification tickets", false)
+        }
+
+        Orchestrator.forget(); installLimitedTask()
+        OrchestratorRegistry.withTransaction { registry in
+            for _ in 0..<30 { _ = registry.takeNotificationRate(now: start) }
+        }
+        let fullReply = Orchestrator.agentNotify(
+            taskID: taskID, secret: secret, title: "ready", body: "done", now: start)
+        if case .refused(let status, let code, _, _) = fullReply {
+            check("the task limit still wins when the global notification window is full",
+                  status == 429 && code == "notify_limit")
+        } else {
+            check("the task limit still wins when the global notification window is full", false)
+        }
+        Orchestrator.forget()
+    }
 }
