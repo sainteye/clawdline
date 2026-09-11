@@ -4,6 +4,23 @@ Project Board is **enabled by default and currently free**. This page describes 
 
 ## Component ownership
 
+### Assistant-attested Session delivery
+
+Internal `record_session_delivery` accepts only workflow-origin calls whose exact actor
+`workflow:<provider>:<conversation UUID>`, item, project, start-request identity and phase match
+an ended non-broker declared interval. Public callers cannot create this fact. Event identity is
+immutable: exact replay is a no-op, changed facts conflict, and bounded capacity never evicts
+old evidence to admit a new delivery.
+
+`progress.sessionDelivery` exposes the latest retained event with `authority:assistant_attested`
+and a separate `current` flag. `scopeRevision` is either the observed revision or null;
+`scopeStatus` is `observed` or `unresolved`. Unknown historical scope is never guessed.
+Newer broker activity, scope changes or later identifiable declared spans invalidate currentness;
+ending a newer span does not resurrect an older delivery. The fact survives Store reload but
+does not call lifecycle reconciliation, change scope, mint verification or create landing/release
+evidence. Trusted verification with missing required checklist evidence is presented as acceptance
+incomplete, rather than silently falling back to planning or claiming completion.
+
 ### Session navigation and Info relationships
 
 Board Session titles are clickable. A shareable address uses the canonical hosted origin and

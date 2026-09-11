@@ -19,6 +19,29 @@ JSON
 ```
 
 Allowed operations are `begin`, `progress`, `document`, `supplement`, `deliver`, and `handoff`.
+Read this installed contract without a broker or credential using the quoted helper path with
+`--help`, or the sibling `clawdline-skill.sh get board-workflow` (also listed by `list`).
+The envelope is metadata, not the JSON command body. `operation` and `classification` must be
+explicit; use `new_work` only for genuinely new work, not every follow-up message. To continue a
+known non-Program item, use its exact UUID, not its title or human key:
+
+```json
+{"operation":"begin","run_id":"RUN_FROM_ENVELOPE","classification":"existing_item","item_id":"EXACT_ITEM_UUID","phase":"output"}
+```
+
+After completing the bounded work, record its actual disposition with a new stable request key:
+
+```json
+{"operation":"deliver","run_id":"RUN_FROM_ENVELOPE","disposition":"delivered","summary":"What was actually completed","next_action":"Named remaining step or none","remaining":[]}
+```
+
+Other dispositions are `waiting_user`, `waiting_external`, `interrupted`, and `cancelled`.
+Unfinished work stays in `remaining` as objects with `title`, `owner`, and boolean `blocking`.
+Session `/complete` is a separate delivery receipt; success there does not establish a Board
+`begin` or `deliver`. On a typed refusal, preserve the code and report the workflow gap; do not
+guess an alternative JSON, replace credentials or loop retries. A successful receipt is not
+permission to claim independent verification, landing or deployment.
+
 When an existing item is a canonical Program, copy the exact binding supplied by the planning
 record into `begin`; names and titles are never binding keys:
 

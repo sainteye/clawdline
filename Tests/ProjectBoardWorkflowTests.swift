@@ -1568,7 +1568,7 @@ group("workflow receipts stay attested and reconcile through a bounded durable o
     workflow.drainForTesting()
     lock.lock(); let operations = commands.compactMap { $0["operation"] as? String }; lock.unlock()
     check("the worker uses only existing factual Board commands",
-          Set(operations).isSubset(of: ["create", "checklist", "link", "span", "end_span", "record_output",
+          Set(operations).isSubset(of: ["create", "checklist", "link", "span", "end_span", "record_output", "record_session_delivery",
                                        "obligation"]))
     check("no assistant receipt can forge verification or landing",
           !operations.contains("record_evidence") && !operations.contains("transition"))

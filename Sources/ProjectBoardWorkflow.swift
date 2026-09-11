@@ -98,6 +98,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var programBinding: ProgramBinding? = nil
         var document: WorkflowDocument? = nil
         var settledIntents: [SettledIntent]? = nil
+        /// Versioned fanout leaves old pending command bodies and receipt identities unchanged.
+        var deliveryProjectionVersion: Int? = nil
     }
 
     private struct SettledIntent: Codable, Equatable {
@@ -930,6 +932,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 throw WorkflowRefusal(status: 400, code: "workflow_deliver_invalid")
             }
             result.disposition = disposition
+            result.deliveryProjectionVersion = 1
             result.summary = summary
             result.nextAction = next
             result.outputs = try outputs(body["outputs"])
@@ -1071,6 +1074,11 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 appendIntent(id: "\(event.id)-end-span", run: run, event: event,
                              kind: "end_span", index: 0, draft: &draft)
             }
+            if event.operation == "deliver", event.deliveryProjectionVersion == 1,
+               (event.settledIntents ?? []).contains(where: { $0.kind == "end_span" }) {
+                appendIntent(id: "\(event.id)-session-delivery", run: run, event: event,
+                             kind: "record_session_delivery", index: 0, draft: &draft)
+            }
             for (index, _) in event.outputs.enumerated() {
                 appendIntent(id: "\(event.id)-artifact-\(index)", run: run, event: event,
                              kind: "record_output", index: index, draft: &draft)
@@ -1144,6 +1152,9 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             ids.formUnion(["\(event.id)-link", "\(event.id)-span"])
         }
         if ["deliver", "handoff"].contains(event.operation) { ids.insert("\(event.id)-end-span") }
+        if event.operation == "deliver", event.deliveryProjectionVersion == 1 {
+            ids.insert("\(event.id)-session-delivery")
+        }
         for i in event.outputs.indices { ids.insert("\(event.id)-artifact-\(i)") }
         for i in event.remaining.indices { ids.insert("\(event.id)-obligation-\(i)") }
         if let supplement = event.supplement {
@@ -1169,6 +1180,40 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         return ids.count
     }
 
+    /// Backfill only exact retained settled deliveries, never recreate their old commands.
+    /// Each pass reserves at most eight additional facts and obeys the existing live capacity.
+    /// Missing span identity or unsettled dependencies remain historical gaps, not guessed work.
+    private func backfillSettledDeliveries(_ draft: inout State) -> Bool {
+        guard draft.observedEnabled == true else { return false }
+        var added = 0
+        for r in draft.runs.indices {
+            guard draft.runs[r].epoch == draft.enabledEpoch,
+                  draft.runs[r].delivery == "delivered", let item = draft.runs[r].itemID,
+                  UUID(uuidString: draft.runs[r].identity.conversationID) != nil,
+                  let start = draft.runs[r].spanStart, start.itemID == item,
+                  start.outboxID == start.eventID + "-span" else { continue }
+            for e in draft.runs[r].events.indices {
+                let event = draft.runs[r].events[e], run = draft.runs[r]
+                guard event.operation == "deliver", event.deliveryProjectionVersion == nil,
+                      boundedText(event.summary, 1_000) != nil,
+                      boundedText(event.nextAction, 500) != nil,
+                      (event.settledIntents ?? []).contains(where: { $0.kind == "end_span" }),
+                      plannedIntentIDs(event, run: run).isSubset(of: Set((event.settledIntents ?? []).map(\.id)))
+                else { continue }
+                guard added < 8, reservedOutboxCount(draft) < limits.outbox else { return added > 0 }
+                var candidate = draft
+                candidate.runs[r].events[e].deliveryProjectionVersion = 1
+                materializeIntents(runIndex: r, draft: &candidate)
+                // Optional history must never prevent loading an otherwise valid journal.
+                guard let bytes = try? JSONEncoder.sorted.encode(candidate),
+                      bytes.count <= limits.maximumBytes else { return added > 0 }
+                draft = candidate
+                added += 1
+            }
+        }
+        return added > 0
+    }
+
     private func settledID(_ entry: SettledIntent, eventID: String) -> String? {
         let suffix: String
         switch entry.kind {
@@ -1177,6 +1222,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         case "obligation": suffix = "-obligation-\(entry.index)"
         case "program_binding": suffix = "-program-binding"
         case "end_span": suffix = "-end-span"
+        case "record_session_delivery": suffix = "-session-delivery"
         case "supplement_checklist": suffix = "-supplement-checklist"
         case "supplement_obligation": suffix = "-supplement-obligation"
         case "supplement_child_create": suffix = "-supplement-child-create"
@@ -1394,6 +1440,18 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             return ["operation": "decide_session_assignment", "itemId": item,
                     "projectId": run.identity.projectID, "assignmentId": assignmentID,
                     "decision": decision, "note": note]
+        case "record_session_delivery":
+            guard let item = run.itemID, let start = run.spanStart, start.itemID == item,
+                  start.outboxID == start.eventID + "-span",
+                  event.deliveryProjectionVersion == 1,
+                  (event.settledIntents ?? []).contains(where: { $0.kind == "end_span" }),
+                  let phase = run.phase, let disposition = event.disposition,
+                  let summary = event.summary, let nextAction = event.nextAction else { return nil }
+            return ["operation": "record_session_delivery", "itemId": item,
+                    "projectId": run.identity.projectID, "runId": run.id, "eventId": event.id,
+                    "sessionId": run.identity.conversationID, "provider": run.identity.provider,
+                    "startRequestId": start.requestID, "phase": phase, "disposition": disposition,
+                    "summary": summary, "nextAction": nextAction, "deliveredAt": event.at]
         case "record_root_landing":
             guard let item = run.itemID, let landing = event.rootLanding else { return nil }
             return ["operation": "record_root_landing", "itemId": item,
@@ -1535,6 +1593,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             }
             materializeIntents(runIndex: runIndex, draft: &draft)
         }
+        _ = backfillSettledDeliveries(&draft)
         guard reservedOutboxCount(draft) <= limits.outbox else {
             storageFailure = "workflow_outbox_reservation_invalid"; return
         }
@@ -1609,7 +1668,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             guard [1, 2, 3].contains(decoded.schemaVersion),
                   decoded.runs.count <= limits.runs,
                   decoded.receipts.count <= limits.receipts,
-                  decoded.runs.allSatisfy({ $0.events.count <= limits.eventsPerRun }) else {
+                  decoded.runs.allSatisfy({ $0.events.count <= limits.eventsPerRun
+                      && $0.events.allSatisfy { $0.deliveryProjectionVersion == nil
+                          || ($0.deliveryProjectionVersion == 1 && $0.operation == "deliver") }
+                  }) else {
                 storageFailure = "workflow_store_invalid"; return
             }
             var migrated = decoded.schemaVersion != 3 || decoded.outbox.contains { $0.status == "complete" }
@@ -1652,8 +1714,13 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     decoded.outbox[index].status = "pending"; migrated = true
                 }
             }
+            migrated = backfillSettledDeliveries(&decoded) || migrated
             decoded.schemaVersion = 3
-            if migrated, !persist(decoded) { return }
+            if migrated, !persist(decoded) {
+                state = decoded
+                if storageFailure == nil { storageFailure = "workflow_persistence_failed" }
+                return
+            }
             state = decoded
         } catch {
             storageFailure = "workflow_store_invalid"

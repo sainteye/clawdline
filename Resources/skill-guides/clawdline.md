@@ -16,6 +16,17 @@ description: |
 
 # Handing work to a child session
 
+## Managed Board workflow — read before sending `begin`
+
+When a message includes `<clawdline-workflow>`, its metadata is not a command JSON body.
+Read the contract bundled with the same App: invoke its `clawdline-skill.sh get board-workflow`,
+or invoke the quoted absolute `helper_path` from the envelope with `--help`.
+Both are local reads and require no credential, running broker, source checkout or PATH setup.
+The contract supplies `begin`/`deliver` examples and exact classification and idempotency rules.
+Never guess a body or substitute the envelope for it. A typed refusal is a workflow gap: retain
+the code, do not retry-loop, and do not misreport a Board record as created. Session `/complete`
+is a separate delivery receipt, not a replacement for managed Board `begin` or `deliver`.
+
 You are **Root**. The Clawdline app is the **broker**: you write a couple of files, make one HTTP
 call, and it opens a terminal tab, types the first message into it, watches for the finish, adds
 up the tokens, and comes back to tell you. The **child** is the session that gets opened. It does

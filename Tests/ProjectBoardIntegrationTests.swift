@@ -426,8 +426,183 @@ private func boardItemKeyPersistenceProof() {
     } catch { check("key persistence fixtures remain readable: \(error)", false) }
 }
 
+private func boardSessionDeliveryProjectionProof() {
+    let d = BoardTestDriver(name: "session-delivery-\(UUID().uuidString)")
+    d.createProject()
+    let itemID = d.create(title: "Root delivery without broker task")
+    let otherID = d.create(title: "Different item")
+    let session = "00000000-0000-0000-0000-000000000356"
+    let identity = ProjectBoardWorkflow.Identity(terminalID: "%356", provider: "codex",
+        conversationID: session, projectID: "project-1", projectPath: "/tmp",
+        processGeneration: "356:1.0")
+    let journal = d.file.deletingLastPathComponent().appendingPathComponent("delivery-workflow.json")
+    var calls: [[String: Any]] = []
+    func open(_ file: URL? = nil, storeOverride: ProjectBoardStore? = nil,
+              maximumBytes: Int = 2 * 1024 * 1024) -> ProjectBoardWorkflow {
+        let store = storeOverride ?? d.store
+        return ProjectBoardWorkflow(url: file ?? journal, boardHeader: {
+            let h = store.readHeader(); return (h.enabled, h.revision, h.available)
+        }, boardCommand: { body, actor in
+            calls.append(body)
+            return store.command(body, actor: actor, workflowOrigin: true)
+        }, limits: ProjectBoardWorkflow.Limits(maximumBytes: maximumBytes), autoStart: false)
+    }
+    var workflow = open()
+    func begin(_ key: String, phase: String = "output") -> String? {
+        guard case .managed(let run) = workflow.prepareIngress(requestID: key,
+            fingerprint: key, text: "work", imageCount: 0, identity: identity) else { return nil }
+        _ = workflow.markDelivery(runID: run.runID, identity: identity, delivered: true)
+        _ = workflow.record(["operation": "begin", "run_id": run.runID,
+            "classification": "existing_item", "item_id": itemID, "phase": phase],
+            requestID: key + "-begin", fingerprint: key + "-begin", identity: identity)
+        workflow.drainForTesting()
+        return run.runID
+    }
+    func deliver(_ run: String, disposition: String = "delivered") {
+        _ = workflow.record(["operation": "deliver", "run_id": run,
+            "disposition": disposition, "summary": "Implementation handed back; not deployed.",
+            "next_action": "Independent review and runtime acceptance"],
+            requestID: run + "-delivery", fingerprint: run + "-delivery", identity: identity)
+        workflow.drainForTesting()
+    }
+    func progress() -> [String: Any] { d.item(itemID)["progress"] as? [String: Any] ?? [:] }
+    guard let run = begin("first") else { check("delivery fixture begins", false); return }
+    let before = d.item(itemID), scope = before["scopeRevision"] as? Int
+    let evidence = before["currentEvidence"] as? NSDictionary
+    deliver(run)
+    expect("a settled root delivery cannot regress to planning or unknown", progress()["state"] as? String, "delivered")
+    expect("root delivery is explicit assistant attestation",
+           (progress()["sessionDelivery"] as? [String: Any])?["authority"] as? String, "assistant_attested")
+    expect("root delivery retains exact run identity",
+           (progress()["sessionDelivery"] as? [String: Any])?["runId"] as? String, run)
+    expect("root delivery remains inactive", progress()["active"] as? Bool, false)
+    expect("root delivery never alters lifecycle", d.item(itemID)["state"] as? String, before["state"] as? String)
+    expect("root delivery never changes scope", d.item(itemID)["scopeRevision"] as? Int, scope)
+    check("root delivery never supplies verification or landing", d.item(itemID)["currentEvidence"] as? NSDictionary == evidence)
+    expect("root delivery does not become a broker attempt",
+           (progress()["attemptCounts"] as? [String: Any])?["total"] as? Int, 0)
+    expect("unrelated item remains planning", (d.item(otherID)["progress"] as? [String: Any])?["state"] as? String, "planning")
+    let revision = d.revision, callCount = calls.count
+    deliver(run); workflow = open(); workflow.drainForTesting()
+    expect("settled delivery replay neither rewrites Board nor resends commands", d.revision, revision)
+    expect("settled delivery restart sends no duplicate commands", calls.count, callCount)
+    let reloaded = ProjectBoardStore(url: d.file)
+    let saved = (reloaded.snapshot(item: itemID)["board"] as? [String: Any])?["item"] as? [String: Any]
+    expect("root delivery survives a Board restart", (saved?["progress"] as? [String: Any])?["state"] as? String, "delivered")
+    do {
+        var legacy = try JSONSerialization.jsonObject(with: Data(contentsOf: journal)) as! [String: Any]
+        var runs = legacy["runs"] as! [[String: Any]]
+        var events = runs[0]["events"] as! [[String: Any]]
+        for i in events.indices {
+            events[i].removeValue(forKey: "deliveryProjectionVersion")
+            events[i]["settledIntents"] = (events[i]["settledIntents"] as? [[String: Any]] ?? [])
+                .filter { $0["kind"] as? String != "record_session_delivery" }
+        }
+        runs[0]["events"] = events; legacy["runs"] = runs
+        let file = d.root.appendingPathComponent("legacy-delivery.json")
+        try JSONSerialization.data(withJSONObject: legacy).write(to: file)
+        let legacyBytes = try Data(contentsOf: file)
+        let tightFile = d.root.appendingPathComponent("legacy-tight-budget.json")
+        try legacyBytes.write(to: tightFile)
+        let beforeTight = calls.count
+        let tight = open(tightFile, maximumBytes: legacyBytes.count + 64)
+        expect("F1 valid old journal survives optional byte-budget deferral",
+               tight.snapshot(runID: run)?["item_id"] as? String, itemID)
+        expect("F1 tight journal is not an empty healthy replacement", tight.syncMode(), nil)
+        tight.drainForTesting()
+        expect("F1 deferred projection sends no old commands", calls.count, beforeTight)
+        expect("F1 byte-budget deferral preserves the exact old journal", try Data(contentsOf: tightFile), legacyBytes)
+        var oldBoard = try JSONSerialization.jsonObject(with: Data(contentsOf: d.file)) as! [String: Any]
+        var oldItems = oldBoard["items"] as! [[String: Any]]
+        for i in oldItems.indices { oldItems[i].removeValue(forKey: "sessionDeliveries") }
+        oldBoard["items"] = oldItems
+        oldBoard["receipts"] = (oldBoard["receipts"] as? [[String: Any]] ?? []).filter {
+            !(($0["requestId"] as? String ?? "").contains("-session-delivery-"))
+        }
+        let oldBoardFile = d.root.appendingPathComponent("legacy-board.json")
+        try JSONSerialization.data(withJSONObject: oldBoard).write(to: oldBoardFile)
+        let oldStore = ProjectBoardStore(url: oldBoardFile)
+        let beforeMigration = calls.count
+        var migrated = open(file, storeOverride: oldStore); migrated.drainForTesting()
+        migrated = open(file, storeOverride: oldStore); migrated.drainForTesting()
+        expect("legacy settled delivery produces only its missing projection", calls.count - beforeMigration, 1)
+        expect("legacy migration never replays old span/output/obligation bodies",
+               calls.last?["operation"] as? String, "record_session_delivery")
+        expect("legacy backfill persists exactly one Board mutation", oldStore.readHeader().revision, revision + 1)
+        let recovered = (oldStore.snapshot(item: itemID)["board"] as? [String: Any])?["item"] as? [String: Any]
+        expect("legacy root delivery is recovered without inventing landing",
+               (recovered?["progress"] as? [String: Any])?["state"] as? String, "delivered")
+        let changedBoardFile = d.root.appendingPathComponent("legacy-changed-board.json")
+        try JSONSerialization.data(withJSONObject: oldBoard).write(to: changedBoardFile)
+        let changedStore = ProjectBoardStore(url: changedBoardFile)
+        for i in 0..<2 {
+            _ = changedStore.command(["operation": "checklist", "requestId": "later-scope-\(i)",
+                "expectedRevision": changedStore.readHeader().revision, "itemId": itemID,
+                "title": "New scope \(i)", "required": true], actor: "root")
+        }
+        let changedJournal = d.root.appendingPathComponent("legacy-changed-workflow.json")
+        try legacyBytes.write(to: changedJournal)
+        let changedWorkflow = open(changedJournal, storeOverride: changedStore)
+        changedWorkflow.drainForTesting()
+        let changedItem = (changedStore.snapshot(item: itemID)["board"] as? [String: Any])?["item"] as? [String: Any]
+        let historical = (changedItem?["progress"] as? [String: Any])?["sessionDelivery"] as? [String: Any]
+        check("F3 backfill never fabricates a historical scope number", historical?["scopeRevision"] is NSNull)
+        expect("F3 unresolved scope is explicit", historical?["scopeStatus"] as? String, "unresolved")
+        expect("F3 unresolved scope is not current", historical?["current"] as? Bool, false)
+        runs[0].removeValue(forKey: "spanStart"); legacy["runs"] = runs
+        let unknownFile = d.root.appendingPathComponent("legacy-unknown.json")
+        try JSONSerialization.data(withJSONObject: legacy).write(to: unknownFile)
+        let beforeUnknown = calls.count
+        let unknown = open(unknownFile); unknown.drainForTesting()
+        expect("legacy missing identity remains unprojected instead of guessed", calls.count, beforeUnknown)
+    } catch { check("legacy delivery fixture remains readable", false) }
+    if let source = calls.first(where: { $0["operation"] as? String == "record_session_delivery" }) {
+        func refuse(_ name: String, mutate: (inout [String: Any]) -> Void,
+                    actor: String = identity.actor, origin: Bool = true) {
+            var body = source; body["requestId"] = "refuse-" + name
+            body["expectedRevision"] = d.revision; mutate(&body)
+            let result = d.store.command(body, actor: actor, workflowOrigin: origin)
+            check("delivery refuses \(name)", result.status == 403 || result.status == 409)
+            expect("refused \(name) leaves Board unchanged", d.revision, revision)
+        }
+        refuse("public forgery", mutate: { _ in }, origin: false)
+        refuse("foreign actor", mutate: { _ in }, actor: "workflow:codex:other")
+        refuse("wrong item", mutate: { $0["itemId"] = otherID })
+        refuse("wrong project", mutate: { $0["projectId"] = "other-project" })
+        refuse("changed immutable summary", mutate: { $0["summary"] = "pretend deployed" })
+    } else { check("workflow produces the typed delivery command", false) }
+    guard let newer = begin("second") else { return }
+    expect("new activity outranks earlier delivered work", progress()["active"] as? Bool, true)
+    expect("F2 old delivery is historical while new declared work is active",
+           (progress()["sessionDelivery"] as? [String: Any])?["current"] as? Bool, false)
+    _ = workflow.record(["operation": "handoff", "run_id": newer,
+        "owner": "receiving-session", "note": "Receiver must accept; no delivery declared"],
+        requestID: "second-handoff", fingerprint: "second-handoff", identity: identity)
+    workflow.drainForTesting()
+    check("F2 old delivery cannot resurface after a newer handoff", progress()["state"] as? String != "delivered")
+    expect("F2 ended newer interval still makes old delivery historical",
+           (progress()["sessionDelivery"] as? [String: Any])?["current"] as? Bool, false)
+    deliver(newer, disposition: "interrupted")
+    check("interrupted newer turn does not retain the old delivered claim", progress()["state"] as? String != "delivered")
+    guard let plan = begin("plan", phase: "planning") else { return }
+    deliver(plan)
+    expect("planning delivery is not implementation delivery", progress()["state"] as? String, "planning")
+    // Existing known-good proof is not the same thing as accepting all required scope.
+    _ = d.send("checklist", ["itemId": itemID, "title": "Runtime acceptance still required", "required": true])
+    _ = d.send("record_evidence", ["itemId": itemID, "kind": "verification", "status": "passed",
+        "sourceId": "source-focused-pass", "subject": String(repeating: "a", count: 40),
+        "summary": "Focused source tests passed, runtime acceptance not observed."], trusted: true)
+    expect("known verification with missing acceptance is not unknown", progress()["state"] as? String, "review_testing")
+    expect("acceptance debt is waiting, not active", progress()["group"] as? String, "waiting")
+    expect("acceptance debt never inflates active count", progress()["active"] as? Bool, false)
+    check("acceptance debt has an explicit reason", (progress()["warningCodes"] as? [String] ?? []).contains("checklist_evidence_incomplete"))
+    expect("historical Session delivery does not become evidence for newer scope",
+           (progress()["sessionDelivery"] as? [String: Any])?["current"] as? Bool, false)
+}
+
 func runProjectBoardIntegrationTests() {
 group("broker live transitions reach the Board before task completion") {
+    boardSessionDeliveryProjectionProof()
     boardItemKeyPersistenceProof()
     boardRootLandingStoreProof()
     do {

@@ -17,6 +17,16 @@ description: |
 
 # 派任務給 child session
 
+## Managed Board workflow：送出 `begin` 前先讀格式
+
+訊息後面的 `<clawdline-workflow>` 是 metadata，不是可以原樣送出的命令 JSON。
+請透過同一 App 內的 `clawdline-skill.sh get board-workflow` 讀取完整契約，
+或把 envelope 的絕對 `helper_path` 加引號後，以 `--help` 呼叫。
+兩者都是本地讀取，不需要憑證、運作中的 broker、source checkout 或設定 PATH。
+文件含 `begin`／`deliver` 範例、分類與冪等規則；不要猜格式或把 envelope 當命令。
+遭拒時保留 typed code、不要循環重試，也不要宣稱看板已建立紀錄。
+Session `/complete` 是另一種交付收據，不能取代看板的 `begin` 或 `deliver`。
+
 你現在是 **Root**。Clawdline app 是 **broker**：你寫檔、按一下 HTTP，它去終端機開一個新分頁、
 把第一句話打進去、盯著完成、算 token、回頭通知你。**Child** 是被開出來的那個 session，
 它只做一件事，做完寫 `result.json`。

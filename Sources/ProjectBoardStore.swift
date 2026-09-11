@@ -281,6 +281,29 @@ final class ProjectBoardStore {
         var authoredAt: Double
     }
 
+    private struct StoredSessionDelivery: Codable, Equatable {
+        var eventId: String
+        var runId: String
+        var sessionId: String
+        var provider: String
+        var startRequestId: String
+        var phase: String
+        var disposition: String
+        var summary: String
+        var nextAction: String
+        var at: Double
+        var scopeRevision: Int?
+
+        var object: [String: Any] {
+            ["eventId": eventId, "runId": runId, "sessionId": sessionId,
+             "provider": provider, "phase": phase, "disposition": disposition,
+             "summary": summary, "nextAction": nextAction, "at": at,
+             "scopeRevision": scopeRevision.map { $0 as Any } ?? NSNull(),
+             "scopeStatus": scopeRevision == nil ? "unresolved" : "observed",
+             "authority": "assistant_attested"]
+        }
+    }
+
     private struct StoredItem: Codable {
         var id: String
         var key: String
@@ -324,6 +347,7 @@ final class ProjectBoardStore {
         var documentReferences: [StoredDocumentReference]? = nil
         /// Optional keeps stores written before atomic Program planning loadable.
         var programPlan: ProjectBoardProgramPlan.Record? = nil
+        var sessionDeliveries: [StoredSessionDelivery]? = nil
     }
 
     private struct StoredProgramPlanReceipt: Codable {
@@ -1000,7 +1024,7 @@ final class ProjectBoardStore {
             return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
                 message: "Only the process-bound receiver workflow may accept or decline an assignment"))
         }
-        if operation == "record_output" && !workflowOrigin {
+        if ["record_output", "record_session_delivery"].contains(operation) && !workflowOrigin {
             return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
                 message: "Delivery references are recorded only by the workflow producer"))
         }
@@ -1050,7 +1074,7 @@ final class ProjectBoardStore {
                                     timestamp: timestamp, draft: &draft)
             if let itemID = applied.itemId,
                operation != "transition", operation != "create", operation != "record_report",
-               operation != "end_span", operation != "record_output",
+               operation != "end_span", operation != "record_output", operation != "record_session_delivery",
                !["document_reference", "plan_structure", "approve_program_gate",
                  "program_binding"].contains(operation),
                !["assign_session", "decide_session_assignment", "cancel_session_assignment"].contains(operation) {
@@ -1850,6 +1874,60 @@ final class ProjectBoardStore {
             reopenForInvalidatedEvidence(index, timestamp: timestamp, draft: &draft)
             touch(&draft.items[index], actor: actor, kind: "milestone_updated",
                   summary: "Milestone scope or status changed.", at: timestamp)
+            return Applied(itemId: draft.items[index].id)
+
+        case "record_session_delivery":
+            let index = try itemIndex(body, draft: draft)
+            let project = try requiredText(body, "projectId", maximum: 200)
+            let run = try requiredText(body, "runId", maximum: 200)
+            let event = try requiredText(body, "eventId", maximum: 200)
+            let session = try requiredText(body, "sessionId", maximum: 200)
+            let provider = try requiredChoice(body, "provider", choices: ["codex", "claude"])
+            let start = try requiredText(body, "startRequestId", maximum: 300)
+            let phase = try requiredChoice(body, "phase", choices: Self.phases)
+            let disposition = try requiredChoice(body, "disposition",
+                choices: ["delivered", "waiting_user", "waiting_external", "interrupted", "cancelled"])
+            guard draft.items[index].projectId == project, UUID(uuidString: session) != nil,
+                  run.hasPrefix("run-"), !event.isEmpty,
+                  actor == "workflow:\(provider):\(session)",
+                  let at = Self.exactDouble(body["deliveredAt"]), at >= 0,
+                  draft.items[index].spans.contains(where: {
+                      $0.id == Self.declaredSpanID(actor: actor, requestID: start)
+                          && $0.sessionId == session && $0.source != "broker"
+                          && $0.phase == phase && $0.endedAt != nil
+                  }) else {
+                throw BoardError(status: 409, code: "session_delivery_binding_invalid",
+                                 message: "Delivery requires its exact ended workflow interval")
+            }
+            var rows = draft.items[index].sessionDeliveries ?? []
+            let prior = rows.first { $0.eventId == event }
+            let currentScope = draft.items[index].scopeRevision ?? 0
+            // The latest scope timestamp cannot reconstruct an older exact revision.
+            // Preserve immutable prior uncertainty instead of upgrading it on replay.
+            let scope: Int?
+            if let prior { scope = prior.scopeRevision }
+            else { scope = (draft.items[index].scopeEventAt ?? 0) > at ? nil : currentScope }
+            let delivery = StoredSessionDelivery(eventId: event, runId: run,
+                sessionId: session, provider: provider, startRequestId: start, phase: phase,
+                disposition: disposition, summary: try requiredText(body, "summary", maximum: 1_000),
+                nextAction: try requiredText(body, "nextAction", maximum: 500), at: at,
+                scopeRevision: scope)
+            if let prior {
+                guard prior == delivery else {
+                    throw BoardError(status: 409, code: "session_delivery_conflict",
+                                     message: "Delivery event identity already names different facts")
+                }
+                return Applied(itemId: draft.items[index].id)
+            }
+            guard rows.count < Self.maximumChildren else {
+                throw BoardError(status: 409, code: "session_delivery_capacity",
+                                 message: "The retained Session delivery capacity is exhausted")
+            }
+            rows.append(delivery)
+            draft.items[index].sessionDeliveries = rows
+            touch(&draft.items[index], actor: actor, kind: "session_delivery_recorded",
+                  summary: "Session delivery recorded; verification, landing and release remain separate.",
+                  at: timestamp)
             return Applied(itemId: draft.items[index].id)
 
         case "record_root_landing":
@@ -3006,6 +3084,24 @@ final class ProjectBoardStore {
         let currentVerified = currentEvidenceVerified && (currentVerification.map { verification in
             !roundAttempts.contains { attemptOccurredAfter($0, evidence: verification) }
         } ?? false)
+        let sessionDelivery = (item.sessionDeliveries ?? []).max {
+            ($0.at, $0.eventId) < ($1.at, $1.eventId)
+        }
+        let currentSessionDelivery = sessionDelivery.flatMap { delivery -> StoredSessionDelivery? in
+            guard delivery.scopeRevision == (item.scopeRevision ?? 0),
+                  let ownSpan = item.spans.first(where: {
+                      $0.id == Self.declaredSpanID(
+                          actor: "workflow:\(delivery.provider):\(delivery.sessionId)",
+                          requestID: delivery.startRequestId)
+                          && $0.sessionId == delivery.sessionId && $0.source != "broker"
+                  }),
+                  !item.spans.contains(where: {
+                      $0.id != ownSpan.id && $0.source != "broker"
+                          && Self.identifiableDeclaration($0) && $0.startedAt >= ownSpan.startedAt
+                  }),
+                  !attempts.contains(where: { ($0.eventAt ?? .infinity) > delivery.at }) else { return nil }
+            return delivery
+        }
         let latestVerification = item.evidence.filter { $0.kind == "verification" }
             .max { eventOrder($0) < eventOrder($1) }
         let failedProofAfterLanding = latestVerification.map { verification in
@@ -3023,13 +3119,16 @@ final class ProjectBoardStore {
         }.count
         var isActive = !activeAttempts.isEmpty || activeSpanCount > 0
         var warningCodes: [String] = []
+        if hasVerificationEvidence(item) && !currentChecklistEvidenceIsValid(item) {
+            warningCodes.append("checklist_evidence_incomplete")
+        }
         if !unresolvedSpans.isEmpty { warningCodes.append("legacy_span_identity_unresolved") }
         if !uncertainAttemptsAfterLanding.isEmpty {
             warningCodes.append("attempt_chronology_unresolved")
         }
         if latestLanding != nil {
             if !hasVerificationEvidence(item) { warningCodes.append("exact_verification_missing") }
-            if item.checklist.contains(where: { $0.required })
+            if !warningCodes.contains("checklist_evidence_incomplete"), item.checklist.contains(where: { $0.required })
                 && !currentChecklistEvidenceIsValid(item) {
                 warningCodes.append("checklist_evidence_incomplete")
             }
@@ -3136,6 +3235,18 @@ final class ProjectBoardStore {
         } else if canceled > 0 && canceled == attempts.count {
             progress = ("canceled", "Canceled", "All retained attempts were canceled.",
                         ["all_attempts_canceled"])
+        } else if hasVerificationEvidence(item) && !currentChecklistEvidenceIsValid(item) {
+            progress = ("review_testing", "Acceptance incomplete",
+                        "Verification is recorded, but required checklist acceptance is incomplete; no active test run is implied.",
+                        ["recorded_verification_incomplete_acceptance"])
+        } else if let delivery = currentSessionDelivery {
+            if delivery.disposition == "delivered" {
+                progress = delivery.phase == "planning"
+                    ? ("planning", "Planning delivered", "The Session delivered planning work; implementation is not established.", ["session_planning_delivery"])
+                    : ("delivered", "Session delivered", "The Session reported delivery; independent verification, landing and release are separate.", ["assistant_attested_delivery"])
+            } else {
+                progress = ("unknown", "Session follow-up", "The Session ended with \(delivery.disposition); no completion is implied.", ["session_\(delivery.disposition)"])
+            }
         } else if !unresolvedSpans.isEmpty {
             progress = ("unknown", "Activity unconfirmed",
                         "A retained interval has no verifiable declaration identity; it is not proof of current activity or completion.",
@@ -3161,7 +3272,7 @@ final class ProjectBoardStore {
                             ["active_delivery_lanes"])
             }
         }
-        let hasHistory = !attempts.isEmpty || !item.evidence.isEmpty
+        let hasHistory = !attempts.isEmpty || !item.evidence.isEmpty || sessionDelivery != nil
         // Activity and outcome are independent. A retained unresolved result is not evidence
         // that somebody is still working, and must not inflate the Project's active count.
         let group: String
@@ -3170,6 +3281,7 @@ final class ProjectBoardStore {
         else if progress.state == "canceled" { group = "canceled" }
         else if isActive && progress.state != "queued" { group = "active" }
         else if progress.state == "queued" || progress.state == "verified"
+            || progress.basis.contains("recorded_verification_incomplete_acceptance")
             || item.obligations.contains(where: { $0.blocking && !$0.resolved }) {
             group = "waiting"
         } else if hasHistory { group = "history" }
@@ -3178,6 +3290,11 @@ final class ProjectBoardStore {
             "state": progress.state, "label": progress.label, "reason": progress.reason,
             "group": group,
             "basisCodes": progress.basis, "warningCodes": warningCodes,
+            "sessionDelivery": sessionDelivery.map { delivery -> [String: Any] in
+                var object = delivery.object
+                object["current"] = currentSessionDelivery != nil
+                return object
+            } as Any? ?? NSNull(),
             "lifecycleApplicable": item.type != "coordination", "active": isActive,
             "historical": !isActive && hasHistory,
             "attemptCounts": [
@@ -4158,6 +4275,9 @@ final class ProjectBoardStore {
             "milestone": ["itemId", "title", "milestoneId", "status"],
             "artifact": ["itemId", "title", "url", "kind"],
             "record_output": ["itemId", "title", "url", "kind"],
+            "record_session_delivery": ["itemId", "projectId", "runId", "eventId", "sessionId",
+                                        "provider", "startRequestId", "phase", "disposition",
+                                        "summary", "nextAction", "deliveredAt"],
             "record_root_landing": ["itemId", "projectId", "runId", "sessionId", "commit",
                                     "targetCommit", "target", "landedAt"],
             "document_reference": ["itemId", "title", "url", "purpose", "documentId",
@@ -5155,6 +5275,18 @@ final class ProjectBoardStore {
                   item.links.count <= maximumChildren,
                   item.obligations.count <= maximumChildren,
                   item.spans.count <= maximumChildren,
+                  (item.sessionDeliveries ?? []).count <= maximumChildren,
+                  Set((item.sessionDeliveries ?? []).map(\.eventId)).count == (item.sessionDeliveries ?? []).count,
+                  (item.sessionDeliveries ?? []).allSatisfy({
+                      boundedText($0.eventId, maximum: 200) != nil && $0.runId.hasPrefix("run-")
+                          && $0.runId.utf8.count <= 200 && UUID(uuidString: $0.sessionId) != nil
+                          && ["codex", "claude"].contains($0.provider) && phases.contains($0.phase)
+                          && boundedText($0.startRequestId, maximum: 300) != nil
+                          && ["delivered", "waiting_user", "waiting_external", "interrupted", "cancelled"].contains($0.disposition)
+                          && boundedText($0.summary, maximum: 1_000) != nil
+                          && boundedText($0.nextAction, maximum: 500) != nil
+                          && $0.at.isFinite && $0.at >= 0 && ($0.scopeRevision.map { $0 >= 0 } ?? true)
+                  }),
                   item.evidence.count <= maximumHistory,
                   item.history.count <= maximumHistory,
                   Self.validTypeDetails(item.typeDetails, for: item.type),

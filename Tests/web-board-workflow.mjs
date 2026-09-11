@@ -89,6 +89,35 @@ try {
         });
         assert.equal(invoked.status, 0, invoked.stderr); bundleChecks++;
         assert.equal(invoked.stdout.trim(), "clawdline-board-workflow 1"); bundleChecks++;
+        // Read the relocated installed contract without a credential, broker, or repo cwd.
+        const help = spawnSync(helper, ["--help"], {
+            cwd: bundleRoot, env: { PATH: "/usr/bin:/bin", HOME: bundleRoot }, encoding: "utf8"
+        });
+        assert.equal(help.status, 0, help.stderr); bundleChecks++;
+        assert.equal(help.stdout, guide); bundleChecks++;
+        fs.copyFileSync(path.join(projectRoot, "Resources/clawdline-skill.sh"),
+            path.join(resources, "clawdline-skill.sh"));
+        fs.cpSync(path.join(projectRoot, "Resources/skill-guides"),
+            path.join(resources, "skill-guides"), { recursive: true });
+        const guideCommand = (...args) => spawnSync("/bin/sh", [path.join(resources,
+            "clawdline-skill.sh"), ...args], { cwd: bundleRoot,
+            env: { PATH: "/usr/bin:/bin", HOME: bundleRoot }, encoding: "utf8" });
+        const list = guideCommand("list");
+        assert.equal(list.status, 0); bundleChecks++;
+        assert.ok(list.stdout.split("\n").includes("board-workflow")); bundleChecks++;
+        const contract = guideCommand("get", "board-workflow");
+        assert.equal(contract.status, 0, contract.stderr); bundleChecks++;
+        assert.equal(contract.stdout, guide); bundleChecks++;
+        for (const language of ["clawdline", "clawdline.zh-TW"]) {
+            const entry = guideCommand("get", language);
+            assert.equal(entry.status, 0); bundleChecks++;
+            assert.match(entry.stdout, /get board-workflow/); bundleChecks++;
+            assert.match(entry.stdout, /--help/); bundleChecks++;
+        }
+        for (const operation of ["begin", "deliver"]) {
+            assert.match(guide, new RegExp('"operation":"' + operation + '"')); bundleChecks++;
+        }
+        assert.match(guide, /\/complete/); bundleChecks++;
         assert.equal(fs.existsSync(path.join(bundleRoot, ".claude")) ||
             fs.existsSync(path.join(bundleRoot, ".codex")), false,
             "packaging/invocation must not install global provider configuration"); bundleChecks++;

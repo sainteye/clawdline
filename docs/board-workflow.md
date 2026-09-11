@@ -1,5 +1,31 @@
 # Session-to-Board workflow contract
 
+## Discoverable installed contract and delivery projection
+
+The installed helper supports `--help` as a local, credential-free read of the bundled
+`board-workflow.md`. The English and Traditional Chinese agent guides point to it, and
+`clawdline-skill.sh list` / `get board-workflow` expose the same bytes after relocation or upgrade.
+Do not POST the managed envelope as a command or guess missing fields. A refused `begin` remains
+a visible workflow gap; a separate Session `/complete` receipt does not repair it.
+
+After an exact managed `deliver` ends its own declared interval, the durable outbox emits
+`record_session_delivery` with the same run, item, provider, Session, start request and event.
+This is **assistant-attested delivery only**: it supplies no verification, landing, release or
+lifecycle authority. `waiting_*`, interrupted and cancelled dispositions remain follow-up states;
+a planning delivery remains planning, not completed implementation.
+
+Retained legacy runs may backfill only the missing projection when their exact span and every
+old intent are settled. Existing command bodies and settled identities are preserved. Each pass
+is bounded by eight additions, outbox capacity and the encoded journal byte budget. Optional
+backfill that cannot fit is deferred without discarding loaded state or changing the journal.
+A mandatory migration write failure makes storage unavailable, never a healthy empty replacement.
+Missing identities remain historical gaps; no guessing or old-command replay is permitted.
+
+The Board records the observed current scope only when the source delivery is not older than
+the latest scope change. Otherwise scope is unresolved, not reconstructed by subtracting one.
+Any later identifiable declared interval (including ended handoffs) makes an earlier delivery
+historical. Equal start timestamps are conservatively unresolved rather than evidence of order.
+
 This slice gives Clawdline-managed terminal sends a durable, non-blocking workflow record. It does
 not install global Claude or Codex configuration, add a Settings control, or claim native-session
 coverage that has not handshaken. The official App packages the protocol-1 helper and guide;

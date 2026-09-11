@@ -29,10 +29,12 @@ list)
         b=${f##*/}
         echo "${b%.md}"
     done
+    [ ! -f "$here/board-workflow.md" ] || echo "board-workflow"
     ;;
 get)
     [ $# -eq 2 ] || usage
     f="$guides/$2.md"
+    if [ "$2" = "board-workflow" ]; then f="$here/board-workflow.md"; fi
     if [ ! -f "$f" ]; then
         echo "clawdline-skill: no guide named '$2'. Try: $0 list" >&2
         exit 69

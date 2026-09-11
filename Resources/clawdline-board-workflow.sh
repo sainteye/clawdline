@@ -7,8 +7,18 @@ umask 077
 
 usage() {
     echo "usage: clawdline-board-workflow <conversation-id> <idempotency-key> < command.json" >&2
+    echo "Read the installed JSON contract first: clawdline-board-workflow --help" >&2
     exit 64
 }
+
+if [ "${1:-}" = "--help" ] && [ "$#" -eq 1 ]; then
+    here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+    [ -f "$here/board-workflow.md" ] || {
+        echo "clawdline-board-workflow: workflow_guide_unavailable" >&2; exit 69;
+    }
+    command cat "$here/board-workflow.md"
+    exit 0
+fi
 
 if [ "${1:-}" = "--version" ] && [ "$#" -eq 1 ]; then
     echo "clawdline-board-workflow 1"
