@@ -470,6 +470,43 @@ for (const source of ["CLAWDLINE_SCRATCH_ROOT", "--root"]) {
     rmSync(named, { recursive: true, force: true });
 }
 
+// ---- Dotted roots ---------------------------------------------------------------------------------
+
+// The broker's sweep also refuses a root with a `.` or `..` component, as root_not_normalized: the kernel
+// resolves one physically, through whatever link stands before it, so a check made on the spelling judges
+// a place the spelling never named. A tool that accepted such a root would make entries the sweep never
+// lists, so the tool refuses the same roots, on every subcommand and before anything is created. Each
+// spelling names a real, usable root once resolved, and is built as a string: `join` would tidy away the
+// very component under test.
+console.log("dotted roots");
+const refusedAsDotted = (result) => result.status === 73 && result.stderr.includes("scratch_root_not_normalized");
+mkdirSync(root, { recursive: true, mode: 0o700 });
+const dottedParent = join(sandbox, "dotted-parent");
+mkdirSync(dottedParent, { recursive: true });
+const rootListing = () => readdirSync(root).sort().join("\n");
+let dottedCase = 0;
+for (const [label, spelled] of [["a trailing .", `${root}/.`], ["a .. component", `${dottedParent}/../scratch`]]) {
+    for (const source of ["CLAWDLINE_SCRATCH_ROOT", "--root"]) {
+        dottedCase += 1;
+        const flag = source === "--root" ? ["--root", spelled] : [];
+        const options = { cwd: relativeRepo, scratchRoot: source === "--root" ? root : spelled };
+        const before = rootListing();
+        const snapshot = runTool(["snapshot-run", "--subject", "worktree", ...flag, "--", "true"], options);
+        check(`snapshot-run refuses a root with ${label} from ${source} as scratch_root_not_normalized, and creates nothing`,
+            refusedAsDotted(snapshot) && rootListing() === before, said(snapshot));
+        const made = runTool(["new", "deploy", ...flag, "--ttl-hours", "1"], options);
+        check(`new refuses a root with ${label} from ${source} as scratch_root_not_normalized, and creates nothing`,
+            refusedAsDotted(made) && rootListing() === before, said(made));
+        const entry = join(root, `deploy.dot${dottedCase}abcd`);
+        mkdirSync(entry, { mode: 0o700 });
+        writeFileSync(join(entry, ".clawdline-scratch.json"), goodMarker);
+        const removed = runTool(["remove", entry, ...flag], options);
+        check(`remove refuses a root with ${label} from ${source} as scratch_root_not_normalized, and the entry it names stays`,
+            refusedAsDotted(removed) && existsSync(entry), said(removed));
+        rmSync(entry, { recursive: true, force: true });
+    }
+}
+
 // ---- Owners, on every process table ---------------------------------------------------------------
 
 // Whose an entry is comes from the process table, and whether that table can be read is a fact about

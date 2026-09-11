@@ -23,12 +23,13 @@ rather than restating it.
 ## The scratch contract, version 1
 
 - **Owned root.** `${CLAWDLINE_SCRATCH_ROOT:-/tmp/clawdline-scratch}`, created with mode `0700`. The
-  root is an absolute path, whether it is the default, `CLAWDLINE_SCRATCH_ROOT` or a `--root`
-  argument. A root that is not absolute, is a symlink, is not a directory, or is not owned by the
-  current uid is refused with a typed error before anything is created — never resolved against a
-  working directory, never replaced, and never worked around by choosing another place. The tool
-  and the broker's sweep refuse the same roots, because a relative root one of them accepted would
-  hold entries the other never lists.
+  root is an absolute path with no `.` or `..` component, whether it is the default,
+  `CLAWDLINE_SCRATCH_ROOT` or a `--root` argument; trailing slashes are ignored. A root that is not
+  absolute, has a `.` or `..` component, is a symlink, is not a directory, or is not owned by the
+  current uid is refused with a typed error before anything is created — never resolved, never
+  replaced, and never worked around by choosing another place. The tool and the broker's sweep
+  refuse the same roots, because a root one of them accepted would hold entries the other never
+  lists.
 - **Entry.** A direct child directory of the root named `<purpose>.<random>`, mode `0700`; `<purpose>`
   matches `[a-z0-9][a-z0-9-]{0,39}`.
 - **Marker.** `<entry>/.clawdline-scratch.json`, written atomically (temporary file + rename) before
@@ -152,7 +153,7 @@ Removes one entry, and refuses — leaving the path untouched — anything that 
 | the command's | — | `snapshot-run` passes the command's status through |
 | 64 | `scratch_usage`, `scratch_ttl_required` | bad arguments; no owner can be proved and no `--ttl-hours` was given |
 | 70 | `scratch_not_in_git`, `scratch_snapshot_failed` | nothing to snapshot; the copy could not be made (the command never ran, the entry is gone) |
-| 73 | `scratch_root_not_absolute`, `scratch_root_symlink`, `scratch_root_not_directory`, `scratch_root_not_owned`, `scratch_root_uncreatable` | the root is refused — before anything is created |
+| 73 | `scratch_root_not_absolute`, `scratch_root_not_normalized`, `scratch_root_symlink`, `scratch_root_not_directory`, `scratch_root_not_owned`, `scratch_root_uncreatable` | the root is refused — before anything is created |
 | 74 | `scratch_cleanup_failed` | an entry could not be removed; the message names it and the command's own status |
 | 77 | `scratch_not_under_root`, `scratch_not_an_entry`, `scratch_marker_missing`, `scratch_marker_unknown`, `scratch_owner_live`, `scratch_owner_unknown` | `remove` refused the path and left it untouched |
 
@@ -194,8 +195,9 @@ the authority.
 temporary root and throwaway repositories: success, a failing command's exact status (`75` and `3`), a
 copy that cannot be made, `INT`, `TERM` and `HUP` each leave nothing and leave no command running;
 `--keep` leaves one `0700` entry with a valid marker; a symlinked root, a root that is a file and a
-root owned by someone else are refused, and so is a relative root, from `CLAWDLINE_SCRATCH_ROOT` or
-from `--root`, on each of `snapshot-run`, `new` and `remove`, with nothing created; `remove` refuses a
+root owned by someone else are refused, and so is a relative root or one with a trailing `.` or a `..`
+component, from `CLAWDLINE_SCRATCH_ROOT` or from `--root`, on each of `snapshot-run`, `new` and
+`remove`, with nothing created; `remove` refuses a
 path outside the root, an entry with no marker or another version's, a link named like an entry, a
 live foreign owner — also when `kill` answers "Operation not permitted" — and an owner whose liveness
 it cannot read: one `kill` says exists while the process table is refused, prints no row for it though

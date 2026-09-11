@@ -80,8 +80,8 @@ exit status   COMMAND's own for snapshot-run, otherwise 0; a signal ends snapsho
               signal once the entry is gone. Refusals, with the typed code on stderr:
   64  scratch_usage, scratch_ttl_required
   70  scratch_not_in_git, scratch_snapshot_failed
-  73  scratch_root_not_absolute, scratch_root_symlink, scratch_root_not_directory, scratch_root_not_owned,
-      scratch_root_uncreatable
+  73  scratch_root_not_absolute, scratch_root_not_normalized, scratch_root_symlink,
+      scratch_root_not_directory, scratch_root_not_owned, scratch_root_uncreatable
   74  scratch_cleanup_failed
   77  scratch_not_under_root, scratch_not_an_entry, scratch_marker_missing, scratch_marker_unknown,
       scratch_owner_live, scratch_owner_unknown
@@ -111,9 +111,9 @@ check_ttl() {
 # ---- The root ------------------------------------------------------------------------------------
 
 # Sets SCRATCH_ROOT (as spelled) and SCRATCH_ROOT_REAL (physical). $2 is `create` or `existing`.
-# A root that is relative, a link, not a directory, or somebody else's is refused — never resolved,
-# never replaced, and never worked around by choosing another place, because a sweep of the place
-# that was chosen instead is a sweep nobody agreed to.
+# A root that is relative, has a . or .. component, is a link, is not a directory, or is somebody
+# else's is refused — never resolved, never replaced, and never worked around by choosing another
+# place, because a sweep of the place that was chosen instead is a sweep nobody agreed to.
 open_root() {
   local root=${1-} mode=${2:-create}
   [ -n "$root" ] || die $EX_USAGE scratch_usage "the scratch root is an empty string"
@@ -126,6 +126,14 @@ open_root() {
          "the scratch root '$root' is not an absolute path; refusing it rather than resolving it against $PWD" ;;
   esac
   while [ "$root" != / ] && [ "${root%/}" != "$root" ]; do root=${root%/}; done
+  # The sweep also refuses a root with a . or .. component as root_not_normalized, in the same order:
+  # trailing slashes trimmed, then absolute, then no dot component. The kernel resolves such a component
+  # physically, through whatever link stands before it, so the checks below would judge a place the
+  # spelling never named — and entries made there would be ones no sweep ever lists.
+  case /$root/ in
+    */./*|*/../*) die $EX_ROOT scratch_root_not_normalized \
+      "the scratch root '$root' has a . or .. component; refusing it rather than resolving it" ;;
+  esac
   if [ ! -e "$root" ] && [ ! -L "$root" ]; then
     [ "$mode" = create ] \
       || die $EX_REFUSED scratch_not_under_root "the scratch root $root does not exist, so nothing is an entry under it"
