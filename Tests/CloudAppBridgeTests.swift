@@ -17,10 +17,11 @@ private struct CloudAppBridgeTestTokenProvider: CloudDeviceTokenProviding {
     func fetchDeviceToken() async throws -> CloudDeviceToken { token }
 }
 final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable {
-    nonisolated let commands: AsyncStream<CloudInboundCommand>
+    nonisolated let commands: CloudInboundCommandStream
     nonisolated let readyGenerations: AsyncStream<UInt64>
     private let lock = NSLock()
-    private var continuation: AsyncStream<CloudInboundCommand>.Continuation!
+    private let commandQueue: CloudInboundCommandQueue
+    private var refusalHandler: CloudTransport.InboundRefusalHandler?
     private var readyContinuation: AsyncStream<UInt64>.Continuation!
     private var sent: [CloudEnvelope] = []
     private var connected = false
@@ -38,9 +39,11 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
     init(suspendConnect: Bool = false, suspendPublication: Bool = false) {
         self.suspendConnect = suspendConnect
         self.suspendPublication = suspendPublication
-        var continuation: AsyncStream<CloudInboundCommand>.Continuation!
-        commands = AsyncStream { continuation = $0 }
-        self.continuation = continuation
+        let commandQueue = CloudInboundCommandQueue(limits: CloudInboundCommandQueueLimits(
+            maximumCount: 10_000, maximumChargedBytes: Int.max
+        ))
+        self.commandQueue = commandQueue
+        commands = commandQueue.stream
         var readyContinuation: AsyncStream<UInt64>.Continuation!
         readyGenerations = AsyncStream { readyContinuation = $0 }
         self.readyContinuation = readyContinuation
@@ -98,7 +101,7 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
     }
     func shutdown() async {
         markStopped()
-        continuation.finish()
+        commandQueue.finish()
         readyContinuation.finish()
         let suspended = takeConnectContinuation()
         if let suspended {
@@ -136,10 +139,33 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
     func releasePublications(_ count: Int = 1) { for _ in 0..<count { publicationContinuation.yield(()) } }
     func yield(_ plaintext: String, sequence: UInt64, commandClass: CloudEnvelopeClass = .ctl,
                channel: String = "ctl/Mac%20%2F%20%E5%8F%B0%E7%81%A3") {
-        continuation.yield(CloudInboundCommand(
+        _ = commandQueue.admit(CloudInboundCommand(
             channel: channel, sequence: sequence, timestamp: 1,
             commandClass: commandClass, sender: "viewer", plaintext: Data(plaintext.utf8)
         ))
+    }
+    func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async {
+        replaceRefusalHandler(handler)
+    }
+    private func replaceRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) {
+        lock.lock()
+        refusalHandler = handler
+        lock.unlock()
+    }
+    func refuse(_ command: CloudInboundCommand, reason: CloudInboundAdmissionRefusalReason) async {
+        let handler = currentRefusalHandler()
+        let metrics = commandQueue.snapshot()
+        if let handler {
+            handler(CloudInboundAdmissionRefusal(
+                command: command, reason: reason, metrics: metrics
+            ))
+        }
+    }
+    private func currentRefusalHandler() -> CloudTransport.InboundRefusalHandler? {
+        lock.lock()
+        defer { lock.unlock() }
+        let handler = refusalHandler
+        return handler
     }
     func envelopes() -> [CloudEnvelope] {
         lock.lock()
@@ -360,6 +386,35 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
     let defaultOffCalls = await router.recorded()
     try require(defaultOffCalls.isEmpty, "default-off commands never enter the broker")
 
+    let overloadPlaintext = Data(
+        #"{"type":"send","session":"plain","request":"ingress-full","text":"later","images":[]}"#.utf8
+    )
+    let overloadCommand = CloudInboundCommand(
+        channel: "ctl/Mac%20%2F%20%E5%8F%B0%E7%81%A3", sequence: 99, timestamp: 1,
+        commandClass: .ctl, sender: "viewer", plaintext: overloadPlaintext
+    )
+    gate.set(true)
+    let envelopesBeforeOverload = transport.envelopes().count
+    await transport.refuse(overloadCommand, reason: .countCap)
+    try await waitForCloudAppBridge("typed ingress overload answer") {
+        transport.envelopes().count == envelopesBeforeOverload + 1
+    }
+    let overloadEnvelope = transport.envelopes().last!
+    let overloadBytes = try overloadEnvelope.open(
+        masterSecret: masterSecret,
+        publicKeyForSender: { $0 == "machine-device" ? signingKey.publicKeyRaw : nil }
+    )
+    let overloadAnswer = try JSONSerialization.jsonObject(with: overloadBytes) as! [String: Any]
+    try require(overloadAnswer["read"] as? String == "action:ingress-full"
+                    && overloadAnswer["status"] as? Int == 429,
+                "an identifiable pre-admission refusal reaches its request-scoped encrypted answer")
+    let overloadError = overloadAnswer["error"] as? [String: Any]
+    try require(overloadError?["code"] as? String == "cloud_ingress_busy",
+                "the encrypted overload answer carries the stable typed code")
+    let overloadRouterCalls = await router.recorded()
+    try require(overloadRouterCalls.isEmpty,
+                "a command refused before admission never reaches the effect router")
+
     gate.set(true)
     transport.yield(#"{"type":"answer","session":"plain","answer":"2"}"#, sequence: 11)
     try await waitForCloudAppBridge("allowed command routing") {
@@ -528,6 +583,8 @@ private func runCloudAppBridgeBaseTests() async throws -> Int {
     return checks
 }
 
+/// R-1 correction: ingress refusals reuse the normal gates and safe read identity, while every
+/// refusal publication enters one bounded, deadline-governed lane instead of blocking its caller.
 private func runCloudAppBridgeLifecycleTests() async throws -> Int {
     var checks = 0
     func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
@@ -725,105 +782,6 @@ private func runCloudAppBridgeTransitiveLifecycleTests() async throws -> Int {
     return checks
 }
 
-private func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
-    var checks = 0
-    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
-        checks += 1
-        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
-    }
-    func sessions(_ ids: [String], _ generation: Int, _ complete: Bool) throws -> Data { try JSONSerialization.data(withJSONObject: ["sessions": ids.map { ["id": $0] }, "at": generation, "scan": ["generation": generation, "complete": complete, "emptyAuthoritative": complete && ids.isEmpty]]) }
-    let signingKey = CloudDeviceKeyPair()
-    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x57, count: 32))
-    RemoteServer.cloudSnapshotDataForTesting = try cloudAppBridgeTestSnapshots(
-        sessionID: "publication-lifecycle"
-    )
-    defer { RemoteServer.cloudSnapshotDataForTesting = nil }
-    func makeBridge(_ transport: CloudAppBridgeTestTransport) -> CloudAppBridge {
-        CloudAppBridge(
-            transport: transport,
-            identity: CloudAppIdentity(
-                machineID: "publication", deviceID: "machine-device", keyID: "ms-1",
-                masterSecret: masterSecret, signingKey: signingKey
-            ),
-            sequencing: CloudAppBridgeTestSequence()
-        )
-    }
-    var transportA: CloudAppBridgeTestTransport? = CloudAppBridgeTestTransport(
-        suspendPublication: true
-    )
-    var bridgeA: CloudAppBridge? = makeBridge(transportA!)
-    weak var transportAReference = transportA
-    weak var bridgeAReference = bridgeA
-    await attachCloudBridgeForTest(bridgeA)
-    try await waitForCloudAppBridge("A publication suspends after entry") {
-        transportA!.state().publicationStarts > 0
-    }
-    RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions(["obsolete"], 2, false))
-    RemoteServer.shared.enqueueCloudOrchestratorForTesting(
-        Data(#"{"tasks":[{"id":"obsolete"}]}"#.utf8))
-    RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions([], 3, true))
-    RemoteServer.shared.enqueueCloudOrchestratorForTesting(
-        Data(#"{"tasks":[{"id":"latest"}]}"#.utf8))
-    RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions(["latest"], 4, false))
-    _ = await RemoteServer.shared.cloudLifecycleStateForTesting(bridge: bridgeA)
-    for _ in 0..<12 {
-        if transportA!.envelopes().contains(where: { $0.ch.hasSuffix("/latest") }) { break }
-        let startsBeforeStep = transportA!.state().publicationStarts
-        transportA!.releasePublications()
-        try await waitForCloudAppBridge("one bounded publication step advances") {
-            transportA!.envelopes().contains { $0.ch.hasSuffix("/latest") }
-                || transportA!.state().publicationStarts > startsBeforeStep
-        }
-    }
-    try await waitForCloudAppBridge("the bounded queue publishes its latest Session") {
-        transportA!.envelopes().contains { $0.ch.hasSuffix("/latest") }
-    }
-    let bounded = transportA!.envelopes()
-    try require(!bounded.contains { $0.ch.hasSuffix("/obsolete") },
-                "interleaved publications cannot preserve an obsolete Session FIFO entry")
-    let orchFrames = bounded.filter { $0.ch == "orch/publication" }
-    let orchBytes = try orchFrames.last?.open(masterSecret: masterSecret, publicKeyForSender: {
-        $0 == "machine-device" ? signingKey.publicKeyRaw : nil })
-    let orchObject = orchBytes.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
-    let orchTasks = orchObject?["tasks"] as? [[String: Any]]
-    try require(orchFrames.count == 1 && orchTasks?.first?["id"] as? String == "latest",
-                "interleaved publications retain only the latest pending orchestrator snapshot")
-    let seedFrames = bounded.filter { $0.ch.hasSuffix("/publication-lifecycle") }
-    let deletion = try seedFrames.last?.open(masterSecret: masterSecret,
-        publicKeyForSender: { $0 == "machine-device" ? signingKey.publicKeyRaw : nil })
-    let deletionObject = deletion.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
-    try require(seedFrames.count == 2 && deletionObject?["deleted"] as? Bool == true,
-                "the authoritative deletion barrier survives a newer incomplete snapshot")
-    let inventory = bounded.indices.filter { bounded[$0].ch.hasSuffix("/__clawdline_inventory_v1__") }
-    let latest = bounded.firstIndex { $0.ch.hasSuffix("/latest") }
-    try require(inventory.count == 2 && latest != nil && inventory.last! < latest!,
-                "the authoritative inventory is delivered before the latest incomplete row")
-    let startsBeforeCancellation = transportA!.state().publicationStarts
-    RemoteServer.shared.enqueueCloudSessionsForTesting(try sessions(["cancelled"], 5, false))
-    try await waitForCloudAppBridge("the replacement target enters bridge publication") {
-        transportA!.state().publicationStarts > startsBeforeCancellation
-    }
-    let transportB = CloudAppBridgeTestTransport()
-    let bridgeB = makeBridge(transportB)
-    await attachCloudBridgeForTest(bridgeB)
-    await RemoteServer.shared.awaitCloudBridgeLifecycle()
-    try require(transportA!.state().publicationCancelled,
-                "replacement cancels an in-flight bridge-owned publication")
-    try await waitForCloudAppBridge("B fresh publications bypass A's invalidated tail") {
-        let channels = transportB.envelopes().map(\.ch)
-        return channels.filter { $0.hasPrefix("s/publication/") }.count == 2
-            && channels.filter { $0 == "orch/publication" }.count == 1
-    }
-    try require(!transportA!.envelopes().contains { $0.ch.hasSuffix("/cancelled") },
-                "cancelled A publication emits no stale envelope")
-    bridgeA = nil
-    transportA = nil
-    try require(bridgeAReference == nil && transportAReference == nil,
-                "publication lifecycle completion releases A and its transport")
-    await attachCloudBridgeForTest(nil)
-    await RemoteServer.shared.awaitCloudBridgeLifecycle()
-    return checks
-}
 private func runCloudAppBridgeABATests() async throws -> Int {
     var checks = 0
     func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
@@ -1091,6 +1049,7 @@ func runCloudAppBridgeTests() async throws -> Int {
     case "documents": return try await runCloudAppBridgeDocumentTests()
     case "snapshot": return try await runCloudAppBridgeSnapshotTests()
     case "refusals": return try await runCloudCommandRefusalTests()
+    case "ingress-refusals": return try await runCloudAppBridgeIngressRefusalTests()
     default:
         let base = try await runCloudAppBridgeBaseTests()
         let lifecycle = try await runCloudAppBridgeLifecycleTests()
@@ -1104,8 +1063,10 @@ func runCloudAppBridgeTests() async throws -> Int {
         let documents = try await runCloudAppBridgeDocumentTests()
         let snapshot = try await runCloudAppBridgeSnapshotTests()
         let refusals = try await runCloudCommandRefusalTests()
+        let ingressRefusals = try await runCloudAppBridgeIngressRefusalTests()
         return base + lifecycle + transitiveLifecycle + publicationLifecycle
-            + reconnect + concreteReconnect + aba + reads + images + documents + snapshot + refusals
+            + reconnect + concreteReconnect + aba + reads + images + documents + snapshot
+            + refusals + ingressRefusals
     }
 }
 
@@ -1118,13 +1079,13 @@ private func waitForCloudAppBridgeSemaphore(_ semaphore: DispatchSemaphore) asyn
     }
 }
 
-private func attachCloudBridgeForTest(_ bridge: CloudAppBridge?) async {
+func attachCloudBridgeForTest(_ bridge: CloudAppBridge?) async {
     await MainActor.run {
         RemoteServer.shared.attachCloudBridge(bridge)
     }
 }
 
-private func cloudAppBridgeTestSnapshots(
+func cloudAppBridgeTestSnapshots(
     sessionID: String?
 ) throws -> (sessions: Data, orchestrator: Data) {
     let rows: [[String: Any]] = sessionID.map {
@@ -1187,6 +1148,7 @@ private func exactPixelPNG(width: Int, height: Int,
     return rep.representation(using: .png, properties: [:])
 }
 
+#if !CLOUD_INGRESS_COMBINED_STANDALONE
 @main
 private enum CloudAppBridgeTestMain {
     static func main() async throws {
@@ -1194,6 +1156,7 @@ private enum CloudAppBridgeTestMain {
         print("\(count) CloudAppBridge checks passed")
     }
 }
+#endif
 #endif
 
 /// The encrypted round trip for every read a Cloud browser can ask this Mac to perform.

@@ -101,11 +101,15 @@ const buildPhases = phasesOf(buildScript);
 // 129 s of node suites, 100 s of compile, 56 s of test binary.
 check("test.sh moves the phase at the four boundaries its own timings name, in order",
       testPhases.join(",") === "guards,node suites,compiling,analysing");
-// Above the lock's own phase rather than below it: `Tests/test-sh-lock.mjs` requires
-// `clawdline_suite_lock_phase compiling` to be the line immediately before the compiler it declares
-// itself for, and a line inserted between the two would take that guard red.
-check("and the compiling phase sits with the lock phase of the same name, above the swiftc",
-      /\nprogress_phase compiling\nclawdline_suite_lock_phase compiling\nswiftc/.test(script));
+// Both branches stay below the same lock phase: the focused Linux SwiftPM product and the ordinary
+// suite compiler are two questions, but neither gets a second machine slot.
+const compileProgress = script.indexOf("\nprogress_phase compiling\n");
+const compileLockPhase = script.indexOf("\nclawdline_suite_lock_phase compiling\n", compileProgress);
+const packageCompiler = script.indexOf("swift build --disable-sandbox", compileLockPhase);
+const suiteCompiler = script.indexOf("\nswiftc \\", compileLockPhase);
+check("and the compiling phase sits with the lock phase of the same name, above both compiler branches",
+      compileProgress > 0 && compileLockPhase > compileProgress
+        && packageCompiler > compileLockPhase && suiteCompiler > packageCompiler);
 check("build.sh moves the phase at its own boundaries",
       buildPhases.join(",") === "preparing,checking signing,compiling,packaging,signing,installing");
 // build.sh installs four EXIT traps in sequence, and `cleanup_build` — which covers the compile,

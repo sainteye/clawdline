@@ -1,10 +1,9 @@
 #!/bin/bash
-# Builds Clawdline.app. No Xcode project, no package manager: a few .swift files and one .js,
-# compiled straight by swiftc — one less layer of "what does the build config actually say".
+# Builds Clawdline.app around the SwiftPM Clawdline product, then signs and installs it through
+# the existing restart-safe rollout. Package.swift is the one compiler-owned source/edge graph;
+# this script owns only the bundle, signature, resources, installation, and rollback behavior.
 set -euo pipefail
 cd "$(dirname "$0")"
-. tools/swift-source-manifest.sh
-verify_swift_source_manifest production
 
 # What this build is doing, for anybody who is not looking at this terminal. The traps and the
 # record used to be a block copied byte for byte out of `test.sh`; they live in
@@ -154,18 +153,18 @@ clawdline_lease_pid_identity() {
 clawdline_lease_pid_verdict() {
   # `alive`, `gone` or `unknown` — and the third one is the point. A two-valued reader collapses
   # "the tool did not answer" into "the process is gone", which is fail-open wherever the question
-  # is "may I act". So the probe carries its own control: `ps -p <pid> -p 1` asks about the process
-  # *and* about pid 1, which exists on every running macOS. If `1` comes back the tool answered and
-  # the absence of `<pid>` is a fact; if `1` does not, the reading is `unknown` and blocks.
-  local pid=$1 seen="" control=0 target=0 n
+  # is "may I act". Ask the kernel about the holder itself with signal 0. Permission denied proves
+  # it exists; only the exact no-such-process answer proves it is gone. A hidden process-table row
+  # or any unfamiliar tool failure remains unknown and therefore cannot remove a takeover gate.
+  local pid=$1 said="" status=0
   case "$pid" in "" | *[!0-9]*) printf 'unknown'; return 0 ;; esac
-  seen=$(ps -p "$pid" -p 1 -o pid= 2>/dev/null) || seen=""
-  for n in $seen; do
-    if [ "$n" = "1" ]; then control=1; fi
-    if [ "$n" = "$pid" ]; then target=1; fi
-  done
-  if [ "$control" = 0 ]; then printf 'unknown'; return 0; fi
-  if [ "$target" = 1 ]; then printf 'alive'; else printf 'gone'; fi
+  said=$(LC_ALL=C env kill -0 "$pid" 2>&1 >/dev/null) || status=$?
+  case "$status:$said" in
+    0:) printf 'alive' ;;
+    "1:kill: $pid: Operation not permitted") printf 'alive' ;;
+    "1:kill: $pid: No such process") printf 'gone' ;;
+    *) printf 'unknown' ;;
+  esac
 }
 
 clawdline_lease_identity_verdict() {
@@ -424,7 +423,7 @@ clawdline_lease_record() {
     # Empty, and that is the third state the contract defines: this writer does not probe for
     # compilers, which is not the same claim as `none`.
     printf 'compilers=%s\n' ""
-    printf 'note=%s\n' "building Clawdline.app; this lock covers the swiftc invocation only. Ask the run named above rather than removing this directory."
+    printf 'note=%s\n' "building Clawdline.app; this lock covers the SwiftPM product compile only. Ask the run named above rather than removing this directory."
   } > "$temp" 2>/dev/null || return 1
   mv "$temp" "$CLAWDLINE_LEASE_DIR/holder.txt" 2>/dev/null || { rm -f "$temp" 2>/dev/null; return 1; }
   return 0
@@ -454,11 +453,11 @@ clawdline_lease_beat() {
 #     while true; do : > beat; sleep 60; done &      # a sentinel
 #
 # — keeps beating after the work it claims to represent has died, which is a sentinel in a new
-# coat. Here the loop's own condition is the compiler still being alive, so when `swiftc` exits,
+# coat. Here the loop's own condition is the compiler driver still being alive, so when SwiftPM exits,
 # or when this shell is killed, the beat stops with it. `kill -0` sends no signal; it asks
 # whether the process exists, and nothing in this file ever signals a process it did not start.
 clawdline_lease_supervise() {
-  # A beat this run may no longer write stops the beating, not the compile. `swiftc` is already
+  # A beat this run may no longer write stops the beating, not the compile. SwiftPM is already
   # running: ending it here would orphan a `swift-frontend` holding tens of gigabytes, which is
   # the exact thing this whole mechanism exists to prevent, and nothing in this file ends a
   # process it did not start. So `clawdline_lease_beat` says so once and goes quiet, and this loop
@@ -817,6 +816,7 @@ STAGE_ROOT="$(mktemp -d "$APP_PARENT/.clawdline-build.XXXXXX")"
 STAGED_APP="$STAGE_ROOT/$APP_NAME"
 BIN="$STAGED_APP/Contents/MacOS/Clawdline"
 RES="$STAGED_APP/Contents/Resources"
+SWIFTPM_SCRATCH="$STAGE_ROOT/swiftpm"
 BACKUP="$STAGE_ROOT.previous"
 cleanup_build() {
   # First, so it reads the status the build is actually leaving with. The run file is composed into
@@ -877,10 +877,10 @@ progress_phase compiling
 # temporary directory, where a relative `.` would find nothing, and a block that cannot be run on
 # its own is a block nothing checks.
 #
-# **This compile is not `test.sh`'s and has its own readings.** 103 production sources with `-O`,
-# which is where the LLVM pass pipeline runs — the phase that reached 46 GiB on the old
-# `CloudAccountTests`. Measured 2026-09-03 on a detached worktree, machine lock held, footprint
-# from `proc_pid_rusage(RUSAGE_INFO_V4)`:
+# **This compile is not `test.sh`'s and has its own readings.** The measurements below were taken
+# from the former flat `swiftc -O` invocation. They do not characterize SwiftPM's release/WMO
+# frontend population. W3-2 conservatively preserves the old ceiling until the landing root records
+# a locked measurement of this exact invocation; its peak memory is currently unmeasured.
 #
 #     -j  1   169 s    one frontend's peak 0.430 GiB    most alive together 0.445 GiB
 #     -j  4    54 s                        0.408                            0.837
@@ -915,17 +915,38 @@ compile_jobs=(-j "$clawdline_compile_jobs")
 echo "→ compiling with -j $clawdline_compile_jobs, from $CLAWDLINE_SUITE_JOBS_SOURCE"
 # <<< clawdline compile ceiling <<<
 
-swiftc \
-  -swift-version 5 \
-  -target arm64-apple-macos13.0 \
-  -O \
+# The package product is the artifact. `--show-bin-path` and the build share every graph-defining
+# argument, so the path cannot silently refer to another configuration, triple, or scratch tree.
+# Keep the scratch tree beside the staged bundle: cleanup_build owns and removes both on every exit.
+swiftpm_common=(
+  --disable-sandbox
+  --package-path "$PWD"
+  --scratch-path "$SWIFTPM_SCRATCH"
+  --configuration release
+  --triple arm64-apple-macosx13.0
+)
+SWIFTPM_BIN_DIR=$(swift build "${swiftpm_common[@]}" --show-bin-path)
+swift build \
+  "${swiftpm_common[@]}" \
   ${compile_jobs[@]+"${compile_jobs[@]}"} \
-  -o "$BIN" \
-  "${clawdline_production_sources[@]}" \
-  -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network &
+  --product Clawdline &
 CLAWDLINE_COMPILER=$!
 clawdline_lease_supervise "$CLAWDLINE_COMPILER"
 wait "$CLAWDLINE_COMPILER"
+
+SWIFTPM_PRODUCT="$SWIFTPM_BIN_DIR/Clawdline"
+[ -x "$SWIFTPM_PRODUCT" ] || {
+  echo "!! SwiftPM reported success but produced no executable Clawdline product at $SWIFTPM_PRODUCT" >&2
+  exit 1
+}
+swiftpm_product_sha256=$(shasum -a 256 "$SWIFTPM_PRODUCT" | awk '{print $1}')
+cp "$SWIFTPM_PRODUCT" "$BIN"
+bundle_product_sha256=$(shasum -a 256 "$BIN" | awk '{print $1}')
+[ "$bundle_product_sha256" = "$swiftpm_product_sha256" ] || {
+  echo "!! bundled executable differs from the SwiftPM Clawdline product" >&2
+  exit 1
+}
+echo "✓ bundled SwiftPM Clawdline product sha256=$bundle_product_sha256"
 
 # The work is over: say so positively, then give the slot back. `done_flag` existing is what lets
 # another line take the lock at once instead of waiting out a heartbeat threshold. Packaging,

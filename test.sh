@@ -186,12 +186,17 @@ fi
 # Validate before guards or compilation, including explicitly empty/newline-only selections.
 . tools/swift-test-artifact.sh
 clawdline_swift_focused_only=0
+clawdline_linux_package_focused_only=0
 case "${1:-}" in
   "") [ "$#" -eq 0 ] || exit 2 ;;
   --swift-focused)
     [ "$#" -eq 1 ] || exit 2
     clawdline_swift_focused_only=1
     clawdline_validate_swift_test_selection required ;;
+  --linux-package-focused)
+    [ "$#" -eq 1 ] || exit 2
+    clawdline_swift_focused_only=1
+    clawdline_linux_package_focused_only=1 ;;
   *) echo 'test.sh: unknown_test_mode' >&2; exit 2 ;;
 esac
 clawdline_validate_swift_test_selection
@@ -430,6 +435,7 @@ node Tests/attached-follow-up-contract.mjs
 # them were false, including both shipped guides still teaching that an unrecognised sender is the
 # same as an absent one. That is the sentence the sender of the 2026-09-04 handoff read.
 node Tests/handoff-sender-contract.mjs
+node Tests/linux-package-graph.mjs
 node Tests/restart-rollout-contract.mjs
 node Tests/remote-response-write-close.mjs
 node Tests/terminal-current-and-browser-open.mjs
@@ -1430,6 +1436,7 @@ clawdline_suite_exit_cleanup() {
   # of its own is composed here instead. `${STORE:-}` because the store is created after this trap
   # is installed: a run that dies in the compile has none to remove.
   if [ -n "${STORE:-}" ]; then rm -rf "$STORE"; fi
+  if [ -n "${linux_package_scratch:-}" ]; then rm -rf "$linux_package_scratch"; fi
   return "$status"
 }
 
@@ -1594,9 +1601,30 @@ echo "test.sh: compile job ceiling: ${clawdline_compile_jobs}, ${clawdline_compi
 # <<< clawdline compile ceiling <<<
 
 # >>> clawdline swift artifact invocation >>>
+progress_phase compiling
+clawdline_suite_lock_phase compiling
+linux_package_scratch=""
+linux_package_bin_dir=""
+build_linux_package_contract() {
+  linux_package_scratch="${TMPDIR:-/tmp}/clawdline-linux-package-$$"
+  mkdir -p "$linux_package_scratch"
+  linux_package_bin_dir=$(swift build --disable-sandbox \
+    --scratch-path "$linux_package_scratch" -c debug --show-bin-path)
+  swift build --disable-sandbox \
+    --scratch-path "$linux_package_scratch" -c debug --product ClawdlineLinux \
+    ${clawdline_suite_jobs_flags[@]+"${clawdline_suite_jobs_flags[@]}"} 2>&1 | tee "$LOG"
+}
+
+if [ "$clawdline_linux_package_focused_only" -eq 1 ]; then
+  # W3-2's narrow compiler/behavior proof. It uses SwiftPM's real product graph under the same
+  # machine-wide lock as the full suite, then drives the resulting executable's fail-closed
+  # startup contract. No Mac app is bundled, installed, signed, or restarted.
+  build_linux_package_contract
+else
+  # The release candidate always compiles and executes the shipped Linux graph too. The flat
+  # compiler below remains as a compatibility test graph; it cannot cover Packages/ClawdlineLinux.
+  if [ "$clawdline_test_profile" = release ]; then build_linux_package_contract; fi
 if [ "${CLAWDLINE_SWIFT_TEST_ARTIFACT:-off}" = "reuse" ]; then
-  progress_phase compiling
-  clawdline_suite_lock_phase compiling
   clawdline_swift_test_artifact "$BIN" \
     -swift-version 5 -target "$clawdline_swift_test_target" \
     ${clawdline_suite_jobs_flags[@]+"${clawdline_suite_jobs_flags[@]}"} \
@@ -1604,8 +1632,6 @@ if [ "${CLAWDLINE_SWIFT_TEST_ARTIFACT:-off}" = "reuse" ]; then
     -framework Speech -framework AVFoundation -framework Network \
     -- "${clawdline_library_sources[@]}" "${clawdline_test_sources[@]}"
 else
-progress_phase compiling
-clawdline_suite_lock_phase compiling
 swiftc \
   -swift-version 5 \
   -target arm64-apple-macos13.0 \
@@ -1615,6 +1641,7 @@ swiftc \
   "${clawdline_test_sources[@]}" \
   -framework AppKit -framework Carbon -framework ServiceManagement -framework Speech -framework AVFoundation -framework Network
 fi
+fi
 # <<< clawdline swift artifact invocation <<<
 
 # Between the two halves of the guarded section. The compile is the long unattended stretch, so this
@@ -1623,6 +1650,29 @@ fi
 clawdline_confirm_suite_lock || exit $?
 clawdline_suite_lock_phase analysing
 progress_phase analysing
+
+if [ "$clawdline_linux_package_focused_only" -eq 1 ]; then
+  CLAWDLINE_LINUX_BINARY="$linux_package_bin_dir/ClawdlineLinux" \
+    node Tests/linux-package-graph.mjs 2>&1 | tee -a "$LOG"
+  linux_package_receipts=$(grep -Ec '^linux package graph: [1-9][0-9]* checks passed$' "$LOG" || true)
+  if [ "$linux_package_receipts" -ne 1 ]; then
+    echo "test.sh: expected one Linux package receipt, found $linux_package_receipts — full output kept at $LOG" >&2
+    exit 125
+  fi
+  clawdline_suite_lock_phase idle-holding
+  clawdline_suite_lock_work_finished
+  rm -rf "$linux_package_scratch"
+  linux_package_scratch=""
+  rm -f "$LOG"
+  exit 0
+fi
+
+if [ "$clawdline_test_profile" = release ]; then
+  CLAWDLINE_LINUX_RUNTIME_ONLY=1 CLAWDLINE_LINUX_BINARY="$linux_package_bin_dir/ClawdlineLinux" \
+    node Tests/linux-package-graph.mjs 2>&1 | tee -a "$LOG"
+  rm -rf "$linux_package_scratch"
+  linux_package_scratch=""
+fi
 
 # `if` rather than a bare assignment: under `set -e` a failing command on the right-hand side
 # ends the script right there, before what it captured has been printed — so a red suite exited

@@ -1,11 +1,10 @@
 // swift-tools-version:5.9
 import PackageDescription
 
-// This package exists so an editor can understand the code. It is not how the app is built.
-//
-// `swift build` produces a bare executable with no Info.plist and no Resources, which cannot
-// register a hotkey, find a mascot pack, or talk to iTerm2. **Use ./build.sh**, which compiles
-// the same files with swiftc and assembles the .app around them.
+// This package is the compiler-owned product graph. `swift build --product Clawdline` produces
+// the Mac executable and `./build.sh` wraps that exact artifact in its Info.plist/resources,
+// signs it, and performs the existing guarded install/restart sequence. A bare SwiftPM executable
+// is still not a distributable .app bundle.
 //
 // Why have it at all: without a package (or a compile_commands.json, which swiftc does not
 // emit), SourceKit-LSP has nothing to index — so VS Code, Zed, Neovim and everything else give
@@ -16,7 +15,7 @@ import PackageDescription
 // It is kept honest by CI: the build job runs `swift build` as well as ./build.sh, so a new
 // file or a raised deployment target cannot leave this file quietly wrong.
 //
-// W3-1 adds two more targets that this comment's "not how the app is built" does not cover:
+// W3-1 added two inward targets:
 // `ClawdlineCore` and `ClawdlineApplication` are the real product-graph boundary named in
 // docs/adr/0001-platform-boundary-and-evidence.md and Plan v4's W3 — not editor metadata, and
 // not a probe. Each `path:` below is a directory of symlinks into `Sources/`, so the bytes have
@@ -31,9 +30,9 @@ import PackageDescription
 // pinned toolchain as the W0-F probe (`tools/ubuntu-core-probe/README.md`); see
 // `tools/swift-core-application-linux-build.sh` and the `swift-core-application-linux` CI job.
 // `ClawdlineApplication` depends only on `ClawdlineCore`. `Clawdline`, the Mac composition
-// target, depends on `ClawdlineApplication` — a real, compiler-checked edge pointing the same
-// direction as the ADR's diagram (Mac/Linux composition depends inward on Application, which
-// depends inward on Core).
+// target, and `ClawdlineLinux`, the deliberately not-ready W3 daemon skeleton, each depend only
+// on `ClawdlineApplication` — real, compiler-checked edges pointing inward. W4 owns Linux host
+// adapters; the W3 executable reports those capabilities as unavailable instead of faking them.
 //
 // **W3-1 correction (`spec-mac-does-not-consume-application`).** The original delivery stopped
 // there: the edge existed in the manifest, but `Clawdline`'s own recursive scan of `Sources/`
@@ -47,21 +46,25 @@ import PackageDescription
 // `Clawdline`'s remaining ~60 files that names that vocabulary (`Sources/Targets.swift`,
 // `Sources/ITerm.swift`, `Sources/MacHostAdapters.swift`, `Sources/Orchestrator.swift` and
 // its neighbours) now reaches it through a guarded `import ClawdlineApplication` — guarded
-// because `./build.sh` compiles the very same `Sources/*.swift` files as one flat, single
+// because `./test.sh` still compiles the very same `Sources/*.swift` files as one flat, single
 // module with no `ClawdlineApplication.swiftmodule` to import: see the `#if
 // canImport(ClawdlineApplication)` note repeated at the top of each of those files, and
 // `Sources/HostPorts.swift`'s own header for why `ClawdlineApplication` re-exports
 // `ClawdlineCore` (`@_exported import`) rather than asking every one of those files to also
 // learn which of the two layers it needs. `exclude:` only changes what SwiftPM's `Clawdline`
 // target compiles; the physical files stay exactly where they were, so
-// `tools/swift-source-manifest.sh`'s flat list — what `./build.sh` and `./test.sh` actually
-// compile — and its production-file count are unchanged, and so is every runtime, wire and
+// `tools/swift-source-manifest.sh`'s flat test list and its production-file count are unchanged,
+// and so is every runtime, wire and
 // crypto behavior. `Packages/README.md`'s correction note and
 // `artifacts/W3_1_CORRECTION.md` carry the full before/after and the verification that ran
 // against it.
 let package = Package(
     name: "Clawdline",
     platforms: [.macOS(.v13)],
+    products: [
+        .executable(name: "Clawdline", targets: ["Clawdline"]),
+        .executable(name: "ClawdlineLinux", targets: ["ClawdlineLinux"]),
+    ],
     targets: [
         .target(name: "ClawdlineCore", path: "Packages/ClawdlineCore"),
         .target(name: "ClawdlineApplication", dependencies: ["ClawdlineCore"], path: "Packages/ClawdlineApplication"),
@@ -75,6 +78,11 @@ let package = Package(
                 "CloudCanonicalJSON.swift",
                 "CloudClock.swift",
             ]
+        ),
+        .executableTarget(
+            name: "ClawdlineLinux",
+            dependencies: ["ClawdlineApplication"],
+            path: "Packages/ClawdlineLinux"
         ),
     ]
 )

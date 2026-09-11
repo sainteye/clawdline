@@ -77,7 +77,7 @@ assert.equal(inspect(broken).postBeforeReplacement, false);
 // catching it, and the one guard this file had was that syntax check.
 //
 // It reached `main` in a state where `./build.sh` died with `compile_jobs[@]: unbound variable`
-// before `swiftc` ran, on the path where no parallelism budget was granted — which is the default,
+// before SwiftPM ran, on the path where no parallelism budget was granted — which is the default,
 // and is also the fallback taken when the broker is not answering, i.e. exactly after the crash
 // this whole feature exists to prevent. The sister file had it right five hundred lines away:
 // `test.sh` writes `${clawdline_suite_jobs_flags[@]+"${…[@]}"}`. **One idiom, two files, one
@@ -87,7 +87,7 @@ assert.equal(inspect(broken).postBeforeReplacement, false);
 // the script will actually do rather than what it is supposed to say.
 // Lifted by the markers rather than by hunting for the next `fi`. The old extraction sliced from
 // `compile_jobs=()` to the first `\nfi\n`, which worked only while every branch of the block ended
-// on its own line; the first single-line `if … ; fi` inside it silently swallowed the `swiftc`
+// on its own line; the first single-line `if … ; fi` inside it silently swallowed the compiler
 // invocation below and the harness died on an unbound `BIN`. A block that has to be run on its own
 // needs boundaries that say where it ends.
 const CEIL_OPEN = '# >>> clawdline compile ceiling >>>';
@@ -108,7 +108,7 @@ function expandsCleanly(block, expansion) {
     'CLAWDLINE_SUITE_JOBS=""',
     'CLAWDLINE_SUITE_JOBS_SOURCE="no budget granted"',
     block,
-    `printf ' [%s]' swiftc ${expansion.trim().replace(/\\$/, '')} -o bin`,
+    `printf ' [%s]' swift-build ${expansion.trim().replace(/\\$/, '')} --product Clawdline`,
     'printf "\\n"',
   ].join('\n');
   return spawnSync('/bin/bash', ['-c', harness], { encoding: 'utf8' });
@@ -116,13 +116,15 @@ function expandsCleanly(block, expansion) {
 
 const noBudget = expandsCleanly(jobsBlock, jobsExpansion);
 assert.equal(noBudget.status, 0,
-  `build.sh must reach swiftc with no parallelism budget granted: ${noBudget.stderr}`);
+  `build.sh must reach SwiftPM with no parallelism budget granted: ${noBudget.stderr}`);
 // An unset budget used to add no flag at all, which on this machine meant one job — measured, not
 // assumed. It now derives `min(8, hw.ncpu)`: 103 sources with `-O` took 169 s at one job and 37 s
 // at eight, at 0.40 GiB per frontend and 1.34 GiB for all of them together. See
 // `docs/suite-runtime.md`.
-const derivedCeiling = Math.min(8, cpus().length);
-assert.match(noBudget.stdout, new RegExp(`\\[swiftc\\] \\[-j\\] \\[${derivedCeiling}\\] \\[-o\\] \\[bin\\]`),
+const ncpu = spawnSync('/usr/sbin/sysctl', ['-n', 'hw.ncpu'], { encoding: 'utf8' });
+const observedCores = /^[1-9][0-9]*$/.test(ncpu.stdout.trim()) ? Number(ncpu.stdout.trim()) : 1;
+const derivedCeiling = Math.min(8, observedCores);
+assert.match(noBudget.stdout, new RegExp(`\\[swift-build\\] \\[-j\\] \\[${derivedCeiling}\\] \\[--product\\] \\[Clawdline\\]`),
   `an unset budget must derive a ceiling and pass it: ${noBudget.stdout}`);
 
 // **The mutation proof below needs an empty array, and the block no longer produces one.** That is
@@ -135,7 +137,7 @@ function expandsWithEmptyArray(expansion) {
   const harness = [
     'set -euo pipefail',
     'compile_jobs=()',
-    `printf ' [%s]' swiftc ${expansion.trim().replace(/\\$/, '')} -o bin`,
+    `printf ' [%s]' swift-build ${expansion.trim().replace(/\\$/, '')} --product Clawdline`,
     'printf "\\n"',
   ].join('\n');
   return spawnSync('/bin/bash', ['-c', harness], { encoding: 'utf8' });
@@ -144,7 +146,7 @@ function expandsWithEmptyArray(expansion) {
 const guardedEmpty = expandsWithEmptyArray(jobsExpansion);
 assert.equal(guardedEmpty.status, 0,
   `the guarded expansion must survive an empty array under set -u: ${guardedEmpty.stderr}`);
-assert.match(guardedEmpty.stdout, /\[swiftc\] \[-o\] \[bin\]/,
+assert.match(guardedEmpty.stdout, /\[swift-build\] \[--product\] \[Clawdline\]/,
   `and must add nothing when there is nothing to add: ${guardedEmpty.stdout}`);
 
 // The mutation that actually happened: put the unguarded expansion back and this must go red while

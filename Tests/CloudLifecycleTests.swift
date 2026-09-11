@@ -18,9 +18,9 @@ private struct ForcedLifecycleFailure: Error, LocalizedError {
 /// A transport with no relay behind it. Commands and ready generations are pushed by the test,
 /// which is the only way to drive the bridge's two inbound streams deterministically.
 private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendable {
-    let commands: AsyncStream<CloudInboundCommand>
+    let commands: CloudInboundCommandStream
     let readyGenerations: AsyncStream<UInt64>
-    private let commandContinuation: AsyncStream<CloudInboundCommand>.Continuation
+    private let commandQueue: CloudInboundCommandQueue
     private let readyContinuation: AsyncStream<UInt64>.Continuation
     private let lock = NSLock()
     private var connectCount = 0
@@ -35,9 +35,11 @@ private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendab
         self.connectError = connectError
         self.buffersPublication = buffersPublication
         self.publicationEffect = publicationEffect
-        var commandContinuation: AsyncStream<CloudInboundCommand>.Continuation!
-        commands = AsyncStream { commandContinuation = $0 }
-        self.commandContinuation = commandContinuation
+        let commandQueue = CloudInboundCommandQueue(limits: CloudInboundCommandQueueLimits(
+            maximumCount: 10_000, maximumChargedBytes: Int.max
+        ))
+        self.commandQueue = commandQueue
+        commands = commandQueue.stream
         var readyContinuation: AsyncStream<UInt64>.Continuation!
         readyGenerations = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { readyContinuation = $0 }
         self.readyContinuation = readyContinuation
@@ -64,11 +66,12 @@ private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendab
 
     func shutdown() async {
         countShutdown()
-        commandContinuation.finish()
+        commandQueue.finish()
         readyContinuation.finish()
     }
 
-    func deliver(_ command: CloudInboundCommand) { commandContinuation.yield(command) }
+    func deliver(_ command: CloudInboundCommand) { _ = commandQueue.admit(command) }
+    func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async {}
     func becameReady(_ generation: UInt64) { readyContinuation.yield(generation) }
     func connects() -> Int { lock.lock(); defer { lock.unlock() }; return connectCount }
     func shutdowns() -> Int { lock.lock(); defer { lock.unlock() }; return shutdownCount }

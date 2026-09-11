@@ -906,7 +906,7 @@ host_ports_imports=$(grep -E '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:sp
   | sort -u | tr '\n' ' ')
 # W3-1: this file is now also the sole member of the real ClawdlineApplication SwiftPM target, so
 # it carries one more import — ClawdlineCore, where Assistant/Assistant.Running now live — but
-# only behind #if canImport(ClawdlineCore), never unconditionally: ./build.sh's flat,
+# only behind #if canImport(ClawdlineCore), never unconditionally: ./test.sh's compatibility flat,
 # single-module swiftc invocation has no ClawdlineCore module to resolve an unconditional import
 # against. The line below still refuses any import besides these exact two.
 [ "$host_ports_imports" = "ClawdlineCore Foundation " ] \
@@ -924,7 +924,7 @@ host_ports_guarded_core_import=$(awk '
   { guard = 0 }
 ' "$host_ports_file")
 [ -n "$host_ports_guarded_core_import" ] \
-  || architecture_guard_fail "$host_ports_file's import ClawdlineCore is not the line immediately after #if canImport(ClawdlineCore) — an unconditional cross-module import here would break ./build.sh's flat compile, which has no ClawdlineCore module to resolve it against"
+  || architecture_guard_fail "$host_ports_file's import ClawdlineCore is not the line immediately after #if canImport(ClawdlineCore) — an unconditional cross-module import here would break ./test.sh's compatibility flat compile, which has no ClawdlineCore module to resolve it against"
 host_code_lines() {
   grep -vE '^[[:space:]]*(//|/\*|\*)' "$1" | grep -vE '^[[:space:]]*case[[:space:]]+[A-Za-z_][A-Za-z0-9_]*\(' || true
 }
@@ -992,22 +992,76 @@ core_candidate_count=$(grep -vcE '^[[:space:]]*(#|$)' "$core_candidates_file" ||
 core_candidate_count=${core_candidate_count:-0}
 [ "$core_candidate_count" -ge "$core_candidate_floor" ] \
   || architecture_guard_fail "$core_candidates_file lists $core_candidate_count candidate(s), below the checked-in floor of $core_candidate_floor; this manifest may only grow — restore the missing entries, or raise the floor in the same change that removes one and say why"
-core_forbidden_imports='AppKit|Security|ServiceManagement|Speech|AVFoundation|Carbon'
+swift_import_modules() {
+  python3 - "$@" <<'PY'
+import re, sys
+pattern = re.compile(
+    r'^\s*(?:@[A-Za-z_][A-Za-z0-9_]*(?:\([^)]*\))?\s+)*import\s+'
+    r'(?:(?:typealias|struct|class|enum|protocol|let|var|func)\s+)?'
+    r'([A-Za-z_][A-Za-z0-9_]*)'
+)
+block_depth = 0
+for path in sys.argv[1:]:
+    text = open(path, encoding="utf-8").read()
+    code, i = [], 0
+    while i < len(text):
+        pair = text[i:i + 2]
+        if block_depth:
+            if pair == "/*": block_depth += 1; i += 2; continue
+            if pair == "*/": block_depth -= 1; i += 2; continue
+            if text[i] == "\n": code.append("\n")
+            i += 1
+            continue
+        if pair == "/*": block_depth = 1; i += 2; continue
+        if pair == "//":
+            newline = text.find("\n", i + 2)
+            if newline < 0: break
+            code.append("\n"); i = newline + 1; continue
+        code.append(text[i]); i += 1
+    for statement in "".join(code).replace(";", "\n").splitlines():
+        match = pattern.match(statement)
+        if match: print(match.group(1))
+PY
+}
+
+swift_code_without_comments() {
+  python3 - "$1" <<'PY'
+import sys
+text = open(sys.argv[1], encoding="utf-8").read()
+code, depth, i = [], 0, 0
+while i < len(text):
+    pair = text[i:i + 2]
+    if depth:
+        if pair == "/*": depth += 1; i += 2; continue
+        if pair == "*/": depth -= 1; i += 2; continue
+        if text[i] == "\n": code.append("\n")
+        i += 1; continue
+    if pair == "/*": depth = 1; i += 2; continue
+    if pair == "//":
+        newline = text.find("\n", i + 2)
+        if newline < 0: break
+        code.append("\n"); i = newline + 1; continue
+    code.append(text[i]); i += 1
+sys.stdout.write("".join(code))
+PY
+}
+
+core_forbidden_imports='AppKit|Security|ServiceManagement|Speech|AVFoundation|Carbon|Cocoa|Network|CoreServices|Darwin|IOKit|ObjectiveC'
 while IFS= read -r candidate; do
   [ -n "$candidate" ] || continue
   [ -f "$candidate" ] \
     || architecture_guard_fail "$core_candidates_file names $candidate, which does not exist in this tree"
-  candidate_imports=$(grep -E '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]' "$candidate" \
-    | sed -E 's/^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+//; s/[[:space:]]+$//' || true)
+  candidate_imports=$(swift_import_modules "$candidate" || true)
   forbidden_hit=$(printf '%s\n' "$candidate_imports" | grep -E "^($core_forbidden_imports)\$" || true)
   [ -z "$forbidden_hit" ] \
-    || architecture_guard_fail "$candidate imports ${forbidden_hit//$'\n'/, }, which the Core/Application candidate manifest forbids (AppKit/Security/ServiceManagement/Speech/AVFoundation/Carbon); move the platform dependency to a Mac leaf in $mac_host_adapters_file"
+    || architecture_guard_fail "$candidate imports ${forbidden_hit//$'\n'/, }, which the Core/Application candidate manifest forbids; move the platform dependency to a Mac leaf in $mac_host_adapters_file"
   candidate_effect_lines=$(host_code_lines "$candidate" | grep -cE "$host_effect_re" || true)
   [ "${candidate_effect_lines:-0}" -eq 0 ] \
     || architecture_guard_fail "$candidate names a platform effect on ${candidate_effect_lines} code line(s); a Core/Application candidate reaches the host only through an injected port"
 done < <(grep -vE '^[[:space:]]*(#|$)' "$core_candidates_file" || true)
 
-# W3-1 correction (`repo-graph-guard-is-not-exact`): the real SwiftPM Core/Application/Mac
+# W3-1 correction (`repo-graph-guard-is-not-exact`), extended by W3-2: the real SwiftPM
+# Core/Application/Mac/Linux
 # target graph, checked against SwiftPM's own resolved manifest instead of reimplemented with
 # `find -maxdepth 1`. The original version of this block counted first-level `.swift` files
 # against a floor and asked only whether `Clawdline` "has" the `ClawdlineApplication` dependency —
@@ -1021,8 +1075,9 @@ done < <(grep -vE '^[[:space:]]*(#|$)' "$core_candidates_file" || true)
 # compile set and dependency edges: exactly what a nested, extra, replaced or moved source, or a
 # direct/extra Mac edge, would change.
 core_application_packages_root=Packages
-core_application_package_graph=$(swift package describe --type json 2>/dev/null) \
-  || architecture_guard_fail "swift package describe failed; the real Core/Application/Mac target graph cannot be checked"
+core_application_package_graph=$(swift package --disable-sandbox describe --type json 2>/dev/null) \
+  || architecture_guard_fail "swift package describe failed; the real Core/Application/Mac/Linux target graph cannot be checked"
+. tools/swift-source-manifest.sh
 
 # Every symlink under Packages/ClawdlineCore/ and Packages/ClawdlineApplication/ must still be a
 # real, correctly-named, candidate-listed link into Sources/ — the "one source of truth"
@@ -1068,12 +1123,16 @@ CloudCanonicalJSON.swift
 CloudClock.swift'
 application_expected_members='HostPorts.swift'
 mac_expected_dependencies='ClawdlineApplication'
+linux_expected_members='LinuxComposition.swift
+main.swift'
+linux_expected_dependencies='ClawdlineApplication'
 
 core_application_exactness=$(printf '%s' "$core_application_package_graph" | python3 -c '
 import json, sys
 data = json.load(sys.stdin)
 targets = {t["name"]: t for t in data.get("targets", [])}
-for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline"):
+products = {p["name"]: p for p in data.get("products", [])}
+for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline", "ClawdlineLinux"):
     if name not in targets:
         print("missing:" + name)
         sys.exit(0)
@@ -1081,13 +1140,23 @@ def sources(name):
     return sorted(targets[name].get("sources") or [])
 def deps(name):
     return sorted(targets[name].get("target_dependencies") or [])
-for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline"):
+print("package.external-dependencies=" + str(len(data.get("dependencies") or [])))
+for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline", "ClawdlineLinux"):
     print(name + ".sources=" + ",".join(sources(name)))
     print(name + ".deps=" + ",".join(deps(name)))
+    print(name + ".external-products=" + str(len(targets[name].get("product_dependencies") or [])))
+for name in ("Clawdline", "ClawdlineLinux"):
+    if name not in products:
+        print("missing-product:" + name)
+        sys.exit(0)
+    print(name + ".product-targets=" + ",".join(sorted(products[name].get("targets") or [])))
 ') || architecture_guard_fail "the Package.swift target graph could not be parsed"
 case "$core_application_exactness" in
   missing:*)
-    architecture_guard_fail "${core_application_exactness#missing:} is not a declared Package.swift target; the real Core/Application/Mac composition graph is incomplete"
+    architecture_guard_fail "${core_application_exactness#missing:} is not a declared Package.swift target; the real Core/Application/Mac/Linux composition graph is incomplete"
+    ;;
+  missing-product:*)
+    architecture_guard_fail "${core_application_exactness#missing-product:} is not a declared Package.swift product; build and CI would have no exact executable to request"
     ;;
 esac
 graph_field() {
@@ -1120,6 +1189,45 @@ actual_mac_deps=$(graph_field 'Clawdline\.deps')
 [ "$actual_mac_deps" = "$expected_mac_deps" ] \
   || architecture_guard_fail "Clawdline's (Mac composition) target dependencies are [$actual_mac_deps], not exactly [$expected_mac_deps] — an extra or a direct Clawdline -> ClawdlineCore edge passes a 'has Application' check but is not the single Mac -> Application -> Core edge this gate exists to hold"
 
+expected_linux_sources=$(sorted_csv "$linux_expected_members")
+actual_linux_sources=$(graph_field 'ClawdlineLinux\.sources')
+[ "$actual_linux_sources" = "$expected_linux_sources" ] \
+  || architecture_guard_fail "ClawdlineLinux's SwiftPM-resolved sources are [$actual_linux_sources], not the pinned [$expected_linux_sources] — the Linux composition source set must change explicitly with this exact guard"
+
+expected_linux_deps=$(sorted_csv "$linux_expected_dependencies")
+actual_linux_deps=$(graph_field 'ClawdlineLinux\.deps')
+[ "$actual_linux_deps" = "$expected_linux_deps" ] \
+  || architecture_guard_fail "ClawdlineLinux's target dependencies are [$actual_linux_deps], not exactly [$expected_linux_deps] — Linux composition must depend inward through Application, never directly on Core or Mac"
+
+actual_package_dependencies=$(graph_field 'package\.external-dependencies')
+[ "$actual_package_dependencies" = 0 ] \
+  || architecture_guard_fail "Package.swift declares $actual_package_dependencies external package dependency/dependencies; the production graph is closed and requires an explicit reviewed allowlist before adding one"
+for graph_target in ClawdlineCore ClawdlineApplication Clawdline ClawdlineLinux; do
+  actual_external_products=$(graph_field "$graph_target\.external-products")
+  [ "$actual_external_products" = 0 ] \
+    || architecture_guard_fail "$graph_target has $actual_external_products external product dependency/dependencies; the production graph is closed and requires an explicit reviewed allowlist before adding one"
+done
+
+for executable_product in Clawdline ClawdlineLinux; do
+  actual_product_targets=$(graph_field "$executable_product\.product-targets")
+  [ "$actual_product_targets" = "$executable_product" ] \
+    || architecture_guard_fail "$executable_product product resolves to [$actual_product_targets], not exactly its same-named executable target"
+done
+
+# The Linux target may use portable Foundation and the Application boundary. It must never gain an
+# Apple host import, nor become a second Mac composition hidden behind a conditional. The import is
+# also required: a manifest edge that no source consumes is the same inert graph defect W3-1's Mac
+# correction closed.
+linux_imports=$(swift_import_modules Packages/ClawdlineLinux/*.swift || true)
+linux_disallowed_imports=$(printf '%s\n' "$linux_imports" | grep -Ev '^(Foundation|ClawdlineApplication)$' || true)
+[ -z "$linux_disallowed_imports" ] \
+  || architecture_guard_fail "ClawdlineLinux imports ${linux_disallowed_imports//$'\n'/, }; its closed import allowlist is Foundation and ClawdlineApplication"
+linux_application_imports=$(printf '%s\n' "$linux_imports" | grep -cx 'ClawdlineApplication' || true)
+[ "${linux_application_imports:-0}" -eq 1 ] \
+  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected exactly once so its inward edge is consumed"
+swift_code_without_comments Packages/ClawdlineLinux/LinuxComposition.swift | grep -q 'HostCapabilityUnavailable\.code' \
+  || architecture_guard_fail "ClawdlineLinux does not consume the Application target's typed capability-unavailable vocabulary; a declared edge alone is inert"
+
 # `spec-mac-does-not-consume-application`'s other half: Clawdline's own SwiftPM source set must
 # not include a Core/Application-owned file. If it did, `swift build` would compile that file a
 # second time as an unrelated `Clawdline.*` type, silently defeating every check above — the
@@ -1132,6 +1240,16 @@ mac_duplicated_sources=$(comm -12 \
   <(printf '%s\n' "$actual_mac_sources" | tr ',' '\n' | LC_ALL=C sort))
 [ -z "$mac_duplicated_sources" ] \
   || architecture_guard_fail "Clawdline's own SwiftPM sources still include ${mac_duplicated_sources//$'\n'/, }, which ClawdlineCore/ClawdlineApplication already own — exclude it in Package.swift's Clawdline target so it is compiled exactly once, as part of the real target that owns it"
+
+# The shipped Mac product is the union of the Mac composition and its two inward library targets.
+# That compiler-owned union must equal the production manifest used by the compatibility flat suite;
+# checking only for duplicate ownership lets an `exclude:` silently remove a dynamically used file.
+manifest_production_basenames=$(printf '%s\n' "${clawdline_production_sources[@]}" \
+  | sed 's#^Sources/##' | LC_ALL=C sort -u)
+swiftpm_mac_union=$(printf '%s\n%s\n%s\n' "$actual_mac_sources" "$actual_core_sources" "$actual_application_sources" \
+  | tr ',' '\n' | sed '/^$/d' | LC_ALL=C sort -u)
+[ "$swiftpm_mac_union" = "$manifest_production_basenames" ] \
+  || architecture_guard_fail "the shipped SwiftPM Mac source union differs from tools/swift-source-manifest.sh's production manifest; Package.swift exclude/source membership and the release-candidate source inventory must describe the same files"
 
 governance_doc=docs/architecture-refactor.md
 governance_marker_open='<!-- clawdline-governance-table:v1 -->'

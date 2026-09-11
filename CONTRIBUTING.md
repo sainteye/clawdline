@@ -1,6 +1,7 @@
 # Contributing
 
-Plain AppKit. No dependencies, no Xcode project, no build system beyond `swiftc`.
+Plain AppKit, no Xcode project. SwiftPM owns the compiler target graph; `build.sh` owns the Mac
+bundle/sign/install wrapper.
 
 ```bash
 ./test.sh     # release-candidate acceptance; minutes rather than seconds
@@ -21,10 +22,14 @@ comments honest without turning a changing runtime total into a source-maintenan
 swift build
 ```
 
-`Package.swift` exists **only** so SourceKit-LSP has something to index — VS Code, Zed, Neovim
-and the rest then give you completion, jump-to-definition and inline errors. What it produces is
-a bare executable with no `Info.plist` and no `Resources`, which cannot register a hotkey or find
-a mascot pack. Never ship it; use `./build.sh`.
+`Package.swift` is both what SourceKit-LSP indexes and the compiler-owned product graph. A bare
+`swift build --product Clawdline` still has no `Info.plist`, resources or signature, so never ship
+that directory: `./build.sh` compiles the same product under the machine lock, verifies its digest
+while copying it into the staged bundle, then preserves the existing sign/install/restart flow.
+
+`swift build --product ClawdlineLinux` compiler-checks the headless composition and its inward
+Application/Core dependencies. In W3 it is intentionally not a service: `ClawdlineLinux health`
+reports `ready=false`, and `run --config …` refuses until W4 supplies the real host adapters.
 
 ## Where things are
 

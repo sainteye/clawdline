@@ -1,7 +1,7 @@
 import Foundation
 // W3-1 correction: this file is the sole member of the real `ClawdlineApplication` SwiftPM
 // target (`Package.swift`, `Packages/README.md`), which depends on `ClawdlineCore` — the target
-// that holds `Assistant`, referenced below. Under `./build.sh`'s flat, single-module `swiftc`
+// that holds `Assistant`, referenced below. Under `./test.sh`'s compatibility flat-module `swiftc`
 // invocation there is no `ClawdlineCore` module to import (`Assistant.swift` compiles directly
 // alongside this file instead, exactly as before this change), so the import is guarded rather
 // than unconditional: `canImport` is false there and true only under `swift build`'s
@@ -283,7 +283,7 @@ public struct HostProcessIdentityChanged: Error, Equatable {
 /// A backend-specific way to reach a not-yet-existing session: what iTerm2's Apple Event needs to
 /// open a tab, or what tmux needs to open a window on its running server or start a brand-new
 /// detached session nothing is attached to yet. Two request shapes because the two backends do
-/// not open the same way — `StartPoints.open` already carries this exact asymmetry.
+/// not open the same way — `StartPoints.start` already carries this exact asymmetry.
 public enum TerminalCreateRequest {
     /// Open a new iTerm2 tab and type `line` at its prompt.
     case iTermTab(line: String)

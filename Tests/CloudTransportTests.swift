@@ -46,6 +46,23 @@ private actor CloudTestReadyGenerations {
     func all() -> [UInt64] { values }
 }
 
+private final class CloudInboundRefusalRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [CloudInboundAdmissionRefusal] = []
+
+    func append(_ refusal: CloudInboundAdmissionRefusal) {
+        lock.lock()
+        values.append(refusal)
+        lock.unlock()
+    }
+
+    func all() -> [CloudInboundAdmissionRefusal] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
 private final class CloudSuspendedHandshakeSocket: CloudTransportSocket, @unchecked Sendable {
     private let lock = NSLock()
     private let continuation: AsyncStream<String>.Continuation
@@ -250,6 +267,7 @@ func runCloudTransportTests() async throws -> Int {
     case "unauthorized-upgrade": return try await runCloudTransportUnauthorizedUpgradeTests()
     case "flush-invariant": return try await runCloudTransportFlushInvariantTests()
     case "timeouts": return try await runCloudTransportTimeoutTests()
+    case "inbound-budget": return try await runCloudTransportInboundBudgetTests()
     default: break
     }
     var checks = 0
@@ -435,6 +453,7 @@ func runCloudTransportTests() async throws -> Int {
     checks += try await runCloudTransportUnauthorizedUpgradeTests()
     checks += try await runCloudTransportFlushInvariantTests()
     checks += try await runCloudTransportTimeoutTests()
+    checks += try await runCloudTransportInboundBudgetTests()
     return checks
 }
 
@@ -1156,6 +1175,199 @@ private func runCloudTransportReadyBufferTests() async throws -> Int {
     return checks
 }
 
+/// R-1: authenticated commands have one explicit count/charged-byte owner. A suspended consumer
+/// fills but cannot grow it; overload does not advance replay identity or fence later requests;
+/// reconnect does not evict admitted work; and shutdown closes admission without false metrics.
+private func runCloudTransportInboundBudgetTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudTransportTestFailure(description: message) }
+    }
+
+    func command(sequence: UInt64, bytes: Int) -> CloudInboundCommand {
+        CloudInboundCommand(
+            channel: "ctl/budget-machine", sequence: sequence, timestamp: 1,
+            commandClass: .ctl, sender: "budget-viewer",
+            plaintext: Data(repeating: UInt8(sequence % 251), count: bytes)
+        )
+    }
+
+    // Representative byte-overflow proof, with the count limit deliberately out of the way.
+    let firstByteCommand = command(sequence: 1, bytes: 32)
+    let byteQueue = CloudInboundCommandQueue(limits: CloudInboundCommandQueueLimits(
+        maximumCount: 8,
+        maximumChargedBytes: firstByteCommand.ingressChargedBytes + 1
+    ))
+    let firstByteAdmission = byteQueue.admit(firstByteCommand)
+    if case .success = firstByteAdmission {
+        checks += 1
+    } else {
+        throw CloudTransportTestFailure(
+            description: "the first command fits the charged-byte budget"
+        )
+    }
+    let byteOverflow = byteQueue.admit(command(sequence: 2, bytes: 2))
+    if case .failure(.chargedByteCap) = byteOverflow {
+        checks += 1
+    } else {
+        throw CloudTransportTestFailure(
+            description: "charged-byte overflow is refused independently of count"
+        )
+    }
+    let byteMetrics = byteQueue.snapshot()
+    try require(byteMetrics.currentCount == 1
+                    && byteMetrics.currentChargedBytes == firstByteCommand.ingressChargedBytes,
+                "byte refusal leaves exact current count and charge unchanged")
+    try require(byteMetrics.refusalTotals[.chargedByteCap] == 1
+                    && byteMetrics.peakChargedBytes == firstByteCommand.ingressChargedBytes,
+                "byte refusal and peak are explicit observability")
+
+    let plaintextQueue = CloudInboundCommandQueue(limits: CloudInboundCommandQueueLimits(
+        maximumCount: 8, maximumChargedBytes: 1_024, maximumPlaintextBytes: 1
+    ))
+    let plaintextOverflow = plaintextQueue.admit(command(sequence: 3, bytes: 2))
+    if case .failure(.plaintextCap) = plaintextOverflow {
+        checks += 1
+    } else {
+        throw CloudTransportTestFailure(
+            description: "one plaintext is refused at the actual post-decrypt admission boundary"
+        )
+    }
+    let plaintextMetrics = plaintextQueue.snapshot()
+    try require(plaintextMetrics.maximumPlaintextBytes == 1
+                    && plaintextMetrics.currentCount == 0
+                    && plaintextMetrics.admittedTotal == 0
+                    && plaintextMetrics.refusalTotals[.plaintextCap] == 1,
+                "plaintext refusal has an explicit limit and cannot inflate accepted metrics")
+    plaintextQueue.finish()
+
+    byteQueue.finish()
+    let postFinishAdmission = byteQueue.admit(command(sequence: 4, bytes: 1))
+    if case .failure(.finished) = postFinishAdmission {
+        checks += 1
+    } else {
+        throw CloudTransportTestFailure(
+            description: "a finished ingress owner rejects rather than accepting unreachable work"
+        )
+    }
+    let finishedMetrics = byteQueue.snapshot()
+    try require(finishedMetrics.admittedTotal == 1
+                    && finishedMetrics.refusalTotals[.finished] == 1,
+                "post-finish admission preserves accepted accounting and records a typed refusal")
+
+    let machineKey = CloudDeviceKeyPair()
+    let viewerKey = CloudDeviceKeyPair()
+    let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x65, count: 32))
+    let relay = CloudLoopbackRelay(
+        account: "budget-account", deviceID: "budget-machine",
+        devicePublicKey: machineKey.publicKeyRaw, allowedTokens: ["budget-token"]
+    )
+    let logs = CloudTestLog()
+    let transport = CloudTransport(
+        relayBaseURL: URL(string: "ws://loopback.invalid/v1/connect")!,
+        tokenProvider: CloudTestTokenProvider(tokens: [
+            CloudDeviceToken(value: "budget-token", expiresAt: Date().addingTimeInterval(3_600))
+        ]),
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: machineKey, masterSecrets: ["master-1": master],
+            pairedDevices: ["budget-viewer": viewerKey.publicKeyRaw]
+        ),
+        connector: CloudLoopbackSocketConnector(relay: relay),
+        initialBackoff: 0.01,
+        maximumBackoff: 0.02,
+        inboundQueueLimits: CloudInboundCommandQueueLimits(
+            maximumCount: 2, maximumChargedBytes: 1_024 * 1_024
+        ),
+        logger: { logs.append($0) }
+    )
+    let refusals = CloudInboundRefusalRecorder()
+    await transport.setInboundRefusalHandler { refusal in
+        refusals.append(refusal)
+    }
+    try await transport.connect(role: .machine)
+
+    func envelope(sequence: UInt64, label: String) throws -> CloudEnvelope {
+        try CloudEnvelope.seal(
+            Data(label.utf8), ch: "ctl/budget-machine", seq: sequence,
+            ts: millisecondsNow(), envelopeClass: .ctl, keyID: "master-1",
+            sender: "budget-viewer", masterSecret: master, signingKey: viewerKey
+        )
+    }
+    let first = try envelope(sequence: 1, label: "one")
+    let second = try envelope(sequence: 2, label: "two")
+    let refused = try envelope(sequence: 3, label: "three")
+    try await relay.send(envelope: first)
+    try await relay.send(envelope: second)
+    try await relay.send(envelope: refused)
+    try await waitUntil("suspended consumer reaches count refusal") {
+        let metrics = await transport.inboundQueueMetrics()
+        let observed = refusals.all()
+        return metrics.currentCount == 2 && observed.count == 1
+    }
+    let saturated = await transport.inboundQueueMetrics()
+    try require(saturated.currentCount == 2 && saturated.peakCount == 2,
+                "a suspended consumer stays at the explicit count ceiling")
+    try require(saturated.refusalTotals[.countCap] == 1,
+                "count overflow is terminal for only the refused authenticated sequence")
+    let refusalSnapshot = refusals.all()
+    try require(refusalSnapshot.map(\.command.idempotencyKey)
+                    == ["cloud:budget-viewer:3"],
+                "the refused sequence is reported once without installing a successor fence")
+
+    // Other actor lanes remain usable while the command consumer is deliberately absent.
+    let outbound = try CloudEnvelope.seal(
+        Data("still-publishes".utf8), ch: "s/budget-machine/session", seq: 1,
+        ts: millisecondsNow(), envelopeClass: .stream, keyID: "master-1",
+        sender: "budget-machine", masterSecret: master, signingKey: machineKey
+    )
+    try await transport.publish(envelope: outbound)
+    try await waitUntil("outbound lane publishes while ingress is saturated") {
+        await relay.publishedEnvelopes().contains(outbound)
+    }
+    checks += 1
+
+    let handshakes = await relay.completedHandshakes()
+    await relay.dropConnections()
+    try await waitUntil("reconnect preserves saturated command occupancy", timeout: 2) {
+        let newHandshakes = await relay.completedHandshakes()
+        let metrics = await transport.inboundQueueMetrics()
+        return newHandshakes > handshakes && metrics.currentCount == 2
+    }
+    checks += 1
+
+    var iterator = transport.commands.makeAsyncIterator()
+    let drainedFirst = await iterator.next()
+    try require(drainedFirst?.sequence == 1,
+                "reconnect and suspension conserve the oldest admitted command")
+    let later = try envelope(sequence: 4, label: "four")
+    try await relay.send(envelope: later)
+    try await waitUntil("capacity drain admits a later request") {
+        await transport.inboundQueueMetrics().currentCount == 2
+    }
+    let drainedSecond = await iterator.next()
+    let admittedLater = await iterator.next()
+    try require([drainedSecond?.sequence, admittedLater?.sequence] == [2, 4]
+                    && admittedLater?.idempotencyKey == "cloud:budget-viewer:4",
+                "capacity drain admits a higher sequence and preserves FIFO without a retry fence")
+    try await relay.send(envelope: refused)
+    try await waitUntil("terminally refused predecessor is stale after a higher admission") {
+        await transport.droppedInboundCount() == 1
+    }
+    checks += 1
+    let recovered = await transport.inboundQueueMetrics()
+    try require(recovered.currentCount == 0 && recovered.admittedTotal == 3
+                    && recovered.deliveredTotal == 3 && recovered.droppedInvalidTotal == 1,
+                "recovery accounts admitted, delivered and stale-replay stages without loss")
+    try require(logs.lines().contains { $0.contains("reason=count_cap") }
+                    && logs.lines().allSatisfy { !$0.contains("budget-viewer") },
+                "overload logging exposes typed debt without sender or plaintext")
+
+    await transport.shutdown()
+    await relay.stop()
+    return checks
+}
+
 private func forgedSignature(_ source: CloudEnvelope, sequence: UInt64) throws -> CloudEnvelope {
     var object = try JSONSerialization.jsonObject(with: source.encodeJSON()) as! [String: Any]
     object["seq"] = sequence
@@ -1183,7 +1395,7 @@ private func waitUntil(
 }
 
 private func nextCommand(
-    from stream: AsyncStream<CloudInboundCommand>,
+    from stream: CloudInboundCommandStream,
     timeout: TimeInterval = 1
 ) async throws -> CloudInboundCommand? {
     try await withThrowingTaskGroup(of: CloudInboundCommand?.self) { group in
@@ -1201,7 +1413,7 @@ private func nextCommand(
     }
 }
 
-#if CLOUD_TRANSPORT_STANDALONE
+#if CLOUD_TRANSPORT_STANDALONE && !CLOUD_INGRESS_COMBINED_STANDALONE
 @main
 private struct CloudTransportStandaloneTests {
     static func main() async throws {

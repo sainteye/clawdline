@@ -876,12 +876,14 @@ link to them.
 
 ## Contributing
 
-Plain AppKit, no dependencies, no build system beyond `swiftc`.
+The Mac app is plain AppKit with no third-party dependencies. SwiftPM now owns the real
+`ClawdlineCore` → `ClawdlineApplication` → host-product graph; `build.sh` wraps the `Clawdline`
+product as the signed Mac app, while `ClawdlineLinux` is the fail-closed W3 composition skeleton.
 
 ```sh
 ./test.sh     # release-candidate acceptance; minutes rather than seconds
-./build.sh    # builds and relaunches if it was running
-swift build   # only so your editor can index the code
+./build.sh    # builds the SwiftPM Mac product, wraps it as an app, and relaunches if needed
+swift build   # compiles the real Mac and Linux product graph; it also powers editor indexing
 ```
 
 The executed check count is recorded by each run rather than copied into source. How long the suite

@@ -195,6 +195,28 @@ Rules:
 - A behavior-neutral refactor does not also change a store schema, route contract or concurrency
   primitive. Any such change becomes its own migration project.
 
+### R-1 Cloud ingress reliability boundary
+
+`CloudTransport` retains its transport/authentication/replay role and delegates pending-command
+ownership to one `CloudInboundCommandQueue`. The queue owns numeric count and charged-byte limits,
+the post-decrypt single-plaintext ceiling, terminal finish, FIFO conservation and
+occupancy/peak/drop/refusal telemetry. It does not own command effects, snapshot coalescing, the
+outbound publication spool or acknowledgement state. `CloudAppBridge` remains the adapter that
+recognizes a safe request-scoped command or read reply identity and emits the encrypted typed
+refusal without entering `CloudCommandRouting`. The reply crosses one eight-outstanding serial
+lane with a one-second deadline and completed/timed-out/full/cancelled counters; offering to that
+lane does not await sequence allocation, sealing or socket send.
+
+The replay cursor commits after queue admission. A capacity refusal is terminal for that
+authenticated sequence and installs no persistent predecessor fence: after capacity drains, a
+higher sequence from the same sender can be admitted; replay defense then rejects the older refused
+envelope if it reappears. This matches the existing browser and Relay, neither of which retries the
+same envelope bytes. Reconnect changes the socket generation but not this FIFO; explicit transport
+shutdown finishes it and subsequent admission returns typed `finished` without advancing replay or
+accepted metrics. The rollback seam is the `CloudInboundCommandStream` facade: callers still use
+`for await`, while the prior `AsyncStream` buffering can be restored behind that surface without
+changing Cloud protocol-v1 envelope or channel bytes.
+
 ## Phase 0 — freeze and prove the baseline
 
 Add guards before moving behavior:

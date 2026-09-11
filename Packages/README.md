@@ -20,8 +20,8 @@ symlink into `Sources/`, never a copy. That is a constraint, not a style choice:
 - Every caller that names the vocabulary these files declare (`Sources/Targets.swift`,
   `Sources/ITerm.swift`, `Sources/Orchestrator.swift` and about fifty neighbours) needs
   `import ClawdlineApplication` under `swift build`'s module-separated compile, but that import
-  line would also sit in the same file `./build.sh` compiles directly with `swiftc` as one flat
-  module with no other modules to import — that compile has no `ClawdlineApplication.swiftmodule`
+  line also sits in the same file `./test.sh` compiles directly with `swiftc` as one flat module
+  with no other modules to import — that compile has no `ClawdlineApplication.swiftmodule`
   to resolve the import against. `#if canImport(ClawdlineApplication)` around the import is what
   lets one file serve both builds; see the note atop `Sources/HostPorts.swift`.
 
@@ -49,16 +49,22 @@ latter, which was never true and is not what this layout needs.
 
 ## What is really proven here, and what is not
 
-`swift build --target ClawdlineCore --target ClawdlineApplication` compiling on macOS and on the
-pinned Ubuntu 24.04 image (`tools/swift-core-application-linux-build.sh`) proves these specific
-files compile as standalone Foundation-only modules on both platforms, and that the SwiftPM
-target-dependency graph has the edges `Clawdline -> ClawdlineApplication -> ClawdlineCore` and no
-others — checked mechanically in `tools/check-architecture-boundaries.sh`, not only asserted
-here. It does not prove a daemon, a Linux composition target, or that every Core/Application
-candidate in `tools/core-application-candidates.txt` is a member of one of these two SwiftPM
-targets yet — the manifest is the lexical (forbidden-import/platform-effect) ratchet across a
-wider candidate set than the two real targets currently include; growing the real targets to
-match it is later work, named in `artifacts/W3_1_DELIVERY.md`.
+`tools/swift-core-application-linux-build.sh` on the pinned Ubuntu 24.04 image compiles the Linux
+executable and its inward `ClawdlineApplication -> ClawdlineCore` dependencies as the real product
+graph, then executes nine health/config/secret/not-ready contract cases. The Mac
+`Clawdline` product also depends inward through Application, and `build.sh` now bundles that exact
+SwiftPM product rather than compiling a second flat source graph. Resolved sources, dependency
+sets and executable-product mappings are checked mechanically in
+`tools/check-architecture-boundaries.sh`, not only asserted here.
+
+This still does not prove a working Ubuntu daemon. `Packages/ClawdlineLinux` is deliberately a
+fail-closed composition skeleton: its diagnostic health identity says `ready=false`, validates a
+versioned loopback-only configuration and owner/mode/type/size for config and secret on the same
+non-following descriptor used for bounded reads, and refuses `run` with
+`w4_runtime_not_composed`. Terminal/process adapters, persistence, HTTP, service management and
+reconciliation remain W4 work; listing those unsupported capabilities is not an implementation.
+The wider candidate manifest remains a lexical ratchet, not proof that every candidate has moved
+into one of the real library targets.
 
 ### Correction: the edge is now consumed, not only declared
 

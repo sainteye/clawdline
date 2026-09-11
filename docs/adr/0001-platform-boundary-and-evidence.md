@@ -1,6 +1,6 @@
 # ADR 0001 — 平台邊界、狀態擁有者與證據分級
 
-狀態：W0-A 交付候選，待 CLA-296 root 的獨立 review／整合；本 ADR 不表示 production 已完成拆分。
+狀態：W0-A 決策已由 W3-1/W3-2 建立首批正式 targets 與 composition；Linux daemon runtime 仍待 W4。
 決策日期：2026-09-10。來源讀取時間：2026-09-10 13:19–14:10 UTC。
 來源 commit：`6f4411f1365258d1e1b41b76c85dcaa1dcb6b88a`；tree：
 `75314e95a17d901362c0d998477205606b9add5d`。本文行號只對這個版本成立。
@@ -31,13 +31,16 @@ inbound: local HTTP / Cloud relay input / CLI
 Core／Application 不得依賴 AppKit、Security、ServiceManagement、Speech、AVFoundation、
 Carbon、iTerm 型別、HTTP server singleton 或平台 executable。Mac／Linux composition 是
 依賴圖末端。不能用到處增加 `#if os(Linux)` 代替邊界，也不要求一個籠統 Infrastructure target。
-此方向是契約；目前尚未形成相應 compiler targets。
+此方向現由 `ClawdlineCore -> ClawdlineApplication -> Clawdline`／`ClawdlineLinux` 的 SwiftPM
+target graph 實作並由 resolved-source/edge guard 固定。Linux executable 在 W3-2 仍刻意
+`ready=false`；它只建立 fail-closed composition、config／secret boundary 與 health identity，
+沒有藉空 adapter 宣稱 W4 runtime 已存在。
 
 ## 固定版本的現有依賴與所有權
 
 | 邊界／資料 | 現有 owner 與來源 | 尚未完成的邊界 |
 |---|---|---|
-| build／package | [Package.swift](../../Package.swift):4–22 是 editor metadata、單一 macOS 13 executable；[build.sh](../../build.sh):918–925 直接編譯並 link Apple frameworks；[source manifest](../../tools/swift-source-manifest.sh) 列 production／test partitions | `ClawdlineCore`、`ClawdlineApplication`、`ClawdlineMac`、`ClawdlineLinux` 是後續契約名稱，不能寫成已存在產品；W0-F 證明非空 Core probe，W3 才建立正式圖 |
+| build／package | [Package.swift](../../Package.swift) 定義 Core／Application 與 Mac／Linux executable products；[architecture guard](../../tools/check-architecture-boundaries.sh) 讀 SwiftPM resolved sources／edges／products；[build.sh](../../build.sh) 在 machine lock 內編譯 `Clawdline` product，再以 digest-checked copy 組 bundle／sign／install | macOS focused proof 已執行 skeleton 的 protected config／secret 與 health contract；pinned Ubuntu job 現在也會執行同一 contract，但 Linux 支援仍須等該 job 的 exact-tree receipt。terminal/process/persistence/listener/service runtime 仍由 W4 實作。Mac bundle wrapper 不是 Ubuntu package provenance |
 | task／handoff／root assignment／Session facts | [Orchestrator.swift](../../Sources/Orchestrator.swift):1287、1313–1333 的 collections 與 lock alias，`:10194` load、`:10293` save | facade 仍混合 admission、state 與 effects；不能宣称 Registry 已接手全部資料 |
 | graph admission reservation、terminal title／role 與部分 label projection | [OrchestratorRegistry.swift](../../Sources/OrchestratorRegistry.swift):30–64 的 private collections；`:198` transaction，`:221` held-lock door，共用原有 NSLock | `Transaction` 還可能逸出 closure；held-lock door 仍依呼叫者持鎖慣例，不是型別系統的完整同步保證。新工作繼續既有 extraction 次序 |
 | orchestration disk codec | [OrchestratorStore.swift](../../Sources/OrchestratorStore.swift):3–18、`:79` stored task，包括 legacy decode／missing-field 語意 | 它是 serializer，並未擁有 collections、load/save 排程或 disk-health policy；不能藉搬移改 corruption／version 行為 |
@@ -77,6 +80,8 @@ references 只提供 bytes 身分，精確 compile artifact 的全輸入身分�
 
 - W0-E 以 [ADR 0002](0002-cloud-authority-and-executor-trust.md) 的 authority 規則產出 contract candidate；須再等 W0-D。
 - W0-F 依本方向與 W0-B 的工具證明 Ubuntu 24.04 amd64 非空 Core boundary；Foundation import 不等於 Linux compile receipt。
+- W3-2 的 Ubuntu CI 編譯真實 `ClawdlineLinux -> ClawdlineApplication -> ClawdlineCore` product；
+  health 固定回 `ready=false`／`w4_runtime_not_composed`，因此 compile receipt 不會被升格成 daemon support。
 - W0-C 負責 reliability 測量；它的數字未回來以前，Plan v4 的 latency／recovery 數字仍是待批准目標。
 - CLA-296 root 收集獨立 review、合併 correction、exact candidate 驗證與 landing。W0-A 不建立 runtime、Cloud rollout 或新的 Board lifecycle。
 

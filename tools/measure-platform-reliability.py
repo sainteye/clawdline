@@ -24,28 +24,28 @@ import time
 import uuid
 
 
-BASE_COMMIT = "402b4954de1b52a60f419b5183f60ae2026f4389"
+BASE_COMMIT = "7a785fc15c34cdbfd2de8f6960a038f78c90132c"
 # Measurement safety bound, not a production HTTP budget or SLA.
 HEALTH_BODY_LIMIT = 16384
 # Whole-file seals prevent an unchanged matching line from concealing a changed caller,
 # guard, comment-only decoy, or failure path elsewhere in the reviewed file.
 SOURCE_SEALS = {
-    "Sources/CloudTransport.swift": "1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d",
-    "Sources/CloudAppBridge.swift": "03b5abdabb0e0ddf6708ac25b509847e57ffc37f3c173bdf2ebc0682cae7d220",
-    "Sources/RemoteServer.swift": "761da7a649f86d981576643e02df562c55aa461791598ff3daa018850871e568",
+    "Sources/CloudTransport.swift": "00ccd9952ec29abfc408c9cfc3904074e9776163070c40a9b0f014efe4350f09",
+    "Sources/CloudAppBridge.swift": "6c302234a33d414c4b40d845c1008b39b04f961cb9fa8efd2de5632cfb2fc1dc",
+    "Sources/RemoteServer.swift": "4fbed488debf5bf879c220ca08e3f003ed98e1b6f53136ece90e47a5c6fcaa38",
     "Sources/TerminalCommandScheduler.swift": "81ca5981fee4900fca40edea3e050de7b88c66982d745e6f51b6f1c5ecce7e4f",
-    "Sources/Orchestrator.swift": "adedd015b38ba301a647cfe5635e0c1146001091cab1bed3111cda5181da9c83",
+    "Sources/Orchestrator.swift": "f3e1ab68b2b75b9769ab2993afbec41430a90ea54c9de7fd6cba88d2af94cf72",
     "Sources/OrchestratorPersistence.swift": "375628d34df7a2b7679b1e5519d2cfd81f92a3ba86df62b12ae95dfd43d9482c",
-    "Sources/OrchestratorRegistry.swift": "e8fe2cbe68e7752343863291dfa5f787df9195cc65c671c471a8eadfbadb2401",
-    "Sources/OrchestratorStore.swift": "ed31e8ceb7aab18aee23efdf8c3a20805e61a576f89673a4b79deeffd58bcfcc",
-    "Sources/Coordinator.swift": "f1427979b4897a17d6796643acc596f14ced538ab6e472aad186d8d9f78397a7",
-    "Sources/SessionWatch.swift": "d1d47930535b2e79bea14d13d56482885adeff09fcaa0326b84f8a60701beb5c",
+    "Sources/OrchestratorRegistry.swift": "9af6a0fecd32f73afb57ccd8963a15c7ade878336c8e3c044d96d0254f2c4523",
+    "Sources/OrchestratorStore.swift": "a15c0d900f79a09406a7b4594fd77047ed9d62347a3d15f6bdb19eb6c6100af8",
+    "Sources/Coordinator.swift": "9540466f054e1e686b2087f511901af49f3364b0164525cb369f7f1d8133d0a6",
+    "Sources/SessionWatch.swift": "57271981d56e9a24ad2eda992392369563eda504c5f0e455b3554ea162badf21",
     "Sources/TranscriptReadCoordinator.swift": "61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371",
     "Sources/ReadingFreshness.swift": "4592b2a84c03d196707626df2876f3ef4e5274149addf361b7738a2888ed672f",
-    "Sources/CloudOutboundSpool.swift": "aef545decd4c7c95b5c566cb60cb11455eaadf6b52f84c3707b76df165459485",
-    "Sources/CloudCommandLedger.swift": "def726c029d4fb17e0d096c3187d87b2ea89fdc413e69b95bb02cf0a27862fcf",
-    "Sources/CloudBridgeLifecycle.swift": "07f585fd60b4e99abe42d89ca72087c6339456cb844b088718c503cd9ef6b663",
-    "Tests/OrchestratorRecoveryTests.swift": "5c966c328f60fdd2404ec0fb41c43eedfd2ba4af3e118a32e43545f9278d27f5",
+    "Sources/CloudOutboundSpool.swift": "1653423609868c4903529194ca74344d755b560d453a65951edf06d1d855f2aa",
+    "Sources/CloudCommandLedger.swift": "a7a2161c8023710d79b36b1bf8dc452c1a52d6050045d61044df8f55bc3b83d4",
+    "Sources/CloudBridgeLifecycle.swift": "5030614169a6389f6189045e9cdf98f52ea8434beb3ce5ab0e9c03eec9f2eef8",
+    "Tests/OrchestratorRecoveryTests.swift": "725f8b579b9980ee5a4de7b1f865a5882eed28d20f27b2949d0ab8e548aa047f",
     "Tests/CloudOutboundSpoolTests.swift": "da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244",
 }
 
@@ -93,7 +93,8 @@ class SourceEvidence:
         start = text.index(anchor)
         stop = start + len(anchor)
         if end is not None:
-            require(text.count(end) == 1, "source_shape_changed", name + ": non-unique end")
+            require(text.count(end) == 1, "source_shape_changed",
+                    name + ": non-unique end: " + end)
             stop = text.index(end)
             require(stop > start, "source_shape_changed", name + ": reversed range")
         return {"path": name, "line": text.count("\n", 0, start) + 1,
@@ -153,16 +154,28 @@ def characterize(source):
     def constants(name, *symbols):
         return {symbol: source.integer(name, symbol) for symbol in symbols}
 
-    row("cloud-ingress", "commands 未指定 bufferingPolicy；acceptInbound 忽略 yield 回傳。"
-        "bridge 逐筆 await consume，再 await commandRouter；worker 上限不等於 ingress 上限。",
-        [ref(t, "commands = AsyncStream { continuation = $0 }"),
+    row("cloud-ingress", "CloudInboundCommandQueue 是 pending command 的單一 owner；"
+        "count、plaintext／charged bytes、finish、peak、invalid drop 與 typed refusal 都有明確讀值。"
+        "replay cursor 只在 admission 後前進；容量拒絕終結該 sequence，不 fence 後繼 sequence。"
+        "加密拒絕由有界且有 deadline 的單一 publication lane 發送。",
+        [ref(t, "struct CloudInboundCommandQueueLimits: Equatable, Sendable {",
+                 "enum CloudInboundAdmissionRefusalReason:"),
          ref(t, "    private func acceptInbound(", "    private func dropInbound("),
          ref(b, "            let commandStream = transport.commands", "            let readyStream = transport.readyGenerations"),
+         ref(b, "struct CloudRefusalPublicationQueueMetrics: Equatable, Sendable {",
+                 "/// Connects the app's existing full-snapshot"),
+         ref(b, "    private func consumeInboundRefusal(", "    /// One answered read"),
          ref(b, "        let result = await commandRouter.route(", "        commandResult(result)")],
-        ["Swift 預設 unbounded 語意為來源推論，未執行 Swift；未量到實際 backlog/RSS、bytes、wait/work。",
-         "authenticated command 的穩定 retry identity、durable re-read 與 typed overload 尚須 R-1 設計。"],
-        "R-1 transport reliability owner", {"explicit_count_cap": None, "explicit_byte_cap": None,
-                                             "yield_result_handled": False})
+        ["8／32 MiB 是 Plan-v4 source budget，尚未以 reference workload 證明適足；charged bytes 不是 RSS 或 sealed frame bytes。",
+         "同一 transport reconnect 可重讀 FIFO；process restart durability、ledger/spool production wiring 與 end-to-end human ACK 仍屬 W5/W6。"],
+        "W5-1 durability owner / W6 numeric-budget review", {
+            **constants(t, "defaultMaximumCount", "defaultMaximumChargedBytes",
+                        "defaultMaximumPlaintextBytes"),
+            **constants(b, "defaultMaximumOutstanding", "defaultDeadlineMilliseconds"),
+            "capacity_refusal": "terminal_for_authenticated_sequence",
+            "idempotency_identity": "cloud:<sender>:<sequence>",
+            "typed_overload_code": "cloud_ingress_busy",
+        })
     row("cloud-ready", "readyGenerations 明定 bufferingNewest(1)，dropped 計數；與 commands 是不同流。",
         [ref(t, "        readyGenerations = AsyncStream(bufferingPolicy: .bufferingNewest(1)) {"),
          ref(t, "            switch readyContinuation.yield(UInt64(currentGeneration)) {", "            return (authenticated, currentGeneration)")],
@@ -225,13 +238,14 @@ def characterize(source):
         ["waiter 數量、closure 持有 bytes、disconnect 後回收及重複 retry 負載未測。"],
         "R-2 HTTP reliability owner")
     row("cloud-read-queues", "Cloud read 的 foreground/background 分別按 queued+active 計 4/16；"
-        "超額回 429 cloud_read_busy，拒絕回覆另以 Task publish。",
-        [ref(b, "    private func enqueueRead(", "    private func publishBusyRead(")],
-        ["沒有此路徑的 aggregate byte ceiling；拒絕回覆 Tasks 的數量／輸出債務未測。"],
+        "超額回 429 cloud_read_busy，拒絕回覆交給共用的有界 publication lane。",
+        [ref(b, "    private func enqueueRead(", "    private func finishLifecycleRefresh(")],
+        ["沒有此路徑的 aggregate byte ceiling；read worker 的輸入 bytes 與 runtime adequacy 未測。"],
         "R-1 transport reliability owner", {"foreground_requests": 4, "background_requests": 16})
     row("cloud-publication", "CloudSnapshotPublicationQueue 合併 snapshot，保留 authoritative barrier；"
         "最多 3 個 pending（active work 另計）。CloudTransport pendingByChannel 按 channel 保留最新 envelope。",
-        [ref(b, "final class CloudSnapshotPublicationQueue:", "    @discardableResult\n    func cancelAndReset()"),
+        [ref(b, "final class CloudSnapshotPublicationQueue:",
+                 "struct CloudRefusalPublicationQueueMetrics:"),
          ref(t, "    private var pendingByChannel: [String: CloudEnvelope] = [:]"),
          ref(t, "    func publish(envelope:", "    func shutdown()")],
         ["未量到 pending bytes；未證明 channel cardinality 有界；不能套用為 local SSE 或 command ingress 保證。"],
@@ -251,7 +265,8 @@ def characterize(source):
          ref(l, "                let actorCount =", "                let row = CloudCommandLedgerRow("),
          ref(l, "    private func refuseCapacity(", "    private func removeReserved(")],
         ["元件未在此工具證明 production 接線；未測 bytes、waiters 與 runtime override。",
-         "稽核指 production idempotency 仍使用 sender/sequence；R-1 應先定 stable retry identity。"],
+         "production idempotency 仍使用 sender/sequence；R-1 的 capacity refusal 終結該 sequence，"
+         "process-restart durable identity 與 ledger 接線仍由 W5-1 定義。"],
         "W5-1 cross-runtime durability owner", constants(l, "globalHardLimit", "normalActorLimit", "fairnessReserveStart", "fairnessActorLimit"))
     row("store-read-health", "readStore 將 absent、ready、corrupt、unsupported-version 與 unreadable 分開；"
         "load 只發布完整 schema-v1，要求 tasks 並拒絕錯型、無法 decode 或重複 identity 的 row。"
@@ -501,6 +516,7 @@ def filesystem_probe(scratch):
 
 def make_report(root, health_port=None, samples=3, scratch=None):
     source = SourceEvidence(root)
+    source_scope_sha256 = digest(canonical(source.manifest).encode())
     rows = characterize(source)
     by_id = {row["id"]: row for row in rows}
     if health_port is not None:
@@ -509,9 +525,11 @@ def make_report(root, health_port=None, samples=3, scratch=None):
         by_id["filesystem-fixture"]["executable-test-derived"] = filesystem_probe(scratch)
     report = {"schema": 1, "canonical_program": "CLA-296", "question": "W0-C reliability characterization",
               "scope": "reviewed source baseline plus explicitly requested safe probes; no production policy change",
-              "source_reference_commit": BASE_COMMIT, "source_manifest": source.manifest,
+              "source_reference_commit": "base:" + BASE_COMMIT
+                  + "+candidate-overlay:" + source_scope_sha256,
+              "source_manifest": source.manifest,
               "measurement_tool_sha256": digest(Path(__file__).read_bytes()),
-              "source_scope_sha256": digest(canonical(source.manifest).encode()),
+              "source_scope_sha256": source_scope_sha256,
               "source_file_count": len(source.manifest), "row_count": len(rows), "rows": rows,
               "approved_new_budgets": None, "production_readiness": "not-established",
               "swift_tests_executed": False,
@@ -524,7 +542,8 @@ def make_report(root, health_port=None, samples=3, scratch=None):
 
 def markdown(report):
     lines = ["# 平台可靠性基準（W0-C）", "", "此文件由 `tools/measure-platform-reliability.py` 產生；CLA-296 Plan v4 的量測輸入。",
-             "來源引用提交：`" + report["source_reference_commit"] + "`。",
+             "`source_reference_commit`：`" + report["source_reference_commit"] + "`；"
+             "這表示指定 base 加上由 source manifest 封存的 candidate overlay，base commit 本身不含 overlay bytes。",
              "來源範圍 SHA-256：`" + report["source_scope_sha256"] + "`。",
              "工具 SHA-256：`" + report["measurement_tool_sha256"] + "`。", "",
              f"{report['source_file_count']} 個非空來源檔、{report['row_count']} 列。這是範圍摘要，並非整棵 commit-tree 驗證。",
@@ -554,7 +573,7 @@ def markdown(report):
         lines += ["- **unknown**：" + " ".join(row["unknown"]), "- **接手 owner**：" + row["downstream_owner"] + "。", ""]
     lines += ["## 預算批准所需的下一批輸入", "",
               "| 後續節點 | 必須取得的觀測與決策 |", "|---|---|",
-              "| R-1 | ingress/admission/accepted/executing/publication/ACK 各段 count、bytes、wait/work；burst + suspended consumer；穩定 retry identity、durable re-read、typed overflow 與無 silent command loss。 |",
+              "| W6（R-1 follow-through） | ingress/admission/accepted/executing/refusal-publication/ACK 各段 count、bytes、wait/work；burst + suspended consumer；terminal-sequence overload、reply-lane deadline/full-drop 與無 silent admitted-command loss。 |",
               "| R-2 | connection/aggregate body/stream/outstanding-byte ceiling；慢 consumer 與 duplicate retry 下，同時追蹤 health、其他 lane、completion/error、eviction、snapshot coalescing 及 reconnect realign。 |",
               "| W1-5 store-health | fresh/existing state × missing/EACCES/corrupt JSON/wrong row shape/unsupported version；load→save 原檔保留；ENOSPC/EROFS/rename/chmod/partial-write；各 effect 的 persist-before-effect/send 與 typed read-health。 |",
               "| W4/W6 | disposable Ubuntu 的 daemon/terminal service restart 分離、VM reboot、非空 restore、同 process/boot identity、queue drain 與 reconciliation 耗時分布。 |", "",

@@ -35,17 +35,18 @@ jobs:
         run: ./tools/ubuntu-core-probe.sh
 
   swift-core-application-linux:
-    name: Ubuntu 24.04 amd64 — real ClawdlineCore/ClawdlineApplication targets
+    name: Ubuntu 24.04 amd64 — real ClawdlineLinux product graph
     runs-on: ubuntu-24.04
     container:
       image: swift:6.1.3-noble@sha256:1d10836ca929943d70b2254e555b17247b132f6eed984654351cb6a8cc531613
     steps:
       - uses: actions/checkout@v4
-      # W3-1: the real Package.swift target graph, not tools/ubuntu-core-probe.sh's separate
+      # W3-1/W3-2: the real Package.swift target graph and Linux executable, not
+      # tools/ubuntu-core-probe.sh's separate
       # materialized probe. This runner is real amd64 hardware, not the QEMU emulation a Clawdline
       # dev Mac uses to reach amd64 — see tools/swift-core-application-linux-build.sh's own comment
       # for why local runs there default to -c debug -j 1.
-      - name: Compile the real ClawdlineCore/ClawdlineApplication targets
+      - name: Compile and execute the real ClawdlineLinux product contract
         run: SWIFT_CORE_APPLICATION_LINUX_BUILD_CONFIGURATION=release SWIFT_CORE_APPLICATION_LINUX_BUILD_JOBS=2 ./tools/swift-core-application-linux-build.sh
 
   build:
@@ -53,9 +54,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      # Package.swift is only there so editors can index the code, which means nothing ever
-      # exercises it — and a stale one gives a new contributor a broken editor and no clue why.
-      - name: The package an editor indexes still resolves
+      # Package.swift is the compiler-owned product graph used by the bundle wrapper below.
+      - name: The SwiftPM product graph resolves
         run: swift build
       - run: CLAWDLINE_APP="$RUNNER_TEMP/Clawdline.app" CLAWDLINE_BUILD_ONLY=1 ./build.sh
       - name: The bundle carries what it needs

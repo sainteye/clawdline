@@ -56,6 +56,9 @@ writes those numbers back into `test.sh`, README files or generated governance. 
 emits the full tuple and therefore cannot mint full-suite evidence.
 
 The default `CLAWDLINE_TEST_PROFILE=release` runs product, contract and structural roster checks.
+It also compiles the shipped `ClawdlineLinux` SwiftPM graph and drives its protected-input/runtime
+contract under the machine lock. `./test.sh --linux-package-focused` is the narrower implementer
+proof for that same graph and contract; it does not mint a full-suite receipt.
 The expensive self-tests for the lock, artifact cache, progress helper, guard mutations and W0
 characterization run under `CLAWDLINE_TEST_PROFILE=infrastructure`, when those inputs change or in
 scheduled infrastructure verification. Both profiles use the same machine-wide compile lock and

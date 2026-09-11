@@ -138,7 +138,7 @@ check("and that one trap still removes $STORE, so composing it did not drop the 
 check("the lock is taken before the compile it exists to serialise",
       last < lines.findIndex((l) => /^swiftc \\$/.test(l)));
 check("and test.sh runs this file",
-      /^node Tests\/test-sh-lock\.mjs$/m.test(script));
+      /^\s*node Tests\/test-sh-lock\.mjs$/m.test(script));
 
 // The identity comparison, which is where a locale reaches in. Measured on this Mac: the same
 // process reads `Thu Sep  3 02:18:04 2026` under LC_ALL=C and `四  9/ 3 02:18:04 2026` under
@@ -1133,11 +1133,12 @@ try {
     // happens to match the function's own definition.
     const after = lines.slice(last + 1).join("\n");
     const compileAt = after.indexOf("\nswiftc \\\n");
+    const packageCompileAt = after.indexOf("swift build --disable-sandbox");
+    const phaseAt = after.indexOf("\nclawdline_suite_lock_phase compiling\n");
     const confirmAt = after.indexOf("\nclawdline_confirm_suite_lock || exit $?\n");
     const binaryAt = after.indexOf('"$BIN" Resources/mascots');
-    check("test.sh declares the compiling phase immediately before the compiler it declares it for",
-          compileAt > 0 && /clawdline_suite_lock_phase compiling\n$/
-              .test(after.slice(0, compileAt + 1)));
+    check("test.sh declares the compiling phase before both compiler branches",
+          phaseAt > 0 && packageCompileAt > phaseAt && compileAt > packageCompileAt);
     check("and confirms the lock is still its own between the compile and the test binary",
           confirmAt > compileAt && binaryAt > confirmAt);
     check("and says its work is finished, below the run, where a waiter can act on it",
@@ -1336,6 +1337,34 @@ try {
             && /mv "\$temp" "\$CLAWDLINE_LEASE_DIR\/holder\.txt"/.test(buildBlock)
             && !/> "\$CLAWDLINE_LEASE_DIR\/holder\.txt"/.test(buildBlock));
 
+    // A process-table visibility filter is not evidence that the holder is gone. Drive the
+    // descriptor-independent kernel probe through all three outcomes, including EPERM: that is
+    // the exact state in which `ps` may hide the holder while still showing pid 1.
+    const killShimDir = join(dir, "shim-build-kill");
+    mkdirSync(killShimDir, { recursive: true });
+    writeFileSync(join(killShimDir, "kill"), [
+        "#!/bin/bash",
+        'case "$2" in',
+        '  4242) echo "kill: 4242: Operation not permitted" >&2; exit 1 ;;',
+        '  4343) echo "kill: 4343: No such process" >&2; exit 1 ;;',
+        '  4444) echo "kill: 4444: unreadable kernel reply" >&2; exit 1 ;;',
+        '  *) exit 0 ;;',
+        'esac',
+        "",
+    ].join("\n"));
+    chmodSync(join(killShimDir, "kill"), 0o755);
+    const verdict19 = shell("s19-pid-verdict.sh", buildBlock, [
+        'echo "hidden=$(clawdline_lease_pid_verdict 4242)"',
+        'echo "gone=$(clawdline_lease_pid_verdict 4343)"',
+        'echo "unknown=$(clawdline_lease_pid_verdict 4444)"',
+    ].join("\n"));
+    const r19Verdict = run(verdict19, { PATH: `${killShimDir}:${process.env.PATH}` });
+    check("build.sh treats a hidden/EPERM holder as alive and only ESRCH as gone",
+          /hidden=alive/.test(r19Verdict.all) && /gone=gone/.test(r19Verdict.all));
+    check("and unfamiliar holder evidence remains unknown instead of opening takeover",
+          /unknown=unknown/.test(r19Verdict.all)
+            && !/ps -p "\$pid" -p 1/.test(buildBlock));
+
     // -----------------------------------------------------------------------------------------
     // 20. **No lock, no compile**, which is the whole of what the acquire path promises now that
     //     there is no broker in front of it.
@@ -1348,8 +1377,8 @@ try {
     //     reader and that queue are gone; the promise they were guarding is not, and it now rests
     //     on two lines that have to stay in this order.
     const acquireCall = buildScript.indexOf("\nclawdline_lease_acquire || exit 1\n");
-    const compileCall = buildScript.indexOf("\nswiftc \\\n");
-    check("build.sh takes the lock before swiftc, and a failure to take it ends the build",
+    const compileCall = buildScript.indexOf("\nswift build \\\n");
+    check("build.sh takes the lock before SwiftPM, and a failure to take it ends the build",
           acquireCall > 0 && compileCall > acquireCall);
 
     // -----------------------------------------------------------------------------------------

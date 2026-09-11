@@ -1769,11 +1769,11 @@ assert.match(cloudBridgeSwift,
     /case "shell-kill":[\s\S]*?Set\(body\.keys\) == \["type", "session", "request", "shell"\][\s\S]*?command = \.shellKill\(session: session, shell: shell\)\s+commandReply = \(session, "action:" \+ request\)/,
     "the Mac decoder admits exactly the stop shape and answers on the action the panel waits for");
 assert.match(cloudBridgeSwift,
-    /guard readLevelCommand \|\| allowCloudCommands\(\) else \{[\s\S]*?publishCommandRefusal[\s\S]*?status: 403,[\s\S]*?code: "cloud_commands_disabled"/,
-    "the Mac publishes a typed disabled refusal whenever the action identity is safe to answer");
+    /guard readLevelCommand \|\| allowCloudCommands\(\) else \{[\s\S]*?enqueueCommandRefusal[\s\S]*?status: 403,[\s\S]*?code: "cloud_commands_disabled"/,
+    "the Mac enqueues a typed disabled refusal whenever the action identity is safe to answer");
 assert.match(cloudBridgeSwift,
-    /case "shell-kill":[\s\S]*?else \{[\s\S]*?publishCommandRefusal[\s\S]*?status: 400,[\s\S]*?code: "malformed_command"/,
-    "the shell-kill decoder publishes an identifiable malformed refusal instead of timing out");
+    /case "shell-kill":[\s\S]*?else \{[\s\S]*?enqueueCommandRefusal[\s\S]*?status: 400,[\s\S]*?code: "malformed_command"/,
+    "the shell-kill decoder enqueues an identifiable malformed refusal instead of timing out");
 assert.match(cloudRouteSwift,
     /case \.shellKill\(let session, let shell\):\s+route = "\/v1\/sessions\/\\\(Self\.segment\(session\)\)\/shells\/\\\(Self\.segment\(shell\)\)\/kill"/,
     "and maps it to the existing named kill route, each id one escaped segment");

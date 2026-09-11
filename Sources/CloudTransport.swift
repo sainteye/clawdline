@@ -202,6 +202,289 @@ struct CloudInboundCommand: Equatable, Sendable {
     let commandClass: CloudEnvelopeClass
     let sender: String
     let plaintext: Data
+
+    /// HTTP-equivalent idempotency identity for an admitted command. Capacity refusal is terminal
+    /// for its sequence; a later request receives a new sequence and therefore a new identity.
+    var idempotencyKey: String { "cloud:\(sender):\(sequence)" }
+
+    /// Retained variable-width bytes charged to the ingress owner. Scalar fields have fixed
+    /// storage; channel, sender and plaintext are the command's variable memory debt.
+    var ingressChargedBytes: Int {
+        let (names, namesOverflow) = channel.utf8.count.addingReportingOverflow(sender.utf8.count)
+        let (total, totalOverflow) = names.addingReportingOverflow(plaintext.count)
+        return namesOverflow || totalOverflow ? Int.max : total
+    }
+}
+
+struct CloudInboundCommandQueueLimits: Equatable, Sendable {
+    /// Reuses the already approved application-wide terminal admission depth from Plan-v4.
+    static let defaultMaximumCount = 8
+    /// One 32 MiB retained-variable-width budget across the pending FIFO.
+    static let defaultMaximumChargedBytes = 32 * 1024 * 1024
+    /// Fail closed at the relay's existing per-envelope content ceiling after authenticated
+    /// decrypt. The retained charge still includes this plaintext plus channel and sender bytes.
+    static let defaultMaximumPlaintextBytes = 16 * 1024 * 1024
+
+    let maximumCount: Int
+    let maximumChargedBytes: Int
+    let maximumPlaintextBytes: Int
+
+    init(
+        maximumCount: Int = Self.defaultMaximumCount,
+        maximumChargedBytes: Int = Self.defaultMaximumChargedBytes,
+        maximumPlaintextBytes: Int = Self.defaultMaximumPlaintextBytes
+    ) {
+        precondition(maximumCount > 0)
+        precondition(maximumChargedBytes > 0)
+        precondition(maximumPlaintextBytes > 0)
+        self.maximumCount = maximumCount
+        self.maximumChargedBytes = maximumChargedBytes
+        self.maximumPlaintextBytes = maximumPlaintextBytes
+    }
+}
+
+enum CloudInboundAdmissionRefusalReason: String, CaseIterable, Error, Hashable, Sendable {
+    case countCap = "count_cap"
+    case chargedByteCap = "charged_byte_cap"
+    case plaintextCap = "plaintext_cap"
+    case finished = "finished"
+}
+
+struct CloudInboundCommandQueueMetrics: Equatable, Sendable {
+    let maximumCount: Int
+    let maximumChargedBytes: Int
+    let maximumPlaintextBytes: Int
+    let currentCount: Int
+    let currentChargedBytes: Int
+    let peakCount: Int
+    let peakChargedBytes: Int
+    let admittedTotal: UInt64
+    let deliveredTotal: UInt64
+    let droppedInvalidTotal: UInt64
+    let refusalTotals: [CloudInboundAdmissionRefusalReason: UInt64]
+    let refusedChargedBytes: UInt64
+    let oldestWaitMilliseconds: UInt64
+}
+
+struct CloudInboundAdmissionRefusal: Sendable {
+    let command: CloudInboundCommand
+    let reason: CloudInboundAdmissionRefusalReason
+    let metrics: CloudInboundCommandQueueMetrics
+}
+
+/// A single-consumer command sequence backed by the explicit ingress owner below. This replaces
+/// AsyncStream's opaque, formerly unbounded buffer so dequeue is observable and charged bytes can
+/// be released at the exact handoff boundary.
+struct CloudInboundCommandStream: AsyncSequence, Sendable {
+    typealias Element = CloudInboundCommand
+
+    struct AsyncIterator: AsyncIteratorProtocol {
+        fileprivate let owner: CloudInboundCommandQueue
+
+        mutating func next() async -> CloudInboundCommand? {
+            await owner.next()
+        }
+    }
+
+    fileprivate let owner: CloudInboundCommandQueue
+
+    func makeAsyncIterator() -> AsyncIterator { AsyncIterator(owner: owner) }
+}
+
+/// The one owner of Cloud command ingress count, charged bytes, peaks, drops and refusals.
+/// Operations inspect at most `maximumCount` rows, so admission/dequeue work is bounded too.
+final class CloudInboundCommandQueue: @unchecked Sendable {
+    private struct Pending {
+        let command: CloudInboundCommand
+        let chargedBytes: Int
+        let admittedAtMilliseconds: UInt64
+    }
+
+    private let lock = NSLock()
+    private let limits: CloudInboundCommandQueueLimits
+    private let nowMilliseconds: @Sendable () -> UInt64
+    private var pending: [Pending] = []
+    private var waiters: [UUID: CheckedContinuation<CloudInboundCommand?, Never>] = [:]
+    private var waiterOrder: [UUID] = []
+    private var cancelledWaiters: Set<UUID> = []
+    private var finished = false
+    private var currentChargedBytes = 0
+    private var peakCount = 0
+    private var peakChargedBytes = 0
+    private var admittedTotal: UInt64 = 0
+    private var deliveredTotal: UInt64 = 0
+    private var droppedInvalidTotal: UInt64 = 0
+    private var refusalTotals: [CloudInboundAdmissionRefusalReason: UInt64] = [:]
+    private var refusedChargedBytes: UInt64 = 0
+
+    init(
+        limits: CloudInboundCommandQueueLimits = CloudInboundCommandQueueLimits(),
+        nowMilliseconds: @escaping @Sendable () -> UInt64 = {
+            UInt64(ProcessInfo.processInfo.systemUptime * 1_000)
+        }
+    ) {
+        self.limits = limits
+        self.nowMilliseconds = nowMilliseconds
+    }
+
+    var stream: CloudInboundCommandStream { CloudInboundCommandStream(owner: self) }
+
+    func admit(_ command: CloudInboundCommand) -> Result<Void, CloudInboundAdmissionRefusalReason> {
+        let chargedBytes = command.ingressChargedBytes
+        var resumed: CheckedContinuation<CloudInboundCommand?, Never>?
+        lock.lock()
+        let refusal: CloudInboundAdmissionRefusalReason?
+        if finished {
+            refusal = .finished
+        } else if command.plaintext.count > limits.maximumPlaintextBytes {
+            refusal = .plaintextCap
+        } else if pending.count >= limits.maximumCount {
+            refusal = .countCap
+        } else {
+            let (candidateBytes, overflow) = currentChargedBytes.addingReportingOverflow(chargedBytes)
+            refusal = overflow || candidateBytes > limits.maximumChargedBytes
+                ? .chargedByteCap : nil
+        }
+        if let refusal {
+            refusalTotals[refusal] = Self.addingClamped(refusalTotals[refusal] ?? 0, 1)
+            refusedChargedBytes = Self.addingClamped(
+                refusedChargedBytes, UInt64(clamping: chargedBytes)
+            )
+            lock.unlock()
+            return .failure(refusal)
+        }
+
+        admittedTotal = Self.addingClamped(admittedTotal, 1)
+        peakCount = max(peakCount, pending.count + 1)
+        let candidatePeakBytes = currentChargedBytes.addingReportingOverflow(chargedBytes)
+        if !candidatePeakBytes.overflow {
+            peakChargedBytes = max(peakChargedBytes, candidatePeakBytes.partialValue)
+        }
+        while let id = waiterOrder.first {
+            waiterOrder.removeFirst()
+            if let continuation = waiters.removeValue(forKey: id) {
+                deliveredTotal = Self.addingClamped(deliveredTotal, 1)
+                resumed = continuation
+                break
+            }
+        }
+        if resumed == nil {
+            pending.append(Pending(
+                command: command, chargedBytes: chargedBytes,
+                admittedAtMilliseconds: nowMilliseconds()
+            ))
+            currentChargedBytes += chargedBytes
+        }
+        lock.unlock()
+        resumed?.resume(returning: command)
+        return .success(())
+    }
+
+    func recordInvalidDrop() -> UInt64 {
+        lock.lock()
+        droppedInvalidTotal = Self.addingClamped(droppedInvalidTotal, 1)
+        let total = droppedInvalidTotal
+        lock.unlock()
+        return total
+    }
+
+    func snapshot() -> CloudInboundCommandQueueMetrics {
+        lock.lock()
+        let now = nowMilliseconds()
+        let oldest = pending.first.map {
+            now >= $0.admittedAtMilliseconds ? now - $0.admittedAtMilliseconds : 0
+        } ?? 0
+        let result = CloudInboundCommandQueueMetrics(
+            maximumCount: limits.maximumCount,
+            maximumChargedBytes: limits.maximumChargedBytes,
+            maximumPlaintextBytes: limits.maximumPlaintextBytes,
+            currentCount: pending.count,
+            currentChargedBytes: currentChargedBytes,
+            peakCount: peakCount,
+            peakChargedBytes: peakChargedBytes,
+            admittedTotal: admittedTotal,
+            deliveredTotal: deliveredTotal,
+            droppedInvalidTotal: droppedInvalidTotal,
+            refusalTotals: refusalTotals,
+            refusedChargedBytes: refusedChargedBytes,
+            oldestWaitMilliseconds: oldest
+        )
+        lock.unlock()
+        return result
+    }
+
+    func finish() {
+        lock.lock()
+        finished = true
+        let continuations = waiterOrder.compactMap { waiters.removeValue(forKey: $0) }
+        waiterOrder.removeAll()
+        cancelledWaiters.removeAll()
+        lock.unlock()
+        for continuation in continuations { continuation.resume(returning: nil) }
+    }
+
+    fileprivate func next() async -> CloudInboundCommand? {
+        if Task.isCancelled { return nil }
+        let id = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                registerWaiter(id: id, continuation: continuation)
+            }
+        } onCancel: {
+            self.cancelWaiter(id: id)
+        }
+    }
+
+    private func registerWaiter(
+        id: UUID, continuation: CheckedContinuation<CloudInboundCommand?, Never>
+    ) {
+        lock.lock()
+        if cancelledWaiters.remove(id) != nil {
+            lock.unlock()
+            continuation.resume(returning: nil)
+            return
+        }
+        if !pending.isEmpty {
+            let item = pending.removeFirst()
+            currentChargedBytes -= item.chargedBytes
+            deliveredTotal = Self.addingClamped(deliveredTotal, 1)
+            lock.unlock()
+            continuation.resume(returning: item.command)
+            return
+        }
+        if finished {
+            lock.unlock()
+            continuation.resume(returning: nil)
+            return
+        }
+        // Production has one bridge consumer. Refuse a competing iterator instead of allowing an
+        // internal misuse to turn continuation waiters into a second unbounded queue.
+        if !waiterOrder.isEmpty {
+            lock.unlock()
+            continuation.resume(returning: nil)
+            return
+        }
+        waiters[id] = continuation
+        waiterOrder.append(id)
+        lock.unlock()
+    }
+
+    private func cancelWaiter(id: UUID) {
+        lock.lock()
+        if let continuation = waiters.removeValue(forKey: id) {
+            waiterOrder.removeAll { $0 == id }
+            lock.unlock()
+            continuation.resume(returning: nil)
+        } else {
+            cancelledWaiters.insert(id)
+            lock.unlock()
+        }
+    }
+
+    private static func addingClamped(_ value: UInt64, _ amount: UInt64) -> UInt64 {
+        let (sum, overflow) = value.addingReportingOverflow(amount)
+        return overflow ? .max : sum
+    }
 }
 
 protocol CloudTransportSocket: AnyObject, Sendable {
@@ -463,8 +746,11 @@ final class CloudURLSessionSocket: CloudStartedTransportSocket, @unchecked Senda
 /// and logging are all injected. Failed inbound envelopes never expose ciphertext or plaintext.
 actor CloudTransport {
     typealias Logger = @Sendable (String) -> Void
+    /// Called inline from the sole receive loop, so implementations must only offer the refusal to
+    /// a bounded lane and return. Publication and any other suspension belong to that lane.
+    typealias InboundRefusalHandler = @Sendable (CloudInboundAdmissionRefusal) -> Void
 
-    nonisolated let commands: AsyncStream<CloudInboundCommand>
+    nonisolated let commands: CloudInboundCommandStream
     /// Emits once after every successful initial or reconnect handshake. Snapshot owners use the
     /// monotonically increasing value to force a fresh full publication for the new relay state.
     /// The buffer coalesces to the newest value: an unconsumed older generation describes relay
@@ -484,7 +770,7 @@ actor CloudTransport {
     private let backoffResetAfter: TimeInterval
     private let authenticationTimeout: TimeInterval
     private let receiveTimeout: TimeInterval
-    private let commandContinuation: AsyncStream<CloudInboundCommand>.Continuation
+    private let commandQueue: CloudInboundCommandQueue
     private let readyContinuation: AsyncStream<UInt64>.Continuation
 
     private var state: CloudTransportState = .idle
@@ -496,9 +782,9 @@ actor CloudTransport {
     private var receiveTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var generation = 0
-    private var droppedInbound = 0
     private var droppedReadyGenerations = 0
     private var sequenceTracker = CloudSequenceTracker()
+    private var inboundRefusalHandler: InboundRefusalHandler?
     private var pendingByChannel: [String: CloudEnvelope] = [:]
     /// The generation whose socket `refreshToken` closed on purpose. Read once, by the reconnect
     /// loop, so the retry it triggers is named for what caused it rather than for how it arrived.
@@ -516,6 +802,7 @@ actor CloudTransport {
         backoffResetAfter: TimeInterval = 30,
         authenticationTimeout: TimeInterval = 15,
         receiveTimeout: TimeInterval = 90,
+        inboundQueueLimits: CloudInboundCommandQueueLimits = CloudInboundCommandQueueLimits(),
         logger: @escaping Logger = { _ in }
     ) {
         self.relayBaseURL = relayBaseURL
@@ -530,9 +817,9 @@ actor CloudTransport {
         self.authenticationTimeout = max(0.01, authenticationTimeout)
         self.receiveTimeout = max(0.01, receiveTimeout)
         self.logger = logger
-        var continuation: AsyncStream<CloudInboundCommand>.Continuation!
-        commands = AsyncStream { continuation = $0 }
-        commandContinuation = continuation
+        let commandQueue = CloudInboundCommandQueue(limits: inboundQueueLimits)
+        self.commandQueue = commandQueue
+        commands = commandQueue.stream
         var readyContinuation: AsyncStream<UInt64>.Continuation!
         readyGenerations = AsyncStream(bufferingPolicy: .bufferingNewest(1)) {
             readyContinuation = $0
@@ -579,8 +866,15 @@ actor CloudTransport {
     }
 
     func currentState() -> CloudTransportState { state }
-    func droppedInboundCount() -> Int { droppedInbound }
+    func droppedInboundCount() -> Int {
+        Int(clamping: commandQueue.snapshot().droppedInvalidTotal)
+    }
     func droppedReadyGenerationCount() -> Int { droppedReadyGenerations }
+    func inboundQueueMetrics() -> CloudInboundCommandQueueMetrics { commandQueue.snapshot() }
+
+    func setInboundRefusalHandler(_ handler: InboundRefusalHandler?) {
+        inboundRefusalHandler = handler
+    }
 
     func shutdown() async {
         guard state != .shutDown else { return }
@@ -600,7 +894,8 @@ actor CloudTransport {
         cachedToken = nil
         rotatingGeneration = nil
         pendingByChannel.removeAll()
-        commandContinuation.finish()
+        inboundRefusalHandler = nil
+        commandQueue.finish()
         readyContinuation.finish()
         _ = await connector?.result
         if let task { await task.value }
@@ -884,22 +1179,47 @@ actor CloudTransport {
             masterSecret: secret,
             publicKeyForSender: { paired[$0] }
         )
-        guard sequenceTracker.accept(sender: envelope.sender, sequence: envelope.seq) else {
+        if let highest = sequenceTracker.highestSequence(for: envelope.sender),
+           envelope.seq <= highest {
             throw CloudEnvelopeError.replay
         }
-        commandContinuation.yield(CloudInboundCommand(
+        let command = CloudInboundCommand(
             channel: envelope.ch,
             sequence: envelope.seq,
             timestamp: envelope.ts,
             commandClass: envelope.envelopeClass,
             sender: envelope.sender,
             plaintext: plaintext
-        ))
+        )
+        switch commandQueue.admit(command) {
+        case .success:
+            guard sequenceTracker.accept(sender: envelope.sender, sequence: envelope.seq) else {
+                preconditionFailure("Cloud inbound replay cursor changed outside its actor")
+            }
+        case .failure(let reason):
+            refuseInbound(command, reason: reason)
+        }
     }
 
     private func dropInbound(reason: String) {
-        droppedInbound += 1
-        logger("CloudTransport dropped inbound envelope reason=\(reason) count=\(droppedInbound)")
+        let count = commandQueue.recordInvalidDrop()
+        logger("CloudTransport dropped inbound envelope reason=\(reason) count=\(count)")
+    }
+
+    private func refuseInbound(
+        _ command: CloudInboundCommand, reason: CloudInboundAdmissionRefusalReason
+    ) {
+        let metrics = commandQueue.snapshot()
+        logger("CloudTransport refused authenticated inbound command reason=\(reason.rawValue) "
+            + "current_count=\(metrics.currentCount) current_charged_bytes=\(metrics.currentChargedBytes) "
+            + "refused_total=\(metrics.refusalTotals[reason, default: 0])")
+        guard let inboundRefusalHandler else {
+            logger("CloudTransport authenticated inbound refusal has no reply handler")
+            return
+        }
+        inboundRefusalHandler(CloudInboundAdmissionRefusal(
+            command: command, reason: reason, metrics: metrics
+        ))
     }
 
     private func reason(for error: Error) -> String {

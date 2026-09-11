@@ -144,6 +144,8 @@ clawdline_library_sources=(Sources/Library.swift)
 clawdline_test_sources=(Tests/main.swift)
 clawdline_suite_jobs_flags=(-j 1)
 clawdline_swift_test_target=arm64-apple-macos13.0
+clawdline_linux_package_focused_only=0
+clawdline_test_profile=infrastructure
 BIN=${JSON.stringify(output)}
 progress_phase() { :; }
 clawdline_suite_lock_phase() { :; }

@@ -153,11 +153,13 @@ written down. Both are asserted now.
 The cost is the typecheck going back from 7 s to 34 s: **27 seconds, once per run**, measured in the
 sweep above. It buys back the property that only one compile at a time is wide on this machine.
 
-## `build.sh` is a different compile, and it was measured separately
+## Historical flat-`swiftc` `build.sh` measurements
 
-Nothing above covers it. `build.sh` compiles the production sources with `-O`, and `-O` is where the
-LLVM pass pipeline runs — the phase that reached 46 GiB on the old `CloudAccountTests`. A default
-proposed for it from `-Onone` readings would be a guess wearing someone else's evidence.
+The measurements below describe the former `build.sh` path, which compiled every production source
+in one flat `swiftc -O` invocation. W3-2 replaced that path with `swift build --product Clawdline -c
+release`; `build.sh` now wraps the resulting SwiftPM product. These numbers remain useful history
+for the machine-lock and job-ceiling decision, but they are not a current SwiftPM release footprint.
+The current product graph needs its own build receipt before any peak-memory comparison is claimed.
 
 103 production sources, same instruments, same held lock, on the tree that removes the broker lease:
 
@@ -168,15 +170,16 @@ proposed for it from `-Onone` readings would be a guess wearing someone else's e
 | 8 | **37 s** | 0.400 GiB | 1.336 GiB |
 | 14 | 33 s | 0.410 GiB | 2.064 GiB |
 
-**Every frontend here is about half of what one costs in `test.sh`, and that is not a property of
-`-O`.** The expensive files are the test suites, and this compile has none of them. So `-O` being
-the phase that once blew up says nothing about how much room this compile needs: it needs less than
-the other one. Fourteen buys four seconds over eight and spends every core to do it.
+**In this historical flat compile, every frontend was about half of what one cost in `test.sh`; that
+is not evidence about the new SwiftPM release/WMO invocation.** The old compile omitted the test
+suites, and fourteen jobs bought only four seconds over eight while spending every core. W3-2 keeps
+the shared machine lock and the same bounded job default, but deliberately does not project these
+old per-frontend measurements onto a different compiler graph.
 
 This became worth measuring rather than academic because the broker heavy-compile lease was removed
-from the Swift tree while this work was in flight. `build.sh` used to get a `budget.parallelism`
-from it; with the lease gone, `CLAWDLINE_SUITE_JOBS` is its only source and unset meant no flag,
-which on this machine is one job. It now derives the same `min(8, hw.ncpu)` as `test.sh`.
+from the Swift tree while this work was in flight. The job ceiling and machine-wide lock remain
+shared policy for the SwiftPM wrapper; only the claimed footprint is deferred until the new command
+is measured directly.
 
 **One rule, deliberately written twice.** Both scripts carry the same marked ceiling block, and
 `Tests/test-sh-lock.mjs` lifts both and drives them against the same five stand-in `sysctl`

@@ -1,0 +1,291 @@
+import Foundation
+import ClawdlineApplication
+
+enum LinuxCompositionError: Error, Equatable {
+    case badArguments(String)
+    case configuration(String)
+    case secret(String)
+    case runtimeUnavailable
+    case internalFailure
+
+    var code: String {
+        switch self {
+        case .badArguments: return "bad_arguments"
+        case .configuration: return "invalid_configuration"
+        case .secret: return "invalid_secret_file"
+        case .runtimeUnavailable: return "w4_runtime_not_composed"
+        case .internalFailure: return "internal_failure"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .badArguments(let message), .configuration(let message), .secret(let message):
+            return message
+        case .runtimeUnavailable:
+            return "The W3 Linux composition is intentionally not a daemon yet; W4 owns terminal, process, persistence, transport, and listener adapters."
+        case .internalFailure:
+            return "unexpected startup failure"
+        }
+    }
+}
+
+private enum LinuxProtectedInputKind {
+    case configuration
+    case secret
+
+    var maximumBytes: Int {
+        switch self {
+        case .configuration: return 64 * 1024
+        case .secret: return 4096
+        }
+    }
+
+    func error(_ message: String) -> LinuxCompositionError {
+        switch self {
+        case .configuration: return .configuration(message)
+        case .secret: return .secret(message)
+        }
+    }
+}
+
+/// Opens, validates, and reads a protected input through one descriptor. The pathname is never
+/// reopened after validation, so replacing it cannot redirect the read to another inode.
+private enum LinuxProtectedInput {
+    static func load(from path: String, kind: LinuxProtectedInputKind) throws -> Data {
+        guard path.hasPrefix("/") else {
+            throw kind.error("protected input path must be absolute")
+        }
+
+        let descriptor = path.withCString {
+            open($0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        }
+        guard descriptor >= 0 else {
+            throw kind.error("protected input cannot be opened safely")
+        }
+        defer { _ = close(descriptor) }
+
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0 else {
+            throw kind.error("protected input metadata is unavailable")
+        }
+        guard metadata.st_mode & S_IFMT == S_IFREG else {
+            throw kind.error("protected input must be a regular file, not a symlink or device")
+        }
+
+        let effectiveUID = geteuid()
+        let mode = metadata.st_mode & 0o777
+        switch kind {
+        case .configuration:
+            guard metadata.st_uid == effectiveUID || metadata.st_uid == 0 else {
+                throw kind.error("config file owner must be the service user or root")
+            }
+            guard mode & 0o022 == 0 else {
+                throw kind.error("config file must not be group- or world-writable")
+            }
+        case .secret:
+            guard metadata.st_uid == effectiveUID else {
+                throw kind.error("secret file owner must be the service user")
+            }
+            guard mode == 0o600 else {
+                throw kind.error("secret file permissions must be exactly 0600")
+            }
+        }
+
+        guard metadata.st_size > 0, metadata.st_size <= kind.maximumBytes else {
+            throw kind.error("protected input must contain 1...\(kind.maximumBytes) bytes")
+        }
+
+        var buffer = [UInt8](repeating: 0, count: kind.maximumBytes + 1)
+        var count = 0
+        while count <= kind.maximumBytes {
+            let result = buffer.withUnsafeMutableBytes { rawBuffer -> Int in
+                let start = rawBuffer.baseAddress!.advanced(by: count)
+                return read(descriptor, start, rawBuffer.count - count)
+            }
+            guard result >= 0 else {
+                throw kind.error("protected input is unreadable")
+            }
+            if result == 0 { break }
+            count += result
+            if count > kind.maximumBytes {
+                throw kind.error("protected input exceeds \(kind.maximumBytes) bytes")
+            }
+        }
+        guard count > 0, count == metadata.st_size else {
+            throw kind.error("protected input changed while it was being read")
+        }
+        return Data(buffer.prefix(count))
+    }
+}
+
+struct LinuxListenConfiguration: Codable, Equatable {
+    let host: String
+    let port: Int
+}
+
+struct LinuxDaemonConfiguration: Codable, Equatable {
+    static let schemaVersion = 1
+
+    let version: Int
+    let listen: LinuxListenConfiguration
+    let stateDirectory: String
+    let secretFile: String
+
+    static func load(from path: String) throws -> LinuxDaemonConfiguration {
+        let bytes: Data
+        do {
+            bytes = try LinuxProtectedInput.load(from: path, kind: .configuration)
+        } catch let error as LinuxCompositionError {
+            throw error
+        }
+
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: bytes)
+        } catch {
+            throw LinuxCompositionError.configuration("config file is not valid JSON")
+        }
+        guard let fields = object as? [String: Any] else {
+            throw LinuxCompositionError.configuration("config root must be an object")
+        }
+        let expectedFields = Set(["version", "listen", "stateDirectory", "secretFile"])
+        guard Set(fields.keys) == expectedFields else {
+            throw LinuxCompositionError.configuration("config fields must be exactly version, listen, stateDirectory, and secretFile")
+        }
+        guard let listen = fields["listen"] as? [String: Any],
+              Set(listen.keys) == Set(["host", "port"]) else {
+            throw LinuxCompositionError.configuration("listen fields must be exactly host and port")
+        }
+
+        let configuration: LinuxDaemonConfiguration
+        do {
+            configuration = try JSONDecoder().decode(LinuxDaemonConfiguration.self, from: bytes)
+        } catch {
+            throw LinuxCompositionError.configuration("config values have invalid types")
+        }
+        guard configuration.version == schemaVersion else {
+            throw LinuxCompositionError.configuration("unsupported config version \(configuration.version)")
+        }
+        guard configuration.listen.host == "127.0.0.1" || configuration.listen.host == "::1" else {
+            throw LinuxCompositionError.configuration("W3 accepts only a loopback listen host")
+        }
+        guard (1...65535).contains(configuration.listen.port) else {
+            throw LinuxCompositionError.configuration("listen port must be between 1 and 65535")
+        }
+        guard configuration.stateDirectory.hasPrefix("/"), configuration.secretFile.hasPrefix("/") else {
+            throw LinuxCompositionError.configuration("stateDirectory and secretFile must be absolute")
+        }
+        guard configuration.stateDirectory != "/", configuration.secretFile != "/" else {
+            throw LinuxCompositionError.configuration("stateDirectory and secretFile may not be the filesystem root")
+        }
+        return configuration
+    }
+}
+
+enum LinuxProtectedSecretFile {
+    static let maximumBytes = 4096
+
+    static func load(from path: String) throws -> Data {
+        try LinuxProtectedInput.load(from: path, kind: .secret)
+    }
+}
+
+struct LinuxUnsupportedCapability: Codable, Equatable {
+    let capability: String
+    let owner: String
+    let refusal: String
+}
+
+struct LinuxRuntimeIdentity: Codable, Equatable {
+    static var current: LinuxRuntimeIdentity { LinuxRuntimeIdentity(
+        service: "clawdline-daemon",
+        executable: "ClawdlineLinux",
+        identityKind: "diagnostic",
+        buildIdentity: ProcessInfo.processInfo.environment["CLAWDLINE_BUILD_IDENTITY"] ?? "unknown",
+        configurationSchemaVersion: LinuxDaemonConfiguration.schemaVersion,
+        ready: false,
+        readinessCode: "w4_runtime_not_composed",
+        applicationRefusalCode: HostCapabilityUnavailable.code,
+        unsupportedCapabilities: HostCapability.allCases.map {
+            LinuxUnsupportedCapability(capability: $0.rawValue, owner: "W4-1", refusal: HostCapabilityUnavailable.code)
+        }
+    ) }
+
+    let service: String
+    let executable: String
+    let identityKind: String
+    let buildIdentity: String
+    let configurationSchemaVersion: Int
+    let ready: Bool
+    let readinessCode: String
+    let applicationRefusalCode: String
+    let unsupportedCapabilities: [LinuxUnsupportedCapability]
+}
+
+struct LinuxConfigurationReceipt: Codable {
+    let configuration: String
+    let secretBytes: Int
+    let identity: LinuxRuntimeIdentity
+}
+
+struct LinuxErrorEnvelope: Codable {
+    struct Body: Codable {
+        let code: String
+        let message: String
+    }
+
+    let error: Body
+}
+
+enum LinuxCompositionCommand {
+    case health
+    case checkConfig(String)
+    case run(String)
+
+    static func parse(_ arguments: [String]) throws -> LinuxCompositionCommand {
+        if arguments == ["health"] { return .health }
+        guard arguments.count == 3, arguments[1] == "--config" else {
+            throw LinuxCompositionError.badArguments("usage: ClawdlineLinux health | check-config --config /absolute/path | run --config /absolute/path")
+        }
+        switch arguments[0] {
+        case "check-config": return .checkConfig(arguments[2])
+        case "run": return .run(arguments[2])
+        default: throw LinuxCompositionError.badArguments("unknown command \(arguments[0])")
+        }
+    }
+}
+
+enum LinuxComposition {
+    static func execute(arguments: [String]) throws -> Data {
+        switch try LinuxCompositionCommand.parse(arguments) {
+        case .health:
+            return try encode(LinuxRuntimeIdentity.current)
+        case .checkConfig(let path):
+            let config = try LinuxDaemonConfiguration.load(from: path)
+            let secret = try LinuxProtectedSecretFile.load(from: config.secretFile)
+            return try encode(LinuxConfigurationReceipt(
+                configuration: "accepted_not_started",
+                secretBytes: secret.count,
+                identity: .current
+            ))
+        case .run(let path):
+            let config = try LinuxDaemonConfiguration.load(from: path)
+            _ = try LinuxProtectedSecretFile.load(from: config.secretFile)
+            throw LinuxCompositionError.runtimeUnavailable
+        }
+    }
+
+    static func errorData(_ error: LinuxCompositionError) -> Data {
+        let envelope = LinuxErrorEnvelope(error: .init(code: error.code, message: error.message))
+        return (try? encode(envelope)) ?? Data("{\"error\":{\"code\":\"encoding_failed\"}}\n".utf8)
+    }
+
+    private static func encode<T: Encodable>(_ value: T) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        var bytes = try encoder.encode(value)
+        bytes.append(0x0a)
+        return bytes
+    }
+}

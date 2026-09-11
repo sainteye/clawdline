@@ -45,7 +45,9 @@ const code = lines.filter(l => !/^\s*#/.test(l));
 // deleting test.sh's `if [ "$status" -ne 0 ]; then exit "$status"` left all five checks green —
 // and that test.sh reports a red suite as `exit 0`. The guard has to run the deciding lines, or it
 // guards the plumbing and not the promise.
-const first = code.findIndex(l => /\|\s*tee\s+"\$LOG"/.test(l));
+// SwiftPM compilation may also stream into the same log.  The block below guards the test
+// binary's pipeline specifically, so anchor it on the environment passed only to that binary.
+const first = code.findIndex(l => /CLAWDLINE_REMOTE_DIR=.*\|\s*tee\s+"\$LOG"/.test(l));
 const opened = first < 0 ? -1 : code.slice(0, first).map(l => l.trim()).lastIndexOf("set +e");
 // The end is the last `fi` of the run of status branches that follows the pipeline, found by
 // walking forward while the lines are still part of that decision.

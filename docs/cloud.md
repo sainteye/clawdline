@@ -117,6 +117,39 @@ with `400 malformed_command`. Neither refusal reaches the command router. A non-
 outside this reply contract and is rejected without minting an action-channel identity; the shipped
 browser sends `shell-kill` only as `ctl`.
 
+**Authenticated command ingress is bounded before execution.** `CloudInboundCommandQueue` is the
+single owner of the pending FIFO and its accounting. Production limits are eight retained commands
+and 32 MiB of charged variable-width bytes; admission also enforces a 16 MiB post-decrypt plaintext
+ceiling matching the Relay content budget. A charge is exactly `plaintext.count +
+channel.utf8.count + sender.utf8.count`, not sealed frame bytes or process RSS. Its snapshot reports
+all three configured limits, current and peak count and charge, admitted and delivered totals,
+invalid drops, per-reason refusals, refused charged bytes and oldest pending wait. These are source
+budgets and runtime counters for W6 measurement, not a claim that the values are load-tested.
+
+The receive path authenticates and decrypts first, checks replay next, and advances the replay
+cursor only after this owner admits the command. Count, aggregate charged-byte and single-command
+overflow return `cloud_ingress_busy` (HTTP-equivalent status 429) through the existing encrypted
+request-scoped command or read answer only when the plaintext has the same safe bounded identity
+the bridge normally accepts. The refusal path applies the exact machine channel and remote-write
+gates first, returning `wrong_machine` or `cloud_commands_disabled` instead of an impossible retry
+instruction. No safe identity means no invented reply channel. Capacity refusal is terminal for
+that authenticated sequence and does not fence a later sequence; after capacity drains, a new
+request can be admitted. The existing browser and Relay do not retry the same envelope bytes, and
+R-1 does not add such a protocol. Thus a refusal is not an admission, an admission is not execution,
+encrypted publication is not relay ACK, and none of them asserts human observation.
+
+The command FIFO survives WebSocket reconnect and token rotation for the life of the transport; it
+is never coalesced with snapshots and an admitted row is never evicted for a newer command. The
+bridge's deliberately serial consumer may suspend in routing while receive, ready-generation and
+outbound publication actor turns remain independently schedulable. Refusal answers—including
+preflight 403 and read-lane busy answers—enter one serial lane capped at eight outstanding items.
+Offering never waits for publication; each item has a one-second deadline, and current/peak,
+admitted, completed, timed-out, full-drop and cancellation totals expose its debt. A timed-out
+publication is cancelled and remains charged until its task exits, so repeated stalls cannot create
+unbounded work or block receive-loop ping handling. Shutdown is an explicit lifecycle boundary:
+admission then returns typed `finished` without advancing replay or accepted metrics. W5 still owns
+process-restart durability and durable result/spool wiring.
+
 **The `orch/` snapshot carries three things, and two of them were added because their absence
 was invisible.** `RemoteServer.orchestratorSnapshot()` is the one body both publishers send — the
 local `orchestrator` event and the cloud envelope — and it holds `tasks`, `schedules` and `app`.

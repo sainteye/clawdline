@@ -3,10 +3,11 @@ import Foundation
 /// The app-facing surface of `CloudTransport`. Keeping the concrete actor behind this protocol
 /// makes the bridge testable without a relay, Keychain, or terminal process.
 protocol CloudTransporting: Sendable {
-    var commands: AsyncStream<CloudInboundCommand> { get }
+    var commands: CloudInboundCommandStream { get }
     var readyGenerations: AsyncStream<UInt64> { get }
     func connect(role: CloudTransportRole) async throws
     func publish(envelope: CloudEnvelope) async throws
+    func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async
     func shutdown() async
 }
 
@@ -340,6 +341,254 @@ final class CloudSnapshotPublicationQueue: @unchecked Sendable {
     }
 }
 
+struct CloudRefusalPublicationQueueMetrics: Equatable, Sendable {
+    let maximumCount: Int
+    let deadlineMilliseconds: UInt64
+    let currentCount: Int
+    let peakCount: Int
+    let admittedTotal: UInt64
+    let completedTotal: UInt64
+    let timedOutTotal: UInt64
+    let droppedFullTotal: UInt64
+    let cancelledTotal: UInt64
+}
+
+/// A refusal has to answer on the encrypted request channel without turning overload into more
+/// unbounded work. Offering is synchronous and constant-time; one worker publishes serially with
+/// a deadline, so neither the transport receive loop nor the command consumer waits for I/O.
+final class CloudRefusalPublicationQueue: @unchecked Sendable {
+    typealias Work = @Sendable () async -> Void
+    enum Outcome: String, Equatable, Sendable {
+        case completed, timedOut = "timed_out", droppedFull = "dropped_full", cancelled
+    }
+    typealias Observer = @Sendable (Outcome, CloudRefusalPublicationQueueMetrics) -> Void
+
+    static let defaultMaximumOutstanding = 8
+    static let defaultDeadlineMilliseconds: UInt64 = 1_000
+
+    private let lock = NSLock()
+    private let maximumCount: Int
+    private let deadlineMilliseconds: UInt64
+    private let observer: Observer
+    private var pending: [Work] = []
+    private var worker: Task<Void, Never>?
+    private var timedOutWork: [UUID: Task<Void, Never>] = [:]
+    private var generation: UInt64 = 0
+    private var active = false
+    private var peakCount = 0
+    private var admittedTotal: UInt64 = 0
+    private var completedTotal: UInt64 = 0
+    private var timedOutTotal: UInt64 = 0
+    private var droppedFullTotal: UInt64 = 0
+    private var cancelledTotal: UInt64 = 0
+
+    init(
+        maximumCount: Int = CloudRefusalPublicationQueue.defaultMaximumOutstanding,
+        deadlineMilliseconds: UInt64 = CloudRefusalPublicationQueue.defaultDeadlineMilliseconds,
+        observer: @escaping Observer = { _, _ in }
+    ) {
+        precondition(maximumCount > 0)
+        precondition((1...60_000).contains(deadlineMilliseconds))
+        self.maximumCount = maximumCount
+        self.deadlineMilliseconds = deadlineMilliseconds
+        self.observer = observer
+    }
+
+    func enqueue(_ work: @escaping Work) {
+        lock.lock()
+        let current = currentCountLocked()
+        guard current < maximumCount else {
+            droppedFullTotal = Self.addingClamped(droppedFullTotal, 1)
+            let metrics = snapshotLocked()
+            lock.unlock()
+            observer(.droppedFull, metrics)
+            return
+        }
+        pending.append(work)
+        admittedTotal = Self.addingClamped(admittedTotal, 1)
+        peakCount = max(peakCount, current + 1)
+        startWorkerLocked()
+        lock.unlock()
+    }
+
+    func snapshot() -> CloudRefusalPublicationQueueMetrics {
+        lock.lock()
+        let metrics = snapshotLocked()
+        lock.unlock()
+        return metrics
+    }
+
+    @discardableResult
+    func cancelAndReset() -> Task<Void, Never>? {
+        lock.lock()
+        generation &+= 1
+        let cancelled = pending.count + (active ? 1 : 0)
+        pending.removeAll()
+        active = false
+        cancelledTotal = Self.addingClamped(cancelledTotal, UInt64(cancelled))
+        let previous = worker
+        worker = nil
+        // Timed-out work may ignore cancellation. Keep it charged across a stop/start cycle until
+        // its task really exits, otherwise repeated lifecycle resets could accumulate unbounded
+        // zombie publications behind an apparently empty lane.
+        let timedOut = Array(timedOutWork.values)
+        let metrics = snapshotLocked()
+        lock.unlock()
+        previous?.cancel()
+        timedOut.forEach { $0.cancel() }
+        if cancelled > 0 { observer(.cancelled, metrics) }
+        return previous
+    }
+
+    private func startWorkerLocked() {
+        guard worker == nil else { return }
+        let ownedGeneration = generation
+        worker = Task { [weak self] in await self?.drain(generation: ownedGeneration) }
+    }
+
+    private func drain(generation ownedGeneration: UInt64) async {
+        while !Task.isCancelled, let work = take(generation: ownedGeneration) {
+            let result = await Self.run(work, deadlineMilliseconds: deadlineMilliseconds)
+            guard let completion = complete(result, generation: ownedGeneration) else { return }
+            observer(result.outcome, completion.metrics)
+            if let id = completion.timedOutID, let task = result.lingeringWork {
+                Task { [weak self] in
+                    await task.value
+                    self?.releaseTimedOutWork(id)
+                }
+            }
+        }
+    }
+
+    private func take(generation ownedGeneration: UInt64) -> Work? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard generation == ownedGeneration, !Task.isCancelled else { return nil }
+        guard !pending.isEmpty else { worker = nil; return nil }
+        active = true
+        return pending.removeFirst()
+    }
+
+    private func complete(
+        _ result: RunResult, generation ownedGeneration: UInt64
+    ) -> Completion? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard generation == ownedGeneration else { return nil }
+        active = false
+        var timedOutID: UUID?
+        switch result.outcome {
+        case .completed: completedTotal = Self.addingClamped(completedTotal, 1)
+        case .timedOut:
+            timedOutTotal = Self.addingClamped(timedOutTotal, 1)
+            if let task = result.lingeringWork {
+                let id = UUID()
+                timedOutWork[id] = task
+                timedOutID = id
+            }
+        case .cancelled: cancelledTotal = Self.addingClamped(cancelledTotal, 1)
+        case .droppedFull: break
+        }
+        return Completion(metrics: snapshotLocked(), timedOutID: timedOutID)
+    }
+
+    private func releaseTimedOutWork(_ id: UUID) {
+        lock.lock()
+        timedOutWork[id] = nil
+        startWorkerLocked()
+        lock.unlock()
+    }
+
+    private func snapshotLocked() -> CloudRefusalPublicationQueueMetrics {
+        CloudRefusalPublicationQueueMetrics(
+            maximumCount: maximumCount,
+            deadlineMilliseconds: deadlineMilliseconds,
+            currentCount: currentCountLocked(),
+            peakCount: peakCount,
+            admittedTotal: admittedTotal,
+            completedTotal: completedTotal,
+            timedOutTotal: timedOutTotal,
+            droppedFullTotal: droppedFullTotal,
+            cancelledTotal: cancelledTotal
+        )
+    }
+
+    private func currentCountLocked() -> Int {
+        pending.count + (active ? 1 : 0) + timedOutWork.count
+    }
+
+    private struct Completion {
+        let metrics: CloudRefusalPublicationQueueMetrics
+        let timedOutID: UUID?
+    }
+
+    private struct RunResult {
+        let outcome: Outcome
+        let lingeringWork: Task<Void, Never>?
+    }
+
+    private final class DeadlineRace: @unchecked Sendable {
+        private let lock = NSLock()
+        private var outcome: Outcome?
+        private var continuation: CheckedContinuation<Outcome, Never>?
+
+        func wait() async -> Outcome {
+            await withCheckedContinuation { continuation in
+                lock.lock()
+                if let outcome {
+                    lock.unlock()
+                    continuation.resume(returning: outcome)
+                } else {
+                    self.continuation = continuation
+                    lock.unlock()
+                }
+            }
+        }
+
+        func resolve(_ outcome: Outcome) {
+            lock.lock()
+            guard self.outcome == nil else { lock.unlock(); return }
+            self.outcome = outcome
+            let continuation = self.continuation
+            self.continuation = nil
+            lock.unlock()
+            continuation?.resume(returning: outcome)
+        }
+    }
+
+    private static func run(
+        _ work: @escaping Work, deadlineMilliseconds: UInt64
+    ) async -> RunResult {
+        let race = DeadlineRace()
+        let workTask = Task {
+            await work()
+            race.resolve(.completed)
+        }
+        let deadlineTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: deadlineMilliseconds * 1_000_000)
+                race.resolve(.timedOut)
+            } catch {}
+        }
+        let outcome = await withTaskCancellationHandler {
+            await race.wait()
+        } onCancel: {
+            race.resolve(.cancelled)
+        }
+        deadlineTask.cancel()
+        if outcome != .completed { workTask.cancel() }
+        return RunResult(
+            outcome: outcome,
+            lingeringWork: outcome == .timedOut ? workTask : nil
+        )
+    }
+
+    private static func addingClamped(_ value: UInt64, _ amount: UInt64) -> UInt64 {
+        let (sum, overflow) = value.addingReportingOverflow(amount)
+        return overflow ? .max : sum
+    }
+}
+
 /// Connects the app's existing full-snapshot and HTTP-command seams to CloudTransport.
 ///
 /// Construction has no side effects. `start()` is the explicit attachment/configuration point,
@@ -361,6 +610,11 @@ actor CloudAppBridge {
         let lifecycleGeneration: UInt64
         let admittedAt: UInt64
     }
+    private struct ReadRefusal {
+        let status: Int
+        let code: String
+        let message: String
+    }
 
     private let transport: any CloudTransporting
     private let identity: CloudAppIdentity
@@ -370,6 +624,7 @@ actor CloudAppBridge {
     private let nowMilliseconds: Milliseconds
     private let commandResult: CommandResultObserver
     private let diagnostic: DiagnosticLogger
+    private let refusalPublications: CloudRefusalPublicationQueue
 
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
@@ -400,7 +655,8 @@ actor CloudAppBridge {
             UInt64(Date().timeIntervalSince1970 * 1_000)
         },
         commandResult: @escaping CommandResultObserver = { _ in },
-        diagnostic: @escaping DiagnosticLogger = { _ in }
+        diagnostic: @escaping DiagnosticLogger = { _ in },
+        refusalPublications: CloudRefusalPublicationQueue? = nil
     ) {
         self.transport = transport
         self.identity = identity
@@ -410,6 +666,16 @@ actor CloudAppBridge {
         self.nowMilliseconds = nowMilliseconds
         self.commandResult = commandResult
         self.diagnostic = diagnostic
+        self.refusalPublications = refusalPublications ?? CloudRefusalPublicationQueue(
+            observer: { outcome, metrics in
+                diagnostic("cloud: refusal reply lane outcome=\(outcome.rawValue) "
+                    + "current=\(metrics.currentCount) peak=\(metrics.peakCount) "
+                    + "admitted=\(metrics.admittedTotal) completed=\(metrics.completedTotal) "
+                    + "timed_out=\(metrics.timedOutTotal) dropped_full=\(metrics.droppedFullTotal) "
+                    + "cancelled=\(metrics.cancelledTotal) "
+                    + "deadline_ms=\(metrics.deadlineMilliseconds)")
+            }
+        )
     }
 
     func start() async throws {
@@ -418,6 +684,14 @@ actor CloudAppBridge {
         let ownedGeneration = lifecycleGeneration
         starting = true
         let transport = self.transport
+        let refusalPublications = self.refusalPublications
+        await transport.setInboundRefusalHandler { [weak self, refusalPublications] refusal in
+            refusalPublications.enqueue { [weak self] in
+                await self?.consumeInboundRefusal(
+                    refusal, lifecycleGeneration: ownedGeneration
+                )
+            }
+        }
         let connect = Task {
             try await transport.connect(role: .machine)
         }
@@ -458,6 +732,7 @@ actor CloudAppBridge {
             if lifecycleGeneration == ownedGeneration {
                 connectTask = nil
                 starting = false
+                await transport.setInboundRefusalHandler(nil)
             }
             throw error
         }
@@ -468,6 +743,7 @@ actor CloudAppBridge {
                 || foregroundReadTask != nil || backgroundReadTask != nil
                 || !lifecycleRefreshTasks.isEmpty || !publicationTasks.isEmpty
         else { return }
+        await transport.setInboundRefusalHandler(nil)
         lifecycleGeneration &+= 1
         starting = false
         running = false
@@ -475,6 +751,7 @@ actor CloudAppBridge {
         let ready = readyTask
         let connect = connectTask
         let publications = Array(publicationTasks.values)
+        let refusalPublication = refusalPublications.cancelAndReset()
         let readTasks = [foregroundReadTask, backgroundReadTask].compactMap { $0 }
             + Array(lifecycleRefreshTasks.values)
         commandTask = nil
@@ -500,6 +777,7 @@ actor CloudAppBridge {
         for publication in publications {
             _ = await publication.result
         }
+        await refusalPublication?.value
         for task in readTasks { await task.value }
         publishedSessionIDs.removeAll()
         publishedSessionRows.removeAll()
@@ -507,6 +785,10 @@ actor CloudAppBridge {
     }
 
     func isRunning() -> Bool { running }
+
+    func refusalPublicationMetrics() -> CloudRefusalPublicationQueueMetrics {
+        refusalPublications.snapshot()
+    }
 
     func setTransportReadyObserver(_ observer: @escaping TransportReadyObserver) {
         transportReady = observer
@@ -774,7 +1056,7 @@ actor CloudAppBridge {
         let readLevelCommand = requestedType == "push-subscribe"
             || requestedType == "push-unsubscribe" || requestedType == "push-test"
         guard readLevelCommand || allowCloudCommands() else {
-            publishCommandRefusal(
+            enqueueCommandRefusal(
                 body: parsed, type: requestedType, commandClass: inbound.commandClass,
                 status: 403, code: "cloud_commands_disabled",
                 message: "Cloud commands are disabled on this Mac.",
@@ -889,7 +1171,7 @@ actor CloudAppBridge {
                   let shell = body["shell"] as? String, !shell.isEmpty,
                   let request = Self.requestName(body["request"])
             else {
-                publishCommandRefusal(
+                enqueueCommandRefusal(
                     body: body, type: type, commandClass: inbound.commandClass,
                     status: 400, code: "malformed_command",
                     message: "The shell-kill command is malformed.",
@@ -1108,7 +1390,7 @@ actor CloudAppBridge {
 
         let result = await commandRouter.route(
             command, sender: inbound.sender,
-            idempotencyKey: "cloud:\(inbound.sender):\(inbound.sequence)"
+            idempotencyKey: inbound.idempotencyKey
         )
         commandResult(result)
         if let reply = commandReply {
@@ -1226,7 +1508,7 @@ actor CloudAppBridge {
     /// this Mac had ever published a `t/` envelope.
     private func serveRead(
         _ type: String, body: [String: Any], inbound: CloudInboundCommand,
-        lifecycleGeneration ownedGeneration: UInt64
+        lifecycleGeneration ownedGeneration: UInt64, refusal: ReadRefusal? = nil
     ) async {
         // A read rides the command channel and therefore its class, which is what the relay bills
         // and what `CloudEnvelope` pins. `dispatch` is a command class and never a read.
@@ -1488,7 +1770,15 @@ actor CloudAppBridge {
             return
         }
 
-        enqueueRead(read, sender: inbound.sender, lifecycleGeneration: ownedGeneration)
+        if let refusal {
+            commandResult(CloudCommandResult(status: refusal.status, code: refusal.code))
+            await publishReadRefusal(
+                read, status: refusal.status, code: refusal.code, message: refusal.message,
+                lifecycleGeneration: ownedGeneration
+            )
+        } else {
+            enqueueRead(read, sender: inbound.sender, lifecycleGeneration: ownedGeneration)
+        }
     }
 
     private func enqueueRead(
@@ -1499,10 +1789,12 @@ actor CloudAppBridge {
             let depth = lifecycleRefreshTasks.count
             guard depth < limit else {
                 commandResult(CloudCommandResult(status: 429, code: "cloud_read_busy"))
-                Task { [weak self] in
-                    await self?.publishBusyRead(read, lane: .background, limit: limit,
-                                                lifecycleGeneration: ownedGeneration)
-                }
+                enqueueReadRefusal(
+                    read, status: 429, code: "cloud_read_busy",
+                    message: "That Cloud read lane is full; retry shortly.",
+                    extra: ["lane": ReadLane.background.rawValue, "limit": limit,
+                            "retry_after": 1], lifecycleGeneration: ownedGeneration
+                )
                 return
             }
             let id = UUID()
@@ -1528,12 +1820,12 @@ actor CloudAppBridge {
             commandResult(CloudCommandResult(status: 429, code: "cloud_read_busy"))
             diagnostic("cloud: read refused read=\(read.name) lane=\(lane.rawValue) "
                 + "depth=\(depth) limit=\(limit) code=cloud_read_busy")
-            Task { [weak self] in
-                await self?.publishBusyRead(
-                    read, lane: lane, limit: limit,
-                    lifecycleGeneration: ownedGeneration
-                )
-            }
+            enqueueReadRefusal(
+                read, status: 429, code: "cloud_read_busy",
+                message: "That Cloud read lane is full; retry shortly.",
+                extra: ["lane": lane.rawValue, "limit": limit, "retry_after": 1],
+                lifecycleGeneration: ownedGeneration
+            )
             return
         }
         let pending = PendingRead(
@@ -1564,17 +1856,26 @@ actor CloudAppBridge {
         lifecycleRefreshTasks[id] = nil
     }
 
-    private func publishBusyRead(
-        _ read: CloudHeadlessRead, lane: ReadLane, limit: Int,
-        lifecycleGeneration ownedGeneration: UInt64
+    private func enqueueReadRefusal(
+        _ read: CloudHeadlessRead, status: Int, code: String, message: String,
+        extra: [String: Any] = [:], lifecycleGeneration ownedGeneration: UInt64
+    ) {
+        refusalPublications.enqueue { [weak self] in
+            await self?.publishReadRefusal(
+                read, status: status, code: code, message: message, extra: extra,
+                lifecycleGeneration: ownedGeneration
+            )
+        }
+    }
+
+    private func publishReadRefusal(
+        _ read: CloudHeadlessRead, status: Int, code: String, message: String,
+        extra: [String: Any] = [:], lifecycleGeneration ownedGeneration: UInt64
     ) async {
+        var error: [String: Any] = ["code": code, "message": message]
+        extra.forEach { error[$0.key] = $0.value }
         let payload: [String: Any] = [
-            "read": read.name, "status": 429,
-            "error": [
-                "code": "cloud_read_busy",
-                "message": "That Cloud read lane is full; retry shortly.",
-                "lane": lane.rawValue, "limit": limit, "retry_after": 1,
-            ] as [String: Any],
+            "read": read.name, "status": status, "error": error,
         ]
         guard running, lifecycleGeneration == ownedGeneration,
               let bytes = try? JSONSerialization.data(
@@ -1589,8 +1890,8 @@ actor CloudAppBridge {
                     lifecycleGeneration: ownedGeneration
                 )
             }
-            diagnostic("cloud: read refusal delivered read=\(read.name) lane=\(lane.rawValue) "
-                + "status=429 code=cloud_read_busy")
+            diagnostic("cloud: read refusal delivered read=\(read.name) "
+                + "status=\(status) code=\(code)")
         } catch {
             commandResult(CloudCommandResult(status: 503, code: "read_answer_undeliverable"))
         }
@@ -1718,7 +2019,70 @@ actor CloudAppBridge {
 
     /// A command rejected before routing still has two observers: local diagnostics and the
     /// request-scoped Cloud caller. Publish to the latter only when its action identity is safe.
-    private func publishCommandRefusal(
+    private func consumeInboundRefusal(
+        _ refusal: CloudInboundAdmissionRefusal,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        let inbound = refusal.command
+        let parsed = (try? JSONSerialization.jsonObject(with: inbound.plaintext)) as? [String: Any]
+        let requestedType = parsed?["type"] as? String
+        diagnostic("cloud: command ingress refused reason=\(refusal.reason.rawValue) "
+            + "current_count=\(refusal.metrics.currentCount) "
+            + "current_charged_bytes=\(refusal.metrics.currentChargedBytes)")
+        let wantedChannel = "ctl/" + Self.channelSegment(identity.machineID)
+        if inbound.channel != wantedChannel {
+            if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
+                await serveRead(
+                    requestedType, body: parsed, inbound: inbound,
+                    lifecycleGeneration: ownedGeneration,
+                    refusal: ReadRefusal(
+                        status: 409, code: "wrong_machine",
+                        message: "This Cloud request addresses another Mac."
+                    )
+                )
+            } else {
+                await publishCommandRefusal(
+                    body: parsed, type: requestedType, commandClass: inbound.commandClass,
+                    status: 409, code: "wrong_machine",
+                    message: "This Cloud request addresses another Mac.",
+                    lifecycleGeneration: ownedGeneration
+                )
+            }
+            return
+        }
+        if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
+            await serveRead(
+                requestedType, body: parsed, inbound: inbound,
+                lifecycleGeneration: ownedGeneration,
+                refusal: ReadRefusal(
+                    status: 429, code: "cloud_ingress_busy",
+                    message: "This request was not accepted because Cloud ingress is full; try again shortly."
+                )
+            )
+            return
+        }
+        let readLevelCommand = requestedType == "push-subscribe"
+            || requestedType == "push-unsubscribe" || requestedType == "push-test"
+        if !readLevelCommand && !allowCloudCommands() {
+            await publishCommandRefusal(
+                body: parsed, type: requestedType, commandClass: inbound.commandClass,
+                status: 403, code: "cloud_commands_disabled",
+                message: "Cloud commands are disabled on this Mac.",
+                lifecycleGeneration: ownedGeneration
+            )
+            return
+        }
+        await publishCommandRefusal(
+            body: parsed, type: parsed?["type"] as? String,
+            commandClass: inbound.commandClass,
+            status: 429, code: "cloud_ingress_busy",
+            message: "This request was not accepted because Cloud ingress is full; try again shortly.",
+            lifecycleGeneration: ownedGeneration
+        )
+    }
+
+    private func enqueueCommandRefusal(
         body: [String: Any]?, type: String?, commandClass: CloudEnvelopeClass,
         status: Int, code: String, message: String,
         lifecycleGeneration ownedGeneration: UInt64
@@ -1729,10 +2093,27 @@ actor CloudAppBridge {
         commandResult(CloudCommandResult(status: status, code: code, body: bytes))
         guard let reply = Self.commandRefusalReply(
             body: body, type: type, commandClass: commandClass) else { return }
-        Task { [weak self] in
-            await self?.publishJSONAnswer(name: reply.name, session: reply.session, status: status,
-                                          body: bytes, lifecycleGeneration: ownedGeneration)
+        refusalPublications.enqueue { [weak self] in
+            await self?.publishJSONAnswer(
+                name: reply.name, session: reply.session, status: status,
+                body: bytes, lifecycleGeneration: ownedGeneration
+            )
         }
+    }
+
+    private func publishCommandRefusal(
+        body: [String: Any]?, type: String?, commandClass: CloudEnvelopeClass,
+        status: Int, code: String, message: String,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        let object: [String: Any] = ["error": ["code": code, "message": message]]
+        let bytes = (try? JSONSerialization.data(
+            withJSONObject: object, options: [.withoutEscapingSlashes])) ?? Data()
+        commandResult(CloudCommandResult(status: status, code: code, body: bytes))
+        guard let reply = Self.commandRefusalReply(
+            body: body, type: type, commandClass: commandClass) else { return }
+        await publishJSONAnswer(name: reply.name, session: reply.session, status: status,
+                                body: bytes, lifecycleGeneration: ownedGeneration)
     }
 
     /// One answered read, resolved into the two things the payload can hold.

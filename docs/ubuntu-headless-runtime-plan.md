@@ -237,7 +237,7 @@ Status, 2026-09-11/12 (W3-1): `Package.swift` declares two real library targets 
 `Sources/CloudClock.swift`) and `ClawdlineApplication` (`Sources/HostPorts.swift`, depending on
 `ClawdlineCore`) — plus the pre-existing `Clawdline` executable target, now depending on
 `ClawdlineApplication`, as the Mac composition point. Every member is a symlink into `Sources/`,
-never a copy (`Packages/README.md` says why a plain file can't coexist with `./build.sh`'s flat,
+never a copy (`Packages/README.md` says why a plain file can't coexist with `./test.sh`'s compatibility flat,
 single-module compile); `tools/check-architecture-boundaries.sh`'s "real SwiftPM
 Core/Application/Mac target graph" block checks the symlinks, the candidate-manifest membership
 and the SwiftPM dependency edges themselves (via `swift package describe --type json`) rather than
@@ -259,12 +259,10 @@ extension split, not a behavior change) — and `Assistant`/`Assistant.Running.p
 `Assistant.quitLine` became `public` for the same reason `HostPorts.swift` itself already had to be
 Foundation-only: a symbol crossing a real module boundary needs real visibility, not only a lexical
 promise. `Sources/HostPorts.swift` gained one `#if canImport(ClawdlineCore)`-guarded import — the
-one place the two coexisting build systems (SwiftPM's module boundaries and `./build.sh`'s flat
+one place the two coexisting build systems (SwiftPM's module boundaries and `./test.sh`'s flat
 compile) could not otherwise agree — checked by name in the same guard block, not left to a bare
-lexical import count. What is not yet real: the remaining `tools/core-application-candidates.txt`
-entries are still lexical-only, not SwiftPM target members; there is no `ClawdlineLinux` target,
-daemon, or Linux composition (W3-2's), and `./build.sh` itself is unchanged — it still compiles
-`Sources/` flatly, not through this package graph, exactly as this task's instructions required.
+lexical import count. W3-1 deliberately stopped before the Linux composition and before changing
+the Mac bundle builder; W3-2 below owns those two connected graph edges.
 
 **Correction, W3-1 (`artifacts/W3_1_CORRECTION.md`).** The sealed review of the status above found
 four defects, all now fixed on the same delivery: (1) `spec-mac-does-not-consume-application` —
@@ -291,6 +289,41 @@ complete!`, no crash — plus the CI job's exact, already-pinned configuration
 (`SWIFT_CORE_APPLICATION_LINUX_BUILD_CONFIGURATION=release SWIFT_CORE_APPLICATION_LINUX_BUILD_JOBS=2`,
 real amd64 hardware, not QEMU). A prior local run's QEMU crash before this repository's code ran is
 real and worth keeping as a named failure mode; it is not a rate.
+
+**W3-2 composition and build wrapper.** `Package.swift` now exports exact executable products for
+both `Clawdline` and `ClawdlineLinux`. Linux depends only on `ClawdlineApplication`, which depends
+only on Core; the architecture guard compares SwiftPM's resolved sources, target dependencies and
+product mappings, scans the Linux sources for forbidden Apple imports, and requires the source to
+consume Application's typed `capability_unavailable` vocabulary. The pinned Ubuntu job builds the
+real `ClawdlineLinux` product, so its two inward dependencies compile in the same invocation.
+
+The executable is an honest W3 skeleton, not a prematurely claimed daemon. `health` returns a
+diagnostic service/build/config-schema identity with `ready=false` and
+`w4_runtime_not_composed`. `check-config` accepts only an exact versioned JSON shape, loopback
+listen address, absolute state/secret paths and descriptor-bound protected inputs: `O_NOFOLLOW`,
+`O_NONBLOCK`, `O_CLOEXEC`, `fstat`, owner/mode/type/size validation and bounded reads. The secret
+must be a non-empty regular 0600 file; the receipt returns only its byte count, never its contents.
+`run` performs the same checks and then fails with the typed
+W4 refusal before opening a listener, creating state, touching a terminal or spawning a process.
+Its health inventory is generated from `HostCapability.allCases`; all six current host capabilities
+are unavailable and owned by W4-1's adapter work. It does not invent HTTP, Cloud or attention wire
+capability identifiers before their compatibility contracts exist.
+
+On macOS, `build.sh` keeps the machine compile lock and its existing resources, identity stamp,
+signing, staged replacement, restart maintenance and rollback flow, but the guarded compile is now
+`swift build --product Clawdline`. The wrapper copies the resolved release product into the staged
+bundle and compares SHA-256 before and after; there is no second flat `swiftc` graph to drift from
+Package.swift. `./test.sh --linux-package-focused` is the narrow locked proof: it compiles the
+Linux product and drives health, protected config/secret refusals and the final W4 startup refusal.
+It does not bundle, install, restart or claim the Phase 4 runtime gate.
+
+**Bound W2-3 policy handoff to W4-1.** W4-1 owns extracting `StartPoints.start` route admission
+(fixtures, typed refusal codes, and the phone attach affordance) plus the `Targets.answer` menu
+parser/allowlist from their Mac facades into `ClawdlineApplication`. Acceptance requires the Mac
+and Linux compositions to consume one policy implementation and one fixture set before either
+invokes `TerminalHost`; Linux must return `capability_unavailable` for an unavailable adapter and
+must not copy the route/menu policy into its composition. This is a named W4-1 dependency, not
+residual W2 work or an implied follow-up.
 
 Estimated effort: 2–3 engineer-weeks.
 
