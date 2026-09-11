@@ -134,7 +134,13 @@ Removes one entry, and refuses — leaving the path untouched — anything that 
 - without a marker (`scratch_marker_missing`) or with a marker that is not version 1
   (`scratch_marker_unknown`), because unknown is never removed;
 - owned by a process that is still running and is not an ancestor of the caller
-  (`scratch_owner_live`), because that entry is another session's live snapshot or credential copy.
+  (`scratch_owner_live`), because that entry is another session's live snapshot or credential copy;
+- owned by a process the tool cannot read (`scratch_owner_unknown`): the process table cannot be read
+  at all, it prints a row for the owner that is not a start time, or the owner is running and the
+  processes above the caller cannot be read to say whether it is one of them. Not being able to see an
+  owner is not seeing it gone. A Codex sandbox refuses to run `ps` at all, and before this refusal
+  existed that read as "not running", so a live session's entry was removed. An entry whose `owner` is
+  `null` has nothing to read and is decided as before.
 
 ### Refusals and exit status
 
@@ -145,7 +151,7 @@ Removes one entry, and refuses — leaving the path untouched — anything that 
 | 70 | `scratch_not_in_git`, `scratch_snapshot_failed` | nothing to snapshot; the copy could not be made (the command never ran, the entry is gone) |
 | 73 | `scratch_root_not_absolute`, `scratch_root_symlink`, `scratch_root_not_directory`, `scratch_root_not_owned`, `scratch_root_uncreatable` | the root is refused — before anything is created |
 | 74 | `scratch_cleanup_failed` | an entry could not be removed; the message names it and the command's own status |
-| 77 | `scratch_not_under_root`, `scratch_not_an_entry`, `scratch_marker_missing`, `scratch_marker_unknown`, `scratch_owner_live` | `remove` refused the path |
+| 77 | `scratch_not_under_root`, `scratch_not_an_entry`, `scratch_marker_missing`, `scratch_marker_unknown`, `scratch_owner_live`, `scratch_owner_unknown` | `remove` refused the path and left it untouched |
 
 Because the command's status passes through, these numbers can collide with it. The typed code is
 the authority.
@@ -164,6 +170,14 @@ the authority.
 - **A snapshot run whose own start time cannot be read** (a sandbox that hides the process table)
   cannot prove its owner, so it records `owner: null` with `keep_until` six hours out, which covers a
   queued suite. It still removes its entry itself when it exits.
+- **Whether an owner is running has three answers: alive, gone and unknown.** The contract releases
+  an entry whose owner's pid "is not running", and a `ps` that was not allowed to run has not said
+  that. A pid the process table prints no row for is gone only once the tool has read pid 1 — launchd,
+  always running — from the same table; if even that cannot be read, or the owner's row is not a start
+  time, the owner is unknown. A running pid whose start differs from `process_start` by more than 1 s
+  is gone. Whether a running owner is above the caller is read the same way: a chain of parents that
+  cannot be read to its top is unknown, not somebody else's. `remove` refuses unknown as
+  `scratch_owner_unknown`.
 - **An existing root is accepted at whatever mode it has**, as long as it is a real directory owned by
   this uid. Every entry inside it is `0700` regardless.
 
@@ -175,9 +189,12 @@ copy that cannot be made, `INT`, `TERM` and `HUP` each leave nothing and leave n
 `--keep` leaves one `0700` entry with a valid marker; a symlinked root, a root that is a file and a
 root owned by someone else are refused, and so is a relative root, from `CLAWDLINE_SCRATCH_ROOT` or
 from `--root`, on each of `snapshot-run`, `new` and `remove`, with nothing created; `remove` refuses a
-path outside the root, an entry with no marker or another version's, a link named like an entry, and
-a live foreign owner. It also holds the worktree subject to not writing the shared index — beside a
-control proving a plain `git diff HEAD` does write it in the same repository.
+path outside the root, an entry with no marker or another version's, a link named like an entry, a
+live foreign owner, and an owner it cannot read — with no process table, even after that owner has
+exited; with a row that is not a start time; and with no readable chain of parents above the caller —
+while an entry whose owner is `null` stays removable with no process table at all. It also holds the
+worktree subject to not writing the shared index — beside a control proving a plain `git diff HEAD`
+does write it in the same repository.
 
 Whose an entry is depends on whether the process table can be read, and that is a fact about the
 runner rather than the tool: a Codex sandbox answers `ps` with "operation not permitted". So the

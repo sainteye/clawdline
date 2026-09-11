@@ -489,7 +489,7 @@ console.log("owners");
 const STAND_IN_START = 1_000_000_000;  // 2001-09-09T01:46:40Z: no process a real table lists started then
 const standIn = (name, script) => {
     const dir = join(sandbox, name);
-    for (const sub of ["bin", "named", "gone"]) mkdirSync(join(dir, sub), { recursive: true });
+    for (const sub of ["bin", "named", "gone", "garbled"]) mkdirSync(join(dir, sub), { recursive: true });
     writeFileSync(join(dir, "bin", "ps"), script, { mode: 0o755 });
     return dir;
 };
@@ -501,6 +501,8 @@ const tableDir = standIn("ps-table", `#!/bin/sh
 # A stand-in for ps, written by Tests/scratch-tool.mjs ("owners"): a process table the suite controls.
 # Every pid is running, started at one fixed moment, named /bin/bash and parented by launchd, unless
 # the suite has entered another name for it under named/ or recorded under gone/ that it has exited.
+# A pid entered under garbled/ has a row whose start is not a time, and while a file named
+# lineage-unreadable exists no process's parent can be read.
 dir=$(cd -P -- "$(dirname -- "$0")/.." && pwd -P) || exit 70
 printf '%s\\n' "$*" >> "$dir/asked"
 if [ $# -ne 4 ] || [ "$1" != -o ] || [ "$3" != -p ]; then printf '%s\\n' "$*" >> "$dir/unmodelled"; exit 2; fi
@@ -509,10 +511,12 @@ case $4 in ''|*[!0-9]*) exit 1 ;; esac
 comm=/bin/bash
 [ ! -f "$dir/named/$4" ] || comm=$(cat -- "$dir/named/$4")
 case $2 in
-  lstart=) date -r ${STAND_IN_START} '+%a %b %e %H:%M:%S %Y' ;;
+  lstart=) if [ -e "$dir/garbled/$4" ]; then printf 'not a start time\\n'; exit 0; fi
+           date -r ${STAND_IN_START} '+%a %b %e %H:%M:%S %Y' ;;
   comm=) printf '%s\\n' "$comm" ;;
   ucomm=) printf 'bash\\n' ;;
-  ppid=) printf '1\\n' ;;
+  ppid=) [ ! -e "$dir/lineage-unreadable" ] || exit 1
+         printf '1\\n' ;;
   *) printf '%s\\n' "$*" >> "$dir/unmodelled"; exit 2 ;;
 esac
 `);
@@ -668,7 +672,9 @@ for (const t of readableTables) {
         timed.result.status === 0 && markerShape(timedMarker, "creds") && timedMarker.owner === null
             && timedMarker.keep_until === timedMarker.created_at + 5 * 3600,
         `${said(timed.result)} marker ${JSON.stringify(timedMarker)}`);
-    if (timed.entry && existsSync(timed.entry)) runTool(["remove", timed.entry], { path: u.path });
+    const nullOwner = timed.entry ? runTool(["remove", timed.entry], { path: u.path }) : null;
+    check(`${u.label}: an entry whose owner is null is still removed, since there is no owner to read`,
+        nullOwner !== null && nullOwner.status === 0 && !existsSync(timed.entry), nullOwner ? said(nullOwner) : "new made no entry");
 
     const keptUnowned = runTool(["snapshot-run", "--subject", "worktree", "--keep", "--ttl-hours", "2", "--", "true"], { path: u.path });
     const keptUnownedAt = Math.floor(Date.now() / 1000);
@@ -679,6 +685,62 @@ for (const t of readableTables) {
             && Math.abs(keptUnownedMarker.keep_until - (keptUnownedAt + 7200)) <= 60,
         `${said(keptUnowned)} entries ${keptUnownedNames.join(", ")} marker ${JSON.stringify(keptUnownedMarker)}`);
     if (keptUnownedNames.length === 1) runTool(["remove", join(rootReal, keptUnownedNames[0])], { path: u.path });
+
+    // The defect `scratch_owner_unknown` exists for, measured on 2026-09-11: an entry that records its
+    // owner, removed by a process that cannot read the process table. That read used to mean "not
+    // running", and the entry went while its owner still ran. The entry is made where the stand-in
+    // table can be read, so its marker names a live holder; each removal below is then judged only on
+    // what the table it is shown lets it conclude.
+    const standInTable = readableTables[0];
+    toolDoor(root, repo);
+    const heldOut = join(sandbox, "held-unknown.out");
+    const holder = spawn("/bin/bash", ["-c",
+        'printf "claude\\n" > "$3/$$"; /bin/bash "$1" new held > "$2"; exec sleep 60',
+        "claude", TOOL, heldOut, join(standInTable.table, "named")], {
+        argv0: "claude", cwd: repo, env: env({ CLAWDLINE_SCRATCH_ROOT: root, PATH: standInTable.path }), stdio: "ignore",
+    });
+    lingering.add(holder.pid);
+    const holderExited = new Promise((done) => holder.on("exit", done));
+    const heldReady = await waitFor(() => existsSync(heldOut) && readFileSync(heldOut, "utf8").endsWith("\n"), 15_000);
+    const heldPath = heldReady ? readFileSync(heldOut, "utf8").trim() : "";
+    const heldMarker = heldReady ? readMarker(heldPath) : null;
+    check(`${u.label}: the entry under test records its owner, a holder that is still running`,
+        heldMarker?.owner?.pid === holder.pid && running(holder.pid), `marker ${JSON.stringify(heldMarker)}`);
+    const removeHeld = (t) => (heldReady ? runTool(["remove", heldPath], { path: t.path }) : null);
+    const refusedAs = (result, code) => result !== null && result.status === 77 && result.stderr.includes(code)
+        && existsSync(heldPath);
+    const shown = (result) => (result ? said(result) : "the holder never made its entry");
+
+    const askedBefore = questions(unreadableDir).asked;
+    const whileRunning = removeHeld(u);
+    check(`${u.label}: remove refuses an entry that records an owner as scratch_owner_unknown, and the entry stays`,
+        refusedAs(whileRunning, "scratch_owner_unknown") && questions(unreadableDir).asked > askedBefore, shown(whileRunning));
+
+    writeFileSync(join(standInTable.table, "garbled", String(holder.pid)), "");
+    const garbled = removeHeld(standInTable);
+    rmSync(join(standInTable.table, "garbled", String(holder.pid)));
+    check(`${standInTable.label}: a row for the owner that is not a start time is refused as scratch_owner_unknown, not read as gone`,
+        refusedAs(garbled, "scratch_owner_unknown"), shown(garbled));
+
+    writeFileSync(join(standInTable.table, "lineage-unreadable"), "");
+    const lineage = removeHeld(standInTable);
+    rmSync(join(standInTable.table, "lineage-unreadable"));
+    check(`${standInTable.label}: with the owner running and the processes above the caller unreadable, remove refuses as scratch_owner_unknown`,
+        refusedAs(lineage, "scratch_owner_unknown"), shown(lineage));
+
+    holder.kill("SIGKILL");
+    await holderExited;
+    lingering.delete(holder.pid);
+    writeFileSync(join(standInTable.table, "gone", String(holder.pid)), "");
+    const exitedUnreadable = removeHeld(u);
+    check(`${u.label}: once that owner has exited it is still refused, because gone cannot be read either`,
+        refusedAs(exitedUnreadable, "scratch_owner_unknown"), shown(exitedUnreadable));
+    const exitedReadable = removeHeld(standInTable);
+    check(`${standInTable.label}: with that owner gone from a table that can be read, remove takes the entry away`,
+        exitedReadable !== null && exitedReadable.status === 0 && !existsSync(heldPath), shown(exitedReadable));
+    const { unmodelled } = questions(standInTable.table);
+    check(`${standInTable.label}: every question those removals asked is one the stand-in models`, unmodelled.length === 0,
+        `unmodelled: ${unmodelled.join(" | ")}`);
     leavesNothing(`${u.label}: nothing is left under the root`);
     const { asked } = questions(unreadableDir);
     check(`${u.label}: the stand-in refused ${asked} questions, so these checks ran with no process table at all`, asked > 0);

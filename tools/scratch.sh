@@ -70,8 +70,9 @@ new           Make an entry a session keeps across tool calls — a deploy copy,
               when there is none, or the process table cannot be read, --ttl-hours (1-24) is required.
 
 remove        Remove one entry. Refuses anything that is not a directory directly under the root, a
-              symbolic link, an entry with no version-1 marker, and an entry whose owner is still
-              running and is not one of this process's ancestors.
+              symbolic link, an entry with no version-1 marker, an entry whose owner is still running
+              and is not one of this process's ancestors, and an entry whose owner the process table
+              cannot be read for: not being able to see an owner is not seeing it gone.
 
 exit status   COMMAND's own for snapshot-run, otherwise 0; a signal ends snapshot-run by that same
               signal once the entry is gone. Refusals, with the typed code on stderr:
@@ -81,7 +82,7 @@ exit status   COMMAND's own for snapshot-run, otherwise 0; a signal ends snapsho
       scratch_root_uncreatable
   74  scratch_cleanup_failed
   77  scratch_not_under_root, scratch_not_an_entry, scratch_marker_missing, scratch_marker_unknown,
-      scratch_owner_live
+      scratch_owner_live, scratch_owner_unknown
 EOF
 }
 
@@ -142,17 +143,22 @@ open_root() {
 
 # ---- Processes -----------------------------------------------------------------------------------
 
-# Seconds since the epoch at which process $1 started, at whole-second resolution.
+# Seconds since the epoch at which process $1 started, at whole-second resolution. 1 = `ps` failed and
+# printed no row: either the pid is absent or `ps` was not allowed to run, and only reading a pid that
+# is always there tells the two apart (owner_liveness). 2 = it printed something that is not a start.
 process_start() {
   local raw
-  raw=$(LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null) || return 1
+  if ! raw=$(LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null); then
+    [ -z "$(trim "$raw")" ] && return 1
+    return 2
+  fi
   set -f
   # shellcheck disable=SC2086
   set -- $raw
   set +f
-  [ $# -eq 5 ] || return 1
-  raw=$(LC_ALL=C TZ=UTC date -j -f '%b %d %H:%M:%S %Y' "$2 $3 $4 $5" +%s 2>/dev/null) || return 1
-  case $raw in ''|*[!0-9]*) return 1 ;; esac
+  [ $# -eq 5 ] || return 2
+  raw=$(LC_ALL=C TZ=UTC date -j -f '%b %d %H:%M:%S %Y' "$2 $3 $4 $5" +%s 2>/dev/null) || return 2
+  case $raw in ''|*[!0-9]*) return 2 ;; esac
   printf '%s\n' "$raw"
 }
 
@@ -190,24 +196,39 @@ assistant_ancestor() {
 }
 
 # Whether the exact process recorded in a marker is still the one running under that pid: the same
-# pid and the same start, ±1 s.
-owner_is_live() {  # $1 pid, $2 recorded process_start
+# pid and the same start, ±1 s. 0 = alive, 1 = gone, 2 = unknown.
+#
+# Not being able to see an owner is not seeing it gone. A Codex sandbox refuses to run `ps` at all,
+# and a tool that read that refusal as "not running" removed a live session's entry. So a pid the
+# table prints no row for is gone only once the same table has been shown to answer, by reading pid 1
+# — launchd, which is always running. If even that cannot be read, nothing about the owner is known.
+owner_liveness() {  # $1 pid, $2 recorded process_start
   local now drift
-  now=$(process_start "$1") || return 1
+  now=$(process_start "$1")
+  case $? in
+    0) ;;
+    1) process_start 1 >/dev/null && return 1
+       return 2 ;;
+    *) return 2 ;;
+  esac
   drift=$((now - $2))
-  [ "$drift" -ge -1 ] && [ "$drift" -le 1 ]
+  [ "$drift" -ge -1 ] && [ "$drift" -le 1 ] && return 0
+  return 1
 }
 
-is_ancestor() {  # $1 pid; true for this process and everything above it
+# 0 = $1 is this process or one above it, 1 = the chain was read to its top without meeting $1,
+# 2 = it could not be read that far, so whether the entry is this caller's own cannot be said.
+is_ancestor() {  # $1 pid
   local pid=$$ depth=0
-  while [ "$pid" -gt 0 ] 2>/dev/null && [ "$depth" -lt 128 ]; do
+  while [ "$depth" -lt 128 ]; do
     [ "$pid" = "$1" ] && return 0
     [ "$pid" -gt 1 ] || return 1
-    pid=$(LC_ALL=C ps -o ppid= -p "$pid" 2>/dev/null) || return 1
+    pid=$(LC_ALL=C ps -o ppid= -p "$pid" 2>/dev/null) || return 2
     pid=$(trim "$pid")
+    case $pid in ''|*[!0-9]*) return 2 ;; esac
     depth=$((depth + 1))
   done
-  return 1
+  return 2
 }
 
 # ---- Entries -------------------------------------------------------------------------------------
@@ -532,10 +553,22 @@ cmd_remove() {
     1) die $EX_REFUSED scratch_marker_missing "$target has no $SCRATCH_MARKER; an entry without one is unknown, and unknown is not removed" ;;
     *) die $EX_REFUSED scratch_marker_unknown "$target has a marker that is not version 1; unknown is not removed" ;;
   esac
-  if [[ $content =~ $OWNER_RE ]] \
-     && owner_is_live "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" && ! is_ancestor "${BASH_REMATCH[1]}"; then
-    die $EX_REFUSED scratch_owner_live \
-      "$target belongs to process ${BASH_REMATCH[1]}, which is still running and is not above this one"
+  if [[ $content =~ $OWNER_RE ]]; then
+    local owner_pid=${BASH_REMATCH[1]} owner_start=${BASH_REMATCH[2]}
+    owner_liveness "$owner_pid" "$owner_start"
+    case $? in
+      1) ;;
+      0) is_ancestor "$owner_pid"
+         case $? in
+           0) ;;
+           1) die $EX_REFUSED scratch_owner_live \
+                "$target belongs to process $owner_pid, which is still running and is not above this one" ;;
+           *) die $EX_REFUSED scratch_owner_unknown \
+                "$target belongs to process $owner_pid, which is still running, and the processes above this one cannot be read to say whether it is one of them; unknown is not removed" ;;
+         esac ;;
+      *) die $EX_REFUSED scratch_owner_unknown \
+           "$target belongs to process $owner_pid, and the process table cannot be read to say whether it is still running; unknown is not removed" ;;
+    esac
   fi
   remove_entry "$SCRATCH_ROOT_REAL/$name"
   status=$?
