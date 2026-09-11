@@ -24,14 +24,14 @@ import time
 import uuid
 
 
-BASE_COMMIT = "6f4411f1365258d1e1b41b76c85dcaa1dcb6b88a"
+BASE_COMMIT = "de9745104daed03bf9f49ff1fb4522e2a275d145"
 # Measurement safety bound, not a production HTTP budget or SLA.
 HEALTH_BODY_LIMIT = 16384
 # Whole-file seals prevent an unchanged matching line from concealing a changed caller,
 # guard, comment-only decoy, or failure path elsewhere in the reviewed file.
 SOURCE_SEALS = {
     "Sources/CloudTransport.swift": "1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d",
-    "Sources/CloudAppBridge.swift": "a63b4b0056997c3be5671830fc345cc6a89dc8db256c7e83af95c758645853f6",
+    "Sources/CloudAppBridge.swift": "853c4431771550175c6c485b9da648edb72ef1d24b350030402dee74785aaabc",
     "Sources/RemoteServer.swift": "5f88bad83081fdd6984f26ae48507975b2a4c825223d17950ec5e5be761ebfdd",
     "Sources/Orchestrator.swift": "9873ab23a71d4c7ae786754a5e8c7d8e6f010016f25f816f4537bc7092fa38ce",
     "Sources/OrchestratorStore.swift": "38ce38e310d8d995445b4b05ece41dcb5fb85d1775f0f3ec3d3f162766262037",
@@ -42,7 +42,7 @@ SOURCE_SEALS = {
     "Sources/CloudOutboundSpool.swift": "aef545decd4c7c95b5c566cb60cb11455eaadf6b52f84c3707b76df165459485",
     "Sources/CloudCommandLedger.swift": "def726c029d4fb17e0d096c3187d87b2ea89fdc413e69b95bb02cf0a27862fcf",
     "Sources/CloudBridgeLifecycle.swift": "07f585fd60b4e99abe42d89ca72087c6339456cb844b088718c503cd9ef6b663",
-    "Tests/OrchestratorRecoveryTests.swift": "2fcfe6a42eb1d4015854351ef1952f04c9d9d7fae0d9bc7e7913198b756cad27",
+    "Tests/OrchestratorRecoveryTests.swift": "e57da0019aa0535c82eb7ce41d22188662b594062fd7deebaabc6bdb4ec420f7",
     "Tests/OrchestratorCompletionTests.swift": "d2258c60bd16287345470da810a3ec720c14886fe49da132ff6d92da6054699b",
     "Tests/CloudOutboundSpoolTests.swift": "da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244",
 }

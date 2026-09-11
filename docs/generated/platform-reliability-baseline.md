@@ -1,9 +1,9 @@
 # 平台可靠性基準（W0-C）
 
 此文件由 `tools/measure-platform-reliability.py` 產生；CLA-296 Plan v4 的量測輸入。
-來源引用提交：`6f4411f1365258d1e1b41b76c85dcaa1dcb6b88a`。
-來源範圍 SHA-256：`2f317f968b2926ca7e803112f32318a7da248ee4528e90124966e9742994dcc3`。
-工具 SHA-256：`9ea6235255e5c28cbea75d460761ca04430d7de08e6842e866d19cde8afcac93`。
+來源引用提交：`de9745104daed03bf9f49ff1fb4522e2a275d145`。
+來源範圍 SHA-256：`95747576472a7502b79626585cee1e030ee40c5180a6def37b2ce036656f524c`。
+工具 SHA-256：`800c5fad55a36284dabe5f29cd09465a4b091a14ab469b3924731ed920ca7ef5`。
 
 15 個非空來源檔、19 列。這是範圍摘要，並非整棵 commit-tree 驗證。
 整檔 seal 拒絕來源漂移；本工具不解析或編譯 Swift。更新 seal 前須重讀受影響行為。
@@ -26,8 +26,8 @@ commands 未指定 bufferingPolicy；acceptInbound 忽略 yield 回傳。bridge 
 - **source-derived**：
   - `Sources/CloudTransport.swift:534–534`；slice SHA-256 `3181e2d4079b0797655422d52cd7477fb57ee07a00d7fd67fbe2bf884ca77247`。
   - `Sources/CloudTransport.swift:875–900`；slice SHA-256 `ce320174cc1cc0536c3ba07146563329008730bf1b7a27233fccc9850ed800ed`。
-  - `Sources/CloudAppBridge.swift:430–438`；slice SHA-256 `21ba233e27062ca9cd21dd77dc3ae69407268b8ffddc0f76491e320f079d6980`。
-  - `Sources/CloudAppBridge.swift:1036–1040`；slice SHA-256 `58504ef9ea6dd1627b87cd98de663707d38190e928e61b0d0e65ded4fca39c60`。
+  - `Sources/CloudAppBridge.swift:431–439`；slice SHA-256 `21ba233e27062ca9cd21dd77dc3ae69407268b8ffddc0f76491e320f079d6980`。
+  - `Sources/CloudAppBridge.swift:1063–1067`；slice SHA-256 `58504ef9ea6dd1627b87cd98de663707d38190e928e61b0d0e65ded4fca39c60`。
 - **來源數值／屬性**：`{"explicit_byte_cap":null,"explicit_count_cap":null,"yield_result_handled":false}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -136,7 +136,7 @@ FreshReadings 對同 key 共用一次 refresh，但會 append 每個 waiter；�
 Cloud read 的 foreground/background 分別按 queued+active 計 4/16；超額回 429 cloud_read_busy，拒絕回覆另以 Task publish。
 
 - **source-derived**：
-  - `Sources/CloudAppBridge.swift:1375–1419`；slice SHA-256 `1620146264f557b2120b6eda55277b7fc93751b7b3ad6ffe920011cd5118b505`。
+  - `Sources/CloudAppBridge.swift:1402–1447`；slice SHA-256 `4c151020946843293f0e2c64b9e811244279f326712e033fbf57fb762200ee81`。
 - **來源數值／屬性**：`{"background_requests":16,"foreground_requests":4}`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
@@ -217,7 +217,7 @@ save 的 serializer/write/chmod 失敗回 false；write 後 chmod 失敗可能�
 - **source-derived**：
   - `Sources/Orchestrator.swift:10267–10338`；slice SHA-256 `0e128b989988f99b6ff0fca95734bd3f8b5fbf8a911be2df4fd81a1143905616`。
   - `Tests/OrchestratorCompletionTests.swift:691–691`；slice SHA-256 `722a8705a2b47caccc42f514cb4c59808be09c627a2090544fdb78054a4b7d4b`。
-  - `Tests/OrchestratorRecoveryTests.swift:1377–1377`；slice SHA-256 `afdb101b2116a038b7267f771c1bfd3f9189395c2b0a4184d0ae16244645a938`。
+  - `Tests/OrchestratorRecoveryTests.swift:1381–1381`；slice SHA-256 `afdb101b2116a038b7267f771c1bfd3f9189395c2b0a4184d0ae16244645a938`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
 - **unknown**：EACCES/ENOSPC/EROFS、partial write、rename、chmod、fsync/power-loss 與雙 writer 未實測。 .atomic 不是 power-loss durability receipt；每個 effect 的 persist ordering 仍須各自確認。
@@ -232,7 +232,7 @@ CloudSequenceFile 有 unreadable/unwritable typed failure，load 檢查 v=1；ne
   - `Sources/CloudBridgeLifecycle.swift:65–92`；slice SHA-256 `75bbed4f31decb5c51ea2250974f1fdfe933590aa72b770fe61c18249f803b74`。
   - `Sources/CloudBridgeLifecycle.swift:92–113`；slice SHA-256 `7be466daf8b4ad380045149f9cd38c1db521f329872b66bad598b27f717e6214`。
   - `Sources/CloudBridgeLifecycle.swift:533–533`；slice SHA-256 `950be1dccde1ede0456c171e515e6532af7aa6fac4e47e36c3468f6ac5d56049`。
-  - `Sources/CloudAppBridge.swift:658–658`；slice SHA-256 `fb03a42f0f7170421077ef8cf7c0fc272abd355bb764e6df403f08af4c42cc1a`。
+  - `Sources/CloudAppBridge.swift:674–674`；slice SHA-256 `fb03a42f0f7170421077ef8cf7c0fc272abd355bb764e6df403f08af4c42cc1a`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
 - **unknown**：上述是來源推導風險；實際序號重用或資料損失未觀測，未執行 Swift failure injection。 寫入失敗後重試、斷電、備份還原與同 identity 雙 writer 的實測及 production 修復由 W5-1 接手。 不得把 registry、sequence、ledger 合成同一錯誤政策。
@@ -246,7 +246,7 @@ restart receipt 以 instance 與 total/per-channel drain 決定 ready；spawning
   - `Sources/SessionWatch.swift:1164–1187`；slice SHA-256 `64b42da82c87bb07f6939ce908f5be1f518826f31eb357f075f133785b038b49`。
   - `Sources/SessionWatch.swift:1189–1207`；slice SHA-256 `6cde2caba502ddeb6dfc97a392ea32be6e7991b163c9a7b190cbed08fa021e0d`。
   - `Sources/Coordinator.swift:1672–1722`；slice SHA-256 `65eff53327059be92f382eeb4ed6beef6634bd261bdcce9834f288d512e78a48`。
-  - `Tests/OrchestratorRecoveryTests.swift:1195–1195`；slice SHA-256 `f827616029d4f063b25655e9997ee192fb5c2732b7d3d1f542eebc4b137496a3`。
+  - `Tests/OrchestratorRecoveryTests.swift:1199–1199`；slice SHA-256 `f827616029d4f063b25655e9997ee192fb5c2732b7d3d1f542eebc4b137496a3`。
 - **executable-test-derived**：`{"observation_count":null,"status":"not-run"}`。
 - **measured-runtime**：`{"observation_count":null,"status":"not-measured"}`。
 - **unknown**：existing test source 不是已執行 receipt；未重啟此 Mac，daemon restart time/p95 與 VM reboot 都未知。 R-1/R-2 與 W4 disposable Ubuntu 須測 admission/effect/write/ACK 各故障點；terminal service 和 daemon 分別測。
@@ -291,7 +291,7 @@ health liveness、fixture 通過、source seal 相符，都不構成 restart、d
 
 | 檔案 | bytes | SHA-256 |
 |---|---:|---|
-| `Sources/CloudAppBridge.swift` | 85265 | `a63b4b0056997c3be5671830fc345cc6a89dc8db256c7e83af95c758645853f6` |
+| `Sources/CloudAppBridge.swift` | 87080 | `853c4431771550175c6c485b9da648edb72ef1d24b350030402dee74785aaabc` |
 | `Sources/CloudBridgeLifecycle.swift` | 25177 | `07f585fd60b4e99abe42d89ca72087c6339456cb844b088718c503cd9ef6b663` |
 | `Sources/CloudCommandLedger.swift` | 28746 | `def726c029d4fb17e0d096c3187d87b2ea89fdc413e69b95bb02cf0a27862fcf` |
 | `Sources/CloudOutboundSpool.swift` | 42597 | `aef545decd4c7c95b5c566cb60cb11455eaadf6b52f84c3707b76df165459485` |
@@ -305,4 +305,4 @@ health liveness、fixture 通過、source seal 相符，都不構成 restart、d
 | `Sources/TranscriptReadCoordinator.swift` | 5111 | `61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371` |
 | `Tests/CloudOutboundSpoolTests.swift` | 66799 | `da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244` |
 | `Tests/OrchestratorCompletionTests.swift` | 63864 | `d2258c60bd16287345470da810a3ec720c14886fe49da132ff6d92da6054699b` |
-| `Tests/OrchestratorRecoveryTests.swift` | 91204 | `2fcfe6a42eb1d4015854351ef1952f04c9d9d7fae0d9bc7e7913198b756cad27` |
+| `Tests/OrchestratorRecoveryTests.swift` | 91478 | `e57da0019aa0535c82eb7ce41d22188662b594062fd7deebaabc6bdb4ec420f7` |
