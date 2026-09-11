@@ -15,9 +15,10 @@
 #   tools/scratch.sh new PURPOSE [--root DIR] [--ttl-hours N]
 #   tools/scratch.sh remove PATH [--root DIR]
 #
-# /bin/bash 3.2 and the stock macOS userland, nothing to install. Every `ps` and `date` whose output
-# is parsed runs with LC_ALL=C and TZ=UTC: this Mac runs zh_TW, where date formats change their
-# field counts, and a start time read in one zone and compared in another is eight hours wrong.
+# /bin/bash 3.2 and the stock macOS userland, nothing to install. Every `ps`, `date` and `kill` whose
+# output is parsed runs with LC_ALL=C, and every time is read with TZ=UTC: this Mac runs zh_TW, where
+# date formats change their field counts, and a start time read in one zone and compared in another
+# is eight hours wrong.
 set -u
 set -o pipefail
 
@@ -71,8 +72,9 @@ new           Make an entry a session keeps across tool calls — a deploy copy,
 
 remove        Remove one entry. Refuses anything that is not a directory directly under the root, a
               symbolic link, an entry with no version-1 marker, an entry whose owner is still running
-              and is not one of this process's ancestors, and an entry whose owner the process table
-              cannot be read for: not being able to see an owner is not seeing it gone.
+              and is not one of this process's ancestors, and an entry whose owner's liveness cannot
+              be read. An owner is gone only when the system answers "No such process" for its pid,
+              or the process running under that pid started at another time.
 
 exit status   COMMAND's own for snapshot-run, otherwise 0; a signal ends snapshot-run by that same
               signal once the entry is gone. Refusals, with the typed code on stderr:
@@ -143,22 +145,20 @@ open_root() {
 
 # ---- Processes -----------------------------------------------------------------------------------
 
-# Seconds since the epoch at which process $1 started, at whole-second resolution. 1 = `ps` failed and
-# printed no row: either the pid is absent or `ps` was not allowed to run, and only reading a pid that
-# is always there tells the two apart (owner_liveness). 2 = it printed something that is not a start.
+# Seconds since the epoch at which process $1 started, at whole-second resolution; 1 when that cannot
+# be read, whatever the reason. A `ps` that prints no row has not said the pid is absent — it may not
+# be allowed to run, or to show that one pid — so whether a process exists is asked of the kernel
+# (signal_probe) and never read from here.
 process_start() {
   local raw
-  if ! raw=$(LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null); then
-    [ -z "$(trim "$raw")" ] && return 1
-    return 2
-  fi
+  raw=$(LC_ALL=C TZ=UTC ps -o lstart= -p "$1" 2>/dev/null) || return 1
   set -f
   # shellcheck disable=SC2086
   set -- $raw
   set +f
-  [ $# -eq 5 ] || return 2
-  raw=$(LC_ALL=C TZ=UTC date -j -f '%b %d %H:%M:%S %Y' "$2 $3 $4 $5" +%s 2>/dev/null) || return 2
-  case $raw in ''|*[!0-9]*) return 2 ;; esac
+  [ $# -eq 5 ] || return 1
+  raw=$(LC_ALL=C TZ=UTC date -j -f '%b %d %H:%M:%S %Y' "$2 $3 $4 $5" +%s 2>/dev/null) || return 1
+  case $raw in ''|*[!0-9]*) return 1 ;; esac
   printf '%s\n' "$raw"
 }
 
@@ -195,22 +195,45 @@ assistant_ancestor() {
   return 1
 }
 
-# Whether the exact process recorded in a marker is still the one running under that pid: the same
-# pid and the same start, ±1 s. 0 = alive, 1 = gone, 2 = unknown.
+# Whether pid $1 exists, asked of the kernel with signal 0. 0 = it exists, 1 = the system answered
+# "No such process", 2 = any other answer. "Operation not permitted" is existence: a process this user
+# may not signal is still there.
 #
-# Not being able to see an owner is not seeing it gone. A Codex sandbox refuses to run `ps` at all,
-# and a tool that read that refusal as "not running" removed a live session's entry. So a pid the
-# table prints no row for is gone only once the same table has been shown to answer, by reading pid 1
-# — launchd, which is always running. If even that cannot be read, nothing about the owner is known.
+# `kill` is looked up on PATH through `env`, as `ps` and `date` are, and not bash's builtin: a builtin
+# is never looked up, so nothing put first on PATH could answer for it, and its message carries this
+# script's path and line number. Measured on Darwin 24.6.0, normally and under a sandbox that denies
+# process-info, in the C locale and in zh_TW: /bin/kill exits 1 with exactly `kill: <pid>: No such
+# process` or `kill: <pid>: Operation not permitted`, and 0 silently for a process it may signal.
+# Anything else — a kill that could not be run, another kill's wording, an illegal pid — is not an
+# answer about the owner.
+signal_probe() {  # $1 pid
+  local said
+  said=$(LC_ALL=C env kill -0 "$1" 2>&1 >/dev/null)
+  case $?:$said in
+    0:) return 0 ;;
+    "1:kill: $1: Operation not permitted") return 0 ;;
+    "1:kill: $1: No such process") return 1 ;;
+  esac
+  return 2
+}
+
+# Whether the exact process recorded in a marker is still the one running under that pid: the same
+# pid and the same start, ±1 s. 0 = alive, 1 = gone, 2 = unknown. The broker's sweep decides the same
+# way (scratchOwnerStatus in Sources/OwnedStorage.swift).
+#
+# An owner is gone for exactly two reasons: the system says there is no such process, or the process
+# under that pid started at another time. Nothing `ps` fails to show is either. A Codex sandbox refuses
+# `ps` altogether, and a table can hide one pid while it shows another — so reading pid 1 beside a
+# missing row, which this once rested on, proved only that pid 1 could be read.
 owner_liveness() {  # $1 pid, $2 recorded process_start
   local now drift
-  now=$(process_start "$1")
+  signal_probe "$1"
   case $? in
     0) ;;
-    1) process_start 1 >/dev/null && return 1
-       return 2 ;;
+    1) return 1 ;;
     *) return 2 ;;
   esac
+  now=$(process_start "$1") || return 2
   drift=$((now - $2))
   [ "$drift" -ge -1 ] && [ "$drift" -le 1 ] && return 0
   return 1
@@ -567,7 +590,7 @@ cmd_remove() {
                 "$target belongs to process $owner_pid, which is still running, and the processes above this one cannot be read to say whether it is one of them; unknown is not removed" ;;
          esac ;;
       *) die $EX_REFUSED scratch_owner_unknown \
-           "$target belongs to process $owner_pid, and the process table cannot be read to say whether it is still running; unknown is not removed" ;;
+           "$target belongs to process $owner_pid, and whether it is still running cannot be read: the system has not said there is no such process, nor shown when a process under that pid started; unknown is not removed" ;;
     esac
   fi
   remove_entry "$SCRATCH_ROOT_REAL/$name"

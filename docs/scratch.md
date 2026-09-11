@@ -41,8 +41,7 @@ rather than restating it.
 - **Releasable.** The marker parses at version 1; and the owner is `null`, or its pid is not running,
   or the running pid's start time differs from `process_start` at whole-second resolution (±1 s);
   and `keep_until` is `null` or in the past. The broker then applies its own grace period.
-- **Unknown.** A missing, unreadable or other-version marker makes the entry `unknown`. Unknown is
-  never deleted automatically; it is reported.
+- **Unknown.** A missing, unreadable or other-version marker, or a recorded owner whose liveness cannot be read, makes the entry `unknown`; unknown is never deleted automatically and is reported.
 - **Children.** A child task does not use the owned root. It passes `--root
   /tmp/.clawdline/<task-id>/work`, where the existing `work/` reclaim applies and no marker is needed.
 - **Single written home.** This page. Every other document links here instead of restating it.
@@ -75,8 +74,9 @@ tools/scratch.sh new PURPOSE [--root DIR] [--ttl-hours N]
 tools/scratch.sh remove PATH [--root DIR]
 ```
 
-It runs on `/bin/bash` 3.2 with the stock macOS userland. Every `ps` and `date` whose output it parses
-runs with `LC_ALL=C` and `TZ=UTC`: this Mac runs zh_TW, where date formats change their field counts.
+It runs on `/bin/bash` 3.2 with the stock macOS userland. Every `ps`, `date` and `kill` whose output it
+parses runs with `LC_ALL=C`, and every time is read with `TZ=UTC`: this Mac runs zh_TW, where date
+formats change their field counts.
 `--help` prints the whole interface.
 
 ### `snapshot-run`
@@ -135,12 +135,15 @@ Removes one entry, and refuses — leaving the path untouched — anything that 
   (`scratch_marker_unknown`), because unknown is never removed;
 - owned by a process that is still running and is not an ancestor of the caller
   (`scratch_owner_live`), because that entry is another session's live snapshot or credential copy;
-- owned by a process the tool cannot read (`scratch_owner_unknown`): the process table cannot be read
-  at all, it prints a row for the owner that is not a start time, or the owner is running and the
-  processes above the caller cannot be read to say whether it is one of them. Not being able to see an
-  owner is not seeing it gone. A Codex sandbox refuses to run `ps` at all, and before this refusal
-  existed that read as "not running", so a live session's entry was removed. An entry whose `owner` is
-  `null` has nothing to read and is decided as before.
+- owned by a process whose liveness the tool cannot read (`scratch_owner_unknown`): `kill -0` on the
+  owner's pid answers something other than success, "No such process" or "Operation not permitted";
+  or the pid exists and its start time cannot be read, because `ps` is refused, prints no row for it
+  or prints a row that is not a start time; or the owner is running and the processes above the
+  caller cannot be read to say whether it is one of them. An owner is gone only when the system says
+  there is no such process, or a process started at another time is running under its pid. Not being
+  able to see an owner is not seeing it gone: a Codex sandbox refuses `ps` altogether, and a table can
+  hide one pid while it shows another. An entry whose `owner` is `null` has nothing to read and is
+  decided as before.
 
 ### Refusals and exit status
 
@@ -170,13 +173,17 @@ the authority.
 - **A snapshot run whose own start time cannot be read** (a sandbox that hides the process table)
   cannot prove its owner, so it records `owner: null` with `keep_until` six hours out, which covers a
   queued suite. It still removes its entry itself when it exits.
-- **Whether an owner is running has three answers: alive, gone and unknown.** The contract releases
-  an entry whose owner's pid "is not running", and a `ps` that was not allowed to run has not said
-  that. A pid the process table prints no row for is gone only once the tool has read pid 1 — launchd,
-  always running — from the same table; if even that cannot be read, or the owner's row is not a start
-  time, the owner is unknown. A running pid whose start differs from `process_start` by more than 1 s
-  is gone. Whether a running owner is above the caller is read the same way: a chain of parents that
-  cannot be read to its top is unknown, not somebody else's. `remove` refuses unknown as
+- **Whether an owner is running has three answers: alive, gone and unknown**, decided the way the
+  broker's sweep decides them. The contract releases an entry whose owner's pid "is not running", and
+  only the system can say that, so the tool sends the pid signal 0 with the `kill` found on `PATH` —
+  not bash's builtin, which nothing on `PATH` can stand in for — in the C locale. "No such process"
+  (`ESRCH`) is gone. Success, or "Operation not permitted" (`EPERM`: a process this user may not
+  signal), means the pid exists, and its start time is read next: unreadable is unknown, more than
+  1 s from `process_start` is gone because the pid was reused, and otherwise the owner is alive. Any
+  other answer — `kill` could not be run, printed other words, or refused the pid — is unknown. What
+  `ps` does not print is never evidence that a pid is absent: it may be refused, or may hide one pid
+  while it shows another. Whether a running owner is above the caller is read as carefully: a chain of
+  parents that cannot be read to its top is unknown, not somebody else's. `remove` refuses unknown as
   `scratch_owner_unknown`.
 - **An existing root is accepted at whatever mode it has**, as long as it is a real directory owned by
   this uid. Every entry inside it is `0700` regardless.
@@ -190,18 +197,24 @@ copy that cannot be made, `INT`, `TERM` and `HUP` each leave nothing and leave n
 root owned by someone else are refused, and so is a relative root, from `CLAWDLINE_SCRATCH_ROOT` or
 from `--root`, on each of `snapshot-run`, `new` and `remove`, with nothing created; `remove` refuses a
 path outside the root, an entry with no marker or another version's, a link named like an entry, a
-live foreign owner, and an owner it cannot read — with no process table, even after that owner has
-exited; with a row that is not a start time; and with no readable chain of parents above the caller —
-while an entry whose owner is `null` stays removable with no process table at all. It also holds the
-worktree subject to not writing the shared index — beside a control proving a plain `git diff HEAD`
-does write it in the same repository.
+live foreign owner — also when `kill` answers "Operation not permitted" — and an owner whose liveness
+it cannot read: one `kill` says exists while the process table is refused, prints no row for it though
+it shows pid 1, or prints a row that is not a start time; a `kill` that could not be run or refused
+the pid; and no readable chain of parents above the caller. It removes an entry whose owner `kill`
+says does not exist, with no process table at all, and one whose pid now runs a process started at
+another time; an entry whose owner is `null` stays removable with no process table at all. It also
+holds the worktree subject to not writing the shared index — beside a control proving a plain
+`git diff HEAD` does write it in the same repository.
 
 Whose an entry is depends on whether the process table can be read, and that is a fact about the
 runner rather than the tool: a Codex sandbox answers `ps` with "operation not permitted". So the
 suite puts a stand-in `ps` first on `PATH` and drives both of the tool's legal answers on every
 runner — a process table it controls, where the marker must name the exact owner, and one that
-refuses every question, where it must be `owner: null` with its mandatory `keep_until`. Each stand-in
-logs what it was asked, and the suite requires that it was asked. This machine's own table is used
-too when it can be read, and the run says so when it cannot. Its red proof is
+refuses every question, where it must be `owner: null` with its mandatory `keep_until`. Beside each
+stands a `kill` answering in the exact words `/bin/kill` prints. The tool reaches it only because it
+looks `kill` up on `PATH`, so requiring that it was asked is what keeps a shell builtin out. Each
+stand-in logs what it was asked, and the suite requires that it was asked. This machine's own table
+is used too when it can be read, and this machine's own `kill` beside a refused table when it answers
+in those words; the run says so when either cannot be used. Its red proof is
 [`Tests/guard-red-proofs/scratch-tool.sh`](../Tests/guard-red-proofs/scratch-tool.sh): with the
 cleanup trap deleted, the suite goes red (see [guard red proofs](guard-red-proofs.md)).

@@ -483,36 +483,69 @@ for (const source of ["CLAWDLINE_SCRATCH_ROOT", "--root"]) {
 //     pinning LC_ALL=C and TZ=UTC would read a Chinese date, or one eight hours off, here as well;
 //   - an unreadable table, which refuses every question the way that sandbox's shell did.
 //
+// Whether an owner still exists is not read from that table. The tool asks the kernel with `kill -0`,
+// looked up on the same PATH, so each stand-in directory also holds a `kill` answering for its
+// processes in the exact words /bin/kill prints — and the checks require that it was asked, which a
+// tool that used bash's builtin `kill` never would.
+//
 // This machine's own table is driven too when it can be read, and the run says so when it cannot.
 // Each stand-in logs every question it is asked, and its checks end by requiring that it was asked.
 console.log("owners");
 const STAND_IN_START = 1_000_000_000;  // 2001-09-09T01:46:40Z: no process a real table lists started then
+// What `kill -0 <pid>` answers, in the words /bin/kill prints them — measured on Darwin 24.6.0 in the C
+// locale and in zh_TW, with and without a sandbox that denies process-info. Every stand-in directory
+// holds one: a pid recorded under gone/ has exited and every other pid exists, including one under
+// hidden/, which that directory's ps prints no row for. A pid entered under signal/ answers as the
+// file says instead: eperm, a kill that could not be run at all (not-run), or an illegal pid.
+const STAND_IN_KILL = `#!/bin/sh
+# A stand-in for kill, written by Tests/scratch-tool.mjs ("owners"); STAND_IN_KILL there says what it models.
+dir=$(cd -P -- "$(dirname -- "$0")/.." && pwd -P) || exit 70
+printf '%s\\n' "$*" >> "$dir/signalled"
+if [ $# -ne 2 ] || [ "$1" != -0 ]; then printf 'kill %s\\n' "$*" >> "$dir/unmodelled"; exit 2; fi
+case $2 in ''|*[!0-9]*) printf 'kill %s\\n' "$*" >> "$dir/unmodelled"; exit 2 ;; esac
+answer=exists
+[ ! -e "$dir/gone/$2" ] || answer=esrch
+[ ! -f "$dir/signal/$2" ] || answer=$(cat -- "$dir/signal/$2")
+case $answer in
+  exists) exit 0 ;;
+  esrch) printf 'kill: %s: No such process\\n' "$2" >&2; exit 1 ;;
+  eperm) printf 'kill: %s: Operation not permitted\\n' "$2" >&2; exit 1 ;;
+  not-run) printf '/bin/sh: /bin/kill: Operation not permitted\\n' >&2; exit 126 ;;
+  illegal) printf 'kill: illegal process id: %s\\n' "$2" >&2; exit 2 ;;
+  *) printf 'kill %s: signal/%s says %s\\n' "$*" "$2" "$answer" >> "$dir/unmodelled"; exit 2 ;;
+esac
+`;
 const standIn = (name, script) => {
     const dir = join(sandbox, name);
-    for (const sub of ["bin", "named", "gone", "garbled"]) mkdirSync(join(dir, sub), { recursive: true });
+    for (const sub of ["bin", "named", "gone", "garbled", "hidden", "started", "signal"]) mkdirSync(join(dir, sub), { recursive: true });
     writeFileSync(join(dir, "bin", "ps"), script, { mode: 0o755 });
+    writeFileSync(join(dir, "bin", "kill"), STAND_IN_KILL, { mode: 0o755 });
     return dir;
 };
 const questions = (dir) => {
     const lines = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean) : []);
-    return { asked: lines("asked").length, unmodelled: lines("unmodelled") };
+    return { asked: lines("asked").length, signalled: lines("signalled").length, unmodelled: lines("unmodelled") };
 };
 const tableDir = standIn("ps-table", `#!/bin/sh
 # A stand-in for ps, written by Tests/scratch-tool.mjs ("owners"): a process table the suite controls.
 # Every pid is running, started at one fixed moment, named /bin/bash and parented by launchd, unless
-# the suite has entered another name for it under named/ or recorded under gone/ that it has exited.
-# A pid entered under garbled/ has a row whose start is not a time, and while a file named
-# lineage-unreadable exists no process's parent can be read.
+# the suite has entered another name for it under named/, another start under started/, or recorded
+# under gone/ that it has exited. A pid entered under hidden/ is running and has no row, the way a
+# table that may not show that one pid answers; a pid under garbled/ has a row whose start is not a
+# time; and while a file named lineage-unreadable exists no process's parent can be read.
 dir=$(cd -P -- "$(dirname -- "$0")/.." && pwd -P) || exit 70
 printf '%s\\n' "$*" >> "$dir/asked"
 if [ $# -ne 4 ] || [ "$1" != -o ] || [ "$3" != -p ]; then printf '%s\\n' "$*" >> "$dir/unmodelled"; exit 2; fi
 case $4 in ''|*[!0-9]*) exit 1 ;; esac
 [ ! -e "$dir/gone/$4" ] || exit 1
+[ ! -e "$dir/hidden/$4" ] || exit 1
 comm=/bin/bash
 [ ! -f "$dir/named/$4" ] || comm=$(cat -- "$dir/named/$4")
+start=${STAND_IN_START}
+[ ! -f "$dir/started/$4" ] || start=$(cat -- "$dir/started/$4")
 case $2 in
   lstart=) if [ -e "$dir/garbled/$4" ]; then printf 'not a start time\\n'; exit 0; fi
-           date -r ${STAND_IN_START} '+%a %b %e %H:%M:%S %Y' ;;
+           date -r "$start" '+%a %b %e %H:%M:%S %Y' ;;
   comm=) printf '%s\\n' "$comm" ;;
   ucomm=) printf 'bash\\n' ;;
   ppid=) [ ! -e "$dir/lineage-unreadable" ] || exit 1
@@ -688,9 +721,12 @@ for (const t of readableTables) {
 
     // The defect `scratch_owner_unknown` exists for, measured on 2026-09-11: an entry that records its
     // owner, removed by a process that cannot read the process table. That read used to mean "not
-    // running", and the entry went while its owner still ran. The entry is made where the stand-in
-    // table can be read, so its marker names a live holder; each removal below is then judged only on
-    // what the table it is shown lets it conclude.
+    // running", and the entry went while its owner still ran. Review then found its second shape: a
+    // table that prints no row for the owner while it still shows pid 1, which the tool took as proof
+    // that the row was missing because the process was. So an owner is gone only when `kill -0` says
+    // there is no such process, or a process started at another time runs under its pid. The entry is
+    // made where the stand-in table can be read, so its marker names a live holder; each removal below
+    // is then judged only on what the stand-ins it is shown let it conclude.
     const standInTable = readableTables[0];
     toolDoor(root, repo);
     const heldOut = join(sandbox, "held-unknown.out");
@@ -710,17 +746,48 @@ for (const t of readableTables) {
     const refusedAs = (result, code) => result !== null && result.status === 77 && result.stderr.includes(code)
         && existsSync(heldPath);
     const shown = (result) => (result ? said(result) : "the holder never made its entry");
+    // One fact entered for the holder's pid in one stand-in directory, for the length of one removal.
+    const withFact = (dir, fact, content, act) => {
+        const file = join(dir, fact, String(holder.pid));
+        writeFileSync(file, content);
+        try { return act(); } finally { rmSync(file, { force: true }); }
+    };
 
-    const askedBefore = questions(unreadableDir).asked;
+    const probedBefore = questions(unreadableDir);
     const whileRunning = removeHeld(u);
-    check(`${u.label}: remove refuses an entry that records an owner as scratch_owner_unknown, and the entry stays`,
-        refusedAs(whileRunning, "scratch_owner_unknown") && questions(unreadableDir).asked > askedBefore, shown(whileRunning));
+    const probedAfter = questions(unreadableDir);
+    check(`${u.label}: an owner kill says exists, whose start cannot be read, is refused as scratch_owner_unknown and the entry stays`,
+        refusedAs(whileRunning, "scratch_owner_unknown") && probedAfter.asked > probedBefore.asked
+            && probedAfter.signalled > probedBefore.signalled, shown(whileRunning));
 
-    writeFileSync(join(standInTable.table, "garbled", String(holder.pid)), "");
-    const garbled = removeHeld(standInTable);
-    rmSync(join(standInTable.table, "garbled", String(holder.pid)));
-    check(`${standInTable.label}: a row for the owner that is not a start time is refused as scratch_owner_unknown, not read as gone`,
+    // The reviewer's counterexample: pid 1 is visible, the owner has no row, and kill says it exists.
+    const tablePs = join(standInTable.table, "bin", "ps");
+    const hidden = withFact(standInTable.table, "hidden", "", () => {
+        const one = spawnSync(tablePs, ["-o", "lstart=", "-p", "1"], { encoding: "utf8" });
+        const owner = spawnSync(tablePs, ["-o", "lstart=", "-p", String(holder.pid)], { encoding: "utf8" });
+        check(`${standInTable.label}: control: the table prints a row for pid 1 and none for the hidden owner`,
+            one.status === 0 && one.stdout.trim() !== "" && owner.status === 1 && owner.stdout === "",
+            `pid 1: status ${one.status} "${one.stdout.trim()}"; owner: status ${owner.status} "${owner.stdout.trim()}"`);
+        return removeHeld(standInTable);
+    });
+    check(`${standInTable.label}: an owner kill says exists and the table has no row for, while pid 1 has one, is refused as scratch_owner_unknown and the entry stays`,
+        refusedAs(hidden, "scratch_owner_unknown"), shown(hidden));
+
+    const garbled = withFact(standInTable.table, "garbled", "", () => removeHeld(standInTable));
+    check(`${standInTable.label}: an owner that exists with a row that is not a start time is refused as scratch_owner_unknown, not read as gone`,
         refusedAs(garbled, "scratch_owner_unknown"), shown(garbled));
+
+    // Answers from kill that are neither "No such process" nor "Operation not permitted". The first
+    // carries EPERM's words from a shell that could not run kill at all, so only the whole answer —
+    // status, wording and pid — tells the two apart.
+    for (const [answer, what] of [["not-run", "kill cannot be run"], ["illegal", "kill refuses the pid as illegal"]]) {
+        const refusal = withFact(standInTable.table, "signal", `${answer}\n`, () => removeHeld(standInTable));
+        check(`${standInTable.label}: when ${what}, remove refuses as scratch_owner_unknown and the entry stays`,
+            refusedAs(refusal, "scratch_owner_unknown"), shown(refusal));
+    }
+    const denied = withFact(standInTable.table, "signal", "eperm\n", () => removeHeld(standInTable));
+    check(`${standInTable.label}: "Operation not permitted" means the owner exists, so a running owner not above the caller is refused as scratch_owner_live`,
+        refusedAs(denied, "scratch_owner_live"), shown(denied));
 
     writeFileSync(join(standInTable.table, "lineage-unreadable"), "");
     const lineage = removeHeld(standInTable);
@@ -731,16 +798,63 @@ for (const t of readableTables) {
     holder.kill("SIGKILL");
     await holderExited;
     lingering.delete(holder.pid);
-    writeFileSync(join(standInTable.table, "gone", String(holder.pid)), "");
-    const exitedUnreadable = removeHeld(u);
-    check(`${u.label}: once that owner has exited it is still refused, because gone cannot be read either`,
-        refusedAs(exitedUnreadable, "scratch_owner_unknown"), shown(exitedUnreadable));
-    const exitedReadable = removeHeld(standInTable);
-    check(`${standInTable.label}: with that owner gone from a table that can be read, remove takes the entry away`,
-        exitedReadable !== null && exitedReadable.status === 0 && !existsSync(heldPath), shown(exitedReadable));
-    const { unmodelled } = questions(standInTable.table);
-    check(`${standInTable.label}: every question those removals asked is one the stand-in models`, unmodelled.length === 0,
-        `unmodelled: ${unmodelled.join(" | ")}`);
+    for (const dir of [standInTable.table, unreadableDir]) writeFileSync(join(dir, "gone", String(holder.pid)), "");
+    const exited = removeHeld(u);
+    check(`${u.label}: once kill says that owner does not exist, remove takes the entry away with no process table at all`,
+        exited !== null && exited.status === 0 && !existsSync(heldPath), shown(exited));
+
+    // A pid that exists but runs a process started an hour after the one the marker recorded: the
+    // owner's pid was reused. The same entry with the recorded start is first shown to be held.
+    const reusedPid = 77777;  // the stand-in table says any pid it has no fact for is running
+    const reusedEntry = join(root, "creds.reusedAB");
+    mkdirSync(reusedEntry, { mode: 0o700 });
+    writeFileSync(join(reusedEntry, ".clawdline-scratch.json"),
+        `{"clawdline_scratch":1,"created_at":${Math.floor(Date.now() / 1000)},"purpose":"creds","owner":{"pid":${reusedPid},"process_start":${STAND_IN_START},"command":"claude"},"keep_until":null}\n`);
+    const sameStart = runTool(["remove", reusedEntry], { path: standInTable.path });
+    check(`${standInTable.label}: control: while that pid's start is the recorded one, its entry is refused as scratch_owner_live`,
+        sameStart.status === 77 && sameStart.stderr.includes("scratch_owner_live") && existsSync(reusedEntry), said(sameStart));
+    writeFileSync(join(standInTable.table, "started", String(reusedPid)), `${STAND_IN_START + 3600}\n`);
+    const reused = runTool(["remove", reusedEntry], { path: standInTable.path });
+    check(`${standInTable.label}: an owner pid that exists but started an hour after process_start was reused, and remove takes the entry away`,
+        reused.status === 0 && !existsSync(reusedEntry), said(reused));
+
+    const unmodelled = [...questions(standInTable.table).unmodelled, ...questions(unreadableDir).unmodelled];
+    check(`${standInTable.label} and ${u.label}: every question those removals asked is one the stand-ins model`,
+        unmodelled.length === 0, `unmodelled: ${unmodelled.join(" | ")}`);
+    const { signalled } = questions(standInTable.table);
+    check(`${standInTable.label}: its kill answered ${signalled} probes, so the tool asks the kill on PATH and not a shell builtin`,
+        signalled > 0);
+
+    // This machine's own kill beside a table that refuses every question, which is what a sandbox that
+    // refuses ps still leaves. A running owner is unknown whatever that kill answers; an exited one is
+    // released where it answers in the words the tool classifies, and the run says so where it does not.
+    const psOnly = join(sandbox, "ps-unreadable-only");
+    mkdirSync(join(psOnly, "bin"), { recursive: true });
+    writeFileSync(join(psOnly, "bin", "ps"), readFileSync(join(unreadableDir, "bin", "ps")), { mode: 0o755 });
+    const machineKill = { label: "unreadable table with this machine's kill", path: `${join(psOnly, "bin")}:${process.env.PATH}` };
+    const sleeper = spawn("/bin/sleep", ["60"], { stdio: "ignore" });
+    lingering.add(sleeper.pid);
+    const sleeperExited = new Promise((done) => sleeper.on("exit", done));
+    const machineEntry = join(root, "creds.machineAB");
+    mkdirSync(machineEntry, { mode: 0o700 });
+    writeFileSync(join(machineEntry, ".clawdline-scratch.json"),
+        `{"clawdline_scratch":1,"created_at":${Math.floor(Date.now() / 1000)},"purpose":"creds","owner":{"pid":${sleeper.pid},"process_start":${Math.floor(Date.now() / 1000)},"command":"sleep"},"keep_until":null}\n`);
+    const machineLive = runTool(["remove", machineEntry], { path: machineKill.path });
+    check(`${machineKill.label}: a running owner is refused as scratch_owner_unknown and the entry stays`,
+        machineLive.status === 77 && machineLive.stderr.includes("scratch_owner_unknown") && existsSync(machineEntry), said(machineLive));
+    sleeper.kill("SIGKILL");
+    await sleeperExited;
+    lingering.delete(sleeper.pid);
+    const machineAnswer = spawnSync("kill", ["-0", String(sleeper.pid)], { encoding: "utf8", env: env({ LC_ALL: "C" }) });
+    if (machineAnswer.status === 1 && machineAnswer.stderr === `kill: ${sleeper.pid}: No such process\n`) {
+        const machineExited = runTool(["remove", machineEntry], { path: machineKill.path });
+        check(`${machineKill.label}: once that owner has exited, "No such process" alone lets remove take the entry away`,
+            machineExited.status === 0 && !existsSync(machineEntry), said(machineExited));
+    } else {
+        const why = String(machineAnswer.error?.message || machineAnswer.stderr || `exit ${machineAnswer.status}`).trim().split("\n")[0];
+        console.log(`  – this machine's kill does not answer an exited pid in the words the tool classifies (${why}): its exited-owner check does not run, and the stand-in kill above drives that branch in its place`);
+        rmSync(machineEntry, { recursive: true, force: true });
+    }
     leavesNothing(`${u.label}: nothing is left under the root`);
     const { asked } = questions(unreadableDir);
     check(`${u.label}: the stand-in refused ${asked} questions, so these checks ran with no process table at all`, asked > 0);
