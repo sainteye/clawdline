@@ -195,9 +195,16 @@
        holding still before a pinch looks like. */
     -webkit-touch-callout: none;
 }
+/* Long screenshots are useful at a readable width, not reduced until thousands of vertical
+   pixels fit inside one phone screen. JS selects this only when that width would overflow the
+   frame, opens it at the top, and bounds the one-finger movement to the image's two ends. */
+.image-lightbox-frame img[data-long-preview="true"] {
+    width: auto; height: auto; max-width: 100%; max-height: none;
+}
 /* The two states the gesture handlers publish, so the desktop cursor says what the picture will do
    before it is pressed. */
-.image-lightbox-frame img[data-zoomed="true"] { cursor: grab; }
+.image-lightbox-frame img[data-zoomed="true"],
+.image-lightbox-frame img[data-pannable="true"] { cursor: grab; }
 .image-lightbox-frame img[data-panning="true"] { cursor: grabbing; }
 /* Only the double tap animates: it is a jump between two scales that the reader did not choose the
    path between. A pinch and a wheel follow the input continuously, and a transition on those is a

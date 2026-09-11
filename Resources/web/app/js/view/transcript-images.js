@@ -283,10 +283,21 @@ export function createImageZoom() {
     var x = 0;
     var y = 0;
     var ceiling = ZOOM_CEILING_MIN;
+    var topAligned = false;
     var frame = null;    // the window the picture may move inside, in client coordinates
     var content = null;  // the picture's fitted size, which is its size at scale 1
 
     function zoomed() { return scale > ZOOM_FIT + ZOOM_EPSILON; }
+
+    function acrossX() {
+        return frame && content ? Math.max(0, (scale * content.width - frame.width) / 2) : 0;
+    }
+
+    function acrossY() {
+        return frame && content ? Math.max(0, (scale * content.height - frame.height) / 2) : 0;
+    }
+
+    function canPan() { return !!frame && !!content && (acrossX() > 0 || acrossY() > 0); }
 
     /**
      * Pull the offset back inside what the picture is allowed to hide.
@@ -299,10 +310,10 @@ export function createImageZoom() {
      */
     function settle() {
         if (!frame || !content) { x = 0; y = 0; return; }
-        var acrossX = Math.max(0, (scale * content.width - frame.width) / 2);
-        var acrossY = Math.max(0, (scale * content.height - frame.height) / 2);
-        x = Math.min(acrossX, Math.max(-acrossX, x));
-        y = Math.min(acrossY, Math.max(-acrossY, y));
+        var limitX = acrossX();
+        var limitY = acrossY();
+        x = Math.min(limitX, Math.max(-limitX, x));
+        y = Math.min(limitY, Math.max(-limitY, y));
     }
 
     /** Record the geometry a gesture is about to be measured against. */
@@ -349,9 +360,12 @@ export function createImageZoom() {
         // Arriving back at the fit recentres, whatever the way up left behind. `settle` would do
         // it wherever the picture is genuinely no larger than its frame, but this is the promise
         // rather than a consequence of one: zooming out must never end holding a corner.
-        if (target <= ZOOM_FIT) { x = 0; y = 0; }
         var moved = target !== scale;
         scale = target;
+        if (target <= ZOOM_FIT) {
+            x = 0;
+            y = topAligned ? acrossY() : 0;
+        }
         settle();
         return moved;
     }
@@ -371,7 +385,7 @@ export function createImageZoom() {
      * the preview is closed.
      */
     function panBy(dx, dy) {
-        if (!zoomed() || !frame || !content) return false;
+        if (!canPan()) return false;
         var wasX = x;
         var wasY = y;
         x += Number(dx) || 0;
@@ -386,12 +400,24 @@ export function createImageZoom() {
         return scaleTo(Math.min(ceiling, ZOOM_DOUBLE_TAP), anchorX, anchorY);
     }
 
+    /** Put an overflowing reading layout at its first row rather than its middle. */
+    function alignTop() {
+        if (!frame || !content) return false;
+        topAligned = true;
+        var wasY = y;
+        x = 0;
+        y = acrossY();
+        settle();
+        return y !== wasY;
+    }
+
     /** Forget everything, including the geometry: the next picture is a different size. */
     function reset() {
         scale = ZOOM_FIT;
         x = 0;
         y = 0;
         ceiling = ZOOM_CEILING_MIN;
+        topAligned = false;
         frame = null;
         content = null;
     }
@@ -401,9 +427,11 @@ export function createImageZoom() {
         state: function () { return { scale: scale, x: x, y: y }; },
         limits: function () { return { min: ZOOM_FIT, max: ceiling }; },
         zoomed: zoomed,
+        canPan: canPan,
         scaleTo: scaleTo,
         scaleBy: scaleBy,
         panBy: panBy,
+        alignTop: alignTop,
         toggle: toggle,
         reset: reset
     };
@@ -506,6 +534,24 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
                 "translate(" + view.x + "px, " + view.y + "px) scale(" + view.scale + ")";
         }
         if (image.dataset) image.dataset.zoomed = zoom.zoomed() ? "true" : "false";
+        if (image.dataset) image.dataset.pannable = zoom.canPan() ? "true" : "false";
+    }
+
+    /**
+     * A very tall screenshot is unreadable when `contain` shrinks all of it into the frame.
+     * Give those images their intrinsic, width-bounded height so one finger can read downward.
+     */
+    function chooseReadingLayout() {
+        var box = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect() : null;
+        var sourceWidth = Number(image.naturalWidth) || 0;
+        var sourceHeight = Number(image.naturalHeight) || 0;
+        var width = box && usableLength(box.width) && usableLength(sourceWidth)
+            ? Math.min(sourceWidth, box.width) : 0;
+        var height = width && usableLength(sourceHeight)
+            ? width * sourceHeight / sourceWidth : 0;
+        var longPreview = !!(box && usableLength(box.height) && height > box.height + 1);
+        if (image.dataset) image.dataset.longPreview = longPreview ? "true" : "false";
+        return longPreview;
     }
 
     /**
@@ -568,6 +614,10 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         // however long it takes the new bytes to arrive.
         zoom.reset();
         measured = null;
+        if (image.dataset) {
+            image.dataset.longPreview = "false";
+            image.dataset.pannable = "false";
+        }
         animate(false);
         draw();
         image.src = src;
@@ -630,7 +680,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         finger.y = touches[0].y;
         // A fitted picture has nowhere to go, and taking the event anyway would be taking it from
         // whatever the page would rather do with a finger that is only resting on the backdrop.
-        if (!zoom.zoomed()) return;
+        if (!zoom.canPan()) return;
         if (zoom.panBy(dx, dy)) draw();
         stopGesture(event);
     }
@@ -710,7 +760,7 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
         pressBegan(event.clientX, event.clientY);
         animate(false);
         relayout();
-        if (!zoom.zoomed()) return;
+        if (!zoom.canPan()) return;
         drag = { x: event.clientX, y: event.clientY };
         if (image.dataset) image.dataset.panning = "true";
     }
@@ -773,7 +823,9 @@ export function createImageLightbox(dialog, image, closeButton, doc = document, 
     // The size of the picture is not known until the bytes are, and every bound below depends on
     // it. This is also the only measurement that happens without a gesture to hang it on.
     image.addEventListener("load", function () {
+        var longPreview = chooseReadingLayout();
         relayout();
+        if (longPreview) zoom.alignTop();
         draw();
     });
     image.addEventListener("error", function () {

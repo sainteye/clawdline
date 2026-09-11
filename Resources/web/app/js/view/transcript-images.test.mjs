@@ -206,7 +206,7 @@ class Node {
 }
 
 /** A lightbox whose frame really is 400x300 with a 400x225 picture centred in it. */
-function lightboxFixture() {
+function lightboxFixture(dimensions = {}) {
     const dialog = new Node("dialog");
     const frame = new Node("frame");
     const image = new Node("image");
@@ -218,10 +218,12 @@ function lightboxFixture() {
     dialog.hidden = true;
     dialog.querySelector = (selector) => (selector === ".image-lightbox-frame" ? frame : null);
     frame.getBoundingClientRect = () => ({ ...FRAME, right: 400, bottom: 300 });
-    image.offsetWidth = CONTENT.width;
-    image.offsetHeight = CONTENT.height;
-    image.naturalWidth = NATURAL.width;
-    image.naturalHeight = NATURAL.height;
+    const content = dimensions.content || CONTENT;
+    const natural = dimensions.natural || NATURAL;
+    image.offsetWidth = content.width;
+    image.offsetHeight = content.height;
+    image.naturalWidth = natural.width;
+    image.naturalHeight = natural.height;
 
     const lightbox = createImageLightbox(dialog, image, closeButton, doc, {
         now: () => clock
@@ -255,6 +257,27 @@ assert.deepEqual(fit.view(), { x: 0, y: 0, scale: 1 },
 checks += 1;
 equal(fit.image.dataset.zoomed, "false", "and says so, because the cursor and the CSS read it");
 equal(fit.closeButton.focuses, 1, "opening still moves focus to the close control");
+
+// A phone screenshot is useful at the width of the screen rather than shrunk until all 2380
+// pixels fit inside its height. It opens at the top and one finger can read it to the bottom,
+// without first discovering the lightbox's pinch or double-tap gestures.
+const longImage = lightboxFixture({
+    natural: { width: 780, height: 2380 },
+    content: { width: 400, height: 1220 }
+});
+longImage.open();
+equal(longImage.image.dataset.longPreview, "true",
+    "a screenshot taller than the frame uses the width-readable long-image layout");
+equal(longImage.image.dataset.pannable, "true",
+    "an overflowing image says it can be moved even before it is zoomed");
+close(longImage.view().y, 460, "a long screenshot opens at its top edge");
+longImage.dialog.emit("touchstart", touchEvent([touch(200, 220)]));
+const longMove = longImage.dialog.emit("touchmove", touchEvent([touch(200, 100)]));
+close(longImage.view().y, 340, "one upward swipe moves down through the long screenshot");
+equal(longMove.defaultPrevented, true,
+    "the reading swipe is consumed by the preview rather than lost behind the modal");
+longImage.dialog.emit("touchmove", touchEvent([touch(200, -9000)]));
+close(longImage.view().y, -460, "and the final swipe reaches the screenshot's bottom edge");
 
 // The desktop half: a wheel notch away from the reader zooms in around the pointer.
 const wheeled = lightboxFixture();
@@ -549,6 +572,10 @@ ok(/user-select:\s*none/.test(lightboxCSS),
     "dragging a picture must not select the text behind it");
 ok(/\[data-zoomed="true"\]/.test(lightboxCSS) && /\[data-panning="true"\]/.test(lightboxCSS),
     "the cursor follows the two states the handlers publish");
+ok(/img\[data-long-preview="true"\][^{]*\{[^}]*max-height:\s*none/.test(lightboxCSS),
+    "a long screenshot is not shrunk back to the frame height after JS selects reading layout");
+ok(/\[data-pannable="true"\]/.test(lightboxCSS),
+    "the cursor also identifies a width-fitted long image as draggable");
 
 const page = await readFile(new URL("../../../index.html", import.meta.url), "utf8");
 ok(page.includes(
