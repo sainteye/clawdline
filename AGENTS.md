@@ -53,6 +53,26 @@ overlapping dirty work, file-release waits and handing an unfinished landing to 
 in [`docs/landing.md`](docs/landing.md). Read it when a delivery comes back.** A child does not
 land and does not need it.
 
+### Post-delivery cleanup is part of delivery
+
+A landing is not finished while its checkout still makes already-delivered bytes look like new
+work. After recording the landing, refresh the canonical target and landing receipt, then classify
+every remaining staged, modified, untracked and registered-worktree row as one of: **landed and
+byte-identical**, **still unlanded**, **mixed/conflicted**, **task-owned temporary**, or
+**prunable metadata**. Missing, stale or ambiguous evidence is a sixth answer: **unknown**.
+
+- Preserve every unlanded or mixed change as a reviewable patch or branch before cleanup. Never
+  stage, reset, delete or rewrite another Session's bytes merely to make status clean.
+- Only remove landed-identical residue, task-owned temporary output and proven-prunable worktree
+  metadata. Refresh status afterwards and reapply anything intentionally preserved.
+- If permissions, live claims or ambiguous ownership prevent cleanup, leave a typed blocker and a
+  named next owner. An unattributed dirty row is an unfinished delivery, not cosmetic debt.
+- The human handoff always includes **Fixed but not yet released (awaiting review)**, or explicitly
+  says `Nothing`. This is separate from dirty-tree cleanup: committed code may still be undeployed.
+
+The evidence and fail-closed procedure are in
+[`docs/landing.md`](docs/landing.md#post-delivery-worktree-reconciliation).
+
 #### Closing a root is an act with victims; look before you do it
 
 Ending a session cancels every live task it dispatched — the ones it opened, live and the finished

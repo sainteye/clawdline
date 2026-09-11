@@ -357,7 +357,7 @@ in this repository's `AGENTS.md`; the short version below carries the same requi
 Project-local instructions may override those global defaults. Clawdline and `install.sh` do not
 edit either global file; adding or updating the block is an explicit setup step.
 
-Keep these two rules in that block:
+Keep these three rules in that block:
 
 - **Prove a localhost failure before calling Clawdline unavailable.** A restricted sandbox's
   connection failure to `http://127.0.0.1:7717` is not evidence that the service is down. Read the
@@ -373,6 +373,11 @@ Keep these two rules in that block:
   external calls, retry amplification, idempotency and delivery receipts, SSE revision and resume,
   stale snapshots, and failure isolation. Distinguish `accepted`, `executed`, `delivered`,
   `observed`, and `acknowledged` instead of treating one HTTP response as all five states.
+- **Reconcile delivery worktrees without erasing unfinished work.** After landing, refresh the
+  target, receipt, status and worktree inventory; classify residue as landed-identical, unlanded,
+  mixed/conflicted, task-temporary, prunable, or unknown. Preserve unlanded and mixed bytes as a
+  verifiable patch or branch before cleanup. Remove only proven landed residue, task-owned temp
+  output and stale metadata; foreign or unknown work fails closed with a named owner.
 
 Task completion follows that rule in the broker itself. The terminal outcome and an idempotent
 completion outbox are persisted together before a background terminal send; retries keep one

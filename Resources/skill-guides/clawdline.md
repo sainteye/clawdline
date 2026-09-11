@@ -1125,6 +1125,13 @@ After the terminal review verdict, root does all of this:
    landing on a repository's behalf"* — and accepting a handoff does not change that, because the
    credential belongs to the machine rather than to the line of work. Only now report `landed` or
    `complete` to the user. Say which target and commit received it.
+6. Reconcile the delivery checkout after refreshing the target, landing receipt, status and
+   worktree inventory. Classify every residue as `landed_identical`, `unlanded`,
+   `mixed_conflict`, `task_temporary`, `prunable_metadata`, or `unknown`. Preserve unlanded and
+   mixed content as a verifiable patch or branch before changing anything. Remove only proven
+   landed-identical residue, task-owned temporary output and stale metadata; never reset or delete
+   foreign or unknown work. A blocker names the next owner. The final human report includes
+   **Fixed but not yet released (awaiting review)**, or says `Nothing`.
 
 **HEAD has to compile standing alone, and committing is the only act that can break that.** It
 happened twice on 2026-08-26 in this repository, from two different sessions: a whole-file `git add`

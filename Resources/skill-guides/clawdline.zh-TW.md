@@ -998,6 +998,12 @@ slug 唯一匹配 retained receipt 時才推導，缺失、衝突、任意路徑
    `nothing_to_land` 都會被拒——`403 forbidden`，*「Only the orchestrator token may settle a
    landing on a repository's behalf」*；接受 handoff 也不改變這件事，因為那個憑證屬於機器，
    不屬於這條工作線。到這裡才能向使用者說 `landed` 或完成，並講出落到哪個 target 與 commit。
+6. 重新讀 target、landing receipt、status 與 worktree inventory，再整理交付 checkout。逐項分類為
+   `landed_identical`（已落地且 byte-identical）、`unlanded`、`mixed_conflict`、`task_temporary`、
+   `prunable_metadata` 或 `unknown`。任何未落地或混合內容都要先保存成可驗證 patch／branch；只能清除
+   已證明落地的殘留、task 自己的暫存與失效 metadata，絕不能 reset／刪除外來或未知工作。遇到阻擋要
+   留 typed blocker 與下一位 owner。最後給人的報告固定列出**已修好但尚未上線（待檢視）**，沒有就寫
+   「沒有」。
 
 **HEAD 必須自己站得住，而唯一能把它弄壞的動作就是 commit。** 2026-08-26 這個 repository 裡發生了
 兩次，來自兩個不同的 session：一次是整檔 `git add` 帶進三行，而定義它們型別的那個檔案還沒 commit；

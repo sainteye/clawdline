@@ -23,6 +23,8 @@ start of every conversation, including the ones that would never land anything.
   files, test the exact integrated tree with a private `TMPDIR`, and record the resulting target
   commit. Then mark that same landing record `landed` with the commit. `SAFE TO LAND` is a pending
   state, not a completion phrase.
+- After the landing record is durable, reconcile the delivery checkout and worktree inventory by
+  the procedure below. A correct target commit beside unexplained residue is not a closed delivery.
 - The exact integrated-tree run is normally the **only full suite in the graph**. Implementers and
   reviewers use focused proof; confirmation reruns the questions a correction changed. Reuse a
   receipt only when repository, tree SHA, question, command digest and environment match. A second
@@ -94,6 +96,37 @@ start of every conversation, including the ones that would never land anything.
   assistant_exhausted`'s `alternatives` before retrying the same assistant. This closure still
   applies when a child dies mid-task because its assistant ran out of quota: whatever it had not
   committed is root's to recover or discard, exactly as with any other child that never reported.
+
+## Post-delivery worktree reconciliation
+
+Cleanup answers a different question from landing: landing proves where the reviewed result went;
+cleanup proves that the checkout no longer lies to the next Session about what is unfinished. Do
+not use a clean target branch as permission to reset a shared worktree.
+
+1. Refresh the remote or canonical target, the exact landing receipt, `git status --short`, staged
+   diff, branch/head/target ancestry, and `git worktree list --porcelain`. Record when each reading
+   was taken; these are changing observations, not timeless facts.
+2. Classify each remaining path or worktree registration independently:
+   - `landed_identical`: the bytes are present in the verified target and the residue adds nothing;
+   - `unlanded`: the bytes are not in the target and still belong to a named delivery;
+   - `mixed_conflict`: one file or branch combines landed and unlanded work, or identity conflicts;
+   - `task_temporary`: output owned by a finished task and not part of its delivery;
+   - `prunable_metadata`: the registered worktree path no longer exists and no live owner uses it;
+   - `unknown`: evidence is missing, stale, ambiguous, or ownership cannot be resolved.
+3. Before changing anything, preserve `unlanded` and `mixed_conflict` content as a patch or branch
+   whose base, head/digest, paths and owner are written down. A patch that cannot be reapplied or a
+   branch whose target is unknown is not preservation.
+4. Remove only rows proved `landed_identical`, `task_temporary`, or `prunable_metadata`. Never
+   stage, reset, delete, prune, rebase or overwrite another Session's live or unknown work. For a
+   mixed file, restore the canonical bytes and replay only the preserved unlanded hunks.
+5. Refresh the same inventory. Completion requires no unattributed dirty/staged/untracked row,
+   every preserved delivery still present and verifiable, landing/target evidence aligned, and
+   every stale worktree registration either pruned or carrying a typed blocker with a named owner.
+
+The final human message separately says **Fixed but not yet released (awaiting review)** and lists
+committed work that has not been installed or published; write `Nothing` when there is none. That
+line cannot be inferred from `git status`, because a perfectly clean checkout may still be one
+release behind.
 
 ## The landing queue, when more than one line is waiting
 

@@ -307,7 +307,7 @@ session 不自己 commit，改完交回去；不要跑 build，因為它會把�
 下面的短版保留同一組要求。Project-local instructions 可以覆寫這些全域預設。Clawdline 與
 `install.sh` 都不會修改這兩個全域檔案；加入或更新這個 block 是一個明確的 setup step。
 
-那個 block 裡要留住這兩條：
+那個 block 裡要留住這三條：
 
 - **先證明 localhost 真的失敗，才能說 Clawdline unavailable。** Restricted sandbox 連不上
   `http://127.0.0.1:7717`，不能證明 service down。先讀目前設定的 port，再到獲准連 loopback 的
@@ -321,6 +321,10 @@ session 不自己 commit，改完交回去；不要跑 build，因為它會把�
   delivery receipts、SSE revision 與 resume、stale snapshots，以及 failure isolation；並把
   `accepted`、`executed`、`delivered`、`observed`、`acknowledged` 分清楚，不能拿一次 HTTP response
   當成五種 state 全都成立。
+- **交付後整理 worktree，但不能抹掉未完成工作。** Landing 後重新讀 target、receipt、status 與
+  worktree inventory，把殘留分成已落地且相同、未落地、混合／衝突、task 暫存、可 prune 與未知。
+  清理前先把未落地與混合內容保存成可驗證 patch／branch；只能移除已證明落地的殘留、task 自己的
+  暫存與失效 metadata。外來或未知工作一律 fail closed，並留下具名 owner。
 
 ## 安裝
 
