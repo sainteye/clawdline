@@ -1550,6 +1550,37 @@ await answerRead(controlCloud, controlSocket, {
 assert.equal((await endedSession).ok, true,
     "Session close resolves only after the Mac actually ended it");
 
+// The session menu's "Show on Mac" calls `api.focus` unguarded. Without a Cloud `focus` the press
+// threw `api.focus is not a function` inside the click handler: no request, no toast, nothing.
+const beforeFocus = publishedReads(controlSocket).length;
+const focusedSession = controlCloud.focus("session-01");
+await until(function () { return publishedReads(controlSocket).length === beforeFocus + 1; },
+    "the Show on Mac request to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeFocus]);
+assert.deepEqual(Object.keys(controlRequest).sort(), ["request", "session", "type"],
+    "Show on Mac carries exactly the closed shape the Mac decoder admits");
+assert.deepEqual({ type: controlRequest.type, session: controlRequest.session },
+    { type: "focus", session: "session-01" },
+    "Cloud Show on Mac names the owning Mac's session, never a route");
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 200, body: { ok: true }
+});
+assert.equal((await focusedSession).ok, true,
+    "Show on Mac resolves only after the Mac answered that press");
+// Read from source, as `Tests/web-schedules.mjs` pins Run now: the Mac decoder and local-route
+// suites sit at the 2,000-line stop-growth limit, and the two halves of this closed command must
+// not drift apart silently.
+const cloudBridgeSwift = await readFile(
+    new URL("../../../../../Sources/CloudAppBridge.swift", import.meta.url), "utf8");
+const cloudRouteSwift = await readFile(
+    new URL("../../../../../Sources/CloudLocalRoute.swift", import.meta.url), "utf8");
+assert.match(cloudBridgeSwift,
+    /case "focus":[\s\S]*?Set\(body\.keys\) == \["type", "session", "request"\][\s\S]*?command = \.focus\(session: session\)\s+commandReply = \(session, "action:" \+ request\)/,
+    "the Mac decoder admits exactly that shape and answers on the action the page waits for");
+assert.match(cloudRouteSwift,
+    /case \.focus\(let session\):\s+route = "\/v1\/sessions\/\\\(Self\.segment\(session\)\)\/focus"/,
+    "and maps it to the existing named focus route rather than one the viewer names");
+
 const beforeFreshSchedules = publishedReads(controlSocket).length;
 const freshSchedules = controlCloud.schedules({ fresh: true });
 await until(function () {

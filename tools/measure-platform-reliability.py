@@ -31,7 +31,7 @@ HEALTH_BODY_LIMIT = 16384
 # guard, comment-only decoy, or failure path elsewhere in the reviewed file.
 SOURCE_SEALS = {
     "Sources/CloudTransport.swift": "1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d",
-    "Sources/CloudAppBridge.swift": "853c4431771550175c6c485b9da648edb72ef1d24b350030402dee74785aaabc",
+    "Sources/CloudAppBridge.swift": "aa8b8758bf7232d5a273785177a3be3e68dac034afe4756ad99310e9f98cccb0",
     "Sources/RemoteServer.swift": "1386d9decd40ae711116bdd3cdad22a34fb490dda314938f5c62523b178a0d36",
     "Sources/TerminalCommandScheduler.swift": "c9a423b31b8e8d374c26ea97b999a73f3e6cbceed00e31519147f9b28fafcd7a",
     "Sources/Orchestrator.swift": "1b9b54e96d3608faa4e6e761020548b2904cd7e812c1ea42267fdd687fdde928",

@@ -804,6 +804,22 @@ export class CloudClient {
         }, "action:" + request);
     }
 
+    /**
+     * Bring the session's terminal forward on the Mac that published it — Show on Mac.
+     *
+     * Two menus call `api.focus` without asking whether this transport has one, so its absence
+     * was not a refusal but a `TypeError` inside the click handler: nothing sent, nothing said.
+     * It resolves on the Mac's own answer, like `end`, so a terminal that could not be raised
+     * comes back as that Mac's typed refusal rather than as a toast claiming it was asked.
+     */
+    focus(value) {
+        var identity;
+        try { identity = this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
+        var request = requestID();
+        return this._read(identity, "focus", { request: request }, "action:" + request);
+    }
+
     schedule(id) {
         try {
             var schedule = String(id || "");

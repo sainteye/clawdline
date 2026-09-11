@@ -34,6 +34,7 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case start(place: String, assistant: String, model: String)
     case resume(place: String, session: String, assistant: String)
     case end(session: String, acceptLoss: Bool, closeabilityVersion: String?)
+    case focus(session: String)
     case scheduleCreate(body: Data)
     case scheduleUpdate(id: String, body: Data)
     case scheduleDelete(id: String)
@@ -851,6 +852,19 @@ actor CloudAppBridge {
             }
             command = .end(session: session, acceptLoss: acceptLoss,
                            closeabilityVersion: closeability.isEmpty ? nil : closeability)
+            commandReply = (session, "action:" + request)
+        case "focus":
+            // Show on Mac: the same named route the direct page presses, behind the same write
+            // switch, and answered so the viewer can say whether this Mac managed it.
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let request = Self.requestName(body["request"])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .focus(session: session)
             commandReply = (session, "action:" + request)
         case "board-command":
             guard inbound.commandClass == .ctl,
