@@ -9,6 +9,32 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: finished work no longer leaves copies, checkouts and credentials behind
+
+Clawdline's cleanup used to reclaim only what the broker itself had created — a task's `work/`
+directory and an isolated checkout's `.build` — so everything else a line of work produced stayed
+on disk. On one busy Mac that added up to tens of gigabytes of repository snapshots and deploy
+copies in `/tmp`, verification scratch in the user temporary directory, finished task checkouts
+kept because they still held already-landed bytes, and a copied credential directory other users
+could read.
+
+Scratch now has an owner. `tools/scratch.sh` runs a verification snapshot and removes it however the
+command ends — success, failure or interruption — and creates scratch a session keeps, such as a
+deploy copy, inside `/tmp/clawdline-scratch` with a marker naming the process that owns it. The
+verification recipes in `AGENTS.md` and the agent guides use it, and closing a delivery now includes
+the scratch a line created outside its checkout. A copy of a credential may live only in an owned
+`0700` entry and is removed before the turn ends. The contract is in `docs/scratch.md`.
+
+The broker reclaims the rest once nothing needs it any more: a landed task's checkout, after saving
+its uncommitted changes as a verified patch for 30 days and keeping its branch; ignored
+`node_modules` and `.venv` directories alongside `.build`; a `work/` directory written after its task
+finished; and scratch whose owning process has gone. Nothing is removed while its owner is still
+running, a path that leaves its root through a symbolic link is refused, and
+`GET /v1/orchestrator/storage` lists what is held and why. The day-old task directory sweep no longer
+deletes the directory of a Root Session that is still working. New settings:
+`orchestrator_landed_checkout_grace_minutes`, `orchestrator_scratch_grace_minutes` and
+`orchestrator_reclaimed_checkout_retention_days`.
+
 ### Fixed: agent receipts and Claude scratchpad images were rejected by valid path spellings
 
 The shipped agent guides now percent-encode a Session's terminal id before putting it in a URL

@@ -1641,3 +1641,36 @@ items:
       lock. Until then, the standing mitigation is human sequencing, which is what was used the
       night this was written.
     opened: 2026-09-05
+
+  - id: B-LEASE-VERDICT-READS-A-HIDDEN-PID-AS-GONE
+    title: The build lease reads a pid it cannot see as gone whenever pid 1 is visible
+    problem: >-
+      `clawdline_lease_pid_verdict` in `build.sh` asks `ps -p <pid> -p 1 -o pid=` and treats pid 1
+      as its control: when pid 1 comes back and `<pid>` does not, it answers `gone`. That separates a
+      `ps` that did not run from one that did, but not a process that is absent from one `ps` was not
+      allowed to show. A process table that hides one pid while it shows pid 1 turns a live holder
+      into `gone`, which is the fail-open direction for a question that means "may I act".
+
+
+      The same shape was found in `tools/scratch.sh` on 2026-09-11, where a confirmation review showed
+      it removing a live session's entry, and replaced there by asking the kernel about the pid itself
+      (`kill -0` answering "No such process"), which is also how the broker's `scratchOwnerStatus`
+      decides. `docs/machine-resource-scheduling.md` describes the pid-1 control as this lease's
+      design, so the reasoning written beside it is part of what to revisit.
+    evidence: >-
+      Read, not reproduced, on 2026-09-12 at `main` `a82f062d`: `build.sh:154-169`, its one caller at
+      `build.sh:340` (`gate_verdict=$(clawdline_lease_pid_verdict "$gate_pid")`), and
+      `docs/machine-resource-scheduling.md:787-790`. The scratch-tool counterexample is in the
+      confirmation review of task `fa53b717`; the measurement that `/bin/kill -0` answers the same
+      under a sandbox denying process-info is in the delivery notes of task `81ffcfd2`. Not measured:
+      whether a table that hides one pid is reachable where `build.sh` runs, and what a wrong `gone`
+      does at `:340` — taking over the suite lock also requires that no compiler is running, so one
+      wrong reading may not be enough on its own.
+    severity: invisible
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      Whoever next touches the lease or the lock takeover. Replace the pid-1 control with the kernel's
+      answer for the pid itself, keep three values, and prove it with the counterexample the scratch
+      tool now tests: a `ps` that shows pid 1 but not the holder must not read as gone.
+    opened: 2026-09-12
