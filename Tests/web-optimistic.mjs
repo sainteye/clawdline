@@ -46,6 +46,23 @@ assert.equal(matchesOptimistic(
     { role: "user", text: workflowTurn, imageCount: 0, at: 100 }
 ), true, "a validated Board workflow record is presentation metadata, not authored text");
 
+const assistedTurn = "same words\n\n" +
+    '<clawdline-workflow version="1" authority="metadata-not-user">\n' +
+    JSON.stringify({
+        ...workflowMetadata,
+        previous_item: "4f1c2d3e-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+        begin_template: {
+            classification: "existing_item|new_work|question|clarification",
+            item_id: "<existing_item>", operation: "begin", phase: "output",
+            run_id: workflowMetadata.run_id, title: "<new_work>",
+            type: "<new_work:task|feature|bug|refactor|coordination|epic>"
+        }
+    }) + "\n</clawdline-workflow>";
+assert.equal(matchesOptimistic(
+    pending("same words", 0, 100),
+    { role: "user", text: assistedTurn, imageCount: 0, at: 100 }
+), true, "a Board record carrying begin assistance still retires the pending turn");
+
 assert.equal(matchesOptimistic(
     pending("same words", 0, 100),
     { role: "user", text: "same words", imageCount: 0, at: 100 },

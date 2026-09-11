@@ -6,6 +6,37 @@ const KEYS = [
     "helper", "input_kind", "mode_gap", "process_generation", "project_id", "provider",
     "required_first_action", "run_id", "terminal_id", "version"
 ].sort();
+const OPTIONAL = ["begin_template", "helper_path", "previous_item"];
+const ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** The producer's placeholder `begin` for one run (`ProjectBoardWorkflow.beginTemplate`). */
+function beginTemplate(runID) {
+    return {
+        classification: "existing_item|new_work|question|clarification",
+        item_id: "<existing_item>",
+        operation: "begin",
+        phase: "output",
+        run_id: runID,
+        title: "<new_work>",
+        type: "<new_work:task|feature|bug|refactor|coordination|epic>"
+    };
+}
+
+// Optional in v1 and exact when present: an advisory settled item id only beside the template,
+// and the template only in the producer's own shape for this run.
+function validBeginAssistance(value) {
+    const hasTemplate = Object.hasOwn(value, "begin_template");
+    if (Object.hasOwn(value, "previous_item") && (!hasTemplate
+        || typeof value.previous_item !== "string" || !ITEM_ID.test(value.previous_item))) return false;
+    if (!hasTemplate) return true;
+    const template = value.begin_template;
+    if (!template || typeof template !== "object" || Array.isArray(template)) return false;
+    const expected = beginTemplate(value.run_id);
+    const keys = Object.keys(template).sort();
+    const wanted = Object.keys(expected).sort();
+    return keys.length === wanted.length
+        && keys.every((key, index) => key === wanted[index] && template[key] === expected[key]);
+}
 
 function outsideFence(source, offset) {
     const lines = source.slice(0, offset).split("\n");
@@ -25,8 +56,9 @@ function outsideFence(source, offset) {
 
 function validMetadata(value) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const keys = Object.keys(value).filter(key => key !== "helper_path").sort();
+    const keys = Object.keys(value).filter(key => !OPTIONAL.includes(key)).sort();
     if (keys.length !== KEYS.length || keys.some((key, index) => key !== KEYS[index])) return false;
+    if (!validBeginAssistance(value)) return false;
     if (Object.hasOwn(value, "helper_path") && (typeof value.helper_path !== "string"
         || !value.helper_path.startsWith("/") || !value.helper_path.endsWith("/clawdline-board-workflow")
         || new TextEncoder().encode(value.helper_path).length > 4096

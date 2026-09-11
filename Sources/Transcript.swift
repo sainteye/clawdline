@@ -1730,6 +1730,21 @@ extension Transcript {
             "helper", "input_kind", "mode_gap", "process_generation", "project_id", "provider",
             "required_first_action", "run_id", "terminal_id", "version",
         ]
+        let optional: Set<String> = ["begin_template", "helper_path", "previous_item"]
+        // Optional in v1 and exact when present: an advisory settled item id only beside the
+        // template, and the template only in the producer's own shape for this run.
+        if let raw = value["previous_item"] {
+            guard value["begin_template"] != nil, let item = raw as? String,
+                  ProjectBoardWorkflow.exactItemID(item) else { return false }
+        }
+        if let raw = value["begin_template"] {
+            guard let template = raw as? [String: Any], let run = value["run_id"] as? String
+            else { return false }
+            let expected = ProjectBoardWorkflow.beginTemplate(runID: run)
+            guard template.count == expected.count,
+                  expected.allSatisfy({ template[$0.key] as? String == $0.value })
+            else { return false }
+        }
         if let raw = value["helper_path"] {
             guard let path = raw as? String, path.hasPrefix("/"),
                   path.hasSuffix("/clawdline-board-workflow"), path.utf8.count <= 4096,
@@ -1737,7 +1752,7 @@ extension Transcript {
                   !path.split(separator: "/").contains(where: { $0 == "." || $0 == ".." })
             else { return false }
         }
-        guard Set(value.keys).subtracting(["helper_path"]) == keys,
+        guard Set(value.keys).subtracting(optional) == keys,
               value["authority"] as? String == "clawdline_metadata_not_user_authorization",
               value["coverage"] as? String == "managed_ingress",
               value["helper"] as? String

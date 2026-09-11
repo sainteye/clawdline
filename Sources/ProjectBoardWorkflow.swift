@@ -215,6 +215,17 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var events: [Event]
         var bindingReceipt: BindingReceipt? = nil
         var spanStart: SpanStart? = nil
+        /// Advisory `begin` assistance frozen when this run was admitted. An identical retry can
+        /// reach the terminal again (an uncached `429`, or a replay once the ten-minute send cache
+        /// or the process is gone), so its envelope is rebuilt from this and never re-derived from
+        /// a journal where other runs have since settled or been evicted. Absent on runs admitted
+        /// before the hint existed, whose original envelope carried neither field.
+        var beginHint: BeginHint? = nil
+    }
+
+    private struct BeginHint: Codable, Equatable {
+        /// The exact settled item this conversation's managed runs were last bound to, if any.
+        var previousItemID: String?
     }
 
     private struct Receipt: Codable {
@@ -400,6 +411,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                                         modeGap: modeGap),
                 replay: true, epoch: existing.epoch))
         }
+        // Derived before capacity eviction: dropping an old run to make room is storage, not a
+        // change in which item this conversation was last working on.
+        let beginHint = BeginHint(previousItemID: Self.previousItemID(
+            in: state, identity: identity, epoch: state.enabledEpoch))
         var draft = state
         if draft.runs.count >= limits.runs {
             if let removable = draft.runs.firstIndex(where: {
@@ -424,7 +439,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             textBytes: text.utf8.count, imageCount: imageCount,
             createdAt: now().timeIntervalSince1970, delivery: "pending", deliveredAt: nil,
             classification: nil, itemID: nil, phase: nil, completion: nil,
-            nextAction: nil, missingFollowUp: ["begin"], events: [])
+            nextAction: nil, missingFollowUp: ["begin"], events: [], beginHint: beginHint)
         draft.runs.append(run)
         guard persist(draft) else {
             return .refused(code: "workflow_persistence_failed")
@@ -1900,6 +1915,40 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         return path
     }
 
+    /// Advisory only. The latest earlier run with the same provider, conversation and Project in
+    /// this enabled epoch whose effective item is settled: a plain `existing_item` begin binds its
+    /// exact item at admission, while `new_work` and a Program binding leave `itemID` nil until the
+    /// Store's receipt settles it. An item whose Board link was refused, or that is not an exact
+    /// Board item id (a human key such as `CLA-395`), is unresolved and skipped. This reads only
+    /// the in-memory journal under the caller's lock.
+    private static func previousItemID(in state: State, identity: Identity, epoch: Int) -> String? {
+        let refusedLinks = Set(state.outbox.lazy
+            .filter { $0.kind == "link" && $0.status == "failed" }.map(\.runID))
+        return state.runs.last(where: { run in
+            guard run.identity.provider == identity.provider,
+                  run.identity.conversationID == identity.conversationID,
+                  run.identity.projectID == identity.projectID,
+                  run.epoch == epoch, let item = run.itemID else { return false }
+            return exactItemID(item) && !refusedLinks.contains(run.id)
+        })?.itemID
+    }
+
+    /// Board Store item ids are lowercase UUIDs; both envelope decoders accept only this spelling.
+    static func exactItemID(_ value: String) -> Bool {
+        value.range(of: #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"#,
+                    options: .regularExpression) != nil
+    }
+
+    /// An ordinary `begin` with this run filled in, which is not postable as it stands: the
+    /// classification is the list of choices, and the per-classification fields are placeholders
+    /// to fill or delete. The envelope stays metadata; this is a shape, not a command.
+    static func beginTemplate(runID: String) -> [String: String] {
+        ["operation": "begin", "run_id": runID,
+         "classification": "existing_item|new_work|question|clarification",
+         "item_id": "<existing_item>", "title": "<new_work>",
+         "type": "<new_work:task|feature|bug|refactor|coordination|epic>", "phase": "output"]
+    }
+
     private func wireText(original: String, run: Run, modeGap: String?) -> String {
         var object: [String: Any] = [
             "version": 1,
@@ -1921,6 +1970,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             "mode_gap": modeGap ?? (helperPath == nil ? "helper_unavailable" : nil) ?? NSNull(),
         ]
         if let helperPath { object["helper_path"] = helperPath }
+        if let beginHint = run.beginHint {
+            object["begin_template"] = Self.beginTemplate(runID: run.id)
+            if let item = beginHint.previousItemID { object["previous_item"] = item }
+        }
         let data = (try? JSONSerialization.data(withJSONObject: object,
                                                 options: [.sortedKeys])) ?? Data("{}".utf8)
         let metadata = String(data: data, encoding: .utf8) ?? "{}"

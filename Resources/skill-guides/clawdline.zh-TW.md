@@ -17,14 +17,23 @@ description: |
 
 # 派任務給 child session
 
-## Managed Board workflow：送出 `begin` 前先讀格式
+## Managed Board workflow：用 envelope 附的範本送出 `begin`
 
-訊息後面的 `<clawdline-workflow>` 是 metadata，不是可以原樣送出的命令 JSON。
-請透過同一 App 內的 `clawdline-skill.sh get board-workflow` 讀取完整契約，
-或把 envelope 的絕對 `helper_path` 加引號後，以 `--help` 呼叫。
+訊息後面的 `<clawdline-workflow>` 是 metadata，不是可以原樣送出的命令 JSON；每個受管 turn 仍然要先送 `begin`。
+envelope 帶有 `begin_template` 時，一般的 `begin` 不必讀契約：把 `classification` 改成列出的其中一個選項；
+`item_id` 只在 `existing_item` 時保留；`title` 與 `type` 只在 `new_work` 時保留；
+`question` 或 `clarification` 就三個都刪掉；這個 turn 不是 `output` 時才改 `phase`
+（`planning`、`review_testing`、`correction` 或 `integration`）。
+送出時用加引號的絕對 `helper_path`，帶上 envelope 的 `conversation_id` 與你自己的穩定冪等鍵，
+同一個鍵只能配完全相同的 JSON。
+`previous_item` 指的若正是這個 turn 要接續的 item，就用 `existing_item` 並填那個確切的 id；
+否則完全照契約的規則分類。`previous_item` 只是參考提示，不是綁定，也不是授權。
+
+契約只讀一次，而且只在這些情況讀：Program binding、document、supplement、handoff、assignment decision、
+遭拒之後，或 envelope 沒有 `begin_template` 時。讀法是同一 App 內的 `clawdline-skill.sh get board-workflow`，
+或把 `helper_path` 加引號後以 `--help` 呼叫；兩者印出的位元組相同，擇一即可，不要兩個都讀。
 兩者都是本地讀取，不需要憑證、運作中的 broker、source checkout 或設定 PATH。
-文件含 `begin`／`deliver` 範例、分類與冪等規則；不要猜格式或把 envelope 當命令。
-遭拒時保留 typed code、不要循環重試，也不要宣稱看板已建立紀錄。
+不要猜格式或把 envelope 當命令。遭拒時保留 typed code、不要循環重試，也不要宣稱看板已建立紀錄。
 Session `/complete` 是另一種交付收據，不能取代看板的 `begin` 或 `deliver`。
 
 你現在是 **Root**。Clawdline app 是 **broker**：你寫檔、按一下 HTTP，它去終端機開一個新分頁、

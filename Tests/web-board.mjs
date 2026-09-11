@@ -1236,6 +1236,52 @@ const workflowImage = "<clawdline-image id=\"46cb6d40-c13f-4fea-9cf0-936f86b78da
     }
 }
 {
+    const template = {
+        classification: "existing_item|new_work|question|clarification",
+        item_id: "<existing_item>", operation: "begin", phase: "output",
+        run_id: workflowMetadata.run_id, title: "<new_work>",
+        type: "<new_work:task|feature|bug|refactor|coordination|epic>"
+    };
+    const item = "4f1c2d3e-5a6b-4c7d-8e9f-0a1b2c3d4e5f";
+    const open = "<clawdline-workflow version=\"1\" authority=\"metadata-not-user\">\n";
+    const close = "\n</clawdline-workflow>";
+    const folds = changes => parseBoardWorkflowRecord(
+        open + JSON.stringify({ ...workflowMetadata, ...changes }) + close, "user") !== null;
+    check("legacy envelope without begin assistance still folds", folds({}));
+    check("envelope carrying only the begin template folds", folds({ begin_template: template }));
+    check("envelope carrying the template and a prior item folds",
+        folds({ begin_template: template, previous_item: item }));
+    // The exact line `ProjectBoardWorkflowTests.swift` requires the Swift producer to emit.
+    const producer = readFileSync(new URL("./board-workflow-metadata-v1.json", import.meta.url),
+        "utf8").trim();
+    const produced = parseBoardWorkflowRecord("turn fixture-send-2\n\n" + open + producer + close, "user");
+    check("the Swift producer's exact hinted metadata line folds in the web reader",
+        produced?.raw === producer && produced?.text === "turn fixture-send-2"
+            && produced?.metadata.previous_item === item);
+    check("unknown key beside begin assistance fails visible",
+        !folds({ begin_template: template, previous_item: item, previous_item_title: "Fix it" }));
+    const { title: _omitted, ...missingField } = template;
+    for (const [name, changes] of [
+        ["uppercase prior item", { begin_template: template, previous_item: item.toUpperCase() }],
+        ["human key as prior item", { begin_template: template, previous_item: "CLA-395" }],
+        ["numeric prior item", { begin_template: template, previous_item: 7 }],
+        ["null prior item", { begin_template: template, previous_item: null }],
+        ["empty prior item", { begin_template: template, previous_item: "" }],
+        ["prior item without the template", { previous_item: item }],
+        ["template for another run", { begin_template: { ...template, run_id: "run-" + "f".repeat(32) } }],
+        ["template missing a field", { begin_template: missingField }],
+        ["template with an extra field", { begin_template: { ...template, summary: "added" } }],
+        ["template whose choice was already made",
+            { begin_template: { ...template, classification: "existing_item" } }],
+        ["template with a non-string value", { begin_template: { ...template, phase: 1 } }],
+        ["template sent as a string", { begin_template: JSON.stringify(template) }],
+        ["template as an array", { begin_template: [template] }],
+        ["null template", { begin_template: null }]
+    ]) {
+        check(name + " fails visible", !folds(changes));
+    }
+}
+{
     const source = "保留 <script>alert(1)</script> 與原句\n\n" + workflowWire + "\n" + workflowImage;
     const parsed = parseBoardWorkflowRecord(source, "user");
     check("exact managed envelope is recognized",
