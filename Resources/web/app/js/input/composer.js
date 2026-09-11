@@ -7,7 +7,7 @@ import { els } from "../core/dom.js";
 import { toast } from "../core/util.js";
 import { api } from "../net/api.js";
 import { byId, sessionSuggestedReply, replySessionIdentity } from "../view/derive.js";
-import { closingID } from "../view/list.js";
+import { closingID, closingKey } from "../view/list.js";
 import { renderDetailHead, renderTranscript } from "../view/transcript.js";
 import { renderComposer } from "../view/composer.js";
 import { Optimistic } from "../view/waits.js";
@@ -16,8 +16,11 @@ import {
     atBottom, closeDetail, followPendingTranscript, loadTranscript, toBottom
 } from "../session/open.js";
 import { carriesPicture, Shots } from "./shots.js";
-import { Voice } from "./voice.js";
 import { observeBoardWorkflowSend } from "./board-workflow-status.js";
+import { SessionSelection } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
+import { clampSkillPickerIndex, selectedSkill } from "./skill-picker-state.js";
+import { deliveredComposerPayloadMatches } from "./composer-state.js";
 
 /* ---- the composer -------------------------------------------------------- */
 
@@ -36,8 +39,9 @@ export function msgText() { return rawMsgText().trim(); }
 
 /** A click may edit this empty draft, never perform the requested action. */
 export function fillSuggestedReply(sid, expectedKey) {
+    var voiceBusy = callSessionUI("voiceBusy");
     if (S.write !== true || S.conn !== "live" || S.openId !== sid || S.agent
-        || S.tx.id !== sid || sending || closingID === sid || Shots.busy() || Voice.busy()) return false;
+        || S.tx.id !== sid || sending || closingID === sid || Shots.busy() || voiceBusy) return false;
     if (rawMsgText().length > 0 || Shots.urls().length > 0) {
         toast((document.documentElement.lang || "").toLowerCase().startsWith("zh")
             ? "已保留現有草稿；請先處理草稿再填入建議回覆。" : "Your draft was kept. Clear it before filling a suggested reply.");
@@ -155,13 +159,15 @@ export var SkillPicker = (function () {
     var shown = false;
 
     function prefix() {
-        var session = S.openId ? byId(S.openId) : null;
+        var selected = SessionSelection.snapshot().open;
+        var session = selected ? byId(selected) : null;
         return session && session.assistant === "codex" ? "$" : "/";
     }
 
     function query() {
         var text = rawMsgText();
-        var session = S.openId ? byId(S.openId) : null;
+        var selected = SessionSelection.snapshot().open;
+        var session = selected ? byId(selected) : null;
         var pattern = session && session.assistant === "codex"
             ? /^[\/$][^\s\/$]*$/ : /^\/[^\s/]*$/;
         return pattern.test(text) ? text.slice(1).toLowerCase() : null;
@@ -192,8 +198,9 @@ export var SkillPicker = (function () {
     }
 
     function draw(q) {
-        matches = filtered(cache[S.openId] || [], q);
-        selected = Math.min(selected, Math.max(0, matches.length - 1));
+        var openSelection = SessionSelection.snapshot().open;
+        matches = filtered(cache[openSelection && openSelection.key] || [], q);
+        selected = clampSkillPickerIndex(selected, matches.length);
         var menu = els["skill-menu"];
         menu.textContent = "";
         if (!matches.length) { hide(); return; }
@@ -215,21 +222,24 @@ export var SkillPicker = (function () {
     }
 
     function changed() {
-        var q = query(), id = S.openId;
-        if (q === null || !id) { hide(); return; }
+        var q = query(), selected = SessionSelection.snapshot().open;
+        if (q === null || !selected) { hide(); return; }
+        var id = selected.key;
         if (cache[id]) { draw(q); return; }
         hide();
         if (loading[id]) return;
         loading[id] = true;
-        api.skills(id).then(function (answer) {
-            cache[id] = answer.skills || [];
+        var effect = SessionSelection.beginEffect("skills", { identity: selected });
+        api.skills(selected.route).then(function (answer) {
+            if (SessionSelection.effectIsCurrent(effect)) cache[id] = answer.skills || [];
         }).catch(function () {
             // Autocomplete is a convenience, never a reason the composer should fail. Unknown
             // commands may still be sent and the assistant will give the authoritative answer.
-            cache[id] = [];
+            if (SessionSelection.effectIsCurrent(effect)) cache[id] = [];
         }).then(function () {
             delete loading[id];
-            if (S.openId === id) changed();
+            if ((SessionSelection.snapshot().open || {}).key === id) changed();
+            SessionSelection.finishEffect(effect);
         });
     }
 
@@ -244,8 +254,10 @@ export var SkillPicker = (function () {
     }
 
     function accept() {
-        if (!shown || !matches[selected]) return false;
-        els.msg.textContent = prefix() + matches[selected].name + " ";
+        var skill = shown ? selectedSkill(matches, selected) : null;
+        if (!skill) return false;
+        selected = clampSkillPickerIndex(selected, matches.length);
+        els.msg.textContent = prefix() + skill.name + " ";
         blankness(); hide(); caretToEnd(); renderComposer();
         return true;
     }
@@ -328,20 +340,38 @@ els.composer.addEventListener("submit", function (ev) { ev.preventDefault(); sub
 /// request is not a second prompt, and these were two requests the page chose to make.
 export var sending = false;
 
+/** Clear only the payload this request actually submitted, never whatever was typed afterwards. */
+function clearDeliveredComposer(identity, draftText, pictures) {
+    var open = SessionSelection.snapshot().open;
+    if (!deliveredComposerPayloadMatches({ identity: identity, text: draftText,
+        pictures: pictures }, { identity: open, text: rawMsgText(), pictures: Shots.urls() })) {
+        return false;
+    }
+    els.msg.textContent = "";
+    blankness();
+    if (document.activeElement === els.msg) caretToEnd();
+    Shots.clear();
+    return true;
+}
+
 function submit() {
     // A picture still shrinking, or a sentence still being transcribed, is part of this message
     // and has not arrived yet. Sending now would post the half of it that happened to be ready
     // and leave the rest to land in an empty box afterwards, looking like the start of the next
     // one. Return goes through here as well as the button, which is the whole reason this guard
     // is in the function rather than on the button alone.
-    if (sending || Shots.busy() || Voice.busy()) return;
+    if (sending || Shots.busy() || callSessionUI("voiceBusy")) return;
     if (SkillPicker.accept()) return;
     var text = msgText();
-    var pictures = Shots.urls();
-    if ((!text && !pictures.length) || !S.openId || S.agent || !S.write || closingID === S.openId) return;
-    var sentID = S.openId;
+    var pictures = Shots.urls().slice();
+    var submittedDraftText = rawMsgText();
+    var selected = SessionSelection.snapshot().open;
+    if ((!text && !pictures.length) || !selected || S.agent || !S.write ||
+        closingKey === selected.key) return;
+    var sentID = selected.rowId;
+    var sentKey = selected.key;
     var stick = atBottom();
-    var session = byId(S.openId);
+    var session = byId(selected);
     // A quit line is not a message. Sending it through the ordinary route does make the
     // assistant leave, but the shell (and therefore the iTerm2 tab) immediately drops out of
     // Clawdline's session list, leaving no way for this page to close it afterwards. Join those
@@ -355,35 +385,36 @@ function submit() {
         S.tx.id === sentID ? S.tx.entries : [], Date.now() / 1000);
     sending = true;
     renderComposer();
-    var request = quit ? api.end(sentID) : api.send(sentID, text, pictures);
+    var effect = SessionSelection.beginEffect("send", { identity: selected });
+    var request = quit ? api.end(selected.route) : api.send(selected.route, text, pictures);
     request.then(function (answer) {
+        // Delivery owns precisely the payload it sent, not the selection epoch. Closing and
+        // reopening the same logical conversation while the request is in flight must not leave
+        // an already-delivered message ready to send twice; a newer draft is never cleared.
+        clearDeliveredComposer(selected, submittedDraftText, pictures);
+        if (!SessionSelection.effectIsCurrent(effect)) return;
         observeBoardWorkflowSend(answer, {
             note: function (event, data) { Diagnostics.note(event, data); },
             toast: toast
         });
-        // Every child node goes, not just the words: the placeholder is drawn from what
-        // `innerText` says, and a `<br>` the browser left behind would keep the box looking
-        // like it still had something in it.
-        els.msg.textContent = "";
-        blankness();
-        if (document.activeElement === els.msg) caretToEnd();
-        // Cleared here and not before: a send that failed still has its pictures attached, and
-        // the reader can press the button again rather than going back to the camera roll.
-        Shots.clear();
+        var currentOpen = SessionSelection.snapshot().open;
+        var acceptedKey = currentOpen && SessionSelection.matches(selected, currentOpen)
+            ? currentOpen.key : sentKey;
         if (quit) closeDetail();
-        else if (S.openId === sentID) {
+        else if (currentOpen && SessionSelection.matches(selected, currentOpen)) {
             if (!S.agent) {
-                Optimistic.add(sentID, text, pictures.length, snapshot.known,
+                Optimistic.add(acceptedKey, text, pictures.length, snapshot.known,
                     authoritativeSendTime(answer, snapshot.startedAt),
                     answer && answer.optimisticIdentity,
                     answer && answer.optimisticRequest);
-                followPendingTranscript(sentID);
+                followPendingTranscript(acceptedKey);
                 renderTranscript();
                 if (stick) toBottom();
             }
-            loadTranscript(sentID, true);
+            loadTranscript(acceptedKey, true);
         }
     }).catch(function (e) {
+        if (!SessionSelection.effectIsCurrent(effect)) return;
         if (e.code === "write_disabled") {
             // The flag and the truth have drifted apart — believe the answer, not the flag.
             S.write = false;
@@ -394,5 +425,9 @@ function submit() {
         // simply be repeated. A composer that clears itself and then fails is a composer that
         // ate somebody's message.
         toast(e.message || T.sendFailed, true);
-    }).then(function () { sending = false; renderComposer(); });
+    }).then(function () {
+        SessionSelection.finishEffect(effect);
+        sending = false;
+        renderComposer();
+    });
 }

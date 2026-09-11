@@ -6,6 +6,7 @@ import { Optimistic } from "../view/waits.js";
 import { entryHTML } from "../view/transcript.js";
 import { copyForUserMessages, filterUserMessages, userMessageEntries, userMessagePosition } from "../view/user-messages-data.js";
 import { SessionActions } from "./detail-actions.js";
+import { SessionSelection } from "../session/selection.js";
 
 /* This view owns its small DOM island. The transcript stays the source of truth; opening and
    closing the sheet never changes the conversation or asks the Mac for a second copy. */
@@ -42,7 +43,7 @@ var title = document.getElementById("user-messages-title");
 var search = document.getElementById("user-messages-search");
 var list = document.getElementById("user-message-list");
 var closeButton = document.getElementById("user-messages-close");
-var sessionID = null;
+var sessionIdentity = null;
 var shownEntries = [];
 var targetTimer = 0;
 
@@ -70,8 +71,8 @@ syncCopy();
 
 function draw() {
     var allEntries = userMessageEntries(
-        S.tx.id === sessionID ? S.tx.entries : [],
-        sessionID ? Optimistic.entries(sessionID) : []
+        sessionIdentity && S.tx.id === sessionIdentity.rowId ? S.tx.entries : [],
+        sessionIdentity ? Optimistic.entries(sessionIdentity.key) : []
     );
     shownEntries = filterUserMessages(allEntries, search.value);
     if (!shownEntries.length) {
@@ -88,8 +89,9 @@ function draw() {
 }
 
 function open() {
-    if (!S.openId) return;
-    sessionID = S.openId;
+    var selected = SessionSelection.snapshot().open;
+    if (!selected) return;
+    sessionIdentity = selected;
     search.value = "";
     syncCopy();
     draw();
@@ -101,12 +103,12 @@ function open() {
 function close() {
     if (overlay.hidden) return;
     overlay.hidden = true;
-    sessionID = null;
+    sessionIdentity = null;
     shownEntries = [];
 }
 
 function jumpTo(entry) {
-    var pending = Optimistic.entries(sessionID);
+    var pending = Optimistic.entries(sessionIdentity && sessionIdentity.key);
     var position = userMessagePosition(S.tx.entries, pending, entry, S.newestFirst);
     close();
     if (position < 0) return;
@@ -167,6 +169,9 @@ overlay.addEventListener("keydown", function (event) {
 document.addEventListener("clawdline:rendered", function () {
     syncCopy();
     if (overlay.hidden) return;
-    if (!S.openId || S.openId !== sessionID) { close(); return; }
+    var selected = SessionSelection.snapshot().open;
+    if (!selected || !sessionIdentity || selected.key !== sessionIdentity.key) {
+        close(); return;
+    }
     draw();
 });

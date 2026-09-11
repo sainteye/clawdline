@@ -8,6 +8,12 @@ import { byId } from "../view/derive.js";
 import { listUnknown } from "../view/waits.js";
 import { Diagnostics } from "../core/layout-diagnostics.js";
 import { createTieredSessionFacts } from "../session/transcript-requests.js";
+import { SessionSelection } from "../session/selection.js";
+
+function sessionRoute(key) {
+    var entry = SessionSelection.resolve(key, S.sessions);
+    return entry ? entry.identity.route : null;
+}
 
 /**
  * One small cache in front of the expensive session-info read. The status line needs those facts
@@ -17,11 +23,13 @@ import { createTieredSessionFacts } from "../session/transcript-requests.js";
  */
 export var SessionFacts = createTieredSessionFacts(
     function (id) {
-        return typeof api.info === "function" ? api.info(id) : Promise.resolve(null);
+        var route = sessionRoute(id);
+        return route && typeof api.info === "function" ? api.info(route) : Promise.resolve(null);
     },
     function (id) {
+        var route = sessionRoute(id);
         var read = typeof api.infoSummary === "function" ? api.infoSummary : api.info;
-        return typeof read === "function" ? read.call(api, id) : Promise.resolve(null);
+        return route && typeof read === "function" ? read.call(api, route) : Promise.resolve(null);
     },
     { ttl: 60000 }
 );
@@ -243,16 +251,19 @@ export var StatusLine = (function () {
         if (mine !== ticket || forId !== id) return;
         if (SessionFacts.tier(id) !== "summary") return;   // already the whole reading
         Diagnostics.note("session.extras.info.upgrade", {});
+        var effect = SessionSelection.beginEffect("status:full");
         SessionFacts.get(id).then(function (facts) {
-            if (mine !== ticket || forId !== id || !facts) return;
+            if (mine !== ticket || forId !== id || !facts ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             data = facts;
             Diagnostics.note("session.extras.info.upgraded", { tree: !!facts.files });
             draw();
         }).catch(function (error) {
+            if (!SessionSelection.effectIsCurrent(effect)) return;
             // The summary on screen is still true. The tree stays absent until the next reading
             // or a card open, rather than taking the model and the cost down with it.
             Diagnostics.note("session.extras.info.upgrade-failure", { code: error && error.code });
-        });
+        }).then(function () { SessionSelection.finishEffect(effect); });
     }
 
     function load(force) {
@@ -260,23 +271,27 @@ export var StatusLine = (function () {
         var id = forId, mine = ++ticket;
         nextAt = Date.now() + 60000;
         Diagnostics.note("session.extras.info.request", { force: !!force });
+        var effect = SessionSelection.beginEffect("status:summary");
         SessionFacts.getSummary(id, force).then(function (facts) {
-            if (mine !== ticket || forId !== id) return;
+            if (mine !== ticket || forId !== id ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             data = facts;
             Diagnostics.note("session.extras.info.response", { available: !!facts });
             draw();
             whenIdle(function () { upgrade(id, mine); });
         }).catch(function (error) {
-            if (mine !== ticket || forId !== id) return;
+            if (mine !== ticket || forId !== id ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             Diagnostics.note("session.extras.info.failure", { code: error && error.code });
             // Keep the last good reading. If there was none, the basic session identity remains.
             draw();
-        });
+        }).then(function () { SessionSelection.finishEffect(effect); });
     }
 
     return {
         follow: function () {
-            var id = S.openId;
+            var open = SessionSelection.snapshot().open;
+            var id = open && open.key;
             var s = id ? byId(id) : null;
             var state = s ? s.state : "";
             if (id !== forId) {

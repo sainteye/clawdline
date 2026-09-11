@@ -13,6 +13,7 @@ import {
 import { renderDetailHead } from "../view/transcript.js";
 import { appendMsg } from "./composer.js";
 import { SessionActions } from "./detail-actions.js";
+import { SessionSelection } from "../session/selection.js";
 
 /* ==========================================================================
    Snippets — the sheet, and the editor
@@ -80,7 +81,7 @@ var editorCancel;
 var editorSave;
 var installed = false;
 
-var sessionID = null;
+var sessionIdentity = null;
 var shown = [];
 var model = null;
 var menuFor = -1;
@@ -238,8 +239,9 @@ function say(message) {
  */
 export function openSnippets() {
     if (!install()) return;
-    if (!S.openId || !readable()) return;
-    sessionID = S.openId;
+    var selected = SessionSelection.snapshot().open;
+    if (!selected || !readable()) return;
+    sessionIdentity = selected;
     menuFor = -1;
     say("");
     syncCopy();
@@ -249,7 +251,7 @@ export function openSnippets() {
     // promise is "press this and the words are in the box". The answer is remembered per session
     // and refreshed after the paint, so the only open that waits is one this session has never
     // opened, and `Snippets.follow` has usually made that one wait in the background instead.
-    var known = answered[sessionID];
+    var known = answered[selected.key];
     if (known) drawAnswer(known); else draw(null, { loading: true });
     overlay.hidden = false;
     SessionActions.close();
@@ -268,8 +270,8 @@ function drawAnswer(answer, options) {
     // Only the read's own `project` reaches the header: on the relay there is no such field, and
     // remembering the sheet's own fallback would put the session's raw `cwd` back on the header
     // by a longer route.
-    var session = byId(sessionID);
-    rememberSnippetProject(sessionID, answer && answer.project);
+    var session = byId(sessionIdentity);
+    rememberSnippetProject(sessionIdentity && sessionIdentity.rowId, answer && answer.project);
     renderDetailHead();
     draw(snippetGroups(answer, {
         machine: session ? session.machine : null,
@@ -290,12 +292,12 @@ export var Snippets = {
     follow: function () {
         if (!install()) return;
         closeSnippets();
-        var id = S.openId;
-        if (!id || !readable() || answered[id] || warming[id]) return;
-        warming[id] = true;
-        api.snippets(id).then(function (answer) {
-            answered[id] = answer;
-        }).catch(function () {}).then(function () { warming[id] = false; });
+        var selected = SessionSelection.snapshot().open;
+        if (!selected || !readable() || answered[selected.key] || warming[selected.key]) return;
+        warming[selected.key] = true;
+        api.snippets(selected.route).then(function (answer) {
+            answered[selected.key] = answer;
+        }).catch(function () {}).then(function () { warming[selected.key] = false; });
     }
 };
 
@@ -304,20 +306,21 @@ export var Snippets = {
  *  change lands at the end of the other one — and a sheet that guessed those would be showing an
  *  order the next reader does not have. */
 function refresh(options) {
-    if (!sessionID) return Promise.resolve();
+    if (!sessionIdentity) return Promise.resolve();
+    var selected = sessionIdentity;
     var opts = options && typeof options === "object" ? options : {};
     var ticket = ++reading;
     // A Cloud write can answer before its asynchronously republished snapshot arrives. After a
     // write, ask the owning Mac; ordinary opens retain the snapshot-first path. The local
     // transport ignores this optional argument.
-    return api.snippets(sessionID, opts.fresh ? { fresh: true } : undefined).then(function (answer) {
+    return api.snippets(selected.route, opts.fresh ? { fresh: true } : undefined).then(function (answer) {
         // Two presses, or a session switched while the first read was out: only the newest one
         // may paint, the same ticket rule the transcript reads under.
-        if (ticket !== reading || overlay.hidden) return;
-        answered[sessionID] = answer;
+        if (ticket !== reading || overlay.hidden || sessionIdentity !== selected) return;
+        answered[selected.key] = answer;
         drawAnswer(answer, { keepScroll: opts.keepScroll });
     }).catch(function (error) {
-        if (ticket !== reading || overlay.hidden) return;
+        if (ticket !== reading || overlay.hidden || sessionIdentity !== selected) return;
         // The transport's own sentence, unedited — `cloud_snippets_unpublished` says a Mac is
         // running a build older than this page, and no string of ours could say it better.
         draw(null, { error: (error && error.message) || String(error) });
@@ -328,7 +331,7 @@ export function closeSnippets() {
     if (overlay.hidden) return;
     closeEditor();
     overlay.hidden = true;
-    sessionID = null;
+    sessionIdentity = null;
     shown = [];
     model = null;
     menuFor = -1;
@@ -358,7 +361,7 @@ function useStarter(starter) {
     if (S.write !== true) return;
     var press = starterPress(starter, { mayCreate: snippetControls(api).create });
     if (!press) return;
-    var route = sessionID;
+    var route = sessionIdentity && sessionIdentity.route;
     closeSnippets();
     appendMsg(press.body);
     if (press.create) api.createSnippet(press.create, route).catch(function () {});
@@ -399,7 +402,7 @@ function remove(row) {
     if (!row || !may().remove) return;
     menuFor = -1;
     wantFocus("data-snippet-more", row);
-    write(function () { return api.deleteSnippet(row.id, sessionID); }, { thenClose: true });
+    write(function () { return api.deleteSnippet(row.id, sessionIdentity.route); }, { thenClose: true });
 }
 
 function move(row, delta) {
@@ -416,7 +419,7 @@ function move(row, delta) {
     menuFor = shown.indexOf(row) + delta;
     wantFocus(delta < 0 ? "data-snippet-up" : "data-snippet-down", row);
     write(function () {
-        return api.orderSnippets(body.scope, body.project || null, body.order, sessionID);
+        return api.orderSnippets(body.scope, body.project || null, body.order, sessionIdentity.route);
     }, { keepScroll: true });
 }
 
@@ -427,7 +430,7 @@ function swapScope(row) {
     if (!patch) return;
     menuFor = -1;
     wantFocus("data-snippet-more", row);
-    write(function () { return api.updateSnippet(row.id, patch, sessionID); });
+    write(function () { return api.updateSnippet(row.id, patch, sessionIdentity.route); });
 }
 
 /* ---- the editor ---------------------------------------------------------- */
@@ -436,10 +439,10 @@ function swapScope(row) {
  *  computes that list; this asks it rather than walking the transcript a second time, so the
  *  two cannot disagree about which turn "my last message" means. */
 function lastSaid() {
-    if (!sessionID) return "";
+    if (!sessionIdentity) return "";
     var mine = userMessageEntries(
-        S.tx.id === sessionID ? S.tx.entries : [],
-        Optimistic.entries(sessionID)
+        S.tx.id === sessionIdentity.rowId ? S.tx.entries : [],
+        Optimistic.entries(sessionIdentity.key)
     );
     return mine.length ? String(mine[0].text || "") : "";
 }
@@ -528,13 +531,13 @@ function save() {
         // there is nothing to save, so this is a sheet to close rather than a request to make.
         if (!Object.keys(patch).length) { closeEditor(); return; }
         var id = editing.id;
-        write(function () { return api.updateSnippet(id, patch, sessionID); }, { thenClose: true });
+        write(function () { return api.updateSnippet(id, patch, sessionIdentity.route); }, { thenClose: true });
         return;
     }
     if (!can.create) return;
     var body = snippetCreateBody(made);
     if (!body) return;
-    write(function () { return api.createSnippet(body, sessionID); }, { thenClose: true });
+    write(function () { return api.createSnippet(body, sessionIdentity.route); }, { thenClose: true });
 }
 
 /* Deleting asks once, in the button itself. A confirmation sheet over an editor over a sheet is
@@ -794,7 +797,8 @@ function install() {
         syncCopy();
         syncRow();
         if (overlay.hidden) return;
-        if (!S.openId || S.openId !== sessionID) closeSnippets();
+        var selected = SessionSelection.snapshot().open;
+        if (!selected || !sessionIdentity || selected.key !== sessionIdentity.key) closeSnippets();
     });
 
     installed = true;

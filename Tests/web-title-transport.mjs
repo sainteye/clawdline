@@ -71,21 +71,28 @@ const selected = await import("../Resources/web/app/js/net/api.js");
 selected.useApi(Mock);
 
 if (fixtureWrites) {
-    const answer = await selected.api.title("8F3A-1C", "  Release  room  ");
+    const route = { machine: "this-mac", session: "8F3A-1C" };
+    const answer = await selected.api.title(route, "  Release  room  ");
     assert.equal(reached.length, 0,
         "the fixture answers a rename itself rather than posting to whatever is serving the page");
     assert.equal(answer.title, "Release room", "the fixture normalizes the way the route does");
     assert.equal(answer.display_title, "Release room", "and answers with what the card should draw");
     assert.equal(answer.downstream, "local_only",
         "a fixture has no terminal to type a slash command into and does not pretend otherwise");
-    const info = await Mock.info("8F3A-1C");
+    const info = await Mock.info(route);
     assert.equal(info.info.session.title, "Release room",
         "the fixture keeps the new name, so the offline flow shows the feature working");
+    const beforePermission = info.info.permission.current;
+    await Mock.key(route, "shift+tab");
+    const afterKey = await Mock.info(route);
+    assert.notEqual(afterKey.info.permission.current, beforePermission,
+        "the fixture key and info routes share the exact route object's session owner");
     console.log("web title transport fixture write passed");
     process.exit(0);
 }
 
-await assert.rejects(selected.api.title("8F3A-1C", "Release room"), function (error) {
+await assert.rejects(selected.api.title({ machine: "this-mac", session: "8F3A-1C" },
+    "Release room"), function (error) {
     assert.equal(error.code, "write_disabled", "the fixture refuses with its own typed code");
     assert.match(error.message, /not enabled on this server/,
         "and with its own sentence, not a static file server's");

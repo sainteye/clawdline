@@ -8,6 +8,9 @@ import { renderComposer } from "../view/composer.js";
 import { Waits } from "../view/waits.js";
 import { Start } from "../input/start.js";
 import { Terminal } from "../view/terminal.js";
+import { SessionSelection } from "../session/selection.js";
+import { closeDetail } from "../session/open.js";
+import { SessionActions } from "../input/detail-actions.js";
 
 /**
  * Whether accepting this frame would close the chat on the strength of one empty observation.
@@ -40,7 +43,18 @@ export var handlers = {
             emptyAuthoritative: !!(scan && scan.emptyAuthoritative)
         });
         var first = !S.arrived;
+        var previousOpen = SessionSelection.snapshot().open;
+        var selectionChange = SessionSelection.reconcile(list);
         S.sessions = list;
+        if (selectionChange.openRemoved) {
+            // A disappearing row is the successful answer to its active End confirmation. Keep
+            // the detail/view beneath that confirmation in place until the visible wait settles.
+            // A same-route conversation replacement is not that answer and still closes/fences.
+            if (previousOpen && !selectionChange.openReplacement &&
+                SessionActions.endEffect && SessionActions.endEffect.identity.key === previousOpen.key) {
+                SessionActions.gone(previousOpen.rowId);
+            } else closeDetail(true);
+        }
         S.at = at || 0;
         S.arrived = true;
         // Anything arriving at all is proof this browser is allowed to ask, whatever an earlier

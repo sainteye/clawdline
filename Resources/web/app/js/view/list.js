@@ -7,28 +7,50 @@ import { Pages } from "../core/pages.js";
 import { shortPath, tint } from "../core/util.js";
 import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
 import { byId, featureRootChip, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, selfReportedPeerWaitCopy, sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
-import { renderDetailHead } from "./transcript.js";
-import { renderAgents, renderComposer, renderWaiting } from "./composer.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
-import {
-    closeDetail, observeTranscriptRevision, openSession, rearmTranscriptRevision
-} from "../session/open.js";
-import { agentRow, agentsRev, loadAgent, renderAgentHead } from "../session/agent.js";
-import { SwipeRows } from "../input/swipe.js";
-import { SessionActions } from "../input/detail-actions.js";
-import { openWanted, setWantedSession, wantedSession } from "../input/route.js";
-import { Start } from "../input/start.js";
-import { StatusLine } from "../input/status-line.js";
-import { SessionBoard } from "../input/session-board.js";
-import { BoardSession } from "../input/board-session.js";
-import { Info } from "../input/info.js";
 import { suggestedReplyButtonHTML, suggestedReplyKeydown } from "./derive.js";
-import { fillSuggestedReply } from "../input/composer.js";
 import {
     CoordinatorControls,
     coordinatorRoute,
     coordinatorRowModel
 } from "../input/coordinator-actions.js";
+import { SessionSelection, sessionSelectionKey } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
+
+function renderDetailHead() { return callSessionUI("renderDetailHead"); }
+function renderAgentHead() { return callSessionUI("renderAgentHead"); }
+function renderComposer() { return callSessionUI("renderComposer"); }
+function renderWaiting() { return callSessionUI("renderWaiting"); }
+function renderAgents() { return callSessionUI("renderAgents"); }
+function closeDetail(silent) { return callSessionUI("closeDetail", silent); }
+function observeTranscriptRevision() {
+    return callSessionUI.apply(null, ["observeTranscriptRevision"].concat(Array.from(arguments)));
+}
+function rearmTranscriptRevision() {
+    return callSessionUI.apply(null, ["rearmTranscriptRevision"].concat(Array.from(arguments)));
+}
+function openSession() {
+    return callSessionUI.apply(null, ["openSession"].concat(Array.from(arguments)));
+}
+function agentRow() { return callSessionUI.apply(null, ["agentRow"].concat(Array.from(arguments))); }
+function agentsRev(session) { return callSessionUI("agentsRev", session) || ""; }
+function loadAgent() { return callSessionUI.apply(null, ["loadAgent"].concat(Array.from(arguments))); }
+var SwipeRows = { reset: function (silent) { return callSessionUI("resetSwipeRows", silent); } };
+var SessionActions = { gone: function (id) { return callSessionUI("sessionGone", id); } };
+function openWanted() { return callSessionUI("openWanted"); }
+function setWantedSession(value) { return callSessionUI("setWantedSession", value); }
+var Start = {
+    arrange: function (rows) { return callSessionUI("arrangeStartRows", rows) || rows; },
+    arriving: function (id) { return !!callSessionUI("startArriving", id); },
+    placeholder: function () { return callSessionUI("startPlaceholder"); },
+    check: function () { return callSessionUI("checkStart"); }
+};
+var StatusLine = { follow: function () { return callSessionUI("followStatusLine"); } };
+var SessionBoard = { sync: function (row) { return callSessionUI("syncSessionBoard", row); } };
+var BoardSession = { observe: function () { return callSessionUI("observeBoardSession"); } };
+var Info = { follow: function () { return callSessionUI("followInfo"); } };
+function fillSuggestedReply(id, key) { return callSessionUI("fillSuggestedReply", id, key); }
+function wantedSession() { return callSessionUI("wantedSession"); }
 
 /* ==========================================================================
    7. Render
@@ -37,28 +59,31 @@ import {
    the selected row does not lose focus every time the stream breathes.
    ========================================================================== */
 
-export var rowNodes = {};       // id → live <li>
+export var rowNodes = {};       // exact selection key → live <li>
 var leavingNodes = {};   // id → detached-from-the-list-order <li>
 // An end request has already crossed the confirmation boundary. Kept outside `S.sessions`
 // because it is browser-side progress rather than a fact from the stream; the stream may remove
 // the session before the request that caused it has made the osascript round trip back.
 export var closingID = null;
+export var closingKey = null;
 
 /// Set from `SessionActions`, which is what ends a session, and a name arriving there by import is
 /// read-only. Same variable, one more hop.
-export function setClosingID(id) { closingID = id; }
+export function setClosingID(id, key) { closingID = id; closingKey = id ? (key || id) : null; }
 
 var firstList = true;
 
 export function onSessions() {
-    var open = S.openId ? byId(S.openId) : null;
+    var selected = SessionSelection.snapshot();
+    var open = selected.open ? byId(selected.open) : null;
     // Anything that has just stopped gets a pulse, and whatever is open gets refetched.
     S.sessions.forEach(function (s) {
-        var was = S.seen[s.id];
+        var sessionKey = sessionSelectionKey(s);
+        var was = S.seen[sessionKey];
         // Working to idle, and only that. A session that stops to ask a question has not
         // finished — it has started shouting, and the row is already doing that.
         if (was && was.state === "working" && s.state === "idle") {
-            var node = rowNodes[s.id];
+            var node = rowNodes[sessionKey];
             if (node && !reduced) {
                 node.classList.remove("finished");
                 void node.offsetWidth;              // restart the animation rather than let it be ignored
@@ -66,33 +91,33 @@ export function onSessions() {
                 setTimeout(function () { node.classList.remove("finished"); }, 1600);
             }
         }
-        if (open && s.id === open.id) {
+        if (open && selected.open && sessionKey === selected.open.key) {
             // `handlers.sessions` runs before the first accepted frame marks the connection live.
             // That one frame is a real reconnect boundary and may open a new bounded failure
             // burst. Ordinary live frames only observe, so replaying one snapshot cannot loop.
             var revision = revisionOf(s);
-            if (S.conn === "live") observeTranscriptRevision(s.id, revision, true);
-            else rearmTranscriptRevision(s.id, revision, true);
+            if (S.conn === "live") observeTranscriptRevision(sessionKey, revision, true);
+            else rearmTranscriptRevision(sessionKey, revision, true);
         }
         // An agent being read has its own reason to refetch, and the session's revision cannot
         // give it: a session sitting between turns with three agents out looks unchanged the
         // whole time they work. `agentsRev` moves when any of them writes a line.
-        if (S.agent && S.agent.sid === s.id) {
-            var mine = agentRow(s.id, S.agent.id);
+        if (S.agent && S.agent.selectionKey === sessionKey) {
+            var mine = agentRow(s, S.agent.id);
             if (mine) { S.agent.meta = mine; renderAgentHead(); }
-            if (!was || was.agents !== agentsRev(s)) loadAgent(s.id, S.agent.id, true);
+            if (!was || was.agents !== agentsRev(s)) loadAgent(s, S.agent.id, true);
         }
-        S.seen[s.id] = { state: s.state, rev: revisionOf(s), agents: agentsRev(s) };
+        S.seen[sessionKey] = { state: s.state, rev: revisionOf(s), agents: agentsRev(s) };
     });
 
     // A session that has gone away takes its row, and its transcript, with it.
-    Object.keys(S.seen).forEach(function (id) { if (!byId(id)) delete S.seen[id]; });
-    if (S.selectedId && !byId(S.selectedId)) S.selectedId = null;
-    if (S.openId && !byId(S.openId)) {
+    Object.keys(S.seen).forEach(function (key) { if (!byId(key)) delete S.seen[key]; });
+    selected = SessionSelection.snapshot();
+    if (selected.open && !byId(selected.open)) {
         // The stream is the stronger answer: if the row vanished while its end request is still
         // in flight, the session is already closed. Let the visible wait finish naturally and
         // make the later HTTP reply harmless instead of tearing the confirmation away mid-spin.
-        if (closingID === S.openId) SessionActions.gone(S.openId);
+        if (closingID === selected.open.rowId) SessionActions.gone(selected.open.rowId);
         else closeDetail(true);
     }
 
@@ -124,9 +149,9 @@ export function onSessions() {
         // `#page=usage` was opened in a fresh tab, would quietly answer a different question
         // than the one in the address. Measured in a browser: the page came up on Usage and
         // the first list took it back to the list, rewriting the address on the way out.
-        if (!routed && !wantedSession && !started && Pages.current() === Pages.home()) {
+        if (!routed && !wantedSession() && !started && Pages.current() === Pages.home()) {
             var top = ordered()[0];
-            if (top) { if (phone()) { S.selectedId = top.id; render(); } else { openSession(top.id, true); } }
+            if (top) { if (phone()) { SessionSelection.select(top, S.sessions); render(); } else { openSession(top, true); } }
         }
         // The first list is the whole list, so a session that is not in it is gone — a
         // notification about a tab somebody has since closed. Let go of it rather than hold the
@@ -147,7 +172,8 @@ export function render() {
     // The Session info card's buttons depend on whether the session is idle.
     if (typeof Info === "object" && Info) Info.follow();
     if (typeof StatusLine === "object" && StatusLine) StatusLine.follow();
-    SessionBoard.sync(S.openId ? byId(S.openId) : null);
+    var open = SessionSelection.snapshot().open;
+    SessionBoard.sync(open ? byId(open) : null);
     BoardSession.observe();
     renderWaiting();
     renderAgents();
@@ -264,7 +290,7 @@ export function renderList() {
 
     setSpinners([]);
     var wanted = {};
-    list.forEach(function (s) { wanted[s.id] = true; });
+    list.forEach(function (s) { wanted[sessionSelectionKey(s)] = true; });
 
     // A leaving row has to be taken out of flow before live nodes are appended into their new
     // order. Otherwise appendChild moves the obsolete node to an arbitrary slot, so it fades
@@ -281,11 +307,12 @@ export function renderList() {
     });
 
     list.forEach(function (s) {
-        var node = rowNodes[s.id];
+        var key = sessionSelectionKey(s);
+        var node = rowNodes[key];
         if (!node) {
-            discardLeaving(s.id);
+            discardLeaving(key);
             node = buildRow(s);
-            rowNodes[s.id] = node;
+            rowNodes[key] = node;
             if (!reduced && !Start.arriving(s.id)) {
                 node.classList.add("entering");
                 setTimeout(function (n) { return function () { n.classList.remove("entering"); }; }(node), 300);
@@ -390,7 +417,7 @@ function buildRow(s) {
         }
         var current = li._session || s;
         if (closingID === current.id) return;
-        if (coordinatorRoute(current, "row") === "session") openSession(current.id);
+        if (coordinatorRoute(current, "row") === "session") openSession(current);
     });
     return li;
 }
@@ -467,6 +494,8 @@ function fillCoordinatorMark(node, s) {
 }
 
 function fillRow(node, s) {
+    var identityKey = sessionSelectionKey(s);
+    var selection = SessionSelection.snapshot();
     const oldReply = node.querySelector(".session-suggested-reply");
     const replyHTML = suggestedReplyButtonHTML(s, { openId: S.openId,
         composerIdentity: S.replyComposerIdentity,
@@ -477,11 +506,12 @@ function fillRow(node, s) {
         if (replyHTML) node.insertAdjacentHTML("beforeend", replyHTML);
         node._replyHTML = replyHTML;
     }
-    var closing = closingID === s.id;
+    var closing = closingKey === identityKey;
     var closingVisible = closing && Waits.end.visible;
-    var pending = Optimistic.entries(s.id).length > 0;
+    var pending = Optimistic.entries(identityKey).length > 0;
     node._session = s;
     node.dataset.id = s.id;
+    node.dataset.selectionKey = identityKey;
     node.dataset.state = s.state;
     if (closingVisible) node.dataset.closing = "1"; else delete node.dataset.closing;
     if (pending) node.dataset.pending = "1"; else delete node.dataset.pending;
@@ -494,9 +524,9 @@ function fillRow(node, s) {
     if (waitingOn.length) node.dataset.coordination = "waiting";
     else if (waitedOnBy.length) node.dataset.coordination = "owed";
     else delete node.dataset.coordination;
-    node.classList.toggle("selected", s.id === S.selectedId);
-    node.classList.toggle("open", s.id === S.openId);
-    node.setAttribute("aria-selected", s.id === S.selectedId ? "true" : "false");
+    node.classList.toggle("selected", !!selection.selected && identityKey === selection.selected.key);
+    node.classList.toggle("open", !!selection.open && identityKey === selection.open.key);
+    node.setAttribute("aria-selected", selection.selected && identityKey === selection.selected.key ? "true" : "false");
     node.setAttribute("aria-disabled", closing ? "true" : "false");
 
     var mark = fillCoordinatorMark(node, s);

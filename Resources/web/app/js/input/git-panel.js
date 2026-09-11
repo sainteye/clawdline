@@ -1,15 +1,11 @@
 import { phone } from "../core/env.js";
 import { esc } from "../core/esc.js";
 import { T } from "../core/i18n.js";
-import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { api } from "../net/api.js";
 import { SessionActions } from "./detail-actions.js";
-// The two panels share the transcript's space and the attribute that says so, so each has to put
-// the other down. They import each other, which is fine here and only here: neither touches the
-// other while its own module is being evaluated — only later, inside `open`.
-import { ShellPanel } from "./shell-panel.js";
-import { Terminal } from "../view/terminal.js";
+import { SessionSelection } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
 
 /**
  * A read-only view of the open session's repository, occupying the transcript's space.
@@ -19,7 +15,7 @@ import { Terminal } from "../view/terminal.js";
  * while it is in flight.
  */
 export var GitPanel = (function () {
-    var forId = null;
+    var forSelection = null;
     var snapshot = null;
     var loading = false;
     var error = null;
@@ -79,31 +75,35 @@ export var GitPanel = (function () {
     }
 
     function load() {
-        var id = forId;
-        if (!id) return;
+        var selected = forSelection;
+        if (!selected) return;
         var mine = ++ticket;
+        var effect = SessionSelection.beginEffect("git-panel", { identity: selected });
         snapshot = null; error = null; loading = true;
         render();
-        api.git(id).then(function (data) {
-            if (mine !== ticket || forId !== id) return;
+        api.git(selected.route).then(function (data) {
+            if (mine !== ticket || forSelection !== selected ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             snapshot = data.git || { files: [], clean: true };
             loading = false;
             render();
         }).catch(function (e) {
-            if (mine !== ticket || forId !== id) return;
+            if (mine !== ticket || forSelection !== selected ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             loading = false;
             error = e && e.code === "not_a_repo" ? T.webGitNotRepo : T.webGitFailed;
             render();
-        });
+        }).then(function () { SessionSelection.finishEffect(effect); });
     }
 
     return {
         open: function () {
-            if (!S.openId) return;
+            var selected = SessionSelection.snapshot().open;
+            if (!selected) return;
             SessionActions.close();
-            ShellPanel.close(false);
-            Terminal.close(false);
-            forId = S.openId;
+            callSessionUI("closeShellPanel", false);
+            callSessionUI("closeTerminal", false);
+            forSelection = selected;
             els["git-panel"].hidden = false;
             els["pane-detail"].dataset.panel = "git";
             load();
@@ -113,7 +113,7 @@ export var GitPanel = (function () {
         close: function (restore) {
             if (els["git-panel"].hidden) return;
             ticket += 1;
-            forId = null; snapshot = null; loading = false; error = null;
+            forSelection = null; snapshot = null; loading = false; error = null;
             els["git-panel"].hidden = true;
             delete els["pane-detail"].dataset.panel;
             if (restore && !els["detail-actions-trigger"].disabled) {
@@ -121,7 +121,7 @@ export var GitPanel = (function () {
             }
         },
 
-        refresh: function () { if (forId) load(); },
+        refresh: function () { if (forSelection) load(); },
         follow: function () { this.close(false); }
     };
 })();

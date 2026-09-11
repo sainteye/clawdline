@@ -9,16 +9,10 @@ import { assistantLogo, assistantName, drawIcon, drawSpinner, optimisticSpinners
 import { byId, taskOfChild, taskWord } from "./derive.js";
 import { markForSession, projectLabel } from "./project-mark.js";
 import { snippetControls, snippetProjectFor } from "./snippets-data.js";
-import { closingID } from "./list.js";
 import { copyCodeBlock, inlineMd, richText } from "./markdown.js";
 import { Optimistic, Waits, listUnknown, txSkeleton } from "./waits.js";
-import { agentTokens } from "../session/agent.js";
-import { SessionActions } from "../input/detail-actions.js";
 import { coordinatorForSession } from "../input/coordinator-actions.js";
-import { GitPanel } from "../input/git-panel.js";
-import { ShellPanel } from "../input/shell-panel.js";
 import { api } from "../net/api.js";
-import { Terminal } from "./terminal.js";
 import {
     connectArtifactTile, createImageLightbox, reconcileArtifactTiles
 } from "./transcript-images.js";
@@ -28,6 +22,8 @@ import {
 import {
     boardWorkflowRecordHTML, parseBoardWorkflowRecord
 } from "./board-workflow-record.js";
+import { SessionSelection } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
 
 /* ---- the transcript ------------------------------------------------------ */
 
@@ -43,8 +39,10 @@ var imageLightbox = createImageLightbox(
     els["image-lightbox-close"], document);
 
 export function renderDetailHead() {
-    var s = S.openId ? byId(S.openId) : null;
-    var ending = !!(s && closingID === s.id);
+    var selection = SessionSelection.snapshot();
+    var s = selection.open ? byId(selection.open) : null;
+    var ending = !!(s && selection.open &&
+        callSessionUI("closingSelectionKey") === selection.open.key);
     els["detail-head"].dataset.closing = ending ? "on" : "off";
     els.back.disabled = ending;
     // Blank, not "No session open", while the list is still on its way — see `listUnknown`. The
@@ -81,7 +79,7 @@ export function renderDetailHead() {
             if (task.title) sub.push(task.title);
             sub.push(taskWord(task));
             var used = task.usage || {};
-            if (used.total) sub.push("↓ " + agentTokens(used.total));
+            if (used.total) sub.push("↓ " + callSessionUI("agentTokens", used.total));
             // Only when there is a figure. Codex is billed by the plan rather than the token, so
             // the Mac sends null rather than a zero, and a "$0.0000" beside real work is a lie
             // that reads as a measurement.
@@ -165,30 +163,34 @@ export function renderDetailHead() {
     els["session-push"].disabled = !s || !S.write || ending;
     els["session-end"].disabled = !s || !S.write || ending;
     if (!s) {
-        SessionActions.close(); GitPanel.follow(); ShellPanel.follow(); Terminal.follow();
+        callSessionUI("closeSessionActions");
+        callSessionUI("followGitPanel");
+        callSessionUI("followShellPanel");
+        callSessionUI("followTerminal");
     }
 }
 
 export function renderTranscript() {
     var box = els.tx;
+    var selection = SessionSelection.snapshot();
     // Every invocation, including a skeleton or empty state, cancels incremental work belonging
     // to the previously open session before that work can append another chunk.
     var renderTicket = ++transcriptRenderTicket;
     Diagnostics.note("transcript.render", {
-        open: !!S.openId, agent: !!S.agent, loading: !!(S.agent || S.tx).loading,
+        open: !!selection.open, agent: !!S.agent, loading: !!(S.agent || S.tx).loading,
         entries: ((S.agent || S.tx).entries || []).length,
         error: !!(S.agent || S.tx).error
     });
     setOptimisticSpinners([]);
     artifactRenderQueue = [];
-    artifactRenderSession = S.openId;
+    artifactRenderSession = selection.open ? selection.open.key : null;
     // Blank rather than the home screen while the list is still on its way — see `listUnknown`.
     // A pane that says "pick a session" and then opens one on its own is a pane that changed its
     // mind in front of the reader; a pane that is briefly empty is a pane that is loading.
-    var home = !S.openId && !listUnknown();
+    var home = !selection.open && !listUnknown();
     box.classList.toggle("home", home);
     els["tx-scroll"].classList.toggle("home", home);
-    if (!S.openId) {
+    if (!selection.open) {
         box.innerHTML = !home ? "" :
             '<section class="home-hero" aria-labelledby="home-hero-title">' +
             '<div class="copy"><span class="rule" aria-hidden="true"></span>' +
@@ -198,7 +200,7 @@ export function renderTranscript() {
     }
     // The speaker belongs to the open session. Keeping this beside the transcript render means a
     // Codex answer cannot inherit the page's historical Claude default while sessions switch.
-    var session = byId(S.openId);
+    var session = byId(selection.open);
     WHO.assistant = assistantName(session && session.assistant);
     // One pane, one of two conversations in it: the session's, or one of the agents it sent
     // away. Everything below this line is the same either way — the same blocks, the same folds,
@@ -208,7 +210,7 @@ export function renderTranscript() {
     // survives until that fetch contains the corresponding real entry. Agent files never get a
     // tail: they are read-only conversations and have no composer to originate one.
     var viewEntries = view.entries.slice();
-    if (!S.agent) viewEntries = viewEntries.concat(Optimistic.entries(S.openId));
+    if (!S.agent) viewEntries = viewEntries.concat(Optimistic.entries(selection.open.key));
     if (view.error && !viewEntries.length) {
         box.innerHTML = '<div class="tx-note err">' + esc(view.error) + "</div>";
         announceMeaningfulPaint(renderTicket, 0, false);
@@ -368,7 +370,7 @@ function announceMeaningfulPaint(renderTicket, entryCount, chunked) {
  */
 function transcriptWorking() {
     if (S.agent) return !!(S.agent.meta && S.agent.meta.state === "running");
-    var s = byId(S.openId);
+    var s = byId(SessionSelection.snapshot().open);
     return !!(s && s.state === "working");
 }
 
@@ -694,7 +696,7 @@ export var WHO = {
 function whoHTML(role, at) {
     var mark = "";
     if (role === "assistant" && S.assistantIcons) {
-        var session = byId(S.openId);
+        var session = byId(SessionSelection.snapshot().open);
         mark = assistantLogo(session && session.assistant);
     }
     return '<div class="who"><span class="speaker">' + mark + esc(WHO[role]) + "</span>" +
@@ -986,8 +988,10 @@ function carriedArtifactSource(session) {
     // answering "undefined". Every other transport question on this page is asked after the
     // entry point has installed one; this one is asked from a render, so it asks safely.
     if (!api || typeof api.image !== "function" || !session) return null;
+    var selected = SessionSelection.resolve(session, S.sessions);
+    if (!selected) return null;
     return function (artifact) {
-        return api.image(session, artifact.id).then(function (answer) {
+        return api.image(selected.identity.route, artifact.id).then(function (answer) {
             var url = URL.createObjectURL(
                 new Blob([answer.bytes], { type: answer.media_type }));
             return { url: url, release: function () { URL.revokeObjectURL(url); } };

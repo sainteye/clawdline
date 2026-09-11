@@ -210,6 +210,7 @@ assert.equal(typeof LocalClient.refreshSessionEvidence, "function",
 const { useApi } = await import("./api.js");
 const { handlers } = await import("./handlers.js");
 const { S } = await import("../core/state.js");
+const { SessionSelection } = await import("../session/selection.js");
 const { renderWaiting } = await import("../view/composer.js");
 const waiting = elementWithID("waiting");
 const originalSessionsHandler = handlers.sessions;
@@ -218,8 +219,8 @@ const appliedSessions = [];
 handlers.sessions = function (list) { appliedSessions.push(list); return true; };
 handlers.conn = function () {};
 useApi(LocalClient);
-S.openId = "WAITING-ONE";
 S.sessions = [{ id: "WAITING-ONE", state: "waiting", menu: null }];
+SessionSelection.open(S.sessions[0], S.sessions);
 LocalClient.es = {};
 LocalClient.resetSessionRefreshForTesting();
 
@@ -294,15 +295,15 @@ assert.equal(requests.filter(function (request) {
     return request.path === "/v1/sessions/refresh";
 }).length, 1, "the LocalClient single-flight layer alone prevents a second POST");
 S.sessions.push({ id: "WAITING-TWO", state: "waiting", menu: null });
-S.openId = "WAITING-TWO";
+SessionSelection.open(S.sessions[1], S.sessions);
 renderWaiting();
 assert.equal(waiting.querySelector("[data-refresh]").ariaDisabled, "true",
     "global inventory refresh state remains busy when a different session card is rendered");
 assert.equal(requests.filter(function (request) {
     return request.path === "/v1/sessions/refresh";
 }).length, 1, "rendering another session does not create per-session refresh work");
-S.openId = "WAITING-ONE";
 S.sessions.pop();
+SessionSelection.open(S.sessions[0], S.sessions);
 renderWaiting();
 
 answerRefresh(jsonResponse({ ok: true, state: "accepted", accepted: true,

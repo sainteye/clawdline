@@ -444,20 +444,28 @@ export function scheduleTranscriptRender(options) {
  * change state, line or label, and an inventory refresh need not append a byte.
  */
 export function createTranscriptEventRouter(currentSessionID, observe, reconnect) {
+    function eventMatches(open, event, data) {
+        if (typeof open === "string") return data.id === open;
+        if (!open || typeof open !== "object") return false;
+        var eventIdentity = event.identity || {};
+        var machine = eventIdentity.machine || event.machine;
+        var session = eventIdentity.session || data.id;
+        return session === open.session && (!machine || machine === open.machine);
+    }
     return function route(event) {
         if (!event) return false;
         if (event.type === "hello") {
             var reconnectID = currentSessionID();
             if (!reconnectID || typeof reconnect !== "function") return false;
-            reconnect(reconnectID);
+            reconnect(typeof reconnectID === "object" ? reconnectID.key : reconnectID);
             return true;
         }
         if (event.type !== "transcript-revision") return false;
         var data = event.data || {};
         var openID = currentSessionID();
-        if (!openID || data.id !== openID || typeof data.signature !== "string" ||
+        if (!openID || !eventMatches(openID, event, data) || typeof data.signature !== "string" ||
             !data.signature) return false;
-        observe(data.id, data.signature);
+        observe(typeof openID === "object" ? openID.key : data.id, data.signature);
         return true;
     };
 }

@@ -383,6 +383,8 @@ browser_contract_suites=(
   Tests/web-session-disposition.mjs
   Tests/web-fast-mode.mjs
   Tests/web-session-closeability.mjs
+  Tests/web-session-selection.mjs
+  Tests/web-module-boundaries.mjs
   Tests/web-title-transport.mjs
   Tests/web-code-copy.mjs
   Tests/web-markdown-lists.mjs
@@ -395,7 +397,7 @@ browser_contract_suites=(
   Tests/web-projects.mjs
   Tests/web-documents.mjs
 )
-if [ "${#browser_contract_suites[@]}" -ne 22 ]; then
+if [ "${#browser_contract_suites[@]}" -ne 24 ]; then
   echo "browser contract roster changed without updating its sealed count" >&2
   exit 1
 fi

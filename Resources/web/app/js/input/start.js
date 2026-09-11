@@ -17,6 +17,7 @@ import {
     createClawdfatherCoordinatorLoader
 } from "./clawdfather.js";
 import { coordinatorOfflineAdvice, coordinatorPresenceText } from "./coordinator-actions.js";
+import { SessionSelection } from "../session/selection.js";
 
 /* ---- starting a session -------------------------------------------------- */
 
@@ -890,7 +891,11 @@ export var Start = (function () {
             // something else meanwhile, and not after the fifteen seconds have gone by: by then
             // they have been told to look at the Mac, and a transcript arriving over whatever
             // they moved on to is the page having an opinion it has not earned.
-            if (late || S.openId !== from) { S.selectedId = id; renderList(); return false; }
+            if (late || S.openId !== from) {
+                SessionSelection.select(id, S.sessions);
+                renderList();
+                return false;
+            }
             openSession(id);
             return true;
         }

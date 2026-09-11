@@ -17,6 +17,7 @@ import { Start } from "./start.js";
 import { Command } from "./command.js";
 import { Schedule } from "./schedule.js";
 import { Info } from "./info.js";
+import { SessionSelection } from "../session/selection.js";
 
 /* ==========================================================================
    9. Input
@@ -48,7 +49,8 @@ document.addEventListener("keydown", function (ev) {
     if (meta && (key === "k" || key === "K")) {
         ev.preventDefault();
         els.rows.focus();
-        if (!S.selectedId) move(1); else select(S.selectedId);
+        var selected = SessionSelection.snapshot().selected;
+        if (!selected) move(1); else select(selected);
         return;
     }
     if (meta && (key === "j" || key === "J")) {
@@ -122,7 +124,7 @@ document.addEventListener("keydown", function (ev) {
         // An agent is a step inside a session, so Escape gives that step back before it gives
         // the session back. Anything else would close two things for one press.
         if (S.agent) { closeAgent(); return; }
-        if (S.openId) { closeDetail(); return; }
+        if (SessionSelection.snapshot().open) { closeDetail(); return; }
         return;
     }
 
@@ -137,7 +139,8 @@ document.addEventListener("keydown", function (ev) {
         case "ArrowDown": case "j": ev.preventDefault(); move(1); break;
         case "ArrowUp": case "k": ev.preventDefault(); move(-1); break;
         case "Enter":
-            if (S.selectedId) { ev.preventDefault(); openSession(S.selectedId); }
+            var selected = SessionSelection.snapshot().selected;
+            if (selected) { ev.preventDefault(); openSession(selected); }
             break;
         case "/":
             ev.preventDefault();

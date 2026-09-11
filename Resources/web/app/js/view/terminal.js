@@ -1,11 +1,15 @@
 import { esc } from "../core/esc.js";
 import { T } from "../core/i18n.js";
-import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { api } from "../net/api.js";
 import { SessionActions } from "../input/detail-actions.js";
-import { GitPanel } from "../input/git-panel.js";
-import { ShellPanel } from "../input/shell-panel.js";
+import { SessionSelection } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
+
+function closeTerminalPeers() {
+    callSessionUI("closeGitPanel", false);
+    callSessionUI("closeShellPanel", false);
+}
 
 /**
  * The terminal itself, as it is right now, in the transcript's space.
@@ -58,7 +62,7 @@ import { ShellPanel } from "../input/shell-panel.js";
  * beside the rules.
  */
 export var Terminal = (function () {
-    var forId = null;
+    var forSelection = null;
     var screen = null;
     var error = null;
     var loading = false;
@@ -557,8 +561,8 @@ export var Terminal = (function () {
      * answer comes out of a cache the signal invalidates.
      */
     function load() {
-        var id = forId;
-        if (!id) return;
+        var selected = forSelection;
+        if (!selected) return;
         if (typeof api.screen !== "function") {
             loading = false;
             error = T.webScreenGone;
@@ -566,19 +570,22 @@ export var Terminal = (function () {
             return;
         }
         var mine = ++ticket;
-        api.screen(id).then(function (data) {
-            if (mine !== ticket || forId !== id) return;
+        var effect = SessionSelection.beginEffect("terminal-screen", { identity: selected });
+        api.screen(selected.route).then(function (data) {
+            if (mine !== ticket || forSelection !== selected ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             loading = false;
             error = null;
             screen = data.screen || null;
             render();
             arrange();
         }).catch(function (e) {
-            if (mine !== ticket || forId !== id) return;
+            if (mine !== ticket || forSelection !== selected ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             loading = false;
             error = T.webScreenGone;
             render();
-        });
+        }).then(function () { SessionSelection.finishEffect(effect); });
     }
 
     /**
@@ -589,7 +596,7 @@ export var Terminal = (function () {
      * because that number is the Mac's, not this page's.
      */
     function arrange() {
-        if (keepalive === null && forId) {
+        if (keepalive === null && forSelection) {
             keepalive = setInterval(function () { load(); }, 15000);
         }
         var wants = screen && screen.channel === "on-demand";
@@ -607,11 +614,11 @@ export var Terminal = (function () {
 
     return {
         open: function () {
-            if (!S.openId) return;
+            var selected = SessionSelection.snapshot().open;
+            if (!selected) return;
             SessionActions.close();
-            GitPanel.close(false);
-            ShellPanel.close(false);
-            forId = S.openId;
+            closeTerminalPeers();
+            forSelection = selected;
             screen = null; error = null; loading = true;
             els["screen-panel"].hidden = false;
             els["pane-detail"].dataset.panel = "screen";
@@ -625,7 +632,7 @@ export var Terminal = (function () {
             if (!els["screen-panel"] || els["screen-panel"].hidden) return;
             ticket += 1;
             stopClocks();
-            forId = null; screen = null; loading = false; error = null;
+            forSelection = null; screen = null; loading = false; error = null;
             els["screen-panel"].hidden = true;
             if (els["pane-detail"].dataset.panel === "screen") {
                 delete els["pane-detail"].dataset.panel;
@@ -635,7 +642,7 @@ export var Terminal = (function () {
             }
         },
 
-        refresh: function () { if (forId) load(); },
+        refresh: function () { if (forSelection) load(); },
         follow: function () { this.close(false); },
 
         /**
@@ -648,14 +655,19 @@ export var Terminal = (function () {
          * otherwise have gone.
          */
         observe: function (id, revision) {
-            if (!id || !revision || forId !== id) return;
+            // Ambient screen revisions exist only on the authenticated local stream. Cloud reads
+            // poll their exact route instead. A duplicate id on another machine therefore cannot
+            // wake this panel through the local event lane.
+            if (!id || !revision || !forSelection ||
+                forSelection.machine !== "this-mac" || forSelection.rowId !== id) return;
             if (screen && screen.revision === revision) return;
             load();
         },
 
         /** For the tests: what this panel currently believes it is showing. */
         stateForTesting: function () {
-            return { forId: forId, screen: screen, error: error,
+            return { forId: forSelection && forSelection.rowId,
+                     selectionKey: forSelection && forSelection.key, screen: screen, error: error,
                      leasing: keepalive !== null, polling: poll !== null };
         },
         paintRowsForTesting: paintRows,

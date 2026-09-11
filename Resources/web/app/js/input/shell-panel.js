@@ -6,8 +6,8 @@ import { api } from "../net/api.js";
 import { toast } from "../core/util.js";
 import { ActionConfirm } from "./action-confirm.js";
 import { byId } from "../view/derive.js";
-import { GitPanel } from "./git-panel.js";
-import { Terminal } from "../view/terminal.js";
+import { SessionSelection } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
 
 /**
  * What one background command has printed, in the transcript's space.
@@ -27,7 +27,7 @@ import { Terminal } from "../view/terminal.js";
  * in flight, the same bargain ``GitPanel`` strikes.
  */
 export var ShellPanel = (function () {
-    var forId = null;          // the session
+    var forSelection = null;   // the exact machine/session/conversation owner
     var shellId = null;        // the command
     var snapshot = null;
     var loading = false;
@@ -50,7 +50,7 @@ export var ShellPanel = (function () {
 
     /** What the session list is already saying about this command, if anything. */
     function stripRow(id) {
-        var s = byId(S.openId);
+        var s = byId(forSelection);
         var list = (s && s.shells) || [];
         for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
         return null;
@@ -113,12 +113,14 @@ export var ShellPanel = (function () {
     }
 
     function load(quiet) {
-        var sid = forId, id = shellId;
+        var sid = forSelection, id = shellId;
         if (!sid || !id) return;
         var mine = ++ticket;
+        var effect = SessionSelection.beginEffect("shell-panel:" + id, { identity: sid });
         if (!quiet) { snapshot = null; error = null; loading = true; render(); }
-        api.shell(sid, id).then(function (data) {
-            if (mine !== ticket || forId !== sid || shellId !== id) return;
+        api.shell(sid.route, id).then(function (data) {
+            if (mine !== ticket || forSelection !== sid || shellId !== id ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             loading = false;
             error = null;
             // A repaint only when the bytes moved. Redrawing an unchanged build log once a
@@ -138,7 +140,8 @@ export var ShellPanel = (function () {
             }
             if (data.ended) stopBeat();
         }).catch(function (e) {
-            if (mine !== ticket || forId !== sid || shellId !== id) return;
+            if (mine !== ticket || forSelection !== sid || shellId !== id ||
+                !SessionSelection.effectIsCurrent(effect)) return;
             loading = false;
             // A command that ended while this was open has its row taken off the strip, and the
             // route answers 404 for an id the session no longer lists. That is the ordinary end
@@ -150,7 +153,7 @@ export var ShellPanel = (function () {
             }
             stopBeat();
             render();
-        });
+        }).then(function () { SessionSelection.finishEffect(effect); });
     }
 
     function stopBeat() {
@@ -175,29 +178,36 @@ export var ShellPanel = (function () {
      * finished on its own, which is what it now is.
      */
     function askToStop() {
-        if (!forId || !shellId || !S.write) return;
+        if (!forSelection || !shellId || !S.write) return;
         var shell = meta || {};
-        ActionConfirm.open("shell-stop", forId, els["shell-stop"], {
+        ActionConfirm.open("shell-stop", forSelection, els["shell-stop"], {
             title: T.webShellStopTitle,
             say: fill(T.webShellStopSay, { command: shell.command || shellId }),
             go: function () {
-                var sid = forId, id = shellId;
-                return api.killShell(sid, id).then(function () {
-                    toast(T.webShellStopped);
-                    if (forId === sid && shellId === id) load(true);
-                }).catch(function (e) {
-                    toast(e.message || T.webShellStopFailed, true);
+                var sid = forSelection, id = shellId;
+                var effect = SessionSelection.beginEffect("shell-kill:" + id, {
+                    identity: sid, requiresOpen: false
                 });
+                return api.killShell(sid.route, id).then(function () {
+                    if (!SessionSelection.effectIsCurrent(effect)) return;
+                    toast(T.webShellStopped);
+                    if (forSelection === sid && shellId === id) load(true);
+                }).catch(function (e) {
+                    if (SessionSelection.effectIsCurrent(effect)) {
+                        toast(e.message || T.webShellStopFailed, true);
+                    }
+                }).then(function () { SessionSelection.finishEffect(effect); });
             }
         });
     }
 
     return {
         open: function (id) {
-            if (!S.openId || !id) return;
-            GitPanel.close(false);
-            Terminal.close(false);
-            forId = S.openId;
+            var selected = SessionSelection.snapshot().open;
+            if (!selected || !id) return;
+            callSessionUI("closeGitPanel", false);
+            callSessionUI("closeTerminal", false);
+            forSelection = selected;
             shellId = id;
             // The strip's own row, so the first draw already names the command rather than
             // waiting a round trip to find out what somebody just pressed.
@@ -218,7 +228,7 @@ export var ShellPanel = (function () {
             if (els["shell-panel"].hidden) return;
             ticket += 1;
             stopBeat();
-            forId = null; shellId = null; snapshot = null; loading = false; error = null;
+            forSelection = null; shellId = null; snapshot = null; loading = false; error = null;
             drawn = false; meta = null;
             els["shell-panel"].hidden = true;
             delete els["pane-detail"].dataset.panel;

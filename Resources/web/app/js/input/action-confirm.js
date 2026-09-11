@@ -10,10 +10,32 @@ import { closeabilityHelpModel } from "../view/closeability-help.js";
 import { Waits } from "../view/waits.js";
 import { closeDetail } from "../session/open.js";
 import { closeAgent } from "../session/agent.js";
-import { SessionActions } from "./detail-actions.js";
-import { GitPanel } from "./git-panel.js";
-import { Terminal } from "../view/terminal.js";
-import { Info } from "./info.js";
+import { callSessionUI } from "../session/ui.js";
+import { SessionSelection } from "../session/selection.js";
+
+// The sheet owns DOM events, not the controllers that answer them. Keeping those answers behind
+// the composition root breaks the old action-confirm/detail/git/info/terminal import knot while
+// preserving the same synchronous, in-gesture calls.
+var SessionActions = {
+    get opener() { return callSessionUI("sessionActionsOpener"); },
+    close: function () { return callSessionUI("closeSessionActions", ...arguments); },
+    end: function () { return callSessionUI("endSession", ...arguments); },
+    prompt: function () { return callSessionUI("promptSession", ...arguments); },
+    focusMac: function () { return callSessionUI("focusMac", ...arguments); },
+    level: function () { return callSessionUI("sessionActionsLevel", ...arguments); },
+    onGit: function () { return callSessionUI("sessionActionsOnGit", ...arguments); },
+    items: function () { return callSessionUI("sessionActionItems", ...arguments) || []; }
+};
+var GitPanel = {
+    open: function () { return callSessionUI("openGitPanel", ...arguments); },
+    refresh: function () { return callSessionUI("refreshGitPanel", ...arguments); },
+    close: function () { return callSessionUI("closeGitPanel", ...arguments); }
+};
+var Terminal = {
+    open: function () { return callSessionUI("openTerminal", ...arguments); },
+    close: function () { return callSessionUI("closeTerminal", ...arguments); }
+};
+var Info = { open: function () { return callSessionUI("openInfo", ...arguments); } };
 
 /** The second press before a session-changing action reaches the transport. */
 export var ActionConfirm = {
@@ -34,7 +56,7 @@ export var ActionConfirm = {
      * before the Mac has answered it.
      */
     open: function (kind, sessionID, opener, ask) {
-        var id = sessionID || S.openId;
+        var id = sessionID || SessionSelection.snapshot().open;
         if (!id || !S.write) return;
         var action = kind === "end" ? T.webEndSession : kind;
         var returnFocus = opener || SessionActions.opener || els["detail-actions-trigger"];

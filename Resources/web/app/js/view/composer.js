@@ -7,10 +7,21 @@ import { toast } from "../core/util.js";
 import { drawSpinner, setLiveSpin, spinPhase } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId } from "./derive.js";
-import { closingID } from "./list.js";
-import { Shots } from "../input/shots.js";
-import { msgText, sending } from "../input/composer.js";
-import { Voice } from "../input/voice.js";
+import { SessionSelection } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
+
+function openSelection() {
+    return SessionSelection.snapshot().open;
+}
+function beginSelectionEffect(lane, selected) {
+    return SessionSelection.beginEffect(lane, { identity: selected });
+}
+function selectionEffectCurrent(effect) {
+    return SessionSelection.effectIsCurrent(effect);
+}
+function finishSelectionEffect(effect) {
+    SessionSelection.finishEffect(effect);
+}
 
 /**
  * An attribute written only when it is about to change.
@@ -66,8 +77,13 @@ function stepsHTML(steps) {
 }
 
 export function renderComposer() {
-    var on = S.write && !!S.openId && closingID !== S.openId;
-    var session = S.openId ? byId(S.openId) : null;
+    var selection = SessionSelection.snapshot();
+    var closingKey = callSessionUI("closingSelectionKey");
+    var sending = !!callSessionUI("composerSending");
+    var shotsBusy = !!callSessionUI("shotsBusy");
+    var voiceBusy = !!callSessionUI("voiceBusy");
+    var on = S.write && !!selection.open && closingKey !== selection.open.key;
+    var session = selection.open ? byId(selection.open) : null;
     var placeholder = T.placeholder;
     if (session && session.assistant === "codex") {
         placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex");
@@ -79,7 +95,7 @@ export function renderComposer() {
         (session && session.assistant === "codex" ? "Codex" : "Claude Code") + " skills");
     els.composer.dataset.write = S.write ? "on" : "off";
     els.composer.dataset.sending = sending ? "on" : "off";
-    els.composer.dataset.closing = closingID === S.openId ? "on" : "off";
+    els.composer.dataset.closing = selection.open && closingKey === selection.open.key ? "on" : "off";
     // Editable only when there is somewhere for the words to go. Not switched off while a send
     // is in flight, though — see the `beforeinput` guard below: taking the editability away from
     // a focused element takes the focus with it, and on a phone that shuts the keyboard between
@@ -92,8 +108,8 @@ export function renderComposer() {
     setAttr(els.msg, "enterkeyhint", hasKeyboard() ? "send" : "enter");
     // A picture on its own is a message. The server takes text, images, or both, and refuses
     // only the one that is neither — so the button follows the same rule.
-    els.send.disabled = !on || sending || Shots.busy() || Voice.busy()
-        || (!msgText() && !Shots.count());
+    els.send.disabled = !on || sending || shotsBusy || voiceBusy
+        || (!callSessionUI("messageText") && !callSessionUI("shotsCount"));
     // **The width is pinned before the word changes.** "Send" and "Sending…" are different
     // lengths in every language, and swapping them mid-press moved the button, which moved the
     // box under it — so the press that started a send also made the thing you pressed jump. The
@@ -126,7 +142,7 @@ export function renderComposer() {
     // open microphone must not disable the only control that can shut it: the light would stay
     // on with nothing left on screen to press, which is the one thing a page is never allowed to
     // do with a microphone.
-    els.mic.disabled = Voice.live() ? false : (!on || sending || Voice.busy());
+    els.mic.disabled = callSessionUI("voiceLive") ? false : (!on || sending || voiceBusy);
     // Only ever the reason the box will not take what you type. There used to be a line here
     // saying that Return sends and Shift-Return starts a line, and it was true and it was in the
     // way: a row of every screen, forever, to teach something once. When there is nothing to
@@ -211,7 +227,8 @@ export function renderWaiting() {
     if (!box) return;
     var restoreRefreshFocus = document.activeElement && document.activeElement.closest &&
         !!document.activeElement.closest("[data-refresh]");
-    var open = S.openId ? byId(S.openId) : null;
+    var currentSelection = openSelection();
+    var open = currentSelection ? byId(currentSelection) : null;
     // The options, when the Mac managed to read them. When it did not — a dialog drawn in a
     // shape the parser does not know — the two sentences underneath are what this box has always
     // said, and they are still the honest answer for that case.
@@ -226,14 +243,14 @@ export function renderWaiting() {
     if (!question.trim()) question = "";
     // Given up after ten seconds: if the session is still waiting by then this was not the
     // answer's own gap, and the honest fallback is better than a dead menu nobody can use.
-    if (answeredMenu && (!open || answeredMenu.id !== open.id || open.state !== "waiting"
+    if (answeredMenu && (!open || answeredMenu.selectionKey !== currentSelection.key || open.state !== "waiting"
                          || Date.now() - answeredMenu.at > 10000)) {
         answeredMenu = null;
     }
-    if (dismissedMenu && (!open || dismissedMenu.id !== open.id || open.state !== "waiting")) {
+    if (dismissedMenu && (!open || dismissedMenu.selectionKey !== currentSelection.key || open.state !== "waiting")) {
         dismissedMenu = null;
     }
-    if (foldedMenu && (!open || foldedMenu.id !== open.id || open.state !== "waiting")) {
+    if (foldedMenu && (!open || foldedMenu.selectionKey !== currentSelection.key || open.state !== "waiting")) {
         foldedMenu = null;
     }
     // Waved away: the whole card goes, rather than falling back to the two sentences about
@@ -403,18 +420,22 @@ els.waiting.addEventListener("click", function (ev) {
     if (!ev.target.closest) return;
 
     if (ev.target.closest("[data-fold]")) {
-        var open2 = S.openId ? byId(S.openId) : null;
+        var selected = openSelection();
+        var open2 = selected ? byId(selected) : null;
         var key = menuKey(open2 ? open2.menu : null);
         foldedMenu = foldedMenu && foldedMenu.key === key
-            ? null : { id: open2 ? open2.id : S.openId, key: key };
+            ? null : { id: open2 ? open2.id : (selected && selected.rowId),
+                selectionKey: selected && selected.key, key: key };
         waitingDrawn = null;
         renderWaiting();
         return;
     }
 
     if (ev.target.closest("[data-dismiss]")) {
-        var here = S.openId ? byId(S.openId) : null;
-        if (here) dismissedMenu = { id: here.id, key: menuKey(here.menu) };
+        var selected = openSelection();
+        var here = selected ? byId(selected) : null;
+        if (here) dismissedMenu = { id: here.id, selectionKey: selected.key,
+            key: menuKey(here.menu) };
         waitingDrawn = null;
         renderWaiting();
         return;
@@ -422,7 +443,8 @@ els.waiting.addEventListener("click", function (ev) {
 
     var opt = ev.target.closest("[data-key]");
     if (opt) {
-        if (!S.openId || opt.disabled) return;
+        var selected = openSelection();
+        if (!selected || opt.disabled) return;
         // Every option goes dead on the first press, not just the one pressed. They are answers
         // to one question: a second tap while the first is in flight would arrive as a stray
         // keystroke in whatever the session moved on to.
@@ -430,15 +452,19 @@ els.waiting.addEventListener("click", function (ev) {
             b.disabled = true;
         });
         // Held so the next render has something to draw when the picker has already gone.
-        var asked = byId(S.openId);
+        var asked = byId(selected);
         if (asked && asked.menu && asked.menu.options && asked.menu.options.length) {
-            answeredMenu = { id: S.openId, rows: asked.menu.options,
+            answeredMenu = { id: selected.rowId, selectionKey: selected.key, rows: asked.menu.options,
                              submit: asked.menu.submit || null,
                              question: asked.menu.question || "", at: Date.now() };
         }
-        api.key(S.openId, opt.dataset.key)
-            .then(function () { toast(T.webMenuSent); })
+        var effect = beginSelectionEffect("answer-menu", selected);
+        api.key(selected.route, opt.dataset.key)
+            .then(function () {
+                if (selectionEffectCurrent(effect)) toast(T.webMenuSent);
+            })
             .catch(function (e) {
+                if (!selectionEffectCurrent(effect)) return;
                 toast(e.message, true);
                 // Drawn again from scratch, and the cache has to be cleared to allow it: the
                 // markup has not changed, so the guard in `renderWaiting` would keep the dead
@@ -446,7 +472,7 @@ els.waiting.addEventListener("click", function (ev) {
                 answeredMenu = null;
                 waitingDrawn = null;
                 renderWaiting();
-            });
+            }).then(function () { finishSelectionEffect(effect); });
         return;
     }
 
@@ -476,15 +502,20 @@ els.waiting.addEventListener("click", function (ev) {
     // `dispatchEvent` runs its listeners before it returns, so the panel opens inside the press and
     // the focus move it ends with is still inside the user's gesture.
     if (ev.target.closest("[data-screen]")) {
-        if (!S.openId) return;
+        if (!openSelection()) return;
         document.dispatchEvent(new CustomEvent("clawdline:open-screen"));
         return;
     }
 
     if (!ev.target.closest("[data-focus]")) return;
-    if (!S.openId) return;
-    api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })
-        .catch(function (e) { toast(e.message, true); });
+    var selected = openSelection();
+    if (!selected) return;
+    var effect = beginSelectionEffect("focus", selected);
+    api.focus(selected.route).then(function () {
+        if (selectionEffectCurrent(effect)) toast(T.webShowOnMacAsked);
+    }).catch(function (e) {
+        if (selectionEffectCurrent(effect)) toast(e.message, true);
+    }).then(function () { finishSelectionEffect(effect); });
 });
 
 // The operation outlives every particular button node.  A fold, a new question, or any other
@@ -509,7 +540,8 @@ document.addEventListener("clawdline:session-refresh", function () {
 export function renderAgents() {
     var box = els.agents;
     if (!box) return;
-    var open = S.openId ? byId(S.openId) : null;
+    var selected = openSelection();
+    var open = selected ? byId(selected) : null;
     var list = (open && open.agents) || [];
     var running = 0;
     for (var i = 0; i < list.length; i++) if (list[i].state === "running") running++;

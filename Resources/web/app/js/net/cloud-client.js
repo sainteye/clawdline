@@ -202,6 +202,10 @@ export class CloudClient {
         }
         this.deviceID = options.deviceID || null;
         this.account = options.account || null;
+        // Deliberately excludes the short-lived viewer token. `useClient` uses this value to
+        // distinguish credential rotation from a real relay/account/device replacement.
+        this.selectionTransportIdentity = ["cloud", this.url, this.account || "",
+            this.deviceID || ""].join("\u0000");
         this.keyID = options.keyID || "ms-1";
         this.masterKeys = new Map();
         if (options.masterKeys) {

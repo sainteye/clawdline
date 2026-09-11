@@ -9,6 +9,7 @@ import { renderTranscript } from "../view/transcript.js";
 import { Waits } from "../view/waits.js";
 import { atBottom, toBottom } from "./open.js";
 import { SkillPicker } from "../input/composer.js";
+import { SessionSelection, sessionSelectionKey } from "./selection.js";
 
 /* ==========================================================================
    Reading one background agent
@@ -48,17 +49,18 @@ export function agentsRev(s) {
 }
 
 export function openAgent(agentId) {
-    var sid = S.openId;
-    if (!sid || !agentId) return;
+    var selected = SessionSelection.snapshot().open;
+    if (!selected || !agentId) return;
+    var sid = selected.rowId;
     if (S.agent && S.agent.id === agentId) return;
     S.agent = {
-        sid: sid, id: agentId, meta: agentRow(sid, agentId),
+        sid: sid, selectionKey: selected.key, id: agentId, meta: agentRow(selected, agentId),
         entries: [], signature: null, loading: true, error: null
     };
     // Which runs a reader had opened is a place in the session's transcript, not in this one.
     S.expanded = {};
     SkillPicker.close();
-    loadAgent(sid, agentId, false);
+    loadAgent(selected, agentId, false);
     // A phone's back gesture already means "out of the thing I just opened", and this is a thing
     // that was just opened. Without this it would mean "out of the session" from in here, which
     // undoes a step the reader never asked to undo.
@@ -79,10 +81,15 @@ export function closeAgent(silent) {
 }
 
 export function loadAgent(sid, agentId, quiet) {
+    var selected = SessionSelection.resolve(sid, S.sessions);
+    if (!selected) return Promise.resolve(false);
+    var effect = SessionSelection.beginEffect("agent:" + agentId, { identity: selected.identity });
+    if (!effect) return Promise.resolve(false);
     if (!quiet) { Waits.tx.start(); renderTranscript(); }
-    api.agent(sid, agentId).then(function (d) {
+    return api.agent(selected.identity.route, agentId).then(function (d) {
         var a = S.agent;
-        if (!a || a.id !== agentId || a.sid !== sid) { Waits.tx.settle(); return; }
+        if (!SessionSelection.effectIsCurrent(effect) || !a || a.id !== agentId ||
+            a.selectionKey !== selected.identity.key) { return; }
         a.loading = false;
         if (d.agent) a.meta = d.agent;
         // The same bargain the session's transcript strikes: the server's signature answers "is
@@ -102,7 +109,8 @@ export function loadAgent(sid, agentId, quiet) {
         });
     }).catch(function (e) {
         var a = S.agent;
-        if (!a || a.id !== agentId || a.sid !== sid) { Waits.tx.settle(); return; }
+        if (!SessionSelection.effectIsCurrent(effect) || !a || a.id !== agentId ||
+            a.selectionKey !== selected.identity.key) { return; }
         a.entries = [];
         a.loading = false;
         a.error = e.message || T.webTranscriptFailed;
@@ -154,12 +162,14 @@ export function renderAgentHead() {
 }
 
 export function select(id) {
-    S.selectedId = id;
+    var entry = SessionSelection.resolve(id, S.sessions);
+    if (!entry) return;
+    SessionSelection.select(entry.identity, S.sessions);
     Object.keys(rowNodes).forEach(function (rid) {
-        rowNodes[rid].classList.toggle("selected", rid === id);
-        rowNodes[rid].setAttribute("aria-selected", rid === id ? "true" : "false");
+        rowNodes[rid].classList.toggle("selected", rid === entry.identity.key);
+        rowNodes[rid].setAttribute("aria-selected", rid === entry.identity.key ? "true" : "false");
     });
-    var node = rowNodes[id];
+    var node = rowNodes[entry.identity.key];
     if (node) {
         node.focus({ preventScroll: true });
         node.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" });
@@ -169,8 +179,11 @@ export function select(id) {
 export function move(delta) {
     var list = ordered();
     if (!list.length) return;
+    var selected = SessionSelection.snapshot().selected;
     var at = -1;
-    for (var i = 0; i < list.length; i++) if (list[i].id === S.selectedId) { at = i; break; }
+    for (var i = 0; i < list.length; i++) {
+        if (selected && sessionSelectionKey(list[i]) === selected.key) { at = i; break; }
+    }
     var next = at < 0 ? (delta > 0 ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, at + delta));
-    select(list[next].id);
+    select(list[next]);
 }

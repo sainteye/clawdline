@@ -1,6 +1,7 @@
 import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
-import { renderList } from "./list.js";
+import { sessionSelectionKey } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
 
 /* ==========================================================================
    6. Deriving what to show
@@ -343,15 +344,14 @@ export function suggestedReplyKeydown(event) {
 
 /** This is a composer pin, not a fallback lookup: duplicate bare IDs are not addressable. */
 export function replySessionIdentity(s, rows = S.sessions) {
-    if (!s || !Array.isArray(rows) || rows.filter(row => row.id === s.id).length !== 1) return null;
-    const live = rows.find(row => row.id === s.id);
-    const machine = s.machine || (s.identity && s.identity.machine);
-    const liveMachine = live.machine || (live.identity && live.identity.machine);
-    if (typeof s.id !== "string" || !s.id || typeof machine !== "string" || !machine
-        || typeof s.sessionId !== "string" || !s.sessionId
-        || liveMachine !== machine || live.sessionId !== s.sessionId
-        || (s.identity && s.identity.machine && s.identity.machine !== machine)) return null;
-    return JSON.stringify([s.id, machine, s.sessionId]);
+    if (!s || !Array.isArray(rows)) return null;
+    if (rows.filter(function (row) { return row && row.id === s.id; }).length !== 1) return null;
+    var explicitMachine = s.machine || (s.identity && s.identity.machine);
+    if (typeof explicitMachine !== "string" || !explicitMachine) return null;
+    var key = sessionSelectionKey(s);
+    if (!key || typeof s.sessionId !== "string" || !s.sessionId) return null;
+    var exact = rows.filter(function (row) { return sessionSelectionKey(row) === key; });
+    return exact.length === 1 ? key : null;
 }
 
 export function suggestedReplyButtonHTML(s, options = {}) {
@@ -446,7 +446,7 @@ export function freezeOrder() {
 export function thawOrder() {
     if (!hold) return;
     hold = null;
-    renderList();
+    callSessionUI("renderList");
 }
 
 /** Waiting first, always. The list exists to answer "which one stopped and wants me", and
@@ -661,7 +661,19 @@ function grouped(list) {
 }
 
 export function byId(id) {
-    for (var i = 0; i < S.sessions.length; i++) if (S.sessions[i].id === id) return S.sessions[i];
+    if (id && typeof id === "object") {
+        var explicit = sessionSelectionKey(id);
+        return explicit ? S.sessions.find(function (row) {
+            return sessionSelectionKey(row) === explicit;
+        }) || null : null;
+    }
+    var exact = S.sessions.filter(function (row) { return sessionSelectionKey(row) === id; });
+    if (exact.length === 1) return exact[0];
+    var bare = S.sessions.filter(function (row) { return row.id === id; });
+    if (bare.length === 1) return bare[0];
+    // A duplicate bare id has no authority. Callers that already own an exact selection pass its
+    // key or immutable identity; this general lookup never consults another mutable singleton to
+    // guess which machine the string meant.
     return null;
 }
 

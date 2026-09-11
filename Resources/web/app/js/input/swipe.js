@@ -135,7 +135,7 @@ export var SwipeRows = (function () {
             ev.preventDefault(); ev.stopPropagation();
             if (!phone() || !S.write) { reset(true); return; }
             var target = action.closest(".row");
-            var id = target && target.dataset.id;
+            var id = target && target.dataset.selectionKey;
             reset(true);
             if (id) ActionConfirm.open("end", id, target);
             return;

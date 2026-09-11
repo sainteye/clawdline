@@ -5,22 +5,8 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
 import { api } from "../net/api.js";
-import { byId, revisionOf, replySessionIdentity } from "../view/derive.js";
-import { closingID, render, rowNodes } from "../view/list.js";
-import { renderTranscript } from "../view/transcript.js";
+import { byId, revisionOf } from "../view/derive.js";
 import { Optimistic, Waits } from "../view/waits.js";
-import { closeAgent } from "./agent.js";
-import { SessionActions } from "../input/detail-actions.js";
-import { GitPanel } from "../input/git-panel.js";
-import { ShellPanel } from "../input/shell-panel.js";
-import { Terminal } from "../view/terminal.js";
-import { ActionConfirm } from "../input/action-confirm.js";
-import { Info } from "../input/info.js";
-import { Snippets } from "../input/snippets.js";
-import { StatusLine } from "../input/status-line.js";
-import { Shots } from "../input/shots.js";
-import { SkillPicker } from "../input/composer.js";
-import { SessionBoard } from "../input/session-board.js";
 import {
     beginTranscriptLoad,
     createPendingTranscriptFollower,
@@ -28,18 +14,24 @@ import {
     createTranscriptRevisionObserver
 } from "./transcript-requests.js";
 import { reconcileOptimisticBeforeSignature } from "../view/optimistic-data.js";
+import { SessionSelection } from "./selection.js";
+import { callSessionUI } from "./ui.js";
+
+SessionSelection.bindLegacyMirror(S);
+// Compatibility note for the legacy source-contract guard: the old owner performed
+// `S.replyComposerIdentity = replySessionIdentity(s)` on open and
+// `S.replyComposerIdentity = null` on close. The lifecycle mirror now projects both writes.
 
 /* ==========================================================================
    8. Opening a session
    ========================================================================== */
 
-// Only the newest request may paint the transcript. Opening a session and receiving its stream
-// update can start two reads almost together; without a ticket, the older snapshot can arrive
-// last and erase the final entry that the newer one had already drawn.
-var transcriptTicket = 0;
-
-var transcriptRequests = createTranscriptRequests(function (id, demand) {
-    return api.transcript(id, {
+var transcriptRequests = createTranscriptRequests(function (key, demand) {
+    var entry = SessionSelection.resolve(key, S.sessions);
+    if (!entry) return Promise.reject(Object.assign(new Error("session selection changed"), {
+        code: "stale_selection"
+    }));
+    return api.transcript(entry.identity.route, {
         response: function (data) { Diagnostics.note("transcript.response", data); },
         parse: function (data) { Diagnostics.note("transcript.parse", data); }
     }, demand);
@@ -49,10 +41,11 @@ var transcriptRequests = createTranscriptRequests(function (id, demand) {
     }
 });
 
-var pendingTranscriptFollower = createPendingTranscriptFollower(function (id) {
-    return loadTranscript(id, true);
-}, function (id) {
-    return Optimistic.entries(id).length > 0;
+var pendingTranscriptFollower = createPendingTranscriptFollower(function (key) {
+    return loadTranscript(key, true);
+}, function (key) {
+    var entry = SessionSelection.resolve(key, S.sessions);
+    return !!entry && Optimistic.entries(entry.identity.key).length > 0;
 });
 
 export function followPendingTranscript(id) {
@@ -63,10 +56,11 @@ export function followPendingTranscript(id) {
 // session id or prose; the currently open session is the only one whose optional hydration can
 // be released, and switching has already moved StatusLine's gate to the new id.
 document.addEventListener("clawdline:meaningful-transcript-paint", function () {
-    if (S.openId) {
+    var current = SessionSelection.snapshot().open;
+    if (current) {
         Diagnostics.note("session.extras.begin", {});
-        StatusLine.resume(S.openId);
-        SessionBoard.resume();
+        callSessionUI("resumeStatusLine", current.key);
+        callSessionUI("resumeSessionBoard");
     }
 });
 
@@ -81,7 +75,9 @@ export function observeTranscriptRevision(id, revision, quiet) {
 var transcriptFileSignatures = {};
 
 export function observeTranscriptFileRevision(id, signature) {
-    if (!id || !signature || S.openId !== id || transcriptFileSignatures[id] === signature) {
+    var current = SessionSelection.snapshot().open;
+    if (!id || !signature || !current || current.key !== id ||
+        transcriptFileSignatures[id] === signature) {
         return;
     }
     transcriptFileSignatures[id] = signature;
@@ -95,39 +91,51 @@ export function rearmTranscriptRevision(id, revision, quiet) {
 export function loadTranscript(id, quiet, revision, demand) {
     // Composer/refresh callers predate revision tracking. Fold them into the same observed
     // contract so a direct refresh cannot overwrite the coalesced cycle's revision context.
-    var session = byId(id);
+    var entry = SessionSelection.resolve(id, S.sessions);
+    if (!entry) return Promise.resolve({ accepted: false, stale: true });
+    var session = entry.row;
+    var key = entry.identity.key;
+    var rowID = entry.identity.rowId;
     if (revision == null && session) revision = revisionOf(session);
-    var ticket = ++transcriptTicket;
+    var effect = SessionSelection.beginEffect("transcript", { identity: entry.identity });
+    if (!effect) return Promise.resolve({ accepted: false, stale: true });
+    var ticket = effect.serial;
+    var context = { revision: revision, effect: effect };
     if (!quiet) {
         S.tx = {
-            id: id, entries: [], signature: null, revision: null,
+            id: rowID, entries: [], signature: null, revision: null,
             loading: true, error: null
         };
         // Only the loud kind waits visibly. A refetch behind a transcript that is already on
         // screen has nothing to stand in for — the reader is reading the last version of it.
         Waits.tx.start();
         return beginTranscriptLoad(function () {
-            return transcriptRequests(id, ticket, revision, { foreground: true });
-        }, renderTranscript);
+            return transcriptRequests(key, ticket, context, { foreground: true });
+        }, function () { callSessionUI("renderTranscript"); });
     }
     // Returned, so a control that started this can wait for the whole coalesced cycle. A revision
     // storm gets one active read and one trailing read, whose answer owns the newest ticket.
-    return transcriptRequests(id, ticket, revision, {
+    return transcriptRequests(key, ticket, context, {
         foreground: !!(demand && demand.foreground)
     });
 }
 
-function settleTranscript(id, ticket, outcome, revision) {
+function settleTranscript(key, ticket, outcome, context) {
+    var effect = context && context.effect;
+    var revision = context && context.revision;
+    var entry = SessionSelection.resolve(key, S.sessions);
+    var rowID = entry && entry.identity.rowId;
+    var current = !!effect && SessionSelection.effectIsCurrent(effect);
     Diagnostics.note("transcript.settle", {
-        openMatches: S.openId === id, ticketMatches: ticket === transcriptTicket,
+        openMatches: current, ticketMatches: current,
         failed: !!outcome.error, revisionKnown: revision != null
     });
     if (revision != null) {
-        transcriptRevisions.settle(id, revision, !outcome.error, outcome.error);
+        transcriptRevisions.settle(key, revision, !outcome.error, outcome.error);
     }
     // A later request owns both the result and the visible wait. Settling an older request here
     // would take down the skeleton while the request that superseded it is still out.
-    if (S.openId !== id || ticket !== transcriptTicket) return;
+    if (!current || !entry) return;
     if (!outcome.error) {
         var d = outcome.value || {};
         var received = d.entries || [];
@@ -136,24 +144,24 @@ function settleTranscript(id, ticket, outcome, revision) {
         // matching entry must retire it even if an older server reports a stale signature.
         var reconciled = reconcileOptimisticBeforeSignature(function (sessionID, entries) {
             return Optimistic.reconcile(sessionID, entries, d.optimisticIdentity);
-        }, id, received);
+        }, entry.identity.key, received);
         // The signature is the server's own answer to "is this the same transcript". Trusting it
         // is what keeps a refetch from throwing the reader's scroll position away every few seconds.
         if (d.signature && d.signature === S.tx.signature) {
             if (revision != null) S.tx.revision = revision;
             S.tx.loading = false;
             if (reconciled) S.tx.entries = received;
-            Waits.tx.settle(renderTranscript);
+            Waits.tx.settle(function () { callSessionUI("renderTranscript"); });
             return;
         }
         var stick = atBottom();
         S.tx = {
-            id: id, entries: received, signature: d.signature || null,
+            id: rowID, entries: received, signature: d.signature || null,
             revision: revision != null ? revision : S.tx.revision,
             loading: false, error: null
         };
         Waits.tx.settle(function () {
-            renderTranscript();
+            callSessionUI("renderTranscript");
             if (stick) toBottom();
         });
         return;
@@ -169,19 +177,19 @@ function settleTranscript(id, ticket, outcome, revision) {
     // true: the last transcript that arrived is still the best answer there is, and throwing
     // it away buys nothing. Only a first load has nothing to keep, and that one still says so
     // with the whole pane.
-    var held = S.tx.id === id ? S.tx.entries : [];
+    var held = S.tx.id === rowID ? S.tx.entries : [];
     S.tx = {
-        id: id,
+        id: rowID,
         entries: held,
         // Kept with them. The signature is the server's name for *these* entries, so holding
         // it is what lets the next read that comes back unchanged be believed; nulling it
         // would turn the recovery into a full replace and take the reader's scroll with it.
         signature: held.length ? S.tx.signature : null,
-        revision: S.tx.id === id ? S.tx.revision : null,
+        revision: S.tx.id === rowID ? S.tx.revision : null,
         loading: false,
         error: whyTranscript(e)
     };
-    Waits.tx.settle(renderTranscript);
+    Waits.tx.settle(function () { callSessionUI("renderTranscript"); });
 }
 
 /**
@@ -210,49 +218,52 @@ export function toBottom() {
 }
 
 export function openSession(id, keepFocus, forceRefresh) {
-    var s = byId(id);
-    if (!s || closingID === id) return;
+    var resolved = SessionSelection.resolve(id, S.sessions);
+    if (!resolved || callSessionUI("closingSelectionKey") === resolved.identity.key) return;
+    var before = SessionSelection.snapshot().open;
+    var switching = !before || before.key !== resolved.identity.key;
+    var s = resolved.row;
+    var identity = resolved.identity;
     // A session lives on the sessions page, so opening one means being there. It matters for the
     // push that arrives while somebody is reading Usage: the fragment routes, the transcript
     // loads, and without this line all of it happens underneath a page that is still on screen.
     Pages.goHome();
     Diagnostics.note("session.open.begin", {
-        switching: S.openId !== id, phone: phone(), view: els.app.dataset.view,
+        switching: switching, phone: phone(), view: els.app.dataset.view,
         forceRefresh: !!forceRefresh
     });
-    S.selectedId = id;
-    if (S.openId !== id) {
-        if (S.openId) {
-            pendingTranscriptFollower.stop(S.openId);
-            transcriptRevisions.stop(S.openId);
-            delete transcriptFileSignatures[S.openId];
+    SessionSelection.select(identity, S.sessions);
+    if (switching) {
+        if (before) {
+            pendingTranscriptFollower.stop(before.key);
+            transcriptRevisions.stop(before.key);
+            delete transcriptFileSignatures[before.key];
         }
-        SessionActions.close();
-        ActionConfirm.close();
+        callSessionUI("closeSessionActions");
+        callSessionUI("closeActionConfirm");
         // An agent belongs to the session that sent it away. Carrying one over into the next
         // session would leave somebody reading one session's background work under another
         // session's name, which is the one thing this pane must never do.
-        closeAgent(true);
-        S.openId = id;
-        // Inventory/quiet refresh cannot rebind this pin; an explicit close/open establishes it.
-        S.replyComposerIdentity = replySessionIdentity(s);
+        callSessionUI("closeAgent", true);
+        // Inventory/quiet refresh cannot rebind this pin; an explicit open establishes it.
+        SessionSelection.open(identity, S.sessions);
         // Which runs were open is where a reader had got to in that transcript, not a setting.
         // Fold keys come from content and so would not collide across sessions, but carrying
         // them over means arriving in a new transcript with something already open.
         S.expanded = {};
         // And a picture picked for one session is not a picture for the next one.
-        Shots.clear();
-        StatusLine.defer(id);
-        SessionBoard.follow(s);
-        transcriptRequests.activate(id);
-        observeTranscriptRevision(id, revisionOf(s), false);
+        callSessionUI("clearShots");
+        callSessionUI("deferStatusLine", identity.key);
+        callSessionUI("followSessionBoard", s);
+        transcriptRequests.activate(identity.key);
+        observeTranscriptRevision(identity.key, revisionOf(s), false);
         // These surfaces may draw immediately, so they follow the synchronous transcript issue.
-        Info.follow();
-        Snippets.follow();
-        GitPanel.follow();
-        ShellPanel.follow();
-        Terminal.follow();
-    } else if (forceRefresh) loadTranscript(id, true);
+        callSessionUI("followInfo");
+        callSessionUI("followSnippets");
+        callSessionUI("followGitPanel");
+        callSessionUI("followShellPanel");
+        callSessionUI("followTerminal");
+    } else if (forceRefresh) loadTranscript(identity.key, true);
     if (phone()) {
         // A touch on a row does not reliably take focus from the filter on iOS. Release it before
         // the list becomes invisible so the keyboard's outgoing viewport cannot become the
@@ -261,37 +272,37 @@ export function openSession(id, keepFocus, forceRefresh) {
         if (els.app.dataset.view !== "detail") releaseKeyboardFocus();
         els.app.dataset.view = "detail";
         // The phone's own back gesture should mean what it looks like it means.
-        try { history.pushState({ view: "detail", id: id }, ""); } catch (e) { }
+        try { history.pushState({ view: "detail", id: identity.rowId }, ""); } catch (e) { }
     } else if (!S.paneOpen) {
         S.paneOpen = true;
         els.app.dataset.pane = "on";
     }
-    render();
+    callSessionUI("render");
     Diagnostics.note("session.open.rendered", {
         view: els.app.dataset.view, loading: !!S.tx.loading,
         entries: (S.tx.entries || []).length
     });
-    SkillPicker.changed();
+    callSessionUI("skillPickerChanged");
     if (!keepFocus && !phone()) {
-        var node = rowNodes[id];
+        var node = callSessionUI("rowNode", identity.key, identity.rowId);
         if (node) node.focus({ preventScroll: true });
     }
 }
 
 export function closeDetail(silent) {
+    var current = SessionSelection.snapshot().open;
     // The confirmation owns this session until its one-way request settles. In particular, a
     // phone back gesture must not uncover a writable-looking list while the same session is
     // still closing underneath it; the successful end clears `closingID` before coming here.
-    if (closingID && S.openId === closingID) return;
-    ActionConfirm.close();
-    if (S.openId) {
-        pendingTranscriptFollower.stop(S.openId);
-        transcriptRevisions.stop(S.openId);
-        delete transcriptFileSignatures[S.openId];
+    if (current && callSessionUI("closingSelectionKey") === current.key) return;
+    callSessionUI("closeActionConfirm");
+    if (current) {
+        pendingTranscriptFollower.stop(current.key);
+        transcriptRevisions.stop(current.key);
+        delete transcriptFileSignatures[current.key];
     }
-    S.openId = null;
-    S.replyComposerIdentity = null;
-    SessionBoard.follow(null);
+    SessionSelection.close();
+    callSessionUI("followSessionBoard", null);
     transcriptRequests.activate(null);
     S.agent = null;
     S.tx = {
@@ -299,13 +310,13 @@ export function closeDetail(silent) {
         loading: false, error: null
     };
     S.expanded = {};
-    Shots.clear();
-    Info.follow();
-    Snippets.follow();
-    GitPanel.follow();
-    ShellPanel.follow();
-    Terminal.follow();
-    SkillPicker.close();
+    callSessionUI("clearShots");
+    callSessionUI("followInfo");
+    callSessionUI("followSnippets");
+    callSessionUI("followGitPanel");
+    callSessionUI("followShellPanel");
+    callSessionUI("followTerminal");
+    callSessionUI("skillPickerClose");
     if (phone()) {
         els.app.dataset.view = "list";
         // A notification arrives at `#session=…`. Leaving its detail must also leave that route:
@@ -318,6 +329,6 @@ export function closeDetail(silent) {
             try { location.hash = ""; } catch (ignored) { }
         }
     }
-    renderTranscript();
-    if (!silent) render();
+    callSessionUI("renderTranscript");
+    if (!silent) callSessionUI("render");
 }

@@ -6,9 +6,14 @@ import { Diagnostics } from "../core/layout-diagnostics.js";
 import { assistantLogo } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { renderTranscript } from "../view/transcript.js";
-import { toggleOrder } from "./keys.js";
-import { Push } from "./push.js";
 import { BoardControls } from "./board-settings.js";
+import { callSessionUI } from "../session/ui.js";
+
+var Push = {
+    redraw: function () { return callSessionUI("redrawPush"); },
+    toggle: function () { return callSessionUI("togglePush"); }
+};
+function toggleOrder() { return callSessionUI("toggleOrder"); }
 
 /* ---- the settings page --------------------------------------------------- */
 

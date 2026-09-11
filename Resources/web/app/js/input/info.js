@@ -16,6 +16,7 @@ import { isOpenableProjectLink, isServedProjectArtifact } from "./project-links.
 import { fastModeCommand, nextFastMode, settledFastMode } from "./fast-mode.js";
 import { suggestedReplyButtonHTML, suggestedReplyKeydown } from "../view/derive.js";
 import { fillSuggestedReply } from "./composer.js";
+import { SessionSelection } from "../session/selection.js";
 
 /**
  * The Session info card — the status line at the bottom of a Claude Code terminal, for somebody
@@ -123,6 +124,10 @@ export var Info = (function () {
     function note(text) { return '<p class="note">' + esc(text) + "</p>"; }
 
     function session() { return forId ? byId(forId) : null; }
+    function routeFor(id) {
+        var entry = SessionSelection.resolve(id, S.sessions);
+        return entry ? entry.identity.route : null;
+    }
     function statusShape(s) {
         if (!s) return "";
         var disposition = s.disposition || {};
@@ -590,10 +595,10 @@ export var Info = (function () {
     /** Send each Back-Tab as its own idempotent write, with enough space for Claude Code to
      *  consume and repaint between them. Sending the escape sequence itself remains one atomic
      *  terminal write on the server; this delay is between complete keys, never their bytes. */
-    function permissionKeys(id, count) {
+    function permissionKeys(route, count) {
         var sent = 0;
         function next() {
-            return api.key(id, "shift+tab").then(function () {
+            return api.key(route, "shift+tab").then(function () {
                 sent += 1;
                 return sent < count ? pause(180).then(next) : null;
             });
@@ -603,8 +608,9 @@ export var Info = (function () {
 
     return {
         open: function () {
-            if (!S.openId) return;
-            forId = S.openId;
+            var open = SessionSelection.snapshot().open;
+            if (!open) return;
+            forId = open.key;
             data = SessionFacts.peek(forId);
             drawn = false;
             pending = null;
@@ -651,7 +657,8 @@ export var Info = (function () {
          *  redraw wipes a half-typed model name. */
         follow: function () {
             if (els.info.hidden) return;
-            if (S.openId !== forId) { this.close(); return; }
+            var open = SessionSelection.snapshot().open;
+            if (!open || open.key !== forId) { this.close(); return; }
             // The status line reads the same answer on its own clock and leaves it in the shared
             // cache. A card open beside it should not be the last to know: a `/model` typed into
             // the terminal changes what this card is about, and nobody who typed it expects to
@@ -666,13 +673,15 @@ export var Info = (function () {
          *  no more than one, and a second would be typed into the terminal as part of it. */
         switchTo: function (word, name) {
             var id = forId;
+            var route = routeFor(id);
             word = String(word || "").trim().split(/\s+/)[0] || "";
-            if (!word || !canSwitch()) return;
+            if (!route || !word || !canSwitch()) return;
             busy = true;
             said("");
             draw();
-            api.send(id, "/model " + word, []).then(function () {
-                if (forId !== id) return;
+            var effect = SessionSelection.beginEffect("info:model");
+            api.send(route, "/model " + word, []).then(function () {
+                if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 pending = word;
                 SessionFacts.drop(id);
@@ -680,50 +689,54 @@ export var Info = (function () {
                 draw();
                 readBack(id, 5);
             }).catch(function (e) {
-                if (forId !== id) return;
+                if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 clearTimeout(confirming);
                 said((e && e.message) || T.webInfoFailed);
                 draw();
-            });
+            }).then(function () { SessionSelection.finishEffect(effect); });
         },
 
         switchFastMode: function (target) {
             var id = forId;
+            var route = routeFor(id);
             var current = data && data.fastMode && data.fastMode.current;
-            if (!id || fastModePending || nextFastMode(current) !== target || !canSwitch()) return;
+            if (!route || fastModePending || nextFastMode(current) !== target || !canSwitch()) return;
             busy = true;
             fastModePending = target;
             said("");
             draw();
-            api.send(id, fastModeCommand(), []).then(function () {
-                if (forId !== id) return;
+            var effect = SessionSelection.beginEffect("info:fast-mode");
+            api.send(route, fastModeCommand(), []).then(function () {
+                if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 SessionFacts.drop(id);
                 said(fill(T.webInfoFastSent, { mode: fastModeName(target) }), true);
                 draw();
                 readFastModeBack(id, 5);
             }).catch(function (e) {
-                if (forId !== id) return;
+                if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 fastModePending = null;
                 clearTimeout(fastModeConfirming);
                 said((e && e.message) || T.webInfoFailed);
                 draw();
-            });
+            }).then(function () { SessionSelection.finishEffect(effect); });
         },
 
         switchPermission: function (mode) {
             var id = forId;
+            var route = routeFor(id);
             var permission = data && data.permission;
             var steps = permissionSteps(permission, mode);
-            if (!steps || !canSwitchPermission()) return;
+            if (!route || !steps || !canSwitchPermission()) return;
             busy = true;
             permissionPending = mode;
             said("");
             draw();
-            permissionKeys(id, steps).then(function () {
-                if (forId !== id) return;
+            var effect = SessionSelection.beginEffect("info:permission");
+            permissionKeys(route, steps).then(function () {
+                if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 SessionFacts.drop(id);
                 said(fill(T.webInfoPermissionSent, { mode: permissionName(mode) }), true);
@@ -731,13 +744,13 @@ export var Info = (function () {
                 if (permissionPending) readPermissionBack(id, 8);
                 else said("");
             }).catch(function (e) {
-                if (forId !== id) return;
+                if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 permissionPending = null;
                 clearTimeout(permissionConfirming);
                 said((e && e.message) || T.webInfoFailed);
                 draw();
-            });
+            }).then(function () { SessionSelection.finishEffect(effect); });
         },
 
         editTitle: function () {
@@ -759,13 +772,15 @@ export var Info = (function () {
 
         saveTitle: function (value) {
             var id = forId;
-            if (!id || !S.write || busy) return;
+            var route = routeFor(id);
+            if (!route || !S.write || busy) return;
             titleDraft = String(value || "");
             busy = true;
             said("");
             draw();
-            api.title(id, titleDraft).then(function (answer) {
-                if (forId !== id) return;
+            var effect = SessionSelection.beginEffect("info:title");
+            api.title(route, titleDraft).then(function (answer) {
+                if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 editingTitle = false;
                 titleDraft = "";
@@ -783,11 +798,11 @@ export var Info = (function () {
                 else said(T.webInfoTitleSaved, true);
                 draw();
             }).catch(function (e) {
-                if (forId !== id) return;
+                if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 said((e && e.message) || T.webInfoFailed);
                 draw();
-            });
+            }).then(function () { SessionSelection.finishEffect(effect); });
         },
 
         /** `said` lets one clipboard path serve two different things: the session id, whose

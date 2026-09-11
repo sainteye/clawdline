@@ -5,6 +5,8 @@ import { readFile } from "node:fs/promises";
 // that escapes four characters where `core/esc.js` escapes five would let a change to the fifth
 // through without a word. This is the one import here that is production code rather than a double.
 import { esc } from "../Resources/web/app/js/core/esc.js";
+import { createSessionSelectionLifecycle } from
+    "../Resources/web/app/js/session/selection.js";
 
 /*
  * The live screen panel, without a browser.
@@ -80,7 +82,7 @@ const T = {
     webLoading: "Loading"
 };
 
-const S = { openId: null };
+const SessionSelection = createSessionSelectionLifecycle();
 const asked = [];
 let answer = null;
 const api = {
@@ -101,12 +103,11 @@ const standalone = source
 
 globalThis.esc = esc;
 globalThis.T = T;
-globalThis.S = S;
 globalThis.els = els;
 globalThis.api = api;
 globalThis.SessionActions = { close: function () {} };
-globalThis.GitPanel = { close: function () {} };
-globalThis.ShellPanel = { close: function () {} };
+globalThis.SessionSelection = SessionSelection;
+globalThis.callSessionUI = function () {};
 globalThis.setInterval = setIntervalStub;
 globalThis.clearInterval = clearIntervalStub;
 
@@ -473,7 +474,9 @@ equal(rows(OSC("8;id=x;https://clawdline.com/") + "x" + spaces(50) + OSC("8;;"))
 
 /* ---- what is claimed ------------------------------------------------------ */
 
-S.openId = "%1";
+const terminalRow = { id: "%1", machine: "this-mac",
+    identity: { machine: "this-mac", session: "%1" } };
+SessionSelection.open(terminalRow, [terminalRow]);
 answer = {
     screen: {
         id: "%1", backend: "tmux", channel: "signalled", revision: "abc",
@@ -483,7 +486,8 @@ answer = {
 Terminal.open();
 await settle();
 
-equal(asked, ["%1"], "opening the panel is what tells the Mac somebody is watching");
+equal(asked, [{ machine: "this-mac", session: "%1" }],
+    "opening the panel asks the exact owning machine/session route");
 equal(els["screen-panel"].hidden, false, "and the panel is up");
 equal(els["pane-detail"].dataset.panel, "screen", "holding the transcript's place");
 ok(els["screen-badge"].innerHTML.indexOf("tmux") >= 0, "the header names the backend");

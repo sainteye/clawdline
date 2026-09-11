@@ -37,15 +37,16 @@ import {
 import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onboarding.js";
 import "./door/door.js";
 import "./view/derive.js";
-import { render, renderConn } from "./view/list.js";
-import { renderTranscript } from "./view/transcript.js";
-import "./view/terminal.js";
+import { closingKey, render, renderConn, renderList, rowNodes } from "./view/list.js";
+import { renderDetailHead, renderTranscript } from "./view/transcript.js";
+import { renderAgents, renderComposer, renderWaiting } from "./view/composer.js";
+import { Terminal } from "./view/terminal.js";
 import { bindProjectsPage, localProjectPlaces, readProjectPlaces } from "./view/projects.js";
 import { LOCAL_MACHINE } from "./net/client.js";
 import { bindLedgerPage } from "./view/ledger.js";
 import { bindBoardPage, enterProjectBoard } from "./view/board.js";
 import { bindSessionBoard, SessionBoard } from "./input/session-board.js";
-import { bindBoardSession } from "./input/board-session.js";
+import { bindBoardSession, BoardSession } from "./input/board-session.js";
 import { bindBoardAssignment } from "./input/board-assignment.js";
 import { BoardControls } from "./input/board-settings.js";
 import { bindUsagePortfolio } from "./view/usage.js";
@@ -55,35 +56,123 @@ import {
     CANONICAL_DOCUMENT_ORIGIN, documentIdentityForSession, documentLocatorFromHash
 } from "./net/document-links.js";
 import "./view/markdown.js";
-import "./view/composer.js";
 import { paintStatic } from "./view/static.js";
 import { Waits } from "./view/waits.js";
-import { loadTranscript, observeTranscriptFileRevision, openSession } from "./session/open.js";
+import {
+    closeDetail, loadTranscript, observeTranscriptFileRevision, observeTranscriptRevision,
+    openSession, rearmTranscriptRevision
+} from "./session/open.js";
+import { agentRow, agentsRev, closeAgent, loadAgent, renderAgentHead, agentTokens } from "./session/agent.js";
+import { SessionSelection } from "./session/selection.js";
+import { bindSessionUI } from "./session/ui.js";
 import { createTranscriptEventRouter } from "./session/transcript-requests.js";
-import "./session/agent.js";
-import "./input/keys.js";
-import "./input/swipe.js";
+import { toggleOrder } from "./input/keys.js";
+import { SwipeRows } from "./input/swipe.js";
 import { SessionActions } from "./input/detail-actions.js";
 import { CoordinatorControls } from "./input/coordinator-actions.js";
 import "./input/user-messages.js";
-import "./input/snippets.js";
-import "./input/git-panel.js";
-import "./input/shell-panel.js";
-import "./input/action-confirm.js";
-import { bindBoardRoute, bindDocumentRoute, bindSessionLocatorRoute, routeTo } from "./input/route.js";
+import { Snippets } from "./input/snippets.js";
+import { GitPanel } from "./input/git-panel.js";
+import { ShellPanel } from "./input/shell-panel.js";
+import { ActionConfirm } from "./input/action-confirm.js";
+import {
+    bindBoardRoute, bindDocumentRoute, bindSessionLocatorRoute, openWanted, routeTo,
+    setWantedSession, wantedSession
+} from "./input/route.js";
 import { markSidebarPage } from "./input/sidebar.js";
 import { Settings } from "./input/settings.js";
 import { Start } from "./input/start.js";
 import "./input/command.js";
 import "./input/schedule.js";
 import { ScheduleHistory } from "./input/schedule-history.js";
-import "./input/status-line.js";
+import { StatusLine } from "./input/status-line.js";
 import { Info } from "./input/info.js";
 import { Push } from "./input/push.js";
-import "./input/shots.js";
-import "./input/voice.js";
-import "./input/composer.js";
+import { Shots } from "./input/shots.js";
+import { Voice } from "./input/voice.js";
+import { fillSuggestedReply, msgText, sending, SkillPicker } from "./input/composer.js";
 import "./input/edges.js";
+
+// Compatibility fields in `S` are projections for older controllers. The exact identity and
+// every asynchronous effect epoch live in SessionSelection.
+SessionSelection.bindLegacyMirror(S);
+
+// The entry point is the sole composition root. Controllers and renderers depend only on the
+// callback surface below, so their imports stay one-way while every existing synchronous UI
+// behavior and public facade remains intact.
+bindSessionUI({
+    render: render,
+    renderList: renderList,
+    renderTranscript: renderTranscript,
+    renderDetailHead: renderDetailHead,
+    renderAgentHead: renderAgentHead,
+    renderComposer: renderComposer,
+    renderWaiting: renderWaiting,
+    renderAgents: renderAgents,
+    closeDetail: closeDetail,
+    closeAgent: closeAgent,
+    openSession: openSession,
+    observeTranscriptRevision: observeTranscriptRevision,
+    rearmTranscriptRevision: rearmTranscriptRevision,
+    agentRow: agentRow,
+    agentsRev: agentsRev,
+    loadAgent: loadAgent,
+    agentTokens: agentTokens,
+    rowNode: function (key) { return rowNodes[key] || null; },
+    closingSelectionKey: function () { return closingKey; },
+    closeSessionActions: function () { return SessionActions.close.apply(SessionActions, arguments); },
+    sessionActionsOpener: function () { return SessionActions.opener; },
+    sessionActionsLevel: function () { return SessionActions.level.apply(SessionActions, arguments); },
+    sessionActionsOnGit: function () { return SessionActions.onGit(); },
+    sessionActionItems: function () { return SessionActions.items(); },
+    endSession: function () { return SessionActions.end.apply(SessionActions, arguments); },
+    promptSession: function () { return SessionActions.prompt.apply(SessionActions, arguments); },
+    focusMac: function () { return SessionActions.focusMac(); },
+    closeActionConfirm: function () { return ActionConfirm.close.apply(ActionConfirm, arguments); },
+    syncActionConfirm: function () { return ActionConfirm.sync(); },
+    openGitPanel: function () { return GitPanel.open.apply(GitPanel, arguments); },
+    refreshGitPanel: function () { return GitPanel.refresh.apply(GitPanel, arguments); },
+    closeGitPanel: function () { return GitPanel.close.apply(GitPanel, arguments); },
+    followGitPanel: function () { return GitPanel.follow.apply(GitPanel, arguments); },
+    closeShellPanel: function () { return ShellPanel.close.apply(ShellPanel, arguments); },
+    followShellPanel: function () { return ShellPanel.follow.apply(ShellPanel, arguments); },
+    openTerminal: function () { return Terminal.open.apply(Terminal, arguments); },
+    closeTerminal: function () { return Terminal.close.apply(Terminal, arguments); },
+    followTerminal: function () { return Terminal.follow.apply(Terminal, arguments); },
+    openInfo: function () { return Info.open.apply(Info, arguments); },
+    followInfo: function () { return Info.follow.apply(Info, arguments); },
+    followSnippets: function () { return Snippets.follow.apply(Snippets, arguments); },
+    followStatusLine: function () { return StatusLine.follow.apply(StatusLine, arguments); },
+    deferStatusLine: function () { return StatusLine.defer.apply(StatusLine, arguments); },
+    resumeStatusLine: function () { return StatusLine.resume.apply(StatusLine, arguments); },
+    followSessionBoard: function () { return SessionBoard.follow.apply(SessionBoard, arguments); },
+    syncSessionBoard: function () { return SessionBoard.sync.apply(SessionBoard, arguments); },
+    resumeSessionBoard: function () { return SessionBoard.resume.apply(SessionBoard, arguments); },
+    observeBoardSession: function () { return BoardSession.observe.apply(BoardSession, arguments); },
+    clearShots: function () { return Shots.clear(); },
+    shotsBusy: function () { return Shots.busy(); },
+    shotsCount: function () { return Shots.count(); },
+    voiceBusy: function () { return Voice.busy(); },
+    voiceLive: function () { return Voice.live(); },
+    composerSending: function () { return sending; },
+    messageText: msgText,
+    fillSuggestedReply: fillSuggestedReply,
+    skillPickerChanged: function () { return SkillPicker.changed.apply(SkillPicker, arguments); },
+    skillPickerClose: function () { return SkillPicker.close.apply(SkillPicker, arguments); },
+    resetSwipeRows: function () { return SwipeRows.reset.apply(SwipeRows, arguments); },
+    wantedSession: function () { return wantedSession; },
+    setWantedSession: setWantedSession,
+    openWanted: openWanted,
+    startPlaceholder: function () { return Start.placeholder.apply(Start, arguments); },
+    arrangeStartRows: function () { return Start.arrange.apply(Start, arguments); },
+    startArriving: function () { return Start.arriving.apply(Start, arguments); },
+    checkStart: function () { return Start.check.apply(Start, arguments); },
+    syncStart: function () { return Start.sync.apply(Start, arguments); },
+    redrawPush: function () { return Push.redraw.apply(Push, arguments); },
+    togglePush: function () { return Push.toggle.apply(Push, arguments); },
+    toggleOrder: toggleOrder,
+    sessionGone: function () { return SessionActions.gone.apply(SessionActions, arguments); }
+});
 
 /* ==========================================================================
    10. Go
@@ -96,7 +185,7 @@ import "./input/edges.js";
 function bindTranscriptEvents(transport) {
     if (transport && typeof transport.events === "function") {
         transport.events(createTranscriptEventRouter(
-            function () { return S.openId; },
+            function () { return SessionSelection.snapshot().open; },
             observeTranscriptFileRevision,
             function (id) { loadTranscript(id, true); }
         ));

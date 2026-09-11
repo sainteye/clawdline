@@ -341,6 +341,29 @@ indirection.
 
 ## Anti-over-splitting test
 
+### UX-1 web selection and effect ownership candidate (2026-09-12)
+
+The web UI's effective module boundary now has one explicit state owner:
+`session/selection.js` owns the immutable machine/session/conversation identity, selection and
+transport generations, inventory reconciliation, and newest-effect lanes. Display titles and bare
+terminal ids are never fallback authority when duplicate routes exist. A conversation UUID learned
+after the route is selected is one-way identity enrichment; a different known UUID, machine,
+session route, or logical transport is replacement and fences prior effects.
+
+Credential rotation inside the same Cloud account/device/relay identity preserves the open
+conversation and its in-flight effects. Exact route objects flow through terminal, Git, shell,
+snippets, sent-message and keyboard surfaces. Row actions may report typed settlement while another
+row is open, and End may use inventory disappearance as its successful evidence without tearing
+down the confirmation underneath it. Composer delivery owns only the unchanged text/attachment
+payload it submitted; the later selection epoch alone neither leaves delivered text resendable nor
+authorizes clearing a newer draft.
+
+`session/ui.js` is the fail-closed dependency-inversion seam. `main.js` installs one complete frozen
+binding table; missing names and non-functions throw. The boundary guard enumerates both direct and
+`.apply` callback spellings and keeps the shipped ESM graph acyclic. Legacy `S.openId` and
+`S.selectedId` remain projections for gradual migration, not writable authority, and general row
+lookup never consults the selection singleton to disambiguate a bare id.
+
 ### Project Board reading/progress correction (2026-09-08)
 
 The Board root adds a cohesive `ProjectBoardNarrative` worker: it owns a separate timer, bounded

@@ -3,13 +3,14 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { toast } from "../core/util.js";
 import { api } from "../net/api.js";
-import { closingID, render, renderList, setClosingID } from "../view/list.js";
+import { closingID, closingKey, render, renderList, setClosingID } from "../view/list.js";
 import { renderTranscript } from "../view/transcript.js";
 import { Optimistic, Waits } from "../view/waits.js";
 import { authoritativeSendTime, optimisticSendSnapshot } from "../view/optimistic-data.js";
 import { closeDetail, followPendingTranscript, loadTranscript } from "../session/open.js";
 import { closeAgent, openAgent } from "../session/agent.js";
 import { ActionConfirm } from "./action-confirm.js";
+import { SessionSelection } from "../session/selection.js";
 
 els.filter.addEventListener("input", function () { S.filter = els.filter.value; renderList(); });
 els.back.addEventListener("click", function () { closeDetail(); });
@@ -31,9 +32,14 @@ els.keys.addEventListener("click", function () { els.keys.hidden = true; });
 els.keys.querySelector(".sheet").addEventListener("click", function (ev) { ev.stopPropagation(); });
 els.conn.addEventListener("click", function () { if (api.refresh) api.refresh(); });
 els["tx-focus"].addEventListener("click", function () {
-    if (!S.openId) return;
-    api.focus(S.openId).then(function () { toast(T.webShowOnMacAsked); })
-        .catch(function (e) { toast(e.message, true); });
+    var selected = SessionSelection.snapshot().open;
+    if (!selected) return;
+    var effect = SessionSelection.beginEffect("focus", { identity: selected });
+    api.focus(selected.route).then(function () {
+        if (SessionSelection.effectIsCurrent(effect)) toast(T.webShowOnMacAsked);
+    }).catch(function (e) {
+        if (SessionSelection.effectIsCurrent(effect)) toast(e.message, true);
+    }).then(function () { SessionSelection.finishEffect(effect); });
 });
 
 els["detail-actions-trigger"].addEventListener("click", function () {
@@ -60,6 +66,8 @@ export var SessionActions = {
     opener: null,
     ticket: 0,
     settlingEnd: false,
+    endEffect: null,
+    endWasOpen: false,
 
     onGit: function () {
         return els["session-actions-git"].dataset.place === "current";
@@ -109,38 +117,54 @@ export var SessionActions = {
     },
 
     focusMac: function () {
-        var id = S.openId;
-        if (!id || !S.write) return;
+        var selected = SessionSelection.snapshot().open;
+        if (!selected || !S.write) return;
         this.close();
-        api.focus(id).then(function () { toast(T.webShowOnMacAsked); })
-            .catch(function (e) { toast(e.message, true); });
+        var effect = SessionSelection.beginEffect("focus", { identity: selected });
+        api.focus(selected.route).then(function () {
+            if (SessionSelection.effectIsCurrent(effect)) toast(T.webShowOnMacAsked);
+        }).catch(function (e) {
+            if (SessionSelection.effectIsCurrent(effect)) toast(e.message, true);
+        }).then(function () { SessionSelection.finishEffect(effect); });
     },
 
     prompt: function (action, sessionID) {
-        var id = sessionID || S.openId;
-        if (!id || !S.write) return;
+        var selected = SessionSelection.resolve(sessionID || SessionSelection.snapshot().open,
+            S.sessions);
+        if (!selected || !S.write) return;
+        var id = selected.identity.rowId;
+        var key = selected.identity.key;
         // The reader can switch sessions during the HTTP trip. Remember the target's transcript
         // before that happens, so an older identical command cannot claim this new local turn.
         var snapshot = optimisticSendSnapshot(
             S.tx.id === id ? S.tx.entries : [], Date.now() / 1000);
         this.close();
-        api.send(id, action, []).then(function (answer) {
-            Optimistic.add(id, action, 0, snapshot.known,
+        // A row action is allowed to settle after the reader opens another row. Its target must
+        // still exist at the same exact route; it need not be the detail currently on screen.
+        var effect = SessionSelection.beginEffect("prompt", {
+            identity: selected.identity, requiresOpen: false
+        });
+        api.send(selected.identity.route, action, []).then(function (answer) {
+            if (!SessionSelection.effectIsCurrent(effect)) return;
+            Optimistic.add(key, action, 0, snapshot.known,
                 authoritativeSendTime(answer, snapshot.startedAt),
                 answer && answer.optimisticIdentity,
                 answer && answer.optimisticRequest);
-            followPendingTranscript(id);
-            if (S.openId === id && !S.agent) {
+            followPendingTranscript(key);
+            if ((SessionSelection.snapshot().open || {}).key === key && !S.agent) {
                 renderTranscript();
-                loadTranscript(id, true);
+                loadTranscript(key, true);
             }
             toast(action + " ✓");
-        })
-            .catch(function (e) { toast(e.message, true); });
+        }).catch(function (e) {
+            if (SessionSelection.effectIsCurrent(effect)) toast(e.message, true);
+        }).then(function () { SessionSelection.finishEffect(effect); });
     },
 
     end: function (sessionID, acceptLoss, closeabilityVersion) {
-        var id = sessionID || S.openId;
+        var selected = SessionSelection.resolve(sessionID || SessionSelection.snapshot().open,
+            S.sessions);
+        var id = selected && selected.identity.rowId;
         // The answer matters to the confirmation sheet, which has already disabled both of its
         // buttons on the assumption that a request is on its way: `false` is the only thing that
         // tells it nothing is coming back, and that it has to let go of itself.
@@ -148,15 +172,20 @@ export var SessionActions = {
         var self = this;
         var ticket = ++this.ticket;
         this.close();
-        setClosingID(id);
+        setClosingID(id, selected.identity.key);
+        this.endWasOpen = SessionSelection.matches(selected.identity,
+            SessionSelection.snapshot().open);
+        this.endEffect = SessionSelection.beginEffect("end", {
+            identity: selected.identity, requiresOpen: false, allowMissing: true
+        });
         this.settlingEnd = false;
         Waits.end.start();
         render();
         ActionConfirm.sync();
-        api.end(id, acceptLoss, closeabilityVersion).then(function () {
-            self.finishEnd(id, ticket, true);
+        api.end(selected.identity.route, acceptLoss, closeabilityVersion).then(function () {
+            self.finishEnd(id, selected.identity.key, ticket, true);
         }).catch(function (e) {
-            self.finishEnd(id, ticket, false, e);
+            self.finishEnd(id, selected.identity.key, ticket, false, e);
         });
         return true;
     },
@@ -164,31 +193,39 @@ export var SessionActions = {
     /** One ending, whichever answer arrives first. The stream can prove the row is gone before
      *  the POST returns; once either has answered, the other is only the tail of the same trip
      *  and must not clear or toast over whatever the reader did next. */
-    finishEnd: function (id, ticket, ok, error) {
-        if (closingID !== id || ticket !== this.ticket || this.settlingEnd) return;
+    finishEnd: function (id, key, ticket, ok, error) {
+        if (closingID !== id || closingKey !== key || ticket !== this.ticket || this.settlingEnd) return;
         var self = this;
+        var effect = this.endEffect;
         this.settlingEnd = true;
         Waits.end.settle(function () {
-            if (closingID !== id || ticket !== self.ticket) return;
+            if (closingID !== id || closingKey !== key || ticket !== self.ticket) return;
+            var current = SessionSelection.finishEffect(effect);
             setClosingID(null);
             self.settlingEnd = false;
+            self.endEffect = null;
             self.ticket += 1;
             ActionConfirm.finish();
+            if (!current) { self.endWasOpen = false; render(); return; }
             // The close gate answered with what the close would take — a list this page did
             // not show, from a fresher frame than its own. That is not a failure to toast; it
             // is the question, asked properly this time.
             if (!ok && error && error.code === "would_lose_work") {
+                self.endWasOpen = false;
                 render();
-                ActionConfirm.reopenEndWithLost(id, error.lost);
+                ActionConfirm.reopenEndWithLost(effect.identity, error.lost);
                 return;
             }
-            if (ok && S.openId === id) closeDetail();
+            var open = SessionSelection.snapshot().open;
+            if (ok && self.endWasOpen &&
+                (!open || SessionSelection.matches(effect.identity, open))) closeDetail();
             else render();
+            self.endWasOpen = false;
             toast(ok ? T.webEndSession + " ✓" : ((error && error.message) || T.webRequestFailed), !ok);
         });
     },
 
     gone: function (id) {
-        if (closingID === id) this.finishEnd(id, this.ticket, true);
+        if (closingID === id) this.finishEnd(id, closingKey, this.ticket, true);
     }
 };

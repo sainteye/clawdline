@@ -776,15 +776,15 @@ assert.match(sheetSource,
 assert.match(sheetSource, /newButton\.hidden = !can\.create/,
     "the ＋ is the one writing control outside the list, so it is hidden by hand");
 assert.match(sheetSource,
-    /api\.snippets\(sessionID, opts\.fresh \? \{ fresh: true \} : undefined\)/,
+    /api\.snippets\(selected\.route, opts\.fresh \? \{ fresh: true \} : undefined\)/,
     "a post-write refresh asks the Mac rather than repainting the snapshot from before the write");
 assert.match(sheetSource, /refresh\(\{ keepScroll: opts\.keepScroll, fresh: true \}\)/,
     "only a completed mutation forces that fresh read; an ordinary open keeps first paint free");
 for (const call of [
-    /api\.createSnippet\(body, sessionID\)/,
-    /api\.updateSnippet\(id, patch, sessionID\)/,
-    /api\.deleteSnippet\(row\.id, sessionID\)/,
-    /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order, sessionID\)/
+    /api\.createSnippet\(body, sessionIdentity\.route\)/,
+    /api\.updateSnippet\(id, patch, sessionIdentity\.route\)/,
+    /api\.deleteSnippet\(row\.id, sessionIdentity\.route\)/,
+    /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order, sessionIdentity\.route\)/
 ]) {
     assert.match(sheetSource, call,
         "every mutation carries the open Session identity into the Cloud transport");
@@ -823,13 +823,13 @@ assert.match(sheetSource, /document\.addEventListener\("keydown", function \(eve
     + "focus is and gets there before keys.js closes the session behind the sheet");
 assert.ok(!/overlay\.addEventListener\("keydown"/.test(sheetSource),
     "rather than only when the focus happens to be inside the overlay");
-assert.match(sheetSource, /rememberSnippetProject\(sessionID, answer && answer\.project\);/,
+assert.match(sheetSource, /rememberSnippetProject\(sessionIdentity && sessionIdentity\.rowId, answer && answer\.project\);/,
     "the read hands the header the Mac's own answer, and only that one — the sheet's own "
     + "fallback would be the raw cwd arriving by a longer route");
 assert.match(sheetSource, /problem === "long" \? T\.webSnippetTooLong : T\.webSnippetNeedsText/,
     "and a draft that is too long is told so, rather than told its fields are empty");
 assert.match(sheetSource,
-    /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order, sessionID\)/,
+    /api\.orderSnippets\(body\.scope, body\.project \|\| null, body\.order, sessionIdentity\.route\)/,
     "reordering sends the full order of one scope to the Mac owning this Session");
 assert.match(sheetSource, /userMessageEntries\(/,
     "'from my last message' asks the sheet next door rather than walking the transcript again");
@@ -904,16 +904,16 @@ assert.match(sheetSource, /function useStarter[^]*?appendMsg\(press\.body\);\n  
    The list is a fetch on the direct path, so every open showed a loading line and then filled —
    for a control whose whole promise is that pressing it is faster than typing. */
 
-assert.match(sheetSource, /var known = answered\[sessionID\];\n    if \(known\) drawAnswer\(known\); else draw\(null, \{ loading: true \}\);/,
+assert.match(sheetSource, /var known = answered\[selected\.key\];\n    if \(known\) drawAnswer\(known\); else draw\(null, \{ loading: true \}\);/,
     "an open paints the last answer for this session before it reads again");
-assert.match(sheetSource, /answered\[sessionID\] = answer;/,
+assert.match(sheetSource, /answered\[selected\.key\] = answer;/,
     "and every read leaves one behind for the next open");
 assert.match(sheetSource, /export var Snippets = \{\n    follow: function \(\) \{/,
     "the panel follows the open session the way every other panel does");
-assert.match(openSource, /Snippets\.follow\(\);/,
+assert.match(openSource, /callSessionUI\("followSnippets"\);/,
     "and session/open.js calls it, so the first open of a session has usually been warmed");
-assert.equal((openSource.match(/Snippets\.follow\(\);/g) || []).length,
-    (openSource.match(/GitPanel\.follow\(\);/g) || []).length,
+assert.equal((openSource.match(/callSessionUI\("followSnippets"\);/g) || []).length,
+    (openSource.match(/callSessionUI\("followGitPanel"\);/g) || []).length,
     "at every place the other panels are told, and not at one of them");
 
 /* ---- importing this module may not touch the document ---------------------

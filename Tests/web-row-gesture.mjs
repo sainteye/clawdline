@@ -64,6 +64,7 @@ function element(className) {
 function buildRow(id) {
     const row = element("row");
     row.dataset.id = id;
+    row.dataset.selectionKey = id;
     const button = element("swipe-end");
     row.querySelector = function (selector) {
         return selector === ".swipe-end" ? button : null;

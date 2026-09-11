@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { T as fallbackStrings } from "../Resources/web/app/js/core/i18n.js";
+import { sessionSelectionKey } from "../Resources/web/app/js/session/selection.js";
+
+assert.equal(sessionSelectionKey({ id: "row", sessionId: null,
+    identity: { machine: "mac-from-route", session: "terminal-from-route" } }),
+JSON.stringify(["row", "mac-from-route", null]),
+"the data-URL harness exercises the production identity fallback instead of copying it");
 
 const deriveURL = new URL("../Resources/web/app/js/view/derive.js", import.meta.url);
 const deriveSource = await readFile(deriveURL, "utf8");
@@ -10,8 +16,12 @@ const standalone = deriveSource
         'const fill = (s, vars) => s.replace(/\\{(\\w+)\\}/g, (m, k) => ' +
         'vars && k in vars ? vars[k] : m);')
     .replace('import { S } from "../core/state.js";', 'const S = globalThis.__closeabilityState;')
-    .replace('import { renderList } from "./list.js";', 'const renderList = function () {};');
+    .replace('import { sessionSelectionKey } from "../session/selection.js";',
+        'const sessionSelectionKey = globalThis.__sessionSelectionKey;')
+    .replace('import { callSessionUI } from "../session/ui.js";',
+        'const callSessionUI = function () {};');
 globalThis.__closeabilityState = { sessions: [], tasks: [], filter: "" };
+globalThis.__sessionSelectionKey = sessionSelectionKey;
 globalThis.__closeabilityStrings = {
     closeabilitySafe: "Safe to close",
     closeabilityBlocked: "1 obligation remains\u001f{n} obligations remain",
@@ -230,11 +240,11 @@ const ui = { openId: "one", write: true, conn: "live", agent: null, tx: { id: "o
 ui.sessions = [current]; ui.replyComposerIdentity = derive.replySessionIdentity(current, ui.sessions);
 const box = { focus() { focused++; }, get textContent() { return draft; }, set textContent(v) { inserts++; draft = v; } };
 let model = { key: "exact-key", text: "允許\nexact candidate" }, attachments = [];
-const fillReply = new Function("S", "els", "byId", "sessionSuggestedReply", "rawMsgText", "Shots", "Voice",
+const fillReply = new Function("S", "els", "byId", "sessionSuggestedReply", "rawMsgText", "Shots", "callSessionUI",
     "blankness", "renderComposer", "sending", "closingID", "toast", "document", "replySessionIdentity", "caretToEnd",
     fillSource.replace("export ", "") + "\nreturn fillSuggestedReply;")(
     ui, { msg: box }, id => id === "one" ? current : null, () => model, () => draft,
-    { urls: () => attachments, busy: () => false }, { busy: () => false }, () => {}, () => renders++, false, null,
+    { urls: () => attachments, busy: () => false }, () => false, () => {}, () => renders++, false, null,
     () => {}, { documentElement: { lang: "zh-Hant" } }, derive.replySessionIdentity, () => caret++);
 function proof(condition, why) { replyChecks++; assert.ok(condition, why); }
 proof(fillReply("one", "exact-key") === true && draft === model.text, "only exact literal reply fills");

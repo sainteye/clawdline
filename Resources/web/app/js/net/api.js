@@ -19,12 +19,29 @@
    client, the fixtures and the cloud client, each of which now carries its own
    `title`.
    -------------------------------------------------------------------------- */
+import { SessionSelection } from "../session/selection.js";
+
 export let api = null;
+var selectedTransportIdentity = null;
 // The new name is an alias of the same live binding. Existing call sites can
 // migrate one module at a time without creating a second selected transport.
 export { api as client };
 
+function transportIdentity(implementation) {
+    if (implementation && typeof implementation.selectionTransportIdentity === "string" &&
+        implementation.selectionTransportIdentity) return implementation.selectionTransportIdentity;
+    return implementation;
+}
+
 export function useClient(implementation) {
+    var nextIdentity = transportIdentity(implementation);
+    // A Cloud token rotation replaces the socket/client object while retaining the authenticated
+    // account, viewer device and relay route. That is credential maintenance, not a selection
+    // boundary. A different local/mock/Cloud kind or Cloud route still invalidates every effect.
+    if (api !== null && selectedTransportIdentity !== nextIdentity) {
+        SessionSelection.replaceTransport();
+    }
     api = implementation;
+    selectedTransportIdentity = nextIdentity;
 }
 export function useApi(implementation) { useClient(implementation); }

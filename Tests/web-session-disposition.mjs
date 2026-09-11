@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { sessionSelectionKey } from "../Resources/web/app/js/session/selection.js";
+
+assert.equal(sessionSelectionKey({ id: "row", sessionId: "conversation",
+    identity: { machine: "mac-from-route", session: "terminal-from-route" } }),
+JSON.stringify(["row", "mac-from-route", "conversation"]),
+"the data-URL harness executes the production selection-key rule");
 
 const deriveURL = new URL("../Resources/web/app/js/view/derive.js", import.meta.url);
 const deriveSource = await readFile(deriveURL, "utf8");
@@ -9,8 +15,12 @@ const standalone = deriveSource
         'const fill = (s, vars) => s.replace(/\\{(\\w+)\\}/g, (m, k) => ' +
         'vars && k in vars ? vars[k] : m);')
     .replace('import { S } from "../core/state.js";', 'const S = globalThis.__workStateState;')
-    .replace('import { renderList } from "./list.js";', 'const renderList = function () {};');
+    .replace('import { sessionSelectionKey } from "../session/selection.js";',
+        'const sessionSelectionKey = globalThis.__sessionSelectionKey;')
+    .replace('import { callSessionUI } from "../session/ui.js";',
+        'const callSessionUI = function () {};');
 globalThis.__workStateState = { sessions: [], tasks: [], filter: "" };
+globalThis.__sessionSelectionKey = sessionSelectionKey;
 globalThis.__workStateStrings = {
     sessionWorkReady: "can take new work",
     sessionWorkUnknown: "status unknown",

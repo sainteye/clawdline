@@ -3,14 +3,18 @@ import { T } from "../core/i18n.js";
 import { S, optimisticBySession } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { uuid } from "../core/util.js";
-import { render, renderList } from "./list.js";
-import { renderTranscript } from "./transcript.js";
-import { ActionConfirm } from "../input/action-confirm.js";
-import { Start } from "../input/start.js";
 import {
     acceptOptimisticReceipt, knownOccurrences, matchesOptimistic, optimisticExpired,
     optimisticClockSeconds, optimisticKey, optimisticScopeKey, OPTIMISTIC_LIFETIME_SECONDS
 } from "./optimistic-data.js";
+import { SessionSelection } from "../session/selection.js";
+import { callSessionUI } from "../session/ui.js";
+
+function render() { return callSessionUI("render"); }
+function renderList() { return callSessionUI("renderList"); }
+function renderTranscript() { return callSessionUI("renderTranscript"); }
+var ActionConfirm = { sync: function () { return callSessionUI("syncActionConfirm"); } };
+var Start = { sync: function () { return callSessionUI("syncStart"); } };
 
 /* ---- waiting on the network ---------------------------------------------- */
 
@@ -103,9 +107,14 @@ export var Optimistic = {
     add: function (id, text, imageCount, known, sentAt, identity, request) {
         var scopeKey = optimisticScopeKey(identity);
         var requestKey = typeof request === "string" && request ? request : null;
+        var selected = SessionSelection.resolve(id, S.sessions);
+        var expectedScope = selected
+            ? selected.identity.machine + "\u0000" + selected.identity.session : null;
         // A pending card is a delivery claim. Without the exact transport receipt, keep the
         // transcript authoritative instead of admitting a card that could match another scope.
-        if (!scopeKey || !requestKey || !identity || identity.session !== id) return null;
+        if (!scopeKey || !requestKey || !identity || !expectedScope || scopeKey !== expectedScope) {
+            return null;
+        }
         var receiptKey = scopeKey + "\u0000" + requestKey;
         var bucket = optimisticBySession[id] || [];
         var localNow = optimisticClockSeconds();
@@ -113,7 +122,8 @@ export var Optimistic = {
             role: "user", text: text,
             at: Number(sentAt) > 0 ? Math.floor(Number(sentAt)) : Math.floor(Date.now() / 1000),
             pending: true, imageCount: imageCount || 0, token: uuid(), wait: null,
-            known: known || this.known(S.tx.id === id ? S.tx.entries : []),
+            known: known || this.known((SessionSelection.snapshot().open || {}).key === id
+                ? S.tx.entries : []),
             scopeKey: scopeKey, receiptKey: receiptKey,
             expiresAt: localNow + OPTIMISTIC_LIFETIME_SECONDS
         };
@@ -200,7 +210,7 @@ export var Optimistic = {
         if (kept.length) optimisticBySession[id] = kept;
         else delete optimisticBySession[id];
         renderList();
-        if (S.openId === id && !S.agent) renderTranscript();
+        if ((SessionSelection.snapshot().open || {}).key === id && !S.agent) renderTranscript();
     }
 };
 

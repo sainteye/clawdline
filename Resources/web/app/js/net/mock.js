@@ -852,8 +852,15 @@ export var Mock = (function () {
     }
 
     function find(id) {
+        id = mockSessionID(id);
         for (var i = 0; i < sessions.length; i++) if (sessions[i].id === id) return sessions[i];
         return null;
+    }
+
+    // The shared UI now hands every transport the same immutable route. Keep accepting the old
+    // string too so fixture-only callers and saved demo links retain their existing facade.
+    function mockSessionID(value) {
+        return value && typeof value === "object" ? value.session || value.id : value;
     }
 
     var verbs = ["Gallivanting", "Puzzling", "Noodling", "Percolating", "Untangling", "Reticulating"];
@@ -999,6 +1006,7 @@ export var Mock = (function () {
             });
         },
         transcript: function (id) {
+            id = mockSessionID(id);
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     var entries = transcripts[id] || [];
@@ -1051,6 +1059,7 @@ export var Mock = (function () {
         // And enough of a background command's output to see the panel it lands in. Bytes in
         // the order they were written, because that is all a command has to show.
         shell: function (id, shellId) {
+            id = mockSessionID(id);
             return new Promise(function (done) {
                 setTimeout(function () {
                     var s = sessions.filter(function (x) { return x.id === id; })[0];
@@ -1074,6 +1083,7 @@ export var Mock = (function () {
         // Enough of an agent's conversation to see the pane it lands in. The row itself comes
         // from the session fixture, so what the header says here is what the strip said.
         agent: function (id, agentId) {
+            id = mockSessionID(id);
             return new Promise(function (done) {
                 setTimeout(function () {
                     var s = sessions.filter(function (x) { return x.id === id; })[0];
@@ -1093,6 +1103,7 @@ export var Mock = (function () {
             });
         },
         skills: function (id) {
+            id = mockSessionID(id);
             return new Promise(function (done) {
                 setTimeout(function () {
                     var session = sessions.filter(function (s) { return s.id === id; })[0];
@@ -1113,6 +1124,7 @@ export var Mock = (function () {
             });
         },
         send: function (id, text, images) {
+            id = mockSessionID(id);
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
@@ -1152,6 +1164,7 @@ export var Mock = (function () {
          * route could tell.
          */
         title: function (id, title) {
+            id = mockSessionID(id);
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Renaming is not enabled on this server."), { code: "write_disabled" })); return; }
@@ -1171,6 +1184,7 @@ export var Mock = (function () {
         /** Answering moves the session off `waiting`, which is the whole thing worth seeing
          *  from a file:// copy: the menu goes, the buttons go, and the composer comes back. */
         key: function (id, press) {
+            id = mockSessionID(id);
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (!MOCK_WRITE) { fail(Object.assign(new Error("Sending is not enabled on this server."), { code: "write_disabled" })); return; }
@@ -1342,6 +1356,7 @@ export var Mock = (function () {
         },
 
         end: function (id, acceptLoss, closeabilityVersion) {
+            id = mockSessionID(id);
             void acceptLoss; void closeabilityVersion;
             return new Promise(function (done, fail) {
                 setTimeout(function () {
@@ -1359,6 +1374,7 @@ export var Mock = (function () {
         /** Slow because the real route reads a transcript and shells out, and the refresh
          *  button has to be seen to be doing something. */
         info: function (id) {
+            id = mockSessionID(id);
             return new Promise(function (done, fail) {
                 setTimeout(function () {
                     if (MOCK_INFO === "fail") {

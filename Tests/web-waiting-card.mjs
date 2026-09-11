@@ -34,6 +34,8 @@
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { createSessionSelectionLifecycle } from
+    "../Resources/web/app/js/session/selection.js";
 import { esc } from "../Resources/web/app/js/core/esc.js";
 import { T, fill, words } from "../Resources/web/app/js/core/i18n.js";
 
@@ -79,6 +81,8 @@ function element() {
 
 const els = { waiting: element(), live: element() };
 const S = { openId: null, write: true, sessions: [] };
+const SessionSelection = createSessionSelectionLifecycle();
+SessionSelection.bindLegacyMirror(S);
 let session = null;
 function byId() { return session; }
 
@@ -123,6 +127,11 @@ globalThis.Shots = { count: function () { return 0; } };
 globalThis.msgText = function () { return ""; };
 globalThis.sending = function () { return false; };
 globalThis.Voice = { available: false };
+globalThis.SessionSelection = SessionSelection;
+globalThis.callSessionUI = function (name) {
+    return ({ closingSelectionKey: null, composerSending: false, messageText: "",
+        shotsBusy: false, shotsCount: 0, voiceBusy: false, voiceLive: false })[name];
+};
 // **A `Terminal` double, for a module that does not use one.** The guard at the foot of this file
 // says `view/composer.js` does not import `view/terminal.js`. The only change that violates it —
 // writing the import and calling `Terminal.open()` — used to kill this suite at the first press
@@ -170,8 +179,8 @@ let served = 0;
 function waiting(menu) {
     served += 1;
     session = { id: "S" + served, state: "waiting", menu: menu || null };
-    S.openId = session.id;
     S.sessions = [session];
+    SessionSelection.open(session, S.sessions);
 }
 
 const MENU = {
@@ -275,7 +284,7 @@ check(!/webWaitingScreen|webLiveScreen|webWaitingLive/.test(composerSource + i18
 /* ---- the card shapes where it is deliberately absent ----------------------- */
 
 session = null;
-S.openId = null;
+SessionSelection.close();
 check(draw() === "", "no session open draws nothing at all");
 check(els.waiting.hidden === true, "and the card is hidden");
 
@@ -366,7 +375,7 @@ equal(opened, 2, "and it opens the screen from the card that could not read a me
 // The one press in this file that is deliberately against an empty box, so it goes around the
 // guard above rather than tripping it.
 session = null;
-S.openId = null;
+SessionSelection.close();
 check(draw() === "", "the card really is gone before this last press");
 els.waiting.press({
     closest: function (selector) { return selector === "[data-screen]" ? this : null; }
@@ -393,12 +402,13 @@ const registration = /document\.addEventListener\("clawdline:open-screen",[\s\S]
     .exec(confirmSource);
 check(registration !== null,
     "input/action-confirm.js registers a clawdline:open-screen listener");
-check(/^import \{ Terminal \} from "\.\.\/view\/terminal\.js";$/m.test(confirmSource),
-    "and that file is one that already holds Terminal, so the wire adds no import anywhere");
+check(!/^import \{ Terminal \} from "\.\.\/view\/terminal\.js";$/m.test(confirmSource) &&
+      /open: function \(\) \{ return callSessionUI\("openTerminal"/.test(confirmSource),
+    "the listener reaches Terminal through the fail-closed composition callback boundary");
 
 // **And the hop that makes any of it run.** Everything above holds the shipped statement against
 // what it does when the event fires; none of it says the browser ever evaluates the file that
-// registers it. That rests on one side-effect import in `main.js`, and nothing in `Tests/` was
+// registers it. That rests on the composition root's named import in `main.js`, and nothing in `Tests/` was
 // watching it: the four suites that read `input/action-confirm.js` read it as text, and the ones
 // that read `main.js` pin the page registry and the element table. Delete that line and this
 // button, the close-confirm sheet and the whole session-actions sheet go dead together while
@@ -407,8 +417,8 @@ check(/^import \{ Terminal \} from "\.\.\/view\/terminal\.js";$/m.test(confirmSo
 // it in. It is not an evaluation proof — only a running browser is that — but the premise now has
 // something that goes red when it breaks.
 const mainSource = await readFile(new URL("main.js", js), "utf8");
-check(/^import "\.\/input\/action-confirm\.js";$/m.test(mainSource),
-    "main.js imports input/action-confirm.js, so the browser reaches the listener above");
+check(/^import \{ ActionConfirm \} from "\.\/input\/action-confirm\.js";$/m.test(mainSource),
+    "main.js imports and binds input/action-confirm.js, so the browser reaches the listener above");
 
 if (registration) {
     // The registration on its own, against a Terminal double: not a description of what that
