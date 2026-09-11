@@ -74,6 +74,7 @@ clawdline_production_sources=(
   Sources/OrchestratorLandingQueue.swift
   Sources/OrchestratorLandingSweep.swift
   Sources/OrchestratorPlanning.swift
+  Sources/OrchestratorPersistence.swift
   Sources/OrchestratorRegistry.swift
   Sources/OrchestratorResultFinalizer.swift
   Sources/OrchestratorRootAssignmentShape.swift
@@ -182,6 +183,7 @@ clawdline_test_sources=(
   Tests/OrchestratorLandingTests.swift
   Tests/OrchestratorLifecycleTests.swift
   Tests/OrchestratorRecoveryTests.swift
+  Tests/OrchestratorPersistenceTests.swift
   Tests/OrchestratorRegistryTests.swift
   Tests/OrchestratorStoreTests.swift
   Tests/PeerMessageTests.swift

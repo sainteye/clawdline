@@ -92,20 +92,28 @@ group("a serialized waiter survives a store round trip without a plaintext secre
     // A dispatch-capable child is told how to read this credential. Rotating it must therefore
     // have no effect on the separate at-rest capability.
     try? Data(RemoteAuth.newToken().utf8).write(to: Orchestrator.tokenURL, options: .atomic)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                           ofItemAtPath: Orchestrator.tokenURL.path)
     expect("rotating the orchestrator token cannot decrypt or invalidate queued secrets",
            sealed.flatMap(Orchestrator.openQueuedSecret), secret)
     check("an invalid sealed value is refused",
           Orchestrator.openQueuedSecret("not a sealed secret") == nil)
 
-    try? Data("not a key".utf8).write(to: Orchestrator.archiveKeyURL, options: .atomic)
+    let invalidKey = Data("not a key".utf8)
+    try? invalidKey.write(to: Orchestrator.archiveKeyURL, options: .atomic)
+    try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                           ofItemAtPath: Orchestrator.archiveKeyURL.path)
     let resealed = Orchestrator.sealQueuedSecret(secret)
     let replacement = try? Data(contentsOf: Orchestrator.archiveKeyURL)
-    check("an unparsable archive key is replaced with a fresh valid one",
-          replacement != keyData
-              && replacement.flatMap { String(data: $0, encoding: .utf8) }
-                  .flatMap { Data(base64Encoded: $0) }?.count == 32)
-    expect("sealing continues after archive-key recovery",
-           resealed.flatMap(Orchestrator.openQueuedSecret), secret)
+    expect("an unparsable archive key is preserved exactly", replacement, invalidKey)
+    check("sealing fails closed instead of minting a replacement key", resealed == nil)
+    if let keyData {
+        try? keyData.write(to: Orchestrator.archiveKeyURL, options: .atomic)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                               ofItemAtPath: Orchestrator.archiveKeyURL.path)
+    }
+    expect("restoring the original installation key reopens the original sealed value",
+           sealed.flatMap(Orchestrator.openQueuedSecret), secret)
 
     var task = Orchestrator.Task(id: taskID, state: .queued, kind: "custom", title: "a task",
                                  assistant: .claude, projectDir: "/tmp", timeoutMinutes: 30,

@@ -668,6 +668,30 @@ of `seedTaskForTesting`, and a tenth bare lock in `Coordinator.swift`'s extensio
 baseline was resealed for `Orchestrator.swift` and `Coordinator.swift` only. The full suite on the
 integrated tree remains the landing root's.
 
+**W1-5 makes broker persistence health authoritative instead of treating every read failure as an
+empty registry.** `OrchestratorPersistence` owns the byte boundary. An absent store is a valid
+first run; a readable schema-v1 object with a complete, uniquely keyed row set is ready. Malformed,
+partial, duplicate-row, unreadable and future-version stores are typed non-authoritative states.
+Readable rejected bytes stay at the canonical path and also receive a content-addressed `0600`
+quarantine copy. Neither `load()` nor `save()` replaces them with an empty schema. SSE and Cloud
+snapshots omit task/schedule authority while unhealthy, and orchestrator routes fail with the same
+typed `orchestrator_store_unavailable` state; the storage diagnostic remains readable. A repaired
+canonical file is adopted only on a fresh process start, not by a mid-process implicit reload.
+
+The token and queued-secret key use the same absence-only rule: creation may win only when the
+path is absent, while malformed, unreadable, non-regular and symlink paths are preserved and make
+authentication or queued-secret crypto fail closed. Store schema remains version 1 and valid old
+rows round-trip unchanged, so rollback is still a source revert rather than a data migration.
+
+W1-4's five named best-effort effects now cross a successful save boundary. Root Assignment
+activation and briefing audits roll back their owned fields when the save is refused; injection
+rolls back the unsent attempt before any terminal bytes; restart recovery publishes no handoff or
+assignment announcement until its recovered state is durable; cleanup persists the registry
+transition before removing task/worktree or expired-handoff directories. A rejected compound
+recovery or cleanup mutation reloads the last authoritative image so a later unrelated save cannot
+smuggle it to disk and the next pass can retry it. Direct dispatch and the terminal briefing lane
+remain explicitly owned by W2-1; W1-5 does not claim those pre-existing orderings are closed.
+
 **Stage 2 is the one that is not a relocation.** `dispatchTimes`, `notifyTimes`,
 `notifyCredentialFailureTimes` and `scheduleWriteTimes` are four `[Date]` arrays carrying the same
 five operations verbatim — expire by window, check room, take one, give one back (two of the four),
@@ -760,9 +784,9 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 623 | `Tests/TestGroupManifest.swift`, counted by the guard |
-| ordered runners | 48 | `Tests/main.swift`, counted by the guard |
-| suite files | 61 | `Tests/*Tests.swift`, counted by the guard |
+| ordered groups | 629 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered runners | 49 | `Tests/main.swift`, counted by the guard |
+| suite files | 62 | `Tests/*Tests.swift`, counted by the guard |
 | `Orchestrator.swift` ceiling | 10,718 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,831 | the receipt in `tools/check-architecture-boundaries.sh` |
 

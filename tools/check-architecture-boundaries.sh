@@ -484,7 +484,8 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # Exact per-run verification receipts and Session work-state projection each have one cohesive
 # runner, keeping both tests out of already frozen 2,000-line suites.
 # Combined Timeline and workflow-presentation runners, measured from Tests/main.swift.
-runner_count_expected=48
+# 49 with W1-5's cohesive store-health/corruption runner, kept out of the frozen recovery suite.
+runner_count_expected=49
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -684,7 +685,8 @@ done
 # 59 with Tests/SessionWorkStateTests.swift, the bounded peer-handoff projection boundary.
 # One owner for the number, for the reason written above the runner count.
 # Combined Timeline and workflow-presentation suite files, measured from Tests/ inventory.
-suite_count_expected=61
+# 62 with W1-5's store-health/corruption suite.
+suite_count_expected=62
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's held-lock doors are closed. `withTransactionOnHeldLock` and its two adapters,

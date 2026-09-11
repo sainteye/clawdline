@@ -1000,6 +1000,15 @@ final class RemoteServer: @unchecked Sendable {
                 return .error(401, "unauthorized", "This needs a paired device.")
             }
         }
+        // A broken broker store is not an empty broker. Keep the health route readable so an
+        // operator can diagnose and recover it, but refuse every task/query/mutation surface
+        // before it can publish or persist the process's empty default registry.
+        if orchestrated, request.path != "/v1/orchestrator/storage",
+           !Orchestrator.storeIsAuthoritative() {
+            return .error(503, "orchestrator_store_unavailable",
+                          "The durable orchestrator store is not authoritative; its original bytes were preserved.",
+                          extra: ["store": Orchestrator.storeHealthRecord()])
+        }
         if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) ?? VerificationRunLedgerHTTP.route(request, machine: orchestratorAuthed) { return response }
         if let response = ProjectBoardHTTP.route(request, machine: orchestratorAuthed,
                                                  permission: permission(for: request)) { return response }
@@ -5513,8 +5522,7 @@ final class RemoteServer: @unchecked Sendable {
             let targets = SessionWatch.shared.targets
             // The task list rides the same stream: a page that reconnects is level on both
             // without asking, for the same reason the whole session list goes out above.
-            let tasks: [String: Any] = ["tasks": Orchestrator.records(),
-                                        "at": Int(Date().timeIntervalSince1970)]
+            let tasks = Self.orchestratorSnapshot()
             self.queue.async {
                 self.write(event: "sessions", data: payload, to: stream)
                 self.write(event: "orchestrator", data: tasks, to: stream)
@@ -5558,41 +5566,6 @@ final class RemoteServer: @unchecked Sendable {
                 self.enqueueCloudSessions(cloudPayload, bridge: bridge)
             }
         }
-    }
-
-    /// The one `orch/<machine>` body, built in one place because two publishers send it: the
-    /// broadcast below, and the republication `cloudTransportBecameReady` performs on every
-    /// transport-ready. They were two dictionary literals and had already drifted.
-    ///
-    /// **`schedules` rides the snapshot instead of answering a request.** The viewer reads
-    /// schedules on a deliberate one-minute lane (`net/schedules.js`), so a request/reply is a
-    /// person waiting; a field on a snapshot already crossing is not. Measured on this Mac:
-    /// `GET /v1/orchestrator/schedules` answered 453 bytes beside 1,056,958 for the task payload
-    /// next to it — 0.043% — in ~7 ms against ~68 ms. The list moves about twice a day and this
-    /// is republished every few seconds, so the *ratio* is bad and the *quantity* is nothing.
-    ///
-    /// **`app` is the build stamp, and it is here because this is the machine's own snapshot.**
-    /// On the direct path `/v1/health` answers it on every connect and reconnect and `Build.saw`
-    /// compares one reading against the last. The relay's `ready` frame is the relay's and cannot
-    /// carry a build, so the stamp rides the one thing republished at exactly the moment health
-    /// would have been asked again.
-    static func orchestratorSnapshot(now: Date = Date()) -> [String: Any] {
-        ["tasks": Orchestrator.records(),
-         "schedules": Orchestrator.scheduleRecords(now: now),
-         "snippets": Snippets.records(),
-         "at": Int(now.timeIntervalSince1970),
-         "app": appStamp()]
-    }
-
-    /// The three fields `Build.stamp()` compares, and deliberately not the two more that
-    /// ``restartHelloPayload()`` carries. `write` there is `Config.shared.remoteWrite`, this
-    /// Mac's switch for its own network, while a cloud viewer's write state is the capability
-    /// its device was granted. Publishing one where the other is read would let a switch on the
-    /// Mac silently regrant or revoke a paired phone.
-    static func appStamp() -> [String: Any] {
-        ["version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
-         "build": Self.buildStamp,
-         "protocol": Self.protocolVersion]
     }
 
     /// Called by the orchestrator whenever any task record changes, from whichever thread it

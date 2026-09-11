@@ -1324,6 +1324,7 @@ enum Orchestrator {
     static let legacyCompletionLookback: TimeInterval = 7 * 24 * 3600
     static let legacyCompletionBatchLimit = 25
     private static var loaded = false
+    private static var storeReadHealth: OrchestratorPersistence.StoreHealth = .unknown
     // The task table is owned by `OrchestratorRegistry` and reached through its task-record
     // capability; its mutation clock replaces the `didSet` this declaration used to carry.
     static var restartReceipt: RestartReceipt?
@@ -1349,6 +1350,9 @@ enum Orchestrator {
     /// result; production leaves it nil. The serialized snapshot is handed over after the task
     /// lock is released so an injected concurrent mutation exercises the real save window.
     static var storeSaveInterceptorForTesting: ((Data) -> Bool?)?
+    /// Test-only protection failure injection on the unpublished temporary file. The regression
+    /// proves that a reported refusal cannot already have replaced the canonical registry.
+    static var storeProtectionInterceptorForTesting: ((URL) -> Bool)?
     static var childIdentityRefreshForTesting: ((TargetSession, inout Task) -> Bool)?
     /// Overrides only the positive ingress evidence. Nil uses current process-bound terminal and
     /// Coordinator facts; an empty array is a deliberate unknown/offline fixture.
@@ -3069,81 +3073,6 @@ enum Orchestrator {
             if let boardRecord { ProjectBoardIntegration.observe(boardRecord) }
             return true
         }
-    }
-
-    // MARK: - The dispatch token
-
-    /// Minted on first use and kept. Reading the file is the only way to hold this credential,
-    /// which is the entire point — a page cannot, and a paired device was never given it.
-    static func dispatchToken() -> String {
-        lock.lock(); defer { lock.unlock() }
-        if let onDisk = try? String(contentsOf: tokenURL, encoding: .utf8) {
-            let token = onDisk.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !token.isEmpty { return token }
-        }
-        let made = RemoteAuth.newToken()
-        try? FileManager.default.createDirectory(at: tokenURL.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        try? Data(made.utf8).write(to: tokenURL, options: .atomic)
-        // Re-applied after every write: an atomic write replaces the file, and the replacement
-        // does not inherit the mode of what it replaced.
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                               ofItemAtPath: tokenURL.path)
-        return made
-    }
-
-    /// Hashes both sides so the comparison is constant-time over equal lengths, like every other
-    /// secret check in the app.
-    static func verifyDispatch(token: String?) -> Bool {
-        guard let token, !token.isEmpty else { return false }
-        let expected = RemoteAuth.hex(SHA256.hash(data: Data(dispatchToken().utf8)))
-        let presented = RemoteAuth.hex(SHA256.hash(data: Data(token.utf8)))
-        return RemoteAuth.constantTimeEquals(expected, presented)
-    }
-
-    static func hash(ofSecret secret: String) -> String {
-        RemoteAuth.hex(SHA256.hash(data: Data(secret.utf8)))
-    }
-
-    /// The at-rest key is not a request credential and is deliberately unrelated to every one.
-    /// It is minted lazily, persists so queued work survives a restart, and is replaced only when
-    /// the file is missing or no longer parses as exactly 32 random bytes.
-    static func archiveKey() -> SymmetricKey {
-        lock.lock(); defer { lock.unlock() }
-        let encoded = try? String(contentsOf: archiveKeyURL, encoding: .utf8)
-        if let encoded,
-           let seed = Data(base64Encoded:
-                encoded.trimmingCharacters(in: .whitespacesAndNewlines)),
-           seed.count == 32 {
-            return SymmetricKey(data: seed)
-        }
-        if encoded != nil {
-            Log.write("orchestrator: the stored archive key will not parse — minting a new one; "
-                + "serialized tasks queued under the old key will fail closed")
-        }
-        let made = SymmetricKey(size: .bits256)
-        let seed = made.withUnsafeBytes { Data($0) }
-        try? FileManager.default.createDirectory(at: archiveKeyURL.deletingLastPathComponent(),
-                                                 withIntermediateDirectories: true)
-        try? Data(seed.base64EncodedString().utf8).write(to: archiveKeyURL, options: .atomic)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                               ofItemAtPath: archiveKeyURL.path)
-        return made
-    }
-
-    /// A serialized waiter has to survive an app restart, but the secret eventually typed into
-    /// its child must not be stored as plaintext. The sealed value is removed before the task
-    /// starts opening.
-    static func sealQueuedSecret(_ secret: String) -> String? {
-        return (try? ChaChaPoly.seal(Data(secret.utf8), using: archiveKey()).combined)?
-            .base64EncodedString()
-    }
-
-    static func openQueuedSecret(_ sealed: String) -> String? {
-        guard let data = Data(base64Encoded: sealed),
-              let box = try? ChaChaPoly.SealedBox(combined: data) else { return nil }
-        guard let clear = try? ChaChaPoly.open(box, using: archiveKey()) else { return nil }
-        return String(data: clear, encoding: .utf8)
     }
 
     // MARK: - Reading the task a root wrote — the three readings that hold the registry
@@ -5620,7 +5549,8 @@ enum Orchestrator {
     /// The dry-run view for owned storage. It enumerates only ledger receipts; an interactive
     /// session or an unowned directory cannot enter this list by resembling one of our paths.
     static func storageInventory(now: Date = Date()) -> [String: Any] {
-        load()
+        _ = load()
+        let store = storeHealthRecord()
         let ledger = OwnedStorage.readLedger()
         guard case .known(let entries, let malformedLines) = ledger else {
             return [
@@ -5631,18 +5561,12 @@ enum Orchestrator {
                 "owned": [],
                 "warnings": ["ledger_unreadable"],
                 "config": storageConfig(),
+                "orchestrator_store": store,
             ]
         }
 
         let taskSnapshot = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
-        let registryReadable: Bool = {
-            guard let data = try? Data(contentsOf: storeURL),
-                  let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  object["tasks"] is [[String: Any]] else {
-                return taskSnapshot.isEmpty && !FileManager.default.fileExists(atPath: storeURL.path)
-            }
-            return true
-        }()
+        let registryReadable = store["authoritative"] as? Bool == true
         let sessions = OwnedStorage.liveSessions()
         var totals = storageTotals()
         var rows: [[String: Any]] = []
@@ -5725,6 +5649,7 @@ enum Orchestrator {
             "owned": rows,
             "warnings": warnings,
             "config": storageConfig(),
+            "orchestrator_store": store,
         ]
     }
 
@@ -6418,11 +6343,14 @@ enum Orchestrator {
 
     /// Wired once at launch, alongside the other observers.
     static func start() {
-        load()
         // Minted now rather than on first use: the skill tells a root to read this file before
         // its first dispatch, and a file that appears only after a request nobody can make yet
         // is a door that opens from the inside.
         _ = dispatchToken()
+        guard load() else {
+            Log.write("orchestrator: startup automation disabled until the durable store is repaired")
+            return
+        }
         withRestartRecovered(resume: { resumeAfterRestart() }) {
         // Rescue what the registry still holds before the cap evicts it. Off the main thread and
         // idempotent: a record already attributed contributes nothing on a second pass, so this
@@ -6461,7 +6389,7 @@ enum Orchestrator {
     /// Separate from timer wiring so the restart handoff can be exercised without opening a live
     /// app lifecycle in the unit suite.
     static func resumeAfterRestart() {
-        load()
+        guard load() else { return }
         resumeRestartIntent()
         // Anything mid-way through briefing is unbriefable now: its plaintext secret died with
         // the process. A serialized task that never left queued is different — its temporary
@@ -6514,18 +6442,26 @@ enum Orchestrator {
                         at: Date()))
         }
         let rearmed = rearmLingers()
-        // Attempt persistence before announcements; W1-5 owns gating handoff effects on failure.
-        if !orphaned.isEmpty || !settled.handoffs.isEmpty
+        let startupChanged = !orphaned.isEmpty || !settled.handoffs.isEmpty
             || !settled.lostReceipts.isEmpty || !settled.incompleteIdentities.isEmpty
-            || rearmed { save() }
-        for id in settled.handoffs {
-            RemoteAuth.audit("handoff.undelivered", ["handoff": id, "why": "app_restarted"])
-        }
-        for id in settled.lostReceipts {
-            reportRootAssignmentTransition(id)
-        }
-        for id in settled.incompleteIdentities {
-            reportRootAssignmentTransition(id)
+            || rearmed
+        let startupPersisted = !startupChanged || save()
+        if !startupPersisted {
+            // Do not leave rejected recovery mutations eligible for a later unrelated save.
+            // Reloading the last authoritative image also makes the next recovery attempt see
+            // the same work again instead of silently dropping its effects.
+            _ = load(force: true)
+        } else {
+            for id in settled.handoffs {
+                RemoteAuth.audit("handoff.undelivered", ["handoff": id,
+                                                         "why": "app_restarted"])
+            }
+            for id in settled.lostReceipts {
+                reportRootAssignmentTransition(id)
+            }
+            for id in settled.incompleteIdentities {
+                reportRootAssignmentTransition(id)
+            }
         }
         let beforeCompletionRecovery = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
         let completionRecovery = reconcileCompletionOutbox(
@@ -6600,6 +6536,7 @@ enum Orchestrator {
     /// without the screen moving. Only the timer path asks for fresh readings, so an observer
     /// firing cannot ask for the reading that fires it.
     static func beat(fromTimer: Bool) {
+        guard storeIsAuthoritative() else { return }
         // Two walkers at once is the shape a task once failed in: one of them had copied a record
         // before the other advanced it, and acted on that copy afterwards. Every caller reachable
         // from here is on the main thread, which was taken to mean the overlap was impossible —
@@ -7159,8 +7096,9 @@ enum Orchestrator {
             guard OrchestratorRegistry.withCoordinationRecords({
                 $0.activateRootAssignment(id, at: now)
             }) else { return false }
-            // Attempt persistence before the operator-visible event; W1-5 owns gating on failure.
-            save()
+            guard persistRootAssignmentActivation(id, at: now, previous: assignment) else {
+                return false
+            }
             RemoteAuth.audit("root_assignment.active", ["assignment": id])
             return true
         case .block:
@@ -7242,10 +7180,13 @@ enum Orchestrator {
             injectAttempts: assignment.injectAttempts)
         switch deliveryDecision {
         case .briefed:
+            let briefedAt = Date()
             guard OrchestratorRegistry.withCoordinationRecords({
-                $0.markRootAssignmentBriefed(id, at: Date())
+                $0.markRootAssignmentBriefed(id, at: briefedAt)
             }) else { return false }
-            save()
+            guard persistRootAssignmentBriefing(id, at: briefedAt, previous: assignment) else {
+                return false
+            }
             RemoteAuth.audit("root_assignment.briefed", ["assignment": id])
             return true
         case .fail(let code):
@@ -7253,12 +7194,10 @@ enum Orchestrator {
             reportRootAssignmentTransition(id)
             return true
         case .inject:
-            // Attempt persistence before typing. W1-5 owns gating the send on save success; until
-            // then a failed best-effort save can leave the durable attempt count behind the line.
             guard OrchestratorRegistry.withCoordinationRecords({
                 $0.recordRootAssignmentInjection(id, at: now)
             }) else { return false }
-            save()
+            guard persistRootAssignmentInjection(id, at: now) else { return false }
             if Targets.send(line, to: target) != nil {
                 OrchestratorRegistry.withCoordinationRecords {
                     $0.withdrawRootAssignmentInjectionTime(id, at: now)
@@ -9678,7 +9617,11 @@ enum Orchestrator {
     /// Test seams for the scheduler's in-memory arbitration. Production reaches the same state
     /// only through ordinary dispatch registration on the remote serial queue.
     static func holdScheduleTaskForTesting(_ task: Task) {
-        OrchestratorRegistry.withTaskRecords { records in records.seedTaskForTesting(task); loaded = true }
+        OrchestratorRegistry.withTaskRecords { records in
+            records.seedTaskForTesting(task)
+            loaded = true
+            storeReadHealth = .ready
+        }
     }
 
     static func mutateTaskForTesting(_ id: String, _ mutate: (inout Task) -> Void) {
@@ -10116,135 +10059,192 @@ enum Orchestrator {
         ]
     }
 
-    static func boundedCoordinationText(_ value: Any?, limit: Int) -> String? {
-        guard let raw = value as? String else { return nil }
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, text.count <= limit,
-              !text.unicodeScalars.contains(where: { $0.value == 0 }) else { return nil }
-        return text
-    }
-
-    static func canonicalCoordinationRepository(_ raw: String) -> String? {
-        guard raw.hasPrefix("/"), raw != "/" else { return nil }
-        let path = URL(fileURLWithPath: raw).standardizedFileURL.path
-        guard path.hasPrefix("/"), path != "/" else { return nil }
-        return path
-    }
-
-    static func canonicalCoordinationPaths(_ raw: [String], repository: String)
-        -> [String]? {
-        guard !raw.isEmpty, raw.count <= 200 else { return nil }
-        let root = URL(fileURLWithPath: repository, isDirectory: true)
-        let prefix = repository + "/"
-        var found = Set<String>()
-        for path in raw {
-            guard !path.isEmpty, path.count <= 1_024,
-                  !path.unicodeScalars.contains(where: { $0.value == 0 }) else { return nil }
-            let absolute = path.hasPrefix("/")
-                ? URL(fileURLWithPath: path).standardizedFileURL.path
-                : URL(fileURLWithPath: path, relativeTo: root).standardizedFileURL.path
-            guard absolute.hasPrefix(prefix) else { return nil }
-            let relative = String(absolute.dropFirst(prefix.count))
-            guard !relative.isEmpty else { return nil }
-            found.insert(relative)
-        }
-        return found.sorted()
-    }
-
     // MARK: - The store
 
-    static func load(force: Bool = false) {
-        lock.lock()
-        if loaded, !force { lock.unlock(); return }
-        loaded = true
-        lock.unlock()
-        guard let data = try? Data(contentsOf: storeURL),
-              let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
-        var found: [String: Task] = [:]
-        for row in obj["tasks"] as? [[String: Any]] ?? [] {
-            guard let task = OrchestratorStore.task(from: row) else { continue }
-            found[task.id] = task
+    @discardableResult
+    static func load(force: Bool = false) -> Bool {
+        storeSaveLock.lock(); defer { storeSaveLock.unlock() }
+        let cached = OrchestratorRegistry.withTaskRecords { _ -> Bool? in
+            loaded && !force ? storeReadHealth.authoritative : nil
         }
-        var foundHandoffs: [String: HandoffEnvelope] = [:]
-        for row in obj["handoffs"] as? [[String: Any]] ?? [] {
-            guard let envelope = OrchestratorStore.handoff(from: row) else { continue }
-            foundHandoffs[envelope.id] = envelope
+        if let cached { return cached }
+
+        let read = OrchestratorPersistence.readStore(at: storeURL)
+        if case .absent = read.health {
+            installLoadedStore(tasks: [:], handoffs: [:], handoffLabels: [:],
+                rootAssignments: [:], waits: [:], deliveries: [:], selfStates: [:],
+                attestations: [:], activity: [:], activityClasses: [:], restart: nil,
+                obligationGeneration: 0, obligationFingerprint: "", health: .absent)
+            return true
         }
-        var foundLabels: [String: HandoffLabel] = [:]
-        for row in obj["handoff_labels"] as? [[String: Any]] ?? [] {
-            guard let label = OrchestratorStore.handoffLabel(from: row) else { continue }
-            foundLabels[label.handoffID] = label
+        guard case .ready = read.health, let obj = read.object else {
+            rememberRejectedStore(read.health)
+            return false
         }
-        var foundRootAssignments: [String: RootAssignment] = [:]
-        for row in obj["root_assignments"] as? [[String: Any]] ?? [] {
-            guard let assignment = OrchestratorStore.rootAssignment(from: row) else { continue }
-            foundRootAssignments[assignment.id] = assignment
+        func rows(_ key: String, required: Bool = false) -> [[String: Any]]? {
+            guard let raw = obj[key] else { return required ? nil : [] }
+            return raw as? [[String: Any]]
         }
-        var foundWaits: [String: CoordinationWait] = [:]
-        for row in obj["coordination_waits"] as? [[String: Any]] ?? [] {
-            guard let wait = OrchestratorStore.coordinationWait(from: row) else { continue }
-            foundWaits[wait.id] = wait
+        func keyed<T>(_ rows: [[String: Any]], decode: ([String: Any]) -> T?,
+                      key: (T) -> String) -> [String: T]? {
+            var found: [String: T] = [:]
+            for row in rows {
+                guard let value = decode(row) else { return nil }
+                let identity = key(value)
+                guard found[identity] == nil else { return nil }
+                found[identity] = value
+            }
+            return found
         }
-        var foundSessionDeliveries: [String: SessionDelivery] = [:]
-        for row in obj["session_deliveries"] as? [[String: Any]] ?? [] {
-            guard let delivery = OrchestratorStore.sessionDelivery(from: row) else { continue }
-            foundSessionDeliveries[delivery.identity.terminalID] = delivery
-        }
-        var foundSelfStates: [String: SessionSelfState] = [:]
-        for row in obj["session_self_states"] as? [[String: Any]] ?? [] {
-            guard let selfState = OrchestratorStore.sessionSelfState(from: row) else { continue }
-            foundSelfStates[selfState.identity.terminalID] = selfState
-        }
-        var foundAttestations: [String: ClosureAttestation] = [:]
-        for row in obj["closure_attestations"] as? [[String: Any]] ?? [] {
-            guard let attestation = closureAttestation(from: row) else { continue }
-            foundAttestations[attestation.identity.terminalID] = attestation
+
+        guard let taskRows = rows("tasks", required: true),
+              let handoffRows = rows("handoffs"),
+              let labelRows = rows("handoff_labels"),
+              let assignmentRows = rows("root_assignments"),
+              let waitRows = rows("coordination_waits"),
+              let deliveryRows = rows("session_deliveries"),
+              let selfStateRows = rows("session_self_states"),
+              let attestationRows = rows("closure_attestations"),
+              let activityRows = rows("session_activity"),
+              let found = keyed(taskRows, decode: OrchestratorStore.task(from:), key: { $0.id }),
+              let foundHandoffs = keyed(handoffRows, decode: OrchestratorStore.handoff(from:),
+                                        key: { $0.id }),
+              let foundLabels = keyed(labelRows, decode: OrchestratorStore.handoffLabel(from:),
+                                      key: { $0.handoffID }),
+              let foundRootAssignments = keyed(
+                assignmentRows, decode: OrchestratorStore.rootAssignment(from:), key: { $0.id }),
+              let foundWaits = keyed(waitRows, decode: OrchestratorStore.coordinationWait(from:),
+                                     key: { $0.id }),
+              let foundSessionDeliveries = keyed(
+                deliveryRows, decode: OrchestratorStore.sessionDelivery(from:),
+                key: { $0.identity.terminalID }),
+              let foundSelfStates = keyed(
+                selfStateRows, decode: OrchestratorStore.sessionSelfState(from:),
+                key: { $0.identity.terminalID }),
+              let foundAttestations = keyed(
+                attestationRows, decode: closureAttestation(from:),
+                key: { $0.identity.terminalID }) else {
+            rememberRejectedStore(OrchestratorPersistence.rejectedStore(
+                read, reason: "invalid_or_duplicate_row", source: storeURL))
+            return false
         }
         var foundActivity: [String: Int] = [:]
         var foundActivityClasses: [String: String] = [:]
-        for row in obj["session_activity"] as? [[String: Any]] ?? [] {
-            guard let terminalID = row["terminal_id"] as? String, !terminalID.isEmpty,
-                  terminalID.count <= 512,
-                  let generation = row["generation"] as? Int, generation >= 0 else { continue }
+        for row in activityRows {
+            guard Set(row.keys).isSubset(of: ["terminal_id", "generation", "class"]),
+                  let terminalID = row["terminal_id"] as? String, !terminalID.isEmpty,
+                  terminalID.count <= 512, foundActivity[terminalID] == nil,
+                  let generation = row["generation"] as? Int, generation >= 0 else {
+                rememberRejectedStore(OrchestratorPersistence.rejectedStore(
+                    read, reason: "invalid_or_duplicate_session_activity", source: storeURL))
+                return false
+            }
             foundActivity[terminalID] = generation
-            if let observed = row["class"] as? String,
-               ["working", "waiting", "idle", "unknown"].contains(observed) {
+            if let observed = row["class"] as? String {
+                guard ["working", "waiting", "idle", "unknown"].contains(observed) else {
+                    rememberRejectedStore(OrchestratorPersistence.rejectedStore(
+                        read, reason: "invalid_session_activity_class", source: storeURL))
+                    return false
+                }
                 foundActivityClasses[terminalID] = observed
             }
         }
+        if let raw = obj["restart"], !(raw is [String: Any]) {
+            rememberRejectedStore(OrchestratorPersistence.rejectedStore(
+                read, reason: "invalid_restart_shape", source: storeURL))
+            return false
+        }
+        let loadedGeneration: Int
+        if let raw = obj["obligation_generation"] {
+            guard let generation = raw as? Int, generation >= 0 else {
+                rememberRejectedStore(OrchestratorPersistence.rejectedStore(
+                    read, reason: "invalid_obligation_generation", source: storeURL))
+                return false
+            }
+            loadedGeneration = generation
+        } else {
+            loadedGeneration = 0
+        }
+        let loadedFingerprint: String
+        if let raw = obj["obligation_fingerprint"] {
+            guard let fingerprint = raw as? String else {
+                rememberRejectedStore(OrchestratorPersistence.rejectedStore(
+                    read, reason: "invalid_obligation_fingerprint", source: storeURL))
+                return false
+            }
+            loadedFingerprint = fingerprint
+        } else {
+            loadedFingerprint = ""
+        }
         let rawRestart = obj["restart"] as? [String: Any]
         let parsedRestart = rawRestart.flatMap(restartReceipt(from:))
-        let foundRestart = parsedRestart ?? rawRestart.map {
-            quarantinedRestartReceipt(from: $0)
-        }
+        let foundRestart = parsedRestart ?? rawRestart.map { quarantinedRestartReceipt(from: $0) }
         if rawRestart != nil, parsedRestart == nil {
             RemoteAuth.audit("orchestrator.restart.invalid_store", [
                 "action": "admission_closed_until_explicit_abort",
             ])
         }
-        OrchestratorRegistry.withTaskRecords { records in
-            records.replaceAllTasks(found)
-            records.coordinationRecords.replacePersistentRecords(
-                .init(handoffs: foundHandoffs, handoffLabels: foundLabels,
-                      rootAssignments: foundRootAssignments, coordinationWaits: foundWaits))
-            records.sessionRecords.replacePersistentRecords(
-                .init(deliveries: foundSessionDeliveries, selfStates: foundSelfStates))
-            closureAttestations = foundAttestations
-            sessionActivityGenerations = foundActivity
-            sessionActivityClasses = foundActivityClasses
-            restartReceipt = foundRestart
-            // Both halves come back together, so a restart neither invents a tick nor loses one:
-            // the first save recomputes the same fingerprint over the same records and finds it
-            // unchanged, which is what lets an attestation written before the restart survive it.
-            obligationGeneration = max(0, obj["obligation_generation"] as? Int ?? 0)
-            obligationFingerprint = obj["obligation_fingerprint"] as? String ?? ""
-            records.rebuildTerminalProjection()
-        }
+        installLoadedStore(tasks: found, handoffs: foundHandoffs,
+            handoffLabels: foundLabels, rootAssignments: foundRootAssignments,
+            waits: foundWaits, deliveries: foundSessionDeliveries, selfStates: foundSelfStates,
+            attestations: foundAttestations, activity: foundActivity,
+            activityClasses: foundActivityClasses, restart: foundRestart,
+            obligationGeneration: loadedGeneration,
+            obligationFingerprint: loadedFingerprint,
+            health: .ready)
+
         // Proofs stored before the independent ledger existed are still strong proofs. Backfill
         // only those exact task/session pairs; never enumerate the surrounding scratch root.
         for task in found.values where task.transcriptProven && task.assistant == .claude {
             _ = registerOwnedScratchpad(for: task)
         }
+        return true
+    }
+
+    private static func rememberRejectedStore(_ health: OrchestratorPersistence.StoreHealth) {
+        OrchestratorRegistry.withTaskRecords { _ in
+            loaded = true
+            storeReadHealth = health
+        }
+        Log.write("orchestrator: durable store is \(health.status); retained without publishing an empty registry")
+    }
+
+    private static func installLoadedStore(
+        tasks: [String: Task], handoffs: [String: HandoffEnvelope],
+        handoffLabels: [String: HandoffLabel], rootAssignments: [String: RootAssignment],
+        waits: [String: CoordinationWait], deliveries: [String: SessionDelivery],
+        selfStates: [String: SessionSelfState], attestations: [String: ClosureAttestation],
+        activity: [String: Int], activityClasses: [String: String], restart: RestartReceipt?,
+        obligationGeneration loadedGeneration: Int, obligationFingerprint loadedFingerprint: String,
+        health: OrchestratorPersistence.StoreHealth
+    ) {
+        OrchestratorRegistry.withTaskRecords { records in
+            records.replaceAllTasks(tasks)
+            records.coordinationRecords.replacePersistentRecords(
+                .init(handoffs: handoffs, handoffLabels: handoffLabels,
+                      rootAssignments: rootAssignments, coordinationWaits: waits))
+            records.sessionRecords.replacePersistentRecords(
+                .init(deliveries: deliveries, selfStates: selfStates))
+            closureAttestations = attestations
+            sessionActivityGenerations = activity
+            sessionActivityClasses = activityClasses
+            restartReceipt = restart
+            obligationGeneration = loadedGeneration
+            obligationFingerprint = loadedFingerprint
+            records.rebuildTerminalProjection()
+            storeReadHealth = health
+            loaded = true
+        }
+    }
+
+    static func storeHealthRecord() -> [String: Any] {
+        _ = load()
+        return OrchestratorRegistry.withTaskRecords { _ in storeReadHealth.record }
+    }
+
+    static func storeIsAuthoritative() -> Bool {
+        _ = load()
+        return OrchestratorRegistry.withTaskRecords { _ in storeReadHealth.authoritative }
     }
 
     /// Atomically replace the registry and report whether the exact snapshot reached disk. Most
@@ -10255,7 +10255,9 @@ enum Orchestrator {
         storeSaveLock.lock(); defer { storeSaveLock.unlock() }
         // The snapshot is taken in one task-record hold; the object is assembled and written
         // after it, exactly as before. Schema-v1 keys and row orders are unchanged.
-        let obj = OrchestratorRegistry.withTaskRecords { records -> [String: Any] in
+        let obj = OrchestratorRegistry.withTaskRecords { records -> [String: Any]? in
+            let testResetMayCreate = storeURLOverrideForTesting != nil && !loaded
+            guard storeReadHealth.authoritative || testResetMayCreate else { return nil }
             records.rebuildTerminalProjection()
             // One choke point for the obligation clock, and it moves only when the obligation
             // evidence itself changed. Bumping on every write would invalidate an attestation
@@ -10298,6 +10300,10 @@ enum Orchestrator {
             if let restart = restartReceipt.map(stored) { obj["restart"] = restart }
             return obj
         }
+        guard let obj else {
+            Log.write("orchestrator: refusing to overwrite a non-authoritative durable store")
+            return false
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
@@ -10305,23 +10311,16 @@ enum Orchestrator {
             return false
         }
         if let intercepted = storeSaveInterceptorForTesting?(data) { return intercepted }
-        do {
-            try FileManager.default.createDirectory(at: RemoteAuth.directory,
-                                                    withIntermediateDirectories: true)
-            try data.write(to: storeURL, options: .atomic)
-        } catch {
-            Log.write("orchestrator: could not persist the store — \(error)")
-            return false
-        }
-        // Every time, not only at creation — same reason as `RemoteAuth.save`.
-        do {
-            try FileManager.default.setAttributes([.posixPermissions: 0o600],
-                                                  ofItemAtPath: storeURL.path)
+        if OrchestratorPersistence.replaceStore(
+            data, at: storeURL, protection: storeProtectionInterceptorForTesting) {
+            OrchestratorRegistry.withTaskRecords { _ in
+                storeReadHealth = .ready
+                loaded = true
+            }
             return true
-        } catch {
-            Log.write("orchestrator: could not protect the store — \(error)")
-            return false
         }
+        Log.write("orchestrator: could not persist a protected store; canonical bytes unchanged")
+        return false
     }
 
     // MARK: - Cleanup
@@ -10425,7 +10424,7 @@ enum Orchestrator {
     /// `orchestrator_task_record_retention_days`, plus every pending landing obligation until root
     /// settles it. See ``taskRetentionSweep(_:now:directoryHours:recordLimit:recordDays:)``.
     static func cleanup() {
-        load()
+        guard load() else { return }
         let now = Date()
         let directoryHours = Config.shared.orchestratorTaskDirRetentionHours
         let recordLimit = Config.shared.orchestratorTaskRecordLimit
@@ -10456,13 +10455,6 @@ enum Orchestrator {
         let sweep = swept.sweep
         let done = swept.done
         let expiredHandoffs = swept.expiredHandoffs
-        for task in done {
-            if let worktree = task.worktree,
-               FileManager.default.fileExists(atPath: worktree.path) {
-                OrchestratorDraft.disposeWorktree(worktree, taskID: task.id, why: "swept")
-            }
-            try? FileManager.default.removeItem(at: task.dir)
-        }
         let pruned = OrchestratorRegistry.withTaskRecords { records
             -> (sessionDeliveries: [String], rootAssignments: [String], retained: Set<String>) in
             let sessions = records.sessionRecords
@@ -10489,13 +10481,23 @@ enum Orchestrator {
                 for id in forgottenLabels { registry.unsuppressHandoffLabel(id) }
             }
         }
-        if !sweep.records.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty
-            || !oldRootAssignmentIDs.isEmpty || !forgottenLabels.isEmpty {
-            save()
+        let cleanupChanged = !sweep.records.isEmpty || !expiredHandoffs.isEmpty
+            || !oldSessionDeliveryIDs.isEmpty || !oldRootAssignmentIDs.isEmpty
+            || !forgottenLabels.isEmpty
+        let cleanupPersisted = !cleanupChanged || save()
+        if !cleanupPersisted {
+            // Restore the authoritative registry image so the next cleanup can retry the same
+            // durable transition. No filesystem effect has happened yet.
+            _ = load(force: true)
+            return
         }
-        // Attempt persistence before deleting the directory. W1-5 owns gating deletion on a
-        // successful save; until then this remains the existing best-effort cleanup policy and
-        // a failed save may leave a durable envelope naming a directory that is already gone.
+        for task in done {
+            if let worktree = task.worktree,
+               FileManager.default.fileExists(atPath: worktree.path) {
+                OrchestratorDraft.disposeWorktree(worktree, taskID: task.id, why: "swept")
+            }
+            try? FileManager.default.removeItem(at: task.dir)
+        }
         for envelope in expiredHandoffs {
             try? FileManager.default.removeItem(at: envelope.dir)
         }
@@ -10655,6 +10657,7 @@ enum Orchestrator {
             scheduleDispatchEnqueuerForTesting = nil
             completionPumpEnqueuerForTesting = nil
             storeSaveInterceptorForTesting = nil
+            storeProtectionInterceptorForTesting = nil
             childIdentityRefreshForTesting = nil
             rootIdentityEvidenceForTesting = nil
             completionPumpScheduled = false
@@ -10674,6 +10677,7 @@ enum Orchestrator {
             records.registry.removeAllSuppressedHandoffLabels()
             records.registry.removeAllRoles()
             loaded = false
+            storeReadHealth = .unknown
         }
         RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
         resetTranscriptOwnershipCacheForTesting()

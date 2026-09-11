@@ -2348,6 +2348,33 @@ is [`messages.md`](messages.md).
 goes out on [the event stream](api.md#the-event-stream) as an `orchestrator` frame, which is how the
 web interface and anything else watching finds out without asking.
 
+### Durable registry read health
+
+The broker store is authoritative only after an absent first-run path or a complete schema-v1 read.
+Malformed JSON, missing the required `tasks` collection, an invalid or duplicate row, a directory,
+symlink or other unreadable path, and an unknown version are not alternate spellings of an empty
+registry. Clawdline preserves the canonical bytes; readable rejected bytes also get a
+content-addressed `0600` copy under the sibling `orchestrator-quarantine/` directory. A save is
+refused until the canonical store is repaired or restored. Repair is intentionally not detected
+mid-process: after restoring a valid canonical file, the operator restarts Clawdline so one fresh
+read establishes the authoritative registry before automation resumes.
+
+While the state is non-authoritative, task/schedule automation does not start, the task and other
+orchestrator routes return typed `503 orchestrator_store_unavailable`, and published snapshots omit
+`tasks` and `schedules` instead of telling a phone that known work disappeared. The read-only
+storage inventory remains available and includes `orchestrator_store` with `status`,
+`authoritative`, and bounded diagnostic facts; it never exposes a quarantine path.
+
+The orchestrator token and queued-secret archive key are also created only when absent. An existing
+malformed, unreadable, non-regular or symlink identity is preserved and authentication/encryption
+fails closed; the process never heals identity by silently minting a replacement.
+
+Root Assignment activation/briefing notices and terminal injection, restart recovery notices, and
+cleanup deletion now occur only after their owning registry transition is durably saved. A failed
+save restores the fields owned by a single Root Assignment step, or reloads the last authoritative
+registry image for compound recovery/cleanup, so retry remains possible without announcing or
+deleting state that exists only in memory.
+
 ### Cleanup
 
 At start and every six hours: task directories for terminal tasks that finished more than 24 hours

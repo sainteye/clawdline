@@ -707,6 +707,16 @@ enum OrchestratorRegistry {
             updateRootAssignment(id) { $0.state = .active; $0.activeAt = at }
         }
 
+        /// Roll back only the activation written by the matching attempt. A later transition is
+        /// never replaced by an older whole-row snapshot when persistence fails.
+        func withdrawRootAssignmentActivation(_ id: String, at: Date,
+                                              restoring state: Orchestrator.RootAssignmentState,
+                                              activeAt: Date?) {
+            guard OrchestratorRegistry.rootAssignments[id]?.state == .active,
+                  OrchestratorRegistry.rootAssignments[id]?.activeAt == at else { return }
+            updateRootAssignment(id) { $0.state = state; $0.activeAt = activeAt }
+        }
+
         @discardableResult
         func blockRootAssignment(_ id: String, blocker: String) -> Bool {
             updateRootAssignment(id) { $0.state = .blocked; $0.blocker = blocker }
@@ -742,10 +752,28 @@ enum OrchestratorRegistry {
             updateRootAssignment(id) { $0.state = .briefed; $0.briefedAt = at }
         }
 
+        /// Roll back only the briefing receipt written by the matching observation.
+        func withdrawRootAssignmentBriefed(_ id: String, at: Date,
+                                           restoring state: Orchestrator.RootAssignmentState,
+                                           briefedAt: Date?) {
+            guard OrchestratorRegistry.rootAssignments[id]?.state == .briefed,
+                  OrchestratorRegistry.rootAssignments[id]?.briefedAt == at else { return }
+            updateRootAssignment(id) { $0.state = state; $0.briefedAt = briefedAt }
+        }
+
         /// One more delivery attempt, counted before the line is typed.
         @discardableResult
         func recordRootAssignmentInjection(_ id: String, at: Date) -> Bool {
             updateRootAssignment(id) { $0.injectAttempts += 1; $0.lastInjectAt = at }
+        }
+
+        /// A line that was never allowed to reach the terminal is not a delivery attempt.
+        func withdrawRootAssignmentInjection(_ id: String, at: Date) {
+            guard OrchestratorRegistry.rootAssignments[id]?.lastInjectAt == at else { return }
+            updateRootAssignment(id) {
+                $0.injectAttempts = max(0, $0.injectAttempts - 1)
+                $0.lastInjectAt = nil
+            }
         }
 
         /// The typed attempt did not reach the terminal: keep the count, release the receipt

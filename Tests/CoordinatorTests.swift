@@ -1371,13 +1371,13 @@ group("the production route preserves scan evidence across cache reads and app g
           watchSource.contains("if scanComplete { self.scanObservedAt = observedAt }")
             && !watchSource.contains("if scanComplete { self.scanObservedAt = Date() }"))
 }
-
 group("Clawdfather succession keeps every handoff and rebind boundary durable") {
     let manager = FileManager.default
     let directory = manager.temporaryDirectory
         .appendingPathComponent("clawdline-coordinator-succession-\(UUID().uuidString)",
                                 isDirectory: true)
     let handoffRoot = directory.appendingPathComponent("handoffs", isDirectory: true)
+    let previousOrchestratorStore = Orchestrator.storeURLOverrideForTesting
     try! manager.createDirectory(at: handoffRoot, withIntermediateDirectories: true)
     Coordinator.storeURLOverrideForTesting = directory.appendingPathComponent("coordinator.json")
     CoordinatorSuccession.storeURLOverrideForTesting = directory
@@ -1398,7 +1398,7 @@ group("Clawdfather succession keeps every handoff and rebind boundary durable") 
         CoordinatorSuccession.storeSaveInterceptorForTesting = nil
         CoordinatorSuccession.storeURLOverrideForTesting = nil
         Coordinator.storeURLOverrideForTesting = nil
-        Orchestrator.storeURLOverrideForTesting = nil
+        Orchestrator.storeURLOverrideForTesting = previousOrchestratorStore
         Orchestrator.handoffRootOverrideForTesting = nil
         Coordinator.forgetForTesting()
         CoordinatorSuccession.forgetForTesting()

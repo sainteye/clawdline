@@ -24,7 +24,7 @@ import time
 import uuid
 
 
-BASE_COMMIT = "bdf3307eab13562f17b7e6ca8f7887b2c0172588"
+BASE_COMMIT = "9d1676e9a1b55e948d3c390fb6da67e382f56659"
 # Measurement safety bound, not a production HTTP budget or SLA.
 HEALTH_BODY_LIMIT = 16384
 # Whole-file seals prevent an unchanged matching line from concealing a changed caller,
@@ -32,8 +32,10 @@ HEALTH_BODY_LIMIT = 16384
 SOURCE_SEALS = {
     "Sources/CloudTransport.swift": "1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d",
     "Sources/CloudAppBridge.swift": "853c4431771550175c6c485b9da648edb72ef1d24b350030402dee74785aaabc",
-    "Sources/RemoteServer.swift": "e143790631dde9e4db0bcaa55f1022a2e363b21781e364e730504cdec27f0c10",
-    "Sources/Orchestrator.swift": "a4980dfa61ea335d369ab7c0534d4b841690ece3b983384a82544ba1db3f9c1e",
+    "Sources/RemoteServer.swift": "b27f9e1e2e2203d73e58bdc43aa30a4a1db64296d1f1258e56ab24658f97748e",
+    "Sources/Orchestrator.swift": "302e10029b6fc761f2c4d3b4bb1616462f032d44c7ee61fb3ef9d41b0f75d8fa",
+    "Sources/OrchestratorPersistence.swift": "375628d34df7a2b7679b1e5519d2cfd81f92a3ba86df62b12ae95dfd43d9482c",
+    "Sources/OrchestratorRegistry.swift": "f0022c5cefc99a26e7ae278f1e286025e693c32ffdf0c286fa7361142e9ec27b",
     "Sources/OrchestratorStore.swift": "ed31e8ceb7aab18aee23efdf8c3a20805e61a576f89673a4b79deeffd58bcfcc",
     "Sources/Coordinator.swift": "923c97e24b64947a218c9b308165174bb2d71d90bf9e78e02a804d658fccc588",
     "Sources/SessionWatch.swift": "d1d47930535b2e79bea14d13d56482885adeff09fcaa0326b84f8a60701beb5c",
@@ -42,7 +44,7 @@ SOURCE_SEALS = {
     "Sources/CloudOutboundSpool.swift": "aef545decd4c7c95b5c566cb60cb11455eaadf6b52f84c3707b76df165459485",
     "Sources/CloudCommandLedger.swift": "def726c029d4fb17e0d096c3187d87b2ea89fdc413e69b95bb02cf0a27862fcf",
     "Sources/CloudBridgeLifecycle.swift": "07f585fd60b4e99abe42d89ca72087c6339456cb844b088718c503cd9ef6b663",
-    "Tests/OrchestratorRecoveryTests.swift": "b6e1212d5c4d4fa85a9012498179b9c871688744ca3b3582e5b9dc0f632df5fb",
+    "Tests/OrchestratorRecoveryTests.swift": "c15ff1acdc556cdf914ad774892c4818117a60709be06086810ce014db3ea753",
     "Tests/OrchestratorCompletionTests.swift": "d2258c60bd16287345470da810a3ec720c14886fe49da132ff6d92da6054699b",
     "Tests/CloudOutboundSpoolTests.swift": "da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244",
 }
@@ -135,6 +137,7 @@ def characterize(source):
                   ("CloudTransport", "CloudAppBridge", "RemoteServer", "Orchestrator"))
     c, w, p, l = ("Sources/" + name + ".swift" for name in
                   ("Coordinator", "SessionWatch", "CloudOutboundSpool", "CloudCommandLedger"))
+    op = "Sources/OrchestratorPersistence.swift"
 
     def row(key, finding, refs, unknown, owner, values=None):
         rows.append({"id": key, "finding": finding, "values": values or {},
@@ -244,31 +247,37 @@ def characterize(source):
         ["元件未在此工具證明 production 接線；未測 bytes、waiters 與 runtime override。",
          "稽核指 production idempotency 仍使用 sender/sequence；R-1 應先定 stable retry identity。"],
         "W5-1 cross-runtime durability owner", constants(l, "globalHardLimit", "normalActorLimit", "fairnessReserveStart", "fairnessActorLimit"))
-    row("store-read-health", "load 先設 loaded=true，unreadable/corrupt/non-object JSON 直接 return；"
-        "既有記憶體不在此分支清除，但 fresh process 的空狀態沒有 read-health fence。"
-        "load 未檢查頂層 version；tasks 缺漏／型別不符變 []，無法 decode 的 row 被 skip 後發布 found。",
-        [ref(o, "    static func load(force:", "    /// Atomically replace the registry"),
+    row("store-read-health", "readStore 將 absent、ready、corrupt、unsupported-version 與 unreadable 分開；"
+        "load 只發布完整 schema-v1，要求 tasks 並拒絕錯型、無法 decode 或重複 identity 的 row。"
+        "non-authoritative health 保留既有記憶體但阻止 projection 與 route 使用。",
+        [ref(op, "    static func readStore(at url:", "    static func rejectedStore("),
+         ref(o, "    static func load(force:", "    /// Atomically replace the registry"),
          ref("Sources/OrchestratorStore.swift", "    static func task(from obj:")],
-        ["這是來源路徑推導，沒有對 live registry 執行 corrupt/unreadable/unsupported-version 注入。",
-         "未證明實際發生資料損失；corrupt whole store 與可 parse 但 invalid restart 子記錄是不同案例。"],
-        "W1-5 persistence owner (store-health)", {"read_health_fence_in_load": False, "top_level_version_gate": False})
-    row("store-overwrite-risk", "save 以 storeSaveLock 序列化 snapshot/write，輸出 version 1 原子替換；"
-        "沒有以先前 load health 阻止 save。fresh empty／部分 decode 後再 save 可能覆蓋原證據。"
-        "read failure 後未改變記憶體，不能概括為每次 failure 都清空。",
+        ["focused Swift fixture 覆蓋 absent/corrupt/partial/wrong-row/future/directory，但不是 live registry 或 power-loss 觀測。",
+         "corrupt whole store 與可 parse 但 invalid restart 子記錄是不同政策。"],
+        "W1-5 persistence owner (accepted source boundary)",
+        {"read_health_fence_in_load": True, "top_level_version_gate": True})
+    row("store-overwrite-risk", "save 以 storeSaveLock 序列化 snapshot/write，輸出 version 1 原子替換，"
+        "並拒絕 non-authoritative read health。Readable rejected bytes 保留在 canonical path 且另作"
+        "content-addressed quarantine；不存在才是 authoritative empty。",
         [ref(o, "    static func save() -> Bool", "    // MARK: - Cleanup"),
-         ref(o, "    static func load(force:", "    /// Atomically replace the registry")],
-        ["authoritative-empty overwrite 為可達路徑風險；沒有實際 overwrite/restart 或 power-loss 測試。",
-         "後續要保留原檔、typed read-health、unsupported version policy、legacy compatibility，分離 best-effort/persist-before-effect。"],
-        "W1-5 persistence owner (store-health)")
+         ref(op, "    static func rejectedStore(", "    static func readSecret(")],
+        ["沒有實際 ENOSPC/EROFS、rename/chmod failure、雙 writer 或 power-loss 測試。",
+         "Data.atomic 與 quarantine copy 不構成 fsync/power-loss durability receipt。"],
+        "W4-2 packaging / operational recovery owner")
     row("disk-failure-seams", "save 的 serializer/write/chmod 失敗回 false；write 後 chmod 失敗"
-        "可能已換檔，因此 false 不等於磁碟完全沒變。storeSaveInterceptorForTesting 可攔截寫入。"
-        "completion/restart 測試已有指定 rollback seam，但本次不執行 Swift。",
+        "可能已換檔，因此 false 不等於磁碟完全沒變。Root Assignment、startup recovery 與"
+        "cleanup 現在 gate effect；storeSaveInterceptorForTesting 可攔截寫入。",
         [ref(o, "    static func save() -> Bool", "    // MARK: - Cleanup"),
+         ref(op, "    static func persistRootAssignmentActivation(", "    // MARK: - Installation secrets"),
+         ref("Sources/OrchestratorRegistry.swift",
+             "        func withdrawRootAssignmentActivation(",
+             "        // MARK: Coordination waits"),
          ref("Tests/OrchestratorCompletionTests.swift", 'group("ACK save failure rolls back only its delivery transition")'),
          ref("Tests/OrchestratorRecoveryTests.swift", 'group("restart reconciliation is bounded, fail-closed on corruption, and rolls back atomically")')],
         ["EACCES/ENOSPC/EROFS、partial write、rename、chmod、fsync/power-loss 與雙 writer 未實測。",
-         ".atomic 不是 power-loss durability receipt；每個 effect 的 persist ordering 仍須各自確認。"],
-        "W1-5 persistence owner / W4-2 packaging owner")
+         "direct dispatch 與一般 terminal briefing lane 的更廣 ordering 仍由 W2-1 接手。"],
+        "W2-1 terminal lane / W4-2 packaging owner")
     row("sequence-disk", "CloudSequenceFile 有 unreadable/unwritable typed failure，load 檢查 v=1；"
         "nextSequence 的正常 reserve 分支嘗試先 persist ceiling 再發序號。"
         "來源控制流程顯示 reserved[sender] 先於 try persist() 更新，"
@@ -303,8 +312,8 @@ def characterize(source):
         "corrupt JSON、missing read、ENOTDIR write 與 replace failure；這是 Python/host filesystem fixture，"
         "不是 Swift Orchestrator.load/save。",
         [ref(o, "        if let intercepted = storeSaveInterceptorForTesting?(data) { return intercepted }")],
-        ["真實 store 的 durability、disk-full、permission failure 與原檔 quarantine 行為仍未知。"],
-        "W1-5 persistence owner")
+        ["真實 store 的 disk-full、permission failure、atomic rename 與 power-loss durability 仍未知。"],
+        "W4-2 packaging / operational recovery owner")
     require(len(rows) == 19 and len({r["id"] for r in rows}) == 19,
             "zero_observations", "characterization row set is incomplete")
     return rows

@@ -3887,6 +3887,13 @@ newest `orchestrator_task_record_limit` records (1350 by default), each kept for
 linear in that limit**: raising it makes every call, and every orchestrator broadcast, project
 proportionally more records on the main queue.
 
+These reads, and every other orchestrator route except the storage diagnostic, fail with
+`503 orchestrator_store_unavailable` when the durable schema is corrupt, unreadable or from an
+unsupported version. The error details contain the bounded store health record. A non-authoritative
+store is never projected as `tasks:[]`, and mutating routes cannot overwrite it while handling an
+unrelated request. After repairing or restoring the canonical file, restart Clawdline to perform
+the next authoritative read; the unhealthy process does not silently adopt bytes changed under it.
+
 ```console
 $ curl -s http://127.0.0.1:7717/v1/orchestrator/tasks \
     -H "X-Clawdline-Orchestrator: $ORCH" | jq '[.tasks[] | {id, state, title, assistant}]'
@@ -4416,6 +4423,13 @@ Lists only storage with an ownership receipt in
 `GET /v1/orchestrator/landings`: the orchestrator token or a paired device with `read` may query
 it. This GET is the dry run; it evaluates the same held/releasable policy the collector will use,
 but has no write or deletion mode.
+
+The response also contains `orchestrator_store`. Its `status` is one of `unknown`, `absent`,
+`ready`, `corrupt`, `unsupported_version`, or `unreadable`, beside `authoritative`. Readable
+rejections include their SHA-256 and whether an exact quarantine copy was made; unsupported data
+also includes its integer version. Paths and rejected bytes are not returned. This route remains
+readable precisely so an operator can diagnose the typed state while other orchestrator routes are
+fail-closed.
 
 ```json
 {"at":1787100152,"source_state":"known",
