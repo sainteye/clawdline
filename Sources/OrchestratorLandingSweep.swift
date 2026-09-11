@@ -683,9 +683,7 @@ extension Orchestrator {
     static func landingSweepPass(now: Date = Date(),
                                  limit: Int = landingSweepLimit) -> [LandingSweepOutcome] {
         load()
-        lock.lock()
-        let evidence = Array(tasks.values)
-        lock.unlock()
+        let evidence = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
         let candidates = landingSweepCandidates(evidence, limit: limit)
         guard !candidates.isEmpty else { return [] }
         let byID = Dictionary(evidence.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -904,17 +902,15 @@ extension Orchestrator {
     static func applyLandingSweep(task: Task, expected: Landing, landing: Landing,
                                   arm: LandingSweepArm)
         -> (verdict: LandingSweepVerdict, settled: Task?) {
-        lock.lock()
-        guard var current = tasks[task.id], current.state == task.state,
-              current.landing == expected, expected.state == .pending else {
-            lock.unlock()
+        let settled = OrchestratorRegistry.withTaskRecords { records -> Task? in
+            guard let current = records.task(task.id), current.state == task.state,
+                  current.landing == expected, expected.state == .pending else { return nil }
+            return records.updateTask(task.id) { $0.landing = landing }
+        }
+        guard let settled else {
             return (.left("the record changed while git was being asked, so it was left alone"),
                     nil)
         }
-        current.landing = landing
-        tasks[task.id] = current
-        let settled = current
-        lock.unlock()
         return (.closed(arm), settled)
     }
 }

@@ -396,9 +396,7 @@ extension Orchestrator {
     /// registry, take one snapshot under the lock, and do every projection outside it.
     static func usageFeatureTaskFacts() -> [String: UsageLedger.TaskFacts] {
         load()
-        lock.lock()
-        let snapshots = Array(tasks.values)
-        lock.unlock()
+        let snapshots = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
         var facts: [String: UsageLedger.TaskFacts] = [:]
         for task in snapshots {
             facts[task.id] = UsageLedger.TaskFacts(
@@ -432,9 +430,7 @@ extension Orchestrator {
         // once for the whole snapshot rather than once per task.
         let retained = OrchestratorLandingQueue.retainedLandingPaths()
         load()
-        lock.lock()
-        let snapshots = Array(tasks.values)
-        lock.unlock()
+        let snapshots = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
         var records: [String: UsageLedger.LiveTaskRecord] = [:]
         for task in snapshots {
             records[task.id] = UsageLedger.LiveTaskRecord(
@@ -465,9 +461,7 @@ extension Orchestrator {
     /// and carries the task's own UUID, so one name belongs to one task in any repository.
     static func usageWorktreeBases() -> [String: String] {
         load()
-        lock.lock()
-        let snapshots = Array(tasks.values)
-        lock.unlock()
+        let snapshots = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
         var bases: [String: String] = [:]
         for task in snapshots {
             guard let worktree = task.worktree, !worktree.branch.isEmpty,

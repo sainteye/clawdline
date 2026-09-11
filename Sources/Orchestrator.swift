@@ -685,10 +685,9 @@ enum Orchestrator {
         if let next = nextFire(of: schedule, after: now) {
             out["next_fire"] = Int(next.timeIntervalSince1970)
         }
-        lock.lock()
-        let snapshots = Array(tasks.values)
-        let missed = lastMissedScheduleFires[schedule.id]
-        lock.unlock()
+        let (snapshots, missed) = OrchestratorRegistry.withTaskRecords { records in
+            (records.taskValues(), lastMissedScheduleFires[schedule.id])
+        }
         let runs = snapshots.filter { $0.scheduleID == schedule.id }
             .sorted { $0.created > $1.created }
         if let last = runs.first {
@@ -750,13 +749,13 @@ enum Orchestrator {
     static func scheduledResumeTitle(sessionID: String, assistant: Assistant,
                                      projectDir: String) -> String? {
         load()
-        lock.lock()
-        defer { lock.unlock() }
-        return tasks.values.first {
-            $0.scheduleID != nil && $0.state.isTerminal && $0.assistant == assistant
-                && $0.projectDir == projectDir && $0.childSessionId == sessionID
-                && availableScheduledSessionID(of: $0) == sessionID
-        }.map { sessionTitle(taskTitle: $0.title, scheduled: true) }
+        return OrchestratorRegistry.withTaskRecords { records in
+            records.taskValues().first {
+                $0.scheduleID != nil && $0.state.isTerminal && $0.assistant == assistant
+                    && $0.projectDir == projectDir && $0.childSessionId == sessionID
+                    && availableScheduledSessionID(of: $0) == sessionID
+            }.map { sessionTitle(taskTitle: $0.title, scheduled: true) }
+        }
     }
 
     private static func availableScheduledSessionID(of task: Task) -> String? {
@@ -840,9 +839,9 @@ enum Orchestrator {
     static func usageScheduleLabels() -> [String: String] {
         let live = schedules()
         load()
-        lock.lock()
-        let snapshots = tasks.values.sorted { $0.created < $1.created }
-        lock.unlock()
+        let snapshots = OrchestratorRegistry.withTaskRecords { records in
+            records.taskValues().sorted { $0.created < $1.created }
+        }
         var labels: [String: String] = [:]
         for task in snapshots {
             guard let id = task.scheduleID,
@@ -856,10 +855,9 @@ enum Orchestrator {
 
     static func scheduleRecords(now: Date = Date()) -> [[String: Any]] {
         let inventory = scheduleInventory()
-        lock.lock()
-        let snapshots = Array(tasks.values)
-        let missedSnapshots = lastMissedScheduleFires
-        lock.unlock()
+        let (snapshots, missedSnapshots) = OrchestratorRegistry.withTaskRecords { records in
+            (records.taskValues(), lastMissedScheduleFires)
+        }
         let valid = inventory.valid.map { schedule -> [String: Any] in
             var out: [String: Any] = ["id": schedule.id, "title": schedule.title,
                                       "enabled": schedule.enabled]
@@ -889,10 +887,6 @@ enum Orchestrator {
     private static func scheduleNamed(_ id: String) -> Schedule? {
         guard OrchestratorDraft.isTaskID(id) else { return nil }
         return schedules().first { $0.id == id }
-    }
-
-    private static func hasActiveScheduleTaskLocked(_ id: String) -> Bool {
-        tasks.values.contains { $0.scheduleID == id && !$0.state.isTerminal }
     }
 
     /// 32 random bytes as hex. Every task secret this app mints itself comes from here — the
@@ -951,15 +945,18 @@ enum Orchestrator {
                             "This schedule was made to run once and already ran at "
                             + "\(Int(fired.timeIntervalSince1970)). Make a new one.")
         }
-        lock.lock()
-        if hasActiveScheduleTaskLocked(id) || dispatchingSchedules.contains(id)
-            || pendingScheduleFires[id] != nil {
-            lock.unlock()
+        let admitted = OrchestratorRegistry.withTaskRecords { records -> Bool in
+            if records.hasActiveScheduleTask(id) || dispatchingSchedules.contains(id)
+                || pendingScheduleFires[id] != nil {
+                return false
+            }
+            dispatchingSchedules.insert(id)
+            return true
+        }
+        guard admitted else {
             return .refused(409, "schedule_active",
                             "The previous task from this schedule is still active.")
         }
-        dispatchingSchedules.insert(id)
-        lock.unlock()
         RemoteAuth.audit("orchestrator.schedule.run", ["schedule": id, "how": "manual"])
         let reply = scheduleRunnerForTesting?(schedule) ?? dispatch(schedule)
         lock.lock()
@@ -981,33 +978,35 @@ enum Orchestrator {
         guard Config.shared.orchestratorEnabled else { return }
         for schedule in schedules() where schedule.enabled {
             guard let fire = latestFire(of: schedule, at: now) else { continue }
-            lock.lock()
-            if handledScheduleFires[schedule.id] == fire || pendingScheduleFires[schedule.id] == fire {
-                lock.unlock()
-                continue
+            let decided = OrchestratorRegistry.withTaskRecords { records -> ScheduleAction? in
+                if handledScheduleFires[schedule.id] == fire
+                    || pendingScheduleFires[schedule.id] == fire {
+                    return nil
+                }
+                let matching = records.taskValues().filter { $0.scheduleID == schedule.id }
+                let latest = matching.max(by: { $0.created < $1.created })
+                let active = matching.contains { !$0.state.isTerminal }
+                    || dispatchingSchedules.contains(schedule.id)
+                let action = scheduleAction(now: now, fire: fire,
+                                            catchUpHours: schedule.catchUpHours,
+                                            lastRunCreated: latest?.created,
+                                            lastRunTerminal: active ? false : latest.map { _ in true },
+                                            createdAt: schedule.createdAt,
+                                            whenChangedAt: schedule.whenChangedAt,
+                                            firedAt: schedule.firedAt)
+                // Only the two outcomes that *consume* an occurrence write it down. An occurrence
+                // from before the schedule was made — or from before the save that invented it —
+                // is not one of them: nothing missed it, so it leaves no `last_missed_at` behind
+                // for the list to draw and nothing to audit.
+                if action == .run {
+                    pendingScheduleFires[schedule.id] = fire
+                } else if action == .active || action == .missed {
+                    handledScheduleFires[schedule.id] = fire
+                    if action == .missed { lastMissedScheduleFires[schedule.id] = fire }
+                }
+                return action
             }
-            let matching = tasks.values.filter { $0.scheduleID == schedule.id }
-            let latest = matching.max(by: { $0.created < $1.created })
-            let active = matching.contains { !$0.state.isTerminal }
-                || dispatchingSchedules.contains(schedule.id)
-            let action = scheduleAction(now: now, fire: fire,
-                                        catchUpHours: schedule.catchUpHours,
-                                        lastRunCreated: latest?.created,
-                                        lastRunTerminal: active ? false : latest.map { _ in true },
-                                        createdAt: schedule.createdAt,
-                                        whenChangedAt: schedule.whenChangedAt,
-                                        firedAt: schedule.firedAt)
-            // Only the two outcomes that *consume* an occurrence write it down. An occurrence
-            // from before the schedule was made — or from before the save that invented it — is
-            // not one of them: nothing missed it, so it leaves no `last_missed_at` behind for the
-            // list to draw and nothing to audit.
-            if action == .run {
-                pendingScheduleFires[schedule.id] = fire
-            } else if action == .active || action == .missed {
-                handledScheduleFires[schedule.id] = fire
-                if action == .missed { lastMissedScheduleFires[schedule.id] = fire }
-            }
-            lock.unlock()
+            guard let action = decided else { continue }
             switch action {
             case .run:
                 let work = { runScheduledFire(schedule, fire: fire) }
@@ -1064,17 +1063,21 @@ enum Orchestrator {
                               "why": scheduleNamed(schedule.id) == nil ? "removed" : "retimed"])
             return
         }
-        lock.lock()
-        pendingScheduleFires.removeValue(forKey: schedule.id)
-        if hasActiveScheduleTaskLocked(schedule.id) || dispatchingSchedules.contains(schedule.id) {
-            handledScheduleFires[schedule.id] = fire
-            lock.unlock()
+        let admitted = OrchestratorRegistry.withTaskRecords { records -> Bool in
+            pendingScheduleFires.removeValue(forKey: schedule.id)
+            if records.hasActiveScheduleTask(schedule.id)
+                || dispatchingSchedules.contains(schedule.id) {
+                handledScheduleFires[schedule.id] = fire
+                return false
+            }
+            dispatchingSchedules.insert(schedule.id)
+            return true
+        }
+        guard admitted else {
             RemoteAuth.audit("orchestrator.schedule.skipped",
                              ["schedule": schedule.id, "why": "active"])
             return
         }
-        dispatchingSchedules.insert(schedule.id)
-        lock.unlock()
 
         RemoteAuth.audit("orchestrator.schedule.run",
                          ["schedule": schedule.id, "how": "timer",
@@ -1183,12 +1186,12 @@ enum Orchestrator {
     private static func failRootAssignmentAndReindex(_ id: String, code: String, at: Date,
                                                      fallback: RootAssignment? = nil)
         -> RootAssignment? {
-        lock.lock(); defer { lock.unlock() }
-        let failed = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            $0.failRootAssignment(id, code: code, at: at, fallback: fallback)
+        OrchestratorRegistry.withTaskRecords { records -> RootAssignment? in
+            let failed = records.coordinationRecords.failRootAssignment(
+                id, code: code, at: at, fallback: fallback)
+            records.rebuildTerminalProjection()
+            return failed
         }
-        reindex()
-        return failed
     }
 
     /// Commit the reconciliation-owned fields of `assignment`, with the projection when the
@@ -1201,11 +1204,10 @@ enum Orchestrator {
             }
             return
         }
-        lock.lock(); defer { lock.unlock() }
-        _ = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            $0.commitRootAssignmentReconciliation(assignment)
+        OrchestratorRegistry.withTaskRecords { records in
+            _ = records.coordinationRecords.commitRootAssignmentReconciliation(assignment)
+            records.rebuildTerminalProjection()
         }
-        reindex()
     }
 
     /// Persist the audit receipt before emitting the event. That deliberately chooses at-most-once
@@ -1322,9 +1324,8 @@ enum Orchestrator {
     static let legacyCompletionLookback: TimeInterval = 7 * 24 * 3600
     static let legacyCompletionBatchLimit = 25
     private static var loaded = false
-    static var tasks: [String: Task] = [:] {
-        didSet { obligationFingerprintDirty = true }
-    }
+    // The task table is owned by `OrchestratorRegistry` and reached through its task-record
+    // capability; its mutation clock replaces the `didSet` this declaration used to carry.
     static var restartReceipt: RestartReceipt?
     // Handoff envelopes, handoff labels, Root Assignments and coordination waits are owned by
     // `OrchestratorRegistry` and reached through its coordination-record capability.
@@ -1358,6 +1359,7 @@ enum Orchestrator {
     /// Test receipt for the semantic root-notification boundary. The terminal transport itself
     /// is exercised elsewhere; this proves a terminal path reached finalization and its notice.
     static var rootNotificationObserverForTesting: ((Task) -> Void)?
+    static var finalizationStageBoundaryForTesting: ((String) -> Void)?
     static var rootAssignmentAuditObserverForTesting:
         ((String, [String: String]) -> Void)?
     static var attachedSenderForTesting: ((String, TargetSession) -> String?)?
@@ -1675,23 +1677,26 @@ enum Orchestrator {
     static func sessionWorkProjection(identity: SessionWorkIdentity,
                                       terminalState: SessionState) -> SessionWorkProjection {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return sessionWorkProjectionLocked(identity: identity, terminalState: terminalState)
+        return OrchestratorRegistry.withTaskRecords { records in
+            sessionWorkProjection(identity: identity, terminalState: terminalState, in: records)
+        }
     }
 
-    /// The caller owns `lock`. Bearings uses this beside coordination and aggregate facts so a
-    /// registry mutation cannot split one response into mutually impossible before/after rows.
-    private static func sessionWorkProjectionLocked(identity: SessionWorkIdentity,
-                                                    terminalState: SessionState)
+    /// Requires the task-record hold. Bearings uses this beside coordination and aggregate facts
+    /// so a registry mutation cannot split one response into mutually impossible before/after rows.
+    private static func sessionWorkProjection(identity: SessionWorkIdentity,
+                                              terminalState: SessionState,
+                                              in records: OrchestratorRegistry.TaskRecordsTransaction)
         -> SessionWorkProjection {
-        let task = taskForCurrentSession(Array(tasks.values), identity: identity)
-        let sessionDelivery = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDelivery(forTerminal: identity.terminalID) }.flatMap {
-            sessionDeliveryMatchesCurrentSession($0, identity: identity) ? $0 : nil
-        }
+        let task = taskForCurrentSession(records.taskValues(), identity: identity)
+        let sessionDelivery = records.sessionRecords
+            .sessionDelivery(forTerminal: identity.terminalID).flatMap {
+                sessionDeliveryMatchesCurrentSession($0, identity: identity) ? $0 : nil
+            }
         let sessionLanding = sessionDelivery?.landing.flatMap {
             isBrokerVerifiedSessionLanding($0) ? $0 : nil
         }
-        let hasOutstandingChild = tasks.values.contains { child in
+        let hasOutstandingChild = records.taskValues().contains { child in
             guard !child.state.isTerminal else { return false }
             if let currentTaskID = task?.id, child.parentTaskId == currentTaskID { return true }
             guard let conversation = identity.conversationID,
@@ -1699,9 +1704,8 @@ enum Orchestrator {
                   (child.rootAssistant ?? .claude) == identity.assistant else { return false }
             return true
         }
-        let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            (waits: $0.coordinationWaits(), handoffs: $0.handoffEnvelopes())
-        }
+        let coordination = (waits: records.coordinationRecords.coordinationWaits(),
+                            handoffs: records.coordinationRecords.handoffEnvelopes())
         let hasWait = coordination.waits.contains { wait in
             wait.waiters.contains { waiter in
                 waiter.releaseDeliveredAt == nil
@@ -1712,9 +1716,10 @@ enum Orchestrator {
         let hasOpenHandoff = coordination.handoffs.contains {
             $0.state != .delivered && handoffSource($0.fromSession, matches: identity)
         }
-        let selfState = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionSelfState(forTerminal: identity.terminalID) }.flatMap {
-            recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
-        }
+        let selfState = records.sessionRecords
+            .sessionSelfState(forTerminal: identity.terminalID).flatMap {
+                recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
+            }
         let owed = selfState?.owed.map { OrchestratorStore.owedPayload($0, conversationID: identity.conversationID, now: Date()) }
 
         // A non-assistant prompt is a terminal waiting for a command. For an assistant, absence
@@ -1800,36 +1805,42 @@ enum Orchestrator {
                             "summary must be 1–\(sessionDeliverySummaryLimit) characters without NUL.")
         }
 
-        lock.lock()
-        if taskForCurrentSession(Array(tasks.values), identity: identity) != nil {
-            lock.unlock()
-            return .refused(409, "child_session",
-                            "A Clawdline child reports through its task result, not this route.")
+        enum Admission {
+            case answered(Reply)
+            case created(SessionDelivery, [String: Any])
         }
-        if let existing = OrchestratorRegistry.withSessionRecordsOnHeldLock({
-            $0.sessionDelivery(forTerminal: identity.terminalID)
-        }),
-           sessionDeliveryMatchesCurrentSession(existing, identity: identity),
-           existing.summary == summary, !existing.settled {
-            let disposition = sessionDeliveryDisposition(existing)
-            lock.unlock()
-            return .ok(["ok": true, "created": false, "disposition": disposition])
+        let admission = OrchestratorRegistry.withTaskRecords { records -> Admission in
+            if taskForCurrentSession(records.taskValues(), identity: identity) != nil {
+                return .answered(.refused(
+                    409, "child_session",
+                    "A Clawdline child reports through its task result, not this route."))
+            }
+            let sessions = records.sessionRecords
+            if let existing = sessions.sessionDelivery(forTerminal: identity.terminalID),
+               sessionDeliveryMatchesCurrentSession(existing, identity: identity),
+               existing.summary == summary, !existing.settled {
+                let disposition = sessionDeliveryDisposition(existing)
+                return .answered(.ok(["ok": true, "created": false, "disposition": disposition]))
+            }
+            if let existing = sessions.sessionDelivery(forTerminal: identity.terminalID),
+               sessionDeliveryMatchesCurrentSession(existing, identity: identity),
+               existing.landing != nil, !existing.settled {
+                return .answered(.refused(
+                    status: 409, code: "landing_conflict",
+                    message: "This turn already has a verified landing with a different summary.",
+                    extra: ["field": "summary"]))
+            }
+            let made = SessionDelivery(identity: identity, summary: summary,
+                                       reportedAt: now, settled: false)
+            sessions.setSessionDelivery(made, forTerminal: identity.terminalID)
+            return .created(made, sessionDeliveryDisposition(made))
         }
-        if let existing = OrchestratorRegistry.withSessionRecordsOnHeldLock({
-            $0.sessionDelivery(forTerminal: identity.terminalID)
-        }),
-           sessionDeliveryMatchesCurrentSession(existing, identity: identity),
-           existing.landing != nil, !existing.settled {
-            lock.unlock()
-            return .refused(status: 409, code: "landing_conflict",
-                            message: "This turn already has a verified landing with a different summary.",
-                            extra: ["field": "summary"])
+        let made: SessionDelivery
+        let disposition: [String: Any]
+        switch admission {
+        case .answered(let reply): return reply
+        case .created(let delivery, let rendered): made = delivery; disposition = rendered
         }
-        let made = SessionDelivery(identity: identity, summary: summary,
-                                   reportedAt: now, settled: false)
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionDelivery(made, forTerminal: identity.terminalID) }
-        let disposition = sessionDeliveryDisposition(made)
-        lock.unlock()
         save()
         RemoteAuth.audit("orchestrator.session.delivered", [
             "session": identity.terminalID, "assistant": identity.assistant?.rawValue ?? "?",
@@ -1954,42 +1965,43 @@ enum Orchestrator {
                             "The declaration is empty: give state, owed, or owed: null.")
         }
 
-        lock.lock()
-        let existing = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionSelfState(forTerminal: identity.terminalID) }.flatMap {
-            recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
-        }
-        var made = SessionSelfState(
-            identity: identity, claim: claim, note: note, movedBy: movedBy,
-            personNeeded: personNeeded, claimReportedAt: claim != nil ? now : nil,
-            claimSettled: false, owed: nil)
-        if clearOwed {
-            made.owed = nil
-        } else if let owed {
-            // The same debt keeps its first clock; only a different note is a new debt.
-            if let held = existing?.owed, held.note == owed.note {
-                var same = owed; same.since = held.since; made.owed = same
-            } else {
-                made.owed = owed
+        let (made, payload) = OrchestratorRegistry.withSessionRecords { sessions
+            -> (SessionSelfState, [String: Any]) in
+            let existing = sessions.sessionSelfState(forTerminal: identity.terminalID).flatMap {
+                recordedIdentityMatchesCurrentSession($0.identity, identity: identity) ? $0 : nil
             }
-        } else {
-            made.owed = existing?.owed
+            var made = SessionSelfState(
+                identity: identity, claim: claim, note: note, movedBy: movedBy,
+                personNeeded: personNeeded, claimReportedAt: claim != nil ? now : nil,
+                claimSettled: false, owed: nil)
+            if clearOwed {
+                made.owed = nil
+            } else if let owed {
+                // The same debt keeps its first clock; only a different note is a new debt.
+                if let held = existing?.owed, held.note == owed.note {
+                    var same = owed; same.since = held.since; made.owed = same
+                } else {
+                    made.owed = owed
+                }
+            } else {
+                made.owed = existing?.owed
+            }
+            if claim == nil {
+                // An owed-only declaration leaves the current turn's claim half alone.
+                made.claim = existing?.claim
+                made.note = existing?.note
+                made.movedBy = existing?.movedBy
+                made.personNeeded = existing?.personNeeded
+                made.claimReportedAt = existing?.claimReportedAt
+                made.claimSettled = existing?.claimSettled ?? false
+            }
+            if made.claim == nil, made.owed == nil {
+                sessions.removeSessionSelfState(forTerminal: identity.terminalID)
+            } else {
+                sessions.setSessionSelfState(made, forTerminal: identity.terminalID)
+            }
+            return (made, OrchestratorStore.selfStateReply(made))
         }
-        if claim == nil {
-            // An owed-only declaration leaves the current turn's claim half alone.
-            made.claim = existing?.claim
-            made.note = existing?.note
-            made.movedBy = existing?.movedBy
-            made.personNeeded = existing?.personNeeded
-            made.claimReportedAt = existing?.claimReportedAt
-            made.claimSettled = existing?.claimSettled ?? false
-        }
-        if made.claim == nil, made.owed == nil {
-            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionSelfState(forTerminal: identity.terminalID) }
-        } else {
-            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionSelfState(made, forTerminal: identity.terminalID) }
-        }
-        let payload = OrchestratorStore.selfStateReply(made)
-        lock.unlock()
         save()
         RemoteAuth.audit("orchestrator.session.declared", [
             "session": identity.terminalID, "state": claim?.rawValue ?? "-",
@@ -2007,52 +2019,51 @@ enum Orchestrator {
     /// declaration (or a different process in the terminal) clears it.
     static func noteSessionStateChange(terminalID: String, to state: SessionState) {
         load()
-        var changed = false
-        lock.lock()
-        // The observed-turn clock the closure attestation names. It moves before any receipt is
-        // settled, so an attestation cannot survive the next active transition SessionWatch sees.
-        if noteActivityLocked(terminalID: terminalID, state: state) { changed = true }
-        if var delivery = OrchestratorRegistry.withSessionRecordsOnHeldLock({
-            $0.sessionDelivery(forTerminal: terminalID)
-        }) {
-            switch state {
-            case .idle where !delivery.settled:
-                delivery.settled = true
-                OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionDelivery(delivery, forTerminal: terminalID) }
-                changed = true
-            case .working where delivery.settled, .waiting where delivery.settled:
-                OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionDelivery(forTerminal: terminalID) }
-                changed = true
-            default:
-                break
-            }
-        }
-        if var selfState = OrchestratorRegistry.withSessionRecordsOnHeldLock({
-            $0.sessionSelfState(forTerminal: terminalID)
-        }), selfState.claim != nil {
-            switch state {
-            case .idle where !selfState.claimSettled:
-                selfState.claimSettled = true
-                OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionSelfState(selfState, forTerminal: terminalID) }
-                changed = true
-            case .working where selfState.claimSettled, .waiting where selfState.claimSettled:
-                selfState.claim = nil
-                selfState.note = nil
-                selfState.movedBy = nil
-                selfState.personNeeded = nil
-                selfState.claimReportedAt = nil
-                selfState.claimSettled = false
-                if selfState.owed == nil {
-                    OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionSelfState(forTerminal: terminalID) }
-                } else {
-                    OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionSelfState(selfState, forTerminal: terminalID) }
+        let changed = OrchestratorRegistry.withSessionRecords { sessions -> Bool in
+            var changed = false
+            // The observed-turn clock the closure attestation names. It moves before any receipt
+            // is settled, so an attestation cannot survive the next active transition SessionWatch
+            // sees. The activity table is still `Orchestrator`'s, behind this same hold.
+            if noteActivityLocked(terminalID: terminalID, state: state) { changed = true }
+            if var delivery = sessions.sessionDelivery(forTerminal: terminalID) {
+                switch state {
+                case .idle where !delivery.settled:
+                    delivery.settled = true
+                    sessions.setSessionDelivery(delivery, forTerminal: terminalID)
+                    changed = true
+                case .working where delivery.settled, .waiting where delivery.settled:
+                    sessions.removeSessionDelivery(forTerminal: terminalID)
+                    changed = true
+                default:
+                    break
                 }
-                changed = true
-            default:
-                break
             }
+            if var selfState = sessions.sessionSelfState(forTerminal: terminalID),
+               selfState.claim != nil {
+                switch state {
+                case .idle where !selfState.claimSettled:
+                    selfState.claimSettled = true
+                    sessions.setSessionSelfState(selfState, forTerminal: terminalID)
+                    changed = true
+                case .working where selfState.claimSettled, .waiting where selfState.claimSettled:
+                    selfState.claim = nil
+                    selfState.note = nil
+                    selfState.movedBy = nil
+                    selfState.personNeeded = nil
+                    selfState.claimReportedAt = nil
+                    selfState.claimSettled = false
+                    if selfState.owed == nil {
+                        sessions.removeSessionSelfState(forTerminal: terminalID)
+                    } else {
+                        sessions.setSessionSelfState(selfState, forTerminal: terminalID)
+                    }
+                    changed = true
+                default:
+                    break
+                }
+            }
+            return changed
         }
-        lock.unlock()
         if changed { save() }
     }
 
@@ -2218,14 +2229,17 @@ enum Orchestrator {
     private static var sessionActivityClasses: [String: String] = [:]
     private static var closureAttestations: [String: ClosureAttestation] = [:]
     /// Machine-wide obligation clock. It advances only when the *content* of the obligation
-    /// evidence changes — see ``obligationFingerprintLocked()`` — so writing an attestation, a
-    /// title or a progress note does not silently invalidate the attestation just written.
+    /// evidence changes — see ``obligationEvidenceFingerprint(in:)`` — so writing an attestation,
+    /// a title or a progress note does not silently invalidate the attestation just written.
     private static var obligationGeneration = 0
     private static var obligationFingerprint = ""
     /// Registry mutations mark these dirty at the mutation itself. Reads can therefore reuse the
     /// settled fingerprint and indexed snapshot; history size is paid once per change, not once
     /// per Session-list poll or SSE publication.
     private static var obligationFingerprintDirty = true
+    /// Last Registry-owned task mutation this facade incorporated into closeability. Replaces the
+    /// `didSet` the task table carried while this type declared it.
+    private static var observedTaskMutationGeneration = -1
     /// Last Registry-owned self-state mutation this facade incorporated into closeability.
     private static var observedSessionSelfStateMutationGeneration = -1
     /// Last Registry-owned handoff/wait mutation this facade incorporated into closeability.
@@ -2272,19 +2286,19 @@ enum Orchestrator {
 
     static func currentObligationGeneration() -> Int {
         load()
-        lock.lock()
-        settleObligationGenerationLocked()
-        let generation = obligationGeneration
-        lock.unlock()
-        return generation
+        return OrchestratorRegistry.withTaskRecords { records -> Int in
+            settleObligationGeneration(records)
+            return obligationGeneration
+        }
     }
 
-    /// A stable digest of exactly the evidence the closeability projection reads. Caller holds
-    /// `lock`. Sorted and fully spelled, because a fingerprint that misses a field is a clock
-    /// that does not tick for the change that mattered.
-    private static func obligationFingerprintLocked() -> String {
+    /// A stable digest of exactly the evidence the closeability projection reads. Requires the
+    /// task-record hold. Sorted and fully spelled, because a fingerprint that misses a field is a
+    /// clock that does not tick for the change that mattered.
+    private static func obligationEvidenceFingerprint(
+        in records: OrchestratorRegistry.TaskRecordsTransaction) -> String {
         var parts: [String] = []
-        for task in tasks.values.sorted(by: { $0.id < $1.id }) {
+        for task in records.taskValues().sorted(by: { $0.id < $1.id }) {
             var row: [String] = []
             row.append(task.id)
             row.append(task.state.rawValue)
@@ -2309,9 +2323,8 @@ enum Orchestrator {
             row.append(task.untouchedClaims.sorted().joined(separator: ","))
             parts.append(row.joined(separator: "\u{1}"))
         }
-        let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            (waits: $0.coordinationWaits(), handoffs: $0.handoffEnvelopes())
-        }
+        let coordination = (waits: records.coordinationRecords.coordinationWaits(),
+                            handoffs: records.coordinationRecords.handoffEnvelopes())
         for wait in coordination.waits.sorted(by: { $0.id < $1.id }) {
             let pending = wait.waiters.filter { $0.releaseDeliveredAt == nil }
                 .map(\.sessionID).sorted().joined(separator: ",")
@@ -2321,9 +2334,7 @@ enum Orchestrator {
             parts.append([handoff.id, handoff.state.rawValue, handoff.fromSession ?? "-"]
                 .joined(separator: "\u{1}"))
         }
-        for selfState in OrchestratorRegistry.withSessionRecordsOnHeldLock({
-            $0.sessionSelfStatesSnapshot()
-        }).values
+        for selfState in records.sessionRecords.sessionSelfStatesSnapshot().values
             .sorted(by: { $0.identity.terminalID < $1.identity.terminalID }) {
             parts.append([selfState.identity.terminalID,
                           selfState.owed?.note ?? "-"].joined(separator: "\u{1}"))
@@ -2333,19 +2344,27 @@ enum Orchestrator {
     }
 
     /// Advance the obligation clock when, and only when, the obligation evidence changed.
-    /// Caller holds `lock`. Returns whether it moved.
+    /// Requires the task-record hold. Returns whether it moved.
+    ///
+    /// All three Registry clocks are consumed here — tasks, session self-states, handoffs and
+    /// waits — so a write through any capability invalidates the fingerprint without the owner
+    /// calling back into this facade.
     @discardableResult
-    private static func settleObligationGenerationLocked() -> Bool {
-        if OrchestratorRegistry.withSessionRecordsOnHeldLock({ $0.consumeSelfStateMutation(
-            after: &observedSessionSelfStateMutationGeneration) }) {
+    private static func settleObligationGeneration(
+        _ records: OrchestratorRegistry.TaskRecordsTransaction) -> Bool {
+        if records.consumeTaskMutation(after: &observedTaskMutationGeneration) {
             obligationFingerprintDirty = true
         }
-        if OrchestratorRegistry.withCoordinationRecordsOnHeldLock({ $0.consumeObligationMutation(
-            after: &observedCoordinationObligationMutationGeneration) }) {
+        if records.sessionRecords.consumeSelfStateMutation(
+            after: &observedSessionSelfStateMutationGeneration) {
+            obligationFingerprintDirty = true
+        }
+        if records.coordinationRecords.consumeObligationMutation(
+            after: &observedCoordinationObligationMutationGeneration) {
             obligationFingerprintDirty = true
         }
         guard obligationFingerprintDirty else { return false }
-        let current = obligationFingerprintLocked()
+        let current = obligationEvidenceFingerprint(in: records)
         obligationFingerprintDirty = false
         guard current != obligationFingerprint else { return false }
         obligationFingerprint = current
@@ -2569,38 +2588,34 @@ enum Orchestrator {
 
     static func closeabilityRegistrySnapshot() -> CloseabilityRegistrySnapshot {
         load()
-        lock.lock()
-        settleObligationGenerationLocked()
-        closeabilityRegistryReadCountForTesting += 1
-        let index: CloseabilityRegistryIndex
-        if !closeabilityIndexDirty, let cached = cachedCloseabilityRegistryIndex {
-            index = cached
-        } else {
-            let orderedTasks = tasks.values.sorted {
-                $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
+        return OrchestratorRegistry.withTaskRecords { records -> CloseabilityRegistrySnapshot in
+            settleObligationGeneration(records)
+            closeabilityRegistryReadCountForTesting += 1
+            let index: CloseabilityRegistryIndex
+            if !closeabilityIndexDirty, let cached = cachedCloseabilityRegistryIndex {
+                index = cached
+            } else {
+                let orderedTasks = records.taskValues().sorted {
+                    $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
+                }
+                let orderedWaits = records.coordinationRecords.coordinationWaits().sorted {
+                    $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
+                }
+                let orderedHandoffs = records.coordinationRecords.handoffEnvelopes().sorted {
+                    $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
+                }
+                index = CloseabilityRegistryIndex(
+                    tasks: orderedTasks, waits: orderedWaits, handoffs: orderedHandoffs)
+                cachedCloseabilityRegistryIndex = index
+                closeabilityIndexDirty = false
             }
-            let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-                (waits: $0.coordinationWaits(), handoffs: $0.handoffEnvelopes())
-            }
-            let orderedWaits = coordination.waits.sorted {
-                $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
-            }
-            let orderedHandoffs = coordination.handoffs.sorted {
-                $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
-            }
-            index = CloseabilityRegistryIndex(
-                tasks: orderedTasks, waits: orderedWaits, handoffs: orderedHandoffs)
-            cachedCloseabilityRegistryIndex = index
-            closeabilityIndexDirty = false
+            return CloseabilityRegistrySnapshot(
+                index: index,
+                selfStates: records.sessionRecords.sessionSelfStatesSnapshot(),
+                attestations: closureAttestations,
+                activityGenerations: sessionActivityGenerations,
+                obligationGeneration: obligationGeneration)
         }
-        let snapshot = CloseabilityRegistrySnapshot(
-            index: index,
-            selfStates: OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionSelfStatesSnapshot() },
-            attestations: closureAttestations,
-            activityGenerations: sessionActivityGenerations,
-            obligationGeneration: obligationGeneration)
-        lock.unlock()
-        return snapshot
     }
 
     /// The broker-side projection for one live Session. `identityMatches` is supplied by the
@@ -2697,30 +2712,43 @@ enum Orchestrator {
             auditID = trimmed
         }
 
-        lock.lock()
-        settleObligationGenerationLocked()
-        let currentActivity = sessionActivityGenerations[identity.terminalID] ?? 0
-        guard let claimedGeneration, claimedGeneration == currentActivity else {
-            lock.unlock()
-            return .refused(status: 409, code: "closure_generation_stale",
-                            message: "activity_generation must name this turn. The broker's "
-                                + "current value is \(currentActivity).",
-                            extra: ["activity_generation": currentActivity])
+        enum Outcome {
+            case answered(Reply)
+            case recorded(ClosureAttestation, activity: Int, obligation: Int)
         }
-        let currentObligation = obligationGeneration
-        if let existing = closureAttestations[identity.terminalID],
-           closureAttestationIsCurrent(existing, identity: identity,
-                                       activityGeneration: currentActivity,
-                                       obligationGeneration: currentObligation) {
-            lock.unlock()
-            return .ok(["ok": true, "created": false, "attestation_id": existing.id])
+        let outcome = OrchestratorRegistry.withTaskRecords { records -> Outcome in
+            settleObligationGeneration(records)
+            let currentActivity = sessionActivityGenerations[identity.terminalID] ?? 0
+            guard let claimedGeneration, claimedGeneration == currentActivity else {
+                return .answered(.refused(
+                    status: 409, code: "closure_generation_stale",
+                    message: "activity_generation must name this turn. The broker's "
+                        + "current value is \(currentActivity).",
+                    extra: ["activity_generation": currentActivity]))
+            }
+            let currentObligation = obligationGeneration
+            if let existing = closureAttestations[identity.terminalID],
+               closureAttestationIsCurrent(existing, identity: identity,
+                                           activityGeneration: currentActivity,
+                                           obligationGeneration: currentObligation) {
+                return .answered(.ok(["ok": true, "created": false,
+                                      "attestation_id": existing.id]))
+            }
+            let made = ClosureAttestation(
+                id: UUID().uuidString.lowercased(), identity: identity,
+                activityGeneration: currentActivity, obligationGeneration: currentObligation,
+                note: note, auditID: auditID, created: now)
+            closureAttestations[identity.terminalID] = made
+            return .recorded(made, activity: currentActivity, obligation: currentObligation)
         }
-        let made = ClosureAttestation(
-            id: UUID().uuidString.lowercased(), identity: identity,
-            activityGeneration: currentActivity, obligationGeneration: currentObligation,
-            note: note, auditID: auditID, created: now)
-        closureAttestations[identity.terminalID] = made
-        lock.unlock()
+        let made: ClosureAttestation
+        let currentActivity: Int
+        let currentObligation: Int
+        switch outcome {
+        case .answered(let reply): return reply
+        case .recorded(let recorded, let activity, let obligation):
+            made = recorded; currentActivity = activity; currentObligation = obligation
+        }
         save()
         RemoteAuth.audit("orchestrator.session.closure", [
             "session": identity.terminalID, "attestation": made.id,
@@ -2809,18 +2837,19 @@ enum Orchestrator {
     ///
     /// The record rather than the ``Role``: the ledger stores what the work *was* — its kind, its
     /// isolation, how many paths it claimed, which schedule made it — and a role carries none of
-    /// that. Attachment is treated the way ``reindex()`` treats it: a guest task owns the session
+    /// that. Attachment is treated the way ``OrchestratorRegistry/TaskRecordsTransaction/rebuildTerminalProjection()`` treats it: a guest task owns the session
     /// only while it is live, because a standing session wearing a finished task's name is the
     /// one shape it must not have.
     static func ledgerTaskRecord(forTerminal id: String) -> [String: Any]? {
-        lock.lock(); defer { lock.unlock() }
-        let candidates = tasks.values.filter { $0.childTerminalId == id }
-        if let live = candidates.first(where: { !$0.state.isTerminal }) {
-            return ledgerRecord(of: live)
+        OrchestratorRegistry.withTaskRecords { records -> [String: Any]? in
+            let candidates = records.taskValues().filter { $0.childTerminalId == id }
+            if let live = candidates.first(where: { !$0.state.isTerminal }) {
+                return ledgerRecord(of: live)
+            }
+            let owned = candidates.filter { $0.attachSessionId == nil }
+                .sorted { $0.created > $1.created }
+            return owned.first.map(ledgerRecord)
         }
-        let owned = candidates.filter { $0.attachSessionId == nil }
-            .sorted { $0.created > $1.created }
-        return owned.first.map(ledgerRecord)
     }
 
     /// Every task the registry still holds, in its own spelling, for the ledger's backfill.
@@ -2835,8 +2864,9 @@ enum Orchestrator {
     /// once, for both this and the finalize collector.
     static func ledgerBackfillRecords() -> [[String: Any]] {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return tasks.values.sorted { $0.created < $1.created }.map(ledgerRecord)
+        return OrchestratorRegistry.withTaskRecords { records in
+            records.taskValues().sorted { $0.created < $1.created }.map(ledgerRecord)
+        }
     }
 
     /// The stored record, minus the two fields that are credentials rather than facts about the
@@ -2868,78 +2898,6 @@ enum Orchestrator {
         ProjectBoardIntegration.observe(ledgerRecord(of: task))
         ProjectTimelineIntegration.observeBrokerRecord(ledgerRecord(of: task))
     }
-    /// Under the lock.
-    private static func reindex() {
-        let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            (labels: $0.handoffLabels(), assignments: $0.rootAssignments())
-        }
-        OrchestratorRegistry.withTransactionOnHeldLock { registry in
-            var found = registry.handoffTitles()
-            // The durable half of the same answer, and the only half a fresh process has: the
-            // map above is written when a tab opens and is empty after a restart. Read before
-            // the assignment and task rows below, so the precedence between the three sources is
-            // exactly what it was — this changes when a handoff label is *known*, never where it
-            // ranks against anything else.
-            //
-            // Two unsuppressed labels on one terminal id are two answers to a question that has
-            // one, and dictionary iteration order is not a tie-break. `rootAssignmentSession-
-            // Projection` refuses the same class of question with `matches.count == 1`; this
-            // refuses per terminal, so an ambiguous tab keeps whatever name it would have had
-            // without any handoff label rather than one of the two at random.
-            var labelsByTerminal: [String: [String]] = [:]
-            for label in coordination.labels
-            where !registry.isHandoffLabelSuppressed(label.handoffID) {
-                labelsByTerminal[label.identity.terminalID, default: []].append(label.label)
-            }
-            for (terminal, labels) in labelsByTerminal {
-                guard labels.count == 1, let only = labels.first else { continue }
-                found[terminal] = only
-            }
-            var roles: [String: Role] = [:]
-            let rootTaskHosts = tasks.values.filter { $0.sessionRoot }
-            // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
-            // putting an assignment in it would make a fourth primitive a disguised task.
-            for assignment in coordination.assignments {
-                guard let terminal = assignment.identity?.terminalID,
-                      ![.failed, .inactive].contains(assignment.state),
-                      !registry.isRootAssignmentLabelSuppressed(assignment.id) else { continue }
-                found[terminal] = assignment.label
-            }
-            for task in tasks.values {
-                guard let terminal = task.childTerminalId else { continue }
-                let role = Role(taskID: task.id, depth: task.depth, title: task.title,
-                                deadline: task.briefedAt?
-                                    .addingTimeInterval(Double(task.timeoutMinutes) * 60),
-                                live: !task.state.isTerminal,
-                                taskRootAccess: task.childTaskRootAccess)
-                // An attached task is a guest in a session somebody else owns. It may say that the
-                // session is busy with broker work while it is running, and that is all: it never
-                // renames the session, and it leaves nothing behind when it ends. A tab this app
-                // opened normally belongs to that task; `sessionRoot` below is the explicit
-                // exception, where the task is only the Root Session's first bounded receipt.
-                if task.attachSessionId != nil {
-                    let retainedRoots = rootTaskHosts.filter {
-                        $0.childTerminalId == terminal && $0.childTTY == task.childTTY
-                            && $0.assistant == task.assistant
-                    }
-                    if retainedRoots.count == 1 { continue }
-                    guard role.live else { continue }
-                    if let existing = roles[terminal], existing.live { continue }
-                    roles[terminal] = role
-                    continue
-                }
-                found[terminal] = sessionTitle(taskTitle: task.title, scheduled: task.scheduleID != nil)
-                if task.sessionRoot { continue }
-                // A tab is normally one task's for its whole life. When two records name the same
-                // one — a terminal id reused after a tab closed and another opened in its place —
-                // the live task is the one anything asking this question means.
-                if let existing = roles[terminal], existing.live, !role.live { continue }
-                roles[terminal] = role
-            }
-            registry.setTerminalProjection(titles: found, roles: roles)
-        }
-    }
-
     /// Handoff labels are transient UI state. Keep one while its tab is visible or its first line
     /// is still in flight; once a closed tab disappears from the reading, its reusable id must
     /// not carry the old root's label into a later session.
@@ -2956,45 +2914,55 @@ enum Orchestrator {
     static func pruneClosedHandoffTitles(visible: Set<String>,
                                          identities: [SessionWorkIdentity]? = nil,
                                          inventoryComplete: Bool = true) {
-        let delivering = Set(OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.handoffDeliveriesSnapshot() }.values.map(\.terminalID))
-        let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            (assignments: $0.rootAssignments(), labels: $0.handoffLabels())
+        OrchestratorRegistry.withTaskRecords { records in
+            pruneClosedHandoffTitles(visible: visible, identities: identities,
+                                     inventoryComplete: inventoryComplete, in: records)
         }
-        OrchestratorRegistry.withTransactionOnHeldLock { registry in
-            registry.setHandoffTitles(registry.handoffTitles().filter {
-                visible.contains($0.key) || delivering.contains($0.key)
-            })
-            if let identities {
-                for assignment in coordination.assignments
-                    where ![.failed, .inactive].contains(assignment.state) {
-                    guard let stored = assignment.identity else { continue }
-                    if identities.contains(where: {
-                        rootAssignmentIdentityMatches(stored, observed: $0)
-                    }) {
-                        registry.unsuppressRootAssignmentLabel(assignment.id)
-                    } else {
-                        registry.suppressRootAssignmentLabel(assignment.id)
-                    }
+    }
+
+    /// The same prune inside a hold the caller already has: ``beat(fromTimer:)`` runs it
+    /// atomically with the identity adoption and the reading of what is still live. The public
+    /// form above acquires the task-record door for itself, which is what its test callers use.
+    private static func pruneClosedHandoffTitles(
+        visible: Set<String>, identities: [SessionWorkIdentity]?, inventoryComplete: Bool,
+        in records: OrchestratorRegistry.TaskRecordsTransaction) {
+        let delivering = Set(records.sessionRecords.handoffDeliveriesSnapshot().values
+            .map(\.terminalID))
+        let assignments = records.coordinationRecords.rootAssignments()
+        let labels = records.coordinationRecords.handoffLabels()
+        let registry = records.registry
+        registry.setHandoffTitles(registry.handoffTitles().filter {
+            visible.contains($0.key) || delivering.contains($0.key)
+        })
+        if let identities {
+            for assignment in assignments where ![.failed, .inactive].contains(assignment.state) {
+                guard let stored = assignment.identity else { continue }
+                if identities.contains(where: {
+                    rootAssignmentIdentityMatches(stored, observed: $0)
+                }) {
+                    registry.unsuppressRootAssignmentLabel(assignment.id)
+                } else {
+                    registry.suppressRootAssignmentLabel(assignment.id)
                 }
-                // A durable handoff label answers the same question and therefore takes the same
-                // answer — but it is the only one of the two whose suppression is wired to
-                // deletion, so it also asks whether the reading is finished. An absent or
-                // unfinished reading is no evidence either way and leaves the suppression alone;
-                // an absent reading is not a closed tab.
-                if inventoryComplete {
-                    for label in coordination.labels {
-                        if identities.contains(where: {
-                            rootAssignmentIdentityMatches(label.identity, observed: $0)
-                        }) {
-                            registry.unsuppressHandoffLabel(label.handoffID)
-                        } else {
-                            registry.suppressHandoffLabel(label.handoffID)
-                        }
+            }
+            // A durable handoff label answers the same question and therefore takes the same
+            // answer — but it is the only one of the two whose suppression is wired to deletion,
+            // so it also asks whether the reading is finished. An absent or unfinished reading is
+            // no evidence either way and leaves the suppression alone; an absent reading is not a
+            // closed tab.
+            if inventoryComplete {
+                for label in labels {
+                    if identities.contains(where: {
+                        rootAssignmentIdentityMatches(label.identity, observed: $0)
+                    }) {
+                        registry.unsuppressHandoffLabel(label.handoffID)
+                    } else {
+                        registry.suppressHandoffLabel(label.handoffID)
                     }
                 }
             }
         }
-        reindex()
+        records.rebuildTerminalProjection()
     }
 
     /// Complete a durable handoff label's identity from the first inventory that can see the
@@ -3019,11 +2987,13 @@ enum Orchestrator {
     /// So a bound record may only have its conversation id filled in, and only by the process it
     /// is already bound to.
     ///
-    /// Under the lock. True when a record changed and the store owes a write.
-    private static func adoptHandoffLabelIdentitiesLocked(
-        snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity]) -> Bool {
+    /// Requires the task-record hold. True when a record changed and the store owes a write.
+    private static func adoptHandoffLabelIdentities(
+        snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity],
+        in held: OrchestratorRegistry.TaskRecordsTransaction) -> Bool {
         guard snapshot.complete else { return false }
-        return OrchestratorRegistry.withCoordinationRecordsOnHeldLock { records in
+        let records = held.coordinationRecords
+        do {
             var changed = false
             for label in records.handoffLabels() {
                 let bound = label.identity.pid != nil && label.identity.processStart != nil
@@ -3062,30 +3032,43 @@ enum Orchestrator {
     @discardableResult
     static func replaceTask(_ candidate: Task, expecting expected: State? = nil,
                             discardSecret: Bool = false) -> Bool {
-        var boardRecord: [String: Any]?
-        lock.lock()
-        defer {
-            lock.unlock()
-            if let boardRecord { ProjectBoardIntegration.observe(boardRecord) }
+        enum Outcome {
+            case refused
+            case stale(current: State)
+            case replaced(boardRecord: [String: Any]?)
         }
-        guard let current = tasks[candidate.id] else { return false }
-        if let expected, current.state != expected { return false }
-        guard mayReplaceState(current.state, with: candidate.state) else {
+        let outcome = OrchestratorRegistry.withTaskRecords { records -> Outcome in
+            guard let current = records.task(candidate.id) else { return .refused }
+            if let expected, current.state != expected { return .refused }
+            guard mayReplaceState(current.state, with: candidate.state) else {
+                return .stale(current: current.state)
+            }
+            let written = records.commitStepCandidate(candidate) ?? candidate
+            if discardSecret {
+                records.sessionRecords.removeTaskSecret(for: candidate.id)
+            }
+            if current.state != candidate.state
+                || current.childSessionId != candidate.childSessionId {
+                return .replaced(boardRecord: ledgerRecord(of: written))
+            }
+            return .replaced(boardRecord: nil)
+        }
+        // Effects after the hold: the audit and the Board observation both used to run with the
+        // lock still held (the audit) or in its `defer` (the observation).
+        switch outcome {
+        case .refused:
+            return false
+        case .stale(let current):
             RemoteAuth.audit("orchestrator.stale_write", [
                 "task": candidate.id,
-                "current": current.state.rawValue,
+                "current": current.rawValue,
                 "candidate": candidate.state.rawValue,
             ])
             return false
+        case .replaced(let boardRecord):
+            if let boardRecord { ProjectBoardIntegration.observe(boardRecord) }
+            return true
         }
-        tasks[candidate.id] = candidate
-        if discardSecret {
-            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeTaskSecret(for: candidate.id) }
-        }
-        if current.state != candidate.state || current.childSessionId != candidate.childSessionId {
-            boardRecord = ledgerRecord(of: candidate)
-        }
-        return true
     }
 
     // MARK: - The dispatch token
@@ -3167,25 +3150,19 @@ enum Orchestrator {
 
     // The pure half of this section is `OrchestratorDraft`: the draft a dispatch body decodes
     // into, the four ingress refusals, the worktree lifecycle, and the claim and workspace scans
-    // over a table of tasks handed to them. What is left here are the three declarations that
-    // fail that file's mechanical test, because each one reads `tasks` — two under the
-    // `…Locked()` contract, one taking `lock` itself. Ownership stays with the owner.
-
-    private static func serializeBlockersLocked(for candidate: Task) -> [Task] {
-        OrchestratorDraft.serializeBlockers(for: candidate, among: Array(tasks.values))
-    }
-
-    private static func claimsOverlapsLocked(for candidate: Task)
-        -> [OrchestratorDraft.ClaimsOverlap] {
-        OrchestratorDraft.claimsOverlaps(for: candidate, among: Array(tasks.values))
-    }
+    // over a table of tasks handed to them. The serialize and claims queries that read the task
+    // table are the Registry's (`OrchestratorRegistry.TaskRecordsTransaction`); what is left here
+    // is the one reading that enters the task door itself.
 
     private static func workspaceOverlaps(for newTask: Task)
         -> [OrchestratorDraft.WorkspaceOverlap] {
-        lock.lock()
-        let newRoot = rootKeyLocked(of: newTask)
-        let existing = tasks.values.map { (task: $0, rootKey: rootKeyLocked(of: $0)) }
-        lock.unlock()
+        let (newRoot, existing) = OrchestratorRegistry.withTaskRecords { records
+            -> (String, [(task: Task, rootKey: String)]) in
+            (records.rootKey(of: newTask),
+             records.taskValues().map {
+                 (task: $0, rootKey: records.rootKey(of: $0))
+             })
+        }
         return OrchestratorDraft.workspaceOverlaps(for: newTask, rootKey: newRoot, among: existing)
     }
 
@@ -3439,27 +3416,23 @@ enum Orchestrator {
                                            id: id, assistant: draft.assistant,
                                            model: draft.model, terminalID: terminalID,
                                            backend: backend, spawnedAt: Date())
-            lock.lock()
-            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setHandoffDelivery(delivery, for: id) }
-            // Only a title the sender actually supplied earns a durable record. `place.label`
-            // falls back to `handoff <first eight of the id>`, which says less about the work
-            // than the name the conversation will generate for itself, so storing that would
-            // cost the tab a better name at every restart from here to the sweep. The iTerm
-            // place label is unchanged either way; this is about what outlives the process.
-            if let title = draft.title {
-                OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-                    $0.bindHandoffLabel(HandoffLabel(
+            OrchestratorRegistry.withTaskRecords { records in
+                records.sessionRecords.setHandoffDelivery(delivery, for: id)
+                // Only a title the sender actually supplied earns a durable record. `place.label`
+                // falls back to `handoff <first eight of the id>`, which says less about the work
+                // than the name the conversation will generate for itself, so storing that would
+                // cost the tab a better name at every restart from here to the sweep. The iTerm
+                // place label is unchanged either way; this is about what outlives the process.
+                if let title = draft.title {
+                    records.coordinationRecords.bindHandoffLabel(HandoffLabel(
                         handoffID: id, label: title,
                         identity: RootAssignmentIdentity(
                             terminalID: terminalID, assistant: draft.assistant, tty: nil,
                             pid: nil, processStart: nil, conversationID: nil)))
                 }
+                records.registry.setHandoffTitle(place.label, forTerminal: terminalID)
+                records.rebuildTerminalProjection()
             }
-            OrchestratorRegistry.withTransactionOnHeldLock {
-                $0.setHandoffTitle(place.label, forTerminal: terminalID)
-            }
-            reindex()
-            lock.unlock()
             if draft.title != nil { save() }
             DispatchQueue.main.async { SessionWatch.shared.nudge() }
             return successfulHandoffReply(for: envelope, draft: draft,
@@ -3740,13 +3713,12 @@ enum Orchestrator {
             if let app { extra["app"] = app }
             return .refused(status: status, code: code, message: message, extra: extra)
         case .started(let terminalID, let backend, _):
-            lock.lock()
-            let opened = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-                $0.recordRootAssignmentTerminal(id, terminalID: terminalID, at: Date(),
-                                                fallback: assignment)
+            let opened = OrchestratorRegistry.withTaskRecords { records -> RootAssignment in
+                let opened = records.coordinationRecords.recordRootAssignmentTerminal(
+                    id, terminalID: terminalID, at: Date(), fallback: assignment)
+                records.rebuildTerminalProjection()
+                return opened
             }
-            reindex()
-            lock.unlock()
             guard save() else {
                 failRootAssignmentAndReindex(id, code: "launch_receipt_lost", at: Date(),
                                              fallback: opened)
@@ -3783,10 +3755,9 @@ enum Orchestrator {
                 (SessionWatch.shared.targets, SessionWatch.shared.states)
             }
         }
-        lock.lock()
-        let live = Array(tasks.values)
-        let roles = OrchestratorRegistry.withTransactionOnHeldLock { $0.roles() }
-        lock.unlock()
+        let (live, roles) = OrchestratorRegistry.withTaskRecords { records in
+            (records.taskValues(), records.registry.roles())
+        }
         return OrchestratorDraft.attachmentDecision(sessionID: sessionID, assistant: assistant,
                                   sessions: inventory.0, states: inventory.1,
                                   tasks: live, roles: roles,
@@ -4027,20 +3998,35 @@ enum Orchestrator {
         // Claims are checked and registered under the same lock. If those were separate steps,
         // two concurrent dispatches could both observe a free path and then both reserve it.
         // Queued serialized work enters here too: reservation starts at dispatch, not promotion.
-        lock.lock()
-        if let sessionID = made.attachSessionId,
-           tasks.values.contains(where: {
-               $0.id != taskID && !$0.state.isTerminal
-                   && ($0.childTerminalId == sessionID || $0.attachSessionId == sessionID)
-           }) {
-            lock.unlock()
+        enum Reservation {
+            case occupied, replayed(Task)
+            case blocked(OrchestratorDraft.ClaimsOverlap)
+            case reserved([OrchestratorDraft.ClaimsOverlap])
+        }
+        let reservation = OrchestratorRegistry.withTaskRecords { records -> Reservation in
+            if let existing = records.task(taskID) { return .replayed(existing) }
+            if let sessionID = made.attachSessionId,
+               records.taskValues().contains(where: {
+                   $0.id != taskID && !$0.state.isTerminal
+                       && ($0.childTerminalId == sessionID || $0.attachSessionId == sessionID)
+               }) {
+                return .occupied
+            }
+            let overlaps = records.claimsOverlaps(for: task)
+            if let blocker = overlaps.first(where: \.blocks) { return .blocked(blocker) }
+            records.admitTask(task)
+            records.sessionRecords.setTaskSecret(secret, for: taskID)
+            return .reserved(overlaps)
+        }
+        let claimsOverlaps: [OrchestratorDraft.ClaimsOverlap]
+        switch reservation {
+        case .replayed(let existing):
+            refundDispatchRate(rateTicket); return successfulDispatchReply(for: existing)
+        case .occupied:
             refundDispatchRate(rateTicket)
             return .refused(409, "attach_session_occupied",
                             "That session already has a live Clawdline task.")
-        }
-        let claimsOverlaps = claimsOverlapsLocked(for: task)
-        if let blocker = claimsOverlaps.first(where: \.blocks) {
-            lock.unlock()
+        case .blocked(let blocker):
             refundDispatchRate(rateTicket)
             RemoteAuth.audit("orchestrator.claims.blocked", [
                 "task": taskID,
@@ -4051,10 +4037,9 @@ enum Orchestrator {
             return .refused(status: 409, code: "workspace_busy",
                             message: "Another dispatch tree has reserved a path this task claims.",
                             extra: OrchestratorDraft.workspaceBusyExtra(blocker))
+        case .reserved(let overlaps):
+            claimsOverlaps = overlaps
         }
-        tasks[taskID] = task
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setTaskSecret(secret, for: taskID) }
-        lock.unlock()
         ProjectBoardIntegration.observe(ledgerRecord(of: task))
         RemoteAuth.audit("orchestrator.dispatch", ["task": taskID, "assistant": made.assistant.rawValue,
                                                    "cwd": made.projectDir, "kind": made.kind,
@@ -4246,9 +4231,9 @@ enum Orchestrator {
     /// retry is not counted — the count is over what is still known, exactly as the chain is.
     private static func respawnFamily(of task: Task) -> (original: String, descendants: Int) {
         load()
-        lock.lock()
-        let parents = tasks.mapValues(\.respawnOf)
-        lock.unlock()
+        let parents = OrchestratorRegistry.withTaskRecords { records in
+            records.tasksByID().mapValues(\.respawnOf)
+        }
         // `parents[id]` is doubly optional on purpose: `.some(nil)` is a held original, `nil` is a
         // task the registry has forgotten, and only the first may be walked through.
         func originOf(_ id: String) -> String {
@@ -4305,9 +4290,9 @@ enum Orchestrator {
         if let claimsOverlaps {
             claimWarnings = claimsOverlaps
         } else {
-            lock.lock()
-            claimWarnings = claimsOverlapsLocked(for: task)
-            lock.unlock()
+            claimWarnings = OrchestratorRegistry.withTaskRecords { records in
+                records.claimsOverlaps(for: task)
+            }
         }
         return .ok(OrchestratorDraft.dispatchPayload(
             record: record, taskID: task.id, overlaps: overlaps,
@@ -4445,14 +4430,17 @@ enum Orchestrator {
     /// makes a crash fail closed: startup will not open a second tab for an operation that may
     /// already have crossed the external side-effect boundary.
     private static func startQueuedTaskIfEligible(_ id: String) -> Task? {
-        lock.lock()
-        guard let snapshot = tasks[id], snapshot.state == .queued,
-              serializeBlockersLocked(for: snapshot).isEmpty else {
-            lock.unlock()
-            return nil
+        let eligible = OrchestratorRegistry.withTaskRecords { records
+            -> (snapshot: Task, secret: String?)? in
+            guard let snapshot = records.task(id), snapshot.state == .queued,
+                  records.serializeBlockers(for: snapshot).isEmpty else {
+                return nil
+            }
+            return (snapshot, records.sessionRecords.taskSecret(for: id))
         }
-        let inMemorySecret = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.taskSecret(for: id) }
-        lock.unlock()
+        guard let eligible else { return nil }
+        let snapshot = eligible.snapshot
+        let inMemorySecret = eligible.secret
 
         let clear = inMemorySecret ?? snapshot.queuedSecret.flatMap(openQueuedSecret)
         guard let clear,
@@ -4466,17 +4454,18 @@ enum Orchestrator {
             return held(id)
         }
 
-        lock.lock()
-        guard var starting = tasks[id], starting.state == .queued,
-              serializeBlockersLocked(for: starting).isEmpty else {
-            lock.unlock()
-            return nil
+        let promoted = OrchestratorRegistry.withTaskRecords { records -> Task? in
+            guard var starting = records.task(id), starting.state == .queued,
+                  records.serializeBlockers(for: starting).isEmpty else {
+                return nil
+            }
+            starting.state = .spawning
+            starting.queuedSecret = nil
+            records.commitTask(starting)
+            records.sessionRecords.setTaskSecret(clear, for: id)
+            return starting
         }
-        starting.state = .spawning
-        starting.queuedSecret = nil
-        tasks[id] = starting
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setTaskSecret(clear, for: id) }
-        lock.unlock()
+        guard let starting = promoted else { return nil }
         save()
 
         // A queued task has not touched the workspace and is excluded from L1. Promotion is the
@@ -4507,15 +4496,15 @@ enum Orchestrator {
     private static func pumpSerializeQueue() -> Bool {
         var changed = false
         while true {
-            lock.lock()
-            let next = tasks.values
-                .filter { $0.state == .queued && !$0.serialize.isEmpty }
-                .sorted {
-                    if $0.created == $1.created { return $0.id < $1.id }
-                    return $0.created < $1.created
-                }
-                .first { serializeBlockersLocked(for: $0).isEmpty }
-            lock.unlock()
+            let next = OrchestratorRegistry.withTaskRecords { records -> Task? in
+                records.taskValues()
+                    .filter { $0.state == .queued && !$0.serialize.isEmpty }
+                    .sorted {
+                        if $0.created == $1.created { return $0.id < $1.id }
+                        return $0.created < $1.created
+                    }
+                    .first { records.serializeBlockers(for: $0).isEmpty }
+            }
             guard let next else { break }
             guard startQueuedTaskIfEligible(next.id) != nil else { continue }
             changed = true
@@ -4537,9 +4526,9 @@ enum Orchestrator {
                 _ = pumpSerializeQueue()
             }
             if !admitted {
-                lock.lock()
-                let waiting = tasks.values.contains { $0.state == .queued && !$0.serialize.isEmpty }
-                lock.unlock()
+                let waiting = OrchestratorRegistry.withTaskRecords { records in
+                    records.taskValues().contains { $0.state == .queued && !$0.serialize.isEmpty }
+                }
                 if waiting {
                     serializePumpQueue.asyncAfter(deadline: .now() + 0.25) {
                         scheduleSerializePump()
@@ -4576,8 +4565,9 @@ enum Orchestrator {
     }
 
     private static func activeCount() -> Int {
-        lock.lock(); defer { lock.unlock() }
-        return tasks.values.filter { !$0.state.isTerminal && !$0.sessionRoot }.count
+        OrchestratorRegistry.withTaskRecords { records in
+            records.taskValues().filter { !$0.state.isTerminal && !$0.sessionRoot }.count
+        }
     }
 
     struct CoordinatorSessionObservation {
@@ -4747,12 +4737,13 @@ enum Orchestrator {
         ]
     }
 
-    private static func pendingLandingRecordsLocked(
+    private static func pendingLandingRecords(
+        in records: OrchestratorRegistry.TaskRecordsTransaction,
         sessions: [LandingSessionFact], sessionsFresh: Bool, sessionsObservedAt: Date?,
         sessionsGeneration: Int?, registryObservedAt: Date, now: Date
     ) -> [[String: Any]] {
-        let indexed = tasks
-        return tasks.values.compactMap { task -> [String: Any]? in
+        let indexed = records.tasksByID()
+        return indexed.values.compactMap { task -> [String: Any]? in
             guard let landing = task.landing, landing.state == .pending else { return nil }
             let root = OrchestratorDraft.rootTask(of: task, among: indexed)
             return [
@@ -4791,37 +4782,38 @@ enum Orchestrator {
                                     sessionsGeneration: Int? = nil,
                                     now: Date = Date()) -> CoordinatorSnapshot {
         load()
-        lock.lock(); defer { lock.unlock() }
-        let sessionFacts = observations.map { observation -> CoordinatorSessionFacts in
-            let work = observation.projectedWorkState.map {
-                SessionWorkProjection(state: $0, disposition: nil)
-            } ?? sessionWorkProjectionLocked(
-                identity: observation.identity, terminalState: observation.terminalState)
-            return CoordinatorSessionFacts(
-                work: work,
-                coordination: coordinationLocked(forTerminal: observation.identity.terminalID))
+        return OrchestratorRegistry.withTaskRecords { records -> CoordinatorSnapshot in
+            let sessionFacts = observations.map { observation -> CoordinatorSessionFacts in
+                let work = observation.projectedWorkState.map {
+                    SessionWorkProjection(state: $0, disposition: nil)
+                } ?? sessionWorkProjection(
+                    identity: observation.identity, terminalState: observation.terminalState,
+                    in: records)
+                return CoordinatorSessionFacts(
+                    work: work,
+                    coordination: coordinationFacts(
+                        forTerminal: observation.identity.terminalID, in: records))
+            }
+            let landingSessions = zip(observations, sessionFacts).map {
+                LandingSessionFact(identity: $0.0.identity, workState: $0.1.work.state)
+            }
+            let pendingRows = pendingLandingRecords(
+                in: records, sessions: landingSessions, sessionsFresh: sessionsFresh,
+                sessionsObservedAt: sessionsObservedAt, sessionsGeneration: sessionsGeneration,
+                registryObservedAt: now, now: now)
+            return CoordinatorSnapshot(
+                observedAt: now,
+                sessions: sessionFacts,
+                activeTasks: records.taskValues().filter { !$0.state.isTerminal }.count,
+                pendingLandings: pendingRows.count,
+                pendingLandingRows: pendingRows,
+                landingSources: landingSources(
+                    sessionsFresh: sessionsFresh, sessionsObservedAt: sessionsObservedAt,
+                    sessionsGeneration: sessionsGeneration, registryObservedAt: now),
+                openWaits: records.coordinationRecords.coordinationWaits().filter { wait in
+                    wait.waiters.contains { $0.releaseDeliveredAt == nil }
+                }.count)
         }
-        let landingSessions = zip(observations, sessionFacts).map {
-            LandingSessionFact(identity: $0.0.identity, workState: $0.1.work.state)
-        }
-        let pendingRows = pendingLandingRecordsLocked(
-            sessions: landingSessions, sessionsFresh: sessionsFresh,
-            sessionsObservedAt: sessionsObservedAt, sessionsGeneration: sessionsGeneration,
-            registryObservedAt: now, now: now)
-        return CoordinatorSnapshot(
-            observedAt: now,
-            sessions: sessionFacts,
-            activeTasks: tasks.values.filter { !$0.state.isTerminal }.count,
-            pendingLandings: pendingRows.count,
-            pendingLandingRows: pendingRows,
-            landingSources: landingSources(
-                sessionsFresh: sessionsFresh, sessionsObservedAt: sessionsObservedAt,
-                sessionsGeneration: sessionsGeneration, registryObservedAt: now),
-            openWaits: OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-                $0.coordinationWaits()
-            }.filter { wait in
-                wait.waiters.contains { $0.releaseDeliveredAt == nil }
-            }.count)
     }
 
     /// The live tasks already dispatched by whoever is asking now.
@@ -4831,13 +4823,14 @@ enum Orchestrator {
     /// particular, and shares a bucket with every other anonymous one — which is the right answer
     /// for a caller that declined to say who it is, and the ceiling covers the rest.
     private static func activeCount(dispatchedBy session: String?, parentTask: String?) -> Int {
-        lock.lock(); defer { lock.unlock() }
-        return tasks.values.filter { task in
-            guard !task.state.isTerminal, !task.sessionRoot else { return false }
-            if let parentTask, task.parentTaskId == parentTask { return true }
-            if let session { return task.rootSessionId == session }
-            return task.rootSessionId == nil && task.parentTaskId == nil
-        }.count
+        OrchestratorRegistry.withTaskRecords { records -> Int in
+            records.taskValues().filter { task in
+                guard !task.state.isTerminal, !task.sessionRoot else { return false }
+                if let parentTask, task.parentTaskId == parentTask { return true }
+                if let session { return task.rootSessionId == session }
+                return task.rootSessionId == nil && task.parentTaskId == nil
+            }.count
+        }
     }
 
     /// The depth a task dispatched right now would sit at: one below its parent, or 1 when the
@@ -4848,14 +4841,15 @@ enum Orchestrator {
     /// gets one of them wrong — or invents one — can only end up further down, never nearer the
     /// top, so the mistake costs it capacity instead of buying any.
     private static func depthOfNew(parentTask: String?, rootSession: String?) -> Int {
-        lock.lock(); defer { lock.unlock() }
-        var parent = 0
-        for task in tasks.values where !task.state.isTerminal {
-            let isParent = (parentTask != nil && task.id == parentTask)
-                || (rootSession != nil && task.childSessionId == rootSession)
-            if isParent { parent = max(parent, task.sessionRoot ? 0 : task.depth) }
+        OrchestratorRegistry.withTaskRecords { records -> Int in
+            var parent = 0
+            for task in records.taskValues() where !task.state.isTerminal {
+                let isParent = (parentTask != nil && task.id == parentTask)
+                    || (rootSession != nil && task.childSessionId == rootSession)
+                if isParent { parent = max(parent, task.sessionRoot ? 0 : task.depth) }
+            }
+            return parent + 1
         }
-        return parent + 1
     }
 
     // MARK: - Completion over HTTP
@@ -5037,11 +5031,10 @@ enum Orchestrator {
     }
 
     private static func refundAgentNotify(taskID: String?, ticket: Date) {
-        OrchestratorRegistry.withTransaction { registry in
-            registry.refundNotificationRate(ticket)
-            if let taskID, var task = tasks[taskID] {
-                task.notifyCount = max(0, task.notifyCount - 1)
-                tasks[taskID] = task
+        OrchestratorRegistry.withTaskRecords { records in
+            records.registry.refundNotificationRate(ticket)
+            if let taskID {
+                records.updateTask(taskID) { $0.notifyCount = max(0, $0.notifyCount - 1) }
             }
         }
         if taskID != nil { save() }
@@ -5106,8 +5099,9 @@ enum Orchestrator {
                             "No device has asked for notifications yet.")
         }
 
-        let admission = OrchestratorRegistry.withTransaction { registry -> AgentNotifyAdmission in
-            guard var current = tasks[taskID] else {
+        let admission = OrchestratorRegistry.withTaskRecords { records -> AgentNotifyAdmission in
+            let registry = records.registry
+            guard var current = records.task(taskID) else {
                 return .refused("not_found", .refused(404, "not_found", "No task named that"))
             }
             if current.state.isTerminal,
@@ -5127,7 +5121,7 @@ enum Orchestrator {
                     "Too many agent notifications; wait for the hourly window."))
             }
             current.notifyCount += 1
-            tasks[taskID] = current
+            records.commitTask(current)
             return .admitted(current, ticket)
         }
         let current: Task
@@ -5273,9 +5267,9 @@ enum Orchestrator {
         }
         let newlyReleased = requested.subtracting(alreadyReleased).sorted()
         if !newlyReleased.isEmpty {
-            var updated = task
-            updated.releasedClaims += newlyReleased.map { ReleasedClaim(path: $0, releasedAt: now) }
-            guard replaceTask(updated, expecting: task.state) else {
+            guard OrchestratorRegistry.withTaskRecords({
+                $0.releaseClaims(taskID, expecting: task.state, newlyReleased, at: now)
+            }) else {
                 return .refused(409, "already_done", "That task already finished.")
             }
             save()
@@ -5354,107 +5348,134 @@ enum Orchestrator {
             ? OrchestratorLandingQueue.retainedLandingPaths() : [:]
 
         load()
-        lock.lock()
-        guard var current = tasks[taskID] else {
-            lock.unlock()
-            return .refused(404, "not_found", "No task named that")
+        // What the first hold decided. Every refusal, the replay and the declaration are decided
+        // and written under the lock; their audit, ledger, save and broadcast run after it.
+        enum LandingAdmission {
+            case answered(Reply)
+            case replayed(Task)
+            case conflicted(field: String, reply: Reply)
+            case declared(Task)
+            case verifying(expectedState: State, expectedLanding: Landing?, task: Task,
+                           evidence: [Task], commit: String, target: String)
         }
-        let existing = current.landing
-        if let settledLanding = existing, settledLanding.state == .landed,
-           requestedState == .landed {
-            switch landingResend(existing: settledLanding, requested: fields) {
-            case .replay:
-                let settled = current
-                lock.unlock()
-                // **The idempotent re-send is the only door left for a landing recorded before
-                // this wiring existed.** Such a record is in the registry and not on its ledger
-                // row, and the write-back below runs on the paths that *change* the landing —
-                // which this one, by definition, does not. Without this line the row waits for
-                // the next launch's backfill, which is exactly the wait this feature was built to
-                // remove. What has changed is only which resends reach it: one that contradicts
-                // nothing, rather than every resend whatever it said.
-                recordLandingInLedger(settled)
-                return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
-            case .conflict(let field, let stored, let requested):
-                lock.unlock()
-                RemoteAuth.audit("orchestrator.landing", [
-                    "task": taskID, "ok": "0", "why": "landing_conflict", "field": field,
-                ])
-                return .refused(
-                    status: 409, code: "landing_conflict",
-                    message: "This obligation is already settled with a different \(field). A "
-                        + "landing aimed somewhere else is another claim rather than a correction "
-                        + "of this one; record it against its own task.",
-                    extra: ["field": field, "stored": stored, "requested": requested])
-            case .correction:
-                // **Durable is not the same as unamendable, and the lie was never the
-                // immutability.** What the early return protects is a replay, which applies no
-                // write; a resend that disagrees *is* a write, and the two honest answers to a
-                // write are "applied" and "refused". Being told `ok` for neither is how a record
-                // on this machine came to name another task's commit permanently — its root
-                // tried to correct it and was told it had worked.
-                //
-                // So a correction falls through to the gate the first landing passed and is held
-                // to exactly it: the same target, and a commit this broker resolves in the task's
-                // own repository and proves contained by that target. It carries the evidence the
-                // original assertion carried and more recency, while the state machine below
-                // stays closed — a settled obligation still cannot become another state. What it
-                // replaced comes back as `corrected_from` and goes to the audit log, so an
-                // amendment is a visible act rather than a silent overwrite.
-                break
+        let admission = OrchestratorRegistry.withTaskRecords { records -> LandingAdmission in
+            guard var current = records.task(taskID) else {
+                return .answered(.refused(404, "not_found", "No task named that"))
             }
-        }
-        if let existing, existing.state.isSettled, existing.state != requestedState {
-            lock.unlock()
-            return .refused(409, "invalid_transition",
-                            "A settled obligation cannot move to another state; open a new task.")
-        }
-        if requestedState != .pending, !current.state.isTerminal {
-            lock.unlock()
-            return .refused(409, "not_terminal",
-                            "Only a terminal task can settle its landing obligation.")
-        }
-        // The evidence gate for the state a read-only delivery needs. It is a refusal built out
-        // of what the registry holds, and `nothingToLandAdmission` says what it can and cannot
-        // see; the assertion itself is the machine credential's.
-        if requestedState == .nothingToLand,
-           case .refused(let why) = nothingToLandAdmission(
-            for: current,
-            declaredWritePaths: OrchestratorLandingQueue.landingPaths(
-                of: current, retainedPaths: retainedPaths)) {
-            lock.unlock()
-            return .refused(409, "wrote_to_repository",
-                            "nothing_to_land says this task wrote nothing to land, and \(why).")
-        }
-        if requestedState == .landed, fields["commit"] == nil {
-            lock.unlock()
-            return .refused(400, "bad_request", "commit is required when state is landed.")
-        }
+            let existing = current.landing
+            if let settledLanding = existing, settledLanding.state == .landed,
+               requestedState == .landed {
+                switch landingResend(existing: settledLanding, requested: fields) {
+                case .replay:
+                    return .replayed(current)
+                case .conflict(let field, let stored, let requested):
+                    return .conflicted(field: field, reply: .refused(
+                        status: 409, code: "landing_conflict",
+                        message: "This obligation is already settled with a different \(field). A "
+                            + "landing aimed somewhere else is another claim rather than a "
+                            + "correction of this one; record it against its own task.",
+                        extra: ["field": field, "stored": stored, "requested": requested]))
+                case .correction:
+                    // **Durable is not the same as unamendable, and the lie was never the
+                    // immutability.** What the early return protects is a replay, which applies
+                    // no write; a resend that disagrees *is* a write, and the two honest answers
+                    // to a write are "applied" and "refused". Being told `ok` for neither is how a
+                    // record on this machine came to name another task's commit permanently — its
+                    // root tried to correct it and was told it had worked.
+                    //
+                    // So a correction falls through to the gate the first landing passed and is
+                    // held to exactly it: the same target, and a commit this broker resolves in
+                    // the task's own repository and proves contained by that target. It carries
+                    // the evidence the original assertion carried and more recency, while the
+                    // state machine below stays closed — a settled obligation still cannot become
+                    // another state. What it replaced comes back as `corrected_from` and goes to
+                    // the audit log, so an amendment is a visible act rather than a silent
+                    // overwrite.
+                    break
+                }
+            }
+            if let existing, existing.state.isSettled, existing.state != requestedState {
+                return .answered(.refused(
+                    409, "invalid_transition",
+                    "A settled obligation cannot move to another state; open a new task."))
+            }
+            if requestedState != .pending, !current.state.isTerminal {
+                return .answered(.refused(
+                    409, "not_terminal", "Only a terminal task can settle its landing obligation."))
+            }
+            // The evidence gate for the state a read-only delivery needs. It is a refusal built
+            // out of what the registry holds, and `nothingToLandAdmission` says what it can and
+            // cannot see; the assertion itself is the machine credential's.
+            if requestedState == .nothingToLand,
+               case .refused(let why) = nothingToLandAdmission(
+                for: current,
+                declaredWritePaths: OrchestratorLandingQueue.landingPaths(
+                    of: current, retainedPaths: retainedPaths)) {
+                return .answered(.refused(
+                    409, "wrote_to_repository",
+                    "nothing_to_land says this task wrote nothing to land, and \(why)."))
+            }
+            if requestedState == .landed, fields["commit"] == nil {
+                return .answered(.refused(400, "bad_request",
+                                          "commit is required when state is landed."))
+            }
 
-        let target = fields["target"] ?? existing?.target
-        if requestedState == .landed, target == nil {
-            lock.unlock()
-            return .refused(400, "bad_request",
-                            "target is required when state is landed.")
+            let target = fields["target"] ?? existing?.target
+            if requestedState == .landed, target == nil {
+                return .answered(.refused(400, "bad_request",
+                                          "target is required when state is landed."))
+            }
+
+            // Pending, abandoned and nothing_to_land are declarations, not verification claims;
+            // they retain the existing state-machine behaviour and never persist
+            // verification-shaped fields.
+            if requestedState != .landed {
+                current.landing = Landing(
+                    state: requestedState,
+                    target: target,
+                    delivery: fields["delivery"] ?? existing?.delivery,
+                    ownerRootKey: existing?.ownerRootKey
+                        ?? OrchestratorDraft.rootKeyDigest(records.rootKey(of: current)),
+                    since: existing?.since ?? now,
+                    commit: nil,
+                    note: fields["note"] ?? existing?.note,
+                    landedAt: nil)
+                records.commitTask(current)
+                return .declared(current)
+            }
+
+            // Git subprocesses must not hold the registry lock. Remember exactly the landing
+            // state they verify; the equality check after the subprocesses is the CAS preventing
+            // a concurrent pending edit from being overwritten with evidence for its old target.
+            return .verifying(expectedState: current.state, expectedLanding: existing,
+                              task: current, evidence: records.taskValues(),
+                              commit: fields["commit"]!, target: target!)
         }
-
-        // Pending, abandoned and nothing_to_land are declarations, not verification claims; they
-        // retain the existing state-machine behaviour and never persist verification-shaped
-        // fields.
-        if requestedState != .landed {
-            current.landing = Landing(
-                state: requestedState,
-                target: target,
-                delivery: fields["delivery"] ?? existing?.delivery,
-                ownerRootKey: existing?.ownerRootKey
-                    ?? OrchestratorDraft.rootKeyDigest(rootKeyLocked(of: current)),
-                since: existing?.since ?? now,
-                commit: nil,
-                note: fields["note"] ?? existing?.note,
-                landedAt: nil)
-            tasks[taskID] = current
-            lock.unlock()
-
+        let expectedState: State
+        let expectedLanding: Landing?
+        let repositoryTask: Task
+        let repositoryEvidence: [Task]
+        let requestedCommit: String
+        let requestedTarget: String
+        switch admission {
+        case .answered(let reply):
+            return reply
+        case .replayed(let settled):
+            // **The idempotent re-send is the only door left for a landing recorded before this
+            // wiring existed.** Such a record is in the registry and not on its ledger row, and
+            // the write-back below runs on the paths that *change* the landing — which this one,
+            // by definition, does not. Without this line the row waits for the next launch's
+            // backfill, which is exactly the wait this feature was built to remove. What has
+            // changed is only which resends reach it: one that contradicts nothing, rather than
+            // every resend whatever it said.
+            recordLandingInLedger(settled)
+            return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        case .conflicted(let field, let reply):
+            RemoteAuth.audit("orchestrator.landing", [
+                "task": taskID, "ok": "0", "why": "landing_conflict", "field": field,
+            ])
+            return reply
+        case .declared(let current):
             save()
             RemoteServer.shared.broadcastOrchestrator()
             RemoteAuth.audit("orchestrator.landing", [
@@ -5463,18 +5484,15 @@ enum Orchestrator {
             ])
             recordLandingInLedger(current)
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        case .verifying(let state, let landing, let task, let evidence, let commit, let target):
+            expectedState = state
+            expectedLanding = landing
+            repositoryTask = task
+            repositoryEvidence = evidence
+            requestedCommit = commit
+            requestedTarget = target
         }
-
-        // Git subprocesses must not hold the registry lock. Remember exactly the landing state
-        // they verify; the equality check after the subprocesses is the CAS preventing a
-        // concurrent pending edit from being overwritten with evidence for its old target.
-        let expectedState = current.state
-        let expectedLanding = existing
-        let repositoryTask = current
-        let repositoryEvidence = Array(tasks.values)
-        let requestedCommit = fields["commit"]!
-        let requestedTarget = target!
-        lock.unlock()
+        let existing = expectedLanding
 
         guard let repositoryIdentity = OrchestratorDraft.landingGitDirectory(
                 for: repositoryTask, among: repositoryEvidence),
@@ -5496,59 +5514,70 @@ enum Orchestrator {
         resolvedFields["commit"] = verification.commit
         resolvedFields["target"] = requestedTarget
 
-        lock.lock()
-        guard var verifiedCurrent = tasks[taskID] else {
-            lock.unlock()
-            return .refused(404, "not_found", "No task named that")
+        enum VerifiedLanding {
+            case answered(Reply)
+            case replayed(Task)
+            case landed(Task)
         }
-        if let raced = verifiedCurrent.landing, raced.state == .landed,
-           verifiedCurrent.landing != expectedLanding {
-            let settled = verifiedCurrent
-            let reading = landingResend(existing: raced, requested: resolvedFields)
-            lock.unlock()
-            // The same door, reached by the race rather than by a re-send: another caller landed
-            // it while these subprocesses ran. Its record is the one that stands and this write
-            // was not applied — which is `ok` only where what stands says the same thing. Then
-            // the write-back is that caller's, and a second one of the same record changes
-            // nothing: `collect(taskRecord:)` is keyed by interval.
-            if case .replay = reading {
-                recordLandingInLedger(settled)
-                return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        let committed = OrchestratorRegistry.withTaskRecords { records -> VerifiedLanding in
+            guard var verifiedCurrent = records.task(taskID) else {
+                return .answered(.refused(404, "not_found", "No task named that"))
             }
-            return .refused(
-                status: 409, code: "landing_conflict",
-                message: "Another caller settled this landing while this one was being verified, "
-                    + "and it says something else. Read the record before resending.",
-                extra: ["field": "commit", "stored": raced.commit ?? "",
-                        "requested": verification.commit])
-        }
-        guard verifiedCurrent.state == expectedState,
-              verifiedCurrent.landing == expectedLanding else {
-            lock.unlock()
-            return .refused(409, "stale_write",
-                            "The landing changed while its target was being verified; retry.")
-        }
+            if let raced = verifiedCurrent.landing, raced.state == .landed,
+               verifiedCurrent.landing != expectedLanding {
+                // The same door, reached by the race rather than by a re-send: another caller
+                // landed it while these subprocesses ran. Its record is the one that stands and
+                // this write was not applied — which is `ok` only where what stands says the same
+                // thing. Then the write-back is that caller's, and a second one of the same record
+                // changes nothing: `collect(taskRecord:)` is keyed by interval.
+                if case .replay = landingResend(existing: raced, requested: resolvedFields) {
+                    return .replayed(verifiedCurrent)
+                }
+                return .answered(.refused(
+                    status: 409, code: "landing_conflict",
+                    message: "Another caller settled this landing while this one was being "
+                        + "verified, and it says something else. Read the record before resending.",
+                    extra: ["field": "commit", "stored": raced.commit ?? "",
+                            "requested": verification.commit]))
+            }
+            guard verifiedCurrent.state == expectedState,
+                  verifiedCurrent.landing == expectedLanding else {
+                return .answered(.refused(
+                    409, "stale_write",
+                    "The landing changed while its target was being verified; retry."))
+            }
 
-        // A correction re-proves the target now, so the landing time moves with the evidence —
-        // unless the evidence is the same commit and only an annotation changed, where the
-        // landing time is still the time this work landed.
-        let landedAt = existing?.verifiedCommit == verification.commit
-            ? (existing?.landedAt ?? now) : now
-        verifiedCurrent.landing = Landing(
-            state: .landed,
-            target: requestedTarget,
-            delivery: fields["delivery"] ?? existing?.delivery,
-            ownerRootKey: existing?.ownerRootKey
-                ?? OrchestratorDraft.rootKeyDigest(rootKeyLocked(of: verifiedCurrent)),
-            since: existing?.since ?? now,
-            commit: verification.commit,
-            note: fields["note"] ?? existing?.note,
-            landedAt: landedAt,
-            verificationOrigin: verification.origin,
-            verifiedCommit: verification.commit,
-            verifiedTargetCommit: verification.targetCommit)
-        tasks[taskID] = verifiedCurrent
-        lock.unlock()
+            // A correction re-proves the target now, so the landing time moves with the evidence
+            // — unless the evidence is the same commit and only an annotation changed, where the
+            // landing time is still the time this work landed.
+            let landedAt = existing?.verifiedCommit == verification.commit
+                ? (existing?.landedAt ?? now) : now
+            verifiedCurrent.landing = Landing(
+                state: .landed,
+                target: requestedTarget,
+                delivery: fields["delivery"] ?? existing?.delivery,
+                ownerRootKey: existing?.ownerRootKey
+                    ?? OrchestratorDraft.rootKeyDigest(records.rootKey(of: verifiedCurrent)),
+                since: existing?.since ?? now,
+                commit: verification.commit,
+                note: fields["note"] ?? existing?.note,
+                landedAt: landedAt,
+                verificationOrigin: verification.origin,
+                verifiedCommit: verification.commit,
+                verifiedTargetCommit: verification.targetCommit)
+            records.commitTask(verifiedCurrent)
+            return .landed(verifiedCurrent)
+        }
+        let verifiedCurrent: Task
+        switch committed {
+        case .answered(let reply):
+            return reply
+        case .replayed(let settled):
+            recordLandingInLedger(settled)
+            return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        case .landed(let landed):
+            verifiedCurrent = landed
+        }
 
         save()
         RemoteServer.shared.broadcastOrchestrator()
@@ -5579,10 +5608,11 @@ enum Orchestrator {
     /// gate: reading or ignoring it changes no claim and blocks no dispatch.
     static func landingRecords(now: Date = Date()) -> [[String: Any]] {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return pendingLandingRecordsLocked(
-            sessions: [], sessionsFresh: false, sessionsObservedAt: nil,
-            sessionsGeneration: nil, registryObservedAt: now, now: now)
+        return OrchestratorRegistry.withTaskRecords { records in
+            pendingLandingRecords(
+                in: records, sessions: [], sessionsFresh: false, sessionsObservedAt: nil,
+                sessionsGeneration: nil, registryObservedAt: now, now: now)
+        }
     }
 
     // MARK: - Owned storage inventory
@@ -5604,9 +5634,7 @@ enum Orchestrator {
             ]
         }
 
-        lock.lock()
-        let taskSnapshot = tasks
-        lock.unlock()
+        let taskSnapshot = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
         let registryReadable: Bool = {
             guard let data = try? Data(contentsOf: storeURL),
                   let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
@@ -5833,9 +5861,9 @@ enum Orchestrator {
                                 branches: RepositoryBranches,
                                 excluding excluded: String? = nil) -> [[String: Any]] {
         load()
-        lock.lock()
-        let all = tasks.values.sorted { $0.created > $1.created }
-        lock.unlock()
+        let all = OrchestratorRegistry.withTaskRecords { records in
+            records.taskValues().sorted { $0.created > $1.created }
+        }
         let prefix = repository.hasSuffix("/") ? repository : repository + "/"
         return all.compactMap { task -> [String: Any]? in
             guard task.id != excluded else { return nil }
@@ -5971,23 +5999,27 @@ enum Orchestrator {
         }
 
         load()
-        lock.lock()
-        guard var current = tasks[taskID] else {
-            lock.unlock()
+        enum ProgressWrite { case missing, repeated, appended }
+        let write = OrchestratorRegistry.withTaskRecords { records -> ProgressWrite in
+            guard var current = records.task(taskID) else { return .missing }
+            // The same sentence twice is a loop, not news. Refusing it costs the caller nothing
+            // and keeps a retrying script from rewriting the registry to disk every second.
+            if current.progress.last?.note == note { return .repeated }
+            current.progress.append(ProgressNote(note: note, at: now))
+            if current.progress.count > progressKept {
+                current.progress.removeFirst(current.progress.count - progressKept)
+            }
+            records.commitTask(current)
+            return .appended
+        }
+        switch write {
+        case .missing:
             return .refused(404, "not_found", "No task named that")
-        }
-        // The same sentence twice is a loop, not news. Refusing it costs the caller nothing and
-        // keeps a retrying script from rewriting the registry to disk every second.
-        if current.progress.last?.note == note {
-            lock.unlock()
+        case .repeated:
             return .ok(["ok": true, "task": existingRecord(taskID) ?? [:]])
+        case .appended:
+            break
         }
-        current.progress.append(ProgressNote(note: note, at: now))
-        if current.progress.count > progressKept {
-            current.progress.removeFirst(current.progress.count - progressKept)
-        }
-        tasks[taskID] = current
-        lock.unlock()
 
         save()
         RemoteServer.shared.broadcastOrchestrator()
@@ -6052,23 +6084,25 @@ enum Orchestrator {
             return false
         }
         guard note != task.progressFileNote else { return false }
-        lock.lock()
-        guard var current = tasks[task.id], !current.state.isTerminal,
-              current.progressFileNote != note else {
-            lock.unlock()
-            return false
-        }
-        current.progressFileNote = note
-        // The same sentence as the newest note is the other channel delivering the same news.
-        if current.progress.last?.note != note {
-            current.progress.append(ProgressNote(note: note, at: Date()))
-            if current.progress.count > progressKept {
-                current.progress.removeFirst(current.progress.count - progressKept)
+        let taskID = task.id
+        let collected = OrchestratorRegistry.withTaskRecords { records -> Task? in
+            guard var current = records.task(taskID), !current.state.isTerminal,
+                  current.progressFileNote != note else {
+                return nil
             }
+            current.progressFileNote = note
+            // The same sentence as the newest note is the other channel delivering the same news.
+            if current.progress.last?.note != note {
+                current.progress.append(ProgressNote(note: note, at: Date()))
+                if current.progress.count > progressKept {
+                    current.progress.removeFirst(current.progress.count - progressKept)
+                }
+            }
+            records.commitTask(current)
+            return current
         }
-        tasks[task.id] = current
-        lock.unlock()
-        task = current
+        guard let collected else { return false }
+        task = collected
         save()
         RemoteServer.shared.broadcastOrchestrator()
         RemoteAuth.audit("orchestrator.progress", ["task": task.id, "ok": "1", "via": "file"])
@@ -6088,12 +6122,11 @@ enum Orchestrator {
         let finish: (TerminalIntervention?) -> Void = { intervention in
             DispatchQueue.main.async {
                 if intervention != nil {
-                    lock.lock()
-                    if var retained = tasks[task.id], !retained.state.isTerminal {
-                        retained.sessionRoot = true
-                        tasks[task.id] = retained
+                    OrchestratorRegistry.withTaskRecords { records in
+                        guard let retained = records.task(task.id),
+                              !retained.state.isTerminal else { return }
+                        records.updateTask(task.id) { $0.sessionRoot = true }
                     }
-                    lock.unlock()
                 }
                 finalize(task.id, as: .cancelled, summary: "Cancelled.")
                 if let intervention, var current = held(task.id) {
@@ -6147,14 +6180,15 @@ enum Orchestrator {
     /// has for a tab.
     static func liveTasks(dispatchedBy rootSessionId: String) -> [String] {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return tasks.values
-            .filter {
-                !$0.state.isTerminal && !$0.sessionRoot
-                    && $0.rootSessionId == rootSessionId
-            }
-            .sorted { $0.created < $1.created }
-            .map { $0.id }
+        return OrchestratorRegistry.withTaskRecords { records -> [String] in
+            records.taskValues()
+                .filter {
+                    !$0.state.isTerminal && !$0.sessionRoot
+                        && $0.rootSessionId == rootSessionId
+                }
+                .sorted { $0.created < $1.created }
+                .map { $0.id }
+        }
     }
 
     /// The finished tasks a root dispatched that still name a child tab, oldest first.
@@ -6174,14 +6208,15 @@ enum Orchestrator {
     /// the tab has gone, or has become somebody else's since.
     static func lingeringTasks(dispatchedBy rootSessionId: String) -> [String] {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return tasks.values
-            .filter { $0.state.isTerminal && $0.childTerminalId != nil
-                        && $0.attachSessionId == nil
-                        && !$0.sessionRoot
-                        && $0.rootSessionId == rootSessionId }
-            .sorted { $0.created < $1.created }
-            .map { $0.id }
+        return OrchestratorRegistry.withTaskRecords { records -> [String] in
+            records.taskValues()
+                .filter { $0.state.isTerminal && $0.childTerminalId != nil
+                            && $0.attachSessionId == nil
+                            && !$0.sessionRoot
+                            && $0.rootSessionId == rootSessionId }
+                .sorted { $0.created < $1.created }
+                .map { $0.id }
+        }
     }
 
     /// The live tasks dispatched from inside the tabs these tasks opened — the level below a
@@ -6205,24 +6240,25 @@ enum Orchestrator {
     private static func tasksUnder(_ parents: [String], where keep: (Task) -> Bool) -> [String] {
         guard !parents.isEmpty else { return [] }
         load()
-        lock.lock(); defer { lock.unlock() }
-        let above = parents.compactMap { tasks[$0] }
-        guard !above.isEmpty else { return [] }
-        let ids = Set(above.map { $0.id })
-        // `childSessionId` can survive from a registry written before ownership proofs were
-        // persisted. It may describe a sibling, so it becomes a cancellation key only after the
-        // task marker has proved the paired path. This lazy check touches at most the requested
-        // parents, never every historical transcript during app startup.
-        let sessions = Set(above.compactMap { provenChildSessionID(of: $0) })
-        return tasks.values
-            .filter { task in
-                guard keep(task), !ids.contains(task.id) else { return false }
-                if let parent = task.parentTaskId, ids.contains(parent) { return true }
-                if let root = task.rootSessionId, sessions.contains(root) { return true }
-                return false
-            }
-            .sorted { $0.created < $1.created }
-            .map { $0.id }
+        return OrchestratorRegistry.withTaskRecords { records -> [String] in
+            let above = parents.compactMap { records.task($0) }
+            guard !above.isEmpty else { return [] }
+            let ids = Set(above.map { $0.id })
+            // `childSessionId` can survive from a registry written before ownership proofs were
+            // persisted. It may describe a sibling, so it becomes a cancellation key only after
+            // the task marker has proved the paired path. This lazy check touches at most the
+            // requested parents, never every historical transcript during app startup.
+            let sessions = Set(above.compactMap { provenChildSessionID(of: $0) })
+            return records.taskValues()
+                .filter { task in
+                    guard keep(task), !ids.contains(task.id) else { return false }
+                    if let parent = task.parentTaskId, ids.contains(parent) { return true }
+                    if let root = task.rootSessionId, sessions.contains(root) { return true }
+                    return false
+                }
+                .sorted { $0.created < $1.created }
+                .map { $0.id }
+        }
     }
 
     private static func provenChildSessionID(of task: Task) -> String? {
@@ -6432,48 +6468,51 @@ enum Orchestrator {
         // sealed copy can be opened with this installation's at-rest key and pumped below.
         var orphaned: [String] = []
         var recovered: [String: String] = [:]
-        lock.lock()
-        let restartRows = tasks.values.filter { $0.state == .queued || $0.state == .spawning }
-        lock.unlock()
+        let restartRows = OrchestratorRegistry.withTaskRecords { records in
+            records.taskValues().filter { $0.state == .queued || $0.state == .spawning }
+        }
         for task in restartRows where task.state == .queued && !task.serialize.isEmpty {
             if let sealed = task.queuedSecret, let secret = openQueuedSecret(sealed),
                RemoteAuth.constantTimeEquals(task.secretHash, hash(ofSecret: secret)) {
                 recovered[task.id] = secret
             }
         }
-        lock.lock()
-        for (id, task) in tasks where task.state == .queued || task.state == .spawning {
-            if task.state == .queued, let secret = recovered[id] {
-                OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setTaskSecret(secret, for: id) }
-                continue
+        let settled = OrchestratorRegistry.withTaskRecords { records
+            -> (handoffs: [String], lostReceipts: [String], incompleteIdentities: [String]) in
+            for (id, task) in records.tasksByID()
+            where task.state == .queued || task.state == .spawning {
+                if task.state == .queued, let secret = recovered[id] {
+                    records.sessionRecords.setTaskSecret(secret, for: id)
+                    continue
+                }
+                var dead = task
+                dead.state = .spawnFailed
+                dead.summary = task.state == .queued && !task.serialize.isEmpty
+                    ? "The app restarted but could not recover the queued task secret."
+                    : "The app restarted before the child was briefed."
+                dead.finishedAt = Date()
+                dead.queuedSecret = nil
+                if dead.childTerminalId == nil { dead.sessionRoot = false }
+                dead.workCleanupAt = reclaimDeadline(
+                    minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: .spawnFailed)
+                dead.buildCleanupAt = dead.worktree == nil ? nil : reclaimDeadline(
+                    minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: .spawnFailed)
+                dead.closeAt = automaticCloseAt(
+                    for: dead, outcome: .spawnFailed,
+                    childLinger: Config.shared.orchestratorChildLinger)
+                if retainedTaskOwnsRootSession(dead) { dead.sessionRoot = true }
+                records.commitTask(dead)
+                orphaned.append(id)
             }
-            var dead = task
-            dead.state = .spawnFailed
-            dead.summary = task.state == .queued && !task.serialize.isEmpty
-                ? "The app restarted but could not recover the queued task secret."
-                : "The app restarted before the child was briefed."
-            dead.finishedAt = Date()
-            dead.queuedSecret = nil
-            if dead.childTerminalId == nil { dead.sessionRoot = false }
-            dead.workCleanupAt = reclaimDeadline(
-                minutes: Config.shared.orchestratorWorkGraceMinutes, outcome: .spawnFailed)
-            dead.buildCleanupAt = dead.worktree == nil ? nil : reclaimDeadline(
-                minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: .spawnFailed)
-            dead.closeAt = automaticCloseAt(
-                for: dead, outcome: .spawnFailed,
-                childLinger: Config.shared.orchestratorChildLinger)
-            if retainedTaskOwnsRootSession(dead) { dead.sessionRoot = true }
-            tasks[id] = dead
-            orphaned.append(id)
+            // `accepted` was persisted before StartPoints was invoked. Reopening it could
+            // duplicate a tab whose side effect happened just before the crash, so this boundary
+            // fails closed.
+            let coordination = records.coordinationRecords
+            return (handoffs: coordination.failInterruptedHandoffOpenings(),
+                    lostReceipts: coordination.failRootAssignmentsWithLostLaunchReceipts(at: Date()),
+                    incompleteIdentities: coordination.failRootAssignmentsWithIncompleteIdentity(
+                        at: Date()))
         }
-        // `accepted` was persisted before StartPoints was invoked. Reopening it could duplicate a
-        // tab whose side effect happened just before the crash, so this boundary fails closed.
-        let settled = OrchestratorRegistry.withCoordinationRecordsOnHeldLock { records in
-            (handoffs: records.failInterruptedHandoffOpenings(),
-             lostReceipts: records.failRootAssignmentsWithLostLaunchReceipts(at: Date()),
-             incompleteIdentities: records.failRootAssignmentsWithIncompleteIdentity(at: Date()))
-        }
-        lock.unlock()
         let rearmed = rearmLingers()
         // Attempt persistence before announcements; W1-5 owns gating handoff effects on failure.
         if !orphaned.isEmpty || !settled.handoffs.isEmpty
@@ -6488,9 +6527,7 @@ enum Orchestrator {
         for id in settled.incompleteIdentities {
             reportRootAssignmentTransition(id)
         }
-        lock.lock()
-        let beforeCompletionRecovery = tasks
-        lock.unlock()
+        let beforeCompletionRecovery = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
         let completionRecovery = reconcileCompletionOutbox(
             taskID: nil, includeDeadLetters: false, now: Date())
         let resultRecovery = reconcileResultReceipts(taskID: nil,
@@ -6499,11 +6536,12 @@ enum Orchestrator {
         let recoveryPersisted = !recoveryChanged || save()
         if !recoveryPersisted {
             // A due envelope that exists only in memory must never become eligible on the next
-            // timer beat. Startup owns this phase, so restoring the just-loaded snapshot is safe.
-            lock.lock()
-            tasks = beforeCompletionRecovery
-            reindex()
-            lock.unlock()
+            // timer beat. The rollback restores, per row, only the fields recovery itself wrote.
+            OrchestratorRegistry.withTaskRecords { records in
+                records.restoreCompletionRecovery(from: beforeCompletionRecovery,
+                    envelopes: completionRecovery.changedTaskIDs, resultReceipts: resultRecovery)
+                records.rebuildTerminalProjection()
+            }
             RemoteAuth.audit("orchestrator.completion.defer", [
                 "why": "startup_store_failed",
             ])
@@ -6534,25 +6572,25 @@ enum Orchestrator {
     private static func rearmLingers() -> Bool {
         let linger = Config.shared.orchestratorChildLinger
         let floor = Date().addingTimeInterval(restartGrace)
-        var changed = false
-        lock.lock()
-        for (id, task) in tasks where task.closeAt != nil {
-            var carried = task
-            // An explicit per-schedule close policy wins over the global default after restart in
-            // exactly the same way it did when finalize created this deadline. Ordinary tasks
-            // still honour a Mac that has since said child tabs are never to be closed.
-            if task.childTerminalId == nil || (task.scheduleID == nil && linger < 0) {
-                carried.closeAt = nil
-            } else if let at = task.closeAt, at < floor {
-                carried.closeAt = floor
-            } else {
-                continue
+        return OrchestratorRegistry.withTaskRecords { records -> Bool in
+            var changed = false
+            for (_, task) in records.tasksByID() where task.closeAt != nil {
+                var carried = task
+                // An explicit per-schedule close policy wins over the global default after restart
+                // in exactly the same way it did when finalize created this deadline. Ordinary
+                // tasks still honour a Mac that has since said child tabs are never to be closed.
+                if task.childTerminalId == nil || (task.scheduleID == nil && linger < 0) {
+                    carried.closeAt = nil
+                } else if let at = task.closeAt, at < floor {
+                    carried.closeAt = floor
+                } else {
+                    continue
+                }
+                records.commitTask(carried)
+                changed = true
             }
-            tasks[id] = carried
-            changed = true
+            return changed
         }
-        lock.unlock()
-        return changed
     }
 
     /// Main thread. Advances every live task one step; cheap when nothing is live.
@@ -6582,26 +6620,34 @@ enum Orchestrator {
         // Outside this type's lock, because it takes one of its own and nothing here needs the
         // two held together.
         SessionNaming.forget(closedFrom: visibleTerminals)
-        lock.lock()
-        pruneClosedHandoffTitles(visible: visibleTerminals, identities: executorIdentities,
-                                 inventoryComplete: watchSnapshot.complete)
-        let handoffLabelsAdopted = adoptHandoffLabelIdentitiesLocked(
-            snapshot: watchSnapshot, identities: executorIdentities)
-        beatSequence += 1
-        let sequence = beatSequence
-        let overlapping = beatsInFlight > 0
-        beatsInFlight += 1
-        let liveIDs = tasks.values
-            .filter {
-                !$0.state.isTerminal || $0.closeAt != nil
-                    || $0.workCleanupAt != nil || $0.buildCleanupAt != nil
-            }
-            .map(\.id)
-        let liveHandoffs = Array(OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.handoffDeliveriesSnapshot() }.keys)
-        let liveRootAssignments = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            $0.rootAssignments()
-        }.filter { ![.failed, .inactive].contains($0.state) }.map(\.id)
-        lock.unlock()
+        let walk = OrchestratorRegistry.withTaskRecords { records
+            -> (adopted: Bool, sequence: Int, overlapping: Bool, liveIDs: [String],
+                liveHandoffs: [String], liveRootAssignments: [String]) in
+            pruneClosedHandoffTitles(visible: visibleTerminals, identities: executorIdentities,
+                                     inventoryComplete: watchSnapshot.complete, in: records)
+            let adopted = adoptHandoffLabelIdentities(
+                snapshot: watchSnapshot, identities: executorIdentities, in: records)
+            beatSequence += 1
+            let sequence = beatSequence
+            let overlapping = beatsInFlight > 0
+            beatsInFlight += 1
+            let liveIDs = records.taskValues()
+                .filter {
+                    !$0.state.isTerminal || $0.closeAt != nil
+                        || $0.workCleanupAt != nil || $0.buildCleanupAt != nil
+                }
+                .map(\.id)
+            let liveHandoffs = Array(records.sessionRecords.handoffDeliveriesSnapshot().keys)
+            let liveRootAssignments = records.coordinationRecords.rootAssignments()
+                .filter { ![.failed, .inactive].contains($0.state) }.map(\.id)
+            return (adopted, sequence, overlapping, liveIDs, liveHandoffs, liveRootAssignments)
+        }
+        let handoffLabelsAdopted = walk.adopted
+        let sequence = walk.sequence
+        let overlapping = walk.overlapping
+        let liveIDs = walk.liveIDs
+        let liveHandoffs = walk.liveHandoffs
+        let liveRootAssignments = walk.liveRootAssignments
         defer {
             lock.lock(); beatsInFlight -= 1; lock.unlock()
         }
@@ -6704,9 +6750,9 @@ enum Orchestrator {
     private static func scheduleHandoffStep(_ id: String) {
         guard !handoffStepsInFlight.contains(id) else { return }
         handoffStepsInFlight.insert(id)
-        lock.lock()
-        let channel = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.handoffDelivery(for: id)?.terminalID }
-        lock.unlock()
+        let channel = OrchestratorRegistry.withSessionRecords {
+            $0.handoffDelivery(for: id)?.terminalID
+        }
         let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: channel) {
             handoffStep(id)
             DispatchQueue.main.async { handoffStepsInFlight.remove(id) }
@@ -7227,17 +7273,19 @@ enum Orchestrator {
     /// Advance one handoff while it is waiting for a composer or a transcript receipt. This is
     /// deliberately not a task watcher: the entry disappears the instant delivery settles.
     private static func handoffStep(_ id: String) {
-        lock.lock()
-        guard var delivery = OrchestratorRegistry.withSessionRecordsOnHeldLock({
-            $0.handoffDelivery(for: id)
-        }), let envelope = OrchestratorRegistry.withCoordinationRecordsOnHeldLock({
-            $0.handoff(id)
-        }), envelope.state == .opening else {
-            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: id) }
-            lock.unlock()
-            return
+        let opening = OrchestratorRegistry.withTaskRecords { records
+            -> (delivery: OrchestratorRegistry.HandoffDelivery, envelope: HandoffEnvelope)? in
+            guard let delivery = records.sessionRecords.handoffDelivery(for: id),
+                  let envelope = records.coordinationRecords.handoff(id),
+                  envelope.state == .opening else {
+                records.sessionRecords.removeHandoffDelivery(for: id)
+                return nil
+            }
+            return (delivery, envelope)
         }
-        lock.unlock()
+        guard let opening else { return }
+        var delivery = opening.delivery
+        let envelope = opening.envelope
 
         if Date().timeIntervalSince(delivery.spawnedAt) > readyLimit {
             settleHandoff(id, delivered: false, assistant: delivery.assistant,
@@ -7284,9 +7332,9 @@ enum Orchestrator {
         if let screen, SessionState.isChoosing(screen, assistant: delivery.assistant) {
             if !delivery.answeredMenu {
                 delivery.answeredMenu = true
-                lock.lock()
-                _ = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setHandoffDeliveryIfPresent(delivery, for: id) }
-                lock.unlock()
+                _ = OrchestratorRegistry.withSessionRecords {
+                    $0.setHandoffDeliveryIfPresent(delivery, for: id)
+                }
                 _ = Targets.answer(0x31, to: child)
                 RemoteAuth.audit("handoff.menu", ["handoff": id, "answer": "1"])
             }
@@ -7306,9 +7354,9 @@ enum Orchestrator {
         delivery.lastInjectAt = Date()
         let failure = Targets.send(line, to: child)
         if failure != nil { delivery.lastInjectAt = nil }
-        lock.lock()
-        _ = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setHandoffDeliveryIfPresent(delivery, for: id) }
-        lock.unlock()
+        _ = OrchestratorRegistry.withSessionRecords {
+            $0.setHandoffDeliveryIfPresent(delivery, for: id)
+        }
         RemoteAuth.audit("handoff.inject", ["handoff": id,
                                              "attempt": String(delivery.attempts),
                                              "ok": failure == nil ? "1" : "0"])
@@ -7320,15 +7368,13 @@ enum Orchestrator {
 
     static func settleHandoff(_ id: String, delivered: Bool, assistant: Assistant,
                               why: String?) {
-        lock.lock()
-        guard let envelope = OrchestratorRegistry.withCoordinationRecordsOnHeldLock({
-            $0.settleHandoffOpening(id, delivered: delivered)
-        }) else {
-            lock.unlock()
-            return
+        let settled = OrchestratorRegistry.withTaskRecords { records -> HandoffEnvelope? in
+            guard let envelope = records.coordinationRecords
+                .settleHandoffOpening(id, delivered: delivered) else { return nil }
+            records.sessionRecords.removeHandoffDelivery(for: id)
+            return envelope
         }
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: id) }
-        lock.unlock()
+        guard let envelope = settled else { return }
         save()
         RemoteAuth.audit(delivered ? "handoff.delivered" : "handoff.undelivered",
                          ["handoff": id, "why": why ?? "delivered"])
@@ -7934,41 +7980,42 @@ enum Orchestrator {
                          summary: String?, artifacts: [String] = [],
                          verification: Verification? = nil,
                          pumpQueue: Bool = true) {
-        lock.lock()
-        guard var task = tasks[taskID], !task.state.isTerminal else { lock.unlock(); return }
-        task.state = outcome
-        if task.childTerminalId == nil { task.sessionRoot = false }
-        task.finishedAt = Date()
-        task.queuedSecret = nil
-        if let summary { task.summary = summary }
-        if !artifacts.isEmpty { task.artifacts = artifacts }
-        if task.completionDelivery == nil,
-           task.parentTaskId != nil || task.rootSessionId != nil {
-            let now = task.finishedAt ?? Date()
-            task.completionDelivery = CompletionDelivery(
-                noticeID: UUID().uuidString.lowercased(), created: now,
-                state: .pending, attempts: 0, nextRetryAt: now, persisted: false)
+        let ended = OrchestratorRegistry.withTaskRecords { records -> Task? in
+            guard var task = records.task(taskID), !task.state.isTerminal else { return nil }
+            task.state = outcome
+            if task.childTerminalId == nil { task.sessionRoot = false }
+            task.finishedAt = Date()
+            task.queuedSecret = nil
+            if let summary { task.summary = summary }
+            if !artifacts.isEmpty { task.artifacts = artifacts }
+            if task.completionDelivery == nil,
+               task.parentTaskId != nil || task.rootSessionId != nil {
+                let now = task.finishedAt ?? Date()
+                task.completionDelivery = CompletionDelivery(
+                    noticeID: UUID().uuidString.lowercased(), created: now,
+                    state: .pending, attempts: 0, nextRetryAt: now, persisted: false)
+            }
+            if let verification { task.verification = verification }
+            records.sessionRecords.removeTaskSecret(for: taskID)
+            task.closeAt = automaticCloseAt(for: task, outcome: outcome,
+                                            childLinger: Config.shared.orchestratorChildLinger)
+            if retainedTaskOwnsRootSession(task) { task.sessionRoot = true }
+            records.commitTask(task)
+            return task
         }
-        if let verification { task.verification = verification }
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeTaskSecret(for: taskID) }
-        task.closeAt = automaticCloseAt(for: task, outcome: outcome,
-                                        childLinger: Config.shared.orchestratorChildLinger)
-        if retainedTaskOwnsRootSession(task) { task.sessionRoot = true }
-        tasks[taskID] = task
-        lock.unlock()
+        guard var task = ended else { return }
+        finalizationStageBoundaryForTesting?(taskID)
 
         // Purely observational, and deliberately outside the lock like the result and usage
         // reads below: one `stat` per claimed path is not the kind of latency that should
-        // serialize every other request in flight.
+        // serialize every other request in flight. Each stage below writes only its own fields,
+        // through a transition that refuses a swept or overtaken row, and adopts the row it wrote.
         let untouched = untouchedClaims(task)
         if !untouched.isEmpty {
-            lock.lock()
-            if var current = tasks[taskID], current.state == outcome {
-                current.untouchedClaims = untouched
-                tasks[taskID] = current
-            }
-            lock.unlock()
             task.untouchedClaims = untouched
+            task = OrchestratorRegistry.withTaskRecords { [task] in
+                $0.recordUntouchedClaims(from: task, endedAs: outcome)
+            } ?? task
         }
 
         // The result file can carry words the finalizer was not handed — the HTTP route sends
@@ -7979,21 +8026,21 @@ enum Orchestrator {
         if task.summary == nil || task.artifacts.isEmpty || task.verification == nil
             || (requiresTypedReview(task) && task.review == nil),
            let result = readResult(of: task) {
-            lock.lock()
             if task.summary == nil { task.summary = result.summary }
             if task.artifacts.isEmpty { task.artifacts = result.artifacts }
             if task.verification == nil { task.verification = result.verification }
             if task.review == nil, requiresTypedReview(task) { task.review = result.review }
             task.resultVerifiedAt = task.resultVerifiedAt ?? Date()
-            tasks[taskID] = task
-            lock.unlock()
+            task = OrchestratorRegistry.withTaskRecords { [task] in
+                $0.adoptResultReceipt(from: task, endedAs: outcome)
+            } ?? task
         }
 
         if let usage = harvestUsage(task) {
-            lock.lock()
             task.usage = usage
-            tasks[taskID] = task
-            lock.unlock()
+            task = OrchestratorRegistry.withTaskRecords { [task] in
+                $0.recordHarvestedUsage(from: task, endedAs: outcome)
+            } ?? task
         }
         // The durable copy, taken here because this record is on a 200-row eviction and this
         // task's directory is swept twenty-four hours from now. The whole record goes over rather
@@ -8017,9 +8064,9 @@ enum Orchestrator {
         // task working in a shared tree would otherwise be handed the person's `.build/`.
         task.buildCleanupAt = task.worktree == nil ? nil : reclaimDeadline(
             minutes: Config.shared.orchestratorBuildGraceMinutes, outcome: outcome)
-        lock.lock()
-        tasks[taskID] = task
-        lock.unlock()
+        task = OrchestratorRegistry.withTaskRecords { [task] in
+            $0.scheduleReclaim(from: task, endedAs: outcome)
+        } ?? task
         if task.workCleanupAt.map({ $0 <= Date() }) == true {
             _ = reclaimTaskWorkIfDue(taskID)
             task.workCleanupAt = held(taskID)?.workCleanupAt
@@ -8045,16 +8092,11 @@ enum Orchestrator {
                                 allowCommitted: false)
             }
             DispatchQueue.main.async {
-                var changed = false
-                lock.lock()
-                if var current = tasks[taskID], current.state == outcome {
-                    if current.worktree?.path == refreshed.path {
-                        current.worktree = refreshed
-                        tasks[taskID] = current
-                        changed = true
-                    }
+                let changed = OrchestratorRegistry.withTaskRecords { records -> Bool in
+                    guard let current = records.task(taskID), current.state == outcome,
+                          current.worktree?.path == refreshed.path else { return false }
+                    return records.updateTask(taskID) { $0.worktree = refreshed } != nil
                 }
-                lock.unlock()
                 if changed {
                     save()
                     RemoteServer.shared.broadcastOrchestrator()
@@ -8079,13 +8121,12 @@ enum Orchestrator {
             // The terminal outcome and its envelope were one attempted snapshot. If that write
             // failed, leave no in-memory-only envelope for a later beat to deliver. Explicit
             // reconciliation (or the next restart) can create and persist a fresh envelope.
-            lock.lock()
-            if var current = tasks[task.id],
-               current.completionDelivery?.noticeID == task.completionDelivery?.noticeID {
-                current.completionDelivery = nil
-                tasks[task.id] = current
+            OrchestratorRegistry.withTaskRecords { records in
+                guard let current = records.task(task.id),
+                      current.completionDelivery?.noticeID == task.completionDelivery?.noticeID
+                else { return }
+                records.updateTask(task.id) { $0.completionDelivery = nil }
             }
-            lock.unlock()
             RemoteAuth.audit("orchestrator.completion.defer", [
                 "task": task.id, "why": "store_failed",
             ])
@@ -8131,15 +8172,12 @@ enum Orchestrator {
         let manager = FileManager.default
         if manager.fileExists(atPath: work.path) { try? manager.removeItem(at: work) }
         guard !manager.fileExists(atPath: work.path) else { return false }
-        lock.lock()
-        guard var current = tasks[taskID], current.state.isTerminal,
-              current.workCleanupAt == due else {
-            lock.unlock()
-            return false
+        let cleared = OrchestratorRegistry.withTaskRecords { records -> Bool in
+            guard let current = records.task(taskID), current.state.isTerminal,
+                  current.workCleanupAt == due else { return false }
+            return records.updateTask(taskID) { $0.workCleanupAt = nil } != nil
         }
-        current.workCleanupAt = nil
-        tasks[taskID] = current
-        lock.unlock()
+        guard cleared else { return false }
         save()
         RemoteAuth.audit("orchestrator.work.reclaimed", ["task": taskID])
         return true
@@ -8169,15 +8207,12 @@ enum Orchestrator {
         let manager = FileManager.default
         if manager.fileExists(atPath: build.path) { try? manager.removeItem(at: build) }
         guard !manager.fileExists(atPath: build.path) else { return false }
-        lock.lock()
-        guard var current = tasks[taskID], current.state.isTerminal,
-              current.buildCleanupAt == due else {
-            lock.unlock()
-            return false
+        let cleared = OrchestratorRegistry.withTaskRecords { records -> Bool in
+            guard let current = records.task(taskID), current.state.isTerminal,
+                  current.buildCleanupAt == due else { return false }
+            return records.updateTask(taskID) { $0.buildCleanupAt = nil } != nil
         }
-        current.buildCleanupAt = nil
-        tasks[taskID] = current
-        lock.unlock()
+        guard cleared else { return false }
         save()
         RemoteAuth.audit("orchestrator.build.reclaimed",
                          ["task": taskID, "path": build.path])
@@ -8480,25 +8515,19 @@ enum Orchestrator {
     private static var completionPumpGeneration = 0
 
     private static func markCompletionEnvelopePersisted(taskID: String, noticeID: String) {
-        lock.lock()
-        if var task = tasks[taskID], var delivery = task.completionDelivery,
-           delivery.noticeID == noticeID {
-            delivery.persisted = true
-            task.completionDelivery = delivery
-            tasks[taskID] = task
+        OrchestratorRegistry.withTaskRecords { records in
+            guard let delivery = records.task(taskID)?.completionDelivery,
+                  delivery.noticeID == noticeID else { return }
+            records.updateTask(taskID) { $0.completionDelivery?.persisted = true }
         }
-        lock.unlock()
     }
 
     private static func markCompletionEnvelopesPersisted(_ taskIDs: [String]) {
-        lock.lock()
-        for id in taskIDs {
-            guard var task = tasks[id], var delivery = task.completionDelivery else { continue }
-            delivery.persisted = true
-            task.completionDelivery = delivery
-            tasks[id] = task
+        OrchestratorRegistry.withTaskRecords { records in
+            for id in taskIDs where records.task(id)?.completionDelivery != nil {
+                records.updateTask(id) { $0.completionDelivery?.persisted = true }
+            }
         }
-        lock.unlock()
     }
 
     static func scheduleCompletionPump() {
@@ -8527,21 +8556,21 @@ enum Orchestrator {
         guard Config.shared.orchestratorNotifyRoot else { return }
         // Every scheduling site already has a loaded registry. Calling `load()` here would let a
         // superseded test/restart generation repopulate memory after `forget()` invalidated it.
-        lock.lock()
-        let due = tasks.values.filter { task in
-            guard let delivery = task.completionDelivery,
-                  delivery.persisted,
-                  delivery.state != .acknowledged, delivery.state != .deadLetter else {
-                return false
+        let due = OrchestratorRegistry.withTaskRecords { records -> [(String, String)] in
+            records.taskValues().filter { task in
+                guard let delivery = task.completionDelivery,
+                      delivery.persisted,
+                      delivery.state != .acknowledged, delivery.state != .deadLetter else {
+                    return false
+                }
+                return delivery.nextRetryAt.map { $0 <= now } ?? false
+            }.sorted {
+                ($0.completionDelivery?.nextRetryAt ?? .distantFuture)
+                    < ($1.completionDelivery?.nextRetryAt ?? .distantFuture)
+            }.prefix(8).compactMap { task in
+                task.completionDelivery.map { (task.id, $0.noticeID) }
             }
-            return delivery.nextRetryAt.map { $0 <= now } ?? false
-        }.sorted {
-            ($0.completionDelivery?.nextRetryAt ?? .distantFuture)
-                < ($1.completionDelivery?.nextRetryAt ?? .distantFuture)
-        }.prefix(8).compactMap { task in
-            task.completionDelivery.map { (task.id, $0.noticeID) }
         }
-        lock.unlock()
         let inventory = due.isEmpty ? [] : rootTargets()
         for (id, noticeID) in due {
             lock.lock()
@@ -8594,9 +8623,9 @@ enum Orchestrator {
             // A scheduled pump must never call a lazy loader after its generation was revoked.
             // Result receipts are reconciled at finalization, startup, and the explicit endpoint;
             // delivery itself only consumes the already-loaded durable envelope.
-            lock.lock()
-            task = expectedPumpGeneration == completionPumpGeneration ? tasks[taskID] : nil
-            lock.unlock()
+            task = OrchestratorRegistry.withTaskRecords { records -> Task? in
+                expectedPumpGeneration == completionPumpGeneration ? records.task(taskID) : nil
+            }
         } else {
             if !reconcileResultReceipts(taskID: taskID, limit: 1).isEmpty { _ = save() }
             task = held(taskID)
@@ -8615,18 +8644,14 @@ enum Orchestrator {
                 code: .acknowledgementTimeout,
                 message: "No root acknowledgement arrived within the bounded retry budget.",
                 at: now)
-            var exhaustedStored = false
-            lock.lock()
-            if (expectedPumpGeneration == nil
-                    || expectedPumpGeneration == completionPumpGeneration),
-               var current = tasks[taskID],
-               current.completionDelivery?.noticeID == delivery.noticeID,
-               current.completionDelivery?.state != .acknowledged {
-                current.completionDelivery = exhausted
-                tasks[taskID] = current
-                exhaustedStored = true
+            let exhaustedStored = OrchestratorRegistry.withTaskRecords { records -> Bool in
+                guard expectedPumpGeneration == nil
+                        || expectedPumpGeneration == completionPumpGeneration,
+                      let current = records.task(taskID),
+                      current.completionDelivery?.noticeID == delivery.noticeID,
+                      current.completionDelivery?.state != .acknowledged else { return false }
+                return records.updateTask(taskID) { $0.completionDelivery = exhausted } != nil
             }
-            lock.unlock()
             guard exhaustedStored else { return false }
             _ = save()
             return true
@@ -8638,21 +8663,19 @@ enum Orchestrator {
                                               noticeID: delivery.noticeID) else { return false }
         let result = deliver(task, ClawdlineMessage.encode(notice))
         let advanced = completionTransition(delivery, at: now, result: result)
-        lock.lock()
-        if let expectedPumpGeneration,
-           expectedPumpGeneration != completionPumpGeneration {
-            lock.unlock()
-            return false
+        let advancedStored = OrchestratorRegistry.withTaskRecords { records -> Bool in
+            if let expectedPumpGeneration,
+               expectedPumpGeneration != completionPumpGeneration {
+                return false
+            }
+            guard let current = records.task(taskID),
+                  current.completionDelivery?.noticeID == delivery.noticeID,
+                  current.completionDelivery?.state != .acknowledged else {
+                return false
+            }
+            return records.updateTask(taskID) { $0.completionDelivery = advanced } != nil
         }
-        guard var current = tasks[taskID],
-              current.completionDelivery?.noticeID == delivery.noticeID,
-              current.completionDelivery?.state != .acknowledged else {
-            lock.unlock()
-            return false
-        }
-        current.completionDelivery = advanced
-        tasks[taskID] = current
-        lock.unlock()
+        guard advancedStored else { return false }
         _ = save()
         let error = advanced.lastError?.code.rawValue ?? "none"
         RemoteAuth.audit("orchestrator.completion.attempt", [
@@ -8787,56 +8810,65 @@ enum Orchestrator {
             return .refused(400, "bad_request", "notice_id must be a UUID.")
         }
         load()
-        lock.lock()
-        guard var task = tasks[taskID] else {
-            lock.unlock()
-            return .refused(404, "not_found", "No task named \(taskID).")
+        enum Acknowledgement {
+            case answered(Reply)
+            case installed(previous: CompletionDelivery, installed: CompletionDelivery)
         }
-        guard var delivery = task.completionDelivery else {
-            lock.unlock()
-            return .refused(409, "completion_not_reconciled",
-                            "This terminal task has no durable completion envelope; reconcile it "
-                                + "or poll result.json.")
+        let acknowledgement = OrchestratorRegistry.withTaskRecords { records -> Acknowledgement in
+            guard let task = records.task(taskID) else {
+                return .answered(.refused(404, "not_found", "No task named \(taskID)."))
+            }
+            guard var delivery = task.completionDelivery else {
+                return .answered(.refused(
+                    409, "completion_not_reconciled",
+                    "This terminal task has no durable completion envelope; reconcile it "
+                        + "or poll result.json."))
+            }
+            guard delivery.persisted else {
+                return .answered(.refused(
+                    409, "completion_not_persisted",
+                    "This completion envelope has not reached durable storage yet; retry."))
+            }
+            guard RemoteAuth.constantTimeEquals(delivery.noticeID, noticeID.lowercased()) else {
+                return .answered(.refused(
+                    409, "completion_notice_mismatch",
+                    "The notice id does not identify this task's completion envelope."))
+            }
+            if delivery.state == .acknowledged {
+                return .answered(.ok(["ok": true, "acknowledged": true, "changed": false,
+                                      "notice_id": delivery.noticeID]))
+            }
+            let previousDelivery = delivery
+            delivery.state = .acknowledged
+            delivery.observedAt = delivery.observedAt ?? now
+            delivery.acknowledgedAt = now
+            delivery.nextRetryAt = nil
+            delivery.lastError = nil
+            let installed = delivery
+            records.updateTask(taskID) { $0.completionDelivery = installed }
+            return .installed(previous: previousDelivery, installed: installed)
         }
-        guard delivery.persisted else {
-            lock.unlock()
-            return .refused(409, "completion_not_persisted",
-                            "This completion envelope has not reached durable storage yet; retry.")
+        let previousDelivery: CompletionDelivery
+        let delivery: CompletionDelivery
+        switch acknowledgement {
+        case .answered(let reply):
+            return reply
+        case .installed(let previous, let installed):
+            previousDelivery = previous
+            delivery = installed
         }
-        guard RemoteAuth.constantTimeEquals(delivery.noticeID, noticeID.lowercased()) else {
-            lock.unlock()
-            return .refused(409, "completion_notice_mismatch",
-                            "The notice id does not identify this task's completion envelope.")
-        }
-        if delivery.state == .acknowledged {
-            lock.unlock()
-            return .ok(["ok": true, "acknowledged": true, "changed": false,
-                        "notice_id": delivery.noticeID])
-        }
-        let previousDelivery = delivery
-        delivery.state = .acknowledged
-        delivery.observedAt = delivery.observedAt ?? now
-        delivery.acknowledgedAt = now
-        delivery.nextRetryAt = nil
-        delivery.lastError = nil
-        task.completionDelivery = delivery
-        tasks[taskID] = task
-        lock.unlock()
         guard save() else {
-            lock.lock()
             // Compare-and-swap only the transition this request installed. Worktree refresh,
             // landing, close and every other field may have advanced while the atomic store write
             // was in flight; replacing the whole earlier Task would silently erase those facts.
-            if var latest = tasks[taskID],
-               let current = latest.completionDelivery,
-               current.noticeID == delivery.noticeID,
-               current.state == .acknowledged,
-               current.observedAt == delivery.observedAt,
-               current.acknowledgedAt == delivery.acknowledgedAt {
-                latest.completionDelivery = previousDelivery
-                tasks[taskID] = latest
+            OrchestratorRegistry.withTaskRecords { records in
+                guard let current = records.task(taskID)?.completionDelivery,
+                      current.noticeID == delivery.noticeID,
+                      current.state == .acknowledged,
+                      current.observedAt == delivery.observedAt,
+                      current.acknowledgedAt == delivery.acknowledgedAt else { return }
+                records.updateTask(taskID) { $0.completionDelivery = previousDelivery }
             }
-            lock.unlock()
             return .refused(500, "completion_store_failed",
                             "The acknowledgement could not be persisted; retry it.")
         }
@@ -8852,13 +8884,13 @@ enum Orchestrator {
     /// envelopes; transport success is not observation.
     static func completionRecords(pendingOnly: Bool = false) -> [[String: Any]] {
         load()
-        lock.lock()
-        let values = tasks.values.filter { task in
-            guard let delivery = task.completionDelivery else { return false }
-            return !pendingOnly
-                || (delivery.state != .acknowledged && delivery.state != .deadLetter)
-        }.sorted { $0.created < $1.created }
-        lock.unlock()
+        let values = OrchestratorRegistry.withTaskRecords { records -> [Task] in
+            records.taskValues().filter { task in
+                guard let delivery = task.completionDelivery else { return false }
+                return !pendingOnly
+                    || (delivery.state != .acknowledged && delivery.state != .deadLetter)
+            }.sorted { $0.created < $1.created }
+        }
         return values.compactMap { task in
             guard let delivery = task.completionDelivery else { return nil }
             var row: [String: Any] = [
@@ -8903,45 +8935,45 @@ enum Orchestrator {
         var rearmed = 0
         var eligible = 0
         var changedTaskIDs: [String] = []
-        lock.lock()
-        let ordered = tasks.values.sorted {
-            ($0.finishedAt ?? $0.created) > ($1.finishedAt ?? $1.created)
-        }
-        for snapshot in ordered {
-            guard taskID == nil || snapshot.id == taskID,
-                  snapshot.state.isTerminal,
-                  snapshot.parentTaskId != nil || snapshot.rootSessionId != nil else { continue }
-            var task = snapshot
-            if task.completionDelivery == nil {
-                guard let finished = task.finishedAt, finished >= floor else { continue }
-                eligible += 1
-                guard created + rearmed < legacyCompletionBatchLimit else { continue }
-                task.completionDelivery = CompletionDelivery(
-                    noticeID: UUID().uuidString.lowercased(), created: now,
-                    state: .pending, attempts: 0, nextRetryAt: now,
-                    legacyReconciled: true, persisted: false)
-                tasks[task.id] = task
-                created += 1
-                changedTaskIDs.append(task.id)
-            } else if includeDeadLetters,
-                      var delivery = task.completionDelivery,
-                      delivery.state == .deadLetter {
-                eligible += 1
-                guard created + rearmed < legacyCompletionBatchLimit else { continue }
-                delivery.state = .pending
-                delivery.attempts = 0
-                delivery.nextRetryAt = now
-                delivery.lastAttemptAt = nil
-                delivery.lastError = nil
-                delivery.deadLetterAt = nil
-                delivery.persisted = false
-                task.completionDelivery = delivery
-                tasks[task.id] = task
-                rearmed += 1
-                changedTaskIDs.append(task.id)
+        OrchestratorRegistry.withTaskRecords { records in
+            let ordered = records.taskValues().sorted {
+                ($0.finishedAt ?? $0.created) > ($1.finishedAt ?? $1.created)
+            }
+            for snapshot in ordered {
+                guard taskID == nil || snapshot.id == taskID,
+                      snapshot.state.isTerminal,
+                      snapshot.parentTaskId != nil || snapshot.rootSessionId != nil else { continue }
+                var task = snapshot
+                if task.completionDelivery == nil {
+                    guard let finished = task.finishedAt, finished >= floor else { continue }
+                    eligible += 1
+                    guard created + rearmed < legacyCompletionBatchLimit else { continue }
+                    task.completionDelivery = CompletionDelivery(
+                        noticeID: UUID().uuidString.lowercased(), created: now,
+                        state: .pending, attempts: 0, nextRetryAt: now,
+                        legacyReconciled: true, persisted: false)
+                    records.commitTask(task)
+                    created += 1
+                    changedTaskIDs.append(task.id)
+                } else if includeDeadLetters,
+                          var delivery = task.completionDelivery,
+                          delivery.state == .deadLetter {
+                    eligible += 1
+                    guard created + rearmed < legacyCompletionBatchLimit else { continue }
+                    delivery.state = .pending
+                    delivery.attempts = 0
+                    delivery.nextRetryAt = now
+                    delivery.lastAttemptAt = nil
+                    delivery.lastError = nil
+                    delivery.deadLetterAt = nil
+                    delivery.persisted = false
+                    task.completionDelivery = delivery
+                    records.commitTask(task)
+                    rearmed += 1
+                    changedTaskIDs.append(task.id)
+                }
             }
         }
-        lock.unlock()
         return (created, rearmed, eligible > created + rearmed,
                 created > 0 || rearmed > 0, changedTaskIDs)
     }
@@ -8950,21 +8982,20 @@ enum Orchestrator {
     /// transition. Only a secret-verified file advances this receipt, and the scan is bounded so
     /// reconciliation never turns into an unbounded scratch-root walk.
     private static func reconcileResultReceipts(taskID: String?, limit: Int) -> [String] {
-        lock.lock()
-        let candidates = tasks.values.filter {
-            ($0.state.isTerminal && $0.resultVerifiedAt == nil)
-                && (taskID == nil || $0.id == taskID)
-        }.sorted { ($0.finishedAt ?? $0.created) > ($1.finishedAt ?? $1.created) }
-        lock.unlock()
+        let candidates = OrchestratorRegistry.withTaskRecords { records -> [Task] in
+            records.taskValues().filter {
+                ($0.state.isTerminal && $0.resultVerifiedAt == nil)
+                    && (taskID == nil || $0.id == taskID)
+            }.sorted { ($0.finishedAt ?? $0.created) > ($1.finishedAt ?? $1.created) }
+        }
         var changed: [String] = []
         for task in candidates.prefix(max(0, limit)) where readResult(of: task) != nil {
-            lock.lock()
-            if var current = tasks[task.id], current.resultVerifiedAt == nil {
-                current.resultVerifiedAt = Date()
-                tasks[task.id] = current
-                changed.append(task.id)
+            let verified = OrchestratorRegistry.withTaskRecords { records -> Bool in
+                guard let current = records.task(task.id),
+                      current.resultVerifiedAt == nil else { return false }
+                return records.updateTask(task.id) { $0.resultVerifiedAt = Date() } != nil
             }
-            lock.unlock()
+            if verified { changed.append(task.id) }
         }
         return changed
     }
@@ -8977,29 +9008,17 @@ enum Orchestrator {
         if let taskID, held(taskID) == nil {
             return .refused(404, "not_found", "No task named \(taskID).")
         }
-        lock.lock()
-        let beforeRecovery = tasks
-        lock.unlock()
+        let beforeRecovery = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
         let outcome = reconcileCompletionOutbox(taskID: taskID,
                                                 includeDeadLetters: includeDeadLetters, now: now)
         let resultReceipts = reconcileResultReceipts(taskID: taskID,
                                                      limit: legacyCompletionBatchLimit)
         if outcome.changed || !resultReceipts.isEmpty {
             guard save() else {
-                lock.lock()
-                for id in outcome.changedTaskIDs {
-                    if var current = tasks[id], current.completionDelivery?.persisted == false {
-                        current.completionDelivery = beforeRecovery[id]?.completionDelivery
-                        tasks[id] = current
-                    }
+                OrchestratorRegistry.withTaskRecords {
+                    $0.restoreCompletionRecovery(from: beforeRecovery,
+                        envelopes: outcome.changedTaskIDs, resultReceipts: resultReceipts)
                 }
-                for id in resultReceipts {
-                    if var current = tasks[id] {
-                        current.resultVerifiedAt = beforeRecovery[id]?.resultVerifiedAt
-                        tasks[id] = current
-                    }
-                }
-                lock.unlock()
                 return .refused(500, "completion_store_failed",
                                 "The reconciled completion envelopes could not be persisted.")
             }
@@ -9120,32 +9139,23 @@ enum Orchestrator {
     /// than saying nothing.
     private static var batches: [String: Batch] = [:]
 
-    /// Under the lock. The session a whole tree hangs from, so every task in one fan-out is
-    /// counted in the same batch however it was filed.
-    ///
-    /// A task that named nobody gets a key of its own rather than sharing one with every other
-    /// anonymous dispatch — the alternative is two unrelated fan-outs waiting for each other.
-    private static func rootKeyLocked(of task: Task) -> String {
-        OrchestratorDraft.rootKey(of: task, among: tasks)
-    }
-
     /// Main thread, from ``finalize(_:as:summary:artifacts:)``. This counts endings for work that
     /// actually ran: success, failure, timeout, cancellation, or a tab that closed under a child.
     /// A dispatch-time tab-opening refusal never ran and is returned directly to its caller, so it
     /// deliberately does not enter a completion batch.
     private static func noteEnded(_ task: Task) {
-        lock.lock()
-        let key = rootKeyLocked(of: task)
-        var batch = batches[key] ?? Batch()
-        batch.done += 1
-        if task.state != .success { batch.failed += 1 }
-        if batch.projectDir == nil { batch.projectDir = task.projectDir }
-        if batch.rootLabel == nil { batch.rootLabel = task.rootLabel }
-        batch.tasks.append(.init(title: task.title, state: task.state.rawValue,
-                                 summary: task.summary))
-        if let terminal = task.childTerminalId { batch.sessionIDs.append(terminal) }
-        batches[key] = batch
-        lock.unlock()
+        OrchestratorRegistry.withTaskRecords { records in
+            let key = records.rootKey(of: task)
+            var batch = batches[key] ?? Batch()
+            batch.done += 1
+            if task.state != .success { batch.failed += 1 }
+            if batch.projectDir == nil { batch.projectDir = task.projectDir }
+            if batch.rootLabel == nil { batch.rootLabel = task.rootLabel }
+            batch.tasks.append(.init(title: task.title, state: task.state.rawValue,
+                                     summary: task.summary))
+            if let terminal = task.childTerminalId { batch.sessionIDs.append(terminal) }
+            batches[key] = batch
+        }
     }
 
     /// Announce any batch that has nothing left running. Called from the beat rather than from
@@ -9156,18 +9166,19 @@ enum Orchestrator {
     /// has settled, and it covers the same ground for cancellation, timeouts, and a tab somebody
     /// closed by hand.
     private static func sweepBatches() {
-        lock.lock()
-        guard !batches.isEmpty else { lock.unlock(); return }
-        var ready: [(String, Batch)] = []
-        for (key, batch) in batches {
-            let running = tasks.values.contains {
-                !$0.state.isTerminal && rootKeyLocked(of: $0) == key
+        let ready = OrchestratorRegistry.withTaskRecords { records -> [(String, Batch)] in
+            guard !batches.isEmpty else { return [] }
+            var ready: [(String, Batch)] = []
+            for (key, batch) in batches {
+                let running = records.taskValues().contains {
+                    !$0.state.isTerminal && records.rootKey(of: $0) == key
+                }
+                guard !running else { continue }
+                ready.append((key, batch))
+                batches.removeValue(forKey: key)
             }
-            guard !running else { continue }
-            ready.append((key, batch))
-            batches.removeValue(forKey: key)
+            return ready
         }
-        lock.unlock()
         for (key, batch) in ready { announce(batch, rootKey: key) }
     }
 
@@ -9527,9 +9538,8 @@ enum Orchestrator {
     /// resolutions (which terminal is the root, right now) the way `session(withID:)` does.
     static func records() -> [[String: Any]] {
         onMain(from: "Orchestrator.records") {
-            let publication = SessionWatch.shared.publishedInventory(); lock.lock()
-            let indexed = tasks; let all = indexed.values.sorted { $0.created > $1.created }
-            lock.unlock()
+            let publication = SessionWatch.shared.publishedInventory(); let indexed = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
+            let all = indexed.values.sorted { $0.created > $1.created }
             let graphIndex = graphTaskIndex(indexed); return all.map { record(of: $0, graphIndex: graphIndex, publication: publication) }
         }
     }
@@ -9623,12 +9633,10 @@ enum Orchestrator {
     static func saveForTesting() { _ = save() }
 
     static func holdRootAssignmentForTesting(_ assignment: RootAssignment) {
-        lock.lock()
-        OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            $0.installRootAssignmentForTesting(assignment)
+        OrchestratorRegistry.withTaskRecords { records in
+            records.coordinationRecords.installRootAssignmentForTesting(assignment)
+            records.rebuildTerminalProjection()
         }
-        reindex()
-        lock.unlock()
     }
 
     static func rootAssignmentForTesting(_ id: String) -> RootAssignment? {
@@ -9647,8 +9655,9 @@ enum Orchestrator {
     /// terminal; this step needs only a reading, so it is the one a test can hold still.
     static func adoptHandoffLabelIdentitiesForTesting(
         snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity]) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return adoptHandoffLabelIdentitiesLocked(snapshot: snapshot, identities: identities)
+        OrchestratorRegistry.withTaskRecords { records in
+            adoptHandoffLabelIdentities(snapshot: snapshot, identities: identities, in: records)
+        }
     }
 
     /// The stored fields only — safe off the main thread, used where a route already holds the
@@ -9674,16 +9683,11 @@ enum Orchestrator {
     /// Test seams for the scheduler's in-memory arbitration. Production reaches the same state
     /// only through ordinary dispatch registration on the remote serial queue.
     static func holdScheduleTaskForTesting(_ task: Task) {
-        lock.lock(); tasks[task.id] = task; loaded = true; lock.unlock()
+        OrchestratorRegistry.withTaskRecords { records in records.seedTaskForTesting(task); loaded = true }
     }
 
     static func mutateTaskForTesting(_ id: String, _ mutate: (inout Task) -> Void) {
-        lock.lock()
-        if var task = tasks[id] {
-            mutate(&task)
-            tasks[id] = task
-        }
-        lock.unlock()
+        OrchestratorRegistry.withTaskRecords { records in records.updateTask(id, mutate) }
     }
 
     static func handledScheduleFireForTesting(_ id: String) -> Date? {
@@ -9737,9 +9741,9 @@ enum Orchestrator {
         if task.sessionRoot { out["session_root"] = true }
         out["permission"] = task.permission.rawValue
         if task.state == .queued, !task.serialize.isEmpty {
-            lock.lock()
-            let waiting = serializeBlockersLocked(for: task).map(\.id)
-            lock.unlock()
+            let waiting = OrchestratorRegistry.withTaskRecords { records in
+                records.serializeBlockers(for: task).map(\.id)
+            }
             if !waiting.isEmpty { out["waiting_on"] = waiting }
         }
         if let at = task.spawnedAt { out["spawnedAt"] = Int(at.timeIntervalSince1970) }
@@ -10045,18 +10049,17 @@ enum Orchestrator {
 
     static func coordination(forTerminal id: String) -> Coordination {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return coordinationLocked(forTerminal: id)
+        return OrchestratorRegistry.withTaskRecords { coordinationFacts(forTerminal: id, in: $0) }
     }
 
     /// The caller owns `lock`; kept separate so Bearings can derive all ownership flags inside
     /// the same observation as task, landing and wait totals.
-    private static func coordinationLocked(forTerminal id: String) -> Coordination {
+    private static func coordinationFacts(
+        forTerminal id: String,
+        in records: OrchestratorRegistry.TaskRecordsTransaction) -> Coordination {
         var waitingOn: [[String: Any]] = []
         var waitedOnBy: [[String: Any]] = []
-        for wait in OrchestratorRegistry.withCoordinationRecordsOnHeldLock({
-            $0.coordinationWaits()
-        }) {
+        for wait in records.coordinationRecords.coordinationWaits() {
             for waiter in wait.waiters where waiter.releaseDeliveredAt == nil {
                 if waiter.sessionID == id {
                     var row = coordinationWaitRecord(wait)
@@ -10224,24 +10227,24 @@ enum Orchestrator {
                 "action": "admission_closed_until_explicit_abort",
             ])
         }
-        lock.lock()
-        tasks = found
-        OrchestratorRegistry.withCoordinationRecordsOnHeldLock { $0.replacePersistentRecords(
-            .init(handoffs: foundHandoffs, handoffLabels: foundLabels,
-                  rootAssignments: foundRootAssignments, coordinationWaits: foundWaits)) }
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.replacePersistentRecords(
-            .init(deliveries: foundSessionDeliveries, selfStates: foundSelfStates)) }
-        closureAttestations = foundAttestations
-        sessionActivityGenerations = foundActivity
-        sessionActivityClasses = foundActivityClasses
-        restartReceipt = foundRestart
-        // Both halves come back together, so a restart neither invents a tick nor loses one:
-        // the first save recomputes the same fingerprint over the same records and finds it
-        // unchanged, which is what lets an attestation written before the restart survive it.
-        obligationGeneration = max(0, obj["obligation_generation"] as? Int ?? 0)
-        obligationFingerprint = obj["obligation_fingerprint"] as? String ?? ""
-        reindex()
-        lock.unlock()
+        OrchestratorRegistry.withTaskRecords { records in
+            records.replaceAllTasks(found)
+            records.coordinationRecords.replacePersistentRecords(
+                .init(handoffs: foundHandoffs, handoffLabels: foundLabels,
+                      rootAssignments: foundRootAssignments, coordinationWaits: foundWaits))
+            records.sessionRecords.replacePersistentRecords(
+                .init(deliveries: foundSessionDeliveries, selfStates: foundSelfStates))
+            closureAttestations = foundAttestations
+            sessionActivityGenerations = foundActivity
+            sessionActivityClasses = foundActivityClasses
+            restartReceipt = foundRestart
+            // Both halves come back together, so a restart neither invents a tick nor loses one:
+            // the first save recomputes the same fingerprint over the same records and finds it
+            // unchanged, which is what lets an attestation written before the restart survive it.
+            obligationGeneration = max(0, obj["obligation_generation"] as? Int ?? 0)
+            obligationFingerprint = obj["obligation_fingerprint"] as? String ?? ""
+            records.rebuildTerminalProjection()
+        }
         // Proofs stored before the independent ledger existed are still strong proofs. Backfill
         // only those exact task/session pairs; never enumerate the surrounding scratch root.
         for task in found.values where task.transcriptProven && task.assistant == .claude {
@@ -10255,53 +10258,51 @@ enum Orchestrator {
     @discardableResult
     static func save() -> Bool {
         storeSaveLock.lock(); defer { storeSaveLock.unlock() }
-        lock.lock()
-        reindex()
-        // One choke point for the obligation clock, and it moves only when the obligation
-        // evidence itself changed. Bumping on every write would invalidate an attestation with
-        // the very save that stored it.
-        settleObligationGenerationLocked()
-        let rows = tasks.values.sorted { $0.created < $1.created }
-            .map { OrchestratorStore.stored($0) }
-        let coordinationRecords = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            $0.persistentSnapshot()
+        // The snapshot is taken in one task-record hold; the object is assembled and written
+        // after it, exactly as before. Schema-v1 keys and row orders are unchanged.
+        let obj = OrchestratorRegistry.withTaskRecords { records -> [String: Any] in
+            records.rebuildTerminalProjection()
+            // One choke point for the obligation clock, and it moves only when the obligation
+            // evidence itself changed. Bumping on every write would invalidate an attestation
+            // with the very save that stored it.
+            settleObligationGeneration(records)
+            let rows = records.taskValues().sorted { $0.created < $1.created }
+                .map { OrchestratorStore.stored($0) }
+            let coordinationRecords = records.coordinationRecords.persistentSnapshot()
+            let handoffRows = coordinationRecords.handoffs.values
+                .sorted { $0.created < $1.created }.map { OrchestratorStore.stored($0) }
+            let handoffLabelRows = coordinationRecords.handoffLabels.values
+                .sorted { $0.handoffID < $1.handoffID }.map { OrchestratorStore.stored($0) }
+            let rootAssignmentRows = coordinationRecords.rootAssignments.values
+                .sorted { $0.created < $1.created }.map { OrchestratorStore.stored($0) }
+            let waitRows = coordinationRecords.coordinationWaits.values
+                .sorted { $0.created < $1.created }.map { OrchestratorStore.stored($0) }
+            let persistentSessionRecords = records.sessionRecords.persistentSnapshot()
+            let sessionDeliveryRows = persistentSessionRecords.deliveries.values
+                .sorted { $0.reportedAt < $1.reportedAt }.map { OrchestratorStore.stored($0) }
+            let sessionSelfStateRows = persistentSessionRecords.selfStates.values
+                .sorted { $0.identity.terminalID < $1.identity.terminalID }
+                .map { OrchestratorStore.stored($0) }
+            let closureRows = closureAttestations.values
+                .sorted { $0.identity.terminalID < $1.identity.terminalID }.map { stored($0) }
+            let activityRows = sessionActivityGenerations.keys.sorted().map { terminalID in
+                ["terminal_id": terminalID,
+                 "generation": sessionActivityGenerations[terminalID] ?? 0,
+                 "class": sessionActivityClasses[terminalID] ?? "unknown"] as [String: Any]
+            }
+            var obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
+                                      "handoff_labels": handoffLabelRows,
+                                      "root_assignments": rootAssignmentRows,
+                                      "coordination_waits": waitRows,
+                                      "session_deliveries": sessionDeliveryRows,
+                                      "session_self_states": sessionSelfStateRows,
+                                      "closure_attestations": closureRows,
+                                      "session_activity": activityRows,
+                                      "obligation_generation": obligationGeneration,
+                                      "obligation_fingerprint": obligationFingerprint]
+            if let restart = restartReceipt.map(stored) { obj["restart"] = restart }
+            return obj
         }
-        let handoffRows = coordinationRecords.handoffs.values.sorted { $0.created < $1.created }
-            .map { OrchestratorStore.stored($0) }
-        let handoffLabelRows = coordinationRecords.handoffLabels.values
-            .sorted { $0.handoffID < $1.handoffID }.map { OrchestratorStore.stored($0) }
-        let rootAssignmentRows = coordinationRecords.rootAssignments.values
-            .sorted { $0.created < $1.created }.map { OrchestratorStore.stored($0) }
-        let waitRows = coordinationRecords.coordinationWaits.values
-            .sorted { $0.created < $1.created }.map { OrchestratorStore.stored($0) }
-        let persistentSessionRecords = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.persistentSnapshot() }
-        let sessionDeliveryRows = persistentSessionRecords.deliveries.values
-            .sorted { $0.reportedAt < $1.reportedAt }.map { OrchestratorStore.stored($0) }
-        let sessionSelfStateRows = persistentSessionRecords.selfStates.values
-            .sorted { $0.identity.terminalID < $1.identity.terminalID }
-            .map { OrchestratorStore.stored($0) }
-        let closureRows = closureAttestations.values
-            .sorted { $0.identity.terminalID < $1.identity.terminalID }.map { stored($0) }
-        let activityRows = sessionActivityGenerations.keys.sorted().map { terminalID in
-            ["terminal_id": terminalID,
-             "generation": sessionActivityGenerations[terminalID] ?? 0,
-             "class": sessionActivityClasses[terminalID] ?? "unknown"] as [String: Any]
-        }
-        let generation = obligationGeneration
-        let fingerprint = obligationFingerprint
-        let restart = restartReceipt.map(stored)
-        lock.unlock()
-        var obj: [String: Any] = ["version": 1, "tasks": rows, "handoffs": handoffRows,
-                                  "handoff_labels": handoffLabelRows,
-                                  "root_assignments": rootAssignmentRows,
-                                  "coordination_waits": waitRows,
-                                  "session_deliveries": sessionDeliveryRows,
-                                  "session_self_states": sessionSelfStateRows,
-                                  "closure_attestations": closureRows,
-                                  "session_activity": activityRows,
-                                  "obligation_generation": generation,
-                                  "obligation_fingerprint": fingerprint]
-        if let restart { obj["restart"] = restart }
         guard let data = try? JSONSerialization.data(withJSONObject: obj,
                                                      options: [.prettyPrinted, .sortedKeys,
                                                                .withoutEscapingSlashes]) else {
@@ -10441,22 +10442,25 @@ enum Orchestrator {
         // label names, which is the moment the label stopped describing anything. Nothing here
         // is on the envelope's timetable — a delivered handoff's letter goes a day after it
         // lands, and the session it opened is usually still working then.
-        let forgottenLabels = OrchestratorRegistry.withTransaction { registry in
-            OrchestratorRegistry.withCoordinationRecordsOnHeldLock { $0.handoffLabels() }
-                .map(\.handoffID).filter { registry.isHandoffLabelSuppressed($0) }
+        let forgottenLabels = OrchestratorRegistry.withTaskRecords { records -> [String] in
+            records.coordinationRecords.handoffLabels()
+                .map(\.handoffID).filter { records.registry.isHandoffLabelSuppressed($0) }
         }
-        lock.lock()
-        let sweep = taskRetentionSweep(tasks.values.map {
-            TaskRetentionCandidate(id: $0.id, terminal: $0.state.isTerminal,
-                                   landingPending: $0.landing?.state == .pending,
-                                   created: $0.created, settledAt: $0.finishedAt ?? $0.created)
-        }, now: now, directoryHours: directoryHours, recordLimit: recordLimit,
-           recordDays: recordDays)
-        let done = sweep.directories.compactMap { tasks[$0] }
-        let expiredHandoffs = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            $0.expiredTerminalHandoffs(createdBefore: cutoff)
+        let swept = OrchestratorRegistry.withTaskRecords { records -> (sweep: (directories: [String], records: [String]), done: [Task], expiredHandoffs: [HandoffEnvelope]) in
+            let sweep = taskRetentionSweep(records.taskValues().map {
+                TaskRetentionCandidate(id: $0.id, terminal: $0.state.isTerminal,
+                                       landingPending: $0.landing?.state == .pending,
+                                       created: $0.created,
+                                       settledAt: $0.finishedAt ?? $0.created)
+            }, now: now, directoryHours: directoryHours, recordLimit: recordLimit,
+               recordDays: recordDays)
+            return (sweep: sweep, done: sweep.directories.compactMap { records.task($0) },
+                    expiredHandoffs: records.coordinationRecords
+                        .expiredTerminalHandoffs(createdBefore: cutoff))
         }
-        lock.unlock()
+        let sweep = swept.sweep
+        let done = swept.done
+        let expiredHandoffs = swept.expiredHandoffs
         for task in done {
             if let worktree = task.worktree,
                FileManager.default.fileExists(atPath: worktree.path) {
@@ -10464,29 +10468,27 @@ enum Orchestrator {
             }
             try? FileManager.default.removeItem(at: task.dir)
         }
-        lock.lock()
-        for envelope in expiredHandoffs {
-            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: envelope.id) }
-        }
-        let oldSessionDeliveryIDs = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDeliveriesSnapshot() }.values
-            .sorted { $0.reportedAt > $1.reportedAt }.dropFirst(200)
-            .map { $0.identity.terminalID }
-        let oldRootAssignmentIDs = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            records -> [String] in
-            records.removeHandoffs(expiredHandoffs.map(\.id))
-            let old = rootAssignmentCleanupIDs(records.rootAssignments().map {
+        let pruned = OrchestratorRegistry.withTaskRecords { records
+            -> (sessionDeliveries: [String], rootAssignments: [String], retained: Set<String>) in
+            let sessions = records.sessionRecords
+            for envelope in expiredHandoffs { sessions.removeHandoffDelivery(for: envelope.id) }
+            let oldSessionDeliveryIDs = sessions.sessionDeliveriesSnapshot().values
+                .sorted { $0.reportedAt > $1.reportedAt }.dropFirst(200)
+                .map { $0.identity.terminalID }
+            let coordination = records.coordinationRecords
+            coordination.removeHandoffs(expiredHandoffs.map(\.id))
+            let old = rootAssignmentCleanupIDs(coordination.rootAssignments().map {
                 RootAssignmentCleanupCandidate(id: $0.id, state: $0.state, created: $0.created)
             })
-            records.removeRootAssignments(old)
-            records.forgetHandoffLabels(forgottenLabels)
-            return old
+            coordination.removeRootAssignments(old)
+            coordination.forgetHandoffLabels(forgottenLabels)
+            records.removeTasks(sweep.records)
+            for id in oldSessionDeliveryIDs { sessions.removeSessionDelivery(forTerminal: id) }
+            return (oldSessionDeliveryIDs, old, Set(records.tasksByID().keys))
         }
-        for id in sweep.records { tasks.removeValue(forKey: id) }
-        for id in oldSessionDeliveryIDs {
-            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionDelivery(forTerminal: id) }
-        }
-        let retained = Set(tasks.keys)
-        lock.unlock()
+        let oldSessionDeliveryIDs = pruned.sessionDeliveries
+        let oldRootAssignmentIDs = pruned.rootAssignments
+        let retained = pruned.retained
         if !forgottenLabels.isEmpty {
             OrchestratorRegistry.withTransaction { registry in
                 for id in forgottenLabels { registry.unsuppressHandoffLabel(id) }
@@ -10510,8 +10512,7 @@ enum Orchestrator {
 
     static func held(_ id: String) -> Task? {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return tasks[id]
+        return OrchestratorRegistry.withTaskRecords { $0.task(id) }
     }
 
     private static func heldHandoff(_ id: String) -> HandoffEnvelope? {
@@ -10520,8 +10521,7 @@ enum Orchestrator {
     }
 
     private static func heldSecret(_ id: String) -> String? {
-        lock.lock(); defer { lock.unlock() }
-        return OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.taskSecret(for: id) }
+        OrchestratorRegistry.withSessionRecords { $0.taskSecret(for: id) }
     }
 
     private static func target(withID id: String) -> TargetSession? {
@@ -10631,58 +10631,55 @@ enum Orchestrator {
 
     /// Test seam: forget everything in memory.
     static func forget() {
-        lock.lock()
-        tasks = [:]
-        OrchestratorRegistry.withTransactionOnHeldLock {
-            $0.removeAllGraphAdmissions()
-            $0.removeAllRateWindows()
+        OrchestratorRegistry.withTaskRecords { records in
+            records.removeAllTasks()
+            records.registry.removeAllGraphAdmissions()
+            records.registry.removeAllRateWindows()
+            restartReceipt = nil
+            records.coordinationRecords.removeAllPersistentRecords()
+            records.sessionRecords.removeAllHandoffDeliveries()
+            records.sessionRecords.removeAllPersistentRecords()
+            closureAttestations = [:]
+            sessionActivityGenerations = [:]
+            sessionActivityClasses = [:]
+            obligationGeneration = 0; obligationFingerprint = ""; obligationFingerprintDirty = true
+            observedTaskMutationGeneration = -1
+            observedSessionSelfStateMutationGeneration = -1
+            observedCoordinationObligationMutationGeneration = -1
+            closeabilityIndexDirty = true
+            cachedCloseabilityRegistryIndex = nil
+            records.registry.removeAllHandoffTitles()
+            records.sessionRecords.removeAllTaskSecrets()
+            badResults = []
+            handledScheduleFires = [:]
+            pendingScheduleFires = [:]
+            lastMissedScheduleFires = [:]
+            dispatchingSchedules = []
+            invalidScheduleFingerprints = [:]
+            scheduleRunnerForTesting = nil
+            scheduleDispatchEnqueuerForTesting = nil
+            completionPumpEnqueuerForTesting = nil
+            storeSaveInterceptorForTesting = nil
+            childIdentityRefreshForTesting = nil
+            rootIdentityEvidenceForTesting = nil
+            completionPumpScheduled = false
+            completionPumpGeneration += 1
+            workspaceOverlapObserverForTesting = nil
+            rootNotificationObserverForTesting = nil
+            rootAssignmentAuditObserverForTesting = nil
+            attachedSenderForTesting = nil
+            attachmentInventoryForTesting = nil
+            taskStarterForTesting = nil
+            agentPushForTesting = nil
+            sessionDeliveryPushForTesting = nil
+            resetSessionLandingTesting()
+            watchedSessionIDsForTesting = nil
+            records.registry.removeAllTerminalTitles()
+            records.registry.removeAllSuppressedRootAssignmentLabels()
+            records.registry.removeAllSuppressedHandoffLabels()
+            records.registry.removeAllRoles()
+            loaded = false
         }
-        restartReceipt = nil
-        OrchestratorRegistry.withCoordinationRecordsOnHeldLock { $0.removeAllPersistentRecords() }
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeAllHandoffDeliveries() }
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeAllPersistentRecords() }
-        closureAttestations = [:]
-        sessionActivityGenerations = [:]
-        sessionActivityClasses = [:]
-        obligationGeneration = 0; obligationFingerprint = ""; obligationFingerprintDirty = true
-        observedSessionSelfStateMutationGeneration = -1
-        observedCoordinationObligationMutationGeneration = -1
-        closeabilityIndexDirty = true
-        cachedCloseabilityRegistryIndex = nil
-        OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllHandoffTitles() }
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeAllTaskSecrets() }
-        badResults = []
-        handledScheduleFires = [:]
-        pendingScheduleFires = [:]
-        lastMissedScheduleFires = [:]
-        dispatchingSchedules = []
-        invalidScheduleFingerprints = [:]
-        scheduleRunnerForTesting = nil
-        scheduleDispatchEnqueuerForTesting = nil
-        completionPumpEnqueuerForTesting = nil
-        storeSaveInterceptorForTesting = nil
-        childIdentityRefreshForTesting = nil
-        rootIdentityEvidenceForTesting = nil
-        completionPumpScheduled = false
-        completionPumpGeneration += 1
-        workspaceOverlapObserverForTesting = nil
-        rootNotificationObserverForTesting = nil
-        rootAssignmentAuditObserverForTesting = nil
-        attachedSenderForTesting = nil
-        attachmentInventoryForTesting = nil
-        taskStarterForTesting = nil
-        agentPushForTesting = nil
-        sessionDeliveryPushForTesting = nil
-        resetSessionLandingTesting()
-        watchedSessionIDsForTesting = nil
-        OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllTerminalTitles() }
-        OrchestratorRegistry.withTransactionOnHeldLock {
-            $0.removeAllSuppressedRootAssignmentLabels()
-            $0.removeAllSuppressedHandoffLabels()
-        }
-        OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllRoles() }
-        loaded = false
-        lock.unlock()
         RemoteServer.shared.setRestartMaintenance(active: false, requestID: nil)
         resetTranscriptOwnershipCacheForTesting()
     }

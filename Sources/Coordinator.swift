@@ -1532,10 +1532,9 @@ extension Orchestrator {
             return .refused(400, "bad_restart_request", "request_id must be one lowercase UUID.")
         }
         load()
-        lock.lock()
-        let candidates = Array(tasks.values)
-        let existing = restartReceipt
-        lock.unlock()
+        let (candidates, existing) = OrchestratorRegistry.withTaskRecords { records in
+            (records.taskValues(), restartReceipt)
+        }
         let blockers = restartBlockers(in: candidates)
         if let existing, existing.phase == .invalid {
             return .refused(status: 503, code: "restart_store_failed",
@@ -1672,45 +1671,58 @@ extension Orchestrator {
     static func reconcileRestartInventory(_ snapshot: SessionWatch.IdentitySnapshot,
                                           identities: [SessionWorkIdentity], now: Date = Date()) {
         load()
-        lock.lock()
-        guard var restart = restartReceipt, restart.phase == .reconciling,
-              snapshot.complete, let observedAt = snapshot.observedAt,
-              observedAt >= (restart.resumedAt ?? restart.requestedAt) else {
-            lock.unlock(); return
+        // The receipts and the restart phase are decided and committed in one task-record hold;
+        // the save follows it, and a failed save restores both in one more hold: the restart
+        // receipt whole, and each row's executor receipt only where reconciliation's still stands.
+        enum Reconciliation {
+            case skipped
+            case reconciled(priorTasks: [String: Task], written: [String: Task],
+                            priorRestart: RestartReceipt, restart: RestartReceipt, allSettled: Bool)
         }
-        let inventory = ExecutorInventory(
-            complete: snapshot.complete, observedAt: observedAt,
-            generation: snapshot.generation, epoch: snapshot.epoch)
-        let priorRestart = restart
-        let priorTasks = tasks
-        var unresolved: [String] = []
-        for (id, var task) in tasks where task.state == .briefed {
-            let receipt = reconcileExecutor(task: task, identities: identities,
-                                            inventory: inventory,
-                                            previous: task.executorReceipt, now: now)
-            task.executorReceipt = receipt
-            tasks[id] = task
-            if receipt.status == .pending { unresolved.append(id) }
+        let reconciliation = OrchestratorRegistry.withTaskRecords { records -> Reconciliation in
+            guard var restart = restartReceipt, restart.phase == .reconciling,
+                  snapshot.complete, let observedAt = snapshot.observedAt,
+                  observedAt >= (restart.resumedAt ?? restart.requestedAt) else {
+                return .skipped
+            }
+            let inventory = ExecutorInventory(
+                complete: snapshot.complete, observedAt: observedAt,
+                generation: snapshot.generation, epoch: snapshot.epoch)
+            let priorRestart = restart
+            let priorTasks = records.tasksByID()
+            var unresolved: [String] = []
+            var written: [String: Task] = [:]
+            for (id, var task) in priorTasks where task.state == .briefed {
+                let receipt = reconcileExecutor(task: task, identities: identities,
+                                                inventory: inventory,
+                                                previous: task.executorReceipt, now: now)
+                task.executorReceipt = receipt
+                if records.commitTask(task) { written[id] = task }
+                if receipt.status == .pending { unresolved.append(id) }
+            }
+            unresolved.sort()
+            let reconciliationExpired = now.timeIntervalSince(
+                restart.resumedAt ?? restart.requestedAt) >= restartReconciliationGrace
+            let allSettled = unresolved.isEmpty || reconciliationExpired
+            if allSettled {
+                restart.phase = .complete
+                restart.reconciledAt = now
+                restart.reconciliationTimedOut = !unresolved.isEmpty
+                restart.unresolvedTaskIDs = unresolved
+                restart.outstanding = 0
+                restart.channels = [:]
+                restartReceipt = restart
+            }
+            return .reconciled(priorTasks: priorTasks, written: written,
+                               priorRestart: priorRestart, restart: restart, allSettled: allSettled)
         }
-        unresolved.sort()
-        let reconciliationExpired = now.timeIntervalSince(
-            restart.resumedAt ?? restart.requestedAt) >= restartReconciliationGrace
-        let allSettled = unresolved.isEmpty || reconciliationExpired
-        if allSettled {
-            restart.phase = .complete
-            restart.reconciledAt = now
-            restart.reconciliationTimedOut = !unresolved.isEmpty
-            restart.unresolvedTaskIDs = unresolved
-            restart.outstanding = 0
-            restart.channels = [:]
-            restartReceipt = restart
-        }
-        lock.unlock()
+        guard case .reconciled(let priorTasks, let written, let priorRestart, let restart,
+                               let allSettled) = reconciliation else { return }
         guard save() else {
-            lock.lock()
-            tasks = priorTasks
-            restartReceipt = priorRestart
-            lock.unlock()
+            OrchestratorRegistry.withTaskRecords { records in
+                records.restoreExecutorReceipts(from: priorTasks, wherever: written)
+                restartReceipt = priorRestart
+            }
             return
         }
         if allSettled {

@@ -352,9 +352,7 @@ enum OrchestratorInventory {
               let repository = Orchestrator.inflightRepository(project) else { return nil }
         let branches = Orchestrator.repositoryBranches(in: repository)
         Orchestrator.load()
-        Orchestrator.lock.lock()
-        let held = Array(Orchestrator.tasks.values)
-        Orchestrator.lock.unlock()
+        let held = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
         // Read outside the registry lock: the landing queue keeps its own, and taking one inside
         // the other is the shape that produced this repository's `exit 133`.
         let retained = OrchestratorLandingQueue.retainedLandingPaths()

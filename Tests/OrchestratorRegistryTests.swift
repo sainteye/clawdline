@@ -553,4 +553,238 @@ func runOrchestratorRegistryTests() {
         }
         Orchestrator.forget()
     }
+
+    // W1-4: the task table left `Orchestrator`, and with it the last reason for a held-lock door.
+    // What must be true is that only admission creates a row and never replaces one, that the
+    // same-hold writes (update, commit) never create the row they name, that the `didSet` the
+    // table used to carry survives as the owner's mutation clock, that a facade read waits for a
+    // task-door writer on the one lock, and that the schema-v1 store and the terminal index come
+    // back from a restart unchanged.
+    group("task records have one registry owner, row-scoped writes and a mutation clock") {
+        let store = Orchestrator.storeURL
+        let before = try? Data(contentsOf: store)
+        defer {
+            if let before { try? before.write(to: store, options: .atomic) }
+            else { try? FileManager.default.removeItem(at: store) }
+            Orchestrator.forget()
+        }
+        Orchestrator.forget()
+        Orchestrator.load()
+        // Lowercase UUIDs: the task codec refuses anything else on reload, and the restart half
+        // would then read a codec refusal as an ownership defect.
+        let id = UUID().uuidString.lowercased()
+        let absent = UUID().uuidString.lowercased()
+        let at = Date(timeIntervalSince1970: 1_800_001_000)
+        func fixture(_ id: String) -> Orchestrator.Task {
+            var task = Orchestrator.Task(
+                id: id, state: .briefed, kind: "custom", title: "registry-owned task",
+                assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: at,
+                secretHash: Orchestrator.hash(ofSecret: String(repeating: "a7", count: 32)))
+            task.childTerminalId = "%registry-task"
+            return task
+        }
+
+        let recorded = OrchestratorRegistry.withTaskRecords { records -> Bool in
+            records.admitTask(fixture(id))
+                && records.task(id)?.title == "registry-owned task" && records.taskCount == 1
+        }
+        check("an admitted task reads back inside the hold that admitted it", recorded)
+        let refused = OrchestratorRegistry.withTaskRecords { records -> Bool in
+            var again = fixture(id)
+            again.title = "admitted twice"
+            return !records.admitTask(again) && records.task(id)?.title == "registry-owned task"
+                && records.updateTask(absent) { $0.title = "invented" } == nil
+                && !records.commitTask(fixture(absent))
+                && records.task(absent) == nil && records.taskCount == 1
+        }
+        check("a second admission replaces nothing, and an update or a commit creates nothing",
+              refused)
+        let committed = OrchestratorRegistry.withTaskRecords { records -> Bool in
+            guard var current = records.task(id) else { return false }
+            current.summary = "committed whole"
+            return records.commitTask(current) && records.task(id)?.summary == "committed whole"
+        }
+        check("a whole-row commit replaces a row that still exists", committed)
+
+        // The obligation fingerprint covers task state, so this update must tick the clock. Before
+        // W1-4 a `didSet` on the facade's dictionary did that; now only the owner can.
+        let beforeUpdate = Orchestrator.currentObligationGeneration()
+        let updated = OrchestratorRegistry.withTaskRecords { records in
+            records.updateTask(id) { $0.state = .success }?.state
+        }
+        expect("an update returns the row as it wrote it", updated, .success)
+        check("a task changed only through the registry advances the obligation clock",
+              Orchestrator.currentObligationGeneration() > beforeUpdate)
+
+        let concurrent = UUID().uuidString.lowercased()
+        let writerIsHalfway = DispatchSemaphore(value: 0)
+        let writerFinished = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            OrchestratorRegistry.withTaskRecords { records in
+                records.admitTask(fixture(concurrent))
+                writerIsHalfway.signal()
+                // Long enough that a facade read which did not take the lock would see the row
+                // before its title changed. With the lock it waits for the whole transaction.
+                Thread.sleep(forTimeInterval: 0.05)
+                records.updateTask(concurrent) { $0.title = "written whole" }
+            }
+            writerFinished.signal()
+        }
+        writerIsHalfway.wait()
+        expect("a facade read opened mid-transaction waits for the whole of it",
+               Orchestrator.held(concurrent)?.title, "written whole")
+        expect("the task-door transaction ended", writerFinished.wait(timeout: .now() + 3),
+               DispatchTimeoutResult.success)
+        OrchestratorRegistry.withTaskRecords { $0.removeTask(concurrent) }
+
+        Orchestrator.saveForTesting()
+        let written = (try? Data(contentsOf: store))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        check("the owner still writes schema version 1 under the tasks key",
+              written?["version"] as? Int == 1
+                && (written?["tasks"] as? [[String: Any]])?
+                    .contains { $0["id"] as? String == id } == true)
+        Orchestrator.forget()
+        check("forget clears the task table through the owner",
+              OrchestratorRegistry.withTaskRecords { $0.taskCount } == 0)
+        Orchestrator.load()
+        let restored = OrchestratorRegistry.withTaskRecords { $0.task(id) }
+        check("a task survives a save and reload through the registry",
+              restored?.state == .success && restored?.summary == "committed whole")
+        expect("and load rebuilds the terminal index from the owner's rows",
+               Orchestrator.role(forTerminal: "%registry-task")?.taskID, id)
+    }
+
+    group("task-door effects run after the hold is released, and persistence precedes the push") {
+        let store = Orchestrator.storeURL
+        let before = try? Data(contentsOf: store)
+        let deliveryPreference = Config.shared.pushOnDelivery
+        let smartPreference = Config.shared.smartNotifications
+        defer {
+            if let before { try? before.write(to: store, options: .atomic) }
+            else { try? FileManager.default.removeItem(at: store) }
+            Config.shared.pushOnDelivery = deliveryPreference
+            Config.shared.smartNotifications = smartPreference
+            Orchestrator.forget()
+        }
+        Orchestrator.forget()
+        Config.shared.pushOnDelivery = true
+        Config.shared.smartNotifications = false
+        // Asked from another thread, because the question is whether *this* thread still holds
+        // the lock while it performs the effect. A held lock makes the probe wait out its timeout
+        // rather than hang the suite, and the answer is then the `-under-lock` spelling.
+        func registryLockIsFree() -> Bool {
+            let acquired = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                OrchestratorRegistry.withTaskRecords { _ in }
+                acquired.signal()
+            }
+            return acquired.wait(timeout: .now() + 2) == .success
+        }
+        var effects: [String] = []
+        var written: [Data] = []
+        Orchestrator.storeSaveInterceptorForTesting = { data in
+            effects.append(registryLockIsFree() ? "save" : "save-under-lock")
+            written.append(data)
+            return true
+        }
+        Orchestrator.sessionDeliveryPushForTesting = { _ in
+            effects.append(registryLockIsFree() ? "push" : "push-under-lock")
+        }
+
+        let taskID = UUID().uuidString.lowercased()
+        let secret = String(repeating: "b8", count: 32)
+        Orchestrator.holdScheduleTaskForTesting(Orchestrator.Task(
+            id: taskID, state: .briefed, kind: "custom", title: "effect order",
+            assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+            created: Date(timeIntervalSince1970: 1_800_002_000),
+            secretHash: Orchestrator.hash(ofSecret: secret)))
+        let progress = Orchestrator.recordProgress(taskID: taskID, secret: secret,
+                                                   note: "The owner committed this first.")
+        if case .ok = progress {
+            check("a live task accepts a progress note through the task door", true)
+        } else {
+            check("a live task accepts a progress note through the task door", false)
+        }
+        expect("a task transition's save runs after the task door released the lock",
+               effects, ["save"])
+        check("and the snapshot it hands the writer already carries the committed transition",
+              written.last.map { String(decoding: $0, as: UTF8.self) }?
+                .contains("The owner committed this first.") == true)
+
+        effects = []
+        let identity = Orchestrator.SessionWorkIdentity(
+            terminalID: "EFFECT-ORDER-TAB", assistant: .claude, tty: "/dev/ttys12", pid: 1200,
+            processStart: Date(timeIntervalSince1970: 610),
+            conversationID: "effect-order-conversation")
+        _ = Orchestrator.reportSessionDelivery(
+            identity: identity, terminalState: .working("wrapping up"),
+            summary: "Registry effects stay outside the hold.",
+            now: Date(timeIntervalSince1970: 710))
+        expect("a delivery receipt is written before its push, and neither runs under the lock",
+               effects, ["save", "push"])
+    }
+
+    // W1-4 correction: the writes that start from a copy taken before other work — finalization's
+    // follow-up stages, after its terminal commit, and a step walker's `replaceTask` — must not
+    // erase a fact another writer committed in between, or bring back a row swept meanwhile. Only
+    // facade seams are used, so the same group runs against the tree before the correction.
+    group("a finalization stage or a step commit keeps a concurrent fact and never re-creates a swept task") {
+        let store = Orchestrator.storeURL
+        let before = try? Data(contentsOf: store)
+        let priorInterceptor = Orchestrator.storeSaveInterceptorForTesting
+        defer {
+            Orchestrator.finalizationStageBoundaryForTesting = nil
+            Orchestrator.storeSaveInterceptorForTesting = priorInterceptor
+            if let before { try? before.write(to: store, options: .atomic) }
+            else { try? FileManager.default.removeItem(at: store) }
+            Orchestrator.forget()
+        }
+        Orchestrator.forget()
+        Orchestrator.storeSaveInterceptorForTesting = { _ in true }
+        func fixture(_ state: Orchestrator.State) -> Orchestrator.Task {
+            Orchestrator.Task(
+                id: UUID().uuidString.lowercased(), state: state, kind: "custom",
+                title: "concurrent fact", assistant: .codex, projectDir: "/tmp",
+                timeoutMinutes: 30, created: Date(timeIntervalSince1970: 1_800_003_000),
+                secretHash: Orchestrator.hash(ofSecret: String(repeating: "c9", count: 32)))
+        }
+
+        let noticed = fixture(.briefed)
+        Orchestrator.holdScheduleTaskForTesting(noticed)
+        Orchestrator.finalizationStageBoundaryForTesting = { id in
+            Orchestrator.mutateTaskForTesting(id) { $0.notifyCount = 3 }
+        }
+        Orchestrator.finalize(noticed.id, as: .failure, summary: "ended", artifacts: ["out.txt"])
+        expect("finalization still ends the task", Orchestrator.held(noticed.id)?.state, .failure)
+        expect("a notification counted after the terminal commit survives the later stages",
+               Orchestrator.held(noticed.id)?.notifyCount, 3)
+
+        let swept = fixture(.briefed)
+        Orchestrator.holdScheduleTaskForTesting(swept)
+        Orchestrator.finalizationStageBoundaryForTesting = { id in
+            _ = OrchestratorRegistry.withTaskRecords { $0.removeTask(id) }
+        }
+        Orchestrator.finalize(swept.id, as: .failure, summary: "ended", artifacts: ["out.txt"])
+        Orchestrator.finalizationStageBoundaryForTesting = nil
+        check("a task swept after the terminal commit is not re-created by a later stage",
+              Orchestrator.held(swept.id) == nil)
+
+        let walked = fixture(.spawning)
+        Orchestrator.holdScheduleTaskForTesting(walked)
+        var stale = Orchestrator.held(walked.id) ?? walked
+        Orchestrator.mutateTaskForTesting(walked.id) {
+            $0.notifyCount = 2
+            $0.progress.append(Orchestrator.ProgressNote(
+                note: "written after the walker's copy", at: Date(timeIntervalSince1970: 1_800_003_100)))
+        }
+        stale.childTTY = "/dev/ttys042"
+        check("a step walker's commit from an older copy is accepted",
+              Orchestrator.replaceTask(stale, expecting: .spawning))
+        let stepped = Orchestrator.held(walked.id)
+        expect("and it writes the walker's own field", stepped?.childTTY, "/dev/ttys042")
+        check("but keeps the notification count and progress note committed after that copy",
+              stepped?.notifyCount == 2
+                && stepped?.progress.last?.note == "written after the walker's copy")
+    }
 }

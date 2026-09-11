@@ -487,7 +487,7 @@ rewrites. Counts are identifier occurrences in `Sources/Orchestrator.swift` at t
 | 4 | coordinationWaits, handoffs | 53 | two features, one lifetime: created, delivered, released |
 | 5 | rootAssignments | 49 | its own feature, and the newest, so its call sites are the least settled |
 | 6 | tasks | 167 | last, alone, and only once the door has survived five stages |
-| 7 | close the second door | — | the ratchet reaches zero, or Cut 2 did not happen |
+| 7 | close the second door, the held-lock door | — | its ratchet reaches zero, or Cut 2 did not happen; the bare regions it leaves are owned in the W1-4 table |
 
 **Stage 3 is one reversible capability boundary.** The original per-collection rule was written
 before the four per-session families were traced through restart and projection. That trace showed
@@ -534,6 +534,139 @@ the six checks that name those behaviors, 6 of 132, while the neighbouring hando
 stayed green. Each new ratchet was pushed one site past its number and refused. The step paths
 that type into a live terminal (activation, briefing, injection) are covered by review, not by
 execution, and the full suite on the integrated tree remains the landing root's.
+
+**Stages 6 and 7 moved together as W1-4: the task table, and the held-lock doors with it.** The
+task collection was the last Registry-facing state `Orchestrator` still declared, and every
+held-lock door existed because some region had to stay atomic with it. It moved behind
+`OrchestratorRegistry.TaskRecordsTransaction`, reached only through the acquiring
+`withTaskRecords` door; the table is `private` to `OrchestratorRegistry.swift`, and
+`tools/check-architecture-boundaries.sh` pins that declaration. The capability exposes value
+projections (`task`, `tasksByID`, `taskValues`), the serialize, claims and root-key admission
+queries, the terminal index rebuild that used to be `Orchestrator.reindex`
+(`rebuildTerminalProjection`), and three kinds of write. The first delivery called all of them
+"closed row transitions"; only the first kind is closed.
+
+- **Named transitions** choose their own guard and write only their own fields. `admitTask`
+  inserts and never replaces. Finalization commits the terminal state in one hold and then reads
+  the result file, the transcript's usage and the claimed paths outside it, so its follow-up facts
+  go through `recordUntouchedClaims`, `adoptResultReceipt`, `recordHarvestedUsage` and
+  `scheduleReclaim`: each writes only while the row still exists and still carries the committed
+  outcome, and finalization adopts the row as written. A step walker's value copy — `replaceTask`
+  from activation, briefing, watch, expiry and close settlement — goes through
+  `commitStepCandidate`, which takes progress notes, the file note, the notification count,
+  released claims, the landing, the completion envelope and finalization's facts from the row as it
+  stands rather than from the copy. `releaseClaims` appends inside the hold. The
+  restart-reconciliation and completion-recovery rollbacks restore, per row, only the fields their
+  own step wrote (`restoreExecutorReceipts`, `restoreCompletionRecovery`), instead of a table taken
+  before the save. None of these can re-create a swept row.
+- **Same-hold read-modify-write** — `updateTask` and `commitTask` — remains a row-scoped
+  capability, not a closed transition: the caller computes the change, and it loses no concurrent
+  write only because the change comes from the row read in the same hold. Review keeps that, not
+  the compiler. Neither creates a row.
+- **Whole-table writes** are `load()`'s `replaceAllTasks` and `forget()`'s `removeAllTasks`;
+  `seedTaskForTesting` is the one upsert, for fixtures. The guard counts the production callers of
+  the upsert and of the table replacement.
+
+What these do not close is named rather than implied. Among the step walkers of one state, the
+walkers' own fields — state, identity, inject counters, deadlines, executor receipts, interventions
+— are still last-writer-wins. Landing, completion-delivery and progress transitions are still
+same-hold read-modify-write in `Orchestrator`, correct by construction but not named Registry
+operations; moving them behind expected-state named operations is a follow-on node, not W1-4.
+
+The same hold derives `registry`, `sessionRecords` and `coordinationRecords`, and that derivation
+is what let the second door close: a region atomic across families acquires once and hands its
+capability down. The registry helpers that used to say "caller holds the lock" now take the
+capability as a parameter, so a caller must have one — except `noteActivityLocked`, which touches
+only `Orchestrator`'s own activity counters and still carries the unchecked convention. No call
+site returns, stores or captures a capability; Swift 5 cannot forbid it, so that is review's to
+keep. `withTransactionOnHeldLock`, `withSessionRecordsOnHeldLock` and
+`withCoordinationRecordsOnHeldLock` are deleted, and their ratchets (12, 48 and 26 sites) are
+replaced by a calibrated check that no code declares or calls a door ending in `OnHeldLock`. **That
+held-lock door is what the W1-4 gate means by "direct door reaches zero", and it is zero.** The
+`Task` mutation `didSet` became a Registry clock consumed at settlement, the way the session and
+coordination clocks already were.
+
+Six files outside the trio read or wrote the table and now enter the task door:
+`OrchestratorInventory`, `OrchestratorLandingQueue` and `OrchestratorLandingSweep`, which took
+`Orchestrator.lock`; `Coordinator`, whose restart reconciliation and its rollback write rows; and
+`UsageFeatureAttribution` (three snapshot reads) and `UsageLedger` (one). The slice's path set was
+extended twice during implementation, the second time by progress note only; the correction wave
+ratifies the whole 18-path union, including `Coordinator.swift`, `UsageFeatureAttribution.swift`
+and `UsageLedger.swift`.
+
+**W1-4 does not complete W1.** The W1 gate is *zero externally held owner locks*, and the shared
+lock is still taken bare in 30 regions guarding state `Orchestrator` declares itself: 21 in
+`Orchestrator.swift` (bare `lock.lock()` in the three files that took the registry lock directly
+fell from 123 to 21) and 9 in `Coordinator.swift`'s `extension Orchestrator`, which the three-file
+count never saw and which now has a ratchet of its own. None reaches a Registry collection. Two
+task-door reads also probe the filesystem inside the hold. Each is owned by the boundary that will
+move it; the counts may only fall.
+
+| Region (function) | State it guards | Next boundary |
+|---|---|---|
+| schedule removal, schedule inventory ×2, manual run, terminal-admission retry, stale-fire skip, dispatch settlement, `handledScheduleFireForTesting` — 8 | `handledScheduleFires`, `pendingScheduleFires`, `lastMissedScheduleFires`, `dispatchingSchedules`, `invalidScheduleFingerprints` | W2-1 scheduling (Cut 3's schedule owner) |
+| `scheduleCompletionPump`, `completionPump` ×3, `completionAttempt`'s generation check — 5 | `completionPumpScheduled`, `completionPumpGeneration` | W2-1 event publication |
+| `beat`'s in-flight counter — 1 | `beatsInFlight` | W2-1 scheduling |
+| `activityGeneration(ofTerminal:)` — 1 | `sessionActivityGenerations` (also written by `noteActivityLocked` inside other holds) | W2-1 event publication |
+| closeability read counter ×2 — 2 | `closeabilityRegistryReadCountForTesting` | W2-2 command admission (the closeability query) |
+| `readResult`'s bad-secret record — 1 | `badResults` | W2-2 command admission (result intake) |
+| `dispatchToken()`, `archiveKey()` — 2, **reading and writing their files inside the hold** | the orchestrator token and archive-key files | W1-5 persistence health: an unreadable file is replaced by a fresh mint today |
+| `load()`'s flag — 1 | `loaded` | W1-5 persistence health: the flag is set before the read, so an unreadable store leaves empty tables authoritative |
+| `Coordinator.swift` restart maintenance: begin ×2, advance ×2, abort ×2, current record, admission check, resume — 9 | `restartReceipt` | W2-2 command admission (restart maintenance) |
+| `scheduledResumeTitle` → `availableScheduledSessionID`: `fileExists`, transcript ownership, `Codex.head` — **inside the task door** | task rows | W2-2 command admission (the place-resume query): take rows in the door, probe outside, revalidate |
+| `tasksUnder` (root-close cascade) → `provenChildSessionID` — **inside the task door** | task rows | W2-2 command admission (session close): the same shape |
+
+Schema v1, the `tasks` key and its codec, the single `NSLock`, the rate and capacity limits,
+idempotent replays and every `Orchestrator` facade are unchanged, so rollback is reverting the
+slice, and a store written by either side is read by the other. What the correction changed is
+behaviour under a race only: a finalization stage or a step commit no longer erases a fact
+committed after its copy, a swept row is no longer re-created, a second admission of one id is
+answered as the idempotent replay it would have been a moment earlier, and a failed-save rollback
+no longer puts back rows or fields another writer changed meanwhile.
+
+Effects follow the door, but **persistence does not precede every terminal send, and the first
+delivery said it did.** The one audit that ran with the lock held — `replaceTask`'s stale-write
+refusal — now runs after the door returns, and no effect moved into a hold. The ordering on this
+tree, read from the code:
+
+- queued activation (`startQueuedTaskIfEligible`): commit `spawning` → `save()` → `spawn`;
+- direct dispatch: admit in memory → `spawn` → `save()`;
+- briefing injection (`brief`): `Targets.send` → in-memory `replaceTask` → `orchestrator.brief.inject`
+  audit → the step's `save()` on the main queue after `brief` returns;
+- startup-menu answer: in-memory `replaceTask` → `Targets.answer` → audit → that same `save()`;
+- briefed acceptance: in-memory `replaceTask`, secret discarded → `orchestrator.brief` audit → that
+  same `save()`.
+
+A crash between a send or an acceptance and that save reloads the row as `spawning`, and startup
+recovery records `spawn_failed` — "The app restarted before the child was briefed." — even when the
+child has the line. The ordering predates W1-4. Its owner is **W2-1**, which owns the terminal step
+lane these sends run on; which effects must further wait for a *successful* save is W1-5's
+decision. The mutation proof below exercised two orderings and no terminal send: a progress note's
+save runs after the task door released the lock, and a session delivery's save precedes its push.
+
+The focused proof was one `--swift-focused` selection of 239 groups — every group in the suites
+that exercise a converted region (dispatch, completion, landing, landing queue, recovery,
+coordination, Root Assignment, scheduled dispatch, background and storage, landing currency,
+closeability, close and quota, store, lifecycle, work state, Coordinator, usage portfolio and the
+registry itself) plus the delivery-push group — run on the working overlay: 4,373 focused checks,
+green, 74 seconds including the compile. Two new registry groups carry the new failure classes.
+Their red half injected two defects into a private copy — a row update that no longer ticks the
+task mutation clock, and the save interceptor called inside the task door — and the two groups
+failed on exactly the three checks that name those behaviors, 3 of 15. The zero-door guard was
+shown red on a copy carrying one `withTransactionOnHeldLock` call. The step paths that type into a
+live terminal remain covered by review rather than execution, and the full suite on the integrated
+tree remains the landing root's.
+
+The correction wave that followed the sealed review was proved the same way, once: one
+`--swift-focused` selection over the same suites plus the new seam group, green on the corrected
+working overlay. Its red half ran the seam group alone on the pre-correction overlay, carrying only
+the test hook and the group, and failed on exactly the three checks that name the defect: a later
+finalization stage reset a notification count committed after the terminal commit, a swept task
+was re-created, and a step walker's older copy erased a notification count and a progress note
+committed after it. The task-door guard was shown red on a private copy twice — a production caller
+of `seedTaskForTesting`, and a tenth bare lock in `Coordinator.swift`'s extension. The reliability
+baseline was resealed for `Orchestrator.swift` and `Coordinator.swift` only. The full suite on the
+integrated tree remains the landing root's.
 
 **Stage 2 is the one that is not a relocation.** `dispatchTimes`, `notifyTimes`,
 `notifyCredentialFailureTimes` and `scheduleWriteTimes` are four `[Date]` arrays carrying the same
@@ -627,10 +760,10 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 619 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered groups | 622 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 48 | `Tests/main.swift`, counted by the guard |
 | suite files | 61 | `Tests/*Tests.swift`, counted by the guard |
-| `Orchestrator.swift` ceiling | 10,721 | the ratchet in `tools/check-architecture-boundaries.sh` |
+| `Orchestrator.swift` ceiling | 10,718 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,831 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->

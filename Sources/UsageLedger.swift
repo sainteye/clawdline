@@ -5080,9 +5080,7 @@ extension Orchestrator {
     /// One bounded registry snapshot for the accepted Feature table's read-time role join.
     static func usageFeatureTaskRoles() -> [String: VerificationLedgerService.Role] {
         load()
-        lock.lock()
-        let snapshots = Array(tasks.values)
-        lock.unlock()
+        let snapshots = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
         return UsageQueryService.featureTaskRoles(snapshots)
     }
 }

@@ -24,7 +24,7 @@ import time
 import uuid
 
 
-BASE_COMMIT = "e23d2beae4b76bb565bef8ec18d6f7a57a8ca1aa"
+BASE_COMMIT = "bdf3307eab13562f17b7e6ca8f7887b2c0172588"
 # Measurement safety bound, not a production HTTP budget or SLA.
 HEALTH_BODY_LIMIT = 16384
 # Whole-file seals prevent an unchanged matching line from concealing a changed caller,
@@ -33,16 +33,16 @@ SOURCE_SEALS = {
     "Sources/CloudTransport.swift": "1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d",
     "Sources/CloudAppBridge.swift": "853c4431771550175c6c485b9da648edb72ef1d24b350030402dee74785aaabc",
     "Sources/RemoteServer.swift": "e143790631dde9e4db0bcaa55f1022a2e363b21781e364e730504cdec27f0c10",
-    "Sources/Orchestrator.swift": "e06cc0b6582ec1e5adb84ae0bd123895a659f570c4bd45737cd6364e3b9369ac",
+    "Sources/Orchestrator.swift": "a4980dfa61ea335d369ab7c0534d4b841690ece3b983384a82544ba1db3f9c1e",
     "Sources/OrchestratorStore.swift": "ed31e8ceb7aab18aee23efdf8c3a20805e61a576f89673a4b79deeffd58bcfcc",
-    "Sources/Coordinator.swift": "bf400471dce7fe381aea8608d5d96b8710e33035c0d98fbaea30b493040345ad",
+    "Sources/Coordinator.swift": "923c97e24b64947a218c9b308165174bb2d71d90bf9e78e02a804d658fccc588",
     "Sources/SessionWatch.swift": "d1d47930535b2e79bea14d13d56482885adeff09fcaa0326b84f8a60701beb5c",
     "Sources/TranscriptReadCoordinator.swift": "61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371",
     "Sources/ReadingFreshness.swift": "4592b2a84c03d196707626df2876f3ef4e5274149addf361b7738a2888ed672f",
     "Sources/CloudOutboundSpool.swift": "aef545decd4c7c95b5c566cb60cb11455eaadf6b52f84c3707b76df165459485",
     "Sources/CloudCommandLedger.swift": "def726c029d4fb17e0d096c3187d87b2ea89fdc413e69b95bb02cf0a27862fcf",
     "Sources/CloudBridgeLifecycle.swift": "07f585fd60b4e99abe42d89ca72087c6339456cb844b088718c503cd9ef6b663",
-    "Tests/OrchestratorRecoveryTests.swift": "e57da0019aa0535c82eb7ce41d22188662b594062fd7deebaabc6bdb4ec420f7",
+    "Tests/OrchestratorRecoveryTests.swift": "b6e1212d5c4d4fa85a9012498179b9c871688744ca3b3582e5b9dc0f632df5fb",
     "Tests/OrchestratorCompletionTests.swift": "d2258c60bd16287345470da810a3ec720c14886fe49da132ff6d92da6054699b",
     "Tests/CloudOutboundSpoolTests.swift": "da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244",
 }

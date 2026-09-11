@@ -5,10 +5,11 @@ extension Orchestrator {
     /// re-verifies Git nor calls the Board while the broker lock is held.
     static func boardRootLandingSnapshot() -> [SessionDelivery] {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDeliveriesSnapshot() }.values.filter {
-            $0.landing.map(isBrokerVerifiedSessionLanding) == true
-        }.sorted { $0.reportedAt < $1.reportedAt }
+        return OrchestratorRegistry.withSessionRecords { records in
+            records.sessionDeliveriesSnapshot().values.filter {
+                $0.landing.map(isBrokerVerifiedSessionLanding) == true
+            }.sorted { $0.reportedAt < $1.reportedAt }
+        }
     }
     /// Git evidence the broker proved for one root Session's current delivered turn. The
     /// repository path is the canonical common Git directory derived from the watched process's
@@ -164,23 +165,29 @@ extension Orchestrator {
                             "The current Session has no process-bound working directory.")
         }
 
-        lock.lock()
-        let expectedChildren = landingChildSnapshot(
-            for: identity.terminalID, tasks: Array(tasks.values))
-        if expectedChildren.contains(where: { child in
-            tasks[child.id].map { taskMatchesCurrentSession($0, identity: identity) } == true
-        }) {
-            lock.unlock()
+        let expected = OrchestratorRegistry.withTaskRecords { records
+            -> (children: [SessionLandingChildSnapshot], assignments: [RootAssignment],
+                receipt: SessionDelivery?)? in
+            let children = landingChildSnapshot(
+                for: identity.terminalID, tasks: records.taskValues())
+            if children.contains(where: { child in
+                records.task(child.id).map { taskMatchesCurrentSession($0, identity: identity) }
+                    == true
+            }) {
+                return nil
+            }
+            return (children, records.coordinationRecords.rootAssignments(),
+                    records.sessionRecords.sessionDelivery(forTerminal: identity.terminalID))
+        }
+        guard let expected else {
             return .refused(409, "child_session",
                             "A Clawdline child reports through its task landing, not this route.")
         }
-        let assignments = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-            $0.rootAssignments()
-        }
+        let expectedChildren = expected.children
+        let assignments = expected.assignments
         let expectedAssignments = landingAssignmentSnapshot(
             for: identity.terminalID, assignments: assignments)
-        let expectedReceipt = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDelivery(forTerminal: identity.terminalID) }
-        lock.unlock()
+        let expectedReceipt = expected.receipt
 
         guard let repositoryCommonDir = OrchestratorDraft.gitCommonDirectory(
                 at: repositoryDirectory) else {
@@ -240,72 +247,85 @@ extension Orchestrator {
             }
         }
 
-        lock.lock()
-        if !sessionLandingSkipPostGitValidationForTesting {
-            let currentChildren = landingChildSnapshot(
-                for: identity.terminalID, tasks: Array(tasks.values))
-            guard currentChildren == expectedChildren else {
-                lock.unlock()
-                return .refused(409, "child_session",
-                                "The Session's child binding changed while landing was verified.")
-            }
-            let currentAssignments = landingAssignmentSnapshot(
-                for: identity.terminalID,
-                assignments: OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
-                    $0.rootAssignments()
-                })
-            guard currentAssignments == expectedAssignments else {
-                lock.unlock()
-                return .refused(409, "root_assignment_changed",
-                                "The Session's durable Root Assignment changed during Git verification.")
-            }
-            guard OrchestratorRegistry.withSessionRecordsOnHeldLock({
-                $0.sessionDelivery(forTerminal: identity.terminalID)
-            }) == expectedReceipt else {
-                lock.unlock()
-                return .refused(409, "receipt_changed",
-                                "The Session delivery receipt changed during Git verification.")
-            }
+        // The compare-and-set after Git: every re-read and the one receipt write share a hold;
+        // save, the Board projection, audit and announcement follow it.
+        enum LandingWrite {
+            case answered(Reply)
+            case replayed(SessionDelivery, disposition: [String: Any])
+            case upgraded(SessionDelivery, disposition: [String: Any])
+            case created(SessionDelivery, disposition: [String: Any])
         }
-        if let existing = OrchestratorRegistry.withSessionRecordsOnHeldLock({
-            $0.sessionDelivery(forTerminal: identity.terminalID)
-        }),
-           sessionDeliveryMatchesCurrentSession(existing, identity: identity) {
-            if existing.settled {
-                lock.unlock()
-                return .refused(409, "receipt_stale",
-                                "That delivery belongs to an already settled turn.")
-            }
-            if existing.summary != summary {
-                lock.unlock()
-                return .refused(status: 409, code: "landing_conflict",
-                                message: "This turn already has a different delivery summary.",
-                                extra: ["field": "summary"])
-            }
-            if let stored = existing.landing {
-                let same = stored.repositoryCommonDir == landing.repositoryCommonDir
-                    && stored.verificationOrigin == landing.verificationOrigin
-                    && stored.target == landing.target
-                    && stored.verifiedCommit == landing.verifiedCommit
-                    && (!sessionLandingCompareTargetTipForTesting
-                        || stored.verifiedTargetCommit == landing.verifiedTargetCommit)
-                if same {
-                    let disposition = sessionDeliveryDisposition(existing)
-                    lock.unlock()
-                    let projection = ProjectBoardIntegration.observeRootLanding(existing)
-                    return .ok(["ok": true, "created": false,
-                                "disposition": disposition, "boardProjection": projection])
+        let write = OrchestratorRegistry.withTaskRecords { records -> LandingWrite in
+            let sessions = records.sessionRecords
+            if !sessionLandingSkipPostGitValidationForTesting {
+                let currentChildren = landingChildSnapshot(
+                    for: identity.terminalID, tasks: records.taskValues())
+                guard currentChildren == expectedChildren else {
+                    return .answered(.refused(
+                        409, "child_session",
+                        "The Session's child binding changed while landing was verified."))
                 }
-                lock.unlock()
-                return .refused(status: 409, code: "landing_conflict",
-                                message: "This turn already has different verified landing evidence.",
-                                extra: ["field": "landing"])
+                let currentAssignments = landingAssignmentSnapshot(
+                    for: identity.terminalID,
+                    assignments: records.coordinationRecords.rootAssignments())
+                guard currentAssignments == expectedAssignments else {
+                    return .answered(.refused(
+                        409, "root_assignment_changed",
+                        "The Session's durable Root Assignment changed during Git verification."))
+                }
+                guard sessions.sessionDelivery(forTerminal: identity.terminalID)
+                        == expectedReceipt else {
+                    return .answered(.refused(
+                        409, "receipt_changed",
+                        "The Session delivery receipt changed during Git verification."))
+                }
             }
-            var upgraded = existing
-            upgraded.landing = landing
-            OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionDelivery(upgraded, forTerminal: identity.terminalID) }
-            let disposition = sessionDeliveryDisposition(upgraded)
-            lock.unlock()
+            if let existing = sessions.sessionDelivery(forTerminal: identity.terminalID),
+               sessionDeliveryMatchesCurrentSession(existing, identity: identity) {
+                if existing.settled {
+                    return .answered(.refused(
+                        409, "receipt_stale", "That delivery belongs to an already settled turn."))
+                }
+                if existing.summary != summary {
+                    return .answered(.refused(
+                        status: 409, code: "landing_conflict",
+                        message: "This turn already has a different delivery summary.",
+                        extra: ["field": "summary"]))
+                }
+                if let stored = existing.landing {
+                    let same = stored.repositoryCommonDir == landing.repositoryCommonDir
+                        && stored.verificationOrigin == landing.verificationOrigin
+                        && stored.target == landing.target
+                        && stored.verifiedCommit == landing.verifiedCommit
+                        && (!sessionLandingCompareTargetTipForTesting
+                            || stored.verifiedTargetCommit == landing.verifiedTargetCommit)
+                    if same {
+                        return .replayed(existing,
+                                         disposition: sessionDeliveryDisposition(existing))
+                    }
+                    return .answered(.refused(
+                        status: 409, code: "landing_conflict",
+                        message: "This turn already has different verified landing evidence.",
+                        extra: ["field": "landing"]))
+                }
+                var upgraded = existing
+                upgraded.landing = landing
+                sessions.setSessionDelivery(upgraded, forTerminal: identity.terminalID)
+                return .upgraded(upgraded, disposition: sessionDeliveryDisposition(upgraded))
+            }
+            let made = SessionDelivery(identity: identity, summary: summary,
+                                       reportedAt: now, settled: false, landing: landing)
+            sessions.setSessionDelivery(made, forTerminal: identity.terminalID)
+            return .created(made, disposition: sessionDeliveryDisposition(made))
+        }
+        switch write {
+        case .answered(let reply):
+            return reply
+        case .replayed(let existing, let disposition):
+            let projection = ProjectBoardIntegration.observeRootLanding(existing)
+            return .ok(["ok": true, "created": false,
+                        "disposition": disposition, "boardProjection": projection])
+        case .upgraded(let upgraded, let disposition):
             save()
             let projection = ProjectBoardIntegration.observeRootLanding(upgraded)
             RemoteAuth.audit("orchestrator.session.landing", [
@@ -315,21 +335,17 @@ extension Orchestrator {
             ])
             return .ok(["ok": true, "created": true, "disposition": disposition,
                         "boardProjection": projection])
+        case .created(let made, let disposition):
+            save()
+            let projection = ProjectBoardIntegration.observeRootLanding(made)
+            RemoteAuth.audit("orchestrator.session.landing", [
+                "session": identity.terminalID, "ok": "1", "target": target,
+                "verified_commit": verification.commit,
+                "verified_target_commit": verification.targetCommit,
+            ])
+            announceDelivery(made)
+            return .ok(["ok": true, "created": true, "disposition": disposition,
+                        "boardProjection": projection])
         }
-        let made = SessionDelivery(identity: identity, summary: summary,
-                                   reportedAt: now, settled: false, landing: landing)
-        OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.setSessionDelivery(made, forTerminal: identity.terminalID) }
-        let disposition = sessionDeliveryDisposition(made)
-        lock.unlock()
-        save()
-        let projection = ProjectBoardIntegration.observeRootLanding(made)
-        RemoteAuth.audit("orchestrator.session.landing", [
-            "session": identity.terminalID, "ok": "1", "target": target,
-            "verified_commit": verification.commit,
-            "verified_target_commit": verification.targetCommit,
-        ])
-        announceDelivery(made)
-        return .ok(["ok": true, "created": true, "disposition": disposition,
-                    "boardProjection": projection])
     }
 }

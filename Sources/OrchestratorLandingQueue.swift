@@ -474,9 +474,7 @@ enum OrchestratorLandingQueue {
         -> (entries: [Entry], order: Order, contended: [Contention], stale: [String]) {
         let branches = Orchestrator.repositoryBranches(in: repository)
         Orchestrator.load()
-        Orchestrator.lock.lock()
-        let tasks = Array(Orchestrator.tasks.values)
-        Orchestrator.lock.unlock()
+        let tasks = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
         let retained = retainedLandingPaths()
         let first = members(tasks: tasks, repository: repository, branches: branches,
                             retainedPaths: retained, deliveryPaths: [:], now: now)

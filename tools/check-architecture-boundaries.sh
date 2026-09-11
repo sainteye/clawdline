@@ -212,7 +212,12 @@ main_lines=$(line_count Tests/main.swift)
 # Registry's coordination-record capability. The transitions went to the owner and the multi-line
 # door calls came back, so this file moved by one line while the owner gained the state machine:
 # 10,721 is measured on this candidate, without headroom.
-orchestrator_ceiling=10721
+# W1-4 moves the task table behind the Registry's task-record capability and closes the held-lock
+# doors. Converging the bare regions onto acquiring doors measured 10,822 mid-slice (+101); moving
+# the serialize/claims/root-key queries and the terminal index (`reindex`) into the owner, where
+# the brief put them, took 103 back, and restoring the one-line `records()` spelling the guard
+# below pins took one more. 10,718 is measured on this candidate, without headroom.
+orchestrator_ceiling=10718
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -682,54 +687,86 @@ done
 suite_count_expected=61
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
-# The registry's second door — withTransactionOnHeldLock — does not acquire the lock; it trusts
-# its caller to hold it, which is exactly the contract the …Locked() suffix carried and exactly
-# what this refactor exists to abolish. It is defensible only as a migration step, and only if it
-# shrinks. Nothing about Swift can check it: NSLock cannot be asked whether this thread holds it,
-# and an owner field would fire on the ~160 legitimate bare regions that never go through the
-# registry. So the check that can exist is a ratchet on the number of sites. It may fall, never
-# rise; when it reaches zero the door is deleted and this block goes with it.
-held_lock_door_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift \
-  | grep -c 'withTransactionOnHeldLock' || true)
-[ "$held_lock_door_sites" -le 12 ] \
-  || architecture_guard_fail "withTransactionOnHeldLock has $held_lock_door_sites call sites; the migration ratchet is 12 and may only fall"
-[ "$held_lock_door_sites" -gt 0 ] \
-  || architecture_guard_fail "withTransactionOnHeldLock has no call sites left; delete the door and this ratchet together"
+# The registry's held-lock doors are closed. `withTransactionOnHeldLock` and its two adapters,
+# `withSessionRecordsOnHeldLock` and `withCoordinationRecordsOnHeldLock`, ran a body without
+# acquiring the lock and trusted the caller to hold it — exactly the contract the …Locked() suffix
+# carried. They were ratcheted at 12, 48 and 26 call sites and reached zero together in W1-4, when
+# the task table moved into OrchestratorRegistry and every region converged on an acquiring door
+# (a region atomic across families takes `withTaskRecords` and reaches the narrower capabilities
+# from that one hold). The ratchets went with the doors. What replaces them is a zero that stays
+# zero: no Swift code may declare or call a door whose name ends in `OnHeldLock`. Comments may
+# still name the history, which is why comment lines are excluded.
+#
+# The scan is calibrated before its zero is believed: the same code-only scan must find the
+# acquiring task door, which this tree calls in two figures and more. A pattern that stopped
+# recognising `withTaskRecords {` would equally stop recognising `withTransactionOnHeldLock {`,
+# and its clean zero would be a statement about the pattern.
+held_lock_door_sites=$(cat Sources/*.swift Tests/*.swift | grep -vE '^[[:space:]]*(//|/\*|\*)' \
+  | grep -cE 'OnHeldLock[[:space:]]*[<({]' || true)
+task_door_control=$(cat Sources/*.swift | grep -vE '^[[:space:]]*(//|/\*|\*)' \
+  | grep -cE 'withTaskRecords[[:space:]]*[<({]' || true)
+[ "${task_door_control:-0}" -gt 50 ] \
+  || architecture_guard_fail "the held-lock door scan found only ${task_door_control:-0} acquiring withTaskRecords sites; it has stopped recognising how this tree enters the registry, so its zero for OnHeldLock doors means nothing"
+[ "${held_lock_door_sites:-0}" -eq 0 ] \
+  || architecture_guard_fail "a door ending in OnHeldLock is declared or called at ${held_lock_door_sites} code site(s); W1-4 closed every held-lock door — acquire through an OrchestratorRegistry door and pass its capability to helpers instead"
 
-# Stage 3 moves the four per-session record families behind a narrower capability while preserving
-# the same registry lock. Its held-lock adapter delegates to the transaction door above, so it is
-# migration surface rather than a second synchronization primitive. Count it independently across
-# every production file that may use it, allow no growth, and delete the adapter with this ratchet
-# when the last session-record caller moves into the owner.
-session_records_held_lock_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift Sources/OrchestratorSessionLanding.swift \
-  | grep -c 'withSessionRecordsOnHeldLock' || true)
-[ "$session_records_held_lock_sites" -le 48 ] \
-  || architecture_guard_fail "withSessionRecordsOnHeldLock has $session_records_held_lock_sites call sites; the migration ratchet is 48 and may only fall"
-[ "$session_records_held_lock_sites" -gt 0 ] \
-  || architecture_guard_fail "withSessionRecordsOnHeldLock has no call sites left; delete the adapter and this ratchet together"
-
-# W1-3 moves the four coordination families behind their own capability, still on the same lock.
-# Regions that touch only those families take `withCoordinationRecords`, which acquires the lock;
-# the held-lock adapter remains only where a region must stay atomic with tasks or the terminal
-# projection, which have not moved yet. Counted the same way: no growth, and the adapter and this
-# ratchet are deleted together when tasks move into the owner.
-coordination_records_held_lock_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift Sources/OrchestratorSessionLanding.swift \
-  | grep -c 'withCoordinationRecordsOnHeldLock' || true)
-[ "$coordination_records_held_lock_sites" -le 26 ] \
-  || architecture_guard_fail "withCoordinationRecordsOnHeldLock has $coordination_records_held_lock_sites call sites; the migration ratchet is 26 and may only fall"
-[ "$coordination_records_held_lock_sites" -gt 0 ] \
-  || architecture_guard_fail "withCoordinationRecordsOnHeldLock has no call sites left; delete the adapter and this ratchet together"
-
-# The bare `lock.lock()` regions are the direct door every capability above replaces. W1-3 took
-# this count from 160 to 123 across the three files that still take the registry lock directly
-# (Orchestrator 153 -> 116, Planning 4, SessionLanding 3). It may only fall: a new region that
-# needs registry state belongs behind an OrchestratorRegistry door, not behind another bare lock.
+# W1-4's gate says the direct door reaches zero. The door it means is the held-lock door checked
+# just above — a body run on the caller's word that it holds the lock — and that is zero. The bare
+# `lock.lock()` regions counted next are not a door onto the registry, and this comment used to call
+# them one: none reaches a Registry collection, because every collection is `private` to
+# OrchestratorRegistry.swift (the compiler enforces it; the task-table check below pins it). Each
+# guards state `Orchestrator` still declares itself under the shared lock. They are residual
+# owner-lock regions, so the W1 gate ("zero externally held owner locks") is not met, and
+# docs/architecture-refactor.md names every region's owner and next boundary (W1-5, W2-1 or W2-2).
+# W1-3 took the count from 160 to 123 across the three files that took the registry lock directly
+# (Orchestrator 153 -> 116, Planning 4, SessionLanding 3); W1-4 took it to 21, all in
+# Orchestrator.swift. It may only fall.
 direct_registry_lock_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift Sources/OrchestratorSessionLanding.swift \
   | grep -c 'lock\.lock()' || true)
-[ "$direct_registry_lock_sites" -le 123 ] \
-  || architecture_guard_fail "the files that take the registry lock directly have $direct_registry_lock_sites bare lock.lock() sites; the ratchet is 123 and may only fall — reach the state through an OrchestratorRegistry door instead"
+[ "$direct_registry_lock_sites" -le 21 ] \
+  || architecture_guard_fail "the files that take the registry lock directly have $direct_registry_lock_sites bare lock.lock() sites; the ratchet is 21 and may only fall — reach registry state through an OrchestratorRegistry door, and move residual state to the owner docs/architecture-refactor.md names for it"
 [ "$direct_registry_lock_sites" -gt 0 ] \
-  || architecture_guard_fail "no bare lock.lock() site was found; either the direct door is gone (delete this ratchet with it) or the pattern stopped matching"
+  || architecture_guard_fail "no bare lock.lock() site was found; either the last residual region is gone (delete this ratchet with it) or the pattern stopped matching"
+
+# The same lock is taken bare in Coordinator.swift's `extension Orchestrator` too: nine regions for
+# the restart-maintenance receipt that the three-file count above never saw. They are counted from
+# that extension's first line, because the `Coordinator` store earlier in the file takes a lock of
+# its own under the same spelling. Owned by W2-2 in docs/architecture-refactor.md; it may only fall.
+coordinator_extension_line=$(grep -n '^extension Orchestrator {' Sources/Coordinator.swift | head -1 | cut -d: -f1)
+[ -n "$coordinator_extension_line" ] \
+  || architecture_guard_fail "Sources/Coordinator.swift has no 'extension Orchestrator {' line, so the restart-maintenance lock count cannot tell Orchestrator's lock from the Coordinator store's"
+coordinator_registry_lock_sites=$(tail -n "+$coordinator_extension_line" Sources/Coordinator.swift \
+  | grep -c 'lock\.lock()' || true)
+[ "$coordinator_registry_lock_sites" -le 9 ] \
+  || architecture_guard_fail "Coordinator.swift's extension Orchestrator has $coordinator_registry_lock_sites bare lock.lock() sites; the ratchet is 9 and may only fall"
+[ "$coordinator_registry_lock_sites" -gt 0 ] \
+  || architecture_guard_fail "no bare lock.lock() site was found in Coordinator.swift's extension Orchestrator; either restart maintenance moved to its owner (delete this ratchet with it) or the pattern stopped matching"
+
+# The task-collection door, stated so this script checks it instead of a sentence promising it:
+# (1) the table is declared once, `private` to OrchestratorRegistry.swift, so no row is reached
+# except through `withTaskRecords` — the held-lock-door zero above is the whole of the other way in;
+# (2) the capability can be made only in that file; (3) there is no generic upsert — admission
+# inserts, and the one fixture upsert, `seedTaskForTesting`, has one production-side caller, the
+# `holdScheduleTaskForTesting` seam; (4) whole-table replacement is `load()`'s alone. Each expected
+# count includes the declaration it names, so a rename reads as a failure here, not a clean zero.
+task_door_code_lines() { cat "$@" | grep -vE '^[[:space:]]*(//|/\*|\*)'; }
+task_table_declarations=$(task_door_code_lines Sources/*.swift | grep -cE 'static var tasks[[:space:]]*:' || true)
+task_table_private=$(grep -cE '^[[:space:]]*private static var tasks: \[String: Orchestrator\.Task\]' Sources/OrchestratorRegistry.swift || true)
+{ [ "$task_table_declarations" -eq 1 ] && [ "$task_table_private" -eq 1 ]; } \
+  || architecture_guard_fail "the task table must be declared exactly once, private to OrchestratorRegistry.swift (static tasks declarations=$task_table_declarations, private in the registry=$task_table_private)"
+task_capability_private_init=$(grep -A1 -E '^[[:space:]]*struct TaskRecordsTransaction \{' Sources/OrchestratorRegistry.swift \
+  | grep -cE '^[[:space:]]*fileprivate init\(\) \{\}' || true)
+[ "$task_capability_private_init" -eq 1 ] \
+  || architecture_guard_fail "TaskRecordsTransaction must open with a fileprivate init(), so only a door in OrchestratorRegistry.swift can make one"
+generic_task_upserts=$(task_door_code_lines Sources/*.swift Tests/*.swift | grep -cE '(^|[^A-Za-z0-9_])recordTask\(' || true)
+task_seed_sites=$(task_door_code_lines Sources/*.swift | grep -cE '(^|[^A-Za-z0-9_])seedTaskForTesting\(' || true)
+task_table_replacements=$(task_door_code_lines Sources/*.swift | grep -cE '(^|[^A-Za-z0-9_])replaceAllTasks\(' || true)
+[ "$generic_task_upserts" -eq 0 ] \
+  || architecture_guard_fail "recordTask( is back at $generic_task_upserts code site(s); a production row is created by admitTask and nothing else"
+[ "$task_seed_sites" -eq 2 ] \
+  || architecture_guard_fail "seedTaskForTesting( appears at $task_seed_sites Sources code site(s), expected 2 (its declaration and holdScheduleTaskForTesting); production creates rows through admitTask"
+[ "$task_table_replacements" -eq 2 ] \
+  || architecture_guard_fail "replaceAllTasks( appears at $task_table_replacements Sources code site(s), expected 2 (its declaration and load()); a rollback restores its own fields through a named transition"
 
 # Cut 4 chose its two files by measuring, and what it measured was that neither of them touches
 # the registry lock. That is the whole reason they were cheap: eleven candidates were scored on
@@ -748,7 +785,7 @@ direct_registry_lock_sites=$(cat Sources/Orchestrator.swift Sources/Orchestrator
 # clean zero for the two files because it can no longer recognise what it is looking for. That is
 # the failure this repository has shipped before: a guard that stopped matching read exactly like a
 # guard that passed.
-lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|with(Transaction|SessionRecords|CoordinationRecords)(OnHeldLock)?[[:space:]]*[({])'
+lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|with(Transaction|SessionRecords|CoordinationRecords|TaskRecords)(OnHeldLock)?[[:space:]]*[({])'
 count_lock_sites() {
   grep -vE '^[[:space:]]*(//|/\*|\*)' "$1" | grep -cE "$lock_acquisition_re" || true
 }
@@ -936,4 +973,4 @@ if [ "$documented_governance_table" != "$(render_governance_table)" ]; then
   architecture_guard_fail "run tools/generate-governance-table.sh — the table is generated, so the fix is never to retype a number into it"
 fi
 
-echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, held-lock door=$held_lock_door_sites, session-record door=$session_records_held_lock_sites, coordination-record door=$coordination_records_held_lock_sites, direct lock=$direct_registry_lock_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
+echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, held-lock doors=$held_lock_door_sites (task-door control=$task_door_control), direct lock=$direct_registry_lock_sites, max suspension=$suspension_max, parsed=$scanner_funcs"

@@ -1147,14 +1147,14 @@ group("restart executor reconciliation uses exact durable identity evidence") {
                 targets: [returnedShell], generation: 19, complete: true,
                 observedAt: started.addingTimeInterval(130), epoch: "settle-path"), identities: []))
     expect("one production settle observation leaves the launcher spawning",
-           Orchestrator.tasks[launcher.id]?.state, .spawning)
+           OrchestratorRegistry.withTaskRecords { $0.task(launcher.id) }?.state, .spawning)
     check("the production settle path accepts the second persistent miss",
           Orchestrator.settleExitedLauncher(
             launcher, snapshot: SessionWatch.IdentitySnapshot(
                 targets: [returnedShell], generation: 20, complete: true,
                 observedAt: started.addingTimeInterval(195), epoch: "settle-path"), identities: []))
     expect("the production settle path alone moves the launcher to spawn_failed",
-           Orchestrator.tasks[launcher.id]?.state, .spawnFailed)
+           OrchestratorRegistry.withTaskRecords { $0.task(launcher.id) }?.state, .spawnFailed)
 }
 
 group("a briefed task refreshes identity before its inventory receipt is judged") {
@@ -1474,7 +1474,7 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
     expect("a failed lifecycle save restores the restart phase",
            Orchestrator.restartReceipt?.phase, .reconciling)
     check("and restores the task receipt written in the same transaction",
-          Orchestrator.tasks[exactTask.id]?.executorReceipt == nil)
+          OrchestratorRegistry.withTaskRecords { $0.task(exactTask.id) }?.executorReceipt == nil)
     check("failed persistence keeps admission closed",
           RemoteServer.shared.terminalMaintenanceRefusal() != nil)
 

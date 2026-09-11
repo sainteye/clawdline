@@ -988,7 +988,7 @@ group("a root session landing receipt is broker verified and process bound") {
         child.childProcStart = currentIdentity.processStart
         child.childSessionId = currentIdentity.conversationID
         child.transcriptProven = true
-        Orchestrator.tasks[child.id] = child
+        OrchestratorRegistry.withTaskRecords { $0.admitTask(child) }
     }
     let becameChild = raceLanding(currentIdentity.terminalID)
     expect("a child appearing during Git is refused", becameChild.status, 409)

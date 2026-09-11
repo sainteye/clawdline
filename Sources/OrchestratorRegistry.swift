@@ -21,12 +21,13 @@ import Foundation
 /// concurrency primitive does not move at all. No actor, no queue, no lock splitting: a second
 /// lock would be a behavior change even where it looks safer.
 ///
-/// **Two synchronization doors, with domain capabilities behind them.** ``withTransaction(_:)``
-/// acquires the lock; ``withTransactionOnHeldLock(_:)`` does not, because its callers are the bare
-/// `lock.lock()` regions this stage has not converged yet. Session records use a narrower
-/// ``SessionRecordsTransaction`` capability, but its held-lock adapter delegates to that same
-/// second door rather than introducing another synchronization primitive. Later cuts move those
-/// regions onto the acquiring door and the held-lock adapter goes away.
+/// **Acquiring doors only, with domain capabilities behind them.** ``withTransaction(_:)``,
+/// ``withSessionRecords(_:)``, ``withCoordinationRecords(_:)`` and ``withTaskRecords(_:)`` each
+/// acquire the lock and hand their body one capability. Until W1-4 there was also a second kind of
+/// door, `withTransactionOnHeldLock`, which acquired nothing and trusted its caller; W1-4 moved the
+/// task table here, converged every one of its call sites onto an acquiring door, and deleted it
+/// with its two adapters. A region that must stay atomic across families enters through
+/// ``withTaskRecords(_:)`` and reaches the narrower capabilities from that one hold.
 enum OrchestratorRegistry {
 
     /// Everything needed only while a handoff line is in flight. Losing this on restart is
@@ -178,6 +179,17 @@ enum OrchestratorRegistry {
     enum CoordinationWaiterWithdrawal {
         case notFound, notWaiter, withdrawn
     }
+
+    // MARK: Task records
+
+    /// Task id → the broker's record of one execution attempt. Schema-v1 key `tasks`, with the
+    /// same codec and the same row order on save; only the owner moved here in W1-4.
+    private static var tasks: [String: Orchestrator.Task] = [:]
+    /// Monotonic invalidation source for closeability obligations. Every task transition advances
+    /// it. This replaces the `didSet { obligationFingerprintDirty = true }` the collection carried
+    /// while `Orchestrator` declared it: the facade consumes the clock when it settles the
+    /// obligation generation instead of being called back by its storage.
+    private static var taskMutationGeneration = 0
 
     // MARK: - The transaction
 
@@ -887,47 +899,403 @@ enum OrchestratorRegistry {
         }
     }
 
-    /// Run `body` under the lock. The transaction is the only way to reach the primary registry
-    /// collections; per-session records use their narrower capability below. Both are released
-    /// with the lock.
+    /// A capability limited to task records, and the one capability that may reach the others
+    /// from inside the same hold.
+    ///
+    /// W1-4 moved the task table — the last collection `Orchestrator` declared behind this lock
+    /// that the other capabilities needed to stay atomic with — into this file. Every region that
+    /// reads or writes a task enters through ``withTaskRecords(_:)``, which acquires the same
+    /// single lock the other doors acquire: dispatch admission, the serialize and claims queries,
+    /// the terminal and task indexes, recovery, landing and completion views.
+    ///
+    /// A region that must stay atomic with graph admissions, the terminal projection, session
+    /// records or coordination records reaches them through ``registry``, ``sessionRecords`` and
+    /// ``coordinationRecords``. Those are capabilities derived from this hold — not a second
+    /// acquisition and not a held-lock door — which is what let `withTransactionOnHeldLock` and
+    /// its two adapters be deleted. A capability is meant to live only inside the closure that
+    /// received it. No call site returns, stores or captures one today, but Swift 5 cannot
+    /// enforce that (non-escapable types are Swift 6.2), so it is a convention kept by review and
+    /// by this file's shape, not a compiler guarantee.
+    ///
+    /// Writes come in three kinds, and only the first is closed:
+    ///
+    /// - **Named transitions** choose their own guard and write only their own fields.
+    ///   ``admitTask(_:)`` inserts and never replaces. Finalization's follow-up facts write only
+    ///   while the row still exists and still carries the outcome finalization committed.
+    ///   ``commitStepCandidate(_:)`` takes every fact another transition owns from the row as it
+    ///   stands, not from the walker's older copy. ``releaseClaims(_:expecting:_:at:)`` appends in
+    ///   the hold. The two rollbacks restore only the fields their own step wrote, per row. None
+    ///   of them can re-create a swept row.
+    /// - **Same-hold read-modify-write** — ``updateTask(_:_:)`` and ``commitTask(_:)`` — is a
+    ///   row-scoped capability, not a closed transition: the caller decides the change. It loses
+    ///   no concurrent write only because the change is computed from the row read in this same
+    ///   hold, which review, not the compiler, keeps. Neither creates a row.
+    /// - **Whole-table writes** belong to `load()` (``replaceAllTasks(_:)``) and `forget()`
+    ///   (``removeAllTasks()``). ``seedTaskForTesting(_:)`` is the one upsert, for fixtures.
+    ///   `tools/check-architecture-boundaries.sh` counts the production callers of all three.
+    ///
+    /// Every projection is a value. Effects (save, audit, terminal, notification, filesystem,
+    /// broadcast) stay the caller's, after the door returns.
+    struct TaskRecordsTransaction {
+        fileprivate init() {}
+
+        // MARK: Capabilities from the same hold
+
+        var registry: Transaction { Transaction() }
+        var sessionRecords: SessionRecordsTransaction { SessionRecordsTransaction() }
+        var coordinationRecords: CoordinationRecordsTransaction {
+            CoordinationRecordsTransaction()
+        }
+
+        private func noteTaskMutation() {
+            OrchestratorRegistry.taskMutationGeneration &+= 1
+        }
+
+        // MARK: Immutable projections
+
+        func task(_ id: String) -> Orchestrator.Task? {
+            OrchestratorRegistry.tasks[id]
+        }
+
+        /// The whole table as a value. Writing to the copy writes nothing here.
+        func tasksByID() -> [String: Orchestrator.Task] {
+            OrchestratorRegistry.tasks
+        }
+
+        /// Every row, in the table's own order — the order `Array(tasks.values)` always had.
+        func taskValues() -> [Orchestrator.Task] {
+            Array(OrchestratorRegistry.tasks.values)
+        }
+
+        var taskCount: Int { OrchestratorRegistry.tasks.count }
+
+        // MARK: Admission queries
+
+        /// Older serialized work this candidate must wait behind, judged against the whole table
+        /// in this hold.
+        func serializeBlockers(for candidate: Orchestrator.Task) -> [Orchestrator.Task] {
+            OrchestratorDraft.serializeBlockers(for: candidate, among: taskValues())
+        }
+
+        /// Claim overlaps between this candidate and every held task. A dispatch asks this and
+        /// records its task in the same hold, so two dispatches cannot both see a path as free.
+        func claimsOverlaps(for candidate: Orchestrator.Task)
+            -> [OrchestratorDraft.ClaimsOverlap] {
+            OrchestratorDraft.claimsOverlaps(for: candidate, among: taskValues())
+        }
+
+        /// The session a whole tree hangs from, resolved through the lineage held here, so every
+        /// task in one fan-out is counted in the same batch however it was filed. A task that
+        /// named nobody gets a key of its own rather than sharing one with every other anonymous
+        /// dispatch — the alternative is two unrelated fan-outs waiting for each other.
+        func rootKey(of task: Orchestrator.Task) -> String {
+            OrchestratorDraft.rootKey(of: task, among: OrchestratorRegistry.tasks)
+        }
+
+        func hasActiveScheduleTask(_ scheduleID: String) -> Bool {
+            OrchestratorRegistry.tasks.values.contains {
+                $0.scheduleID == scheduleID && !$0.state.isTerminal
+            }
+        }
+
+        // MARK: The terminal index
+
+        /// Rebuild the terminal title and role index from the task, Root Assignment and handoff
+        /// label records held here, and replace it whole through ``Transaction/setTerminalProjection(titles:roles:)``.
+        /// The inputs and the write share this hold, so no reader sees half of a new projection.
+        func rebuildTerminalProjection() {
+            let registry = self.registry
+            let labels = coordinationRecords.handoffLabels()
+            let assignments = coordinationRecords.rootAssignments()
+            let taskRows = taskValues()
+            var found = registry.handoffTitles()
+            // The durable half of the same answer, and the only half a fresh process has: the map
+            // above is written when a tab opens and is empty after a restart. Read before the
+            // assignment and task rows below, so the precedence between the three sources is
+            // exactly what it was — this changes when a handoff label is *known*, never where it
+            // ranks against anything else.
+            //
+            // Two unsuppressed labels on one terminal id are two answers to a question that has
+            // one, and dictionary iteration order is not a tie-break. `rootAssignmentSession-
+            // Projection` refuses the same class of question with `matches.count == 1`; this
+            // refuses per terminal, so an ambiguous tab keeps whatever name it would have had
+            // without any handoff label rather than one of the two at random.
+            var labelsByTerminal: [String: [String]] = [:]
+            for label in labels where !registry.isHandoffLabelSuppressed(label.handoffID) {
+                labelsByTerminal[label.identity.terminalID, default: []].append(label.label)
+            }
+            for (terminal, labels) in labelsByTerminal {
+                guard labels.count == 1, let only = labels.first else { continue }
+                found[terminal] = only
+            }
+            var roles: [String: Orchestrator.Role] = [:]
+            let rootTaskHosts = taskRows.filter { $0.sessionRoot }
+            // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
+            // putting an assignment in it would make a fourth primitive a disguised task.
+            for assignment in assignments {
+                guard let terminal = assignment.identity?.terminalID,
+                      ![.failed, .inactive].contains(assignment.state),
+                      !registry.isRootAssignmentLabelSuppressed(assignment.id) else { continue }
+                found[terminal] = assignment.label
+            }
+            for task in taskRows {
+                guard let terminal = task.childTerminalId else { continue }
+                let role = Orchestrator.Role(
+                    taskID: task.id, depth: task.depth, title: task.title,
+                    deadline: task.briefedAt?.addingTimeInterval(Double(task.timeoutMinutes) * 60),
+                    live: !task.state.isTerminal, taskRootAccess: task.childTaskRootAccess)
+                // An attached task is a guest in a session somebody else owns. It may say that the
+                // session is busy with broker work while it is running, and that is all: it never
+                // renames the session, and it leaves nothing behind when it ends. A tab this app
+                // opened normally belongs to that task; `sessionRoot` below is the explicit
+                // exception, where the task is only the Root Session's first bounded receipt.
+                if task.attachSessionId != nil {
+                    let retainedRoots = rootTaskHosts.filter {
+                        $0.childTerminalId == terminal && $0.childTTY == task.childTTY
+                            && $0.assistant == task.assistant
+                    }
+                    if retainedRoots.count == 1 { continue }
+                    guard role.live else { continue }
+                    if let existing = roles[terminal], existing.live { continue }
+                    roles[terminal] = role
+                    continue
+                }
+                found[terminal] = Orchestrator.sessionTitle(taskTitle: task.title,
+                                                            scheduled: task.scheduleID != nil)
+                if task.sessionRoot { continue }
+                // A tab is normally one task's for its whole life. When two records name the same
+                // one — a terminal id reused after a tab closed and another opened in its place —
+                // the live task is the one anything asking this question means.
+                if let existing = roles[terminal], existing.live, !role.live { continue }
+                roles[terminal] = role
+            }
+            registry.setTerminalProjection(titles: found, roles: roles)
+        }
+
+        // MARK: Named transitions
+
+        /// Admission: insert the row a dispatch just made. `false` — writing nothing — when a row
+        /// with this id already exists, so a second admission of one id can neither replace the
+        /// first nor stand in for it.
+        @discardableResult
+        func admitTask(_ task: Orchestrator.Task) -> Bool {
+            guard OrchestratorRegistry.tasks[task.id] == nil else { return false }
+            OrchestratorRegistry.tasks[task.id] = task
+            noteTaskMutation()
+            return true
+        }
+
+        /// The guard every finalization follow-up shares. Finalization commits the terminal state
+        /// in one hold and then reads files — the result, the transcript's usage, claimed paths —
+        /// outside it, so each later stage writes from a copy another writer may have overtaken.
+        /// Each therefore writes only its own fields, and only while the row still exists and
+        /// still carries `outcome`. `nil` — writing nothing — otherwise, so a swept row stays swept.
+        private func updateEndedTask(_ id: String, endedAs outcome: Orchestrator.State,
+                                     _ change: (inout Orchestrator.Task) -> Void)
+            -> Orchestrator.Task? {
+            guard var task = OrchestratorRegistry.tasks[id], task.state == outcome else {
+                return nil
+            }
+            change(&task)
+            OrchestratorRegistry.tasks[id] = task
+            noteTaskMutation()
+            return task
+        }
+
+        /// The claimed paths the ending found untouched. Returns the row as written.
+        func recordUntouchedClaims(from staged: Orchestrator.Task,
+                                   endedAs outcome: Orchestrator.State) -> Orchestrator.Task? {
+            updateEndedTask(staged.id, endedAs: outcome) {
+                $0.untouchedClaims = staged.untouchedClaims
+            }
+        }
+
+        /// What a verified `result.json` added: each field only where the row as it stands still
+        /// lacks it, and the receipt time only once.
+        func adoptResultReceipt(from staged: Orchestrator.Task,
+                                endedAs outcome: Orchestrator.State) -> Orchestrator.Task? {
+            updateEndedTask(staged.id, endedAs: outcome) { task in
+                if task.summary == nil { task.summary = staged.summary }
+                if task.artifacts.isEmpty { task.artifacts = staged.artifacts }
+                if task.verification == nil { task.verification = staged.verification }
+                if task.review == nil { task.review = staged.review }
+                task.resultVerifiedAt = task.resultVerifiedAt ?? staged.resultVerifiedAt
+            }
+        }
+
+        func recordHarvestedUsage(from staged: Orchestrator.Task,
+                                  endedAs outcome: Orchestrator.State) -> Orchestrator.Task? {
+            updateEndedTask(staged.id, endedAs: outcome) { $0.usage = staged.usage }
+        }
+
+        /// The two reclaim deadlines, written whole because they are this stage's own fields.
+        func scheduleReclaim(from staged: Orchestrator.Task,
+                             endedAs outcome: Orchestrator.State) -> Orchestrator.Task? {
+            updateEndedTask(staged.id, endedAs: outcome) {
+                $0.workCleanupAt = staged.workCleanupAt
+                $0.buildCleanupAt = staged.buildCleanupAt
+            }
+        }
+
+        /// A step walker's candidate — a value copy taken before terminal or filesystem work, whose
+        /// state the caller has compared in this hold — replacing the row it came from. The facts
+        /// that have writers of their own and that no walker writes are taken from the row as it
+        /// stands, so a copy taken before a progress note, a notification, a claim release, a
+        /// landing declaration, a completion envelope or a finalization fact cannot erase it. The
+        /// walkers' own fields — state, identity, inject counters, deadlines, executor receipts,
+        /// interventions — are still the candidate's, and last-writer-wins among walkers.
+        /// Returns the row as written, or `nil` — writing nothing — when the row is gone.
+        @discardableResult
+        func commitStepCandidate(_ candidate: Orchestrator.Task) -> Orchestrator.Task? {
+            guard let current = OrchestratorRegistry.tasks[candidate.id] else { return nil }
+            var merged = candidate
+            merged.progress = current.progress
+            merged.progressFileNote = current.progressFileNote
+            merged.notifyCount = current.notifyCount
+            merged.releasedClaims = current.releasedClaims
+            merged.landing = current.landing
+            merged.completionDelivery = current.completionDelivery
+            merged.untouchedClaims = current.untouchedClaims
+            merged.usage = current.usage
+            merged.review = current.review
+            merged.resultVerifiedAt = current.resultVerifiedAt
+            OrchestratorRegistry.tasks[candidate.id] = merged
+            noteTaskMutation()
+            return merged
+        }
+
+        /// The release-claims route: append the paths not already released, while the row still
+        /// has the state the route checked. `false` — writing nothing — otherwise.
+        func releaseClaims(_ id: String, expecting state: Orchestrator.State,
+                           _ paths: [String], at now: Date) -> Bool {
+            guard var task = OrchestratorRegistry.tasks[id], task.state == state else {
+                return false
+            }
+            let released = Set(task.releasedClaims.map(\.path))
+            task.releasedClaims += paths.filter { !released.contains($0) }
+                .map { Orchestrator.ReleasedClaim(path: $0, releasedAt: now) }
+            OrchestratorRegistry.tasks[id] = task
+            noteTaskMutation()
+            return true
+        }
+
+        /// Restart reconciliation's rollback after its save failed: each reconciled row gets back
+        /// the executor receipt it carried before, but only while it still exists and still carries
+        /// the receipt reconciliation wrote. One field per row, never the table.
+        func restoreExecutorReceipts(from prior: [String: Orchestrator.Task],
+                                     wherever written: [String: Orchestrator.Task]) {
+            var restored = false
+            for (id, wrote) in written {
+                guard var task = OrchestratorRegistry.tasks[id],
+                      task.executorReceipt == wrote.executorReceipt else { continue }
+                task.executorReceipt = prior[id]?.executorReceipt
+                OrchestratorRegistry.tasks[id] = task
+                restored = true
+            }
+            if restored { noteTaskMutation() }
+        }
+
+        /// Completion recovery's rollback after its save failed, at startup or on the reconcile
+        /// route: an envelope it created or re-armed that is still unpersisted goes back to what
+        /// the row carried before, and a result receipt it stamped is withdrawn. Per field, on rows
+        /// that still exist; never the table.
+        func restoreCompletionRecovery(from before: [String: Orchestrator.Task],
+                                       envelopes: [String], resultReceipts: [String]) {
+            var restored = false
+            for id in envelopes {
+                guard var task = OrchestratorRegistry.tasks[id],
+                      task.completionDelivery?.persisted == false else { continue }
+                task.completionDelivery = before[id]?.completionDelivery
+                OrchestratorRegistry.tasks[id] = task
+                restored = true
+            }
+            for id in resultReceipts {
+                guard var task = OrchestratorRegistry.tasks[id] else { continue }
+                task.resultVerifiedAt = before[id]?.resultVerifiedAt
+                OrchestratorRegistry.tasks[id] = task
+                restored = true
+            }
+            if restored { noteTaskMutation() }
+        }
+
+        // MARK: Same-hold read-modify-write — row-scoped, not closed
+
+        /// Replace a row only while it still exists, with a candidate computed from the row read
+        /// **in this same hold**. `false` means nothing was written. A candidate carried in from an
+        /// earlier hold belongs in ``commitStepCandidate(_:)`` or a named transition instead.
+        @discardableResult
+        func commitTask(_ candidate: Orchestrator.Task) -> Bool {
+            guard OrchestratorRegistry.tasks[candidate.id] != nil else { return false }
+            OrchestratorRegistry.tasks[candidate.id] = candidate
+            noteTaskMutation()
+            return true
+        }
+
+        /// Change fields of one existing row. Returns the row as written, or `nil` — writing
+        /// nothing — when the row is absent. `Task.id` is a `let`, so a change cannot re-key it.
+        @discardableResult
+        func updateTask(_ id: String, _ change: (inout Orchestrator.Task) -> Void)
+            -> Orchestrator.Task? {
+            guard var task = OrchestratorRegistry.tasks[id] else { return nil }
+            change(&task)
+            OrchestratorRegistry.tasks[id] = task
+            noteTaskMutation()
+            return task
+        }
+
+        @discardableResult
+        func removeTask(_ id: String) -> Orchestrator.Task? {
+            guard let removed = OrchestratorRegistry.tasks.removeValue(forKey: id) else {
+                return nil
+            }
+            noteTaskMutation()
+            return removed
+        }
+
+        func removeTasks<S: Sequence>(_ ids: S) where S.Element == String {
+            var removed = false
+            for id in ids where OrchestratorRegistry.tasks.removeValue(forKey: id) != nil {
+                removed = true
+            }
+            if removed { noteTaskMutation() }
+        }
+
+        /// `load()` only: the decoded table replaces the held one whole. A rollback restores the
+        /// fields it wrote through its own transition rather than a table taken earlier.
+        func replaceAllTasks(_ found: [String: Orchestrator.Task]) {
+            OrchestratorRegistry.tasks = found
+            noteTaskMutation()
+        }
+
+        /// Test fixtures only: the one upsert. Production creates a row through ``admitTask(_:)``.
+        func seedTaskForTesting(_ task: Orchestrator.Task) {
+            OrchestratorRegistry.tasks[task.id] = task
+            noteTaskMutation()
+        }
+
+        func removeAllTasks() {
+            OrchestratorRegistry.tasks = [:]
+            noteTaskMutation()
+        }
+
+        func consumeTaskMutation(after observed: inout Int) -> Bool {
+            let current = OrchestratorRegistry.taskMutationGeneration
+            guard current != observed else { return false }
+            observed = current
+            return true
+        }
+    }
+
+    /// Run `body` under the lock with the primary registry capability: graph admissions, the
+    /// terminal projection, handoff titles, suppressed labels and the rate windows.
     static func withTransaction<R>(_ body: (Transaction) -> R) -> R {
         lock.lock()
         defer { lock.unlock() }
         return body(Transaction())
     }
 
-    /// Run `body` without acquiring the lock, because the caller is already inside a region that
-    /// holds it.
-    ///
-    /// This is the successor of `Orchestrator`'s `…Locked()` suffix and it inherits that
-    /// convention's one weakness: nothing here can ask an `NSLock` whether this thread holds it.
-    /// What it does not inherit is the other half — the collections stay unreachable without the
-    /// token, so a caller that gets this wrong is unsynchronized rather than also unbounded.
-    ///
-    /// **Every production use is inside a `lock.lock()` region in the same function or its caller;
-    /// the test suite is a stated exception.** Six test call sites reach
-    /// `pruneClosedHandoffTitles` without the lock — single-threaded, and doing exactly what they
-    /// did before this refactor, when they assigned `handoffTitlesByTerminal` directly. Wrapping
-    /// them would change what they exercise. The honest reading is that this door is unchecked at
-    /// compile time and its contract holds by inspection, which is the same thing the `…Locked()`
-    /// suffix offered; what makes it a migration step rather than a rename is that the count of
-    /// these sites is ratcheted in `tools/check-architecture-boundaries.sh` and may only fall.
-    /// Each one is a site a later cut converges onto ``withTransaction(_:)``.
-    static func withTransactionOnHeldLock<R>(_ body: (Transaction) -> R) -> R {
-        body(Transaction())
-    }
-
-    /// Session-record migration door for callers that still own the shared legacy lock. Its
-    /// capability is domain-limited; W1-7 removes this door when the remaining lock regions move.
-    static func withSessionRecordsOnHeldLock<R>(
-        _ body: (SessionRecordsTransaction) -> R
-    ) -> R {
-        withTransactionOnHeldLock { _ in body(SessionRecordsTransaction()) }
-    }
-
-    /// Acquire the registry lock and expose only the per-session record capability.
-    /// Production code currently enters through the held-lock adapter above; focused tests use
-    /// this acquiring door to exercise the owner without reaching unrelated registry state.
+    /// Acquire the registry lock and expose only the per-session record capability, for a region
+    /// that touches secrets, deliveries, self-states or in-flight handoffs and nothing else.
     static func withSessionRecords<R>(_ body: (SessionRecordsTransaction) -> R) -> R {
         lock.lock()
         defer { lock.unlock() }
@@ -943,13 +1311,22 @@ enum OrchestratorRegistry {
         return body(CoordinationRecordsTransaction())
     }
 
-    /// Coordination-record migration door for regions that must stay atomic with collections
-    /// still declared in `Orchestrator` (tasks, the terminal projection) and therefore already
-    /// hold the shared lock. Delegates to the same held-lock door; its call sites are ratcheted
-    /// and leave with the last of those collections.
-    static func withCoordinationRecordsOnHeldLock<R>(
-        _ body: (CoordinationRecordsTransaction) -> R
-    ) -> R {
-        withTransactionOnHeldLock { _ in body(CoordinationRecordsTransaction()) }
+    /// Acquire the registry lock and expose task records, together with the narrower
+    /// capabilities a region must reach atomically with them.
+    ///
+    /// **There is no held-lock door any more.** `withTransactionOnHeldLock`,
+    /// `withSessionRecordsOnHeldLock` and `withCoordinationRecordsOnHeldLock` ran their bodies
+    /// without acquiring anything and trusted the caller to hold the lock — the `…Locked()` suffix
+    /// under another name, checked by nothing. W1-4 converged every one of their call sites onto
+    /// this door or one of the three above. The lock is still the single non-recursive `NSLock`
+    /// `Orchestrator.lock` aliases, so a body must never enter a door again: the registry helpers
+    /// that used to require "caller holds the lock" now take a capability parameter, so a caller
+    /// must have one to call them. `Orchestrator.noteActivityLocked`, which touches only
+    /// `Orchestrator`'s own activity counters, still carries the old unchecked convention.
+    @discardableResult
+    static func withTaskRecords<R>(_ body: (TaskRecordsTransaction) throws -> R) rethrows -> R {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body(TaskRecordsTransaction())
     }
 }

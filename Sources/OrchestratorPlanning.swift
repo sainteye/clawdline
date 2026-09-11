@@ -279,7 +279,7 @@ extension Orchestrator {
     }
 
     static func graphTaskIndex() -> GraphTaskIndex {
-        lock.lock(); let indexed = tasks; lock.unlock()
+        let indexed = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
         return graphTaskIndex(indexed)
     }
 
@@ -414,24 +414,31 @@ extension Orchestrator {
 
     static func graphAdmissionRefusal(_ graph: PlanningGraph, taskID: String,
                                       reserve: Bool = false) -> Reply? {
-        lock.lock(); defer { lock.unlock() }
+        // One task-record hold: the in-flight reservation, the durable task index and the
+        // reservation this call may take are read and written atomically, as they always were.
+        OrchestratorRegistry.withTaskRecords { records in
+            graphAdmissionRefusal(graph, taskID: taskID, reserve: reserve, in: records)
+        }
+    }
+
+    private static func graphAdmissionRefusal(
+        _ graph: PlanningGraph, taskID: String, reserve: Bool,
+        in records: OrchestratorRegistry.TaskRecordsTransaction) -> Reply? {
+        let registry = records.registry
         let key = graphAdmissionKey(graph)
-        if let holder = OrchestratorRegistry
-            .withTransactionOnHeldLock({ $0.graphAdmission(forKey: key) }) {
+        if let holder = registry.graphAdmission(forKey: key) {
             return .refused(status: 409, code: "graph_node_active",
                             message: "Another dispatch is already admitting this graph node.",
                             extra: ["graph_id": graph.id, "node_id": graph.currentNode,
                                     "task_id": holder.taskID])
         }
-        let pendingAdmissions = OrchestratorRegistry
-            .withTransactionOnHeldLock { $0.graphAdmissions() }
-        for pending in pendingAdmissions where pending.graph.id == graph.id {
+        for pending in registry.graphAdmissions() where pending.graph.id == graph.id {
             guard pending.graph.hasSameDefinition(as: graph) else {
                 return .refused(409, "graph_definition_conflict",
                                 "Another dispatch is admitting a different definition for this graph id.")
             }
         }
-        let indexed = tasks
+        let indexed = records.tasksByID()
         let taskIndex = graphTaskIndex(indexed)
 
         for existing in indexed.values where existing.graph?.id == graph.id {
@@ -479,9 +486,7 @@ extension Orchestrator {
         }
         guard !blockers.isEmpty else {
             if reserve {
-                OrchestratorRegistry.withTransactionOnHeldLock {
-                    $0.reserveGraphAdmission(key, taskID: taskID, graph: graph)
-                }
+                registry.reserveGraphAdmission(key, taskID: taskID, graph: graph)
             }
             return nil
         }
@@ -541,7 +546,7 @@ extension Orchestrator {
 
     /// One control-sheet row per immutable graph definition.
     static func graphRecords() -> [[String: Any]] {
-        lock.lock(); let indexed = tasks; lock.unlock()
+        let indexed = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
         let taskIndex = graphTaskIndex(indexed)
         var newest: [String: Task] = [:]
         for task in indexed.values {
@@ -567,7 +572,7 @@ extension Orchestrator {
     /// Newest task per graph, the same rule ``graphRecords()`` uses, because a graph re-dispatched
     /// under a second destination should read as the destination it was last sent for.
     static func graphDestinations() -> [String: String] {
-        lock.lock(); let indexed = tasks; lock.unlock()
+        let indexed = OrchestratorRegistry.withTaskRecords { $0.tasksByID() }
         var newest: [String: Task] = [:]
         for task in indexed.values {
             guard let graph = task.graph else { continue }
