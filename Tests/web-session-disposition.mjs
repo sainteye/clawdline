@@ -528,6 +528,15 @@ replyCheck(derive.suggestedReplyButtonHTML(replySession, { now: 1000, writable: 
     true, "foreign session cannot navigate or fill");
 replyCheck(derive.suggestedReplyButtonHTML(replySession, { now: 1000, writable: false, openId: "row-one" }).includes("disabled"),
     true, "read-only button is disabled");
+for (const [options, reason] of [
+    [{openId:"other",writable:true}, "先開啟此 Session"],
+    [{openId:"row-one",writable:false}, "等待連線與輸入就緒"],
+    [{openId:"row-one",writable:true,composerIdentity:null}, "等待對話身分確認"]
+]) {
+    const html=derive.suggestedReplyButtonHTML(replySession,{now:1000,zh:true,rows:[replySession],...options});
+    replyCheck(html.includes(reason),true,"disabled action visibly explains readiness");
+    replyCheck(html.includes("disabled"),true,"explanation never weakens the disabled gate");
+}
 console.log(`CLA-370 suggested-reply model: ${replyChecks} checks passed`);
 // The actual LocalClient ingress receives server rows without machine/identity fields.
 const localSource = await readFile(new URL("../Resources/web/app/js/net/live.js", import.meta.url), "utf8");

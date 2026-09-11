@@ -587,5 +587,13 @@ assert.doesNotThrow(function () { assertClawdlineClient(boot.idleClient()); },
     "the transport held while the cloud one boots satisfies the same seam");
 assert.doesNotThrow(function () { boot.idleClient().start(); },
     "the placeholder also satisfies main.js's unconditional boot hook");
+for (const method of ["board", "boardCommand"]) {
+    const idle = boot.idleClient();
+    assert.equal(typeof idle[method], "function", "cold Board route has a typed transport seam");
+    await assert.rejects(idle[method]("exact-project", "exact-item", null, "exact-machine"),
+        error => error.code === "cloud_starting" && error.retryable === true,
+        "starting does not forge empty data or admit a command");
+}
+console.log("Board idle transport: 4 checks passed");
 
 console.log("web cloud boot tests passed");

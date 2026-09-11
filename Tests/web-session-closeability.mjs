@@ -224,21 +224,22 @@ for (const property of ["min-width: 0", "overflow: hidden"]) {
 const composerSource = await readFile(new URL("../Resources/web/app/js/input/composer.js", import.meta.url), "utf8");
 const fillSource = composerSource.match(/export function fillSuggestedReply\(sid, expectedKey\) \{[\s\S]*?\n\}/)?.[0];
 assert.ok(fillSource, "a separate fill-only boundary exists");
-let draft = "", inserts = 0, renders = 0, replyChecks = 0;
+let draft = "", inserts = 0, renders = 0, replyChecks = 0, focused = 0, caret = 0;
 const current = { id: "one", machine: "mac", sessionId: "conversation", owed: { note: "original" } };
 const ui = { openId: "one", write: true, conn: "live", agent: null, tx: { id: "one" } };
 ui.sessions = [current]; ui.replyComposerIdentity = derive.replySessionIdentity(current, ui.sessions);
-const box = { get textContent() { return draft; }, set textContent(v) { inserts++; draft = v; } };
+const box = { focus() { focused++; }, get textContent() { return draft; }, set textContent(v) { inserts++; draft = v; } };
 let model = { key: "exact-key", text: "允許\nexact candidate" }, attachments = [];
 const fillReply = new Function("S", "els", "byId", "sessionSuggestedReply", "rawMsgText", "Shots", "Voice",
-    "blankness", "renderComposer", "sending", "closingID", "toast", "document", "replySessionIdentity",
+    "blankness", "renderComposer", "sending", "closingID", "toast", "document", "replySessionIdentity", "caretToEnd",
     fillSource.replace("export ", "") + "\nreturn fillSuggestedReply;")(
     ui, { msg: box }, id => id === "one" ? current : null, () => model, () => draft,
     { urls: () => attachments, busy: () => false }, { busy: () => false }, () => {}, () => renders++, false, null,
-    () => {}, { documentElement: { lang: "zh-Hant" } }, derive.replySessionIdentity);
+    () => {}, { documentElement: { lang: "zh-Hant" } }, derive.replySessionIdentity, () => caret++);
 function proof(condition, why) { replyChecks++; assert.ok(condition, why); }
 proof(fillReply("one", "exact-key") === true && draft === model.text, "only exact literal reply fills");
 proof(inserts === 1 && renders === 1 && current.owed.note === "original", "only draft/render changes; owed preserved");
+proof(focused === 1 && caret === 1, "successful literal fill focuses its composer at the end for review");
 for (const existing of ["original draft", " ", "\n"]) {
     draft = existing; proof(fillReply("one", "exact-key") === false && draft === existing, "even whitespace draft is preserved");
 }
@@ -270,6 +271,7 @@ for (const [key, value] of [["write", false], ["conn", "offline"], ["agent", { i
 }
 model = null;
 proof(fillReply("one", "exact-key") === false && draft === "", "withdrawn/expired suggestion refuses at click time");
+proof(focused === 1 && caret === 1, "all refused fills preserve focus and selection");
 proof(!/api\.|send\(|resume|appendMsg|dispatchEvent/.test(fillSource), "fill boundary has no send/resume/remote event path");
 const openSource = await readFile(new URL("../Resources/web/app/js/session/open.js", import.meta.url), "utf8");
 proof(openSource.includes("S.replyComposerIdentity = replySessionIdentity(s)") &&

@@ -1565,6 +1565,16 @@ export function bindBoardPage(elements, environment = {}) {
             })
             .catch((error) => {
                 if (state.active && ticket === state.readTicket) {
+                    if (error.code === "cloud_starting" && error.retryable === true) {
+                        // A cold hosted route can precede its authenticated transport. Keep its
+                        // exact selection and any retained records; the bounded loading timer
+                        // reads the live transport thunk again after the connection is ready.
+                        state.readStatus = "loading";
+                        render();
+                        ctx.status(words(ctx, "Waiting for Cloud connection… Records will load automatically.",
+                            "等待 Cloud 連線…連上後會自動載入紀錄。"));
+                        return;
+                    }
                     state.readStatus = "error";
                     render();
                     ctx.status(

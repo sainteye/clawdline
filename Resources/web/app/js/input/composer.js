@@ -50,6 +50,8 @@ export function fillSuggestedReply(sid, expectedKey) {
     els.msg.textContent = reply.text;
     blankness();
     renderComposer();
+    els.msg.focus();
+    caretToEnd();
     return true;
 }
 

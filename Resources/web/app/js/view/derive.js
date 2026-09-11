@@ -363,9 +363,15 @@ export function suggestedReplyButtonHTML(s, options = {}) {
     const label = options.zh ? "填入建議回覆" : "Fill suggested reply";
     const destination = s.label || s.title || s.id;
     const explanation = options.zh ? "僅填入草稿，請檢查後自行送出" : "Draft only; review and send yourself";
+    const reason = enabled ? "" : options.openId !== s.id
+        ? (options.zh ? "先開啟此 Session" : "Open this Session first")
+        : options.writable !== true
+            ? (options.zh ? "等待連線與輸入就緒" : "Wait for connection and input readiness")
+            : (options.zh ? "等待對話身分確認" : "Wait for conversation identity confirmation");
     return '<button type="button" class="session-suggested-reply" data-reply-session="' + attr(s.id) +
         '" data-reply-key="' + attr(reply.key) + '" title="' + attr(destination + " — " + explanation) +
-        '"' + (enabled ? "" : " disabled") + '>' + label + '</button>';
+        '"' + (enabled ? "" : " disabled") + '>' + label +
+        (reason ? " · " + reason : "") + '</button>';
 }
 
 export function owedBadgeHTML(s) {

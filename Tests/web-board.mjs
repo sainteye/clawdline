@@ -140,11 +140,13 @@ function page(env = {}, lang = "zh-Hant") {
     ])
         elements[id] = new Node(doc);
     const timers = new Map();
+    const timerDelays = [];
     let next = 0;
     const environment = {
         document: doc,
         read: () => Promise.resolve(envelope()),
-        setTimeout: (fn) => {
+        setTimeout: (fn, ms) => {
+            timerDelays.push(ms);
             timers.set(++next, fn);
             return next;
         },
@@ -156,6 +158,7 @@ function page(env = {}, lang = "zh-Hant") {
         elements,
         environment,
         timers,
+        timerDelays,
         view: bindBoardPage(elements, environment)
     };
 }
@@ -1300,5 +1303,34 @@ check("multiple envelope candidates fail visible instead of partly hiding prose"
     action.click();check('assignment entry pins exact item Project and Mac',
         requested?.itemId===selected.id&&requested.projectId==='a'&&requested.machine==='mac-b');
     p.view.leave();
+}
+{
+    const { idleClient } = await import("../Resources/web/app/js/net/cloud-boot.js");
+    let transport = idleClient();
+    const calls = [];
+    const p = page({read: (...args) => { calls.push(args); return transport.board(...args); }});
+    // The binder captures its scheduler on construction; use the actual registered callback
+    // below to prove automatic recovery rather than substituting a user refresh.
+    await p.view.open("a", null, { id: "a", machine: "mac-cold" });
+    check("cold Board uses a waiting state rather than a technical error", p.view.state.readStatus === "loading"
+        && p.elements["board-status"].textContent.includes("Cloud")
+        && !p.elements["board-status"].textContent.includes("is not a function"));
+    check("cold Board retains exact route", p.view.state.projectId === "a" && p.view.state.machine === "mac-cold");
+    transport = { board: async () => envelope() };
+    check("cold Board has one bounded two-second retry", p.timers.size === 1 && p.timerDelays.at(-1) === 2000);
+    const retry = [...p.timers.values()][0]; p.timers.clear(); retry(); await flush();
+    check("ready transport recovers the same route", p.view.state.selectionLoaded
+        && calls.at(-1)[0] === "a" && calls.at(-1)[2] === "mac-cold");
+    const retained = p.view.state.items;
+    transport = idleClient();
+    await p.view.refresh();
+    check("reconnecting retains observed data and selection", p.view.state.items === retained
+        && p.view.state.selectionLoaded && p.view.state.projectId === "a");
+    transport = { board: async () => { throw Object.assign(new Error("denied"), {code:"forbidden"}); } };
+    await p.view.refresh();
+    check("real refusal is not disguised as connecting", p.view.state.readStatus === "error"
+        && p.elements["board-status"].textContent.includes("denied"));
+    p.view.leave();
+    check("leaving cancels pending retries", p.timers.size === 0);
 }
 console.log(`${checks} web board behavioral checks passed`);

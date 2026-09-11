@@ -719,7 +719,8 @@ export function keepConnected(session, options) {
 export function idleClient() {
     var listeners = new Set();
     function offline() {
-        return Promise.reject(bootError("cloud_starting", "the cloud connection is not ready"));
+        return Promise.reject(Object.assign(
+            bootError("cloud_starting", "the cloud connection is not ready"), { retryable: true }));
     }
     return {
         // `main.js` calls `api.start()` for every selected transport after the DOM boots.
@@ -734,6 +735,8 @@ export function idleClient() {
             return Promise.resolve({ sessions: [], at: 0, scan: { emptyAuthoritative: false } });
         },
         transcript: offline,
+        board: offline,
+        boardCommand: offline,
         documents: offline,
         document: offline,
         send: offline,
