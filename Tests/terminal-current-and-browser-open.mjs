@@ -60,7 +60,35 @@ const cloudControl = settings.slice(
     settings.indexOf("// MARK: - The apps the hotkey fires in"));
 assert.match(cloudControl, /Pair a Browser…/,
     "Cloud Settings exposes the browser half of the pairing protocol instead of only phone QR");
-const pairBrowser = functionBody(cloudControl, "private func beginBrowserPairing()");
+const browserStart = functionBody(cloudControl, "private func beginBrowserPairing()");
+assert.match(browserStart, /beginInvitationPairing\(browser: true\)/,
+    "Mac browser pairing starts a one-time invitation rather than a paste dialog");
+const pairBrowser = functionBody(cloudControl, "private func beginManualBrowserPairing()");
+const invitationFlow = functionBody(cloudControl, "private func beginInvitationPairing(browser: Bool)");
+assert.match(invitationFlow, /startPairingInvitation/);
+assert.match(invitationFlow, /invitation\.qrURL\(\)/);
+assert.match(invitationFlow, /guard NSWorkspace\.shared\.open\(url\)/,
+    "browser open failure is visible, never silently treated as an opened page");
+const browserConsent = functionBody(cloudControl, "private func confirmInvitedBrowser(fragment: String)");
+assert.match(browserConsent, /preview\.viewerFingerprint/);
+assert.match(browserConsent, /runModal\(\) == \.alertFirstButtonReturn/);
+assert.ok(invitationFlow.indexOf("confirmInvitedBrowser(fragment:") < invitationFlow.indexOf("completer.complete(offerFragment:"),
+    "invited browser requires explicit fingerprint consent before key handover");
+assert.match(invitationFlow, /guard accepted else \{ throw CancellationError\(\) \}/);
+assert.match(invitationFlow, /pairingGeneration == generation/,
+    "late results cannot finish a newer pairing attempt");
+assert.match(functionBody(cloudControl, "private func cancelPairing()"), /pairingGeneration = UUID\(\)/);
+assert.match(pairBrowser, /BrowserPairingCodeField\(/);
+const codeField = settings.slice(settings.indexOf("private final class BrowserPairingCodeField"),
+    settings.indexOf("private final class CloudSettingsControl"));
+assert.match(codeField, /flags == \[\.command\]/);
+assert.match(codeField, /currentEditor\(\) as\? NSTextView/);
+for (const [key, action] of [["v", "paste"], ["c", "copy"], ["x", "cut"], ["a", "selectAll"]]) {
+    assert.match(codeField, new RegExp('case "' + key + '": editor\\.' + action + '\\(nil\\)'));
+}
+assert.doesNotMatch(codeField, /NSPasteboard|Timer|addGlobalMonitor/,
+    "editing only routes explicit shortcuts to the active field editor");
+assert.doesNotMatch(invitationFlow, /Log\.write|print\(|Diagnostics\./);
 const browserWorkflow = cloudHandover.slice(
     cloudHandover.indexOf("final class CloudBrowserPairingWorkflow"));
 assert.match(browserWorkflow, /CloudHandover\.decodeOfferFragment/,

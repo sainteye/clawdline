@@ -1,6 +1,7 @@
 /** The hosted console installs before it creates any E2E identity on iOS. */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 const pairing = await import("../Resources/web/app/js/net/cloud-onboarding.js");
 
@@ -66,6 +67,43 @@ assert.equal(scanned.invitation_id, "x", "the locally decoded frame becomes the 
 assert.ok(stopped && destroyed, "the camera is stopped immediately after the one valid QR");
 
 const main = readFileSync("Resources/web/app/js/main.js", "utf8");
+const connectedStart = main.indexOf('if (update.state === "connected")');
+const connectedEnd = main.indexOf('} else if (update.state === "sign_in")', connectedStart);
+const connectedBody = main.slice(main.indexOf("{", connectedStart) + 1, connectedEnd);
+for (const hasInvitation of [true, false]) {
+    let cleared = 0, noticed = 0, hidden = 0, used = 0, bound = 0, continuation;
+    const context = { cloudInvitation: hasInvitation ? { invitation_id: "one-time" } : null,
+        cloudGateUp: true, window: { sessionStorage: {} }, update: { client: {} },
+        clearCloudPairingInvitation() { cleared++; },
+        showCloudAlreadyPaired(options) { noticed++; continuation = options.onContinue; },
+        hideCloudGate() { hidden++; }, useApi() { used++; }, bindTranscriptEvents() { bound++; } };
+    vm.runInNewContext(connectedBody, context);
+    assert.equal(cleared, hasInvitation ? 1 : 0);
+    assert.equal(noticed, hasInvitation ? 1 : 0,
+        "already-paired browser explicitly reports no new pairing instead of silently consuming the URL");
+    assert.equal(context.cloudInvitation, null);
+    assert.equal(context.cloudGateUp, hasInvitation);
+    assert.equal(used, 1); assert.equal(bound, 1);
+    if (hasInvitation) { assert.equal(hidden, 0); continuation(); }
+    assert.equal(context.cloudGateUp, false);
+    assert.equal(hidden, 1);
+}
+const pairingUI = readFileSync("Resources/web/app/js/input/cloud-pairing.js", "utf8");
+const noticeStart = pairingUI.indexOf("export function showCloudAlreadyPaired(");
+assert.ok(noticeStart >= 0);
+const noticeEnd = pairingUI.indexOf("\nexport function ", noticeStart + 1);
+const noticeSource = pairingUI.slice(noticeStart, noticeEnd).replace("export function", "function");
+const fields = new Map();
+const field = id => { if (!fields.has(id)) fields.set(id, {}); return fields.get(id); };
+let continued = 0;
+const noticeContext = { byId: field, cloudDoor: () => ({}), hideCloudControls() {}, say() {},
+    fetch() { assert.fail("already-paired notice must not call an API"); } };
+vm.runInNewContext(noticeSource + ";showCloudAlreadyPaired({onContinue(){}});", noticeContext);
+assert.match(field("cloud-door-guide").textContent, /No new access was granted/);
+assert.match(field("cloud-door-guide").textContent, /Cancel Pairing/);
+noticeContext.showCloudAlreadyPaired({ onContinue() { continued++; } });
+field("cloud-door-restart").onclick();
+assert.equal(continued, 1);
 assert.ok(main.indexOf('cloudOnboarding === "install"') < main.indexOf("new CloudViewerSession"),
     "the install gate is selected before a Cloud session can register a Safari viewer");
 assert.ok(main.indexOf("clearCloudPairingInvitation(window.sessionStorage)")

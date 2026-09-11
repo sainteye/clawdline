@@ -256,10 +256,11 @@ hash and opaque bytes to `POST /v1/pairing/invitations/accept`. The Mac polls
 `POST /v1/pairing/invitations/poll`, decrypts that offer locally, and the existing
 `complete`/`claim` X25519 handover moves the account master secret Mac → viewer.
 
-A desktop browser uses the compatibility hand-carry path because it cannot scan a QR displayed on
-the same Mac. Sign in at `app.clawdline.com`; while it says *Pair this browser*, copy the complete
-short-lived pairing code. On the Mac choose Settings → Cloud → *Pair a Browser…*, paste that code,
-and continue. The Mac decodes and bounds the offer before showing the browser fingerprint. Compare
+A desktop browser starts from Settings → Cloud → *Pair a Browser…*. The Mac creates the same
+short-lived invitation used by Phone QR and opens its `https://app.clawdline.com/` fragment URL in
+the default browser. Sign in there if needed and continue pairing; no code copying is required.
+The browser returns its encrypted offer through the existing invitation channel. The Mac then
+comes forward with an explicit fingerprint/access confirmation before releasing keys. Compare
 that fingerprint with the one still visible in the browser, then choose *Pair Browser*; pressing
 Cancel never starts the encrypted handover. While the handover is running Settings exposes only
 *Cancel Pairing*, so signing out cannot race it. Cancellation stops this Settings owner from
@@ -268,6 +269,16 @@ or Cloud write that already finished. An expired, malformed, oversized, wrong-ac
 fingerprint-mismatched offer fails visibly and must be restarted from the browser. This first Mac
 surface uses English security copy, matching the existing Cloud identity card; translating that
 copy is a presentation follow-up, not a second pairing protocol.
+
+*Paste Browser Code…* remains a compatibility fallback for another browser or a failed automatic
+open. Its focused field supports Command-V/C/X/A/Z via the standard field editor; it does not
+inspect the clipboard in the background. The raw offer and invitation secret are never logged.
+Phone QR is unchanged. Cancelling an invitation prevents a late result from completing a newer
+attempt; it cannot revoke a key handover or Cloud write that has already completed.
+If the default browser already holds account keys, it explicitly says it is already connected,
+removes the unused invitation from that page and grants no new access. Cancel Pairing on the Mac
+in that case, or use the fallback to pair another browser. The Mac invitation simply expires if
+not cancelled; this notice does not claim to cancel it remotely or change existing keys.
 
 The acceptance seam after that poll is bounded too. `CloudPairingCompleter.production` loads the
 restored identity, device signing key and master secret through one-shot `CloudKeychainReader`

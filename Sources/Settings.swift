@@ -3013,6 +3013,26 @@ final class DeviceChips: NSView, SelfSizing {
 /// The state machine lives in ``CloudSettingsModel`` so none of the security or cancellation
 /// rules depend on a window being present. This view only translates those states into one
 /// selectable reading and the actions that are valid at that moment.
+private final class BrowserPairingCodeField: NSTextField {
+    // Accessory apps have no standard Edit menu to route these key equivalents.
+    // Read the pasteboard only through an explicit edit command on this field's editor.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard flags == [.command], let editor = currentEditor() as? NSTextView else {
+            return super.performKeyEquivalent(with: event)
+        }
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "v": editor.paste(nil)
+        case "c": editor.copy(nil)
+        case "x": editor.cut(nil)
+        case "a": editor.selectAll(nil)
+        case "z": editor.undoManager?.undo()
+        default: return super.performKeyEquivalent(with: event)
+        }
+        return true
+    }
+}
+
 private final class CloudSettingsControl: NSView, SelfSizing {
 
     private enum PairingKind {
@@ -3031,6 +3051,7 @@ private final class CloudSettingsControl: NSView, SelfSizing {
     private var pairingKind: PairingKind?
     private var pairing: Bool { pairingKind != nil }
     private var pairingTask: Task<Void, Never>?
+    private var pairingGeneration = UUID()
     private var browserPairing: CloudBrowserPairingWorkflow?
     private var pairingWindow: NSWindow?
     private var pairingCloseObserver: NSObjectProtocol?
@@ -3115,6 +3136,8 @@ private final class CloudSettingsControl: NSView, SelfSizing {
                     ("Pair a Phone…", true, { [weak self] in self?.beginQRPairing() }),
                     ("Pair a Browser…", false,
                      { [weak self] in self?.beginBrowserPairing() }),
+                    ("Paste Browser Code…", false,
+                     { [weak self] in self?.beginManualBrowserPairing() }),
                     ("Sign Out", false, { [weak model] in model?.signOut() }),
                 ]
             }
@@ -3193,15 +3216,19 @@ private final class CloudSettingsControl: NSView, SelfSizing {
     /// The raw offer is deliberately kept in this stack frame and never copied into a log, note,
     /// preference or diagnostic report.
     private func beginBrowserPairing() {
+        beginInvitationPairing(browser: true)
+    }
+
+    private func beginManualBrowserPairing() {
         guard !pairing else { return }
 
         let entry = NSAlert()
-        entry.messageText = "Pair a Browser"
+        entry.messageText = "Paste Browser Code (Fallback)"
         entry.informativeText = "Copy the short-lived pairing code from app.clawdline.com and paste it here."
         entry.alertStyle = .informational
         entry.addButton(withTitle: "Continue")
         entry.addButton(withTitle: "Cancel")
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 460, height: 24))
+        let field = BrowserPairingCodeField(frame: NSRect(x: 0, y: 0, width: 460, height: 24))
         field.placeholderString = "Pairing code"
         field.isEditable = true
         field.isSelectable = true
@@ -3268,6 +3295,7 @@ private final class CloudSettingsControl: NSView, SelfSizing {
 
     private func cancelPairing() {
         guard pairing else { return }
+        pairingGeneration = UUID()
         pairingKind = nil
         pairingTask?.cancel()
         pairingTask = nil
@@ -3290,9 +3318,28 @@ private final class CloudSettingsControl: NSView, SelfSizing {
     /// its encrypted viewer offer. The QR secret is in a URL fragment, so neither the web server
     /// nor the OAuth redirect receives it; Cloud stores only its SHA-256 and the opaque offer.
     private func beginQRPairing() {
+        beginInvitationPairing(browser: false)
+    }
+
+    private func confirmInvitedBrowser(fragment: String) throws -> Bool {
+        let preview = try CloudBrowserPairingWorkflow.production().preview(raw: fragment)
+        let confirmation = NSAlert()
+        confirmation.messageText = "Pair this browser?"
+        confirmation.informativeText = "Browser fingerprint \(preview.viewerFingerprint). "
+            + "Check that app.clawdline.com shows the same fingerprint. "
+            + "Pairing grants this browser access to your encrypted Session data."
+        confirmation.addButton(withTitle: "Pair Browser")
+        confirmation.addButton(withTitle: "Cancel")
+        NSApp.activate(ignoringOtherApps: true)
+        return confirmation.runModal() == .alertFirstButtonReturn
+    }
+
+    private func beginInvitationPairing(browser: Bool) {
         guard !pairing else { return }
-        pairingKind = .phone
-        pairingNote = nil
+        let generation = UUID()
+        pairingGeneration = generation
+        pairingKind = browser ? .browser : .phone
+        pairingNote = browser ? "Opening your browser for pairing…" : nil
         refresh()
         let client = CloudAccountClient()
         let completer = CloudPairingCompleter.production()
@@ -3310,7 +3357,25 @@ private final class CloudSettingsControl: NSView, SelfSizing {
                 guard let url = invitation.qrURL() else {
                     throw CloudHandoverError.malformedInvitation
                 }
-                await MainActor.run { self?.showPairingQR(url: url, expiresIn: started.expiresIn) }
+                try Task.checkCancellation()
+                try await MainActor.run {
+                    guard let self, self.pairingGeneration == generation else {
+                        throw CancellationError()
+                    }
+                    if browser {
+                        guard NSWorkspace.shared.open(url) else {
+                            throw NSError(domain: "ClawdlinePairing", code: 1,
+                                userInfo: [NSLocalizedDescriptionKey:
+                                    "Could not open your browser. Try again, or use Paste Browser Code."])
+                        }
+                        self.pairingNote = "Continue in the browser. This Mac will ask you to confirm "
+                            + "its fingerprint before granting access. If it says already connected, cancel here; "
+                            + "use Paste Browser Code for another browser. This invitation expires in \(started.expiresIn)s."
+                        self.refresh()
+                    } else {
+                        self.showPairingQR(url: url, expiresIn: started.expiresIn)
+                    }
+                }
 
                 let ready: (String, String, CloudOpaquePairingBlob)
                 poll: while true {
@@ -3332,19 +3397,37 @@ private final class CloudSettingsControl: NSView, SelfSizing {
                 }
                 let fragment = try invitation.openEncryptedOffer(
                     ready.2, nowMilliseconds: Int64(Date().timeIntervalSince1970 * 1_000))
+                try Task.checkCancellation()
+                if browser {
+                    let accepted = try await MainActor.run {
+                        guard let self, self.pairingGeneration == generation else {
+                            throw CancellationError()
+                        }
+                        return try self.confirmInvitedBrowser(fragment: fragment)
+                    }
+                    guard accepted else { throw CancellationError() }
+                }
+                try Task.checkCancellation()
                 let outcome = try await completer.complete(offerFragment: fragment)
                 guard outcome.viewerDeviceID == ready.0 else {
                     throw CloudHandoverError.wrongSender
                 }
-                let note = "Paired \(outcome.viewerDeviceID). Phone fingerprint "
+                let note = "Paired \(outcome.viewerDeviceID). \(browser ? "Browser" : "Phone") fingerprint "
                     + "\(outcome.viewerFingerprint); this Mac's is \(outcome.machineFingerprint)."
-                await MainActor.run { self?.finishPairing(note: note) }
+                await MainActor.run {
+                    guard self?.pairingGeneration == generation else { return }
+                    self?.finishPairing(note: note)
+                }
             } catch is CancellationError {
-                await MainActor.run { self?.finishPairing(note: nil) }
+                await MainActor.run {
+                    guard self?.pairingGeneration == generation else { return }
+                    self?.finishPairing(note: "Pairing cancelled.")
+                }
             } catch {
                 let described = (error as? LocalizedError)?.errorDescription
                     ?? error.localizedDescription
                 await MainActor.run {
+                    guard self?.pairingGeneration == generation else { return }
                     self?.finishPairing(note: "Pairing failed: \(described)")
                 }
             }

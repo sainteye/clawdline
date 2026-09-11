@@ -32,7 +32,7 @@ import { ScheduleWebhookClient } from "./net/schedule-webhooks.js";
 import {
     captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudInstallGate,
     hideCloudGate, deferCloudGate, showCloudGate, showCloudBootError, showCloudDeviceRecovery,
-    showCloudPairing, showCloudSignIn
+    showCloudPairing, showCloudSignIn, showCloudAlreadyPaired
 } from "./input/cloud-pairing.js";
 import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onboarding.js";
 import "./door/door.js";
@@ -174,8 +174,19 @@ if (transportKind === "cloud") {
             keepConnected(cloudSession, {
                 onState: function (update) {
                     if (update.state === "connected") {
-                        cloudGateUp = false;
-                        hideCloudGate();
+                        cloudGateUp = !!cloudInvitation;
+                        if (cloudInvitation) {
+                            // Existing account keys skip pairing_required. Do not leave a stale
+                            // invitation or imply that this visit granted any new authority.
+                            clearCloudPairingInvitation(window.sessionStorage);
+                            cloudInvitation = null;
+                            showCloudAlreadyPaired({ onContinue: function () {
+                                cloudGateUp = false;
+                                hideCloudGate();
+                            } });
+                        } else {
+                            hideCloudGate();
+                        }
                         useApi(update.client);
                         bindTranscriptEvents(update.client);
                     } else if (update.state === "sign_in") {

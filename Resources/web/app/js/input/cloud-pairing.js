@@ -105,6 +105,20 @@ export function clearCloudPairingInvitation(storage) {
     storage.removeItem(INVITATION_STORAGE_KEY);
 }
 
+/** A connected viewer already has account keys; an invitation must not silently hang the Mac. */
+export function showCloudAlreadyPaired(options) {
+    if (!cloudDoor()) return;
+    hideCloudControls();
+    byId("cloud-door-lede").textContent = "This browser is already connected";
+    byId("cloud-door-guide").textContent = "No new access was granted. Choose Cancel Pairing on the Mac. "
+        + "To pair a different browser, open that browser and use Paste Browser Code on the Mac.";
+    say("The unused invitation was removed from this page. Your existing connection is unchanged.", true);
+    var button = byId("cloud-door-restart");
+    button.hidden = false;
+    button.textContent = "Continue to my Sessions";
+    button.onclick = options.onContinue;
+}
+
 /**
  * Safari and an installed iOS web app do not share IndexedDB. Stop before Cloud creates a
  * disposable Safari viewer; the PWA will own login, its signing key, and the account key.
@@ -338,7 +352,7 @@ export function showCloudPairing(session, options) {
         }
         if (fingerprint) fingerprint.textContent = pending.fingerprint || "";
         if (invitation) {
-            say("QR confirmed. Waiting for the Mac to finish the encrypted key handover…", true);
+            say("Invitation confirmed. Check the Mac to continue the encrypted key handover…", true);
         } else {
             say(T.webDoorCodeLede, true);
         }
@@ -376,7 +390,7 @@ export function showCloudPairing(session, options) {
         if (offerField) offerField.hidden = true;
         if (confirm) confirm.hidden = true;
         if (fingerprintLine) fingerprintLine.hidden = false;
-        if (fingerprintPrefix) fingerprintPrefix.textContent = "This phone's fingerprint is ";
+        if (fingerprintPrefix) fingerprintPrefix.textContent = "This device's fingerprint is ";
         if (fingerprintSuffix) fingerprintSuffix.textContent = ". The Mac pins it when pairing completes.";
         if (scanButton) scanButton.hidden = true;
         if (cameraFrame) cameraFrame.hidden = true;
