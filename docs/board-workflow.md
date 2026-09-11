@@ -282,6 +282,14 @@ and compacts proven completed rows before testing live capacity. This includes l
 journals created by the former post-create fanout overflow. Migration must be durably synchronized
 before it is installed in memory. Unknown/conflicting settlement identity, unresolved over-capacity
 work, and persistence errors remain explicit refusals; no journal clearing or blind resend is used.
+Legacy `artifact` intents and current `record_output` intents share the exact
+`<event-id>-artifact-<index>` identity. Migration accepts only these two declared spellings,
+retaining the original kind and nonnegative output index; it does not infer aliases from titles.
+Duplicate IDs, mismatched indexes, live/settled collisions and unknown kinds still refuse.
+The focused migration fixture can additionally consume a read-only journal copy through
+`CLAWDLINE_LEGACY_WORKFLOW_FIXTURE`; it copies bytes into its private test directory and uses a
+stub Board sink. A passing copy test proves migration and the semantic begin boundary, not a
+successful helper call against the installed runtime; that still requires post-rollout acceptance.
 
 Pending, in-flight, and failed-visible outbox subjects protect their run from capacity eviction;
 settlement re-finds an immutable outbox id and verifies its version, run, event, and kind instead of

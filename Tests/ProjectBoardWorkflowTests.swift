@@ -2,6 +2,78 @@ import Foundation
 
 private enum WorkflowSyncFixtureError: Error { case refused }
 
+private func workflowLegacyArtifactProof(_ seedData: Data, root: URL, identity: ProjectBoardWorkflow.Identity) {
+    do {
+        var journal = try JSONSerialization.jsonObject(with: seedData) as! [String: Any]
+        var runs = journal["runs"] as! [[String: Any]], rows: [[String: Any]] = []
+        var events = runs[0]["events"] as! [[String: Any]]; let start = runs[0]["spanStart"] as! [String: Any]
+        for i in events.indices {
+            for intent in events[i]["settledIntents"] as? [[String: Any]] ?? [] {
+                let kind = intent["kind"] as! String
+                rows.append(["id": intent["id"]!, "version": 1, "runID": runs[0]["id"]!,
+                    "eventID": events[i]["id"]!, "kind": kind == "record_output" ? "artifact" : kind,
+                    "index": intent["index"]!, "status": "complete", "attempts": 1, "updatedAt": 1,
+                    "preparedRequestID": kind == "span" ? start["requestID"]! : "legacy-proof-request"])
+            }
+            events[i].removeValue(forKey: "settledIntents")
+        }
+        runs[0]["events"] = events; runs[0].removeValue(forKey: "spanStart")
+        journal["runs"] = runs; journal["outbox"] = rows; journal["schemaVersion"] = 2
+        func verifyCopy(_ data: Data, name: String, expectedRows: Int) throws {
+            let file = root.appendingPathComponent(name + ".json"); try data.write(to: file)
+            let original = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            let oldRows = original["outbox"] as! [[String: Any]]
+            expect("\(name) exact input row count", oldRows.count, expectedRows)
+            var calls = 0
+            func open() -> ProjectBoardWorkflow {
+                ProjectBoardWorkflow(url: file, boardHeader: { (true, 1, true) },
+                    ensureProject: { _, _ in (true, nil) },
+                    boardCommand: { _, _ in calls += 1; return ProjectBoardStore.Reply(status: 200, body: [:]) }, autoStart: false)
+            }
+            var reopened = open(); let mode = reopened.syncMode()
+            expect("\(name) legacy artifact migration accepts", mode, nil)
+            guard mode == nil else { return }
+            reopened.drainForTesting(); reopened = open(); reopened.drainForTesting()
+            expect("\(name) restart never replays completed artifacts", calls, 0)
+            let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
+            expect("\(name) migration durably writes schema3", saved["schemaVersion"] as? Int, 3)
+            let remaining = saved["outbox"] as! [[String: Any]]
+            expect("\(name) preserves exact failed identities", remaining.map { $0["id"] as! String }.sorted(),
+                oldRows.filter { $0["status"] as? String != "complete" }.map { $0["id"] as! String }.sorted())
+            guard case .managed(let next) = reopened.prepareIngress(requestID: "post-migration-send",
+                fingerprint: "post-migration", text: "proof", imageCount: 0, identity: identity) else {
+                check("\(name) post-migration ingress accepted", false); return
+            }
+            _ = reopened.markDelivery(runID: next.runID, identity: identity, delivered: true)
+            let body: [String: Any] = ["operation": "begin", "run_id": next.runID,
+                "classification": "existing_item", "item_id": "local-proof-item", "phase": "review_testing"]
+            expect("\(name) helper begin semantic boundary succeeds", reopened.record(body,
+                requestID: "post-migration-begin", fingerprint: "begin", identity: identity).status, 202)
+            reopened.drainForTesting(); reopened = open()
+            expect("\(name) begin replay retains receipt", reopened.record(body,
+                requestID: "post-migration-begin", fingerprint: "begin", identity: identity).status, 202)
+            reopened.drainForTesting(); expect("\(name) only new link/span execute once", calls, 2)
+        }
+        try verifyCopy(JSONSerialization.data(withJSONObject: journal), name: "synthetic", expectedRows: 9)
+        if let fixture = ProcessInfo.processInfo.environment["CLAWDLINE_LEGACY_WORKFLOW_FIXTURE"] {
+            let original = try Data(contentsOf: URL(fileURLWithPath: fixture))
+            try verifyCopy(original, name: "formal514-copy", expectedRows: 514)
+            expect("formal source fixture remains byte-identical", try Data(contentsOf: URL(fileURLWithPath: fixture)), original)
+        }
+        for variant in ["wrong-index", "unknown-kind", "duplicate-id"] {
+            var bad = journal, badRows = rows; let i = badRows.firstIndex { $0["kind"] as? String == "artifact" }!
+            if variant == "wrong-index" { badRows[i]["index"] = -1 }
+            if variant == "unknown-kind" { badRows[i]["kind"] = "artifact_guess" }
+            if variant == "duplicate-id" { badRows.append(badRows[i]) }
+            bad["outbox"] = badRows; let file = root.appendingPathComponent(variant + ".json")
+            let bytes = try JSONSerialization.data(withJSONObject: bad); try bytes.write(to: file)
+            let refused = ProjectBoardWorkflow(url: file, boardHeader: { (true, 1, true) }, autoStart: false)
+            expect("\(variant) remains fail-closed", refused.syncMode(), "workflow_persistence_failed")
+            expect("\(variant) does not rewrite refused journal", try Data(contentsOf: file), bytes)
+        }
+    } catch { check("legacy artifact fixture completes", false) }
+}
+
 private func workflowSettledCapacityProof() {
     let root = workflowTestDirectory("settled-capacity")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -45,6 +117,7 @@ private func workflowSettledCapacityProof() {
     if let data = try? Data(contentsOf: file),
        let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
         expect("completed payload rows no longer consume outbox", (saved["outbox"] as? [Any])?.count, 0)
+        workflowLegacyArtifactProof(data, root: root, identity: identity)
     } else { check("compacted journal remains readable", false) }
 
     // A capacity of two must reject a create before any of its three dependent writes execute.

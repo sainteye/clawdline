@@ -1173,7 +1173,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         let suffix: String
         switch entry.kind {
         case "record_root_landing": suffix = ""
-        case "record_output": suffix = "-artifact-\(entry.index)"
+        case "artifact", "record_output": suffix = "-artifact-\(entry.index)"
         case "obligation": suffix = "-obligation-\(entry.index)"
         case "program_binding": suffix = "-program-binding"
         case "end_span": suffix = "-end-span"
@@ -1188,7 +1188,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         default: return nil
         }
         guard entry.index >= 0 else { return nil }
-        if !["record_output", "obligation"].contains(entry.kind), entry.index != 0 { return nil }
+        if !["artifact", "record_output", "obligation"].contains(entry.kind), entry.index != 0 { return nil }
         return eventID + suffix
     }
 
