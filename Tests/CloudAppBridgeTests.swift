@@ -2,10 +2,10 @@ import Foundation
 #if CLOUD_APP_BRIDGE_STANDALONE
 import AppKit
 #endif
-private struct CloudAppBridgeTestFailure: Error, CustomStringConvertible {
+struct CloudAppBridgeTestFailure: Error, CustomStringConvertible {
     let description: String
 }
-private actor CloudAppBridgeTestSequence: CloudEnvelopeSequencing {
+actor CloudAppBridgeTestSequence: CloudEnvelopeSequencing {
     private var value: UInt64 = 0
     func nextSequence(sender: String) async throws -> UInt64 {
         value += 1
@@ -16,7 +16,7 @@ private struct CloudAppBridgeTestTokenProvider: CloudDeviceTokenProviding {
     let token: CloudDeviceToken
     func fetchDeviceToken() async throws -> CloudDeviceToken { token }
 }
-private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable {
+final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable {
     nonisolated let commands: AsyncStream<CloudInboundCommand>
     nonisolated let readyGenerations: AsyncStream<UInt64>
     private let lock = NSLock()
@@ -156,7 +156,7 @@ private final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked S
                 publicationStarts, publicationCancelled)
     }
 }
-private actor CloudAppBridgeTestRouter: CloudCommandRouting {
+actor CloudAppBridgeTestRouter: CloudCommandRouting {
     struct Call: Equatable {
         let command: CloudHeadlessCommand
         let sender: String
@@ -187,8 +187,7 @@ private actor CloudAppBridgeTestRouter: CloudCommandRouting {
     func recorded() -> [Call] { calls }
     func recordedReads() -> [ReadCall] { reads }
 }
-
-private final class CloudAppBridgeTestGate: @unchecked Sendable {
+final class CloudAppBridgeTestGate: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
     func set(_ value: Bool) {
@@ -202,7 +201,6 @@ private final class CloudAppBridgeTestGate: @unchecked Sendable {
         return value
     }
 }
-
 private final class CloudAppBridgeCompletion: @unchecked Sendable {
     private let lock = NSLock()
     private var value = false
@@ -220,7 +218,7 @@ private final class CloudAppBridgeCompletion: @unchecked Sendable {
     }
 }
 
-private final class CloudAppBridgeTestResults: @unchecked Sendable {
+final class CloudAppBridgeTestResults: @unchecked Sendable {
     private let lock = NSLock()
     private var values: [CloudCommandResult] = []
 
@@ -1092,6 +1090,7 @@ func runCloudAppBridgeTests() async throws -> Int {
     case "images": return try await runCloudAppBridgeImageTests()
     case "documents": return try await runCloudAppBridgeDocumentTests()
     case "snapshot": return try await runCloudAppBridgeSnapshotTests()
+    case "refusals": return try await runCloudCommandRefusalTests()
     default:
         let base = try await runCloudAppBridgeBaseTests()
         let lifecycle = try await runCloudAppBridgeLifecycleTests()
@@ -1104,8 +1103,9 @@ func runCloudAppBridgeTests() async throws -> Int {
         let images = try await runCloudAppBridgeImageTests()
         let documents = try await runCloudAppBridgeDocumentTests()
         let snapshot = try await runCloudAppBridgeSnapshotTests()
+        let refusals = try await runCloudCommandRefusalTests()
         return base + lifecycle + transitiveLifecycle + publicationLifecycle
-            + reconnect + concreteReconnect + aba + reads + images + documents + snapshot
+            + reconnect + concreteReconnect + aba + reads + images + documents + snapshot + refusals
     }
 }
 
@@ -1139,7 +1139,7 @@ private func cloudAppBridgeTestSnapshots(
     )
 }
 
-private func waitForCloudAppBridge(
+func waitForCloudAppBridge(
     _ description: String,
     timeout: TimeInterval = 3,
     condition: @escaping () async -> Bool
@@ -1382,9 +1382,9 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         "snippets": #"{"type":"snippets","session":"__clawdline_machine__","request":"p-snippets"}"#,
         "schedule": #"{"type":"schedule","session":"__clawdline_machine__","request":"p-4","id":"morning"}"#,
         "push-key": #"{"type":"push-key","session":"__clawdline_machine__","request":"p-5"}"#,
+        "project-worktree-lifecycle": #"{"type":"project-worktree-lifecycle","session":"__clawdline_machine__","request":"p-6","project":"project-0123456789abcdef01234567"}"#, "project-worktree-lifecycle-refresh": #"{"type":"project-worktree-lifecycle-refresh","session":"__clawdline_machine__","request":"p-7","project":"project-0123456789abcdef01234567"}"#,
     ]
-    try require(Set(wellFormed.keys) == CloudAppBridge.readTypes,
-                "every read type this bridge admits has a body written for it here")
+    try require(Set(wellFormed.keys) == CloudAppBridge.readTypes, "every read type this bridge admits has a body written for it here")
     var typedSequence: UInt64 = 60
     for type in CloudAppBridge.readTypes.sorted() {
         let readsBeforeType = await router.recordedReads().count
@@ -1402,7 +1402,7 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
         typedNames
             == ["transcript", "info.full", "agent:a", "shell:s", "skills", "git", "screen",
                 "image.img-1", "documents", "read:p-doc", "read:p-1", "read:p-2", "read:p-3", "read:p-4",
-                "read:p-5", "read:p-list", "read:p-snippets", "read:p-board", "read:p-timeline"]
+                "read:p-5", "read:p-list", "read:p-snippets", "read:p-board", "read:p-timeline", "read:p-6", "read:p-7"]
             && typedReads.contains(CloudAppBridgeTestRouter.ReadCall(
                 read: .transcript(session: "typed", limit: 200, priority: .foreground),
                 sender: "viewer")),

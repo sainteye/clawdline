@@ -111,7 +111,11 @@ converts a verified cloud command back into an in-process request, so authentica
 idempotency, menu safety, image validation and audit stay the local HTTP route's single
 implementation. The write gate is the same one: a Mac with `remote_write` off refuses a cloud
 command with `cloud_commands_disabled`, exactly as it refuses one from the browser on its own
-network.
+network. If the command carried a safe bounded request identity, the Mac also publishes that 403
+on the existing `action:<request>` channel; an identifiable malformed `shell-kill` does the same
+with `400 malformed_command`. Neither refusal reaches the command router. A non-`ctl` envelope is
+outside this reply contract and is rejected without minting an action-channel identity; the shipped
+browser sends `shell-kill` only as `ctl`.
 
 **The `orch/` snapshot carries three things, and two of them were added because their absence
 was invisible.** `RemoteServer.orchestratorSnapshot()` is the one body both publishers send — the

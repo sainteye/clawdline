@@ -12,7 +12,7 @@ import Foundation
 /// is unchanged on `RemoteServer`, so no external caller — `Orchestrator`, `ProjectBoardWorkflowHTTP`,
 /// or any test file — has to change. This type owns none of the restart-*receipt* persistence
 /// (`Orchestrator.beginRestartMaintenance`/`advanceRestartMaintenance`/`abortRestartMaintenance`,
-/// `restartReceipt`): that remains W2-2's, in `Coordinator.swift`'s `extension Orchestrator`. What
+/// `RestartRecordsTransaction`): that is Registry-owned after W2-2. What
 /// this type owns is only the admission flag those routes flip and the counters they read to
 /// decide when the drain is complete — the terminal lane's own half of that handshake.
 final class TerminalCommandScheduler: @unchecked Sendable {

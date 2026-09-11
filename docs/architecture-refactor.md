@@ -604,13 +604,13 @@ move it; the counts may only fall.
 
 | Region (function) | State it guards | Next boundary |
 |---|---|---|
-| closeability read counter ×2 — 2 | `closeabilityRegistryReadCountForTesting` | W2-2 command admission (the closeability query) |
-| `readResult`'s bad-secret record — 1 | `badResults` | W2-2 command admission (result intake) |
+| closeability read counter ×2 — 2 | `closeabilityRegistryReadCountForTesting` | **closed by W2-2**: a Registry counter behind task-door transitions |
+| `readResult`'s bad-secret record — 1 | `badResults` | **already closed** by `9d1676e9`, which moved result intake to `OrchestratorResultFinalizer` and deleted the set |
 | `dispatchToken()`, `archiveKey()` — 2, **reading and writing their files inside the hold** | the orchestrator token and archive-key files | W1-5 persistence health: an unreadable file is replaced by a fresh mint today |
 | `load()`'s flag — 1 | `loaded` | W1-5 persistence health: the flag is set before the read, so an unreadable store leaves empty tables authoritative |
-| `Coordinator.swift` restart maintenance: begin ×2, advance ×2, abort ×2, current record, admission check, resume — 9 | `restartReceipt` | W2-2 command admission (restart maintenance) |
-| `scheduledResumeTitle` → `availableScheduledSessionID`: `fileExists`, transcript ownership, `Codex.head` — **inside the task door** | task rows | W2-2 command admission (the place-resume query): take rows in the door, probe outside, revalidate |
-| `tasksUnder` (root-close cascade) → `provenChildSessionID` — **inside the task door** | task rows | W2-2 command admission (session close): the same shape |
+| `Coordinator.swift` restart maintenance: begin ×2, advance ×2, abort ×2, current record, admission check, resume — 9 | `restartReceipt` | **closed by W2-2**: `OrchestratorRegistry.RestartRecordsTransaction` |
+| `scheduledResumeTitle` → `availableScheduledSessionID`: `fileExists`, transcript ownership, `Codex.head` — **inside the task door** | task rows | **closed by W2-2**: rows in the door, probe outside, exact row revalidated |
+| `tasksUnder` (root-close cascade) → `provenChildSessionID` — **inside the task door** | task rows | **closed by W2-2**: the same shape |
 
 **W2-1 closed its fifteen rows (`Sources/ScheduleService.swift`, `Sources/OrchestratorEventPublisher.swift`).**
 The nine scheduling regions (schedule removal, schedule inventory ×2, manual run,
@@ -641,6 +641,40 @@ same way. The restart-*receipt* persistence this wrapper calls into
 (`Orchestrator.beginRestartMaintenance`/`advanceRestartMaintenance`/`abortRestartMaintenance`,
 `restartReceipt`, the nine `Coordinator.swift` `extension Orchestrator` sites in the table above)
 stays W2-2's; this slice did not touch it.
+
+**W2-2 closed the remaining owner rows and added one application owner.** Measured on its own
+candidate against base `a88201bb`:
+
+- **Closeability read counter.** `closeabilityRegistryReadCountForTesting` left `Orchestrator`; the
+  count is `OrchestratorRegistry`'s, incremented inside the task door that already assembles the
+  snapshot and read or reset through that door. `direct_registry_lock_sites` is **0**, and the
+  ratchet became a zero that stays zero with a `withTaskRecords` control.
+- **Bad-result intake.** Already gone before this slice: `9d1676e9` deleted `badResults` when result
+  intake moved to `OrchestratorResultFinalizer`. The row is recorded as closed rather than re-done.
+- **Restart receipt.** The receipt is private to `OrchestratorRegistry` behind
+  `RestartRecordsTransaction` — `current`, a compare-and-set `commit(_:expecting:)`, `load()`'s
+  `replaceForLoad`, `forget()`'s `removeForForget` — reached through the acquiring
+  `withRestartRecords` door, or as `restartRecords` from a task-door hold where reconciliation must
+  stay atomic with executor receipts. The nine `Coordinator.swift` regions are **0**, with the
+  Coordinator store's own lock as the scan's control. Two behaviours change only under a race: a
+  begin whose read receipt was replaced before its write is refused `409 restart_in_progress` instead
+  of overwriting it, and every failed-save rollback restores only the receipt it wrote. Schema v1's
+  `restart` key, its codec and every route are unchanged.
+- **Filesystem probes under the task door.** `scheduledResumeTitle` and `tasksUnder` take value copies
+  in one hold, run the transcript/rollout probe with the lock released, and in a second hold count a
+  proof only while the row still carries the id, assistant, project, child session and transcript
+  path it was taken of. `childSessionProbeObserverForTesting` is the seam the red proof uses.
+  `Orchestrator.swift` grew by 23 lines for that shape and its ceiling says so; the next extractable
+  boundary is the child-session identity query itself.
+
+The application owner is `ProjectWorktreeLifecycleService` (`Sources/ProjectWorktreeLifecycle.swift`),
+the single Git/filesystem probe, classifier, preservation step, preview and cleanup executor for
+Project worktrees, with `ProjectWorktreeHTTP` as its only codec; see
+[`project-worktrees.md`](project-worktrees.md). Its file is over this document's 1,200-line warning
+and under the 2,500 stop: the probe, the classifier, the pins and the executor share one row model and
+one set of pins, and splitting the executor from the pins it rechecks would create the second cleanup
+authority the design exists to prevent. The next cohesive seam is the idempotency ledger, which has
+its own persistence lifetime. `RemoteServer.swift` holds only the lane registration (+17 lines).
 
 Schema v1, the `tasks` key and its codec, the single `NSLock`, the rate and capacity limits,
 idempotent replays and every `Orchestrator` facade are unchanged, so rollback is reverting the
@@ -823,11 +857,11 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 636 | `Tests/TestGroupManifest.swift`, counted by the guard |
-| ordered runners | 50 | `Tests/main.swift`, counted by the guard |
-| suite files | 63 | `Tests/*Tests.swift`, counted by the guard |
-| `Orchestrator.swift` ceiling | 10,661 | the ratchet in `tools/check-architecture-boundaries.sh` |
-| `RemoteServer.swift` ceiling | 5,741 | the receipt in `tools/check-architecture-boundaries.sh` |
+| ordered groups | 644 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered runners | 52 | `Tests/main.swift`, counted by the guard |
+| suite files | 66 | `Tests/*Tests.swift`, counted by the guard |
+| `Orchestrator.swift` ceiling | 10,684 | the ratchet in `tools/check-architecture-boundaries.sh` |
+| `RemoteServer.swift` ceiling | 5,758 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->
 

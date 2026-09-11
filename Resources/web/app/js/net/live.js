@@ -699,6 +699,21 @@ export var LocalClient = {
                          + encodeURIComponent(project));
     },
 
+    /// The Project worktree lifecycle read model, named by the Board Project id. The read never
+    /// runs Git on the Mac; the refresh asks for one bounded local observation and answers with the
+    /// snapshot it produced. **There is no cleanup method on any transport**: preview and apply
+    /// take this Mac's orchestrator token, which a browser never holds. The answer carries the
+    /// machine it came from, so a row's locator is (machine, owner.sessionId) on both transports.
+    projectWorktreeLifecycle: function (project) {
+        return jsonFetch("/v1/projects/" + encodeURIComponent(project) + "/worktrees")
+            .then(function (answer) { return Object.assign({}, answer, { machine: LOCAL_MACHINE }); });
+    },
+
+    projectWorktreeLifecycleRefresh: function (project) {
+        return jsonFetch("/v1/projects/" + encodeURIComponent(project) + "/worktrees/refresh", post({}))
+            .then(function (answer) { return Object.assign({}, answer, { machine: LOCAL_MACHINE }); });
+    },
+
     /// What each Feature's reviews found, what proving it cost, and how its tokens divided
     /// between building the work and reading it. With no argument it is the whole list; with a
     /// graph id it is that one Feature, its findings and the axes each review answered on.

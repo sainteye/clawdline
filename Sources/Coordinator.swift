@@ -1526,7 +1526,7 @@ extension Orchestrator {
         }
         load()
         let (candidates, existing) = OrchestratorRegistry.withTaskRecords { records in
-            (records.taskValues(), restartReceipt)
+            (records.taskValues(), records.restartRecords.current())
         }
         let blockers = restartBlockers(in: candidates)
         if let existing, existing.phase == .invalid {
@@ -1555,40 +1555,60 @@ extension Orchestrator {
             current: (existing?.phase == .complete || existing?.phase == .aborted) ? nil : existing,
             requestID: requestID, instanceID: appInstanceID, outstanding: outstanding,
             channels: channels, blockers: blockers, now: now)
-        lock.lock(); restartReceipt = next; lock.unlock()
+        // W2-2: the receipt is the Registry's. The decision above read it in one hold; the write
+        // names that exact receipt, so a concurrent writer turns this into a typed refusal rather
+        // than being overwritten, and the failed-save rollback restores only what this call wrote.
+        guard OrchestratorRegistry.withRestartRecords({ $0.commit(next, expecting: existing) }) else {
+            if let current = currentRestartRecord(), current["request_id"] as? String == requestID {
+                return .ok(["restart": current])
+            }
+            return .refused(status: 409, code: "restart_in_progress",
+                            message: "The restart intent changed while this request was deciding.",
+                            extra: ["restart": currentRestartRecord().map { $0 as Any } ?? NSNull()])
+        }
         guard save() else {
-            lock.lock(); restartReceipt = existing; lock.unlock()
+            OrchestratorRegistry.withRestartRecords { $0.commit(existing, expecting: next) }
             return .refused(503, "restart_store_failed",
                             "The durable restart intent could not be written; replacement is unsafe.")
         }
         return .ok(["restart": restartRecord(next)])
     }
 
+    private enum RestartStep {
+        case missing
+        case refused(Reply)
+        case settled(RestartReceipt)
+        case wrote(prior: RestartReceipt, next: RestartReceipt)
+    }
+
     static func advanceRestartMaintenance(outstanding: Int, channels: [String: Int],
                                           now: Date = Date()) -> Reply {
         load()
-        lock.lock()
-        guard let current = restartReceipt else {
-            lock.unlock()
+        let step = OrchestratorRegistry.withRestartRecords { records -> RestartStep in
+            guard let current = records.current() else { return .missing }
+            guard current.phase != .invalid else {
+                return .refused(.refused(503, "restart_store_failed",
+                                         "The stored restart intent is invalid; abort it explicitly."))
+            }
+            let next = restartTransition(
+                current: current, requestID: current.requestID, instanceID: appInstanceID,
+                outstanding: outstanding, channels: channels, blockers: [], now: now)
+            records.commit(next, expecting: current)
+            return .wrote(prior: current, next: next)
+        }
+        switch step {
+        case .missing:
             return .refused(404, "restart_not_found", "No restart maintenance intent exists.")
+        case .refused(let reply): return reply
+        case .settled(let receipt): return .ok(["restart": restartRecord(receipt)])
+        case .wrote(let current, let next):
+            if next != current, !save() {
+                OrchestratorRegistry.withRestartRecords { $0.commit(current, expecting: next) }
+                return .refused(503, "restart_store_failed",
+                                "The drained restart receipt could not be persisted; replacement is unsafe.")
+            }
+            return .ok(["restart": restartRecord(next)])
         }
-        guard current.phase != .invalid else {
-            lock.unlock()
-            return .refused(503, "restart_store_failed",
-                            "The stored restart intent is invalid; abort it explicitly.")
-        }
-        let next = restartTransition(
-            current: current, requestID: current.requestID, instanceID: appInstanceID,
-            outstanding: outstanding, channels: channels, blockers: [], now: now)
-        let changed = next != current
-        restartReceipt = next
-        lock.unlock()
-        if changed, !save() {
-            lock.lock(); restartReceipt = current; lock.unlock()
-            return .refused(503, "restart_store_failed",
-                            "The drained restart receipt could not be persisted; replacement is unsafe.")
-        }
-        return .ok(["restart": restartRecord(next)])
     }
 
     static func abortRestartMaintenance(requestID: String, now: Date = Date()) -> Reply {
@@ -1596,69 +1616,66 @@ extension Orchestrator {
             return .refused(400, "bad_restart_request", "request_id must be one lowercase UUID.")
         }
         load()
-        lock.lock()
-        guard var current = restartReceipt else {
-            lock.unlock()
+        let step = OrchestratorRegistry.withRestartRecords { records -> RestartStep in
+            guard var current = records.current() else { return .missing }
+            guard current.requestID == requestID else {
+                return .refused(.refused(status: 409, code: "restart_in_progress",
+                                         message: "A different restart maintenance intent is active.",
+                                         extra: ["restart": restartRecord(current)]))
+            }
+            if current.phase == .aborted || current.phase == .complete { return .settled(current) }
+            let prior = current
+            current.phase = .aborted
+            current.abortedAt = now
+            current.outstanding = 0
+            current.channels = [:]
+            records.commit(current, expecting: prior)
+            return .wrote(prior: prior, next: current)
+        }
+        switch step {
+        case .missing:
             return .refused(404, "restart_not_found", "No restart maintenance intent exists.")
-        }
-        guard current.requestID == requestID else {
-            lock.unlock()
-            return .refused(status: 409, code: "restart_in_progress",
-                            message: "A different restart maintenance intent is active.",
-                            extra: ["restart": restartRecord(current)])
-        }
-        if current.phase == .aborted || current.phase == .complete {
-            lock.unlock()
+        case .refused(let reply): return reply
+        case .settled(let receipt): return .ok(["restart": restartRecord(receipt)])
+        case .wrote(let prior, let current):
+            guard save() else {
+                OrchestratorRegistry.withRestartRecords { $0.commit(prior, expecting: current) }
+                return .refused(503, "restart_store_failed",
+                                "The aborted restart receipt could not be persisted; admission stays closed.")
+            }
             return .ok(["restart": restartRecord(current)])
         }
-        let prior = current
-        current.phase = .aborted
-        current.abortedAt = now
-        current.outstanding = 0
-        current.channels = [:]
-        restartReceipt = current
-        lock.unlock()
-        guard save() else {
-            lock.lock()
-            restartReceipt = prior
-            lock.unlock()
-            return .refused(503, "restart_store_failed",
-                            "The aborted restart receipt could not be persisted; admission stays closed.")
-        }
-        return .ok(["restart": restartRecord(current)])
     }
 
     static func currentRestartRecord() -> [String: Any]? {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return restartReceipt.map(restartRecord)
+        return OrchestratorRegistry.withRestartRecords { $0.current() }.map(restartRecord)
     }
 
     static func restartAdmissionClosed() -> Bool {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return restartReceipt?.admissionClosed == true
+        return OrchestratorRegistry.withRestartRecords { $0.current()?.admissionClosed == true }
     }
 
     static func resumeRestartIntent() {
         load()
-        lock.lock()
-        guard let current = restartReceipt, current.phase != .complete else {
-            lock.unlock(); return
+        let step = OrchestratorRegistry.withRestartRecords { records -> RestartStep in
+            guard let current = records.current(), current.phase != .complete else { return .missing }
+            if current.phase == .invalid { return .settled(current) }
+            let next = restartTransition(
+                current: current, requestID: current.requestID, instanceID: appInstanceID,
+                outstanding: 0, channels: [:], blockers: [], now: Date())
+            records.commit(next, expecting: current)
+            return .wrote(prior: current, next: next)
         }
-        if current.phase == .invalid {
-            lock.unlock()
-            RemoteServer.shared.setRestartMaintenance(active: true,
-                                                       requestID: current.requestID)
-            return
+        switch step {
+        case .missing, .refused: return
+        case .settled(let invalid):
+            RemoteServer.shared.setRestartMaintenance(active: true, requestID: invalid.requestID)
+        case .wrote(let current, let next):
+            if next != current { _ = save() }
+            RemoteServer.shared.setRestartMaintenance(active: true, requestID: next.requestID)
         }
-        let next = restartTransition(
-            current: current, requestID: current.requestID, instanceID: appInstanceID,
-            outstanding: 0, channels: [:], blockers: [], now: Date())
-        restartReceipt = next
-        lock.unlock()
-        if next != current { _ = save() }
-        RemoteServer.shared.setRestartMaintenance(active: true, requestID: next.requestID)
     }
 
     static func reconcileRestartInventory(_ snapshot: SessionWatch.IdentitySnapshot,
@@ -1673,7 +1690,7 @@ extension Orchestrator {
                             priorRestart: RestartReceipt, restart: RestartReceipt, allSettled: Bool)
         }
         let reconciliation = OrchestratorRegistry.withTaskRecords { records -> Reconciliation in
-            guard var restart = restartReceipt, restart.phase == .reconciling,
+            guard var restart = records.restartRecords.current(), restart.phase == .reconciling,
                   snapshot.complete, let observedAt = snapshot.observedAt,
                   observedAt >= (restart.resumedAt ?? restart.requestedAt) else {
                 return .skipped
@@ -1704,7 +1721,7 @@ extension Orchestrator {
                 restart.unresolvedTaskIDs = unresolved
                 restart.outstanding = 0
                 restart.channels = [:]
-                restartReceipt = restart
+                records.restartRecords.commit(restart, expecting: priorRestart)
             }
             return .reconciled(priorTasks: priorTasks, written: written,
                                priorRestart: priorRestart, restart: restart, allSettled: allSettled)
@@ -1714,7 +1731,7 @@ extension Orchestrator {
         guard save() else {
             OrchestratorRegistry.withTaskRecords { records in
                 records.restoreExecutorReceipts(from: priorTasks, wherever: written)
-                restartReceipt = priorRestart
+                records.restartRecords.commit(priorRestart, expecting: restart)
             }
             return
         }

@@ -24,28 +24,28 @@ import time
 import uuid
 
 
-BASE_COMMIT = "e9939b55b0ca4705b3b880ddaaccc9921363d689"
+BASE_COMMIT = "402b4954de1b52a60f419b5183f60ae2026f4389"
 # Measurement safety bound, not a production HTTP budget or SLA.
 HEALTH_BODY_LIMIT = 16384
 # Whole-file seals prevent an unchanged matching line from concealing a changed caller,
 # guard, comment-only decoy, or failure path elsewhere in the reviewed file.
 SOURCE_SEALS = {
     "Sources/CloudTransport.swift": "1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d",
-    "Sources/CloudAppBridge.swift": "aa8b8758bf7232d5a273785177a3be3e68dac034afe4756ad99310e9f98cccb0",
-    "Sources/RemoteServer.swift": "1386d9decd40ae711116bdd3cdad22a34fb490dda314938f5c62523b178a0d36",
-    "Sources/TerminalCommandScheduler.swift": "c9a423b31b8e8d374c26ea97b999a73f3e6cbceed00e31519147f9b28fafcd7a",
-    "Sources/Orchestrator.swift": "1b9b54e96d3608faa4e6e761020548b2904cd7e812c1ea42267fdd687fdde928",
+    "Sources/CloudAppBridge.swift": "03b5abdabb0e0ddf6708ac25b509847e57ffc37f3c173bdf2ebc0682cae7d220",
+    "Sources/RemoteServer.swift": "761da7a649f86d981576643e02df562c55aa461791598ff3daa018850871e568",
+    "Sources/TerminalCommandScheduler.swift": "81ca5981fee4900fca40edea3e050de7b88c66982d745e6f51b6f1c5ecce7e4f",
+    "Sources/Orchestrator.swift": "adedd015b38ba301a647cfe5635e0c1146001091cab1bed3111cda5181da9c83",
     "Sources/OrchestratorPersistence.swift": "375628d34df7a2b7679b1e5519d2cfd81f92a3ba86df62b12ae95dfd43d9482c",
-    "Sources/OrchestratorRegistry.swift": "f0022c5cefc99a26e7ae278f1e286025e693c32ffdf0c286fa7361142e9ec27b",
+    "Sources/OrchestratorRegistry.swift": "e8fe2cbe68e7752343863291dfa5f787df9195cc65c671c471a8eadfbadb2401",
     "Sources/OrchestratorStore.swift": "ed31e8ceb7aab18aee23efdf8c3a20805e61a576f89673a4b79deeffd58bcfcc",
-    "Sources/Coordinator.swift": "8c465b30b97aacd421de00db92416712e7b16f556ade97d0ebb16d39ea3f69ae",
+    "Sources/Coordinator.swift": "f1427979b4897a17d6796643acc596f14ced538ab6e472aad186d8d9f78397a7",
     "Sources/SessionWatch.swift": "d1d47930535b2e79bea14d13d56482885adeff09fcaa0326b84f8a60701beb5c",
     "Sources/TranscriptReadCoordinator.swift": "61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371",
     "Sources/ReadingFreshness.swift": "4592b2a84c03d196707626df2876f3ef4e5274149addf361b7738a2888ed672f",
     "Sources/CloudOutboundSpool.swift": "aef545decd4c7c95b5c566cb60cb11455eaadf6b52f84c3707b76df165459485",
     "Sources/CloudCommandLedger.swift": "def726c029d4fb17e0d096c3187d87b2ea89fdc413e69b95bb02cf0a27862fcf",
     "Sources/CloudBridgeLifecycle.swift": "07f585fd60b4e99abe42d89ca72087c6339456cb844b088718c503cd9ef6b663",
-    "Tests/OrchestratorRecoveryTests.swift": "c15ff1acdc556cdf914ad774892c4818117a60709be06086810ce014db3ea753",
+    "Tests/OrchestratorRecoveryTests.swift": "5c966c328f60fdd2404ec0fb41c43eedfd2ba4af3e118a32e43545f9278d27f5",
     "Tests/CloudOutboundSpoolTests.swift": "da5322716a38ed3732fd113afdf507587c11f033e0a30d32f91be227b34fa244",
 }
 

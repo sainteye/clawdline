@@ -746,16 +746,34 @@ enum Orchestrator {
     static func scheduledResumeTitle(sessionID: String, assistant: Assistant,
                                      projectDir: String) -> String? {
         load()
-        return OrchestratorRegistry.withTaskRecords { records in
-            records.taskValues().first {
+        // W2-2: rows are taken in the door, the transcript/rollout probe runs outside it, and the
+        // exact row the probe was about is re-read before its title is used.
+        let candidates = OrchestratorRegistry.withTaskRecords { records in
+            records.taskValues().filter {
                 $0.scheduleID != nil && $0.state.isTerminal && $0.assistant == assistant
                     && $0.projectDir == projectDir && $0.childSessionId == sessionID
-                    && availableScheduledSessionID(of: $0) == sessionID
-            }.map { sessionTitle(taskTitle: $0.title, scheduled: true) }
+            }
         }
+        for probed in candidates where availableScheduledSessionID(of: probed) == sessionID {
+            if let row = OrchestratorRegistry.withTaskRecords({ $0.task(probed.id) }),
+               row.state.isTerminal, row.scheduleID == probed.scheduleID, sameProbeIdentity(row, probed) {
+                return sessionTitle(taskTitle: row.title, scheduled: true)
+            }
+        }
+        return nil
     }
 
+    /// The fields a child-session probe read: a row that still carries them is the row it proved.
+    private static func sameProbeIdentity(_ row: Task, _ probed: Task) -> Bool {
+        row.id == probed.id && row.assistant == probed.assistant && row.projectDir == probed.projectDir
+            && row.childSessionId == probed.childSessionId && row.transcriptPath == probed.transcriptPath
+    }
+
+    /// Test seam: called with the task id whenever a child-session filesystem probe starts.
+    static var childSessionProbeObserverForTesting: ((String) -> Void)?
+
     private static func availableScheduledSessionID(of task: Task) -> String? {
+        childSessionProbeObserverForTesting?(task.id)
         guard task.scheduleID != nil, let path = task.transcriptPath,
               FileManager.default.fileExists(atPath: path) else { return nil }
         guard let session = provenChildSessionID(of: task),
@@ -1297,8 +1315,8 @@ enum Orchestrator {
     private static var loaded = false
     private static var storeReadHealth: OrchestratorPersistence.StoreHealth = .unknown
     // The task table is owned by `OrchestratorRegistry` and reached through its task-record
-    // capability; its mutation clock replaces the `didSet` this declaration used to carry.
-    static var restartReceipt: RestartReceipt?
+    // capability; its mutation clock replaces the `didSet` this declaration used to carry. The
+    // restart receipt is the Registry's too, reached through `withRestartRecords`.
     // Handoff envelopes, handoff labels, Root Assignments and coordination waits are owned by
     // `OrchestratorRegistry` and reached through its coordination-record capability.
     /// Which walk this is. Exists to catch the overlap that should not be possible; it does not
@@ -2219,15 +2237,13 @@ enum Orchestrator {
     private static var observedCoordinationObligationMutationGeneration = -1
     private static var closeabilityIndexDirty = true
     private static var cachedCloseabilityRegistryIndex: CloseabilityRegistryIndex?
-    private static var closeabilityRegistryReadCountForTesting = 0
 
     static func resetCloseabilityRegistryReadCountForTesting() {
-        lock.lock(); closeabilityRegistryReadCountForTesting = 0; lock.unlock()
+        OrchestratorRegistry.withTaskRecords { $0.resetCloseabilityRegistryReads() }
     }
 
     static func closeabilityRegistryReadsForTesting() -> Int {
-        lock.lock(); defer { lock.unlock() }
-        return closeabilityRegistryReadCountForTesting
+        OrchestratorRegistry.withTaskRecords { $0.closeabilityRegistryReads() }
     }
 
     private static func activityClass(of state: SessionState) -> String {
@@ -2557,7 +2573,7 @@ enum Orchestrator {
         load()
         return OrchestratorRegistry.withTaskRecords { records -> CloseabilityRegistrySnapshot in
             settleObligationGeneration(records)
-            closeabilityRegistryReadCountForTesting += 1
+            records.noteCloseabilityRegistryRead()
             let index: CloseabilityRegistryIndex
             if !closeabilityIndexDirty, let cached = cachedCloseabilityRegistryIndex {
                 index = cached
@@ -6129,15 +6145,21 @@ enum Orchestrator {
     private static func tasksUnder(_ parents: [String], where keep: (Task) -> Bool) -> [String] {
         guard !parents.isEmpty else { return [] }
         load()
+        // `childSessionId` can survive from a registry written before ownership proofs were
+        // persisted. It may describe a sibling, so it becomes a cancellation key only after the
+        // task marker has proved the paired path. This lazy check touches at most the requested
+        // parents, never every historical transcript during app startup. W2-2: it reads the
+        // filesystem, so it runs outside the task door, and a proof counts only while the parent
+        // row still carries the identity it was taken of.
+        let probed = OrchestratorRegistry.withTaskRecords { records in parents.compactMap { records.task($0) } }
+        let proofs = probed.compactMap { parent in provenChildSessionID(of: parent).map { (parent, $0) } }
         return OrchestratorRegistry.withTaskRecords { records -> [String] in
             let above = parents.compactMap { records.task($0) }
             guard !above.isEmpty else { return [] }
             let ids = Set(above.map { $0.id })
-            // `childSessionId` can survive from a registry written before ownership proofs were
-            // persisted. It may describe a sibling, so it becomes a cancellation key only after
-            // the task marker has proved the paired path. This lazy check touches at most the
-            // requested parents, never every historical transcript during app startup.
-            let sessions = Set(above.compactMap { provenChildSessionID(of: $0) })
+            // A changed row cannot make the close answer smaller: retain the proven prior session,
+            // allowing an extra accept-loss prompt but never losing an unlisted child.
+            let sessions = Set(proofs.map { $0.1 })
             return records.taskValues()
                 .filter { task in
                     guard keep(task), !ids.contains(task.id) else { return false }
@@ -6151,6 +6173,7 @@ enum Orchestrator {
     }
 
     private static func provenChildSessionID(of task: Task) -> String? {
+        childSessionProbeObserverForTesting?(task.id)
         guard let sessionID = task.childSessionId,
               let path = task.transcriptPath else { return nil }
         if task.transcriptProven { return sessionID }
@@ -10178,7 +10201,7 @@ enum Orchestrator {
             closureAttestations = attestations
             OrchestratorEventPublisher.installActivityLocked(
                 generations: activity, classes: activityClasses)
-            restartReceipt = restart
+            records.restartRecords.replaceForLoad(restart)
             obligationGeneration = loadedGeneration
             obligationFingerprint = loadedFingerprint
             records.rebuildTerminalProjection()
@@ -10248,7 +10271,7 @@ enum Orchestrator {
                                       "session_activity": activityRows,
                                       "obligation_generation": obligationGeneration,
                                       "obligation_fingerprint": obligationFingerprint]
-            if let restart = restartReceipt.map(stored) { obj["restart"] = restart }
+            if let restart = records.restartRecords.current().map(stored) { obj["restart"] = restart }
             return obj
         }
         guard let obj else {
@@ -10583,7 +10606,7 @@ enum Orchestrator {
             records.removeAllTasks()
             records.registry.removeAllGraphAdmissions()
             records.registry.removeAllRateWindows()
-            restartReceipt = nil
+            records.restartRecords.removeForForget()
             records.coordinationRecords.removeAllPersistentRecords()
             records.sessionRecords.removeAllHandoffDeliveries()
             records.sessionRecords.removeAllPersistentRecords()

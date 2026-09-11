@@ -286,6 +286,7 @@ final class RemoteServer: @unchecked Sendable {
                     self.startSlowReading(request) { continuation.resume(returning: $0) }
                 } else if request.path == "/v1/board" { self.startBoardRequest(request) { continuation.resume(returning: $0) }
                 } else if request.path == "/v1/timeline" { self.startTimelineRequest(request) { continuation.resume(returning: $0) }
+                } else if ProjectWorktreeHTTP.owns(request.path) { self.startWorktreeRequest(request) { continuation.resume(returning: $0) }
                 } else {
                     continuation.resume(returning: self.withCachePolicy(self.dispatch(request)))
                 }
@@ -671,6 +672,13 @@ final class RemoteServer: @unchecked Sendable {
             }
             return
         }
+        if ProjectWorktreeHTTP.owns(request.path) {
+            startWorktreeRequest(request) { [weak self] response in
+                guard let self else { conn.cancel(); return }
+                self.send(response, on: conn)
+            }
+            return
+        }
         // Analytics has its own bounded worker and admission budget: a full analytics queue must
         // never spend the depth reserved for a phone's /info, transcript or places refresh.
         if request.method == "GET", Self.isUsageAnalyticsReading(request.path) {
@@ -801,6 +809,15 @@ final class RemoteServer: @unchecked Sendable {
             preAuthRefusal: crossOriginRefusal(request), postAuthRefusal: writeOriginRefusal(request),
             decorate: withCachePolicy, completeOnOwner: { [queue] in queue.async(execute: $0) },
             deliver: deliver)
+    }
+
+    /// Project worktree lifecycle: the whole codec and its bounded lane are `ProjectWorktreeHTTP`.
+    private func startWorktreeRequest(_ request: Request, deliver: @escaping (Response) -> Void) {
+        ProjectWorktreeHTTP.start(request,
+            machine: Orchestrator.verifyDispatch(token: request.headers["x-clawdline-orchestrator"]),
+            permission: permission(for: request), preAuthRefusal: crossOriginRefusal(request),
+            postAuthRefusal: writeOriginRefusal(request), decorate: withCachePolicy,
+            completeOnOwner: { [queue] in queue.async(execute: $0) }, deliver: deliver)
     }
 
     /// Everything that leaves here, with a cache policy applied at the door.

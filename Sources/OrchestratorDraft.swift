@@ -649,12 +649,16 @@ enum OrchestratorDraft {
     static func git(_ arguments: [String], cwd: String,
                     gitDirectory: String? = nil,
                     timeout: TimeInterval = 15,
-                    separateStandardError: Bool = false) -> GitAnswer? {
+                    separateStandardError: Bool = false,
+                    environment extra: [String: String] = [:]) -> GitAnswer? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = gitDirectory.map { ["--git-dir", $0] + arguments } ?? arguments
         process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         var environment = ProcessInfo.processInfo.environment
+        // Callers add variables (a private `GIT_INDEX_FILE`, literal pathspecs, the C locale);
+        // none of them may switch optional locks back on, so that one is applied last.
+        extra.forEach { environment[$0.key] = $0.value }
         environment["GIT_OPTIONAL_LOCKS"] = "0"
         process.environment = environment
         let pipe = Pipe()

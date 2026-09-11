@@ -726,6 +726,34 @@ export class CloudClient {
             "read");
     }
 
+    /** The Project worktree lifecycle read model from one Mac, named by its Board Project id.
+     * The service knows nothing about Cloud identity, so this client attaches the authenticated
+     * route machine to the answer: a row is located by (machine, owner.sessionId), never a title.
+     * The refresh is a read-admitted bounded observation. No cleanup method exists here. */
+    projectWorktreeLifecycle(project, machine) {
+        return this._worktreeLifecycle("project-worktree-lifecycle", project, machine);
+    }
+
+    projectWorktreeLifecycleRefresh(project, machine) {
+        return this._worktreeLifecycle("project-worktree-lifecycle-refresh", project, machine);
+    }
+
+    _worktreeLifecycle(type, project, machine) {
+        project = String(project || "");
+        if (!project || project.length > 200) {
+            return Promise.reject(cloudError("malformed_read",
+                "a Project worktree read needs a bounded Project id"));
+        }
+        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+            throw cloudError("cloud_machine_unavailable",
+                "this Mac has not published a current Cloud inventory");
+        }
+        var route = machine || this._onlyMachine("Project worktrees");
+        var timeout = type === "project-worktree-lifecycle-refresh" ? 130000 : undefined;
+        return this._machineRequest(route, type, { project: project }, "read", timeout)
+            .then(function (answer) { return Object.assign({}, answer, { machine: route }); });
+    }
+
     board(project, item, report, machine) {
         if (report) item = boardReportSelection(item, report);
         if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {

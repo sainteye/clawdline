@@ -127,6 +127,10 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `GET` | `/v1/places` | token | `read` |
 | `GET` | `/v1/places/:id/sessions` | token | `read` |
 | `GET` | `/v1/places/:id/sessions/:assistant` | token | `read` |
+| `GET` | `/v1/projects/:id/worktrees` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/projects/:id/worktrees/refresh` | orchestrator token, **or** token | `read` |
+| `POST` | `/v1/projects/:id/worktrees/cleanup/preview` | orchestrator token | — |
+| `POST` | `/v1/projects/:id/worktrees/cleanup/apply` | orchestrator token | — |
 | `GET` | `/v1/events` | token | `read` |
 | `POST` | `/v1/places/:id/start` | token + key | `send` **and** the write switch |
 | `POST` | `/v1/places/:id/start/:assistant` | token + key | `send` **and** the write switch |
@@ -505,6 +509,86 @@ $ curl -s http://127.0.0.1:7717/v1/projects -H "Authorization: Bearer $TOKEN" | 
 
 `path` and `label` always; `icon` only when the registry has one. Sorted by path.
 
+### Project worktree lifecycle
+
+`GET /v1/projects/:id/worktrees` · `POST .../worktrees/refresh` ·
+`POST .../worktrees/cleanup/preview` · `POST .../worktrees/cleanup/apply`
+
+`:id` is the Board Project id (`project-` and 24 lowercase hex digits); anything else is
+`400 bad_project_id`, and an id no Project on this Mac has is `404 project_not_found`. None of the
+four takes a query field. The model, the seven classes and the cleanup rules are in
+[`project-worktrees.md`](project-worktrees.md); this section is the wire.
+
+**Read** answers `{"projectWorktreeLifecycle": snapshot}` from the bounded cache and never runs Git.
+Before the first observation the snapshot is `complete: false` with
+`error: {"code": "not_observed"}` and every count `null`. **Refresh** takes an empty body (or `{}`),
+runs one bounded local observation — never a fetch — and answers with the snapshot it produced, in the
+same wrapper. Both are read-level: the orchestrator token, a paired device with `read`, or a verified
+Cloud viewer. Git work runs on a lane of its own; four queued-plus-running requests is the bound, and
+the fifth is `429 worktree_lifecycle_busy`. A refresh reuses a successful observation completed in
+the previous five seconds. If a later refresh fails, its typed top-level error is returned while the
+last good rows remain visible as stale. Local observations are current for five minutes; a recorded
+canonical-remote observation is current for six hours.
+
+```json
+{"projectWorktreeLifecycle":{
+  "schemaVersion":1,
+  "project":{"id":"project-0123456789abcdef01234567","label":"clawdline"},
+  "repository":{"id":"repository-…","label":"clawdline","canonicalPath":"/Users/you/code/clawdline"},
+  "observedAt":"2026-09-11T12:00:00Z","complete":true,"error":null,"truncated":false,
+  "counts":{"rows":1,"active":0,"staged":0,"modified":0,"untracked":1,"unknown":0},
+  "rows":[{"worktreeId":"wt-…","path":"/Users/you/Library/Application Support/Clawdline/worktrees/…",
+    "branch":"clawdline/task/…","base":"…","head":"…","target":"main",
+    "owner":{"taskId":"…","sessionId":"…","terminalId":"%585","title":"…","evidence":"exact_task_worktree_record"},
+    "active":false,
+    "status":{"complete":true,"staged":0,"modified":0,"untracked":1},
+    "classifications":["genuinely_unlanded"],
+    "localObservation":{"state":"current","observedAt":"2026-09-11T12:00:00Z","head":"…","error":null},
+    "canonicalTargetObservation":{"state":"current","observedAt":"2026-09-11T12:00:00Z","ref":"refs/heads/main","oid":"…","error":null},
+    "cleanup":{"eligible":false,"blockers":[{"code":"unlanded_work","message":"1 path(s) are not in the target."}],
+               "nextOwner":"Fixture root (the root that dispatched task …)"}}]}}
+```
+
+Counts are integers only when every row they sum was read; any unreadable row makes that count
+`null`, never `0`. `active` is `null` when the Session inventory was incomplete. The service holds no
+machine identity: a Cloud client attaches the authenticated route machine to the answer, and the
+local Web transport its own.
+
+**Preview** (orchestrator token only; `403 machine_token_required` for every other caller, a Cloud
+viewer and an administrative device included) takes `{}` or `{"worktrees": ["wt-…", …]}` — 1 to 200
+distinct ids from a snapshot, never paths (`400 bad_worktree_ids`). It re-observes and answers
+`{"projectWorktreeCleanupPreview": {…}}` with `previewId`, `createdAt`, `expiresAt` (five minutes),
+`pins`, `pinDigest`, `actions` (each with `worktreeId`, `action`, `reason`, `removes`, `preserves`
+and `recovery: {method, artifact, base, digest}`) and `refused` (each row's typed `blockers` and
+`nextOwner`). A named id that is not registered in the fresh observation is `404 worktree_not_found`.
+An unreadable repository or worktree list is a typed `409 repository_unreadable`,
+`worktree_list_failed`, or `worktree_list_empty`. Oversized request and response bodies are
+`413 body_too_large` and `503 worktree_response_too_large`.
+
+**Apply** (orchestrator token only) takes exactly
+`{"preview_id", "pin_digest", "confirm": true, "idempotency_key"}` and answers
+`{"projectWorktreeCleanupReceipt": {receiptId, previewId, idempotencyKey, pinDigest, state, replayed,
+startedAt, finishedAt, actions}}`, where `state` is `applied`, `partial` or `failed` and each action
+reports `done`, `failed` or `skipped` with a typed `error`.
+
+| status | code | when |
+|---|---|---|
+| 400 | `confirmation_required` | `confirm` is not `true` |
+| 400 | `bad_idempotency_key` | not 16–128 characters of letters, digits and `-_.:` |
+| 404 | `preview_not_found` | no live preview has that id |
+| 409 | `preview_expired`, `pin_digest_mismatch`, `preview_project_mismatch` | the preview cannot be used as named |
+| 409 | `repository_changed`, `worktree_changed`, `owner_changed`, `live_changed`, `comparison_changed`, `status_changed` | the fresh re-observation differs from a pin; nothing was changed |
+| 409 | `idempotency_key_reused` | the key already settled a different preview |
+| 409 | `apply_outcome_unknown` | an apply with this key started and never recorded its outcome |
+| 409 | `cleanup_in_progress` | another apply is running |
+| 500 | `preservation_failed` | a patch did not write or did not reapply to its base; no destructive step ran; the partial receipt is in `error.receipt` |
+| 503 | `cleanup_ledger_unavailable` | the idempotency ledger exists but cannot be read, or its start record could not be written |
+
+Per-action failures include `earlier_action_failed`, `preservation_missing`, `remove_failed`,
+`branch_identity_missing`, `branch_delete_failed`, `prune_set_changed`, `prune_failed`, and the
+`*_during_apply` recheck codes. The same key and preview replay the stored success or failure with
+`replayed: true` and change nothing. A key is reused if either its preview or pin digest differs.
+
 ### `GET /v1/sessions/:id/links`
 
 Every address this project has, gathered from the files other tools already write.
@@ -752,6 +836,8 @@ and what is reachable is a closed list named in `CloudHeadlessRead`:
 | `{"type":"document","session":"…","request":"…","scope":"task","task":"<uuid>","path":"report.md"}` | `read: "read:<request>"` | `GET /v1/sessions/:id/documents/task/:taskId/report.md` |
 | `{"type":"places","session":"__clawdline_machine__","request":"…"}` | `read: "read:<request>"` | `GET /v1/places` |
 | `{"type":"project-worktrees","session":"__clawdline_machine__","request":"…","project":"…"}` | `read: "read:<request>"` | `GET /v1/orchestrator/usage/project-worktrees?project=…` |
+| `{"type":"project-worktree-lifecycle","session":"__clawdline_machine__","request":"…","project":"project-…"}` | `read: "read:<request>"` | [`GET /v1/projects/:id/worktrees`](#project-worktree-lifecycle) |
+| `{"type":"project-worktree-lifecycle-refresh","session":"__clawdline_machine__","request":"…","project":"project-…"}` | `read: "read:<request>"` | `POST /v1/projects/:id/worktrees/refresh` — read-admitted, observation only |
 | `{"type":"past-sessions","session":"__clawdline_machine__","request":"…","place":"…","assistant":"…"}` | `read: "read:<request>"` | `GET /v1/places/:id/sessions/:assistant` |
 
 **An agent, a shell, an image and one document name themselves in the answer; the single-instance reads do not
@@ -844,7 +930,13 @@ read types into nothing, and on the direct path a paired device reads one whatev
 says. The session rows this Mac publishes to the relay cross without consulting it either, so a
 viewer that can see every row and not the messages inside one would be showing less than the same
 device sees through the tunnel, for no reason anybody chose. `send`, `answer` and `key` still meet
-`cloud_commands_disabled` exactly where they always did.
+`cloud_commands_disabled` exactly where they always did. When a request-carrying `ctl` command has
+a safe bounded identity, a 403 gate refusal—or an identifiable malformed `shell-kill` 400—is also
+published on `action:<request>`. This settles the caller's existing waiter without routing the
+command or granting any new command authority. A body that arrives under any non-`ctl` envelope
+class receives no action-channel reply: that class is outside the browser command vocabulary, so
+answering it would authenticate an action identity the command parser refused. The shipped browser
+uses `ctl` for `shell-kill`.
 
 **They queue where a phone queues.** A Cloud transcript explicitly carries `priority` into the
 same interactive/background transcript lanes; a stale hosted tab that predates the field is
@@ -852,9 +944,10 @@ treated as interactive because only newer automatic callers know to send `backgr
 Info read enters the same eight-place reading lane, so both can come back
 `429 transcript_busy` or `429 busy` with the same fields as above. A second door that skipped
 those lanes would put back the exclusivity they were built to remove. Before they reach those local
-lanes, the Cloud bridge itself has bounded foreground and background workers: all noninteractive
-panel, agent and refresh reads are ordered behind one background worker and cannot block the
-foreground transcript worker from consuming the command stream.
+lanes, the Cloud bridge itself has bounded foreground and background workers. Worktree lifecycle
+refreshes use a separate four-place lane and a 120-second server-side observation deadline, so a
+slow Git observation cannot monopolize unrelated Board, document, timeline, Git or shell reads.
+The Cloud client waits 130 seconds for this one read class.
 
 Those bridge bounds count the active read plus queued reads: 4 foreground and 16 background. The
 next request never enters the full worker. Instead the bridge publishes an encrypted answer on

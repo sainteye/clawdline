@@ -225,7 +225,13 @@ main_lines=$(line_count Tests/main.swift)
 # `OrchestratorRegistry.lock`. Every schedule route, `beat`'s control flow and every audit line
 # stay here, now calling the new owners instead of the state directly. Relocation, not a feature,
 # so the ceiling falls: 10,661 is measured on this candidate, without headroom.
-orchestrator_ceiling=10661
+# 10,684 with W2-2, a raise and not a relocation, so it is named: +23 lines. The two child-session
+# filesystem probes that ran inside the task door (the place-resume query and the root-close
+# cascade) now take rows in one hold, probe outside it and revalidate the exact row in a second —
+# that shape is longer than the one-hold version — plus the probe observer the red proof needs.
+# The closeability counter and restart receipt moved out (-2). The next extractable boundary is the
+# child-session identity query itself (`provenChildSessionID`, `availableScheduledSessionID`).
+orchestrator_ceiling=10684
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -433,7 +439,10 @@ fi
 # `setRestartMaintenance`, `terminalMaintenanceRefusal`) as a thin delegating wrapper. A
 # relocation, so the ceiling falls with it rather than being absorbed as headroom: 5,741 is
 # measured on this candidate.
-remote_server_ceiling=5741
+# 5,758 with W2-2's Project worktree lifecycle routes (+17): the connection lane branch (7), the
+# verified-Cloud read branch (1) and the `startWorktreeRequest` adapter (9). The codec, auth and
+# bounded lane are `Sources/ProjectWorktreeHTTP.swift`; the router keeps only the registration.
+remote_server_ceiling=5758
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -502,7 +511,9 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # 50 with W2-1's owner-uniqueness runner: `ScheduleService`, `OrchestratorEventPublisher` and
 # `TerminalCommandScheduler` each get proved directly rather than only through whatever paths the
 # suites that already existed happened to exercise.
-runner_count_expected=50
+# 52 with W2-2: `runW2CommandAdmissionTests` (the owner seams) and `runProjectWorktreeLifecycleTests`
+# (the lifecycle owner and its codec), two independent boundaries run after W2-1's owner suite.
+runner_count_expected=52
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -704,7 +715,8 @@ done
 # Combined Timeline and workflow-presentation suite files, measured from Tests/ inventory.
 # 62 with W1-5's store-health/corruption suite.
 # 63 with Tests/W2ApplicationOwnershipTests.swift, W2-1's owner-uniqueness suite.
-suite_count_expected=63
+# 66 with Tests/CloudCommandRefusalTests.swift closing W2-2's typed Cloud refusal proof.
+suite_count_expected=66
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's held-lock doors are closed. `withTransactionOnHeldLock` and its two adapters,
@@ -743,28 +755,37 @@ task_door_control=$(cat Sources/*.swift | grep -vE '^[[:space:]]*(//|/\*|\*)' \
 # Orchestrator.swift. By this measurement the count had already fallen to 17 before W2-1 (a prior
 # delivery's own reduction this history was not updated for). W2-1 closes the nine scheduling and
 # six event-publication regions the docs/architecture-refactor.md table names for it, taking bare
-# `lock.lock()` in these three files from 17 to 2 — both remaining sites are
-# `closeabilityRegistryReadCountForTesting`, explicitly W2-2's. It may only fall.
+# `lock.lock()` in these three files from 17 to 2 — both remaining sites were
+# `closeabilityRegistryReadCountForTesting`, explicitly W2-2's. W2-2 moved that counter into
+# OrchestratorRegistry behind task-door transitions, so the ratchet reached zero and became what the
+# held-lock check above already is: a zero that stays zero. Its control is the acquiring task door,
+# which these files call in two figures; a pattern that stopped recognising `lock.lock()` would
+# equally stop recognising `withTaskRecords {`, and its clean zero would be a statement about itself.
 direct_registry_lock_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift Sources/OrchestratorSessionLanding.swift \
-  | grep -c 'lock\.lock()' || true)
-[ "$direct_registry_lock_sites" -le 2 ] \
-  || architecture_guard_fail "the files that take the registry lock directly have $direct_registry_lock_sites bare lock.lock() sites; the ratchet is 2 and may only fall — reach registry state through an OrchestratorRegistry door, and move residual state to the owner docs/architecture-refactor.md names for it"
-[ "$direct_registry_lock_sites" -gt 0 ] \
-  || architecture_guard_fail "no bare lock.lock() site was found; either the last residual region is gone (delete this ratchet with it) or the pattern stopped matching"
+  | grep -vE '^[[:space:]]*(//|/\*|\*)' | grep -c 'lock\.lock()' || true)
+direct_lock_control=$(cat Sources/Orchestrator.swift | grep -vE '^[[:space:]]*(//|/\*|\*)' \
+  | grep -cE 'withTaskRecords[[:space:]]*[<({]' || true)
+[ "${direct_lock_control:-0}" -gt 20 ] \
+  || architecture_guard_fail "the direct-lock scan's control found only ${direct_lock_control:-0} withTaskRecords sites in Sources/Orchestrator.swift; it no longer recognises how that file enters the registry"
+[ "$direct_registry_lock_sites" -eq 0 ] \
+  || architecture_guard_fail "the files that took the registry lock directly have $direct_registry_lock_sites bare lock.lock() site(s); W2-2 closed the last one — reach registry state through an OrchestratorRegistry door"
 
-# The same lock is taken bare in Coordinator.swift's `extension Orchestrator` too: nine regions for
-# the restart-maintenance receipt that the three-file count above never saw. They are counted from
-# that extension's first line, because the `Coordinator` store earlier in the file takes a lock of
-# its own under the same spelling. Owned by W2-2 in docs/architecture-refactor.md; it may only fall.
+# The same zero for Coordinator.swift's `extension Orchestrator`, which held nine bare regions for the
+# restart-maintenance receipt until W2-2 moved the receipt behind
+# `OrchestratorRegistry.withRestartRecords` and the task door's `restartRecords` capability. Counted
+# from that extension's first line, because the `Coordinator` store earlier in the file takes a lock
+# of its own under the same spelling; its control is that store's own lock, which must still be seen.
 coordinator_extension_line=$(grep -n '^extension Orchestrator {' Sources/Coordinator.swift | head -1 | cut -d: -f1)
 [ -n "$coordinator_extension_line" ] \
   || architecture_guard_fail "Sources/Coordinator.swift has no 'extension Orchestrator {' line, so the restart-maintenance lock count cannot tell Orchestrator's lock from the Coordinator store's"
 coordinator_registry_lock_sites=$(tail -n "+$coordinator_extension_line" Sources/Coordinator.swift \
-  | grep -c 'lock\.lock()' || true)
-[ "$coordinator_registry_lock_sites" -le 9 ] \
-  || architecture_guard_fail "Coordinator.swift's extension Orchestrator has $coordinator_registry_lock_sites bare lock.lock() sites; the ratchet is 9 and may only fall"
-[ "$coordinator_registry_lock_sites" -gt 0 ] \
-  || architecture_guard_fail "no bare lock.lock() site was found in Coordinator.swift's extension Orchestrator; either restart maintenance moved to its owner (delete this ratchet with it) or the pattern stopped matching"
+  | grep -vE '^[[:space:]]*(//|/\*|\*)' | grep -c 'lock\.lock()' || true)
+coordinator_store_lock_control=$(head -n "$coordinator_extension_line" Sources/Coordinator.swift \
+  | grep -vE '^[[:space:]]*(//|/\*|\*)' | grep -c 'lock\.lock()' || true)
+[ "${coordinator_store_lock_control:-0}" -gt 0 ] \
+  || architecture_guard_fail "the Coordinator store's own lock was not found above the extension; the scan cannot tell a moved receipt from a pattern that stopped matching"
+[ "$coordinator_registry_lock_sites" -eq 0 ] \
+  || architecture_guard_fail "Coordinator.swift's extension Orchestrator has $coordinator_registry_lock_sites bare lock.lock() site(s); the restart receipt is OrchestratorRegistry's — use withRestartRecords or the task door's restartRecords"
 
 # The task-collection door, stated so this script checks it instead of a sentence promising it:
 # (1) the table is declared once, `private` to OrchestratorRegistry.swift, so no row is reached
@@ -785,12 +806,21 @@ task_capability_private_init=$(grep -A1 -E '^[[:space:]]*struct TaskRecordsTrans
 generic_task_upserts=$(task_door_code_lines Sources/*.swift Tests/*.swift | grep -cE '(^|[^A-Za-z0-9_])recordTask\(' || true)
 task_seed_sites=$(task_door_code_lines Sources/*.swift | grep -cE '(^|[^A-Za-z0-9_])seedTaskForTesting\(' || true)
 task_table_replacements=$(task_door_code_lines Sources/*.swift | grep -cE '(^|[^A-Za-z0-9_])replaceAllTasks\(' || true)
+restart_load_sites=$(task_door_code_lines Sources/*.swift | grep -cE '(^|[^A-Za-z0-9_])replaceForLoad\(' || true)
+restart_forget_sites=$(task_door_code_lines Sources/*.swift | grep -cE '(^|[^A-Za-z0-9_])removeForForget\(' || true)
+restart_fixture_sites=$(task_door_code_lines Sources/*.swift Tests/*.swift | grep -cE '(^|[^A-Za-z0-9_])installForTesting\(' || true)
 [ "$generic_task_upserts" -eq 0 ] \
   || architecture_guard_fail "recordTask( is back at $generic_task_upserts code site(s); a production row is created by admitTask and nothing else"
 [ "$task_seed_sites" -eq 2 ] \
   || architecture_guard_fail "seedTaskForTesting( appears at $task_seed_sites Sources code site(s), expected 2 (its declaration and holdScheduleTaskForTesting); production creates rows through admitTask"
 [ "$task_table_replacements" -eq 2 ] \
   || architecture_guard_fail "replaceAllTasks( appears at $task_table_replacements Sources code site(s), expected 2 (its declaration and load()); a rollback restores its own fields through a named transition"
+[ "$restart_load_sites" -eq 2 ] \
+  || architecture_guard_fail "replaceForLoad( appears at $restart_load_sites Sources code site(s), expected its declaration plus load() only"
+[ "$restart_forget_sites" -eq 2 ] \
+  || architecture_guard_fail "removeForForget( appears at $restart_forget_sites Sources code site(s), expected its declaration plus forget() only"
+[ "$restart_fixture_sites" -eq 6 ] \
+  || architecture_guard_fail "installForTesting( appears at $restart_fixture_sites code site(s), expected its declaration plus five test fixtures only"
 
 # Cut 4 chose its two files by measuring, and what it measured was that neither of them touches
 # the registry lock. That is the whole reason they were cheap: eleven candidates were scored on
@@ -809,7 +839,7 @@ task_table_replacements=$(task_door_code_lines Sources/*.swift | grep -cE '(^|[^
 # clean zero for the two files because it can no longer recognise what it is looking for. That is
 # the failure this repository has shipped before: a guard that stopped matching read exactly like a
 # guard that passed.
-lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|with(Transaction|SessionRecords|CoordinationRecords|TaskRecords)(OnHeldLock)?[[:space:]]*[({])'
+lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|with(Transaction|SessionRecords|CoordinationRecords|TaskRecords|RestartRecords)(OnHeldLock)?[[:space:]]*[({])'
 count_lock_sites() {
   grep -vE '^[[:space:]]*(//|/\*|\*)' "$1" | grep -cE "$lock_acquisition_re" || true
 }

@@ -644,6 +644,14 @@ let expectedOrderedTestGroupTitles: [String] = [
     "TerminalCommandScheduler enforces total depth, per-channel depth and nested reservation",
     "Orchestrator and RemoteServer keep every W2-1 legacy facade name, delegating to its new owner",
     "Orchestrator.swift no longer declares the W2-1 state it handed to its new owners",
+    "W2-2 closeability read receipts and the restart receipt are Registry-owned transitions",
+    "W2-2 place-resume and cascade queries probe the filesystem outside the task door and revalidate the row",
+    "worktree lifecycle classifies all seven classes and keeps mixed facts together",
+    "worktree lifecycle keeps unknown liveness, registry and stale canonical evidence out of cleanup",
+    "worktree cleanup preview pins its evidence and apply refuses every changed pin",
+    "worktree cleanup rechecks exact destructive targets immediately before each effect",
+    "worktree cleanup preserves verifiable bytes first, stops on failed preservation, and replays",
+    "worktree lifecycle routes keep cleanup machine-only and Cloud reads settle the closed vocabulary",
 ]
 
 func validateExecutedTestGroupManifest() {

@@ -100,8 +100,8 @@ struct CloudLocalRoute: Sendable {
     }
 
     init(read: CloudHeadlessRead) {
-        method = "GET"
         body = Data()
+        var routeMethod = "GET"
         var route: String
         var parameters: [String: String] = [:]
         switch read {
@@ -149,6 +149,12 @@ struct CloudLocalRoute: Sendable {
         case .projectWorktrees(_, _, let project):
             route = "/v1/orchestrator/usage/project-worktrees"
             parameters = ["project": project]
+        case .projectWorktreeLifecycle(_, _, let project):
+            route = "/v1/projects/\(Self.segment(project))/worktrees"
+        case .projectWorktreeLifecycleRefresh(_, _, let project):
+            // A read-admitted observation: POST only because the local GET never probes.
+            routeMethod = "POST"
+            route = "/v1/projects/\(Self.segment(project))/worktrees/refresh"
         case .pastSessions(_, _, let place, let assistant):
             route = "/v1/places/\(Self.segment(place))/sessions"
             if !assistant.isEmpty { route += "/" + Self.segment(assistant) }
@@ -161,6 +167,7 @@ struct CloudLocalRoute: Sendable {
         case .pushKey:
             route = "/v1/push/key"
         }
+        method = routeMethod
         path = route
         query = parameters
     }

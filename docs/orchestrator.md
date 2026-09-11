@@ -2395,6 +2395,11 @@ read prunes only opaque-id files inside that store. `CLAWDLINE_SESSION_IMAGE_DIR
 deleting store for test isolation; it never changes which source paths a request is allowed to
 name.
 
+Person-confirmed cleanup of residue that outlives these automatic rules — landed-identical
+checkouts, finished tasks' temporary checkouts and stale worktree metadata — is not part of this
+sweep. It has one owner, `ProjectWorktreeLifecycleService`, with a pinned preview, a verified
+preservation step and a machine-token-only apply; see [`project-worktrees.md`](project-worktrees.md).
+
 Worktrees follow a separate, fail-safe policy: an empty clean checkout whose `HEAD` remains on its
 task branch is removed with that empty branch when the child tab closes; after 24 hours a clean
 checkout with commits is removed while its branch is retained indefinitely; any dirty checkout,

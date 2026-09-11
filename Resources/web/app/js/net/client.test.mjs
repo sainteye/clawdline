@@ -1215,6 +1215,78 @@ await answerRead(projectCloud, projectSocket, {
 assert.equal((await worktreesAnswer).projectWorktrees.length, 1,
     "the Projects view receives the local route's body unchanged");
 
+// The worktree lifecycle read model is named by a Board Project id on both transports. Its two
+// closed read words settle `read:<request>`, the service's body passes through unchanged, and the
+// client — not the Mac's service — attaches the authenticated machine a row is located under.
+const lifecycleProject = "project-0123456789abcdef01234567";
+const lifecycleCloud = makeReadingCloud();
+const lifecycleSocket = await becomeReady(lifecycleCloud);
+lifecycleCloud.orchestratorSnapshots.set("mac-01", { tasks: [] });
+for (const [method, type] of [["projectWorktreeLifecycle", "project-worktree-lifecycle"],
+    ["projectWorktreeLifecycleRefresh", "project-worktree-lifecycle-refresh"]]) {
+    const before = publishedReads(lifecycleSocket).length;
+    const pending = lifecycleCloud[method](lifecycleProject);
+    await until(function () { return publishedReads(lifecycleSocket).length === before + 1; },
+        "the " + type + " read to leave");
+    const sent = JSON.parse(new TextDecoder().decode(await openEnvelope(
+        publishedReads(lifecycleSocket)[before].envelope, masterKey, senderKey)));
+    assert.deepEqual(Object.keys(sent).sort(), ["project", "request", "session", "type"],
+        type + " carries exactly its closed key set");
+    assert.deepEqual({ type: sent.type, session: sent.session, project: sent.project },
+        { type: type, session: "__clawdline_machine__", project: lifecycleProject },
+        type + " rides the reserved machine session with the Board Project id");
+    assert.equal(readTimerDelays.at(-1), type.endsWith("-refresh") ? 130000 : 60000,
+        "the refresh timeout exceeds the Mac's bounded observation budget");
+    await answerRead(lifecycleCloud, lifecycleSocket, {
+        read: "read:" + sent.request, status: 200,
+        body: { projectWorktreeLifecycle: { schemaVersion: 1, rows: [] } }
+    }, "__clawdline_machine__");
+    const answer = await pending;
+    assert.equal(answer.projectWorktreeLifecycle.schemaVersion, 1,
+        type + " returns the service snapshot under its success wrapper");
+    assert.equal(answer.machine, "mac-01", type + " is located under the authenticated route machine");
+}
+assert.throws(function () { lifecycleCloud.projectWorktreeLifecycle(lifecycleProject, "mac-99"); },
+    function (error) { return error.code === "cloud_machine_unavailable"; },
+    "a lifecycle read never guesses a Mac the account has not published");
+lifecycleCloud.orchestratorSnapshots.set("mac-02", { tasks: [] });
+assert.throws(function () { lifecycleCloud.projectWorktreeLifecycle(lifecycleProject); },
+    function (error) { return error.code === "cloud_machine_ambiguous"; },
+    "a lifecycle read never guesses between two published Macs");
+lifecycleCloud.orchestratorSnapshots.delete("mac-02");
+await assert.rejects(lifecycleCloud.projectWorktreeLifecycle("", "mac-01"),
+    function (error) { return error.code === "malformed_read"; },
+    "an empty Project id is refused before Cloud publication");
+await assert.rejects(lifecycleCloud.projectWorktreeLifecycle("x".repeat(201), "mac-01"),
+    function (error) { return error.code === "malformed_read"; },
+    "an oversized Project id is refused before Cloud publication");
+const localLifecycleRequests = [];
+const fetchBeforeLifecycle = globalThis.fetch;
+globalThis.fetch = function (path, options) {
+    localLifecycleRequests.push({ path: path, method: (options && options.method) || "GET" });
+    return Promise.resolve(jsonResponse({ projectWorktreeLifecycle: { schemaVersion: 1, rows: [] } }));
+};
+const localLifecycle = await LocalClient.projectWorktreeLifecycle(lifecycleProject);
+const localRefresh = await LocalClient.projectWorktreeLifecycleRefresh(lifecycleProject);
+globalThis.fetch = fetchBeforeLifecycle;
+assert.deepEqual(localLifecycleRequests.map(function (row) { return row.method + " " + row.path; }), [
+    "GET /v1/projects/" + lifecycleProject + "/worktrees",
+    "POST /v1/projects/" + lifecycleProject + "/worktrees/refresh",
+], "the local transport reads with GET and refreshes with one POST");
+assert.equal(localLifecycle.projectWorktreeLifecycle.schemaVersion, 1);
+assert.equal(localRefresh.projectWorktreeLifecycle.schemaVersion, 1);
+for (const client of [LocalClient, lifecycleCloud]) {
+    const names = Object.getOwnPropertyNames(Object.getPrototypeOf(client)).concat(Object.keys(client));
+    assert.deepEqual(names.filter(function (name) {
+        return /cleanup|worktree.*(?:apply|preview)|(?:apply|preview).*worktree/i.test(name);
+    }), [],
+        "no transport offers a worktree cleanup, preview or apply method");
+}
+for (const [path, source] of pageSources) {
+    assert.doesNotMatch(source, /worktrees\/cleanup/,
+        "browser source does not contain the machine-only cleanup route: " + path);
+}
+
 const startedAnswer = projectCloud.startPlace(cloudPlaces.places[0].id, "claude", "sonnet");
 await until(function () { return publishedReads(projectSocket).length === 3; },
     "the start action to leave");
@@ -1669,6 +1741,24 @@ await answerRead(controlCloud, controlSocket, {
 await assert.rejects(killedShell, function (error) {
     return error.code === "unidentified" && error.status === 409;
 }, "a Mac that could not tie the process to the session reaches the panel as that typed refusal");
+const disabledShell = controlCloud.killShell("session-01", "bao9i2a93");
+await until(function () { return publishedReads(controlSocket).length === beforeKill + 2; },
+    "the disabled stop-command request to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeKill + 1]);
+await answerRead(controlCloud, controlSocket, { read: "action:" + controlRequest.request, status: 403,
+    error: { code: "cloud_commands_disabled", message: "remote writes are disabled" } });
+await assert.rejects(disabledShell, function (error) {
+    return error.code === "cloud_commands_disabled" && error.status === 403;
+}, "a disabled Mac action reaches the panel as its typed refusal instead of timing out");
+const malformedShell = controlCloud.killShell("session-01", "bao9i2a93");
+await until(function () { return publishedReads(controlSocket).length === beforeKill + 3; },
+    "the malformed stop-command request to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeKill + 2]);
+await answerRead(controlCloud, controlSocket, { read: "action:" + controlRequest.request, status: 400,
+    error: { code: "malformed_command", message: "the command shape was refused" } });
+await assert.rejects(malformedShell, function (error) {
+    return error.code === "malformed_command" && error.status === 400;
+}, "an identifiable malformed Mac action settles under the original request word");
 const beforeEmptyKill = publishedReads(controlSocket).length;
 await assert.rejects(controlCloud.killShell("session-01", ""), function (error) {
     return error.code === "malformed_read";
@@ -1678,6 +1768,12 @@ assert.equal(publishedReads(controlSocket).length, beforeEmptyKill,
 assert.match(cloudBridgeSwift,
     /case "shell-kill":[\s\S]*?Set\(body\.keys\) == \["type", "session", "request", "shell"\][\s\S]*?command = \.shellKill\(session: session, shell: shell\)\s+commandReply = \(session, "action:" \+ request\)/,
     "the Mac decoder admits exactly the stop shape and answers on the action the panel waits for");
+assert.match(cloudBridgeSwift,
+    /guard readLevelCommand \|\| allowCloudCommands\(\) else \{[\s\S]*?publishCommandRefusal[\s\S]*?status: 403,[\s\S]*?code: "cloud_commands_disabled"/,
+    "the Mac publishes a typed disabled refusal whenever the action identity is safe to answer");
+assert.match(cloudBridgeSwift,
+    /case "shell-kill":[\s\S]*?else \{[\s\S]*?publishCommandRefusal[\s\S]*?status: 400,[\s\S]*?code: "malformed_command"/,
+    "the shell-kill decoder publishes an identifiable malformed refusal instead of timing out");
 assert.match(cloudRouteSwift,
     /case \.shellKill\(let session, let shell\):\s+route = "\/v1\/sessions\/\\\(Self\.segment\(session\)\)\/shells\/\\\(Self\.segment\(shell\)\)\/kill"/,
     "and maps it to the existing named kill route, each id one escaped segment");

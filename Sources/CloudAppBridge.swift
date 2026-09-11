@@ -93,6 +93,9 @@ enum CloudHeadlessRead: Equatable, Sendable {
     case document(session: String, request: String, scope: String, task: String, path: String)
     case places(session: String, request: String)
     case projectWorktrees(session: String, request: String, project: String)
+    /// The Project worktree lifecycle read model, and its read-admitted bounded observation.
+    case projectWorktreeLifecycle(session: String, request: String, project: String)
+    case projectWorktreeLifecycleRefresh(session: String, request: String, project: String)
     case pastSessions(session: String, request: String, place: String, assistant: String)
     case schedules(session: String, request: String)
     case snippets(session: String, request: String)
@@ -116,6 +119,8 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .document(let session, _, _, _, _): return session
         case .places(let session, _): return session
         case .projectWorktrees(let session, _, _): return session
+        case .projectWorktreeLifecycle(let session, _, _),
+             .projectWorktreeLifecycleRefresh(let session, _, _): return session
         case .pastSessions(let session, _, _, _): return session
         case .schedules(let session, _): return session
         case .snippets(let session, _): return session
@@ -156,6 +161,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
         case .document(_, let request, _, _, _): return "read:" + request
         case .board(_, let request, _, _), .timeline(_, let request, _, _, _, _, _, _),
              .places(_, let request), .projectWorktrees(_, let request, _),
+             .projectWorktreeLifecycle(_, let request, _), .projectWorktreeLifecycleRefresh(_, let request, _),
              .pastSessions(_, let request, _, _), .schedule(_, let request, _),
              .schedules(_, let request), .snippets(_, let request),
              .pushKey(_, let request): return "read:" + request
@@ -371,6 +377,7 @@ actor CloudAppBridge {
     private var publicationTasks: [UUID: Task<Void, Error>] = [:]
     private var foregroundReadTask: Task<Void, Never>?
     private var backgroundReadTask: Task<Void, Never>?
+    private var lifecycleRefreshTasks: [UUID: Task<Void, Never>] = [:]
     private var foregroundReadActive = false
     private var backgroundReadActive = false
     private var foregroundReads: [PendingRead] = []
@@ -459,7 +466,7 @@ actor CloudAppBridge {
     func stop() async {
         guard running || starting || connectTask != nil || commandTask != nil || readyTask != nil
                 || foregroundReadTask != nil || backgroundReadTask != nil
-                || !publicationTasks.isEmpty
+                || !lifecycleRefreshTasks.isEmpty || !publicationTasks.isEmpty
         else { return }
         lifecycleGeneration &+= 1
         starting = false
@@ -469,10 +476,12 @@ actor CloudAppBridge {
         let connect = connectTask
         let publications = Array(publicationTasks.values)
         let readTasks = [foregroundReadTask, backgroundReadTask].compactMap { $0 }
+            + Array(lifecycleRefreshTasks.values)
         commandTask = nil
         readyTask = nil
         connectTask = nil
         publicationTasks.removeAll()
+        lifecycleRefreshTasks.removeAll()
         foregroundReadTask = nil
         backgroundReadTask = nil
         foregroundReadActive = false
@@ -765,7 +774,11 @@ actor CloudAppBridge {
         let readLevelCommand = requestedType == "push-subscribe"
             || requestedType == "push-unsubscribe" || requestedType == "push-test"
         guard readLevelCommand || allowCloudCommands() else {
-            commandResult(CloudCommandResult(status: 403, code: "cloud_commands_disabled"))
+            publishCommandRefusal(
+                body: parsed, type: requestedType, commandClass: inbound.commandClass,
+                status: 403, code: "cloud_commands_disabled",
+                message: "Cloud commands are disabled on this Mac.",
+                lifecycleGeneration: ownedGeneration)
             return
         }
         guard let body = parsed, let type = requestedType else {
@@ -876,7 +889,11 @@ actor CloudAppBridge {
                   let shell = body["shell"] as? String, !shell.isEmpty,
                   let request = Self.requestName(body["request"])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                publishCommandRefusal(
+                    body: body, type: type, commandClass: inbound.commandClass,
+                    status: 400, code: "malformed_command",
+                    message: "The shell-kill command is malformed.",
+                    lifecycleGeneration: ownedGeneration)
                 return
             }
             command = .shellKill(session: session, shell: shell)
@@ -1114,6 +1131,7 @@ actor CloudAppBridge {
         "documents", "document",
         "screen", "board", "timeline", "places", "project-worktrees", "past-sessions", "schedules",
         "snippets", "schedule", "push-key",
+        "project-worktree-lifecycle", "project-worktree-lifecycle-refresh",
     ]
 
     private static func requestName(_ value: Any?) -> String? {
@@ -1121,6 +1139,36 @@ actor CloudAppBridge {
               value.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7f })
         else { return nil }
         return value
+    }
+
+    /// Name the answer channel only from a closed command vocabulary and the same lexical
+    /// identity fields the command parser consumes. This lets a preflight refusal settle the
+    /// browser's request without turning a malformed body into an arbitrary transcript publish.
+    private static func commandRefusalReply(
+        body: [String: Any]?, type: String?, commandClass: CloudEnvelopeClass
+    ) -> (session: String, name: String)? {
+        guard commandClass == .ctl, let body, let type else { return nil }
+        if type == "schedule-webhook-bind-v1" {
+            guard let request = body["request_id"] as? String,
+                  UUID(uuidString: request) != nil, request == request.lowercased()
+            else { return nil }
+            return (machineReplySession, "action:" + request)
+        }
+        guard let request = requestName(body["request"]),
+              let session = body["session"] as? String,
+              !session.isEmpty, session.count <= 256,
+              session.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7f })
+        else { return nil }
+        let sessionCommands: Set<String> = ["send", "end", "focus", "shell-kill"]
+        let machineCommands: Set<String> = [
+            "start", "resume", "board-command", "timeline-command",
+            "schedule-create", "schedule-update", "schedule-delete", "schedule-run",
+            "snippet-create", "snippet-update", "snippet-delete", "snippet-order",
+            "push-subscribe", "push-unsubscribe", "push-test", "voice",
+        ]
+        if sessionCommands.contains(type) { return (session, "action:" + request) }
+        guard machineCommands.contains(type), session == machineReplySession else { return nil }
+        return (session, "action:" + request)
     }
 
     /// A cheap copy of the local route's lexical boundary, before any filesystem is touched.
@@ -1363,6 +1411,21 @@ actor CloudAppBridge {
                 return
             }
             read = .projectWorktrees(session: session, request: request, project: project)
+        case "project-worktree-lifecycle", "project-worktree-lifecycle-refresh":
+            // The same exact key set as the Portfolio worktree join, but a Board Project id rather
+            // than a path: `ProjectWorktreeHTTP` refuses any other shape before the service runs.
+            guard Set(body.keys) == ["type", "session", "request", "project"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let project = body["project"] as? String, !project.isEmpty, project.count <= 200
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                return
+            }
+            read = type == "project-worktree-lifecycle"
+                ? .projectWorktreeLifecycle(session: session, request: request, project: project)
+                : .projectWorktreeLifecycleRefresh(session: session, request: request, project: project)
         case "past-sessions":
             guard Set(body.keys) == ["type", "session", "request", "place", "assistant"],
                   let session = body["session"] as? String,
@@ -1431,6 +1494,29 @@ actor CloudAppBridge {
     private func enqueueRead(
         _ read: CloudHeadlessRead, sender: String, lifecycleGeneration ownedGeneration: UInt64
     ) {
+        if case .projectWorktreeLifecycleRefresh = read {
+            let limit = 4
+            let depth = lifecycleRefreshTasks.count
+            guard depth < limit else {
+                commandResult(CloudCommandResult(status: 429, code: "cloud_read_busy"))
+                Task { [weak self] in
+                    await self?.publishBusyRead(read, lane: .background, limit: limit,
+                                                lifecycleGeneration: ownedGeneration)
+                }
+                return
+            }
+            let id = UUID()
+            let admittedAt = nowMilliseconds()
+            lifecycleRefreshTasks[id] = Task { [weak self] in
+                guard let self else { return }
+                await self.performRead(read, sender: sender,
+                                       lifecycleGeneration: ownedGeneration, admittedAt: admittedAt)
+                await self.finishLifecycleRefresh(id, lifecycleGeneration: ownedGeneration)
+            }
+            diagnostic("cloud: read admitted read=\(read.name) lane=lifecycle-refresh "
+                + "depth=\(depth + 1) limit=\(limit)")
+            return
+        }
         let lane: ReadLane
         if case .transcript(_, _, .foreground) = read { lane = .foreground }
         else { lane = .background }
@@ -1471,6 +1557,11 @@ actor CloudAppBridge {
         }
         diagnostic("cloud: read admitted read=\(read.name) lane=\(lane.rawValue) "
             + "depth=\(depth + 1) limit=\(limit)")
+    }
+
+    private func finishLifecycleRefresh(_ id: UUID, lifecycleGeneration ownedGeneration: UInt64) {
+        guard lifecycleGeneration == ownedGeneration else { return }
+        lifecycleRefreshTasks[id] = nil
     }
 
     private func publishBusyRead(
@@ -1622,6 +1713,25 @@ actor CloudAppBridge {
             }
         } catch {
             commandResult(CloudCommandResult(status: 503, code: "command_answer_undeliverable"))
+        }
+    }
+
+    /// A command rejected before routing still has two observers: local diagnostics and the
+    /// request-scoped Cloud caller. Publish to the latter only when its action identity is safe.
+    private func publishCommandRefusal(
+        body: [String: Any]?, type: String?, commandClass: CloudEnvelopeClass,
+        status: Int, code: String, message: String,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) {
+        let object: [String: Any] = ["error": ["code": code, "message": message]]
+        let bytes = (try? JSONSerialization.data(
+            withJSONObject: object, options: [.withoutEscapingSlashes])) ?? Data()
+        commandResult(CloudCommandResult(status: status, code: code, body: bytes))
+        guard let reply = Self.commandRefusalReply(
+            body: body, type: type, commandClass: commandClass) else { return }
+        Task { [weak self] in
+            await self?.publishJSONAnswer(name: reply.name, session: reply.session, status: status,
+                                          body: bytes, lifecycleGeneration: ownedGeneration)
         }
     }
 

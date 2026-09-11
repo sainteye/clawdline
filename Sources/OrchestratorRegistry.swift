@@ -190,6 +190,13 @@ enum OrchestratorRegistry {
     /// while `Orchestrator` declared it: the facade consumes the clock when it settles the
     /// obligation generation instead of being called back by its storage.
     private static var taskMutationGeneration = 0
+    /// The restart-maintenance receipt. `Coordinator.swift`'s `extension Orchestrator` reached it
+    /// through nine bare `lock.lock()` regions while `Orchestrator` declared it; W2-2 moved it here,
+    /// behind ``RestartRecordsTransaction``. Persisted with the task store under schema v1 `restart`.
+    private static var restartReceipt: Orchestrator.RestartReceipt?
+    /// Closeability registry snapshots assembled, a test receipt for the snapshot index cache.
+    /// Moved with W2-2 from the two bare `lock.lock()` regions that reset and read it.
+    private static var closeabilityRegistryReads = 0
 
     // MARK: - The transaction
 
@@ -974,6 +981,12 @@ enum OrchestratorRegistry {
         var coordinationRecords: CoordinationRecordsTransaction {
             CoordinationRecordsTransaction()
         }
+        var restartRecords: RestartRecordsTransaction { RestartRecordsTransaction() }
+
+        /// Test receipt: one closeability registry snapshot was assembled in this hold.
+        func noteCloseabilityRegistryRead() { OrchestratorRegistry.closeabilityRegistryReads += 1 }
+        func closeabilityRegistryReads() -> Int { OrchestratorRegistry.closeabilityRegistryReads }
+        func resetCloseabilityRegistryReads() { OrchestratorRegistry.closeabilityRegistryReads = 0 }
 
         private func noteTaskMutation() {
             OrchestratorRegistry.taskMutationGeneration &+= 1
@@ -1312,6 +1325,43 @@ enum OrchestratorRegistry {
             observed = current
             return true
         }
+    }
+
+    /// The restart-maintenance receipt capability. Every write names the receipt it expects to
+    /// replace, so a failed-save rollback cannot put back a receipt another writer has replaced.
+    struct RestartRecordsTransaction {
+        fileprivate init() {}
+
+        func current() -> Orchestrator.RestartReceipt? { OrchestratorRegistry.restartReceipt }
+
+        /// Replace `expected` with `next`; false, and nothing written, once it is not `expected`.
+        @discardableResult
+        func commit(_ next: Orchestrator.RestartReceipt?,
+                    expecting expected: Orchestrator.RestartReceipt?) -> Bool {
+            guard OrchestratorRegistry.restartReceipt == expected else { return false }
+            OrchestratorRegistry.restartReceipt = next
+            return true
+        }
+
+        /// `load()` only: the decoded receipt replaces the held one whole.
+        func replaceForLoad(_ receipt: Orchestrator.RestartReceipt?) {
+            OrchestratorRegistry.restartReceipt = receipt
+        }
+
+        /// `forget()` only.
+        func removeForForget() { OrchestratorRegistry.restartReceipt = nil }
+
+        /// Test fixtures only.
+        func installForTesting(_ receipt: Orchestrator.RestartReceipt?) {
+            OrchestratorRegistry.restartReceipt = receipt
+        }
+    }
+
+    /// Acquire the registry lock and expose only the restart-receipt capability.
+    static func withRestartRecords<R>(_ body: (RestartRecordsTransaction) -> R) -> R {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(RestartRecordsTransaction())
     }
 
     /// Run `body` under the lock with the primary registry capability: graph admissions, the

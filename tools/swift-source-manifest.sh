@@ -103,6 +103,8 @@ clawdline_production_sources=(
   Sources/ProjectTimelineReadCache.swift
   Sources/ProjectTimelineRequestCoordinator.swift
   Sources/ProjectTimelineStore.swift
+  Sources/ProjectWorktreeHTTP.swift
+  Sources/ProjectWorktreeLifecycle.swift
   Sources/ProjectIcon.swift
   Sources/ProjectStatus.swift
   Sources/ReadingFreshness.swift
@@ -159,6 +161,7 @@ clawdline_test_sources=(
   Tests/BackgroundAndStorageTests.swift
   Tests/CloudAccountTests.swift
   Tests/CloudAppBridgeTests.swift
+  Tests/CloudCommandRefusalTests.swift
   Tests/CloudCanonicalJSONTests.swift
   Tests/CloudClockTests.swift
   Tests/CloudCommandLedgerTests.swift
@@ -224,6 +227,8 @@ clawdline_test_sources=(
   Tests/VerificationLedgerTests.swift
   Tests/VerificationRunLedgerTests.swift
   Tests/W2ApplicationOwnershipTests.swift
+  Tests/W2CommandAdmissionTests.swift
+  Tests/ProjectWorktreeLifecycleTests.swift
   Tests/main.swift
 )
 

@@ -1511,12 +1511,12 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
         requestID: requestID, requestedInstanceID: "old", resumedInstanceID: nil,
         phase: .ready, requestedAt: started, drainedAt: started,
         resumedAt: nil, reconciledAt: nil, outstanding: 0, channels: [:])
-    Orchestrator.restartReceipt = ready
+    OrchestratorRegistry.withRestartRecords { $0.installForTesting(ready) }
     check("the ready lifecycle fixture is durably persisted", Orchestrator.save())
     Orchestrator.forget()
     Orchestrator.resumeRestartIntent()
     expect("startup resumes a ready receipt as reconciling",
-           Orchestrator.restartReceipt?.phase, .reconciling)
+           OrchestratorRegistry.withRestartRecords { $0.current() }?.phase, .reconciling)
     check("startup keeps admission closed until its inventory is reconciled",
           RemoteServer.shared.terminalMaintenanceRefusal() != nil)
     Orchestrator.reconcileRestartInventory(
@@ -1524,7 +1524,7 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
                                       observedAt: Date(), epoch: "replacement"),
         identities: [], now: Date())
     expect("the production lifecycle reaches complete after its fresh inventory",
-           Orchestrator.restartReceipt?.phase, .complete)
+           OrchestratorRegistry.withRestartRecords { $0.current() }?.phase, .complete)
     check("the complete production lifecycle reopens admission",
           RemoteServer.shared.terminalMaintenanceRefusal() == nil)
 
@@ -1533,7 +1533,7 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
         requestID: requestID, requestedInstanceID: "old", resumedInstanceID: "replacement",
         phase: .reconciling, requestedAt: started, drainedAt: started,
         resumedAt: started, reconciledAt: nil, outstanding: 0, channels: [:])
-    Orchestrator.restartReceipt = restart
+    OrchestratorRegistry.withRestartRecords { $0.installForTesting(restart) }
     let unresolvedID = "794e042a-1111-4222-8333-444444444444"
     var unresolved = Orchestrator.Task(
         id: unresolvedID, state: .briefed, kind: "code", title: "unresolved",
@@ -1559,7 +1559,7 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
     Orchestrator.forget()
     restart.reconciliationTimedOut = false
     restart.unresolvedTaskIDs = []
-    Orchestrator.restartReceipt = restart
+    OrchestratorRegistry.withRestartRecords { $0.installForTesting(restart) }
     var exactTask = Orchestrator.Task(
         id: "894e042a-1111-4222-8333-444444444444", state: .briefed, kind: "code",
         title: "exact", assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
@@ -1582,7 +1582,7 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
                                       observedAt: Date(), epoch: "replacement"),
         identities: [identity], now: Date())
     expect("a failed lifecycle save restores the restart phase",
-           Orchestrator.restartReceipt?.phase, .reconciling)
+           OrchestratorRegistry.withRestartRecords { $0.current() }?.phase, .reconciling)
     check("and restores the task receipt written in the same transaction",
           OrchestratorRegistry.withTaskRecords { $0.task(exactTask.id) }?.executorReceipt == nil)
     check("failed persistence keeps admission closed",
@@ -1595,7 +1595,7 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
     restart.resumedAt = nil
     restart.outstanding = 1
     restart.channels = ["EXACT": 1]
-    Orchestrator.restartReceipt = restart
+    OrchestratorRegistry.withRestartRecords { $0.installForTesting(restart) }
     check("the draining rollback fixture is durably persisted", Orchestrator.save())
     Orchestrator.storeSaveInterceptorForTesting = { _ in false }
     let advanceFailed = Orchestrator.advanceRestartMaintenance(outstanding: 0, channels: [:])
@@ -1605,7 +1605,7 @@ group("restart reconciliation is bounded, fail-closed on corruption, and rolls b
     expect("a failed ready transition has the typed store refusal",
            advanceFailedCode, "restart_store_failed")
     expect("a failed ready transition restores its prior durable phase",
-           Orchestrator.restartReceipt?.phase, .draining)
+           OrchestratorRegistry.withRestartRecords { $0.current() }?.phase, .draining)
     check("a failed ready transition remains admission-closed",
           Orchestrator.restartAdmissionClosed())
 
