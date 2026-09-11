@@ -366,6 +366,20 @@ internal step. Coordinate only on an observed path/index conflict, an active mac
 external dependency, a changed scope boundary, or a decision only the user can make. Ordinary
 updates collapse to: boundary claimed, blocker changed, and delivery landed.
 
+Let the broker's durable `task_finished`, progress, notification and landing events wake the Root;
+do not keep an assistant alive in a fixed polling loop. The Root observes the delivery, performs
+its integration duty, and only then starts dependent work. A worker does not autonomously start a
+peer or downstream task, because that can race the Root's exact-tree integration or start the same
+dependency twice.
+
+Polling is a bounded watchdog, not the normal control flow. Check a newly queued or spawning task
+once after 90 seconds. Check healthy briefed/working code only after 15 minutes with no task,
+progress or worktree activity. For a known compile or test, wait its expected duration plus three
+minutes. A schema-valid `result.json.tmp` is recovered by the broker's 30-second stable-result
+finalizer and must not be polled by an LLM. Every watchdog first reads only compact task state and
+timestamps; fetch a transcript only after that evidence names a stale or blocked condition. Do not
+send a timed user update when no state changed.
+
 **A verification receipt names its subject and question.** At minimum keep the repository, exact
 tree SHA (or an explicit working-overlay digest), question id, command/variant, environment,
 duration, exit status and check counts. Only an exact commit-tree receipt may be reused across

@@ -861,6 +861,18 @@ result-verified、transport-delivered、observed 與 acknowledged 是分開的�
 **不要開一個 while loop 在那裡等。** 每隔一段時間、在使用者問起時查一次就好；child 動輒十幾分鐘，
 把 root session 綁在輪詢上是最貴的用法。
 
+正常流程採事件驅動：durable `task_finished`、progress、notification 或 landing 事件喚醒 Root；
+Root 先觀察並整合交付，再啟動相依工作。Worker 不得自行啟動 peer 或下游 task，否則可能與 Root
+的精確樹整合競爭，或把同一個相依工作啟動兩次。只有沒有事件時才使用以下 watchdog 門檻：
+
+- queued 或 spawning：90 秒後做一次精簡檢查；
+- 健康的 briefed／working 開發：task、progress 與 worktree 都 15 分鐘沒有活動後，做一次精簡檢查；
+- 已知的 compile 或 test：等待預估時間，再加三分鐘；
+- schema-valid `result.json.tmp`：模型不輪詢，由 broker 的 stable-result finalizer 在 30 秒內做兩次觀察。
+
+Watchdog 先只讀精簡 task 狀態與時間。只有這份證據指出 stale 或 blocked 才讀 transcript；狀態沒有
+改變時，不送定時的使用者進度訊息。
+
 要提早收掉：
 
 ```bash

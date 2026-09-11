@@ -971,6 +971,22 @@ correcting the cause. Reconciliation is bounded and never rewrites a historical 
 routinely run for ten or twenty minutes, and tying the root session to a poll is the most expensive
 way to use this.
 
+The normal chain is event-driven: a durable `task_finished`, progress, notification or landing
+event wakes the Root; the Root observes and integrates the result, then starts any dependent work.
+A worker must not autonomously start a peer or downstream task, because it can race integration or
+start the dependency twice. Use these watchdog thresholds only when no event arrives:
+
+- queued or spawning: one compact check after 90 seconds;
+- healthy briefed/working code: one compact check after 15 minutes without task, progress or
+  worktree activity;
+- a known compile or test: its expected duration plus three minutes;
+- a schema-valid `result.json.tmp`: no model poll — the broker's stable-result finalizer observes
+  it twice over 30 seconds.
+
+The watchdog reads compact task state and timestamps first. Read the transcript only when that
+evidence identifies a stale or blocked condition, and do not send a timed user update when no state
+changed.
+
 To end one early:
 
 ```bash
