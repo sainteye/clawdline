@@ -57,14 +57,24 @@ land and does not need it.
 
 A landing is not finished while its checkout still makes already-delivered bytes look like new
 work. After recording the landing, refresh the canonical target and landing receipt, then classify
-every remaining staged, modified, untracked and registered-worktree row as one of: **landed and
-byte-identical**, **still unlanded**, **mixed/conflicted**, **task-owned temporary**, or
-**prunable metadata**. Missing, stale or ambiguous evidence is a sixth answer: **unknown**.
+every remaining staged, modified, untracked and registered-worktree row — **and every scratch path
+this line created outside the checkout** — as one of: **landed and byte-identical**, **still
+unlanded**, **mixed/conflicted**, **task-owned temporary**, or **prunable metadata**. Missing, stale
+or ambiguous evidence is a sixth answer: **unknown**.
 
 - Preserve every unlanded or mixed change as a reviewable patch or branch before cleanup. Never
   stage, reset, delete or rewrite another Session's bytes merely to make status clean.
 - Only remove landed-identical residue, task-owned temporary output and proven-prunable worktree
   metadata. Refresh status afterwards and reapply anything intentionally preserved.
+- **A root creates scratch only through `tools/scratch.sh`**, so every path it made outside the
+  checkout — a landing snapshot, a merged tree, a deploy copy — is an owned entry whose marker names
+  its owner, and the inventory can find it and `tools/scratch.sh remove` can take it away. A bare
+  `mktemp -d` or hand-named `/tmp` directory has no owner and no deadline, which is how 106 snapshot
+  directories piled up in one temporary directory.
+- **A credential or secret copy lives only in an owned `0700` entry** from `tools/scratch.sh new`,
+  and is removed before the turn that made it ends — never left for a sweep, which is the backstop
+  for a session that died rather than the plan for one that finished. The contract is
+  [`docs/scratch.md`](docs/scratch.md).
 - If permissions, live claims or ambiguous ownership prevent cleanup, leave a typed blocker and a
   named next owner. An unattributed dirty row is an unfinished delivery, not cosmetic debt.
 - The human handoff always includes **Fixed but not yet released (awaiting review)**, or explicitly
@@ -226,61 +236,60 @@ question.**
 
 **A child asks "does what I wrote work?"** The working tree is the right subject — other sessions'
 half-finished edits included, because a child does not commit and their mess cannot reach HEAD
-through it. Snapshot it *without touching the shared index*:
+through it. Snapshot it *without touching the shared index*, inside the task's own `work/`:
 
 ```sh
-snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
-git archive HEAD | tar -x -C "$snapshot_dir"
-# Rebuild the tracked working tree without writing a stash object under the sandbox-protected
-# .git directory. This carries staged and unstaged edits, deletions, modes and binary changes.
-git diff --binary --full-index --no-ext-diff HEAD \
-  | (cd "$snapshot_dir" && git apply --allow-empty --whitespace=nowarn)
-# The diff still cannot carry untracked files. A new test another session has written but not
-# committed may be one the suite needs, and leaving it out makes the run fail on something nobody
-# broke.
-git ls-files --others --exclude-standard -z \
-  | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
-# `tools/check-version-strings.py` asks git for the files it scans (`git ls-files -z`), so a
-# snapshot that is not a repository makes it fail closed — `version_scan_no_files`, exit 2 — and
-# `test.sh` aborts before running a single check. This `git` only ever touches the private
-# snapshot; no command here reads or writes the shared index. Staging is enough: nothing needs a
-# commit, because `ls-files` reads the index this creates.
-(cd "$snapshot_dir" && git init -q && git add -A)
-(cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
+tools/scratch.sh snapshot-run --subject worktree --root /tmp/.clawdline/<task-id>/work -- ./test.sh
 ```
 
-That untracked-file overlay is not optional and was found the hard way: the first child told to
-follow this recipe hit `test.sh` requiring `Tests/web-schedules.mjs`, which existed only as an
+That is three steps and a cleanup. It unpacks `git archive HEAD` into a private copy; replays
+`git diff --binary --full-index --no-ext-diff HEAD` onto it with `git apply`, which carries staged
+and unstaged edits, deletions, modes and binary changes without writing a stash object under the
+sandbox-protected `.git`; and overlays the untracked files, which no diff can carry. Then it stages
+the copy in a repository of its own, runs `./test.sh` at its top with a private `TMPDIR`, and removes
+all of it however the run ends — success, failure, `INT`, `TERM` or `HUP` — with the suite's exit
+status passed back unchanged. What it replaced was a copy-paste recipe that made two `mktemp -d`
+directories and removed neither: on 2026-09-11 this user's temporary directory held 106 of them,
+1,871 MB. The contract behind the tool, and each choice it makes, is
+[`docs/scratch.md`](docs/scratch.md).
+
+The untracked-file overlay is not optional, and it was found the hard way: the first child told to
+follow the old recipe hit `test.sh` requiring `Tests/web-schedules.mjs`, which existed only as an
 untracked file from another session. It reported the gap instead of quietly working around it,
 which is the right thing to do with a rule that does not fit — the rule was wrong, not the
 situation.
 
 The archive starts from `HEAD`; `git diff HEAD` then describes the shared tracked worktree without
-creating an object in `.git`, and `git apply` reconstructs that state in the private snapshot. It
-reads the shared index but does not change it. **A child must not use `git write-tree` for this.**
-That reads the *index*, so it requires staging first — and the index is shared. A child staging its
-own files sweeps up whatever another session left in there, and then a root commits it. That has
-happened here.
+creating an object in `.git`, and `git apply` reconstructs that state in the private copy. **It must
+not change the shared index, and a plain `git diff HEAD` does:** measured on 2026-09-11 with git
+2.38.1, when a tracked file's stat information is stale — the same bytes with a new mtime — it writes
+the refreshed index back, with and without `GIT_OPTIONAL_LOCKS=0`. So the tool reads a private copy
+of the index. **A child must not use `git write-tree` for this.** That reads the *index*, so it
+requires staging first — and the index is shared. A child staging its own files sweeps up whatever
+another session left in there, and then a root commits it. That has happened here.
 
 **A root asks "will HEAD still build after this commit?"** The working tree cannot answer that, and
 neither can a green suite run inside it. Root is staging anyway, so the index is the right subject:
 
 ```sh
-snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
-git archive "$(git write-tree)" | tar -x -C "$snapshot_dir"
-(cd "$snapshot_dir" && git init -q && git add -A)   # see the note in the child recipe above
-(cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
+tools/scratch.sh snapshot-run --subject index -- ./test.sh
 ```
 
-Both recipes need that `git init`, and it was found twice on 2026-09-05 by two sessions that did
-not know about each other: a child following this recipe and a root building a landing snapshot
-both watched the whole suite abort on `version_scan_no_files` before a single check ran. The
-scanner is right to fail closed — a version scan that silently finds no files is the failure it
-was written to prevent — so the recipe is what was wrong.
+That is `git archive "$(git write-tree)"` into an owned entry under `/tmp/clawdline-scratch`, removed
+the same way. `--subject index` belongs to a root alone, because `write-tree` writes a tree object
+into the shared `.git`.
+
+Both subjects stage the copy in a repository of its own (`git init -q && git add -A`), and the need
+for that was found twice on 2026-09-05 by two sessions that did not know about each other: a child
+following the old recipe and a root building a landing snapshot both watched the whole suite abort
+on `version_scan_no_files` before a single check ran. `tools/check-version-strings.py` asks git for
+the files it scans, and it is right to fail closed — a version scan that silently finds no files is
+the failure it was written to prevent — so the recipe was what was wrong. Staging is enough; nothing
+reads a commit.
 
 Use a new, private `TMPDIR` for every `./test.sh` run.
 The script writes its test binary to the fixed path `${TMPDIR}/clawdline-tests`; shared `TMPDIR`
-values race and overwrite it.
+values race and overwrite it. `snapshot-run` gives each run its own, inside the entry it removes.
 
 **Verification is budgeted, and it does not leave its output behind.** A child that keeps re-running
 the suite is paying this repository's largest fixed cost over and over: `./test.sh` compiles every
@@ -308,10 +317,11 @@ runs.
   "pass", "scope": "..."}`. Without a number, "it kept re-verifying" is an impression rather than a
   finding.
 - Heavy temporary output — repository snapshots, build products, compiler indexes — goes in the
-  task's own `work/` directory, and the private `TMPDIR` for a verification run points at
-  `work/tmp`, so the test binary lands there too. Clawdline reclaims `work/` when the task ends;
-  until that reclaim has landed, delete it yourself before writing `result.json`. Anything worth
-  keeping is copied into `artifacts/` first.
+  task's own `work/` directory. A child passes `--root /tmp/.clawdline/<task-id>/work` to
+  `tools/scratch.sh`, so the snapshot and its private `TMPDIR`, test binary included, live in an entry
+  under `work/` that the tool removes when the run ends and that Clawdline's `work/` reclaim would
+  take in any case. A child does not use the owned root `/tmp/clawdline-scratch`; that is for
+  sessions that have no `work/`. Anything worth keeping is copied into `artifacts/` first.
 
 **`./test.sh` takes a machine-wide lock, and that is not politeness.** On 2026-09-03 this Mac was
 force-rebooted twice inside half an hour because several sessions each started the suite: four

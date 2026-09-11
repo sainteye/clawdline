@@ -1466,19 +1466,20 @@ curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks"
   `checkout`。它們在共用工作樹裡執行，一個 `git reset --hard` 會連別人的東西一起帶走。
 - **child 跟 root 問的是不同的問題，所以驗證方式也不同。** child 問的是「我寫的東西會不會動」——
   該測的就是工作樹，連別人做到一半的東西都算在內，因為 child 不 commit，那些東西不會透過它進到
-  HEAD。child 要跑測試的話，把這段照抄進 `instructions`：
+  HEAD。child 要在附帶 `tools/scratch.sh` 的 repo（Clawdline 就是）裡跑測試的話，把這行照抄進
+  `instructions`，填上 child 自己的 task id：
 
   ```bash
-  snapshot_dir=$(mktemp -d); test_tmp=$(mktemp -d)
-  git archive HEAD | tar -x -C "$snapshot_dir"
-  git diff --binary --full-index --no-ext-diff HEAD \
-    | (cd "$snapshot_dir" && git apply --allow-empty --whitespace=nowarn)
-  git ls-files --others --exclude-standard -z \
-    | tar --null -T - -cf - | tar -xf - -C "$snapshot_dir"
-  (cd "$snapshot_dir" && TMPDIR="$test_tmp" ./test.sh)
+  tools/scratch.sh snapshot-run --subject worktree --root /tmp/.clawdline/<task-id>/work -- ./test.sh
   ```
 
-  **三行而不是一行，因為那個一行版錯了兩次。** `git archive "$(git stash create)"` 看起來對，
+  它取代的是一段照抄的配方：開兩個 `mktemp -d` 目錄，一個都不刪，所以每跑一次就留下一份 repo
+  快照和一顆測試 binary——2026-09-11 在一台 Mac 上累積到 106 個目錄、1,871 MB。工具保留那段配方
+  的三個步驟——解開 `HEAD` 的 archive、把 `git diff HEAD` 重播上去、疊上未追蹤的檔案——把快照
+  stage 起來讓版本掃描有檔案可讀，在 child 的 `work/` 裡用私有的 `TMPDIR` 跑指令，不論怎麼結束
+  都把快照刪掉，exit status 原封不動地回傳。契約寫在那個 repo 的 `docs/scratch.md`。
+
+  **三步而不是一行，因為那個一行版錯了兩次。** `git archive "$(git stash create)"` 看起來對，
   失敗的時候卻不出聲：**樹是乾淨的時候** `git stash create` exit 0 但印出**空字串**，所以
   `|| echo HEAD` 那種退路永遠不會觸發，`git archive ""` 什麼都沒解出來，`./test.sh` exit 127，
   然後這一輪以「零個失敗」收場。那個綠什麼都沒跑，而且打得最準的是唯讀的複審者——他們的樹永遠
@@ -1486,10 +1487,11 @@ curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks"
   測試會漏出快照，而呼叫它的 `test.sh` 卻進得去：套件照樣綠，那條測試從來沒跑過。
   以 `HEAD` 開檔、把 `git diff HEAD` 重播上去、再疊上未追蹤的檔案，乾淨樹、髒樹、新檔三種都蓋到，
   而且不會在 `.git` 裡寫任何 object——在 linked worktree 裡這件事有差，因為 Codex 的沙箱
-  可能根本不能寫那裡。**絕對不要叫 child 用 `git write-tree`**——那讀的是 *index*，所以得先 stage，而 index 是共用的：
+  可能根本不能寫那裡。單純的 `git diff HEAD` 在檔案的 stat 資料過期時會把 index 寫回去，所以工具
+  讀的是 index 的私有副本。**絕對不要叫 child 用 `git write-tree`**——那讀的是 *index*，所以得先 stage，而 index 是共用的：
   child 會把別的 session 留在裡面的東西一起掃進去，然後被某個 root commit 出去。這件事在這裡發生過。
-  `write-tree` 是 root 的工具，因為 root 本來就在 stage，而「commit 下去 HEAD 還編得過嗎」
-  這個問題只有 index 答得出來。
+  `write-tree` 是 root 的工具——也就是 `--subject index`——因為 root 本來就在 stage，而「commit
+  下去 HEAD 還編得過嗎」這個問題只有 index 答得出來。
 - **派工的規矩是使用者的，不是你的。** `~/.config/clawdline/dispatch-policy.md` 跟你的判斷牴觸時
   照它做，並在回報時說一聲你照了哪一條。
 - **child 開的是真的終端機分頁，跑的是真的指令。** 派出去等於授權它在那個 `project_dir` 動手。

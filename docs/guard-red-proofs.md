@@ -152,6 +152,12 @@ falls: `MJS_PROOF_FLOOR` in `tools/check-guards-go-red.sh`, the same shape as th
 file-size ceilings, raised by whoever adds the next proof. A count that can only go up is the
 difference between "we will get to it" and "we got to one and then stopped".
 
+The floor is two. `changelog-routes.sh` proves `Tests/changelog-facts.mjs`, and `scratch-tool.sh`
+proves `Tests/scratch-tool.mjs`: its broken arm deletes the one `trap scratch_cleanup EXIT` line that
+`tools/scratch.sh` removes a snapshot's entry from, and the suite has to say an entry was left behind.
+Every way out of a snapshot run — the command's exit, a refusal while copying, a signal — reaches that
+trap, so losing it is the failure the tool exists to prevent rather than the easiest thing to break.
+
 ## The meta check, and its own proof
 
 `tools/check-guards-go-red.sh` matches `tools/check-*`, so it is on its own list and needs its own
