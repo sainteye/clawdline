@@ -1560,8 +1560,35 @@ neither the 24-hour cutoff nor whole-worktree disposal, and a **pending landing 
 it** — that was the gap this closed. Disposing a checkout requires `landing.state != pending`, so
 five open landings on this machine were holding 814 MB of object files that no landing has ever
 needed: what a landing needs is the source and the delivery branch, and both are left untouched.
-Removal is `.build` and nothing else; a directory already absent settles the deadline, a refusal
-keeps it for the next beat.
+The deadline's own removal is `.build` and nothing else; a directory already absent settles the
+deadline, a refusal keeps it for the next beat.
+
+**Dependency directories go on that deadline too, once the task's process is gone.** Re-measured on
+2026-09-11, 13 `node_modules` directories held 3,492 MB of the 5,167 MB under the worktree root.
+Git-ignored `node_modules` and `.venv` directories inside a checkout the task owns are reclaimed
+after its `.build`, off the main queue. git lists the candidates
+(`ls-files --others --ignored --exclude-standard --directory`), and each one must be named exactly
+that, be matched by an ignore rule (`check-ignore --no-index`), hold no tracked path (`ls-files`), be
+reached from the checkout through real directories only, and still be inside it once resolved. A task
+working in a shared checkout has none. Unlike `.build` these also wait for the task's recorded
+process to be gone, because a reinstall costs minutes and a Session still running in the checkout
+may be using them; a live owner defers them to the six-hourly pass, which is also how a task that
+never received a build deadline has its `.build` and dependencies collected. Every removal is
+audited as `orchestrator.dependency.reclaimed` and every refusal as `orchestrator.dependency.kept`,
+each with its path.
+
+**The owned scratch root is swept on a grace of its own.** Scratch a session creates outside a task
+directory lives in `${CLAWDLINE_SCRATCH_ROOT:-/tmp/clawdline-scratch}` under
+[scratch contract v1](scratch.md), which is written there once. The six-hourly pass reads that root
+and its direct children and nothing else — never `/tmp` itself — which keeps to the boundary above:
+an entry's marker is its receipt. `OwnedStorage.evaluateScratch` applies the contract as written and
+then holds an entry some live process has as its working directory (one `lsof -d cwd` per pass, read
+only when something is releasable), because a `snapshot-run` killed with `SIGKILL` can leave its
+command running inside the entry while the marker names a dead owner. A file merely held open from
+elsewhere is not seen; `orchestrator_scratch_grace_minutes` (default 60, `-1…1440`, counted from the
+later of `created_at` and `keep_until`) is what covers that. `unknown` is never removed. A removal
+re-reads the entry's facts first, removes the payload before the marker, and is audited as
+`orchestrator.scratch.reclaimed`; `GET /v1/orchestrator/storage` lists every entry under `scratch`.
 
 ### File release waits belong to Clawdline
 
@@ -2383,10 +2410,23 @@ time. The registry keeps its most recent 200 task records. **Artifacts are in `/
 they are not yours to keep** — if a child produced something worth having, copy it out. The
 directory going away after a day is the same promise `/tmp` always made, made explicitly.
 
+**A finished task whose recorded process is still running keeps its directory, and its registry
+row, until that process is gone.** A Root Session's task is terminal from its first report while the
+Session goes on working. Read from the code before this rule: `taskRetentionSweep` took no liveness
+input and `cleanup()` removed every directory it named, so a day after that report the Session's
+directory — the `work/` it was still writing included — went whether or not the Session was alive,
+while the after-finish `work/` rule below waited for the same process. On 2026-09-11 three finished
+tasks on this Mac still had their recorded process running 7 to 21 hours after finishing. Liveness is
+`child_pid` with `child_proc_start`; an unreadable answer holds.
+
 Heavyweight `work/` storage has a shorter, separate life. It is removed during a successful
 finalize, or when the non-success grace deadline expires; `artifacts/`, `task.json`, `CHILD.md` and
 `result.json` remain untouched until the whole task-root sweep above. Reclaiming a missing `work/`
-is success, and a filesystem refusal never delays or reverses the terminal task state.
+is success, and a filesystem refusal never delays or reverses the terminal task state. **A `work/`
+that exists again with no deadline outstanding** — written by a Root Session after its first task,
+or left by a task that finished before deadlines existed and never received one — is collected by
+the six-hourly pass on the same grace, counted from when the task settled, once the task's recorded
+process is gone and never while it runs.
 
 Session-message image artifacts are not task artifacts and do not live under `/tmp/.clawdline`.
 Their Clawdline-owned cache has its own deterministic bounds: 24-hour TTL, 64 live files, 64 MiB
@@ -2403,13 +2443,43 @@ preservation step and a machine-token-only apply; see [`project-worktrees.md`](p
 Worktrees follow a separate, fail-safe policy: an empty clean checkout whose `HEAD` remains on its
 task branch is removed with that empty branch when the child tab closes; after 24 hours a clean
 checkout with commits is removed while its branch is retained indefinitely; any dirty checkout,
-moved `HEAD`, missing branch, or unreadable git fact is kept. Removal always uses
+moved `HEAD`, missing branch, or unreadable git fact is kept. **Dirty for disposal does not count
+tool noise**: an untracked directory a tool writes into every checkout it opens — the list is
+`Orchestrator.worktreeToolNoiseDirectories`, today only `.serena`, which on 2026-09-11 was untracked
+in 24 of 49 checkouts and the only dirt in 13 — is read again immediately before removal, and
+`git worktree remove --force` is used only while it is still all there is. `Worktree.dirty` and every
+other reader keep counting it. Removal always uses
 `git worktree remove` followed by `git worktree prune`, never filesystem deletion. The directory
 shape is also scanned for records evicted by the 200-row cap: the repository comes from the linked
 checkout's git metadata and the branch base from the oldest reflog entry, then the same disposal
 rules are applied. If either fact is unreadable, the checkout is kept and audited as `unreadable`;
 `remove_failed` is reserved for a removal that git actually rejected. **The `/tmp` 24-hour promise
 does not extend to branches**: Clawdline never automatically deletes the only copy of committed work.
+
+**A landed checkout is removed once its delta is preserved, and a Codex delivery is why.** A Codex
+child cannot commit in a linked worktree, so its delivery is dirty bytes, and they stay dirty after
+root lands them: "any dirty checkout is kept" kept every landed Codex checkout for ever. Root
+measured 62 checkouts and 8,802 MB under the worktree root on 2026-09-11 at 20:05, most carrying
+`landing.state == "landed"`; re-measured an hour later, 49 and 5,167 MB. The six-hourly pass now takes
+a terminal task's own checkout once its landing is `landed`,
+`orchestrator_landed_checkout_grace_minutes` (default 60, `-1…1440`, `-1` keeps them) have passed
+since `landed_at`, and the task's recorded process is gone; a task that never recorded one is
+`unknown` and kept. `OrchestratorDraft.disposeLandedWorktree` refuses a checkout that is not
+`<worktree root>/<slug>/<task-id>` reached without a symlink, a missing branch, a moved `HEAD`, an
+operation in progress, a conflict, or index bytes a working-tree patch cannot carry. It writes
+`~/Library/Application Support/Clawdline/reclaimed-checkouts/<task-id>/<attempt>/`: `delta.patch`
+(`git diff --binary --full-index --no-ext-diff HEAD`), `untracked.tar` (every untracked, non-ignored
+file outside the tool-noise list) and `manifest.json` (base, head, branch, repository, each SHA-256).
+The patch is proved in two private index files, never the checkout's own — `read-tree <head>`,
+`git apply --cached --check`, apply, write the tree, which must equal the tree the same tracked
+paths write from the working files — and the archive's listing must name exactly the untracked set.
+The status is read once more, and only if nothing moved does `git worktree remove --force` run, then
+`git worktree prune`; the branch is kept. Any refusal keeps the checkout, audits
+`orchestrator.worktree.kept` with its reason and throws that attempt away, because while the
+checkout exists it is the copy. Ignored files — a local `.env`, build caches — are not part of the
+delta and go with the checkout. Attempts are kept `orchestrator_reclaimed_checkout_retention_days`
+(default 30, `1…365`), and only a directory holding this app's version-1 manifest for that task is
+ever pruned.
 
 ---
 

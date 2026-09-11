@@ -487,6 +487,21 @@ final class Config {
     /// files nobody has ever read, and on this Mac it was 814 MB of them, kept alive by pending
     /// landings that needed only the source and the branch.
     var orchestratorBuildGraceMinutes = 60
+    /// How long a landed task's own checkout stays after its landing was recorded, in minutes,
+    /// before its uncommitted delta is preserved and proved and the checkout removed with its
+    /// branch kept. Shaped like the two settings above: `0` as soon as the task's process is gone,
+    /// `-1` keeps every landed checkout, which is what this app did before. A Codex delivery is
+    /// dirty bytes and stays dirty after root lands it, so without this nothing ever took it.
+    var orchestratorLandedCheckoutGraceMinutes = 60
+    /// How long a releasable entry of the owned scratch root (`docs/scratch.md`) waits before the
+    /// broker removes it, in minutes, counted from the later of its marker's `created_at` and
+    /// `keep_until`. `0` on the next sweep; `-1` lists entries in `GET /v1/orchestrator/storage`
+    /// and removes none.
+    var orchestratorScratchGraceMinutes = 60
+    /// How many days a removed landed checkout's preserved delta is kept under
+    /// `~/Library/Application Support/Clawdline/reclaimed-checkouts`. The delivery branch is never
+    /// deleted; this bounds only the patch and archive of what was never committed.
+    var orchestratorReclaimedCheckoutRetentionDays = 30
     /// How long a finished task's directory under `/tmp/.clawdline/` survives, in hours. That
     /// directory is working space — artifacts, logs, and whatever `work/` still holds — and it is
     /// the heavy half of a task's storage. Terminal handoff envelopes and their packages ride the
@@ -717,6 +732,15 @@ final class Config {
         if let v = obj["orchestrator_build_grace_minutes"] as? Int, v >= -1, v <= 1440 {
             orchestratorBuildGraceMinutes = v
         }
+        if let v = obj["orchestrator_landed_checkout_grace_minutes"] as? Int, v >= -1, v <= 1440 {
+            orchestratorLandedCheckoutGraceMinutes = v
+        }
+        if let v = obj["orchestrator_scratch_grace_minutes"] as? Int, v >= -1, v <= 1440 {
+            orchestratorScratchGraceMinutes = v
+        }
+        if let v = obj["orchestrator_reclaimed_checkout_retention_days"] as? Int, v >= 1, v <= 365 {
+            orchestratorReclaimedCheckoutRetentionDays = v
+        }
         if let v = obj["orchestrator_task_dir_retention_hours"] as? Int, v >= 1, v <= 8760 {
             orchestratorTaskDirRetentionHours = v
         }
@@ -803,6 +827,9 @@ final class Config {
             "orchestrator_child_linger": orchestratorChildLinger,
             "orchestrator_work_grace_minutes": orchestratorWorkGraceMinutes,
             "orchestrator_build_grace_minutes": orchestratorBuildGraceMinutes,
+            "orchestrator_landed_checkout_grace_minutes": orchestratorLandedCheckoutGraceMinutes,
+            "orchestrator_scratch_grace_minutes": orchestratorScratchGraceMinutes,
+            "orchestrator_reclaimed_checkout_retention_days": orchestratorReclaimedCheckoutRetentionDays,
             "orchestrator_task_dir_retention_hours": orchestratorTaskDirRetentionHours,
             "orchestrator_task_record_limit": orchestratorTaskRecordLimit,
             "orchestrator_task_record_retention_days": orchestratorTaskRecordRetentionDays,

@@ -2235,6 +2235,35 @@ own — a shared checkout's build output belongs to whoever is working in it —
 whole-checkout disposal, it is **not** deferred by `landing.state == pending`: a landing under
 review needs the source and the delivery branch, both of which this leaves exactly as they were.
 
+**What the six-hourly pass reclaims after that.** `cleanup()` hands one pass to the worktree queue,
+and every step in it keeps what it cannot prove and audits why. The task's owner is its recorded
+process — `child_pid` with its start time — and "gone" means that pid is not running or now belongs
+to a process that started at another time.
+
+- **Dependency directories.** Git-ignored `node_modules` and `.venv` directories inside a task's own
+  checkout fall due on the build deadline and go once the owner is gone: named exactly that, matched
+  by an ignore rule, holding no tracked path, reached without a symlink and still inside the checkout
+  once resolved. A task working in a shared checkout has none.
+- **After-finish `work/`.** A `work/` that exists with no deadline outstanding — written after the
+  task ended, as a Root Session does, or left by a task that finished before deadlines existed — goes
+  on the work grace counted from when the task settled, once the owner is gone and never while it
+  runs.
+- **Landed checkouts.** A terminal task whose landing is `landed` has its own checkout removed
+  `orchestrator_landed_checkout_grace_minutes` after `landed_at` (default `60`, `-1…1440`; `-1` keeps
+  them), once the owner is gone. First its uncommitted delta is written to
+  `~/Library/Application Support/Clawdline/reclaimed-checkouts/<task-id>/<attempt>/` —
+  `delta.patch`, `untracked.tar` and `manifest.json` with base, head, branch and each SHA-256 — and
+  proved to reapply; then `git worktree remove --force` and `git worktree prune`, with the branch
+  kept. Those attempts are kept `orchestrator_reclaimed_checkout_retention_days` (default `30`,
+  `1…365`).
+- **Owned scratch.** Releasable entries of the owned scratch root ([`scratch.md`](scratch.md)) go
+  `orchestrator_scratch_grace_minutes` after the later of their `created_at` and `keep_until`
+  (default `60`, `-1…1440`; `-1` lists and removes none). `GET /v1/orchestrator/storage` lists every
+  entry.
+
+A finished task whose owner is still running also keeps its `<dir>` and its registry row through the
+sweep described next.
+
 **What the six-hourly sweep removes, and on which of two independent windows.** A task's `<dir>`
 under `/tmp/.clawdline` and its row in `~/.config/clawdline/orchestrator.json` are swept on
 separate clocks, because they cost separate things. The directory holds artifacts, logs and
@@ -4549,6 +4578,40 @@ The endpoint does **not** scan `/tmp/claude-*`, interactive assistant sessions, 
 directories. An entry can appear only after a Claude child transcript proves the exact task marker
 and Clawdline successfully appends its task, assistant, session, canonical path, proof method,
 project, and timestamp to the independent ledger.
+
+`scratch` lists the owned scratch root of [scratch contract v1](scratch.md) — the one other place
+this route reads — beside the ledger rows and never folded into `totals`. Only that root and its
+direct children are read:
+
+```json
+"scratch":{"root":"/tmp/clawdline-scratch","root_state":"present","why":null,"grace_minutes":60,
+  "truncated":false,
+  "totals":{"items":2,"bytes":496123904,"held_items":1,"releasable_items":0,"unknown_items":1,
+    "unknown_size_items":0},
+  "entries":[{"name":"landing.Q3vT8kLm","path":"/tmp/clawdline-scratch/landing.Q3vT8kLm",
+    "purpose":"landing","state":"held","why":"owner_alive","created_at":1787100000,
+    "keep_until":null,"owner":{"pid":81234,"process_start":1787090000,"command":"claude"},
+    "eligible_at":null,"bytes":496123904},
+   {"name":"deploy.8hG2xZq1","path":"/tmp/clawdline-scratch/deploy.8hG2xZq1","purpose":null,
+    "state":"unknown","why":"marker_missing","created_at":null,"keep_until":null,"owner":null,
+    "eligible_at":null,"bytes":0}]}
+```
+
+`root_state` is `present`, `absent`, or `refused` with `why` one of `root_not_absolute`,
+`root_symlink`, `root_not_directory`, `root_not_owned` or `root_unreadable`; a refused root is never
+replaced or worked around. An entry is `unknown`, and never removed, when its name is not
+`<purpose>.<random>` (`name_not_contract`); when it is a symlink, not a directory, another uid's, or
+not mode `0700` (`entry_symlink`, `entry_not_directory`, `entry_not_owned`, `entry_mode_not_0700`);
+when its marker is missing, unreadable, invalid or another version (`marker_missing`,
+`marker_unreadable`, `marker_invalid`, `marker_version`) or names another purpose
+(`marker_purpose_mismatch`); when its owner's liveness cannot be read (`owner_unreadable`); or when
+the process table cannot be read for an entry that would otherwise be releasable (`cwd_unreadable`).
+It is `held` while its owner runs (`owner_alive`, by pid and start time to ±1 s), while `keep_until`
+is ahead (`keep_until`), while a live process has its working directory inside it (`cwd_in_use`),
+inside the broker's grace (`grace`), or when `orchestrator_scratch_grace_minutes` is `-1`
+(`grace_disabled`). Otherwise it is `releasable` (`eligible`), and the six-hourly pass removes it
+and audits `orchestrator.scratch.reclaimed` with its path. A file some process holds open from
+outside the entry is not seen; the grace period is what covers that.
 
 ### `GET /v1/orchestrator/usage`, `.csv` (legacy forensic contracts)
 

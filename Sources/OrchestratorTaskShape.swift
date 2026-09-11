@@ -634,4 +634,234 @@ extension Orchestrator {
         task.state != .cancelled && task.attachSessionId == nil
             && task.childTerminalId != nil && task.closeAt == nil
     }
+
+    // MARK: - What a finished line no longer needs
+
+    /// When a reclaimable directory falls due, from one grace setting and one ending.
+    ///
+    /// Shared by `work/` and by the isolated checkout's build output so the two settings cannot
+    /// drift into meaning different things: `0` and every success go now, a positive number is
+    /// minutes of diagnostic grace, and `-1` hands the directory to the 24-hour sweep.
+    static func reclaimDeadline(minutes: Int, outcome: State, now: Date = Date()) -> Date? {
+        if outcome == .success || minutes == 0 { return now }
+        if minutes > 0 { return now.addingTimeInterval(TimeInterval(minutes * 60)) }
+        return nil
+    }
+
+    /// The four places the reclaim passes act on, and the only spelling of them those passes read.
+    ///
+    /// Production answers this Mac's directories. The test binary installs temporary roots once at
+    /// launch (`configureTestIsolation`), so a reclaim pass reached from any test — including every
+    /// test that runs `cleanup()` — can only touch a fixture. Everything written against this value
+    /// is outside B-SUITE-WALKS-LIVE-WORKTREES by construction rather than by review.
+    struct ReclaimRoots: Equatable {
+        /// Every checkout the broker created: `~/Library/Application Support/Clawdline/worktrees`.
+        var worktrees: URL
+        /// Task protocol directories: `/tmp/.clawdline`.
+        var tasks: URL
+        /// Scratch contract v1's owned root, `${CLAWDLINE_SCRATCH_ROOT:-/tmp/clawdline-scratch}`
+        /// (`docs/scratch.md`). The raw spelling, so a relative value is refused rather than
+        /// resolved against this process's working directory.
+        var scratch: String
+        /// Where a removed landed checkout's verified delta is kept:
+        /// `~/Library/Application Support/Clawdline/reclaimed-checkouts`.
+        var preserved: URL
+    }
+
+    static var reclaimRootsOverrideForTesting: ReclaimRoots?
+
+    static var reclaimRoots: ReclaimRoots {
+        if let override = reclaimRootsOverrideForTesting { return override }
+        let scratch = ProcessInfo.processInfo.environment["CLAWDLINE_SCRATCH_ROOT"] ?? ""
+        return ReclaimRoots(
+            worktrees: OrchestratorDraft.worktreeRoot, tasks: root,
+            scratch: scratch.isEmpty ? "/tmp/clawdline-scratch" : scratch,
+            preserved: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                "Library/Application Support/Clawdline/reclaimed-checkouts", isDirectory: true))
+    }
+
+    /// Untracked directories a tool writes into whatever checkout it is started in. `git status`
+    /// counts them, and they hold nothing anybody delivered, so they do not make a checkout dirty
+    /// **for disposal** and are not part of a preserved delta. Nothing else changes meaning:
+    /// `Worktree.dirty` and every other reader still count them.
+    ///
+    /// A measured list rather than a pattern, and each name has to earn its place. Read-only on
+    /// 2026-09-11 across the 49 checkouts then under the worktree root: `.serena/` — Serena's
+    /// per-project cache and generated `project.yml` — was untracked in 24 of them, was the only
+    /// thing making 13 of the 37 dirty ones dirty, and was the only untracked dot-directory in any.
+    static let worktreeToolNoiseDirectories: Set<String> = [".serena"]
+
+    /// Directory names the build deadline reclaims beside `.build`, inside a checkout the task
+    /// owns: installed JavaScript packages and a Python virtual environment. Re-measured
+    /// 2026-09-11: 13 `node_modules` held 3,492 MB of the 5,167 MB under the worktree root.
+    static let dependencyDirectoryNames: Set<String> = ["node_modules", ".venv"]
+
+    /// One `git status --porcelain=v1 -z` record: its two-letter code, its path, and for a rename
+    /// or copy the path it came from.
+    struct WorktreeStatusEntry: Equatable {
+        let code: String
+        let path: String
+        var original: String? = nil
+        var untracked: Bool { code == "??" }
+    }
+
+    /// Parse `git status --porcelain=v1 -z`. `nil` when the bytes are not that shape: a status
+    /// nobody could read is not a clean one.
+    static func worktreeStatusEntries(_ output: String) -> [WorktreeStatusEntry]? {
+        var fields = output.components(separatedBy: "\0")
+        if fields.last == "" { fields.removeLast() }
+        var entries: [WorktreeStatusEntry] = []
+        var index = 0
+        while index < fields.count {
+            let bytes = Array(fields[index].utf8)
+            index += 1
+            guard bytes.count >= 4, bytes[2] == 0x20 else { return nil }
+            let code = String(decoding: bytes[0..<2], as: UTF8.self)
+            var entry = WorktreeStatusEntry(code: code,
+                                            path: String(decoding: bytes[3...], as: UTF8.self))
+            if code.contains("R") || code.contains("C") {
+                guard index < fields.count, !fields[index].isEmpty else { return nil }
+                entry.original = fields[index]
+                index += 1
+            }
+            entries.append(entry)
+        }
+        return entries
+    }
+
+    /// Whether a status record is only tool noise: untracked, inside a listed directory at the
+    /// checkout's top level. A regular file that happens to share the name is not a directory a
+    /// tool wrote, and stays dirty.
+    static func isWorktreeToolNoise(_ entry: WorktreeStatusEntry) -> Bool {
+        guard entry.untracked else { return false }
+        return worktreeToolNoiseDirectories.contains { entry.path.hasPrefix($0 + "/") }
+    }
+
+    /// Whether a finished task's own checkout may now be preserved and removed because its
+    /// delivery landed. Pure: ``OrchestratorDraft/disposeLandedWorktree(_:taskID:roots:now:)``
+    /// still proves every git fact before it removes anything.
+    ///
+    /// The owner is the task's recorded process. A Root Session keeps working in its checkout
+    /// after its task ends, and a tab left open is still somebody's working directory. A task that
+    /// never recorded a process is `unknown` here rather than gone, because this is the reclaim
+    /// whose mistake costs work: a checkout deleted by mistake is work this app has no other copy
+    /// of, and one kept by mistake is a directory.
+    static func landedCheckoutDecision(state: State, landing: Landing?,
+                                       owner: OwnedStorage.ProcessStatus, graceMinutes: Int,
+                                       now: Date) -> OwnedStorage.Decision {
+        guard graceMinutes >= 0 else { return .init(state: .held, why: "grace_disabled", eligibleAt: nil) }
+        guard state.isTerminal else { return .init(state: .held, why: "task_not_terminal", eligibleAt: nil) }
+        guard let landing, landing.state == .landed else {
+            return .init(state: .held, why: "not_landed", eligibleAt: nil)
+        }
+        guard let landedAt = landing.landedAt else {
+            return .init(state: .unknown, why: "landed_at_missing", eligibleAt: nil)
+        }
+        if owner == .absent { return .init(state: .unknown, why: "owner_unrecorded", eligibleAt: nil) }
+        return ownerGoneDecision(owner, due: landedAt.addingTimeInterval(TimeInterval(graceMinutes * 60)),
+                                 now: now, why: "landed")
+    }
+
+    /// Whether a `work/` that exists with no reclaim deadline outstanding may go now.
+    ///
+    /// Two histories arrive with the same facts. A task whose `work/` was reclaimed and then
+    /// written again — a Root Session keeps working after its first task ends, and one measured
+    /// on 2026-09-11 wrote a 496 MB deploy copy and a credential copy there — and a task that
+    /// finished before deadlines existed and never received one (what B-RECLAIM-HAS-NO-BACKFILL
+    /// recorded). Both take the grace the first reclaim would have used, counted from when the
+    /// task settled, and neither is removed while the task's recorded process runs. A task that
+    /// never recorded a process has nobody who could be writing there, which is the one place
+    /// `.absent` counts as gone.
+    static func afterFinishWorkDecision(state: State, workCleanupAt: Date?, settledAt: Date,
+                                        owner: OwnedStorage.ProcessStatus, graceMinutes: Int,
+                                        now: Date) -> OwnedStorage.Decision {
+        guard state.isTerminal else { return .init(state: .held, why: "task_not_terminal", eligibleAt: nil) }
+        guard workCleanupAt == nil else {
+            return .init(state: .held, why: "deadline_pending", eligibleAt: workCleanupAt)
+        }
+        guard let due = reclaimDeadline(minutes: graceMinutes, outcome: state, now: settledAt) else {
+            return .init(state: .held, why: "grace_disabled", eligibleAt: nil)
+        }
+        return ownerGoneDecision(owner, due: due, now: now, why: "after_finish")
+    }
+
+    /// Dependency directories fall due on `.build`'s deadline and additionally wait for the
+    /// task's process to be gone: a reinstall costs minutes, and a Session still running in the
+    /// checkout may be using them. A live owner is not refused, only deferred — the six-hourly
+    /// pass asks again with no deadline outstanding, which is also how a task that never received
+    /// a build deadline gets its `.build` and dependencies reclaimed.
+    static func dependencyReclaimDecision(state: State, buildCleanupAt: Date?, settledAt: Date,
+                                          owner: OwnedStorage.ProcessStatus, graceMinutes: Int,
+                                          now: Date) -> OwnedStorage.Decision {
+        guard state.isTerminal else { return .init(state: .held, why: "task_not_terminal", eligibleAt: nil) }
+        guard buildCleanupAt == nil else {
+            return .init(state: .held, why: "deadline_pending", eligibleAt: buildCleanupAt)
+        }
+        guard let due = reclaimDeadline(minutes: graceMinutes, outcome: state, now: settledAt) else {
+            return .init(state: .held, why: "grace_disabled", eligibleAt: nil)
+        }
+        return ownerGoneDecision(owner, due: due, now: now, why: "build_deadline")
+    }
+
+    private static func ownerGoneDecision(_ owner: OwnedStorage.ProcessStatus, due: Date, now: Date,
+                                          why: String) -> OwnedStorage.Decision {
+        switch owner {
+        case .unreadable: return .init(state: .unknown, why: "owner_unreadable", eligibleAt: nil)
+        case .alive: return .init(state: .held, why: "owner_alive", eligibleAt: nil)
+        case .absent, .dead, .reused: break
+        }
+        guard due <= now else { return .init(state: .held, why: "grace", eligibleAt: due) }
+        return .init(state: .releasable, why: why, eligibleAt: due)
+    }
+
+    /// One task as the sweep sees it. `settledAt` is `finishedAt ?? created` — when the task
+    /// stopped being live, which is the clock both windows read; `created` is what the count
+    /// orders by, because that is what it has always ordered by. `ownerLive` says the task's
+    /// recorded process is still running, or could not be ruled out.
+    struct TaskRetentionCandidate: Equatable {
+        let id: String
+        let terminal: Bool
+        let landingPending: Bool
+        let created: Date
+        let settledAt: Date
+        var ownerLive = false
+    }
+
+    /// The two limits, answered separately so that a caller — and a test — can say which one
+    /// fired. They are deliberately not the same window. `directories` is heavyweight working
+    /// space under `/tmp/.clawdline`; `records` is the registry row, which is small and is the
+    /// only durable evidence the usage Feature classifier has, so it is worth keeping for far
+    /// longer than the directory it names. Three settings decide it:
+    /// `orchestrator_task_dir_retention_hours` for the first, and
+    /// `orchestrator_task_record_limit` (a valve on file size) together with
+    /// `orchestrator_task_record_retention_days` (the retention policy) for the second.
+    ///
+    /// Either record limit fires alone: the count drops what is past `recordLimit` however recent
+    /// it is, and the age drops what is past `recordDays` however few records there are. A
+    /// pending landing is exempt from both, unconditionally, and a task that is not terminal is
+    /// never aged out by either clock.
+    ///
+    /// **A finished task whose recorded process is still running keeps its directory, and the
+    /// record that names it.** A Root Session's task is terminal from its first report while the
+    /// Session goes on writing; before this, the day-old sweep deleted that directory — `work/`
+    /// included — under the live Session, while the after-finish `work/` rule waited for the
+    /// same process to be gone. Both now say the same thing. The record is held with it so the
+    /// directory is never left with nothing to sweep it.
+    static func taskRetentionSweep(_ rows: [TaskRetentionCandidate], now: Date = Date(),
+                                   directoryHours: Int, recordLimit: Int, recordDays: Int)
+        -> (directories: [String], records: [String]) {
+        let directoryCutoff = now.addingTimeInterval(-Double(directoryHours) * 3600)
+        let recordCutoff = now.addingTimeInterval(-Double(recordDays) * 86_400)
+        let overCount = Set(rows.sorted { $0.created > $1.created }
+                                .dropFirst(recordLimit).map(\.id))
+        return (rows.filter {
+                    $0.terminal && !$0.landingPending && !$0.ownerLive
+                        && $0.settledAt < directoryCutoff
+                }.map(\.id),
+                rows.filter {
+                    !$0.landingPending && !($0.terminal && $0.ownerLive)
+                        && (overCount.contains($0.id)
+                            || ($0.terminal && $0.settledAt < recordCutoff))
+                }.map(\.id))
+    }
 }

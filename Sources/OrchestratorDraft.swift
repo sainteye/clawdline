@@ -1018,6 +1018,9 @@ enum OrchestratorDraft {
         var head: String?
         var commits: Int?
         var dirty: Bool?
+        /// `dirty` with ``Orchestrator/worktreeToolNoiseDirectories`` taken out. Only disposal
+        /// reads it; `dirty` keeps meaning exactly what `git status` says.
+        var disposalDirty: Bool? = nil
         var headOnBranch: Bool?
         var branchExists: Bool
     }
@@ -1040,11 +1043,18 @@ enum OrchestratorDraft {
         }
         let status = git(["status", "--porcelain", "--untracked-files=all"], cwd: worktree.path)
         let dirty = status?.status == 0 ? !status!.output.isEmpty : nil
+        // Asked only of a dirty checkout, on a stream of its own: a status that does not parse is
+        // not a clean one, so `nil` keeps the checkout.
+        let disposalDirty = dirty == true
+            ? worktreeStatus(at: worktree.path).map { entries in
+                entries.contains { !Orchestrator.isWorktreeToolNoise($0) } }
+            : dirty
         let symbolic = git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd: worktree.path)
         let headOnBranch = symbolic?.status == 0
             ? symbolic!.output.trimmingCharacters(in: .whitespacesAndNewlines) == worktree.branch
             : false
         return WorktreeFacts(head: head, commits: commits, dirty: dirty,
+                             disposalDirty: disposalDirty,
                              headOnBranch: headOnBranch, branchExists: branchExists)
     }
 
@@ -1062,12 +1072,13 @@ enum OrchestratorDraft {
     static func disposeWorktree(_ worktree: Orchestrator.Worktree, taskID: String, why: String,
                                 allowCommitted: Bool = true) {
         let facts = inspectWorktree(worktree)
-        let decision = Orchestrator.worktreeDisposal(commits: facts.commits, dirty: facts.dirty,
+        let decision = Orchestrator.worktreeDisposal(commits: facts.commits,
+                                        dirty: facts.disposalDirty,
                                         headOnBranch: facts.headOnBranch,
                                         branchExists: facts.branchExists)
         guard decision != .keepEverything else {
             let keptWhy: String
-            if facts.dirty == true { keptWhy = "dirty" }
+            if facts.disposalDirty == true { keptWhy = "dirty" }
             else if facts.commits == 0 && facts.headOnBranch == false { keptWhy = "head_moved" }
             else { keptWhy = "unreadable" }
             RemoteAuth.audit("orchestrator.worktree.kept", [
@@ -1082,8 +1093,20 @@ enum OrchestratorDraft {
             pruneWorktrees(in: worktree.repository)
             return
         }
-        let removed = git(["worktree", "remove", worktree.path], cwd: worktree.repository,
-                          timeout: 60)
+        // Tool noise is still untracked to git, which refuses to remove a checkout holding it. Read
+        // the status again at the last moment and force only while that noise is all there is.
+        var removal = ["worktree", "remove", worktree.path]
+        if facts.dirty == true {
+            guard worktreeStatus(at: worktree.path).map({ entries in
+                !entries.contains { !Orchestrator.isWorktreeToolNoise($0) } }) == true else {
+                RemoteAuth.audit("orchestrator.worktree.kept", [
+                    "task": taskID, "branch": worktree.branch, "why": "dirty",
+                ])
+                return
+            }
+            removal.insert("--force", at: 2)
+        }
+        let removed = git(removal, cwd: worktree.repository, timeout: 60)
         pruneWorktrees(in: worktree.repository)
         guard removed?.status == 0 else {
             RemoteAuth.audit("orchestrator.worktree.kept", [
@@ -1113,6 +1136,517 @@ enum OrchestratorDraft {
         Orchestrator.worktreeQueue.async {
             disposeWorktree(worktree, taskID: taskID, why: why,
                             allowCommitted: allowCommitted)
+        }
+    }
+
+    // MARK: - Reclaiming what a finished line no longer needs
+
+    /// This checkout's `git status --porcelain=v1 -z --untracked-files=all`, parsed, on a stream of
+    /// its own; `nil` when git could not answer or answered in a shape that does not parse.
+    static func worktreeStatus(at path: String) -> [Orchestrator.WorktreeStatusEntry]? {
+        guard let answer = git(["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                               cwd: path, timeout: 60, separateStandardError: true),
+              answer.status == 0, answer.outputIsUTF8 else { return nil }
+        return Orchestrator.worktreeStatusEntries(answer.output)
+    }
+
+    /// Whether `path` is a checkout this task owns under `root`: exactly `<root>/<slug>/<task-id>`,
+    /// both components below the root real directories rather than symlinks. Registry text is held
+    /// against the root it must live under before any git runs inside it.
+    static func ownedCheckoutDirectory(_ path: String, taskID: String, root: URL) -> Bool {
+        let checkout = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
+        let slug = checkout.deletingLastPathComponent()
+        guard isTaskID(taskID), checkout.lastPathComponent == taskID,
+              canonicalFilesystemPath(slug.deletingLastPathComponent().path)
+                == canonicalFilesystemPath(root.path) else { return false }
+        return [slug.path, checkout.path].allSatisfy { component in
+            var info = stat()
+            return lstat(component, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
+        }
+    }
+
+    enum LandedCheckoutOutcome: Equatable {
+        case removed(preserved: String)
+        case kept(String)
+    }
+
+    /// Remove a finished task's own checkout because its delivery landed — after its uncommitted
+    /// delta is preserved and proved, never before, and never its branch.
+    ///
+    /// The delta is `git diff --binary --full-index --no-ext-diff HEAD` plus a tar of every
+    /// untracked, non-ignored file outside ``Orchestrator/worktreeToolNoiseDirectories``, written to
+    /// `<roots.preserved>/<task-id>/<attempt>/` with a manifest naming base, head, branch and each
+    /// file's SHA-256. Ignored files are not part of it and go with the checkout. The patch is
+    /// proved in two private index files, never the checkout's own: `read-tree <head>`,
+    /// `apply --cached --check`, apply, write the tree, and require it to equal the tree the same
+    /// tracked paths write from the working files. The archive's listing must name exactly the
+    /// untracked set, and the status must not have moved while all of that ran. Only then
+    /// `git worktree remove --force` and `git worktree prune`. Every refusal keeps the checkout and
+    /// audits a typed reason; a removal git refuses throws the attempt away, because while the
+    /// checkout exists it is the copy.
+    @discardableResult
+    static func disposeLandedWorktree(_ worktree: Orchestrator.Worktree, taskID: String,
+                                      roots: Orchestrator.ReclaimRoots = Orchestrator.reclaimRoots,
+                                      now: Date = Date()) -> LandedCheckoutOutcome {
+        let path = worktree.path
+        let manager = FileManager.default
+        func kept(_ why: String) -> LandedCheckoutOutcome {
+            RemoteAuth.audit("orchestrator.worktree.kept", [
+                "task": taskID, "branch": worktree.branch, "path": path, "why": why,
+            ])
+            return .kept(why)
+        }
+        func run(_ arguments: [String], _ environment: [String: String] = [:]) -> GitAnswer? {
+            let answer = git(arguments, cwd: path, timeout: 120, separateStandardError: true,
+                             environment: environment)
+            return answer?.status == 0 ? answer : nil
+        }
+        func line(_ arguments: [String], _ environment: [String: String] = [:]) -> String? {
+            guard let text = run(arguments, environment)?.output
+                .trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return nil }
+            return text
+        }
+        guard worktree.branch == worktreeBranch(for: taskID),
+              ownedCheckoutDirectory(path, taskID: taskID, root: roots.worktrees) else {
+            return kept("path_not_owned")
+        }
+        let branchRef = "refs/heads/\(worktree.branch)"
+        guard let head = line(["rev-parse", "--verify", "--quiet", "\(branchRef)^{commit}"]) else {
+            return kept("branch_missing")
+        }
+        guard line(["symbolic-ref", "--quiet", "HEAD"]) == branchRef,
+              line(["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]) == head else {
+            return kept("head_moved")
+        }
+        guard let gitDirectory = line(["rev-parse", "--absolute-git-dir"]) else {
+            return kept("git_unreadable")
+        }
+        let operations = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG",
+                          "rebase-merge", "rebase-apply"]
+        guard !operations.contains(where: { manager.fileExists(atPath: gitDirectory + "/" + $0) })
+        else { return kept("operation_in_progress") }
+        guard let status = worktreeStatus(at: path) else { return kept("status_unreadable") }
+        let delta = status.filter { !Orchestrator.isWorktreeToolNoise($0) }
+        let tracked = delta.filter { !$0.untracked }
+        guard !tracked.contains(where: { $0.code.contains("U") || $0.code == "AA" || $0.code == "DD" })
+        else { return kept("conflicted") }
+        // Index bytes that differ from both HEAD and the working file are something a patch of the
+        // working tree against HEAD cannot carry.
+        guard !tracked.contains(where: { !$0.code.hasPrefix(" ") && !$0.code.hasSuffix(" ") }) else {
+            return kept("staged_differs_from_worktree")
+        }
+        guard let others = run(["ls-files", "--others", "--exclude-standard", "-z"]),
+              others.outputIsUTF8 else { return kept("untracked_unreadable") }
+        let untracked = others.output.components(separatedBy: "\0").filter {
+            !$0.isEmpty && !Orchestrator.isWorktreeToolNoise(.init(code: "??", path: $0))
+        }.sorted()
+        guard untracked == delta.filter({ $0.untracked }).map({ $0.path }).sorted() else {
+            return kept("status_changed")
+        }
+
+        let attempt = roots.preserved.appendingPathComponent(taskID, isDirectory: true)
+            .appendingPathComponent("\(Int(now.timeIntervalSince1970))-"
+                + UUID().uuidString.prefix(8).lowercased(), isDirectory: true)
+        do {
+            try manager.createDirectory(at: attempt, withIntermediateDirectories: true,
+                                        attributes: [.posixPermissions: 0o700])
+        } catch {
+            return kept("preservation_unwritable")
+        }
+        var removedCheckout = false
+        defer { if !removedCheckout { try? manager.removeItem(at: attempt) } }
+        let patch = attempt.appendingPathComponent("delta.patch")
+        guard run(["diff", "--binary", "--full-index", "--no-ext-diff", "--no-textconv",
+                   "--no-renames", "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
+                   "--output=\(patch.path)", "HEAD"]) != nil,
+              let patchData = try? Data(contentsOf: patch) else { return kept("patch_failed") }
+
+        let verify = ["GIT_INDEX_FILE": attempt.appendingPathComponent("verify.index").path]
+        let expect = ["GIT_INDEX_FILE": attempt.appendingPathComponent("expect.index").path,
+                      "GIT_LITERAL_PATHSPECS": "1"]
+        let pathspecs = attempt.appendingPathComponent("tracked.pathspecs")
+        defer {
+            for file in [verify["GIT_INDEX_FILE"] ?? "", expect["GIT_INDEX_FILE"] ?? "", pathspecs.path] {
+                try? manager.removeItem(atPath: file)
+            }
+        }
+        guard run(["read-tree", head], verify) != nil else { return kept("patch_unverified") }
+        if !patchData.isEmpty {
+            guard run(["apply", "--cached", "--check", "--binary", patch.path], verify) != nil,
+                  run(["apply", "--cached", "--binary", patch.path], verify) != nil else {
+                return kept("patch_unverified")
+            }
+        }
+        guard let applied = line(["write-tree"], verify),
+              run(["read-tree", head], expect) != nil else { return kept("patch_unverified") }
+        let trackedPaths = tracked.flatMap { [$0.path] + ($0.original.map { [$0] } ?? []) }
+        if !trackedPaths.isEmpty {
+            let list = Data(trackedPaths.map { $0 + "\0" }.joined().utf8)
+            guard (try? list.write(to: pathspecs)) != nil,
+                  run(["add", "-A", "--pathspec-from-file=\(pathspecs.path)", "--pathspec-file-nul"],
+                      expect) != nil else { return kept("patch_unverified") }
+        }
+        guard let expected = line(["write-tree"], expect), applied == expected else {
+            return kept("patch_unverified")
+        }
+
+        var untrackedRecord: [String: Any] = ["count": untracked.count, "paths": untracked,
+                                              "file": NSNull(), "sha256": NSNull(), "bytes": 0]
+        if !untracked.isEmpty {
+            let list = attempt.appendingPathComponent("untracked.list")
+            let tarball = attempt.appendingPathComponent("untracked.tar")
+            defer { try? manager.removeItem(at: list) }
+            // A UTF-8 locale, because `tar -t` in the C locale escapes every non-ASCII byte and a
+            // file named in Chinese would never match its own listing.
+            let locale = ["LC_ALL": "en_US.UTF-8", "PATH": "/usr/bin:/bin"]
+            guard (try? Data(untracked.map { $0 + "\0" }.joined().utf8).write(to: list)) != nil,
+                  Process.collect("/usr/bin/tar", ["-c", "-f", tarball.path, "-C", path, "--null",
+                                                   "-T", list.path],
+                                  environment: locale, timeout: 600)?.status == 0,
+                  let listing = Process.collect("/usr/bin/tar", ["-t", "-f", tarball.path],
+                                                environment: locale, timeout: 600),
+                  listing.status == 0,
+                  let names = String(data: listing.output, encoding: .utf8),
+                  Set(names.split(separator: "\n").map(String.init)) == Set(untracked),
+                  let digest = sha256Hex(fileAt: tarball) else {
+                return kept("archive_incomplete")
+            }
+            untrackedRecord["file"] = "untracked.tar"
+            untrackedRecord["sha256"] = digest.hex
+            untrackedRecord["bytes"] = digest.bytes
+        }
+        let patchDigest = SHA256.hash(data: patchData).map { String(format: "%02x", $0) }.joined()
+        let manifest: [String: Any] = [
+            "clawdline_reclaimed_checkout": 1, "task": taskID, "branch": worktree.branch,
+            "base": worktree.base, "head": head, "repository": worktree.repository,
+            "checkout": path, "created_at": Int(now.timeIntervalSince1970),
+            "patch": ["file": "delta.patch", "bytes": patchData.count, "sha256": patchDigest,
+                      "tree": expected] as [String: Any],
+            "untracked": untrackedRecord,
+            "tool_noise": Orchestrator.worktreeToolNoiseDirectories.sorted(),
+        ]
+        guard let manifestData = try? JSONSerialization.data(
+                withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
+              (try? manifestData.write(to: attempt.appendingPathComponent("manifest.json"),
+                                       options: .atomic)) != nil else {
+            return kept("manifest_unwritable")
+        }
+        // Nothing moved while all of that ran; otherwise what was proved is not what would go.
+        guard worktreeStatus(at: path)?.filter({ !Orchestrator.isWorktreeToolNoise($0) }) == delta else {
+            return kept("status_changed")
+        }
+        guard git(["worktree", "remove", "--force", path], cwd: worktree.repository,
+                  timeout: 120)?.status == 0 else {
+            pruneWorktrees(in: worktree.repository)
+            return kept("remove_failed")
+        }
+        pruneWorktrees(in: worktree.repository)
+        removedCheckout = true
+        RemoteAuth.audit("orchestrator.worktree.remove", [
+            "task": taskID, "branch": worktree.branch, "why": "landed", "path": path,
+            "preserved": attempt.path, "patch_sha256": patchDigest,
+            "untracked": String(untracked.count),
+        ])
+        return .removed(preserved: attempt.path)
+    }
+
+    /// A file's SHA-256 read a megabyte at a time, so a large archive is never held in memory.
+    private static func sha256Hex(fileAt url: URL) -> (hex: String, bytes: Int)? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        var bytes = 0
+        while true {
+            let chunk: Data?
+            do { chunk = try handle.read(upToCount: 1 << 20) } catch { return nil }
+            guard let chunk, !chunk.isEmpty else { break }
+            hasher.update(data: chunk)
+            bytes += chunk.count
+        }
+        return (hasher.finalize().map { String(format: "%02x", $0) }.joined(), bytes)
+    }
+
+    enum DependencyDirectoryVerdict: Equatable {
+        case reclaim
+        case refused(String)
+    }
+
+    /// Whether one candidate may go: named `node_modules` or `.venv`, reached from the checkout
+    /// through real directories only, still inside it once resolved, matched by an ignore rule
+    /// (`check-ignore --no-index`, so the pattern answers on its own), and holding no tracked path
+    /// (`ls-files`, which answers the other half). Every fact is re-proved here even for a path git
+    /// itself listed.
+    static func dependencyDirectoryVerdict(_ relative: String, checkout: String)
+        -> DependencyDirectoryVerdict {
+        let components = relative.components(separatedBy: "/")
+        guard let last = components.last, Orchestrator.dependencyDirectoryNames.contains(last),
+              !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
+            return .refused("not_a_dependency_directory")
+        }
+        var walked = checkout
+        for component in components {
+            walked += "/" + component
+            var info = stat()
+            guard lstat(walked, &info) == 0 else { return .refused("unreadable") }
+            let kind = info.st_mode & S_IFMT
+            guard kind == S_IFDIR else { return .refused(kind == S_IFLNK ? "symlink" : "not_directory") }
+        }
+        guard canonicalFilesystemPath(walked).hasPrefix(canonicalFilesystemPath(checkout) + "/") else {
+            return .refused("outside_checkout")
+        }
+        // No literal-pathspec variable for `check-ignore`: it refuses that magic outright (exit 128).
+        guard let ignored = git(["check-ignore", "-q", "--no-index", "--", relative], cwd: checkout,
+                                separateStandardError: true) else { return .refused("unreadable") }
+        guard ignored.status == 0 else {
+            return .refused(ignored.status == 1 ? "not_ignored" : "unreadable")
+        }
+        guard let tracked = git(["ls-files", "-z", "--", relative + "/"], cwd: checkout,
+                                separateStandardError: true,
+                                environment: ["GIT_LITERAL_PATHSPECS": "1"]),
+              tracked.status == 0 else { return .refused("unreadable") }
+        return tracked.output.isEmpty ? .reclaim : .refused("tracked")
+    }
+
+    /// Reclaim git-ignored `node_modules` and `.venv` directories inside a checkout this task owns.
+    /// git lists the candidates (`ls-files --others --ignored --exclude-standard --directory`), so
+    /// nothing here walks a checkout by hand, and each one then has to pass
+    /// ``dependencyDirectoryVerdict(_:checkout:)``. Every removal and every refusal is audited.
+    @discardableResult
+    static func reclaimDependencyDirectories(checkout: String, taskID: String,
+                                             roots: Orchestrator.ReclaimRoots = Orchestrator.reclaimRoots)
+        -> [String] {
+        func audit(_ event: String, _ path: String, _ why: String? = nil) {
+            var fields = ["task": taskID, "path": path]
+            if let why { fields["why"] = why }
+            RemoteAuth.audit(event, fields)
+        }
+        guard ownedCheckoutDirectory(checkout, taskID: taskID, root: roots.worktrees) else {
+            audit("orchestrator.dependency.kept", checkout, "path_not_owned")
+            return []
+        }
+        guard let listing = git(["ls-files", "--others", "--ignored", "--exclude-standard",
+                                 "--directory", "-z"], cwd: checkout, timeout: 120,
+                                separateStandardError: true),
+              listing.status == 0, listing.outputIsUTF8 else {
+            audit("orchestrator.dependency.kept", checkout, "unreadable")
+            return []
+        }
+        var removed: [String] = []
+        for entry in listing.output.components(separatedBy: "\0") where entry.hasSuffix("/") {
+            let relative = String(entry.dropLast())
+            guard let name = relative.components(separatedBy: "/").last,
+                  Orchestrator.dependencyDirectoryNames.contains(name) else { continue }
+            let path = checkout + "/" + relative
+            switch dependencyDirectoryVerdict(relative, checkout: checkout) {
+            case .refused(let why):
+                audit("orchestrator.dependency.kept", path, why)
+            case .reclaim:
+                do {
+                    try FileManager.default.removeItem(atPath: path)
+                    removed.append(path)
+                    audit("orchestrator.dependency.reclaimed", path)
+                } catch {
+                    audit("orchestrator.dependency.kept", path, "remove_failed")
+                }
+            }
+        }
+        return removed
+    }
+
+    /// `<worktree.cwd>/.build` for a task with no build deadline outstanding — one never set, or
+    /// set before the checkout was built in again. The same single directory the deadline removes;
+    /// a symlink in its place is refused.
+    private static func reclaimBuildOutput(_ task: Orchestrator.Task, worktree: Orchestrator.Worktree,
+                                           roots: Orchestrator.ReclaimRoots) {
+        guard ownedCheckoutDirectory(worktree.path, taskID: task.id, root: roots.worktrees) else { return }
+        let build = worktree.cwd + "/.build"
+        var info = stat()
+        guard lstat(build, &info) == 0 else { return }
+        guard (info.st_mode & S_IFMT) == S_IFDIR,
+              canonicalFilesystemPath(build).hasPrefix(canonicalFilesystemPath(worktree.path) + "/") else {
+            RemoteAuth.audit("orchestrator.build.kept", ["task": task.id, "path": build, "why": "not_directory"])
+            return
+        }
+        do {
+            try FileManager.default.removeItem(atPath: build)
+            RemoteAuth.audit("orchestrator.build.reclaimed",
+                             ["task": task.id, "path": build, "why": "after_finish"])
+        } catch {
+            RemoteAuth.audit("orchestrator.build.kept", ["task": task.id, "path": build, "why": "remove_failed"])
+        }
+    }
+
+    /// A `work/` that exists with no deadline outstanding, removed once
+    /// ``Orchestrator/afterFinishWorkDecision(state:workCleanupAt:settledAt:owner:graceMinutes:now:)``
+    /// allows it — asked twice, the second time immediately before the removal, so a process that
+    /// took the pid in between still holds the directory.
+    @discardableResult
+    static func reclaimAfterFinishWork(_ task: Orchestrator.Task, at work: URL, graceMinutes: Int,
+                                       now: Date,
+                                       ownerStatus: (Orchestrator.Task) -> OwnedStorage.ProcessStatus)
+        -> Bool {
+        func decision() -> OwnedStorage.Decision {
+            Orchestrator.afterFinishWorkDecision(
+                state: task.state, workCleanupAt: task.workCleanupAt,
+                settledAt: task.finishedAt ?? task.created, owner: ownerStatus(task),
+                graceMinutes: graceMinutes, now: now)
+        }
+        func kept(_ why: String) -> Bool {
+            RemoteAuth.audit("orchestrator.work.kept", ["task": task.id, "path": work.path, "why": why])
+            return false
+        }
+        let first = decision()
+        if first.state == .unknown { return kept(first.why) }
+        guard first.mayCollect else { return false }
+        var info = stat()
+        guard lstat(work.path, &info) == 0 else { return false }
+        guard (info.st_mode & S_IFMT) == S_IFDIR else { return kept("not_directory") }
+        guard decision().mayCollect else { return false }
+        do { try FileManager.default.removeItem(at: work) } catch { return kept("remove_failed") }
+        RemoteAuth.audit("orchestrator.work.reclaimed",
+                         ["task": task.id, "path": work.path, "why": "after_finish"])
+        return true
+    }
+
+    /// The build deadline's second half, off the main queue: the dependency directories of a
+    /// checkout whose `.build` just went, if the task's process is already gone. A live one is not
+    /// refused, only left for ``reclaimFinishedStorage(_:roots:graces:now:ownerStatus:)``.
+    static func scheduleDependencyReclaim(_ task: Orchestrator.Task) {
+        guard let worktree = task.worktree else { return }
+        let roots = Orchestrator.reclaimRoots
+        let grace = Config.shared.orchestratorBuildGraceMinutes
+        Orchestrator.worktreeQueue.async {
+            let owner = OwnedStorage.processStatus(pid: task.childPID,
+                                                   recordedStart: task.childProcStart)
+            guard Orchestrator.dependencyReclaimDecision(
+                    state: task.state, buildCleanupAt: nil,
+                    settledAt: task.finishedAt ?? task.created, owner: owner,
+                    graceMinutes: grace, now: Date()).mayCollect,
+                  FileManager.default.fileExists(atPath: worktree.path) else { return }
+            reclaimDependencyDirectories(checkout: worktree.path, taskID: task.id, roots: roots)
+        }
+    }
+
+    /// The settings the six-hourly pass reads, captured on the main queue before it leaves.
+    struct FinishedStorageGraces: Equatable {
+        var work: Int
+        var build: Int
+        var landedCheckout: Int
+        var scratch: Int
+        var preservedRetentionDays: Int
+
+        static var current: FinishedStorageGraces {
+            let config = Config.shared
+            return FinishedStorageGraces(
+                work: config.orchestratorWorkGraceMinutes, build: config.orchestratorBuildGraceMinutes,
+                landedCheckout: config.orchestratorLandedCheckoutGraceMinutes,
+                scratch: config.orchestratorScratchGraceMinutes,
+                preservedRetentionDays: config.orchestratorReclaimedCheckoutRetentionDays)
+        }
+    }
+
+    /// Which finished tasks' directories the day-old sweep must hold, because the task's recorded
+    /// process is still running or could not be ruled out. Asked only about a directory the sweep
+    /// would otherwise remove — terminal, settled before the cutoff, still present — so the process
+    /// table is read for a handful of rows rather than every record.
+    static func liveOwnerTaskIDs(_ tasks: [Orchestrator.Task], settledBefore cutoff: Date)
+        -> Set<String> {
+        Set(tasks.filter { task in
+            guard task.state.isTerminal, task.childPID != nil,
+                  (task.finishedAt ?? task.created) < cutoff,
+                  FileManager.default.fileExists(atPath: task.dir.path) else { return false }
+            let owner = OwnedStorage.processStatus(pid: task.childPID,
+                                                   recordedStart: task.childProcStart)
+            return owner == .alive || owner == .unreadable
+        }.map { $0.id })
+    }
+
+    /// What `cleanup()` hands the worktree queue after its own sweep: one pass off the main queue,
+    /// because it runs git and reads directories.
+    static func scheduleFinishedStorageReclaim(_ tasks: [Orchestrator.Task]) {
+        let roots = Orchestrator.reclaimRoots
+        let graces = FinishedStorageGraces.current
+        Orchestrator.worktreeQueue.async {
+            reclaimFinishedStorage(tasks, roots: roots, graces: graces, now: Date())
+        }
+    }
+
+    /// Every retained terminal task's after-finish `work/`, its checkout's build output and
+    /// dependency directories once the build deadline and the process allow, and its landed
+    /// checkout; then the owned scratch root and the preserved deltas past their retention. Each
+    /// step decides for itself and keeps what it cannot prove; none waits for another to succeed.
+    static func reclaimFinishedStorage(
+        _ tasks: [Orchestrator.Task], roots: Orchestrator.ReclaimRoots,
+        graces: FinishedStorageGraces, now: Date,
+        ownerStatus: (Orchestrator.Task) -> OwnedStorage.ProcessStatus = {
+            OwnedStorage.processStatus(pid: $0.childPID, recordedStart: $0.childProcStart)
+        }) {
+        let manager = FileManager.default
+        for task in tasks where task.state.isTerminal && isTaskID(task.id) {
+            let work = roots.tasks.appendingPathComponent(task.id, isDirectory: true)
+                .appendingPathComponent("work", isDirectory: true)
+            if manager.fileExists(atPath: work.path) {
+                reclaimAfterFinishWork(task, at: work, graceMinutes: graces.work, now: now,
+                                       ownerStatus: ownerStatus)
+            }
+            guard let worktree = task.worktree, manager.fileExists(atPath: worktree.path) else {
+                continue
+            }
+            let owner = ownerStatus(task)
+            if Orchestrator.dependencyReclaimDecision(
+                state: task.state, buildCleanupAt: task.buildCleanupAt,
+                settledAt: task.finishedAt ?? task.created, owner: owner,
+                graceMinutes: graces.build, now: now).mayCollect {
+                reclaimBuildOutput(task, worktree: worktree, roots: roots)
+                reclaimDependencyDirectories(checkout: worktree.path, taskID: task.id, roots: roots)
+            }
+            let landed = Orchestrator.landedCheckoutDecision(
+                state: task.state, landing: task.landing, owner: owner,
+                graceMinutes: graces.landedCheckout, now: now)
+            if landed.mayCollect {
+                disposeLandedWorktree(worktree, taskID: task.id, roots: roots, now: now)
+            } else if landed.state == .unknown {
+                RemoteAuth.audit("orchestrator.worktree.kept", [
+                    "task": task.id, "branch": worktree.branch, "path": worktree.path,
+                    "why": landed.why,
+                ])
+            }
+        }
+        OwnedStorage.sweepScratch(root: roots.scratch, now: now, graceMinutes: graces.scratch)
+        pruneReclaimedCheckouts(root: roots.preserved, retentionDays: graces.preservedRetentionDays,
+                                now: now)
+    }
+
+    /// Preserved deltas past `orchestrator_reclaimed_checkout_retention_days`. A candidate is only
+    /// what this app wrote — `<task-id>/<attempt>/manifest.json` at version 1 naming that task — so
+    /// anything else under the root, an attempt without a readable manifest included, stays.
+    static func pruneReclaimedCheckouts(root: URL, retentionDays: Int, now: Date) {
+        let manager = FileManager.default
+        func isDirectory(_ path: String) -> Bool {
+            var info = stat()
+            return lstat(path, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
+        }
+        guard isDirectory(root.path),
+              let tasks = try? manager.contentsOfDirectory(atPath: root.path) else { return }
+        let cutoff = now.addingTimeInterval(-Double(retentionDays) * 86_400)
+        for task in tasks where isTaskID(task) && isDirectory(root.path + "/" + task) {
+            let taskDirectory = root.path + "/" + task
+            for attempt in (try? manager.contentsOfDirectory(atPath: taskDirectory)) ?? [] {
+                let directory = taskDirectory + "/" + attempt
+                guard isDirectory(directory),
+                      let data = manager.contents(atPath: directory + "/manifest.json"),
+                      let manifest = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                      manifest["clawdline_reclaimed_checkout"] as? Int == 1,
+                      manifest["task"] as? String == task,
+                      let created = manifest["created_at"] as? Double,
+                      Date(timeIntervalSince1970: created) < cutoff,
+                      (try? manager.removeItem(atPath: directory)) != nil else { continue }
+                RemoteAuth.audit("orchestrator.worktree.preservation_expired",
+                                 ["task": task, "path": directory])
+            }
+            if (try? manager.contentsOfDirectory(atPath: taskDirectory))?.isEmpty == true {
+                try? manager.removeItem(atPath: taskDirectory)
+            }
         }
     }
 

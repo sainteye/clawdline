@@ -5542,6 +5542,7 @@ enum Orchestrator {
                 "warnings": ["ledger_unreadable"],
                 "config": storageConfig(),
                 "orchestrator_store": store,
+                "scratch": OwnedStorage.scratchInventory(now: now),
             ]
         }
 
@@ -5630,6 +5631,7 @@ enum Orchestrator {
             "warnings": warnings,
             "config": storageConfig(),
             "orchestrator_store": store,
+            "scratch": OwnedStorage.scratchInventory(now: now),
         ]
     }
 
@@ -8071,17 +8073,6 @@ enum Orchestrator {
         if pumpQueue { scheduleSerializePump() }
     }
 
-    /// When a reclaimable directory falls due, from one grace setting and one ending.
-    ///
-    /// Shared by `work/` and by the isolated checkout's build output so the two settings cannot
-    /// drift into meaning different things: `0` and every success go now, a positive number is
-    /// minutes of diagnostic grace, and `-1` hands the directory to the 24-hour sweep.
-    static func reclaimDeadline(minutes: Int, outcome: State, now: Date = Date()) -> Date? {
-        if outcome == .success || minutes == 0 { return now }
-        if minutes > 0 { return now.addingTimeInterval(TimeInterval(minutes * 60)) }
-        return nil
-    }
-
     /// Remove only the heavyweight task-owned scratch directory. A missing directory is already
     /// the desired result; a real filesystem refusal keeps the deadline so a later beat retries.
     @discardableResult
@@ -8136,6 +8127,7 @@ enum Orchestrator {
         save()
         RemoteAuth.audit("orchestrator.build.reclaimed",
                          ["task": taskID, "path": build.path])
+        OrchestratorDraft.scheduleDependencyReclaim(snapshot)
         return true
     }
 
@@ -10325,7 +10317,7 @@ enum Orchestrator {
     private static func cleanupOrphanWorktrees(knownTaskIDs: Set<String>, olderThan cutoff: Date) {
         let manager = FileManager.default
         guard let repositories = try? manager.contentsOfDirectory(
-            at: OrchestratorDraft.worktreeRoot,
+            at: reclaimRoots.worktrees,
             includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else {
             return
         }
@@ -10352,46 +10344,6 @@ enum Orchestrator {
         }
     }
 
-    /// One task as the sweep sees it. `settledAt` is `finishedAt ?? created` — when the task
-    /// stopped being live, which is the clock both windows read; `created` is what the count
-    /// orders by, because that is what it has always ordered by.
-    struct TaskRetentionCandidate: Equatable {
-        let id: String
-        let terminal: Bool
-        let landingPending: Bool
-        let created: Date
-        let settledAt: Date
-    }
-
-    /// The two limits, answered separately so that a caller — and a test — can say which one
-    /// fired. They are deliberately not the same window. `directories` is heavyweight working
-    /// space under `/tmp/.clawdline`; `records` is the registry row, which is small and is the
-    /// only durable evidence the usage Feature classifier has, so it is worth keeping for far
-    /// longer than the directory it names. Three settings decide it:
-    /// `orchestrator_task_dir_retention_hours` for the first, and
-    /// `orchestrator_task_record_limit` (a valve on file size) together with
-    /// `orchestrator_task_record_retention_days` (the retention policy) for the second.
-    ///
-    /// Either record limit fires alone: the count drops what is past `recordLimit` however recent
-    /// it is, and the age drops what is past `recordDays` however few records there are. A
-    /// pending landing is exempt from both, unconditionally, and a task that is not terminal is
-    /// never aged out by either clock.
-    static func taskRetentionSweep(_ rows: [TaskRetentionCandidate], now: Date = Date(),
-                                   directoryHours: Int, recordLimit: Int, recordDays: Int)
-        -> (directories: [String], records: [String]) {
-        let directoryCutoff = now.addingTimeInterval(-Double(directoryHours) * 3600)
-        let recordCutoff = now.addingTimeInterval(-Double(recordDays) * 86_400)
-        let overCount = Set(rows.sorted { $0.created > $1.created }
-                                .dropFirst(recordLimit).map(\.id))
-        return (rows.filter {
-                    $0.terminal && !$0.landingPending && $0.settledAt < directoryCutoff
-                }.map(\.id),
-                rows.filter {
-                    !$0.landingPending && (overCount.contains($0.id)
-                        || ($0.terminal && $0.settledAt < recordCutoff))
-                }.map(\.id))
-    }
-
     /// Task directories are working files, not the archive — the record survives here, the
     /// directory goes once `orchestrator_task_dir_retention_hours` has passed and its task is
     /// over. The registry keeps `orchestrator_task_record_limit` ordinary records for
@@ -10404,6 +10356,8 @@ enum Orchestrator {
         let recordLimit = Config.shared.orchestratorTaskRecordLimit
         let recordDays = Config.shared.orchestratorTaskRecordRetentionDays
         let cutoff = now.addingTimeInterval(-Double(directoryHours) * 3600)
+        let finished = OrchestratorRegistry.withTaskRecords { $0.taskValues() }
+        let liveOwners = OrchestratorDraft.liveOwnerTaskIDs(finished, settledBefore: cutoff)
         // Read before the region below, because this one acquires the lock for itself. A handoff
         // label is reclaimed on the tab rather than on its envelope's 24-hour clock: suppressed
         // means a beat holding a live reading of this machine could not find the process the
@@ -10419,7 +10373,8 @@ enum Orchestrator {
                 TaskRetentionCandidate(id: $0.id, terminal: $0.state.isTerminal,
                                        landingPending: $0.landing?.state == .pending,
                                        created: $0.created,
-                                       settledAt: $0.finishedAt ?? $0.created)
+                                       settledAt: $0.finishedAt ?? $0.created,
+                                       ownerLive: liveOwners.contains($0.id))
             }, now: now, directoryHours: directoryHours, recordLimit: recordLimit,
                recordDays: recordDays)
             return (sweep: sweep, done: sweep.directories.compactMap { records.task($0) },
@@ -10477,6 +10432,7 @@ enum Orchestrator {
         }
         cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
         _ = OwnedStorage.compact()
+        OrchestratorDraft.scheduleFinishedStorageReclaim(finished.filter { retained.contains($0.id) })
     }
 
     // MARK: - Small lookups

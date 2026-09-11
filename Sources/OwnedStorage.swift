@@ -419,4 +419,401 @@ enum OwnedStorage {
         }
         return Decision(state: .releasable, why: "eligible", eligibleAt: eligibleAt)
     }
+
+    // MARK: - The owned scratch root: scratch contract v1 (docs/scratch.md)
+    //
+    // The ledger above names paths a transcript proved. This names the one root whose entries carry
+    // their own receipt, the marker. Neither enumerates `/tmp`: the only directory read here is the
+    // owned root itself, and only its direct children.
+
+    struct ScratchOwner: Equatable {
+        let pid: Int32
+        let processStart: Date
+        let command: String
+    }
+
+    /// `<entry>/.clawdline-scratch.json` at version 1.
+    struct ScratchMarker: Equatable {
+        let createdAt: Date
+        let purpose: String
+        let owner: ScratchOwner?
+        let keepUntil: Date?
+    }
+
+    enum ScratchMarkerRead: Equatable {
+        case marker(ScratchMarker)
+        case missing, unreadable, invalid, otherVersion
+    }
+
+    enum ScratchRootState: Equatable {
+        case present, absent
+        case refused(String)
+    }
+
+    enum ScratchEntryKind: Equatable {
+        case directory(uid: uid_t, mode: mode_t)
+        case symlink, other, unreadable
+    }
+
+    /// What one direct child of the root is, read without following anything.
+    struct ScratchEntryFacts: Equatable {
+        var name: String
+        var kind: ScratchEntryKind
+        var marker: ScratchMarkerRead
+        var owner: ProcessStatus
+    }
+
+    struct ScratchRow {
+        let name: String
+        let path: String
+        let isDirectory: Bool
+        let marker: ScratchMarker?
+        let decision: Decision
+    }
+
+    struct ScratchListing {
+        let root: String
+        let state: ScratchRootState
+        let rows: [ScratchRow]
+        let truncated: Bool
+    }
+
+    static let scratchMarkerName = ".clawdline-scratch.json"
+    /// Direct children read per pass; past it the listing says `truncated` and the rest wait.
+    static let scratchEntryLimit = 1_000
+
+    /// `[a-z0-9][a-z0-9-]{0,39}`.
+    static func isScratchPurpose(_ value: String) -> Bool {
+        let bytes = Array(value.utf8)
+        func lowerOrDigit(_ byte: UInt8) -> Bool {
+            (0x61...0x7a).contains(byte) || (0x30...0x39).contains(byte)
+        }
+        guard (1...40).contains(bytes.count), lowerOrDigit(bytes[0]) else { return false }
+        return bytes.dropFirst().allSatisfy { lowerOrDigit($0) || $0 == 0x2d }
+    }
+
+    /// The purpose half of `<purpose>.<random>`, or `nil` when a name is not that shape. The
+    /// random half is bounded to letters, digits, `_` and `-`, so no name can carry a separator.
+    static func scratchEntryPurpose(_ name: String) -> String? {
+        guard let dot = name.firstIndex(of: ".") else { return nil }
+        let purpose = String(name[..<dot])
+        let random = Array(name[name.index(after: dot)...].utf8)
+        guard isScratchPurpose(purpose), (1...64).contains(random.count),
+              random.allSatisfy({ byte in
+                  (0x30...0x39).contains(byte) || (0x41...0x5a).contains(byte)
+                      || (0x61...0x7a).contains(byte) || byte == 0x5f || byte == 0x2d
+              }) else { return nil }
+        return purpose
+    }
+
+    /// Every field the contract names, with its type; a missing `owner` or `keep_until` key is as
+    /// invalid as a wrong one, because `null` is how the contract says "none".
+    static func parseScratchMarker(_ data: Data) -> ScratchMarkerRead {
+        guard data.count <= 65_536,
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let version = jsonNumber(object["clawdline_scratch"]) else { return .invalid }
+        guard version == 1 else { return .otherVersion }
+        guard let created = jsonNumber(object["created_at"]), created >= 0,
+              let purpose = object["purpose"] as? String, isScratchPurpose(purpose),
+              let rawOwner = object["owner"], let rawKeepUntil = object["keep_until"] else {
+            return .invalid
+        }
+        var owner: ScratchOwner?
+        if !(rawOwner is NSNull) {
+            guard let fields = rawOwner as? [String: Any], let pid = jsonNumber(fields["pid"]),
+                  pid == pid.rounded(), pid > 0, pid <= Double(Int32.max),
+                  let started = jsonNumber(fields["process_start"]), started >= 0,
+                  let command = fields["command"] as? String, !command.isEmpty,
+                  !command.contains("/") else { return .invalid }
+            owner = ScratchOwner(pid: Int32(pid), processStart: Date(timeIntervalSince1970: started),
+                                 command: command)
+        }
+        var keepUntil: Date?
+        if !(rawKeepUntil is NSNull) {
+            guard let seconds = jsonNumber(rawKeepUntil), seconds >= 0 else { return .invalid }
+            keepUntil = Date(timeIntervalSince1970: seconds)
+        }
+        return .marker(ScratchMarker(createdAt: Date(timeIntervalSince1970: created),
+                                     purpose: purpose, owner: owner, keepUntil: keepUntil))
+    }
+
+    /// A JSON number that is finite and is not a boolean.
+    private static func jsonNumber(_ value: Any?) -> Double? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else {
+            return nil
+        }
+        return number.doubleValue.isFinite ? number.doubleValue : nil
+    }
+
+    /// The root, read with `lstat` so a symlink is seen rather than followed. A trailing slash is
+    /// dropped first, because `lstat` on `link/` follows the link.
+    static func scratchRootState(_ root: String, uid: uid_t = getuid()) -> ScratchRootState {
+        let path = trimmedScratchRoot(root)
+        guard path.hasPrefix("/") else { return .refused("root_not_absolute") }
+        var info = stat()
+        guard lstat(path, &info) == 0 else {
+            return errno == ENOENT ? .absent : .refused("root_unreadable")
+        }
+        switch info.st_mode & S_IFMT {
+        case S_IFLNK: return .refused("root_symlink")
+        case S_IFDIR: return info.st_uid == uid ? .present : .refused("root_not_owned")
+        default: return .refused("root_not_directory")
+        }
+    }
+
+    private static func trimmedScratchRoot(_ root: String) -> String {
+        var path = root
+        while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+        return path
+    }
+
+    static func scratchEntryFacts(root: String, name: String,
+                                  ownerStatus: (ScratchOwner) -> ProcessStatus = scratchOwnerStatus)
+        -> ScratchEntryFacts {
+        let path = trimmedScratchRoot(root) + "/" + name
+        var facts = ScratchEntryFacts(name: name, kind: .unreadable, marker: .unreadable,
+                                      owner: .absent)
+        var info = stat()
+        guard lstat(path, &info) == 0 else { return facts }
+        switch info.st_mode & S_IFMT {
+        case S_IFDIR: facts.kind = .directory(uid: info.st_uid, mode: info.st_mode & 0o7777)
+        case S_IFLNK: facts.kind = .symlink; return facts
+        default: facts.kind = .other; return facts
+        }
+        let markerPath = path + "/" + scratchMarkerName
+        var markerInfo = stat()
+        if lstat(markerPath, &markerInfo) != 0 {
+            facts.marker = errno == ENOENT ? .missing : .unreadable
+        } else if (markerInfo.st_mode & S_IFMT) == S_IFREG, markerInfo.st_size <= 65_536,
+                  let data = FileManager.default.contents(atPath: markerPath) {
+            facts.marker = parseScratchMarker(data)
+        }
+        if case .marker(let marker) = facts.marker, let owner = marker.owner {
+            facts.owner = ownerStatus(owner)
+        }
+        return facts
+    }
+
+    /// Contract v1's liveness: the pid is running and its start time equals the marker's at
+    /// whole-second resolution, ±1 s. Process identity only — never the command name, which the
+    /// kernel reports for Claude Code as its version string.
+    static func scratchOwnerStatus(_ owner: ScratchOwner) -> ProcessStatus {
+        errno = 0
+        if kill(owner.pid, 0) != 0 {
+            if errno == ESRCH { return .dead }
+            if errno == EPERM { return .alive }
+            return .unreadable
+        }
+        guard let started = Targets.processStart(ofPID: owner.pid) else { return .unreadable }
+        let difference = abs(started.timeIntervalSince1970.rounded(.down)
+                             - owner.processStart.timeIntervalSince1970.rounded(.down))
+        return difference <= 1 ? .alive : .reused
+    }
+
+    /// Contract v1, three-valued. `unknown` — a name, entry or marker the contract does not
+    /// describe, or an owner whose liveness cannot be read — is never collected. `held` is an owner
+    /// still running, a `keep_until` still ahead, or the broker's own grace, which counts from the
+    /// later of `created_at` and `keep_until` because nothing records when an owner died.
+    static func evaluateScratch(_ facts: ScratchEntryFacts, uid: uid_t = getuid(), now: Date,
+                                graceMinutes: Int) -> Decision {
+        func unknown(_ why: String) -> Decision { Decision(state: .unknown, why: why, eligibleAt: nil) }
+        guard let purpose = scratchEntryPurpose(facts.name) else { return unknown("name_not_contract") }
+        switch facts.kind {
+        case .unreadable: return unknown("entry_unreadable")
+        case .symlink: return unknown("entry_symlink")
+        case .other: return unknown("entry_not_directory")
+        case .directory(let owner, let mode):
+            guard owner == uid else { return unknown("entry_not_owned") }
+            guard mode & 0o777 == 0o700 else { return unknown("entry_mode_not_0700") }
+        }
+        let marker: ScratchMarker
+        switch facts.marker {
+        case .missing: return unknown("marker_missing")
+        case .unreadable: return unknown("marker_unreadable")
+        case .invalid: return unknown("marker_invalid")
+        case .otherVersion: return unknown("marker_version")
+        case .marker(let value): marker = value
+        }
+        guard marker.purpose == purpose else { return unknown("marker_purpose_mismatch") }
+        switch facts.owner {
+        case .unreadable: return unknown("owner_unreadable")
+        case .alive: return Decision(state: .held, why: "owner_alive", eligibleAt: nil)
+        case .absent, .dead, .reused: break
+        }
+        guard graceMinutes >= 0 else {
+            return Decision(state: .held, why: "grace_disabled", eligibleAt: nil)
+        }
+        let from = max(marker.createdAt, marker.keepUntil ?? marker.createdAt)
+        let eligibleAt = from.addingTimeInterval(TimeInterval(graceMinutes * 60))
+        if let keepUntil = marker.keepUntil, keepUntil > now {
+            return Decision(state: .held, why: "keep_until", eligibleAt: eligibleAt)
+        }
+        guard eligibleAt <= now else {
+            return Decision(state: .held, why: "grace", eligibleAt: eligibleAt)
+        }
+        return Decision(state: .releasable, why: "eligible", eligibleAt: eligibleAt)
+    }
+
+    /// The current working directory of every process this user runs, from one `lsof`, or `nil`
+    /// when that could not be read.
+    ///
+    /// A `snapshot-run` killed with `SIGKILL` can leave its command running inside the entry while
+    /// the marker names a dead owner, so the marker alone reads releasable. An entry some process
+    /// is working in is therefore held. A file merely held open from elsewhere is not seen; that is
+    /// the documented limit, and the grace period is what covers it.
+    static func processWorkingDirectories() -> Set<String>? {
+        guard let answer = Process.collect(
+                "/usr/sbin/lsof", ["-w", "-a", "-u", String(getuid()), "-d", "cwd", "-Fn"],
+                environment: ["LC_ALL": "en_US.UTF-8", "PATH": "/usr/bin:/bin:/usr/sbin"],
+                timeout: 30),
+              let text = String(data: answer.output, encoding: .utf8) else { return nil }
+        let paths = Set(text.split(separator: "\n").filter { $0.hasPrefix("n/") }
+            .map { String($0.dropFirst()) })
+        return answer.status == 0 || !paths.isEmpty ? paths : nil
+    }
+
+    /// Every direct child of the root with its decision. A releasable entry is then asked one more
+    /// question the marker cannot answer — is a live process working inside it — and the process
+    /// table is read at most once per listing, only when something is releasable.
+    static func scratchListing(root: String, now: Date, graceMinutes: Int, uid: uid_t = getuid(),
+                               ownerStatus: (ScratchOwner) -> ProcessStatus = scratchOwnerStatus,
+                               workingDirectories: () -> Set<String>? = processWorkingDirectories)
+        -> ScratchListing {
+        let path = trimmedScratchRoot(root)
+        let state = scratchRootState(path, uid: uid)
+        guard state == .present else {
+            return ScratchListing(root: path, state: state, rows: [], truncated: false)
+        }
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: path) else {
+            return ScratchListing(root: path, state: .refused("root_unreadable"), rows: [],
+                                  truncated: false)
+        }
+        let sorted = names.sorted()
+        var cwds: Set<String>?? = nil
+        let rows = sorted.prefix(scratchEntryLimit).map { name -> ScratchRow in
+            let facts = scratchEntryFacts(root: path, name: name, ownerStatus: ownerStatus)
+            var decision = evaluateScratch(facts, uid: uid, now: now, graceMinutes: graceMinutes)
+            let entry = path + "/" + name
+            if decision.mayCollect {
+                if cwds == nil { cwds = .some(workingDirectories()) }
+                if let known = cwds ?? nil {
+                    if workingInside(entry, known) {
+                        decision = Decision(state: .held, why: "cwd_in_use", eligibleAt: nil)
+                    }
+                } else {
+                    decision = Decision(state: .unknown, why: "cwd_unreadable", eligibleAt: nil)
+                }
+            }
+            var marker: ScratchMarker?
+            if case .marker(let value) = facts.marker { marker = value }
+            var isDirectory = false
+            if case .directory = facts.kind { isDirectory = true }
+            return ScratchRow(name: name, path: entry, isDirectory: isDirectory, marker: marker,
+                              decision: decision)
+        }
+        return ScratchListing(root: path, state: state, rows: rows,
+                              truncated: sorted.count > scratchEntryLimit)
+    }
+
+    /// Whether any of `directories` is `entry` or inside it, compared both as spelled and through
+    /// `realpath`, because `lsof` names `/tmp/x` as `/private/tmp/x`.
+    private static func workingInside(_ entry: String, _ directories: Set<String>) -> Bool {
+        var spellings = [entry]
+        if let resolved = realpath(entry, nil) {
+            spellings.append(String(cString: resolved))
+            free(resolved)
+        }
+        return directories.contains { directory in
+            spellings.contains { directory == $0 || directory.hasPrefix($0 + "/") }
+        }
+    }
+
+    /// Remove every releasable entry, re-reading its facts immediately before it goes. The payload
+    /// goes first and the marker last, so an entry a removal only half finished is still a
+    /// releasable entry the next pass retries, rather than an `unknown` one nothing will touch.
+    @discardableResult
+    static func sweepScratch(root: String, now: Date, graceMinutes: Int, uid: uid_t = getuid(),
+                             ownerStatus: (ScratchOwner) -> ProcessStatus = scratchOwnerStatus,
+                             workingDirectories: () -> Set<String>? = processWorkingDirectories)
+        -> [String] {
+        let listing = scratchListing(root: root, now: now, graceMinutes: graceMinutes, uid: uid,
+                                     ownerStatus: ownerStatus,
+                                     workingDirectories: workingDirectories)
+        if case .refused(let why) = listing.state {
+            RemoteAuth.audit("orchestrator.scratch.root_refused", ["root": listing.root, "why": why])
+            return []
+        }
+        let manager = FileManager.default
+        var removed: [String] = []
+        for row in listing.rows {
+            switch row.decision.state {
+            case .held:
+                continue
+            case .unknown:
+                RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": row.decision.why])
+            case .releasable:
+                let again = evaluateScratch(
+                    scratchEntryFacts(root: listing.root, name: row.name, ownerStatus: ownerStatus),
+                    uid: uid, now: now, graceMinutes: graceMinutes)
+                guard again.mayCollect else { continue }
+                do {
+                    for child in try manager.contentsOfDirectory(atPath: row.path)
+                    where child != scratchMarkerName {
+                        try manager.removeItem(atPath: row.path + "/" + child)
+                    }
+                    try manager.removeItem(atPath: row.path)
+                    removed.append(row.path)
+                    RemoteAuth.audit("orchestrator.scratch.reclaimed", [
+                        "path": row.path, "purpose": row.marker?.purpose ?? "", "why": again.why,
+                    ])
+                } catch {
+                    RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": "remove_failed"])
+                }
+            }
+        }
+        return removed
+    }
+
+    /// The owned scratch root as `GET /v1/orchestrator/storage` lists it: every direct child with
+    /// its decision and reason, beside the ledger rows and never folded into their totals.
+    static func scratchInventory(root: String = Orchestrator.reclaimRoots.scratch, now: Date,
+                                 graceMinutes: Int = Config.shared.orchestratorScratchGraceMinutes)
+        -> [String: Any] {
+        let listing = scratchListing(root: root, now: now, graceMinutes: graceMinutes)
+        var totals = ["items": 0, "bytes": 0, "held_items": 0, "releasable_items": 0,
+                      "unknown_items": 0, "unknown_size_items": 0]
+        let entries = listing.rows.map { row -> [String: Any] in
+            totals["items", default: 0] += 1
+            totals["\(row.decision.state.rawValue)_items", default: 0] += 1
+            var bytes: Any = NSNull()
+            if row.isDirectory, case .known(let size) = directorySize(at: row.path) {
+                bytes = size
+                totals["bytes", default: 0] += size
+            } else {
+                totals["unknown_size_items", default: 0] += 1
+            }
+            let recorded = row.marker?.owner.map { owner -> [String: Any] in
+                ["pid": Int(owner.pid), "process_start": Int(owner.processStart.timeIntervalSince1970),
+                 "command": owner.command]
+            }
+            let owner: Any = recorded as Any? ?? NSNull()
+            return [
+                "name": row.name, "path": row.path, "state": row.decision.state.rawValue,
+                "why": row.decision.why, "bytes": bytes, "owner": owner,
+                "purpose": row.marker.map { $0.purpose as Any } ?? NSNull(),
+                "created_at": row.marker.map { Int($0.createdAt.timeIntervalSince1970) as Any } ?? NSNull(),
+                "keep_until": row.marker?.keepUntil.map { Int($0.timeIntervalSince1970) as Any } ?? NSNull(),
+                "eligible_at": row.decision.eligibleAt.map { Int($0.timeIntervalSince1970) as Any } ?? NSNull(),
+            ]
+        }
+        var why: Any = NSNull()
+        let state: String
+        switch listing.state {
+        case .present: state = "present"
+        case .absent: state = "absent"
+        case .refused(let reason): state = "refused"; why = reason
+        }
+        return ["root": listing.root, "root_state": state, "why": why, "grace_minutes": graceMinutes,
+                "entries": entries, "totals": totals, "truncated": listing.truncated]
+    }
 }

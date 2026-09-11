@@ -999,6 +999,14 @@ group("owned storage is visible through the read-only orchestrator route") {
     Orchestrator.holdScheduleTaskForTesting(task)
     Orchestrator.saveForTesting()
 
+    // The owned scratch root is listed beside the ledger rows, and only this binary's root is read.
+    let scratchRoot = Orchestrator.reclaimRoots.scratch
+    try? manager.removeItem(atPath: scratchRoot)
+    try! manager.createDirectory(atPath: scratchRoot + "/stray.x1y2z3",
+                                 withIntermediateDirectories: true)
+    try! manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scratchRoot + "/stray.x1y2z3")
+    defer { try? manager.removeItem(atPath: scratchRoot) }
+
     let anonymous = RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/storage"))
     expect("anonymous storage inventory is refused", anonymous.status, 401)
     let phone = RemoteAuth.addDevice(name: "storage inventory reader", caps: [.read])
@@ -1019,6 +1027,15 @@ group("owned storage is visible through the read-only orchestrator route") {
           totals?["owned_items"] as? Int == 1
             && totals?["releasable_items"] as? Int == 1
             && totals?["releasable_bytes"] as? Int != nil)
+    let scratch = body?["scratch"] as? [String: Any]
+    let scratchEntries = scratch?["entries"] as? [[String: Any]]
+    check("the route lists the owned scratch root beside them, an unmarked entry unknown with its reason",
+          scratch?["root"] as? String == scratchRoot
+            && scratch?["root_state"] as? String == "present"
+            && scratchEntries?.count == 1 && scratchEntries?[0]["state"] as? String == "unknown"
+            && scratchEntries?[0]["why"] as? String == "marker_missing"
+            && (scratch?["totals"] as? [String: Any])?["unknown_items"] as? Int == 1
+            && totals?["owned_items"] as? Int == 1)
 }
 
 group("child briefings put heavyweight temporary work in owned task storage") {
@@ -1032,6 +1049,19 @@ group("child briefings put heavyweight temporary work in owned task storage") {
     check("and names the heavyweight examples that belong there",
           brief.contains("repo copies") && brief.contains("build outputs")
             && brief.contains("scratchpad"))
+    check("a child makes that scratch with the scratch tool rooted in its own work directory",
+          brief.contains("tools/scratch.sh new <purpose> --root /tmp/.clawdline/\(id)/work")
+            && brief.contains("--root /tmp/.clawdline/\(id)/work -- ./test.sh")
+            && !brief.contains("CLAWDLINE_SCRATCH_ROOT"))
+    var rootTask = task
+    rootTask.sessionRoot = true
+    let rootBrief = Orchestrator.childBrief(for: rootTask)
+    check("a Root Session is told its later scratch goes in the owned root, not in work/",
+          rootBrief.contains("**This Session outlives that task, and its later work does not go in /tmp/.clawdline/\(id)/work/.**")
+            && rootBrief.contains("${CLAWDLINE_SCRATCH_ROOT:-/tmp/clawdline-scratch}")
+            && rootBrief.contains("tools/scratch.sh new <purpose>")
+            && !rootBrief.contains("Everything there is deleted when the task ends")
+            && !rootBrief.contains("--root /tmp/.clawdline/\(id)/work"))
 }
 
 group("verification reports are optional, bounded metadata rather than a success gate") {

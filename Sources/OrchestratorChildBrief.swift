@@ -87,6 +87,50 @@ extension Orchestrator {
     /// checked without a broker, a terminal or a config file.
     static func depthIsAllowed(_ depth: Int) -> Bool { depth <= depthFloor }
 
+    /// Where a task's heavy scratch goes and what becomes of it, said differently to the two
+    /// sessions that read a briefing, because the sentence a child can rely on — everything in
+    /// `work/` goes when the task ends — is untrue about everything a Root Session writes after its
+    /// first task. Both point at the scratch tool, whose contract is `docs/scratch.md`.
+    static func scratchRule(for task: Task, dir: String) -> String {
+        task.sessionRoot
+            ? """
+              - Heavyweight temporary work for this first task (repo copies, build outputs, mutation
+                worktrees and compiler indexes) goes in \(dir)/work/, not in the assistant scratchpad,
+                and it is deleted when that task ends — immediately on success, after the configured
+                grace period otherwise.
+                **This Session outlives that task, and its later work does not go in \(dir)/work/.**
+                A `work/` that appears there again is deleted once this Session's process has exited,
+                and nothing in it is kept. Scratch for later turns belongs in the owned scratch root,
+                `${CLAWDLINE_SCRATCH_ROOT:-/tmp/clawdline-scratch}`, made with
+                `tools/scratch.sh new <purpose>` (contract: `docs/scratch.md`). Its marker names this
+                Session as the owner, so the broker removes it only after this Session has exited;
+                remove what you made with `tools/scratch.sh remove <path>` when you are done, and a
+                credential copy before the turn that made it ends.
+              """
+            : """
+              - Put heavyweight temporary work (repo copies, build outputs, mutation worktrees and
+                compiler indexes) in \(dir)/work/, not in the assistant scratchpad. Make it with the
+                scratch tool rooted there — `tools/scratch.sh new <purpose> --root \(dir)/work`, or
+                `tools/scratch.sh snapshot-run --subject worktree --root \(dir)/work -- <command>`
+                (contract: `docs/scratch.md`) — or directly in that directory where the tool is not
+                available. Everything there is deleted when the task ends — immediately on success,
+                after the configured grace period otherwise — so copy any log or diff worth keeping
+                into `artifacts/` **before** writing `result.json`.
+              """
+    }
+
+    /// The verification `TMPDIR` half of the same rule.
+    static func verificationScratchRule(for task: Task, dir: String) -> String {
+        task.sessionRoot
+            ? "Point this first task's verification `TMPDIR` at `\(dir)/work/tmp`, which goes with "
+                + "the task; later verification in this Session runs through "
+                + "`tools/scratch.sh snapshot-run`, whose entry and test binary go when the run ends."
+            : "Run verification through `tools/scratch.sh snapshot-run --subject worktree --root "
+                + "\(dir)/work -- ./test.sh`, which points `TMPDIR` at `\(dir)/work/<entry>/tmp`, or "
+                + "point `TMPDIR` at `\(dir)/work/tmp` where the tool is not available; either way "
+                + "the test binary is reclaimed with the task."
+    }
+
     static func childBrief(for task: Task) -> String {
         let dir = "/tmp/.clawdline/\(task.id)"
         let workspaceRule: String
@@ -126,8 +170,11 @@ extension Orchestrator {
             these rules are briefing rules rather than a shell sandbox.
 
             This checkout's `.build/` is reclaimed on the same schedule as `work/` once the task
-            ends. The source and the delivery branch are never touched by that, but nothing you
-            want to keep should be left inside a build directory.
+            ends, and any git-ignored `node_modules` or `.venv` in it on that schedule once your
+            process has exited. The source and the delivery branch are never touched by that, but
+            nothing you want to keep should be left inside a build or dependency directory. Once
+            the root records this delivery as landed, the checkout itself is removed after its
+            uncommitted changes are preserved and verified; the branch is kept.
             """
         } else {
             workspaceRule = "- Work inside \(task.projectDir). Put every file you produce in "
@@ -318,11 +365,7 @@ extension Orchestrator {
         ## Rules
 
         \(workspaceRule)
-        - Put heavyweight temporary work (repo copies, build outputs, mutation worktrees and
-          compiler indexes) in \(dir)/work/, not in the assistant scratchpad. Everything there
-          is deleted when the task ends — immediately on success, after the configured grace
-          period otherwise — so copy any log or diff worth keeping into `artifacts/` **before**
-          writing `result.json`.
+        \(scratchRule(for: task, dir: dir))
         - \(handOnRule)
         - Do not read any directory under /tmp/.clawdline/ except your own and any your
           instructions name explicitly. That second one is how a reviewing node works: it is sent
@@ -362,9 +405,8 @@ extension Orchestrator {
         Nothing in this system will ever end somebody else's compile, and neither may you.
 
         Verification stops after one third of this task's timeout
-        (\(verificationMinutes) minutes). At the limit, stop and report the state reached in `result.json`. Point
-        verification's private `TMPDIR` at `\(dir)/work/tmp`; the repository's
-        snapshot recipe remains unchanged, and its test binary is then reclaimed with the task.
+        (\(verificationMinutes) minutes). At the limit, stop and report the state reached in `result.json`.
+        \(verificationScratchRule(for: task, dir: dir))
 
         \(timelySection)
 

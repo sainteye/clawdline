@@ -421,6 +421,111 @@ group("owned storage evaluation is three-valued and fail-closed") {
            OwnedStorage.evaluate(input(process: .unreadable)).state, .unknown)
     expect("a path that does not match its reconstructed canonical path is unknown",
            OwnedStorage.evaluate(input(path: .invalid)).state, .unknown)
+
+    // Scratch contract v1 over this binary's own scratch root: every direct child is listed with
+    // its decision and reason, and a sweep takes only what is releasable.
+    let manager = FileManager.default
+    let scratchRoot = Orchestrator.reclaimRoots.scratch
+    try? manager.removeItem(atPath: scratchRoot)
+    try! manager.createDirectory(atPath: scratchRoot, withIntermediateDirectories: true)
+    defer { try? manager.removeItem(atPath: scratchRoot) }
+    let scratchNow = Date()
+    func scratchEntry(_ name: String, _ contents: [String: Any]?) {
+        let path = scratchRoot + "/" + name
+        try! manager.createDirectory(atPath: path + "/tree", withIntermediateDirectories: true)
+        try! manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
+        if let contents {
+            try! JSONSerialization.data(withJSONObject: contents)
+                .write(to: URL(fileURLWithPath: path + "/" + OwnedStorage.scratchMarkerName))
+        }
+    }
+    func marker(_ purpose: String, owner: Any = NSNull(), keepUntil: Any = NSNull(),
+                version: Int = 1) -> [String: Any] {
+        ["clawdline_scratch": version, "created_at": Int(scratchNow.timeIntervalSince1970) - 7_200,
+         "purpose": purpose, "owner": owner, "keep_until": keepUntil]
+    }
+    scratchEntry("snapshot-worktree.a1B2c3D4", marker("snapshot-worktree"))
+    scratchEntry("session.e5F6g7H8", marker("session", owner: [
+        "pid": 4242, "process_start": 1_700_000_000, "command": "claude"] as [String: Any]))
+    scratchEntry("ttl.i9J0k1L2", marker("ttl", keepUntil: Int(scratchNow.timeIntervalSince1970) + 600))
+    scratchEntry("orphan.m3N4o5P6", marker("orphan"))
+    scratchEntry("nomarker.q7R8s9T0", nil)
+    scratchEntry("future.u1V2w3X4", marker("future", version: 2))
+    scratchEntry("other.y5Z6a7B8", marker("different"))
+    scratchEntry("broken.c9D0e1F2", ["clawdline_scratch": 1, "created_at": 1, "purpose": "broken"])
+    try! Data("stray".utf8).write(to: URL(fileURLWithPath: scratchRoot + "/Not A Contract Name"))
+    var ownerAnswer = OwnedStorage.ProcessStatus.alive
+    let working = Set([scratchRoot + "/orphan.m3N4o5P6/tree"])
+    let decisions = Dictionary(uniqueKeysWithValues: OwnedStorage.scratchListing(
+        root: scratchRoot, now: scratchNow, graceMinutes: 60, ownerStatus: { _ in ownerAnswer },
+        workingDirectories: { working }).rows.map {
+            ($0.name, "\($0.decision.state.rawValue):\($0.decision.why)")
+        })
+    expect("every direct child of the owned root is listed with its decision and reason", decisions, [
+        "snapshot-worktree.a1B2c3D4": "releasable:eligible", "session.e5F6g7H8": "held:owner_alive",
+        "ttl.i9J0k1L2": "held:keep_until", "orphan.m3N4o5P6": "held:cwd_in_use",
+        "nomarker.q7R8s9T0": "unknown:marker_missing", "future.u1V2w3X4": "unknown:marker_version",
+        "other.y5Z6a7B8": "unknown:marker_purpose_mismatch",
+        "broken.c9D0e1F2": "unknown:marker_invalid", "Not A Contract Name": "unknown:name_not_contract",
+    ])
+    expect("the sweep removes only the releasable entry",
+           OwnedStorage.sweepScratch(root: scratchRoot, now: scratchNow, graceMinutes: 60,
+                                     ownerStatus: { _ in ownerAnswer }, workingDirectories: { working }),
+           [scratchRoot + "/snapshot-worktree.a1B2c3D4"])
+    check("and holds a live owner's entry, one a process works in, and every unknown one",
+          ["session.e5F6g7H8", "ttl.i9J0k1L2", "orphan.m3N4o5P6", "nomarker.q7R8s9T0",
+           "future.u1V2w3X4", "other.y5Z6a7B8", "broken.c9D0e1F2", "Not A Contract Name"]
+            .allSatisfy { manager.fileExists(atPath: scratchRoot + "/" + $0) })
+    ownerAnswer = .reused
+    expect("a pid that now belongs to another process releases its owner's entry",
+           OwnedStorage.sweepScratch(root: scratchRoot, now: scratchNow, graceMinutes: 60,
+                                     ownerStatus: { _ in ownerAnswer }, workingDirectories: { working }),
+           [scratchRoot + "/session.e5F6g7H8"])
+    expect("an unreadable process table makes a releasable entry unknown, never collected",
+           OwnedStorage.sweepScratch(root: scratchRoot, now: scratchNow, graceMinutes: 60,
+                                     ownerStatus: { _ in .dead }, workingDirectories: { nil }), [])
+
+    let linkedRoot = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-scratch-link-\(UUID().uuidString)").path
+    try! manager.createSymbolicLink(atPath: linkedRoot, withDestinationPath: scratchRoot)
+    defer { try? manager.removeItem(atPath: linkedRoot) }
+    expect("a symlinked root is refused, never followed, even spelled with a trailing slash",
+           [OwnedStorage.scratchRootState(linkedRoot), OwnedStorage.scratchRootState(linkedRoot + "/")],
+           [.refused("root_symlink"), .refused("root_symlink")])
+    expect("a relative root is refused rather than resolved",
+           OwnedStorage.scratchRootState("clawdline-scratch"), .refused("root_not_absolute"))
+    expect("an absent root is nothing to sweep",
+           OwnedStorage.scratchRootState(scratchRoot + "-absent"), .absent)
+    check("and a refused root sweeps nothing, whatever its target holds",
+          OwnedStorage.sweepScratch(root: linkedRoot, now: scratchNow, graceMinutes: 0,
+                                    ownerStatus: { _ in .dead },
+                                    workingDirectories: { Set<String>() }).isEmpty
+            && manager.fileExists(atPath: scratchRoot + "/ttl.i9J0k1L2"))
+
+    let me = getpid()
+    if let started = Targets.processStart(ofPID: me) {
+        func status(_ offset: TimeInterval) -> OwnedStorage.ProcessStatus {
+            OwnedStorage.scratchOwnerStatus(.init(pid: me, processStart: started.addingTimeInterval(offset),
+                                                  command: "clawdline-tests"))
+        }
+        expect("a running pid with its recorded start is alive, to the contract's one second",
+               [status(0), status(1), status(-1)], [.alive, .alive, .alive])
+        expect("two seconds off is another process that took the pid", status(2), .reused)
+    } else {
+        check("this process's own start time is readable", false)
+    }
+    let ownerless = OwnedStorage.ScratchEntryFacts(
+        name: "landing.a1b2c3d4", kind: .directory(uid: getuid(), mode: 0o700),
+        marker: .marker(.init(createdAt: scratchNow.addingTimeInterval(-600), purpose: "landing",
+                              owner: nil, keepUntil: nil)), owner: .absent)
+    expect("the broker's grace counts from created_at",
+           OwnedStorage.evaluateScratch(ownerless, now: scratchNow, graceMinutes: 60).why, "grace")
+    expect("-1 lists an entry and collects nothing",
+           OwnedStorage.evaluateScratch(ownerless, now: scratchNow, graceMinutes: -1).why, "grace_disabled")
+    var foreign = ownerless
+    foreign.kind = .directory(uid: getuid() + 1, mode: 0o700)
+    expect("an entry another uid owns is unknown",
+           OwnedStorage.evaluateScratch(foreign, now: scratchNow, graceMinutes: 0).why, "entry_not_owned")
 }
 
 group("owned storage ledger records proof durably and never claims a failed append") {
@@ -618,6 +723,18 @@ group("task retention answers its two limits separately") {
           !exempt.records.contains("pending") && !exempt.directories.contains("pending"))
     expect("while everything beside it is swept on both", exempt.records.sorted(), ["a", "b"])
 
+    // A live owner holds its directory and the record that names it, as a pending landing does:
+    // the day a Root Session's task ended is not the day that Session stopped writing there.
+    var owned = candidate("owned", hoursAgo: 400 * 24)
+    owned.ownerLive = true
+    let ownedSweep = Orchestrator.taskRetentionSweep([owned, candidate("gone", hoursAgo: 300 * 24)],
+                                                     now: now, directoryHours: 1, recordLimit: 1,
+                                                     recordDays: 1)
+    check("a finished task whose process still runs keeps its directory and its record",
+          !ownedSweep.directories.contains("owned") && !ownedSweep.records.contains("owned"))
+    expect("while the same finish without a live owner goes on both",
+           [ownedSweep.directories, ownedSweep.records], [["gone"], ["gone"]])
+
     // A task that has not finished is never aged out; the count still reaches it, as it always did.
     // Distinct ages on purpose. The first version of this gave both rows the same `created`, and
     // `sorted { $0.created > $1.created }` is not stable, so which one the count reached was the
@@ -702,10 +819,10 @@ group("the retention settings reach the sweep that reads them") {
     }
 
     // The directory window is only ever *widened* here, never narrowed. `cleanup()` hands the same
-    // cutoff to `cleanupOrphanWorktrees`, which scans the real `~/Library/Application
-    // Support/Clawdline/worktrees` with only this test's fixtures as its known ids — so a shorter
-    // window in a test is an offer to dispose another session's live checkout. The narrow
-    // direction is proved on `taskRetentionSweep` above, where nothing touches a filesystem.
+    // cutoff to `cleanupOrphanWorktrees`, which once scanned the real `~/Library/Application
+    // Support/Clawdline/worktrees` with only this test's fixtures as its known ids. It now reads
+    // `Orchestrator.reclaimRoots`, which this binary points at a temporary root, and the habit stays:
+    // the narrow direction is proved on `taskRetentionSweep` above, where nothing touches a filesystem.
     func fixture(_ hoursAgo: Double) -> (String, URL) {
         let id = UUID().uuidString.lowercased()
         let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
@@ -832,6 +949,55 @@ group("task-owned work is reclaimed on the terminal-state schedule") {
     Orchestrator.finalize(absentID, as: .success, summary: "done")
     expect("a missing work directory never delays the terminal state",
            Orchestrator.record(id: absentID)?["state"] as? String, "success")
+
+    // Work written after the task ended, or by a task that ended before deadlines existed: no
+    // deadline is outstanding, so the six-hourly pass decides — on the same grace, and never while
+    // the task's recorded process runs. The fixture lives under this binary's reclaim roots only.
+    let reclaimRoots = Orchestrator.reclaimRoots
+    check("every reclaim root this binary can reach is inside its own temporary boundary",
+          [reclaimRoots.worktrees.path, reclaimRoots.tasks.path, reclaimRoots.scratch,
+           reclaimRoots.preserved.path].allSatisfy { $0.hasPrefix(isolatedTestStoreDirectory.path) })
+    var rootSession = Orchestrator.Task(
+        id: UUID().uuidString.lowercased(), state: .success, kind: "custom",
+        title: "root session scratch", assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30,
+        created: Date().addingTimeInterval(-7_200), secretHash: String(repeating: "0", count: 64))
+    rootSession.sessionRoot = true
+    rootSession.finishedAt = Date().addingTimeInterval(-3_600)
+    let laterWork = reclaimRoots.tasks.appendingPathComponent(rootSession.id, isDirectory: true)
+        .appendingPathComponent("work", isDirectory: true)
+    madeDirectories.append(laterWork.deletingLastPathComponent())
+    try! manager.createDirectory(at: laterWork.appendingPathComponent("deploy-main"),
+                                 withIntermediateDirectories: true)
+    let credential = laterWork.appendingPathComponent("deploy-main/credentials.json")
+    try! Data("written after the task ended".utf8).write(to: credential)
+    var owner = OwnedStorage.ProcessStatus.alive
+    func reclaimLaterWork() -> Bool {
+        OrchestratorDraft.reclaimAfterFinishWork(rootSession, at: laterWork, graceMinutes: 60,
+                                                 now: Date(), ownerStatus: { _ in owner })
+    }
+    check("work written after the task ended is held while the Session's process runs",
+          !reclaimLaterWork() && manager.fileExists(atPath: credential.path))
+    owner = .unreadable
+    check("and while that process cannot be read",
+          !reclaimLaterWork() && manager.fileExists(atPath: credential.path))
+    owner = .reused
+    check("and goes once that pid belongs to another process",
+          reclaimLaterWork() && !manager.fileExists(atPath: laterWork.path))
+    let settled = Date(timeIntervalSince1970: 1_000_000)
+    func laterWhy(_ state: Orchestrator.State, deadline: Date? = nil,
+                  owner: OwnedStorage.ProcessStatus = .dead, grace: Int = 60,
+                  after seconds: TimeInterval = 7_200) -> String {
+        Orchestrator.afterFinishWorkDecision(state: state, workCleanupAt: deadline,
+                                             settledAt: settled, owner: owner, graceMinutes: grace,
+                                             now: settled.addingTimeInterval(seconds)).why
+    }
+    expect("a deadline still outstanding belongs to the beat, not to this pass",
+           laterWhy(.failure, deadline: settled), "deadline_pending")
+    expect("a failure's later work keeps the diagnostic grace", laterWhy(.failure, after: 60),
+           "grace")
+    expect("and -1 still means the day-old sweep", laterWhy(.failure, grace: -1), "grace_disabled")
+    expect("a task that never recorded a process has nobody left writing there",
+           laterWhy(.success, owner: .absent, after: 0), "after_finish")
 
     let configDirectory = manager.temporaryDirectory
         .appendingPathComponent("clawdline-work-grace-config-\(UUID().uuidString)",
@@ -1133,6 +1299,138 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
     check("and takeChildTab's stale snapshot cannot resurrect either deadline",
           Orchestrator.workCleanupAtForTesting(staleID) == nil
             && Orchestrator.buildCleanupAtForTesting(staleID) == nil)
+
+    // A landed checkout: its delta preserved and proved, then the checkout removed through git with
+    // its branch kept — and any failure before the removal keeps every byte. Under this binary's
+    // reclaim roots only.
+    let roots = Orchestrator.reclaimRoots
+    func landedCheckout() -> (repository: URL, checkout: URL, worktree: Orchestrator.Worktree,
+                              id: String) {
+        let id = UUID().uuidString.lowercased()
+        let repository = roots.worktrees.deletingLastPathComponent()
+            .appendingPathComponent("landed-repository-\(id)", isDirectory: true)
+        let checkout = roots.worktrees.appendingPathComponent("landed-fixture", isDirectory: true)
+            .appendingPathComponent(id, isDirectory: true)
+        made.append(repository)
+        made.append(checkout)
+        try! manager.createDirectory(at: repository.appendingPathComponent("src"),
+                                     withIntermediateDirectories: true)
+        try! Data("one\n".utf8).write(to: repository.appendingPathComponent("src/a.txt"))
+        try! Data("gone\n".utf8).write(to: repository.appendingPathComponent("src/gone.txt"))
+        check("the landed fixture repository and its linked checkout are made", [
+            ["init", "-q", "-b", "main"], ["add", "."],
+            ["-c", "user.name=Clawdline Tests", "-c", "user.email=tests@clawdline.invalid",
+             "-c", "commit.gpgsign=false", "commit", "-qm", "base"],
+            ["worktree", "add", "-q", "-b", "clawdline/task/\(id)", checkout.path, "main"],
+        ].allSatisfy { testGit($0, cwd: repository).status == 0 })
+        // A Codex delivery: dirty bytes only, landed by root and still dirty.
+        try! Data("one\ntwo\n".utf8).write(to: checkout.appendingPathComponent("src/a.txt"))
+        try! manager.removeItem(at: checkout.appendingPathComponent("src/gone.txt"))
+        try! Data("brand new\n".utf8).write(to: checkout.appendingPathComponent("src/new.txt"))
+        _ = testGit(["add", "src/new.txt"], cwd: checkout)
+        try! Data("notes\n".utf8).write(to: checkout.appendingPathComponent("notes 中文.txt"))
+        try! manager.createDirectory(at: checkout.appendingPathComponent(".serena/cache"),
+                                     withIntermediateDirectories: true)
+        try! Data("tool cache".utf8).write(to: checkout.appendingPathComponent(".serena/cache/symbols"))
+        let base = testGit(["rev-parse", "HEAD"], cwd: repository).output
+        return (repository, checkout,
+                Orchestrator.Worktree(path: checkout.path, branch: "clawdline/task/\(id)", base: base,
+                                      repository: repository.path, cwd: checkout.path), id)
+    }
+
+    // Failure injection: the preservation directory cannot be written, so nothing may go.
+    let failing = landedCheckout()
+    var unwritable = roots
+    unwritable.preserved = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-preserved-is-a-file-\(UUID().uuidString)")
+    made.append(unwritable.preserved)
+    try! Data("not a directory".utf8).write(to: unwritable.preserved)
+    expect("a preservation that cannot be written keeps the landed checkout",
+           OrchestratorDraft.disposeLandedWorktree(failing.worktree, taskID: failing.id,
+                                                   roots: unwritable),
+           .kept("preservation_unwritable"))
+    check("with every uncommitted byte still in it",
+          manager.fileExists(atPath: failing.checkout.appendingPathComponent("src/new.txt").path)
+            && manager.fileExists(atPath: failing.checkout.appendingPathComponent("notes 中文.txt").path))
+    let mixed = landedCheckout()
+    try! Data("brand new, then edited\n".utf8).write(to: mixed.checkout.appendingPathComponent("src/new.txt"))
+    expect("index bytes a working-tree patch cannot carry keep the checkout",
+           OrchestratorDraft.disposeLandedWorktree(mixed.worktree, taskID: mixed.id, roots: roots),
+           .kept("staged_differs_from_worktree"))
+
+    let landed = landedCheckout()
+    let outcome = OrchestratorDraft.disposeLandedWorktree(landed.worktree, taskID: landed.id,
+                                                          roots: roots)
+    var preserved = ""
+    if case .removed(let path) = outcome { preserved = path }
+    check("a landed checkout is removed only after its delta was preserved",
+          !preserved.isEmpty && !manager.fileExists(atPath: landed.checkout.path)
+            && manager.fileExists(atPath: preserved + "/manifest.json"), "\(outcome)")
+    check("its delivery branch is kept, and git no longer lists the checkout",
+          testGit(["rev-parse", "--verify", "refs/heads/clawdline/task/\(landed.id)"],
+                  cwd: landed.repository).status == 0
+            && !testGit(["worktree", "list", "--porcelain"], cwd: landed.repository).output
+                .contains("landed-fixture/\(landed.id)"))
+    let manifest = (try? JSONSerialization.jsonObject(
+        with: Data(contentsOf: URL(fileURLWithPath: preserved + "/manifest.json")))) as? [String: Any]
+    check("the manifest names base, head, branch and each preserved file's SHA-256",
+          manifest?["base"] as? String == landed.worktree.base
+            && manifest?["branch"] as? String == landed.worktree.branch
+            && (manifest?["head"] as? String)?.count == 40
+            && ((manifest?["patch"] as? [String: Any])?["sha256"] as? String)?.count == 64
+            && ((manifest?["untracked"] as? [String: Any])?["sha256"] as? String)?.count == 64)
+    // Rebuild the delivery from nothing but what was preserved.
+    let restored = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-restored-\(UUID().uuidString)", isDirectory: true)
+    made.append(restored)
+    let patched = testGit(["worktree", "add", "-q", "--detach", restored.path,
+                           "clawdline/task/\(landed.id)"], cwd: landed.repository).status == 0
+        && testGit(["apply", "--index", preserved + "/delta.patch"], cwd: restored).status == 0
+    let extract = Process()
+    extract.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+    extract.arguments = ["-x", "-f", preserved + "/untracked.tar", "-C", restored.path]
+    var extracted = false
+    if patched, (try? extract.run()) != nil {
+        extract.waitQuietly()
+        extracted = extract.terminationStatus == 0
+    }
+    func restoredText(_ name: String) -> String? {
+        try? String(contentsOf: restored.appendingPathComponent(name), encoding: .utf8)
+    }
+    check("the preserved patch and archive rebuild exactly the delivery that was removed",
+          extracted && restoredText("src/a.txt") == "one\ntwo\n"
+            && restoredText("src/new.txt") == "brand new\n" && restoredText("notes 中文.txt") == "notes\n"
+            && !manager.fileExists(atPath: restored.appendingPathComponent("src/gone.txt").path)
+            && !manager.fileExists(atPath: restored.appendingPathComponent(".serena").path))
+
+    // Tool noise does not make a checkout dirty for the ordinary sweep either.
+    let noisy = landedCheckout()
+    check("a committed checkout whose only untracked directory is tool noise is made", [
+        ["add", "-A", "--", "src", "notes 中文.txt"],
+        ["-c", "user.name=Clawdline Tests", "-c", "user.email=tests@clawdline.invalid",
+         "-c", "commit.gpgsign=false", "commit", "-qm", "delivered"],
+    ].allSatisfy { testGit($0, cwd: noisy.checkout).status == 0 })
+    OrchestratorDraft.disposeWorktree(noisy.worktree, taskID: noisy.id, why: "swept")
+    check("and the sweep removes it through git, keeping its branch",
+          !manager.fileExists(atPath: noisy.checkout.path)
+            && testGit(["rev-parse", "--verify", "refs/heads/clawdline/task/\(noisy.id)"],
+                       cwd: noisy.repository).status == 0)
+
+    // Retention: an attempt past its days goes; a directory this app did not write stays.
+    let expiredTask = UUID().uuidString.lowercased()
+    let expired = roots.preserved.appendingPathComponent("\(expiredTask)/1-old", isDirectory: true)
+    let foreignAttempt = roots.preserved.appendingPathComponent("\(expiredTask)/not-ours",
+                                                                isDirectory: true)
+    for directory in [expired, foreignAttempt] {
+        try! manager.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    try! JSONSerialization.data(withJSONObject: [
+        "clawdline_reclaimed_checkout": 1, "task": expiredTask, "created_at": 1,
+    ]).write(to: expired.appendingPathComponent("manifest.json"))
+    OrchestratorDraft.pruneReclaimedCheckouts(root: roots.preserved, retentionDays: 30, now: Date())
+    check("a preserved delta past its retention goes, and a directory without this app's manifest stays",
+          !manager.fileExists(atPath: expired.path) && manager.fileExists(atPath: foreignAttempt.path)
+            && manager.fileExists(atPath: preserved + "/manifest.json"))
 }
 
 group("an isolated checkout's build output is reclaimed on its own deadline") {
@@ -1280,6 +1578,77 @@ group("an isolated checkout's build output is reclaimed on its own deadline") {
     check("a negative grace defers to the ordinary sweep",
           Orchestrator.reclaimDeadline(minutes: -1, outcome: .failure) == nil)
 
+    // Dependency directories: a real repository and a linked checkout under this binary's worktree
+    // root, never the live one.
+    let reclaimRoots = Orchestrator.reclaimRoots
+    let dependencyID = UUID().uuidString.lowercased()
+    let dependencyRepository = reclaimRoots.worktrees.deletingLastPathComponent()
+        .appendingPathComponent("dependency-repository-\(dependencyID)", isDirectory: true)
+    let dependencyCheckout = reclaimRoots.worktrees
+        .appendingPathComponent("dependency-fixture", isDirectory: true)
+        .appendingPathComponent(dependencyID, isDirectory: true)
+    made.append(dependencyRepository)
+    made.append(dependencyCheckout.deletingLastPathComponent())
+    try! manager.createDirectory(at: dependencyRepository.appendingPathComponent("vendor/node_modules"),
+                                 withIntermediateDirectories: true)
+    try! Data("node_modules/\n.venv/\n".utf8)
+        .write(to: dependencyRepository.appendingPathComponent(".gitignore"))
+    try! Data("vendored on purpose".utf8)
+        .write(to: dependencyRepository.appendingPathComponent("vendor/node_modules/kept.js"))
+    check("the dependency fixture repository and its linked checkout are made", [
+        ["init", "-q", "-b", "main"], ["add", "-f", "."],
+        ["-c", "user.name=Clawdline Tests", "-c", "user.email=tests@clawdline.invalid",
+         "-c", "commit.gpgsign=false", "commit", "-qm", "base"],
+        ["worktree", "add", "-q", "-b", "clawdline/task/\(dependencyID)", dependencyCheckout.path, "main"],
+    ].allSatisfy { testGit($0, cwd: dependencyRepository).status == 0 })
+    for directory in ["relay/node_modules/pkg", "packages/a/node_modules", ".venv/bin",
+                      "vendor/node_modules/extra"] {
+        try! manager.createDirectory(at: dependencyCheckout.appendingPathComponent(directory),
+                                     withIntermediateDirectories: true)
+        try! Data("installed".utf8)
+            .write(to: dependencyCheckout.appendingPathComponent(directory + "/file"))
+    }
+    try! manager.createDirectory(at: dependencyRepository.appendingPathComponent("elsewhere/node_modules"),
+                                 withIntermediateDirectories: true)
+    try! manager.createSymbolicLink(at: dependencyCheckout.appendingPathComponent("linked"),
+                                    withDestinationURL: dependencyRepository.appendingPathComponent("elsewhere"))
+    let reclaimed = OrchestratorDraft.reclaimDependencyDirectories(checkout: dependencyCheckout.path,
+                                                                    taskID: dependencyID)
+    expect("ignored node_modules and .venv inside the task's own checkout go, and nothing else",
+           Set(reclaimed.map { String($0.dropFirst(dependencyCheckout.path.count + 1)) }),
+           ["relay/node_modules", "packages/a/node_modules", ".venv"])
+    check("a node_modules holding a tracked file stays, with what was installed beside it",
+          manager.fileExists(atPath: dependencyCheckout.appendingPathComponent("vendor/node_modules/kept.js").path)
+            && manager.fileExists(atPath: dependencyCheckout
+                .appendingPathComponent("vendor/node_modules/extra/file").path))
+    expect("and is refused for what it holds",
+           OrchestratorDraft.dependencyDirectoryVerdict("vendor/node_modules",
+                                                        checkout: dependencyCheckout.path),
+           .refused("tracked"))
+    expect("a dependency directory reached through a symlink is refused, never followed",
+           OrchestratorDraft.dependencyDirectoryVerdict("linked/node_modules",
+                                                        checkout: dependencyCheckout.path),
+           .refused("symlink"))
+    check("so what the symlink points at is untouched",
+          manager.fileExists(atPath: dependencyRepository.appendingPathComponent("elsewhere/node_modules").path))
+    let foreignCheckout = fixture().1!
+    try! manager.createDirectory(at: foreignCheckout.appendingPathComponent("node_modules"),
+                                 withIntermediateDirectories: true)
+    check("a checkout outside the worktree root is never read, whatever it holds",
+          OrchestratorDraft.reclaimDependencyDirectories(checkout: foreignCheckout.path,
+                                                         taskID: dependencyID).isEmpty
+            && manager.fileExists(atPath: foreignCheckout.appendingPathComponent("node_modules").path))
+    func dependencyWhy(_ owner: OwnedStorage.ProcessStatus, deadline: Date? = nil) -> String {
+        Orchestrator.dependencyReclaimDecision(state: .success, buildCleanupAt: deadline,
+                                               settledAt: Date(timeIntervalSince1970: 100),
+                                               owner: owner, graceMinutes: 60,
+                                               now: Date(timeIntervalSince1970: 200)).why
+    }
+    expect("dependency directories wait for the task's process, not only for the build deadline",
+           [dependencyWhy(.alive), dependencyWhy(.unreadable), dependencyWhy(.dead),
+            dependencyWhy(.dead, deadline: Date(timeIntervalSince1970: 150))],
+           ["owner_alive", "owner_unreadable", "build_deadline", "deadline_pending"])
+
     let configDirectory = manager.temporaryDirectory
         .appendingPathComponent("clawdline-build-grace-config-\(UUID().uuidString)",
                                 isDirectory: true)
@@ -1297,6 +1666,34 @@ group("an isolated checkout's build output is reclaimed on its own deadline") {
         expect("out-of-range build grace \(invalid) falls back to the default",
                Config(directoryForTesting: configDirectory).orchestratorBuildGraceMinutes, 60)
     }
+
+    // The three reclaim settings reclaim with nobody configuring anything, and a value outside
+    // their range is ignored rather than clamped.
+    let reclaimKnobs: [(String, KeyPath<Config, Int>, [Int], Int)] = [
+        ("orchestrator_landed_checkout_grace_minutes", \.orchestratorLandedCheckoutGraceMinutes,
+         [-2, 1_441], 60),
+        ("orchestrator_scratch_grace_minutes", \.orchestratorScratchGraceMinutes, [-2, 1_441], 60),
+        ("orchestrator_reclaimed_checkout_retention_days",
+         \.orchestratorReclaimedCheckoutRetentionDays, [0, 366], 30),
+    ]
+    for (key, path, invalids, fallback) in reclaimKnobs {
+        for invalid in invalids {
+            try! JSONSerialization.data(withJSONObject: [key: invalid])
+                .write(to: configDirectory.appendingPathComponent("config.json"), options: .atomic)
+            expect("out-of-range \(key) \(invalid) falls back to its default",
+                   Config(directoryForTesting: configDirectory)[keyPath: path], fallback)
+        }
+    }
+    let knobs = Config(directoryForTesting: configDirectory)
+    knobs.orchestratorLandedCheckoutGraceMinutes = -1
+    knobs.orchestratorScratchGraceMinutes = 0
+    knobs.orchestratorReclaimedCheckoutRetentionDays = 365
+    knobs.save()
+    let rereadKnobs = Config(directoryForTesting: configDirectory)
+    expect("all three reclaim settings round-trip through config.json",
+           [rereadKnobs.orchestratorLandedCheckoutGraceMinutes,
+            rereadKnobs.orchestratorScratchGraceMinutes,
+            rereadKnobs.orchestratorReclaimedCheckoutRetentionDays], [-1, 0, 365])
 
     // A reclaim nobody documented is a reclaim somebody reports as data loss — and the one
     // thing a reader has to be told is which wait it does *not* observe.
