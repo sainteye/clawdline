@@ -820,6 +820,25 @@ export class CloudClient {
         return this._read(identity, "focus", { request: request }, "action:" + request);
     }
 
+    /**
+     * Stop one of that session's background commands on the Mac that published it.
+     *
+     * The shell panel's confirmation calls `api.killShell` unguarded, like Show on Mac, so its
+     * absence was the same silent `TypeError`. This one destroys something, so it resolves only on
+     * the owning Mac's answer: `unidentified` — nothing was signalled — reaches the panel as that
+     * word rather than as "stopped". An empty id is refused here, as the shell read refuses one.
+     */
+    killShell(value, shellId) {
+        var shell = readSubject(shellId);
+        if (!shell) return Promise.reject(missingSubject("shell"));
+        var identity;
+        try { identity = this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
+        var request = requestID();
+        return this._read(identity, "shell-kill", { request: request, shell: shell },
+                          "action:" + request);
+    }
+
     schedule(id) {
         try {
             var schedule = String(id || "");

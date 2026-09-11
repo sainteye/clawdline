@@ -47,6 +47,8 @@ struct CloudLocalRoute: Sendable {
             if let closeabilityVersion { object["expected_closeability_version"] = closeabilityVersion }
         case .focus(let session):
             route = "/v1/sessions/\(Self.segment(session))/focus"
+        case .shellKill(let session, let shell):
+            route = "/v1/sessions/\(Self.segment(session))/shells/\(Self.segment(shell))/kill"
         case .scheduleCreate(let data):
             route = "/v1/orchestrator/schedules"
             encodedBody = data

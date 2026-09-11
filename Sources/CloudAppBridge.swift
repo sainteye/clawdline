@@ -35,6 +35,7 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case resume(place: String, session: String, assistant: String)
     case end(session: String, acceptLoss: Bool, closeabilityVersion: String?)
     case focus(session: String)
+    case shellKill(session: String, shell: String)
     case scheduleCreate(body: Data)
     case scheduleUpdate(id: String, body: Data)
     case scheduleDelete(id: String)
@@ -865,6 +866,20 @@ actor CloudAppBridge {
                 return
             }
             command = .focus(session: session)
+            commandReply = (session, "action:" + request)
+        case "shell-kill":
+            // Stop a background command: the same named route and write switch as the direct
+            // page, answered so a refusal such as `unidentified` reaches the panel in its own word.
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "shell"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let shell = body["shell"] as? String, !shell.isEmpty,
+                  let request = Self.requestName(body["request"])
+            else {
+                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                return
+            }
+            command = .shellKill(session: session, shell: shell)
             commandReply = (session, "action:" + request)
         case "board-command":
             guard inbound.commandClass == .ctl,

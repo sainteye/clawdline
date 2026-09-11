@@ -457,6 +457,73 @@ handlers.conn = originalConnectionHandler;
 const { CloudClient } = await import("./cloud-client.js");
 assert.equal(typeof CloudClient.prototype.refreshSessionEvidence, "undefined",
     "the Cloud reconnect client does not inherit the local inventory-evidence operation");
+
+// **Every client method the page calls without asking must exist on the Cloud client.** Six did
+// not — `agent`, `shell`, `skills`, `git`, then `focus` and `killShell` — and each was found by
+// somebody pressing a button on app.clawdline.com and watching nothing happen, because an absent
+// method is a `TypeError` inside a click handler rather than a refusal. So the requirement is read
+// from the call sites instead of from a list somebody has to remember: a bare `api.X(` or
+// `client.X(` in a page module is a call this transport must answer, and `typeof api.X` in that
+// same module is the module saying the method is optional there. A guard in another module excuses
+// nothing here: it proves that module asked, not this one. `net/` holds the transports themselves;
+// `door/` is the local pairing door, which only `live.js` and `mock.js` ever open.
+const { readdirSync, readFileSync, statSync } = await import("node:fs");
+const { fileURLToPath } = await import("node:url");
+function unguardedClientCalls(sources) {
+    const calls = new Map();
+    for (const [file, text] of sources) {
+        const optional = new Set(Array.from(
+            text.matchAll(/typeof\s+(?:api|client)\.([A-Za-z_$][\w$]*)/g),
+            function (match) { return match[1]; }));
+        for (const match of text.matchAll(/(?<![.\w$])(?:api|client)\.([A-Za-z_$][\w$]*)\s*\(/g)) {
+            if (optional.has(match[1])) continue;
+            if (!calls.has(match[1])) calls.set(match[1], new Set());
+            calls.get(match[1]).add(file);
+        }
+    }
+    return calls;
+}
+const crossModule = unguardedClientCalls([
+    ["guarded.js", "if (typeof api.send === 'function') api.send(text);"],
+    ["bare.js", "api.send(text);"]]);
+assert.deepEqual(Array.from(crossModule.get("send") || []), ["bare.js"],
+    "a typeof guard in one module does not excuse a bare call in another");
+function missingFrom(calls, implementation) {
+    return Array.from(calls.keys()).filter(function (name) {
+        return typeof implementation[name] !== "function";
+    }).sort();
+}
+const probeCalls = unguardedClientCalls([["probe.js",
+    "api.focus(id); webhook.client.read(hook); if (typeof api.intents === 'function') api.intents(text);"]]);
+assert.deepEqual(Array.from(probeCalls.keys()), ["focus"],
+    "the scan counts a bare client call, not another object's `client`, and honours a typeof guard");
+assert.deepEqual(missingFrom(probeCalls, {}), ["focus"],
+    "and a transport without that method is reported by name");
+const pageRoot = fileURLToPath(new URL("../", import.meta.url));
+const pageSources = [];
+(function walk(directory) {
+    readdirSync(directory).sort().forEach(function (entry) {
+        const path = directory + entry;
+        if (statSync(path).isDirectory()) {
+            if (entry !== "net" && entry !== "door") walk(path + "/");
+        } else if (entry.endsWith(".js")) {
+            pageSources.push([path.slice(pageRoot.length), readFileSync(path, "utf8")]);
+        }
+    });
+})(pageRoot);
+const pageCalls = unguardedClientCalls(pageSources);
+console.log("client parity scan: " + pageSources.length + " page modules, "
+    + pageCalls.size + " unguarded client methods");
+// Floors, not counts: 74 modules and 31 unguarded methods when this was written. A moved
+// directory or a broken pattern reads zero, which is what these are here to refuse.
+assert.ok(pageSources.length >= 40 && pageCalls.size >= 20,
+    "the page scan read " + pageSources.length + " modules and found " + pageCalls.size
+        + " unguarded client methods; a scan that finds almost nothing has stopped looking");
+const cloudMissing = missingFrom(pageCalls, CloudClient.prototype);
+assert.deepEqual(cloudMissing, [], "the page calls client methods the Cloud client lacks: "
+    + cloudMissing.map(function (name) {
+        return name + " (" + Array.from(pageCalls.get(name)).join(", ") + ")";
+    }).join("; "));
 useApi({ focus: function () { return Promise.resolve(); } });
 document.dispatchEvent(new CustomEvent("clawdline:session-refresh"));
 assert.equal(waiting.querySelector("[data-refresh]"), null,
@@ -1580,6 +1647,40 @@ assert.match(cloudBridgeSwift,
 assert.match(cloudRouteSwift,
     /case \.focus\(let session\):\s+route = "\/v1\/sessions\/\\\(Self\.segment\(session\)\)\/focus"/,
     "and maps it to the existing named focus route rather than one the viewer names");
+
+// Stopping a background command is the same shape and the same former crash: the shell panel's
+// confirmation calls `api.killShell` unguarded. It destroys something, so it must also resolve
+// only on the owning Mac's answer — a toast saying "stopped" for a command still running is worse
+// than no button.
+const beforeKill = publishedReads(controlSocket).length;
+const killedShell = controlCloud.killShell("session-01", "bao9i2a93");
+await until(function () { return publishedReads(controlSocket).length === beforeKill + 1; },
+    "the stop-command request to leave");
+controlRequest = await requestBody(publishedReads(controlSocket)[beforeKill]);
+assert.deepEqual(Object.keys(controlRequest).sort(), ["request", "session", "shell", "type"],
+    "stopping a command carries exactly the closed shape the Mac decoder admits");
+assert.deepEqual({ type: controlRequest.type, session: controlRequest.session,
+    shell: controlRequest.shell }, { type: "shell-kill", session: "session-01", shell: "bao9i2a93" },
+    "Cloud names the owning Mac's session and that session's command, never a route");
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + controlRequest.request, status: 409,
+    error: { code: "unidentified", message: "nothing was signalled" }
+});
+await assert.rejects(killedShell, function (error) {
+    return error.code === "unidentified" && error.status === 409;
+}, "a Mac that could not tie the process to the session reaches the panel as that typed refusal");
+const beforeEmptyKill = publishedReads(controlSocket).length;
+await assert.rejects(controlCloud.killShell("session-01", ""), function (error) {
+    return error.code === "malformed_read";
+}, "a stop with no command id is refused before anything is published");
+assert.equal(publishedReads(controlSocket).length, beforeEmptyKill,
+    "and it spends no envelope");
+assert.match(cloudBridgeSwift,
+    /case "shell-kill":[\s\S]*?Set\(body\.keys\) == \["type", "session", "request", "shell"\][\s\S]*?command = \.shellKill\(session: session, shell: shell\)\s+commandReply = \(session, "action:" \+ request\)/,
+    "the Mac decoder admits exactly the stop shape and answers on the action the panel waits for");
+assert.match(cloudRouteSwift,
+    /case \.shellKill\(let session, let shell\):\s+route = "\/v1\/sessions\/\\\(Self\.segment\(session\)\)\/shells\/\\\(Self\.segment\(shell\)\)\/kill"/,
+    "and maps it to the existing named kill route, each id one escaped segment");
 
 const beforeFreshSchedules = publishedReads(controlSocket).length;
 const freshSchedules = controlCloud.schedules({ fresh: true });
