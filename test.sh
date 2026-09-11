@@ -462,6 +462,14 @@ node Tests/git-hooks.mjs
 # repositories under `mkdtemp` and a registry of its own: this machine's real
 # `~/.config/clawdline/orchestrator.json` is never opened.
 node Tests/landing-records-scope.mjs
+# The scratch tool that replaced the two snapshot recipes AGENTS.md used to print, which made
+# `mktemp -d` directories and removed none of them. What it promises is an absence, so every run here
+# is followed by a look at the root: success, a failing command whose status comes back unchanged,
+# INT, TERM and HUP leave nothing; `--keep` leaves one entry with a valid marker; a symlinked or
+# foreign root and a path outside the root are refused. Throwaway repositories and a scratch root
+# under `mkdtemp` only — this machine's `/tmp/clawdline-scratch` and `/tmp/.clawdline` are never
+# pointed at, and the refusal that keeps them out is itself counted. docs/scratch.md is the contract.
+node Tests/scratch-tool.mjs
 # The onboarding policy, compiled out of Sources/Onboarding.swift without its AppKit half: that a
 # config switch is not readiness, that an allocated credential is not a connection, and that the
 # installer reopens the exact bundle it just wrote. It runs here rather than in the Swift suite

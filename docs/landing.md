@@ -104,8 +104,11 @@ cleanup proves that the checkout no longer lies to the next Session about what i
 not use a clean target branch as permission to reset a shared worktree.
 
 1. Refresh the remote or canonical target, the exact landing receipt, `git status --short`, staged
-   diff, branch/head/target ancestry, and `git worktree list --porcelain`. Record when each reading
-   was taken; these are changing observations, not timeless facts.
+   diff, branch/head/target ancestry, and `git worktree list --porcelain` — and list **every scratch
+   path this line created outside the checkout**, which none of those can see: each entry
+   `tools/scratch.sh new` or `snapshot-run --keep` printed, read together with its
+   `.clawdline-scratch.json` marker, and any other directory the line made under `/tmp`. Record when
+   each reading was taken; these are changing observations, not timeless facts.
 2. Classify each remaining path or worktree registration independently:
    - `landed_identical`: the bytes are present in the verified target and the residue adds nothing;
    - `unlanded`: the bytes are not in the target and still belong to a named delivery;
@@ -113,15 +116,30 @@ not use a clean target branch as permission to reset a shared worktree.
    - `task_temporary`: output owned by a finished task and not part of its delivery;
    - `prunable_metadata`: the registered worktree path no longer exists and no live owner uses it;
    - `unknown`: evidence is missing, stale, ambiguous, or ownership cannot be resolved.
+
+   A scratch entry this line created and nothing still needs is `task_temporary`. One whose marker
+   is missing or unreadable, or whose owner is another live session, is `unknown`.
 3. Before changing anything, preserve `unlanded` and `mixed_conflict` content as a patch or branch
    whose base, head/digest, paths and owner are written down. A patch that cannot be reapplied or a
    branch whose target is unknown is not preservation.
 4. Remove only rows proved `landed_identical`, `task_temporary`, or `prunable_metadata`. Never
    stage, reset, delete, prune, rebase or overwrite another Session's live or unknown work. For a
-   mixed file, restore the canonical bytes and replay only the preserved unlanded hunks.
+   mixed file, restore the canonical bytes and replay only the preserved unlanded hunks. Remove a
+   scratch entry with `tools/scratch.sh remove <path>`, which refuses anything that is not an owned
+   entry, rather than with `rm -rf`.
 5. Refresh the same inventory. Completion requires no unattributed dirty/staged/untracked row,
-   every preserved delivery still present and verifiable, landing/target evidence aligned, and
-   every stale worktree registration either pruned or carrying a typed blocker with a named owner.
+   every preserved delivery still present and verifiable, landing/target evidence aligned, every
+   stale worktree registration either pruned or carrying a typed blocker with a named owner, and no
+   scratch path this line created still present — unless it was kept on purpose, and then the
+   handoff names it and its `keep_until`.
+
+**Scratch has the same rules as the checkout, because it belongs to the same line.** A root creates
+scratch only through `tools/scratch.sh`: a hand-made `mktemp -d` or `/tmp/<name>` directory carries
+no owner, so no inventory can tell it from somebody else's and nothing ever removes it. A copy of a
+credential, token or other secret lives only in an owned mode-`0700` entry from
+`tools/scratch.sh new`, and is removed before the turn that made it ends — a deploy session's copy
+of a gcloud configuration sat in a world-readable directory under `/private/tmp`, 17,810 files, until
+it was deleted by hand on 2026-09-11. The contract is [`scratch.md`](scratch.md).
 
 The final human message separately says **Fixed but not yet released (awaiting review)** and lists
 committed work that has not been installed or published; write `Nothing` when there is none. That

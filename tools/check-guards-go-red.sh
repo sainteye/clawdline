@@ -61,7 +61,7 @@ PREVENTS_MIN=24
 # suites and covering them is a programme, not a change. What is required is that the count never
 # falls: a ratchet, in the shape this repository already uses for its file-size ceilings. Raise it
 # with the proof that raises it.
-MJS_PROOF_FLOOR=1
+MJS_PROOF_FLOOR=2
 
 failures=0
 notes=0
