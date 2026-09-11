@@ -939,9 +939,10 @@ ROOT_CONVERSATION='<這個助理目前 process-bound conversation id>'
 ROOT_TERMINAL=$(curl -fsSG "http://127.0.0.1:$PORT/v1/orchestrator/whoami" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   --data-urlencode "conversation_id=$ROOT_CONVERSATION" | jq -er .terminal_id)
+ROOT_TERMINAL_SEGMENT=$(jq -rn --arg value "$ROOT_TERMINAL" '$value|@uri')
 jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
   | curl --fail-with-body -sS -X POST \
-      "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
+      "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL_SEGMENT/complete" \
       -H "X-Clawdline-Orchestrator: $TOKEN" \
       -H 'Content-Type: application/json' --data-binary @-
 ```
@@ -959,6 +960,8 @@ Child 工作；這是等待，不是待分流，也不是已交付。Root 同時
 `POST /v1/orchestrator/sessions/:id/state`，用 `state:"waiting_session"`、有界單行 `note`、
 精確的 `moved_by` 與 `person_needed:false` 宣告 handoff。這不是 completion receipt；整輪完成才用
 `/complete`，需要人的決定則用 `owed` 加 `/v1/orchestrator/notify`。
+只要把回傳的 terminal id 放進任一 session 路徑，都要先 percent-encode 成單一 URL segment；
+否則像 `%547` 這種 id 會被當成 escape sequence，而不是 Session id。
 
 有 claims 的 child 成果回來時，root 要用該 task secret 在原 task 上登記尚未關閉的義務：呼叫
 `POST /v1/orchestrator/tasks/:id/landing`，body 是
@@ -1200,7 +1203,9 @@ session 通常還在別的專案裡，那裡沒有裝這份 skill：只寫在這
 > Clawdline 上出現「已完成」勾的東西。兩通呼叫，都帶
 > `-H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)"`：
 > `GET /v1/orchestrator/whoami?conversation_id=<你自己的 conversation id>` 會回 `terminal_id`，
-> 然後 `POST /v1/orchestrator/sessions/<那個 terminal_id>/complete`，body 是
+> 先把它 percent-encode 成單一 URL segment（例如
+> `jq -rn --arg value "$ROOT_TERMINAL" '$value|@uri'`），再 `POST
+> /v1/orchestrator/sessions/<編碼後的 terminal_id>/complete`，body 是
 > `{"summary":"<一句話，500 字元以內>"}`。把它當成最後答覆前的最後一個工具動作，而且只給真的做完
 > 的一輪——做一半、只做了診斷、被擋住、或回頭問我，都不要送。
 

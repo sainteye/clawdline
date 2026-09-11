@@ -409,8 +409,12 @@ struct SessionImageArtifactStore {
             throw Refusal(status: 400, code: "invalid_image_path",
                           message: "Each image path must be one normalized absolute local path.")
         }
-        let url = URL(fileURLWithPath: path)
-        guard url.standardizedFileURL.path == path else {
+        let requestedURL = URL(fileURLWithPath: path)
+        let url = requestedURL.standardizedFileURL
+        let systemTemporaryAlias = path.hasPrefix("/private/")
+            && String(path.dropFirst("/private".count)) == url.path
+            && (url.path.hasPrefix("/tmp/") || url.path.hasPrefix("/var/"))
+        guard url.path == path || systemTemporaryAlias else {
             throw Refusal(status: 400, code: "invalid_image_path",
                           message: "Each image path must be one normalized absolute local path.")
         }

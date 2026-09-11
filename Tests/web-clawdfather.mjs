@@ -535,6 +535,10 @@ for (const guide of ["../Resources/skill-guides/clawdline.md",
     assert.match(text, /orchestrator\/whoami/,
         `${guide}: the receipt line does not say how a session resolves its own terminal id, which `
         + `is the half a receiver cannot look up`);
+    assert.match(text, /ROOT_TERMINAL_SEGMENT=\$\(jq[^\n]+\$value\|@uri/,
+        `${guide}: a percent-prefixed terminal id is not encoded before entering a URL path`);
+    assert.match(text, /sessions\/\$ROOT_TERMINAL_SEGMENT\/complete/,
+        `${guide}: the completion example computes an encoded segment but does not use it`);
 }
 
 // A session named to a person by its id alone is unreadable — the person cannot tell which of

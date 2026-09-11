@@ -9,6 +9,16 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: agent receipts and Claude scratchpad images were rejected by valid path spellings
+
+The shipped agent guides now percent-encode a Session's terminal id before putting it in a URL
+path. Terminal ids such as `%547` therefore reach that Session instead of being decoded as an
+unrelated character and returning `session_not_found`.
+
+Image upload now accepts macOS's standard `/private/tmp` and `/private/var` spellings for local
+temporary files. This includes Claude Code scratchpad screenshots. Other non-normalized paths,
+including traversal spellings, remain rejected.
+
 ### Fixed: background Session reads could fill the Cloud transcript lane
 
 Opening a conversation in the hosted Cloud console now carries an explicit interactive priority

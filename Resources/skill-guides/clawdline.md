@@ -1058,9 +1058,10 @@ ROOT_CONVERSATION='<this assistant process-bound conversation id>'
 ROOT_TERMINAL=$(curl -fsSG "http://127.0.0.1:$PORT/v1/orchestrator/whoami" \
   -H "X-Clawdline-Orchestrator: $TOKEN" \
   --data-urlencode "conversation_id=$ROOT_CONVERSATION" | jq -er .terminal_id)
+ROOT_TERMINAL_SEGMENT=$(jq -rn --arg value "$ROOT_TERMINAL" '$value|@uri')
 jq -n --arg summary "$SUMMARY" '{summary:$summary}' \
   | curl --fail-with-body -sS -X POST \
-      "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL/complete" \
+      "http://127.0.0.1:$PORT/v1/orchestrator/sessions/$ROOT_TERMINAL_SEGMENT/complete" \
       -H "X-Clawdline-Orchestrator: $TOKEN" \
       -H 'Content-Type: application/json' --data-binary @-
 ```
@@ -1081,6 +1082,8 @@ declares that handoff through `POST /v1/orchestrator/sessions/:id/state` with
 `state:"waiting_session"`, a bounded one-line `note`, the exact peer in `moved_by`, and
 `person_needed:false`. That is not a completion receipt. A whole completed turn uses `/complete`;
 a person-owned decision uses `owed` plus `/v1/orchestrator/notify`.
+Whenever a returned terminal id is inserted into either session path, percent-encode it as one URL
+segment first; ids such as `%547` are otherwise parsed as an escape sequence rather than an id.
 
 When claimed child work comes back, root records the open obligation on that task with its task
 secret: `POST /v1/orchestrator/tasks/:id/landing` and `{"state":"pending","target":"<ref>"}`.
@@ -1366,7 +1369,9 @@ written into the package and one not. Near enough verbatim:
 > one **delivery receipt**, which is what puts the *done* check on this session in Clawdline. Two
 > calls, both with `-H "X-Clawdline-Orchestrator: $(cat ~/.config/clawdline/orchestrator-token)"`:
 > `GET /v1/orchestrator/whoami?conversation_id=<your own conversation id>` gives back
-> `terminal_id`, and `POST /v1/orchestrator/sessions/<that terminal_id>/complete` with
+> `terminal_id`; percent-encode that value as one URL segment (for example with
+> `jq -rn --arg value "$ROOT_TERMINAL" '$value|@uri'`), then `POST
+> /v1/orchestrator/sessions/<that encoded terminal id>/complete` with
 > `{"summary":"<one sentence, at most 500 characters>"}` records it. Send it as the last tool
 > action before your final answer, and only for a turn that is actually finished — not for partial
 > work, a diagnosis, a blocker, or a question back to me.

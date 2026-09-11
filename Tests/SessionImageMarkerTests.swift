@@ -400,6 +400,19 @@ group("storing an image answers with its marker and leaves the message route alo
            SessionImageMarker.read(artifact?["marker"] as? String ?? "").ids, [artifactID])
     check("storing an image types nothing into any terminal", sent.isEmpty)
 
+    let systemAliasPath = input.path.hasPrefix("/tmp/") || input.path.hasPrefix("/var/")
+        ? "/private" + input.path : input.path
+    let aliased = store(object(["images": [["path": systemAliasPath]]]))
+    expect("a standard macOS /private temporary-directory alias is accepted", aliased.status, 200)
+    let inputDirectory = input.deletingLastPathComponent()
+    let nonNormalizedPath = inputDirectory.path + "/../" + inputDirectory.lastPathComponent
+        + "/shot.png"
+    let nonNormalized = store(object(["images": [["path": nonNormalizedPath]]]))
+    expect("a traversal spelling is still rejected rather than normalized silently",
+           nonNormalized.status, 400)
+    expect("the traversal spelling keeps the typed path refusal",
+           remoteErrorCode(nonNormalized), "invalid_image_path")
+
     let anonymous = store(object(["images": [["path": input.path]]]), token: "not-the-token")
     expect("a request with no credential at all is refused", anonymous.status, 401)
     expect("as unauthorized, the way every other machine route refuses one",
