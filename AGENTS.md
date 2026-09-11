@@ -351,6 +351,16 @@ compiled/runtime behavior may stop at its relevant static checks. A second full 
 when the first is typed `inconclusive_environment` (crash, timeout, or a named sandbox capability),
 never merely to see whether a green result was flaky. Record the reason beside the second receipt.
 
+**Verification is divided by question, not repeated by role.** The implementer proves the changed
+behavior once with an accumulated focused receipt. The reviewer reads that receipt and the diff;
+it does not rerun tests unless its review question needs runtime evidence that the receipt does not
+contain, and then it names that missing question. The integrator consumes both receipts and tests
+only new merge seams, correction findings, or changed dependencies before the release candidate's
+single exact full. Never rerun the same tree/question/environment tuple because ownership moved,
+because another Session cannot see the old stdout, or merely to obtain a fresh green. A non-semantic
+runner failure such as a fully evidenced `exit 133` is recorded once and left for the one final exact
+gate; repeated retries are not verification.
+
 **Review is risk-triggered, not ceremonial.** Require one independent sealed review for security,
 authentication, durable state, concurrency/backpressure, migrations, destructive/external actions,
 or a broad cross-component change. Routine localized code, docs, generated data and test-only

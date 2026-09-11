@@ -1066,6 +1066,12 @@ slug 唯一匹配 retained receipt 時才推導，缺失、衝突、任意路徑
    `CLAWDLINE_TEST_SEAL` runtime tuple，completion 綁定該 digest；裡面的實際執行數字不再回寫
    source。這些 machine-authenticated hashes 是 caller 的 attestation，不是 broker 自己重新觀測
    Git、command 或 log 的證明。
+
+   驗證要按「問題」分工，不是換一個 owner 就重跑。實作者只交一份累積式 focused proof；審查者
+   讀 diff 與這份證據，除非有一個具名審查問題缺少 runtime 證據，否則不重跑；整合者沿用兩邊
+   receipt，只驗合併後的新 seam、修正 finding 或真的改變的 dependency，最後整班 release 只付
+   一次 exact full。相同 tree／question／environment 不得只為了再拿一次綠燈而重跑。已完整留下
+   診斷的非語意 runner 中斷只記一次，剩餘問題交給最後 exact gate。
 5. **Build**，最後做一次——在最後一份落地之後，中間不要 build。它會替換並重啟使用者正在用的 app，
    所以動手前先說一聲，而且要從 HEAD 建，不是從工作樹。
 6. **恢復，並且跟每條線要「內部盤點」和「給人的收尾」。** 在任何東西重新開始之前，分開問每一條線：

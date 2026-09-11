@@ -1207,6 +1207,13 @@ ordering step is the one that is skipped, and it is the one that prevents the me
    the wrapper retains and hashes the printed `CLAWDLINE_TEST_SEAL` runtime tuple and binds that
    digest in completion. Its observed counts never rewrite source. These machine-authenticated
    hashes are caller attestations, not independent broker observation.
+
+   Verification is split by question, not repeated when ownership changes. The implementer supplies
+   one accumulated focused proof. A reviewer reads that proof and does not rerun it unless a named
+   review question lacks runtime evidence. The integrator reuses both receipts and runs only changed
+   merge seams, correction findings or dependencies before the release train's one exact full.
+   Never rerun the same tree/question/environment tuple merely to obtain a fresh green. A fully
+   evidenced non-semantic runner interruption is recorded once and left for the final exact gate.
 5. **Build**, once, at the end — after the last landing, never between them. It replaces and
    restarts the user's running app, so say so before you do it and do it from HEAD, not from the
    working tree.

@@ -86,6 +86,19 @@ checks.
 A third review requires `scope_changed`, `new_external_evidence`, or `systemic_pattern`. A repeated
 defect class beyond that correction seam moves to `architecture_hold` instead of a fourth patch.
 
+The stages above own different questions; they do not inherit one another's test list. The
+implementer owns one accumulated focused behavior proof. The reviewer normally owns no test run:
+it reads the exact diff and retained receipts, and runs something only when a named review question
+has no usable evidence. The landing root reuses both and verifies only changed merge seams,
+correction findings and changed dependencies before the release train's one exact full. Changing
+owners is not a reason to repeat a command. A tuple with the same tree, question and environment is
+reused, while a changed tree is tested only for the question the change could invalidate.
+
+When a focused runner ends for a known non-semantic transport condition after producing the
+required diagnostics—such as the repository's evidenced `exit 133` case—capture the bytes, tick
+count, last complete check and fatal count once. Do not rerun it until green. The remaining
+candidate-wide question belongs to the single exact full.
+
 ## Machine-readable verdict
 
 ```json

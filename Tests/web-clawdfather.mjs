@@ -519,6 +519,26 @@ for (const [surface, titleRule, idRule] of [
     assert.match(text, idRule, `${surface} keeps unclickable Session ids out of the human summary`);
 }
 
+// Verification responsibility follows the question, not the Session role. Keep the shipped guide
+// and repository working agreement explicit so a coordinator cannot turn one focused proof into
+// three identical runs merely because implementation, review and integration have different owners.
+for (const [surface, rules] of [
+    ["../Resources/skill-guides/clawdline.md",
+     [/implementer supplies[^.]*focused proof/i, /reviewer[^.]*does not rerun/i,
+      /integrator reuses/i, /same tree\/question\/environment/i]],
+    ["../Resources/skill-guides/clawdline.zh-TW.md",
+     [/實作者只交一份累積式 focused proof/, /審查者[^。]*不重跑/,
+      /整合者沿用/, /相同 tree／question／environment/]],
+    ["../AGENTS.md",
+     [/implementer proves[^.]*focused receipt/i, /reviewer[^.]*does not rerun/i,
+      /integrator consumes/i, /same tree\/question\/environment/i]],
+]) {
+    const text = await readFile(new URL(surface, import.meta.url), "utf8");
+    for (const rule of rules) {
+        assert.match(text, rule, `${surface} keeps role-specific verification reuse rule ${rule}`);
+    }
+}
+
 // The two lines a handoff sender writes into the package, held here because the package is the only
 // carrier that reaches a receiver in a project where nothing of this project is installed. On
 // 2026-09-05 only the naming line existed: a receiver made that call on arrival and finished
