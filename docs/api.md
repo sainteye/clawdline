@@ -2239,12 +2239,15 @@ below already had: a Session still building in its checkout keeps its `.build`. 
 runs, or cannot be read, the deadline stays outstanding and the beat asks again; the directory goes
 on the first beat after the process has gone.
 
-**Every removal proves its path immediately before it runs.** Each component from its root down —
-`/tmp/.clawdline` for `work/`, the worktree root for `.build` — must be a real directory rather than
-a symlink, and the path must still resolve inside that root. Checking only the last component is not
-enough, because the kernel follows every component above it. A path that fails is not removed: its
-deadline settles, and `orchestrator.work.kept` or `orchestrator.build.kept` names the reason
-(`symlink`, `root_symlink`, `not_directory`, `outside_root`, `unreadable`, `path_not_owned`).
+**Every removal proves its path immediately before it runs.** The root as spelled is examined first —
+`/tmp/.clawdline` for `work/`, the worktree root for `.build` — and must be a real directory, whatever
+spelling the path uses; then each component below it must be a real directory rather than a symlink,
+and the resolved path must still lie inside the resolved root. A root that is a symlink is refused
+even for a path spelled under the directory it points at, and a `.` or `..` in a spelling is refused
+rather than tidied. Checking only the last component is not enough, because the kernel follows every
+component above it. A path that fails is not removed: its deadline settles, and
+`orchestrator.work.kept` or `orchestrator.build.kept` names the reason (`symlink`, `root_symlink`,
+`root_not_normalized`, `not_directory`, `outside_root`, `unreadable`, `path_not_owned`).
 
 **What the six-hourly pass reclaims after that.** `cleanup()` hands one pass to the worktree queue,
 and every step in it keeps what it cannot prove and audits why. The task's owner is its recorded
@@ -2272,9 +2275,10 @@ before it runs, so a directory swapped for a symlink since the step decided is r
 - **Owned scratch.** Releasable entries of the owned scratch root ([`scratch.md`](scratch.md)) go
   `orchestrator_scratch_grace_minutes` after the later of their `created_at` and `keep_until`
   (default `60`, `-1…1440`; `-1` lists and removes none). Every direct child is judged on every pass,
-  however many there are, and the working directories of this user's processes are read again at the
-  removal itself, so a process that entered an entry after the listing keeps it.
-  `GET /v1/orchestrator/storage` lists the entries, up to the body limit it describes.
+  however many there are; a pass then removes at most 64 releasable entries, continuing from where the
+  previous pass stopped, and reads the working directories of this user's processes again once for
+  each batch of 16, immediately before its removals, so a process that entered an entry after the
+  listing keeps it. `GET /v1/orchestrator/storage` lists the entries, up to the body limit it describes.
 
 A finished task whose owner is still running also keeps its `<dir>` and its registry row through the
 sweep described next, whichever limit reaches the row. That includes the record count, which can
@@ -4615,7 +4619,9 @@ direct children are read:
 ```
 
 `root_state` is `present`, `absent`, or `refused` with `why` one of `root_not_absolute`,
-`root_symlink`, `root_not_directory`, `root_not_owned` or `root_unreadable`; a refused root is never
+`root_not_normalized` (a `.` or `..` component, which `lstat` resolves through whatever symlink
+stands before it), `root_symlink`, `root_not_directory`, `root_not_owned` or `root_unreadable`; a
+refused root is never
 replaced or worked around. An entry is `unknown`, and never removed, when its name is not
 `<purpose>.<random>` (`name_not_contract`); when it is a symlink, not a directory, another uid's, or
 not mode `0700` (`entry_symlink`, `entry_not_directory`, `entry_not_owned`, `entry_mode_not_0700`);
@@ -4633,11 +4639,15 @@ outside the entry is not seen; the grace period is what covers that.
 Every direct child is judged and counted in `totals`, however many there are. `entries` lists and
 sizes the first 1,000 by name; past that `truncated` is `true`, and each entry not listed still
 counts in `totals` by state and in `unknown_size_items`, because this response did not size it. The
-limit bounds the body only: the six-hourly pass judges and removes every entry whatever it lists.
-At the removal itself the pass reads again the entry's facts, the working directories — a process
-that entered the entry since the listing keeps it, and a table that cannot be read then keeps it,
-audited `orchestrator.scratch.kept` with `cwd_unreadable` — and the entry's path from the root down,
-so a root or entry swapped for a symlink is kept with `root_symlink` or `symlink`.
+limit bounds the body only: the six-hourly pass judges every entry whatever it lists, and takes up at
+most 64 releasable entries a pass, in name order from where the previous pass stopped and wrapping to
+the front, so every releasable entry is taken up within ⌈releasable ÷ 64⌉ passes of one app run; a
+restart begins again at the first name. It removes them in batches of 16. At the removal the pass
+reads again each entry's facts; then the working directories, once for the whole batch and
+immediately before its removals — a process that entered an entry since the listing keeps it, and a
+table that cannot be read then keeps the whole batch, audited `orchestrator.scratch.kept` with
+`cwd_unreadable`, and ends the pass, so one pass runs `lsof` at most five times; and the entry's path
+from the root down, so a root or entry swapped for a symlink is kept with `root_symlink` or `symlink`.
 
 ### `GET /v1/orchestrator/usage`, `.csv` (legacy forensic contracts)
 

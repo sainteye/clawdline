@@ -1570,13 +1570,21 @@ first beat after the process has gone removes the directory.
 **Every reclaim removal proves its path immediately before it runs.**
 `OwnedStorage.containedDirectory` walks the path from its root down — `/tmp/.clawdline` for `work/`,
 the worktree root for `.build`, dependency directories and checkouts, the preservation root for
-preserved deltas, the owned scratch root for scratch entries and their payload — with `lstat` on each
-component, so a symlink at any level is seen rather than followed, and then requires the resolved
-path to lie inside that root. `lstat` on the last component alone is not this check: the kernel
-follows every component above it, so a task directory replaced by a symlink hands a recursive
-removal a real `work/` somewhere else. A path that fails is kept and audited with its reason
-(`symlink`, `root_symlink`, `not_directory`, `outside_root`, `unreadable`); the root's own ancestors,
-such as `/tmp`, may be symlinks.
+preserved deltas, the owned scratch root for scratch entries and their payload. **The root as spelled
+is examined first**, with `lstat`, whatever spelling the path uses, and must be a real directory.
+Only then is the path's spelling chosen, byte for byte — below the root as spelled, or below its
+resolved spelling once `lstat` finds that to be the same directory, device and inode — and `lstat`
+runs on each component below, so a symlink at any level is seen rather than followed. Last, the
+resolved path must lie inside the resolved root. A root that is a symlink to a real directory is
+therefore refused even for a path spelled under that directory, and a root or path spelled with `.`
+or `..` is refused rather than tidied, because the kernel resolves those through whatever symlink
+stands before them. `lstat` on the last component alone is not this check: the kernel follows every
+component above it, so a task directory replaced by a symlink hands a recursive removal a real
+`work/` somewhere else. A path that fails is kept and audited with its reason (`symlink`,
+`root_symlink`, `root_not_normalized`, `not_directory`, `outside_root`, `unreadable`); the root's own
+ancestors, such as `/tmp`, may be symlinks. The checkout guards are this same walk rather than a
+second one: a checkout the task owns is exactly `<worktree root>/<slug>/<task-id>` proved from the
+worktree root, and a dependency directory is proved from the checkout as spelled.
 
 **Dependency directories go on that deadline too, once the task's process is gone.** Re-measured on
 2026-09-11, 13 `node_modules` directories held 3,492 MB of the 5,167 MB under the worktree root.
@@ -1605,10 +1613,17 @@ as written and then holds an entry some live process has as its working director
 with `SIGKILL` can leave its command running inside the entry while the marker names a dead owner. A
 file merely held open from elsewhere is not seen; `orchestrator_scratch_grace_minutes` (default 60,
 `-1…1440`, counted from the later of `created_at` and `keep_until`) is what covers that. `unknown` is
-never removed. A removal reads again, at the removal itself, the entry's facts and the working
-directories — a process that entered the entry after the listing looked keeps it, and a table that
-cannot be read then keeps it too — proves the entry from the root down before each read and removal
-inside it, removes the payload before the marker, and is audited as `orchestrator.scratch.reclaimed`;
+never removed. **A pass is bounded, and makes progress across passes.** It takes up at most 64
+releasable entries, in name order from where the previous pass stopped and wrapping to the front, so
+an entry that keeps failing to go is passed over rather than taken up first on every pass, and every
+releasable entry is taken up within ⌈releasable ÷ 64⌉ passes of one app run; the position is kept in
+memory, so a restart begins again at the first name. It removes them in batches of 16: each entry's
+facts are read again, then the working directories once for the whole batch, immediately before its
+removals — a process that entered an entry after the listing looked keeps it, and a table that cannot
+be read keeps the whole batch and ends the pass — so one pass runs `lsof` at most five times,
+whatever the root holds, on the worktree queue it shares with checkout inspection and disposal. Each
+removal proves the entry from the root down before each read and removal inside it, removes the
+payload before the marker, and is audited as `orchestrator.scratch.reclaimed`;
 `GET /v1/orchestrator/storage` lists the entries under `scratch`.
 
 ### File release waits belong to Clawdline

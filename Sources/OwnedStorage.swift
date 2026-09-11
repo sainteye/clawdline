@@ -548,10 +548,12 @@ enum OwnedStorage {
     }
 
     /// The root, read with `lstat` so a symlink is seen rather than followed. A trailing slash is
-    /// dropped first, because `lstat` on `link/` follows the link.
+    /// dropped first, because `lstat` on `link/` follows the link; a `.` or `..` component is
+    /// refused rather than read, because `lstat` on `link/.` follows the link just the same.
     static func scratchRootState(_ root: String, uid: uid_t = getuid()) -> ScratchRootState {
         let path = trimmedScratchRoot(root)
         guard path.hasPrefix("/") else { return .refused("root_not_absolute") }
+        guard !hasDotComponent(path) else { return .refused("root_not_normalized") }
         var info = stat()
         guard lstat(path, &info) == 0 else {
             return errno == ENOENT ? .absent : .refused("root_unreadable")
@@ -567,6 +569,31 @@ enum OwnedStorage {
         var path = root
         while path.count > 1, path.hasSuffix("/") { path.removeLast() }
         return path
+    }
+
+    /// Whether a path names a `.` or `..` component. The kernel resolves one physically, through
+    /// whatever symlink stands before it, so that spelling reaches a place a check made on the
+    /// spelling never looked at.
+    private static func hasDotComponent(_ path: String) -> Bool {
+        path.split(separator: "/").contains { $0 == "." || $0 == ".." }
+    }
+
+    /// `realpath(3)`: the physical spelling of a path that exists, or `nil`.
+    private static func resolvedPath(_ path: String) -> String? {
+        guard let resolved = realpath(path, nil) else { return nil }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
+    /// The components of `path` below `base`, compared byte for byte, or `nil` when `path` is not
+    /// spelled below it. `String.hasPrefix` compares characters, and two byte spellings of one
+    /// character are two names to a filesystem that does not normalize them.
+    static func componentsBelow(_ base: String, in path: String) -> [String]? {
+        let prefix = Array((base + "/").utf8)
+        let bytes = Array(path.utf8)
+        guard bytes.count > prefix.count, bytes.starts(with: prefix) else { return nil }
+        return String(decoding: bytes[prefix.count...], as: UTF8.self)
+            .split(separator: "/", omittingEmptySubsequences: false).map(String.init)
     }
 
     enum ContainedDirectory: Equatable {
@@ -588,50 +615,80 @@ enum OwnedStorage {
         }
     }
 
-    /// The check every reclaim removal makes immediately before it removes: `path` lies below
-    /// `root` as spelled, is reached from the root through real directories only — `lstat` on
-    /// each component in turn, so a symlink at any level is seen rather than followed — and is
-    /// still inside the root once resolved. The root's own ancestors may be symlinks (`/tmp`,
-    /// `/var`); the root itself may not.
+    /// The check every reclaim removal makes immediately before it removes. Its order is the
+    /// check:
+    ///
+    /// 1. **The root as spelled** is `lstat`ed first, whatever spelling `path` uses, and must be a
+    ///    real directory: a symlink root is `root_symlink`. Its own ancestors may be symlinks
+    ///    (`/tmp`, `/var`); a `.` or `..` in its spelling is `root_not_normalized`, because `lstat`
+    ///    on `link/.` follows the link.
+    /// 2. Only then is `path`'s spelling chosen, byte for byte: below the root as spelled, or below
+    ///    the root's resolved spelling — and a resolved spelling is walked only once `lstat` finds
+    ///    it to be the very directory step 1 proved, the same device and inode.
+    /// 3. Every component below it is `lstat`ed in turn and must be a real directory, so a symlink
+    ///    at any level is seen rather than followed.
+    /// 4. The path, resolved, must lie inside the root, resolved.
     ///
     /// `lstat` on the last component alone is not this check. The kernel follows every component
     /// above it, so a task directory replaced by a symlink hands that `lstat` a real `work/`
     /// somewhere else, and the recursive removal after it lands there too.
     static func containedDirectory(_ path: String, under root: String) -> ContainedDirectory {
+        containment(path, under: root).verdict
+    }
+
+    /// ``containedDirectory(_:under:)`` with the components it proved below the root, for a guard
+    /// that also has to know how deep the path sits. `below` is empty unless the path is proven.
+    static func containment(_ path: String, under root: String)
+        -> (verdict: ContainedDirectory, below: [String]) {
+        func refused(_ why: String) -> (verdict: ContainedDirectory, below: [String]) {
+            (.refused(why), [])
+        }
         let rootPath = trimmedScratchRoot(root)
         let target = trimmedScratchRoot(path)
-        guard rootPath.hasPrefix("/"), rootPath != "/" else { return .refused("root_not_absolute") }
-        let canonicalRoot = OrchestratorDraft.canonicalFilesystemPath(rootPath)
-        var walked: String
-        if target.hasPrefix(rootPath + "/") {
-            walked = rootPath
-        } else if target.hasPrefix(canonicalRoot + "/") {
-            walked = canonicalRoot
-        } else {
-            return .refused("outside_root")
+        guard rootPath.hasPrefix("/"), rootPath != "/" else { return refused("root_not_absolute") }
+        guard !hasDotComponent(rootPath) else { return refused("root_not_normalized") }
+        var rootInfo = stat()
+        guard lstat(rootPath, &rootInfo) == 0 else {
+            return errno == ENOENT ? (.missing, []) : refused("unreadable")
         }
-        let components = target.dropFirst(walked.count + 1)
-            .split(separator: "/", omittingEmptySubsequences: false)
-        guard !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
-            return .refused("outside_root")
+        switch rootInfo.st_mode & S_IFMT {
+        case S_IFDIR: break
+        case S_IFLNK: return refused("root_symlink")
+        default: return refused("root_not_directory")
         }
-        let steps: [Substring?] = [nil] + components.map { Optional($0) }
+        guard let resolvedRoot = resolvedPath(rootPath) else { return refused("unreadable") }
+        let spellings = [rootPath, resolvedRoot, OrchestratorDraft.canonicalFilesystemPath(rootPath)]
+        guard let index = spellings.firstIndex(where: { componentsBelow($0, in: target) != nil }),
+              let below = componentsBelow(spellings[index], in: target) else {
+            return refused("outside_root")
+        }
+        guard !below.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
+            return refused("outside_root")
+        }
         var info = stat()
-        for step in steps {
-            if let step { walked += "/" + step }
+        if index > 0 {
+            // Another spelling of the root is walked only as the very directory just proved.
+            guard lstat(spellings[index], &info) == 0 else {
+                return errno == ENOENT ? (.missing, []) : refused("unreadable")
+            }
+            guard (info.st_mode & S_IFMT) == S_IFDIR, info.st_dev == rootInfo.st_dev,
+                  info.st_ino == rootInfo.st_ino else { return refused("outside_root") }
+        }
+        var walked = spellings[index]
+        for component in below {
+            walked += "/" + component
             guard lstat(walked, &info) == 0 else {
-                return errno == ENOENT ? .missing : .refused("unreadable")
+                return errno == ENOENT ? (.missing, []) : refused("unreadable")
             }
             switch info.st_mode & S_IFMT {
             case S_IFDIR: continue
-            case S_IFLNK: return .refused(step == nil ? "root_symlink" : "symlink")
-            default: return .refused(step == nil ? "root_not_directory" : "not_directory")
+            case S_IFLNK: return refused("symlink")
+            default: return refused("not_directory")
             }
         }
-        guard OrchestratorDraft.canonicalFilesystemPath(walked).hasPrefix(canonicalRoot + "/") else {
-            return .refused("outside_root")
-        }
-        return .proven
+        guard let resolved = resolvedPath(walked), componentsBelow(resolvedRoot, in: resolved) != nil
+        else { return refused("outside_root") }
+        return (.proven, below)
     }
 
     static func scratchEntryFacts(root: String, name: String,
@@ -784,11 +841,7 @@ enum OwnedStorage {
     /// Whether any of `directories` is `entry` or inside it, compared both as spelled and through
     /// `realpath`, because `lsof` names `/tmp/x` as `/private/tmp/x`.
     private static func workingInside(_ entry: String, _ directories: Set<String>) -> Bool {
-        var spellings = [entry]
-        if let resolved = realpath(entry, nil) {
-            spellings.append(String(cString: resolved))
-            free(resolved)
-        }
+        let spellings = [entry] + (resolvedPath(entry).map { [$0] } ?? [])
         return directories.contains { directory in
             spellings.contains { directory == $0 || directory.hasPrefix($0 + "/") }
         }
@@ -799,18 +852,51 @@ enum OwnedStorage {
         let why: String
     }
 
-    /// Remove every releasable entry, reading again at the removal itself everything the listing
-    /// decided from: the entry's facts; the working directories of this user's processes, so a
-    /// process that entered the entry after the listing looked holds it and a table that cannot be
-    /// read now keeps it; and, before every read and removal inside the entry, its path from the
-    /// root down, so a root or entry swapped for a symlink since the listing is refused, never
-    /// followed. The payload goes first and the marker last, so an entry a removal only half
-    /// finished is still a releasable entry the next pass retries, rather than an `unknown` one
-    /// nothing will touch.
+    /// Releasable entries one pass takes up. The rest wait for a later pass, which begins after the
+    /// last name this one took (``ScratchSweepCursor``), so every releasable entry is taken up within
+    /// ⌈releasable ÷ this⌉ passes of one app run.
+    static let scratchSweepPassLimit = 64
+    /// Entries one reading of the working directories answers for. A pass reads them in its listing
+    /// and once for each batch, immediately before that batch's removals: at most
+    /// 1 + ⌈``scratchSweepPassLimit`` ÷ this⌉ `lsof` runs a pass, however many entries the root holds.
+    static let scratchSweepBatchSize = 16
+
+    /// Where the next pass over each scratch root begins: after the last name a pass took up. An
+    /// entry that keeps failing to go is then passed over, rather than taken up first on every pass
+    /// ahead of entries that would go. Kept in memory, so a restart begins again at the first name.
+    final class ScratchSweepCursor {
+        static let shared = ScratchSweepCursor()
+        private let lock = NSLock()
+        private var after: [String: String] = [:]
+
+        func position(_ root: String) -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return after[root]
+        }
+
+        func advance(_ root: String, past name: String) {
+            lock.lock()
+            defer { lock.unlock() }
+            after[root] = name
+        }
+    }
+
+    /// Remove releasable entries — at most ``scratchSweepPassLimit`` a pass, in name order from the
+    /// cursor on and wrapping to the front — reading again at the removal everything the listing
+    /// decided from: each entry's facts; then, once for each batch of ``scratchSweepBatchSize`` and
+    /// immediately before its removals, the working directories of this user's processes, so a
+    /// process that entered an entry after the listing looked holds it, and a table that cannot be
+    /// read holds the whole batch and ends the pass; and, before every read and removal inside an
+    /// entry, its path from the root down, so a root or entry swapped for a symlink since the listing
+    /// is refused, never followed. The payload goes first and the marker last, so an entry a removal
+    /// only half finished is still a releasable entry a later pass retries, rather than an `unknown`
+    /// one nothing will touch.
     @discardableResult
     static func sweepScratch(root: String, now: Date, graceMinutes: Int, uid: uid_t = getuid(),
                              ownerStatus: (ScratchOwner) -> ProcessStatus = scratchOwnerStatus,
-                             workingDirectories: () -> Set<String>? = processWorkingDirectories)
+                             workingDirectories: () -> Set<String>? = processWorkingDirectories,
+                             cursor: ScratchSweepCursor = .shared)
         -> [String] {
         let listing = scratchListing(root: root, now: now, graceMinutes: graceMinutes, uid: uid,
                                      ownerStatus: ownerStatus,
@@ -819,6 +905,13 @@ enum OwnedStorage {
             RemoteAuth.audit("orchestrator.scratch.root_refused", ["root": listing.root, "why": why])
             return []
         }
+        for row in listing.rows where row.decision.state == .unknown {
+            RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": row.decision.why])
+        }
+        let releasable = listing.rows.filter { $0.decision.mayCollect }
+        let taken = Array((cursor.position(listing.root).map { after in
+            releasable.filter { $0.name > after } + releasable.filter { $0.name <= after }
+        } ?? releasable).prefix(scratchSweepPassLimit))
         let manager = FileManager.default
         var removed: [String] = []
         func proved(_ entry: String) throws -> String {
@@ -827,36 +920,43 @@ enum OwnedStorage {
             }
             return entry
         }
-        for row in listing.rows {
-            switch row.decision.state {
-            case .held:
-                continue
-            case .unknown:
-                RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": row.decision.why])
-            case .releasable:
+        for start in stride(from: 0, to: taken.count, by: scratchSweepBatchSize) {
+            let batch = taken[start..<min(start + scratchSweepBatchSize, taken.count)]
+            let collectable = batch.compactMap { row -> (row: ScratchRow, why: String)? in
                 let again = evaluateScratch(
                     scratchEntryFacts(root: listing.root, name: row.name, ownerStatus: ownerStatus),
                     uid: uid, now: now, graceMinutes: graceMinutes)
-                guard again.mayCollect else { continue }
+                guard again.mayCollect else { return nil }
+                return (row: row, why: again.why)
+            }
+            if !collectable.isEmpty {
                 guard let working = workingDirectories() else {
-                    RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": "cwd_unreadable"])
-                    continue
-                }
-                guard !workingInside(row.path, working) else { continue }
-                do {
-                    for child in try manager.contentsOfDirectory(atPath: proved(row.path))
-                    where child != scratchMarkerName {
-                        try manager.removeItem(atPath: proved(row.path) + "/" + child)
+                    for entry in collectable {
+                        RemoteAuth.audit("orchestrator.scratch.kept",
+                                         ["path": entry.row.path, "why": "cwd_unreadable"])
                     }
-                    try manager.removeItem(atPath: proved(row.path))
-                    removed.append(row.path)
-                    RemoteAuth.audit("orchestrator.scratch.reclaimed", [
-                        "path": row.path, "purpose": row.marker?.purpose ?? "", "why": again.why,
-                    ])
-                } catch {
-                    RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": "remove_failed"])
+                    return removed
+                }
+                for entry in collectable where !workingInside(entry.row.path, working) {
+                    let row = entry.row
+                    do {
+                        for child in try manager.contentsOfDirectory(atPath: proved(row.path))
+                        where child != scratchMarkerName {
+                            try manager.removeItem(atPath: proved(row.path) + "/" + child)
+                        }
+                        try manager.removeItem(atPath: proved(row.path))
+                        removed.append(row.path)
+                        RemoteAuth.audit("orchestrator.scratch.reclaimed", [
+                            "path": row.path, "purpose": row.marker?.purpose ?? "", "why": entry.why,
+                        ])
+                    } catch let refusal as ScratchRemovalRefused {
+                        RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": refusal.why])
+                    } catch {
+                        RemoteAuth.audit("orchestrator.scratch.kept", ["path": row.path, "why": "remove_failed"])
+                    }
                 }
             }
+            if let last = batch.last { cursor.advance(listing.root, past: last.name) }
         }
         return removed
     }

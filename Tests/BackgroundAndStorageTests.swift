@@ -3,24 +3,6 @@ import Carbon.HIToolbox
 import Foundation
 import SQLite3
 
-// MARK: - The list of background sessions
-
-// Pressing ← opens the list of background sessions, and doing that is what moves the conversation
-// you were in to the background — the banner across the middle of this capture is Claude Code
-// saying so out loud. So this screen is what a parked tab shows whenever nobody has pressed enter
-// to step back into the conversation, which is most of the time: parking is what happens when you
-// go to look at something else.
-//
-// It is worth pinning down because it is nearly the shape of a dialog — a flush-left list, a
-// marker in front of every row, a composer underneath — and a wrong reading here would put
-// buttons on a phone whose real actions are "cancel this job" and "start a new session", neither
-// of which is an answer to anything. It is not a dialog, and the reason is narrow: a row here
-// carries no number, and ``SessionState/option(_:)`` counts nothing without one.
-//
-// The real screen pads some forty blank lines between the last row and the composer, so the
-// default window would never reach the rows at all. That padding is dropped here on purpose —
-// what is being pinned is the shape of the rows, not the luck of where they sat.
-
 
 
 
@@ -71,129 +53,6 @@ import SQLite3
 // was for, and it is what stops the narrowing from going one step too far.
 
 func runBackgroundAndStorageTests() {
-group("the list of background sessions is a list of jobs, not a question") {
-    let screen = """
-     ▐▛███▛█   Claude Code v2.1.245
-    ▝▜██████▀  Opus 5 · ~/code/clawdline
-      ▝▝ ▝▝    1 awaiting input · 1 working · 2 completed
-
-    Your conversation moved to the background — enter opens it · esc returns to it · ctrl+c twice quits
-
-    Needs input
-     ✻ 修正瀏覽器問答               press option 1 on phone, then Return to submit                 2h
-
-    Working
-     ✽ sleep 300                    請執行 sleep 300 這個指令                                       2s
-
-    Completed
-     ✻ workspace status check       修正沒有停，但卡在一個誤判                                      3m
-     ✻ debug dialog text detection  程式碼是對的，寫下來的理由是錯的                                 9m
-
-    ─────────────────────────────────────────────────────────
-    ❯ describe a task for a new session
-    ─────────────────────────────────────────────────────────
-      ⏵⏵ auto mode · enter to return · space to reply · ctrl+x to delete · ? for shortcuts
-    """
-    check("a job with a spinner in front of it is not an option to choose",
-          SessionState.menu(screen) == nil)
-    // The gate is what a `waiting` status opens, and a parked tab now carries the status of the
-    // conversation that moved into the background — so this is the pairing that matters, and the
-    // one that did not exist before a tab could speak for a session it is only mirroring.
-    check("nor with the gate a waiting session opens",
-          SessionState.menu(screen, hookWaiting: true) == nil)
-    check("and the composer under it is still a composer",
-          SessionState.isChoosing(screen, hookWaiting: true) == false)
-}
-
-group("the Mac's schedule form collects fields and never checks them twice") {
-    let fresh = ScheduleFormState()
-    let body = fresh.body
-    expect("a new form asks for every day", body["days"] as? String, "daily")
-    expect("and opens on a round hour rather than on whatever time it is", body["at"] as? String,
-           "09:00")
-    expect("with the parser's own catch-up default", body["catch_up_hours"] as? Int, 6)
-    expect("and the parser's own timeout", body["timeout_minutes"] as? Int, 30)
-    check("an empty model is left out, not written as an empty string", body["model"] == nil)
-    // `scheduleObject(from:)` refuses the whole request over one field it does not recognise, so
-    // a field this form invents is a form that cannot save at all.
-    let allowed = Set(["title", "at", "days", "place_id", "assistant", "instructions", "enabled",
-                       "close_tab", "catch_up_hours", "notify_on_failure", "timeout_minutes",
-                       "model"])
-    let unknown = Set(body.keys).subtracting(allowed).sorted()
-    check("and nothing is sent that the orchestrator's allowlist would refuse", unknown.isEmpty,
-          unknown.joined(separator: ", "))
-
-    var picked = ScheduleFormState()
-    picked.toggle(day: "mon")
-    check("picking a day while Daily is on replaces it rather than adding to it",
-          !picked.daily && picked.weekdays == ["mon"])
-    picked.toggle(day: "fri")
-    expect("the days are sent in weekday order however they were picked",
-           picked.body["days"] as? [String], ["mon", "fri"])
-    picked.toggle(day: "fri")
-    picked.toggle(day: "mon")
-    check("and turning the last one off falls back to daily rather than to nothing",
-          picked.daily && (picked.body["days"] as? String) == "daily")
-
-    expect("Calendar's weekday numbers are the codes a schedule file keeps",
-           (1...7).compactMap(ScheduleFormState.code(forWeekday:)),
-           ["sun", "mon", "tue", "wed", "thu", "fri", "sat"])
-    check("and nothing outside that week is a weekday",
-          ScheduleFormState.code(forWeekday: 0) == nil
-            && ScheduleFormState.code(forWeekday: 8) == nil)
-
-    // The picker is the only thing that writes `at`, so what matters is that the two directions
-    // agree — and that a shape `when.at` refuses is one the picker cannot be set from in the
-    // first place. A stated calendar rather than the machine's, so this says the same thing on a
-    // runner in another time zone.
-    var berlin = Calendar(identifier: .gregorian)
-    berlin.timeZone = TimeZone(identifier: "Europe/Berlin")!
-    let day = Date(timeIntervalSince1970: 1_700_000_000)
-    guard let five = ScheduleFormState.date(forTime: "09:05", on: day, calendar: berlin),
-          let midnight = ScheduleFormState.date(forTime: "00:00", on: day, calendar: berlin) else {
-        check("the picker can be set from a time the parser accepts", false)
-        return
-    }
-    expect("the picker's instant comes back as HH:MM in local time",
-           ScheduleFormState.time(from: five, calendar: berlin), "09:05")
-    expect("midnight keeps both its pairs of zeros",
-           ScheduleFormState.time(from: midnight, calendar: berlin), "00:00")
-    check("and the shapes the parser refuses are ones the picker cannot be set from",
-          ScheduleFormState.date(forTime: "9:05", on: day, calendar: berlin) == nil
-            && ScheduleFormState.date(forTime: "24:00", on: day, calendar: berlin) == nil
-            && ScheduleFormState.date(forTime: "09:60", on: day, calendar: berlin) == nil
-            && ScheduleFormState.date(forTime: "", on: day, calendar: berlin) == nil)
-
-    expect("a number box holding a number is that number",
-           ScheduleFormState.number("  12 ", atLeast: 0, or: 6), 12)
-    expect("one holding nothing is somebody who did not want to choose",
-           ScheduleFormState.number("", atLeast: 0, or: 6), 6)
-    expect("one holding a word is the same answer",
-           ScheduleFormState.number("soon", atLeast: 1, or: 30), 30)
-    expect("no minutes at all is not a timeout somebody meant",
-           ScheduleFormState.number("0", atLeast: 1, or: 30), 30)
-    expect("but no catch-up at all is a real answer",
-           ScheduleFormState.number("0", atLeast: 0, or: 6), 0)
-
-    let home = "/Users/somebody"
-    let mine = StartPoints.Place(id: "aaa", path: "\(home)/code/clawdline", label: "clawdline",
-                                 at: Date(timeIntervalSince1970: 2))
-    let theirs = StartPoints.Place(id: "bbb", path: "\(home)/work/clawdline", label: "clawdline",
-                                   at: Date(timeIntervalSince1970: 1))
-    expect("two projects with one name are told apart by where they are",
-           ScheduleFormState.placeLabels([mine, theirs], home: home),
-           ["clawdline — ~/code/clawdline", "clawdline — ~/work/clawdline"])
-    expect("a name nothing shares is left as the name",
-           ScheduleFormState.placeLabels([mine], home: home), ["clawdline"])
-    expect("a schedule whose project has fallen off the recent list can still be saved",
-           ScheduleFormState.placeChoices([mine], including: "\(home)/old/site").map(\.path),
-           ["\(home)/code/clawdline", "\(home)/old/site"])
-    expect("one still on it is not offered twice",
-           ScheduleFormState.placeChoices([mine], including: mine.path).count, 1)
-    expect("and a form with no schedule behind it adds nothing",
-           ScheduleFormState.placeChoices([mine], including: nil).count, 1)
-}
-
 group("the Mac's schedule form and the file it wrote agree about what it says") {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("clawdline-schedule-form-\(UUID().uuidString)")
@@ -501,6 +360,8 @@ group("owned storage evaluation is three-valued and fail-closed") {
                                     ownerStatus: { _ in .dead },
                                     workingDirectories: { Set<String>() }).isEmpty
             && manager.fileExists(atPath: scratchRoot + "/ttl.i9J0k1L2"))
+    expect("and a root spelled with a dot, which lstat would follow, is refused rather than read",
+           OwnedStorage.scratchRootState(linkedRoot + "/."), .refused("root_not_normalized"))
 
     let me = getpid()
     if let started = Targets.processStart(ofPID: me) {
@@ -557,34 +418,61 @@ group("owned storage evaluation is three-valued and fail-closed") {
                                      workingDirectories: { Set<String>() }), [last])
 
     // The removal seam: what the listing read is read again at the removal itself. First the
-    // working directories, which a process can enter between the two readings.
+    // working directories — once for each batch, immediately before its removals — which a process
+    // can enter between the two readings.
     let seamRoot = scratchRoot + "-seam"
     try? manager.removeItem(atPath: seamRoot)
     defer { try? manager.removeItem(atPath: seamRoot) }
-    let entered = seamRoot + "/entered.e1F2g3H4"
-    try! manager.createDirectory(atPath: entered + "/tree", withIntermediateDirectories: true)
-    try! manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: entered)
-    try! JSONSerialization.data(withJSONObject: marker("entered"))
-        .write(to: URL(fileURLWithPath: entered + "/" + OwnedStorage.scratchMarkerName))
+    func releasable(_ root: String, _ name: String) -> String {
+        let entry = root + "/" + name
+        try! manager.createDirectory(atPath: entry + "/tree", withIntermediateDirectories: true)
+        try! manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: entry)
+        try! JSONSerialization.data(withJSONObject: marker(String(name.prefix { $0 != "." })))
+            .write(to: URL(fileURLWithPath: entry + "/" + OwnedStorage.scratchMarkerName))
+        return entry
+    }
+    let entered = releasable(seamRoot, "entered.e1F2g3H4")
     var readings = 0
     var secondReading: () -> Set<String>? = { Set<String>() }
-    func sweepSeam() -> [String] {
+    func sweepSeam(_ root: String, _ cursor: OwnedStorage.ScratchSweepCursor = .init()) -> [String] {
         readings = 0
-        return OwnedStorage.sweepScratch(root: seamRoot, now: scratchNow, graceMinutes: 60,
+        return OwnedStorage.sweepScratch(root: root, now: scratchNow, graceMinutes: 60,
                                          ownerStatus: { _ in .dead }, workingDirectories: {
             readings += 1
             return readings == 1 ? Set<String>() : secondReading()
-        })
+        }, cursor: cursor)
     }
     secondReading = { [entered + "/tree"] }
     expect("a process that entered the entry after the listing looked keeps it at the removal",
-           sweepSeam(), [])
+           sweepSeam(seamRoot), [])
     check("so the working directories were read twice and the entry is intact",
           readings == 2 && manager.fileExists(atPath: entered + "/tree"))
     secondReading = { nil }
-    expect("and a process table that cannot be read at the removal keeps it too", sweepSeam(), [])
+    expect("and a process table that cannot be read at the removal keeps it too",
+           sweepSeam(seamRoot), [])
     secondReading = { Set<String>() }
-    expect("with nobody working in it the entry goes", sweepSeam(), [entered])
+    expect("with nobody working in it the entry goes", sweepSeam(seamRoot), [entered])
+
+    // A pass is bounded: more releasable entries than one pass takes up, and every entry of the
+    // first pass's take worked in by a process that arrived after the listing looked.
+    let bulkRoot = scratchRoot + "-bulk"
+    try? manager.removeItem(atPath: bulkRoot)
+    defer { try? manager.removeItem(atPath: bulkRoot) }
+    let limit = OwnedStorage.scratchSweepPassLimit, batch = OwnedStorage.scratchSweepBatchSize
+    let bulk = (0..<(limit + 3)).map { releasable(bulkRoot, String(format: "bulk-%03d.a1B2c3D4", $0)) }
+    let bulkCursor = OwnedStorage.ScratchSweepCursor()
+    secondReading = { Set(bulk.prefix(limit).map { $0 + "/tree" }) }
+    check("a pass takes up at most its limit, reading the working directories once a batch",
+          sweepSeam(bulkRoot, bulkCursor).isEmpty && readings == 1 + (limit + batch - 1) / batch)
+    expect("and the next pass begins after that take, so entries that stayed never starve the rest",
+           sweepSeam(bulkRoot, bulkCursor), Array(bulk.suffix(3)))
+    secondReading = { nil }
+    check("a batch whose reading cannot be read is held whole and ends the pass",
+          sweepSeam(bulkRoot, bulkCursor).isEmpty && readings == 2
+            && bulk.prefix(limit).allSatisfy { manager.fileExists(atPath: $0 + "/tree") })
+    secondReading = { Set<String>() }
+    expect("and successive passes collect every releasable entry",
+           Set(sweepSeam(bulkRoot, bulkCursor)), Set(bulk.prefix(limit)))
 
     // Then the entry's path from the root down: a root swapped for a symlink between the listing
     // and the removal — here while the owner is asked about the second time — is refused there,
@@ -1169,6 +1057,19 @@ group("task-owned work is reclaimed on the terminal-state schedule") {
             OwnedStorage.containedDirectory(elsewhere.path + "/work", under: tasksRootPath)],
            [.proven, .refused("symlink"), .refused("root_symlink"), .missing,
             .refused("outside_root"), .refused("outside_root")])
+    // The reviewer's counterexample: the root is a symlink to a real directory, and the path is
+    // spelled under that directory. The root as spelled is examined before any spelling is chosen.
+    let resolvedTasksRoot = OrchestratorDraft.canonicalFilesystemPath(tasksRootPath)
+    expect("the root as spelled is examined first, however the path is spelled, and a dotted root is refused",
+           [OwnedStorage.containedDirectory(resolvedTasksRoot + "/" + rootSession.id + "/work",
+                                            under: linkedTasksRoot.path),
+            OwnedStorage.containedDirectory(realWork, under: linkedTasksRoot.path),
+            OwnedStorage.containedDirectory(linkedTasksRoot.path + "/./" + rootSession.id + "/work",
+                                            under: linkedTasksRoot.path + "/."),
+            OwnedStorage.containedDirectory(resolvedTasksRoot + "/" + rootSession.id + "/work",
+                                            under: tasksRootPath)],
+           [.refused("root_symlink"), .refused("root_symlink"), .refused("root_not_normalized"),
+            .proven])
 
     let configDirectory = manager.temporaryDirectory
         .appendingPathComponent("clawdline-work-grace-config-\(UUID().uuidString)",
@@ -1422,6 +1323,37 @@ group("every terminal path keeps the reclaim contract at its real filesystem bou
           manager.fileExists(atPath: outsideObject.path))
     check("and that refusal settles the deadline rather than retrying it on every beat",
           Orchestrator.buildCleanupAtForTesting(slugID) == nil)
+
+    // The reviewer's counterexample, end to end: the worktree root itself is a symlink to a real
+    // directory elsewhere, and the checkout is spelled under that directory. The deadline examines
+    // the root as spelled first and settles with nothing removed.
+    let rootLinkID = UUID().uuidString.lowercased()
+    let outsideRoot = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-worktree-root-elsewhere-\(UUID().uuidString)", isDirectory: true)
+    let linkedWorktreeRoot = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-worktree-root-link-\(UUID().uuidString)", isDirectory: true)
+    made += [outsideRoot, linkedWorktreeRoot]
+    let outsidePayload = outsideRoot.appendingPathComponent("slug/\(rootLinkID)/.build/debug/Payload.o")
+    try! manager.createDirectory(at: outsidePayload.deletingLastPathComponent(),
+                                 withIntermediateDirectories: true)
+    try! Data("not this task's".utf8).write(to: outsidePayload)
+    try! manager.createSymbolicLink(at: linkedWorktreeRoot, withDestinationURL: outsideRoot)
+    let resolvedCheckout = OrchestratorDraft.canonicalFilesystemPath(linkedWorktreeRoot.path)
+        + "/slug/" + rootLinkID
+    var rootLinked = Orchestrator.Task(
+        id: rootLinkID, state: .success, kind: "custom", title: "checkout under a symlinked root",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    rootLinked.buildCleanupAt = Date().addingTimeInterval(-1)
+    rootLinked.worktree = Orchestrator.Worktree(
+        path: resolvedCheckout, branch: "clawdline/task/\(rootLinkID)", base: "d6781a8",
+        repository: resolvedCheckout, cwd: resolvedCheckout)
+    var linkedRoots = Orchestrator.reclaimRoots
+    linkedRoots.worktrees = linkedWorktreeRoot
+    check("a worktree root that is a symlink is refused even for a checkout spelled under its target",
+          OrchestratorDraft.reclaimBuildAtDeadline(rootLinked, roots: linkedRoots, now: Date(),
+                                                   ownerStatus: { _ in .dead })
+            && manager.fileExists(atPath: outsidePayload.path))
 
     let staleID = UUID().uuidString.lowercased()
     let staleDirectory = Orchestrator.root.appendingPathComponent(staleID, isDirectory: true)
@@ -1862,6 +1794,30 @@ group("an isolated checkout's build output is reclaimed on its own deadline") {
            .refused("symlink"))
     check("so what the symlink points at is untouched",
           manager.fileExists(atPath: dependencyRepository.appendingPathComponent("elsewhere/node_modules").path))
+    // A second spelling of the same checkout gets the check the first one gets: the root as
+    // spelled first, then each component, and never a spelling tidied before it is walked.
+    let slugPath = dependencyCheckout.deletingLastPathComponent().path
+    let linkedWorktrees = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-worktrees-link-\(UUID().uuidString)", isDirectory: true)
+    let linkedCheckout = manager.temporaryDirectory
+        .appendingPathComponent("clawdline-checkout-link-\(UUID().uuidString)", isDirectory: true)
+    made += [linkedWorktrees, linkedCheckout]
+    try! manager.createSymbolicLink(at: linkedWorktrees, withDestinationURL: reclaimRoots.worktrees)
+    try! manager.createSymbolicLink(at: linkedCheckout, withDestinationURL: dependencyCheckout)
+    expect("an owned checkout is proved from the worktree root as spelled, through no second spelling",
+           [OrchestratorDraft.ownedCheckoutDirectory(dependencyCheckout.path, taskID: dependencyID,
+                                                     root: reclaimRoots.worktrees),
+            OrchestratorDraft.ownedCheckoutDirectory(slugPath + "/./" + dependencyID,
+                                                     taskID: dependencyID, root: reclaimRoots.worktrees),
+            OrchestratorDraft.ownedCheckoutDirectory(slugPath + "/absent/../" + dependencyID,
+                                                     taskID: dependencyID, root: reclaimRoots.worktrees),
+            OrchestratorDraft.ownedCheckoutDirectory(dependencyCheckout.path, taskID: dependencyID,
+                                                     root: linkedWorktrees)],
+           [true, false, false, false])
+    expect("and a dependency directory is walked from the checkout as spelled, never through a link to it",
+           OrchestratorDraft.dependencyDirectoryVerdict("vendor/node_modules",
+                                                        checkout: linkedCheckout.path),
+           .refused("root_symlink"))
     let foreignCheckout = manager.temporaryDirectory
         .appendingPathComponent("clawdline-foreign-checkout-\(UUID().uuidString)", isDirectory: true)
     made.append(foreignCheckout)

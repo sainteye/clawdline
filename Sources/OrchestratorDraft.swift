@@ -1161,18 +1161,15 @@ enum OrchestratorDraft {
     }
 
     /// Whether `path` is a checkout this task owns under `root`: exactly `<root>/<slug>/<task-id>`,
-    /// both components below the root real directories rather than symlinks. Registry text is held
-    /// against the root it must live under before any git runs inside it.
+    /// proved by ``OwnedStorage/containment(_:under:)`` — the root as spelled first, then the slug
+    /// and the checkout real directories, then the resolved path inside the resolved root. The
+    /// spelling is never tidied first: `x/../` or `/./` is refused rather than standardized away,
+    /// because the kernel resolves it through whatever `x` is. Registry text is held against the
+    /// root it must live under before any git runs inside it.
     static func ownedCheckoutDirectory(_ path: String, taskID: String, root: URL) -> Bool {
-        let checkout = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL
-        let slug = checkout.deletingLastPathComponent()
-        guard isTaskID(taskID), checkout.lastPathComponent == taskID,
-              canonicalFilesystemPath(slug.deletingLastPathComponent().path)
-                == canonicalFilesystemPath(root.path) else { return false }
-        return [slug.path, checkout.path].allSatisfy { component in
-            var info = stat()
-            return lstat(component, &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
-        }
+        let proof = OwnedStorage.containment(path, under: root.path)
+        return isTaskID(taskID) && proof.verdict == .proven && proof.below.count == 2
+            && proof.below.last == taskID
     }
 
     enum LandedCheckoutOutcome: Equatable {
@@ -1395,8 +1392,9 @@ enum OrchestratorDraft {
         case refused(String)
     }
 
-    /// Whether one candidate may go: named `node_modules` or `.venv`, reached from the checkout
-    /// through real directories only, still inside it once resolved, matched by an ignore rule
+    /// Whether one candidate may go: named `node_modules` or `.venv`, reached through real
+    /// directories only from the checkout as spelled — itself a real directory, never a symlink to
+    /// one — still inside it once resolved, matched by an ignore rule
     /// (`check-ignore --no-index`, so the pattern answers on its own), and holding no tracked path
     /// (`ls-files`, which answers the other half). Every fact is re-proved here even for a path git
     /// itself listed.
@@ -1407,16 +1405,12 @@ enum OrchestratorDraft {
               !components.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else {
             return .refused("not_a_dependency_directory")
         }
-        var walked = checkout
-        for component in components {
-            walked += "/" + component
-            var info = stat()
-            guard lstat(walked, &info) == 0 else { return .refused("unreadable") }
-            let kind = info.st_mode & S_IFMT
-            guard kind == S_IFDIR else { return .refused(kind == S_IFLNK ? "symlink" : "not_directory") }
-        }
-        guard canonicalFilesystemPath(walked).hasPrefix(canonicalFilesystemPath(checkout) + "/") else {
-            return .refused("outside_checkout")
+        // The walk every removal makes, rooted at the checkout: the checkout as spelled first.
+        switch OwnedStorage.containedDirectory(checkout + "/" + relative, under: checkout) {
+        case .proven: break
+        case .missing: return .refused("unreadable")
+        case .refused("outside_root"): return .refused("outside_checkout")
+        case .refused(let why): return .refused(why)
         }
         // No literal-pathspec variable for `check-ignore`: it refuses that magic outright (exit 128).
         guard let ignored = git(["check-ignore", "-q", "--no-index", "--", relative], cwd: checkout,
@@ -1493,7 +1487,9 @@ enum OrchestratorDraft {
         let contained = OwnedStorage.containedDirectory(build, under: roots.worktrees.path)
         guard contained == .proven else { return contained }
         guard ownedCheckoutDirectory(worktree.path, taskID: taskID, root: roots.worktrees),
-              build.hasPrefix(worktree.path + "/") else { return .refused("path_not_owned") }
+              OwnedStorage.componentsBelow(worktree.path, in: build) != nil else {
+            return .refused("path_not_owned")
+        }
         return .proven
     }
 
