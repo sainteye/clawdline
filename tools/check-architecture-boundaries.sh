@@ -231,7 +231,13 @@ main_lines=$(line_count Tests/main.swift)
 # that shape is longer than the one-hold version — plus the probe observer the red proof needs.
 # The closeability counter and restart receipt moved out (-2). The next extractable boundary is the
 # child-session identity query itself (`provenChildSessionID`, `availableScheduledSessionID`).
-orchestrator_ceiling=10684
+# 10,687 with the W3-1 correction (`spec-mac-does-not-consume-application`): +3 lines, a guarded
+# `#if canImport(ClawdlineApplication) import ClawdlineApplication #endif` block so this file's
+# `Assistant`/`TargetSession`/`Permission` references resolve to the real cross-module types
+# instead of a duplicate compiled a second time into `Clawdline` — see `Sources/HostPorts.swift`.
+# Not a relocation; the same three lines land in every one of the ~58 files this correction
+# touched, and this file's ceiling has no headroom to absorb them silently.
+orchestrator_ceiling=10687
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -442,7 +448,9 @@ fi
 # 5,758 with W2-2's Project worktree lifecycle routes (+17): the connection lane branch (7), the
 # verified-Cloud read branch (1) and the `startWorktreeRequest` adapter (9). The codec, auth and
 # bounded lane are `Sources/ProjectWorktreeHTTP.swift`; the router keeps only the registration.
-remote_server_ceiling=5758
+# 5,761 with the W3-1 correction (`spec-mac-does-not-consume-application`): +3 lines, the same
+# guarded `import ClawdlineApplication` block described beside `orchestrator_ceiling` above.
+remote_server_ceiling=5761
 remote_server_lines=$(line_count Sources/RemoteServer.swift)
 [ -n "$remote_server_lines" ] \
   || architecture_guard_fail "remote_server_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -896,8 +904,27 @@ mac_host_adapters_file=Sources/MacHostAdapters.swift
 host_ports_imports=$(grep -E '^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]' "$host_ports_file" \
   | sed -E 's/^[[:space:]]*(@[A-Za-z_]+[[:space:]]+)*import[[:space:]]+//; s/[[:space:]]+$//' \
   | sort -u | tr '\n' ' ')
-[ "$host_ports_imports" = "Foundation " ] \
-  || architecture_guard_fail "$host_ports_file imports '${host_ports_imports% }'; the application side of the host boundary imports Foundation only — put the platform dependency in $mac_host_adapters_file"
+# W3-1: this file is now also the sole member of the real ClawdlineApplication SwiftPM target, so
+# it carries one more import — ClawdlineCore, where Assistant/Assistant.Running now live — but
+# only behind #if canImport(ClawdlineCore), never unconditionally: ./build.sh's flat,
+# single-module swiftc invocation has no ClawdlineCore module to resolve an unconditional import
+# against. The line below still refuses any import besides these exact two.
+[ "$host_ports_imports" = "ClawdlineCore Foundation " ] \
+  || architecture_guard_fail "$host_ports_file imports '${host_ports_imports% }'; the application side of the host boundary imports Foundation unconditionally and ClawdlineCore only behind #if canImport(ClawdlineCore) (W3-1) — put any other platform dependency in $mac_host_adapters_file"
+# W3-1 correction (`spec-mac-does-not-consume-application`): the guarded import is now
+# `@_exported import ClawdlineCore`, not a plain `import ClawdlineCore` — `@_exported` is what
+# lets every one of Clawdline's ~58 real consumers reach `Assistant`/`Permission`/`ReasoningEffort`
+# through one `import ClawdlineApplication` instead of each also learning it needs `ClawdlineCore`
+# by name. The awk pattern accepts an optional attribute prefix for the same reason
+# `host_ports_imports` above already strips one; it still refuses anything but exactly that one
+# guarded line, still immediately after the `#if`.
+host_ports_guarded_core_import=$(awk '
+  /^#if canImport\(ClawdlineCore\)$/ { guard = 1; next }
+  guard && /^(@[A-Za-z_]+[[:space:]]+)*import ClawdlineCore$/ { print; guard = 0; next }
+  { guard = 0 }
+' "$host_ports_file")
+[ -n "$host_ports_guarded_core_import" ] \
+  || architecture_guard_fail "$host_ports_file's import ClawdlineCore is not the line immediately after #if canImport(ClawdlineCore) — an unconditional cross-module import here would break ./build.sh's flat compile, which has no ClawdlineCore module to resolve it against"
 host_code_lines() {
   grep -vE '^[[:space:]]*(//|/\*|\*)' "$1" | grep -vE '^[[:space:]]*case[[:space:]]+[A-Za-z_][A-Za-z0-9_]*\(' || true
 }
@@ -950,8 +977,15 @@ terminal_migration_delegations=$(cat Sources/StartPoints.swift Sources/Targets.s
 # Sources/HostPorts.swift is already held to above — it proves nothing about Linux, and does not
 # claim to. A real Ubuntu compile receipt is W3's, from a genuine second target or CI, not from
 # this script reading source text.
+#
+# W3-1 raised the floor from 1 to 4: Sources/CloudCanonicalJSON.swift and Sources/CloudClock.swift
+# (already proven to compile standalone on Ubuntu 24.04 by tools/ubuntu-core-probe.sh) and
+# Sources/Assistant.swift (extracted clean of its one platform effect into
+# Sources/AssistantInstallation.swift in the same delivery) joined Sources/HostPorts.swift as real
+# members of the ClawdlineCore/ClawdlineApplication SwiftPM targets below, not only lexical
+# candidates.
 core_candidates_file=tools/core-application-candidates.txt
-core_candidate_floor=1
+core_candidate_floor=4
 [ -f "$core_candidates_file" ] \
   || architecture_guard_fail "$core_candidates_file is missing; the Core/Application candidate manifest must be checked in for this guard to protect anything"
 core_candidate_count=$(grep -vcE '^[[:space:]]*(#|$)' "$core_candidates_file" || true)
@@ -972,6 +1006,132 @@ while IFS= read -r candidate; do
   [ "${candidate_effect_lines:-0}" -eq 0 ] \
     || architecture_guard_fail "$candidate names a platform effect on ${candidate_effect_lines} code line(s); a Core/Application candidate reaches the host only through an injected port"
 done < <(grep -vE '^[[:space:]]*(#|$)' "$core_candidates_file" || true)
+
+# W3-1 correction (`repo-graph-guard-is-not-exact`): the real SwiftPM Core/Application/Mac
+# target graph, checked against SwiftPM's own resolved manifest instead of reimplemented with
+# `find -maxdepth 1`. The original version of this block counted first-level `.swift` files
+# against a floor and asked only whether `Clawdline` "has" the `ClawdlineApplication` dependency —
+# both are gameable: a maxdepth-1 count cannot see a `.swift` file added in a nested subdirectory,
+# which SwiftPM's implicit recursive target scan compiles anyway; a same-count member swap (drop
+# one symlink, add a different candidate) still satisfies a floor; and "has Application" says
+# nothing about an *extra* edge such as `Clawdline -> ClawdlineCore` added beside it.
+# `swift package describe --type json` does not compile anything — it only evaluates the
+# manifest — so it is cheap enough to run outside the compile lock like every other check in this
+# script, and its `sources`/`target_dependencies` fields are SwiftPM's own recursively-resolved
+# compile set and dependency edges: exactly what a nested, extra, replaced or moved source, or a
+# direct/extra Mac edge, would change.
+core_application_packages_root=Packages
+core_application_package_graph=$(swift package describe --type json 2>/dev/null) \
+  || architecture_guard_fail "swift package describe failed; the real Core/Application/Mac target graph cannot be checked"
+
+# Every symlink under Packages/ClawdlineCore/ and Packages/ClawdlineApplication/ must still be a
+# real, correctly-named, candidate-listed link into Sources/ — the "one source of truth"
+# guarantee from Packages/README.md. This is a different invariant from "which files are
+# members" (checked below against SwiftPM's own resolution), so it stays its own filesystem scan.
+for package_target in ClawdlineCore ClawdlineApplication; do
+  package_dir="$core_application_packages_root/$package_target"
+  [ -d "$package_dir" ] \
+    || architecture_guard_fail "$package_dir is missing; the real $package_target SwiftPM target has no sources"
+  package_target_member_count=0
+  while IFS= read -r member; do
+    [ -n "$member" ] || continue
+    package_target_member_count=$((package_target_member_count + 1))
+    [ -L "$member" ] \
+      || architecture_guard_fail "$member is a real file, not a symlink; every $core_application_packages_root member must be a symlink into Sources/ so the bytes have one source of truth (Packages/README.md) — a copy here is exactly the fork this boundary forbids"
+    link_target=$(readlink "$member") \
+      || architecture_guard_fail "$member is a symlink readlink could not resolve"
+    case "$link_target" in
+      ../../Sources/*.swift) ;;
+      *) architecture_guard_fail "$member points at '$link_target', not a ../../Sources/*.swift path — repointing this symlink away from Sources/ breaks the one-source-of-truth guarantee" ;;
+    esac
+    resolved_basename=$(basename "$link_target")
+    [ "$resolved_basename" = "$(basename "$member")" ] \
+      || architecture_guard_fail "$member's filename does not match its symlink target's basename ($resolved_basename); a real package member must be named after the source file it mirrors"
+    [ -f "$member" ] \
+      || architecture_guard_fail "$member's symlink target does not resolve to a regular file; it is dangling"
+    grep -qxF "Sources/$resolved_basename" "$core_candidates_file" \
+      || architecture_guard_fail "$member mirrors Sources/$resolved_basename, which is not listed in $core_candidates_file — every real Core/Application package member must also be a checked lexical candidate, so a new target member cannot skip the forbidden-import/platform-effect scan above"
+  done < <(find "$package_dir" -maxdepth 1 -name '*.swift' | LC_ALL=C sort)
+  [ "$package_target_member_count" -gt 0 ] \
+    || architecture_guard_fail "$package_dir has no .swift members; an empty target is not the boundary this checks"
+done
+
+# The exact expected membership of each real target, and of the Mac target's dependency set — not
+# a floor or a contains-check, a pinned set. This is what W3-1 shipped (`Packages/README.md`):
+# three files in ClawdlineCore, one in ClawdlineApplication, and exactly one Mac-to-Application
+# edge. Growing real membership stays possible and stays deliberate — `core-application-candidates.txt`
+# above may only grow on its own — but *this* pinned list may only be edited in the same change
+# that adds the matching symlink(s), never as a side effect of something else moving a file
+# around.
+core_expected_members='Assistant.swift
+CloudCanonicalJSON.swift
+CloudClock.swift'
+application_expected_members='HostPorts.swift'
+mac_expected_dependencies='ClawdlineApplication'
+
+core_application_exactness=$(printf '%s' "$core_application_package_graph" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+targets = {t["name"]: t for t in data.get("targets", [])}
+for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline"):
+    if name not in targets:
+        print("missing:" + name)
+        sys.exit(0)
+def sources(name):
+    return sorted(targets[name].get("sources") or [])
+def deps(name):
+    return sorted(targets[name].get("target_dependencies") or [])
+for name in ("ClawdlineCore", "ClawdlineApplication", "Clawdline"):
+    print(name + ".sources=" + ",".join(sources(name)))
+    print(name + ".deps=" + ",".join(deps(name)))
+') || architecture_guard_fail "the Package.swift target graph could not be parsed"
+case "$core_application_exactness" in
+  missing:*)
+    architecture_guard_fail "${core_application_exactness#missing:} is not a declared Package.swift target; the real Core/Application/Mac composition graph is incomplete"
+    ;;
+esac
+graph_field() {
+  printf '%s\n' "$core_application_exactness" | sed -n "s/^$1=//p"
+}
+sorted_csv() {
+  printf '%s\n' "$1" | LC_ALL=C sort | paste -sd, -
+}
+
+expected_core_sources=$(sorted_csv "$core_expected_members")
+actual_core_sources=$(graph_field 'ClawdlineCore\.sources')
+[ "$actual_core_sources" = "$expected_core_sources" ] \
+  || architecture_guard_fail "ClawdlineCore's SwiftPM-resolved sources are [$actual_core_sources], not the pinned [$expected_core_sources] — a nested, extra, replaced or moved source under Packages/ClawdlineCore/ changes what actually compiles even when the symlink scan above looks fine"
+
+expected_application_sources=$(sorted_csv "$application_expected_members")
+actual_application_sources=$(graph_field 'ClawdlineApplication\.sources')
+[ "$actual_application_sources" = "$expected_application_sources" ] \
+  || architecture_guard_fail "ClawdlineApplication's SwiftPM-resolved sources are [$actual_application_sources], not the pinned [$expected_application_sources] — a nested, extra, replaced or moved source under Packages/ClawdlineApplication/ changes what actually compiles even when the symlink scan above looks fine"
+
+actual_core_deps=$(graph_field 'ClawdlineCore\.deps')
+[ -z "$actual_core_deps" ] \
+  || architecture_guard_fail "ClawdlineCore has a target dependency ($actual_core_deps); it must have none — Core is the root of the graph"
+
+actual_application_deps=$(graph_field 'ClawdlineApplication\.deps')
+[ "$actual_application_deps" = "ClawdlineCore" ] \
+  || architecture_guard_fail "ClawdlineApplication's target dependencies are [$actual_application_deps], not exactly [ClawdlineCore]"
+
+expected_mac_deps=$(sorted_csv "$mac_expected_dependencies")
+actual_mac_deps=$(graph_field 'Clawdline\.deps')
+[ "$actual_mac_deps" = "$expected_mac_deps" ] \
+  || architecture_guard_fail "Clawdline's (Mac composition) target dependencies are [$actual_mac_deps], not exactly [$expected_mac_deps] — an extra or a direct Clawdline -> ClawdlineCore edge passes a 'has Application' check but is not the single Mac -> Application -> Core edge this gate exists to hold"
+
+# `spec-mac-does-not-consume-application`'s other half: Clawdline's own SwiftPM source set must
+# not include a Core/Application-owned file. If it did, `swift build` would compile that file a
+# second time as an unrelated `Clawdline.*` type, silently defeating every check above — the
+# dependency edge would be exact and the two library targets' membership would be exact, and the
+# Mac target would still hold a duplicate, unconsumed copy of the same vocabulary.
+mac_forbidden_sources=$(printf '%s\n%s\n' "$core_expected_members" "$application_expected_members" | LC_ALL=C sort)
+actual_mac_sources=$(graph_field 'Clawdline\.sources')
+mac_duplicated_sources=$(comm -12 \
+  <(printf '%s\n' "$mac_forbidden_sources") \
+  <(printf '%s\n' "$actual_mac_sources" | tr ',' '\n' | LC_ALL=C sort))
+[ -z "$mac_duplicated_sources" ] \
+  || architecture_guard_fail "Clawdline's own SwiftPM sources still include ${mac_duplicated_sources//$'\n'/, }, which ClawdlineCore/ClawdlineApplication already own — exclude it in Package.swift's Clawdline target so it is compiled exactly once, as part of the real target that owns it"
 
 governance_doc=docs/architecture-refactor.md
 governance_marker_open='<!-- clawdline-governance-table:v1 -->'

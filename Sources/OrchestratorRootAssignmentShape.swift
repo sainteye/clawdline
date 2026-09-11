@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 // The shape of a Root Assignment: the states it moves through, the request that opens one, the
 // executor identity it is bound to, and the pure decisions taken from those values — trust, the

@@ -1,4 +1,26 @@
 import Foundation
+// W3-1 correction: this file is the sole member of the real `ClawdlineApplication` SwiftPM
+// target (`Package.swift`, `Packages/README.md`), which depends on `ClawdlineCore` — the target
+// that holds `Assistant`, referenced below. Under `./build.sh`'s flat, single-module `swiftc`
+// invocation there is no `ClawdlineCore` module to import (`Assistant.swift` compiles directly
+// alongside this file instead, exactly as before this change), so the import is guarded rather
+// than unconditional: `canImport` is false there and true only under `swift build`'s
+// module-separated compile, where it is what lets this target see `Assistant` at all. This is
+// the one line the two coexisting build systems could not otherwise agree on; it is not a
+// platform conditional, and `tools/check-architecture-boundaries.sh` still refuses any
+// unconditional import here but Foundation, and any second conditional import but this one.
+//
+// `@_exported`: `Clawdline`, the Mac executable target, no longer compiles this file (or
+// `Assistant.swift`/`CloudCanonicalJSON.swift`/`CloudClock.swift`) a second time — see
+// `Package.swift`'s `exclude:` on the `Clawdline` target and the correction note in
+// `Packages/README.md`. Its ~60 files that name `Assistant`, `Permission`, `ReasoningEffort` or
+// `CloudCanonicalJSON`/`CloudClock` vocabulary now reach all of it, Core and Application alike,
+// through one guarded `import ClawdlineApplication`, the same way this file already reaches
+// `Assistant` — re-exporting is what lets a single import satisfy both layers instead of asking
+// every one of those files to also learn which half of the boundary it needs.
+#if canImport(ClawdlineCore)
+@_exported import ClawdlineCore
+#endif
 
 // W2-3: the host boundary, from the application's side.
 //
@@ -25,7 +47,7 @@ import Foundation
 ///
 /// A clock and an identifier source are not in this list: every host has both, and their ports
 /// exist so that time and identity are injected, not so that they can be missing.
-enum HostCapability: String, CaseIterable {
+public enum HostCapability: String, CaseIterable {
     case terminalITerm = "terminal.iterm"
     case terminalTmux = "terminal.tmux"
     case processObservation = "process.observe"
@@ -34,7 +56,7 @@ enum HostCapability: String, CaseIterable {
     case secrets = "secrets"
 
     /// The capability that drives one terminal backend.
-    static func terminal(_ backend: Backend) -> HostCapability {
+    public static func terminal(_ backend: Backend) -> HostCapability {
         switch backend {
         case .iterm: return .terminalITerm
         case .tmux: return .terminalTmux
@@ -47,29 +69,29 @@ enum HostCapability: String, CaseIterable {
 /// An error rather than an empty value, because every empty value on these ports already means
 /// something: an empty inventory is "no sessions", an absent observation is "the assistant left",
 /// a `nil` secret is "never stored". A host that cannot look must not answer as if it looked.
-struct HostCapabilityUnavailable: Error, Equatable {
+public struct HostCapabilityUnavailable: Error, Equatable {
     /// The code the capability matrix reserves for this refusal.
-    static let code = "capability_unavailable"
+    public static let code = "capability_unavailable"
 
-    let capability: HostCapability
+    public let capability: HostCapability
     /// What was asked, in the asker's words: `end`, `observe`, `read secret`.
-    let operation: String
+    public let operation: String
 
-    var message: String {
+    public var message: String {
         "\(operation) needs \(capability.rawValue), which this host does not provide (\(Self.code))."
     }
 }
 
 /// What every optional port says about itself, so a lifecycle can refuse before its first effect
 /// rather than discover halfway through that a later step is impossible.
-protocol HostCapabilityProviding {
+public protocol HostCapabilityProviding {
     var capabilities: Set<HostCapability> { get }
 }
 
 // MARK: - Terminal vocabulary
 
 /// Where a session lives, and therefore how text gets into it.
-enum Backend: String {
+public enum Backend: String {
     case iterm
     case tmux
 }
@@ -83,13 +105,13 @@ enum Backend: String {
 /// (``SessionWatch``, ``CodexNaming``, ``Config``, ``Orchestrator``) rather than into the host —
 /// stays behind as an `extension TargetSession` in `Sources/ITerm.swift`; this is only the
 /// identity a use case needs to address a session.
-struct TargetSession: Equatable, Identifiable {
-    let backend: Backend
-    let id: String          // iTerm2 session UUID, or tmux pane id
-    let name: String        // tab title (Claude Code sets it to the current task)
-    let tty: String         // /dev/ttysNNN
-    let windowIndex: Int
-    let tabIndex: Int
+public struct TargetSession: Equatable, Identifiable {
+    public let backend: Backend
+    public let id: String          // iTerm2 session UUID, or tmux pane id
+    public let name: String        // tab title (Claude Code sets it to the current task)
+    public let tty: String         // /dev/ttysNNN
+    public let windowIndex: Int
+    public let tabIndex: Int
     /// Which assistant is running here, or nothing when it is an ordinary shell.
     ///
     /// This was `isClaude`, a boolean, for as long as there was only one thing it could be
@@ -97,31 +119,47 @@ struct TargetSession: Equatable, Identifiable {
     /// "can I send work to this", because that answer has not changed; what changed is that
     /// how to read its screen, where to find its record and what word ends it are now three
     /// answers rather than three assumptions. See ``Assistant``.
-    let assistant: Assistant?
-    var cwd: String?
+    public let assistant: Assistant?
+    public var cwd: String?
+
+    // W3-1 correction: an explicit public memberwise init. The compiler-synthesized one is never
+    // more visible than `internal`, so a cross-module constructor (``Sources/ITerm.swift``,
+    // ``Sources/Tmux.swift``) needs this written out by hand; `cwd`'s default keeps both call
+    // sites — one that supplies it, one that does not — unchanged.
+    public init(backend: Backend, id: String, name: String, tty: String, windowIndex: Int,
+                tabIndex: Int, assistant: Assistant?, cwd: String? = nil) {
+        self.backend = backend
+        self.id = id
+        self.name = name
+        self.tty = tty
+        self.windowIndex = windowIndex
+        self.tabIndex = tabIndex
+        self.assistant = assistant
+        self.cwd = cwd
+    }
 
     /// Somewhere work can be sent, as opposed to a shell somebody left open.
-    var isAssistant: Bool { assistant != nil }
+    public var isAssistant: Bool { assistant != nil }
 
     /// Kept because Claude Code genuinely is a special case in two places — the Ctrl-V paste
     /// that turns a clipboard image into `[Image #3]`, and the transcripts under `~/.claude`.
     /// Everywhere else that used to ask this wanted ``isAssistant`` and now says so.
-    var isClaude: Bool { assistant == .claude }
+    public var isClaude: Bool { assistant == .claude }
 
     /// Where the tab is: the keystroke that would bring it to the front.
     ///
     /// The last thing a row can say when nothing knows what the session is *called* — and it is
     /// still a true statement about this session, which is what makes it the right last thing.
     /// A profile name is not: eleven tabs reading `Default` at once name nothing.
-    var coordinate: String { "⌘\(windowIndex + 1)-\(tabIndex + 1)" }
+    public var coordinate: String { "⌘\(windowIndex + 1)-\(tabIndex + 1)" }
 }
 
 /// A failure returned by the terminal operation that produced it. The kind travels with the
 /// message so an HTTP response or orchestrator record never has to sample unrelated global state
 /// later and guess whether this particular operation met an iTerm modal, a timeout, or ordinary
 /// terminal I/O failure.
-struct TerminalFailure: Error, Equatable {
-    enum Kind: Equatable {
+public struct TerminalFailure: Error, Equatable {
+    public enum Kind: Equatable {
         case io
         case timeout
         case iTermAttention
@@ -130,22 +168,35 @@ struct TerminalFailure: Error, Equatable {
         case unknownActivity
     }
 
-    let kind: Kind
-    let message: String
+    public let kind: Kind
+    public let message: String
+
+    public init(kind: Kind, message: String) {
+        self.kind = kind
+        self.message = message
+    }
 }
 
 /// One reading of every terminal session a host can see. `Targets.Snapshot` on the Mac facade is
 /// this type under its old name.
-struct TerminalInventory {
-    var sessions: [TargetSession] = []
-    var currentID: String?
-    var error: String?
+public struct TerminalInventory {
+    public var sessions: [TargetSession] = []
+    public var currentID: String?
+    public var error: String?
     /// True only when every source needed to decide absence was actually enumerated.
     /// A partial snapshot may add or refresh rows, but it has no authority to remove one.
-    var isComplete = true
+    public var isComplete = true
+
+    public init(sessions: [TargetSession] = [], currentID: String? = nil, error: String? = nil,
+                isComplete: Bool = true) {
+        self.sessions = sessions
+        self.currentID = currentID
+        self.error = error
+        self.isComplete = isComplete
+    }
 
     /// The ones with an assistant in them, whichever assistant that is.
-    var assistantSessions: [TargetSession] { sessions.filter { $0.isAssistant } }
+    public var assistantSessions: [TargetSession] { sessions.filter { $0.isAssistant } }
 }
 
 /// What assistant, if any, is still running on one tty — asked now rather than remembered.
@@ -157,16 +208,21 @@ struct TerminalInventory {
 /// one that is still working. The result is scoped to the exact tty after a fresh whole-process
 /// read, whose success/failure status is unambiguous. `ITerm.TTYAssistantObservation` on the Mac
 /// is this type under its old name.
-struct TerminalProcessObservation {
-    let running: Assistant.Running?
-    let error: String?
-    var isComplete: Bool {
+public struct TerminalProcessObservation {
+    public let running: Assistant.Running?
+    public let error: String?
+    public var isComplete: Bool {
         error == nil && (running == nil || running?.processStart != nil)
+    }
+
+    public init(running: Assistant.Running?, error: String?) {
+        self.running = running
+        self.error = error
     }
 }
 
 /// The two ways a lifecycle asks a process to leave. The port owns the platform's numbers for them.
-enum HostProcessSignal: Equatable {
+public enum HostProcessSignal: Equatable {
     /// Ask. Claude Code and Codex both handle it and flush on the way out.
     case terminate
     /// Stop asking.
@@ -185,9 +241,9 @@ enum HostProcessSignal: Equatable {
 /// no identity behind it, and nothing at the actual `kill(2)` boundary re-checked what the caller
 /// had proved several steps earlier. Carrying the full identity through the port lets the adapter
 /// that is about to perform the effect revalidate it right there instead of trusting a comment.
-struct HostProcessIdentity: Equatable {
-    let pid: pid_t
-    let processStart: Date
+public struct HostProcessIdentity: Equatable {
+    public let pid: pid_t
+    public let processStart: Date
 }
 
 /// What a ``ProcessHost`` throws from ``ProcessHost/signal(_:_:)`` when the process it was asked
@@ -204,8 +260,8 @@ struct HostProcessIdentity: Equatable {
 /// does not block: an adapter built on it can still throw ``processGone`` for a `pidfd` that no
 /// longer resolves, it would just never need ``pidReused`` — pidfd cannot be reused the way a pid
 /// can.
-struct HostProcessIdentityChanged: Error, Equatable {
-    enum Reason: Equatable {
+public struct HostProcessIdentityChanged: Error, Equatable {
+    public enum Reason: Equatable {
         /// Nothing is running at that pid any more.
         case processGone
         /// A process is running at that pid, but its start time no longer matches: the original
@@ -213,8 +269,13 @@ struct HostProcessIdentityChanged: Error, Equatable {
         case pidReused
     }
 
-    let identity: HostProcessIdentity
-    let reason: Reason
+    public let identity: HostProcessIdentity
+    public let reason: Reason
+
+    public init(identity: HostProcessIdentity, reason: Reason) {
+        self.identity = identity
+        self.reason = reason
+    }
 }
 
 // MARK: - Ports
@@ -223,7 +284,7 @@ struct HostProcessIdentityChanged: Error, Equatable {
 /// open a tab, or what tmux needs to open a window on its running server or start a brand-new
 /// detached session nothing is attached to yet. Two request shapes because the two backends do
 /// not open the same way — `StartPoints.open` already carries this exact asymmetry.
-enum TerminalCreateRequest {
+public enum TerminalCreateRequest {
     /// Open a new iTerm2 tab and type `line` at its prompt.
     case iTermTab(line: String)
     /// Open a new window on tmux's running server.
@@ -237,13 +298,20 @@ enum TerminalCreateRequest {
 /// session is deliberately not a ``TargetSession``: window/tab index, name and assistant are not
 /// known at creation time, only from the next inventory, the same reasoning
 /// `Sources/Targets.swift` already documents beside why starting a session is not a facade call.
-struct TerminalCreated: Equatable {
-    let id: String
-    let backend: Backend
-    let tty: String?
+public struct TerminalCreated: Equatable {
+    public let id: String
+    public let backend: Backend
+    public let tty: String?
     /// Set only for a brand-new detached tmux session; `nil` for a session drawn on screen
     /// already (an iTerm2 tab, or a window on a server something is attached to).
-    let attachCommand: String?
+    public let attachCommand: String?
+
+    public init(id: String, backend: Backend, tty: String?, attachCommand: String?) {
+        self.id = id
+        self.backend = backend
+        self.tty = tty
+        self.attachCommand = attachCommand
+    }
 }
 
 /// Terminal sessions: create one, enumerate them, address one directly, take one away.
@@ -259,7 +327,7 @@ struct TerminalCreated: Equatable {
 /// its admitted iTerm/tmux creation to ``create(_:)``; `Targets.answer` keeps menu parsing in the
 /// facade while its admitted bytes cross ``interrupt(_:to:)``. The policy remains application
 /// code, while the platform effect is owned by this boundary.
-protocol TerminalHost: HostCapabilityProviding {
+public protocol TerminalHost: HostCapabilityProviding {
     /// A fresh inventory taken now. Incompleteness is carried in the value rather than thrown,
     /// because a partial reading is still worth publishing; it is only never proof of absence.
     func inventory() throws -> TerminalInventory
@@ -290,7 +358,7 @@ protocol TerminalHost: HostCapabilityProviding {
 }
 
 /// The process table, as far as safe close needs it: one exact tty, and one identified process.
-protocol ProcessHost: HostCapabilityProviding {
+public protocol ProcessHost: HostCapabilityProviding {
     /// A fresh, confidence-bearing reading of one tty. A scan that failed is an incomplete
     /// observation, never an absent assistant.
     func observeAssistant(onTTY tty: String) throws -> TerminalProcessObservation
@@ -303,7 +371,7 @@ protocol ProcessHost: HostCapabilityProviding {
 }
 
 /// Bytes at a path. Absence and failure are never spelled the same way.
-protocol FileSystemHost: HostCapabilityProviding {
+public protocol FileSystemHost: HostCapabilityProviding {
     /// `nil` only when nothing is at `path`. A directory or an unreadable file throws.
     func contents(atPath path: String) throws -> Data?
     /// The whole new contents or the old ones; a reader never sees half a write.
@@ -323,7 +391,7 @@ protocol FileSystemHost: HostCapabilityProviding {
 /// different secret under the same account, and the second write silently wins. ``data(for:)``
 /// stays on this protocol for read-only inspection — nothing here stops a caller from looking —
 /// but it is not the load half of a create-if-absent or a replace.
-protocol SecretStore: HostCapabilityProviding {
+public protocol SecretStore: HostCapabilityProviding {
     /// `nil` only when nothing is stored under `account`. Read-only: see the type's doc for why
     /// this must not be paired with ``set(_:for:)`` to implement create-if-absent or replace.
     func data(for account: String) throws -> Data?
@@ -353,13 +421,13 @@ protocol SecretStore: HostCapabilityProviding {
 /// machine's own pace and carries no calendar meaning by itself — only a difference between two
 /// readings from the same host means anything, which is the only thing this lifecycle ever asks
 /// of it.
-protocol HostClock {
+public protocol HostClock {
     func monotonicNow() -> TimeInterval
     func sleep(for seconds: TimeInterval)
 }
 
 /// Fresh identifiers.
-protocol IdentityHost {
+public protocol IdentityHost {
     /// A new opaque identifier, unique for the life of this host's durable state.
     func newIdentifier() -> String
 }
@@ -367,77 +435,81 @@ protocol IdentityHost {
 /// A host that provides none of the optional capabilities. Every operation is a typed refusal, so
 /// a composition that left a port out fails by name instead of answering with an empty value that
 /// already means something else.
-struct UnsupportedHost: TerminalHost, ProcessHost, FileSystemHost, SecretStore {
-    var capabilities: Set<HostCapability> { [] }
+// `public`: `HostPorts.init`'s default argument values name `UnsupportedHost()` — a public
+// function's default-value expression still needs the type and initializer it names to be at
+// least as visible as the function itself, even though no caller ever spells `UnsupportedHost`.
+public struct UnsupportedHost: TerminalHost, ProcessHost, FileSystemHost, SecretStore {
+    public init() {}
+    public var capabilities: Set<HostCapability> { [] }
 
-    func inventory() throws -> TerminalInventory {
+    public func inventory() throws -> TerminalInventory {
         // An inventory is at least the portable backend's, so that is the capability named.
         throw HostCapabilityUnavailable(capability: .terminalTmux, operation: "terminal inventory")
     }
 
-    func sendLine(_ text: String, to session: TargetSession) throws -> String? {
+    public func sendLine(_ text: String, to session: TargetSession) throws -> String? {
         throw HostCapabilityUnavailable(capability: .terminal(session.backend), operation: "send")
     }
 
-    func close(_ session: TargetSession) throws -> String? {
+    public func close(_ session: TargetSession) throws -> String? {
         throw HostCapabilityUnavailable(capability: .terminal(session.backend), operation: "close")
     }
 
-    func create(_ request: TerminalCreateRequest) throws -> TerminalCreated {
+    public func create(_ request: TerminalCreateRequest) throws -> TerminalCreated {
         // No session exists yet to name a backend from, so — as with `inventory()` — the
         // portable backend is what this capability-less host names itself unable to do.
         throw HostCapabilityUnavailable(capability: .terminalTmux, operation: "create")
     }
 
-    func capture(_ session: TargetSession) throws -> String? {
+    public func capture(_ session: TargetSession) throws -> String? {
         throw HostCapabilityUnavailable(capability: .terminal(session.backend), operation: "capture")
     }
 
-    func reveal(_ session: TargetSession, activate: Bool) throws {
+    public func reveal(_ session: TargetSession, activate: Bool) throws {
         throw HostCapabilityUnavailable(capability: .terminal(session.backend), operation: "reveal")
     }
 
-    func interrupt(_ bytes: [UInt8], to session: TargetSession) throws -> String? {
+    public func interrupt(_ bytes: [UInt8], to session: TargetSession) throws -> String? {
         throw HostCapabilityUnavailable(capability: .terminal(session.backend), operation: "interrupt")
     }
 
-    func observeAssistant(onTTY tty: String) throws -> TerminalProcessObservation {
+    public func observeAssistant(onTTY tty: String) throws -> TerminalProcessObservation {
         throw HostCapabilityUnavailable(capability: .processObservation, operation: "observe")
     }
 
-    func signal(_ identity: HostProcessIdentity, _ signal: HostProcessSignal) throws {
+    public func signal(_ identity: HostProcessIdentity, _ signal: HostProcessSignal) throws {
         throw HostCapabilityUnavailable(capability: .processSignal, operation: "signal")
     }
 
-    func contents(atPath path: String) throws -> Data? {
+    public func contents(atPath path: String) throws -> Data? {
         throw HostCapabilityUnavailable(capability: .files, operation: "read file")
     }
 
-    func writeAtomically(_ data: Data, toPath path: String) throws {
+    public func writeAtomically(_ data: Data, toPath path: String) throws {
         throw HostCapabilityUnavailable(capability: .files, operation: "write file")
     }
 
-    func removeItem(atPath path: String) throws {
+    public func removeItem(atPath path: String) throws {
         throw HostCapabilityUnavailable(capability: .files, operation: "remove file")
     }
 
-    func data(for account: String) throws -> Data? {
+    public func data(for account: String) throws -> Data? {
         throw HostCapabilityUnavailable(capability: .secrets, operation: "read secret")
     }
 
-    func set(_ data: Data, for account: String) throws {
+    public func set(_ data: Data, for account: String) throws {
         throw HostCapabilityUnavailable(capability: .secrets, operation: "store secret")
     }
 
-    func loadOrCreate(_ account: String, create: @Sendable () throws -> Data) throws -> Data {
+    public func loadOrCreate(_ account: String, create: @Sendable () throws -> Data) throws -> Data {
         throw HostCapabilityUnavailable(capability: .secrets, operation: "load-or-create secret")
     }
 
-    func rotate(_ account: String, replace: @Sendable (Data?) throws -> Data) throws -> Data {
+    public func rotate(_ account: String, replace: @Sendable (Data?) throws -> Data) throws -> Data {
         throw HostCapabilityUnavailable(capability: .secrets, operation: "rotate secret")
     }
 
-    func remove(_ account: String) throws {
+    public func remove(_ account: String) throws {
         throw HostCapabilityUnavailable(capability: .secrets, operation: "remove secret")
     }
 }
@@ -447,17 +519,17 @@ struct UnsupportedHost: TerminalHost, ProcessHost, FileSystemHost, SecretStore {
 /// The ports one use case runs on. Built at the edge — ``HostPorts/mac`` for this app, fakes in a
 /// test, a Linux composition later — and handed in; nothing inside a lifecycle reaches for a
 /// platform global.
-struct HostPorts {
-    let terminal: any TerminalHost
-    let process: any ProcessHost
-    let files: any FileSystemHost
-    let secrets: any SecretStore
-    let clock: any HostClock
-    let identity: any IdentityHost
+public struct HostPorts {
+    public let terminal: any TerminalHost
+    public let process: any ProcessHost
+    public let files: any FileSystemHost
+    public let secrets: any SecretStore
+    public let clock: any HostClock
+    public let identity: any IdentityHost
 
     /// The optional ports default to ``UnsupportedHost``. The clock and the identifier source never
     /// default, so a composition cannot fall back to real time without saying so.
-    init(terminal: any TerminalHost = UnsupportedHost(),
+    public init(terminal: any TerminalHost = UnsupportedHost(),
          process: any ProcessHost = UnsupportedHost(),
          files: any FileSystemHost = UnsupportedHost(),
          secrets: any SecretStore = UnsupportedHost(),
@@ -473,7 +545,7 @@ struct HostPorts {
 
     /// Whether the port that owns `capability` provides it. Asked of that owner rather than of a
     /// union, so a terminal port cannot vouch for a secret store.
-    func provides(_ capability: HostCapability) -> Bool {
+    public func provides(_ capability: HostCapability) -> Bool {
         switch capability {
         case .terminalITerm, .terminalTmux: return terminal.capabilities.contains(capability)
         case .processObservation, .processSignal: return process.capabilities.contains(capability)
@@ -484,7 +556,7 @@ struct HostPorts {
 
     /// The first of `required` this host lacks, as the refusal `operation` returns before doing
     /// anything at all.
-    func firstUnavailable(_ required: [HostCapability],
+    public func firstUnavailable(_ required: [HostCapability],
                           operation: String) -> HostCapabilityUnavailable? {
         required.first { !provides($0) }.map {
             HostCapabilityUnavailable(capability: $0, operation: operation)
@@ -496,13 +568,13 @@ struct HostPorts {
 
 /// What a safe close returns instead of closing. The Mac facade has always answered with a
 /// sentence, and ``message`` is that sentence byte for byte; the case says which kind it was.
-enum TerminalSafeCloseRefusal: Error, Equatable {
+public enum TerminalSafeCloseRefusal: Error, Equatable {
     /// The host cannot perform a step this close needs. Returned before the first effect.
     case capabilityUnavailable(HostCapabilityUnavailable)
     /// A step ran and refused, or the backend failed. The tab stays open.
     case refused(String)
 
-    var message: String {
+    public var message: String {
         switch self {
         case .capabilityUnavailable(let unavailable): return unavailable.message
         case .refused(let message): return message
@@ -541,7 +613,7 @@ enum TerminalSafeCloseRefusal: Error, Equatable {
 /// word into a session that this host could not then observe or signal would leave it half ended,
 /// so every operation asks ``HostPorts/firstUnavailable(_:operation:)`` first and returns
 /// ``TerminalSafeCloseRefusal/capabilityUnavailable(_:)`` with nothing sent.
-enum TerminalSafeClose {
+public enum TerminalSafeClose {
     /// What to do next while waiting for a session to finish leaving.
     ///
     /// Split out from the loop that runs it because this is the part with the decisions in it,
@@ -549,13 +621,13 @@ enum TerminalSafeClose {
     /// with no tests. The loop below is three lines of sleeping; everything that could be wrong
     /// about *when to stop being polite* is here, and is checked against a clock that is passed
     /// in rather than one that has to pass.
-    enum Farewell {
+    public enum Farewell {
         /// The port's own identity type (W2-3 correction, F4) — kept under this name too because
         /// `Tests/MascotTests.swift` and `Sources/Targets.swift` already spell it
         /// `Farewell.ProcessIdentity`/`Targets.Farewell.ProcessIdentity`.
-        typealias ProcessIdentity = HostProcessIdentity
+        public typealias ProcessIdentity = HostProcessIdentity
 
-        enum Step: Equatable {
+        public enum Step: Equatable {
             /// Still leaving on its own. Look again in a moment.
             case wait
             /// Ask the process to go.
@@ -580,13 +652,13 @@ enum TerminalSafeClose {
         /// program is asked to leave; both assistants handle it and flush on the way out. The
         /// thing this replaced — closing the tab regardless — hung up the tty underneath them,
         /// which is less notice than any step below.
-        static let polite: TimeInterval = 3
+        public static let polite: TimeInterval = 3
         /// After `SIGTERM`. Claude Code and Codex both handle it and leave; this is the room to.
-        static let afterTerm: TimeInterval = 1.5
+        public static let afterTerm: TimeInterval = 1.5
         /// After `SIGKILL`. Only the kernel's own bookkeeping happens in here.
-        static let afterKill: TimeInterval = 1
+        public static let afterKill: TimeInterval = 1
 
-        static func step(elapsed: TimeInterval, pid: pid_t?,
+        public static func step(elapsed: TimeInterval, pid: pid_t?,
                          termed: Bool, killed: Bool) -> Step {
             // Gone is gone, at any point — including before the first sleep, which is the
             // common case and the reason this is faster than what it replaces.
@@ -603,7 +675,7 @@ enum TerminalSafeClose {
 
         /// Identity-bearing form used by production safe close. Kept as its own seam so tests
         /// can replace a process between TERM and KILL without signalling a real process.
-        static func step(elapsed: TimeInterval, identity: ProcessIdentity?,
+        public static func step(elapsed: TimeInterval, identity: ProcessIdentity?,
                          termed: ProcessIdentity?, killed: ProcessIdentity?) -> Step {
             // Once a signal has been sent, the next rung belongs only to the same kernel
             // process. A different PID is plainly different; the same PID with a different
@@ -619,7 +691,7 @@ enum TerminalSafeClose {
     /// Require a fresh, complete inventory to preserve the exact terminal id/backend/tty tuple.
     /// The assistant label is included too: a tab now occupied by another assistant is not the
     /// terminal operation the caller admitted.
-    static func stableTerminal(_ expected: TargetSession,
+    public static func stableTerminal(_ expected: TargetSession,
                                in snapshot: TerminalInventory,
                                allowAssistantGone: Bool = false)
         -> Result<TargetSession, TerminalFailure> {
@@ -645,7 +717,7 @@ enum TerminalSafeClose {
     }
 
     /// The quit word, the wait, and the close. `nil` means the tab was closed.
-    static func end(_ session: TargetSession, ports: HostPorts) -> TerminalSafeCloseRefusal? {
+    public static func end(_ session: TargetSession, ports: HostPorts) -> TerminalSafeCloseRefusal? {
         if let missing = ports.firstUnavailable(
             [.terminal(session.backend), .processObservation, .processSignal], operation: "end") {
             return .capabilityUnavailable(missing)
@@ -691,7 +763,7 @@ enum TerminalSafeClose {
     /// Close a shell-only tab only after a fresh exact-tty process observation proves there is no
     /// assistant left in it. Inventory labels can be nil while a scan is degraded; they are not
     /// authority to hang up a tty. Nothing is signalled, so signalling is not required.
-    static func closeIfAssistantGone(_ session: TargetSession,
+    public static func closeIfAssistantGone(_ session: TargetSession,
                                      ports: HostPorts) -> TerminalSafeCloseRefusal? {
         if let missing = ports.firstUnavailable(
             [.terminal(session.backend), .processObservation], operation: "close") {
@@ -726,7 +798,7 @@ enum TerminalSafeClose {
 
     /// Block until nothing is running on that session's tty, or until it has been made so.
     /// `nil` means the tty is empty; the tab has not been touched.
-    static func waitToBeGone(_ session: TargetSession, ports: HostPorts) -> TerminalSafeCloseRefusal? {
+    public static func waitToBeGone(_ session: TargetSession, ports: HostPorts) -> TerminalSafeCloseRefusal? {
         if let missing = ports.firstUnavailable(
             [.processObservation, .processSignal], operation: "wait") {
             return .capabilityUnavailable(missing)

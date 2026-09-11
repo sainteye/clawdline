@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// This state deliberately remains independent from the `EpochGuardState` computed by
 /// `EpochGuard`, so the clock and ledger units can compile and verify in isolation. A future

@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// The black rectangle at the top of a MacBook's screen, borrowed.
 ///

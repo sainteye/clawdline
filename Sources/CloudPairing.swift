@@ -1,5 +1,8 @@
 import Foundation
 import CryptoKit
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// Maximum UTF-8 byte count of the complete phase-write body (design §5.2): the exact
 /// two-member `{claim_nonce, blob}` object — claim nonce, wrapper, base64 ct and every field

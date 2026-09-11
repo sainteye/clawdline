@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 // Which terminal, process and transcript belong to this child, and whether its briefing has
 // landed. Everything here is a decision taken from evidence — a screen, a transcript's bytes, a

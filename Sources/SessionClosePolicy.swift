@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// Pure decisions shared by Session closeability, startup-menu recovery and terminal cleanup.
 ///

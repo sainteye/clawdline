@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// The Mac's durable outbound spool for the cloud protocol (design §6.1, §6.2, §6.6).
 ///

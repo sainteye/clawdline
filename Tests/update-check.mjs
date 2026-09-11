@@ -66,12 +66,13 @@ try {
   const compat = readFileSync(compatPath, "utf8");
   const appMain = readFileSync(mainPath, "utf8");
 
-  // ---- no dependency was taken on for this ------------------------------------------------------
+  // ---- no external package dependency was taken on for this -------------------------------------
   // The README's badge says `dependencies-none` and that is a property of the product, not a mood.
-  // Sparkle is the obvious way to do this feature and it is the one thing this may not do.
+  // Internal SwiftPM target edges are the product architecture; `.package(...)` would add the
+  // third-party dependency this check exists to refuse. Sparkle is the obvious example.
   const manifest = readFileSync(packagePath, "utf8");
-  check("Package.swift still declares no dependencies",
-        /dependencies:\s*\[\s*\]/.test(manifest) || !/\bdependencies:/.test(manifest));
+  check("Package.swift still declares no external package dependencies",
+        !/\.package\s*\(/.test(manifest));
   check("and the update check imports Foundation and nothing else",
         source.split("\n").filter((line) => /^import /.test(line)).join(",") === "import Foundation");
   check("no third-party updater is named anywhere in it",

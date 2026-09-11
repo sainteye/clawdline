@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// The facts behind a session's compact web status line and its expanded card — what it has
 /// spent, what is left of the plan's window, how much has changed on disk, and whether the last

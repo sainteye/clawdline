@@ -1,5 +1,8 @@
 import Foundation
 import CryptoKit
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// Key handover between a browser viewer and this Mac, over the three pairing calls the
 /// deployed control plane actually exposes.

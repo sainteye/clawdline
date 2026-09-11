@@ -6,7 +6,11 @@ import Foundation
 /// coding default (`high`) or the deeper planning/review setting (`xhigh`). Omitting it leaves
 /// Codex and the user's own configuration untouched. Other Codex values are intentionally not
 /// part of the dispatch protocol.
-enum ReasoningEffort: String, CaseIterable {
+// W3-1 correction: `public` — `Clawdline` no longer compiles this file a second time (see
+// `Package.swift`'s `exclude:` on the `Clawdline` target), so its dispatch-shape code
+// (`Sources/Orchestrator.swift` and neighbours) now reaches this vocabulary only through
+// `import ClawdlineApplication`'s re-export of this module.
+public enum ReasoningEffort: String, CaseIterable {
     case high, xhigh
 }
 
@@ -28,7 +32,8 @@ enum ReasoningEffort: String, CaseIterable {
 /// word that quietly becomes the *strictest* setting on the cheapest model is the failure nobody
 /// catches: the tab sits at a prompt nobody is watching, and the task times out looking like work
 /// that was simply never done. The three below behave the same on every model tried.
-enum Permission: String, CaseIterable, Comparable {
+// W3-1 correction: `public`, for the same reason as `ReasoningEffort` above.
+public enum Permission: String, CaseIterable, Comparable {
     /// Every step that would need approval stops and asks — Claude Code's `manual`, which is also
     /// what it does with no flag at all, and what Haiku falls back to when handed a mode it does
     /// not have. **Nobody is watching a child's tab**, so in practice this is a session that sits
@@ -58,7 +63,7 @@ enum Permission: String, CaseIterable, Comparable {
         case .full:  return 2
         }
     }
-    static func < (a: Permission, b: Permission) -> Bool { a.rank < b.rank }
+    public static func < (a: Permission, b: Permission) -> Bool { a.rank < b.rank }
 
     /// The flags that spell this for one assistant, or nothing at all where the mode is already
     /// that CLI's own default. Every string here is a literal: nothing a task sends reaches it,
@@ -91,12 +96,21 @@ enum Permission: String, CaseIterable, Comparable {
 /// The list is closed on purpose. A third one is a day's work — a screen to read, a record to
 /// find, a word to leave on — and not a plugin point, because each of those three is a shape
 /// somebody has to observe on a real terminal and keep observing.
-enum Assistant: String, CaseIterable {
+// W3-1: `public` because `Sources/HostPorts.swift` — the sole member of the real
+// `ClawdlineApplication` SwiftPM target — names this type and `.claude` in a field type and a
+// default value, and a cross-module reference needs at least as much visibility as that. Every
+// pre-existing internal member below is unaffected: `public` widens what other modules may see,
+// it does not narrow or change what this module already could.
+public enum Assistant: String, CaseIterable {
     case claude
     case codex
 
     /// What a person calls it. Not translated: these are product names.
-    var label: String {
+    ///
+    /// `public` (W3-1 correction): read across the split by `Sources/AssistantQuota.swift`,
+    /// `Sources/Compat.swift`, `Sources/CodexNaming.swift`, `Sources/Orchestrator.swift`,
+    /// `Sources/StateHook.swift` and `Sources/Settings.swift`.
+    public var label: String {
         switch self {
         case .claude: return "Claude Code"
         case .codex:  return "Codex"
@@ -105,11 +119,16 @@ enum Assistant: String, CaseIterable {
 
     /// The short name, for a row that has to say which of two it is without spending a line on
     /// it. The command, which is also what a person types, so it is not a third name to learn.
-    var short: String { rawValue }
+    ///
+    /// `public` (W3-1 correction): read by `Sources/Controller.swift`.
+    public var short: String { rawValue }
 
     /// The command that starts one, with no arguments. A literal, and it stays a literal —
     /// see ``StartPoints`` for why the one route that runs it has no field a string can enter by.
-    var command: String { rawValue }
+    ///
+    /// `public` (W3-1 correction): read by `Sources/Compat.swift`, `Sources/CodexNaming.swift`
+    /// and `Sources/Tmux.swift`.
+    public var command: String { rawValue }
 
     /// How this assistant is asked to pick a recorded conversation back up.
     ///
@@ -264,7 +283,9 @@ enum Assistant: String, CaseIterable {
     /// answer, so without this the first question is where the task stops. It is also the reason
     /// the second level felt so much worse than the first: a child that dispatches touches that
     /// directory a dozen more times, once per grandchild it makes, briefs and reads back.
-    func command(model: String?, reasoningEffort: ReasoningEffort? = nil,
+    /// `public` (W3-1 correction): built and typed by `Sources/StartPoints.swift` across the
+    /// split.
+    public func command(model: String?, reasoningEffort: ReasoningEffort? = nil,
                  permission: Permission = .ask, addDir: String? = nil,
                  resume: String? = nil) -> String {
         var line = dropInheritedIdentity + command
@@ -285,46 +306,13 @@ enum Assistant: String, CaseIterable {
     /// the entire reason this is not one string in ``Targets/end(_:)``. A refused word leaves the
     /// session open and the tab closing under it a second later, which is the failure this
     /// avoids rather than a detail.
-    var quitLine: String {
+    ///
+    /// `public`: `Sources/HostPorts.swift` reads it (W3-1, see the note on `Assistant` above).
+    public var quitLine: String {
         switch self {
         case .claude: return "/exit"
         case .codex:  return "/quit"
         }
-    }
-
-    /// Whether this assistant has ever run on this Mac.
-    ///
-    /// Its home directory being there, which is not the same question as the binary being on
-    /// `PATH` — and is the only one that can be answered from an app launched from Finder, which
-    /// inherits no login shell and therefore no `PATH` worth reading. It is also the better
-    /// question: a directory full of sessions is proof the thing ran here, where a binary on a
-    /// path is a promise that it could.
-    ///
-    /// What it decides is whether to *offer* starting one. Getting it wrong in the shy direction
-    /// costs a button; getting it wrong the other way opens a tab that says "command not found".
-    var isInstalled: Bool {
-        let url: URL
-        switch self {
-        case .claude:
-            url = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".claude", isDirectory: true)
-        case .codex:
-            url = Codex.home
-        }
-        var isDirectory: ObjCBool = false
-        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-            && isDirectory.boolValue
-    }
-
-    /// The ones worth offering, in the order they should be offered in.
-    ///
-    /// Never empty. A Mac with neither home directory on it is one where nothing has run yet,
-    /// and answering "nothing" there would leave a person with no way to start the first
-    /// session — so the answer is the whole list, which is what it was before any of this
-    /// checked anything.
-    static var available: [Assistant] {
-        let installed = allCases.filter(\.isInstalled)
-        return installed.isEmpty ? allCases : installed
     }
 
     /// Whether a bare digit typed into this assistant's menu answers it.
@@ -339,13 +327,20 @@ enum Assistant: String, CaseIterable {
     // MARK: - Reading `ps`
 
     /// One assistant found running on a tty.
-    struct Running: Equatable {
-        let assistant: Assistant
-        let pid: Int32
+    ///
+    /// `public`: `Sources/HostPorts.swift`'s `TerminalProcessObservation` names this type as a
+    /// field's type and reads `pid`/`processStart` to build a safe-close identity (W3-1, see the
+    /// note on `Assistant` above). W3-1 correction: `assistant` is also `public` now — the
+    /// original claim that "nothing outside this module ... reads `assistant`" stopped being true
+    /// once `Sources/ITerm.swift` became a genuine cross-module reader of it; the initializer
+    /// stays at its existing access level because nothing outside this module constructs one.
+    public struct Running: Equatable {
+        public let assistant: Assistant
+        public let pid: Int32
         /// Kernel process identity is PID plus its authoritative start instant. `nil` is kept
         /// only for legacy/test process listings that did not carry `lstart`; no safe-close
         /// signal is allowed to use such a partial identity.
-        let processStart: Date?
+        public let processStart: Date?
 
         init(assistant: Assistant, pid: Int32, processStart: Date? = nil) {
             self.assistant = assistant
@@ -379,7 +374,7 @@ enum Assistant: String, CaseIterable {
     /// spawns a native binary, so `ps` shows `node …/bin/codex` and `…/vendor/…/bin/codex`
     /// together. Either proves a session is there; the native one is preferred for the pid,
     /// because it is the process that holds the working directory anybody asks about later.
-    static func reading(ofPS output: String) -> [String: Running] {
+    public static func reading(ofPS output: String) -> [String: Running] {
         struct Row {
             let tty: String
             let pid: Int32
@@ -452,7 +447,7 @@ enum Assistant: String, CaseIterable {
 
     /// Parse macOS `ps -o lstart=` without inheriting the person's locale. `ps` emits this
     /// column in its POSIX English shape even when the UI locale is not English.
-    static func parseProcessStart(_ fields: [String]) -> Date? {
+    public static func parseProcessStart(_ fields: [String]) -> Date? {
         guard fields.count == 5 else { return nil }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -485,7 +480,7 @@ enum Assistant: String, CaseIterable {
     /// Also tmux's second opinion — it reports a pane's process name, which is this without the
     /// path — so it is not private. See ``Tmux/parsePanes(_:running:)`` for why that opinion is
     /// only ever a second one.
-    static func named(_ path: String) -> Assistant? {
+    public static func named(_ path: String) -> Assistant? {
         for assistant in Assistant.allCases
         where path == assistant.command || path.hasSuffix("/" + assistant.command) {
             return assistant

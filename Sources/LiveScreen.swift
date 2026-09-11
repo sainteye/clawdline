@@ -1,5 +1,8 @@
 import Foundation
 import Darwin
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// A live screen for a phone: tmux says the pane moved, `capture-pane` says what it now shows.
 ///

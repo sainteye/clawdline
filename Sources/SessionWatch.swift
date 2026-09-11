@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// One reading of what every session is doing, for everything that wants to know.
 ///

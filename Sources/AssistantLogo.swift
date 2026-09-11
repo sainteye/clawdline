@@ -1,4 +1,7 @@
 import AppKit
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// The product mark beside an assistant's name in the session list.
 ///

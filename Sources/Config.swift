@@ -1,4 +1,7 @@
 import AppKit
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// Which queue the caller is standing on — which is **not** the same question as which thread.
 ///

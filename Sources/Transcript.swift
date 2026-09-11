@@ -1,5 +1,8 @@
 import AppKit
 import CoreFoundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// Reading a Claude Code session from the transcript it keeps on disk.
 ///

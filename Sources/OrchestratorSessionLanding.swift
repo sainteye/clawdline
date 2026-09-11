@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 extension Orchestrator {
     /// A bounded immutable source snapshot for the utility-lane Board reconciler. It neither

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// The machine-authenticated command surface shared by Claude and Codex workflow helpers.
 /// Identity is supplied only by RemoteServer after resolving the live process named by the path;

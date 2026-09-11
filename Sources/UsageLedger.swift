@@ -1,6 +1,9 @@
 import CryptoKit
 import Foundation
 import SQLite3
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// What every assistant session on this machine actually spent, kept where nothing can sweep it.
 ///

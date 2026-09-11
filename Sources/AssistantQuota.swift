@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// One of the four things this Mac can honestly say about an assistant's account-level quota,
 /// tightest to loosest. Never a percentage — see `docs/api.md`'s note on `GET

@@ -15,5 +15,18 @@
 #
 # What this proves: that the listed files are lexically free of the platform spellings above, on
 # this tree, right now. It does not prove they compile on Linux, and it is not a substitute for
-# tools/ubuntu-core-probe.sh's own manifest or for a real second target/CI once W3 adds one.
+# tools/ubuntu-core-probe.sh's own manifest.
+#
+# W3-1 added the three lines below and, in the same delivery, made all four files real members of
+# the ClawdlineCore/ClawdlineApplication SwiftPM targets in Package.swift — Packages/README.md
+# says why they are symlinks there rather than a second copy, and
+# tools/check-architecture-boundaries.sh's "real SwiftPM Core/Application/Mac target graph" block
+# checks that every real target member is also listed here, so a new target member cannot skip
+# this scan. Sources/CloudCanonicalJSON.swift and Sources/CloudClock.swift already had a genuine
+# (not lexical) Ubuntu 24.04 compile receipt from tools/ubuntu-core-probe.sh before this file
+# named them; tools/swift-core-application-linux-build.sh now proves the same for the real
+# targets themselves, under the same pinned image.
+Sources/Assistant.swift
+Sources/CloudCanonicalJSON.swift
+Sources/CloudClock.swift
 Sources/HostPorts.swift

@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// Durable, serialized ownership for the Project Board domain.
 ///

@@ -1,0 +1,74 @@
+# `ClawdlineCore` and `ClawdlineApplication`
+
+W3-1 (Plan v4; see `artifacts/2026-09-10-clawdline-platform-refactor-program-v4.md` and
+`docs/adr/0001-platform-boundary-and-evidence.md`). These are the first two real product-graph
+targets, not editor metadata and not a probe like `tools/ubuntu-core-probe/`.
+
+## Why symlinks, not files
+
+Every `.swift` file under `Packages/ClawdlineCore/` and `Packages/ClawdlineApplication/` is a
+symlink into `Sources/`, never a copy. That is a constraint, not a style choice:
+
+- SwiftPM refuses two targets that claim the same source file (`target 'X' has overlapping
+  sources`), so `Sources/HostPorts.swift` cannot be a member of both the existing `Clawdline`
+  executable target's implicit recursive scan of `Sources/` **and** an explicit-`sources:`
+  `ClawdlineApplication` target in the same package.
+- The only way to give `ClawdlineApplication` that file without removing it from `Clawdline`'s
+  physical layout is a different *path* that resolves, in the checked-out working tree, to the
+  same bytes — a symlink — or a copy. A copy is exactly the fork the task this shipped under
+  forbids: two files that must be kept in sync by hand and will eventually drift.
+- Every caller that names the vocabulary these files declare (`Sources/Targets.swift`,
+  `Sources/ITerm.swift`, `Sources/Orchestrator.swift` and about fifty neighbours) needs
+  `import ClawdlineApplication` under `swift build`'s module-separated compile, but that import
+  line would also sit in the same file `./build.sh` compiles directly with `swiftc` as one flat
+  module with no other modules to import — that compile has no `ClawdlineApplication.swiftmodule`
+  to resolve the import against. `#if canImport(ClawdlineApplication)` around the import is what
+  lets one file serve both builds; see the note atop `Sources/HostPorts.swift`.
+
+A symlink has neither problem: `git` tracks the link itself (a small blob holding the *link
+text* — the relative path it points at — not a second copy of the target's content), so there is
+exactly one place the target file's bytes live; the two SwiftPM targets see the symlink as a path
+distinct from `Sources/HostPorts.swift`, so the overlap check does not fire.
+
+### Correction: the symlink and its target are not the same Git object
+
+An earlier version of this document, and of `Package.swift`'s own comment, said a symlink and the
+file it names are "the same blob" and that `git show` on either produces identical bytes. That
+conflates two different things `git` tracks. `git ls-tree HEAD -- Packages/ClawdlineCore/Assistant.swift`
+reports it as **mode `120000`** (a symlink), and its blob's content is the sixteen-odd bytes of
+link text, `../../Sources/Assistant.swift` — not the several hundred lines of Swift in
+`Sources/Assistant.swift`, which is a wholly different blob under mode `100644`. `git show
+HEAD:Packages/ClawdlineCore/Assistant.swift` prints that link text, not the source. What *is*
+true, and is the actual guarantee this layout gives: the **checked-out working tree** resolves
+the symlink through the filesystem, so any tool that reads the path (the Swift compiler included)
+sees the same bytes as `Sources/Assistant.swift` — one production source, reached by two paths,
+with no second copy for either `git` or a person to let drift. That is a working-tree-resolution
+property, not a Git-object-identity one, and `tools/check-architecture-boundaries.sh` checks the
+former (that the link still resolves to the right, real, non-dangling file) rather than the
+latter, which was never true and is not what this layout needs.
+
+## What is really proven here, and what is not
+
+`swift build --target ClawdlineCore --target ClawdlineApplication` compiling on macOS and on the
+pinned Ubuntu 24.04 image (`tools/swift-core-application-linux-build.sh`) proves these specific
+files compile as standalone Foundation-only modules on both platforms, and that the SwiftPM
+target-dependency graph has the edges `Clawdline -> ClawdlineApplication -> ClawdlineCore` and no
+others — checked mechanically in `tools/check-architecture-boundaries.sh`, not only asserted
+here. It does not prove a daemon, a Linux composition target, or that every Core/Application
+candidate in `tools/core-application-candidates.txt` is a member of one of these two SwiftPM
+targets yet — the manifest is the lexical (forbidden-import/platform-effect) ratchet across a
+wider candidate set than the two real targets currently include; growing the real targets to
+match it is later work, named in `artifacts/W3_1_DELIVERY.md`.
+
+### Correction: the edge is now consumed, not only declared
+
+The original delivery proved the target-dependency edge above and stopped there: `Clawdline`'s
+own SwiftPM source set *also* still compiled `HostPorts.swift`, `Assistant.swift`,
+`CloudCanonicalJSON.swift` and `CloudClock.swift` a second time as ordinary members of the
+`Clawdline` module, so `swift build` produced two unrelated `TargetSession` types, two unrelated
+`Assistant` types, and so on — the dependency existed and nothing in `Clawdline` ever imported
+`ClawdlineApplication` to reach the real ones. `Package.swift`'s `exclude:` list on the `Clawdline`
+target closes that: those four files are no longer part of `Clawdline`'s own compile, so under
+`swift build` there is exactly one SwiftPM identity for each type they declare, and `Clawdline`'s
+remaining consumers reach it through the guarded `import ClawdlineApplication` described above.
+`artifacts/W3_1_CORRECTION.md` carries the full before/after and what verified it.

@@ -1,5 +1,8 @@
 import Foundation
 import Darwin
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// File-system driven transcript revisions for the web reader.
 ///

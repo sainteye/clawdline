@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 // `Backend`, `TerminalFailure`, the inventory behind `Targets.Snapshot` and the safe-close
 // lifecycle are the terminal port's vocabulary and live in `Sources/HostPorts.swift`, which imports

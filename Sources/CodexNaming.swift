@@ -1,5 +1,8 @@
 import Darwin
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// One native Codex name observed while Codex may still be replacing its opening-line preview
 /// with the concise title it generated a few seconds later.

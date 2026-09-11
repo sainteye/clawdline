@@ -14,6 +14,9 @@ import CryptoKit
 import Foundation
 import os
 import Security
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 enum CloudKeyError: Error, LocalizedError, Equatable {
     case invalidDevicePrivateKey

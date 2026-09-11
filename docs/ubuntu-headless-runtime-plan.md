@@ -232,6 +232,66 @@ Deliverables:
 
 Gate: Ubuntu CI compiles shared modules and passes protocol/state tests; macOS app still passes its acceptance suite.
 
+Status, 2026-09-11/12 (W3-1): `Package.swift` declares two real library targets —
+`ClawdlineCore` (`Sources/Assistant.swift`, `Sources/CloudCanonicalJSON.swift`,
+`Sources/CloudClock.swift`) and `ClawdlineApplication` (`Sources/HostPorts.swift`, depending on
+`ClawdlineCore`) — plus the pre-existing `Clawdline` executable target, now depending on
+`ClawdlineApplication`, as the Mac composition point. Every member is a symlink into `Sources/`,
+never a copy (`Packages/README.md` says why a plain file can't coexist with `./build.sh`'s flat,
+single-module compile); `tools/check-architecture-boundaries.sh`'s "real SwiftPM
+Core/Application/Mac target graph" block checks the symlinks, the candidate-manifest membership
+and the SwiftPM dependency edges themselves (via `swift package describe --type json`) rather than
+trusting Package.swift's own comment, and a red-before-green proof on both the target-edge check
+and the symlink/one-source-of-truth check is in `artifacts/W3_1_DELIVERY.md`. `swift build` (all
+targets, matching CI's existing smoke-test job) and a flat `swiftc -typecheck` over the unchanged
+`./build.sh`/`./test.sh` production source list both pass; `./build.sh` and `./test.sh` themselves
+were not run, per this task's own instructions. `tools/swift-core-application-linux-build.sh`
+compiles the real targets — not a materialized copy — on the pinned Ubuntu 24.04 amd64 image
+`tools/ubuntu-core-probe.sh` already uses, wired into CI as `swift-core-application-linux`; a
+local run under Docker/QEMU on Apple Silicon passed 2 of 5 tries (the other 3, and one rerun of
+the pre-existing, already-landed W0-F probe under the identical image, died `qemu: uncaught target
+signal 4` before any of this repository's code ran — an emulation gap on that one host shape, not
+a defect either script found; see the script's own comment). `HostPorts.swift` needed
+`Assistant`/`Assistant.Running`'s type, and `Assistant.isInstalled`/`.available` were the one
+platform effect (`FileManager`, and transitively `Codex.home`) keeping `Assistant.swift` out of a
+real target — moved, unchanged, to `Sources/AssistantInstallation.swift` (a mechanical Swift
+extension split, not a behavior change) — and `Assistant`/`Assistant.Running.pid`/`.processStart`/
+`Assistant.quitLine` became `public` for the same reason `HostPorts.swift` itself already had to be
+Foundation-only: a symbol crossing a real module boundary needs real visibility, not only a lexical
+promise. `Sources/HostPorts.swift` gained one `#if canImport(ClawdlineCore)`-guarded import — the
+one place the two coexisting build systems (SwiftPM's module boundaries and `./build.sh`'s flat
+compile) could not otherwise agree — checked by name in the same guard block, not left to a bare
+lexical import count. What is not yet real: the remaining `tools/core-application-candidates.txt`
+entries are still lexical-only, not SwiftPM target members; there is no `ClawdlineLinux` target,
+daemon, or Linux composition (W3-2's), and `./build.sh` itself is unchanged — it still compiles
+`Sources/` flatly, not through this package graph, exactly as this task's instructions required.
+
+**Correction, W3-1 (`artifacts/W3_1_CORRECTION.md`).** The sealed review of the status above found
+four defects, all now fixed on the same delivery: (1) `spec-mac-does-not-consume-application` —
+the `Clawdline -> ClawdlineApplication` edge existed but nothing in `Clawdline` ever imported it;
+`Clawdline`'s own SwiftPM source set still compiled `HostPorts.swift`/`Assistant.swift`/
+`CloudCanonicalJSON.swift`/`CloudClock.swift` a second time, so `swift build` held two unrelated
+copies of `TargetSession`, `Assistant` and the rest. `Package.swift`'s `exclude:` on the
+`Clawdline` target closes that; its ~60 real consumers now reach the vocabulary through a guarded
+`import ClawdlineApplication`. (2) `repo-graph-guard-is-not-exact` — the guard's target-membership
+check was a `find -maxdepth 1` count against a floor, blind to a source added in a nested
+subdirectory, and its Mac-edge check only asked whether `ClawdlineApplication` was present, not
+whether it was the *only* dependency; both are now exact comparisons against `swift package
+describe --type json`'s own resolved `sources`/`target_dependencies`. (3)
+`repo-symlink-git-object-claim-is-false` — `Package.swift` and `Packages/README.md` said a symlink
+member and the file it names are "the same blob"; a Git symlink is its own object (mode `120000`,
+content = the link text) distinct from the target file's blob, and only the *checked-out working
+tree* resolves both paths to the same bytes. Both documents now say that correctly.
+(4) `runtime-qemu-receipt-counts-conflict` — this status paragraph's "2 of 5", the delivery
+artifact's table and `tools/swift-core-application-linux-build.sh`'s own comment each quoted a
+different attempt-count ratio for the same handful of local QEMU tries; none of it is restated
+here. What is claimed instead is one fresh, dated, single attempt in the correction's ledger
+(`-c debug -j 1`, the script's own default): **PASS**, `Build of target: 'ClawdlineApplication'
+complete!`, no crash — plus the CI job's exact, already-pinned configuration
+(`SWIFT_CORE_APPLICATION_LINUX_BUILD_CONFIGURATION=release SWIFT_CORE_APPLICATION_LINUX_BUILD_JOBS=2`,
+real amd64 hardware, not QEMU). A prior local run's QEMU crash before this repository's code ran is
+real and worth keeping as a named failure mode; it is not a rate.
+
 Estimated effort: 2–3 engineer-weeks.
 
 ### Phase 4 — Ubuntu terminal and service runtime

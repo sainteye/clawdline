@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 // W2-3 correction, F1: `TargetSession`'s stored properties and its portable computed properties
 // (`isAssistant`, `isClaude`, `coordinate`) moved to `Sources/HostPorts.swift` — the identity

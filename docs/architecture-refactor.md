@@ -155,9 +155,9 @@ which should be re-evaluated against current dependencies before a later extract
 | 15 | `runOrchestratorLifecycleTests` / `OrchestratorLifecycleTests.swift` | serialization, state transitions and briefing | 1, 2, 4 |
 | 16 | `runOrchestratorCoordinationTests` / `OrchestratorCoordinationTests.swift` | handoffs, waits, relay and notifications | 1, 2, 4 |
 | 17 | `runSessionCloseAndQuotaTests` / `SessionCloseAndQuotaTests.swift` | close lifecycle, linger and quota | 1, 2, 4 |
-| 18 | `runSessionRegistryTests` / `SessionRegistryTests.swift` | Claude registry and subprocess jobs | 1, 2, 4 |
-| 19 | `runBackgroundAndStorageTests` / `BackgroundAndStorageTests.swift` | background sessions, owned storage and reclaim | 1, 2, 4 |
-| 20 | `runOrchestratorRecoveryTests` / `OrchestratorRecoveryTests.swift` | spawn retry, progress and verification metadata | 1, 2, 4 |
+| 18 | `runSessionRegistryTests` / `SessionRegistryTests.swift` | Claude registry, subprocess jobs, background-session inventory and schedule-form fields | 1, 2, 4 |
+| 19 | `runBackgroundAndStorageTests` / `BackgroundAndStorageTests.swift` | owned storage and reclaim | 1, 2, 4 |
+| 20 | `runOrchestratorRecoveryTests` / `OrchestratorRecoveryTests.swift` | spawn retry, attached follow-up single-flight, progress and verification metadata | 1, 2, 4 |
 | 21 | `runCoordinatorTests` / `CoordinatorTests.swift` | coordinator identity, rebind and Bearings | 1, 2, 4 |
 | 22 | `runOrchestratorCompletionTests` / `OrchestratorCompletionTests.swift` | durable completion ingress, retry and ACK | 1, 2, 4 |
 | 23 | `runUsageLedgerTests` / `UsageLedgerTests.swift` | ledger normalization, parsing and range semantics | 1, 2, 4 |
@@ -955,8 +955,8 @@ is written, and this document is not that place for any of them.
 | ordered groups | 651 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 53 | `Tests/main.swift`, counted by the guard |
 | suite files | 67 | `Tests/*Tests.swift`, counted by the guard |
-| `Orchestrator.swift` ceiling | 10,684 | the ratchet in `tools/check-architecture-boundaries.sh` |
-| `RemoteServer.swift` ceiling | 5,758 | the receipt in `tools/check-architecture-boundaries.sh` |
+| `Orchestrator.swift` ceiling | 10,687 | the ratchet in `tools/check-architecture-boundaries.sh` |
+| `RemoteServer.swift` ceiling | 5,761 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->
 

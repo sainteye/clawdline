@@ -5,6 +5,7 @@ clawdline_production_sources=(
   Sources/Activity.swift
   Sources/Ansi.swift
   Sources/Assistant.swift
+  Sources/AssistantInstallation.swift
   Sources/AssistantLogo.swift
   Sources/AssistantPlaceholder.swift
   Sources/AssistantQuota.swift

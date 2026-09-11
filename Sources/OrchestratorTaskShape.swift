@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 // The shape of a task: its states, its landing obligations, its worktree and the records a
 // root keeps about it. Eighteen nested types and no stored state of its own, which is why it

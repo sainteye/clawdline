@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// What a dispatch body says before anything is spawned from it, and every admission answer that
 /// can be given without reading the registry.

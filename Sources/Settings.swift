@@ -1,6 +1,9 @@
 import AppKit
 import CryptoKit
 import UniformTypeIdentifiers
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// The settings, as controls rather than as a file.
 ///

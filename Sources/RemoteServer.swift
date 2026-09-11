@@ -1,6 +1,9 @@
 import AppKit
 import Foundation
 import Network
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// Decide whether a local title can also be handed to the assistant without changing what its
 /// current turn means. Claude accepts a slash command only at an idle prompt; Codex names thread

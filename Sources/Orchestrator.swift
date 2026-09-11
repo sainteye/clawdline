@@ -2,6 +2,9 @@ import AppKit
 import CryptoKit
 import Foundation
 import Security
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
+#endif
 
 /// Root sessions dispatching child sessions — the broker side. See docs/orchestrator.md.
 ///

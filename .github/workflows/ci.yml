@@ -34,6 +34,20 @@ jobs:
       - name: Compile and run the listed Core boundary
         run: ./tools/ubuntu-core-probe.sh
 
+  swift-core-application-linux:
+    name: Ubuntu 24.04 amd64 — real ClawdlineCore/ClawdlineApplication targets
+    runs-on: ubuntu-24.04
+    container:
+      image: swift:6.1.3-noble@sha256:1d10836ca929943d70b2254e555b17247b132f6eed984654351cb6a8cc531613
+    steps:
+      - uses: actions/checkout@v4
+      # W3-1: the real Package.swift target graph, not tools/ubuntu-core-probe.sh's separate
+      # materialized probe. This runner is real amd64 hardware, not the QEMU emulation a Clawdline
+      # dev Mac uses to reach amd64 — see tools/swift-core-application-linux-build.sh's own comment
+      # for why local runs there default to -c debug -j 1.
+      - name: Compile the real ClawdlineCore/ClawdlineApplication targets
+        run: SWIFT_CORE_APPLICATION_LINUX_BUILD_CONFIGURATION=release SWIFT_CORE_APPLICATION_LINUX_BUILD_JOBS=2 ./tools/swift-core-application-linux-build.sh
+
   build:
     name: App builds
     runs-on: macos-14
