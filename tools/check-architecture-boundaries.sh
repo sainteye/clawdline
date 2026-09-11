@@ -208,7 +208,11 @@ main_lines=$(line_count Tests/main.swift)
 # Schedule Webhook adds one projection call; binding authority remains in ScheduleWebhook.swift.
 # Cut 2 Stage 2 moves the four process-local rate windows behind Registry transactions. The
 # 10,723-line ceiling is measured on this candidate; the shared lock and route facades remain.
-orchestrator_ceiling=10723
+# W1-3 moves handoff envelopes, handoff labels, Root Assignments and coordination waits behind the
+# Registry's coordination-record capability. The transitions went to the owner and the multi-line
+# door calls came back, so this file moved by one line while the owner gained the state machine:
+# 10,721 is measured on this candidate, without headroom.
+orchestrator_ceiling=10721
 orchestrator_lines=$(line_count Sources/Orchestrator.swift)
 [ -n "$orchestrator_lines" ] \
   || architecture_guard_fail "orchestrator_lines came back empty; that is a broken script or a missing file, not a clean tree"
@@ -704,6 +708,29 @@ session_records_held_lock_sites=$(cat Sources/Orchestrator.swift Sources/Orchest
 [ "$session_records_held_lock_sites" -gt 0 ] \
   || architecture_guard_fail "withSessionRecordsOnHeldLock has no call sites left; delete the adapter and this ratchet together"
 
+# W1-3 moves the four coordination families behind their own capability, still on the same lock.
+# Regions that touch only those families take `withCoordinationRecords`, which acquires the lock;
+# the held-lock adapter remains only where a region must stay atomic with tasks or the terminal
+# projection, which have not moved yet. Counted the same way: no growth, and the adapter and this
+# ratchet are deleted together when tasks move into the owner.
+coordination_records_held_lock_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift Sources/OrchestratorSessionLanding.swift \
+  | grep -c 'withCoordinationRecordsOnHeldLock' || true)
+[ "$coordination_records_held_lock_sites" -le 26 ] \
+  || architecture_guard_fail "withCoordinationRecordsOnHeldLock has $coordination_records_held_lock_sites call sites; the migration ratchet is 26 and may only fall"
+[ "$coordination_records_held_lock_sites" -gt 0 ] \
+  || architecture_guard_fail "withCoordinationRecordsOnHeldLock has no call sites left; delete the adapter and this ratchet together"
+
+# The bare `lock.lock()` regions are the direct door every capability above replaces. W1-3 took
+# this count from 160 to 123 across the three files that still take the registry lock directly
+# (Orchestrator 153 -> 116, Planning 4, SessionLanding 3). It may only fall: a new region that
+# needs registry state belongs behind an OrchestratorRegistry door, not behind another bare lock.
+direct_registry_lock_sites=$(cat Sources/Orchestrator.swift Sources/OrchestratorPlanning.swift Sources/OrchestratorSessionLanding.swift \
+  | grep -c 'lock\.lock()' || true)
+[ "$direct_registry_lock_sites" -le 123 ] \
+  || architecture_guard_fail "the files that take the registry lock directly have $direct_registry_lock_sites bare lock.lock() sites; the ratchet is 123 and may only fall — reach the state through an OrchestratorRegistry door instead"
+[ "$direct_registry_lock_sites" -gt 0 ] \
+  || architecture_guard_fail "no bare lock.lock() site was found; either the direct door is gone (delete this ratchet with it) or the pattern stopped matching"
+
 # Cut 4 chose its two files by measuring, and what it measured was that neither of them touches
 # the registry lock. That is the whole reason they were cheap: eleven candidates were scored on
 # lines, private symbols crossing the proposed boundary, and lock acquisitions, and the two that
@@ -721,7 +748,7 @@ session_records_held_lock_sites=$(cat Sources/Orchestrator.swift Sources/Orchest
 # clean zero for the two files because it can no longer recognise what it is looking for. That is
 # the failure this repository has shipped before: a guard that stopped matching read exactly like a
 # guard that passed.
-lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|with(Transaction|SessionRecords)(OnHeldLock)?[[:space:]]*[({])'
+lock_acquisition_re='(^|[^A-Za-z0-9_])(lock\.lock\(\)|Orchestrator\.lock|with(Transaction|SessionRecords|CoordinationRecords)(OnHeldLock)?[[:space:]]*[({])'
 count_lock_sites() {
   grep -vE '^[[:space:]]*(//|/\*|\*)' "$1" | grep -cE "$lock_acquisition_re" || true
 }
@@ -909,4 +936,4 @@ if [ "$documented_governance_table" != "$(render_governance_table)" ]; then
   architecture_guard_fail "run tools/generate-governance-table.sh — the table is generated, so the fix is never to retype a number into it"
 fi
 
-echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, held-lock door=$held_lock_door_sites, session-record door=$session_records_held_lock_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
+echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, held-lock door=$held_lock_door_sites, session-record door=$session_records_held_lock_sites, coordination-record door=$coordination_records_held_lock_sites, direct lock=$direct_registry_lock_sites, max suspension=$suspension_max, parsed=$scanner_funcs"

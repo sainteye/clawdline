@@ -174,7 +174,9 @@ extension Orchestrator {
             return .refused(409, "child_session",
                             "A Clawdline child reports through its task landing, not this route.")
         }
-        let assignments = Array(rootAssignments.values)
+        let assignments = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            $0.rootAssignments()
+        }
         let expectedAssignments = landingAssignmentSnapshot(
             for: identity.terminalID, assignments: assignments)
         let expectedReceipt = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDelivery(forTerminal: identity.terminalID) }
@@ -248,7 +250,10 @@ extension Orchestrator {
                                 "The Session's child binding changed while landing was verified.")
             }
             let currentAssignments = landingAssignmentSnapshot(
-                for: identity.terminalID, assignments: Array(rootAssignments.values))
+                for: identity.terminalID,
+                assignments: OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+                    $0.rootAssignments()
+                })
             guard currentAssignments == expectedAssignments else {
                 lock.unlock()
                 return .refused(409, "root_assignment_changed",

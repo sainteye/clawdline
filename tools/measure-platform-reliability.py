@@ -24,7 +24,7 @@ import time
 import uuid
 
 
-BASE_COMMIT = "de9745104daed03bf9f49ff1fb4522e2a275d145"
+BASE_COMMIT = "e23d2beae4b76bb565bef8ec18d6f7a57a8ca1aa"
 # Measurement safety bound, not a production HTTP budget or SLA.
 HEALTH_BODY_LIMIT = 16384
 # Whole-file seals prevent an unchanged matching line from concealing a changed caller,
@@ -32,9 +32,9 @@ HEALTH_BODY_LIMIT = 16384
 SOURCE_SEALS = {
     "Sources/CloudTransport.swift": "1996000707852cac1a71b2a9622cca7aea996e79d000d7d1ddc9f4175425465d",
     "Sources/CloudAppBridge.swift": "853c4431771550175c6c485b9da648edb72ef1d24b350030402dee74785aaabc",
-    "Sources/RemoteServer.swift": "5f88bad83081fdd6984f26ae48507975b2a4c825223d17950ec5e5be761ebfdd",
-    "Sources/Orchestrator.swift": "5316c8a21199c7efd4449053ad35f7ccc153811a9e8b9218e5499cb11b8eda57",
-    "Sources/OrchestratorStore.swift": "38ce38e310d8d995445b4b05ece41dcb5fb85d1775f0f3ec3d3f162766262037",
+    "Sources/RemoteServer.swift": "e143790631dde9e4db0bcaa55f1022a2e363b21781e364e730504cdec27f0c10",
+    "Sources/Orchestrator.swift": "e06cc0b6582ec1e5adb84ae0bd123895a659f570c4bd45737cd6364e3b9369ac",
+    "Sources/OrchestratorStore.swift": "ed31e8ceb7aab18aee23efdf8c3a20805e61a576f89673a4b79deeffd58bcfcc",
     "Sources/Coordinator.swift": "bf400471dce7fe381aea8608d5d96b8710e33035c0d98fbaea30b493040345ad",
     "Sources/SessionWatch.swift": "d1d47930535b2e79bea14d13d56482885adeff09fcaa0326b84f8a60701beb5c",
     "Sources/TranscriptReadCoordinator.swift": "61c1adf7558d54bff495128b78450b849eb48dd69bcddd724148b72f855cd371",

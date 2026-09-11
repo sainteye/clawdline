@@ -1177,31 +1177,62 @@ enum Orchestrator {
 
     // MARK: - Independent feature roots
 
+    /// A typed failure that can remove a Feature Root label, committed in the same hold as the
+    /// terminal projection it changes. The caller persists and reports after this returns.
+    @discardableResult
+    private static func failRootAssignmentAndReindex(_ id: String, code: String, at: Date,
+                                                     fallback: RootAssignment? = nil)
+        -> RootAssignment? {
+        lock.lock(); defer { lock.unlock() }
+        let failed = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            $0.failRootAssignment(id, code: code, at: at, fallback: fallback)
+        }
+        reindex()
+        return failed
+    }
+
+    /// Commit the reconciliation-owned fields of `assignment`, with the projection when the
+    /// change can move a label.
+    private static func commitRootAssignmentReconciliation(_ assignment: RootAssignment,
+                                                           reindexing: Bool) {
+        guard reindexing else {
+            _ = OrchestratorRegistry.withCoordinationRecords {
+                $0.commitRootAssignmentReconciliation(assignment)
+            }
+            return
+        }
+        lock.lock(); defer { lock.unlock() }
+        _ = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            $0.commitRootAssignmentReconciliation(assignment)
+        }
+        reindex()
+    }
+
     /// Persist the audit receipt before emitting the event. That deliberately chooses at-most-once
     /// delivery over restart spam; every event carries the durable assignment and exact executor
     /// identity so an operator can find a pre-brief tab that needs attention.
     @discardableResult
     static func reportRootAssignmentTransition(_ id: String) -> Bool {
-        lock.lock()
-        guard var assignment = rootAssignments[id],
-              let notice = rootAssignmentTransitionNotice(
-                state: assignment.state, blocker: assignment.blocker,
-                failure: assignment.failure),
-              assignment.reportedTransition != notice.receipt else {
-            lock.unlock(); return false
+        let reported = OrchestratorRegistry.withCoordinationRecords { records
+            -> (assignment: RootAssignment, notice: RootAssignmentTransitionNotice,
+                previous: String?)? in
+            guard let current = records.rootAssignment(id),
+                  let notice = rootAssignmentTransitionNotice(
+                    state: current.state, blocker: current.blocker,
+                    failure: current.failure),
+                  current.reportedTransition != notice.receipt,
+                  let marked = records.recordRootAssignmentTransitionReport(
+                    id, receipt: notice.receipt) else { return nil }
+            return (marked.assignment, notice, marked.previous)
         }
-        let previous = assignment.reportedTransition
-        assignment.reportedTransition = notice.receipt
-        rootAssignments[id] = assignment
-        lock.unlock()
+        guard let reported else { return false }
+        let assignment = reported.assignment
+        let notice = reported.notice
         guard save() else {
-            lock.lock()
-            if var current = rootAssignments[id],
-               current.reportedTransition == notice.receipt {
-                current.reportedTransition = previous
-                rootAssignments[id] = current
+            OrchestratorRegistry.withCoordinationRecords {
+                $0.withdrawRootAssignmentTransitionReport(
+                    id, receipt: notice.receipt, restoring: reported.previous)
             }
-            lock.unlock()
             return false
         }
         var fields = ["assignment": id, "state": assignment.state.rawValue,
@@ -1295,16 +1326,8 @@ enum Orchestrator {
         didSet { obligationFingerprintDirty = true }
     }
     static var restartReceipt: RestartReceipt?
-    private static var handoffs: [String: HandoffEnvelope] = [:] {
-        didSet { obligationFingerprintDirty = true }
-    }
-    /// Handoff id → the tab that handoff was delivered into and what it is called. Durable, and
-    /// the only thing that gives a handed-off root its job title back after a restart.
-    private static var handoffLabels: [String: HandoffLabel] = [:]
-    static var rootAssignments: [String: RootAssignment] = [:]
-    private static var coordinationWaits: [String: CoordinationWait] = [:] {
-        didSet { obligationFingerprintDirty = true }
-    }
+    // Handoff envelopes, handoff labels, Root Assignments and coordination waits are owned by
+    // `OrchestratorRegistry` and reached through its coordination-record capability.
     /// How many `beat` walks are inside the loop, and which walk this is. Both exist to catch the
     /// overlap that should not be possible; neither changes what a walk does.
     private static var beatsInFlight = 0
@@ -1676,14 +1699,17 @@ enum Orchestrator {
                   (child.rootAssistant ?? .claude) == identity.assistant else { return false }
             return true
         }
-        let hasWait = coordinationWaits.values.contains { wait in
+        let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            (waits: $0.coordinationWaits(), handoffs: $0.handoffEnvelopes())
+        }
+        let hasWait = coordination.waits.contains { wait in
             wait.waiters.contains { waiter in
                 waiter.releaseDeliveredAt == nil
                     && (waiter.sessionID == identity.terminalID
                         || wait.ownerSessionID == identity.terminalID)
             }
         }
-        let hasOpenHandoff = handoffs.values.contains {
+        let hasOpenHandoff = coordination.handoffs.contains {
             $0.state != .delivered && handoffSource($0.fromSession, matches: identity)
         }
         let selfState = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionSelfState(forTerminal: identity.terminalID) }.flatMap {
@@ -2202,6 +2228,8 @@ enum Orchestrator {
     private static var obligationFingerprintDirty = true
     /// Last Registry-owned self-state mutation this facade incorporated into closeability.
     private static var observedSessionSelfStateMutationGeneration = -1
+    /// Last Registry-owned handoff/wait mutation this facade incorporated into closeability.
+    private static var observedCoordinationObligationMutationGeneration = -1
     private static var closeabilityIndexDirty = true
     private static var cachedCloseabilityRegistryIndex: CloseabilityRegistryIndex?
     private static var closeabilityRegistryReadCountForTesting = 0
@@ -2281,12 +2309,15 @@ enum Orchestrator {
             row.append(task.untouchedClaims.sorted().joined(separator: ","))
             parts.append(row.joined(separator: "\u{1}"))
         }
-        for wait in coordinationWaits.values.sorted(by: { $0.id < $1.id }) {
+        let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            (waits: $0.coordinationWaits(), handoffs: $0.handoffEnvelopes())
+        }
+        for wait in coordination.waits.sorted(by: { $0.id < $1.id }) {
             let pending = wait.waiters.filter { $0.releaseDeliveredAt == nil }
                 .map(\.sessionID).sorted().joined(separator: ",")
             parts.append([wait.id, wait.ownerSessionID, pending].joined(separator: "\u{1}"))
         }
-        for handoff in handoffs.values.sorted(by: { $0.id < $1.id }) {
+        for handoff in coordination.handoffs.sorted(by: { $0.id < $1.id }) {
             parts.append([handoff.id, handoff.state.rawValue, handoff.fromSession ?? "-"]
                 .joined(separator: "\u{1}"))
         }
@@ -2307,6 +2338,10 @@ enum Orchestrator {
     private static func settleObligationGenerationLocked() -> Bool {
         if OrchestratorRegistry.withSessionRecordsOnHeldLock({ $0.consumeSelfStateMutation(
             after: &observedSessionSelfStateMutationGeneration) }) {
+            obligationFingerprintDirty = true
+        }
+        if OrchestratorRegistry.withCoordinationRecordsOnHeldLock({ $0.consumeObligationMutation(
+            after: &observedCoordinationObligationMutationGeneration) }) {
             obligationFingerprintDirty = true
         }
         guard obligationFingerprintDirty else { return false }
@@ -2544,10 +2579,13 @@ enum Orchestrator {
             let orderedTasks = tasks.values.sorted {
                 $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
             }
-            let orderedWaits = coordinationWaits.values.sorted {
+            let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+                (waits: $0.coordinationWaits(), handoffs: $0.handoffEnvelopes())
+            }
+            let orderedWaits = coordination.waits.sorted {
                 $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
             }
-            let orderedHandoffs = handoffs.values.sorted {
+            let orderedHandoffs = coordination.handoffs.sorted {
                 $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
             }
             index = CloseabilityRegistryIndex(
@@ -2832,6 +2870,9 @@ enum Orchestrator {
     }
     /// Under the lock.
     private static func reindex() {
+        let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            (labels: $0.handoffLabels(), assignments: $0.rootAssignments())
+        }
         OrchestratorRegistry.withTransactionOnHeldLock { registry in
             var found = registry.handoffTitles()
             // The durable half of the same answer, and the only half a fresh process has: the
@@ -2846,7 +2887,7 @@ enum Orchestrator {
             // refuses per terminal, so an ambiguous tab keeps whatever name it would have had
             // without any handoff label rather than one of the two at random.
             var labelsByTerminal: [String: [String]] = [:]
-            for label in handoffLabels.values
+            for label in coordination.labels
             where !registry.isHandoffLabelSuppressed(label.handoffID) {
                 labelsByTerminal[label.identity.terminalID, default: []].append(label.label)
             }
@@ -2858,7 +2899,7 @@ enum Orchestrator {
             let rootTaskHosts = tasks.values.filter { $0.sessionRoot }
             // A Feature Root receives a label, never a Role. `Role` is the child-lineage type and
             // putting an assignment in it would make a fourth primitive a disguised task.
-            for assignment in rootAssignments.values {
+            for assignment in coordination.assignments {
                 guard let terminal = assignment.identity?.terminalID,
                       ![.failed, .inactive].contains(assignment.state),
                       !registry.isRootAssignmentLabelSuppressed(assignment.id) else { continue }
@@ -2916,12 +2957,15 @@ enum Orchestrator {
                                          identities: [SessionWorkIdentity]? = nil,
                                          inventoryComplete: Bool = true) {
         let delivering = Set(OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.handoffDeliveriesSnapshot() }.values.map(\.terminalID))
+        let coordination = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            (assignments: $0.rootAssignments(), labels: $0.handoffLabels())
+        }
         OrchestratorRegistry.withTransactionOnHeldLock { registry in
             registry.setHandoffTitles(registry.handoffTitles().filter {
                 visible.contains($0.key) || delivering.contains($0.key)
             })
             if let identities {
-                for assignment in rootAssignments.values
+                for assignment in coordination.assignments
                     where ![.failed, .inactive].contains(assignment.state) {
                     guard let stored = assignment.identity else { continue }
                     if identities.contains(where: {
@@ -2938,7 +2982,7 @@ enum Orchestrator {
                 // unfinished reading is no evidence either way and leaves the suppression alone;
                 // an absent reading is not a closed tab.
                 if inventoryComplete {
-                    for label in handoffLabels.values {
+                    for label in coordination.labels {
                         if identities.contains(where: {
                             rootAssignmentIdentityMatches(label.identity, observed: $0)
                         }) {
@@ -2979,33 +3023,37 @@ enum Orchestrator {
     private static func adoptHandoffLabelIdentitiesLocked(
         snapshot: SessionWatch.IdentitySnapshot, identities: [SessionWorkIdentity]) -> Bool {
         guard snapshot.complete else { return false }
-        var changed = false
-        for id in Array(handoffLabels.keys) {
-            guard let label = handoffLabels[id] else { continue }
-            let bound = label.identity.pid != nil && label.identity.processStart != nil
-            guard !bound || label.identity.conversationID == nil else { continue }
-            let onThatTab = identities.filter {
-                $0.terminalID == label.identity.terminalID
-                    && $0.assistant == label.identity.assistant
+        return OrchestratorRegistry.withCoordinationRecordsOnHeldLock { records in
+            var changed = false
+            for label in records.handoffLabels() {
+                let bound = label.identity.pid != nil && label.identity.processStart != nil
+                guard !bound || label.identity.conversationID == nil else { continue }
+                let onThatTab = identities.filter {
+                    $0.terminalID == label.identity.terminalID
+                        && $0.assistant == label.identity.assistant
+                }
+                guard onThatTab.count == 1, let only = onThatTab.first,
+                      let pid = only.pid, let start = only.processStart else { continue }
+                // An already-bound record accepts nothing but the conversation id, from the same
+                // process: a different pid or a different start is a stranger in a reused tab.
+                if bound {
+                    guard label.identity.pid == pid,
+                          label.identity.processStart == start.timeIntervalSince1970 else {
+                        continue
+                    }
+                }
+                let adopted = RootAssignmentIdentity(
+                    terminalID: only.terminalID, assistant: label.identity.assistant,
+                    tty: only.tty, pid: pid, processStart: start.timeIntervalSince1970,
+                    conversationID: only.conversationID)
+                guard adopted != label.identity else { continue }
+                if records.adoptHandoffLabelIdentity(label.handoffID, expected: label.identity,
+                                                     adopted: adopted) {
+                    changed = true
+                }
             }
-            guard onThatTab.count == 1, let only = onThatTab.first,
-                  let pid = only.pid, let start = only.processStart else { continue }
-            // An already-bound record accepts nothing but the conversation id, from the same
-            // process: a different pid or a different start is a stranger in a reused tab.
-            if bound {
-                guard label.identity.pid == pid,
-                      label.identity.processStart == start.timeIntervalSince1970 else { continue }
-            }
-            let adopted = RootAssignmentIdentity(
-                terminalID: only.terminalID, assistant: label.identity.assistant, tty: only.tty,
-                pid: pid, processStart: start.timeIntervalSince1970,
-                conversationID: only.conversationID)
-            guard adopted != label.identity else { continue }
-            handoffLabels[id] = HandoffLabel(handoffID: label.handoffID, label: label.label,
-                                             identity: adopted)
-            changed = true
+            return changed
         }
-        return changed
     }
 
     /// Commit a value copy only while the record is still the state the caller worked from.
@@ -3364,15 +3412,13 @@ enum Orchestrator {
                                        title: draft.title, fromSession: draft.fromSession,
                                        coordinatorPlainHandoff: draft.coordinatorPlainHandoff,
                                        created: Date(), state: .opening)
-        lock.lock()
-        // The server queue is serial, but the lock keeps direct test callers and any future
-        // entry point from crossing the open-tab side effect together.
-        if let existing = handoffs[id] {
-            lock.unlock()
+        // The server queue is serial, but the registry transition keeps direct test callers and
+        // any future entry point from crossing the open-tab side effect together.
+        if let existing = OrchestratorRegistry.withCoordinationRecords({
+            $0.openHandoff(envelope)
+        }) {
             return successfulHandoffReply(for: existing)
         }
-        handoffs[id] = envelope
-        lock.unlock()
         save()
         RemoteAuth.audit("handoff.open", ["handoff": id, "assistant": draft.assistant.rawValue,
                                            "cwd": draft.projectDir,
@@ -3383,11 +3429,7 @@ enum Orchestrator {
                                       label: draft.title ?? "handoff \(id.prefix(8))", at: Date())
         switch start(place, draft.assistant, draft.model, envelope.dir.path) {
         case .refused(let status, let code, let message, let app):
-            lock.lock()
-            var failed = handoffs[id] ?? envelope
-            failed.state = .spawnFailed
-            handoffs[id] = failed
-            lock.unlock()
+            OrchestratorRegistry.withCoordinationRecords { $0.failHandoffOpening(envelope) }
             save()
             RemoteAuth.audit("handoff.undelivered", ["handoff": id, "why": code])
             return .refused(status: status, code: code, message: message,
@@ -3405,11 +3447,13 @@ enum Orchestrator {
             // cost the tab a better name at every restart from here to the sweep. The iTerm
             // place label is unchanged either way; this is about what outlives the process.
             if let title = draft.title {
-                handoffLabels[id] = HandoffLabel(
-                    handoffID: id, label: title,
-                    identity: RootAssignmentIdentity(
-                        terminalID: terminalID, assistant: draft.assistant, tty: nil, pid: nil,
-                        processStart: nil, conversationID: nil))
+                OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+                    $0.bindHandoffLabel(HandoffLabel(
+                        handoffID: id, label: title,
+                        identity: RootAssignmentIdentity(
+                            terminalID: terminalID, assistant: draft.assistant, tty: nil,
+                            pid: nil, processStart: nil, conversationID: nil)))
+                }
             }
             OrchestratorRegistry.withTransactionOnHeldLock {
                 $0.setHandoffTitle(place.label, forTerminal: terminalID)
@@ -3646,12 +3690,11 @@ enum Orchestrator {
         }
         let digest = rootAssignmentDigest(draft)
         load()
-        lock.lock()
-        if let existing = rootAssignments.values.first(where: { $0.requestID == draft.requestID }) {
-            lock.unlock()
+        if let existing = OrchestratorRegistry.withCoordinationRecords({
+            $0.rootAssignment(forRequest: draft.requestID)
+        }) {
             return replayRootAssignment(existing, digest: digest)
         }
-        lock.unlock()
         guard Config.shared.orchestratorEnabled else {
             return .refused(403, "orchestrator_disabled",
                             "Root Assignment is switched off in Settings.")
@@ -3672,15 +3715,15 @@ enum Orchestrator {
             constraints: draft.constraints, relevantReferences: draft.relevantReferences,
             acceptance: draft.acceptance, projectApproved: projectApproved(draft.projectDir),
             created: now, state: .accepted, language: rootAssignmentLanguage())
-        lock.lock()
-        if let existing = rootAssignments.values.first(where: { $0.requestID == draft.requestID }) {
-            lock.unlock()
+        if let existing = OrchestratorRegistry.withCoordinationRecords({
+            $0.acceptRootAssignment(assignment)
+        }) {
             return replayRootAssignment(existing, digest: digest)
         }
-        rootAssignments[id] = assignment
-        lock.unlock()
         guard save() else {
-            lock.lock(); rootAssignments.removeValue(forKey: id); lock.unlock()
+            OrchestratorRegistry.withCoordinationRecords {
+                $0.withdrawUnpersistedRootAssignment(id)
+            }
             return .refused(503, "persistence_failed",
                             "The accepted assignment could not be durably recorded.")
         }
@@ -3688,32 +3731,25 @@ enum Orchestrator {
                                       path: draft.projectDir, label: draft.label, at: now)
         switch start(place, draft.assistant, draft.model == "default" ? nil : draft.model) {
         case .refused(let status, let code, let message, let app):
-            lock.lock()
-            var failed = rootAssignments[id] ?? assignment
-            failed.state = .failed; failed.failure = code; failed.endedAt = Date()
-            rootAssignments[id] = failed
-            lock.unlock(); save()
+            _ = OrchestratorRegistry.withCoordinationRecords {
+                $0.failRootAssignment(id, code: code, at: Date(), fallback: assignment)
+            }
+            save()
             reportRootAssignmentTransition(id)
             var extra: [String: Any] = ["assignment_id": id]
             if let app { extra["app"] = app }
             return .refused(status: status, code: code, message: message, extra: extra)
         case .started(let terminalID, let backend, _):
             lock.lock()
-            var opened = rootAssignments[id] ?? assignment
-            opened.state = .terminalOpened
-            opened.terminalOpenedAt = Date()
-            opened.identity = RootAssignmentIdentity(terminalID: terminalID,
-                assistant: draft.assistant, tty: nil, pid: nil, processStart: nil,
-                conversationID: nil)
-            rootAssignments[id] = opened
+            let opened = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+                $0.recordRootAssignmentTerminal(id, terminalID: terminalID, at: Date(),
+                                                fallback: assignment)
+            }
             reindex()
             lock.unlock()
             guard save() else {
-                lock.lock()
-                var lost = rootAssignments[id] ?? opened
-                lost.state = .failed; lost.failure = "launch_receipt_lost"
-                lost.endedAt = Date(); rootAssignments[id] = lost; reindex()
-                lock.unlock()
+                failRootAssignmentAndReindex(id, code: "launch_receipt_lost", at: Date(),
+                                             fallback: opened)
                 if !reportRootAssignmentTransition(id) {
                     RemoteAuth.audit("root_assignment.failed", [
                         "assignment": id, "state": RootAssignmentState.failed.rawValue,
@@ -4781,7 +4817,9 @@ enum Orchestrator {
             landingSources: landingSources(
                 sessionsFresh: sessionsFresh, sessionsObservedAt: sessionsObservedAt,
                 sessionsGeneration: sessionsGeneration, registryObservedAt: now),
-            openWaits: coordinationWaits.values.filter { wait in
+            openWaits: OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+                $0.coordinationWaits()
+            }.filter { wait in
                 wait.waiters.contains { $0.releaseDeliveredAt == nil }
             }.count)
     }
@@ -6260,12 +6298,12 @@ enum Orchestrator {
                              "state": task.state.rawValue])
             }
         }
-        lock.lock()
-        let ownedWaits = coordinationWaits.values.filter { wait in
-            wait.ownerSessionID == session.id
-                && wait.waiters.contains { $0.releaseDeliveredAt == nil }
+        let ownedWaits = OrchestratorRegistry.withCoordinationRecords { records in
+            records.coordinationWaits().filter { wait in
+                wait.ownerSessionID == session.id
+                    && wait.waiters.contains { $0.releaseDeliveredAt == nil }
+            }
         }.sorted { $0.created < $1.created }
-        lock.unlock()
         for wait in ownedWaits {
             lost.append(["wait": wait.id, "release_condition": wait.releaseCondition,
                          "waiters": wait.waiters.filter { $0.releaseDeliveredAt == nil }.count])
@@ -6428,50 +6466,28 @@ enum Orchestrator {
             tasks[id] = dead
             orphaned.append(id)
         }
-        var interruptedHandoffs: [String] = []
-        for (id, envelope) in handoffs where envelope.state == .opening {
-            var failed = envelope
-            failed.state = .spawnFailed
-            handoffs[id] = failed
-            interruptedHandoffs.append(id)
-        }
-        var lostAssignmentReceipts: [String] = []
         // `accepted` was persisted before StartPoints was invoked. Reopening it could duplicate a
         // tab whose side effect happened just before the crash, so this boundary fails closed.
-        for (id, assignment) in rootAssignments where assignment.state == .accepted {
-            var failed = assignment
-            failed.state = .failed
-            failed.failure = "launch_receipt_lost"
-            failed.endedAt = Date()
-            rootAssignments[id] = failed
-            lostAssignmentReceipts.append(id)
-        }
-        var incompleteAssignmentIdentities: [String] = []
-        for (id, assignment) in rootAssignments
-            where ![.accepted, .failed, .inactive].contains(assignment.state)
-                && (assignment.identity?.pid == nil
-                    || assignment.identity?.processStart == nil) {
-            var failed = assignment
-            failed.state = .failed
-            failed.failure = "restart_identity_incomplete"
-            failed.endedAt = Date()
-            rootAssignments[id] = failed
-            incompleteAssignmentIdentities.append(id)
+        let settled = OrchestratorRegistry.withCoordinationRecordsOnHeldLock { records in
+            (handoffs: records.failInterruptedHandoffOpenings(),
+             lostReceipts: records.failRootAssignmentsWithLostLaunchReceipts(at: Date()),
+             incompleteIdentities: records.failRootAssignmentsWithIncompleteIdentity(at: Date()))
         }
         lock.unlock()
-        for id in interruptedHandoffs {
+        let rearmed = rearmLingers()
+        // Attempt persistence before announcements; W1-5 owns gating handoff effects on failure.
+        if !orphaned.isEmpty || !settled.handoffs.isEmpty
+            || !settled.lostReceipts.isEmpty || !settled.incompleteIdentities.isEmpty
+            || rearmed { save() }
+        for id in settled.handoffs {
             RemoteAuth.audit("handoff.undelivered", ["handoff": id, "why": "app_restarted"])
         }
-        for id in lostAssignmentReceipts {
+        for id in settled.lostReceipts {
             reportRootAssignmentTransition(id)
         }
-        for id in incompleteAssignmentIdentities {
+        for id in settled.incompleteIdentities {
             reportRootAssignmentTransition(id)
         }
-        let rearmed = rearmLingers()
-        if !orphaned.isEmpty || !interruptedHandoffs.isEmpty
-            || !lostAssignmentReceipts.isEmpty || !incompleteAssignmentIdentities.isEmpty
-            || rearmed { save() }
         lock.lock()
         let beforeCompletionRecovery = tasks
         lock.unlock()
@@ -6582,9 +6598,9 @@ enum Orchestrator {
             }
             .map(\.id)
         let liveHandoffs = Array(OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.handoffDeliveriesSnapshot() }.keys)
-        let liveRootAssignments = rootAssignments.values.filter {
-            ![.failed, .inactive].contains($0.state)
-        }.map(\.id)
+        let liveRootAssignments = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            $0.rootAssignments()
+        }.filter { ![.failed, .inactive].contains($0.state) }.map(\.id)
         lock.unlock()
         defer {
             lock.lock(); beatsInFlight -= 1; lock.unlock()
@@ -6703,7 +6719,9 @@ enum Orchestrator {
         identities: [SessionWorkIdentity]) {
         guard !rootAssignmentStepsInFlight.contains(id) else { return }
         rootAssignmentStepsInFlight.insert(id)
-        lock.lock(); let channel = rootAssignments[id]?.identity?.terminalID; lock.unlock()
+        let channel = OrchestratorRegistry.withCoordinationRecords {
+            $0.rootAssignment(id)?.identity?.terminalID
+        }
         let admitted = RemoteServer.shared.enqueueTerminalCommand(channel: channel) {
             let reconciled = reconcileRootAssignment(id, snapshot: snapshot,
                                                      identities: identities)
@@ -6956,12 +6974,10 @@ enum Orchestrator {
     private static func reconcileRootAssignment(
         _ id: String, snapshot: SessionWatch.IdentitySnapshot,
         identities: [SessionWorkIdentity]) -> Bool {
-        lock.lock()
-        guard var assignment = rootAssignments[id], let stored = assignment.identity,
-              ![.failed, .inactive].contains(assignment.state) else {
-            lock.unlock(); return false
-        }
-        lock.unlock()
+        guard var assignment = OrchestratorRegistry.withCoordinationRecords({
+            $0.rootAssignment(id)
+        }), let stored = assignment.identity,
+              ![.failed, .inactive].contains(assignment.state) else { return false }
         let candidates = identities.compactMap { identity -> RootAssignmentIdentity? in
             guard identity.assistant == stored.assistant else { return nil }
             return RootAssignmentIdentity(
@@ -6988,7 +7004,7 @@ enum Orchestrator {
                 assignment.missingGeneration = nil
                 assignment.missingEpoch = nil
                 assignment.reconciliation = nil
-                lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock(); save()
+                commitRootAssignmentReconciliation(assignment, reindexing: true); save()
                 return true
             case .wait(let code):
                 guard assignment.reconciliation != code
@@ -7000,14 +7016,14 @@ enum Orchestrator {
                     assignment.missingGeneration = snapshot.generation
                     assignment.missingEpoch = snapshot.epoch
                 }
-                lock.lock(); rootAssignments[id] = assignment; lock.unlock(); save()
+                commitRootAssignmentReconciliation(assignment, reindexing: false); save()
                 return true
             case .fail(let code):
                 assignment.state = .failed
                 assignment.failure = code
                 assignment.reconciliation = nil
                 assignment.endedAt = Date()
-                lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock(); save()
+                commitRootAssignmentReconciliation(assignment, reindexing: true); save()
                 reportRootAssignmentTransition(id)
                 return true
             case .inactive:
@@ -7057,20 +7073,20 @@ enum Orchestrator {
             || assignment.missingObservedAt != beforeMissingAt
             || assignment.missingGeneration != beforeMissingGeneration
             || assignment.missingEpoch != beforeMissingEpoch else { return false }
-        lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock(); save()
+        commitRootAssignmentReconciliation(assignment, reindexing: true); save()
         reportRootAssignmentTransition(id)
         return true
     }
 
     @discardableResult
     private static func rootAssignmentStep(_ id: String) -> Bool {
-        lock.lock()
-        guard var assignment = rootAssignments[id], let identity = assignment.identity,
+        guard let assignment = OrchestratorRegistry.withCoordinationRecords({
+            $0.rootAssignment(id)
+        }), let identity = assignment.identity,
               identity.pid != nil, identity.processStart != nil,
               ![.accepted, .failed, .inactive, .active].contains(assignment.state) else {
-            lock.unlock(); return false
+            return false
         }
-        lock.unlock()
         let now = Date()
         let promptWindowOpenedAt = rootAssignmentPromptTimeoutAnchor(
             terminalOpenedAt: assignment.terminalOpenedAt ?? assignment.created,
@@ -7094,29 +7110,31 @@ enum Orchestrator {
             delivery: nil, injectAttempts: assignment.injectAttempts)
         switch firstDecision {
         case .activate:
-            assignment.state = .active; assignment.activeAt = now
-            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            guard OrchestratorRegistry.withCoordinationRecords({
+                $0.activateRootAssignment(id, at: now)
+            }) else { return false }
+            // Attempt persistence before the operator-visible event; W1-5 owns gating on failure.
+            save()
             RemoteAuth.audit("root_assignment.active", ["assignment": id])
             return true
         case .block:
             guard assignment.state != .blocked
                 || assignment.blocker != "workspace_trust_required" else { return false }
-            assignment.state = .blocked
-            assignment.blocker = "workspace_trust_required"
-            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            guard OrchestratorRegistry.withCoordinationRecords({
+                $0.blockRootAssignment(id, blocker: "workspace_trust_required")
+            }) else { return false }
             reportRootAssignmentTransition(id)
             return true
         case .answerTrust(let row):
             // The receipt must survive a restart before any digit can reach the terminal. A
             // persistence refusal leaves the picker untouched and restores the in-memory bit.
-            assignment.answeredTrustMenu = true
-            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            guard OrchestratorRegistry.withCoordinationRecords({
+                $0.recordRootAssignmentTrustAnswer(id)
+            }) else { return false }
             guard save() else {
-                lock.lock()
-                if var current = rootAssignments[id], current.answeredTrustMenu {
-                    current.answeredTrustMenu = false; rootAssignments[id] = current
+                OrchestratorRegistry.withCoordinationRecords {
+                    $0.withdrawRootAssignmentTrustAnswer(id)
                 }
-                lock.unlock()
                 return false
             }
             _ = Targets.answer(UInt8(0x30 + row), to: target)
@@ -7124,17 +7142,14 @@ enum Orchestrator {
                                                         "policy": "approved_workspace"])
             return true
         case .promptReady:
-            let resumedFromTrust = assignment.state == .blocked
-            assignment.state = .promptReady; assignment.promptReadyAt = now
-            if resumedFromTrust { assignment.promptTimeoutStartedAt = now }
-            assignment.blocker = nil
-            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
-            return true
+            return OrchestratorRegistry.withCoordinationRecords {
+                $0.markRootAssignmentPromptReady(
+                    id, at: now, resumedFromTrust: assignment.state == .blocked)
+            }
         case .wait:
             return false
         case .fail(let code):
-            assignment.state = .failed; assignment.failure = code; assignment.endedAt = now
-            lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock()
+            failRootAssignmentAndReindex(id, code: code, at: now)
             reportRootAssignmentTransition(id)
             return true
         case .inspectDelivery:
@@ -7181,19 +7196,28 @@ enum Orchestrator {
             injectAttempts: assignment.injectAttempts)
         switch deliveryDecision {
         case .briefed:
-            assignment.state = .briefed; assignment.briefedAt = Date()
-            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            guard OrchestratorRegistry.withCoordinationRecords({
+                $0.markRootAssignmentBriefed(id, at: Date())
+            }) else { return false }
+            save()
             RemoteAuth.audit("root_assignment.briefed", ["assignment": id])
             return true
         case .fail(let code):
-            assignment.state = .failed; assignment.failure = code; assignment.endedAt = now
-            lock.lock(); rootAssignments[id] = assignment; reindex(); lock.unlock()
+            failRootAssignmentAndReindex(id, code: code, at: now)
             reportRootAssignmentTransition(id)
             return true
         case .inject:
-            assignment.injectAttempts += 1; assignment.lastInjectAt = now
-            if Targets.send(line, to: target) != nil { assignment.lastInjectAt = nil }
-            lock.lock(); rootAssignments[id] = assignment; lock.unlock()
+            // Attempt persistence before typing. W1-5 owns gating the send on save success; until
+            // then a failed best-effort save can leave the durable attempt count behind the line.
+            guard OrchestratorRegistry.withCoordinationRecords({
+                $0.recordRootAssignmentInjection(id, at: now)
+            }) else { return false }
+            save()
+            if Targets.send(line, to: target) != nil {
+                OrchestratorRegistry.withCoordinationRecords {
+                    $0.withdrawRootAssignmentInjectionTime(id, at: now)
+                }
+            }
             return true
         default:
             return false
@@ -7206,8 +7230,9 @@ enum Orchestrator {
         lock.lock()
         guard var delivery = OrchestratorRegistry.withSessionRecordsOnHeldLock({
             $0.handoffDelivery(for: id)
-        }), let envelope = handoffs[id],
-              envelope.state == .opening else {
+        }), let envelope = OrchestratorRegistry.withCoordinationRecordsOnHeldLock({
+            $0.handoff(id)
+        }), envelope.state == .opening else {
             OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: id) }
             lock.unlock()
             return
@@ -7296,12 +7321,12 @@ enum Orchestrator {
     static func settleHandoff(_ id: String, delivered: Bool, assistant: Assistant,
                               why: String?) {
         lock.lock()
-        guard var envelope = handoffs[id], envelope.state == .opening else {
+        guard let envelope = OrchestratorRegistry.withCoordinationRecordsOnHeldLock({
+            $0.settleHandoffOpening(id, delivered: delivered)
+        }) else {
             lock.unlock()
             return
         }
-        envelope.state = delivered ? .delivered : .spawnFailed
-        handoffs[id] = envelope
         OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: id) }
         lock.unlock()
         save()
@@ -9525,23 +9550,21 @@ enum Orchestrator {
 
     static func rootAssignmentRecords() -> [[String: Any]] {
         load()
-        lock.lock(); let rows = rootAssignments.values.sorted { $0.created > $1.created }
-        lock.unlock()
+        let rows = OrchestratorRegistry.withCoordinationRecords { $0.rootAssignments() }
+            .sorted { $0.created > $1.created }
         return rows.map(rootAssignmentPublicRecord)
     }
 
     static func rootAssignmentRecord(id: String) -> [String: Any]? {
         load()
-        lock.lock(); let row = rootAssignments[id]; lock.unlock()
+        let row = OrchestratorRegistry.withCoordinationRecords { $0.rootAssignment(id) }
         return row.map(rootAssignmentPublicRecord)
     }
 
     static func rootAssignmentSessionRecord(identity observed: SessionWorkIdentity)
         -> [String: Any]? {
         load()
-        lock.lock()
-        let assignments = Array(rootAssignments.values)
-        lock.unlock()
+        let assignments = OrchestratorRegistry.withCoordinationRecords { $0.rootAssignments() }
         return rootAssignmentSessionProjection(assignments: assignments, identity: observed)
     }
 
@@ -9600,19 +9623,24 @@ enum Orchestrator {
     static func saveForTesting() { _ = save() }
 
     static func holdRootAssignmentForTesting(_ assignment: RootAssignment) {
-        lock.lock(); rootAssignments[assignment.id] = assignment; reindex(); lock.unlock()
+        lock.lock()
+        OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            $0.installRootAssignmentForTesting(assignment)
+        }
+        reindex()
+        lock.unlock()
     }
 
     static func rootAssignmentForTesting(_ id: String) -> RootAssignment? {
-        load(); lock.lock(); defer { lock.unlock() }
-        return rootAssignments[id]
+        load()
+        return OrchestratorRegistry.withCoordinationRecords { $0.rootAssignment(id) }
     }
 
     /// The durable handoff→tab binding as it stands on this process's own records. Deliberately
     /// not a public route: what the outside world may see of a handoff is its envelope.
     static func handoffLabelForTesting(_ id: String) -> HandoffLabel? {
-        load(); lock.lock(); defer { lock.unlock() }
-        return handoffLabels[id]
+        load()
+        return OrchestratorRegistry.withCoordinationRecords { $0.handoffLabel(id) }
     }
 
     /// The beat's identity adoption, without a beat. Everything else on that path needs a live
@@ -9868,35 +9896,15 @@ enum Orchestrator {
 
         load()
         coordinationDeliveryLock.lock(); defer { coordinationDeliveryLock.unlock() }
-        var deduplicated = false
-        var needsDelivery = true
-        var waitID: String
-        lock.lock()
-        if var existing = coordinationWaits.values.first(where: {
-            $0.repository == repository && $0.paths == paths
-                && $0.ownerSessionID == owner && $0.releaseCondition == condition
-        }) {
-            waitID = existing.id
-            if let index = existing.waiters.firstIndex(where: { $0.sessionID == waiter }) {
-                deduplicated = true
-                needsDelivery = existing.waiters[index].requestDeliveredAt == nil
-            } else {
-                existing.waiters.append(CoordinationWaiter(sessionID: waiter, reason: reason,
-                                                            created: now,
-                                                            requestDeliveredAt: nil,
-                                                            releaseDeliveredAt: nil))
-                coordinationWaits[existing.id] = existing
-            }
-        } else {
-            waitID = UUID().uuidString.lowercased()
-            coordinationWaits[waitID] = CoordinationWait(
-                id: waitID, repository: repository, paths: paths,
-                ownerSessionID: owner, releaseCondition: condition, created: now,
-                waiters: [CoordinationWaiter(sessionID: waiter, reason: reason, created: now,
-                                             requestDeliveredAt: nil,
-                                             releaseDeliveredAt: nil)])
+        let joined = OrchestratorRegistry.withCoordinationRecords {
+            $0.joinCoordinationWait(
+                repository: repository, paths: paths, owner: owner,
+                releaseCondition: condition, waiter: waiter, reason: reason, now: now,
+                newWaitID: UUID().uuidString.lowercased())
         }
-        lock.unlock()
+        let waitID = joined.waitID
+        let deduplicated = joined.deduplicated
+        let needsDelivery = joined.needsDelivery
         save()
 
         if needsDelivery {
@@ -9926,13 +9934,9 @@ enum Orchestrator {
                                 message: problem,
                                 extra: ["wait": coordinationWaitRecord(id: waitID) ?? [:]])
             }
-            lock.lock()
-            if var current = coordinationWaits[waitID],
-               let index = current.waiters.firstIndex(where: { $0.sessionID == waiter }) {
-                current.waiters[index].requestDeliveredAt = now
-                coordinationWaits[waitID] = current
+            OrchestratorRegistry.withCoordinationRecords {
+                $0.receiptCoordinationWaitRequest(waitID, waiter: waiter, at: now)
             }
-            lock.unlock()
             save()
         }
         RemoteAuth.audit("orchestrator.wait.register", [
@@ -9956,18 +9960,16 @@ enum Orchestrator {
         else { return .refused(400, "bad_wait", "The release fields are not valid.") }
         load()
         coordinationDeliveryLock.lock(); defer { coordinationDeliveryLock.unlock() }
-        lock.lock()
-        guard let snapshot = coordinationWaits[id] else {
-            lock.unlock()
+        guard let snapshot = OrchestratorRegistry.withCoordinationRecords({
+            $0.coordinationWait(id)
+        }) else {
             return .refused(404, "not_found", "No coordination wait named that.")
         }
         guard snapshot.ownerSessionID == owner else {
-            lock.unlock()
             return .refused(403, "wrong_owner",
                             "Only the owner recorded on this wait may release it.")
         }
         let pending = snapshot.waiters.filter { $0.releaseDeliveredAt == nil }
-        lock.unlock()
 
         let commitText = commit.flatMap { boundedCoordinationText($0, limit: 200) }
         let noteText = note.flatMap { boundedCoordinationText($0, limit: 1_000) }
@@ -9985,20 +9987,13 @@ enum Orchestrator {
             if deliver(waiter.sessionID, message) == nil { deliveredIDs.append(waiter.sessionID) }
         }
 
-        lock.lock()
-        guard var current = coordinationWaits[id], current.ownerSessionID == owner else {
-            lock.unlock()
+        let receipt = OrchestratorRegistry.withCoordinationRecords {
+            $0.receiptCoordinationWaitRelease(id, owner: owner, deliveredTo: deliveredIDs,
+                                              at: now)
+        }
+        guard case .recorded(let total, let stillPending) = receipt else {
             return .refused(409, "wait_changed", "The coordination wait changed during release.")
         }
-        for index in current.waiters.indices
-            where deliveredIDs.contains(current.waiters[index].sessionID) {
-            current.waiters[index].releaseDeliveredAt = now
-        }
-        let total = current.waiters.count
-        let stillPending = current.waiters.filter { $0.releaseDeliveredAt == nil }.count
-        if stillPending == 0 { coordinationWaits.removeValue(forKey: id) }
-        else { coordinationWaits[id] = current }
-        lock.unlock()
         save()
 
         if stillPending > 0 {
@@ -10025,20 +10020,16 @@ enum Orchestrator {
         }
         load()
         coordinationDeliveryLock.lock(); defer { coordinationDeliveryLock.unlock() }
-        lock.lock()
-        guard var current = coordinationWaits[id] else {
-            lock.unlock()
+        switch OrchestratorRegistry.withCoordinationRecords({
+            $0.withdrawCoordinationWaiter(id, waiter: waiter)
+        }) {
+        case .notFound:
             return .refused(404, "not_found", "No coordination wait named that.")
-        }
-        let before = current.waiters.count
-        current.waiters.removeAll { $0.sessionID == waiter }
-        guard current.waiters.count != before else {
-            lock.unlock()
+        case .notWaiter:
             return .refused(403, "not_waiter", "That session is not a waiter on this group.")
+        case .withdrawn:
+            break
         }
-        if current.waiters.isEmpty { coordinationWaits.removeValue(forKey: id) }
-        else { coordinationWaits[id] = current }
-        lock.unlock()
         save()
         RemoteAuth.audit("orchestrator.wait.cancel", ["wait": id, "waiter": waiter])
         return .ok(["ok": true, "id": id])
@@ -10046,8 +10037,7 @@ enum Orchestrator {
 
     static func coordinationWaitRecords() -> [[String: Any]] {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return coordinationWaits.values.sorted {
+        return OrchestratorRegistry.withCoordinationRecords { $0.coordinationWaits() }.sorted {
             $0.created == $1.created ? $0.id < $1.id : $0.created < $1.created
         }
             .map(coordinationWaitRecord)
@@ -10064,7 +10054,9 @@ enum Orchestrator {
     private static func coordinationLocked(forTerminal id: String) -> Coordination {
         var waitingOn: [[String: Any]] = []
         var waitedOnBy: [[String: Any]] = []
-        for wait in coordinationWaits.values {
+        for wait in OrchestratorRegistry.withCoordinationRecordsOnHeldLock({
+            $0.coordinationWaits()
+        }) {
             for waiter in wait.waiters where waiter.releaseDeliveredAt == nil {
                 if waiter.sessionID == id {
                     var row = coordinationWaitRecord(wait)
@@ -10098,8 +10090,8 @@ enum Orchestrator {
     }
 
     private static func coordinationWaitRecord(id: String) -> [String: Any]? {
-        lock.lock(); defer { lock.unlock() }
-        return coordinationWaits[id].map(coordinationWaitRecord)
+        OrchestratorRegistry.withCoordinationRecords { $0.coordinationWait(id) }
+            .map(coordinationWaitRecord)
     }
 
     private static func coordinationWaitRecord(_ wait: CoordinationWait) -> [String: Any] {
@@ -10234,10 +10226,9 @@ enum Orchestrator {
         }
         lock.lock()
         tasks = found
-        handoffs = foundHandoffs
-        handoffLabels = foundLabels
-        rootAssignments = foundRootAssignments
-        coordinationWaits = foundWaits
+        OrchestratorRegistry.withCoordinationRecordsOnHeldLock { $0.replacePersistentRecords(
+            .init(handoffs: foundHandoffs, handoffLabels: foundLabels,
+                  rootAssignments: foundRootAssignments, coordinationWaits: foundWaits)) }
         OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.replacePersistentRecords(
             .init(deliveries: foundSessionDeliveries, selfStates: foundSelfStates)) }
         closureAttestations = foundAttestations
@@ -10272,14 +10263,17 @@ enum Orchestrator {
         settleObligationGenerationLocked()
         let rows = tasks.values.sorted { $0.created < $1.created }
             .map { OrchestratorStore.stored($0) }
-        let handoffRows = handoffs.values.sorted { $0.created < $1.created }
+        let coordinationRecords = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            $0.persistentSnapshot()
+        }
+        let handoffRows = coordinationRecords.handoffs.values.sorted { $0.created < $1.created }
             .map { OrchestratorStore.stored($0) }
-        let handoffLabelRows = handoffLabels.values.sorted { $0.handoffID < $1.handoffID }
-            .map { OrchestratorStore.stored($0) }
-        let rootAssignmentRows = rootAssignments.values.sorted { $0.created < $1.created }
-            .map { OrchestratorStore.stored($0) }
-        let waitRows = coordinationWaits.values.sorted { $0.created < $1.created }
-            .map { OrchestratorStore.stored($0) }
+        let handoffLabelRows = coordinationRecords.handoffLabels.values
+            .sorted { $0.handoffID < $1.handoffID }.map { OrchestratorStore.stored($0) }
+        let rootAssignmentRows = coordinationRecords.rootAssignments.values
+            .sorted { $0.created < $1.created }.map { OrchestratorStore.stored($0) }
+        let waitRows = coordinationRecords.coordinationWaits.values
+            .sorted { $0.created < $1.created }.map { OrchestratorStore.stored($0) }
         let persistentSessionRecords = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.persistentSnapshot() }
         let sessionDeliveryRows = persistentSessionRecords.deliveries.values
             .sorted { $0.reportedAt < $1.reportedAt }.map { OrchestratorStore.stored($0) }
@@ -10448,7 +10442,8 @@ enum Orchestrator {
         // is on the envelope's timetable — a delivered handoff's letter goes a day after it
         // lands, and the session it opened is usually still working then.
         let forgottenLabels = OrchestratorRegistry.withTransaction { registry in
-            handoffLabels.keys.filter { registry.isHandoffLabelSuppressed($0) }
+            OrchestratorRegistry.withCoordinationRecordsOnHeldLock { $0.handoffLabels() }
+                .map(\.handoffID).filter { registry.isHandoffLabelSuppressed($0) }
         }
         lock.lock()
         let sweep = taskRetentionSweep(tasks.values.map {
@@ -10458,8 +10453,8 @@ enum Orchestrator {
         }, now: now, directoryHours: directoryHours, recordLimit: recordLimit,
            recordDays: recordDays)
         let done = sweep.directories.compactMap { tasks[$0] }
-        let expiredHandoffs = handoffs.values.filter {
-            $0.state.isTerminal && $0.created < cutoff
+        let expiredHandoffs = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            $0.expiredTerminalHandoffs(createdBefore: cutoff)
         }
         lock.unlock()
         for task in done {
@@ -10469,26 +10464,27 @@ enum Orchestrator {
             }
             try? FileManager.default.removeItem(at: task.dir)
         }
-        for envelope in expiredHandoffs {
-            try? FileManager.default.removeItem(at: envelope.dir)
-        }
         lock.lock()
         for envelope in expiredHandoffs {
-            handoffs.removeValue(forKey: envelope.id)
             OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeHandoffDelivery(for: envelope.id) }
         }
         let oldSessionDeliveryIDs = OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.sessionDeliveriesSnapshot() }.values
             .sorted { $0.reportedAt > $1.reportedAt }.dropFirst(200)
             .map { $0.identity.terminalID }
-        let oldRootAssignmentIDs = rootAssignmentCleanupIDs(rootAssignments.values.map {
-            RootAssignmentCleanupCandidate(id: $0.id, state: $0.state, created: $0.created)
-        })
+        let oldRootAssignmentIDs = OrchestratorRegistry.withCoordinationRecordsOnHeldLock {
+            records -> [String] in
+            records.removeHandoffs(expiredHandoffs.map(\.id))
+            let old = rootAssignmentCleanupIDs(records.rootAssignments().map {
+                RootAssignmentCleanupCandidate(id: $0.id, state: $0.state, created: $0.created)
+            })
+            records.removeRootAssignments(old)
+            records.forgetHandoffLabels(forgottenLabels)
+            return old
+        }
         for id in sweep.records { tasks.removeValue(forKey: id) }
         for id in oldSessionDeliveryIDs {
             OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeSessionDelivery(forTerminal: id) }
         }
-        for id in oldRootAssignmentIDs { rootAssignments.removeValue(forKey: id) }
-        for id in forgottenLabels { handoffLabels.removeValue(forKey: id) }
         let retained = Set(tasks.keys)
         lock.unlock()
         if !forgottenLabels.isEmpty {
@@ -10499,6 +10495,12 @@ enum Orchestrator {
         if !sweep.records.isEmpty || !expiredHandoffs.isEmpty || !oldSessionDeliveryIDs.isEmpty
             || !oldRootAssignmentIDs.isEmpty || !forgottenLabels.isEmpty {
             save()
+        }
+        // Attempt persistence before deleting the directory. W1-5 owns gating deletion on a
+        // successful save; until then this remains the existing best-effort cleanup policy and
+        // a failed save may leave a durable envelope naming a directory that is already gone.
+        for envelope in expiredHandoffs {
+            try? FileManager.default.removeItem(at: envelope.dir)
         }
         cleanupOrphanWorktrees(knownTaskIDs: retained, olderThan: cutoff)
         _ = OwnedStorage.compact()
@@ -10514,8 +10516,7 @@ enum Orchestrator {
 
     private static func heldHandoff(_ id: String) -> HandoffEnvelope? {
         load()
-        lock.lock(); defer { lock.unlock() }
-        return handoffs[id]
+        return OrchestratorRegistry.withCoordinationRecords { $0.handoff(id) }
     }
 
     private static func heldSecret(_ id: String) -> String? {
@@ -10637,17 +10638,15 @@ enum Orchestrator {
             $0.removeAllRateWindows()
         }
         restartReceipt = nil
-        handoffs = [:]
-        handoffLabels = [:]
+        OrchestratorRegistry.withCoordinationRecordsOnHeldLock { $0.removeAllPersistentRecords() }
         OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeAllHandoffDeliveries() }
-        rootAssignments = [:]
-        coordinationWaits = [:]
         OrchestratorRegistry.withSessionRecordsOnHeldLock { $0.removeAllPersistentRecords() }
         closureAttestations = [:]
         sessionActivityGenerations = [:]
         sessionActivityClasses = [:]
         obligationGeneration = 0; obligationFingerprint = ""; obligationFingerprintDirty = true
         observedSessionSelfStateMutationGeneration = -1
+        observedCoordinationObligationMutationGeneration = -1
         closeabilityIndexDirty = true
         cachedCloseabilityRegistryIndex = nil
         OrchestratorRegistry.withTransactionOnHeldLock { $0.removeAllHandoffTitles() }

@@ -201,11 +201,30 @@ group("root assignments are a closed durable fourth primitive") {
         }
     expect("an unavailable selected assistant has a typed refusal", refusalCode(unavailableReply), "assistant_unavailable")
     expect("assistant availability is checked before opening a terminal", opens, 0)
+    // The terminal effect is observed from inside itself: the registry lock must already be
+    // free, and the accepted record must already be on disk, before any tab is requested.
+    var launchEffectFoundLockFree = false
+    var launchEffectFoundDurableAcceptance = false
     let first = Orchestrator.rootAssignment(base, idempotencyKey: requestID,
         assistantAvailable: { _ in true }, projectApproved: { _ in true }) { _, _, _ in
             opens += 1
+            if OrchestratorRegistry.lock.try() {
+                launchEffectFoundLockFree = true
+                OrchestratorRegistry.lock.unlock()
+            }
+            let onDisk = (try? Data(contentsOf: Orchestrator.storeURL)).flatMap {
+                (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+            }
+            launchEffectFoundDurableAcceptance =
+                (onDisk?["root_assignments"] as? [[String: Any]] ?? []).contains {
+                    $0["request_id"] as? String == requestID
+                        && $0["state"] as? String == "accepted"
+                }
             return .started(id: "%feature-root", backend: .tmux, attach: nil)
         }
+    check("the tab is requested outside the registry lock", launchEffectFoundLockFree)
+    check("and only after the accepted assignment reached disk",
+          launchEffectFoundDurableAcceptance)
     guard case .ok(let firstPayload) = first,
           let firstRecord = firstPayload["root_assignment"] as? [String: Any],
           let stableID = firstRecord["id"] as? String else {
@@ -383,8 +402,24 @@ group("root assignments are a closed durable fourth primitive") {
     var audited = assignmentFixture(state: .blocked); audited.blocker = "workspace_trust_required"
     Orchestrator.holdRootAssignmentForTesting(audited)
     var notices: [(String, [String: String])] = []
-    Orchestrator.rootAssignmentAuditObserverForTesting = { notices.append(($0, $1)) }
+    var auditFoundLockFree = true
+    Orchestrator.rootAssignmentAuditObserverForTesting = { event, fields in
+        if OrchestratorRegistry.lock.try() { OrchestratorRegistry.lock.unlock() }
+        else { auditFoundLockFree = false }
+        notices.append((event, fields))
+    }
+    // Failure injection: a receipt that cannot reach disk must neither announce itself nor stay
+    // behind in memory, or the next beat would believe the operator had already been told.
+    Orchestrator.storeSaveInterceptorForTesting = { _ in false }
+    let refusedReport = Orchestrator.reportRootAssignmentTransition(audited.id)
+    Orchestrator.storeSaveInterceptorForTesting = nil
+    check("a transition receipt whose save is refused emits no audit",
+          !refusedReport && notices.isEmpty)
+    check("and is rolled back to the receipt it replaced",
+          Orchestrator.rootAssignmentForTesting(audited.id)?.reportedTransition == nil)
     check("the blocked transition emits one persisted operator-visible audit", Orchestrator.reportRootAssignmentTransition(audited.id))
+    check("the audit is emitted after the registry lock is released",
+          auditFoundLockFree && notices.count == 1)
     check("the durable transition receipt suppresses a repeat beat", !Orchestrator.reportRootAssignmentTransition(audited.id))
     expect("the audit names the typed blocked event", notices.first?.0, "root_assignment.blocked")
     expect("the audit names the exact terminal identity", notices.first?.1["terminal"], exact.terminalID)

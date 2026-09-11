@@ -502,6 +502,39 @@ restored candidate passed all 53 selected checks. The held-lock adapter still re
 debt, not a new lock: its 48 call sites are counted by the guard, may only fall, and must disappear
 with the adapter at Stage 7.
 
+**Stages 4 and 5 moved together as W1-3, one reversible coordination-record capability.** Handoff
+envelopes, handoff labels, coordination waits and Root Assignments are four durable families with
+one lifetime shape — opened, delivered or settled, released, swept — and they already shared one
+store snapshot, one restart settlement and one label projection. Moving them one at a time would
+have given a handoff's envelope and its label two owners for a stage, so all four moved behind
+`OrchestratorRegistry.CoordinationRecordsTransaction`: immutable value projections plus closed,
+named transitions (`openHandoff`, `settleHandoffOpening`, `bindHandoffLabel`,
+`adoptHandoffLabelIdentity`, `acceptRootAssignment`, `recordRootAssignmentTransitionReport`,
+`joinCoordinationWait`, `withdrawCoordinationWaiter`, …) and no mutable collection accessor.
+Schema v1, the JSON keys and codecs, the single `NSLock`, the persistence lifetimes and every
+`Orchestrator` facade are unchanged, so rollback is reverting the slice; a store written by either
+side is read by the other. Three things are new rather than moved. Obligation invalidation no
+longer rides a `didSet` in the facade: every handoff or wait transition advances a Registry
+mutation clock that `settleObligationGenerationLocked` consumes, the way session self-states
+already did. Effects that ran ahead of persistence now follow a synchronous save attempt: the
+`root_assignment.active` and `.briefed` audits, Root Assignment injection, restart handoff
+announcement and expired-handoff directory deletion all come after that attempt. These five call
+sites remain best-effort until W1-5 decides which effects must be gated on save success. The
+existing withdrawals — acceptance, trust answer and transition receipt — are kept; only the trust
+answer and transition receipt use compare-before-restore transitions. Separating best-effort from
+gated persistence is W1-5's behavioral slice, not this extraction's. Regions that touch coordination
+records take the acquiring `withCoordinationRecords` door, which took bare `lock.lock()` sites
+from 160 to 123 across the three files that still hold the lock directly. The 26
+`withCoordinationRecordsOnHeldLock` sites that must stay atomic with tasks or the terminal
+projection are ratcheted beside the other two adapters and leave with tasks. The focused proof ran
+26 selected groups on the working overlay — 679 checks, green, 37 seconds. Its red half broke two
+transitions in a private copy — a withdrawn waiter no longer advancing the obligation clock, a
+failed receipt save no longer restoring the receipt — and the two guarding groups failed on exactly
+the six checks that name those behaviors, 6 of 132, while the neighbouring handoff-clock check
+stayed green. Each new ratchet was pushed one site past its number and refused. The step paths
+that type into a live terminal (activation, briefing, injection) are covered by review, not by
+execution, and the full suite on the integrated tree remains the landing root's.
+
 **Stage 2 is the one that is not a relocation.** `dispatchTimes`, `notifyTimes`,
 `notifyCredentialFailureTimes` and `scheduleWriteTimes` are four `[Date]` arrays carrying the same
 five operations verbatim — expire by window, check room, take one, give one back (two of the four),
@@ -597,7 +630,7 @@ is written, and this document is not that place for any of them.
 | ordered groups | 619 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 48 | `Tests/main.swift`, counted by the guard |
 | suite files | 61 | `Tests/*Tests.swift`, counted by the guard |
-| `Orchestrator.swift` ceiling | 10,723 | the ratchet in `tools/check-architecture-boundaries.sh` |
+| `Orchestrator.swift` ceiling | 10,721 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,831 | the receipt in `tools/check-architecture-boundaries.sh` |
 
 <!-- /clawdline-governance-table:v1 -->

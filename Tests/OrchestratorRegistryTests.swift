@@ -115,6 +115,125 @@ func runOrchestratorRegistryTests() {
                    OrchestratorRegistry.withTransaction(fact.read), fact.want)
         }
         Orchestrator.forget()
+
+        // The four coordination families have their own capability. Each is written through a
+        // named transition and read back through a value projection: in the writing hold, in the
+        // next hold, and across a real save / forget / load, because all four are durable.
+        do {
+            let store = Orchestrator.storeURL
+            let before = try? Data(contentsOf: store)
+            defer {
+                if let before { try? before.write(to: store, options: .atomic) }
+                else { try? FileManager.default.removeItem(at: store) }
+                Orchestrator.forget()
+            }
+            Orchestrator.forget()
+            Orchestrator.load()
+            // The store codecs admit only lowercase UUID ids, so a fixture that is not one would
+            // be dropped on reload and read as a lifetime defect it is not.
+            let handoffID = UUID().uuidString.lowercased()
+            let acceptedID = UUID().uuidString.lowercased()
+            let replayedID = UUID().uuidString.lowercased()
+            let requestID = UUID().uuidString.lowercased()
+            let waitID = UUID().uuidString.lowercased()
+            let duplicateWaitID = UUID().uuidString.lowercased()
+            let at = Date(timeIntervalSince1970: 1_800_000_900)
+            let envelope = Orchestrator.HandoffEnvelope(
+                id: handoffID, projectDir: "/tmp",
+                title: "registry handoff", fromSession: "%sender",
+                coordinatorPlainHandoff: false, created: at, state: .opening)
+            let labelIdentity = Orchestrator.RootAssignmentIdentity(
+                terminalID: "%coordination-label", assistant: .codex, tty: nil, pid: nil,
+                processStart: nil, conversationID: nil)
+            func assignment(_ id: String) -> Orchestrator.RootAssignment {
+                Orchestrator.RootAssignment(
+                    id: id, requestID: requestID,
+                    requestDigest: String(repeating: "c", count: 64), assistant: .codex,
+                    model: "default", projectDir: "/tmp", label: "registry assignment",
+                    objective: "objective", scope: "scope", constraints: "constraints",
+                    relevantReferences: "references", acceptance: "acceptance",
+                    projectApproved: false, created: at, state: .accepted, language: nil)
+            }
+            func join(_ records: OrchestratorRegistry.CoordinationRecordsTransaction,
+                      newWaitID: String) -> OrchestratorRegistry.CoordinationWaitJoin {
+                records.joinCoordinationWait(
+                    repository: "/tmp", paths: ["a.swift"], owner: "%owner",
+                    releaseCondition: "landed", waiter: "%waiter", reason: "needs a.swift",
+                    now: at, newWaitID: newWaitID)
+            }
+            let accepted = assignment(acceptedID)
+            let wroteAndRead = OrchestratorRegistry.withCoordinationRecords { records -> Bool in
+                let opened = records.openHandoff(envelope) == nil
+                records.bindHandoffLabel(Orchestrator.HandoffLabel(
+                    handoffID: envelope.id, label: "registry label", identity: labelIdentity))
+                let admitted = records.acceptRootAssignment(accepted) == nil
+                let joined = join(records, newWaitID: waitID)
+                return opened && admitted && joined.waitID == waitID
+                    && records.handoff(envelope.id)?.state == .opening
+                    && records.handoffLabel(envelope.id)?.label == "registry label"
+                    && records.rootAssignment(accepted.id)?.state == .accepted
+                    && records.coordinationWait(joined.waitID)?.waiters.count == 1
+            }
+            check("the four coordination families read back inside the hold that wrote them",
+                  wroteAndRead)
+            let replayed = OrchestratorRegistry.withCoordinationRecords { records in
+                (handoff: records.openHandoff(envelope)?.id,
+                 assignment: records.acceptRootAssignment(assignment(replayedID))?.id,
+                 secondRow: records.rootAssignment(replayedID),
+                 join: join(records, newWaitID: duplicateWaitID))
+            }
+            expect("a replayed handoff id returns the envelope already held",
+                   replayed.handoff, envelope.id)
+            expect("a replayed request id returns the assignment already held",
+                   replayed.assignment, accepted.id)
+            check("and records no second assignment under the new id", replayed.secondRow == nil)
+            check("a repeated waiter is the wait already held, still owed its request",
+                  replayed.join.waitID == waitID
+                    && replayed.join.deduplicated && replayed.join.needsDelivery)
+
+            // Obligation evidence is invalidated by the owner's clock, not by a `didSet` in the
+            // facade: a wait or handoff written only through the registry must still move it.
+            let beforeSettlement = Orchestrator.currentObligationGeneration()
+            let settled = OrchestratorRegistry.withCoordinationRecords {
+                $0.settleHandoffOpening(envelope.id, delivered: true)
+            }
+            check("an opening settles once", settled?.state == .delivered
+                    && OrchestratorRegistry.withCoordinationRecords {
+                        $0.settleHandoffOpening(envelope.id, delivered: false)
+                    } == nil)
+            check("a handoff settled through the registry advances the obligation clock",
+                  Orchestrator.currentObligationGeneration() > beforeSettlement)
+
+            Orchestrator.saveForTesting()
+            Orchestrator.forget()
+            let forgotten = OrchestratorRegistry.withCoordinationRecords { $0.persistentSnapshot() }
+            check("forget clears all four coordination families",
+                  forgotten.handoffs.isEmpty && forgotten.handoffLabels.isEmpty
+                    && forgotten.rootAssignments.isEmpty && forgotten.coordinationWaits.isEmpty)
+            Orchestrator.load()
+            let durable = OrchestratorRegistry.withCoordinationRecords { records -> Bool in
+                records.handoff(envelope.id)?.state == .delivered
+                    && records.handoffLabel(envelope.id)?.identity == labelIdentity
+                    && records.rootAssignment(forRequest: accepted.requestID)?.id == accepted.id
+                    && records.coordinationWait(waitID)?.waiters
+                        .map(\.sessionID) == ["%waiter"]
+            }
+            check("all four coordination families survive a save and reload", durable)
+
+            let beforeWithdrawal = Orchestrator.currentObligationGeneration()
+            let withdrawn = OrchestratorRegistry.withCoordinationRecords { records in
+                (stranger: records.withdrawCoordinationWaiter(
+                    waitID, waiter: "%stranger"),
+                 waiter: records.withdrawCoordinationWaiter(
+                    waitID, waiter: "%waiter"),
+                 remaining: records.coordinationWait(waitID))
+            }
+            check("only a waiter withdraws itself, and the wait goes with its last waiter",
+                  withdrawn.stranger == .notWaiter && withdrawn.waiter == .withdrawn
+                    && withdrawn.remaining == nil)
+            check("a wait withdrawn through the registry advances the obligation clock",
+                  Orchestrator.currentObligationGeneration() > beforeWithdrawal)
+        }
     }
 
     group("one lock, and a reader waits for the whole of a writer's transaction") {

@@ -964,9 +964,11 @@ group("a root session landing receipt is broker verified and process bound") {
         tty: currentIdentity.tty, pid: currentIdentity.pid,
         processStart: currentIdentity.processStart?.timeIntervalSince1970,
         conversationID: currentIdentity.conversationID)
-    Orchestrator.rootAssignments[assignment.id] = assignment
+    Orchestrator.holdRootAssignmentForTesting(assignment)
     Orchestrator.sessionLandingDidVerifyForTesting = {
-        Orchestrator.rootAssignments[assignment.id]?.state = .inactive
+        var inactive = assignment
+        inactive.state = .inactive
+        Orchestrator.holdRootAssignmentForTesting(inactive)
     }
     let reassigned = raceLanding(currentIdentity.terminalID)
     expect("a Root Assignment transition during Git is refused", reassigned.status, 409)
