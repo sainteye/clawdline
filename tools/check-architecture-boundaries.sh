@@ -736,7 +736,7 @@ done
 # not have produced anything else.**
 #
 # So the table stops being a list of numbers and becomes a rendering. This script already holds all
-# six — it counts three of them, owns two as ratchets, and reads the sixth out of test.sh — so it
+# five — it counts three of them and owns two as ratchets — so it
 # renders the block itself and compares the committed one against that rendering. Nobody types a
 # governance number into the doc any more; `tools/generate-governance-table.sh` writes what
 # `--emit-governance-table` prints. Every row is now a value against its own rendering, which is a
@@ -765,14 +765,9 @@ render_governance_table() {
     "| ordered groups | $(with_thousands "$manifest_group_count") | \`Tests/TestGroupManifest.swift\`, counted by the guard |" \
     "| ordered runners | $(with_thousands "$runner_count") | \`Tests/main.swift\`, counted by the guard |" \
     "| suite files | $(with_thousands "$suite_count") | \`Tests/*Tests.swift\`, counted by the guard |" \
-    "| Swift checks | $(with_thousands "$documented_swift_receipt") | \`expected_swift_receipt\` in \`test.sh\`, set from a run |" \
     "| \`Orchestrator.swift\` ceiling | $(with_thousands "$orchestrator_ceiling") | the ratchet in \`tools/check-architecture-boundaries.sh\` |" \
     "| \`RemoteServer.swift\` ceiling | $(with_thousands "$remote_server_ceiling") | the receipt in \`tools/check-architecture-boundaries.sh\` |"
 }
-
-documented_swift_receipt=$(sed -n "s/^expected_swift_receipt='\([0-9]*\) checks passed'/\1/p" test.sh)
-[ -n "$documented_swift_receipt" ] \
-  || architecture_guard_fail "could not read expected_swift_receipt from test.sh"
 
 # The compile-job ceiling must not exist before ./test.sh holds the machine lock. b8dfd0ff moved
 # this block above the acquisition and an eight-way 104-file typecheck then ran outside the lock for
@@ -804,31 +799,6 @@ suite_lock_line=$(printf '%s\n' "$suite_lock_hits" | head -1 | cut -d: -f1)
   || architecture_guard_fail "cannot locate the compile-ceiling block or the suite lock in test.sh (block=${ceiling_block_line:-missing} lock=${suite_lock_line:-missing}); if either was renamed, update this check rather than deleting it"
 [ "$ceiling_block_line" -gt "$suite_lock_line" ] \
   || architecture_guard_fail "test.sh settles its compile ceiling at line $ceiling_block_line but does not hold the machine lock until $suite_lock_line, so everything it runs above the lock can compile wide with nothing rationing it"
-
-# Rendering the table from the seal removes the second copy of the Swift-checks number and does not
-# make that number true. `expected_swift_receipt` is a record of what one run reported, and a record
-# with nothing to compare against is green whatever it says — which is how eight added checks stayed
-# invisible until somebody else's suite run hours later. No guard can count checks without running
-# them, so what stands in for the count is a witness of the tree the count was taken on: the number
-# of assertion call sites in the sealed test sources. It is a record against a measurement, the
-# shape the other five rows already have, and it goes red on the thing that actually happened —
-# an assertion added to a test file with the seal left alone.
-#
-# It is deliberately not a model of the total. Two of a4ed9edb's four checks came from one call site
-# inside a two-variant loop; the witness would have caught that, because the sites moved. Widening a
-# loop around an existing check moves the total and no site, and nothing before the run sees it.
-# `report_receipt_direction` in test.sh still catches that at the end, and the run is still what
-# settles the number. This closes the case that has bitten twice, not the general one.
-#
-# The scan fails closed in every way it can fail. If `\b` stops being honoured, or the names change,
-# the count moves or falls to zero, and both are red.
-sealed_assertion_sites=$(sed -n 's/^expected_swift_receipt_witness=\([0-9]*\).*$/\1/p' test.sh)
-[ -n "$sealed_assertion_sites" ] \
-  || architecture_guard_fail "could not read expected_swift_receipt_witness from test.sh; it says which tree expected_swift_receipt was measured on, and without it the seal is a number nothing can check"
-assertion_sites=$(cat Tests/*.swift \
-  | grep -oE '\b(check|expect)[A-Za-z0-9_]*\(' | wc -l | tr -d '[:space:]' || true)
-[ "${assertion_sites:-0}" -gt 0 ] \
-  || architecture_guard_fail "the assertion-site scan of Tests/*.swift found nothing; that is a broken scan, not a tree without tests"
 
 # The two ceilings above are the only rows here whose left-hand side is also a record: both are
 # constants in this script, compared against constants in a document. Everything else on that list
@@ -906,23 +876,6 @@ if [ "${1:-}" = "--emit-governance-table" ]; then
   exit 0
 fi
 
-# Re-sealing is a cycle without this door, and rendering the table did not close it — it moved it
-# one step earlier, which is where it belongs. The seal's witness now goes red the moment a check is
-# added, before a compiler starts; the true total is only known once the suite has finished. So the
-# door is what lets the run that produces the number start at all. `CLAWDLINE_RESEAL=1` says out
-# loud that this run exists to produce it, and downgrades the witness to a warning. Nothing else
-# relaxes — including the table, which never needs to: it is rendered from the seal, so it is still
-# in agreement with the seal that has not been changed yet. The suite still ends on
-# `verify_test_completion_receipts`, which still fails and says which way the total moved.
-if [ "$assertion_sites" != "$sealed_assertion_sites" ]; then
-  if [ "${CLAWDLINE_RESEAL:-}" = "1" ]; then
-    echo "architecture boundaries: CLAWDLINE_RESEAL=1 — the seal was measured on a tree with $sealed_assertion_sites assertion call sites and this one has $assertion_sites." >&2
-    echo "Letting the run proceed so it can report the real total. Set expected_swift_receipt from what it reports and expected_swift_receipt_witness to $assertion_sites, then run tools/generate-governance-table.sh; this run's own receipt check still has to pass." >&2
-  else
-    architecture_guard_fail "test.sh seals $documented_swift_receipt checks against a tree with $sealed_assertion_sites assertion call sites, and this tree has $assertion_sites — so the seal was measured somewhere else and no run has produced a total for what is here. Re-run with CLAWDLINE_RESEAL=1 to let the suite report the real total, then set expected_swift_receipt from it and expected_swift_receipt_witness to $assertion_sites."
-  fi
-fi
-
 # One comparison for all six rows, against the rendering above rather than against six hand-typed
 # cells. It catches a row edited, and also a row renamed, reordered or deleted, which six per-row
 # lookups could not: a lookup for a row that is gone reports a missing row, and a lookup nobody
@@ -944,4 +897,4 @@ if [ "$documented_governance_table" != "$(render_governance_table)" ]; then
   architecture_guard_fail "run tools/generate-governance-table.sh — the table is generated, so the fix is never to retype a number into it"
 fi
 
-echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, seal witness=$assertion_sites sites, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"
+echo "architecture boundaries: main=$main_lines lines, ceiling after lock ($ceiling_block_line>$suite_lock_line), runners=$runner_count, groups=$manifest_group_count, suite_files=$suite_count, governance table is this run's own rendering, held-lock door=$held_lock_door_sites, max suspension=$suspension_max, parsed=$scanner_funcs"

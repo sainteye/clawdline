@@ -2,7 +2,7 @@
 
 Clawdline reads this file at every dispatch and copies it into the briefing of every child that may
 dispatch in turn. Edit it freely; an empty file means there are no house rules. **It is cut at
-12,000 characters, at a paragraph break** — but keep it far under that, because it is pasted beside
+16,000 characters, at a paragraph break** — but keep it far under that, because it is pasted beside
 the task's own instructions and every line of it competes with them for a child's attention.
 
 This file is only about **handing work out**. Landing, shared-tree discipline, file waits and how a
@@ -24,15 +24,10 @@ a single one by **80.9%**; where every step depends on the last, *every* multi-a
 tested was **39–70% worse**, because the handoffs break a chain that needed to stay whole. So: **can
 this be cut into pieces that need not talk to each other, and joined at the end?**
 
-**When the answer is no, that is a recommendation and not a refusal.** Give the reason in a sentence,
-ask, then do whatever they answer — **their yes settles it**, and what is owed is the reason once,
-before the work starts.
-
-**And ask it as options, not as prose.** Any decision genuinely the user's — this one, which design,
-who adopts an orphaned line — reaches him in his own session as an explicit options prompt: one
-question at a time, each option naming what happens if he picks it, your recommendation attached.
-Asked inside a paragraph it does not arrive; his words are «我會漏掉，我不知道怎麼回答». **Technical
-to-dos and user decisions are two lists, never one** — mixed, it is always his half that is lost.
+When the answer is no, keep the chain in one Session. If the user explicitly requested delegation,
+state the dependency once and follow that request; do not turn an internal execution choice into a
+new approval prompt. Genuine product/design decisions still go to the user as one explicit options
+prompt, separate from technical to-dos.
 
 **Clawdline Agent**, **dispatch**, **new tab**, **independent task**, **派 Agent／派下去** all mean
 `POST /v1/orchestrator/tasks`: a broker task id and an ordinary assistant session in its own tab.
@@ -75,14 +70,16 @@ Provider-native subagents remain useful for short, disposable, normally read-onl
 calculation or focused review with no independent delivery. Announce them honestly and never call
 them a Clawdline dispatch. If Clawdline refuses the task or is unavailable, report the typed failure
 and wait, retry or ask; do not silently turn the Feature into invisible delegation. For every
-bounded child it dispatches, Clawdfather continues to own decomposition, independent review,
+bounded child it dispatches, Clawdfather continues to own decomposition, any risk-triggered review,
 exact-tree integration and landing closure.
 
 ## How big one task is
 
-**One task is one coherent, independently reviewable feature slice** — production change, red-before-
-green tests, docs and its own verification, through one sustained session. Keep the implementer there
-until the slice is mature; new discoveries go to that session, not a new tab.
+**One task is the largest coherent, rollback-safe user outcome or architecture boundary that one
+owner can carry safely.** A file, test, checklist row, finding or small correction is not a slice.
+Carry related production changes, tests and docs in one sustained session, then pay for one
+accumulated focused verification near the end. Keep the implementer there until the whole unit is
+mature; discoveries and corrections stay in that session.
 
 **A slice big enough to dispatch is big enough to lose.** `timeout_minutes` stops at 240, quota can
 run out mid-task and a context window can fill. So a long or multi-file slice goes out with
@@ -133,13 +130,13 @@ is for: a leaf that knows what its output feeds writes a usable output, one that
 essay, and leaves are narrow enough to state in a sentence. **Stagger dispatches 30–45 seconds** or
 they compete, and a tab that has not reached a prompt in four minutes is `spawn_failed`, whose retry
 needs a fresh id and secret. **Say when you did it yourself.**
-- **Ask every task for one progress note in its first three minutes** — the task-directory file for
+- **Do not ask a task to echo a clear briefing.** Use progress only for a material boundary change —
+  the task-directory file for
   a stock codex sandbox, whose outbound connections are blocked, or either channel when this
   machine's `dispatch-policy.local.md` says network access was opened; its briefing carries the one
-  that works. Say what it has decided
-  to do now it has read the briefing. One round, and it is the only thing that lets a wrong
-  direction be cancelled at minute three rather than minute twenty-six: the two dearest cancelled
-  tasks measured on one machine burned 18.5M and 16.5M tokens before anybody could tell.
+  that works. Send one short note only when the discovered write set, approach, dependency, risk
+  or blocker materially differs from the briefing, or a long-running task needs an early root
+  choice. Do not send periodic heartbeat notes.
 - **An interrupted review is handed over, not restarted.** A reviewer that died or was cancelled has
   usually written part of its findings; hand that file to whoever picks it up. Review is both the
   most expensive node and the one most often thrown away — 30 of 101 review dispatches on one
@@ -147,51 +144,37 @@ needs a fresh id and secret. **Say when you did it yourself.**
 
 ## Which assistant, which model
 
-- **Codex** for *making* something you then look at: code, an image from its built-in image model, a
-  hand-written SVG, a build driven to green, mechanical edits across many files. It cannot be told
-  where to save a drawing — say: generate it, then copy it into `artifacts/`.
-- **Claude** for reading and judging: a diff, why something behaves as it does, prose.
+Choose the assistant and model for the complete delivery unit, not by a fixed provider-role rule.
+Use the strongest available reasoning where a high-risk design or review genuinely needs it and an
+efficient capable model for routine work. Do not split a Feature merely to route different stages
+to different models. Record an explicit model only when the dispatch intentionally overrides the
+Session default.
 
-The choice has a price as well as a fit. Codex work is billed against a plan and Claude work per
-token: on one machine 84% of dispatches ran on Codex for nothing, and the whole bill came from the
-16% on Claude. So "Codex makes, Claude reads" is not only about which is better at what — sending
-making-shaped work to Claude is the most expensive thing you can do by accident. Where both would do
-and nothing has to be weighed, it goes to Codex.
+## Check in proportion to risk
 
-`haiku` for mechanical single-source work where being wrong is obvious; `sonnet` for a leaf with
-judgement in it; `opus` for a decision somebody acts on without checking, and for any synthesis of
-several children's answers.
-
-**Always name the model on a Claude dispatch — `opus` unless you can say why not.** Omitting it
-inherits whatever `/model` is set to on this Mac at that moment: nobody chose it for that task and
-nothing records it. Three dispatches ran on `claude-fable-5` that way on 2026-08-28. A named model
-can be argued with; an inherited one cannot even be seen.
-
-## Somebody has to check the work
-
-Every graph producing code, or a decision anybody acts on, ends with a node whose only job is to find
-what is wrong with it — reading a complete feature or a complete batch, never a fragment, and
-returning the whole finding set in one pass.
+Use an independent review node for security/authentication, durable state,
+concurrency/backpressure, migrations, destructive/external effects, or a broad cross-component
+change. Routine localized code, docs, generated data and test-only corrections use the owner's
+focused diff review. When independent review is warranted, it reads the complete feature or batch,
+never a fragment, and returns the whole finding set in one pass.
 
 - **It did not help build the thing.** A model judging its own output misses about a third of its own
   semantic drift, structurally: a judge favours low-perplexity text and its own output is
   low-perplexity to it by construction.
-- **A different assistant helps and does not solve it.** Nine frontier models carried about two
-  votes' worth of independent information; where review really matters use several, complementary.
-- **Opus-class, always** — an absolute floor, not "no weaker than what it judges". Measured here: a
-  Sonnet reviewer, mid-way through explaining that judging hallucinates, invented a citation.
+- **A different assistant can help and does not solve it.** Choose one capable independent reader
+  for the whole risk boundary; multiple reviewers are exceptional, not a default.
 - **Name the paths it may read** — the exact `artifacts/` directories, and for a batch every branch
   and head. **A verdict with receipts**: worst first, is it safe to ship, every finding naming the
   passage it rests on. A verdict without sources is the shape a hallucinating judge produces.
 
-**Then the reviewer repairs what it found, and root reviews the repair.** The finding set is written
-down and reported **before a single byte is repaired**: a repair made while the findings are still in
-the reviewer's head buries the judgement somebody needed to see. Once it has edited production bytes
-its verdict is spent — that repair is a delivery, and the focused diff and exact-tree acceptance are
-root's. It repairs only what does not change the design; a design-changing correction goes back to
-the implementer's session. Never one task per finding.
+**Then the original implementer fixes the complete finding set in the same sustained Session.**
+The reviewer writes the findings before any correction, but does not switch roles and implement
+them. Root checks the focused correction evidence; another reviewer is warranted only if the
+correction materially changes the design or crosses a new high-risk boundary. Never one task per
+finding.
 
-**One review round per feature or batch.** Parallel complementary reviewers count as one round.
+**When risk triggers review, use one review round per feature or batch.** Parallel complementary
+reviewers count as one round.
 Measured on one line here: the implementation cost $30.90 and its four review rounds cost $57.39 —
 **1.9x the thing being reviewed** — and both correction rounds introduced defects the next review
 caught, so the rounds were not merely expensive, they were part of what made themselves necessary.
@@ -200,20 +183,18 @@ questions. A second round needs a recurring defect class. A third needs `scope_c
 `new_external_evidence`, or `systemic_pattern`. If the same class escapes again, stop at
 `architecture_hold`; do not dispatch a fourth patch.
 
-**The landing root owns the normal full suite.** Children use focused proof. Until a focused Swift
-runner ships, an implementer may run one full suite only when labelled
-`focused_runner_unavailable`; reviewers do not repeat it. Root tests the exact target candidate.
+**The landing root owns the release candidate's full suite.** Children accumulate related changes
+and use one focused proof near the end; they do not compile once per assertion, file or finding.
+Several compatible Feature slices share one exact release candidate rather than each paying for a
+full suite. Docs-only or mechanically generated candidates that cannot affect compiled/runtime
+behavior use their relevant static checks. Until a focused Swift runner ships, an implementer may
+run one full suite only when labelled `focused_runner_unavailable`; reviewers do not repeat it.
+Root tests the exact target candidate.
 Never repeat a green tree/question/environment tuple; a second run needs a typed
 `inconclusive_environment` receipt.
 
-**A child may add Swift assertions, and the seal is not the reason it cannot.** Adding a `check(`
-or `expect(` to `Tests/*.swift` moves `expected_swift_receipt_witness`, and the architecture guard
-refuses to start a compile while the witness names a different tree — which reads like a wall,
-because a child cannot run the full suite that would produce a new total. **`CLAWDLINE_RESEAL=1` is
-the door built for exactly this**: it downgrades that refusal to a warning and lets the run proceed,
-so a child runs its focused groups normally and leaves both `expected_swift_receipt` and the witness
-untouched for the root to set from the landing run. Verified 2026-09-03: without the flag the guard
-prints "the seal was measured somewhere else"; with it, "Letting the run proceed so it can report
-the real total", followed by the ordinary green summary. One delivery that day wrote down that it
-had added no assertions **because it believed the seal forbade it**, and lost the coverage to a
-limit that does not exist.
+**A child may add Swift assertions without asking anyone to maintain a total.** The focused proof
+records what it executed; the release-candidate run records its own observed Swift and Cloud counts.
+No count is copied back into `test.sh`, README files or governance docs, and no RESEAL measurement
+run exists. Completeness comes from the ordered group/runner/suite rosters and a unique runtime
+receipt, not from comparing this tree with the previous tree's assertion number.

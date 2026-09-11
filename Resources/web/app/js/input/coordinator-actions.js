@@ -148,11 +148,12 @@ function tokenEffortText(effort) {
 export function deepStatusAuditInstruction() {
     return [
         "Run a deep status audit now. This is a high-token, multi-session, agent-driven audit request; it is not a broker-persisted audit run.",
-        "First snapshot the sessions, tasks, landings, and waits registries. Then contact every relevant idle or root Session and require exactly four separate sections from each reply:",
+        "First snapshot the sessions, tasks, landings, and waits registries. Then contact every relevant idle or root Session and require exactly five separate sections from each reply:",
         "1. Unfinished — for every item name its owner, blocker, and exactly one next action.",
         "2. Completed but not landed.",
         "3. Landed — include commit and target evidence.",
         "4. User decisions — keep these separate from technical next steps and present each decision as its own explicit options prompt.",
+        "5. Process feedback — name any blocking, repeated verification, coordination overhead, or other workflow friction; estimate lost time when possible and suggest one concrete improvement.",
         "Wait for replies with a bounded deadline, then re-read all four registries. Compare the same task, Session, and commit across surfaces. Verify Git ancestry only when a delivery commit exists.",
         "Report unreachable, timeout, stale snapshot, contradiction, missing delivery commit, and already-integrated-but-unclosed separately; do not collapse one into another.",
         "Do not auto-dispatch, auto-land, auto-close, or start technical work. Only report and propose next actions. Never treat titles, paths, or commit messages as proof."

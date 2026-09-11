@@ -70,13 +70,9 @@ check("each script opens the row by naming itself", testStart !== null && buildS
 if (testStart === null || buildStart === null) {
     stop("one of the two scripts no longer calls progress_start, so nothing below can drive it");
 }
-// **288 seconds is measured and says where.** One green `./test.sh` on 2026-09-03, receipt
-// `8353 checks passed`, in a detached worktree pinned at `d97d0afb`, written up in
-// `docs/suite-runtime.md`. A number with no provenance is indistinguishable from one somebody
-// made up, so the provenance is asserted beside the value.
-check("test.sh calls itself test and passes the 288 seconds somebody measured",
-      /^progress_start --label test --typical 288$/.test(testStart)
-        && /288/.test(script) && /2026-09-03/.test(script) && /docs\/suite-runtime\.md/.test(script));
+check("test.sh calls itself test without preserving an obsolete fixed duration",
+      /^progress_start --label test$/.test(testStart)
+        && /stale progress estimate/.test(script));
 // **Nobody has ever measured `./build.sh`**, so it passes no `--typical` and no `typical_seconds`
 // is written at all. The field is optional, and an invented number is indistinguishable from a
 // measured one to every reader of the file.
@@ -199,7 +195,7 @@ check("and the one call inside test.sh's suite-lock block asks whether the funct
 check("test.sh runs this file", /^node Tests\/run-file-producer\.mjs$/m.test(script));
 // The helper's own suite, which owns everything this file stopped asking when the block moved.
 check("and the suite that drives the helper both scripts source",
-      /^node Tests\/progress-helper\.mjs$/m.test(script));
+      /^\s*node Tests\/progress-helper\.mjs$/m.test(script));
 // The other half of the feature, the web app's reader. Registering it here is what makes a checkout
 // that has only one of the two say so, instead of passing quietly.
 check("and the web app's half of it", /^node Tests\/web-run-progress\.mjs$/m.test(script));
@@ -276,8 +272,8 @@ try {
               r.code === 0 && row !== null && row.state === "ok");
         check("and the label a reader draws is the one test.sh gave itself",
               row !== null && row.label === "test");
-        check("and the 288 seconds it passed reach the file as typical_seconds",
-              row !== null && row.typical_seconds === 288);
+        check("and no stale fixed duration reaches the file as typical_seconds",
+              row !== null && row.typical_seconds === undefined);
     }
 
     // 2. build.sh's, which passes no measurement at all.

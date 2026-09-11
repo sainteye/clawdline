@@ -31,9 +31,10 @@ an old landing or a successful child result for current-scope acceptance.
 The registered Clawdfather is the machine-wide context owner. Its scarce resource is attention
 across sessions, tasks, waits, landings, failures, and user decisions—not keystrokes in one
 implementation. It should personally do quick inventory reads, decomposition, synthesis,
-conflict resolution, landing review, and final verification. It should dispatch substantial
-diagnosis, implementation, research, and independent review as separate Clawdline tasks whenever
-capacity and authority allow, even when the delegated work is sequential internally.
+conflict resolution, landing review, and final verification. It dispatches only work that is
+genuinely independent or large enough to repay a new Session's startup and handoff cost. Keep a
+sequential implementation or reasoning chain in one capable Session; available capacity by itself
+is not a reason to split it. Independent review is dispatched only at the risk triggers below.
 
 Do not apply the ordinary "diagnosis is often faster in one session" heuristic to make
 Clawdfather absorb a long investigation. Give one diagnostic task the evidence and a self-contained
@@ -75,7 +76,7 @@ If the broker refuses or Clawdline is unavailable, report the typed failure and 
 do not silently substitute an invisible child. Clawdfather retains decomposition, independent
 review, target-tree integration and landing closure for every bounded child it dispatches.
 
-## Dispatch feature-sized work, not fragments
+## Dispatch the largest safe delivery unit, not fragments
 
 A new terminal tab has a real fixed cost: assistant startup, repository and `CHILD.md` reads,
 context reconstruction, snapshot setup, and a completion/landing lifecycle. Do not spend that cost
@@ -83,9 +84,10 @@ on a single small finding, one mechanical file edit, one probe, or work whose us
 than the briefing needed to explain it. Parallelism is not a goal by itself, and Clawdfather must
 not fill every available slot merely because the slots exist.
 
-- Make the ordinary implementation node a coherent, independently reviewable feature slice. It
-  should normally carry its production change, red-before-green tests, relevant docs/Artifact,
-  mutations or failure injection, and its own verification/report through one sustained session.
+- Make the ordinary implementation node a coherent, rollback-safe user outcome or architecture
+  boundary. A file, test, checklist row, finding or small correction is not a slice. The node should
+  normally carry the production change, relevant tests/docs, one representative failure proof per
+  new defect class, and one accumulated focused verification near the end.
 - Keep a live implementer on that feature until the whole slice is mature. Add closely related
   discoveries and corrections to the same session instead of opening another tab for each one.
   Tiny work that cannot justify a full briefing remains root work.
@@ -96,19 +98,16 @@ not fill every available slot merely because the slots exist.
   milestone on its delivery branch rather than at the end, and says through `/progress` when the
   work stops matching its title. Root can then continue from the branch instead of starting again.
   Cutting work larger without this turns one failure into a total one.
-- Dispatch one independent reviewer after the complete feature is delivered, not a sequence of
-  reviewers for intermediate fragments. A reviewer inspects the whole feature boundary and returns
-  the complete finding set in one pass.
-- On `CHANGES REQUIRED`, the reviewer repairs what it found and root reviews the repair. The order
-  is not negotiable: **the complete finding set is written down and reported to root before a single
-  byte is repaired.** A repair made while the findings are still only in the reviewer's head buries
-  the judgement somebody needed to see, and root is left looking at a corrected diff with no record
-  of what was wrong with it. Once the reviewer has edited production bytes its verdict is spent and
-  it cannot approve its own repair: that repair is a delivery, and root performs the independent
-  focused diff, mutation and exact-tree acceptance, opening another reviewer when the risk warrants
-  it. The reviewer repairs only findings that do not change the design; a broad or design-changing
-  correction goes back to the original implementer's session, where the reasoning behind the code
-  still is. Never create one task per finding — one correction round carries the whole set.
+- Dispatch one independent reviewer after the complete delivery unit only when its risk justifies
+  it: security/authentication, durable state, concurrency/backpressure, migration,
+  destructive/external effects, or broad cross-component semantics. Routine localized changes,
+  docs, generated data and test-only corrections use owner review and focused checks. Never send a
+  sequence of reviewers over intermediate fragments.
+- On `CHANGES REQUIRED`, the reviewer first writes the complete finding set. The original
+  implementer then fixes the whole set in the same sustained Session; do not open one correction
+  task per finding or make the reviewer switch from judge to implementer. Root checks the focused
+  correction evidence and opens another reviewer only when the correction materially changes the
+  design or crosses a new high-risk boundary.
 - **An interrupted review is handed over, not restarted.** Review is the most expensive node here
   and the one most often thrown away: of 101 review dispatches on this machine 30 never returned a
   verdict, and one re-review spent 6.7M tokens re-reading 1.9M tokens of work somebody had already
@@ -121,6 +120,15 @@ not fill every available slot merely because the slots exist.
 Task planning and review reports should expose the fixed-cost side as well as useful output:
 session/tab starts, briefing and repeated-context tokens, elapsed useful work, continuations, and
 micro-task warnings.
+
+### Coordinate only on an observed collision
+
+One owner, one clean index and no declared path overlap means proceed. Do not ask for a landing
+window, send a heartbeat, or request permission at every internal phase. A coordination round is
+justified only by an observed path/index conflict, an active machine lock, an external dependency,
+a changed scope boundary, or a user-only decision. Normal cross-session reporting has three useful
+events: ownership boundary claimed, blocker materially changed, and delivery landed. Everything
+else stays in the working Session.
 
 For multi-node work, carry the typed `graph` object as well as any free-text `plan`. While retained,
 one graph id has one destination, node list, fog-of-war list, and out-of-scope boundary; each task
@@ -158,17 +166,15 @@ already this repository's only ranking of work, and nothing here lets anybody ty
 directly. The pool belongs to the root, or to Clawdfather where one is registered, and it is named
 in the report: how many items the batch carried, and what is still waiting.
 
-#### Say what you are about to do, in the first three minutes
+#### Report only a material boundary change
 
-Every dispatched task sends one `/progress` note as soon as it has read its briefing and decided how
-to proceed — before the work rather than during it. It costs one round.
+When `task.json` already states the exact boundary, the child starts work without echoing it.
+Use `/progress` only when the discovered write set, approach, dependency, risk or blocker
+materially differs from the briefing, or a long-running task needs an early root choice. Do not
+send periodic heartbeat progress.
 
-That note is the only thing that makes an early cancellation possible. Measured here: the two most
-expensive cancelled tasks on this machine burned 18.5M and 16.5M tokens and ran twenty-six minutes
-each before anybody could see they were going the wrong way, because the protocol asked for a note
-only when the work stopped matching its title — a signal that arrives after the divergence rather
-than at it. A wrong first sentence is visible at minute three, and it is the cheapest thing in this
-system to correct.
+For an uncertain or long-running task, that material-change note makes early correction possible.
+For a clear task that is still following its briefing, the final receipt is enough.
 
 #### Standing sessions
 

@@ -1,5 +1,10 @@
 # Where `./test.sh` spends its time
 
+Current workflow note (2026-09-11): ordinary release candidates use
+`CLAWDLINE_TEST_PROFILE=release`. Test-runner, lock, cache or measurement changes use
+`CLAWDLINE_TEST_PROFILE=infrastructure`. The older measurements below predate that split and include
+infrastructure self-tests in every run; new per-phase receipts will replace the stale aggregate.
+
 A companion to [machine-resource-scheduling.md](machine-resource-scheduling.md), which measured how
 much *memory* one compile takes and why this Mac rebooted twice over it. This one measures where the
 *seconds* go, and it exists because the memory answer had gone stale without anybody noticing.

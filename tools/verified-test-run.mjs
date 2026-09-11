@@ -83,7 +83,6 @@ const environmentFacts = (cwd, env) => ({
   node: process.version,
   platform: platform(),
   swift: spawnSync("swiftc", ["--version"], { env, encoding: "utf8" }).stdout?.trim() ?? "unavailable",
-  CLAWDLINE_RESEAL: env.CLAWDLINE_RESEAL,
   CLAWDLINE_SUITE_JOBS: env.CLAWDLINE_SUITE_JOBS,
   CLAWDLINE_TEST_GROUPS: env.CLAWDLINE_TEST_GROUPS,
   ...(env.CLAWDLINE_SWIFT_TEST_ARTIFACT === "reuse"

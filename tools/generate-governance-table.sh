@@ -2,16 +2,9 @@
 set -euo pipefail
 
 # Writes the governance table in docs/architecture-refactor.md from the values the architecture
-# guard already holds. Nobody types a governance number into that document any more: five of the six
-# are counted from the tree by `tools/check-architecture-boundaries.sh`, the sixth is
-# `expected_swift_receipt` in `test.sh`, and this splices what the guard renders between the markers
-# in the doc. The guard then compares the committed block against the same rendering on every run,
-# so the doc is a projection of those sources rather than a second hand-edited copy of them.
-#
-# What this deliberately does NOT do: touch `expected_swift_receipt` or its witness in `test.sh`.
-# Those two are set by a person, together, from a suite run. A generator that could also write them
-# would be a generator that silences the only guard standing over them, and a check that is always
-# satisfied guards nothing.
+# guard already holds. Nobody types a governance number into that document: all rows are structural
+# facts counted from the tree by `tools/check-architecture-boundaries.sh`. Executed check totals are
+# run receipts, not source-governance values, so this tool never reads or writes them.
 
 # `cd ""` returns 0 in both bash and zsh and stays put, so `|| exit 1` alone does not protect this;
 # `:?` is what makes an unset or empty path stop the script rather than run it somewhere else.

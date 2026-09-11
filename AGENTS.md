@@ -138,6 +138,9 @@ markers rather than decoration:
   item when useful, and call out a stale Board row instead of treating it as product truth.
 - **🚀 Release status** — say plainly whether the result is only written, committed, installed on
   the Mac, published to Cloud, or actually checked there. Do not let `landed` read as `deployed`.
+- **⚙️ Process feedback** — name any rule, approval, wait, repeated verification or coordination
+  round that blocked or slowed the work; estimate the lost time when possible and suggest one
+  concrete improvement. Write `Nothing` when the flow was proportionate.
 - **🔒 Can this Session close?** — yes or no, and the one human reason. Clawdfather still verifies
   broker closeability before closing; this sentence is not authority by itself.
 
@@ -268,10 +271,14 @@ runs.
   restart or the real UI as acceptance, does not re-run a full suite after every small edit, does
   not run a suite unrelated to the paths it claimed, and does not repeat a green run to see whether
   it was flaky.
-- It does run one verification that actually proves its change: compile, the tests covering what it
-  touched, and one red-before-green run for each test it added. Iterating until something first
-  compiles and passes is ordinary work and is not what this rule is about. **Handing back code that
-  does not compile costs root far more than one honest run costs anybody.**
+- It runs the cheapest verification pass that materially reduces the risk of the complete delivery
+  unit. Accumulate related edits first, then compile and run the relevant groups once near the end;
+  do not pay a Swift compile for each assertion, file, finding or small correction. Use one
+  representative red-before-green or failure-injection proof for each materially new failure class
+  when the test could otherwise pass without the behavior. Pure prose, generated-count
+  transcription, mechanical moves and test-fixture-only corrections do not need a synthetic red
+  mutation. **Handing back code that does not compile costs root far more than one honest run costs
+  anybody, but repeated proof of the same boundary is waste rather than safety.**
 - Until the repository ships a focused Swift runner, an implementer whose behavior cannot be
   exercised any narrower may use **one** full-suite run and record
   `focused_runner_unavailable` in its receipt. Reviewers do not repeat that run. The time budget is
@@ -316,24 +323,28 @@ has run, so forgetting is no longer possible. What that means for you:
 `docs/machine-resource-scheduling.md` carries the measurements, the instruments that lied on the
 way, and the design that came out of them.
 
-**One feature normally pays for one final full suite, and the landing root owns it.** Implementation,
-review and correction answer named questions with compile/typecheck, focused tests and mutations;
-they do not each buy another complete `./test.sh` run. The temporary implementer exception above
-exists only while no focused Swift runner can answer the feature question. The normal graph is implementation → one
-independent review → one consolidated correction wave → focused confirmation → one exact candidate-
-tree full suite by root → landing → build/smoke. A second full run is allowed only when the first is
-typed `inconclusive_environment` (crash, timeout, or a named sandbox capability), never merely to
-see whether a green result was flaky. Record the reason beside the second receipt.
+**One release candidate normally pays for one final full suite, and the landing root owns it.**
+Several compatible Feature slices should share that candidate instead of each buying the same
+machine-wide compile. Implementation and correction use one accumulated focused pass; they do not
+compile once per small edit. A docs-only or mechanically generated candidate that cannot affect
+compiled/runtime behavior may stop at its relevant static checks. A second full run is allowed only
+when the first is typed `inconclusive_environment` (crash, timeout, or a named sandbox capability),
+never merely to see whether a green result was flaky. Record the reason beside the second receipt.
 
-**Seal findings before correction.** One review returns the complete finding set before anybody
-edits it. Corrections with disjoint write sets may run in parallel, but together they are one wave;
-every finding ends `fixed`, `disproved`, or `deferred` with a named owner. Confirmation reopens only
-those findings and adjacent regressions. A third review wave requires one written reason:
-`scope_changed`, `new_external_evidence`, or `systemic_pattern`. Without one, stop the review loop.
-If a third wave finds another instance of the same defect class outside the correction seam, mark
-the feature `architecture_hold` and repair the boundary rather than dispatching a fourth patch.
-The staged extraction rules and anti-over-splitting gate are in
-[`docs/architecture-refactor.md`](docs/architecture-refactor.md).
+**Review is risk-triggered, not ceremonial.** Require one independent sealed review for security,
+authentication, durable state, concurrency/backpressure, migrations, destructive/external actions,
+or a broad cross-component change. Routine localized code, docs, generated data and test-only
+repairs use the owner's focused diff review unless the user asks for more. When independent review
+is warranted, it reads the complete Feature or batch once and seals the full finding set before one
+correction wave; confirmation reopens only those findings and adjacent regressions. Do not create a
+review or verification task per finding. The staged extraction rules and anti-over-splitting gate
+are in [`docs/architecture-refactor.md`](docs/architecture-refactor.md).
+
+**Coordination is event-driven.** A single owner with a clean index and no declared path conflict
+proceeds without asking for a landing slot, sending heartbeats, or requesting approval at each
+internal step. Coordinate only on an observed path/index conflict, an active machine lock, an
+external dependency, a changed scope boundary, or a decision only the user can make. Ordinary
+updates collapse to: boundary claimed, blocker changed, and delivery landed.
 
 **A verification receipt names its subject and question.** At minimum keep the repository, exact
 tree SHA (or an explicit working-overlay digest), question id, command/variant, environment,
@@ -353,9 +364,10 @@ cases measured so far converge on one test. An earlier reading that called the c
 boundary was withdrawn once those two were compared with each other instead of against a run that
 died of something else — the sister of the rule about holding the observed thing still.
 
-A new test must be seen red before the change that makes it green. A test born green proves
-nothing: reviews here have repeatedly found suites that stayed green after the guarded logic was
-replaced with a stub — or deleted outright. Break the thing once, watch the test catch it, then fix it.
+A materially new failure class needs one representative proof that would have failed without the
+behavior. That can be a baseline red, a focused mutation, or failure injection. Do not manufacture
+one red run per assertion: several tests may protect the same class, and prose, generated values,
+mechanical moves and fixture-only corrections do not become safer through a synthetic failure.
 
 **Assert on the check count, not on the exit code.** The reason was measured on this repository's
 own guard, and the gap it was measured in is now closed. `Tests/test-sh-streaming.mjs` said it

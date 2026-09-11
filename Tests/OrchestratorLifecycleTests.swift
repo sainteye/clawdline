@@ -763,16 +763,12 @@ group("a child briefing carries the whole of what a child needs, and none of wha
               && brief.contains("at most 30 per hour"))
     check("and it is told where the answer will appear",
           brief.contains("result.json"))
-    // The ask nothing was making: AGENTS.md, docs/dispatching.md and the dispatch policy all
-    // require a first progress note, and the briefing — the only thing a child actually reads —
-    // asked only for one when the work drifted. A note at minute three is what lets a wrong
-    // direction be cancelled before it has spent a session.
-    check("a child is asked for one progress note before it starts, not only when it drifts",
-          brief.contains("within about three minutes of starting")
-            && brief.contains("before you begin the work"))
-    check("and told why, because a child that knows why will actually send it",
-          brief.contains("cancelled at minute three instead of minute twenty-six")
-            && brief.contains("18.5M and 16.5M tokens"))
+    check("a clear briefing starts work without a progress echo or heartbeat",
+          brief.contains("Do not echo a clear `task.json`")
+            && brief.contains("heartbeat status"))
+    check("progress is reserved for a material boundary or blocker change",
+          brief.contains("write set, approach, dependency, risk, or blocker materially differs")
+            && brief.contains("This is not a status feed"))
     check("the at-rest archive key is never named in a child briefing",
           !brief.contains("orchestrator-archive-key") && !brief.contains("archive key"))
 }
@@ -936,9 +932,10 @@ group("a child briefing does not infer loopback reachability from its assistant"
           codex.contains("/tmp/.clawdline/\(taskID)/progress.json")
             && codex.contains("\"task_secret\"") && codex.contains("\"note\"")
             && codex.contains("cannot connect"))
-    check("the three-minute first note remains explicit",
-          codex.contains("within about three minutes of starting")
-            && codex.contains("before you begin the work"))
+    check("progress is not a mandatory startup echo or heartbeat",
+          codex.contains("Do not echo a clear `task.json`")
+            && codex.contains("heartbeat status")
+            && !codex.contains("within about three minutes of starting"))
     check("a failed notification is not retried or mistaken for delivery",
           codex.contains("leave the content in `result.json`")
             && codex.contains("do not retry"))

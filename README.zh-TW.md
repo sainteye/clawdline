@@ -761,15 +761,14 @@ App 做的每一件事都寫進 `~/Library/Logs/Clawdline.log`。
 純 AppKit、沒有相依套件、除了 `swiftc` 沒有 build 系統。
 
 ```sh
-./test.sh     # 11701 個檢查，是分鐘等級不是秒
+./test.sh     # 發布候選驗收，是分鐘等級不是秒
 ./build.sh    # 編譯，原本有在跑的話會自己接回來
 swift build   # 只是為了讓編輯器讀得懂程式碼
 ```
 
-那個檢查數就是 `test.sh` 裡的封印，而整套跑多久是量出來的——在一台有寫出型號的機器上，
-拆成四個階段——記在 [docs/suite-runtime.md](docs/suite-runtime.md)。兩個只要跟來源對不上，
-`Tests/docs-suite-facts.mjs` 就會紅；這個區塊在 2026-09-04 以前寫的是「約兩秒」，
-而它其實是分鐘等級。
+實際執行的檢查數由每次 run 的收據保存，不再抄進 source。整套跑多久是在一台有寫出型號
+的機器上量測，並拆成各階段記在 [docs/suite-runtime.md](docs/suite-runtime.md)。
+`Tests/docs-suite-facts.mjs` 只維持這段快速指引與量測連結正確，不會因數字變動要求再跑一次 full。
 
 [CONTRIBUTING.md](CONTRIBUTING.md) 是其餘的部分：東西放在哪、怎麼加一個語言或一隻吉祥物、
 以及「第三種把字送出去的方式」會長什麼樣。十四種翻譯的修正都歡迎——其中沒有人以母語在用的那幾種

@@ -173,9 +173,9 @@ context 留給別的事、或單純想在一個分頁裡看著它跑。**他說�
 
 ### 2.0b 一件任務該多大，小事什麼時候出去
 
-**一件任務就是一片完整、能獨立審查的 feature slice**——production 改動、先紅後綠的測試、文件、
-以及它自己的驗證，由同一個 session 一路做完。實作者留在那片上：同一個 feature 冒出來的新發現或
-修正回到同一個 session，不要為每一件開一個新分頁。
+**一件任務就是同一位 owner 能安全承擔的最大完整成果或架構邊界。** 一個檔案、一條 assertion、
+一個 finding 或小修正都不算 slice。production、測試與文件由同一個 session 累積完成，接近交付時
+只付一次真正相關的 focused 驗證；同一邊界的新發現與修正都留在原 session。
 
 **大到值得派的一片，也大到輸得起整片。** `timeout_minutes` 上限 240，助理額度可能中途耗盡，
 context 也會滿。所以會跑很久、或會動到好幾個檔的一片，要用 `isolation: "worktree"` 派出去，並且
@@ -268,12 +268,14 @@ finding set；把那個檔案交給接手的人。review 是這裡最貴的節�
 review 派工裡有 30 次沒交出 verdict，其中一次重審花了 6.7M tokens 去重讀 1.9M tokens、別人已經
 讀過的工作。
 
-**reviewer 帶著 findings 回來的時候：** 它要先把完整的 finding set 寫下來回報，**才可以動手修**，
-而且只修不改變設計的部分。它一旦寫了 production bytes，verdict 就用掉了——那份修正是一個
-delivery，聚焦 diff、mutation、exact-tree 驗收都是你的事，不是它的。會改變設計的修正回原
-implementer 的 session。永遠不要一個 finding 派一件 task。
+**只有風險值得時才派獨立 review：** security/authentication、durable state、concurrency/backpressure、
+migration、破壞性／外部操作，或跨元件的大範圍語意。一般局部修改、文件、generated data 與
+test-only correction 由 owner 做 focused diff review。
 
-**一個 feature 或一個 batch 配一次獨立複審，而且要數輪數。** 同一輪裡並排跑兩個互補的 reviewer
+**reviewer 帶著 findings 回來時：** 先把完整 finding set 寫下來，原 implementer 在同一個 sustained
+session 一次修完；reviewer 不切換角色去實作，也不要一個 finding 派一件 task。root 只確認聚焦修正。
+
+**風險觸發 review 的 feature 或 batch 配一次獨立複審，而且要數輪數。** 同一輪裡並排跑兩個互補的 reviewer
 還是「一輪」，那不是這條在管的；這條管的是「改完再審一次」，它看起來免費，其實不是。這裡實測過
 的一條線：實作花 $30.90，四輪複審花 $57.39，是被審那個東西的 **1.9 倍**。
 
@@ -1023,32 +1025,33 @@ slug 唯一匹配 retained receipt 時才推導，缺失、衝突、任意路徑
    的兩份根本不用排序，重疊的兩份就讓「另一份要接在上面的那一份」先走。真的平手時，實際有效的
    tie-break 是**已經 rebase 到最新 base、而且是對著它驗證過的那一份先走**——只有它的綠還是在講
    所有人接下來要繼承的那棵樹，而且先落它會讓其他線的 rebase 變便宜而不是變貴。
-4. **一次落一份，而且每一份都由你自己在確切的 staged tree 上驗。** 不是交付者跑的那一次，是你
-   在即將 commit 的那個 index 上跑的那一次，照上面「關閉一份 code delivery」的步驟。一次一份不是
-   為了謹慎而謹慎：它讓失敗可以歸因，因為距離上一棵綠樹之間唯一變動的，就是你剛 stage 的那一份。
+4. **先組成一個完整、可回滾的 release candidate，再驗那棵確切 staged tree。** 相容的 deliveries
+   共用一個 candidate 與一次 acceptance，不要讓每個小 landing 都各付一次 full 的成本。
    以 `CLAWDLINE_VERIFY_QUESTION_ID=<穩定問題代號> ./test.sh` 開始；repo-native wrapper 會用
    canonical recipe 算出 repository/tree/command/environment tuple，並在取得 compile lock 前用
    machine token 保留它。只有 exact commit-tree 的 `reusable` pass 可以直接沿用；`active` 就等待；
    只有 `run_required` 才執行，之後完成同一張 receipt。focused 或 dirty overlay 的綠只算
    self-proof，不能代替這一步。完整 unfiltered full pass 由 wrapper 保留並雜湊 stdout/log 裡的
-   `CLAWDLINE_TEST_SEAL` tuple，completion 綁定該 digest；本地三個 seal 只能用
-   `tools/apply-test-receipt-seal.sh` 一次更新。這些 machine-authenticated hashes 是 caller 的
-   attestation，不是 broker 自己重新觀測 Git、command 或 log 的證明。
+   `CLAWDLINE_TEST_SEAL` runtime tuple，completion 綁定該 digest；裡面的實際執行數字不再回寫
+   source。這些 machine-authenticated hashes 是 caller 的 attestation，不是 broker 自己重新觀測
+   Git、command 或 log 的證明。
 5. **Build**，最後做一次——在最後一份落地之後，中間不要 build。它會替換並重啟使用者正在用的 app，
    所以動手前先說一聲，而且要從 HEAD 建，不是從工作樹。
 6. **恢復，並且跟每條線要「內部盤點」和「給人的收尾」。** 在任何東西重新開始之前，分開問每一條線：
    **(a) 技術下一步**、**(b) 只有使用者能做的決定**、**(c) 已完成的成果**、**(d) 完成與剩餘工作是否
-   已登記到 Project 看板**、**(e) 上線狀態**、**(f) 它認為自己是否可以關閉**。branch、path、test、
+   已登記到 Project 看板**、**(e) 上線狀態**、**(f) 流程阻力：遇到的 blocking、重複驗證、協調成本與
+   一項具體改善建議**、**(g) 它認為自己是否可以關閉**。branch、path、test、
    receipt 等精確資料是交給 Clawdfather 的技術交接（technical handoff）；另外一定要有一份給使用者的
    白話（plain language）收尾，不能叫使用者直接讀原始盤點。使用者決定永遠單獨列出，再用選項介面
    一次問一題，每個選項都帶著代價與建議——形狀在
    [`AGENTS.md`](../../AGENTS.md#decisions-that-are-the-users-go-to-the-user-as-options)。
 
-   Session 最後一則給使用者看的訊息，要用短句、短清單，而且固定有這六個掃讀點：
+   Session 最後一則給使用者看的訊息，要用短句、短清單，而且固定有這七個掃讀點：
    **✅ 完成了什麼**、**🧭 還沒完成**、**🙋 需要你決定什麼**、**📌 Project 看板**、
-   **🚀 上線狀態**、**🔒 這個 Session 可以關閉嗎？**。「沒有」也是完整答案，省略不是。它必須分清楚
+   **🚀 上線狀態**、**⚙️ 流程回饋**、**🔒 這個 Session 可以關閉嗎？**。「沒有」也是完整答案，省略不是。它必須分清楚
    只是寫完、已 commit、已裝到 Mac、已發布到 Cloud、以及真的在線上驗收過；每個未完成項目都要寫
-   現在由誰負責，看板資料過期也要直接說。精確 SHA、路徑、指令、check 數量與 log 位置，只有使用者
+   現在由誰負責，看板資料過期也要直接說。流程回饋要寫明具體 blocking 或拖慢處、可以估計時附上
+   浪費時間，並提出一項改善，不要貼技術事故流水帳。精確 SHA、路徑、指令、check 數量與 log 位置，只有使用者
    要求或需要一張簡短稽核收據時，才放到分開的技術附錄（technical appendix）。Clawdfather 要驗證並
    統整這些白話收尾，不能把各 Session 的技術盤點原封不動貼給使用者。
    每一條工作線都用人在介面上認得的 **Session 標題**稱呼。內部 Session ID 只有需要對照時才放技術附錄；

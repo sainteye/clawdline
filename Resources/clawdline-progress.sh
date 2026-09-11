@@ -1,7 +1,7 @@
 #!/bin/bash
 # Say how far a long-running command has got, to somebody who is not looking at this terminal.
 #
-# `./test.sh` is 288 seconds and `./build.sh` is not much quicker, and until the seventh project
+# `./test.sh` and `./build.sh` both take minutes, and until the seventh project
 # status file landed the person who started one had nothing to look at anywhere but the terminal
 # they started it in. `run-<key>.json` fixed that for those two scripts. **This file is what makes
 # it a facility rather than a format**: a lint run, a data import, a migration, a video encode all
@@ -15,7 +15,7 @@
 # the caller installs no traps at all, and the whole class of bug below cannot occur.
 #
 #     . "$CLAWDLINE_PROGRESS"
-#     progress_start --label test --typical 288
+#     progress_start --label test
 #     progress_phase compiling
 #     # no explicit finish: the traps progress_start installs decide from the exit status
 #
@@ -418,7 +418,7 @@ clawdline_run_file_start() {
         0) ;;
         "" | *[!0-9]* | 0*) CLAWDLINE_RUN_STALE_AFTER=900 ;;
     esac
-    # **How long this usually takes, and it is optional on purpose.** `test.sh` passes `--typical 288`
+    # **How long this usually takes, and it is optional on purpose.** A caller may pass `--typical`
     # — one green run on 2026-09-03, receipt `8353 checks passed`, in a detached worktree pinned at
     # `d97d0afb`, written up in `docs/suite-runtime.md`. **Nobody has ever measured `./build.sh`**, so
     # it passes none and no `typical_seconds` is written at all: an invented number is
@@ -606,7 +606,7 @@ COMMAND's own exit status, and this command exits on that status too.
 Or, inside a script that wants its own phases:
 
     . "$CLAWDLINE_PROGRESS"
-    progress_start --label test --typical 288
+    progress_start --label test
     progress_phase compiling
 
 --typical is optional and nothing is invented for it: with no measurement, no typical_seconds is

@@ -227,7 +227,8 @@ assert.equal(coordinatorAuditCanSend({ ...coordinatorSession,
 }, { connected: true, write: true }), false);
 
 const auditInstruction = deepStatusAuditInstruction();
-for (const section of ["Unfinished", "Completed but not landed", "Landed", "User decisions"])
+for (const section of ["Unfinished", "Completed but not landed", "Landed", "User decisions",
+                       "Process feedback"])
     assert.match(auditInstruction, new RegExp(section));
 for (const degradation of ["unreachable", "timeout", "stale snapshot", "contradiction",
     "missing delivery commit", "already-integrated-but-unclosed"])
@@ -236,6 +237,7 @@ assert.match(auditInstruction, /bounded deadline/);
 assert.match(auditInstruction, /re-read all four registries/);
 assert.match(auditInstruction, /same task, Session, and commit across surfaces/);
 assert.match(auditInstruction, /Verify Git ancestry only when a delivery commit exists/);
+assert.match(auditInstruction, /estimate lost time when possible/);
 assert.match(auditInstruction, /Do not auto-dispatch, auto-land, auto-close, or start technical work/);
 assert.match(auditInstruction, /Never treat titles, paths, or commit messages as proof/);
 

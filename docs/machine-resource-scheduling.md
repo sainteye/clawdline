@@ -509,39 +509,14 @@ changed and the receipt still described the tree being landed. **The difference 
 documentation commit and a test-file commit is the whole content of the item**, and a rule phrased
 as a trigger discards exactly that.
 
-### What the re-seal door has and has not been shown to do
+### The re-seal loop was retired
 
-`CLAWDLINE_RESEAL=1` downgrades one row of the architecture guard — `Swift checks`, the only one
-comparing two records rather than a record against a measurement of the tree — from a failure to a
-warning. It exists because that row blocks the suite until the seal and the governance table agree,
-while the true count is only known once the suite has run; the exit is to make them agree, and the
-only value available before a run is a wrong one. A line spent an hour on 2026-09-03 in exactly that
-state, both records saying 8218 on a tree that ran 8226, with every guard green and nobody aware.
-
-**Shown, by mutation:** the door opens for that row and for nothing else — all five measured rows
-still fail hard with it set, each mutation printing the value it replaced. The end-of-run receipt
-check still fails on a wrong seal with the door open, so landing is not weakened. `CLAWDLINE_RESEAL=1
-./test.sh` reaches the guard through the ordinary child process, which is the path people will use
-rather than the direct invocation the first proofs used.
-
-**A second door since 2026-09-04, and it is the same shape.** `expected_cloud_receipt` pins twelve
-suite counts inside one exact string, so any one of them moving produced one sentence — *the receipt
-appeared 0 times* — which never named a suite. It now names the field that moved, both numbers and
-the distance between them, and under `CLAWDLINE_RESEAL=1` it prints the whole line to paste and goes
-on to compare the Swift seal rather than stopping there. **The exit code is unchanged at 125 either
-way.** Both doors change what a person is told and neither changes whether a tree may land, which is
-the property that makes them safe to open at all.
-
-**Since measured, and the claim was wrong.** Somebody ran the whole loop on both trees and counted:
-two suite runs before, two suite runs after, two hand-edited numbers each time. **The door saves no
-run.** What it changes is step one: adding an assertion and running the guard used to exit 0 —
-green, on a tree whose seal now describes a different tree — and now exits 1 with a message naming
-the next command. So the door's value is not the arithmetic this page claimed for it. It is that the
-silent state becomes loud, which is the same thing every other entry here is about, and the run-count
-saving was a guess made by someone who had not walked the loop.
-
-Worth keeping as its own small lesson: **the reason a mechanism is worth having and the benefit its
-author predicted can come apart, and only walking the whole path tells you which one you have.**
+The old workflow stored Swift and per-Cloud-suite check totals in `test.sh`, compared them before
+and after a run, copied the Swift total into three contributor documents, and required
+`CLAWDLINE_RESEAL=1` to measure a changed tree. A successful measurement then changed source and
+forced a second full run. Retained 2026-09-11 receipts measured that loop at roughly twenty minutes
+for one candidate. It is now removed: ordered rosters and unique completion receipts prove that the
+registered work ran, while observed counts live only in the exact run receipt.
 
 ### Two checks this page specifies but the tree does not yet carry
 

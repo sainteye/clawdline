@@ -13,699 +13,69 @@ if [ -n "${CLAWDLINE_VERIFY_QUESTION_ID:-}" ] && [ -z "${CLAWDLINE_VERIFICATION_
   exec node tools/verified-test-run.mjs "$0" "$@"
 fi
 
-expected_cloud_receipt='CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites=CloudEnvelope:66,CloudAccount:105,CloudTransport:69,CloudAppBridge:158,CloudSettings:59,ScheduleResume:19,CloudClock:47,CloudCanonicalJSON:91,CloudCommandLedger:101,CloudOutboundSpool:141,CloudPairing:172,CloudLifecycle:101'
-# The signed-release baseline has an observed 6,781-check receipt. Root Assignment adds 82
-# executed checks, Usage Portfolio adds 43, Milestone adds 15, inline Codex patches add 15,
-# the typed planning graph adds 14, the Cloud bridge lifecycle adds 75, and the Usage mobile,
-# schedule-title, Feature-status and Claude-only spending correction adds 3. Splitting owned-child
-# dispatch from detached automation adds 8. Clawdfather succession adds 75. Root Assignment
-# event-time delivery receipts add 16. Bounded Keychain writes add 22. The consolidated
-# Keychain/signing correction adds 43 more: CloudAccount
-# 92 -> 105, CloudSettings 40 -> 59 and CloudLifecycle 76 -> 87. Every added check is
-# unconditional and outside a loop, so the delta is arithmetic rather than an estimate; the
-# paired checks inside do/catch contribute one each.
-# Publication-bound Session process evidence and bounded subprocess cleanup add 35 checks; removing
-# five obsolete main-crossing sites and replacing the four-check coordinator wait fixture with
-# five direct-publication checks makes the net change 31.
-# The exact candidate-tree run remains authoritative and must update this guard if its observed
-# final count differs.
-# Transcript first-paint isolation adds 25 unconditional checks: three route/tier predicates and
-# twenty-two admission, completion, drain, interruption and queue-responsiveness checks.
-# Browser token adoption adds 7 unconditional checks for the 303/cookie contract and public health.
-# Stale-while-revalidate readings add 68 unconditional checks: 24 for the freshness policy
-# itself (fresh service, stale-then-refresh ordering, a refusal ageing rather than replacing a
-# reading, and the serveFor edge), 21 for single-flight admission and the answer a waiter gets
-# when the read it joined was refused, 14 for moving the lane's depth to where it can only refuse
-# a request that had nothing to serve, and 9 for the trace that keeps queueing apart from cost.
-# Reading the process list in one language adds 7 unconditional checks. The fixture beside them
-# was written in English by hand, which is how a Mac running zh_TW.UTF-8 came to find none of its
-# seventeen assistants: `ps -o lstart=` renders four fields there instead of five, the parser falls
-# back to the no-lstart offset, and every row is dropped. Three of these ask the real `ps` through
-# the real helper rather than a fixture, so the guard fails on the machine that would have the bug.
-# Coexisting with iTerm2's native tmux control mode adds 40 unconditional checks: 11 for reading
-# `#{client_flags}` off `list-clients`, 22 for what becomes of an iTerm2 row that has an identity
-# and no pty — including that the marker key is the same word in `iterm.js` and in Swift — and 7
-# for whether selecting a tmux pane may also bring iTerm2 forward. 7448 -> 7488.
-# Correcting that attribution adds 31 more, in the same three groups: 9 for the window count that
-# gives it a ceiling and for a tmux this app cannot find being a question that was never asked,
-# 16 for the ceiling itself and for a control-mode client having to be speaking over a pty iTerm2
-# named in the same reading, and 6 for that identity deciding activation and for the activation
-# tail leaving the caller's thread. 7488 -> 7519.
-# tmux read parity adds 56 unconditional checks in four groups, counted by running each group on
-# its own rather than by reading the source: 30 for one subprocess answering for every pane — the
-# script it sends, the marker that has no `%` for strftime to eat, the parsing of what comes back,
-# and ten panes costing one invocation with a dead one among them — 14 for a server Clawdline
-# starts detached and types its line into rather than handing to tmux as a command, 8 for the
-# screen a decision reads being the screen and not its history, and 4 more in the existing
-# terminal-plan group for tmux installed with no server being its own answer. 7542 -> 7598.
-# Correcting that slice adds 28, counted the same way — each group run on its own. 17 are a new
-# group for what a failed tmux command proves about the server behind it, which is where the
-# blocking defect was: a socket that has never existed says `error connecting to <path> (No such
-# file or directory)` rather than `no server running on <path>`, so the Mac the detached server
-# was written for was the one Mac it did not start on. 8 more in the batched-reading group, for a
-# deadline and an unreachable socket no longer reading as a tmux too old for the script, and for
-# the per-pane fallback itself, which no test had ever executed. 3 in the detached-server group,
-# for the page saying that typing a line is not the shell running it and for a pane tmux would
-# not type into being a failure. 7598 -> 7626.
-# Extracting the store codec into `OrchestratorStore` adds 399 checks and changes nothing
-# else: ten table-driven codec groups, one check per field per record, plus the legacy-shape
-# fixtures each type's preserved branch is worth. Every pre-existing count is unmoved, which
-# is what makes the relocation behaviour-neutral rather than merely green. The extraction was
-# measured against 7519 and has been rebased twice since, each time on somebody else's landing
-# rather than on anything it changed: the reader-paced question steps moved the baseline to
-# 7542, and tmux read parity moved it to 7626. 7626 + 399 -> 8025.
-# Giving the terminal a setting of its own adds 26, counted by running the two groups on their own
-# rather than by reading the source. 19 of them are the terminal-plan group being rewritten from the
-# hotkey scope onto `StartPoints.TerminalChoice`: twelve scope-shaped cases go and thirty-one arrive
-# — six for `auto` reproducing exactly the order that shipped, six for the two answers the old
-# setting had no words for, six for what a `config.json` written before the key meant by its scope,
-# four for every triple that used to reach `plan` reaching the same answer through the derived
-# choice, and nine for the file itself, including that an unreadable value and an absent one get the
-# same answer and that the derived one is written down on the next save. 5 more are the finishing:
-# the three raw values that are the file format, a config that says nothing at all, iTerm2-by-name
-# with no tmux to have fallen into, and the two that read every page writing a terminal refusal and
-# require it to ask for a name first — `terminal_unsupported` stopped carrying one. The last 2 are
-# in the screen-reading group, where `docs/interface.md`'s "200 lines of history" is now compared
-# with the depth `Targets.screenWithHistory` actually asks tmux for instead of being a transcription
-# nothing could contradict. 8026 -> 8052.
-# Cut 2 stage 1 gives the five smallest collections an owner and adds 35 unconditional checks in
-# four groups: 15 for a transaction reading back its own writes across all five collections and the
-# next transaction still seeing them, 4 for `Orchestrator.lock` being the registry's own instance
-# and a reader waiting out the whole of a writer's transaction, 11 for the per-terminal facts
-# keeping the replace-whole/merge-one semantics the projection had before, and 5 for a graph
-# admission being one reservation whose public release takes the lock for itself. No pre-existing
-# count moves, which is what makes the relocation behaviour-neutral rather than merely green.
-# The stage was measured against 8025 and has been rebased three times since, each onto
-# somebody else's landing rather than anything it changed: 8026 after the reader-paced question
-# steps, 8052 after the terminal-choice setting. 8052 + 35 -> 8087.
-# The heavy-compile lease adds 190 checks, and the number is the one the suite reported rather
-# than one read off the source: 8087 -> 8277, measured on the exact staged tree 90c137d5 in the run
-# that this line now guards. Eleven groups: the record three programs share, renewal as the proof of
-# life, the backstop that is necessary and never sufficient, pid recycling and the unpinned locale,
-# the FIFO queue, release and cancel ownership, restart reconciliation, admission degrading to the
-# floor rather than refusing, a holder that is not compiling being reported and still not
-# reclaimable, a heartbeat that outlives its work, and the store round trip. The run before it was
-# red at 4 of 8277 — a briefing that carried a loopback recipe a codex child cannot use, and a
-# route locator that stopped being unique when a second `/release` route existed — so this number
-# is from the repair, not from the delivery.
-# Closing that delivery's review adds 6, counted the same way and appended rather than folded into
-# the paragraph above, because each paragraph says how its own checks were arrived at and a reader
-# asking where the final number came from needs both halves. 4 are in the start-sheet words group:
-# a language keeping the `{app}` hole in the one refusal sentence that has no name to fill it, the
-# three pages no longer asking for a name `terminal_unsupported` never carries, what each of those
-# branches actually draws rather than only what it asks — the gap that let the whole delivery ship
-# a carefully written refusal nobody could read — and the mock answering that code in the shape the
-# server really sends. 2 are in the terminal-plan group, for a hand-typed `terminal` value being
-# named as discarded instead of silently replaced. Every one is unconditional and at the group's own
-# top level. 8277 -> 8283.
-# The second correction round over the compile lease adds 22, counted from the diff rather than
-# from memory and every one unconditional at its group's top level. 12 are a new group for a
-# refusal being an answer to an ask: the poll clock moving on a refusal and on an effect that
-# failed, the place in the line not moving with it, nobody else's clock moving, the later arrival
-# that must not take the slot from a waiter that has been refused all along, and the control that
-# a head which really has stopped asking is still passed over. 7 are in the store round trip,
-# which asserted "every field survives" over a codec that dropped three: the two the holder
-# carries, the refusal note, the waiter's poll clock, a refusal row with no request id, an adopted
-# holder that pins the provenance fallback, and the fixture's own control that no two of its ten
-# clocks coincide. 1 more is that same control for the `holder.txt` round trip beside it, whose
-# four clocks were all one instant. 2 are the process readings one decision takes, now that the
-# one nothing read is gone. 8331 -> 8353. The exact candidate-tree run remains authoritative.
-# Removing the broker heavy-compile lease takes 260 away, and the number is the one the suite
-# reported rather than one read off the source: 8353 -> 8093, from the run that this line now
-# guards, on this branch's tree with `CLAWDLINE_SUITE_JOBS=1`. Thirteen groups go with
-# `Tests/OrchestratorLeaseTests.swift` — the same eleven the lease's own paragraph above lists,
-# plus the two its two correction rounds added — and no group outside that file loses a check,
-# which is what makes this a removal rather than a change to anything that stayed. **The three
-# paragraphs above are kept rather than collapsed into this one**: each says how its own number was
-# arrived at, and a reader asking where 8093 came from needs the arithmetic *and* the fact that no
-# step of it was arithmetic. `Tests/test-sh-lock.mjs` moves separately and is not in this number:
-# 165 -> 150, counted by that file itself.
-#
-# The landing queue adds 72, and they were counted rather than predicted: its five groups were run
-# on their own through CLAWDLINE_TEST_GROUPS against the delivered branch and reported `72 focused
-# checks passed`, and against a mutation restoring the pre-change world — membership admitting only
-# declared pending landings, the isolated write set handed back and dropped, the old single-line
-# claims projection — the same selection reported `47 of 72 focused checks failed`. Both runs held
-# this script's own lock; neither was a full suite, so 8,298 is 8,226 plus a measured delta and not
-# a reading of the whole tree. `main` has moved since this branch's base, so the landing root
-# recomputes the absolute from its own tree and what carries across the merge is the 72.
-# The local Feature classifier adds 125: six groups in `Tests/UsageLedgerTests.swift` — the rung
-# ladder and its decline reasons, the acceptance policy's threshold, the conflicting-head refusal,
-# the backfill dry run, the payload's statement of whether a producer is configured, and the Project
-# scope a Feature and the Projects table now resolve by one shared rule.
-#
-# **8101 -> 8226, and the base moved after this line was first written.** The delivery measured
-# 8218 four times, and that number was right about the tree it was measured on and wrong about this
-# one: `a4ed9edb` added four checks inside a two-variant loop and did not re-seal, so `main` itself
-# read 8101 against a seal of 8093 before this landed. Both numbers here are what a run reported —
-# 8226 from the exact candidate tree below, 8101 from `main` — rather than either being 8218 + 8.
-# **The arithmetic would have produced the same answer and could not have told anyone the base was
-# wrong**, which is the whole reason this line is set from a run.
-#
-# Then the draft/refusal extraction landed on top of that base:
-# The draft/refusal extraction adds 157 unconditional checks in six groups, and moves no
-# pre-existing count — which is what makes the relocation behaviour-neutral rather than merely
-# green. The arithmetic, by group: 13 for the root-identity refusal (nine table rows plus the four
-# identity facts its extra carries), 23 for the dispatch door (four owner rows, eight route rows,
-# eight assistant rows and the three messages that each name a different door), 41 for the bodies
-# `draft(from:)` refuses (forty table rows plus the one row that proves the filesystem seam is
-# consulted), 50 for a fully populated body and a minimal one compared field by field against the
-# twenty-five fields a `Draft` has, 18 for the shapes an older root still writes, and 12 for
-# `isTaskID` and `isTaskSecret`. 8353 -> 8510.
-# Rebased onto the lease removal: that landing took the receipt to 8,093, and this
-# extraction's 157 land on top of it. Its 157 land on top of whatever base is current; the value below is what a run reported, and the
-# base under it moved from 8093 to 8101 to 8226 while this branch waited.
-# The durable handoff label and its correction wave add 39: 26 for the record — the codec, the
-# rehydration through a restart, the reused terminal id and the different conversation, the untitled
-# handoff that stores nothing — and 13 for the correction that split "is it bound?" from "is a field
-# missing?", gave the projection an ambiguity refusal, and made the forget guard able to go red.
-# **8383 -> 8422, read off the run, not added up.** The arithmetic agrees this time, which is worth
-# nothing on its own: it agreed on the base before this one too, while the base itself was wrong.
-# Putting the notification on the delivery receipt adds 23 checks and takes 7 away, counted from
-# the diff and confirmed by two mutation runs that made every one of the 23 go red. The 23: 12 in a
-# new group for the delivery push — its pure wording with and without `smart_notifications`, one
-# push for a new receipt, none for a repeat, none for a report outside its turn, and the preference
-# gate — 9 in the fan-out group for which key that push reads and for `push_on_fanout` inheriting
-# `push_on_finish`, and 2 in the audience group for the removed machinery being absent from
-# `Sources/StateHook.swift`. The 7: the three `.finished` decisions that had a case to test, and the
-# four in `a long turn keeps enough time to announce its finish`, whose `FinishTracker` is gone with
-# the event it timed. Net +16.
-#
-# **Both halves found `a4ed9edb`'s missing re-seal on their own.** The classifier line measured
-# `main` at 8,101 against a seal of 8,093; this one reached the same eight from the other end, by
-# reading that the four new `check(` calls sit inside a loop over English and Traditional Chinese.
-# Two roads to one number is worth more than one number asserted twice — and neither road is what
-# this line is set from.
-#
-# **8,438 is what this tree's own run reported**, and the number reached this line from that run
-# rather than from 8,422 + 16. The two agree, which is worth stating only because agreeing is not
-# what makes it right: the same arithmetic agreed with the seal below it on a base that was eight
-# short, and the guard that compares these two records cannot tell a pair that agrees from a pair
-# that is correct. This one was re-sealed under `CLAWDLINE_RESEAL=1`, which says out loud that the
-# run existed to produce the count, and the receipt check at the end of that run is what settled it.
-#
-# The landing queue merges on top of that. Its own run reported 8,298 against a base of
-# 8,226 — a measured delta of 72 — but that base is not this one, so the delta is a
-# prediction and not the seal. The value below is what this tree's run reported.
-# Task retention becoming a setting adds 34, in the two groups that line introduced. The 8,563 it
-# wrote down was that focused count added to the seal *its own* base carried, and that base is not
-# this one: `main` has moved to 8,549 since. The number below is what the merged tree's full run
-# reported, measured rather than computed. 8,549 + 34 = 8,583.
-# Folding the Feature table and naming each Feature's Project adds 17, in one group. 8,680 -> 8,697,
-# and the run that produced it was red: two checks in `OrchestratorLifecycleTests` failed on a
-# three-second `eventually` while the machine was busy, in a file this delivery does not touch. The
-# same compiled binary re-run five times reported `8697 checks passed` with zero failures every
-# time, which is what says the total is the tree's and the two failures were the clock's. A count
-# from a red run is still the count when the run reached the end of its roster; what a red run
-# cannot give you is a green.
-# The seventh project status file — `run-<path>.json`, a local `./test.sh` or `./build.sh` in
-# flight — adds 61 across two groups: the reader and its staleness ceiling, and the allow-list that
-# stops an unrecognised state drawing a mark for the deploy and health rows as well. It landed on a
-# `main` that had itself just moved: `05502b1b` added 3 for an answer sent from a phone, and sealed
-# 9,072 from its own run. **Both numbers are right and their sum is not a receipt.** The line below
-# is what the merged tree's run reported, and this repository has already had one day where two
-# branches wrote the same count field, agreed, and were wrong together with no conflict marker.
-# That run was red on two checks, and so was every tree here today, including `9e42f5b3` with none
-# of this in it: `the dedicated automation door accepts an explicit poll-only task` wants 200 and
-# gets 409, and the executor it should open stays at 0. A control tree was built and run for that
-# question rather than reasoned about, because the first two explanations that came to mind — a
-# claims collision from a busy dispatch hour, then a group-ordering change leaking shared state —
-# were both plausible and both wrong. So the roster was reached and the total is this tree's; the
-# pair of reds belongs to the orchestrator's detached door and is nobody's here.
-#
-# Snippets then arrived on top of that, adding its own groups: the store's strictness and UUID-only
-# addressing, the scope rule that follows the mark and then the git common directory, the routes
-# sharing the write gate with their typed refusals, and the snapshot a session read is already
-# filtered from. **Its branch sealed 9,151 and `main` sealed 9,133, and 9,133 + 82 is not a
-# receipt either** — the line below is what the merged tree's own run reported, for exactly the
-# reason the paragraph above gives. It came back 9,215, which is also what 9,133 + 82 comes to —
-# and the agreement is worth exactly nothing as evidence, because the two numbers it adds were
-# measured on two trees neither of which is this one. The same two detached-door checks were red
-# here too, on this tree, on the snippets branch before the merge, and on `9e42f5b3` with none of
-# it: two sessions reached that conclusion separately, each by building a control tree.
-#
-# **9,473 is the first seal in this repository read out of a green run.** Every total before it
-# was taken from a run that had failures in it: the receipt line the check below looks for is
-# printed only when nothing failed, so while the two detached-door checks stayed red there was no
-# `N checks passed` anywhere to copy, and the seal had to be set from the failing run's own count
-# with the reason written down. Those two are fixed — the fixture named `"assistant": "codex"` and
-# reached the real dispatch path, which reads this Mac's live quota, so an account at `7d 100%`
-# answered `409 assistant_exhausted` before a starter was ever called. 2026-09-06,
-# `CLAWDLINE_RESEAL=1`, tree `954ec556`, nothing unstaged before or after: 0 failures and
-# `9473 checks passed` printed for real. The witness below came from the same tree, so the pair is
-# a measurement rather than arithmetic.
-#
-# **Three other checks were red on this tree once and are not red here**, which is why the
-# number above is 9,342 and not a smaller total taken from that run: the 60k-row usage-query
-# fixture opens a second SQLite connection through `usageStoreExec`, and that connection set no
-# pragmas at all while the ledger's own sets `busy_timeout=5000`. Three runs of the same tree:
-# 2 red, then 5 red with `sqlite: database is locked` in the log and the fixture's INSERT never
-# happening (`seconds=0.011` against the usual ~3.9), then 2 red again. The total is unaffected —
-# those checks ran either way.
-#
-# **This paragraph corrects the attribution in `4dab30fe`'s commit message, which named the wrong
-# side.** That message said the fixture collided with "the `UsageLedger.shared` connection that
-# has a busy_timeout", meaning the read `_ = UsageLedger.shared.rows()` had just finished. It
-# cannot have been that one. In WAL a completed read holds no lock against a writer, and `rows()`
-# is a `queue.sync` on the ledger's serial queue, so every write queued before it had already run
-# by the time it returned. Measured here rather than reasoned: a WAL reader with its connection
-# still open lets an outside `BEGIN IMMEDIATE` through with no error at all.
-#
-# **What actually decides it is on the losing side, not the holding side.** The fixture's script
-# opens with `BEGIN IMMEDIATE` — the write lock demanded at statement one — and a connection with
-# no busy handler does not wait for it: `SQLITE_BUSY` comes back at once, `sqlite3_exec` stops at
-# that first statement, and the INSERT after it never runs. Four arms of the same experiment, on
-# a scratch WAL database with `/usr/bin/sqlite3`: with a writer holding the lock and no
-# `busy_timeout` it failed in 0.02-0.04s and inserted nothing; the same script with
-# `PRAGMA busy_timeout=5000` waited 1.62s for the same holder and inserted the row; with no
-# holder at all it passed without the pragma; and a completed read never blocked anybody — the
-# arms are `artifacts/sqlite-lock-arms.sh`. So any writer holding the lock
-# for a millisecond was enough, which is what made one tree green, red, then green again.
-#
-# **Which writer, this side did not establish**, and the candidate is offered as a candidate:
-# `UsageLedger.shared` is the only other connection in the process (one `sqlite3_open_v2` in
-# `Sources/`), it is serialized, and its three asynchronous doors — `observe`, `sealSession`,
-# `collect` — can all be fed after `rows()` has returned. `Orchestrator.scheduleSerializePump()`
-# re-arms itself every 0.25s for as long as any queued serialized task exists, and its pump can
-# finalize a task, which calls `collect` — a background loop an earlier group can leave running.
-# Naming it would need a run instrumented to catch it, which nothing here has done.
-#
-# **The repair is the one that does not depend on knowing that.** `usageStoreExec` now sets
-# `sqlite3_busy_timeout(db, 5_000)`, matching the ledger; the other suggestion in that message —
-# closing the ledger's connection before the fixture opens its own — would not have helped, since
-# what takes the lock is a write scheduled afterwards, and that write reopens the connection.
-#
-# **9,501, and the six checks are the tmux follow.** `Tmux.reveal(_:activate:false)` — the prompt
-# bar's walk — used to stop after `select-window`, which iTerm2 does not act on, so "the terminal
-# shows whatever the bar is aimed at" moved no tab at all under `tmux -CC`. It names the tab now,
-# and the four assertions above the two that prove it are about the gate in front: which half of
-# `activateITerm2`'s identity check the walk keeps, and that the half it keeps fails *open* where
-# the activation's fails closed. 2026-09-06, `CLAWDLINE_RESEAL=1`, in a snapshot of tree
-# `58b3f74e` rather than in the shared checkout — another session was editing the roster below
-# while this ran, and a suite that takes six minutes on a tree three sessions can write to is not
-# measuring the tree it started on. 0 failures, `9501 checks passed`.
-
-# **9,538 is the worktree inventory landing, and the 43 are its three groups.** 9,495 + 43 comes to
-# the same number and that agreement is not what this line is set from: the value below is what this
-# tree's own run under `CLAWDLINE_RESEAL=1` reported, 0 failures, all twelve Cloud suites present
-# and the Cloud receipt matching its seal exactly. The witness came from the same run's guard line.
-# The 43 are `the inventory answers three sections and every row names an action a route accepts`
-# (three sections, the `do` vocabulary held to the landing route's own admission predicate, the
-# droppable ladder's three verdicts and its four refusals), `the inventory generation moves on what
-# changes a decision and on nothing else` (a clock, a title and a state inside a section do not move
-# it; claims and a row changing section do), and `a dispatch that did not read the inventory is
-# refused and handed the inventory` (the `409` red/green pair, whose two arms differ in exactly one
-# body field).
-#
-# **The run that produced it was stopped one step early, and the step it lost was the comparison
-# below rather than any part of the suite.** A `SIGTERM` aimed at that run's own top-level `bash`
-# was deferred while it waited on the foreground suite and landed between the lock release and
-# `verify_test_completion_receipts`. The roster was reached, the receipt line was printed, and the
-# comparison it did not reach is the one whose answer was already known — 9,495 against a tree that
-# ran 9,538. The run that set this line is therefore not the run that proves it; the confirming run
-# is the one taken after these two values were written, with no `CLAWDLINE_RESEAL` at all.
-#
-# **9,544 is those 43 arriving on a `main` that had meanwhile moved to 9,501, and it is measured
-# rather than added.** The merge put the two seals above in conflict — 9,501 against 9,538 — and
-# neither is the merged tree's total; 9,501 + 43 lands on the same number and that is arithmetic
-# agreeing with a measurement, not a second measurement. The conflict was resolved by keeping the
-# **older** value so the tree stayed honestly red, and this line was written afterwards from
-# `CLAWDLINE_RESEAL=1` on `0edd66b3`, 0 failures. That run was taken in a detached snapshot at
-# that commit and not in the shared checkout, for the reason the 9,501 note gives above and for one
-# more: a third session had 177 lines of uncommitted Plan-page strings sitting in the shared
-# working tree, and a seal measured over somebody else's unfinished work is not about this tree.
-# 9,572 once a session could show the user an image on its own card: 80 checks in three groups —
-# the marker's one spelling and everything that is not it, an assistant turn's markers becoming
-# that entry's attachments in both readers and both renderers, and the store route beside the
-# message route it deliberately leaves alone. Measured, not added: this is what the clean run
-# reported after two mutation rounds had shown 34 of those checks going red.
-# 9,587 with that delivery's correction round: 15 more in the same three groups — which of two
-# absences a marker resolved to and that it invents no measurements for either, that reading a
-# transcript back never sweeps the whole artifact store, and that both readers spend one image
-# budget across one turn rather than one per block. Read off a mutation round in which 13 of
-# those 15 went red, which is also where this total came from: `16 of 9587 checks failed`.
-#
-# **9,639 is the image card arriving on a `main` that had meanwhile moved to 9,544, and neither
-# number nor their difference produced it.** The image-card line was measured on a branch based on
-# `e1de8129` and read 9,587; `main` moved to 9,544 underneath it; the merge put the two in conflict
-# and the sum of two measurements is not a measurement. The older value was committed with the
-# merge on purpose, so `b44f5e93` was honestly red, and this line comes from `CLAWDLINE_RESEAL=1`
-# run on `b44f5e93` itself — 0 failures, all twelve Cloud suites present, `9639 checks passed`.
-# The witness beside it came from the same run.
-#
-# **The row that had no conflict is the one that nearly got through.** Five rows of the governance
-# table conflicted and were re-measured; `ordered groups` did not, because both sides still said
-# 545, and the merged tree renders 548. A merge can only report disagreement, and a receipt's right
-# value is a function of the tree rather than of its two parents — so agreement between the parents
-# is not evidence. The guard caught it before the compiler started.
-# **9,582, and the arithmetic does not reach it from either number above — which is the point.**
-# The merge `0edd66b3` resolved this line to its first parent's 9,501/7,586 while keeping the
-# second parent's prose about 9,538/7,621 two paragraphs up, so the tree arrived already red: it
-# carried 7,627 assertion call sites against a witness of 7,586, and the guard said so before this
-# branch touched anything. Both sides had written a number here and neither was wrong on its own
-# tree, which is exactly the shape `git` does not mark as a conflict. So this value is not
-# 9,501 + this branch's checks and not 9,538 + them either; it is what one
-# `CLAWDLINE_RESEAL=1 ./test.sh` on this branch reported — 9,582, zero failures, all twelve Cloud
-# suites present, `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`. The witness came from the same
-# run's guard line, which named 7,665.
-#
-# **9,677, and it is not reachable by arithmetic from either parent — which is the whole reason
-# this line is set from a run.** This merge brought two lines together: the notification-address
-# slice, measured at 9,582 on a base that was itself already red, and the image card's 9,639 on
-# `main`. Both numbers were true about the tree each was taken on and neither is true about this
-# one; adding them is not a measurement. Four fields said the same kind of thing and were wrong
-# the same way — the runner count and the suite-file count were *both* 37 and 50 on both sides,
-# so `git` had nothing to mark, and the merged tree counts 38 and 51. This value is what
-# `CLAWDLINE_RESEAL=1 ./test.sh` reported on the merge commit `267e3cd0` itself: `9677 checks
-# passed`, zero failures, `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`, with `git rev-parse
-# HEAD` identical before and after the run. The witness beside it was named by the guard on the
-# same tree before any of it compiled.
-#
-# **9,874, from the run that measured this tree and not from 9,838 + 36.** The two are the same
-# number here, and that is worth one line rather than a paragraph: this branch added three test
-# groups to a tree nothing else had moved, so the sum happens to agree with the measurement. It is
-# still the measurement that is written down. `CLAWDLINE_RESEAL=1 ./test.sh` on this branch:
-# `9874 checks passed`, zero failures, all twelve Cloud suites present,
-# `CLAWDLINE_CLOUD_TESTS_COMPLETE suite_count=12`, and the Cloud receipt itself unchanged because
-# none of the three groups is a Cloud one. The witness below is what the guard named on the same
-# tree before any of it compiled.
-# **10,112 is the measured voice-frame/snippet-realignment tree, not 10,111 plus a static count.**
-# `CLAWDLINE_RESEAL=1 ./test.sh` on the private exact candidate tree
-# `0503dae9ac55cc319a837360a180bc72bea4f103` ran all 10,112 checks with all twelve Cloud
-# suites present. The only exit was the expected stale-seal refusal; no behavior assertion failed.
-# **10,121 is the Fast-mode tree's measured total, not 10,112 plus a source count.** The private
-# exact working-overlay run with `CLAWDLINE_RESEAL=1` reached all 10,121 checks and all twelve
-# Cloud suites. It exposed the eight locale variants backed by the two Chinese Copy structs still
-# carrying the English heading; those translations were corrected before the sealed candidate run.
-# **10,125 is the machine-quota display tree's measured total.** The private exact candidate run
-# with `CLAWDLINE_RESEAL=1` reached all 10,132 checks and all twelve Cloud suites; the seven new
-# checks exercise bounded provider-record reads, indexed closeability, and the slow-reading cache
-# lifetime bound. The same run measured the 8,154-site witness below.
-# **10,134 is the measured early-output-scan tree.** The private exact candidate run with
-# `CLAWDLINE_RESEAL=1` reached all 10,134 checks and all twelve Cloud suites. The two new checks
-# preserve the first non-empty output line and prove the scan stops before a 1.7 MB discarded tail.
-# The same run measured the 8,156-site witness below.
-# Project Board's exact candidate e02f8762 completed 10,337 checks and all twelve Cloud
-# suites on 2026-09-08. The same run measured 8,362 assertion sites; the count is its
-# emitted receipt, not the sum of the earlier interrupted run and focused confirmation.
-# Project-contained automatic Board candidate a3f49163 measured 10,432 checks and all twelve
-# Cloud suites on 2026-09-08, with 8,452 assertion sites. Authorized exact-tree run: 367.40 s;
-# the earlier sandbox attempt stopped before the main compile on unavailable hw.ncpu access.
-# Project model/isolation candidate e050d053 measured 10,500 checks and all twelve Cloud suites
-# on 2026-09-08; witness 8,520. Full log creation-to-final-write: 406 s. Only the two seal
-# values and generated governance count changed afterwards; the receipt guard rechecked that log.
-# Project Board report candidate 48554e8e measured 10,552 checks and all twelve Cloud suites
-# on 2026-09-08; the same run measured 8,572 assertion sites. The final seal/governance-only
-# delta is checked against that retained log rather than paying for a second full run.
-# Encrypted Cloud task documents candidate f4b2b518 measured 10,570 checks and all twelve Cloud
-# suites on 2026-09-08; the same run measured 8,572 assertion sites. All 18 added checks are in
-# CloudAppBridge (132 -> 150); the only exit was the expected stale-seal refusal (125).
-# Board reading/progress candidate eae7784aa11e39641cbee5ac54364a5635341df6 measured
-# 10,743 checks and all twelve Cloud suites on 2026-09-08, with 8,718 assertion sites.
-# The Cloud snippet-write candidate run on 2026-09-09 reported 10,799 checks and the twelve-suite
-# receipt above. Only seal/governance metadata changes after that run; its retained receipt is
-# checked below.
-# Secure desktop Cloud browser pairing candidate 6f17573f measured 10,810 checks and all twelve
-# Cloud suites on 2026-09-09, with 8,801 assertion sites.
-# Retained task Root Session candidate bda9e1fac415e1f5121e913a0a8edeab3792fd5f measured
-# 10,837 checks and all twelve Cloud suites on 2026-09-09, with 8,826 assertion sites. Only the
-# seal and generated governance metadata changed after that exact candidate run.
-# Mac personal Board measurement tree 2f596934 on 2026-09-09 ran 11,135 checks and all twelve
-# Cloud suites, with 8,993 assertion sites. That measurement failed 14 checks (locale parity,
-# maintenance admission precedence and document display order); it is not acceptance. Corrections
-# preserve the check/site count; the final exact-tree run must produce this successful receipt.
-expected_swift_receipt='11701 checks passed'
-# Which tree that number was measured on: assertion call sites in `Tests/*.swift`, counted by
-# `tools/check-architecture-boundaries.sh`. The line above is a record and had nothing to compare
-# against, so it was green whatever it said — `main` ran 8,101 against a seal of 8,093 for hours
-# with every guard passing. This is the measurement that record is checked against: add a `check`
-# or an `expect` anywhere in the test sources and the guard goes red before a compiler starts.
-# Set both lines together, from the same run, and never from arithmetic.
-# **7,767 is what the merged tree counts, and neither parent's witness reaches it.** This merge
-# brought two branches that had each added Swift assertions — the notification-address slice and
-# the image card's line on `main` — so `main` said 7,729 and the branch said 7,665, each correct
-# about the tree it was measured on and neither correct about this one. The guard named 7,767
-# before any of it compiled; the receipt below comes from the `CLAWDLINE_RESEAL=1` run taken on
-# the merge commit itself, not from adding one side's checks to the other's total.
-expected_swift_receipt_witness=9514
-
-count_exact_receipt_lines() {
-  local receipt=$1
-  local log=$2
-  awk -v receipt="$receipt" '$0 == receipt { count++ } END { print count + 0 }' "$log"
+cloud_receipt_prefix='CLAWDLINE_CLOUD_TESTS_COMPLETE'
+cloud_suite_roster='CloudEnvelope,CloudAccount,CloudTransport,CloudAppBridge,CloudSettings,ScheduleResume,CloudClock,CloudCanonicalJSON,CloudCommandLedger,CloudOutboundSpool,CloudPairing,CloudLifecycle'
+# Completion counts are observations from this run, not source-controlled expectations. Keeping
+# the previous tree's totals in this file made every legitimate assertion change require a
+# measurement full, a source rewrite, and a second identical full. The runtime receipt still
+# records the observed totals; completeness is proved structurally by the ordered Swift group
+# manifest and by this Cloud roster validation.
+cloud_receipt_lines() {
+  awk -v token="$cloud_receipt_prefix " 'substr($0, 1, length(token)) == token' "$1"
 }
 
-# >>> clawdline receipt direction >>>
-# Says which way the total moved, because the two directions mean opposite things and shared one
-# sentence until 2026-09-03. A green run with zero failures and all twelve cloud suites present
-# exited 125 against a seal eight checks stale, and `receipt mismatch` reads as *your delivery is
-# broken* in a case where the delivery was fine; the line that hit it spent a round proving the
-# eight were not its own. Short is the other direction and is not cosmetic: a group that aborts
-# takes the ones after it, so the count is a coverage number as well as a result.
-# Reports only. The exit code belongs to whatever called this — a check should not alter the
-# conclusion of the thing it reports on.
-
-# The one reader of this run's per-suite counts. `Tests/CloudTestRunner.swift` prints
-# `  ✓ <suite> (<n> checks)` from a single site, so there is one format to read, and it is read
-# in one place here for the reason the seal has one home: two copies of a pattern drift apart, and
-# this one's failure direction is silence — a pattern that has stopped matching is indistinguishable
-# from a run in which nothing moved, unless somebody counts what it found. Callers do.
-#
-# `|| true` is not decoration. `grep` exits 1 on no match and this script runs under
-# `set -o pipefail`, so an empty scan inside `x=$(...)` would abort the whole script — at the exact
-# moment the reporting below is the only thing left that could say anything useful.
-cloud_suite_counts() {
-  # `.` was one character here, which is one *byte* under `LC_ALL=C` while the tick is three, so
-  # this read nothing at all in that locale — and the caller then reported all twelve suites as
-  # never having reported, a false positive that reads exactly like a run that stopped early.
-  # Measured against `/usr/bin/grep`, which is what runs here: C found nothing, both UTF-8 locales
-  # found the line. `[^[:space:]]+` is the same shape without asking what a character is.
-  grep -aoE '^  [^[:space:]]+ [A-Za-z]+ \([0-9]+ checks\)' "$1" \
-    | awk '{ print $2 ":" substr($3, 2) }' || true
+validate_cloud_completion_receipt() {
+  node -e '
+    const [line, expectedRoster] = process.argv.slice(1);
+    const match = /^CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=([1-9][0-9]*) suites=(.+)$/.exec(line);
+    if (!match) process.exit(1);
+    const entries = match[2].split(",");
+    if (entries.length !== Number(match[1])) process.exit(2);
+    const names = new Set();
+    for (const entry of entries) {
+      const pair = /^([A-Za-z][A-Za-z0-9]*):([1-9][0-9]*)$/.exec(entry);
+      if (!pair || names.has(pair[1])) process.exit(3);
+      names.add(pair[1]);
+    }
+    if (entries.map((entry) => entry.split(":")[0]).join(",") !== expectedRoster) process.exit(4);
+  ' "$1" "$cloud_suite_roster"
 }
 
 report_receipt_direction() {
-  local log=$1 sealed attempted ran suite missing=""
-  sealed=${expected_swift_receipt%% *}
-  case "$sealed" in "" | *[!0-9]*) return 0 ;; esac
-  # The total lives on a different line in each case: `N of M checks failed:` when the suite is
-  # red, `M checks passed` when it is green. An earlier version read only the first and was
-  # therefore silent on the case that actually arrived.
-  attempted=$(awk 'match($0, /^[0-9]+ of [0-9]+ checks failed/) { n = $3 }
-                   match($0, /^[0-9]+ checks passed$/)         { n = $1 } END { print n }' "$log")
-  case "$attempted" in "" | *[!0-9]*) return 0 ;; esac
-  if [ "$attempted" -lt "$sealed" ]; then
-    echo "The total came out short: $attempted ran, this tree's seal is $sealed, so $((sealed - attempted)) never ran." >&2
-    ran=$(cloud_suite_counts "$log" | awk -F: '{ print $1 }')
-    for suite in $(printf '%s' "${expected_cloud_receipt#*suites=}" | tr ',' ' '); do
-      printf '%s\n' "$ran" | grep -qx "${suite%%:*}" || missing="$missing ${suite%%:*}"
-    done
-    [ -n "$missing" ] && echo "Cloud suites that never reported:$missing" >&2
-    echo "A run that did not finish is not a green, whatever its failure count says." >&2
-  elif [ "$attempted" -gt "$sealed" ]; then
-    echo "The tree grew and the seal did not follow: $attempted ran, the seal says $sealed, so $((attempted - sealed)) checks were added without re-sealing." >&2
-    echo "The suite itself is fine. What needs updating is the seal above and the governance row beside it — from a run, never from arithmetic." >&2
+  local log=$1
+  local failed_total
+  failed_total=$(awk 'match($0, /^[0-9]+ of [0-9]+ checks failed/) { print $3; exit }' "$log")
+  if [ -n "$failed_total" ]; then
+    echo "The suite reported failures after attempting $failed_total checks; it is not a complete green receipt." >&2
+  else
+    echo "The suite ended without one complete Swift success receipt; full output kept at $log" >&2
   fi
-  return 0
 }
-# <<< clawdline receipt direction <<<
-
-# >>> clawdline cloud receipt fields >>>
-# `expected_cloud_receipt` pins twelve numbers inside one exact string and `count_exact_receipt_lines`
-# compares the string, so all twelve produce the same sentence when they move: *appeared 0 times*.
-# On 2026-09-03 that sentence stood in front of `main` for four hours. The field that had moved was
-# `CloudTransport` — sealed 67 against a tree reporting 68, from two commits that added a `require`
-# and one that removed one, none of which touched this file — and the red landed on whoever tried to
-# land next rather than on whoever caused it. This says which field moved, and by how much.
-#
-# **Both sides are read; neither is computed.** The sealed pairs come out of the seal itself and this
-# run's pairs come off the `  ✓ <suite> (<n> checks)` lines through `cloud_suite_counts`, the reader
-# `report_receipt_direction` already uses. Nothing here proposes a value for the seal: a seal is
-# transcribed from a run, and the run's own line is what `report_cloud_receipt_reseal_line` hands
-# back. A per-field delta is printed because it says how far the two are apart; it is not an answer,
-# and adding it to the seal is exactly the arithmetic this repository keeps refusing.
-
-# The completion receipt lines this run actually printed, found by the keyword the seal itself opens
-# with rather than by a second copy of that keyword written here. Exact prefix, no regex: the line
-# carries no metacharacters and this way no locale can change what a `.` means.
-cloud_receipt_lines() {
-  local token=${expected_cloud_receipt%% *}
-  [ -n "$token" ] || return 0
-  awk -v token="$token " 'substr($0, 1, length(token)) == token' "$1"
-}
-
-report_cloud_receipt_fields() {
-  # Reports only, like report_receipt_direction above it: an awk that cannot run must not turn a
-  # 125 into its own exit code, or the conclusion would belong to the thing describing it.
-  local log=$1 sealed_pairs sealed_count actual_line
-  sealed_pairs=${expected_cloud_receipt#*suites=}
-  # A seal carrying no `suites=` list cannot be compared field by field. Say that, rather than
-  # diffing nothing and printing a comparison that read as clean.
-  if [ "$sealed_pairs" = "$expected_cloud_receipt" ]; then
-    echo "The seal in test.sh carries no \`suites=\` list, so this run could not be compared against it field by field." >&2
-    return 0
-  fi
-  sealed_count=${expected_cloud_receipt#*suite_count=}
-  sealed_count=${sealed_count%% *}
-  case "$sealed_count" in "" | *[!0-9]*) sealed_count="" ;; esac
-  actual_line=$(cloud_receipt_lines "$log" | awk 'NR == 1')
-  cloud_suite_counts "$log" | awk \
-    -v sealed="$sealed_pairs" -v sealed_count="$sealed_count" -v logpath="$log" \
-    -v sealed_line="$expected_cloud_receipt" -v actual_line="$actual_line" '
-    function suites(k) { return k == 1 ? "One suite" : k " suites" }
-    BEGIN {
-      n = split(sealed, entries, ",")
-      for (i = 1; i <= n; i++) {
-        split(entries[i], kv, ":")
-        order[i] = kv[1]
-        seal[kv[1]] = kv[2]
-        if (length(kv[1]) > width) width = length(kv[1])
-      }
-    }
-    /:/ {
-      split($0, kv, ":")
-      if (!(kv[1] in ran)) ran_order[++ran_n] = kv[1]
-      ran[kv[1]] = kv[2]
-      if (length(kv[1]) > width) width = length(kv[1])
-    }
-    END {
-      # A scan that found nothing is a third answer and has to look like one. A pattern that has
-      # stopped matching — the line renamed, or a locale in which the `.` in it is one byte and the
-      # tick is three — would otherwise print a clean comparison of no data at all, which is the
-      # shape of failure this whole block exists to remove.
-      if (ran_n == 0) {
-        # `logpath`, not `log`: awk has a natural-logarithm builtin of that name, and a variable
-        # called `log` printed `-inf` here instead of the path — a message about not being able to
-        # read something, unable to say what it could not read.
-        printf "This run printed no `  \342\234\223 <suite> (<n> checks)` lines at all, so its per-suite counts could not be read out of %s.\n", logpath
-        print "That is not the same as nothing having moved: the twelve fields were never compared, and this is that third answer rather than a clean one."
-        exit 0
-      }
-      for (i = 1; i <= n; i++) {
-        name = order[i]
-        if (!(name in ran)) { silent_names[++silent] = name; continue }
-        if (ran[name] + 0 != seal[name] + 0) moved_names[++moved] = name; else matched++
-      }
-      for (i = 1; i <= ran_n; i++) if (!(ran_order[i] in seal)) extra_names[++extra] = ran_order[i]
-
-      if (moved > 0) {
-        printf "Cloud receipt does not match the seal. %s moved:\n", suites(moved)
-        for (i = 1; i <= moved; i++) {
-          name = moved_names[i]
-          printf "  %-*s sealed %s, this run reported %s (%+d)\n",
-                 width, name, seal[name], ran[name], ran[name] - seal[name]
-        }
-      } else if (silent + extra > 0) {
-        print "Cloud receipt does not match the seal. No suite it names reported a different count, but the roster did not hold:"
-      } else {
-        print "Cloud receipt does not match the seal, and every suite it names reported exactly the count it names."
-        print "So what differs is the rest of the line. The seal, and the line this run printed:"
-        printf "  sealed:   %s\n", sealed_line
-        printed = (actual_line == "") ? "(this run printed no completion receipt line at all)" : actual_line
-        printf "  this run: %s\n", printed
-      }
-      if (silent > 0) {
-        printf "%s the seal names never reported at all:\n", suites(silent)
-        for (i = 1; i <= silent; i++) {
-          name = silent_names[i]
-          printf "  %-*s sealed %s, and this run printed no line for it\n", width, name, seal[name]
-        }
-      }
-      if (extra > 0) {
-        printf "%s reported that the seal does not name:\n", suites(extra)
-        for (i = 1; i <= extra; i++) {
-          name = extra_names[i]
-          printf "  %-*s this run reported %s\n", width, name, ran[name]
-        }
-      }
-      if (sealed_count != "" && sealed_count + 0 != ran_n) {
-        # A roster that grew says plainly that suite_count moves. A roster that came up short does
-        # not: a suite removed from the registry and a suite that never got to report are the same
-        # eleven lines from here, and naming one of them would be a cause this cannot establish.
-        tail = (extra > 0) ? ", so suite_count moves with them." \
-               : ". Which of those two the seal should carry is not something this can tell: a suite removed from the registry and a suite that never reported look the same from here."
-        printf "The seal names suite_count=%s and this run reported %d Cloud suites%s\n",
-               sealed_count, ran_n, tail
-      }
-      if (moved + silent + extra > 0 && matched > 0) {
-        printf "The other %d %s the seal names reported exactly the count it names.\n",
-               matched, (matched == 1 ? "suite" : "suites")
-      }
-    }
-  ' >&2 || true
-  return 0
-}
-
-# The door, in the shape its Swift sibling in tools/check-architecture-boundaries.sh already has:
-# the person who has to re-seal is otherwise stopped by the very check they are trying to move, and
-# the only thing that knows the new value is a run. This one does not relax the verdict — the run
-# still ends non-zero, because the tree really is unsealed until the line below is pasted in — it
-# decides whether the run hands back the string to paste or leaves it to be dug out of a log.
-report_cloud_receipt_reseal_line() {
-  local log=$1 token lines count
-  token=${expected_cloud_receipt%% *}
-  lines=$(cloud_receipt_lines "$log")
-  count=$(printf '%s\n' "$lines" | awk 'NF { c++ } END { print c + 0 }')
-  if [ "$count" -eq 0 ]; then
-    echo "CLAWDLINE_RESEAL=1 — this run printed no $token line, so there is nothing to re-seal from: the Cloud harness did not reach the end of its own roster." >&2
-    echo "That is a defect in the run, not a stale seal. A seal is transcribed from a run that produced one, and this run produced none." >&2
-    return 0
-  fi
-  if [ "$count" -ne 1 ]; then
-    echo "CLAWDLINE_RESEAL=1 — this run printed $count $token lines, so no single one of them is the line to copy:" >&2
-    printf '%s\n' "$lines" | sed 's/^/  /' >&2
-    return 0
-  fi
-  echo "CLAWDLINE_RESEAL=1 — this is the line this run printed. Replace the seal in test.sh with it, whole:" >&2
-  echo "expected_cloud_receipt='$lines'" >&2
-  echo "The run still ends 125. The door decides whether you are told what to paste, not whether the tree is sealed." >&2
-}
-# <<< clawdline cloud receipt fields <<<
 
 verify_test_completion_receipts() {
-  local log=$1
+  local log=$1 cloud_lines cloud_count swift_count cloud
   if [ -n "${CLAWDLINE_TEST_GROUPS:-}" ]; then
     echo 'test.sh: focused_run_cannot_verify_full_receipt' >&2
     return 125
   fi
-  local cloud_receipt_count swift_receipt_count reported_swift_receipts cloud_receipt_stale=0
-  cloud_receipt_count=$(count_exact_receipt_lines "$expected_cloud_receipt" "$log")
-  if [ "$cloud_receipt_count" -ne 1 ]; then
-    echo "Cloud test completion receipt appeared $cloud_receipt_count times, expected exactly once — full output kept at $log" >&2
-    # An aborted group fails here first, before the Swift seal is ever compared, so the direction
-    # has to be reported on this path too or `--verify-completion-receipts` stays silent about the
-    # one case it is most often pointed at: a log from a run that stopped early.
-    report_receipt_direction "$log"
-    report_cloud_receipt_fields "$log"
-    # Without the door, nothing below this line runs: a stale Cloud field hides the Swift seal
-    # entirely, which is what left 2026-09-03 comparing one of the two records it has. With it, both
-    # are compared and both are reported from the one run that could measure either.
-    if [ "${CLAWDLINE_RESEAL:-}" != "1" ]; then
-      echo "Set expected_cloud_receipt from a run, never from arithmetic. CLAWDLINE_RESEAL=1 makes this run print the line to paste, and compares the Swift seal as well instead of stopping here." >&2
-      return 125
-    fi
-    cloud_receipt_stale=1
-    report_cloud_receipt_reseal_line "$log"
-  fi
-
-  swift_receipt_count=$(count_exact_receipt_lines "$expected_swift_receipt" "$log")
-  if [ "$swift_receipt_count" -ne 1 ]; then
-    reported_swift_receipts=$(awk '/^[0-9]+ checks passed$/ { values = values (values ? ", " : "") $0 } END { print values ? values : "none" }' "$log")
-    echo "Swift test completion receipt mismatch: expected exactly one '$expected_swift_receipt'; found $swift_receipt_count exact and reported $reported_swift_receipts — full output kept at $log" >&2
-    # Once, not twice. Without the door only one of these two branches is ever reached, so this is
-    # the door's own arithmetic: it lets both run, and the direction is a property of the run rather
-    # than of the branch that noticed.
-    [ "$cloud_receipt_stale" -eq 1 ] || report_receipt_direction "$log"
+  cloud_lines=$(cloud_receipt_lines "$log")
+  cloud_count=$(printf '%s\n' "$cloud_lines" | awk 'NF { c++ } END { print c + 0 }')
+  swift_count=$(awk '/^[1-9][0-9]* checks passed$/ { count++ } END { print count + 0 }' "$log")
+  if [ "$cloud_count" -ne 1 ]; then
+    echo "Cloud test completion receipt appeared $cloud_count times, expected exactly once — full output kept at $log" >&2
     return 125
   fi
-  # A run under the door that got this far still failed the Cloud comparison. The door bought the
-  # rest of the reporting, not a pass.
-  [ "$cloud_receipt_stale" -eq 0 ] || return 125
+  cloud=$(printf '%s\n' "$cloud_lines" | awk 'NF { print; exit }')
+  if ! validate_cloud_completion_receipt "$cloud"; then
+    echo "Cloud test completion receipt is malformed, internally inconsistent, or names a duplicate suite — full output kept at $log" >&2
+    return 125
+  fi
+  if [ "$swift_count" -ne 1 ]; then
+    echo "Swift test completion receipt appeared $swift_count times, expected exactly once — full output kept at $log" >&2
+    return 125
+  fi
 }
 
-# One retained-log receipt for the three values that have to move together. This is emitted only
-# after the binary has returned green and its log is readable; the atomic helper consumes this one
-# JSON object and never reconstructs a missing Cloud field or a Swift total by arithmetic.
 emit_complete_test_seal_receipt() {
   local log=$1 cloud swift witness cloud_count swift_count
   if [ -n "${CLAWDLINE_TEST_GROUPS:-}" ]; then
@@ -714,28 +84,25 @@ emit_complete_test_seal_receipt() {
   fi
   cloud=$(cloud_receipt_lines "$log")
   cloud_count=$(printf '%s\n' "$cloud" | awk 'NF { c++ } END { print c + 0 }')
-  swift=$(awk '/^[0-9]+ checks passed$/ { line=$0; count++ } END { if (count == 1) print line }' "$log")
-  swift_count=$(awk '/^[0-9]+ checks passed$/ { count++ } END { print count + 0 }' "$log")
+  swift=$(awk '/^[1-9][0-9]* checks passed$/ { line=$0; count++ } END { if (count == 1) print line }' "$log")
+  swift_count=$(awk '/^[1-9][0-9]* checks passed$/ { count++ } END { print count + 0 }' "$log")
   witness=$(cat Tests/*.swift \
     | grep -oE '\b(check|expect)[A-Za-z0-9_]*\(' | wc -l | tr -d '[:space:]' || true)
-  if [ "$cloud_count" -ne 1 ] || [ "$swift_count" -ne 1 ] \
-     || [ -z "$witness" ] || [ "$witness" -le 0 ]; then
-    echo "test.sh: cannot emit a complete test seal receipt (cloud=$cloud_count swift=$swift_count witness=${witness:-missing})" >&2
+  if [ "$cloud_count" -ne 1 ] || ! validate_cloud_completion_receipt "$cloud" \
+     || [ "$swift_count" -ne 1 ] || [ -z "$witness" ] || [ "$witness" -le 0 ]; then
+    echo "test.sh: cannot emit a complete test receipt (cloud=$cloud_count swift=$swift_count witness=${witness:-missing})" >&2
     return 125
   fi
-  local seal
-  seal=$(node -e '
+  local receipt
+  receipt=$(node -e '
     const [swift, witness, cloud] = process.argv.slice(1);
     process.stdout.write("CLAWDLINE_TEST_SEAL " + JSON.stringify({
       version: 1, outcome: "passed", swift_receipt: swift,
       assertion_sites: Number(witness), cloud_receipt: cloud
     }) + "\n");
   ' "$swift" "$witness" "$cloud")
-  # `$LOG` is intentionally removed after a fully sealed green run. Emit the same canonical line
-  # to stdout as well as appending it to the internal log: an outer verified-run wrapper can retain
-  # and hash it, while the verifier below still reads the exact line from the exact suite log.
-  printf '%s\n' "$seal" >> "$log"
-  printf '%s\n' "$seal"
+  printf '%s\n' "$receipt" >> "$log"
+  printf '%s\n' "$receipt"
 }
 
 is_unfiltered_test_run() {
@@ -832,6 +199,11 @@ case "${CLAWDLINE_SWIFT_TEST_ARTIFACT:-off}" in
   off|reuse) ;;
   *) echo 'test.sh: unknown_swift_artifact_mode' >&2; exit 2 ;;
 esac
+clawdline_test_profile=${CLAWDLINE_TEST_PROFILE:-release}
+case "$clawdline_test_profile" in
+  release|infrastructure) ;;
+  *) echo 'test.sh: unknown_test_profile' >&2; exit 2 ;;
+esac
 # <<< clawdline focused entry <<<
 
 # Everything above this line is either a definition or one of the two narrow modes, which run
@@ -855,17 +227,14 @@ esac
 # each of them composes `clawdline_run_file_exit` and is a superset of it, and
 # `Tests/run-file-producer.mjs` holds all of them to that in both scripts.
 #
-# **288 seconds is measured and here is where.** One green `./test.sh` on 2026-09-03, receipt
-# `8353 checks passed`, in a detached worktree pinned at `d97d0afb`; a second run in the shared tree
-# two changes older read 289.55 s with the same four boundaries. Both are in `docs/suite-runtime.md`,
-# which is also where the phase names below come from. `./build.sh` passes no `--typical` at all,
-# because nobody has ever measured it and an invented number is indistinguishable from a measured
-# one to every reader of that file.
+# Recent runs no longer fit the old 288-second estimate, and a stale progress estimate is worse than
+# no estimate. Per-phase durable receipts will supply a rolling value; until then neither test nor
+# build invents one.
 . ./Resources/clawdline-progress.sh
-progress_start --label test --typical 288
+progress_start --label test
 
 # (d) in `docs/suite-runtime.md`: the manifest, the architecture guard, the trailing-comma scan, the
-# three Python guards and the protocol vectors. Three seconds of the 288, and the phase exists so
+# three Python guards and the protocol vectors. Historically this phase took a few seconds; it exists so
 # that a run which dies in them is not drawn as a run that died in the compile.
 progress_phase guards
 . tools/swift-source-manifest.sh
@@ -959,10 +328,14 @@ unset remediation_header
 # became the ninth. The tenth, `landing-records-scope.sh`, builds another repository, another merge
 # and a linked worktree of it, and two readings taken with it in are 5.27 s and 5.23 s: inside this
 # machine's noise rather than free, and measured rather than reasoned about.
-bash tools/check-guards-go-red.sh
+if [ "$clawdline_test_profile" = infrastructure ]; then
+  bash tools/check-guards-go-red.sh
+else
+  bash tools/check-guards-go-red.sh --meta
+fi
 verify_suite_roster
-# (c) in `docs/suite-runtime.md`: 129 s of the 288, before the compile the machine lock exists for
-# has even started. Two of these suites are 119 s of it.
+# (c) in `docs/suite-runtime.md` records how this pre-compile phase once dominated a run. The
+# infrastructure profile keeps those expensive self-tests without charging every release candidate.
 progress_phase 'node suites'
 node Tests/docs-ui-labels.mjs
 # The two READMEs are one document in two languages, and the file above pins eleven strings in
@@ -971,13 +344,8 @@ node Tests/docs-ui-labels.mjs
 # compares their heading sequence instead — count and order — which is the most that can be
 # compared when the heading text is in two different languages.
 node Tests/docs-readme-parity.mjs
-# What `./test.sh` costs is quoted in three documents a contributor reads before running it, and
-# all three were wrong on 2026-09-04 with nothing to say so: `1567 checks, a couple of seconds`
-# against a sealed 8,660 and a measured 288 s. This compares the check count with the seal below
-# and the magnitude claim with `docs/suite-runtime.md`, which is where the seconds were measured.
-# **Moving `expected_swift_receipt` therefore means moving four things, not one**: the seal, its
-# witness, and the count quoted in `CONTRIBUTING.md` and in both READMEs. This suite is what says
-# so, before a compiler starts, and it names the file, the line and both numbers when it does.
+# Keep the three contributor quick starts honest about cost without copying a volatile check total.
+# Executed counts belong to run receipts; the dated wall-time measurement has one documented home.
 node Tests/docs-suite-facts.mjs
 # And nothing at all watched `CHANGELOG.md`, the document that becomes the release notes. On
 # 2026-09-04 four of its forty entries still described `orchestrator_max_grandchildren` and a
@@ -991,11 +359,6 @@ node Tests/agent-attention-principle.mjs
 # including the closed review schema, and prove the briefing carries the validator into projects
 # that do not contain Clawdline's own tools directory.
 node Tests/task-result-validator.mjs
-# The three-field full-suite seal is one emitted tuple now. This drives the atomic helper against
-# temporary targets, including the 2026-09-09 failure where a green 11,135-check run omitted one
-# Cloud field and the partial transcription forced another full compile.
-node Tests/test-receipt-seal.mjs
-
 # The checked-in protocol fixture is the cross-runtime byte authority. Generate the expected
 # bytes in memory and compare through the generator's read-only mode so hand edits fail closed.
 swift tools/generate-protocol-vectors.swift --check Tests/protocol-vectors.json
@@ -1179,17 +542,17 @@ node Tests/web-close-confirm-explanation.mjs
 # and that the machine-wide suite lock below serialises the expensive half. Both run before the
 # lock is taken, so a machine that is already busy still gets told what is wrong with this checkout
 # before it starts queueing.
-node Tests/test-sh-streaming.mjs
-node Tests/test-sh-lock.mjs
-node Tests/platform-architecture-inventory.mjs
-node Tests/platform-reliability-characterization.mjs
 node Tests/cloud-contract-v1.mjs
-node Tests/swift-test-artifact.mjs
-# And that anything with a slow command to run can still say how far it has got. The helper both
-# this script and `build.sh` source is driven in both its forms — wrapping a whole command, and
-# sourced by a script with phases of its own — against a scratch directory, with a copy of it
-# mutated once per trap so that every check in it has been seen to go red.
-node Tests/progress-helper.mjs
+if [ "$clawdline_test_profile" = infrastructure ]; then
+  # These suites prove the test/lock/cache/measurement infrastructure itself. Product release
+  # candidates do not spend minutes re-proving them when none of those inputs changed.
+  node Tests/test-sh-streaming.mjs
+  node Tests/test-sh-lock.mjs
+  node Tests/platform-architecture-inventory.mjs
+  node Tests/platform-reliability-characterization.mjs
+  node Tests/swift-test-artifact.mjs
+  node Tests/progress-helper.mjs
+fi
 # And that these two scripts are the helper's first callers rather than its documentation: that they
 # source it from the checkout, name themselves, arm it before anything that could exit, and that
 # every EXIT trap either of them installs further down is a superset of the one it armed. Both run

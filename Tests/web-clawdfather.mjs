@@ -489,13 +489,16 @@ for (const guide of ["../Resources/skill-guides/clawdline.md",
 for (const [surface, headings] of [
     ["../Resources/skill-guides/clawdline.md",
      [/✅ What was completed/, /🧭 What remains/, /🙋 What you need to decide/,
-      /📌 Project Board/, /🚀 Release status/, /🔒 Can this Session close/]],
+      /📌 Project Board/, /🚀 Release status/, /⚙️ Process feedback/,
+      /🔒 Can this Session close/]],
     ["../Resources/skill-guides/clawdline.zh-TW.md",
      [/✅ 完成了什麼/, /🧭 還沒完成/, /🙋 需要你決定什麼/,
-      /📌 Project 看板/, /🚀 上線狀態/, /🔒 這個 Session 可以關閉嗎/]],
+      /📌 Project 看板/, /🚀 上線狀態/, /⚙️ 流程回饋/,
+      /🔒 這個 Session 可以關閉嗎/]],
     ["../AGENTS.md",
      [/✅ What was completed/, /🧭 What remains/, /🙋 What you need to decide/,
-      /📌 Project Board/, /🚀 Release status/, /🔒 Can this Session close/]],
+      /📌 Project Board/, /🚀 Release status/, /⚙️ Process feedback/,
+      /🔒 Can this Session close/]],
 ]) {
     const text = await readFile(new URL(surface, import.meta.url), "utf8");
     for (const heading of headings) {

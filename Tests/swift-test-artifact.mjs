@@ -637,8 +637,10 @@ try {
     else refused(result, "focused_receipt_");
   });
   check("the full verifier refuses focused evidence even if both full lines were forged", () => {
-    const cloud = runner.match(/^expected_cloud_receipt='([^']+)'$/m)[1];
-    const full = runner.match(/^expected_swift_receipt='([^']+)'$/m)[1];
+    const roster = runner.match(/^cloud_suite_roster='([^']+)'$/m)[1].split(",");
+    const cloud = `CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=${roster.length} suites=`
+      + roster.map((name) => `${name}:2`).join(",");
+    const full = "7 checks passed";
     const f = fixture(); put(join(f.base, "forged.log"), `${full}\n${cloud}\n`);
     const result = spawnSync("/bin/bash", ["test.sh", "--verify-completion-receipts", join(f.base, "forged.log")],
       { cwd: f.root, env: { ...process.env, ...f.env }, encoding: "utf8" });
@@ -647,13 +649,15 @@ try {
   });
   check("the full emitter itself refuses focused context with plausible full evidence", () => {
     const f = fixture();
-    const cloud = runner.match(/^expected_cloud_receipt='([^']+)'$/m)[1];
-    const full = runner.match(/^expected_swift_receipt='([^']+)'$/m)[1];
+    const roster = runner.match(/^cloud_suite_roster='([^']+)'$/m)[1].split(",");
+    const cloud = `CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=${roster.length} suites=`
+      + roster.map((name) => `${name}:2`).join(",");
+    const full = "7 checks passed";
     put(join(f.base, "full.log"), `${full}\n${cloud}\n`);
     put(join(f.root, "Tests/main.swift"), 'check("witness", true)\n');
     const start = runner.indexOf("emit_complete_test_seal_receipt() {");
     const end = runner.indexOf("\nis_unfiltered_test_run()", start);
-    const result = f.run({ code: 'cloud_receipt_lines() { sed -n "/^CLAWDLINE_CLOUD_TESTS_COMPLETE /p" "$1"; }\n'
+    const result = f.run({ code: 'cloud_receipt_lines() { sed -n "/^CLAWDLINE_CLOUD_TESTS_COMPLETE /p" "$1"; }\nvalidate_cloud_completion_receipt() { :; }\n'
       + runner.slice(start, end) + '\nemit_complete_test_seal_receipt ' + JSON.stringify(join(f.base, "full.log")) });
     refused(result, "focused_run_cannot_emit_full_receipt");
     assert.equal(result.status, 125);
@@ -677,52 +681,28 @@ try {
     const binary = runner.indexOf('"$BIN" Resources/mascots', confirm);
     assert.ok(lock > 0 && lock < start && end < confirm && confirm < binary);
     assert.match(runner, /else\n  clawdline_verify_focused_test_receipt "\$LOG" \|\| exit \$\?/);
-    assert.match(runner, /^node Tests\/swift-test-artifact\.mjs$/m);
+    assert.match(runner, /^\s*node Tests\/swift-test-artifact\.mjs$/m);
     assert.match(sourceManifest, /clawdline_swift_test_compile_resources=\([\s\S]*Resources\n\)/);
     assert.match(section("swift artifact invocation"), /-target "\$clawdline_swift_test_target"/);
     assert.match(sourceManifest, /^clawdline_swift_test_target=[A-Za-z0-9_.-]+$/m);
   });
-  check("F5 legitimate reseal remains accepted by the artifact seal invariant", () => {
-    const f = fixture();
-    const count = Number(runner.match(/^expected_swift_receipt='([0-9]+) checks passed'$/m)[1]) + 1;
-    const witness = Number(runner.match(/^expected_swift_receipt_witness=([0-9]+)$/m)[1]) + 1;
-    const cloud = runner.match(/^expected_cloud_receipt='([^']+)'$/m)[1];
-    const tuple = { version: 1, outcome: "passed", swift_receipt: `${count} checks passed`,
-      assertion_sites: witness, cloud_receipt: cloud };
-    const log = join(f.base, "retained.log");
-    put(log, `${tuple.swift_receipt}\n${cloud}\nCLAWDLINE_TEST_SEAL ${JSON.stringify(tuple)}\n`);
-    const sealed = spawnSync("/bin/bash", [join(repository, "tools/apply-test-receipt-seal.sh"), log], {
-      cwd: f.root, env: { ...process.env, CLAWDLINE_SEAL_TARGET: join(f.root, "test.sh") }, encoding: "utf8" });
-    assert.equal(sealed.status, 0, sealed.stderr);
-    const changed = readFileSync(join(f.root, "test.sh"), "utf8");
-    assert.ok(changed.includes(`expected_swift_receipt='${tuple.swift_receipt}'`));
-    assert.ok(changed.includes(`expected_swift_receipt_witness=${witness}\n`));
-    assert.ok(changed.includes(`expected_cloud_receipt='${cloud}'`));
-    copyFileSync(join(repository, "Tests/swift-test-artifact.mjs"), join(f.root, "Tests/swift-test-artifact.mjs"));
-    const checked = spawnSync("node", ["Tests/swift-test-artifact.mjs", "--case", "full seal follows the retained tuple protocol"], {
-      cwd: f.root, env: { ...process.env, TMPDIR: f.temp }, encoding: "utf8" });
-    assert.equal(checked.status, 0, checked.stderr.slice(0, 1000));
-    assert.match(checked.stdout, /1\/1 swift-test-artifact checks passed/);
-  });
-  check("full seal follows the retained tuple protocol", () => {
-    const swift = [...runner.matchAll(/^expected_swift_receipt='([1-9][0-9]* checks passed)'$/gm)];
-    const witness = [...runner.matchAll(/^expected_swift_receipt_witness=([1-9][0-9]*)$/gm)];
-    const cloud = [...runner.matchAll(/^expected_cloud_receipt='(CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=([1-9][0-9]*) suites=([^']+))'$/gm)];
-    assert.equal(swift.length, 1); assert.equal(witness.length, 1); assert.equal(cloud.length, 1);
-    const suites = cloud[0][3].split(",");
-    assert.equal(suites.length, Number(cloud[0][2]));
-    assert.ok(suites.every(s => /^[A-Za-z][A-Za-z0-9]*:[1-9][0-9]*$/.test(s)));
-    assert.equal(new Set(suites.map(s => s.split(":")[0])).size, suites.length);
+  check("full receipt validation is structural rather than tied to a checked-in total", () => {
+    assert.ok(!/^expected_(?:swift|cloud)_receipt=/m.test(runner));
+    assert.ok(!/^expected_swift_receipt_witness=/m.test(runner));
     const f = fixture(), log = join(f.base, "full.log");
-    put(log, `${swift[0][1]}\n${cloud[0][1]}\n`);
+    const roster = runner.match(/^cloud_suite_roster='([^']+)'$/m)[1].split(",");
+    const cloud = `CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=${roster.length} suites=`
+      + roster.map((name, index) => `${name}:${index + 1}`).join(",");
+    put(log, `321 checks passed\n${cloud}\n`);
     const env = { ...process.env, TMPDIR: f.temp };
     delete env.CLAWDLINE_TEST_GROUPS; delete env.CLAWDLINE_VERIFY_QUESTION_ID;
-    const verify = () => spawnSync("/bin/bash", ["test.sh", "--verify-completion-receipts", log],
+    const good = spawnSync("/bin/bash", ["test.sh", "--verify-completion-receipts", log],
       { cwd: f.root, env, encoding: "utf8" });
-    const good = verify(); assert.equal(good.status, 0, good.stderr);
-    put(log, `${Number(swift[0][1].split(" ")[0]) + 1} checks passed\n${cloud[0][1]}\n`);
-    const bad = verify(); assert.notEqual(bad.status, 0);
-    assert.ok(!bad.stdout.includes("CLAWDLINE_TEST_SEAL"));
+    assert.equal(good.status, 0, good.stderr);
+    put(log, `321 checks passed\n${cloud.replace(`${roster[1]}:2`, `${roster[0]}:2`)}\n`);
+    const duplicate = spawnSync("/bin/bash", ["test.sh", "--verify-completion-receipts", log],
+      { cwd: f.root, env, encoding: "utf8" });
+    assert.equal(duplicate.status, 125);
   });
 } finally {
   rmSync(directory, { recursive: true, force: true });

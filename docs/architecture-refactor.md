@@ -374,10 +374,10 @@ one phase-end exact-tree suite, adds no dependency cycle, and can be reverted as
 Approve only Phases 0–1 initially. Phase 2 begins only when all of these are true on one exact
 candidate commit tree:
 
-1. independent review has sealed every finding as fixed, disproved or deferred with an owner;
-2. `expectedOrderedTestGroupTitles` equals the runtime order, the exact current Swift completion
-   receipt named above passes, and the existing Cloud receipt appears exactly once with the
-   existing eleven suite names and counts;
+1. any risk-triggered independent review has sealed every finding as fixed, disproved or deferred
+   with an owner; routine localized work records the owner's focused diff review instead;
+2. `expectedOrderedTestGroupTitles` equals the runtime order, and the exact candidate emits one
+   successful Swift receipt plus one structurally valid Cloud receipt with the ordered suite roster;
 3. `tools/swift-source-manifest.sh` reports the exact on-disk recursive inventory, including a
    recorded red mutation for one missing nested source;
 4. the architecture guard reports `Tests/main.swift <= 500`, 24 ordered runners, no domain group in
@@ -584,7 +584,6 @@ is written, and this document is not that place for any of them.
 | ordered groups | 618 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 48 | `Tests/main.swift`, counted by the guard |
 | suite files | 61 | `Tests/*Tests.swift`, counted by the guard |
-| Swift checks | 11,701 | `expected_swift_receipt` in `test.sh`, set from a run |
 | `Orchestrator.swift` ceiling | 10,723 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,831 | the receipt in `tools/check-architecture-boundaries.sh` |
 
@@ -599,50 +598,12 @@ went rather than because code moved. A ratchet that reads as "this only falls" i
 one whose raises are visible; one that cannot tell a removal from a refactor is worth less again,
 which is why the guard's history block names which of the two each line was.
 
-The Swift-checks row read 8,025 after Cut 1, then 8,026 when the multi-question picker's
-confirmation guard added one check on 2026-09-02 (`4273990a`) — the first landing to move a count
-after this table became asserted, and therefore the one that proved the mechanism works. It then
-read 8,061, which was 8,026 plus that stage's 35, and the heavy-compile lease and its two
-correction rounds carried it to 8,353: 8,331 observed by a full suite at `3a30b5a8`, plus the
-22 the second correction round adds — a group for a refusal counting as an ask, the store round
-trip's three dropped fields and its own clock control, and the process readings one decision takes.
-Removing that lease takes 260 back off, to **8,093**, observed by a full suite on the removal
-branch rather than subtracted from the paragraph above. That branch number then went stale on the
-tree that landed: `a4ed9edb` added four `check(` calls inside a two-language loop — eight executed
-checks — and moved nothing, so `a4ed9edb` really ran 8,101. The delivery-receipt notification adds
-16 more, and the row reads **8,117**; `test.sh` carries the whole derivation beside the value,
-including why no single run has yet printed it. **Every figure here is arithmetic until the
-landing root's full suite observes it**, and the number this row carries is only as good as the last
-run that did — which for this one is a run on a branch, so the root integrating it owes the tree it
-actually lands one of its own. **This paragraph is a history and stops where it stops**: it ends at
-8,093 and the seal has moved since, which the table above will always say and this will not. That is
-the difference between a rendering and a prose number, and the reason only one of the two is asserted.
-
-**This row used to be a comparison between two records, and that is what failed.**
-`compare_documented "Swift checks"` compared this table with `test.sh`'s `expected_swift_receipt`,
-two numbers neither of which had touched the tree, and on 2026-09-03 a commit added eight checks and
-updated neither. They agreed, so the guard was green, while `main` ran 8,101 against a seal of 8,093
-for hours — found by the next person's suite run and very nearly blamed on their change. **A green
-that two hand-edited numbers produced by agreeing with each other looks exactly like a correct one.**
-
-Rendering this table from the seal removes the second copy. It does not, on its own, make the seal
-true: no guard can count checks without running them, so `expected_swift_receipt` is still a record
-of what one run reported, and a record with nothing to compare against is green whatever it says. So
-the seal carries a second value on the line beneath it, `expected_swift_receipt_witness` — the number
-of assertion call sites in `Tests/*.swift` on the tree the seal was measured on. That one is a record
-against a measurement, the shape the five computed rows already have: add a `check` or an `expect`
-anywhere in the test sources and the guard goes red before a compiler starts, saying the seal belongs
-to a different tree. It does not know the new total, only that the old one is stale — and
-`CLAWDLINE_RESEAL=1` is what lets the run that does know the total start.
-
-**What the witness still cannot see**, said here rather than left to be discovered: a check
-multiplied by a loop rather than written out. `a4ed9edb`'s four checks came from two call sites, so
-the witness would have caught them; widening a loop around a check that already exists moves the
-total and no site, and nothing before the run notices. `report_receipt_direction` in `test.sh`
-catches that at the end of the run and says which way the total moved. Table equals seal (guard),
-seal's witness equals tree (guard) and seal equals run (suite) still only gives table equals run when
-the suite has actually been run, which is why the landing rule remains one exact-tree suite before
-landing.
+Executed Swift and Cloud check totals are intentionally absent from this table. They are facts
+about one run, so the canonical run receipt records them together with the exact tree, command,
+environment and log digest. Copying the previous tree's totals into `test.sh` and contributor docs
+created a self-invalidating loop: the first successful full run changed source metadata and forced
+a second identical full. Structural completeness remains enforced by the ordered group, runner,
+suite-file and Cloud-suite rosters; observed assertion totals remain receipt telemetry.
 
 ### What stage 1 proved, and what it declined to do
 
@@ -679,17 +640,9 @@ number came from is said per row, in prose, rather than by one heading that woul
 six different things at once. **A column heading is the smallest place in this document that can
 lie, because it is the one part nobody re-reads when a cell changes.**
 
-**Two of the Swift-checks numbers below have since been observed rather than derived.** The landing
-run of `252b016b` — the exact committed tree, not a working copy — reported `8052 checks passed`,
-and the landing run of this correction reported `8283` on its own exact tree. The `8,025` those were
-built on is still inherited arithmetic, so an error there would travel into every number after it by
-the same amount, and only another full suite can find one.
-
-**And it worked on the next one.** Giving the terminal a setting of its own — `Config.terminal` and
-`StartPoints.TerminalChoice`, split out of the hotkey's scope — moved that row to **8,052**, 26
-checks, in three groups and no new group, runner or suite file. The count was moved here in the same
-edit as `test.sh`'s `expected_swift_receipt` because the guard reads both and refuses to agree with
-one of them, and the arithmetic behind the 26 is written out beside that variable.
+Historical landing runs recorded their own observed check totals. Those receipts remain evidence
+for their exact trees, but the totals are no longer copied into this document or `test.sh`: ordered
+rosters prove completeness, while each run records its own changing assertion count.
 
 **Closing that delivery's review moves it by six more, to 8,058.** Four are in *the page is given the
 words it draws the start sheet with* (9 → 13): a language keeping a `{app}` hole in the one sentence

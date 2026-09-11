@@ -193,10 +193,10 @@ will consume, and **work smaller than its own briefing**.
 
 ### 2.0b How big one task is, and when small work goes out
 
-**One task is one coherent, independently reviewable feature slice** — its production change, its
-red-before-green tests, its docs, and its own verification, carried through one sustained session.
-Keep the implementer there until the slice is mature: a discovery or a correction that belongs to
-the same feature goes back into the same session, not into a new tab.
+**One task is the largest coherent, rollback-safe user outcome or architecture boundary one owner
+can carry safely.** A file, assertion, finding or small correction is not a slice. Accumulate its
+production change, tests and docs in one sustained session, then pay for one relevant focused pass
+near the end. A discovery or correction in that boundary stays in the same session.
 
 **A slice big enough to dispatch is big enough to lose.** `timeout_minutes` stops at 240, an
 assistant can exhaust its quota mid-task, and a context window can fill. So a long or multi-file
@@ -302,13 +302,16 @@ up. Review is both the most expensive node here and the one most often thrown aw
 review dispatches on this machine never returned a verdict, and one re-review spent 6.7M tokens
 re-reading 1.9M tokens of work somebody had already read.
 
-**And when the reviewer comes back with findings:** it writes the complete finding set down and
-reports it *before* it repairs anything, then repairs only what does not change the design. Once it
-has edited production bytes its verdict is spent — that repair is a delivery, and the focused diff,
-the mutation and the exact-tree acceptance are yours, not its. A design-changing correction goes
-back to the implementer's session instead. Never one task per finding.
+**Use independent review only when the risk earns it:** security/authentication, durable state,
+concurrency/backpressure, migrations, destructive/external effects, or broad cross-component
+semantics. Routine localized work, docs, generated data and test-only corrections use the owner's
+focused diff review.
 
-**One independent review per feature or batch. Count the rounds.** A *round* is one review of a
+**When the reviewer comes back with findings:** it writes the complete finding set down before any
+repair. The original implementer fixes the complete set in the same sustained session; the reviewer
+does not switch roles and one finding never becomes one task. Root checks the focused correction.
+
+**For work that triggers review, one independent review per feature or batch. Count the rounds.** A *round* is one review of a
 delivery; running two complementary reviewers side by side inside a round is still one round, and
 that is not what this limits. What this limits is re-reviewing after a correction, which looks
 free — the finding set is right there, the correction is small — and is not. Measured here on one
@@ -1157,37 +1160,39 @@ ordering step is the one that is skipped, and it is the one that prevents the me
    tie-break that worked is **the one already rebased onto, and verified against, the newest base
    goes first** — its green run is the only one still about the tree everybody will inherit, and
    landing it makes every other line's rebase cheaper rather than dearer.
-4. **Land one at a time, and verify each on the exact staged tree yourself.** Not the deliverer's
-   run — yours, on the index you are about to commit, by the "Close a code delivery" steps above.
-   One at a time is not caution for its own sake: it is what makes a failure attributable, because
-   the only thing that changed since the last green tree is the delivery you just staged.
+4. **Build one coherent release candidate and verify that exact staged tree.** Compatible deliveries
+   share one candidate and one acceptance run; do not make each small landing pay for a separate full.
    Start that run with `CLAWDLINE_VERIFY_QUESTION_ID=<stable-question> ./test.sh`; its repo-native
    wrapper computes the canonical repository/tree/command/environment tuple and reserves it with
    the machine token before the compile lock. Reuse only a `reusable` exact commit-tree pass; wait
    on `active`; run only on `run_required`, then complete the same receipt. A focused or
    dirty-overlay pass is self-proof and cannot stand in for this step. For an unfiltered full pass,
-   the wrapper retains and hashes the printed `CLAWDLINE_TEST_SEAL` tuple and binds that digest in
-   completion; update all three local seals only with `tools/apply-test-receipt-seal.sh`. These
-   machine-authenticated hashes are caller attestations, not independent broker observation.
+   the wrapper retains and hashes the printed `CLAWDLINE_TEST_SEAL` runtime tuple and binds that
+   digest in completion. Its observed counts never rewrite source. These machine-authenticated
+   hashes are caller attestations, not independent broker observation.
 5. **Build**, once, at the end — after the last landing, never between them. It replaces and
    restarts the user's running app, so say so before you do it and do it from HEAD, not from the
    working tree.
 6. **Resume, and ask each line for an internal audit plus a human ending.** Before anything
    restarts, ask every line separately for **(a) its technical next steps**, **(b) the decisions
    only the user can make**, **(c) what it completed**, **(d) whether completed and remaining work
-   is registered on the Project Board**, **(e) release status**, and **(f) whether it believes it
-   can close**. The exact branch/path/test/receipt inventory is the technical handoff to
+   is registered on the Project Board**, **(e) release status**, **(f) process friction — blocking,
+   repeated verification, coordination overhead, and one suggested improvement**, and **(g) whether
+   it believes it can close**. The exact branch/path/test/receipt inventory is the technical handoff to
    Clawdfather. Require a second, plain-language ending for the person; never make the person read
    the raw audit reply. User decisions remain a separate list and then go to the user as options,
    one at a time, each carrying its consequence and your recommendation — the shape is in
    [`AGENTS.md`](../../AGENTS.md#decisions-that-are-the-users-go-to-the-user-as-options).
 
-   The Session's last user-facing message uses short bullets and exactly these six scan points:
+   The Session's last user-facing message uses short bullets and exactly these seven scan points:
    **✅ What was completed**, **🧭 What remains**, **🙋 What you need to decide**,
-   **📌 Project Board**, **🚀 Release status**, and **🔒 Can this Session close?** `Nothing` is an
+   **📌 Project Board**, **🚀 Release status**, **⚙️ Process feedback**, and
+   **🔒 Can this Session close?** `Nothing` is an
    answer; omission is not. It distinguishes written, committed, installed on the Mac, published
    to Cloud and verified there. It names the owner of every remaining item and says when a Board
-   row is stale. Exact SHAs, paths, commands, check counts and log locations belong in a separate
+   row is stale. Process feedback names concrete blocking or slowdown, estimates lost time when
+   possible, and suggests one improvement rather than pasting a technical incident log. Exact SHAs,
+   paths, commands, check counts and log locations belong in a separate
    technical appendix only when requested or needed as a short audit receipt. Clawdfather verifies
    and synthesizes these human endings; it does not paste the technical handoffs into its report.
    Name every line by its **Session title**, the label the person can recognize in the UI. Put an

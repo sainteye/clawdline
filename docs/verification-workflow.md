@@ -5,8 +5,9 @@ verification ledger are implemented.
 Review verdicts and verification records are kept in the Observability store
 (`~/Library/Application Support/Clawdline/Observability/usage.sqlite3`), keyed by task and by the
 graph they belong to, and they outlive both clocks that used to delete them. Exact run reservations
-and outcomes now live beside them in the same durable SQLite store. The remaining runner work is
-compile-once execution; focused selection exists but still pays for a fresh compile.
+and outcomes now live beside them in the same durable SQLite store. Compile artifacts can be reused
+when their identity matches; the next optimization is making reuse the ordinary focused path and
+measuring its hit rate rather than adding another mandatory verification stage.
 
 ## Phase 0–1 repository guards
 
@@ -16,13 +17,11 @@ disabled without removing the safeguards below. Root attestations, artifact acce
 broker-verified landing remain separate evidence kinds. See [Project Board](project-board.md).
 
 The refactor foundation implements three local guards. **This section deliberately names no
-counts.** It carried five of them — a check target, a runner count, a group count, a suite-file
-count and two source-manifest partition sizes — and every one had drifted by the time anybody read
-them, because each is a receipt that moves with the tree while a paragraph does not. The current
-values are in the generated table in
+counts.** Structural values that move with the tree are rendered in the generated table in
 [`architecture-refactor.md`](architecture-refactor.md), written by
 `tools/generate-governance-table.sh` from the tree itself; the guard refuses a tree whose table is
-not that run's own rendering, which is why retyping a number into it is never the fix.
+not that run's own rendering. Executed check totals are different: they belong only to the run
+receipt and are never copied back into source or docs.
 
 - `tools/swift-source-manifest.sh` is sourced by both `build.sh` and `test.sh`; production mode
   compares the production partition only with recursive `Sources/` inventory, while full mode
@@ -32,8 +31,8 @@ not that run's own rendering, which is why retyping a number into it is never th
   the ordered runner count, the current sealed group identities, production stop-growth receipts
   and the 2,000-line suite ceiling.
 - `Tests/TestGroupManifest.swift` records group titles at runtime and adds a failure on any identity
-  or order difference without incrementing `checks`. `test.sh` separately requires the exact
-  `expected_swift_receipt` line and the existing Cloud receipt exactly once.
+  or order difference without incrementing `checks`. `test.sh` requires exactly one Swift success
+  receipt and one structurally valid Cloud completion receipt; their observed counts are telemetry.
 
 The missing-nested-source mutation returned 1 before the fixture was restored; the entry-point
 growth mutation returned 1 at 534 lines before the 34-line entry was restored. These are guard
@@ -41,48 +40,48 @@ proofs, not extra full-suite runs. Focused `CLAWDLINE_TEST_GROUPS` execution is 
 fails closed for missing groups or a zero-check selection; compile caching in “Runner direction”
 remains planned.
 
-The sealed structural/count receipts have different owners. A legitimate check change updates
-`expected_swift_receipt` in `test.sh` from a run, never from arithmetic, and moves
-`expected_swift_receipt_witness` to the assertion-site count that run was taken on. A group identity
-change updates `expectedOrderedTestGroupTitles`. A runner-boundary change updates `Tests/main.swift`
-and the runner-count expectation in the guard. A suite-file change updates the manifest and the
-suite-file expectation. The entry point's size is an observation, not another exact guard; only its
-limit is enforced. Change only the receipts affected by the approved behavior change, record the old
-guard going red, then record the updated guard green — and regenerate the governance table
-afterwards, because it is the one place all of them are written down at once.
+Structural receipts retain their existing owners. A group identity change updates
+`expectedOrderedTestGroupTitles`; a runner-boundary change updates `Tests/main.swift` and the
+runner-count expectation; a suite-file change updates the manifest and suite-file expectation.
+The entry point's size is an observation, not another exact guard; only its limit is enforced.
+Executed checks may freely increase or decrease with behavior: the release-candidate run records
+the observed total and does not rewrite this repository afterwards.
 
-`test.sh` now emits one `CLAWDLINE_TEST_SEAL` JSON tuple only after an unfiltered successful run has
-produced exactly one Swift receipt and exactly one Cloud receipt. The tuple carries those two exact
-strings plus the measured assertion-site witness. It is appended to the internal log **and printed
-to stdout before that internal log is removed**, so an outer caller can retain the successful run.
-`tools/apply-test-receipt-seal.sh <retained-log>` is the only supported mechanical update: it
-rejects incomplete or red logs, duplicate/malformed tuples, more than one Swift or Cloud completion
-line, and missing Cloud suites, then atomically moves all three seal lines together. A focused run
-never emits this tuple and therefore cannot mint a full-suite receipt.
+`test.sh` emits one `CLAWDLINE_TEST_SEAL` JSON tuple only after an unfiltered successful run has
+produced exactly one Swift receipt and one Cloud receipt whose declared suite count, unique names
+and positive observed counts agree internally. The tuple carries the observed strings plus the
+assertion-site count as diagnostic telemetry. It is appended to the internal log **and printed to
+stdout before that internal log is removed**, so the verification ledger can retain it. Nothing
+writes those numbers back into `test.sh`, README files or generated governance. A focused run never
+emits the full tuple and therefore cannot mint full-suite evidence.
 
-**A child adding assertions does not reseal.** Adding a `check(` or `expect(` moves
-`expected_swift_receipt_witness`, and the architecture guard refuses to start a compile while the
-witness names a different tree. `CLAWDLINE_RESEAL=1` downgrades that refusal to a warning so a
-focused run can proceed; both seal values stay as they are, for the landing root to set from the
-exact-tree run.
+The default `CLAWDLINE_TEST_PROFILE=release` runs product, contract and structural roster checks.
+The expensive self-tests for the lock, artifact cache, progress helper, guard mutations and W0
+characterization run under `CLAWDLINE_TEST_PROFILE=infrastructure`, when those inputs change or in
+scheduled infrastructure verification. Both profiles use the same machine-wide compile lock and
+neither can weaken the Swift/Cloud completion receipt.
 
-## One feature graph
+## One risk-sized delivery graph
 
 ```text
-implementation
-  -> focused self-proof
-  -> independent review
-  -> one sealed correction wave
-  -> focused confirmation
-  -> one root exact-tree full suite
+coherent implementation batch
+  -> one accumulated focused proof
+  -> independent review only when risk-triggered
+  -> at most one sealed correction wave + narrow confirmation
+  -> one release-candidate exact full when executable behavior can change
   -> landing
   -> build/restart/smoke
 ```
 
-Implementation proves new tests red before green and verifies only the claimed feature. Review
-answers three named, independent axes: `specification`, `repository_invariants`, and
-`runtime_failure_behavior`. The complete finding set is sealed before correction. Confirmation
-reopens only those findings and adjacent regressions. Root alone owns the normal graph's full suite.
+The unit is a rollback-safe user outcome or architecture boundary, not a file, test, checklist row
+or finding. Implementation uses one representative red/failure-injection proof per materially new
+failure class, not one compiler run per test. Independent review is required for high-risk
+boundaries (security/authentication, durable state, concurrency, migration, destructive/external
+effects, or broad cross-component semantics); routine localized/docs/generated/test-only work uses
+owner review. When present, review answers the three named axes and seals the complete finding set
+before one correction wave. Root groups compatible slices into one release candidate and alone owns
+its exact full. A candidate that cannot affect compiled/runtime behavior stops at relevant static
+checks.
 
 A third review requires `scope_changed`, `new_external_evidence`, or `systemic_pattern`. A repeated
 defect class beyond that correction seam moves to `architecture_hold` instead of a fourth patch.
@@ -221,8 +220,8 @@ Repository fields are `clawdline-verification-repository-v1` and the exact `remo
 (falling back to the real Git common-directory path). Command fields are
 `clawdline-verification-command-v1` followed by each argv element, preserving argument boundaries.
 Environment fields are `clawdline-verification-environment-v1`, then sorted key/value pairs for
-architecture, Node version, platform, Swift version, `CLAWDLINE_RESEAL`,
-`CLAWDLINE_SUITE_JOBS`, and `CLAWDLINE_TEST_GROUPS`; absent is the literal `<absent>` and differs
+architecture, Node version, platform, Swift version, `CLAWDLINE_SUITE_JOBS`, and
+`CLAWDLINE_TEST_GROUPS`; absent is the literal `<absent>` and differs
 from empty. `tools/verified-test-run.mjs` is the reference implementation.
 
 These values are **machine-authenticated caller attestations**. The broker validates their shape,
@@ -322,11 +321,13 @@ registered group ran.
 
 ## Metrics
 
-- normal full-suite runs per landed feature: 1;
+- normal full-suite runs per release candidate: at most 1;
 - duplicate full-suite rate for an exact tuple: 0%;
-- ordinary review/correction waves: at most 1/1, high risk 2/2;
+- routine localized/docs/generated/test-only review tasks: 0;
+- risk-triggered review/correction waves: at most 1/1;
 - third reviews below 5%, all with typed reason;
-- new tests with red receipt: 100%;
+- materially new failure classes with one representative red/mutation receipt: 100%;
+- coordination messages without an observed collision, dependency, boundary change or user decision: 0;
 - code-task verification valid: 100%;
 - exact-tree first-pass rate at least 90%;
 - full-suite seconds per landed feature reduced by at least 50%.

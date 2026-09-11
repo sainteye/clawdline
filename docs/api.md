@@ -3109,7 +3109,8 @@ ordinary row, preserving their old JSON behavior.
 
 This first deep-audit slice is agent-driven. The instruction asks Clawdfather to snapshot sessions,
 tasks, landings and waits; question relevant idle/root Sessions; wait to a bounded deadline; reread
-the registries; and report four separate sections plus distinct degradation states. There is no
+the registries; and report five separate sections — including workflow blocking and slowdown
+feedback — plus distinct degradation states. There is no
 persistent broker audit-run/probe protocol yet, and this API does not claim one.
 
 #### Proposed observer provenance for any future liveness action

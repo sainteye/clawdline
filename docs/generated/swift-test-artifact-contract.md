@@ -162,12 +162,11 @@ is refused. A focused log containing a full Swift result, a Cloud completion lin
 `CLAWDLINE_TEST_SEAL` is refused. Both the full verifier and the full seal emitter independently
 reject focused context, in addition to their existing outer scope gates.
 
-The current full count, assertion-site witness and Cloud receipt come from the three seal lines
-in `test.sh`. This tooling does not update them. Only the original full completion flow may
-produce its combined seal; `tools/apply-test-receipt-seal.sh` updates the three values together
-from a complete retained tuple. The permanent artifact tests check that protocol, full/focused
-separation and a synthetic legitimate reseal on a private copy, rather than freezing today's
-counts. Compile reuse does not waive any full receipt gate.
+The full completion flow records its observed Swift count, assertion-site telemetry and Cloud
+receipt in one runtime tuple. Nothing copies those values back into `test.sh` or docs. The
+permanent artifact tests check full/focused separation, receipt uniqueness and structural Cloud
+roster validity rather than freezing a previous tree's counts. Compile reuse does not waive any
+full receipt gate.
 
 A compiler failure prints `CLAWDLINE_SWIFT_TEST_COMPILE_FAILURE` JSON with `version: 1`,
 `kind: "exit" | "signal"`, the original subprocess `returncode`, and the returned `exit_status`.

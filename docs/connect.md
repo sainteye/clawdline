@@ -294,7 +294,7 @@ clawdline-progress run --label lint --typical 120 -- ./scripts/lint.sh
 
 # or sourced into a script that already knows what its own phases are called
 . "$CLAWDLINE_PROGRESS"
-progress_start --label test --typical 288
+progress_start --label test
 progress_phase compiling
 ```
 
@@ -402,8 +402,9 @@ Five things in that sketch are the whole point of it:
 that number and nothing else, so a guess draws a bar that is confidently wrong and no reader can tell
 a guess from a measurement. Time one honest run and write that; if you have not timed it, leave the
 field out and the row still says what is running and which phase it is in, with an empty bar rather
-than a false one. This repository does both on purpose — `./test.sh` writes a measured `288`, and
-`./build.sh`, which nobody has ever timed, writes no `typical_seconds` at all.
+than a false one. This repository deliberately leaves the field out for both `./test.sh` and
+`./build.sh`: their duration varies too much across profiles and trees for one source-controlled
+estimate to stay honest. A producer with a rolling measured estimate may still provide it.
 
 `none`, and every state a reader does not recognise, draws nothing at all. Do not invent states:
 an unrecognised one is not an error the user gets told about, it is a row that silently disappears.

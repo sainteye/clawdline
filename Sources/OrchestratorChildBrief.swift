@@ -334,9 +334,13 @@ extension Orchestrator {
         re-run a full suite as a ritual after every small edit, run a suite unrelated to the paths this task claimed,
         or repeat a run whose only purpose is to see whether something is flaky.
 
-        Do one verification that actually proves the change: compile, run the tests covering the
-        paths this task touched, and see one red-before-green run for every test you add. Iterating
-        until the change first compiles and passes is ordinary work. Until the repository ships a
+        Do the cheapest verification pass that materially reduces the risk of the complete delivery
+        unit. Accumulate related edits first, then compile and run the relevant groups once near the
+        end; do not pay a Swift compile for each assertion, file, finding or small correction. Use
+        one representative red-before-green or failure-injection proof for each materially new
+        failure class when the test could otherwise pass without the behavior. Pure prose,
+        generated-count transcription, mechanical moves and test-fixture-only corrections do not
+        need a synthetic mutation. Until the repository ships a
         focused Swift runner, an implementer whose behavior cannot be exercised more narrowly may
         use one full-suite run and record `focused_runner_unavailable`; a reviewer does not repeat
         it.
@@ -361,25 +365,18 @@ extension Orchestrator {
 
         \(timelySection)
 
-        ## Say what you are doing — once at the start, and again when it changes
+        ## Report only a material boundary change
 
-        **Send the first one within about three minutes of starting**, before you begin the work
-        rather than during it: one sentence saying what you have decided to do now that you have
-        read this file and `task.json`. It is the only thing that lets a wrong direction be
-        cancelled at minute three instead of minute twenty-six — the two most expensive cancelled
-        tasks on this Mac burned 18.5M and 16.5M tokens before anybody could tell what they had
-        set off to do. Nobody can read your screen; this note is the whole of what they have.
-
-        After that, your title was fixed before you started. When what you are actually doing
-        stops matching it — you decide to rewrite the fixture too, the real problem turns out to
-        be somewhere else, you have moved on to the second half — say so the same way:
+        Do not echo a clear `task.json` back as a routine progress message and do not send
+        heartbeat status. Start the work. Send one short progress note only when you discover that
+        the write set, approach, dependency, risk, or blocker materially differs from the briefing,
+        or when a long-running task needs an early choice from its root. Say what changed:
 
         \(progressChannel)
 
-        **This is not a status report and nobody is waiting to read it.** It is one sentence, it
-        costs you a second, and it is what another session sees when it asks whether the thing it
-        is about to start is already being done. The newest \(progressKept) are kept; sending the
-        same sentence twice is ignored rather than refused.
+        **This is not a status feed.** Ordinary progress and results stay in your final
+        `result.json`. The newest \(progressKept) material changes are kept; sending the same
+        sentence twice is ignored rather than refused.
 
         \(inflightSection)
 

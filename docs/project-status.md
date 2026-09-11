@@ -196,7 +196,7 @@ clawdline-progress run --label lint --typical 120 -- ./scripts/lint.sh
 
 # or source it into a script that has phases worth naming
 . "$CLAWDLINE_PROGRESS"
-progress_start --label test --typical 288
+progress_start --label test
 progress_phase compiling
 ```
 
@@ -251,10 +251,9 @@ rather than guess.** It is the only thing the bar is drawn against, so an invent
 that is confidently wrong — full four minutes into a twenty-minute job, then pinned at the end for
 the rest of it — and no reader can tell an invented number from a measured one. Leaving it out costs
 the bar and nothing else: the row still names what is running, `phase` still says where it has got
-to, and the bar stays empty instead of lying. This repository does it both ways on purpose:
-`./test.sh` writes `288`, which is one measured green run recorded in
-[`suite-runtime.md`](suite-runtime.md), and **`./build.sh` has never been timed and writes no
-`typical_seconds` at all** — a decision, not an oversight, and one to copy rather than to fix. What
+to, and the bar stays empty instead of lying. This repository leaves it out for both `./test.sh`
+and `./build.sh`: profiles and tree size make a fixed source-controlled estimate stale quickly. A
+producer with a rolling measured estimate may provide one. What
 an absent one looks like is worth seeing before you choose it: the Mac footer draws the empty bar
 and an elapsed clock with nothing to count against — `1m 4s/0s` — and the browser page draws the
 empty bar with `…` where the percentage would be.
