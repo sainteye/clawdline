@@ -103,14 +103,49 @@ even if another run settled or was evicted in between. A run admitted before the
 no `beginHint` and replays the legacy envelope it was first sent with. Together the two fields add
 a constant 337 bytes to a hinted envelope.
 
+**Byte identity lasts only as long as the retried run is retained.** The journal holds at most 256
+runs. At that capacity a new admission evicts the earliest run whose delivery is no longer
+`pending` (it is `delivered` or `rejected`), whose `missingFollowUp` is empty, and which no outbox
+row short of `complete` protects; its outbox rows and receipts go with it. Once the retried run has
+been evicted, a later identical retry finds no run. It is a new admission: it derives the hint again
+from the journal as it is at that moment, under the same deterministic run id, so its
+`previous_item` can differ from the original send. When the original was delivered, that retry
+types the prompt into the terminal a second time. That is the pre-existing `/send` idempotency gap,
+not something this field introduced: the replay cache lives only in memory for ten minutes, so once
+it forgets, even a retained run's retry is typed again. Root owns that gap as a separate line of
+work. No tombstone or other durable state is kept for an evicted run.
+
+**A downgrade drops the frozen hint.** `beginHint` is an optional field on schema-3 runs, not a
+schema bump. An older App that reads schema 3 loads a journal containing it, ignores the field, and
+drops it the next time it persists, because every persist re-encodes the whole journal from that
+App's own types. After re-upgrading, those runs have no `beginHint`, so a retry of one replays the
+legacy envelope, which both decoders still accept. A schema bump was the alternative and was
+rejected: the older App would refuse the whole journal as `workflow_store_invalid`, and every
+managed send would then go out unrecorded (`workflow_persistence_failed`) until the upgrade came
+back. Failing closed would stop Board workflow recording on a downgrade to protect an advisory
+field.
+
 Compatibility: the native (`Transcript.swift`) and web (`board-workflow-record.js`) decoders accept a
 legacy envelope without either key and a new envelope with valid values. They still reject unknown
-keys, a `previous_item` that is not a lowercase UUID or that appears without the template, and any
-template other than the producer's exact shape for that run. A rejected envelope stays visible
-prose. `Tests/board-workflow-metadata-v1.json` is one exact producer line: the Swift producer test
-must emit it and the web decoder test must accept it. An old decoder shown a new envelope displays
-the raw JSON, and the hosted console at app.clawdline.com renders with the same web bundle. So
-deploy the hosted console before, or together with, the Mac App that starts emitting these fields.
+top-level keys, and a `previous_item` that is not a lowercase UUID or that appears without the
+template. `begin_template` is held to a structural v1 contract, identical in both decoders, rather
+than to the producer's current text: it is a JSON object with 2 to 16 keys, each spelled
+`[a-z_]{1,64}`; every value is a string of at most 256 UTF-8 bytes; `operation` is exactly `begin`;
+and `run_id` equals the envelope's own `run_id`. Nothing else is required, so a later producer can
+reword a placeholder, change the choice list, or add or drop an optional field, and the envelopes
+already in transcripts keep folding. A rejected envelope stays visible prose.
+`Tests/board-workflow-metadata-v1.json` is one exact producer line: the Swift producer test must
+emit it and the web decoder test must accept it.
+
+Rollout: publish the hosted console at app.clawdline.com, which renders with the same web bundle,
+completely first, and release the Mac App that starts emitting these fields only after that. A
+console page loaded after the publish has the new decoder, and it also folds the legacy envelopes an
+older Mac App still sends. The order does not protect a page that is already open. A standalone PWA
+keeps the decoder it loaded and never reloads itself (`Resources/web/app/js/net/build.js`); once
+the Mac build changes it shows the stale-build notice, and until the person reloads it, every new
+envelope appears as raw prose. The structural template contract does not help such a page: it
+governs only decoders that ship with it, and a decoder built before these fields existed rejects
+both of them as unknown keys.
 
 ## Semantic receipts
 

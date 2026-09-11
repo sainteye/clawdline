@@ -1251,16 +1251,40 @@ const workflowImage = "<clawdline-image id=\"46cb6d40-c13f-4fea-9cf0-936f86b78da
     check("envelope carrying only the begin template folds", folds({ begin_template: template }));
     check("envelope carrying the template and a prior item folds",
         folds({ begin_template: template, previous_item: item }));
-    // The exact line `ProjectBoardWorkflowTests.swift` requires the Swift producer to emit.
+    // The exact line `ProjectBoardWorkflowPresentationTests.swift` requires the Swift producer to emit.
     const producer = readFileSync(new URL("./board-workflow-metadata-v1.json", import.meta.url),
         "utf8").trim();
     const produced = parseBoardWorkflowRecord("turn fixture-send-2\n\n" + open + producer + close, "user");
     check("the Swift producer's exact hinted metadata line folds in the web reader",
         produced?.raw === producer && produced?.text === "turn fixture-send-2"
             && produced?.metadata.previous_item === item);
+    // A later producer may reword placeholders, add a field and drop one; its envelopes must keep
+    // folding after that producer is gone. This is the first check a text-equality decoder fails.
+    const { title: _omitted, ...missingField } = template;
+    const future = { ...missingField, classification: "<existing_item|new_work|question|clarification>",
+        item_id: "<exact item uuid>", type: "<task|feature|bug|refactor|coordination|epic>",
+        handoff_id: "<handoff>" };
+    check("future-shaped template with other placeholders, an extra key and no title folds",
+        folds({ begin_template: future, previous_item: item }));
+    // Valid under the structural contract; each was malformed while the decoder demanded the
+    // producer's exact text.
+    for (const [name, shape] of [
+        ["missing an optional field", missingField],
+        ["with an extra field", { ...template, summary: "added" }],
+        ["whose choice was already made", { ...template, classification: "existing_item" }]
+    ]) {
+        check("template " + name + " folds", folds({ begin_template: shape }));
+    }
+    const widest = { operation: "begin", run_id: workflowMetadata.run_id };
+    for (let length = 1; length <= 13; length++) widest["k_" + "a".repeat(length)] = `<${length}>`;
+    widest["z".repeat(64)] = "界".repeat(85) + "a";
+    check("template at the bounds folds: 16 keys, a 64-byte key, a 256-byte value",
+        Object.keys(widest).length === 16 && folds({ begin_template: widest }));
+    check("template of only operation and run_id folds",
+        folds({ begin_template: { operation: "begin", run_id: workflowMetadata.run_id } }));
     check("unknown key beside begin assistance fails visible",
         !folds({ begin_template: template, previous_item: item, previous_item_title: "Fix it" }));
-    const { title: _omitted, ...missingField } = template;
+    const { operation: _operation, ...noOperation } = template;
     for (const [name, changes] of [
         ["uppercase prior item", { begin_template: template, previous_item: item.toUpperCase() }],
         ["human key as prior item", { begin_template: template, previous_item: "CLA-395" }],
@@ -1269,16 +1293,20 @@ const workflowImage = "<clawdline-image id=\"46cb6d40-c13f-4fea-9cf0-936f86b78da
         ["empty prior item", { begin_template: template, previous_item: "" }],
         ["prior item without the template", { previous_item: item }],
         ["template for another run", { begin_template: { ...template, run_id: "run-" + "f".repeat(32) } }],
-        ["template missing a field", { begin_template: missingField }],
-        ["template with an extra field", { begin_template: { ...template, summary: "added" } }],
-        ["template whose choice was already made",
-            { begin_template: { ...template, classification: "existing_item" } }],
+        ["template without operation", { begin_template: noOperation }],
+        ["template for another operation", { begin_template: { ...template, operation: "progress" } }],
+        ["template with 17 keys", { begin_template: { ...widest, one_more: "<17>" } }],
+        ["template value of 257 UTF-8 bytes", { begin_template: { ...template, title: "界".repeat(85) + "ab" } }],
         ["template with a non-string value", { begin_template: { ...template, phase: 1 } }],
         ["template sent as a string", { begin_template: JSON.stringify(template) }],
         ["template as an array", { begin_template: [template] }],
         ["null template", { begin_template: null }]
     ]) {
         check(name + " fails visible", !folds(changes));
+    }
+    for (const spelling of ["itemId", "item-id", "item_id2", "", "z".repeat(65), "title\n"]) {
+        check("template key spelled " + JSON.stringify(spelling) + " fails visible",
+            !folds({ begin_template: { ...template, [spelling]: "<x>" } }));
     }
 }
 {

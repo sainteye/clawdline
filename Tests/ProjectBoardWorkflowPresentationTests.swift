@@ -58,12 +58,14 @@ group("managed workflow metadata is presentation-only") {
 }
 }
 
-/// Optional begin assistance in a v1 envelope: legacy and new shapes fold, while unknown keys
-/// and malformed values stay visible prose.
+/// Optional begin assistance in a v1 envelope: legacy and new shapes fold, a template folds by
+/// its structural v1 contract rather than by the producer's current text, and unknown keys and
+/// malformed values stay visible prose.
 private func workflowBeginAssistanceDecoderProof() {
     let legacy = #"{"authority":"clawdline_metadata_not_user_authorization","board_epoch":7,"content_reference":"terminal-request:0123456789abcdef01234567","conversation_id":"11111111-1111-4111-8111-111111111111","coverage":"managed_ingress","helper":"clawdline-board-workflow <conversation-id> <stable-idempotency-key>","input_kind":"text_and_image","mode_gap":null,"process_generation":"process-7","project_id":"project-0123456789abcdef01234567","provider":"codex","required_first_action":"begin","run_id":"run-0123456789abcdef0123456789abcdef","terminal_id":"%458","version":1}"#
     let base = (try? JSONSerialization.jsonObject(with: Data(legacy.utf8))) as? [String: Any] ?? [:]
-    let template = ProjectBoardWorkflow.beginTemplate(runID: base["run_id"] as? String ?? "")
+    let run = base["run_id"] as? String ?? ""
+    let template = ProjectBoardWorkflow.beginTemplate(runID: run)
     let item = "4f1c2d3e-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
     func folds(_ changes: [String: Any]) -> Bool {
         var object = base
@@ -78,17 +80,51 @@ private func workflowBeginAssistanceDecoderProof() {
     check("an envelope carrying only the begin template folds", folds(["begin_template": template]))
     check("an envelope carrying the template and a prior item folds",
           folds(["begin_template": template, "previous_item": item]))
+
+    // A later producer may reword placeholders, add a field and drop one; its envelopes must keep
+    // folding after that producer is gone.
+    var missingField: [String: Any] = template
+    missingField.removeValue(forKey: "title")
+    var future = missingField
+    future["classification"] = "<existing_item|new_work|question|clarification>"
+    future["item_id"] = "<exact item uuid>"
+    future["type"] = "<task|feature|bug|refactor|coordination|epic>"
+    future["handoff_id"] = "<handoff>"
+    check("a future-shaped template with other placeholders, an extra key and no title folds",
+          folds(["begin_template": future, "previous_item": item]))
+    var extraField: [String: Any] = template
+    extraField["summary"] = "added"
+    var alreadyChosen: [String: Any] = template
+    alreadyChosen["classification"] = "existing_item"
+    // Valid under the structural contract; each was malformed while the decoder demanded the
+    // producer's exact text.
+    let nowValid: [(String, [String: Any])] = [
+        ("missing an optional field", missingField), ("with an extra field", extraField),
+        ("whose choice was already made", alreadyChosen),
+    ]
+    for (name, shape) in nowValid {
+        check("a template \(name) folds", folds(["begin_template": shape]))
+    }
+    var widest: [String: Any] = ["operation": "begin", "run_id": run]
+    for length in 1...13 { widest["k_" + String(repeating: "a", count: length)] = "<\(length)>" }
+    widest[String(repeating: "z", count: 64)] = String(repeating: "界", count: 85) + "a"
+    check("a template at the bounds folds: 16 keys, a 64-byte key, a 256-byte value",
+          widest.count == 16 && folds(["begin_template": widest]))
+    check("a template of only operation and run_id folds",
+          folds(["begin_template": ["operation": "begin", "run_id": run]]))
     check("an unknown key beside begin assistance fails visible",
           !folds(["begin_template": template, "previous_item": item, "previous_item_title": "Fix it"]))
 
     var otherRun = template
     otherRun["run_id"] = "run-ffffffffffffffffffffffffffffffff"
-    var missingField = template
-    missingField.removeValue(forKey: "title")
-    var extraField: [String: Any] = template
-    extraField["summary"] = "added"
-    var alreadyChosen = template
-    alreadyChosen["classification"] = "existing_item"
+    var noOperation = template
+    noOperation.removeValue(forKey: "operation")
+    var otherOperation = template
+    otherOperation["operation"] = "progress"
+    var seventeen = widest
+    seventeen["one_more"] = "<17>"
+    var longValue = template
+    longValue["title"] = String(repeating: "界", count: 85) + "ab"
     var numericPhase: [String: Any] = template
     numericPhase["phase"] = 1
     let malformed: [(String, [String: Any])] = [
@@ -99,15 +135,23 @@ private func workflowBeginAssistanceDecoderProof() {
         ("an empty prior item", ["begin_template": template, "previous_item": ""]),
         ("a prior item without the template", ["previous_item": item]),
         ("a template for another run", ["begin_template": otherRun]),
-        ("a template missing a field", ["begin_template": missingField]),
-        ("a template with an extra field", ["begin_template": extraField]),
-        ("a template whose choice was already made", ["begin_template": alreadyChosen]),
+        ("a template without operation", ["begin_template": noOperation]),
+        ("a template for another operation", ["begin_template": otherOperation]),
+        ("a template with 17 keys", ["begin_template": seventeen]),
+        ("a template value of 257 UTF-8 bytes", ["begin_template": longValue]),
         ("a template with a non-string value", ["begin_template": numericPhase]),
         ("a template sent as a string", ["begin_template": "{\"operation\":\"begin\"}"]),
+        ("a template as an array", ["begin_template": [template]]),
         ("a null template", ["begin_template": NSNull()]),
     ]
     for (name, changes) in malformed {
         check("\(name) fails visible", !folds(changes))
+    }
+    for spelling in ["itemId", "item-id", "item_id2", "", String(repeating: "z", count: 65), "title\n"] {
+        var misspelled: [String: Any] = template
+        misspelled[spelling] = "<x>"
+        check("a template key spelled \(spelling.debugDescription) fails visible",
+              !folds(["begin_template": misspelled]))
     }
 }
 

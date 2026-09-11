@@ -8,34 +8,30 @@ const KEYS = [
 ].sort();
 const OPTIONAL = ["begin_template", "helper_path", "previous_item"];
 const ITEM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const TEMPLATE_KEY = /^[a-z_]{1,64}$/;
 
-/** The producer's placeholder `begin` for one run (`ProjectBoardWorkflow.beginTemplate`). */
-function beginTemplate(runID) {
-    return {
-        classification: "existing_item|new_work|question|clarification",
-        item_id: "<existing_item>",
-        operation: "begin",
-        phase: "output",
-        run_id: runID,
-        title: "<new_work>",
-        type: "<new_work:task|feature|bug|refactor|coordination|epic>"
-    };
+/**
+ * The structural v1 contract for `begin_template`, identical in `Transcript.swift`: an object of
+ * 2–16 fields named `[a-z_]{1,64}`, each a string of at most 256 UTF-8 bytes, whose `operation`
+ * is `begin` and whose `run_id` is the envelope's own. Placeholder text and which optional fields
+ * appear are the producer's to change, so a later template edit keeps historical envelopes folding.
+ */
+function validBeginTemplate(template, runID) {
+    if (!template || typeof template !== "object" || Array.isArray(template)) return false;
+    const keys = Object.keys(template);
+    return keys.length >= 2 && keys.length <= 16
+        && keys.every(key => TEMPLATE_KEY.test(key) && typeof template[key] === "string"
+            && new TextEncoder().encode(template[key]).length <= 256)
+        && template.operation === "begin" && template.run_id === runID;
 }
 
-// Optional in v1 and exact when present: an advisory settled item id only beside the template,
-// and the template only in the producer's own shape for this run.
+// Optional in v1: an advisory settled item id only beside the template, and the template held to
+// its structural v1 contract rather than to the producer's current text.
 function validBeginAssistance(value) {
     const hasTemplate = Object.hasOwn(value, "begin_template");
     if (Object.hasOwn(value, "previous_item") && (!hasTemplate
         || typeof value.previous_item !== "string" || !ITEM_ID.test(value.previous_item))) return false;
-    if (!hasTemplate) return true;
-    const template = value.begin_template;
-    if (!template || typeof template !== "object" || Array.isArray(template)) return false;
-    const expected = beginTemplate(value.run_id);
-    const keys = Object.keys(template).sort();
-    const wanted = Object.keys(expected).sort();
-    return keys.length === wanted.length
-        && keys.every((key, index) => key === wanted[index] && template[key] === expected[key]);
+    return !hasTemplate || validBeginTemplate(value.begin_template, value.run_id);
 }
 
 function outsideFence(source, offset) {
