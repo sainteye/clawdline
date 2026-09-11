@@ -92,6 +92,8 @@ final class ProjectBoardStore {
     private struct StoredProject: Codable {
         var id: String
         var name: String
+        /// Reserved ordinals survive inferred-card retirement. Absent in older schema-v1 files.
+        var itemKeyHighWater: Int? = nil
     }
 
     private struct StoredChecklist: Codable {
@@ -444,7 +446,7 @@ final class ProjectBoardStore {
                 board["items"] = ids.prefix(100).compactMap { id -> [String: Any]? in
                     guard let detail = itemDetailsByID[id] else { return nil }
                     var row: [String: Any] = [:]
-                    for key in ["id", "key", "projectId", "title", "type", "state", "updatedAt", "progress"] {
+                    for key in ["id", "key", "keyStatus", "projectId", "title", "type", "state", "updatedAt", "progress"] {
                         row[key] = detail[key]
                     }
                     row["sessionActivity"] = sessionActiveItemIDs[session]?.contains(id) == true
@@ -1216,9 +1218,12 @@ final class ProjectBoardStore {
         if itemIndex == nil, let graphID,
            let destination = Self.boundedText(graph?["destination"], maximum: 500),
            draft.items.count < Self.maximumItems {
-            var item = makeItem(projectID: projectID, title: destination, type: "feature",
+            guard var item = makeItem(projectID: projectID, title: destination, type: "feature",
                                 summary: "", owner: "", parentID: nil, timestamp: timestamp,
-                                projects: draft.projects, items: draft.items)
+                                projects: &draft.projects, items: draft.items) else {
+                return AutomaticMutationOutcome(status: .refused, acceptedCount: 0,
+                    droppedCount: 1, persisted: true, reason: "item_key_exhausted")
+            }
             item.inferredSourceKey = graphKey
             draft.items.append(item)
             draft.graphItems[Self.graphKey(projectID: projectID, graphID: graphID)] = item.id
@@ -1227,12 +1232,15 @@ final class ProjectBoardStore {
             acceptedCount += 1
         } else if itemIndex == nil, graphID == nil, let taskID,
                   draft.items.count < Self.maximumItems {
-            var item = makeItem(
+            guard var item = makeItem(
                 projectID: projectID,
                 title: Self.boundedText(task["title"], maximum: 300) ?? "Execution \(taskID)",
                 type: "task", summary: "Retained broker execution record.",
                 owner: Self.brokerOwner(task) ?? "", parentID: nil, timestamp: timestamp,
-                projects: draft.projects, items: draft.items)
+                projects: &draft.projects, items: draft.items) else {
+                return AutomaticMutationOutcome(status: .refused, acceptedCount: 0,
+                    droppedCount: 1, persisted: true, reason: "item_key_exhausted")
+            }
             item.inferredSourceKey = taskKey
             if !item.owner.isEmpty { item.ownerSourceTaskId = taskID }
             draft.items.append(item)
@@ -1701,9 +1709,12 @@ final class ProjectBoardStore {
             let owner = try optionalText(body, "owner", maximum: 300) ?? ""
             let parent = try optionalText(body, "parentId", maximum: 200)
             if let parent { try validateParent(parent, projectID: projectID, draft: draft) }
-            var item = makeItem(projectID: projectID, title: title, type: type,
+            guard var item = makeItem(projectID: projectID, title: title, type: type,
                                 summary: summary, owner: owner, parentID: parent,
-                                timestamp: timestamp, projects: draft.projects, items: draft.items)
+                                timestamp: timestamp, projects: &draft.projects, items: draft.items) else {
+                throw BoardError(status: 409, code: "item_key_exhausted",
+                                 message: "the Project item key sequence is exhausted")
+            }
             item.typeDetails = try parsedTypeDetails(body["typeDetails"], type: type,
                                                      existing: nil)
             draft.items.append(item)
@@ -2030,10 +2041,13 @@ final class ProjectBoardStore {
                           summary: "Program Plan fields were updated without changing work authority.",
                           at: timestamp)
                 } else {
-                    var child = makeItem(projectID: program.projectId, title: node.title,
+                    guard var child = makeItem(projectID: program.projectId, title: node.title,
                                          type: node.type, summary: node.summary, owner: node.owner,
                                          parentID: program.id, timestamp: timestamp,
-                                         projects: draft.projects, items: draft.items)
+                                         projects: &draft.projects, items: draft.items) else {
+                        throw BoardError(status: 409, code: "item_key_exhausted",
+                                         message: "the Project item key sequence is exhausted")
+                    }
                     child.id = node.itemId
                     draft.items.append(child)
                 }
@@ -3203,6 +3217,7 @@ final class ProjectBoardStore {
         let listSummaryByItemID: [String: [String: Any]]
         let itemsByID: [String: StoredItem]
         let positionByID: [String: Int]
+        let keyCountsByProject: [String: [String: Int]]
     }
 
     /// Build the relationships needed by every detail once. The hook counts actual index work so
@@ -3211,10 +3226,12 @@ final class ProjectBoardStore {
         var children: [String: [StoredItem]] = [:]
         var items: [String: StoredItem] = [:]
         var positions: [String: Int] = [:]
+        var keyCounts: [String: [String: Int]] = [:]
         for (position, item) in state.items.enumerated() {
             Self.materializationIndexOperationForTesting?()
             items[item.id] = item
             positions[item.id] = position
+            keyCounts[item.projectId, default: [:]][item.key, default: 0] += 1
             if let parent = item.parentId { children[parent, default: []].append(item) }
         }
         var progress: [String: [String: Any]] = [:]
@@ -3224,7 +3241,8 @@ final class ProjectBoardStore {
         })
         return MaterializationIndex(childrenByParentID: children, progressByItemID: progress,
                                     listSummaryByItemID: listSummaries,
-                                    itemsByID: items, positionByID: positions)
+                                    itemsByID: items, positionByID: positions,
+                                    keyCountsByProject: keyCounts)
     }
 
     /// Read-model partition, not a lifecycle transition. Compute from full retained facts before
@@ -3560,6 +3578,9 @@ final class ProjectBoardStore {
         let coverage = item.ingestionCoverage ?? []
         var answer: [String: Any] = [
             "id": item.id, "key": item.key, "projectId": item.projectId,
+            "keyStatus": (index?.keyCountsByProject[item.projectId]?[item.key]
+                ?? state.items.filter { $0.projectId == item.projectId && $0.key == item.key }.count) > 1
+                ? "ambiguous" : "unique",
             "title": item.title, "type": item.type, "state": item.state,
             "summary": item.summary, "owner": item.owner,
             "typeDetails": item.typeDetails ?? [:],
@@ -4472,14 +4493,18 @@ final class ProjectBoardStore {
 
     private func makeItem(projectID: String, title: String, type: String, summary: String,
                           owner: String, parentID: String?, timestamp: Double,
-                          projects: [StoredProject], items: [StoredItem]) -> StoredItem {
-        let projectName = projects.first(where: { $0.id == projectID })?.name ?? "Project"
+                          projects: inout [StoredProject], items: [StoredItem]) -> StoredItem? {
+        guard let projectIndex = projects.firstIndex(where: { $0.id == projectID }) else { return nil }
+        let projectName = projects[projectIndex].name
         let letters = projectName.uppercased().unicodeScalars.filter {
             CharacterSet.alphanumerics.contains($0)
         }
         let prefix = String(String.UnicodeScalarView(letters.prefix(3)))
         let keyPrefix = prefix.isEmpty ? "PRJ" : prefix
-        let sequence = items.filter { $0.projectId == projectID }.count + 1
+        let highWater = Self.itemKeyHighWater(projects[projectIndex], items: items)
+        guard highWater < Int.max else { return nil }
+        let sequence = highWater + 1
+        projects[projectIndex].itemKeyHighWater = sequence
         var item = StoredItem(
             id: Self.newID(), key: "\(keyPrefix)-\(sequence)", projectId: projectID,
             title: title, type: type, state: "backlog", summary: summary, owner: owner,
@@ -4491,6 +4516,19 @@ final class ProjectBoardStore {
         appendHistory(item: &item, actor: "board", kind: "item_created",
                       summary: "Work item was created.", at: timestamp)
         return item
+    }
+
+    /// Seed from retained legacy suffixes, independent of a Project's current display name.
+    /// Never renumber duplicates or reconstruct identities from their human labels. An oversized
+    /// numeric suffix exhausts allocation rather than wrapping or being silently ignored.
+    private static func itemKeyHighWater(_ project: StoredProject, items: [StoredItem]) -> Int {
+        let retained = items.filter { $0.projectId == project.id }
+        return retained.reduce(max(project.itemKeyHighWater ?? 0, retained.count)) { high, item in
+            guard let separator = item.key.lastIndex(of: "-") else { return high }
+            let suffix = item.key[item.key.index(after: separator)...]
+            guard !suffix.isEmpty, suffix.allSatisfy({ $0 >= "0" && $0 <= "9" }) else { return high }
+            return max(high, Int(suffix) ?? Int.max)
+        }
     }
 
     private func touch(_ item: inout StoredItem, actor: String, kind: String,
@@ -5029,6 +5067,12 @@ final class ProjectBoardStore {
                 decoded.explicitGraphItems = migratedExplicit
             }
             try Self.validateStoredState(decoded)
+            // In-memory migration precedes any retirement. The next successful mutation persists
+            // the watermark atomically with its other changes; an ordinary read never rewrites disk.
+            for index in decoded.projects.indices {
+                decoded.projects[index].itemKeyHighWater = Self.itemKeyHighWater(
+                    decoded.projects[index], items: decoded.items)
+            }
             state = decoded
         } catch let error as BoardError {
             unavailable = error
@@ -5040,6 +5084,7 @@ final class ProjectBoardStore {
 
     private static func validateStoredState(_ state: StoredState) throws {
         guard state.schemaVersion == schemaVersion, state.revision >= 0,
+              state.projects.allSatisfy({ ($0.itemKeyHighWater ?? 0) >= 0 }),
               state.projects.count <= maximumProjects, state.items.count <= maximumItems,
               state.receipts.count <= maximumReceipts,
               (state.eventSequence ?? 0) >= 0,

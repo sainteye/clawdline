@@ -608,7 +608,7 @@ enum ProjectBoardIntegration {
     /// a card never pays to carry the detail arrays merely so accounting can find its task links.
     static func compactCard(_ item: [String: Any]) -> [String: Any] {
         let stableFields = [
-            "id", "key", "projectId", "title", "type", "state", "summary", "owner",
+            "id", "key", "keyStatus", "projectId", "title", "type", "state", "summary", "owner",
             "parentId", "createdAt", "updatedAt", "scopeRevision", "progress",
             "presentation", "deliveryLanes", "deliveryLaneCount",
             "listSummary", // Complete bounded attention facts, never raw obligation/detail arrays.

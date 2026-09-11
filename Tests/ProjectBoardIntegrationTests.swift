@@ -350,8 +350,85 @@ private func boardRootLandingStoreProof() {
     expect("coverage eviction remains an explicit unproved gap", coverage.evictedRootGapCount, 1)
 }
 
+private func boardItemKeyPersistenceProof() {
+    let d = BoardTestDriver(name: "key-retirement-\(UUID().uuidString)")
+    d.createProject()
+    let canonical = d.create(title: "Canonical destination")
+    let task: [String: Any] = ["id": "key-task", "title": "Historical attempt", "state": "success",
+        "graph": ["id": "key-graph", "destination": "Inferred destination", "current_node": "work"]]
+    _ = d.store.ingest(task: task, projectID: "project-1")
+    var attributed = task; attributed["workItemId"] = canonical
+    _ = d.store.ingest(task: attributed, projectID: "project-1")
+    let reopened = ProjectBoardStore(url: d.file)
+    func create(_ store: ProjectBoardStore, _ request: String, project: String = "project-1", expected: Int? = nil) -> ProjectBoardStore.Reply {
+        let revision = expected ?? ((store.snapshot()["board"] as? [String: Any])?["revision"] as? Int ?? -1)
+        return store.command(["operation": "create", "requestId": request, "expectedRevision": revision,
+                              "projectId": project, "title": "Next work", "type": "feature"], actor: "key-proof")
+    }
+    func key(_ reply: ProjectBoardStore.Reply) -> String? {
+        ((reply.body["board"] as? [String: Any])?["item"] as? [String: Any])?["key"] as? String
+    }
+    expect("retired highest ordinal survives restart", key(create(reopened, "after-restart")), "CLA-3")
+    _ = reopened.ensureProject(id: "project-1", name: "Renamed")
+    expect("project rename does not reset its ordinal", key(create(reopened, "after-rename")), "REN-4")
+    _ = reopened.ensureProject(id: "project-2", name: "Clawdline")
+    expect("different Project keeps its independent key namespace",
+           key(create(reopened, "second-project", project: "project-2")), "CLA-1")
+
+    let legacy = BoardTestDriver(name: "key-legacy-\(UUID().uuidString)")
+    legacy.createProject()
+    let first = legacy.create(title: "Latency")
+    let second = legacy.create(title: "Workflow feedback")
+    do {
+        var json = try JSONSerialization.jsonObject(with: Data(contentsOf: legacy.file)) as! [String: Any]
+        var projects = json["projects"] as! [[String: Any]]
+        for index in projects.indices { projects[index].removeValue(forKey: "itemKeyHighWater") }
+        var items = json["items"] as! [[String: Any]]
+        for index in items.indices { items[index]["key"] = "CLA-369" }
+        json["projects"] = projects; json["items"] = items
+        try JSONSerialization.data(withJSONObject: json).write(to: legacy.file, options: .atomic)
+        let originalBytes = try Data(contentsOf: legacy.file)
+        let loaded = ProjectBoardStore(url: legacy.file)
+        let rows = (loaded.snapshot()["board"] as? [String: Any])?["items"] as? [[String: Any]] ?? []
+        expect("legacy duplicate human keys remain two UUID identities", Set(rows.compactMap { $0["id"] as? String }), Set([first, second]))
+        check("legacy load never rewrites the journal merely to allocate keys", try Data(contentsOf: legacy.file) == originalBytes)
+        check("legacy collisions are surfaced explicitly without title merge",
+              rows.count == 2 && rows.allSatisfy { $0["keyStatus"] as? String == "ambiguous" })
+        check("compact list transport preserves each ambiguous UUID's key status",
+              rows.count == 2 && rows.allSatisfy {
+                  ProjectBoardIntegration.compactCard($0)["keyStatus"] as? String == "ambiguous"
+              })
+        let beforeCreate = (loaded.snapshot()["board"] as? [String: Any])?["revision"] as? Int
+        let created = create(loaded, "legacy-create", expected: beforeCreate)
+        expect("legacy high key seeds allocation above retained ordinals", key(created), "CLA-370")
+        let createdItem = (created.body["board"] as? [String: Any])?["item"] as? [String: Any] ?? [:]
+        expect("compact list transport preserves a noncolliding key status",
+               ProjectBoardIntegration.compactCard(createdItem)["keyStatus"] as? String, "unique")
+        expect("same semantic create replay does not allocate again", key(create(loaded, "legacy-create", expected: beforeCreate)), "CLA-370")
+        let restarted = ProjectBoardStore(url: legacy.file)
+        expect("migrated high water persists for the next process", key(create(restarted, "next-create")), "CLA-371")
+        let existing = ((restarted.snapshot(item: first)["board"] as? [String: Any])?["item"] as? [String: Any]) ?? [:]
+        expect("allocation never renumbers existing keys", existing["key"] as? String, "CLA-369")
+        expect("allocation never promotes lifecycle", existing["state"] as? String, "backlog")
+
+        json = try JSONSerialization.jsonObject(with: Data(contentsOf: legacy.file)) as! [String: Any]
+        projects = json["projects"] as! [[String: Any]]
+        projects[0]["itemKeyHighWater"] = Int.max; json["projects"] = projects
+        try JSONSerialization.data(withJSONObject: json).write(to: legacy.file, options: .atomic)
+        let exhausted = ProjectBoardStore(url: legacy.file)
+        expect("exhausted ordinal refuses safely instead of wrapping", boardError(create(exhausted, "overflow")), "item_key_exhausted")
+        let automatic = exhausted.ingest(task: ["id": "overflow-task", "title": "No key", "state": "success"], projectID: "project-1")
+        expect("broker allocation shares the same exhausted-key refusal", automatic.reason, "item_key_exhausted")
+        projects[0]["itemKeyHighWater"] = -1; json["projects"] = projects
+        try JSONSerialization.data(withJSONObject: json).write(to: legacy.file, options: .atomic)
+        let corrupt = ProjectBoardStore(url: legacy.file)
+        expect("negative stored key watermark is corrupt, not reset", boardError(create(corrupt, "negative")), "board_store_corrupt")
+    } catch { check("key persistence fixtures remain readable: \(error)", false) }
+}
+
 func runProjectBoardIntegrationTests() {
 group("broker live transitions reach the Board before task completion") {
+    boardItemKeyPersistenceProof()
     boardRootLandingStoreProof()
     do {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("board-session-index-\(UUID().uuidString).json")

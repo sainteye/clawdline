@@ -211,6 +211,26 @@ Schema-v1 stores with no report fields decode unchanged.
 Evidence uses plural arrays `findings`, `verifications`, `landings`, `artifactAcceptances`, `evidenceSummaries`, with `currentEvidence` pointers. The browser displays receipt identity, subject, status and current/historical distinction; artifact acceptance is not a mutable `artifact.accepted` boolean. Bounded projections expose per-collection `projection` counts (`retainedCount`, `omittedCount`, `reason`), not silent data loss. The HTTP service caps the final encoded, enriched response at 2 MiB for both local and Cloud callers.
 
 Types: `feature`, `refactor`, `task`, `bug`, `coordination`, `epic`.
+
+Human item keys such as `CLA-369` are labels, never lookup or ownership authority. Links must
+carry the exact machine, Project and item UUID, for example
+`https://app.clawdline.com/#page=board&machine=<machine>&project=<project>&item=<item-uuid>`.
+The visible label may be the short key; clients must not guess a UUID from a title or ambiguous key.
+Item projections include `keyStatus:"unique"|"ambiguous"`, scoped to the exact Project. Existing
+duplicate keys remain attached to their original UUIDs and histories; this field is a diagnostic,
+not permission to merge, rename, or promote those items.
+
+Each stored Project now has an optional schema-v1 `itemKeyHighWater` ordinal. Creation, broker
+fallback creation and atomic Program imports reserve from the same draft-owned sequence, persisted
+with the successful mutation. Retiring an inferred card or renaming a Project never resets it;
+failed persistence and exact request replay do not consume another ordinal. Older files seed this
+watermark in memory from retained numeric key suffixes before any retirement; reads do not rewrite
+the file, and the next successful write persists it. Previously retired keys absent from an old
+file cannot be reconstructed by guessing. Retained legacy collisions are reported, not silently
+repaired. Invalid negative watermarks fail closed on load; numeric exhaustion refuses new items
+with `item_key_exhausted` rather than wrapping or lowering the counter. This adds no lifecycle,
+verification, assignment, or landing authority.
+
 States: `backlog`, `planning`, `ready`, `execution`, `verified`, `integrated`, `closed`, `canceled`. Unknown historical state must remain explicit if imported.
 The browser renders the separate `progress` projection, not a manually advanced status field.
 It carries `state`, evidence-based `reason`/`basisCodes`, procedural `warningCodes`,

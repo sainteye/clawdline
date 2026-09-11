@@ -1637,6 +1637,11 @@ group("broker ingestion is idempotent, phase-explicit, and has one accounting ow
            explicit)
     let fallbackAfter = all.first { $0["id"] as? String == fallback["id"] as? String }
     check("an empty inferred graph card retires after explicit reattribution", fallbackAfter == nil)
+    let afterRetirement = d.create(title: "Next independent work")
+    expect("retiring an inferred card cannot reuse the surviving canonical key",
+           d.item(afterRetirement)["key"] as? String, "CLA-3")
+    expect("retirement preserves distinct canonical identities",
+           Set([d.item(explicit)["key"] as? String, d.item(afterRetirement)["key"] as? String]).count, 2)
     let explicitlyOwned = d.item(explicit)
     expect("reattribution moves the task's session fact exactly once",
            (explicitlyOwned["links"] as? [[String: Any]])?.filter {
