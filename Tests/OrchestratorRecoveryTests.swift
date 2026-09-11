@@ -38,6 +38,206 @@ import SQLite3
 // worktree and its delivery branch while its tab was still working inside the deleted directory.
 
 func runOrchestratorRecoveryTests() {
+group("an attached follow-up goes through dispatch, and survives its own single-flight check") {
+    let manager = FileManager.default
+    let store = Orchestrator.storeURL
+    let storeBefore = try? Data(contentsOf: store)
+    var made: [URL] = []
+    defer {
+        Orchestrator.drainSerializePumpForTesting()
+        for directory in made { try? manager.removeItem(at: directory) }
+        AssistantQuota.clearOverridesForTesting()
+        if let storeBefore { try? storeBefore.write(to: store, options: .atomic) }
+        else { try? manager.removeItem(at: store) }
+        Orchestrator.forget()
+    }
+    Orchestrator.forget()
+
+    func session(_ id: String) -> TargetSession {
+        TargetSession(backend: .iterm, id: id, name: "odd jobs", tty: "/dev/ttys0\(id.count)",
+                      windowIndex: 0, tabIndex: 1, assistant: .codex, cwd: "/tmp")
+    }
+    let standing = session("STANDING-ONE")
+    let second = session("STANDING-TWO")
+    let third = session("STANDING-THREE")
+    @discardableResult
+    func keepAsStandingChild(_ session: TargetSession, depth: Int,
+                             taskRootAccess: Bool) -> String {
+        var opener = Orchestrator.Task(
+            id: UUID().uuidString.lowercased(), state: .success, kind: "custom",
+            title: "standing child \(session.id)", assistant: .codex, projectDir: "/tmp",
+            timeoutMinutes: 30, created: Date().addingTimeInterval(-3_600),
+            secretHash: String(repeating: "0", count: 64))
+        opener.depth = depth
+        opener.finishedAt = Date().addingTimeInterval(-3_000)
+        opener.childTerminalId = session.id
+        opener.childTaskRootAccess = taskRootAccess
+        Orchestrator.holdScheduleTaskForTesting(opener)
+        return opener.id
+    }
+    let standingOpenerID = keepAsStandingChild(standing, depth: 1, taskRootAccess: true)
+    _ = keepAsStandingChild(second, depth: 1, taskRootAccess: true)
+    _ = keepAsStandingChild(third, depth: 2, taskRootAccess: false)
+    Orchestrator.saveForTesting()
+    Orchestrator.attachmentInventoryForTesting = ([standing, second, third], [:])
+    AssistantQuota.setOverrideForTesting(
+        AssistantQuota(assistant: .codex, installed: true, loggedIn: true, plan: nil,
+                       availability: .ok, source: .observed,
+                       observedAt: Int(Date().timeIntervalSince1970), resetsAt: nil,
+                       detail: "plenty", windows: []),
+        for: .codex)
+    var typed: [(String, String)] = []
+    var deliveryFails = false
+    Orchestrator.attachedSenderForTesting = { line, target in
+        if deliveryFails { return "the session went away" }
+        typed.append((target.id, line))
+        return nil
+    }
+    Orchestrator.workspaceOverlapObserverForTesting = { _, _ in }
+
+    func write(_ id: String, attach: String?, serialize: [String] = [],
+               claims: [String] = [], root: String) {
+        let directory = Orchestrator.root.appendingPathComponent(id, isDirectory: true)
+        made.append(directory)
+        try? manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        var obj: [String: Any] = [
+            "clawdline_protocol": 1, "task_id": id, "kind": "custom", "assistant": "codex",
+            "project_dir": "/tmp", "title": "standing follow-up",
+            "instructions": "the follow-up work", "timeout_minutes": 30,
+            "root": ["session_id": root],
+        ]
+        if let attach { obj["attach_session"] = attach }
+        if !serialize.isEmpty { obj["serialize"] = serialize }
+        // Declared on every fixture, empty included: an absent field is `claims_required`
+        // now, so a follow-up that writes nothing has to say so like any other caller.
+        obj["claims"] = claims
+        try! JSONSerialization.data(withJSONObject: obj)
+            .write(to: directory.appendingPathComponent("task.json"), options: .atomic)
+    }
+    func secret(_ pair: String) -> String { String(repeating: pair, count: 32) }
+    func refusal(_ reply: Orchestrator.Reply) -> (Int, String)? {
+        guard case .refused(let status, let code, _, _) = reply else { return nil }
+        return (status, code)
+    }
+
+    // `attach_session` is parsed out of task.json at all — every existing test built the field
+    // by hand on an `Orchestrator.Task`, so the parser could be deleted without a red.
+    let parsedID = UUID().uuidString.lowercased()
+    switch OrchestratorDraft.draft(from: [
+        "clawdline_protocol": 1, "task_id": parsedID, "assistant": "codex",
+        "project_dir": "/tmp", "instructions": "read", "attach_session": standing.id,
+    ], expecting: parsedID, isDirectory: { _ in true }) {
+    case .ok(let made):
+        check("task.json's attach_session reaches the draft",
+              made.attachSessionId == standing.id)
+    case .bad(let why):
+        check("task.json's attach_session reaches the draft", false, why)
+    }
+
+    let attachedID = UUID().uuidString.lowercased()
+    write(attachedID, attach: standing.id, claims: ["Sources/Attached.swift"], root: "root-a")
+    let accepted = Orchestrator.dispatch(taskID: attachedID, secret: secret("a1"))
+    if case .ok(let payload) = accepted {
+        let task = payload["task"] as? [String: Any]
+        expect("an attached dispatch reaches spawning without opening a tab",
+               task?["state"] as? String, "spawning")
+        check("and the record says it is attached, and to which session",
+              task?["attached"] as? Bool == true
+                && task?["attachSession"] as? String == standing.id)
+        check("and nothing was opened: the child block names the standing session's own tab",
+              ((task?["child"] as? [String: Any])?["terminalId"] as? String) == standing.id)
+    } else {
+        check("an attached dispatch is accepted", false, "\(accepted)")
+    }
+    check("the ordinary first line was typed into the standing session",
+          typed.count == 1 && typed[0].0 == standing.id
+            && typed[0].1.contains(attachedID) && typed[0].1.contains("CHILD.md"))
+    check("and the attached briefing was written where the child will look for it",
+          manager.fileExists(atPath: Orchestrator.root
+            .appendingPathComponent(attachedID, isDirectory: true)
+            .appendingPathComponent("CHILD.md").path))
+
+    // Single-flight, through the route rather than through the pure decision.
+    let secondID = UUID().uuidString.lowercased()
+    write(secondID, attach: standing.id, root: "root-a")
+    let occupied = refusal(Orchestrator.dispatch(taskID: secondID, secret: secret("b2")))
+    expect("a second task cannot be typed into an occupied session", occupied?.0, 409)
+    expect("and the refusal is typed", occupied?.1, "attach_session_occupied")
+    check("nothing was typed for the refused task", typed.count == 1)
+    check("and no record was made for it", Orchestrator.record(id: secondID) == nil)
+
+    // What SPEC asks for by name: an accepted attached task reserves its claims, and a
+    // conflicting one is refused by the ordinary workspace gate — through `dispatch`, with a
+    // 409 at the end of it.
+    let conflictID = UUID().uuidString.lowercased()
+    write(conflictID, attach: second.id, claims: ["Sources/Attached.swift"], root: "root-b")
+    let busy = refusal(Orchestrator.dispatch(taskID: conflictID, secret: secret("c3")))
+    expect("an attached task's claims are reserved against another root", busy?.0, 409)
+    expect("with the ordinary workspace refusal", busy?.1, "workspace_busy")
+
+    let unknownID = UUID().uuidString.lowercased()
+    write(unknownID, attach: "NO-SUCH-SESSION", root: "root-b")
+    expect("an unknown session is refused before anything is typed",
+           refusal(Orchestrator.dispatch(taskID: unknownID, secret: secret("d4")))?.1,
+           "attach_session_not_found")
+
+    let leafID = UUID().uuidString.lowercased()
+    write(leafID, attach: third.id, root: "root-b")
+    expect("a Clawdline leaf without the launch-time task-root grant is refused before typing",
+           refusal(Orchestrator.dispatch(taskID: leafID, secret: secret("d5")))?.1,
+           "attach_not_managed")
+
+    // The one typed refusal with no test at all, and its seam was already in the file.
+    deliveryFails = true
+    let deadID = UUID().uuidString.lowercased()
+    write(deadID, attach: second.id, root: "root-b")
+    let failed = refusal(Orchestrator.dispatch(taskID: deadID, secret: secret("e5")))
+    expect("a briefing that cannot be typed is a 502", failed?.0, 502)
+    expect("with the typed delivery code", failed?.1, "attach_delivery_failed")
+    expect("and the task record exists, terminal, exactly as a tab that never opened",
+           Orchestrator.record(id: deadID)?["state"] as? String, "spawn_failed")
+    deliveryFails = false
+
+    // Finding 2, end to end. A task combining attach_session with serialize registers queued,
+    // and the pump writes it back as `spawning` before calling spawn — so the attachment is
+    // re-resolved with the task itself in the registry. Without the self-exclusion this refuses
+    // itself, at a moment when the HTTP response that could have said so has already gone.
+    let holderID = UUID().uuidString.lowercased()
+    var holder = Orchestrator.Task(
+        id: holderID, state: .briefed, kind: "custom", title: "holds the token",
+        assistant: .codex, projectDir: "/tmp", timeoutMinutes: 30, created: Date(),
+        secretHash: String(repeating: "0", count: 64))
+    holder.serialize = ["attach-and-serialize"]
+    Orchestrator.holdScheduleTaskForTesting(holder)
+    let queuedID = UUID().uuidString.lowercased()
+    write(queuedID, attach: second.id, serialize: ["attach-and-serialize"], root: "root-c")
+    let queued = Orchestrator.dispatch(taskID: queuedID, secret: secret("f6"))
+    if case .ok(let payload) = queued {
+        expect("an attached serialized task waits for its token like any other",
+               (payload["task"] as? [String: Any])?["state"] as? String, "queued")
+    } else {
+        check("an attached serialized task is accepted", false, "\(queued)")
+    }
+    Orchestrator.finalize(holderID, as: .success, summary: "token released")
+    _ = Orchestrator.drainSerializePumpForTesting(timeout: 5)
+    expect("and is briefed, not refused for being itself",
+           Orchestrator.record(id: queuedID)?["state"] as? String, "spawning")
+    check("its briefing reached the standing session it named",
+          typed.contains { $0.0 == second.id && $0.1.contains(queuedID) })
+
+    // Finding 6. A guest does not rename its host, and takes its role with it when it leaves.
+    Orchestrator.saveForTesting()
+    check("an attached task never renames the session it is a guest in",
+          Orchestrator.title(forTerminal: standing.id) == "standing child \(standing.id)")
+    expect("while it runs, the session says which broker task has it",
+           Orchestrator.role(forTerminal: standing.id)?.taskID, attachedID)
+    Orchestrator.finalize(attachedID, as: .success, summary: "follow-up done")
+    expect("and when it ends the standing session recovers its exact opener role",
+           Orchestrator.role(forTerminal: standing.id)?.taskID, standingOpenerID)
+    expect("and it keeps the standing child's title",
+           Orchestrator.title(forTerminal: standing.id), "standing child \(standing.id)")
+}
+
 group("a result's verification is read even when the summary and artifacts are already known") {
     let manager = FileManager.default
     let store = Orchestrator.storeURL
@@ -999,6 +1199,14 @@ group("owned storage is visible through the read-only orchestrator route") {
     Orchestrator.holdScheduleTaskForTesting(task)
     Orchestrator.saveForTesting()
 
+    // The owned scratch root is listed beside the ledger rows, and only this binary's root is read.
+    let scratchRoot = Orchestrator.reclaimRoots.scratch
+    try? manager.removeItem(atPath: scratchRoot)
+    try! manager.createDirectory(atPath: scratchRoot + "/stray.x1y2z3",
+                                 withIntermediateDirectories: true)
+    try! manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scratchRoot + "/stray.x1y2z3")
+    defer { try? manager.removeItem(atPath: scratchRoot) }
+
     let anonymous = RemoteServer.shared.route(remoteRequest("GET", "/v1/orchestrator/storage"))
     expect("anonymous storage inventory is refused", anonymous.status, 401)
     let phone = RemoteAuth.addDevice(name: "storage inventory reader", caps: [.read])
@@ -1019,6 +1227,15 @@ group("owned storage is visible through the read-only orchestrator route") {
           totals?["owned_items"] as? Int == 1
             && totals?["releasable_items"] as? Int == 1
             && totals?["releasable_bytes"] as? Int != nil)
+    let scratch = body?["scratch"] as? [String: Any]
+    let scratchEntries = scratch?["entries"] as? [[String: Any]]
+    check("the route lists the owned scratch root beside them, an unmarked entry unknown with its reason",
+          scratch?["root"] as? String == scratchRoot
+            && scratch?["root_state"] as? String == "present"
+            && scratchEntries?.count == 1 && scratchEntries?[0]["state"] as? String == "unknown"
+            && scratchEntries?[0]["why"] as? String == "marker_missing"
+            && (scratch?["totals"] as? [String: Any])?["unknown_items"] as? Int == 1
+            && totals?["owned_items"] as? Int == 1)
 }
 
 group("child briefings put heavyweight temporary work in owned task storage") {
@@ -1032,6 +1249,19 @@ group("child briefings put heavyweight temporary work in owned task storage") {
     check("and names the heavyweight examples that belong there",
           brief.contains("repo copies") && brief.contains("build outputs")
             && brief.contains("scratchpad"))
+    check("a child makes that scratch with the scratch tool rooted in its own work directory",
+          brief.contains("tools/scratch.sh new <purpose> --root /tmp/.clawdline/\(id)/work")
+            && brief.contains("--root /tmp/.clawdline/\(id)/work -- ./test.sh")
+            && !brief.contains("CLAWDLINE_SCRATCH_ROOT"))
+    var rootTask = task
+    rootTask.sessionRoot = true
+    let rootBrief = Orchestrator.childBrief(for: rootTask)
+    check("a Root Session is told its later scratch goes in the owned root, not in work/",
+          rootBrief.contains("**This Session outlives that task, and its later work does not go in /tmp/.clawdline/\(id)/work/.**")
+            && rootBrief.contains("${CLAWDLINE_SCRATCH_ROOT:-/tmp/clawdline-scratch}")
+            && rootBrief.contains("tools/scratch.sh new <purpose>")
+            && !rootBrief.contains("Everything there is deleted when the task ends")
+            && !rootBrief.contains("--root /tmp/.clawdline/\(id)/work"))
 }
 
 group("verification reports are optional, bounded metadata rather than a success gate") {

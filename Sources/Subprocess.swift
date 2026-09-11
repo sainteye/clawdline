@@ -42,4 +42,38 @@ extension Process {
         waiter.start()
         exited.wait()
     }
+
+    /// Run one program without a shell and collect its standard output, with standard error kept
+    /// apart and a hard ceiling on how long it may take. `nil` when it could not be started.
+    ///
+    /// For callers that parse what a program prints — `tar -t`, `lsof -F` — and so must never see
+    /// its diagnostics mixed into the records. Both pipes are drained at once, or a chatty stderr
+    /// fills its buffer while stdout is being read and the program never exits.
+    static func collect(_ executable: String, _ arguments: [String],
+                        environment: [String: String]? = nil,
+                        timeout: TimeInterval) -> (status: Int32, output: Data)? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        if let environment { process.environment = environment }
+        let output = Pipe()
+        let errors = Pipe()
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = output
+        process.standardError = errors
+        do { try process.run() } catch { return nil }
+        let killer = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: killer)
+        let drained = DispatchGroup()
+        drained.enter()
+        DispatchQueue.global(qos: .utility).async {
+            _ = errors.fileHandleForReading.readDataToEndOfFile()
+            drained.leave()
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        drained.wait()
+        process.waitQuietly()
+        killer.cancel()
+        return (process.terminationStatus, data)
+    }
 }

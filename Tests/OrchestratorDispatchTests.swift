@@ -1100,6 +1100,48 @@ group("worktree cleanup chooses data preservation before disk reclamation") {
     expect("an unreadable git fact fails safe",
            Orchestrator.worktreeDisposal(commits: nil, dirty: nil,
                                          headOnBranch: nil, branchExists: true), .keepEverything)
+
+    // Tool noise: only an untracked path inside a listed directory is noise, and a status that
+    // does not parse is unreadable — which disposal keeps — rather than clean.
+    let porcelain = " M Sources/A.swift\0?? .serena/cache/symbols\0R  new name.txt\0old name.txt\0?? .serena\0"
+    let entries = Orchestrator.worktreeStatusEntries(porcelain)
+    expect("porcelain -z parses four records and keeps a rename's source apart",
+           entries?.map { "\($0.code)|\($0.path)|\($0.original ?? "")" },
+           [" M|Sources/A.swift|", "??|.serena/cache/symbols|", "R |new name.txt|old name.txt",
+            "??|.serena|"])
+    expect("only an untracked path inside a listed tool directory is noise",
+           entries?.map { Orchestrator.isWorktreeToolNoise($0) }, [false, true, false, false])
+    check("a status that is not porcelain is unreadable rather than clean",
+          Orchestrator.worktreeStatusEntries("not porcelain") == nil)
+
+    // A landed checkout, before git is asked anything: every answer that is not a proof keeps it.
+    let landedAt = Date(timeIntervalSince1970: 1_000_000)
+    func landing(_ state: Orchestrator.LandingState, at: Date?) -> Orchestrator.Landing {
+        Orchestrator.Landing(state: state, target: "main", delivery: nil, ownerRootKey: "12345678",
+                             since: landedAt, commit: nil, note: nil, landedAt: at)
+    }
+    func landedWhy(_ state: Orchestrator.State = .success, _ record: Orchestrator.Landing? = nil,
+                   owner: OwnedStorage.ProcessStatus = .dead, grace: Int = 60,
+                   after seconds: TimeInterval = 7_200) -> String {
+        Orchestrator.landedCheckoutDecision(state: state,
+                                            landing: record ?? landing(.landed, at: landedAt),
+                                            owner: owner, graceMinutes: grace,
+                                            now: landedAt.addingTimeInterval(seconds)).why
+    }
+    expect("a landed checkout whose process is gone goes once its grace has passed",
+           landedWhy(), "landed")
+    expect("not before", landedWhy(after: 60), "grace")
+    expect("never under its running process", landedWhy(owner: .alive), "owner_alive")
+    expect("an unreadable process keeps it", landedWhy(owner: .unreadable), "owner_unreadable")
+    expect("a task that never recorded a process keeps it", landedWhy(owner: .absent),
+           "owner_unrecorded")
+    expect("a pending landing is not a landed one",
+           landedWhy(.success, landing(.pending, at: nil)), "not_landed")
+    expect("a landed record without its time keeps it",
+           landedWhy(.success, landing(.landed, at: nil)), "landed_at_missing")
+    expect("-1 keeps every landed checkout, as before this setting", landedWhy(grace: -1),
+           "grace_disabled")
+    expect("a task still running is never considered", landedWhy(.briefed), "task_not_terminal")
 }
 
 group("worktree task records, briefings and shared-tree coordination stay distinct") {

@@ -2240,6 +2240,56 @@ tries again. In the registry, `build_cleanup_at` is absent on every task without
 own — a shared checkout's build output belongs to whoever is working in it — and, unlike
 whole-checkout disposal, it is **not** deferred by `landing.state == pending`: a landing under
 review needs the source and the delivery branch, both of which this leaves exactly as they were.
+**`build_cleanup_at` does wait for the task's recorded process**, the gate the dependency directories
+below already had: a Session still building in its checkout keeps its `.build`. While that process
+runs, or cannot be read, the deadline stays outstanding and the beat asks again; the directory goes
+on the first beat after the process has gone.
+
+**Every removal proves its path immediately before it runs.** The root as spelled is examined first —
+`/tmp/.clawdline` for `work/`, the worktree root for `.build` — and must be a real directory, whatever
+spelling the path uses; then each component below it must be a real directory rather than a symlink,
+and the resolved path must still lie inside the resolved root. A root that is a symlink is refused
+even for a path spelled under the directory it points at, and a `.` or `..` in a spelling is refused
+rather than tidied. Checking only the last component is not enough, because the kernel follows every
+component above it. A path that fails is not removed: its deadline settles, and
+`orchestrator.work.kept` or `orchestrator.build.kept` names the reason (`symlink`, `root_symlink`,
+`root_not_normalized`, `not_directory`, `outside_root`, `unreadable`, `path_not_owned`).
+
+**What the six-hourly pass reclaims after that.** `cleanup()` hands one pass to the worktree queue,
+and every step in it keeps what it cannot prove and audits why. The task's owner is its recorded
+process — `child_pid` with its start time — and "gone" means that pid is not running or now belongs
+to a process that started at another time. Each removal re-proves its path from its root down, as
+above — the tasks root, the worktree root, the preservation root or the scratch root — immediately
+before it runs, so a directory swapped for a symlink since the step decided is refused, never followed.
+
+- **Dependency directories.** Git-ignored `node_modules` and `.venv` directories inside a task's own
+  checkout fall due on the build deadline and go once the owner is gone: named exactly that, matched
+  by an ignore rule, holding no tracked path, reached without a symlink and still inside the checkout
+  once resolved. A task working in a shared checkout has none.
+- **After-finish `work/`.** A `work/` that exists with no deadline outstanding — written after the
+  task ended, as a Root Session does, or left by a task that finished before deadlines existed — goes
+  on the work grace counted from when the task settled, once the owner is gone and never while it
+  runs.
+- **Landed checkouts.** A terminal task whose landing is `landed` has its own checkout removed
+  `orchestrator_landed_checkout_grace_minutes` after `landed_at` (default `60`, `-1…1440`; `-1` keeps
+  them), once the owner is gone. First its uncommitted delta is written to
+  `~/Library/Application Support/Clawdline/reclaimed-checkouts/<task-id>/<attempt>/` —
+  `delta.patch`, `untracked.tar` and `manifest.json` with base, head, branch and each SHA-256 — and
+  proved to reapply; then `git worktree remove --force` and `git worktree prune`, with the branch
+  kept. Those attempts are kept `orchestrator_reclaimed_checkout_retention_days` (default `30`,
+  `1…365`).
+- **Owned scratch.** Releasable entries of the owned scratch root ([`scratch.md`](scratch.md)) go
+  `orchestrator_scratch_grace_minutes` after the later of their `created_at` and `keep_until`
+  (default `60`, `-1…1440`; `-1` lists and removes none). Every direct child is judged on every pass,
+  however many there are; a pass then removes at most 64 releasable entries, continuing from where the
+  previous pass stopped, and reads the working directories of this user's processes again once for
+  each batch of 16, immediately before its removals, so a process that entered an entry after the
+  listing keeps it. `GET /v1/orchestrator/storage` lists the entries, up to the body limit it describes.
+
+A finished task whose owner is still running also keeps its `<dir>` and its registry row through the
+sweep described next, whichever limit reaches the row. That includes the record count, which can
+reach a task that finished an hour ago: the owner is read for every terminal row either limit could
+remove, and a row that became removable after that reading is held for the pass.
 
 **What the six-hourly sweep removes, and on which of two independent windows.** A task's `<dir>`
 under `/tmp/.clawdline` and its row in `~/.config/clawdline/orchestrator.json` are swept on
@@ -4555,6 +4605,55 @@ The endpoint does **not** scan `/tmp/claude-*`, interactive assistant sessions, 
 directories. An entry can appear only after a Claude child transcript proves the exact task marker
 and Clawdline successfully appends its task, assistant, session, canonical path, proof method,
 project, and timestamp to the independent ledger.
+
+`scratch` lists the owned scratch root of [scratch contract v1](scratch.md) — the one other place
+this route reads — beside the ledger rows and never folded into `totals`. Only that root and its
+direct children are read:
+
+```json
+"scratch":{"root":"/tmp/clawdline-scratch","root_state":"present","why":null,"grace_minutes":60,
+  "truncated":false,
+  "totals":{"items":2,"bytes":496123904,"held_items":1,"releasable_items":0,"unknown_items":1,
+    "unknown_size_items":0},
+  "entries":[{"name":"landing.Q3vT8kLm","path":"/tmp/clawdline-scratch/landing.Q3vT8kLm",
+    "purpose":"landing","state":"held","why":"owner_alive","created_at":1787100000,
+    "keep_until":null,"owner":{"pid":81234,"process_start":1787090000,"command":"claude"},
+    "eligible_at":null,"bytes":496123904},
+   {"name":"deploy.8hG2xZq1","path":"/tmp/clawdline-scratch/deploy.8hG2xZq1","purpose":null,
+    "state":"unknown","why":"marker_missing","created_at":null,"keep_until":null,"owner":null,
+    "eligible_at":null,"bytes":0}]}
+```
+
+`root_state` is `present`, `absent`, or `refused` with `why` one of `root_not_absolute`,
+`root_not_normalized` (a `.` or `..` component, which `lstat` resolves through whatever symlink
+stands before it), `root_symlink`, `root_not_directory`, `root_not_owned` or `root_unreadable`; a
+refused root is never
+replaced or worked around. An entry is `unknown`, and never removed, when its name is not
+`<purpose>.<random>` (`name_not_contract`); when it is a symlink, not a directory, another uid's, or
+not mode `0700` (`entry_symlink`, `entry_not_directory`, `entry_not_owned`, `entry_mode_not_0700`);
+when its marker is missing, unreadable, invalid or another version (`marker_missing`,
+`marker_unreadable`, `marker_invalid`, `marker_version`) or names another purpose
+(`marker_purpose_mismatch`); when its owner's liveness cannot be read (`owner_unreadable`); or when
+the process table cannot be read for an entry that would otherwise be releasable (`cwd_unreadable`).
+It is `held` while its owner runs (`owner_alive`, by pid and start time to ±1 s), while `keep_until`
+is ahead (`keep_until`), while a live process has its working directory inside it (`cwd_in_use`),
+inside the broker's grace (`grace`), or when `orchestrator_scratch_grace_minutes` is `-1`
+(`grace_disabled`). Otherwise it is `releasable` (`eligible`), and the six-hourly pass removes it
+and audits `orchestrator.scratch.reclaimed` with its path. A file some process holds open from
+outside the entry is not seen; the grace period is what covers that.
+
+Every direct child is judged and counted in `totals`, however many there are. `entries` lists and
+sizes the first 1,000 by name; past that `truncated` is `true`, and each entry not listed still
+counts in `totals` by state and in `unknown_size_items`, because this response did not size it. The
+limit bounds the body only: the six-hourly pass judges every entry whatever it lists, and takes up at
+most 64 releasable entries a pass, in name order from where the previous pass stopped and wrapping to
+the front, so every releasable entry is taken up within ⌈releasable ÷ 64⌉ passes of one app run; a
+restart begins again at the first name. It removes them in batches of 16. At the removal the pass
+reads again each entry's facts; then the working directories, once for the whole batch and
+immediately before its removals — a process that entered an entry since the listing keeps it, and a
+table that cannot be read then keeps the whole batch, audited `orchestrator.scratch.kept` with
+`cwd_unreadable`, and ends the pass, so one pass runs `lsof` at most five times; and the entry's path
+from the root down, so a root or entry swapped for a symlink is kept with `root_symlink` or `symlink`.
 
 ### `GET /v1/orchestrator/usage`, `.csv` (legacy forensic contracts)
 

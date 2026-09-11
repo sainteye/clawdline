@@ -87,6 +87,18 @@ func configureTestIsolation() {
         .appendingPathComponent("orchestrator.json")
     SessionNaming.lookForTesting = noSessionNames
 
+    // The reclaim passes delete checkouts, dependency directories, task `work/` and scratch
+    // entries, and every one of them reads its roots from `Orchestrator.reclaimRoots`. This one
+    // assignment is what leaves this binary unable to reach
+    // `~/Library/Application Support/Clawdline/worktrees`, `/tmp/clawdline-scratch` or
+    // `/tmp/.clawdline` through them, whichever test — or `cleanup()` — started the pass.
+    let reclaim = isolatedTestStoreDirectory.appendingPathComponent("reclaim", isDirectory: true)
+    Orchestrator.reclaimRootsOverrideForTesting = Orchestrator.ReclaimRoots(
+        worktrees: reclaim.appendingPathComponent("worktrees", isDirectory: true),
+        tasks: reclaim.appendingPathComponent("tasks", isDirectory: true),
+        scratch: reclaim.appendingPathComponent("scratch", isDirectory: true).path,
+        preserved: reclaim.appendingPathComponent("preserved", isDirectory: true))
+
     // The usage ledger is a durable store of its own, deliberately outside the remote directory —
     // see `UsageLedger.storeURL`. Point it inside the same process-owned boundary, so no test run
     // can write a row into the ledger somebody is going to quote a month's total from.
