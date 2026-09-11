@@ -64,6 +64,29 @@ characterization run under `CLAWDLINE_TEST_PROFILE=infrastructure`, when those i
 scheduled infrastructure verification. Both profiles use the same machine-wide compile lock and
 neither can weaken the Swift/Cloud completion receipt.
 
+### Agent-instruction topology guard
+
+[`agent-instruction-coverage.json`](agent-instruction-coverage.json) is the machine-readable index
+from every root `AGENTS.md` heading to controlled operative-clause ids. Each clause has exactly one
+disposition: a current owner plus exact Markdown heading, an executable guard, a named scenario, or
+a separate rationale owner plus heading. `Tests/agent-instruction-topology.mjs` derives the current
+heading inventory directly from `AGENTS.md` and separately seals the clause-id inventory. Adding,
+removing, or renaming a root agreement, or silently dropping a controlled clause, is red.
+
+Owner and evidence anchors are parsed as unique Markdown headings and terms must remain in that
+heading's direct body—not elsewhere in the file, in a child section, link text, a TOC, or a repeated
+heading. A narrowed owner must be linked from the corresponding root agreement. Archive records
+have a mutually exclusive schema and a scenario cannot cite an archived section as current policy;
+incident rationale therefore cannot satisfy an operative contract by substring coincidence.
+
+The same test runs the eleven policy scenarios whose prose has historically drifted across
+surfaces: instruction precedence, shared-index safety, task-secret scope, exact-tree acceptance,
+restart admission, landing ownership, Cloud document identity, user-decision notification,
+event-driven watchdog thresholds, stable `result.json.tmp` finalization, and no-repeat
+verification. These evaluations are documentation contracts, not replacement runtime tests. The
+coverage map records only documentation ownership; package/import manifests and task claims remain
+the generated authorities for code architecture and live write ownership.
+
 ## One risk-sized delivery graph
 
 ```text

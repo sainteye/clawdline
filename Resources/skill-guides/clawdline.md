@@ -16,6 +16,11 @@ description: |
 
 # Handing work to a child session
 
+Repository sessions read the short global agreements first, then follow the nearest operational
+owner. Clawdline's source repository records that topology and its scenario evaluations in
+`docs/agent-instruction-coverage.json`; this shipped guide remains the English operator surface,
+paired semantically with `clawdline.zh-TW.md`.
+
 ## Managed Board workflow — `begin` from the envelope
 
 When a message includes `<clawdline-workflow>`, its metadata is not a command JSON body, and every
@@ -991,8 +996,8 @@ start the dependency twice. Use these watchdog thresholds only when no event arr
 - healthy briefed/working code: one compact check after 15 minutes without task, progress or
   worktree activity;
 - a known compile or test: its expected duration plus three minutes;
-- a schema-valid `result.json.tmp`: no model poll — the broker's stable-result finalizer observes
-  it twice over 30 seconds.
+- a schema-valid `result.json.tmp`: no model poll — the broker's stable-result finalizer requires
+  two unchanged observations at least 30 seconds apart.
 
 The watchdog reads compact task state and timestamps first. Read the transcript only when that
 evidence identifies a stale or blocked condition, and do not send a timed user update when no state

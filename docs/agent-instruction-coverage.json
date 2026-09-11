@@ -1,0 +1,171 @@
+{
+  "schema": "clawdline.agent-instruction-coverage.v2",
+  "source": "AGENTS.md",
+  "precedence": {
+    "order": ["global", "repository", "nearest-domain", "task-brief"],
+    "winner": "last-applicable",
+    "empty_nearest_file": "no-additional-rules",
+    "truncation": "preserve-nearest-domain-whole"
+  },
+  "classifications": [
+    "remains_global",
+    "inherited_nearest_domain_rule",
+    "executable_guard",
+    "scenario_evaluation",
+    "archived_incident_rationale"
+  ],
+  "agreements": [
+    {"id":"repository-entry","root_heading":"Working in this repository","clauses":[
+      {"id":"opening-status-is-foreign","disposition":"remains_global","owner":"AGENTS.md","anchor":"# Working in this repository","terms":["opening `git status --short` row","unfinished work"]},
+      {"id":"context-before-semantics","disposition":"remains_global","owner":"AGENTS.md","anchor":"# Working in this repository","terms":["Read [`CONTEXT.md`]","task, graph, review, landing"]},
+      {"id":"instruction-source-precedence","disposition":"scenario_evaluation","owner":"AGENTS.md","anchor":"# Working in this repository","terms":["global, repository, nearest-domain, then task brief","last applicable rule wins","intentionally empty nearest-domain file","preserve the nearest-domain instructions whole"],"scenario":"instruction-precedence"}
+    ]},
+    {"id":"shared-tree","root_heading":"Shared-tree discipline","clauses":[
+      {"id":"named-staging-only","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Shared-tree discipline","terms":["Stage only named files","never `git add -A`"]},
+      {"id":"foreign-staged-index-trap","disposition":"scenario_evaluation","owner":"AGENTS.md","anchor":"## Shared-tree discipline","terms":["git diff --cached --stat","somebody else's staged file"],"scenario":"shared-index-safety"},
+      {"id":"pathspec-unstaged-hunk-trap","disposition":"scenario_evaluation","owner":"AGENTS.md","anchor":"## Shared-tree discipline","terms":["plain `git commit -m <message>` with no pathspec","pathspec can sweep in their","unstaged hunks"],"scenario":"shared-index-safety"},
+      {"id":"shared-sequencer-guard","disposition":"executable_guard","owner":"docs/shared-tree-guard.md","anchor":"### 1. A sequencer operation is in progress — local, **fails closed**","terms":["MERGE_HEAD","CHERRY_PICK_HEAD","REVERT_HEAD"],"guard":"tools/git-hooks/pre-commit"},
+      {"id":"shared-index-guard","disposition":"executable_guard","owner":"docs/shared-tree-guard.md","anchor":"### 2. A staged path is claimed by another root's live task — broker, **fails open**","terms":["staged path covered by a claim","different root"],"guard":"tools/git-hooks/pre-commit"},
+      {"id":"shared-index-incident-rationale","disposition":"archived_incident_rationale","rationale_owner":"docs/shared-tree-guard.md","rationale_anchor":"## The failure mode, and why","terms":["fails open","fails closed"]}
+    ]},
+    {"id":"landing-closure","root_heading":"Root-owned landing closure","clauses":[
+      {"id":"delivery-review-not-integration","disposition":"scenario_evaluation","owner":"docs/landing.md","anchor":"## Root-owned landing closure","terms":["delivered","reviewed","Neither means"],"scenario":"landing-ownership"},
+      {"id":"root-owns-exact-landing","disposition":"inherited_nearest_domain_rule","owner":"docs/landing.md","anchor":"## Root-owned landing closure","terms":["root session that dispatched","test the exact integrated tree","record the resulting target commit"]}
+    ]},
+    {"id":"post-delivery-cleanup","root_heading":"Post-delivery cleanup is part of delivery","clauses":[
+      {"id":"classify-all-residue","disposition":"inherited_nearest_domain_rule","owner":"docs/landing.md","anchor":"## Post-delivery worktree reconciliation","terms":["`landed_identical`","`unknown`"]},
+      {"id":"preserve-unlanded-mixed","disposition":"inherited_nearest_domain_rule","owner":"docs/landing.md","anchor":"## Post-delivery worktree reconciliation","terms":["Preserve","unlanded","mixed"]},
+      {"id":"owned-scratch-cleanup","disposition":"inherited_nearest_domain_rule","owner":"docs/landing.md","anchor":"## Post-delivery worktree reconciliation","terms":["tools/scratch.sh","secret"]},
+      {"id":"unreleased-line-required","disposition":"remains_global","owner":"AGENTS.md","anchor":"### Post-delivery cleanup is part of delivery","terms":["Fixed but not yet released (awaiting review)","Nothing"]}
+    ]},
+    {"id":"root-close-cascade","root_heading":"Closing a root is an act with victims; look before you do it","clauses":[
+      {"id":"inspect-descendants-before-close","disposition":"remains_global","owner":"AGENTS.md","anchor":"#### Closing a root is an act with victims; look before you do it","terms":["cancels all of its queued, spawning and briefed descendants","deepest first"]},
+      {"id":"close-cascade-rationale","disposition":"archived_incident_rationale","rationale_owner":"AGENTS.md","rationale_anchor":"#### Closing a root is an act with victims; look before you do it","terms":["2026-08-27 four-task close cascade"]}
+    ]},
+    {"id":"root-completion","root_heading":"Root completion receipt","clauses":[
+      {"id":"root-completion-only-after-whole-turn","disposition":"inherited_nearest_domain_rule","owner":"docs/api.md","anchor":"### `POST /v1/orchestrator/sessions/:id/complete`","terms":["after the work it claims is delivered","delivered, awaiting approval"]},
+      {"id":"no-partial-root-completion","disposition":"remains_global","owner":"AGENTS.md","anchor":"### Root completion receipt","terms":["Do not send it for partial","child work"]}
+    ]},
+    {"id":"peer-handoff-state","root_heading":"A peer handoff is a status, not only a message","clauses":[
+      {"id":"peer-wait-is-durable-state","disposition":"inherited_nearest_domain_rule","owner":"docs/api.md","anchor":"### `POST /v1/orchestrator/sessions/:id/state`","terms":["waiting_session","moved_by","person_needed"]},
+      {"id":"user-wait-is-not-peer-wait","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A peer handoff is a status, not only a message","terms":["A user decision is neither","`owed`"]}
+    ]},
+    {"id":"human-ending","root_heading":"A status audit has a technical handoff and a human ending","clauses":[
+      {"id":"human-ending-seven-scan-points","disposition":"inherited_nearest_domain_rule","owner":"Resources/skill-guides/clawdline.md","anchor":"### Close a whole batch, when you are the coordinator","terms":["exactly these seven scan points","Can this Session close?"]},
+      {"id":"human-ending-nothing-is-answer","disposition":"inherited_nearest_domain_rule","owner":"Resources/skill-guides/clawdline.md","anchor":"### Close a whole batch, when you are the coordinator","terms":["`Nothing` is an answer","omission is not"]},
+      {"id":"human-ending-release-states","disposition":"inherited_nearest_domain_rule","owner":"Resources/skill-guides/clawdline.md","anchor":"### Close a whole batch, when you are the coordinator","terms":["written, committed, installed on the Mac, published","verified there"]},
+      {"id":"human-ending-remaining-owner","disposition":"inherited_nearest_domain_rule","owner":"Resources/skill-guides/clawdline.md","anchor":"### Close a whole batch, when you are the coordinator","terms":["owner of every remaining item","Board row is stale"]},
+      {"id":"human-ending-process-feedback","disposition":"inherited_nearest_domain_rule","owner":"Resources/skill-guides/clawdline.md","anchor":"### Close a whole batch, when you are the coordinator","terms":["estimates lost time","suggests one improvement"]},
+      {"id":"human-ending-synthesize-not-paste","disposition":"inherited_nearest_domain_rule","owner":"Resources/skill-guides/clawdline.md","anchor":"### Close a whole batch, when you are the coordinator","terms":["synthesizes these human endings","does not paste the technical handoffs"]},
+      {"id":"human-ending-session-title","disposition":"inherited_nearest_domain_rule","owner":"Resources/skill-guides/clawdline.md","anchor":"### Close a whole batch, when you are the coordinator","terms":["Session title","primary name"]}
+    ]},
+    {"id":"attention-before-wait","root_heading":"Notify before waiting for the user","clauses":[
+      {"id":"persist-wait-and-notify","disposition":"scenario_evaluation","owner":"docs/dispatching.md","anchor":"## Attention requests are part of the work","terms":["send it before waiting","concrete action"],"scenario":"user-decision-notification"},
+      {"id":"notification-no-secret-no-loop","disposition":"inherited_nearest_domain_rule","owner":"docs/dispatching.md","anchor":"## Attention requests are part of the work","terms":["contain no password, token, secret","do not retry in a loop"]}
+    ]},
+    {"id":"user-decisions","root_heading":"Decisions that are the user's go to the user, as options","clauses":[
+      {"id":"one-options-prompt-at-a-time","disposition":"scenario_evaluation","owner":"AGENTS.md","anchor":"## Decisions that are the user's go to the user, as options","terms":["one explicit options prompt at a time"],"scenario":"user-decision-notification"},
+      {"id":"recommended-consequential-options","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Decisions that are the user's go to the user, as options","terms":["recommended choice first","cost","who acts next"]},
+      {"id":"separate-technical-and-user-lists","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Decisions that are the user's go to the user, as options","terms":["two separately labelled lists"]}
+    ]},
+    {"id":"verification","root_heading":"Verifying your work","clauses":[
+      {"id":"child-proves-working-overlay","disposition":"scenario_evaluation","owner":"docs/verification-workflow.md","anchor":"## One risk-sized delivery graph","terms":["implementer owns one accumulated focused behavior proof"],"scenario":"exact-tree-verification"},
+      {"id":"root-proves-exact-candidate","disposition":"scenario_evaluation","owner":"docs/landing.md","anchor":"## Root-owned landing closure","terms":["test the exact integrated tree"],"scenario":"exact-tree-verification"},
+      {"id":"one-release-candidate-full","disposition":"inherited_nearest_domain_rule","owner":"docs/landing.md","anchor":"## Root-owned landing closure","terms":["only full suite in the graph"]},
+      {"id":"reuse-identical-verification-tuple","disposition":"scenario_evaluation","owner":"docs/verification-workflow.md","anchor":"## One risk-sized delivery graph","terms":["same tree, question and environment","reason to repeat a command"],"scenario":"no-repeat-verification"},
+      {"id":"assert-check-count-not-exit","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Verifying your work","terms":["Assert completion receipts and check counts","not only process exit"]}
+    ]},
+    {"id":"restart-live-task","root_heading":"A live task is not by itself a build/restart blocker","clauses":[
+      {"id":"restart-follows-secret-recoverability","disposition":"scenario_evaluation","owner":"docs/api.md","anchor":"### `POST`, `GET`, `DELETE /v1/orchestrator/maintenance/restart`","terms":["recoverable sealed secret","`spawning` task","restart_blocked_by_task_secret"],"scenario":"restart-admission"},
+      {"id":"build-before-replace","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A live task is not by itself a build/restart blocker","terms":["Build only an exact clean candidate","replace only after a safe maintenance receipt"]}
+    ]},
+    {"id":"confirmation-evidence","root_heading":"A confirmation is worth what it names","clauses":[
+      {"id":"confirmation-binds-subject-predicate-time-method-observer","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A confirmation is worth what it names","terms":["subject, predicate, time, method and observer"]},
+      {"id":"confirmation-incident-rationale","disposition":"archived_incident_rationale","rationale_owner":"AGENTS.md","rationale_anchor":"### A confirmation is worth what it names","terms":["incident lesson"]}
+    ]},
+    {"id":"surface-comparison","root_heading":"To compare two surfaces, hold the observed thing still","clauses":[
+      {"id":"comparison-holds-identity-still","disposition":"remains_global","owner":"AGENTS.md","anchor":"### To compare two surfaces, hold the observed thing still","terms":["same bytes, revision, environment and time window"]},
+      {"id":"comparison-rationale-is-not-policy","disposition":"archived_incident_rationale","rationale_owner":"AGENTS.md","rationale_anchor":"### To compare two surfaces, hold the observed thing still","terms":["Historical counterexamples are rationale"]}
+    ]},
+    {"id":"lossy-rendering","root_heading":"A rendering collapses distinctions, and then we reason about the rendering","clauses":[
+      {"id":"lossy-projection-requires-source","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A rendering collapses distinctions, and then we reason about the rendering","terms":["inspect the source bytes or typed record"]},
+      {"id":"lossy-rendering-rationale","disposition":"archived_incident_rationale","rationale_owner":"docs/hard-problems.md","rationale_anchor":"### Why it took eleven rounds","terms":["reading that has no power to disagree"]}
+    ]},
+    {"id":"phone-evidence","root_heading":"A defect on the phone is read from a file, never from a paste","clauses":[
+      {"id":"phone-defect-uses-canonical-artifact","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A defect on the phone is read from a file, never from a paste","terms":["canonical stored artifact","pasted excerpt is a new artifact"]}
+    ]},
+    {"id":"guard-red","root_heading":"A guard must be able to go red","clauses":[
+      {"id":"representative-red-proof","disposition":"executable_guard","owner":"docs/verification-workflow.md","anchor":"## Phase 0–1 repository guards","terms":["mutation returned 1","guard proofs"],"guard":"Tests/agent-instruction-topology.mjs"},
+      {"id":"false-green-rationale","disposition":"archived_incident_rationale","rationale_owner":"docs/hard-problems.md","rationale_anchor":"### What would have shown it sooner","terms":["Prove the guard red on the real subject"]}
+    ]},
+    {"id":"referrer-enumeration","root_heading":"Before moving a file, list what names it — that costs nothing, and testing costs four minutes","clauses":[
+      {"id":"enumerate-referrers-before-extraction","disposition":"remains_global","owner":"AGENTS.md","anchor":"### Before moving a file, list what names it — that costs nothing, and testing costs four minutes","terms":["use `rg` to enumerate","Report the exact referrer count"]}
+    ]},
+    {"id":"sampling-scope","root_heading":"A sample taken along one path measures that path","clauses":[
+      {"id":"sampling-claims-only-measured-path","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A sample taken along one path measures that path","terms":["Sample across time, thread and path","state which path was measured"]},
+      {"id":"sampling-incident-rationale","disposition":"archived_incident_rationale","rationale_owner":"docs/machine-resource-scheduling.md","rationale_anchor":"### The instruments, and the three ways they lied","terms":["Peak and sample are different quantities"]}
+    ]},
+    {"id":"journey-invariant","root_heading":"A single exit constrains its readers, not what reaches it","clauses":[
+      {"id":"audit-complete-writer-reader-journey","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A single exit constrains its readers, not what reaches it","terms":["Audit the whole journey","writers and accumulation"]}
+    ]},
+    {"id":"local-measurement","root_heading":"Measure a constant here; do not recall it","clauses":[
+      {"id":"measure-machine-constant-locally","disposition":"inherited_nearest_domain_rule","owner":"docs/machine-resource-scheduling.md","anchor":"### What a file lock cannot reach, measured rather than reasoned","terms":["calibrated against a known positive","found the real thing"]},
+      {"id":"resource-incident-rationale","disposition":"archived_incident_rationale","rationale_owner":"docs/machine-resource-scheduling.md","rationale_anchor":"### The incident, in the shape it actually had","terms":["JetsamEvent-2026-09-03-014340.ips","four separate drivers"]}
+    ]},
+    {"id":"dispatching","root_heading":"Dispatching substantial work with Clawdline","clauses":[
+      {"id":"root-owns-dispatch-graph","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Dispatching substantial work with Clawdline","terms":["root owns the graph, synthesis, review, integration and landing"]},
+      {"id":"event-driven-watchdogs","disposition":"scenario_evaluation","owner":"Resources/skill-guides/clawdline.md","anchor":"## 6. Report, wait, then close the root obligation","terms":["event-driven","90 seconds","15 minutes","plus three minutes"],"scenario":"event-driven-monitoring"},
+      {"id":"stable-result-finalizer","disposition":"scenario_evaluation","owner":"docs/api.md","anchor":"### `POST /v1/orchestrator/tasks/:id/complete`","terms":["two observations at least 30 seconds apart","file age alone is never sufficient"],"scenario":"result-tmp-finalizer"}
+    ]},
+    {"id":"dispatch-role","root_heading":"A major Feature has a visible independent owner","clauses":[
+      {"id":"closed-dispatch-role-contract","disposition":"executable_guard","owner":"AGENTS.md","anchor":"### A major Feature has a visible independent owner","terms":["Owned child","Root Assignment / Feature Launch"],"guard":"Tests/dispatch-role-contract.mjs"}
+    ]},
+    {"id":"cross-session-message","root_heading":"Cross-session assistant communication uses the message route","clauses":[
+      {"id":"assistant-reports-use-message-route","disposition":"inherited_nearest_domain_rule","owner":"docs/messages.md","anchor":"## Session message","terms":["POST /v1/orchestrator/messages","machine-token-only","`to_session`"]}
+    ]},
+    {"id":"loopback-proof","root_heading":"Prove a localhost failure before calling Clawdline offline","clauses":[
+      {"id":"distinguish-observer-from-service-failure","disposition":"inherited_nearest_domain_rule","owner":"docs/orchestrator.md","anchor":"## The filesystem is the protocol","terms":["filesystem","result.json"]}
+    ]},
+    {"id":"session-addressing","root_heading":"Name a session to a person, address it by id","clauses":[
+      {"id":"human-label-machine-id","disposition":"remains_global","owner":"AGENTS.md","anchor":"### Name a session to a person, address it by id","terms":["Human prose names the Session title","terminal-neutral id"]}
+    ]},
+    {"id":"stall-audit","root_heading":"Repeated communication stalls require a capacity and protocol audit","clauses":[
+      {"id":"audit-full-capacity-protocol-path","disposition":"remains_global","owner":"AGENTS.md","anchor":"### Repeated communication stalls require a capacity and protocol audit","terms":["queue/concurrency bounds","SSE resume","failure isolation"]}
+    ]},
+    {"id":"dispatch-meaning","root_heading":"\"Dispatch\" means a Clawdline task, not a provider-native subagent","clauses":[
+      {"id":"dispatch-requires-broker-task","disposition":"scenario_evaluation","owner":"AGENTS.md","anchor":"### \"Dispatch\" means a Clawdline task, not a provider-native subagent","terms":["POST /v1/orchestrator/tasks","Provider-native children do not satisfy"],"scenario":"instruction-precedence"}
+    ]},
+    {"id":"dispatch-details","root_heading":"Everything else about dispatching is in `docs/dispatching.md`","clauses":[
+      {"id":"dispatch-detail-owner","disposition":"inherited_nearest_domain_rule","owner":"docs/dispatching.md","anchor":"# Handing work out with Clawdline","terms":["how big one task should be","`claims` and serialization","what to do when the broker refuses"]}
+    ]},
+    {"id":"child-entry","root_heading":"When Clawdline dispatched you","clauses":[
+      {"id":"child-brief-is-authoritative","disposition":"scenario_evaluation","owner":"docs/orchestrator.md","anchor":"### `CHILD.md` — written by the app, read by the child","terms":["follow it exactly","Everything that would not fit is in `CHILD.md`","result.json"],"scenario":"instruction-precedence"},
+      {"id":"child-result-is-authenticated","disposition":"scenario_evaluation","owner":"docs/orchestrator.md","anchor":"### `result.json` — written by the child, and it *is* the signal","terms":["task_secret","completion signal"],"scenario":"task-secret-boundaries"},
+      {"id":"child-does-not-land","disposition":"remains_global","owner":"AGENTS.md","anchor":"## When Clawdline dispatched you","terms":["A child never lands","never opens another Clawdline task"]}
+    ]},
+    {"id":"never","root_heading":"Never","clauses":[
+      {"id":"child-forbidden-git-actions","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Never","terms":["Never run `git commit`, `git reset`, `git checkout`, or `git stash`"]},
+      {"id":"child-forbidden-build","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Never","terms":["Never run `./build.sh` from a child"]},
+      {"id":"cloud-document-canonical-identity","disposition":"scenario_evaluation","owner":"AGENTS.md","anchor":"## Never","terms":["canonical `https://app.clawdline.com` document identity","verified machine, Session, scope and relative path","credentials never enter the URL"],"scenario":"cloud-document-scope"},
+      {"id":"deploy-build-web-bundle","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Never","terms":["tools/build-web-app.py --out dist/app-console"]},
+      {"id":"deploy-pages-project","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Never","terms":["Cloudflare Pages project","`clawdline-app`"]},
+      {"id":"deploy-pages-host-acceptance","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Never","terms":["deployment-specific `*.pages.dev` URL"]},
+      {"id":"deploy-build-stamp-acceptance","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Never","terms":["https://app.clawdline.com/BUILD.json","expected build stamp"]},
+      {"id":"single-operational-finalizer","disposition":"scenario_evaluation","owner":"AGENTS.md","anchor":"## Never","terms":["One named operational finalizer","must not build, restart, or deploy"],"scenario":"landing-ownership"},
+      {"id":"never-touch-foreign-work","disposition":"remains_global","owner":"AGENTS.md","anchor":"## Never","terms":["Never alter, stage, discard, or claim another Session's pre-existing work"]}
+    ]}
+  ],
+  "scenarios": [
+    {"id":"instruction-precedence","evaluation":"task brief wins the same-key conflict; an empty nearest file adds nothing; truncation retains the nearest file whole","evidence":[{"path":"AGENTS.md","anchor":"# Working in this repository","terms":["global, repository, nearest-domain, then task brief","last applicable rule wins","intentionally empty nearest-domain file","preserve the nearest-domain instructions whole"]}]},
+    {"id":"shared-index-safety","evaluation":"named staging, foreign staged bytes, staged-diff review and pathspec absorption are separate gates","evidence":[{"path":"AGENTS.md","anchor":"## Shared-tree discipline","terms":["Stage only named files","somebody else's staged file","pathspec can sweep in their","unstaged hunks"]},{"path":"docs/shared-tree-guard.md","anchor":"## The escape hatch","terms":["recommend `git commit -- <your paths>`","absorb another session's unstaged work"]}]},
+    {"id":"task-secret-boundaries","evaluation":"task secrets complete their task and maintain pending but cannot attest landed or enter machine maintenance","evidence":[{"path":"docs/orchestrator.md","anchor":"### Landing is a root obligation, not a child state","terms":["task secret can maintain","cannot write `landed`"]}]},
+    {"id":"exact-tree-verification","evaluation":"child overlay proof and root exact candidate acceptance answer different questions","evidence":[{"path":"docs/verification-workflow.md","anchor":"## One risk-sized delivery graph","terms":["implementer owns one accumulated focused behavior proof","same tree, question and environment"]},{"path":"docs/landing.md","anchor":"## Root-owned landing closure","terms":["test the exact integrated tree","green tree says nothing about HEAD"]}]},
+    {"id":"restart-admission","evaluation":"spawning or unrecoverable queued secrets block replacement while recoverable queued and briefed work do not","evidence":[{"path":"docs/api.md","anchor":"### `POST`, `GET`, `DELETE /v1/orchestrator/maintenance/restart`","terms":["recoverable sealed secret","`spawning` task","restart_blocked_by_task_secret"]}]},
+    {"id":"landing-ownership","evaluation":"delivery and review do not transfer the root integration or finalizer obligation","evidence":[{"path":"docs/landing.md","anchor":"## Root-owned landing closure","terms":["root session that dispatched","SAFE TO LAND","completion phrase"]},{"path":"AGENTS.md","anchor":"## Never","terms":["One named operational finalizer","must not build, restart, or deploy"]}]},
+    {"id":"cloud-document-scope","evaluation":"the hosted locator uses one canonical fragment route, stable identities, a closed scope and a safe relative inert-text path with no credential fields","evidence":[{"path":"docs/api.md","anchor":"### `GET /v1/sessions/:id/documents/project/:path` · `.../documents/task/:taskId/:path`","terms":["absolute, holds an empty segment","segment beginning with `.`","complete machine/session pair","machine=this-mac"]},{"path":"AGENTS.md","anchor":"## Never","terms":["credentials never enter the URL"]}]},
+    {"id":"user-decision-notification","evaluation":"persist the user wait and send one concrete attention request before waiting","evidence":[{"path":"AGENTS.md","anchor":"## Decisions that are the user's go to the user, as options","terms":["one explicit options prompt at a time"]},{"path":"docs/dispatching.md","anchor":"## Attention requests are part of the work","terms":["send it before waiting","concrete action","do not retry"]}]},
+    {"id":"event-driven-monitoring","evaluation":"events drive progress; watchdogs are 90 seconds, 15 minutes and expected duration plus three minutes","evidence":[{"path":"Resources/skill-guides/clawdline.md","anchor":"## 6. Report, wait, then close the root obligation","terms":["event-driven","90 seconds","15 minutes","plus three minutes"]},{"path":"Resources/skill-guides/clawdline.zh-TW.md","anchor":"## 6. 回報、等完成、關閉 root 的責任","terms":["事件驅動","90 秒","15 分鐘","再加三分鐘"]}]},
+    {"id":"result-tmp-finalizer","evaluation":"only bound unchanged bytes seen twice at least 30 seconds apart may finalize; restart resets the span and age never consents","evidence":[{"path":"docs/api.md","anchor":"### `POST /v1/orchestrator/tasks/:id/complete`","terms":["two observations at least 30 seconds apart","Restart resets the observation interval","file age alone is never sufficient"]},{"path":"Resources/skill-guides/clawdline.md","anchor":"## 6. Report, wait, then close the root obligation","terms":["two unchanged observations at least 30 seconds apart"]},{"path":"Resources/skill-guides/clawdline.zh-TW.md","anchor":"## 6. 回報、等完成、關閉 root 的責任","terms":["兩次未變觀察的間隔至少 30 秒"]}]},
+    {"id":"no-repeat-verification","evaluation":"reuse an identical tuple and repeat a full only after typed inconclusive environment evidence","evidence":[{"path":"docs/verification-workflow.md","anchor":"## One risk-sized delivery graph","terms":["same tree, question and environment","reason to repeat a command"]},{"path":"docs/landing.md","anchor":"## Root-owned landing closure","terms":["typed inconclusive first result"]}]}
+  ]
+}

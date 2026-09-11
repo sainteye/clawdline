@@ -352,6 +352,7 @@ node Tests/docs-readme-parity.mjs
 # Keep the three contributor quick starts honest about cost without copying a volatile check total.
 # Executed counts belong to run receipts; the dated wall-time measurement has one documented home.
 node Tests/docs-suite-facts.mjs
+node Tests/agent-instruction-topology.mjs
 # And nothing at all watched `CHANGELOG.md`, the document that becomes the release notes. On
 # 2026-09-04 four of its forty entries still described `orchestrator_max_grandchildren` and a
 # dispatch tree two levels deep, long after the second level came out — the same shape as the 0.5.0

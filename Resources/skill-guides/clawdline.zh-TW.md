@@ -17,6 +17,10 @@ description: |
 
 # 派任務給 child session
 
+Repository session 先讀精簡的全域工作協議，再依最接近的操作文件。Clawdline 原始碼 repository
+以 `docs/agent-instruction-coverage.json` 記錄這套拓樸與情境評估；本檔是隨產品交付的繁中操作面，
+並與 `clawdline.md` 維持語意對等。
+
 ## Managed Board workflow：用 envelope 附的範本送出 `begin`
 
 訊息後面的 `<clawdline-workflow>` 是 metadata，不是可以原樣送出的命令 JSON；每個受管 turn 仍然要先送 `begin`。
@@ -877,7 +881,7 @@ Root 先觀察並整合交付，再啟動相依工作。Worker 不得自行啟�
 - queued 或 spawning：90 秒後做一次精簡檢查；
 - 健康的 briefed／working 開發：task、progress 與 worktree 都 15 分鐘沒有活動後，做一次精簡檢查；
 - 已知的 compile 或 test：等待預估時間，再加三分鐘；
-- schema-valid `result.json.tmp`：模型不輪詢，由 broker 的 stable-result finalizer 在 30 秒內做兩次觀察。
+- schema-valid `result.json.tmp`：模型不輪詢；broker 的 stable-result finalizer 要求兩次未變觀察的間隔至少 30 秒。
 
 Watchdog 先只讀精簡 task 狀態與時間。只有這份證據指出 stale 或 blocked 才讀 transcript；狀態沒有
 改變時，不送定時的使用者進度訊息。

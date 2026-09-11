@@ -1,8 +1,9 @@
 # Clawdline context
 
 This file defines the project vocabulary. It says what the words mean, not how the app implements
-them. Operational rules remain in `AGENTS.md`; protocol details live in the documents linked from
-each definition.
+them. `AGENTS.md` keeps the rules every repository session must see immediately; narrower operating
+procedures live in the documents linked from each definition. The machine-readable ownership and
+scenario index is [`docs/agent-instruction-coverage.json`](docs/agent-instruction-coverage.json).
 
 ## Decision graph
 
@@ -125,6 +126,8 @@ separate facts. See `docs/dispatching.md` and `docs/api.md`.
 ## Context sources
 
 - `AGENTS.md` — repository working agreements and safety rules.
+- `docs/agent-instruction-coverage.json` — every root agreement's owner, enforcement and scenario
+  evaluation; the topology test rejects an unmapped heading or broken owner anchor.
 - `docs/dispatching.md` — when work becomes a task and how a graph is staged.
 - `docs/landing.md` — delivery, review, pending landing, and landed obligations.
 - `docs/verification-workflow.md` — focused proof, review, correction, and exact-tree acceptance.
