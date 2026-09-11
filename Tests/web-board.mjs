@@ -367,14 +367,46 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
 }
 {
     const epic = item("Program", "execution"); epic.type = "epic";
+    epic.progress.measurement = {
+        status: "available", authority: "recorded_evidence", recordedPercent: 60,
+        denominator: 5, completed: 3, leafCount: 2, unmeasuredLeafCount: 0,
+        measuredAt: 1700000000, scope: "epic_leaf_acceptance",
+        stages: {
+            planning: { percent: 100, completed: 2, total: 2 },
+            implementation: { percent: 80, completed: 4, total: 5 },
+            verification: { percent: 60, completed: 3, total: 5 },
+            release: { percent: null, completed: null, total: 2, status: "insufficient_evidence" }
+        }
+    };
+    epic.presentation = { authority: "narrative_only", variants: [{ locale: "zh-TW", status: "current",
+        title: "Program", summary: "", progressEstimate: { percent: 55, lowerBound: 40,
+            upperBound: 70, confidence: "low", scope: "目前固定範圍",
+            basis: "依目前範圍與交付敘述估計", authoredAt: 1700000001, model: "test" } }] };
     epic.deliveryLanes = [{ id: "cloud-child", projectId: "b", projectName: "Cloud", title: "接收排程通知", owner: "%406", progress: { state: "execution" }, checklistDone: 2, checklistTotal: 4 }];
     const reads = [];
     const p = page({ read: async (project, id) => { reads.push([project, id]); return envelope({ item: epic }); } });
     await p.view.open("a", epic.id);
+    const progress = p.elements["board-detail"].all(".board-large-progress")[0];
+    check("large work shows recorded evidence percentage", progress && progress.textContent.includes("60%") && progress.textContent.includes("實際驗收紀錄"));
+    const progressbar = progress.all(node => node.getAttribute("role") === "progressbar")[0];
+    check("recorded progressbar has a localized accessible name", progressbar && progressbar.getAttribute("aria-label") === "實際驗收紀錄");
+    check("planning implementation verification and release remain separate", progress.textContent.includes("規劃 100%") && progress.textContent.includes("實作 80%") && progress.textContent.includes("驗收 60%") && progress.textContent.includes("發布 —"));
+    check("AI estimate is visibly separate with its own confidence and provenance", progress.textContent.includes("AI 估計 55%") && progress.textContent.includes("40–70%") && progress.textContent.includes("信心 低") && progress.textContent.includes("test") && progress.textContent.includes("不會改變驗收或完成狀態"));
     const lane = p.elements["board-detail"].all(".board-delivery-lane")[0];
     check("Epic presents related delivery with Project, owner and progress", lane && lane.textContent.includes("Cloud") && lane.textContent.includes("%406") && lane.textContent.includes("執行中"));
     lane.click(); await flush();
     check("cross-Project delivery opens the item's owning Project", reads.some(([project, id]) => project === "b" && id === "cloud-child"));
+    p.view.leave();
+}
+{
+    const epic = item("Unscoped program", "planning"); epic.type = "epic";
+    epic.progress.measurement = { status: "insufficient_scope", authority: "recorded_evidence",
+        recordedPercent: null, denominator: 0, leafCount: 3, unmeasuredLeafCount: 2,
+        measuredAt: 1700000000, scope: "epic_leaf_acceptance", stages: {} };
+    const p = page({ read: async () => envelope({ item: epic }) });
+    await p.view.open("a", epic.id);
+    const progress = p.elements["board-detail"].all(".board-large-progress")[0];
+    check("missing leaf scope is explicit instead of a guessed zero", progress && progress.textContent.includes("目前無法精確計算") && !progress.textContent.includes("0% 完成"));
     p.view.leave();
 }
 {

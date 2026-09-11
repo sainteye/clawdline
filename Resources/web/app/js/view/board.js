@@ -393,6 +393,76 @@ function journey(ctx, parent, item) {
         el(ctx, row, "span", localized(ctx, pair));
     });
 }
+function boundedPercent(value) {
+    return Number.isSafeInteger(value) && value >= 0 && value <= 100 ? value : null;
+}
+function renderLargeProgress(ctx, parent, item, compact = false) {
+    const measurement = item.progress && item.progress.measurement;
+    if (!measurement || !["epic", "refactor"].includes(item.type)) return null;
+    const node = el(ctx, parent, compact ? "span" : "section", null,
+        compact ? "board-progress-compact" : "board-large-progress");
+    const recorded = boundedPercent(measurement.recordedPercent);
+    if (compact) {
+        el(ctx, node, "strong", recorded == null ? "—" : recorded + "%");
+        el(ctx, node, "span", recorded == null
+            ? words(ctx, "Scope needed", "進度分母待補")
+            : words(ctx, "Recorded acceptance", "實際驗收紀錄"));
+        return node;
+    }
+    el(ctx, node, "h2", words(ctx, "Overall progress", "整體進度"), "board-section-title");
+    if (measurement.status !== "available" || recorded == null) {
+        el(ctx, node, "p", words(ctx,
+            "A precise percentage is not available yet. Fix the leaf scope and acceptance denominator first.",
+            "目前無法精確計算；需要先補齊 leaf scope 與驗收分母。"), "board-progress-empty");
+    } else {
+        const headline = el(ctx, node, "div", null, "board-progress-headline");
+        el(ctx, headline, "strong", recorded + "%", "board-progress-percent");
+        el(ctx, headline, "span", words(ctx, "Recorded acceptance evidence", "實際驗收紀錄"));
+        const track = el(ctx, node, "div", null, "board-progress-track");
+        track.setAttribute("role", "progressbar");
+        track.setAttribute("aria-label", words(ctx,
+            "Recorded acceptance evidence", "實際驗收紀錄"));
+        track.setAttribute("aria-valuemin", "0");
+        track.setAttribute("aria-valuemax", "100");
+        track.setAttribute("aria-valuenow", String(recorded));
+        const fill = el(ctx, track, "span", null, "board-progress-fill");
+        fill.setAttribute("style", "width:" + recorded + "%");
+    }
+    const stages = measurement.stages || {}, stageGrid = el(ctx, node, "div", null, "board-progress-stages");
+    [["planning", "Planning", "規劃"], ["implementation", "Implementation", "實作"],
+     ["verification", "Acceptance", "驗收"], ["release", "Release", "發布"]]
+        .forEach(([key, en, zh]) => {
+            const value = boundedPercent(stages[key] && stages[key].percent);
+            const row = el(ctx, stageGrid, "div", null, "board-progress-stage");
+            el(ctx, row, "span", words(ctx, en, zh) + " ");
+            el(ctx, row, "strong", value == null ? "—" : value + "%");
+        });
+    const scope = measurement.scope === "program_plan_v1"
+        ? words(ctx, "Program Plan v1 leaf nodes", "Program Plan v1 leaf 節點")
+        : measurement.scope === "epic_leaf_acceptance"
+          ? words(ctx, "Epic leaf work acceptance", "Epic leaf 工作驗收")
+          : words(ctx, "Required checklist and milestones", "必要 checklist 與 milestones");
+    el(ctx, node, "p", scope + " · " + measurement.completed + "/" + measurement.denominator
+        + words(ctx, " passed · updated ", " 通過・更新於 ") + date(measurement.measuredAt),
+        "board-progress-basis");
+    const estimate = reading(ctx, item).progressEstimate;
+    if (estimate && boundedPercent(estimate.percent) != null
+        && boundedPercent(estimate.lowerBound) != null && boundedPercent(estimate.upperBound) != null) {
+        const ai = el(ctx, node, "div", null, "board-progress-ai");
+        el(ctx, ai, "strong", words(ctx, "AI estimate ", "AI 估計 ") + estimate.percent + "%");
+        const confidence = { low: words(ctx, "low", "低"), medium: words(ctx, "medium", "中"),
+            high: words(ctx, "high", "高") }[estimate.confidence] || words(ctx, "unknown", "未知");
+        el(ctx, ai, "span", estimate.lowerBound + "–" + estimate.upperBound + "% · "
+            + words(ctx, "confidence ", "信心 ") + confidence);
+        el(ctx, ai, "p", estimate.scope + " · " + estimate.basis);
+        el(ctx, ai, "p", words(ctx, "Generated ", "產生於 ") + date(estimate.authoredAt)
+            + (estimate.model ? " · " + estimate.model : ""));
+        el(ctx, ai, "p", words(ctx,
+            "This estimate never changes acceptance or completion status.",
+            "這項估計不會改變驗收或完成狀態。"));
+    }
+    return node;
+}
 function card(ctx, item) {
     const node = button(ctx, null, null, "item", () => ctx.openItem(item.id), "board-item-card");
     node.dataset.boardItemId = item.id;
@@ -406,6 +476,7 @@ function card(ctx, item) {
     if (narrative.summary) el(ctx, node, "span", narrative.summary, "board-card-summary");
     const blocker = (item.obligations || []).find((row) => row.blocking && !row.resolved);
     el(ctx, node, "span", blocker ? blocker.title : say(ctx, item), "board-card-next");
+    renderLargeProgress(ctx, node, item, true);
     journey(ctx, node, item);
     const foot = el(ctx, node, "span", null, "board-card-facts"),
         checks = (item.checklist || []).filter((row) => row.required),
@@ -866,6 +937,7 @@ function detail(ctx) {
         "copy-item-link", () => ctx.copyLink(item.id), "board-button board-copy-link");
     if (narrative.summary) el(ctx, head, "p", narrative.summary, "board-detail-summary");
     if (narrative.locale) el(ctx, head, "p", words(ctx, "AI reading summary · progress follows recorded evidence", "AI 整理・進度仍以實際紀錄為準"), "board-narrative-provenance");
+    renderLargeProgress(ctx, head, item);
     journey(ctx, head, item);
     el(ctx, head, "p", say(ctx, item), "board-detail-summary");
     renderSessionOwnership(ctx, target, item);

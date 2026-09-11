@@ -279,6 +279,16 @@ final class ProjectBoardStore {
         var nextStep: String
         var model: String
         var authoredAt: Double
+        var progressEstimate: StoredProgressEstimate? = nil
+    }
+
+    private struct StoredProgressEstimate: Codable {
+        var percent: Int
+        var lowerBound: Int
+        var upperBound: Int
+        var confidence: String
+        var scope: String
+        var basis: String
     }
 
     private struct StoredSessionDelivery: Codable, Equatable {
@@ -585,10 +595,17 @@ final class ProjectBoardStore {
             guard !(item.presentations ?? []).contains(where: {
                 $0.locale == locale && $0.sourceFingerprint == fingerprint
             }) else { continue }
-            result.append(["id": item.id, "locale": locale, "sourceFingerprint": presentationWorkToken(item),
-                           "title": Self.presentationText(item.title, maximumBytes: 1_000),
-                           "summary": Self.presentationText(item.summary, maximumBytes: 4_800), "type": item.type,
-                           "outcome": Self.presentationText(item.completionReports?.last?.deliveredOutcomes ?? "", maximumBytes: 2_000)])
+            var row: [String: Any] = ["id": item.id, "locale": locale,
+                "sourceFingerprint": presentationWorkToken(item),
+                "title": Self.presentationText(item.title, maximumBytes: 1_000),
+                "summary": Self.presentationText(item.summary, maximumBytes: 4_800),
+                "type": item.type,
+                "outcome": Self.presentationText(
+                    item.completionReports?.last?.deliveredOutcomes ?? "", maximumBytes: 2_000)]
+            if let measurement = projectedProgressMeasurement(item) {
+                row["progressMeasurement"] = measurement
+            }
+            result.append(row)
             if result.count >= min(limit, 8) { break }
         }
         return result
@@ -602,7 +619,8 @@ final class ProjectBoardStore {
     @discardableResult
     func recordPresentation(itemID: String, locale: String, sourceFingerprint: String,
                             title: String, summary: String, outcome: String,
-                            nextStep: String, model: String) -> Bool {
+                            nextStep: String, model: String,
+                            progressEstimate: ProjectBoardNarrative.ProgressEstimate? = nil) -> Bool {
         lock.lock(); defer { lock.unlock() }
         guard unavailable == nil, state.enabled, Self.validPresentationLocale(locale),
               let index = state.items.firstIndex(where: { $0.id == itemID }),
@@ -612,6 +630,19 @@ final class ProjectBoardStore {
               outcome.count <= 300, outcome.utf8.count <= 1200,
               nextStep.count <= 200, nextStep.utf8.count <= 800,
               let model = Self.boundedText(model, maximum: 200) else { return false }
+        if let estimate = progressEstimate {
+            guard ["epic", "refactor"].contains(state.items[index].type),
+                  progressMeasurement(state.items[index])?["status"] as? String == "available",
+                  (0...100).contains(estimate.percent), (0...100).contains(estimate.lowerBound),
+                  (0...100).contains(estimate.upperBound),
+                  estimate.lowerBound <= estimate.percent, estimate.percent <= estimate.upperBound,
+                  estimate.lowerBound < estimate.upperBound,
+                  ["low", "medium", "high"].contains(estimate.confidence),
+                  Self.boundedText(estimate.scope, maximum: 640) != nil,
+                  estimate.scope.count <= 160,
+                  Self.boundedText(estimate.basis, maximum: 1200) != nil,
+                  estimate.basis.count <= 300 else { return false }
+        }
         let contentFingerprint = presentationFingerprint(state.items[index])
         if (state.items[index].presentations ?? []).contains(where: {
             $0.locale == locale && $0.sourceFingerprint == contentFingerprint
@@ -619,9 +650,14 @@ final class ProjectBoardStore {
         var draft = state
         let timestamp = now().timeIntervalSince1970
         var variants = (draft.items[index].presentations ?? []).filter { $0.locale != locale }
+        let storedEstimate = progressEstimate.map {
+            StoredProgressEstimate(percent: $0.percent, lowerBound: $0.lowerBound,
+                upperBound: $0.upperBound, confidence: $0.confidence,
+                scope: $0.scope, basis: $0.basis)
+        }
         variants.append(StoredPresentation(locale: locale, sourceFingerprint: contentFingerprint,
             title: title, summary: summary, outcome: outcome, nextStep: nextStep,
-            model: model, authoredAt: timestamp))
+            model: model, authoredAt: timestamp, progressEstimate: storedEstimate))
         draft.items[index].presentations = Array(variants.suffix(3))
         // Do not touch item.updatedAt: rewriting a reading aid is not new work activity.
         draft.revision += 1
@@ -644,18 +680,27 @@ final class ProjectBoardStore {
 
     private func presentationObject(_ item: StoredItem) -> [String: Any] {
         let fingerprint = presentationFingerprint(item)
-        return ["authority": "narrative_only", "variants": (item.presentations ?? []).map {
-            ["locale": $0.locale, "title": $0.title, "summary": $0.summary,
-             "outcome": $0.outcome, "nextStep": $0.nextStep, "model": $0.model,
-             "authoredAt": $0.authoredAt,
-             "status": $0.sourceFingerprint == fingerprint ? "current" : "stale"] as [String: Any]
+        return ["authority": "narrative_only", "variants": (item.presentations ?? []).map { variant in
+            var row: [String: Any] = ["locale": variant.locale, "title": variant.title, "summary": variant.summary,
+             "outcome": variant.outcome, "nextStep": variant.nextStep, "model": variant.model,
+             "authoredAt": variant.authoredAt,
+             "status": variant.sourceFingerprint == fingerprint ? "current" : "stale"]
+            if let estimate = variant.progressEstimate {
+                row["progressEstimate"] = ["percent": estimate.percent,
+                    "lowerBound": estimate.lowerBound, "upperBound": estimate.upperBound,
+                    "confidence": estimate.confidence, "scope": estimate.scope,
+                    "basis": estimate.basis, "authoredAt": variant.authoredAt,
+                    "model": variant.model] as [String: Any]
+            }
+            return row
         }]
     }
 
     private func presentationFingerprint(_ item: StoredItem) -> String {
         Self.digest(["title": item.title, "summary": item.summary, "type": item.type,
                      "scopeRevision": item.scopeRevision ?? 0,
-                     "report": item.completionReports?.last?.id ?? ""])!
+                     "report": item.completionReports?.last?.id ?? "",
+                     "progressMeasurement": progressMeasurement(item) ?? NSNull()])!
     }
 
     private func presentationWorkToken(_ item: StoredItem) -> String {
@@ -3011,7 +3056,7 @@ final class ProjectBoardStore {
         return changed
     }
 
-    private func progressObject(_ item: StoredItem) -> [String: Any] {
+    private func progressObject(_ item: StoredItem, includeMeasurement: Bool = true) -> [String: Any] {
         let attempts = item.links.filter { $0.kind == "task" && $0.source == "broker" }
         let states = attempts.map { $0.attemptState }
         let activeAttempts = attempts.filter {
@@ -3286,7 +3331,7 @@ final class ProjectBoardStore {
             group = "waiting"
         } else if hasHistory { group = "history" }
         else { group = "waiting" }
-        return [
+        var result: [String: Any] = [
             "state": progress.state, "label": progress.label, "reason": progress.reason,
             "group": group,
             "basisCodes": progress.basis, "warningCodes": warningCodes,
@@ -3320,6 +3365,135 @@ final class ProjectBoardStore {
                 }.count,
             ] as [String: Any],
         ]
+        if includeMeasurement, let measurement = projectedProgressMeasurement(item) {
+            result["measurement"] = measurement
+        }
+        return result
+    }
+
+    private func projectedProgressMeasurement(_ item: StoredItem) -> [String: Any]? {
+        var measurement = progressMeasurement(item)
+        measurement?.removeValue(forKey: "acceptanceFingerprint")
+        return measurement
+    }
+
+    /// A transparent large-work measurement. It counts only fixed leaf acceptance rows and never
+    /// infers completion from prose, elapsed time, a parent summary row, or an AI presentation.
+    private func progressMeasurement(_ item: StoredItem) -> [String: Any]? {
+        guard item.type == "epic" || item.type == "refactor" else { return nil }
+        let leaves: [StoredItem]
+        let scope: String
+        let scopeVersion: Int
+        var scopeResolutionIncomplete = false
+        if item.type == "epic" {
+            if let plan = item.programPlan {
+                let byID = Dictionary(uniqueKeysWithValues: state.items.map { ($0.id, $0) })
+                var seen = Set<String>()
+                let members: [StoredItem] = plan.nodes.compactMap { node -> StoredItem? in
+                    guard seen.insert(node.itemId).inserted else { return nil }
+                    return byID[node.itemId]
+                }
+                scopeResolutionIncomplete = members.count != seen.count
+                let memberIDs = Set(members.map(\.id))
+                let containerIDs = Set(members.compactMap { member -> String? in
+                    guard state.items.contains(where: {
+                        $0.parentId == member.id && memberIDs.contains($0.id)
+                    }) else { return nil }
+                    return member.id
+                })
+                leaves = members.filter { !containerIDs.contains($0.id) }
+                scope = "program_plan_v1"
+                scopeVersion = plan.planVersion
+            } else {
+                let byID = Dictionary(uniqueKeysWithValues: state.items.map { ($0.id, $0) })
+                let childPairs: [(String, String)] = state.items.compactMap { stored -> (String, String)? in
+                    guard let parent = stored.parentId else { return nil }
+                    return (parent, stored.id)
+                }
+                let childrenByParent = Dictionary(grouping: childPairs, by: { $0.0 })
+                    .mapValues { pairs in pairs.map { $0.1 } }
+                var pending = state.items.filter { $0.parentId == item.id }.map(\.id)
+                pending += item.links.filter { $0.kind == "related" }.map(\.targetId)
+                var scopedIDs = Set<String>()
+                while let candidate = pending.popLast() {
+                    guard candidate != item.id, scopedIDs.insert(candidate).inserted else {
+                        if candidate == item.id { scopeResolutionIncomplete = true }
+                        continue
+                    }
+                    guard scopedIDs.count <= ProjectBoardProgramPlan.maximumNodes,
+                          byID[candidate] != nil else {
+                        scopeResolutionIncomplete = true
+                        continue
+                    }
+                    pending.append(contentsOf: childrenByParent[candidate] ?? [])
+                }
+                if !pending.isEmpty { scopeResolutionIncomplete = true }
+                let containerIDs = Set(scopedIDs.filter {
+                    !(childrenByParent[$0] ?? []).filter(scopedIDs.contains).isEmpty
+                })
+                leaves = scopedIDs.subtracting(containerIDs).compactMap { byID[$0] }
+                scope = "epic_leaf_acceptance"
+                scopeVersion = item.scopeRevision ?? 0
+            }
+        } else {
+            leaves = [item]
+            scope = "item_acceptance"
+            scopeVersion = item.scopeRevision ?? 0
+        }
+        let excludedParentUnits = item.type == "epic"
+            ? item.checklist.filter(\.required).count + item.milestones.count : 0
+        let declaredCounts = leaves.map { leaf in
+            leaf.checklist.filter(\.required).count + leaf.milestones.count
+        }
+        let unmeasured = declaredCounts.filter { $0 == 0 }.count
+        let statuses = leaves.flatMap { leaf in
+            leaf.checklist.filter(\.required).map(\.status) + leaf.milestones.map(\.status)
+        }.filter { $0 != "not_applicable" }
+        let denominator = statuses.count
+        let completed = statuses.filter { $0 == "passed" }.count
+        let started = statuses.filter { $0 == "doing" || $0 == "passed" || $0 == "failed" }.count
+        let status = !scopeResolutionIncomplete && !leaves.isEmpty
+            && unmeasured == 0 && denominator > 0
+            ? "available" : "insufficient_scope"
+        func percent(_ numerator: Int, _ total: Int) -> Any {
+            guard total > 0 else { return NSNull() }
+            return Int((Double(numerator) * 100.0 / Double(total)).rounded())
+        }
+        let measuredAt = ([item.updatedAt] + leaves.map(\.updatedAt)).max() ?? item.updatedAt
+        let precise = status == "available"
+        let acceptanceFingerprint = Self.digest(["leaves":
+            leaves.sorted { $0.id < $1.id }.map { leaf in
+                ["id": leaf.id, "type": leaf.type, "parentId": leaf.parentId ?? NSNull(),
+                 "scopeRevision": leaf.scopeRevision ?? 0,
+                 "checklist": leaf.checklist.sorted { $0.id < $1.id }.map {
+                     ["id": $0.id, "required": $0.required, "status": $0.status] as [String: Any]
+                 },
+                 "milestones": leaf.milestones.sorted { $0.id < $1.id }.map {
+                     ["id": $0.id, "status": $0.status] as [String: Any]
+                 }] as [String: Any]
+            }
+        ]) ?? ""
+        return ["status": status, "authority": "recorded_evidence", "scope": scope,
+            "scopeVersion": scopeVersion,
+            "scopeRevision": item.scopeRevision ?? 0, "measuredAt": measuredAt,
+            "leafCount": leaves.count, "unmeasuredLeafCount": unmeasured,
+            "denominator": denominator, "completed": completed,
+            "excludedParentUnits": excludedParentUnits,
+            "recordedPercent": precise ? percent(completed, denominator) : NSNull(),
+            "acceptanceFingerprint": acceptanceFingerprint,
+            "basisCodes": ["fixed_leaf_acceptance", "required_checklist_and_milestones",
+                           "parent_units_excluded", "release_evidence_unavailable",
+                           "ai_has_no_authority"],
+            "stages": [
+                "planning": ["percent": percent(leaves.count - unmeasured, leaves.count),
+                             "completed": leaves.count - unmeasured, "total": leaves.count],
+                "implementation": ["percent": precise ? percent(started, denominator) : NSNull(),
+                                   "completed": started, "total": denominator],
+                "verification": ["percent": precise ? percent(completed, denominator) : NSNull(),
+                                 "completed": completed, "total": denominator],
+                "release": ["percent": NSNull(), "completed": NSNull(),
+                            "total": leaves.count, "status": "insufficient_evidence"],
+            ] as [String: Any]]
     }
 
     // MARK: - Snapshot
@@ -3830,7 +4004,9 @@ final class ProjectBoardStore {
         if let plan = item.programPlan {
             let progressByItemID = Dictionary(uniqueKeysWithValues: plan.nodes.map { node in
                 let progress = index?.progressByItemID[node.itemId]
-                    ?? state.items.first(where: { $0.id == node.itemId }).map(progressObject)
+                    ?? state.items.first(where: { $0.id == node.itemId }).map {
+                        progressObject($0)
+                    }
                 return (node.itemId, progress?["state"] as? String ?? "unknown")
             })
             answer["programPlan"] = ProjectBoardProgramPlan.projection(
@@ -5300,6 +5476,19 @@ final class ProjectBoardStore {
                           && $0.nextStep.count <= 200 && $0.nextStep.utf8.count <= 800
                           && boundedText($0.model, maximum: 200) != nil
                           && $0.authoredAt.isFinite && $0.authoredAt >= 0
+                          && ($0.progressEstimate.map { estimate in
+                              (0...100).contains(estimate.percent)
+                                  && (0...100).contains(estimate.lowerBound)
+                                  && (0...100).contains(estimate.upperBound)
+                                  && estimate.lowerBound <= estimate.percent
+                                  && estimate.percent <= estimate.upperBound
+                                  && estimate.lowerBound < estimate.upperBound
+                                  && ["low", "medium", "high"].contains(estimate.confidence)
+                                  && boundedText(estimate.scope, maximum: 640) != nil
+                                  && estimate.scope.count <= 160
+                                  && boundedText(estimate.basis, maximum: 1200) != nil
+                                  && estimate.basis.count <= 300
+                          } ?? true)
                   }),
                   (item.scopeRevision ?? 0) >= 0,
                   (item.scopeEventAt.map { $0.isFinite && $0 >= 0 } ?? true),

@@ -260,6 +260,24 @@ invalidate prior authoritative landing. Coordination has
 An authoritative later landing can display landed despite missing older procedural records; those
 records qualify the evidence as warnings, not a stale state gate. New work retains previous landings.
 
+For `epic` and `refactor`, `progress.measurement` is a read-only large-work measurement with
+`authority:"recorded_evidence"`, `status`, `scope`, `scopeVersion`, `scopeRevision`, `measuredAt`, `leafCount`,
+`unmeasuredLeafCount`, `denominator`, `completed`, `excludedParentUnits`, nullable
+`recordedPercent`, `basisCodes`, and separate `stages.{planning,implementation,verification,release}`
+counts and percentages. Required checklist rows plus milestones are the only acceptance units;
+optional and `not_applicable` rows are excluded. Epic parent units and every in-scope container's
+summary units are excluded whenever descendant leaf work defines the denominator. A missing leaf scope makes `status:"insufficient_scope"` and
+`recordedPercent:null`; consumers must not display that as zero. Nested Epic members remain in the
+scope and therefore block precision when they lack their own acceptance denominator. The release
+stage remains null with `status:"insufficient_evidence"` until an authoritative deployment receipt
+exists; `landed`, `settled` and `nothing_to_land` are not release evidence.
+
+`presentation.variants[].progressEstimate`, when present, is
+`{percent,lowerBound,upperBound,confidence,scope,basis,authoredAt,model}`. It is accepted only as
+part of a current `narrative_only` variant, uses an explicit non-zero uncertainty interval, and has
+no workflow, lifecycle, verification, landing or release authority. Its source fingerprint includes
+the recorded measurement, so a changed denominator or leaf status makes the old estimate stale.
+
 Optional `typeDetails` is accepted by create/update and returned with the item. Bug supports only
 `rootCause` and `lessons`; Coordination supports only `outcomes`, `difficulties`, `improvements`.
 Values are bounded strings. Other types do not accept these fields. Missing narratives are shown

@@ -1,3 +1,4 @@
+import CoreFoundation
 import Foundation
 
 /// Creates presentation-only Board prose in a bounded background lane.
@@ -8,7 +9,7 @@ import Foundation
 final class ProjectBoardNarrative {
     static let shared = ProjectBoardNarrative(environment: .live)
 
-    struct Candidate: Equatable {
+    struct Candidate {
         let id: String
         let sourceFingerprint: String
         let title: String
@@ -16,6 +17,7 @@ final class ProjectBoardNarrative {
         let type: String
         let outcome: String
         let locale: String
+        let progressMeasurement: [String: Any]?
 
         var retryKey: String { id + "\u{1f}" + sourceFingerprint + "\u{1f}" + locale }
 
@@ -36,6 +38,7 @@ final class ProjectBoardNarrative {
             self.type = type
             self.outcome = outcome
             self.locale = locale
+            progressMeasurement = value["progressMeasurement"] as? [String: Any]
         }
 
         private static func string(_ key: String, in value: [String: Any],
@@ -46,11 +49,21 @@ final class ProjectBoardNarrative {
         }
     }
 
+    struct ProgressEstimate: Equatable {
+        let percent: Int
+        let lowerBound: Int
+        let upperBound: Int
+        let confidence: String
+        let scope: String
+        let basis: String
+    }
+
     struct Narrative: Equatable {
         let title: String
         let summary: String
         let outcome: String
         let nextStep: String
+        let progressEstimate: ProgressEstimate?
     }
 
     typealias Generator = (CodexNaming.StructuredRequest,
@@ -70,7 +83,7 @@ final class ProjectBoardNarrative {
         var generate: Generator
         var record: (_ itemID: String, _ locale: String, _ sourceFingerprint: String,
                      _ title: String, _ summary: String, _ outcome: String,
-                     _ nextStep: String, _ model: String) -> Bool
+                     _ nextStep: String, _ model: String, _ progressEstimate: ProgressEstimate?) -> Bool
         var didMutate: () -> Void
 
         static var live: Environment {
@@ -93,11 +106,11 @@ final class ProjectBoardNarrative {
                     CodexNaming.shared.generateStructured(
                         request, priority: .veryLow, completion: completion)
                 },
-                record: { id, locale, fingerprint, title, summary, outcome, nextStep, model in
+                record: { id, locale, fingerprint, title, summary, outcome, nextStep, model, estimate in
                     ProjectBoardStore.shared.recordPresentation(
                         itemID: id, locale: locale, sourceFingerprint: fingerprint,
                         title: title, summary: summary, outcome: outcome, nextStep: nextStep,
-                        model: model)
+                        model: model, progressEstimate: estimate)
                 },
                 didMutate: { ProjectBoardIntegration.didMutate() })
         }
@@ -250,10 +263,19 @@ final class ProjectBoardNarrative {
             failed(candidate: candidate, at: environment.now())
             return
         }
+        if narrative.progressEstimate != nil {
+            guard ["epic", "refactor"].contains(candidate.type),
+                  candidate.progressMeasurement?["status"] as? String == "available",
+                  (candidate.progressMeasurement?["denominator"] as? Int ?? 0) > 0 else {
+                failed(candidate: candidate, at: environment.now())
+                return
+            }
+        }
 
         let stored = environment.record(
             candidate.id, locale, candidate.sourceFingerprint, narrative.title,
-            narrative.summary, narrative.outcome, narrative.nextStep, result.model)
+            narrative.summary, narrative.outcome, narrative.nextStep, result.model,
+            narrative.progressEstimate)
         guard stored else { return } // The Store's fingerprint CAS detected a newer source.
         candidateFailures.removeValue(forKey: candidate.retryKey)
         candidateCooldowns.removeValue(forKey: candidate.retryKey)
@@ -293,18 +315,28 @@ final class ProjectBoardNarrative {
       "title":{"type":"string","minLength":2,"maxLength":80},
       "summary":{"type":"string","minLength":2,"maxLength":300},
       "outcome":{"type":"string","maxLength":300},
-      "nextStep":{"type":"string","maxLength":200}},
-     "required":["title","summary","outcome","nextStep"],"additionalProperties":false}
+      "nextStep":{"type":"string","maxLength":200},
+      "progressEstimate":{"anyOf":[{"type":"null"},{"type":"object","properties":{
+        "percent":{"type":"integer","minimum":0,"maximum":100},
+        "lowerBound":{"type":"integer","minimum":0,"maximum":100},
+        "upperBound":{"type":"integer","minimum":0,"maximum":100},
+        "confidence":{"type":"string","enum":["low","medium","high"]},
+        "scope":{"type":"string","minLength":2,"maxLength":160},
+        "basis":{"type":"string","minLength":2,"maxLength":300}},
+        "required":["percent","lowerBound","upperBound","confidence","scope","basis"],
+        "additionalProperties":false}]}},
+     "required":["title","summary","outcome","nextStep","progressEstimate"],"additionalProperties":false}
     """
 
     static func request(for candidate: Candidate, locale: String, assistant: Assistant,
                         model: String, shouldStart: @escaping () -> Bool = { true })
         -> CodexNaming.StructuredRequest {
-        let source: [String: String] = [
+        let source: [String: Any] = [
             "sourceTitle": candidate.title,
             "sourceSummary": candidate.summary,
             "sourceType": candidate.type,
             "documentedOutcome": candidate.outcome,
+            "recordedProgress": candidate.progressMeasurement ?? NSNull(),
         ]
         let data = (try? JSONSerialization.data(withJSONObject: source, options: [.sortedKeys]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
@@ -321,6 +353,13 @@ final class ProjectBoardNarrative {
         or graph node remain legitimate source content.
         `outcome` may summarize only documentedOutcome and is empty when that field documents no
         outcome. `nextStep` is empty unless the source explicitly documents one; never guess it.
+
+        `progressEstimate` is an optional AI estimate for a large Epic or Refactor, not a status
+        transition. Return null unless recordedProgress has status `available`, a fixed scope and
+        a non-zero denominator. When present, give an integer estimate plus a non-zero uncertainty
+        interval, name the scope and briefly state the source basis. Do not copy recordedPercent
+        as if it were an AI estimate, claim certainty, or treat the estimate as completion,
+        verification, landing or release evidence.
         """
         return CodexNaming.StructuredRequest(
             assistant: assistant, model: model, system: system, data: data, schema: schema,
@@ -337,7 +376,7 @@ final class ProjectBoardNarrative {
     }
 
     static func narrative(from object: [String: Any]) -> Narrative? {
-        let allowed = Set(["title", "summary", "outcome", "nextStep"])
+        let allowed = Set(["title", "summary", "outcome", "nextStep", "progressEstimate"])
         guard Set(object.keys) == allowed,
               JSONSerialization.isValidJSONObject(object),
               let encoded = try? JSONSerialization.data(withJSONObject: object),
@@ -345,11 +384,41 @@ final class ProjectBoardNarrative {
               let title = field("title", in: object, maximum: 80, required: true),
               let summary = field("summary", in: object, maximum: 300, required: true),
               let outcome = field("outcome", in: object, maximum: 300),
-              let nextStep = field("nextStep", in: object, maximum: 200)
+              let nextStep = field("nextStep", in: object, maximum: 200),
+              let estimate = progressEstimate(object["progressEstimate"])
         else { return nil }
-        let all = [title, summary, outcome, nextStep].joined(separator: " ")
+        let all = [title, summary, outcome, nextStep, estimate?.scope ?? "",
+                   estimate?.basis ?? ""].joined(separator: " ")
         guard !containsInternalIdentifiers(all) else { return nil }
-        return Narrative(title: title, summary: summary, outcome: outcome, nextStep: nextStep)
+        return Narrative(title: title, summary: summary, outcome: outcome, nextStep: nextStep,
+                         progressEstimate: estimate)
+    }
+
+    private static func progressEstimate(_ raw: Any?) -> ProgressEstimate?? {
+        if raw is NSNull { return .some(nil) }
+        guard let object = raw as? [String: Any],
+              Set(object.keys) == Set(["percent", "lowerBound", "upperBound", "confidence",
+                                       "scope", "basis"]),
+              let percent = exactInteger(object["percent"]),
+              let lower = exactInteger(object["lowerBound"]),
+              let upper = exactInteger(object["upperBound"]),
+              (0...100).contains(percent), (0...100).contains(lower),
+              (0...100).contains(upper), lower <= percent, percent <= upper, lower < upper,
+              let confidence = object["confidence"] as? String,
+              ["low", "medium", "high"].contains(confidence),
+              let scope = field("scope", in: object, maximum: 160, required: true),
+              let basis = field("basis", in: object, maximum: 300, required: true)
+        else { return nil }
+        return .some(ProgressEstimate(percent: percent, lowerBound: lower, upperBound: upper,
+                                      confidence: confidence, scope: scope, basis: basis))
+    }
+
+    private static func exactInteger(_ raw: Any?) -> Int? {
+        guard let number = raw as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let value = number.doubleValue
+        guard value.isFinite, value.rounded() == value else { return nil }
+        return Int(exactly: value)
     }
 
     private static func field(_ key: String, in object: [String: Any], maximum: Int,

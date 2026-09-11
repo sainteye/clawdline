@@ -337,6 +337,23 @@ span takes precedence over older discovery output; declared activity is labeled 
 Epic delivery lanes expose each related item's own Project, owner and progress without turning
 aggregate activity into aggregate verification or landing.
 
+Large Epic and Refactor items also expose a transparent percentage model. The recorded percentage
+uses only required checklist rows and milestones from a fixed leaf scope. An Epic with child or
+Program Plan nodes excludes its own summary rows and every in-scope container summary, so a parent
+and its descendants are never counted twice; optional and `not_applicable` rows do not inflate the denominator. If any leaf has no declared
+acceptance scope, the overall percentage is unavailable rather than guessed. Planning, implementation,
+acceptance and release remain four separate measurements: beginning work does not claim acceptance,
+and acceptance does not claim release. Until Board has an authoritative deployment receipt, release
+is shown as unknown (`—`), even when every leaf is landed or settled; a Git landing is not a rollout.
+An existing nested Epic is retained as a scope member, so an unscoped nested program makes the total
+unavailable instead of silently disappearing from a 100% result.
+
+When Board reading AI is explicitly enabled, its current presentation variant may include a separate
+AI estimate with a bounded range, confidence label, named scope, basis, model and timestamp. The
+estimate is `narrative_only`: it never changes lifecycle, verification, landing, release, checklist or
+milestone state. The browser labels recorded evidence and AI estimation separately and hides stale AI
+variants after the underlying progress fingerprint changes.
+
 Project cards use compact materialized summaries; selected item details are resolved only when
 opened. Successful models do not expire merely because ten seconds elapsed. Durable changes,
 source events and changes in the already-published Session Project inventory trigger bounded
