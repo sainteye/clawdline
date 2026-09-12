@@ -23,6 +23,24 @@ function count(value, complete = true) {
     return complete && Number.isSafeInteger(value) && value >= 0
         ? new Intl.NumberFormat().format(value) : "—";
 }
+function narrative(value, limit) {
+    if (typeof value !== "string") return null;
+    const compact = value.trim().replace(/\s+/g, " ");
+    if (!compact) return null;
+    return compact.length <= limit ? compact : compact.slice(0, limit - 1) + "…";
+}
+function bytes(value, complete, language) {
+    if (!complete || !Number.isSafeInteger(value) || value < 0) {
+        return words(language, "not observed", "尚未觀測");
+    }
+    if (value === 0) return "0 B";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const unit = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+    const amount = value / (1024 ** unit);
+    return new Intl.NumberFormat(language || undefined, {
+        maximumFractionDigits: amount >= 10 || unit === 0 ? 0 : 1
+    }).format(amount) + " " + units[unit];
+}
 function date(value, language) {
     if (!value) return words(language, "not observed", "尚未觀測");
     const parsed = new Date(value);
@@ -83,6 +101,12 @@ export function worktreeRowPresentation(row, environment = {}) {
         "mixed_conflicted"].includes(value));
     const group = actionable ? "needs" : classes.includes("unknown_incomplete_evidence")
         ? "unknown" : "after";
+    const context = row.context && typeof row.context === "object" ? row.context : {};
+    const origin = context.originSession && typeof context.originSession === "object"
+        ? context.originSession : {};
+    const originSession = typeof origin.sessionId === "string" && CONVERSATION.test(origin.sessionId)
+        ? origin.sessionId.toLowerCase() : null;
+    const storage = row.storage && typeof row.storage === "object" ? row.storage : {};
     return {
         id: typeof row.worktreeId === "string" ? row.worktreeId : "",
         path: typeof row.path === "string" ? row.path : "",
@@ -94,6 +118,22 @@ export function worktreeRowPresentation(row, environment = {}) {
         owner: title,
         ownerLocator: machine && session ? { machine, session } : null,
         active: typeof row.active === "boolean" ? row.active : null,
+        purpose: narrative(context.purpose, 240)
+            || words(language, "Purpose not recorded", "尚未記錄用途"),
+        note: narrative(context.note, 600),
+        currentStatus: narrative(context.currentStatus, 300),
+        taskState: narrative(context.state, 80) || words(language, "unknown", "未知"),
+        createdAt: context.createdAt || null,
+        startedAt: context.startedAt || null,
+        finishedAt: context.finishedAt || null,
+        origin: {
+            title: narrative(origin.title, 120)
+                || words(language, "Origin Session not identified", "尚未確認原始 Session"),
+            locator: machine && originSession ? { machine, session: originSession } : null
+        },
+        storage: bytes(storage.bytes, storage.complete === true, language),
+        storageComplete: storage.complete === true,
+        storageError: storage.error && (storage.error.message || storage.error.code) || null,
         counts: {
             staged: count(row.status && row.status.staged, statusComplete),
             modified: count(row.status && row.status.modified, statusComplete),
@@ -132,16 +172,36 @@ function renderCard(doc, parent, row, environment) {
         owner.type = "button";
         owner.addEventListener("click", () => environment.onOwner(view.ownerLocator));
     } else node(doc, head, "span", view.owner, "worktree-owner");
+    const story = node(doc, card, "div", null, "worktree-story");
+    node(doc, story, "p", view.purpose, "worktree-purpose");
+    if (view.note) node(doc, story, "p", view.note, "worktree-note");
+    if (view.currentStatus) node(doc, story, "p",
+        words(language, "Now: ", "目前：") + view.currentStatus, "worktree-current-status");
     const tags = node(doc, card, "div", null, "worktree-tags");
     view.labels.forEach(label => node(doc, tags, "span", label, "worktree-tag"));
     const counts = node(doc, card, "div", null, "worktree-counts");
     fact(doc, counts, words(language, "Staged", "已暫存"), view.counts.staged);
     fact(doc, counts, words(language, "Modified", "已修改"), view.counts.modified);
     fact(doc, counts, words(language, "Untracked", "未追蹤"), view.counts.untracked);
+    fact(doc, counts, words(language, "Disk used", "磁碟占用"), view.storage);
+    const lifecycle = node(doc, card, "div", null, "worktree-lifecycle-facts");
+    fact(doc, lifecycle, words(language, "Created", "建立時間"), date(view.createdAt, language));
+    fact(doc, lifecycle, words(language, "Development started", "開始開發"), date(view.startedAt, language));
+    fact(doc, lifecycle, words(language, "Development ended", "結束開發"), date(view.finishedAt, language));
+    fact(doc, lifecycle, words(language, "Task state", "任務狀態"), view.taskState);
+    const originLine = node(doc, lifecycle, "div", null, "worktree-fact");
+    node(doc, originLine, "span", words(language, "Origin Session", "原始 Session"), "worktree-fact-key");
+    if (view.origin.locator && typeof environment.onOwner === "function") {
+        const origin = node(doc, originLine, "button", view.origin.title, "worktree-origin-link");
+        origin.type = "button";
+        origin.addEventListener("click", () => environment.onOwner(view.origin.locator));
+    } else node(doc, originLine, "span", view.origin.title, "worktree-fact-value");
     const observations = node(doc, card, "div", null, "worktree-observations");
     fact(doc, observations, words(language, "Local observation", "本機觀測"), view.local.text);
     fact(doc, observations, words(language, "Canonical target", "正式目標"), view.canonical.text);
     fact(doc, observations, words(language, "Target", "目標分支"), view.target);
+    if (!view.storageComplete && view.storageError) fact(doc, observations,
+        words(language, "Storage observation", "磁碟觀測"), view.storageError);
     const assessment = node(doc, card, "p", null, "worktree-cleanup-assessment");
     if (view.blockers.length) assessment.textContent = view.blockers.join(" · ");
     else if (view.cleanupEligible) assessment.textContent = words(language,

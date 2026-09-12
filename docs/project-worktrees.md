@@ -33,8 +33,9 @@ and this service does not call it.
 ## The snapshot
 
 `schemaVersion` is `1`. Each row carries `worktreeId`, `path`, `branch`, `base`, `head`, `target`,
-`owner`, `active`, `status`, `classifications`, `localObservation`, `canonicalTargetObservation` and
-`cleanup`, and nothing else.
+`owner`, `active`, `status`, `classifications`, `localObservation`, `canonicalTargetObservation`,
+`context`, `storage` and `cleanup`. The latter two are additive v1 fields: older readers may ignore
+them, while a missing field remains unknown rather than taking on a guessed default.
 
 - `owner` is `{taskId, sessionId, terminalId, title, evidence}`. `sessionId` is the child's
   conversation UUID and `terminalId` is the separate, nullable terminal address (`%…`). The service
@@ -43,6 +44,17 @@ and this service does not call it.
 - `active` is `true`, `false`, or `null` when the Session inventory was incomplete.
 - `status` is `{complete, staged, modified, untracked}`; the counts are `null` whenever `complete` is
   false.
+- `context` is an evidence-backed description of why and when the checkout exists. For an exact
+  Clawdline task record it carries `purpose` from the immutable task title, a bounded `note` from
+  the original plan, `currentStatus` from the latest progress or completion summary, the task
+  `state`, `createdAt`, `startedAt`, `finishedAt`, and `originSession {sessionId, title}`. The
+  originating Session is linked only when its conversation UUID is valid; a title is display text,
+  never identity. The main checkout receives only the system statement that it is canonical.
+- `storage` is `{complete, bytes, observedAt, error}`. `bytes` is the allocated size below this
+  checkout path observed by a bounded `du -sk`. A linked worktree does not duplicate the shared Git
+  object store, while the primary checkout's own `.git` directory is included. A timeout,
+  process error or out-of-range result is `null` with a typed error, never zero. The snapshot count
+  `storageBytes` is likewise null unless every row was measured.
 - `localObservation` says when this checkout was read and whether that reading is `current`, `stale`,
   `unknown` or `failed`. `canonicalTargetObservation` says the same about the comparison subject: the
   remote-tracking target (`refs/remotes/origin/<target>`, dated by the last recorded fetch) when a

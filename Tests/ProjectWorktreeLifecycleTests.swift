@@ -24,6 +24,7 @@ private final class WorktreeWorld {
         tasks: { [unowned self] in .init(authoritative: self.authoritative, tasks: self.tasks) },
         live: { [unowned self] in self.live },
         now: { [unowned self] in self.clock },
+        storageBytes: { _, _ in .success(3_221_225_472) },
         beforeApplyAction: { [unowned self] kind, worktreeID in
             self.beforeApplyAction?(kind, worktreeID)
         }))
@@ -78,7 +79,14 @@ private final class WorktreeWorld {
                                               repository: repository.path, cwd: path.path)
         task.childSessionId = UUID().uuidString
         task.childTerminalId = "%9\(tasks.count)"
+        task.rootSessionId = "22222222-2222-4222-8222-222222222222"
         task.rootLabel = "Fixture root"
+        task.spawnedAt = task.created.addingTimeInterval(5)
+        task.briefedAt = task.created.addingTimeInterval(10)
+        task.plan = "Implement the worktree lifecycle card.\nKeep it evidence-backed."
+        task.progress = [.init(note: "Rendering the lifecycle cards.",
+                               at: task.created.addingTimeInterval(20))]
+        if state.isTerminal { task.finishedAt = task.created.addingTimeInterval(30) }
         tasks.append(task)
         return (id, path)
     }
@@ -191,17 +199,37 @@ func runProjectWorktreeLifecycleTests() {
                                      "rows", "truncated", "counts"]
                 && Set(world.row(snapshot, merged.path).keys) == ["worktreeId", "path", "branch", "base", "head",
                     "target", "owner", "active", "status", "classifications", "localObservation",
-                    "canonicalTargetObservation", "cleanup"]
+                    "canonicalTargetObservation", "cleanup", "context", "storage"]
                 && Set((world.row(snapshot, merged.path)["owner"] as? [String: Any] ?? [:]).keys)
                     == ["taskId", "sessionId", "terminalId", "title", "evidence"]
                 && Set((snapshot["counts"] as? [String: Any] ?? [:]).keys)
-                    == ["rows", "active", "staged", "modified", "untracked", "unknown"])
+                    == ["rows", "active", "staged", "modified", "untracked", "storageBytes", "unknown"])
         let owner = world.row(snapshot, merged.path)["owner"] as? [String: Any] ?? [:]
         let recorded = world.tasks.first { $0.id == merged.id }
         check("owner carries the conversation UUID and the separate terminal id",
               owner["sessionId"] as? String == recorded?.childSessionId?.lowercased()
                 && owner["terminalId"] as? String == recorded?.childTerminalId
                 && owner["evidence"] as? String == "exact_task_worktree_record")
+        let context = world.row(snapshot, merged.path)["context"] as? [String: Any] ?? [:]
+        let origin = context["originSession"] as? [String: Any] ?? [:]
+        let storage = world.row(snapshot, merged.path)["storage"] as? [String: Any] ?? [:]
+        check("task evidence populates a bounded worktree description and lifecycle",
+              context["purpose"] as? String == recorded?.title
+                && context["note"] as? String == "Implement the worktree lifecycle card. Keep it evidence-backed."
+                && context["currentStatus"] as? String == "Rendering the lifecycle cards."
+                && context["state"] as? String == recorded?.state.rawValue
+                && context["createdAt"] as? String != nil
+                && context["startedAt"] as? String != nil
+                && context["finishedAt"] as? String != nil
+                && origin["sessionId"] as? String == "22222222-2222-4222-8222-222222222222"
+                && origin["title"] as? String == "Fixture root"
+                && context["evidence"] as? String == "exact_task_worktree_record")
+        check("storage is an observed byte count rather than a guessed zero",
+              storage["complete"] as? Bool == true
+                && storage["bytes"] as? Int == 3_221_225_472
+                && storage["observedAt"] as? String != nil
+                && storage["error"] is NSNull
+                && (snapshot["counts"] as? [String: Any])?["storageBytes"] is NSNull)
         check("residue and temporary rows are eligible; unlanded, live and unknown are not",
               (world.row(snapshot, temporary.path)["cleanup"] as? [String: Any])?["eligible"] as? Bool == true
                 && (world.row(snapshot, merged.path)["cleanup"] as? [String: Any])?["eligible"] as? Bool == true

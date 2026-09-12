@@ -90,6 +90,14 @@ final class ProjectWorktreeLifecycleService {
         let sessions: [LiveSession]
     }
 
+    struct StorageEvidence: Equatable {
+        let bytes: Int?
+        let observedAt: Date?
+        let error: Issue?
+
+        var complete: Bool { bytes != nil && error == nil }
+    }
+
     /// Every dependency this owner reads, so a test can replace each one without a global seam.
     struct Ports {
         var stateDirectory: URL
@@ -98,6 +106,9 @@ final class ProjectWorktreeLifecycleService {
         var tasks: () -> TaskEvidence
         var live: () -> LiveEvidence
         var now: () -> Date
+        /// Allocated bytes for one checkout. This stays inside the sole lifecycle probe and is
+        /// injected so tests never depend on a machine's `du` implementation.
+        var storageBytes: (String, TimeInterval) -> Result<Int, Issue>
         /// Deterministic race injection for the focused lifecycle tests. Production is a no-op;
         /// the executor still performs every last-look from Git and the registries themselves.
         var beforeApplyAction: (ActionKind, String) -> Void = { _, _ in }
@@ -133,6 +144,9 @@ final class ProjectWorktreeLifecycleService {
                                         observedAt: publication.observedAt, sessions: sessions)
                 },
                 now: Date.init,
+                storageBytes: { path, timeout in
+                    ProjectWorktreeLifecycleService.measureStorageBytes(path, timeout: timeout)
+                },
                 beforeApplyAction: { _, _ in })
         }
     }
@@ -171,6 +185,14 @@ final class ProjectWorktreeLifecycleService {
         var landing: String? = nil
         var recordedBase: String? = nil
         var recordedBranch: String? = nil
+        var purpose: String? = nil
+        var note: String? = nil
+        var currentStatus: String? = nil
+        var createdAt: Date? = nil
+        var startedAt: Date? = nil
+        var finishedAt: Date? = nil
+        var originSessionID: String? = nil
+        var originTitle: String? = nil
 
         var json: [String: Any] {
             ["taskId": taskID ?? NSNull(), "sessionId": sessionID ?? NSNull(),
@@ -235,6 +257,9 @@ final class ProjectWorktreeLifecycleService {
         var actions: [ActionKind] = []
         var statusDigest = ""
         var contentDigest = ""
+        var storage = StorageEvidence(bytes: nil, observedAt: nil,
+                                      error: Issue(code: "storage_not_observed",
+                                                   message: "Disk usage has not been observed."))
 
         var base: String? { owner.recordedBase ?? mergeBase }
         var dirtyTracked: Bool { dirty.contains { !$0.untracked } }
@@ -378,7 +403,8 @@ final class ProjectWorktreeLifecycleService {
                       "message": "This Mac has not observed these worktrees yet; request a refresh."],
             "rows": [], "truncated": false,
             "counts": ["rows": NSNull(), "active": NSNull(), "staged": NSNull(),
-                       "modified": NSNull(), "untracked": NSNull(), "unknown": NSNull()],
+                       "modified": NSNull(), "untracked": NSNull(), "storageBytes": NSNull(),
+                       "unknown": NSNull()],
         ]
     }
 
@@ -403,17 +429,48 @@ final class ProjectWorktreeLifecycleService {
         hex(Data(parts.joined(separator: "\u{1f}").utf8))
     }
 
+    static func boundedNarrative(_ value: String?, limit: Int) -> String? {
+        guard let value else { return nil }
+        let compact = value.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard !compact.isEmpty else { return nil }
+        return compact.count <= limit ? compact : String(compact.prefix(limit - 1)) + "…"
+    }
+
+    /// `du -sk` is the platform's bounded allocated-size observation below the checkout path.
+    /// Linked worktrees do not duplicate the shared object store; the primary checkout's `.git`
+    /// directory is part of that path and is therefore included.
+    static func measureStorageBytes(_ path: String, timeout: TimeInterval) -> Result<Int, Issue> {
+        guard timeout > 0,
+              let answer = Process.collect("/usr/bin/du", ["-sk", path], timeout: timeout),
+              answer.status == 0,
+              let text = String(data: answer.output, encoding: .utf8),
+              let token = text.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).first,
+              let kibibytes = Int(token), kibibytes >= 0 else {
+            return .failure(Issue(code: "storage_unavailable",
+                                  message: "The bounded disk-usage observation did not complete."))
+        }
+        let (bytes, overflow) = kibibytes.multipliedReportingOverflow(by: 1024)
+        guard !overflow, bytes <= 9_007_199_254_740_991 else {
+            return .failure(Issue(code: "storage_out_of_range",
+                                  message: "The observed disk usage is outside JSON's safe integer range."))
+        }
+        return .success(bytes)
+    }
+
     static func snapshotJSON(_ observation: Observation, now: Date) -> [String: Any] {
         let rows = observation.rows
         let stale = now.timeIntervalSince(observation.observedAt) > localFreshness
         let complete = observation.error == nil && !observation.truncated && !stale
-            && rows.allSatisfy { $0.statusComplete && $0.errors.isEmpty && $0.active != nil }
+            && rows.allSatisfy { $0.statusComplete && $0.errors.isEmpty && $0.active != nil
+                && $0.storage.complete }
         func sum(_ value: (Row) -> Int?) -> Any {
             guard observation.error == nil, !observation.truncated else { return NSNull() }
             var total = 0
             for row in rows {
                 guard let count = value(row) else { return NSNull() }
-                total += count
+                let (next, overflow) = total.addingReportingOverflow(count)
+                guard !overflow, next <= 9_007_199_254_740_991 else { return NSNull() }
+                total = next
             }
             return total
         }
@@ -423,6 +480,7 @@ final class ProjectWorktreeLifecycleService {
                 && rows.allSatisfy({ $0.active != nil }) ? rows.filter { $0.active == true }.count : NSNull(),
             "staged": sum { $0.staged }, "modified": sum { $0.modified },
             "untracked": sum { $0.untracked },
+            "storageBytes": sum { $0.storage.bytes },
             "unknown": observation.error == nil && !observation.truncated
                 ? rows.filter { $0.classifications.contains(.unknownIncompleteEvidence) }.count : NSNull(),
         ]
@@ -477,6 +535,30 @@ final class ProjectWorktreeLifecycleService {
             ? ["complete": true, "staged": row.staged ?? NSNull(), "modified": row.modified ?? NSNull(),
                "untracked": row.untracked ?? NSNull()]
             : ["complete": false, "staged": NSNull(), "modified": NSNull(), "untracked": NSNull()]
+        let purpose: Any = row.isMain
+            ? "Canonical checkout for \(observation.repositoryLabel)"
+            : row.owner.purpose.map { $0 as Any } ?? NSNull()
+        let origin: [String: Any] = [
+            "sessionId": row.owner.originSessionID.map { $0 as Any } ?? NSNull(),
+            "title": row.owner.originTitle.map { $0 as Any } ?? NSNull(),
+        ]
+        let context: [String: Any] = [
+            "purpose": purpose,
+            "note": row.owner.note ?? NSNull(),
+            "currentStatus": row.owner.currentStatus ?? NSNull(),
+            "state": row.owner.taskState?.rawValue ?? (row.isMain ? "repository" : "unknown"),
+            "createdAt": rfc3339(row.owner.createdAt),
+            "startedAt": rfc3339(row.owner.startedAt),
+            "finishedAt": rfc3339(row.owner.finishedAt),
+            "originSession": origin,
+            "evidence": row.owner.evidence,
+        ]
+        let storage: [String: Any] = [
+            "complete": row.storage.complete,
+            "bytes": row.storage.bytes ?? NSNull(),
+            "observedAt": rfc3339(row.storage.observedAt),
+            "error": row.storage.error?.json ?? NSNull(),
+        ]
         return [
             "worktreeId": row.worktreeID, "path": row.path,
             "branch": row.branch ?? NSNull(), "base": row.base ?? NSNull(), "head": row.head ?? NSNull(),
@@ -488,6 +570,8 @@ final class ProjectWorktreeLifecycleService {
             "localObservation": ["state": localState, "observedAt": rfc3339(observation.observedAt),
                                  "head": row.head ?? NSNull(), "error": localError],
             "canonicalTargetObservation": canonical,
+            "context": context,
+            "storage": storage,
             "cleanup": ["eligible": !row.actions.isEmpty && row.blockers.isEmpty,
                         "blockers": row.blockers.map(\.json),
                         "nextOwner": row.blockers.isEmpty ? NSNull() : row.owner.nextOwner as Any],
@@ -719,6 +803,20 @@ final class ProjectWorktreeLifecycleService {
             row.statusDigest = Self.digest(["missing", entry.path])
             return row
         }
+        let storageObservedAt = ports.now()
+        let storageTimeout = min(5, max(0, observationDeadline?.timeIntervalSince(storageObservedAt) ?? 5))
+        if storageTimeout > 0 {
+            switch ports.storageBytes(entry.path, storageTimeout) {
+            case .success(let bytes):
+                row.storage = StorageEvidence(bytes: bytes, observedAt: storageObservedAt, error: nil)
+            case .failure(let issue):
+                row.storage = StorageEvidence(bytes: nil, observedAt: storageObservedAt, error: issue)
+            }
+        } else {
+            row.storage = StorageEvidence(bytes: nil, observedAt: storageObservedAt,
+                error: Issue(code: "storage_observation_budget_exceeded",
+                             message: "The bounded observation ended before disk usage could be read."))
+        }
         guard let statusText = gitText(["status", "--porcelain=v2", "-z", "--no-renames",
                                         "--untracked-files=all", "--ignored=matching"],
                                        cwd: entry.path, timeout: 30),
@@ -921,7 +1019,16 @@ final class ProjectWorktreeLifecycleService {
                      sessionID: task.childSessionId.flatMap { UUID(uuidString: $0) != nil ? $0.lowercased() : nil },
                      terminalID: task.childTerminalId, title: task.title, taskState: task.state,
                      rootLabel: task.rootLabel, landing: landing, recordedBase: worktree.base,
-                     recordedBranch: worktree.branch)
+                     recordedBranch: worktree.branch,
+                     purpose: Self.boundedNarrative(task.title, limit: 240),
+                     note: Self.boundedNarrative(task.plan, limit: 600),
+                     currentStatus: Self.boundedNarrative(task.progress.last?.note ?? task.summary, limit: 300),
+                     createdAt: task.created, startedAt: task.briefedAt ?? task.spawnedAt,
+                     finishedAt: task.finishedAt,
+                     originSessionID: task.rootSessionId.flatMap {
+                         UUID(uuidString: $0) != nil ? $0.lowercased() : nil
+                     },
+                     originTitle: Self.boundedNarrative(task.rootLabel, limit: 120))
     }
 
     private func resolveActivity(_ row: inout Row, live: LiveEvidence) {

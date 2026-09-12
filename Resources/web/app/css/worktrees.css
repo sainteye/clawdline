@@ -62,13 +62,22 @@
 }
 button.worktree-owner-link { cursor: pointer; color: var(--accent); }
 button.worktree-owner-link:hover { border-color: var(--accent-ed); background: var(--card-hi); }
+.worktree-story { display: grid; gap: 5px; margin-top: 11px; }
+.worktree-purpose { margin: 0; color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.45; }
+.worktree-note, .worktree-current-status {
+    margin: 0; overflow-wrap: anywhere; color: var(--dim); font-size: 11px; line-height: 1.5;
+}
+.worktree-note { border-left: 2px solid var(--line); padding-left: 9px; }
+.worktree-current-status { color: var(--accent); }
 .worktree-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 .worktree-tag {
     border: 1px solid var(--line); border-radius: 999px; padding: 4px 7px;
     color: var(--dim); font: 600 10px/1.2 var(--sans, sans-serif);
 }
-.worktree-counts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
-.worktree-observations { display: grid; gap: 5px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.worktree-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.worktree-lifecycle-facts, .worktree-observations {
+    display: grid; gap: 5px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line);
+}
 .worktree-fact { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 .worktree-counts .worktree-fact {
     display: grid; gap: 2px; border: 1px solid var(--line); border-radius: 9px; padding: 8px;
@@ -76,13 +85,18 @@ button.worktree-owner-link:hover { border-color: var(--accent-ed); background: v
 .worktree-fact-key { color: var(--faint); font-size: 10px; }
 .worktree-fact-value { min-width: 0; overflow-wrap: anywhere; color: var(--dim); text-align: right; font-size: 11px; }
 .worktree-counts .worktree-fact-value { color: var(--ink); text-align: left; font: 650 16px/1.2 var(--mono); }
+.worktree-origin-link {
+    min-width: 0; overflow: hidden; border: 0; padding: 0; background: transparent;
+    color: var(--accent); text-align: right; text-overflow: ellipsis; white-space: nowrap;
+}
+.worktree-origin-link:hover { text-decoration: underline; }
 .worktree-cleanup-assessment, .worktree-next-owner { margin: 10px 0 0; color: var(--dim); font-size: 11px; line-height: 1.45; }
 .worktree-next-owner { color: var(--faint); }
 
 @media (max-width: 620px) {
     .project-worktree-heading, .worktree-card-head { align-items: stretch; flex-direction: column; }
     #project-worktree-refresh, .worktree-owner, .worktree-owner-link { max-width: none; width: 100%; }
-    .worktree-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .worktree-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .worktree-fact { align-items: flex-start; flex-direction: column; gap: 2px; }
     .worktree-fact-value { text-align: left; }
 }

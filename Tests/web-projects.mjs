@@ -1081,6 +1081,14 @@ if (placesBody) {
                 sessionId: "11111111-1111-4111-8111-111111111111",
                 terminalId: "%123", title: "Finish the Board",
                 evidence: "exact_task_worktree_record" },
+            context: { purpose: "Finish the Board", note: "Keep the Project view readable.",
+                currentStatus: "Rendering the lifecycle cards.", state: "briefed",
+                createdAt: "2026-09-11T09:00:00Z", startedAt: "2026-09-11T09:05:00Z",
+                finishedAt: null, originSession: {
+                    sessionId: "22222222-2222-4222-8222-222222222222", title: "Board root"
+                }, evidence: "exact_task_worktree_record" },
+            storage: { complete: true, bytes: 3221225472,
+                observedAt: "2026-09-11T12:00:00Z", error: null },
             active: true, status: { complete: true, staged: 0, modified: 2, untracked: 1 },
             classifications: ["active_in_use", "genuinely_unlanded"],
             localObservation: { state: "current", observedAt: "2026-09-11T12:00:00Z",
@@ -1103,6 +1111,13 @@ if (placesBody) {
         equal(view.counts.staged, "0", "observed zero remains a genuine zero");
         equal(view.counts.modified, "2", "modified count is not combined with staged");
         equal(view.counts.untracked, "1", "untracked count stays independent");
+        equal(view.purpose, "Finish the Board", "the task title explains what the worktree is for");
+        equal(view.note, "Keep the Project view readable.", "the bounded task plan becomes an attributed note");
+        equal(view.currentStatus, "Rendering the lifecycle cards.", "latest task progress explains current work");
+        equal(view.storage, "3 GB", "observed bytes are formatted as useful disk usage");
+        equal(view.origin.title, "Board root", "the originating Session is named by title");
+        equal(view.origin.locator.session, "22222222-2222-4222-8222-222222222222",
+            "the originating Session link keeps its exact conversation identity");
         equal(view.canClean, false, "browser never converts eligible into cleanup authority");
         check(view.active, "active is an independent fact");
 
@@ -1185,6 +1200,14 @@ if (placesBody) {
             "local observation freshness is labelled separately");
         match(elements["project-worktree-lifecycle"].textContent, /Canonical target/i,
             "canonical target freshness is labelled separately");
+        match(elements["project-worktree-lifecycle"].textContent, /Finish the Board/i,
+            "the card explains what this worktree is for");
+        match(elements["project-worktree-lifecycle"].textContent, /Keep the Project view readable/i,
+            "the card shows the evidence-backed worktree note");
+        match(elements["project-worktree-lifecycle"].textContent, /3 GB/i,
+            "the card shows observed disk usage");
+        match(elements["project-worktree-lifecycle"].textContent, /Sep|2026/i,
+            "the card shows its development dates");
         const ownerButtons = elements["project-worktree-lifecycle"].querySelectorAll(
             ".worktree-owner-link");
         equal(ownerButtons.length, 1, "only the exact owner locator becomes clickable");
