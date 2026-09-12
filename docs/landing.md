@@ -184,13 +184,45 @@ exactly the case a derived queue keeps, because their children were still workin
   each other's `main`, or carry off what the other had left in the shared index. Only work in
   **different repositories** lands in parallel. Roots do not negotiate that turn between
   themselves, because the queue already answers it.
-- **The slot hands itself on.** The holder is the first entry still in the queue, so a landing
-  recorded above moves it with no second write. Nothing in the broker watches two ready lines and
-  decides between them: a coordinator may still write an order, and where nobody has, the derived
-  holder is what makes the slot arrive anyway.
-  `POST /v1/orchestrator/landing-queue/advance` is what reaches the next root's session, once per
-  holder per order generation, with a broker-composed message that prints the whole write set and
-  names the route as the authority over its own prose.
+- **The slot hands itself on, and there is one of it per repository.** The turn belongs to the first
+  of that repository's ready candidates (`candidate.turn`), so a landing recorded above moves it
+  with no second write. `POST /v1/orchestrator/landing-queue/advance` is what reaches that root's
+  session, once per holder per order generation, with a broker-composed message that prints the
+  whole write set and names the route as the authority over its own prose. When no entry in the
+  repository is a ready candidate, that route refuses `no_ready_candidate` rather than calling a
+  line forward: nothing is typed and no receipt is written.
+- **`holder` and `position` are compatibility display, and `candidate.turn` is the authority.**
+  `holder` is the older answer — the first entry still in the queue, ready or not — so it can be
+  `true` on a line whose child is still out. It is still published, and `order.derived.authority`
+  and `order.derived.compatibility` say in the response itself which field a landing may rest on.
+  Two fields that can disagree about one shared index are not two opinions to weigh.
+- **And the broker orders the lines that are actually ready.** Two or more entries in one
+  repository, all of them ready to land, used to be told only "unplaced, oldest first" — an
+  accident of two timestamps that two roots then settled by asking each other. The queue now
+  derives a deterministic order over them and says who has the turn. A **ready candidate** is an
+  entry whose contributing tasks are all terminal, which still holds something to land, and whose
+  repository, target and candidate identity were all read: one live task disqualifies the whole
+  entry however much of the rest has finished. **Terminal tasks alone are not readiness.** An entry
+  whose target or identity cannot be proved keeps its row and is reported as unordered with the
+  reason — a missing target is never read as `main` — because an order that can be guessed is an
+  order that can be about the wrong branch. A coordinator's explicit order still wins, entries in
+  **different repositories** are never ordered against each other, and the derivation is taken on
+  every read and stored nowhere, so nothing about it moves the order's `generation` or re-arms a
+  notice.
+- **One repository has one turn, and the target does not make a second one.** Grouping the turn by
+  target — a first place for `main` and another for `release` — reads like two refs and is two
+  refs; it is also one `.git/index`, one staging area and one `HEAD`, so the two lines holding it
+  would stage over each other exactly as the lines this queue was built for did. Target stays part
+  of a candidate's identity and part of the deterministic key, and the answer names which branch
+  the single turn is for (`order.derived.turn_target`). Only **different repositories** land at the
+  same time.
+- **Holding the slot is the shared-checkout turn, and it is not approval to land.** It says the
+  ref update and the shared index are yours for now. It does not say the work was reviewed, that
+  its tests passed, or that anybody agreed to this landing: a line whose review has just finished
+  and whose correction has not been dispatched is terminal-looking, and being called forward must
+  not read as "land it now". The notice says that in those words, and asks for the re-reads that
+  cost seconds — `HEAD`, `git status` and the index in your own checkout — before you stage or
+  commit anything.
 
 **This does not replace a file wait and must not be described as replacing one.** A wait is
 path-level and is registered between two named sessions about specific files; the queue is

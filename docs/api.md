@@ -4471,16 +4471,24 @@ replaces lost two roots that were working in the shared checkout at the time.
 ```json
 {"repository":"/Users/me/code/clawdline",
  "queue":[{"root_key":"9f1c2e7a","root_label":"clawdline main","position":1,"placement":"ordered",
-   "holder":true,"reasons":["unlanded_delivery"],"since":1787100110,"age_seconds":42,
+   "holder":true,"reasons":["pending_landing"],"since":1787100110,"age_seconds":42,
    "paths":["Sources/Orchestrator.swift","tools/check-architecture-boundaries.sh"],
+   "candidate":{"ready":true,"target":"main","order":1,"of":1,"turn":true,"why":null},
    "tasks":[{"id":"3f9a21bc-…","title":"Edit the orchestrator","state":"success",
-     "visibility":"unmerged","reason":"unlanded_delivery",
+     "visibility":"unmerged","reason":"pending_landing",
      "delivery":{"branch":"clawdline/task/3f9a21bc","base":"9e12a2a8…","head":"427ec660…"}}]},
   {"root_key":"a1e5c53d","root_label":null,"position":null,"placement":"unplaced",
    "holder":false,"reasons":["live_work"],"since":1787100150,"age_seconds":2,
-   "paths":["tools/check-architecture-boundaries.sh"],"tasks":[…]}],
+   "paths":["tools/check-architecture-boundaries.sh"],
+   "candidate":{"ready":false,"target":null,"order":null,"of":null,"turn":false,
+     "why":"live_work"},"tasks":[…]}],
  "order":{"keys":["9f1c2e7a"],"generation":3,"updated":1787100120,"set_by":"clawdfather",
-   "stale":[],"unplaced":["a1e5c53d"]},
+   "stale":[],"unplaced":["a1e5c53d"],
+   "derived":{"basis":"coordinator_order_then_oldest_work_then_target_then_digest",
+     "keys":["9f1c2e7a"],"turn":"9f1c2e7a","turn_target":"main",
+     "authority":"queue[].candidate.turn",
+     "compatibility":["queue[].holder","queue[].position"],
+     "unordered":[{"root_key":"a1e5c53d","why":"live_work"}]}},
  "contended_paths":[{"path":"tools/check-architecture-boundaries.sh",
    "entries":[{"root_key":"9f1c2e7a","source":"claims"},
               {"root_key":"a1e5c53d","source":"delivery_diff"}]}],
@@ -4498,8 +4506,13 @@ sort after ordered ones, oldest first, and `order.unplaced` names them so an inc
 visible instead of quiet. `order.stale` names digests the stored order still holds that are no
 longer members; they are reported, never revived.
 
-`holder` marks the one entry that may land now — the first ordered entry, or the oldest unplaced
-one when nothing has been ordered. It is derived, so a slot completing moves it with no write.
+`holder` is **compatibility display and not landing authority**. It is the first ordered entry, or
+the oldest unplaced one when nothing has been ordered — derived, so it moves with no write, and
+therefore still worth reading as "who is at the front of the list". What it is not is permission to
+touch the shared checkout: it can be `true` on a row whose own `candidate.ready` is `false`, which
+is a line whose child is still out or whose delivery branch this side could not read.
+`candidate.turn` is the field a landing rests on, and `order.derived.authority` says so in the
+response itself.
 
 `paths` is that entry's landing-time write set: the declared `claims` of its tasks, plus what each
 delivery branch changed against its own base (`git diff --name-only base...branch`, one per live
@@ -4513,15 +4526,60 @@ that share no path may prepare at the same time — isolated implementation, rev
 proof, the candidate gate — and telling them that before anybody re-measures is what this array is
 for. It does not release the last step. **Updating a ref on this repository and target branch, and
 staging or committing in the shared checkout, remain one entry at a time whatever this array
-says**, because disjoint write sets still share one `main` and one index. `holder` is the field
-that says when that turn has come, and because it is derived on every read, nothing on this side
-examines two ready entries and decides between them: a coordinator may still write an order through
-`POST /v1/orchestrator/landing-queue/order`, and where nobody has, the derived holder is what makes
-the slot arrive without one.
+says**, because disjoint write sets still share one `main` and one index. `candidate.turn` is the
+field that says when that turn has come, and it is derived on every read, so a slot completing moves
+it with no write.
+
+**And `candidate` is this side examining the entries that are ready and putting them in an order.**
+A ready candidate is an entry whose contributing tasks are all terminal, which still has something
+to land, and whose repository, target and candidate identity were all read. `ready` is that answer;
+`target` is the branch it would land on; `order` is its 1-based place among **this repository's**
+ready candidates, `of` how many there are, and `turn` whether it is first among them. All six keys
+are always present: `why` carries the closed reason an entry is not a candidate — `live_work`,
+`target_unreadable`, `delivery_unreadable`, `repository_unreadable` — and is `null` when it is one.
+
+**One repository has exactly one `turn`, and `target` does not create a second.** A repository is
+one shared index, one staging area and one `HEAD`: two candidates on `main` and on `release` in the
+same checkout stage into the same `.git/index` and commit against the same `HEAD`, so they are not
+parallel and are never both `turn: true`. Target stays part of a candidate's identity and part of
+the deterministic key — `order.derived.turn_target` names the branch the single turn is for — and
+only **different repositories** hold turns at the same time.
+
+**One live task disqualifies the whole entry**, however much of the rest of the line has finished.
+**Terminal tasks alone are not readiness either**: an entry whose target or candidate identity
+cannot be read keeps its row, is reported unordered with the reason, and is never given a position
+by guessing. `Landing.target` is optional, so an entry that is only an unmerged delivery ordinarily
+has none — **a missing target is never read as `main`**. Entries in different repositories never
+meet here at all, because membership is filtered by repository before any of this is derived.
+
+`order.derived` is the same answer read the other way round: `basis` names the key it sorted by,
+`keys` is this repository's ready candidates in that order, `turn` is the one digest holding the
+turn with `turn_target` naming the branch it is for, and `unordered` names every entry the broker
+would not place, with its reason. The key is a coordinator's placement first — so **an explicit
+order written through `POST /v1/orchestrator/landing-queue/order` still wins** — then the oldest
+contributing task's clock, which is this queue's published sort, then the target, then the digest.
+Nothing about it is stored, so reading this route never moves `generation` and never re-arms a slot
+notice.
+
+`order.derived.authority` and `order.derived.compatibility` are published rather than left to this
+page: `authority` is `queue[].candidate.turn`, and `compatibility` lists `queue[].holder` and
+`queue[].position`. Two fields that can disagree about one shared index must say in the response
+which of them a landing may rest on, because the reader that picks the other one becomes the second
+session in that index.
+
+**Holding the slot is the shared-checkout turn and not approval to land.** The turn says the ref
+update and the shared index are this entry's for now; it says nothing about review, tests, or
+anybody having agreed to the landing.
 
 | `code` | status | |
 |---|---|---|
 | `bad_request` | 400 | `project` was missing, relative, or not inside a Git repository |
+
+A repository this side cannot resolve is that refusal and nothing is answered. Everything else the
+broker cannot read — a missing target, a delivery branch git did not answer for, a repository git
+said nothing about at all — is answered rather than refused: the entry keeps its row, `candidate`
+carries the reason in `why`, and `order.derived.unordered` names it. A queue that dropped what it
+could not place would be short exactly where somebody is about to land.
 
 ### `POST /v1/orchestrator/landing-queue/order`
 
@@ -4560,7 +4618,14 @@ terminal.
 
 Nothing here decides who is next: the previous holder left the queue when its landing was recorded,
 and the arithmetic moved on without being told. What this adds is the one thing arithmetic cannot
-do, which is reach the session that is now at the front — the relay a person used to type by hand.
+do, which is reach the session that now holds the turn — the relay a person used to type by hand.
+
+**It follows `candidate.turn` and never `holder`.** The entry it types into is the first of this
+repository's ready candidates, and the `holder` in the answer below is that entry. When no entry
+holds the turn — every line still working, or every one unprovable — the route refuses
+`no_ready_candidate`: nothing is typed, no receipt is written, and the entry carrying the legacy
+`holder` flag is never notified in its place. The refusal carries `unordered`, one row per entry
+with the reason it is not a candidate.
 
 ```json
 {"ok":true,"repository":"/Users/me/code/clawdline","delivered":true,"reason":"delivered",
@@ -4585,8 +4650,9 @@ sharing one, and the `GET` above named as the authority over the sentence a read
 | `bad_request` | 400 | `project` was missing, relative, or not inside a Git repository |
 | `forbidden` | 403 | no orchestrator token |
 | `queue_empty` | 409 | nothing is outstanding in that repository, so there is no slot to hand on |
+| `no_ready_candidate` | 409 | the queue has entries and none of them holds the turn; `unordered` names each one and why. Nothing was typed and no receipt was written |
 | `holder_busy` | 409 | the holder's session would read typed words as an answer to a menu; nothing was sent and no receipt was written |
-| `holder_unreachable` | 409 | the entry at the front has no Clawdline session to type into |
+| `holder_unreachable` | 409 | the ready candidate holding the turn has no Clawdline session to type into |
 | `handoff_delivery_failed` | 502 | the line could not be typed; no receipt was written |
 
 ### `GET /v1/orchestrator/storage`
