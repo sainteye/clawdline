@@ -249,16 +249,16 @@ enum OrchestratorLandingQueue {
                 reasons.append(reason)
             }
             let root = sorted.first { $0.task.rootSessionId != nil }?.task
-            let tasks = sorted.map(\.member)
-            let candidacy = candidacy(reasons: reasons, tasks: tasks, branches: branches)
+            let memberTasks = sorted.map(\.member)
+            let ready = candidacy(reasons: reasons, tasks: memberTasks, branches: branches)
             return Member(
                 rootKey: key, digest: rootKeyDigest(key),
                 label: sorted.compactMap { $0.task.rootLabel }.first,
                 sessionID: root?.rootSessionId,
                 reasons: reasons,
                 since: sorted.first?.member.since ?? now,
-                tasks: tasks, paths: paths,
-                target: candidacy.target, notCandidate: candidacy.notCandidate)
+                tasks: memberTasks, paths: paths,
+                target: ready.target, notCandidate: ready.notCandidate)
         }.sorted { first, second in
             first.since == second.since ? first.digest < second.digest : first.since < second.since
         }
@@ -819,9 +819,9 @@ enum OrchestratorLandingQueue {
     /// dispatched is terminal-looking, so it can be called forward while the thing it would land
     /// is not the thing anybody agreed to; and the queue's own answer is a *reading*, taken before
     /// this message was typed, of a shared checkout that other roots are still writing in. So the
-    /// notice also asks for the two re-reads that cost seconds — `HEAD`, `git status` and the
-    /// index in the reader's own checkout — rather than assuming the sentence it is holding is
-    /// still true.
+    /// notice also asks for the re-reads that cost seconds — `HEAD`, `git status` and the index
+    /// in the reader's own checkout — rather than assuming the sentence it is holding is still
+    /// true.
     static func slotNotice(repository: String, entry: Entry, total: Int,
                            previous: String?, contended: [Contention]) -> String {
         let position = entry.position.map(String.init) ?? "unplaced"

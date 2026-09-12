@@ -539,8 +539,8 @@ func landingQueueSameDerived(_ first: [OrchestratorLandingQueue.Entry],
                              _ second: [OrchestratorLandingQueue.Entry]) -> Bool {
     let left = landingQueueDerived(first), right = landingQueueDerived(second)
     return left.count == right.count && zip(left, right).allSatisfy {
-        $0.digest == $1.digest && $0.target == $1.target && $0.order == $1.order
-            && $0.of == $1.of && $0.turn == $1.turn
+        $0.0.digest == $0.1.digest && $0.0.target == $0.1.target && $0.0.order == $0.1.order
+            && $0.0.of == $0.1.of && $0.0.turn == $0.1.turn
     }
 }
 
