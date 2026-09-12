@@ -874,9 +874,18 @@ result-verified、transport-delivered、observed 與 acknowledged 是分開的�
 **不要開一個 while loop 在那裡等。** 每隔一段時間、在使用者問起時查一次就好；child 動輒十幾分鐘，
 把 root session 綁在輪詢上是最貴的用法。
 
-正常流程採事件驅動：durable `task_finished`、progress、notification 或 landing 事件喚醒 Root；
-Root 先觀察並整合交付，再啟動相依工作。Worker 不得自行啟動 peer 或下游 task，否則可能與 Root
-的精確樹整合競爭，或把同一個相依工作啟動兩次。只有沒有事件時才使用以下 watchdog 門檻：
+正常流程採事件驅動，而會進到 root 終端機的事件有三種：durable `task_finished` 完成通知、
+file-wait 的 release notice，以及經由 `POST /v1/orchestrator/messages` 送達的 peer message。
+其中之一喚醒 Root；Root 先觀察並整合交付，再啟動相依工作。Worker 不得自行啟動 peer 或下游 task，
+否則可能與 Root 的精確樹整合競爭，或把同一個相依工作啟動兩次。
+
+**progress note 與 `notify` 都不在其中。** progress note 留在 task 紀錄與 `inflight` 列上，是給讀
+那份紀錄的人看的狀態，不會被打進任何 root 的 session；`notify` 是送到人手機上的 WebPush。
+2026-09-11 量到：一個 child 送出兩則 progress note，第二則直接向它的 root 提問，root 兩則都沒收到，
+child 只好自己決定。所以 child 需要 root 拍板時，就停在那裡、把手上的東西 commit、把問題寫進
+`result.json` 的 summary——那才是 root 真的收得到的訊號。
+
+只有沒有事件時才使用以下 watchdog 門檻：
 
 - queued 或 spawning：90 秒後做一次精簡檢查；
 - 健康的 briefed／working 開發：task、progress 與 worktree 都 15 分鐘沒有活動後，做一次精簡檢查；

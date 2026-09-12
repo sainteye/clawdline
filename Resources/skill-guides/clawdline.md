@@ -987,10 +987,21 @@ correcting the cause. Reconciliation is bounded and never rewrites a historical 
 routinely run for ten or twenty minutes, and tying the root session to a poll is the most expensive
 way to use this.
 
-The normal chain is event-driven: a durable `task_finished`, progress, notification or landing
-event wakes the Root; the Root observes and integrates the result, then starts any dependent work.
-A worker must not autonomously start a peer or downstream task, because it can race integration or
-start the dependency twice. Use these watchdog thresholds only when no event arrives:
+The normal chain is event-driven, and three events reach a root's terminal: the durable
+`task_finished` completion notice, a file-wait release notice, and a peer message through
+`POST /v1/orchestrator/messages`. One of those wakes the Root; the Root observes and integrates the
+result, then starts any dependent work. A worker must not autonomously start a peer or downstream
+task, because it can race integration or start the dependency twice.
+
+**A progress note and `notify` are not among them.** A progress note is kept on the task record and
+on `inflight` rows — status for whoever reads those, with nothing typing it into a root's session —
+and `notify` is a WebPush to the person's phone. Measured on 2026-09-11: a child sent two progress
+notes, the second asking its root a question outright; the root received neither, and the child
+decided alone. So a child that needs a decision from its root stops there, commits what it has, and
+writes `result.json` with the question in its summary, because that is the signal a root does
+receive.
+
+Use these watchdog thresholds only when no event arrives:
 
 - queued or spawning: one compact check after 90 seconds;
 - healthy briefed/working code: one compact check after 15 minutes without task, progress or
