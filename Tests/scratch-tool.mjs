@@ -103,10 +103,11 @@ const toolDoor = (scratchRoot, cwd, foreign = false) => {
 };
 // `path` is the PATH the tool sees, which is how "owners" below puts a process table in front of it;
 // every other run gets this runner's own.
-const runTool = (args, { scratchRoot = root, cwd = repo, input, foreign = false, path = process.env.PATH } = {}) => {
+const runTool = (args, { scratchRoot = root, cwd = repo, input, foreign = false, path = process.env.PATH,
+                         tool = TOOL } = {}) => {
     toolDoor(scratchRoot, cwd, foreign);
     args.forEach((arg, at) => { if (arg === "--root" && at + 1 < args.length) toolDoor(args[at + 1], cwd, foreign); });
-    return spawnSync("/bin/bash", [TOOL, ...args], {
+    return spawnSync("/bin/bash", [tool, ...args], {
         cwd,
         input,
         encoding: "utf8",
@@ -239,6 +240,81 @@ leavesNothing("an index run leaves nothing");
 const piped = runTool(["snapshot-run", "--subject", "worktree", "--", "cat"], { input: "through standard input\n" });
 check("standard input reaches the command", piped.stdout === "through standard input\n", JSON.stringify(piped.stdout));
 leavesNothing("a run reading standard input leaves nothing");
+
+// ---- A tracked file the copy's own .gitignore matches ---------------------------------------------
+
+// `git add -A` obeys the ignore rules, and a repository is allowed to track a file that matches its
+// own. Measured on 2026-09-11 while landing a82f062d: the snapshot's index held 724 files where the
+// commit has 725, the missing one being `tools/ubuntu-core-probe/Package.resolved`, tracked and
+// matching `.gitignore:17`. It was on disk throughout — everything that asks git for the file list
+// simply ran on a tree one file short, and the suite went green. This fixture is that shape twice
+// over: a tracked file matching a name rule, a tracked file inside an ignored directory, and a
+// tracked file the worktree overlay deletes, which must stay deleted.
+console.log("tracked files the copy's .gitignore matches");
+const ignoring = join(sandbox, "ignoring-repo");
+mkdirSync(ignoring);
+git(ignoring, ["init", "-q"]);
+writeFileSync(join(ignoring, ".gitignore"), "Package.resolved\nbuilt/\n");
+writeFileSync(join(ignoring, "Package.resolved"), "pinned\n");
+mkdirSync(join(ignoring, "built"));
+writeFileSync(join(ignoring, "built", "kept.txt"), "kept\n");
+writeFileSync(join(ignoring, "plain.txt"), "plain\n");
+writeFileSync(join(ignoring, "removed.txt"), "removed\n");
+git(ignoring, ["add", "-f", ".gitignore", "Package.resolved", "built/kept.txt", "plain.txt", "removed.txt"]);
+git(ignoring, ["commit", "-qm", "tracked in spite of the ignore rule"]);
+rmSync(join(ignoring, "removed.txt"));
+check("the fixture repository does track a file its own .gitignore matches",
+    git(ignoring, ["ls-files", "-i", "-c", "--exclude-standard"]).split("\n").filter(Boolean).sort()
+        .join(" ") === "Package.resolved built/kept.txt");
+
+const listing = 'printf "files=%s\\n" "$(git ls-files | tr "\\n" " ")"';
+const stagedIn = (result) => (parse(result.stdout).files || "").trim().split(" ").filter(Boolean);
+
+const ignoredWorktree = runTool(["snapshot-run", "--subject", "worktree", "--", "/bin/sh", "-c", listing],
+    { cwd: ignoring });
+const worktreeFiles = stagedIn(ignoredWorktree);
+check("a worktree snapshot stages the tracked files its .gitignore matches",
+    ignoredWorktree.status === 0 && worktreeFiles.includes("Package.resolved")
+        && worktreeFiles.includes("built/kept.txt"),
+    `${said(ignoredWorktree)}; staged: ${worktreeFiles.join(" ")}`);
+check("and a tracked file the overlay deleted stays deleted rather than being added back",
+    !worktreeFiles.includes("removed.txt"), worktreeFiles.join(" "));
+leavesNothing("a worktree snapshot of that repository leaves nothing");
+
+const ignoredIndex = runTool(["snapshot-run", "--subject", "index", "--", "/bin/sh", "-c", listing],
+    { cwd: ignoring });
+const indexFiles = stagedIn(ignoredIndex);
+check("an index snapshot stages the tracked files its .gitignore matches",
+    ignoredIndex.status === 0 && indexFiles.includes("Package.resolved")
+        && indexFiles.includes("built/kept.txt"),
+    `${said(ignoredIndex)}; staged: ${indexFiles.join(" ")}`);
+check("and the index subject still carries the file the worktree deleted, because it is staged",
+    indexFiles.includes("removed.txt"), indexFiles.join(" "));
+leavesNothing("an index snapshot of that repository leaves nothing");
+
+// The control. Both subjects prove their copy before the command runs, and a proof nobody has seen
+// refuse is a claim with nothing behind it: this is the tool with the add-by-name taken out and the
+// proof left in, which is exactly the state the defect above was found in.
+const blindTool = join(sandbox, "scratch-without-the-add-by-name.sh");
+{
+    const addByName = "in_tree git add -f --pathspec-from-file=- --pathspec-file-nul";
+    const original = readFileSync(TOOL, "utf8");
+    const blinded = original.split(addByName).join("cat > /dev/null");
+    if (original.split(addByName).length !== 3) {
+        stop(`the tool no longer adds the subject's files by name twice, so this control proves nothing`);
+    }
+    writeFileSync(blindTool, blinded, { mode: 0o755 });
+}
+for (const subject of ["worktree", "index"]) {
+    const a = subject === "index" ? "an" : "a";
+    const blind = runTool(["snapshot-run", "--subject", subject, "--", "/bin/sh", "-c", listing],
+        { cwd: ignoring, tool: blindTool });
+    check(`control: ${a} ${subject} copy that lost those files is refused as scratch_snapshot_incomplete`,
+        blind.status === 70 && blind.stderr.includes("scratch_snapshot_incomplete"), said(blind));
+    check(`control: and the ${subject} command never ran in it`, !blind.stdout.includes("files="),
+        JSON.stringify(blind.stdout));
+    leavesNothing(`control: a refused ${subject} copy leaves nothing`);
+}
 
 // ---- Failure --------------------------------------------------------------------------------------
 

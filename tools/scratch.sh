@@ -79,7 +79,7 @@ remove        Remove one entry. Refuses anything that is not a directory directl
 exit status   COMMAND's own for snapshot-run, otherwise 0; a signal ends snapshot-run by that same
               signal once the entry is gone. Refusals, with the typed code on stderr:
   64  scratch_usage, scratch_ttl_required
-  70  scratch_not_in_git, scratch_snapshot_failed
+  70  scratch_not_in_git, scratch_snapshot_failed, scratch_snapshot_incomplete
   73  scratch_root_not_absolute, scratch_root_not_normalized, scratch_root_symlink,
       scratch_root_not_directory, scratch_root_not_owned, scratch_root_uncreatable
   74  scratch_cleanup_failed
@@ -327,12 +327,31 @@ in_tree() {
   )
 }
 
+# Paths read NUL-separated from standard input, printed the same way, minus the ones the snapshot
+# does not have. `-L` beside `-e`, because a link whose target is missing is still a path the copy
+# holds; a path the overlay deleted is one it does not, and a deletion is part of the subject.
+present_in_tree() {
+  local path
+  while IFS= read -r -d '' path; do
+    [ -e "$ENTRY/tree/$path" ] || [ -L "$ENTRY/tree/$path" ] || continue
+    printf '%s\0' "$path"
+  done
+}
+
+# How many paths a NUL-separated list holds. Counting the separators rather than the lines, because
+# a path may contain a newline and `wc -l` would then count one file twice.
+count_nul() {  # reads the list on standard input
+  local n
+  n=$(tr -dc '\0' | wc -c) || return 1
+  printf '%s' "$((n))"
+}
+
 # The recipe AGENTS.md used to print, step for step, with one correction measured on 2026-09-11:
 # `git diff HEAD` refreshes the stat cache of the index it reads and writes that index back — with
 # and without GIT_OPTIONAL_LOCKS=0, on git 2.38.1 — so the worktree subject reads a private copy of
 # the index, and the shared index is never written.
 materialise() {  # $1 subject, $2 repository top level
-  local subject=$1 top=$2 index tree_id
+  local subject=$1 top=$2 index tree_id snapshot_tree have both
   mkdir -- "$ENTRY/tree" "$ENTRY/tmp" || return 1
   cd -- "$top" || return 1
   case $subject in
@@ -359,7 +378,40 @@ materialise() {  # $1 subject, $2 repository top level
   # `tools/check-version-strings.py` asks git for the files it scans, so a snapshot that is not a
   # repository fails closed with `version_scan_no_files` before a single check runs. Staging is
   # enough; nothing reads a commit.
-  in_tree git init -q && in_tree git add -A
+  in_tree git init -q && in_tree git add -A || return 1
+  # `git add -A` obeys the copy's own `.gitignore`, and a repository may track a file that matches
+  # it. Measured on 2026-09-11 while landing a82f062d: the snapshot's index held 724 files where the
+  # commit has 725, and the missing one was `tools/ubuntu-core-probe/Package.resolved`, tracked and
+  # matching `.gitignore:17`. It was on disk the whole time — everything that asks git for the file
+  # list, `git ls-files` and `tools/check-version-strings.py` among them, simply ran on a tree one
+  # file short and went green. So the paths the subject is known to hold are added by name, and the
+  # snapshot then has to prove it is the tree it was taken from before the command runs in it.
+  case $subject in
+    index)
+      git ls-tree -r -z --name-only "$tree_id" \
+        | in_tree git add -f --pathspec-from-file=- --pathspec-file-nul || return 1
+      snapshot_tree=$(in_tree git write-tree) || return 1
+      [ "$snapshot_tree" = "$tree_id" ] || die $EX_SNAPSHOT scratch_snapshot_incomplete \
+        "the snapshot in $ENTRY/tree is tree $snapshot_tree, not the $tree_id it was taken from"
+      ;;
+    worktree)
+      # There is no tree to compare against — the subject is an overlay nobody has written down —
+      # so the weaker true thing is proved instead: every path the source repository tracks and the
+      # copy has is in the copy's index. The list comes from the private index copy, so reading it
+      # still writes nothing shared.
+      GIT_INDEX_FILE="$ENTRY/index" git ls-files -z | present_in_tree > "$ENTRY/tracked" || return 1
+      if [ -s "$ENTRY/tracked" ]; then
+        in_tree git add -f --pathspec-from-file=- --pathspec-file-nul < "$ENTRY/tracked" || return 1
+      fi
+      in_tree git ls-files -z > "$ENTRY/staged" || return 1
+      # A subset test that does not care what is in a path: the union is no larger than the
+      # snapshot's own list exactly when the snapshot already holds every tracked path.
+      have=$(sort -z -u < "$ENTRY/staged" | count_nul) || return 1
+      both=$(cat -- "$ENTRY/tracked" "$ENTRY/staged" | sort -z -u | count_nul) || return 1
+      [ "$both" = "$have" ] || die $EX_SNAPSHOT scratch_snapshot_incomplete \
+        "the snapshot in $ENTRY/tree is missing $((both - have)) of the files $top tracks"
+      ;;
+  esac
 }
 
 signal_number() {

@@ -110,7 +110,22 @@ Standard input reaches the command.
   question only the session that is staging may ask.
 - Both subjects then run `git init -q && git add -A` inside the copy, with every inherited `GIT_*`
   repository variable unset, so that `tools/check-version-strings.py` finds files to scan instead of
-  failing closed with `version_scan_no_files`.
+  failing closed with `version_scan_no_files`. **`git add -A` obeys the copy's own `.gitignore`, and
+  a repository is allowed to track a file that matches it.** Measured on 2026-09-11 while landing
+  `a82f062d`: the snapshot's index held 724 files where the commit has 725, and the one it dropped
+  was `tools/ubuntu-core-probe/Package.resolved`, tracked and matching `.gitignore:17`. The file was
+  in the copy the whole time; everything that asks git for the file list — `git ls-files`,
+  `tools/check-version-strings.py` — simply ran on a tree one file short, and the suite went green.
+  So the subject's own paths are added by name as well: `git ls-tree -r "$tree_id"` for the index,
+  and for the worktree the paths the source repository tracks that the copy still has, read from the
+  private index copy.
+- **The copy then proves it is the subject, before the command runs in it.** A copy that cannot be
+  proved is refused as `scratch_snapshot_incomplete`, and the entry goes the way every other refusal
+  leaves it. The index subject proves the strong thing, because it has a tree to name: `git
+  write-tree` inside the copy is the same tree the snapshot was taken from. The worktree subject has
+  no such tree — the subject is an overlay nobody has written down — so it proves the weaker true
+  thing: every path the source repository tracks and the copy has is in the copy's index. A path the
+  overlay deleted stays deleted, because a deletion is part of what the snapshot is for.
 - **`--keep`** keeps the entry after the command exits and prints its path on stderr. A kept entry is
   a directory a session keeps across tool calls, so its marker is rewritten the way `new` writes one:
   the nearest `claude` or `codex` ancestor as owner, or `null`, and `keep_until` `--ttl-hours` from
@@ -152,7 +167,7 @@ Removes one entry, and refuses — leaving the path untouched — anything that 
 |---|---|---|
 | the command's | — | `snapshot-run` passes the command's status through |
 | 64 | `scratch_usage`, `scratch_ttl_required` | bad arguments; no owner can be proved and no `--ttl-hours` was given |
-| 70 | `scratch_not_in_git`, `scratch_snapshot_failed` | nothing to snapshot; the copy could not be made (the command never ran, the entry is gone) |
+| 70 | `scratch_not_in_git`, `scratch_snapshot_failed`, `scratch_snapshot_incomplete` | nothing to snapshot; the copy could not be made, or could not be proved to be the subject (the command never ran, the entry is gone) |
 | 73 | `scratch_root_not_absolute`, `scratch_root_not_normalized`, `scratch_root_symlink`, `scratch_root_not_directory`, `scratch_root_not_owned`, `scratch_root_uncreatable` | the root is refused — before anything is created |
 | 74 | `scratch_cleanup_failed` | an entry could not be removed; the message names it and the command's own status |
 | 77 | `scratch_not_under_root`, `scratch_not_an_entry`, `scratch_marker_missing`, `scratch_marker_unknown`, `scratch_owner_live`, `scratch_owner_unknown` | `remove` refused the path and left it untouched |
