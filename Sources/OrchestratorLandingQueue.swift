@@ -308,6 +308,14 @@ enum OrchestratorLandingQueue {
     /// than false, so it is reported first; a live task is the registry's own answer and disqualifies
     /// the entry whatever git says; and of the two remaining facts the target is asked for first,
     /// because it is the one whose absence used to read as `main`.
+    ///
+    /// **Liveness is asked of the tasks, not of the reasons.** ``Reason`` answers "why is this in
+    /// the queue" and reports ``Reason/pendingLanding`` in preference to ``Reason/liveWork``, so a
+    /// task that is still running under a root that has already declared its landing obligation
+    /// contributes `pending_landing` and nothing else. Reading liveness out of that set therefore
+    /// missed exactly the entry this whole check exists for — a line whose child is mid-flight —
+    /// and made it a ready candidate that ``advance(project:now:readiness:deliver:)`` would call
+    /// forward. ``Orchestrator/WorkVisibility`` is the fact; the reason is a label over it.
     static func candidacy(reasons: [Reason], tasks: [MemberTask],
                           branches: Orchestrator.RepositoryBranches)
         -> (target: String?, notCandidate: NotCandidate?) {
@@ -317,7 +325,9 @@ enum OrchestratorLandingQueue {
         // Two obligations naming two branches is not a target this side may choose between.
         let target = declared.count == 1 ? declared.first : nil
         if !branches.known { return (target, .repositoryUnreadable) }
-        if reasons.contains(.liveWork) { return (target, .liveWork) }
+        if reasons.contains(.liveWork) || tasks.contains(where: { $0.visibility == .live }) {
+            return (target, .liveWork)
+        }
         guard target != nil else { return (nil, .targetUnreadable) }
         let unreadable = tasks.contains { task in
             guard let branch = task.branch else { return false }

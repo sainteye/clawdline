@@ -806,6 +806,27 @@ group("a landing candidate the broker cannot prove stays visible, unordered and 
     check("with no target of its own",
           landingQueueEntry(divided, landingQueueDigest("provable"))?.member.target == nil)
 
+    // A task that is still running under a root that has already declared `landing: pending` is
+    // reported with reason `pending_landing`, because that reason wins over `live_work`. Readiness
+    // that read liveness out of the reasons therefore called this entry a ready candidate while its
+    // own task was mid-flight — the one shape "terminal tasks alone are not readiness" is about.
+    let declaredEarly = landingQueueTask(
+        id: "cc000000-0000-4000-8000-00000000002c", title: "still running", state: .briefed,
+        root: "declared-early", label: "declared-early", projectDir: repository, created: 6_000,
+        claims: ["Sources/Early.swift"],
+        landing: Orchestrator.Landing(state: .pending, target: "main", delivery: nil,
+                                      ownerRootKey: "abcd1234",
+                                      since: Date(timeIntervalSince1970: 6_000),
+                                      commit: nil, note: nil))
+    let early = landingQueueEntries([declaredEarly], repository: repository, heads: heads)
+    expect("a line that declared its landing while still working keeps its row", early.count, 1)
+    expect("its reason is the obligation it declared",
+           early.first?.member.reasons, [OrchestratorLandingQueue.Reason.pendingLanding])
+    expect("and it is not a ready candidate, because a task of it is live",
+           early.first?.member.notCandidate, OrchestratorLandingQueue.NotCandidate.liveWork)
+    check("so it holds no order and no turn",
+          early.first?.candidateOrder == nil && early.first?.turn == false)
+
     // git said nothing at all. Membership keeps its fail-safe direction — every line stays
     // visible — and ordering takes the opposite one, because the two mistakes cost different
     // amounts.
