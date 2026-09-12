@@ -188,7 +188,14 @@ function refusal(error, language) {
 export function bindWorktreeLifecycle(elements, environment = {}) {
     const doc = environment.document || document;
     const language = () => (doc.documentElement && doc.documentElement.lang) || "en";
-    const state = { place: null, answer: null, loading: 0, active: false };
+    const state = { place: null, answer: null, loading: 0, active: false,
+        autoRefreshAttempted: false };
+
+    function needsFirstObservation(answer) {
+        const snapshot = answer && answer.projectWorktreeLifecycle;
+        return !!(snapshot && snapshot.complete !== true && snapshot.error
+            && snapshot.error.code === "not_observed");
+    }
 
     function draw(answer, note) {
         const snapshot = answer && answer.projectWorktreeLifecycle;
@@ -278,12 +285,23 @@ export function bindWorktreeLifecycle(elements, environment = {}) {
         }
     }
 
-    function enter(place) {
+    async function enter(place) {
         state.active = true; state.place = place; state.answer = null;
+        state.autoRefreshAttempted = false;
         elements["project-worktree-lifecycle"].hidden = false;
         clear(elements["project-worktree-rows"]);
         elements["project-worktree-summary"].textContent = "";
-        return load(false);
+        const initialTicket = state.loading + 1;
+        await load(false);
+        // A cached `not_observed` result means the backend has not looked yet, not that the
+        // repository has no worktrees. Perform one bounded observation on first entry so the
+        // person does not land on an apparently empty page. This deliberately does not retry:
+        // typed refusal stays visible and the explicit Refresh button remains the next action.
+        if (!state.active || state.place !== place || state.loading !== initialTicket
+            || state.autoRefreshAttempted || !needsFirstObservation(state.answer)
+            || typeof environment.refresh !== "function") return;
+        state.autoRefreshAttempted = true;
+        return load(true);
     }
     function leave() {
         state.active = false; state.place = null; state.answer = null; ++state.loading;

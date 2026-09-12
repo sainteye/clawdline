@@ -70,8 +70,8 @@ button.worktree-owner-link:hover { border-color: var(--accent-ed); background: v
 .worktree-next-owner { color: var(--faint); }
 
 @media (max-width: 620px) {
-    .project-row-wrap { grid-template-columns: 1fr; }
-    .project-row-worktrees { min-height: 42px; width: 100%; }
+    .project-row-wrap { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: stretch; }
+    .project-row-worktrees { min-width: 76px; min-height: 42px; width: auto; padding-inline: 9px; }
     .project-worktree-heading, .worktree-card-head { align-items: stretch; flex-direction: column; }
     #project-worktree-refresh, .worktree-owner, .worktree-owner-link { max-width: none; width: 100%; }
     .worktree-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); }

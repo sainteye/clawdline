@@ -936,6 +936,13 @@ check(linked.indexOf("pages.css") < linked.indexOf("projects.css"),
       "after pages.css, which owns the frame this page sits in");
 check(linked.indexOf("projects.css") < linked.indexOf("worktrees.css"),
       "worktree lifecycle styles extend the Project page after its base styles");
+const worktreeCSS = read("Resources/web/app/css/worktrees.css");
+const mobileWorktreeCSS = /@media \(max-width: 620px\) \{([\s\S]*?)\n\}/.exec(worktreeCSS)?.[1] || "";
+check(/\.project-row-wrap\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/.test(
+    mobileWorktreeCSS),
+    "the mobile Project card keeps Worktrees as a compact right-side action");
+check(!/\.project-row-worktrees\s*\{[^}]*width:\s*100%/.test(mobileWorktreeCSS),
+    "the mobile Worktrees action never expands into a distracting second row");
 
 const liveSource = read("Resources/web/app/js/net/live.js");
 check(liveSource.includes("/v1/orchestrator/usage/project-worktrees?project="),
@@ -1224,22 +1231,51 @@ if (placesBody) {
         const partial = { ...snapshot, complete: false,
             error: { code: "not_observed", message: "Active inventory was not observed." },
             counts: { rows: 2, active: null, staged: 0, modified: 2, untracked: 1, unknown: 1 } };
+        let partialRefreshes = 0;
         const partialController = lifecycle.bindWorktreeLifecycle(partialElements, {
             document: doc,
             read: async () => ({ projectWorktreeLifecycle: partial,
                 machine: "authenticated-mac-one" }),
-            refresh: async () => { throw Object.assign(new Error("Refresh is busy"), {
+            refresh: async () => { partialRefreshes++; throw Object.assign(new Error("Refresh is busy"), {
                 code: "worktree_lifecycle_busy", status: 429
             }); }
         });
         await partialController.enter({ id: snapshot.project.id, boardProjectId: snapshot.project.id,
             label: "clawdline", path: "/repo" });
+        equal(partialRefreshes, 1,
+            "a first not-observed cache result performs one bounded automatic observation");
         match(partialElements["project-worktree-summary"].textContent,
             /2 worktrees · — active · 0 staged · 2 modified · 1 untracked · 1 unknown/,
             "partial snapshots retain every independently known count");
+        match(partialElements["project-worktree-status"].textContent, /Refresh is busy.*not observed/i,
+            "the automatic observation refusal remains visible beside the cached condition");
         partialElements["project-worktree-refresh"].click(); await flush();
+        equal(partialRefreshes, 2,
+            "a later explicit click is separate; the automatic path never retry-loops");
         match(partialElements["project-worktree-status"].textContent, /Refresh is busy.*not observed/i,
             "latest refresh refusal remains visible beside the prior incomplete condition");
+
+        const coldElements = {};
+        for (const id of ["project-worktree-lifecycle", "project-worktree-status",
+            "project-worktree-summary", "project-worktree-rows", "project-worktree-refresh"])
+            coldElements[id] = new FakeNode(doc, id.includes("refresh") ? "button" : "div", id);
+        let coldRefreshes = 0;
+        const coldController = lifecycle.bindWorktreeLifecycle(coldElements, {
+            document: doc,
+            read: async () => ({ projectWorktreeLifecycle: { ...partial, rows: [], counts: {
+                rows: null, active: null, staged: null, modified: null, untracked: null, unknown: null
+            } }, machine: "authenticated-mac-one" }),
+            refresh: async () => { coldRefreshes++; return {
+                projectWorktreeLifecycle: snapshot, machine: "authenticated-mac-one"
+            }; }
+        });
+        await coldController.enter({ id: snapshot.project.id, boardProjectId: snapshot.project.id,
+            label: "clawdline", path: "/repo" });
+        equal(coldRefreshes, 1, "the empty first visit observes the Mac exactly once");
+        equal(coldElements["project-worktree-rows"].querySelectorAll(".worktree-card").length, 2,
+            "the first visit renders the newly observed worktrees without a second user action");
+        match(coldElements["project-worktree-status"].textContent, /Observation refreshed/i,
+            "the automatic observation remains visibly read-only and reports completion");
 
         const localPlaces = module.localProjectPlaces({ places: [{ id: "local-place",
             path: "/repo" }] }, "this-mac");
