@@ -350,6 +350,35 @@ func runCloudTransportTests() async throws -> Int {
         channel: snapshot.ch, sequence: Int64(snapshot.seq), kind: .delivered),
         "an authenticated ack exposes the correlated channel and sequence")
 
+    let rejectionTask = Task {
+        try await nextOutboundReceipt(from: transport.outboundReceipts)
+    }
+    try await transport.handleAuthenticatedFrameForTesting(
+        "{\"type\":\"publish_error\",\"ch\":\"s/machine-1/session-1\",\"seq\":1,"
+            + "\"code\":\"clock_skew\",\"field\":\"ts\"}")
+    let rejection = try await rejectionTask.value
+    try require(rejection == CloudOutboundTransportReceipt(
+        channel: snapshot.ch, sequence: 1,
+        kind: .peerRejected(CloudOutboundPeerRejection(
+            code: .clockSkew, field: .timestamp, disposition: .retryNewAttempt))),
+        "publish_error exposes closed code/field and retry-new-attempt disposition")
+    let futureRejectionTask = Task {
+        try await nextOutboundReceipt(from: transport.outboundReceipts)
+    }
+    try await transport.handleAuthenticatedFrameForTesting(
+        "{\"type\":\"publish_error\",\"ch\":\"s/machine-1/session-1\",\"seq\":1,"
+            + "\"code\":\"future_code\",\"field\":\"future_field\"}")
+    let futureRejection = try await futureRejectionTask.value
+    try require(futureRejection?.kind == .peerRejected(CloudOutboundPeerRejection(
+        code: .unknown, field: .unknown, disposition: .terminal)),
+        "unknown publish_error code is terminal and cannot opt an old client into replay")
+    try await transport.handleAuthenticatedFrameForTesting(
+        "{\"type\":\"error\",\"code\":\"malformed_envelope\",\"message\":\"redacted\"}")
+    try await transport.handleAuthenticatedFrameForTesting("{\"type\":\"future_frame\"}")
+    let stateAfterNonfatalFrames = await transport.currentState()
+    try require(stateAfterNonfatalFrames == .ready,
+                "uncorrelated error and unknown authenticated frame do not discard the socket")
+
     // The exact receipt assertion above independently proves authenticated parsing. Drive the
     // shared actor-isolated offer seam on a fresh, unopened transport so neither an iterator nor
     // socket/handshake scheduling can become the quantity under test.
@@ -587,15 +616,14 @@ private func runCloudTransportReconnectOwnershipTests() async throws -> Int {
         maximumBackoff: 8
     )
     try await unexpectedTransport.connect(role: .machine)
-    try await waitUntil("unexpected frames drive three reconnect attempts") {
-        await unexpectedClock.recordedSleeps().count >= 3
-    }
+    try await Task.sleep(nanoseconds: 30_000_000)
     let unexpectedSockets = unexpectedProbe.snapshot()
+    let unexpectedSleeps = await unexpectedClock.recordedSleeps()
     await unexpectedTransport.shutdown()
     try require(
-        unexpectedSockets.opened == 3 && unexpectedSockets.closed == 3
-            && unexpectedSockets.live == 0 && unexpectedSockets.peak == 1,
-        "a frame rejected by handle disposes every authenticated predecessor"
+        unexpectedSockets.opened == 1 && unexpectedSockets.live == 1
+            && unexpectedSockets.peak == 1 && unexpectedSleeps.isEmpty,
+        "an unsupported authenticated frame is ignored without entering reconnect"
     )
 
     let handledProbe = CloudReconnectSocketProbe()
@@ -1406,6 +1434,219 @@ private func runCloudTransportInboundBudgetTests() async throws -> Int {
 
     await transport.shutdown()
     await relay.stop()
+    return checks
+}
+
+private final class CloudOutboundCorrectionStore: CloudSpoolStore, @unchecked Sendable {
+    enum Refusal: Equatable { case none, firstSeal, everySent }
+    private let lock = NSLock()
+    private var state = CloudSpoolPersistedState()
+    private let refusal: Refusal
+    private var didRefuseSeal = false
+    private var refusalCount = 0
+
+    init(refusal: Refusal) { self.refusal = refusal }
+
+    func load() throws -> CloudSpoolPersistedState {
+        lock.lock(); defer { lock.unlock() }
+        return state
+    }
+
+    func commit(_ candidate: CloudSpoolPersistedState) throws {
+        lock.lock(); defer { lock.unlock() }
+        if refusal == .firstSeal, !didRefuseSeal,
+           candidate.rows.contains(where: { $0.state == .ready }) {
+            didRefuseSeal = true
+            refusalCount += 1
+            throw CloudDurableStoreFailure.persist
+        }
+        if refusal == .everySent, candidate.rows.contains(where: { $0.state == .sent }) {
+            refusalCount += 1
+            throw CloudDurableStoreFailure.oversized
+        }
+        state = candidate
+    }
+
+    func snapshot() -> (state: CloudSpoolPersistedState, refusals: Int) {
+        lock.lock(); defer { lock.unlock() }
+        return (state, refusalCount)
+    }
+}
+
+func runCloudOutboundCorrectionTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudTransportTestFailure(description: message) }
+    }
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x61, count: 32))
+
+    var shutdownLimits = CloudSpoolLimits()
+    shutdownLimits.attemptWindow = .milliseconds(20)
+    let shutdownStore = CloudOutboundCorrectionStore(refusal: .none)
+    let shutdownSpool = try CloudOutboundSpool(
+        store: shutdownStore, clock: CloudSystemSpoolClock(), metrics: CloudNoopSpoolMetrics(),
+        runtime: .mac, limits: shutdownLimits)
+    let shutdownTransport = CloudAppBridgeTestTransport(
+        suspendPublication: true, publicationRequiresShutdown: true)
+    let shutdownComposition = CloudDurableOutboundComposition(
+        spool: shutdownSpool, transport: shutdownTransport,
+        identity: CloudAppIdentity(
+            machineID: "durable-mac", deviceID: "durable-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey),
+        nowMilliseconds: { UInt64(Date().timeIntervalSince1970 * 1_000) })
+    try await shutdownComposition.enqueue(
+        Data("shutdown-unblocks-send".utf8), channel: "t/account/viewer", logicalID: "shutdown")
+    try await waitForCloudAppBridge("production-shaped send reaches uncancellable suspension") {
+        shutdownTransport.state().publicationStarts == 1
+    }
+    await shutdownComposition.stop { await shutdownTransport.shutdown() }
+    try await Task.sleep(nanoseconds: 30_000_000)
+    try require(shutdownTransport.state().stopped
+                    && shutdownTransport.state().publicationCancelled,
+                "socket shutdown happens before joining a production-shaped suspended send")
+    try require(shutdownStore.snapshot().state.rows.first?.state == .sent,
+                "no attempt deadline task mutates durable state after stop returns")
+    do {
+        try await shutdownComposition.enqueue(
+            Data("after-stop".utf8), channel: "t/account/viewer", logicalID: "after-stop")
+        throw CloudTransportTestFailure(description: "enqueue after stop unexpectedly succeeded")
+    } catch CloudDurableOutboundError.stopped {
+        checks += 1
+    }
+
+    var reservationLimits = CloudSpoolLimits()
+    reservationLimits.staleReservedAfter = .milliseconds(20)
+    reservationLimits.gcInterval = .milliseconds(5)
+    let reservationStore = CloudOutboundCorrectionStore(refusal: .firstSeal)
+    let reservationSpool = try CloudOutboundSpool(
+        store: reservationStore, clock: CloudSystemSpoolClock(), metrics: CloudNoopSpoolMetrics(),
+        runtime: .mac, limits: reservationLimits)
+    let reservationComposition = CloudDurableOutboundComposition(
+        spool: reservationSpool, transport: CloudAppBridgeTestTransport(),
+        identity: CloudAppIdentity(
+            machineID: "durable-mac", deviceID: "durable-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey),
+        nowMilliseconds: { UInt64(Date().timeIntervalSince1970 * 1_000) })
+    do {
+        try await reservationComposition.enqueue(
+            Data("seal-fails".utf8), channel: "t/account/viewer", logicalID: "seal-fails")
+        throw CloudTransportTestFailure(description: "injected seal failure did not fire")
+    } catch CloudDurableStoreFailure.persist {}
+    try await waitForCloudAppBridge("failed reservation has an autonomous stale wake owner") {
+        await reservationSpool.row(seq: 0)?.burnReason == .staleReservation
+    }
+    checks += 1
+    await reservationComposition.stop()
+
+    let capacityStore = CloudOutboundCorrectionStore(refusal: .everySent)
+    let capacitySpool = try CloudOutboundSpool(
+        store: capacityStore, clock: CloudSystemSpoolClock(), metrics: CloudNoopSpoolMetrics())
+    let capacityComposition = CloudDurableOutboundComposition(
+        spool: capacitySpool, transport: CloudAppBridgeTestTransport(),
+        identity: CloudAppIdentity(
+            machineID: "durable-mac", deviceID: "durable-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey),
+        nowMilliseconds: { UInt64(Date().timeIntervalSince1970 * 1_000) },
+        deadlineFailureRetryDelay: .milliseconds(5))
+    try await capacityComposition.enqueue(
+        Data("capacity".utf8), channel: "t/account/viewer", logicalID: "capacity")
+    try await waitForCloudAppBridge("structural capacity failure is visible") {
+        await capacityComposition.persistentFailureState() == .capacity
+    }
+    try await Task.sleep(nanoseconds: 30_000_000)
+    try require(capacityStore.snapshot().refusals == 1,
+                "persistent capacity refusal is not retried by a fixed 1 Hz full-store loop")
+    await capacityComposition.stop()
+
+    let capDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-window-cap-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: capDirectory, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: capDirectory) }
+    let capFile = capDirectory.appendingPathComponent("spool.json")
+    let capStore = try CloudFileSpoolStore(url: capFile)
+    let capSpool = try CloudOutboundSpool(
+        store: capStore, clock: CloudSystemSpoolClock(), metrics: CloudNoopSpoolMetrics())
+    let mebibyteFrame = Data(repeating: 0x61, count: 1_048_576)
+    for index in 0..<4 {
+        let seq = try await capSpool.reserve(
+            channel: .t, logicalID: "cap-\(index)", ownerID: nil,
+            recipient: "viewer", record: .int(Int64(index)))
+        try await capSpool.seal(seq: seq, sealedEnvelope: mebibyteFrame)
+        _ = try await capSpool.sendNext { _ in }
+    }
+    let capCandidate = try await capSpool.reserve(
+        channel: .t, logicalID: "cap-over", ownerID: nil,
+        recipient: "viewer", record: .int(9))
+    try await capSpool.seal(seq: capCandidate, sealedEnvelope: Data([0x62]))
+    let capBlocked = try await capSpool.sendNext { _ in }
+    let durableSize = try FileManager.default.attributesOfItem(atPath: capFile.path)[.size] as? Int
+    try require(capBlocked == .blockedWindowFull(currentRows: 4, currentBytes: 4_194_304),
+                "one byte beyond the default raw-frame cap is typed window refusal")
+    try require(durableSize.map { $0 < CloudFileSpoolStore.maximumBytes } == true,
+                "the full base64-and-metadata file reaches the typed cap below its ceiling")
+
+    func strictRecord(channel: String, logicalID: String) -> CloudJSONValue {
+        .object([
+            "v": .int(2), "ch": .string(channel), "class": .string("stream"),
+            "key_id": .string("key-1"), "logical_id": .string(logicalID),
+            "payload_bytes": .int(7),
+            "payload_sha256": .string(String(repeating: "a", count: 64)),
+            "sender": .string("device-1"),
+        ])
+    }
+    func strictFrame(seq: Int64, channel: String, timestamp: Int64) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "type": "publish",
+            "envelope": [
+                "v": 1, "ch": channel, "seq": seq, "ts": timestamp,
+                "class": "stream", "key_id": "key-1",
+                "nonce": Data(repeating: 1, count: 12).base64EncodedString(),
+                "ct": Data(repeating: 2, count: 16).base64EncodedString(),
+                "sender": "device-1",
+                "sig": Data(repeating: 3, count: 64).base64EncodedString(),
+            ],
+        ], options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+    let freshnessStore = CloudOutboundCorrectionStore(refusal: .none)
+    let freshnessSpool = try CloudOutboundSpool(
+        store: freshnessStore, clock: CloudSystemSpoolClock(), metrics: CloudNoopSpoolMetrics(),
+        strictPersistedFrameValidation: true)
+    let freshnessNow = Int64(Date().timeIntervalSince1970 * 1_000)
+    let staleTimestamp = freshnessNow - 241_000
+    let staleTranscript = try await freshnessSpool.reserve(
+        channel: .t, logicalID: "stale-t", ownerID: nil, recipient: "t/viewer",
+        record: strictRecord(channel: "t/viewer", logicalID: "stale-t"))
+    try await freshnessSpool.seal(
+        seq: staleTranscript,
+        sealedEnvelope: strictFrame(
+            seq: staleTranscript, channel: "t/viewer", timestamp: staleTimestamp))
+    let staleControl = try await freshnessSpool.reserve(
+        channel: .ctl, logicalID: "stale-ctl", ownerID: "viewer", recipient: "ctl/machine",
+        record: strictRecord(channel: "ctl/machine", logicalID: "stale-ctl"))
+    try await freshnessSpool.seal(
+        seq: staleControl,
+        sealedEnvelope: strictFrame(
+            seq: staleControl, channel: "ctl/machine", timestamp: staleTimestamp))
+    let fresh = try await freshnessSpool.reserve(
+        channel: .t, logicalID: "fresh-t", ownerID: nil, recipient: "t/viewer",
+        record: strictRecord(channel: "t/viewer", logicalID: "fresh-t"))
+    try await freshnessSpool.seal(
+        seq: fresh,
+        sealedEnvelope: strictFrame(seq: fresh, channel: "t/viewer", timestamp: freshnessNow))
+    let freshDisposition = try await freshnessSpool.sendNext { _ in }
+    let freshnessState = freshnessStore.snapshot().state
+    try require(freshDisposition == .sent(seq: fresh),
+                "live selection burns stale predecessors and sends the next fresh row immediately")
+    try require(freshnessState.rows.first { $0.seq == staleTranscript }?.burnReason
+                    == .staleReadyAtRestart,
+                "transcript freshness is an explicit terminal local policy")
+    try require(freshnessState.rows.first { $0.seq == staleControl }?.burnReason
+                    == .staleReadyAtRestart,
+                "control freshness is an explicit terminal local policy")
     return checks
 }
 

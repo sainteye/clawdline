@@ -41,13 +41,63 @@ extension CloudTransport: CloudTransporting {}
 enum CloudOutboundTransportReceiptKind: Equatable, Sendable {
     case delivered
     case viewerOffline
-    case peerError
+    case peerRejected(CloudOutboundPeerRejection)
+}
+
+enum CloudPublishErrorCode: String, CaseIterable, Equatable, Sendable {
+    case badRequest = "bad_request"
+    case tooLarge = "too_large"
+    case forbidden
+    case rateLimited = "rate_limited"
+    case clockSkew = "clock_skew"
+    case unavailable
+    case `internal`
+    case legacyRefused = "legacy_refused"
+    case unknown
+}
+
+enum CloudPublishErrorField: String, CaseIterable, Equatable, Sendable {
+    case version = "v"
+    case channel = "ch"
+    case sequence = "seq"
+    case timestamp = "ts"
+    case envelopeClass = "class"
+    case keyID = "key_id"
+    case nonce
+    case ciphertext = "ct"
+    case sender
+    case signature = "sig"
+    case unknown
+}
+
+enum CloudPublishErrorDisposition: String, Equatable, Sendable {
+    case terminal
+    case retryNewAttempt = "retry_new_attempt"
+}
+
+struct CloudOutboundPeerRejection: Equatable, Sendable {
+    let code: CloudPublishErrorCode
+    let field: CloudPublishErrorField?
+    let disposition: CloudPublishErrorDisposition
 }
 
 struct CloudOutboundTransportReceipt: Equatable, Sendable {
     let channel: String
     let sequence: Int64
     let kind: CloudOutboundTransportReceiptKind
+}
+
+enum CloudDurableOutboundError: Error, Equatable, Sendable {
+    case stopped
+}
+
+enum CloudDurableOutboundFailureClass: String, Equatable, Sendable {
+    case capacity
+    case integrity
+    case permissions
+    case durableIO = "durable_io"
+    case transport
+    case other
 }
 
 struct CloudOutboundReceiptIngestionSnapshot: Equatable, Sendable {
@@ -660,28 +710,49 @@ final class CloudRefusalPublicationQueue: @unchecked Sendable {
 /// The W0-E contract remains candidate-only: this composes the already-deployed legacy-v1
 /// envelope producer and does not opt into candidate authority or raise a client floor.
 actor CloudDurableOutboundComposition {
+    typealias EnqueueStageObserver = @Sendable (
+        _ stage: String, _ durationMilliseconds: UInt64, _ outcome: String,
+        _ logicalRecordBytes: Int, _ sealedFrameBytes: Int
+    ) -> Void
+
     private let spool: CloudOutboundSpool
     private let transport: any CloudTransporting
     private let identity: CloudAppIdentity
     private let nowMilliseconds: CloudAppBridge.Milliseconds
-    private let onDeadlineFailure: @Sendable () -> Void
+    private let diagnostic: @Sendable (String) -> Void
     private let deadlineFailureRetryDelay: Duration
     private var attemptDeadlineTask: Task<Void, Never>?
     private var attemptDeadlineGeneration: UInt64 = 0
+    private var drainWorker: Task<Void, Never>?
+    private var drainRequested = false
+    private var reconnectRequested = false
+    private var drainGeneration: UInt64 = 0
+    private var stopped = false
+    private var stoppingDrainWorker: Task<Void, Never>?
+    private var stoppingDeadlineTask: Task<Void, Never>?
+    private var structuralFailure: CloudDurableOutboundFailureClass?
+    private var transientFailureCount = 0
 
     init(spool: CloudOutboundSpool, transport: any CloudTransporting,
          identity: CloudAppIdentity, nowMilliseconds: @escaping CloudAppBridge.Milliseconds,
-         onDeadlineFailure: @escaping @Sendable () -> Void = {},
+         diagnostic: @escaping @Sendable (String) -> Void = { _ in },
          deadlineFailureRetryDelay: Duration = .seconds(1)) {
         self.spool = spool
         self.transport = transport
         self.identity = identity
         self.nowMilliseconds = nowMilliseconds
-        self.onDeadlineFailure = onDeadlineFailure
+        self.diagnostic = diagnostic
         self.deadlineFailureRetryDelay = deadlineFailureRetryDelay
     }
 
-    func enqueue(_ plaintext: Data, channel: String, logicalID: String) async throws {
+    /// Producer completion is the durable seal, not a socket acknowledgement. Once the exact
+    /// frame is committed ready, this method only wakes the independently owned drain worker and
+    /// returns; a slow socket can no longer suspend snapshot/read producers behind itself.
+    func enqueue(
+        _ plaintext: Data, channel: String, logicalID: String,
+        observe: EnqueueStageObserver? = nil
+    ) async throws {
+        guard !stopped else { throw CloudDurableOutboundError.stopped }
         let spoolChannel = try Self.spoolChannel(channel)
         let payloadDigest = SHA256.hash(data: plaintext).map { String(format: "%02x", $0) }.joined()
         // Durable logical metadata carries the quota-relevant size and a one-way content identity,
@@ -693,34 +764,71 @@ actor CloudDurableOutboundComposition {
             "payload_bytes": .int(Int64(plaintext.count)),
             "payload_sha256": .string(payloadDigest), "sender": .string(identity.deviceID),
         ])
-        let sequence = try await spool.reserve(
-            channel: spoolChannel, logicalID: logicalID, ownerID: nil,
-            recipient: channel, record: logicalRecord)
+        let logicalRecordBytes = CloudOutboundSpool.chargedBytes(of: logicalRecord)
+        var stageStarted = nowMilliseconds()
+        let sequence: Int64
+        do {
+            if spoolChannel.isLatestValue {
+                sequence = try await spool.reserveLatestValue(
+                    channel: spoolChannel, logicalID: logicalID, ownerID: nil,
+                    recipient: channel, record: logicalRecord)
+            } else {
+                sequence = try await spool.reserve(
+                    channel: spoolChannel, logicalID: logicalID, ownerID: nil,
+                    recipient: channel, record: logicalRecord)
+            }
+            observe?("durable_reserve", Self.elapsed(stageStarted, nowMilliseconds()), "complete",
+                     logicalRecordBytes, 0)
+        } catch {
+            observe?("durable_reserve", Self.elapsed(stageStarted, nowMilliseconds()), "failed",
+                     logicalRecordBytes, 0)
+            recordImmediateFailure(error, stage: "durable_reserve")
+            throw error
+        }
         guard sequence >= 0 else { throw CloudAppBridgeError.sequenceExhausted }
-        let envelope = try CloudEnvelope.seal(
-            plaintext, ch: channel, seq: UInt64(sequence), ts: nowMilliseconds(),
-            envelopeClass: .stream, keyID: identity.keyID, sender: identity.deviceID,
-            masterSecret: identity.masterSecret, signingKey: identity.signingKey)
+        stageStarted = nowMilliseconds()
+        let envelope: CloudEnvelope
+        do {
+            envelope = try CloudEnvelope.seal(
+                plaintext, ch: channel, seq: UInt64(sequence), ts: nowMilliseconds(),
+                envelopeClass: .stream, keyID: identity.keyID, sender: identity.deviceID,
+                masterSecret: identity.masterSecret, signingKey: identity.signingKey)
+            observe?("envelope_seal", Self.elapsed(stageStarted, nowMilliseconds()), "complete",
+                     logicalRecordBytes, 0)
+        } catch {
+            observe?("envelope_seal", Self.elapsed(stageStarted, nowMilliseconds()), "failed",
+                     logicalRecordBytes, 0)
+            throw error
+        }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let exactFrame = try encoder.encode(CloudPublishFrame(envelope: envelope))
-        try await spool.seal(seq: sequence, sealedEnvelope: exactFrame)
-        _ = try await drain(reconnect: false)
+        stageStarted = nowMilliseconds()
+        do {
+            try await spool.seal(seq: sequence, sealedEnvelope: exactFrame)
+            observe?("spool_seal", Self.elapsed(stageStarted, nowMilliseconds()), "complete",
+                     logicalRecordBytes, exactFrame.count)
+        } catch {
+            observe?("spool_seal", Self.elapsed(stageStarted, nowMilliseconds()), "failed",
+                     logicalRecordBytes, exactFrame.count)
+            recordImmediateFailure(error, stage: "spool_seal")
+            // The reservation is durable even when sealing fails. Its stale deadline now has an
+            // explicit wake owner, so it cannot block higher ready work forever without traffic.
+            requestDrain(reconnect: false)
+            throw error
+        }
+        requestDrain(reconnect: false)
     }
 
-    @discardableResult
-    func drain(reconnect: Bool) async throws -> CloudSpoolSendDisposition {
-        do {
-            let disposition = try await spool.sendNext(resendSent: reconnect) { [transport] bytes in
-                try await transport.sendExactPublishFrame(bytes)
-            }
-            await scheduleAttemptDeadline()
-            return disposition
-        } catch {
-            // `sendNext` commits sent before the socket call. Even a throwing socket therefore
-            // needs the same autonomous deadline wakeup.
-            await scheduleAttemptDeadline()
-            throw error
+    func requestDrain(reconnect: Bool) {
+        guard !stopped else { return }
+        drainRequested = true
+        reconnectRequested = reconnectRequested || reconnect
+        guard drainWorker == nil else { return }
+        drainGeneration &+= 1
+        let generation = drainGeneration
+        drainWorker = Task { [weak self] in
+            await self?.runDrainWorker(generation: generation)
         }
     }
 
@@ -730,25 +838,178 @@ actor CloudDurableOutboundComposition {
         switch receipt.kind {
         case .delivered: kind = .delivered
         case .viewerOffline: kind = .viewerOffline
-        case .peerError: kind = .peerError
+        case .peerRejected: kind = .peerError
         }
-        _ = try await spool.settle(
+        let retrySource = await spool.row(seq: receipt.sequence)
+        let disposition = try await spool.settle(
             seq: receipt.sequence, channel: channel, fullChannel: receipt.channel, kind)
-        _ = try await drain(reconnect: false)
+        requestDrain(reconnect: false)
+        if case .peerRejected(let rejection) = receipt.kind {
+            let field = rejection.field?.rawValue ?? "none"
+            diagnostic("cloud: outbound peer_rejection code=\(rejection.code.rawValue) "
+                + "field=\(field) "
+                + "disposition=\(rejection.disposition.rawValue)")
+            if rejection.disposition == .retryNewAttempt,
+               disposition == .settled(.rejected), let retrySource {
+                try await retryRejectedRow(retrySource)
+            }
+        }
     }
 
-    func stop() {
+    func metricsSnapshot() async -> CloudOutboundWindowSnapshot {
+        await spool.outboundWindowSnapshot()
+    }
+
+    func persistentFailureState() -> CloudDurableOutboundFailureClass? { structuralFailure }
+
+    /// Phase one is deliberately non-joining: CloudAppBridge must close the transport socket
+    /// before it waits for a production URLSession send that does not observe Task cancellation.
+    func beginStop() {
+        guard !stopped else { return }
+        stopped = true
+        drainGeneration &+= 1
+        drainRequested = false
+        reconnectRequested = false
+        let worker = drainWorker
+        drainWorker = nil
+        worker?.cancel()
         attemptDeadlineGeneration &+= 1
-        attemptDeadlineTask?.cancel()
+        let deadline = attemptDeadlineTask
         attemptDeadlineTask = nil
+        deadline?.cancel()
+        stoppingDrainWorker = worker
+        stoppingDeadlineTask = deadline
     }
 
-    private func scheduleAttemptDeadline(notBefore minimumDelay: Duration = .zero) async {
+    func finishStop() async {
+        await stoppingDrainWorker?.value
+        await stoppingDeadlineTask?.value
+        stoppingDrainWorker = nil
+        stoppingDeadlineTask = nil
+    }
+
+    func stop(unblocking: @Sendable () async -> Void) async {
+        beginStop()
+        await unblocking()
+        await finishStop()
+    }
+
+    /// Test/helper convenience for cancellation-aware transports. Production uses the explicit
+    /// begin/transport-shutdown/finish sequence above.
+    func stop() async {
+        beginStop()
+        await finishStop()
+    }
+
+    private func runDrainWorker(generation ownedGeneration: UInt64) async {
+        while !Task.isCancelled, ownedGeneration == drainGeneration, !stopped {
+            guard drainRequested else { break }
+            let reconnect = reconnectRequested
+            drainRequested = false
+            reconnectRequested = false
+            do {
+                if reconnect {
+                    let sent = await spool.rowsSnapshot()
+                        .filter { $0.state == .sent }
+                        .map(\.seq).sorted()
+                    for sequence in sent {
+                        try Task.checkCancellation()
+                        _ = try await measuredSend(preparationStage: "reconnect_replay_lookup") {
+                            try await self.spool.resendPersisted(seq: sequence, via: $0)
+                        }
+                    }
+                }
+                while !Task.isCancelled {
+                    let disposition = try await measuredSend(preparationStage: "spool_mark_sent") {
+                        try await self.spool.sendNext(via: $0)
+                    }
+                    guard case .sent = disposition else { break }
+                }
+                structuralFailure = nil
+                transientFailureCount = 0
+                await scheduleAttemptDeadline()
+            } catch is CancellationError {
+                break
+            } catch {
+                // `sendNext` commits sent before the socket call. A failed transport therefore
+                // consumes its durable window slot. A store failure can instead leave the row
+                // ready. The same single wake owner retries either shape without a busy loop.
+                let failure = Self.failureDisposition(error)
+                let retry = failure.retryable ? "scheduled" : "permanent"
+                diagnostic("cloud: durable outbound drain failed failure=\(failure.kind.rawValue) "
+                    + "retry=\(retry)")
+                if failure.retryable {
+                    transientFailureCount = min(transientFailureCount + 1, 8)
+                    await scheduleAttemptDeadline(
+                        notBefore: Self.scaledRetryDelay(
+                            deadlineFailureRetryDelay, failures: transientFailureCount),
+                        forceWake: true)
+                } else {
+                    structuralFailure = failure.kind
+                }
+            }
+        }
+        if ownedGeneration == drainGeneration { drainWorker = nil }
+    }
+
+    private func measuredSend(
+        preparationStage: String,
+        _ operation: (@escaping @Sendable (Data) async throws -> Void) async throws
+            -> CloudSpoolSendDisposition
+    ) async throws -> CloudSpoolSendDisposition {
+        let before = await spool.outboundWindowSnapshot()
+        let persistenceStarted = nowMilliseconds()
+        let disposition = try await operation { [self, transport, diagnostic, nowMilliseconds] bytes in
+            let start = nowMilliseconds()
+            diagnostic("cloud: durable outbound stage=\(preparationStage) "
+                + "duration_ms=\(Self.elapsed(persistenceStarted, start)) outcome=complete "
+                + "frame_bytes=\(bytes.count) ready_rows=\(before.readyWaitingRows) "
+                + "window_rows=\(before.currentRows) window_bytes=\(before.currentBytes)")
+            // The deadline owner must wake before a socket is allowed to stall indefinitely.
+            // `sendNext` has already committed this exact frame as sent when it invokes us.
+            await self.scheduleAttemptDeadline()
+            do {
+                try await transport.sendExactPublishFrame(bytes)
+                diagnostic("cloud: durable outbound stage=socket_write "
+                    + "duration_ms=\(Self.elapsed(start, nowMilliseconds())) outcome=complete "
+                    + "frame_bytes=\(bytes.count)")
+            } catch {
+                diagnostic("cloud: durable outbound stage=socket_write "
+                    + "duration_ms=\(Self.elapsed(start, nowMilliseconds())) outcome=failed "
+                    + "frame_bytes=\(bytes.count)")
+                throw error
+            }
+        }
+        let after = await spool.outboundWindowSnapshot()
+        if !Self.isWriteDisposition(disposition) {
+            diagnostic("cloud: durable outbound stage=drain_observation ready_age_ms="
+                + "\(after.oldestReadyAgeMilliseconds) outcome=\(Self.dispositionName(disposition)) "
+                + "receipt_wait_ms=\(after.oldestReceiptWaitMilliseconds) "
+                + "ready_rows=\(after.readyWaitingRows) ready_bytes=\(after.readyWaitingBytes) "
+                + "window_rows=\(after.currentRows) window_bytes=\(after.currentBytes) "
+                + "process_window_peak_rows=\(after.processPeakRows) "
+                + "process_window_peak_bytes=\(after.processPeakBytes) "
+                + "window_refusal_attempts=\(after.windowAdmissionRefusalAttempts) "
+                + "writes_started=\(after.socketWritesStarted) "
+                + "writes_completed=\(after.socketWritesCompleted) "
+                + "writes_failed=\(after.socketWritesFailed) "
+                + "budget=\(after.budgetStatus)")
+        }
+        return disposition
+    }
+
+    private func scheduleAttemptDeadline(
+        notBefore minimumDelay: Duration = .zero, forceWake: Bool = false
+    ) async {
+        guard !stopped else { return }
         attemptDeadlineGeneration &+= 1
         let generation = attemptDeadlineGeneration
         attemptDeadlineTask?.cancel()
         attemptDeadlineTask = nil
-        guard let nextDelay = await spool.nextAttemptWakeDelay() else { return }
+        let deadlineDelay = await spool.nextMaintenanceWakeDelay()
+        guard !stopped else { return }
+        guard deadlineDelay != nil || forceWake else { return }
+        let nextDelay = deadlineDelay ?? .zero
         let delay = max(nextDelay, minimumDelay)
         let nanoseconds = Self.nanoseconds(delay)
         attemptDeadlineTask = Task { [weak self] in
@@ -759,13 +1020,51 @@ actor CloudDurableOutboundComposition {
     }
 
     private func attemptDeadlineFired(generation: UInt64) async {
-        guard generation == attemptDeadlineGeneration, !Task.isCancelled else { return }
+        guard !stopped, generation == attemptDeadlineGeneration, !Task.isCancelled else { return }
         attemptDeadlineTask = nil
-        do { _ = try await drain(reconnect: false) }
-        catch {
-            onDeadlineFailure()
-            await scheduleAttemptDeadline(notBefore: deadlineFailureRetryDelay)
+        do {
+            _ = try await spool.expireAttemptDeadlines()
+            requestDrain(reconnect: false)
+            await scheduleAttemptDeadline()
+        } catch {
+            let failure = Self.failureDisposition(error)
+            let retry = failure.retryable ? "scheduled" : "permanent"
+            diagnostic("cloud: durable outbound deadline failed failure=\(failure.kind.rawValue) "
+                + "retry=\(retry)")
+            if failure.retryable {
+                transientFailureCount = min(transientFailureCount + 1, 8)
+                await scheduleAttemptDeadline(
+                    notBefore: Self.scaledRetryDelay(
+                        deadlineFailureRetryDelay, failures: transientFailureCount),
+                    forceWake: true)
+            } else {
+                structuralFailure = failure.kind
+            }
         }
+    }
+
+    private func retryRejectedRow(_ row: CloudSpoolRow) async throws {
+        guard let bytes = row.sealedEnvelopeBytes else { return }
+        let frame = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
+        guard frame.envelope.ch == row.recipient, Int64(frame.envelope.seq) == row.seq else {
+            throw CloudOutboundSpoolError.settlementCorrelationMismatch(seq: row.seq)
+        }
+        let deviceID = identity.deviceID
+        let publicKey = identity.signingKey.publicKeyRaw
+        let plaintext = try frame.envelope.open(
+            masterSecret: identity.masterSecret,
+            publicKeyForSender: { sender in
+                sender == deviceID ? publicKey : nil
+            })
+        try await enqueue(plaintext, channel: row.recipient, logicalID: row.logicalID)
+    }
+
+    private func recordImmediateFailure(_ error: Error, stage: String) {
+        let failure = Self.failureDisposition(error)
+        if !failure.retryable { structuralFailure = failure.kind }
+        let retry = failure.retryable ? "caller" : "permanent"
+        diagnostic("cloud: durable outbound stage=\(stage) failure=\(failure.kind.rawValue) "
+            + "retry=\(retry)")
     }
 
     private static func nanoseconds(_ duration: Duration) -> UInt64 {
@@ -776,6 +1075,54 @@ actor CloudDurableOutboundComposition {
         let (whole, overflow) = seconds.multipliedReportingOverflow(by: 1_000_000_000)
         if overflow { return .max }
         return whole.addingReportingOverflow(nanos).overflow ? .max : whole + nanos
+    }
+
+    private static func elapsed(_ start: UInt64, _ end: UInt64) -> UInt64 {
+        end >= start ? end - start : 0
+    }
+
+    private static func dispositionName(_ disposition: CloudSpoolSendDisposition) -> String {
+        switch disposition {
+        case .idle: return "idle"
+        case .sent: return "sent"
+        case .resent: return "resent"
+        case .blockedAwaitingAcknowledgement: return "receipt_wait"
+        case .blockedAwaitingSeal: return "seal_wait"
+        case .blockedWindowFull: return "window_full"
+        }
+    }
+
+    private static func isWriteDisposition(_ disposition: CloudSpoolSendDisposition) -> Bool {
+        switch disposition {
+        case .sent, .resent: return true
+        default: return false
+        }
+    }
+
+    private static func failureDisposition(
+        _ error: Error
+    ) -> (kind: CloudDurableOutboundFailureClass, retryable: Bool) {
+        if error is CloudTransportError { return (.transport, true) }
+        if error is CloudOutboundSpoolError { return (.integrity, false) }
+        guard let durable = error as? CloudDurableStoreFailure else { return (.other, false) }
+        switch durable {
+        case .oversized: return (.capacity, false)
+        case .unsafePath, .unsafePermissions, .invalidMachineIdentity, .writerLockHeld,
+             .symlink, .nonRegular, .multipleLinks, .wrongOwner:
+            return (.permissions, false)
+        case .unreadable, .corrupt, .unknownVersion, .sequenceExhausted:
+            return (.integrity, false)
+        case .persist, .fileFsync, .rename, .directoryFsync, .recovery:
+            return (.durableIO, true)
+        }
+    }
+
+    private static func scaledRetryDelay(_ base: Duration, failures: Int) -> Duration {
+        let exponent = max(0, min(failures - 1, 6))
+        let baseNanoseconds = nanoseconds(base)
+        let multiplier = UInt64(1) << UInt64(exponent)
+        let (scaled, overflow) = baseNanoseconds.multipliedReportingOverflow(by: multiplier)
+        return .nanoseconds(Int64(min(overflow ? UInt64.max : scaled, 60_000_000_000)))
     }
 
     private static func spoolChannel(_ channel: String) throws -> CloudSpoolChannel {
@@ -881,10 +1228,7 @@ actor CloudAppBridge {
         durableOutbound = durableRuntime.map {
             CloudDurableOutboundComposition(
                 spool: $0.spool, transport: transport, identity: identity,
-                nowMilliseconds: nowMilliseconds,
-                onDeadlineFailure: {
-                    diagnostic("cloud: durable outbound attempt deadline could not commit")
-                })
+                nowMilliseconds: nowMilliseconds, diagnostic: diagnostic)
         }
         self.refusalPublications = refusalPublications ?? CloudRefusalPublicationQueue(
             observer: { outcome, metrics in
@@ -1005,8 +1349,13 @@ actor CloudAppBridge {
         outboundReceipts?.cancel()
         publications.forEach { $0.cancel() }
         readTasks.forEach { $0.cancel() }
-        await durableOutbound?.stop()
-        await transport.shutdown()
+        // Cancellation alone does not unblock Foundation's production WebSocket send. Establish
+        // the stop fence first, close the socket next, and only then join the drain/deadline tasks.
+        if let durableOutbound {
+            await durableOutbound.stop { [transport] in await transport.shutdown() }
+        } else {
+            await transport.shutdown()
+        }
         _ = await connect?.result
         await command?.value
         await ready?.value
@@ -1201,10 +1550,24 @@ actor CloudAppBridge {
         trace("complete")
         do {
             if let durableOutbound {
-                stage = "durable_reserve_seal_send"; startedAt = nowMilliseconds(); trace("begin")
+                stage = "durable_enqueue"; startedAt = nowMilliseconds(); trace("begin")
+                let stageObserver: CloudDurableOutboundComposition.EnqueueStageObserver?
+                if let publicationID = readTraceID {
+                    stageObserver = { [diagnostic, nowMilliseconds] part, duration, outcome,
+                                      rowBytes, frameBytes in
+                        diagnostic("cloud: publication id=\(publicationID) publication_stage=\(part) "
+                            + "duration_ms=\(duration) outcome=\(outcome) "
+                            + "row_bytes=\(rowBytes) frame_bytes=\(frameBytes) "
+                            + "observed_at_ms=\(nowMilliseconds()) socket_send=not_observed "
+                            + "ack=not_observed")
+                    }
+                } else {
+                    stageObserver = nil
+                }
                 try await durableOutbound.enqueue(
                     plaintext, channel: channel,
-                    logicalID: readTraceID ?? UUID().uuidString.lowercased())
+                    logicalID: readTraceID ?? UUID().uuidString.lowercased(),
+                    observe: stageObserver)
                 trace("complete")
                 return
             }
@@ -1277,10 +1640,7 @@ actor CloudAppBridge {
     ) async {
         guard running, lifecycleGeneration == ownedGeneration else { return }
         if let durableOutbound {
-            do { _ = try await durableOutbound.drain(reconnect: true) }
-            catch {
-                diagnostic("cloud: durable outbound reconnect drain failed")
-            }
+            await durableOutbound.requestDrain(reconnect: true)
         }
         transportReady(generation)
     }

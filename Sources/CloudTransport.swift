@@ -1271,7 +1271,10 @@ actor CloudTransport {
 
     private func handle(_ text: String) async throws {
         let data = Data(text.utf8)
-        let header = try JSONDecoder().decode(FrameHeader.self, from: data)
+        guard let header = try? JSONDecoder().decode(FrameHeader.self, from: data) else {
+            logger("CloudTransport ignored inbound frame reason=malformed_header")
+            return
+        }
         switch header.type {
         case "envelope":
             do {
@@ -1281,19 +1284,37 @@ actor CloudTransport {
                 dropInbound(reason: reason(for: error))
             }
         case "ack":
-            let frame = try JSONDecoder().decode(AckFrame.self, from: data)
-            guard frame.seq >= 0, frame.fanout >= 0 else {
-                throw CloudTransportError.unexpectedFrame("ack")
+            guard let frame = try? JSONDecoder().decode(AckFrame.self, from: data),
+                  frame.seq >= 0, frame.fanout >= 0, !frame.ch.isEmpty else {
+                logger("CloudTransport ignored inbound frame reason=malformed_ack")
+                return
             }
             let kind: CloudOutboundTransportReceiptKind
             switch frame.status {
             case "delivered": kind = .delivered
             case "viewer_offline": kind = .viewerOffline
-            case "rejected", "refused": kind = .peerError
-            default: throw CloudTransportError.unexpectedFrame("ack-status")
+            case "rejected", "refused":
+                kind = .peerRejected(CloudOutboundPeerRejection(
+                    code: .legacyRefused, field: nil, disposition: .terminal))
+            default:
+                logger("CloudTransport ignored inbound frame reason=unknown_ack_status")
+                return
             }
             offerOutboundReceipt(CloudOutboundTransportReceipt(
                 channel: frame.ch, sequence: frame.seq, kind: kind))
+            return
+        case "publish_error":
+            guard let frame = try? JSONDecoder().decode(PublishErrorFrame.self, from: data),
+                  frame.seq >= 0, !frame.ch.isEmpty else {
+                logger("CloudTransport ignored inbound frame reason=malformed_publish_error")
+                return
+            }
+            let code = Self.publishErrorCode(frame.code)
+            offerOutboundReceipt(CloudOutboundTransportReceipt(
+                channel: frame.ch, sequence: frame.seq,
+                kind: .peerRejected(CloudOutboundPeerRejection(
+                    code: code, field: Self.publishErrorField(frame.field),
+                    disposition: Self.publishErrorDisposition(code)))))
             return
         case "subscriptions", "pong":
             return
@@ -1301,11 +1322,42 @@ actor CloudTransport {
             guard let socket else { throw CloudTransportError.notConnected }
             try await socket.send(text: "{\"type\":\"pong\"}")
         case "error":
-            let frame = try JSONDecoder().decode(ErrorFrame.self, from: data)
-            logger("CloudTransport relay error code=\(frame.code)")
+            guard let frame = try? JSONDecoder().decode(ErrorFrame.self, from: data) else {
+                logger("CloudTransport ignored inbound frame reason=malformed_error")
+                return
+            }
+            logger("CloudTransport uncorrelated relay error code="
+                + "\(Self.publishErrorCode(frame.code).rawValue)")
         default:
-            throw CloudTransportError.unexpectedFrame(header.type)
+            // The socket is already authenticated. A future or irrelevant nonfatal frame cannot
+            // discard the very connection carrying correlated durable settlement.
+            logger("CloudTransport ignored inbound frame reason=unsupported_type")
         }
+    }
+
+    private static func publishErrorCode(_ raw: String) -> CloudPublishErrorCode {
+        CloudPublishErrorCode(rawValue: raw) ?? .unknown
+    }
+
+    private static func publishErrorField(_ raw: String?) -> CloudPublishErrorField? {
+        guard let raw else { return nil }
+        return CloudPublishErrorField(rawValue: raw) ?? .unknown
+    }
+
+    private static func publishErrorDisposition(
+        _ code: CloudPublishErrorCode
+    ) -> CloudPublishErrorDisposition {
+        switch code {
+        case .clockSkew, .unavailable, .internal: return .retryNewAttempt
+        case .badRequest, .tooLarge, .forbidden, .rateLimited, .legacyRefused, .unknown:
+            return .terminal
+        }
+    }
+
+    /// Deterministic parser seam: it exercises the same authenticated-frame handling used by the
+    /// receive loop without requiring a relay fake to grow a second raw-frame API.
+    func handleAuthenticatedFrameForTesting(_ text: String) async throws {
+        try await handle(text)
     }
 
     private func offerOutboundReceipt(_ receipt: CloudOutboundTransportReceipt) {
@@ -1497,6 +1549,14 @@ actor CloudTransport {
         let type: String
         let code: String
         let message: String
+    }
+
+    private struct PublishErrorFrame: Decodable {
+        let type: String
+        let ch: String
+        let seq: Int64
+        let code: String
+        let field: String?
     }
 }
 #endif

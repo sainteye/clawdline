@@ -175,6 +175,15 @@ pass on one fast machine.
   An authoritative inventory of at most 512 exact Session ids is encrypted on a reserved
   machine-scoped Session channel after each changed scan and on reconnect. It repairs retained
   relay rows across a Mac restart without trusting labels or terminal names.
+- Durable Cloud publication returns each producer after reserve, encryption and durable spool seal;
+  one lifecycle-owned worker performs globally ordered socket writes independently. Already-sent
+  rows may await correlated receipts while later ready rows fill a hard row/byte window (currently
+  8 rows and 4 MiB, labelled `implementation_default_pending_w6`). Current/process-local-peak window
+  debt, ready wall-clock age, receipt wait, exact frame bytes, socket work/failure and window-refusal
+  attempts are separate observations. `s`/`orch` ready backlog is latest-value coalesced and every
+  channel's authenticated sealed timestamp is checked immediately before send. A stalled socket owns
+  one worker; stop closes its transport before joining it, so Foundation's non-cancellation-aware
+  WebSocket send cannot hold bridge replacement.
 - Every transcript admission/refusal/completion records its lane, source, target, queue debt,
   queue time, parse time, total local time, status and answer size. Cloud additionally records
   receive-to-route and encrypted-publication timing, without recording transcript text.
@@ -190,6 +199,13 @@ The last item remains an O(retained history) mutation cost. The read path is ind
 durable registry is still one JSON document rather than a journal or database. If save latency
 becomes visible near the configured ceiling, measure serialization and atomic replacement
 separately before choosing a storage migration.
+
+The Cloud outbound spool is also still an atomically replaced JSON authority. Its commit path no
+longer rereads the complete old payload before replacement; it checks the same descriptor metadata
+and pathname inode instead. Live evidence on a 4.13 MiB/1,674-row spool measured the full
+read/decode/encode/write/fsync commit at about 8 ms, while producer publication was p50 44,493 ms
+and p95 126,135 ms. That comparison rules persistence out as the primary tens-of-seconds cause;
+the corrected scheduling seam is the producer's former await of socket drain.
 
 ## How to measure a recurrence
 

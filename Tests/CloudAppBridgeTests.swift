@@ -34,13 +34,18 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
     private var readyGeneration: UInt64 = 0
     private let suspendConnect: Bool
     private let suspendPublication: Bool
+    private let publicationRequiresShutdown: Bool
     private let publicationContinuation: AsyncStream<Void>.Continuation
     private let publicationStream: AsyncStream<Void>
     private var publicationStarts = 0
     private var publicationCancelled = false
-    init(suspendConnect: Bool = false, suspendPublication: Bool = false) {
+    init(
+        suspendConnect: Bool = false, suspendPublication: Bool = false,
+        publicationRequiresShutdown: Bool = false
+    ) {
         self.suspendConnect = suspendConnect
         self.suspendPublication = suspendPublication
+        self.publicationRequiresShutdown = publicationRequiresShutdown
         let commandQueue = CloudInboundCommandQueue(limits: CloudInboundCommandQueueLimits(
             maximumCount: 10_000, maximumChargedBytes: Int.max
         ))
@@ -82,7 +87,7 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
                 var iterator = publicationStream.makeAsyncIterator()
                 _ = await iterator.next()
             } onCancel: {
-                self.cancelPublication()
+                self.observePublicationCancellation()
             }
             if Task.isCancelled { throw CancellationError() }
         }
@@ -93,11 +98,12 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
         publicationStarts += 1
         lock.unlock()
     }
-    private func cancelPublication() {
+    private func observePublicationCancellation() {
         lock.lock()
         publicationCancelled = true
+        let release = !publicationRequiresShutdown
         lock.unlock()
-        publicationContinuation.finish()
+        if release { publicationContinuation.finish() }
     }
     private func append(_ envelope: CloudEnvelope) {
         lock.lock()
@@ -106,6 +112,7 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
     }
     func shutdown() async {
         markStopped()
+        publicationContinuation.finish()
         commandQueue.finish()
         readyContinuation.finish()
         receiptContinuation.finish()

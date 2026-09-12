@@ -12,7 +12,7 @@ private struct CloudOutboundSpoolTestFailure: Error, CustomStringConvertible {
 
 private struct SpoolTransportBoom: Error {}
 private struct SpoolInjectedStoreFailure: Error {}
-
+private enum LegacyCloudSpoolBurnReason: String, Decodable { case staleReadyAtRestart }
 // MARK: - Injected fakes
 
 private final class SpoolMemoryStore: CloudSpoolStore, @unchecked Sendable {
@@ -195,10 +195,12 @@ private struct SpoolWorld {
     let metrics = SpoolRecordingMetrics()
 
     func open(liveOwners: Set<String> = [],
-              limits: CloudSpoolLimits = CloudSpoolLimits()) throws -> CloudOutboundSpool {
+              limits: CloudSpoolLimits = CloudSpoolLimits(),
+              strictPersistedFrameValidation: Bool = false) throws -> CloudOutboundSpool {
         try CloudOutboundSpool(store: store, clock: clock, metrics: metrics,
                                runtime: .mac, limits: limits,
-                               liveOwnerIDs: liveOwners)
+                               liveOwnerIDs: liveOwners,
+                               strictPersistedFrameValidation: strictPersistedFrameValidation)
     }
 }
 
@@ -262,11 +264,13 @@ private func strictLogicalRecord(channel: String, logicalID: String) -> CloudJSO
     ])
 }
 
-private func strictSealedFrame(seq: Int64, channel: String) throws -> Data {
+private func strictSealedFrame(
+    seq: Int64, channel: String, timestampMilliseconds: Int64 = 1
+) throws -> Data {
     try JSONSerialization.data(withJSONObject: [
         "type": "publish",
         "envelope": [
-            "v": 1, "ch": channel, "seq": seq, "ts": 1,
+            "v": 1, "ch": channel, "seq": seq, "ts": timestampMilliseconds,
             "class": "stream", "key_id": "key-1",
             "nonce": Data(repeating: 1, count: 12).base64EncodedString(),
             "ct": Data(repeating: 2, count: 16).base64EncodedString(),
@@ -328,6 +332,11 @@ private func testMetricsDomainsAndLimits(_ h: SpoolTestHarness) throws {
     try h.check(limits.fairnessRecipientByteCap == 262_144,
                 "default fairness recipient byte cap 256 KiB")
     try h.check(limits.attemptWindow == .seconds(30), "attempt window 30s")
+    try h.check(limits.outboundWindowRowCap == 8
+                    && limits.outboundWindowByteCap == 4_194_304,
+                "outbound window defaults are 8 rows and 4 MiB pending W6")
+    try h.check(limits.sealedFrameFreshnessSeconds == 240,
+                "local sealed-frame freshness leaves sixty seconds inside relay default skew")
     try h.check(limits.tombstoneRetention == .seconds(600), "tombstone retention 10 min")
     try h.check(limits.gcInterval == .seconds(60), "gc interval 60s")
 
@@ -453,8 +462,8 @@ private func testTerminalBytesOccupyHardCap(_ h: SpoolTestHarness) async throws 
     }
 }
 
-/// §6.1: publisher head selection identifies the lowest non-terminal seq rather than
-/// trusting array position. This pins the selector independently of load validation.
+/// §6.1: the persisted-state selector identifies the lowest non-terminal seq rather than
+/// trusting array position. This pins the recovery helper independently of load validation.
 private func testHeadSelectorUsesLowestSeq(_ h: SpoolTestHarness) async throws {
     let source = SpoolWorld()
     let sourceSpool = try source.open()
@@ -466,7 +475,7 @@ private func testHeadSelectorUsesLowestSeq(_ h: SpoolTestHarness) async throws {
     seeded.rows.reverse()
     let selected = CloudOutboundSpool.lowestNonterminalIndex(in: seeded.rows)
     try h.check(selected.map { seeded.rows[$0].seq } == low,
-                "publisher head selector chooses the lowest non-terminal seq")
+                "persisted-state selector chooses the lowest non-terminal seq")
 }
 
 /// The persisted-state ascending-seq invariant is enforced at load; malformed ordering is
@@ -604,7 +613,9 @@ private func testCrashBeforeSealRecovery(_ h: SpoolTestHarness) async throws {
 /// ready larger seq on a different channel.
 private func testHeadOfLineAcrossChannels(_ h: SpoolTestHarness) async throws {
     let world = SpoolWorld()
-    let spool = try world.open()
+    var limits = CloudSpoolLimits()
+    limits.outboundWindowByteCap = sealedEnvelopeStub.count * 2
+    let spool = try world.open(limits: limits)
     let ctlSeq = try await spool.reserve(channel: .ctl, logicalID: "cmd-1", ownerID: "viewer-1",
                                          recipient: "machine", record: tinyRecord(1))
     let snapSeq = try await reserveSealed(spool, channel: .s, logicalID: "snap-1",
@@ -620,10 +631,19 @@ private func testHeadOfLineAcrossChannels(_ h: SpoolTestHarness) async throws {
     try await spool.seal(seq: ctlSeq, sealedEnvelope: sealedEnvelopeStub)
     let first = try await spool.sendNext { log.record($0) }
     try h.check(first == .sent(seq: ctlSeq), "the lowest non-terminal seq sends first")
-    _ = try await spool.settle(seq: ctlSeq, .delivered)
     let second = try await spool.sendNext { log.record($0) }
     try h.check(second == .sent(seq: snapSeq),
-                "the larger seq sends only after the smaller one is terminal")
+                "the bounded window sends the next ready seq without waiting for the first ACK")
+    let byteSeq = try await reserveSealed(spool, channel: .s, logicalID: "byte-window",
+                                          recipient: "viewer-1", record: tinyRecord(3))
+    let byteBlocked = try await spool.sendNext { log.record($0) }
+    try h.check(byteBlocked == .blockedWindowFull(
+                    currentRows: 2, currentBytes: sealedEnvelopeStub.count * 2),
+                "exact persisted frame bytes hard-bound the send window")
+    _ = try await spool.settle(seq: ctlSeq, .delivered)
+    let replenished = try await spool.sendNext { log.record($0) }
+    try h.check(replenished == .sent(seq: byteSeq),
+                "settlement replenishes one byte-bounded window slot")
 }
 
 /// §6.2: the attempt window is first_sent + 30s; within it reconnect resends the same sealed
@@ -638,13 +658,13 @@ private func testAttemptCapBurnReleasesHeadOfLine(_ h: SpoolTestHarness) async t
     let n1 = try await reserveSealed(spool, channel: .t, logicalID: "term-n1",
                                      recipient: "v", record: tinyRecord(2))
 
-    let resent = try await spool.sendNext(resendSent: true) { log.record($0) }
+    let resent = try await spool.resendPersisted(seq: n) { log.record($0) }
     try h.check(resent == .resent(seq: n) && log.payloads.count == 2
                 && log.payloads[1] == log.payloads[0],
                 "reconnect within the window resends the same sealed bytes")
 
     world.clock.advance(.seconds(29))
-    let stillResent = try await spool.sendNext(resendSent: true) { log.record($0) }
+    let stillResent = try await spool.resendPersisted(seq: n) { log.record($0) }
     try h.check(stillResent == .resent(seq: n), "29s after first send the row still resends")
 
     world.clock.advance(.seconds(1))
@@ -696,18 +716,16 @@ private func testCorrelatedAckLossReorderAndDuplicate(_ h: SpoolTestHarness) asy
         spool, channel: .t, logicalID: "second", recipient: "viewer", record: tinyRecord(2))
     _ = try await spool.sendNext { log.record($0) }
 
-    let ackLost = try await spool.sendNext { log.record($0) }
-    try h.check(ackLost == .blockedAwaitingAcknowledgement(headSeq: first)
-                && log.payloads.count == 1,
-                "ack loss leaves the sent head owned without an accidental normal resend")
-    let reconnect = try await spool.sendNext(resendSent: true) { log.record($0) }
-    try h.check(reconnect == .resent(seq: first) && log.payloads[0] == log.payloads[1],
+    let advanced = try await spool.sendNext { log.record($0) }
+    try h.check(advanced == .sent(seq: second) && log.payloads.count == 2,
+                "ack loss leaves the sent head owned while the bounded window advances")
+    let reconnect = try await spool.resendPersisted(seq: first) { log.record($0) }
+    try h.check(reconnect == .resent(seq: first) && log.payloads[0] == log.payloads[2],
                 "reconnect resends the exact sealed bytes for the uncertain sent head")
 
-    try await h.expectSpoolError(.settleBeforeSend(seq: second, state: .ready),
-                                 "a reordered ack cannot settle an unsent later row") {
-        _ = try await spool.settle(seq: second, channel: .t, .delivered)
-    }
+    let reordered = try await spool.settle(seq: second, channel: .t, .delivered)
+    try h.check(reordered == .settled(.acked) && world.store.row(first)?.state == .sent,
+                "an out-of-order correlated ACK settles only its already-sent row")
     try await h.expectSpoolError(.settlementCorrelationMismatch(seq: first),
                                  "an ack must correlate both global sequence and channel") {
         _ = try await spool.settle(seq: first, channel: .t, .delivered)
@@ -750,8 +768,13 @@ private func testSendThrowLeavesRowSent(_ h: SpoolTestHarness) async throws {
                 && row?.attemptNotAfterContinuous
                 == row!.firstSentContinuous! + CloudSpoolLimits().attemptWindow,
                 "first send durably fixed attempt_not_after = first_sent + 30s")
+    let failedMetrics = await spool.outboundWindowSnapshot()
+    try h.check(failedMetrics.currentRows == 1 && failedMetrics.socketWritesStarted == 1
+                    && failedMetrics.socketWritesCompleted == 0
+                    && failedMetrics.socketWritesFailed == 1,
+                "a failed socket write remains inside the hard window and is counted once")
     let log = SpoolTransportLog()
-    let resent = try await spool.sendNext(resendSent: true) { log.record($0) }
+    let resent = try await spool.resendPersisted(seq: seq) { log.record($0) }
     try h.check(resent == .resent(seq: seq) && log.payloads == [sealedEnvelopeStub],
                 "after the throw the same sealed bytes are resent")
 }
@@ -777,55 +800,49 @@ private func testReadyRowWithFirstSentFailsClosed(_ h: SpoolTestHarness) async t
                 "ready/first_sent corruption is neither normalized nor committed")
 }
 
-/// §6.1.5: snapshot coalescing burns the never-sent ready snapshot and reserves a fresh seq;
-/// sent rows never coalesce; ctl/ctlr never coalesce.
-private func testCoalescing(_ h: SpoolTestHarness) async throws {
+/// `s` and `orch` are explicit latest-value lanes. Admission burns every older ready value for
+/// the same exact recipient in one transaction, and live selection also collapses a pre-existing
+/// backlog. Transcript and control lanes retain every value.
+private func testLatestValueCoalescing(_ h: SpoolTestHarness) async throws {
     let world = SpoolWorld()
     let spool = try world.open()
     let old = try await reserveSealed(spool, channel: .s, logicalID: "snap",
                                       recipient: "viewer-1", record: tinyRecord(1))
-    let replacement = try await spool.coalesceSnapshot(replacing: old, with: tinyRecord(22))
+    let replacement = try await spool.reserveLatestValue(
+        channel: .s, logicalID: "snap-new", ownerID: nil,
+        recipient: "viewer-1", record: tinyRecord(22))
     try h.check(replacement > old, "coalescing reserves a strictly newer seq")
     let oldRow = world.store.row(old)
     try h.check(oldRow?.state == .burned && oldRow?.burnReason == .replacedByCoalescing,
                 "coalescing burns the old row first")
     let newRow = world.store.row(replacement)
-    try h.check(newRow?.state == .reserved
-                && newRow?.channel == .s
+    try h.check(newRow?.state == .reserved && newRow?.channel == .s
                 && newRow?.recipient == "viewer-1"
                 && newRow?.chargedBytes == CloudOutboundSpool.chargedBytes(of: tinyRecord(22)),
-                "the replacement inherits the row identity and recharges the new record")
+                "the replacement keeps exact recipient identity and charges the new record")
 
     try await spool.seal(seq: replacement, sealedEnvelope: sealedEnvelopeStub)
+    let orchOld = try await reserveSealed(
+        spool, channel: .orch, logicalID: "orch-old", recipient: "machine", record: tinyRecord(3))
+    let orchNew = try await reserveSealed(
+        spool, channel: .orch, logicalID: "orch-new", recipient: "machine", record: tinyRecord(4))
+    let transcriptOld = try await reserveSealed(
+        spool, channel: .t, logicalID: "t-old", recipient: "viewer", record: tinyRecord(5))
+    let transcriptNew = try await reserveSealed(
+        spool, channel: .t, logicalID: "t-new", recipient: "viewer", record: tinyRecord(6))
     let log = SpoolTransportLog()
     _ = try await spool.sendNext { log.record($0) }
-    try await h.expectSpoolError(.coalesceAfterSend(seq: replacement),
-                                 "a sent snapshot must not coalesce") {
-        _ = try await spool.coalesceSnapshot(replacing: replacement, with: tinyRecord(33))
-    }
-
-    _ = try await spool.settle(seq: replacement, .delivered)
-    let ctl = try await reserveSealed(spool, channel: .ctl, logicalID: "cmd", ownerID: "v",
-                                      recipient: "machine", record: tinyRecord(4))
-    try await h.expectSpoolError(.coalesceControlChannelForbidden(seq: ctl, channel: .ctl),
-                                 "ctl never coalesces") {
-        _ = try await spool.coalesceSnapshot(replacing: ctl, with: tinyRecord(5))
-    }
-    _ = try await spool.sendNext { log.record($0) }
-    _ = try await spool.settle(seq: ctl, .delivered)
-    let ctlr = try await reserveSealed(spool, channel: .ctlr, logicalID: "resp", ownerID: "v",
-                                       recipient: "v", record: tinyRecord(6))
-    try await h.expectSpoolError(.coalesceControlChannelForbidden(seq: ctlr, channel: .ctlr),
-                                 "ctlr never coalesces") {
-        _ = try await spool.coalesceSnapshot(replacing: ctlr, with: tinyRecord(7))
-    }
-    _ = try await spool.sendNext { log.record($0) }
-    _ = try await spool.settle(seq: ctlr, .delivered)
-    let stream = try await reserveSealed(spool, channel: .t, logicalID: "term",
-                                         recipient: "v", record: tinyRecord(8))
-    try await h.expectSpoolError(.coalesceNotSnapshotChannel(seq: stream, channel: .t),
-                                 "coalescing is defined only for the snapshot channel") {
-        _ = try await spool.coalesceSnapshot(replacing: stream, with: tinyRecord(9))
+    try h.check(world.store.row(orchOld)?.burnReason == .replacedByCoalescing
+                    && world.store.row(orchNew)?.state == .ready,
+                "live selection collapses an existing orchestrator ready backlog")
+    try h.check(world.store.row(transcriptOld)?.state == .ready
+                    && world.store.row(transcriptNew)?.state == .ready,
+                "transcript policy retains ordered non-latest values")
+    try await h.expectSpoolError(.latestValuePolicyRequired(channel: .t),
+                                 "transcript cannot enter the latest-value admission path") {
+        _ = try await spool.reserveLatestValue(
+            channel: .t, logicalID: "invalid", ownerID: nil,
+            recipient: "viewer", record: tinyRecord(7))
     }
 }
 
@@ -1235,8 +1252,6 @@ private func testFairnessRecipientCapExactBoundaries(_ h: SpoolTestHarness) asyn
     }
 }
 
-/// §6.2 restart freshness is strict: exactly five minutes old is still fresh; any amount
-/// beyond the boundary burns the ready stream row.
 private func testReadyFreshnessExactBoundary(_ h: SpoolTestHarness) async throws {
     let world = SpoolWorld()
     var spool = try world.open()
@@ -1245,14 +1260,23 @@ private func testReadyFreshnessExactBoundary(_ h: SpoolTestHarness) async throws
     world.clock.advance(.milliseconds(1))
     let exact = try await reserveSealed(spool, channel: .s, logicalID: "exact",
                                         recipient: "R", record: tinyRecord(1))
-    world.clock.advance(.seconds(300))
+    world.clock.advance(.seconds(240))
     spool = try world.open()
     _ = spool
     try h.check(world.store.row(exact)?.state == .ready,
-                "a ready stream exactly 300 seconds old remains fresh at restart")
+                "a ready stream exactly 240 seconds old remains fresh at restart")
     try h.check(world.store.row(over)?.state == .burned
                 && world.store.row(over)?.burnReason == .staleReadyAtRestart,
-                "a ready stream 1 millisecond past 300 seconds burns at restart")
+                "a ready stream 1 millisecond past 240 seconds burns at restart")
+    world.clock.advance(.milliseconds(1))
+    let fresh = try await reserveSealed(spool, channel: .t, logicalID: "fresh", recipient: "R",
+                                        record: tinyRecord(2))
+    let sent = try await spool.sendNext { _ in }
+    let liveReason = world.store.row(exact)?.burnReason
+    let oldReader = try JSONDecoder().decode(LegacyCloudSpoolBurnReason?.self, from: JSONEncoder().encode(liveReason))
+    try h.check(sent == .sent(seq: fresh) && liveReason == .staleReadyAtRestart &&
+                    oldReader?.rawValue == CloudSpoolBurnReason.staleReadyAtRestart.rawValue,
+                "live stale burn remains decodable by the pre-window rollback reader")
 }
 
 /// Current-run reservation staleness is also strict: equality is retained, and only time
@@ -1953,7 +1977,7 @@ public func runCloudOutboundSpoolTests() async throws -> Int {
     try await testSendThrowLeavesRowSent(h)
     try await testReadyRowWithFirstSentFailsClosed(h)
     try await testOutOfDomainIntegersRefusedWithoutPersistence(h)
-    try await testCoalescing(h)
+    try await testLatestValueCoalescing(h)
     try await testRestartNormalization(h)
     try await testGCDeletesOnlyExpiredTombstonedTerminals(h)
     try await testGCFailureFailsAdmissionClosed(h)

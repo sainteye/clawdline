@@ -261,6 +261,43 @@ private final class LifecycleBlockingKeyStore: CloudKeyStoring, @unchecked Senda
     }
 }
 
+/// Empty protected identity authority for production-composition tests. Using the default
+/// Keychain-backed authority here makes the test depend on whether this Mac is already enrolled:
+/// an enrolled developer machine bypasses the injected hanging key store entirely.
+private final class LifecycleEmptySecretStore: SecretStore, @unchecked Sendable {
+    let capabilities: Set<HostCapability> = [.secrets]
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+
+    func data(for account: String) throws -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        return values[account]
+    }
+
+    func set(_ data: Data, for account: String) throws {
+        lock.lock(); values[account] = data; lock.unlock()
+    }
+
+    func loadOrCreate(_ account: String, create: @Sendable () throws -> Data) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        if let value = values[account] { return value }
+        let value = try create()
+        values[account] = value
+        return value
+    }
+
+    func rotate(_ account: String, replace: @Sendable (Data?) throws -> Data) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        let value = try replace(values[account])
+        values[account] = value
+        return value
+    }
+
+    func remove(_ account: String) throws {
+        lock.lock(); values.removeValue(forKey: account); lock.unlock()
+    }
+}
+
 private struct LifecycleUnusedHTTPTransport: CloudAccountHTTPTransport {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         throw ForcedLifecycleFailure()
@@ -1359,6 +1396,8 @@ private struct CloudLifecycleTests {
             return CloudPairingCompleter.production(
                 client: client,
                 keys: CloudKeys(store: keyStore),
+                identityAuthority: CloudExecutorIdentityAuthority(
+                    store: LifecycleEmptySecretStore()),
                 keychainTimeoutSeconds: timeout,
                 nowMilliseconds: { fixture.now })
         }
@@ -1762,7 +1801,7 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
     deadlineLimits.attemptWindow = .milliseconds(20)
     let deadlineRuntime = try CloudDurableRuntime.open(
         directory: deadlineDirectory, runtime: .mac, limits: deadlineLimits)
-    let deadlineTransport = CloudAppBridgeTestTransport()
+    let deadlineTransport = CloudAppBridgeTestTransport(suspendPublication: true)
     let deadlineComposition = CloudDurableOutboundComposition(
         spool: deadlineRuntime.spool, transport: deadlineTransport,
         identity: CloudAppIdentity(
@@ -1776,7 +1815,7 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
     }
     let deadlineRow = await deadlineRuntime.spool.row(seq: 0)
     try require(deadlineRow?.burnReason == .attemptCapExpired,
-                "a sent head burns at its attempt deadline without another outbound event")
+                "a socket-stalled sent head burns at its attempt deadline without another outbound event")
     await deadlineComposition.stop()
 
     let retryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -1808,6 +1847,115 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
     try require(retryFault.didFire,
                 "the retry fixture reaches the injected deadline persistence failure")
     await retryComposition.stop()
+
+    checks += try await runCloudOutboundCorrectionTests()
+
+    let stalledDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-bridge-stalled-drain-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: stalledDirectory, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: stalledDirectory) }
+    let stalledRuntime = try CloudDurableRuntime.open(
+        directory: stalledDirectory, runtime: .mac)
+    let stalledTransport = CloudAppBridgeTestTransport(suspendPublication: true)
+    let stalledComposition = CloudDurableOutboundComposition(
+        spool: stalledRuntime.spool, transport: stalledTransport,
+        identity: CloudAppIdentity(
+            machineID: "durable-mac", deviceID: "durable-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey),
+        nowMilliseconds: { now })
+    try await stalledComposition.enqueue(
+        Data("stalled-first".utf8), channel: "s/account/viewer", logicalID: "stalled-0")
+    try await waitForCloudAppBridge("independent drain reaches stalled socket") {
+        stalledTransport.state().publicationStarts == 1
+    }
+    for index in 1...3 {
+        try await stalledComposition.enqueue(
+            Data("stalled-\(index)".utf8), channel: "s/account/viewer",
+            logicalID: "stalled-\(index)")
+    }
+    let stalledMetrics = await stalledComposition.metricsSnapshot()
+    try require(stalledMetrics.currentRows == 1
+                    && stalledMetrics.readyWaitingRows == 1
+                    && stalledTransport.state().publicationStarts == 1,
+                "latest-value enqueue coalesces backlog behind one independently owned stalled writer")
+    await stalledComposition.stop()
+    try require(stalledTransport.state().publicationCancelled,
+                "stop cancels and joins the independently owned drain worker")
+
+    let windowDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-bridge-window-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: windowDirectory, withIntermediateDirectories: true,
+                                            attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: windowDirectory) }
+    var windowLimits = CloudSpoolLimits(); windowLimits.outboundWindowRowCap = 2
+    let windowRuntime = try CloudDurableRuntime.open(
+        directory: windowDirectory, runtime: .mac, limits: windowLimits)
+    let windowTransport = CloudAppBridgeTestTransport()
+    let windowComposition = CloudDurableOutboundComposition(
+        spool: windowRuntime.spool, transport: windowTransport,
+        identity: CloudAppIdentity(machineID: "durable-mac", deviceID: "durable-device",
+            keyID: "ms-1", masterSecret: masterSecret, signingKey: signingKey),
+        nowMilliseconds: { now })
+    for index in 0..<3 {
+        try await windowComposition.enqueue(Data("window-\(index)".utf8),
+            channel: index == 1 ? "t/account/viewer" : "s/account/viewer", logicalID: "window-\(index)")
+    }
+    try await waitForCloudAppBridge("bounded outbound window fills without ACK") {
+        windowTransport.envelopes().count == 2
+    }
+    let fullWindow = await windowComposition.metricsSnapshot()
+    try require(fullWindow.currentRows == 2 && fullWindow.readyWaitingRows == 1
+                    && fullWindow.processPeakRows == 2
+                    && fullWindow.windowAdmissionRefusalAttempts >= 1
+                    && fullWindow.currentBytes <= fullWindow.maximumBytes
+                    && fullWindow.processPeakBytes <= fullWindow.maximumBytes,
+                "the durable send window exposes current peak wait and refusal at its row bound")
+    let secondWindowFrame = windowTransport.envelopes()[1]
+    try await windowComposition.settle(CloudOutboundTransportReceipt(
+        channel: secondWindowFrame.ch, sequence: Int64(secondWindowFrame.seq), kind: .delivered))
+    try await waitForCloudAppBridge("out-of-order receipt replenishes one window slot") {
+        windowTransport.envelopes().count == 3
+    }
+    let olderWindowState = await windowRuntime.spool.row(seq: 0)?.state
+    try require(olderWindowState == .sent,
+                "out-of-order settlement does not alter the older sent row")
+    await windowComposition.requestDrain(reconnect: true)
+    try await waitForCloudAppBridge("production reconnect replays the sent snapshot once") {
+        windowTransport.envelopes().count == 5
+    }
+    let replayed = windowTransport.envelopes().suffix(2).map(\.seq)
+    try require(Array(replayed) == [0, 2],
+                "production reconnect snapshots sent rows once and replays them in sequence order")
+
+    let firstWindowFrame = windowTransport.envelopes()[0]
+    try await windowComposition.settle(CloudOutboundTransportReceipt(
+        channel: firstWindowFrame.ch, sequence: Int64(firstWindowFrame.seq),
+        kind: .peerRejected(CloudOutboundPeerRejection(
+            code: .unknown, field: .unknown, disposition: .terminal))))
+    await windowComposition.requestDrain(reconnect: true)
+    try await waitForCloudAppBridge("terminally rejected bytes never replay") {
+        windowTransport.envelopes().count == 6
+    }
+    let terminallyRejectedState = await windowRuntime.spool.row(seq: 0)?.state
+    try require(windowTransport.envelopes().last?.seq == 2
+                    && terminallyRejectedState == .rejected,
+                "a definitive refusal settles only its correlated row and excludes it from replay")
+
+    let retrySourceFrame = windowTransport.envelopes()[2]
+    try await windowComposition.settle(CloudOutboundTransportReceipt(
+        channel: retrySourceFrame.ch, sequence: Int64(retrySourceFrame.seq),
+        kind: .peerRejected(CloudOutboundPeerRejection(
+            code: .clockSkew, field: .timestamp, disposition: .retryNewAttempt))))
+    try await waitForCloudAppBridge("retryable refusal creates a fresh attempt") {
+        windowTransport.envelopes().contains { $0.seq == 3 }
+    }
+    let retryFrame = windowTransport.envelopes().first { $0.seq == 3 }
+    let retrySourceState = await windowRuntime.spool.row(seq: 2)?.state
+    try require(retryFrame?.ct != retrySourceFrame.ct && retrySourceState == .rejected,
+                "retryable refusal terminally settles old bytes and reseals a new sequence")
+    await windowComposition.stop()
     try? FileManager.default.removeItem(at: directory)
     return checks
 }

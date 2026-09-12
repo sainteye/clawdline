@@ -6,16 +6,15 @@ import ClawdlineApplication // W3-1 correction: real cross-module import, see So
 /// The Mac's durable outbound spool for the cloud protocol (design §6.1, §6.2, §6.6).
 ///
 /// Every byte the Mac publishes — s/t/orch stream frames and ctlr control responses — passes
-/// through one spool with one shared sequence counter, drained by a single publisher expressed
-/// as a Swift actor. The spool's three invariants, in the order they tend to be violated:
+/// through one spool with one shared sequence counter, drained by one independently owned
+/// publisher worker. The spool's three invariants, in the order they tend to be violated:
 ///
 /// 1. **A seq, once reserved, is never reused** (§6.1.1) — not after a burn, not after a crash,
 ///    not after coalescing. The counter only moves forward, and recovery burns rather than
 ///    deletes, so the history of what was reserved is never rewritten.
-/// 2. **The queue is not per-channel** (§6.1.3). The publisher takes the lowest non-terminal
-///    seq; a larger seq must not be sent while any smaller seq is still reserved/ready/sent,
-///    even across different channels. Head-of-line release comes only from terminality —
-///    the §6.2 30-second burn — never from reordering.
+/// 2. **The queue is not per-channel** (§6.1.3). Socket writes take ready rows in global seq
+///    order. A reserved/ready lower seq is never skipped; an already-written `sent` row may wait
+///    for its receipt while later ready rows fill the bounded durable window.
 /// 3. **Sending is durable-first** (§6.1.4): the row is committed as `sent` before the socket
 ///    write, and a throwing send leaves it `sent`. Whether the peer saw the bytes is unknown,
 ///    and the row's state must say so until an ack correlates or the attempt window expires.
@@ -35,6 +34,10 @@ public enum CloudSpoolChannel: String, CaseIterable, Codable, Equatable, Sendabl
 
     /// ctl/ctlr — the channels §6.1.5 says never coalesce and §6.2 burns when ownerless.
     public var isControl: Bool { self == .ctl || self == .ctlr }
+
+    /// State and orchestrator snapshots carry the complete current value. Keeping an older
+    /// never-sent value has no delivery value and can only delay the newer snapshot behind it.
+    public var isLatestValue: Bool { self == .s || self == .orch }
 }
 
 /// §6.1 row states. `acked`, `rejected` and `burned` are terminal; a terminal row never
@@ -59,13 +62,13 @@ public enum CloudSpoolBurnReason: String, Codable, Equatable, Sendable {
     /// §6.2 — the attempt window (first_sent + 30s) elapsed with no correlated ack/error.
     case attemptCapExpired
     /// §6.2 — after restart old continuous instants cannot be compared, so every sent row
-    /// burns to release head-of-line.
+    /// burns to release its durable window slot.
     case restartSentUncertain
     /// §6.2 — a ctl/ctlr ready row whose owner did not survive the restart.
     case ownerlessControlAtRestart
-    /// A never-sent ready stream row whose wall-clock ts was no longer fresh at restart
-    /// (§6.2 permits normal sending only for still-fresh ready streams; see the freshness
-    /// note on `CloudSpoolLimits.readyFreshnessSeconds`).
+    /// A never-sent ready row whose authenticated timestamp is no longer fresh. The historical
+    /// raw-value name is retained so a pre-window binary can still decode a store after rollback;
+    /// the reason now applies both at restart and immediately before a live socket send.
     case staleReadyAtRestart
     /// §6.1.5 — the old snapshot row burned by coalescing, before the replacement reserve.
     case replacedByCoalescing
@@ -200,11 +203,18 @@ public struct CloudSpoolLimits: Sendable {
     /// §6.6 "stale reserved先burn": how long a reservation may sit unsealed within one run
     /// before GC burns it. The quoted design text names no number; this is a local constant.
     public var staleReservedAfter = Duration.seconds(60)
-    /// §6.2 restart: a never-sent ready *stream* row may still be sent normally only while its
-    /// wall-clock ts is fresh. The quoted text names no window; this is a local constant.
-    public var readyFreshnessSeconds: TimeInterval = 300
+    /// The relay defaults to a 300-second authenticated-envelope skew window. Selection uses a
+    /// deliberately tighter local limit so socket write and relay queueing cannot consume the
+    /// whole peer allowance. A typed clock_skew refusal remains the deployment-drift signal.
+    public var sealedFrameFreshnessSeconds: TimeInterval = 240
     /// Upper bound on terminal-row deletions per GC batch (bounded batch, §6.6).
     public var gcBatchLimit = 256
+    /// Maximum durable sent rows awaiting settlement. This is an implementation default pending
+    /// W6 measurement, not an approved production budget.
+    public var outboundWindowRowCap = 8
+    /// Maximum exact sealed-frame bytes across durable sent rows. This is an implementation
+    /// default pending W6 measurement, not an approved production budget.
+    public var outboundWindowByteCap = 4 * 1024 * 1024
 
     public init() {}
 }
@@ -298,6 +308,8 @@ public protocol CloudSpoolMetrics: AnyObject, Sendable {
 // MARK: - Typed errors and dispositions
 
 public enum CloudOutboundSpoolError: Error, Equatable {
+    case invalidWindowLimits
+    case latestValuePolicyRequired(channel: CloudSpoolChannel)
     /// §6.6 — the candidate transaction was refused; reason and scope name which cap.
     case admissionRefused(reason: CloudSpoolRefusalReason, scope: CloudSpoolRefusalScope)
     /// Fail closed: the persisted counter does not dominate the persisted rows.
@@ -309,14 +321,6 @@ public enum CloudOutboundSpoolError: Error, Equatable {
     case resealForbidden(seq: Int64, state: CloudSpoolRowState)
     /// A sealed envelope with no bytes is indistinguishable from a crash marker; refused.
     case emptySealedEnvelope(seq: Int64)
-    /// §6.1.5 — ctl/ctlr never coalesce.
-    case coalesceControlChannelForbidden(seq: Int64, channel: CloudSpoolChannel)
-    /// Snapshot coalescing is defined only for the snapshot channel `s`.
-    case coalesceNotSnapshotChannel(seq: Int64, channel: CloudSpoolChannel)
-    /// §6.1.5 — a row that has ever been sent must not coalesce.
-    case coalesceAfterSend(seq: Int64)
-    /// Only a ready row may coalesce (a reserved or terminal row may not).
-    case coalesceNotReady(seq: Int64, state: CloudSpoolRowState)
     /// An ack/error correlated to a row that was never sent is a protocol violation.
     case settleBeforeSend(seq: Int64, state: CloudSpoolRowState)
     /// viewer_offline is a ctlr-response outcome (§6.2); it does not settle other channels.
@@ -331,17 +335,40 @@ public enum CloudOutboundSpoolError: Error, Equatable {
     case settlementCorrelationMismatch(seq: Int64)
 }
 
-/// What one publisher step did. The publisher only ever touches the lowest non-terminal seq
-/// (§6.1.3), so "blocked" names the head that is in the way rather than offering a detour.
+/// What one publisher step did. A normal publisher may pass already-written `sent` rows, but it
+/// never passes the lowest `reserved` or `ready` sequence; blocked dispositions name that boundary.
 public enum CloudSpoolSendDisposition: Equatable, Sendable {
     case idle
     case sent(seq: Int64)
     /// §6.2 reconnect: the same sealed bytes were handed to the transport again.
     case resent(seq: Int64)
-    /// A normal drain found an in-window sent head. Only reconnect may resend it.
+    /// A normal drain found only in-window sent work. Only reconnect may resend it.
     case blockedAwaitingAcknowledgement(headSeq: Int64)
+    /// The next globally ordered ready row remains durable because admitting it would exceed the
+    /// implementation-default row or byte window.
+    case blockedWindowFull(currentRows: Int, currentBytes: Int)
     /// The head seq is reserved and unsealed; nothing may send past it.
     case blockedAwaitingSeal(headSeq: Int64)
+}
+
+/// A bounded, identity-free observation for W6. Numeric limits remain
+/// `implementation_default_pending_w6` until the rollout owner measures and approves them.
+public struct CloudOutboundWindowSnapshot: Equatable, Sendable {
+    public let budgetStatus: String
+    public let maximumRows: Int
+    public let maximumBytes: Int
+    public let currentRows: Int
+    public let currentBytes: Int
+    public let processPeakRows: Int
+    public let processPeakBytes: Int
+    public let readyWaitingRows: Int
+    public let readyWaitingBytes: Int
+    public let oldestReadyAgeMilliseconds: UInt64
+    public let oldestReceiptWaitMilliseconds: UInt64
+    public let socketWritesStarted: UInt64
+    public let socketWritesCompleted: UInt64
+    public let socketWritesFailed: UInt64
+    public let windowAdmissionRefusalAttempts: UInt64
 }
 
 /// How the peer settled a sent row.
@@ -375,6 +402,12 @@ public actor CloudOutboundSpool {
     private var state: CloudSpoolPersistedState
     private var lastGCContinuous: Duration
     private var alertLevels: [CloudSpoolOccupancyDimension: CloudSpoolOccupancyAlert] = [:]
+    private var peakWindowRows = 0
+    private var peakWindowBytes = 0
+    private var socketWritesStarted: UInt64 = 0
+    private var socketWritesCompleted: UInt64 = 0
+    private var socketWritesFailed: UInt64 = 0
+    private var windowAdmissionRefusalAttempts: UInt64 = 0
 
     /// Opening the spool IS recovery. In order, all inside one committed transaction:
     /// integrity verification fails closed (corrupt counter, §6.6 charged_bytes
@@ -400,6 +433,10 @@ public actor CloudOutboundSpool {
         self.limits = limits
         self.sequenceFence = sequenceFence
         self.strictPersistedFrameValidation = strictPersistedFrameValidation
+
+        guard limits.outboundWindowRowCap > 0, limits.outboundWindowByteCap > 0 else {
+            throw CloudOutboundSpoolError.invalidWindowLimits
+        }
 
         var working = try store.load()
         let openContinuous = clock.continuousNow
@@ -460,7 +497,7 @@ public actor CloudOutboundSpool {
                       tombstone: openContinuous)
         }
         // §6.2: old continuous instants are incomparable after restart — every sent row
-        // burns (transport uncertain) to release head-of-line.
+        // burns (transport uncertain) to release its durable window slot.
         for index in working.rows.indices where working.rows[index].state == .sent {
             Self.burn(&working.rows[index], reason: .restartSentUncertain,
                       outcome: .transportUncertain, tombstone: openContinuous)
@@ -474,12 +511,16 @@ public actor CloudOutboundSpool {
                           tombstone: openContinuous)
             }
         }
-        // §6.2: a never-sent ready stream row may continue only while its wall-clock ts is
-        // still fresh; anything staler burns rather than shipping a stale snapshot.
+        // Every relay publish class is timestamp-validated. Apply the same explicit local policy
+        // at open and live selection, using the authenticated timestamp inside the exact frame.
+        // Control and transcript rows are not coalesced, but impossible-to-accept bytes are still
+        // terminal locally instead of being sent into a deterministic peer refusal loop.
         for index in working.rows.indices
-        where working.rows[index].state == .ready && !working.rows[index].channel.isControl {
-            if openWall.timeIntervalSince(working.rows[index].reservedAt)
-                > limits.readyFreshnessSeconds {
+        where working.rows[index].state == .ready {
+            if Self.isStaleForSend(
+                working.rows[index], wallNow: openWall,
+                freshnessSeconds: limits.sealedFrameFreshnessSeconds
+            ) {
                 Self.burn(&working.rows[index], reason: .staleReadyAtRestart, outcome: nil,
                           tombstone: openContinuous)
             }
@@ -502,6 +543,9 @@ public actor CloudOutboundSpool {
         try store.commit(working)
         self.state = working
         self.lastGCContinuous = openContinuous
+        let initialWindow = Self.windowOccupancy(of: working)
+        self.peakWindowRows = initialWindow.rows
+        self.peakWindowBytes = initialWindow.bytes
 
         let rows = Self.storedRowCount(of: working)
         let bytes = Self.storedByteCount(of: working)
@@ -544,6 +588,35 @@ public actor CloudOutboundSpool {
         var working = state
         let seq = try admitReservation(into: &working, channel: channel, logicalID: logicalID,
                                        ownerID: ownerID, recipient: recipient, record: record)
+        try store.commit(working)
+        state = working
+        publishOccupancy()
+        return seq
+    }
+
+    /// Latest-value admission for `s` and `orch`. Every older never-sent ready value for the
+    /// same exact wire recipient is burned before the replacement reservation, and both changes
+    /// share one commit. Sent rows retain their exact-frame uncertainty and are never coalesced.
+    public func reserveLatestValue(
+        channel: CloudSpoolChannel, logicalID: String, ownerID: String?, recipient: String,
+        record: CloudJSONValue
+    ) throws -> Int64 {
+        guard channel.isLatestValue else {
+            throw CloudOutboundSpoolError.latestValuePolicyRequired(channel: channel)
+        }
+        try gcBeforeAdmission()
+        var working = state
+        let now = clock.continuousNow
+        for index in working.rows.indices
+        where working.rows[index].state == .ready
+            && working.rows[index].channel == channel
+            && working.rows[index].recipient == recipient {
+            Self.burn(&working.rows[index], reason: .replacedByCoalescing, outcome: nil,
+                      tombstone: now)
+        }
+        let seq = try admitReservation(
+            into: &working, channel: channel, logicalID: logicalID, ownerID: ownerID,
+            recipient: recipient, record: record)
         try store.commit(working)
         state = working
         publishOccupancy()
@@ -666,16 +739,16 @@ public actor CloudOutboundSpool {
 
     // MARK: Publish (the single lease)
 
-    /// One publisher step. The actor is the unique publisher lease (§6.1.6): it takes the
-    /// lowest non-terminal seq and nothing else, regardless of channel (§6.1.3). Before
-    /// looking at the head it burns any sent row whose attempt window has expired — the §6.2
-    /// terminal burn that keeps a lost ack from blocking head-of-line forever.
+    /// One publisher step under the composition's unique worker lease (§6.1.6). Normal drain
+    /// skips already-written `sent` rows, but never a lower reserved/ready row, and stops before
+    /// the configured row or exact-frame byte window would be exceeded. The composition snapshots
+    /// reconnect work and calls `resendPersisted` for each sent sequence in ascending order.
     ///
     /// For a ready head the row is durably committed `sent` (first_sent and
     /// attempt_not_after = first_sent + 30s fixed on the first send) *before* the transport
     /// closure runs; a throwing transport leaves the row sent and rethrows (§6.1.4). For a
-    /// still-in-window sent head, the same sealed bytes are handed to the transport again only
-    /// when `resendSent` names a reconnect (§6.2 reconnect).
+    /// Reconnect replay has one implementation, `resendPersisted`, and is never selected by this
+    /// normal-drain method.
     static func lowestNonterminalIndex(in rows: [CloudSpoolRow]) -> Int? {
         rows.indices
             .filter { !rows[$0].state.isTerminal }
@@ -683,53 +756,109 @@ public actor CloudOutboundSpool {
     }
 
     public func sendNext(
-        resendSent: Bool = false,
         via transport: @Sendable (Data) async throws -> Void
     ) async throws -> CloudSpoolSendDisposition {
         try gcIfDue()
         try burnExpiredSentRows()
-        guard let index = Self.lowestNonterminalIndex(in: state.rows)
-        else { return .idle }
-        let head = state.rows[index]
-        switch head.state {
-        case .reserved:
-            return .blockedAwaitingSeal(headSeq: head.seq)
-        case .ready:
-            guard head.firstSentContinuous == nil else {
-                throw CloudOutboundSpoolError.readyRowAlreadyHasFirstSent(seq: head.seq)
+        try normalizeReadyRowsForSend()
+        let occupancy = Self.windowOccupancy(of: state)
+        let ordered = state.rows.indices.sorted { state.rows[$0].seq < state.rows[$1].seq }
+
+        var candidateIndex: Int?
+        for index in ordered {
+            switch state.rows[index].state {
+            case .reserved:
+                return .blockedAwaitingSeal(headSeq: state.rows[index].seq)
+            case .ready:
+                candidateIndex = index
+            case .sent, .acked, .rejected, .burned:
+                continue
             }
-            guard let sealedEnvelope = head.sealedEnvelopeBytes, !sealedEnvelope.isEmpty else {
-                throw CloudOutboundSpoolError.missingSealedEnvelopeForSend(
-                    seq: head.seq, state: head.state)
-            }
-            var working = state
-            let firstSent = clock.continuousNow
-            working.rows[index].firstSentContinuous = firstSent
-            working.rows[index].attemptNotAfterContinuous = firstSent + limits.attemptWindow
-            working.rows[index].state = .sent
-            try store.commit(working)
-            state = working
-            do {
-                try await transport(sealedEnvelope)
-            } catch {
-                // §6.1.4: a throwing send leaves the row sent. The attempt window, not the
-                // transport error, decides when it stops holding head-of-line.
-                throw error
-            }
-            return .sent(seq: head.seq)
-        case .sent:
-            guard resendSent else {
+            if candidateIndex != nil { break }
+        }
+        guard let index = candidateIndex else {
+            if let head = state.rows.filter({ $0.state == .sent }).min(by: { $0.seq < $1.seq }) {
                 return .blockedAwaitingAcknowledgement(headSeq: head.seq)
             }
-            guard let sealedEnvelope = head.sealedEnvelopeBytes, !sealedEnvelope.isEmpty else {
-                throw CloudOutboundSpoolError.missingSealedEnvelopeForSend(
-                    seq: head.seq, state: head.state)
-            }
-            try await transport(sealedEnvelope)
-            return .resent(seq: head.seq)
-        case .acked, .rejected, .burned:
-            return .idle // unreachable: terminal rows were filtered out above
+            return .idle
         }
+        let head = state.rows[index]
+        guard head.firstSentContinuous == nil else {
+            throw CloudOutboundSpoolError.readyRowAlreadyHasFirstSent(seq: head.seq)
+        }
+        guard let sealedEnvelope = head.sealedEnvelopeBytes, !sealedEnvelope.isEmpty else {
+            throw CloudOutboundSpoolError.missingSealedEnvelopeForSend(
+                seq: head.seq, state: head.state)
+        }
+        guard sealedEnvelope.count <= limits.outboundWindowByteCap,
+              occupancy.rows < limits.outboundWindowRowCap,
+              occupancy.bytes <= limits.outboundWindowByteCap - sealedEnvelope.count else {
+            windowAdmissionRefusalAttempts = Self.incremented(windowAdmissionRefusalAttempts)
+            return .blockedWindowFull(
+                currentRows: occupancy.rows, currentBytes: occupancy.bytes)
+        }
+        var working = state
+        let firstSent = clock.continuousNow
+        working.rows[index].firstSentContinuous = firstSent
+        working.rows[index].attemptNotAfterContinuous = firstSent + limits.attemptWindow
+        working.rows[index].state = .sent
+        try store.commit(working)
+        state = working
+        updateWindowPeaks()
+        socketWritesStarted = Self.incremented(socketWritesStarted)
+        do {
+            try await transport(sealedEnvelope)
+            socketWritesCompleted = Self.incremented(socketWritesCompleted)
+        } catch {
+            // §6.1.4: a throwing send leaves the row sent. The attempt window, not the
+            // transport error, decides when it stops holding a durable window slot.
+            socketWritesFailed = Self.incremented(socketWritesFailed)
+            throw error
+        }
+        return .sent(seq: head.seq)
+    }
+
+    /// Reconnect-only exact replay. The caller snapshots sent sequences once per authenticated
+    /// connection and invokes this in ascending order, so rows that settle while reconnect drain
+    /// is running cannot make the sender fall through into a newly-ready row or replay one frame
+    /// twice. A terminal row is already settled and therefore needs no replay.
+    public func resendPersisted(
+        seq: Int64,
+        via transport: @Sendable (Data) async throws -> Void
+    ) async throws -> CloudSpoolSendDisposition {
+        try gcIfDue()
+        try burnExpiredSentRows()
+        guard let row = state.rows.first(where: { $0.seq == seq }) else {
+            throw CloudOutboundSpoolError.rowNotFound(seq: seq)
+        }
+        guard row.state == .sent else {
+            return row.state.isTerminal ? .idle : .blockedAwaitingAcknowledgement(headSeq: seq)
+        }
+        guard let sealedEnvelope = row.sealedEnvelopeBytes, !sealedEnvelope.isEmpty else {
+            throw CloudOutboundSpoolError.missingSealedEnvelopeForSend(
+                seq: row.seq, state: row.state)
+        }
+        socketWritesStarted = Self.incremented(socketWritesStarted)
+        do {
+            try await transport(sealedEnvelope)
+            socketWritesCompleted = Self.incremented(socketWritesCompleted)
+        } catch {
+            socketWritesFailed = Self.incremented(socketWritesFailed)
+            throw error
+        }
+        return .resent(seq: row.seq)
+    }
+
+    /// Deadline-only maintenance, deliberately separate from socket ownership. It lets the
+    /// composition release expired durable window slots even while its sole socket write is
+    /// suspended. The same committed burn transition is used by normal drain.
+    @discardableResult
+    public func expireAttemptDeadlines() throws -> Int {
+        try gcIfDue()
+        let before = state.rows.reduce(0) { $0 + ($1.state == .sent ? 1 : 0) }
+        try burnExpiredSentRows()
+        let after = state.rows.reduce(0) { $0 + ($1.state == .sent ? 1 : 0) }
+        return before - after
     }
 
     /// §6.2: at the attempt cap with no correlated ack/error, one transaction moves the row
@@ -801,45 +930,6 @@ public actor CloudOutboundSpool {
         case .reserved, .ready:
             throw CloudOutboundSpoolError.settleBeforeSend(seq: seq, state: row.state)
         }
-    }
-
-    // MARK: Coalescing
-
-    /// §6.1.5: snapshot coalescing — burn the old row, then reserve the new one, in one
-    /// committed transaction, only for a never-sent ready snapshot on the `s` channel. The
-    /// replacement inherits channel, logical id, owner and recipient; the reserve runs the
-    /// full admission (with the old row already burned, so its charge no longer occupies).
-    /// Sent rows never coalesce; ctl/ctlr never coalesce.
-    public func coalesceSnapshot(replacing oldSeq: Int64,
-                                 with record: CloudJSONValue) throws -> Int64 {
-        try gcBeforeAdmission()
-        guard let index = state.rows.firstIndex(where: { $0.seq == oldSeq }) else {
-            throw CloudOutboundSpoolError.rowNotFound(seq: oldSeq)
-        }
-        let old = state.rows[index]
-        guard !old.channel.isControl else {
-            throw CloudOutboundSpoolError.coalesceControlChannelForbidden(seq: oldSeq,
-                                                                          channel: old.channel)
-        }
-        guard old.channel == .s else {
-            throw CloudOutboundSpoolError.coalesceNotSnapshotChannel(seq: oldSeq,
-                                                                     channel: old.channel)
-        }
-        guard old.state == .ready, old.firstSentContinuous == nil else {
-            throw old.state == .sent || old.firstSentContinuous != nil
-                ? CloudOutboundSpoolError.coalesceAfterSend(seq: oldSeq)
-                : CloudOutboundSpoolError.coalesceNotReady(seq: oldSeq, state: old.state)
-        }
-        var working = state
-        Self.burn(&working.rows[index], reason: .replacedByCoalescing, outcome: nil,
-                  tombstone: clock.continuousNow)
-        let seq = try admitReservation(into: &working, channel: old.channel,
-                                       logicalID: old.logicalID, ownerID: old.ownerID,
-                                       recipient: old.recipient, record: record)
-        try store.commit(working)
-        state = working
-        publishOccupancy()
-        return seq
     }
 
     // MARK: Tombstones and GC
@@ -927,12 +1017,48 @@ public actor CloudOutboundSpool {
         state.rows.first { $0.seq == seq }
     }
 
-    /// The sole publisher uses this to schedule a cancellable wakeup. It is derived from the
-    /// current head every time, so a stale task cannot authorize a later generation by itself.
-    public func nextAttemptWakeDelay() -> Duration? {
-        guard let index = Self.lowestNonterminalIndex(in: state.rows),
-              state.rows[index].state == .sent,
-              let deadline = state.rows[index].attemptNotAfterContinuous else { return nil }
+    public func outboundWindowSnapshot() -> CloudOutboundWindowSnapshot {
+        let occupancy = Self.windowOccupancy(of: state)
+        let ready = state.rows.filter { $0.state == .ready }
+        let now = clock.continuousNow
+        let oldestReadyMilliseconds = state.rows
+            .filter { $0.state == .ready }
+            .map { Self.milliseconds(max(0, clock.wallNow.timeIntervalSince($0.reservedAt))) }
+            .max() ?? 0
+        let oldestReceiptMilliseconds = state.rows.compactMap { row -> UInt64? in
+            guard row.state == .sent, let first = row.firstSentContinuous else { return nil }
+            return Self.milliseconds(max(.zero, now - first))
+        }.max() ?? 0
+        return CloudOutboundWindowSnapshot(
+            budgetStatus: "implementation_default_pending_w6",
+            maximumRows: limits.outboundWindowRowCap,
+            maximumBytes: limits.outboundWindowByteCap,
+            currentRows: occupancy.rows,
+            currentBytes: occupancy.bytes,
+            processPeakRows: peakWindowRows,
+            processPeakBytes: peakWindowBytes,
+            readyWaitingRows: ready.count,
+            readyWaitingBytes: ready.reduce(0) { $0 + ($1.sealedEnvelopeBytes?.count ?? 0) },
+            oldestReadyAgeMilliseconds: oldestReadyMilliseconds,
+            oldestReceiptWaitMilliseconds: oldestReceiptMilliseconds,
+            socketWritesStarted: socketWritesStarted,
+            socketWritesCompleted: socketWritesCompleted,
+            socketWritesFailed: socketWritesFailed,
+            windowAdmissionRefusalAttempts: windowAdmissionRefusalAttempts)
+    }
+
+    /// The lifecycle-owned maintenance task wakes both attempt expiry and a stale unsealed
+    /// reservation. A reservation failure therefore cannot strand every higher ready row merely
+    /// because no later producer happens to arrive.
+    public func nextMaintenanceWakeDelay() -> Duration? {
+        let deadlines = state.rows.compactMap { row -> Duration? in
+            if row.state == .sent { return row.attemptNotAfterContinuous }
+            if row.state == .reserved {
+                return row.reservedAtContinuous + limits.staleReservedAfter + .milliseconds(1)
+            }
+            return nil
+        }
+        guard let deadline = deadlines.min() else { return nil }
         return max(.zero, deadline - clock.continuousNow)
     }
 
@@ -964,6 +1090,97 @@ public actor CloudOutboundSpool {
 
     private static func storedByteCount(of state: CloudSpoolPersistedState) -> Int {
         state.rows.reduce(0) { $0 + $1.chargedBytes }
+    }
+
+    private static func windowOccupancy(
+        of state: CloudSpoolPersistedState
+    ) -> (rows: Int, bytes: Int) {
+        let sent = state.rows.filter { $0.state == .sent }
+        return (sent.count, sent.reduce(0) { $0 + ($1.sealedEnvelopeBytes?.count ?? 0) })
+    }
+
+    /// Before every live socket selection, collapse ready latest-value backlogs and terminally
+    /// burn any row whose authenticated sealed timestamp is outside the explicit local policy.
+    /// One commit makes the whole normalization durable before any later row can be selected.
+    private func normalizeReadyRowsForSend() throws {
+        var working = state
+        let wallNow = clock.wallNow
+        let continuousNow = clock.continuousNow
+        var keepLatest = Set<String>()
+        var changed = false
+        for index in working.rows.indices.reversed()
+        where working.rows[index].state == .ready && working.rows[index].channel.isLatestValue {
+            let row = working.rows[index]
+            let key = row.channel.rawValue + "\u{0}" + row.recipient
+            if !keepLatest.insert(key).inserted {
+                Self.burn(&working.rows[index], reason: .replacedByCoalescing, outcome: nil,
+                          tombstone: continuousNow)
+                changed = true
+            }
+        }
+        for index in working.rows.indices where working.rows[index].state == .ready {
+            if Self.isStaleForSend(
+                working.rows[index], wallNow: wallNow,
+                freshnessSeconds: limits.sealedFrameFreshnessSeconds
+            ) {
+                Self.burn(&working.rows[index], reason: .staleReadyAtRestart, outcome: nil,
+                          tombstone: continuousNow)
+                changed = true
+            }
+        }
+        if changed {
+            try store.commit(working)
+            state = working
+            publishOccupancy()
+        }
+    }
+
+    private static func isStaleForSend(
+        _ row: CloudSpoolRow, wallNow: Date, freshnessSeconds: TimeInterval
+    ) -> Bool {
+        let sealedMilliseconds = authenticatedSealedTimestampMilliseconds(row)
+        let sealedAt = sealedMilliseconds.map {
+            Date(timeIntervalSince1970: TimeInterval($0) / 1_000)
+        } ?? row.reservedAt
+        return wallNow.timeIntervalSince(sealedAt) > freshnessSeconds
+    }
+
+    /// Production opens with strict frame validation, so this value is authenticated by the
+    /// retained signature and identity checks. The reservation-time fallback exists only for
+    /// deliberately non-wire unit fixtures that open with strict validation disabled.
+    private static func authenticatedSealedTimestampMilliseconds(_ row: CloudSpoolRow) -> Int64? {
+        guard let bytes = row.sealedEnvelopeBytes,
+              let frame = try? CloudCanonicalJSON.parseStrict(bytes),
+              case .object(let fields) = frame,
+              case .object(let envelope)? = fields["envelope"],
+              case .int(let timestamp)? = envelope["ts"], timestamp >= 0 else { return nil }
+        return timestamp
+    }
+
+    private func updateWindowPeaks() {
+        let occupancy = Self.windowOccupancy(of: state)
+        peakWindowRows = max(peakWindowRows, occupancy.rows)
+        peakWindowBytes = max(peakWindowBytes, occupancy.bytes)
+    }
+
+    private static func incremented(_ value: UInt64) -> UInt64 {
+        let (next, overflow) = value.addingReportingOverflow(1)
+        return overflow ? .max : next
+    }
+
+    private static func milliseconds(_ duration: Duration) -> UInt64 {
+        let parts = duration.components
+        guard parts.seconds >= 0 else { return 0 }
+        let seconds = UInt64(parts.seconds)
+        let millis = UInt64(max(0, parts.attoseconds / 1_000_000_000_000_000))
+        let (whole, overflow) = seconds.multipliedReportingOverflow(by: 1_000)
+        return overflow || whole > UInt64.max - millis ? .max : whole + millis
+    }
+
+    private static func milliseconds(_ seconds: TimeInterval) -> UInt64 {
+        guard seconds.isFinite, seconds > 0 else { return 0 }
+        let value = seconds * 1_000
+        return value >= Double(UInt64.max) ? .max : UInt64(value)
     }
 
     /// Publishes the two gauges and raises the §6.6 occupancy alerts (80% warning, 90% page)

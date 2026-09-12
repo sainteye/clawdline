@@ -139,7 +139,12 @@ private final class CloudDurableFile: @unchecked Sendable {
         fault: ((CloudDurableStoreFaultPoint) throws -> Void)?
     ) throws {
         guard bytes.count <= maximumBytes else { throw CloudDurableStoreFailure.oversized }
-        if Self.pathExists(url.path) { _ = try secureRead(url) }
+        // A commit is about to atomically replace these bytes; reading the whole current spool
+        // only to discard them amplified every metadata transition by the complete sealed-frame
+        // population. Inspect the opened descriptor instead. This retains every fail-closed file
+        // identity/ownership/permission/size invariant from `secureRead`, including a pathname
+        // identity recheck, without copying payload bytes into memory.
+        if Self.pathExists(url.path) { try secureInspect(url) }
         if Self.pathExists(previousURL.path) { try recoverInterruptedCommit() }
 
         let temporary = temporaryURL
@@ -288,6 +293,51 @@ private final class CloudDurableFile: @unchecked Sendable {
             throw CloudDurableStoreFailure.unreadable
         }
         return output
+    }
+
+    private func secureInspect(_ source: URL) throws {
+        var namedBefore = stat()
+        guard lstat(source.path, &namedBefore) == 0 else {
+            throw CloudDurableStoreFailure.unreadable
+        }
+        guard namedBefore.st_mode & S_IFMT != S_IFLNK else {
+            throw CloudDurableStoreFailure.symlink
+        }
+        let descriptor = source.path.withCString {
+            open($0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        }
+        guard descriptor >= 0 else { throw CloudDurableStoreFailure.unreadable }
+        defer { _ = close(descriptor) }
+        var opened = stat()
+        guard fstat(descriptor, &opened) == 0 else {
+            throw CloudDurableStoreFailure.unreadable
+        }
+        let metadata = CloudDurableFileMetadata(
+            size: Int64(opened.st_size), uid: opened.st_uid,
+            links: UInt64(opened.st_nlink), mode: opened.st_mode)
+        guard metadata.mode & S_IFMT == S_IFREG else {
+            throw CloudDurableStoreFailure.nonRegular
+        }
+        guard metadata.links == 1 else { throw CloudDurableStoreFailure.multipleLinks }
+        guard metadata.uid == expectedUID else { throw CloudDurableStoreFailure.wrongOwner }
+        guard metadata.mode & 0o777 == 0o600 else {
+            throw CloudDurableStoreFailure.unsafePermissions
+        }
+        guard metadata.size >= 0, metadata.size <= maximumBytes else {
+            throw CloudDurableStoreFailure.oversized
+        }
+        var openedAfter = stat()
+        var namedAfter = stat()
+        guard fstat(descriptor, &openedAfter) == 0,
+              lstat(source.path, &namedAfter) == 0,
+              namedAfter.st_mode & S_IFMT == S_IFREG,
+              namedBefore.st_dev == opened.st_dev, namedBefore.st_ino == opened.st_ino,
+              namedAfter.st_dev == opened.st_dev, namedAfter.st_ino == opened.st_ino,
+              openedAfter.st_dev == opened.st_dev, openedAfter.st_ino == opened.st_ino,
+              openedAfter.st_size == opened.st_size,
+              openedAfter.st_nlink == opened.st_nlink else {
+            throw CloudDurableStoreFailure.unreadable
+        }
     }
 
     private func writeNew(

@@ -105,7 +105,13 @@ advance. `CloudOutboundSpool` therefore reserves one never-reused global sequenc
 persists the logical record, seals the exact publish-frame bytes, and persists `sent` before the
 socket write. `CloudTransport` has no `pendingByChannel`, queue, or sequence allocator: while it is
 not ready it returns `notConnected`, and the spool retains the only retryable bytes. Reconnect may
-resend the exact in-window sent frame; restart burns sent uncertainty, and only a correlated
+resend the exact in-window sent frames in sequence order. A successful durable seal wakes one
+independently owned drain worker and returns to the producer; it does not await that frame's socket
+write or ACK. The worker writes ready rows in global sequence order until either the row or exact
+sealed-frame-byte window is full, and a correlated receipt replenishes one slot. The current
+implementation defaults are 8 sent rows and 4 MiB, explicitly
+`implementation_default_pending_w6`, not approved budgets. A lower reserved/ready row is never
+skipped. Restart burns sent uncertainty, and only a correlated
 authenticated channel/sequence ack or refusal settles a live row. Unreadable or unsafe state never
 restarts from zero. On the first Mac open, the former `cloud-sequence.json` is descriptor-checked
 and its sender ceiling is durably applied as the spool's minimum next sequence before any publish;
@@ -143,15 +149,34 @@ Durable outbound logical rows contain channel/identity, byte count, and a SHA-25
 not plaintext or a base64-equivalent payload copy; content exists only inside the encrypted sealed
 frame. Production revalidates complete logical metadata and the sealed frame on load. Settlement
 matches the exact authenticated wire channel plus sequence and creates its tombstone in the same
-commit. A cancellable deadline wake releases a lost-ACK head without waiting for new traffic and
-reschedules with bounded backoff after a transient durable-store failure;
+commit. Authenticated `publish_error` is decoded as closed code/field labels and never disconnects
+the socket: terminal and unknown codes reject only their exact row, while clock-skew/unavailable/
+internal responses terminally reject the old exact bytes and create a newly sealed sequence from
+in-memory decryption. Uncorrelated error and unknown authenticated frames are ignored and observed,
+not promoted into reconnect reasons. Before socket selection, the signed envelope `ts` must be no
+older than 240 seconds, leaving one minute inside Relay's 300-second default. This applies explicitly
+to transcript and control rows; `s` and `orch` are latest-value lanes whose older ready values are
+durably burned and stripped of sealed bytes both at admission and live backlog selection.
+
+A cancellable maintenance wake burns every expired sent attempt and stale failed reservation without
+waiting for new traffic. Transient durable I/O uses bounded exponential delay; structural capacity,
+integrity and permission failures become a visible typed persistent state and are not re-encoded at
+1 Hz. Stop/detach fences new scheduling, closes the transport to release a production WebSocket send,
+then joins the sole drain and deadline tasks. Identity-free observations split
+producer wait, reserve, envelope sealing, spool sealing, sent-state persistence, socket write and
+receipt wait, and include logical/frame bytes plus ready/window current, process-local peak and
+refusal-attempt debt; ready age is wall-clock age, not worker duration.
 receipt ingestion keeps at most 256 oldest observations and counts overflow. Authority directories
 and files must be private (0700/0600), newly created directory entries are parent-fsynced, new
 writes use one fixed candidate name, and startup scans at most 128 directory entries before either
 descriptor-validating/removing at most 64 legacy `.writing-*` candidates or failing closed. A
 validated server machine identity is injectively encoded rather than used
 as a raw path. Linux has no accepted runtime metric label, so it suppresses spool metrics instead
-of publishing `runtime=mac`.
+of publishing `runtime=mac`. Atomic spool replacement still writes and fsyncs the complete next
+candidate; its pre-replacement safety check now inspects descriptor metadata instead of rereading
+all current payload bytes, while preserving the regular-file, single-link, uid, mode, size and inode
+checks. A measured 4.13 MiB/1,674-row commit was about 8 ms, so this is adjacent amplification
+cleanup, not the explanation for the observed 44-second median producer stall.
 
 **Authenticated command ingress is bounded before execution.** `CloudInboundCommandQueue` is the
 single owner of the pending FIFO and its accounting. Production limits are eight retained commands
@@ -205,6 +230,12 @@ one-minute lane and a request is a person waiting; measured on one Mac it is 453
 `/v1/health` — nothing about permissions — and it is the only reading the "this page is behind"
 banner can have out here, because on the direct path that comparison comes from asking health on
 every reconnect and the relay's `ready` frame is the *relay's* and has never heard of a build.
+
+Commit `eaa20bbc` reduced only this Cloud `orchestratorSnapshot()` projection. It did not change the
+local authenticated `GET /v1/orchestrator/tasks` route: that endpoint intentionally still returns
+the complete `Orchestrator.records()` representation (about 3.69 MiB in the cited live reading).
+The projected Cloud bytes and the complete local endpoint are different contracts, not before/after
+measurements of one surface.
 
 **An empty list and no list are different answers.** `CloudClient.schedules()` resolves an empty
 inventory and refuses an unknown one — `cloud_read_unavailable` before any snapshot has arrived,

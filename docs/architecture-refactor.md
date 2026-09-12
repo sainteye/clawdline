@@ -217,6 +217,41 @@ accepted metrics. The rollback seam is the `CloudInboundCommandStream` facade: c
 `for await`, while the prior `AsyncStream` buffering can be restored behind that surface without
 changing Cloud protocol-v1 envelope or channel bytes.
 
+### Cloud outbound latency correction
+
+Outbound durable ownership stays in `CloudOutboundSpool`; the correction changes scheduling, not
+wire authority. `CloudDurableOutboundComposition.enqueue` reserves a never-reused sequence, seals
+the authenticated exact frame and commits it ready, then wakes and leaves one independently owned
+drain worker. Producers never own or await socket work. The worker is the only socket-write lease,
+walks global sequence order, never passes a lower reserved/ready row, and may hold several sent rows
+while their correlated receipts arrive. Row and exact-frame bytes are both hard-bounded; the 8-row,
+4-MiB values are `implementation_default_pending_w6`, not accepted budgets. The byte bound is
+demonstrably reachable while the complete base64-and-metadata file remains below its 32-MiB ceiling.
+
+Reconnect snapshots the durable sent set and replays each exact persisted frame in ascending order;
+restart retains the existing conservative sent burn. Authenticated `publish_error` receipts expose
+only closed code/field labels, settle exactly their `(channel, sequence)` row, never tear down the
+socket, and follow Relay disposition: terminal and unknown codes end the row; retryable codes decrypt
+only in memory and reseal a new sequence instead of replaying rejected bytes. Before every send, the
+authenticated sealed `ts` must be within the local 240-second policy, strictly inside Relay's
+300-second default; stale `t` and control rows terminate, while `s`/`orch` additionally coalesce all
+older ready values durably. Duplicate, late, out-of-order and mismatched receipts retain their
+existing fail-closed behavior. Attempt deadlines select the earliest sent or stale-reservation wake.
+Stop/detach first fences and cancels scheduling, then shuts down the transport to unblock a production
+socket send, and only then joins the drain/deadline tasks.
+Instrumentation separates producer wait, reserve, envelope seal, spool seal, sent-state persistence,
+socket write, ready wall-clock age and receipt wait without logging channel paths, payloads, account/device
+identities or secrets; process-local peaks, ready wall-clock age and refusal-attempt counts say their
+measurement subjects explicitly. The existing opaque publication trace id remains only for stage
+correlation. Structural durable failures become a typed persistent state and are not retried at 1 Hz;
+transient durable I/O uses bounded exponential delay.
+
+The nearby durable-file change is deliberately smaller: atomic replacement keeps its existing
+fsync/rename/recovery protocol, but validates the old file through descriptor metadata and pathname
+inode rather than reading and discarding all payload bytes. Live measurement put a representative
+complete commit near 8 ms versus 44,493 ms producer p50, so no journal/schema migration is justified
+as this latency correction.
+
 ## Phase 0 — freeze and prove the baseline
 
 Add guards before moving behavior:
