@@ -19,6 +19,7 @@ clawdline_production_sources=(
   Sources/CloudCanonicalJSON.swift
   Sources/CloudClock.swift
   Sources/CloudCommandLedger.swift
+  Sources/CloudDurableStores.swift
   Sources/CloudEnvelope.swift
   Sources/CloudHandover.swift
   Sources/CloudKeys.swift

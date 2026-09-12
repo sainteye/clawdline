@@ -363,6 +363,43 @@ final class LinuxRuntimeContractTests: XCTestCase {
         })
     }
 
+    func testW51LinuxComposesSharedDurabilityUnderCandidateAuthority() async throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-cloud-runtime-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        var metadata = stat()
+        XCTAssertEqual(lstat(scratch.path, &metadata), 0)
+
+        let linux = try LinuxDurableCloudRuntime(
+            stateDirectory: scratch.path, expectedUID: metadata.st_uid)
+        XCTAssertTrue(linux.readiness.durable)
+        XCTAssertEqual(linux.readiness.authority, "candidate")
+        XCTAssertTrue(linux.readiness.cutoverRequired)
+        XCTAssertFalse(linux.readiness.emissionEnabled)
+        XCTAssertEqual(linux.candidateAuthority.publicCommit,
+                       "38eb822575e3c309a776a9e3e2874c7062d8fb75")
+        XCTAssertEqual(linux.candidateAuthority.packageTree,
+                       "3ee391a4af73f9688510c19106d38ba325227051")
+        XCTAssertFalse(linux.candidateAuthority.permitsNormativeCutover)
+        XCTAssertFalse(linux.candidateAuthority.permitsEmission(wireVersion: 1))
+        XCTAssertFalse(linux.candidateAuthority.permitsEmission(wireVersion: 2))
+        XCTAssertFalse(linux.candidateAuthority.permitsClientFloorRaise(to: "2"))
+        let ledgerRows = try await linux.runtime.ledger.rowCount()
+        let spoolRows = await linux.runtime.spool.rowsSnapshot()
+        let metricRuntime = await linux.runtime.spool.runtime
+        XCTAssertEqual(ledgerRows, 0)
+        XCTAssertTrue(spoolRows.isEmpty)
+        XCTAssertNil(metricRuntime, "Linux must suppress unsupported spool metrics, not label them mac")
+
+        XCTAssertThrowsError(try LinuxDurableCloudRuntime(
+            stateDirectory: scratch.path, expectedUID: metadata.st_uid)) {
+            XCTAssertEqual($0 as? CloudDurableStoreFailure, .writerLockHeld)
+        }
+    }
+
     #if os(Linux)
     func testRealTmuxProviderLifecycleOnLinux() throws {
         let tmux = try XCTUnwrap(ProcessInfo.processInfo.environment["CLAWDLINE_TEST_TMUX"],

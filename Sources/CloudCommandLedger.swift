@@ -3,11 +3,10 @@ import Foundation
 import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
 #endif
 
-/// This state deliberately remains independent from the `EpochGuardState` computed by
-/// `EpochGuard`, so the clock and ledger units can compile and verify in isolation. A future
-/// wiring seam must map between them explicitly; until that seam exists, there is no compile-time
-/// guarantee that the clock guard's computed state reaches this ledger consumer.
-public enum CloudEpochGuardState: Sendable {
+/// Durable command admission consumes this small projection of the host clock guard. The Mac
+/// composition maps its current `EpochGuardState` at both reservation and effect time; keeping the
+/// projection here lets the shared Application target remain independent of the host clock type.
+public enum CloudEpochGuardState: Equatable, Sendable {
     case uncertain
     case ready
 }
@@ -35,15 +34,36 @@ public enum CloudCommandOutcomeCode: String, Codable, Sendable {
     case busy
     case rateLimited = "rate_limited"
     case unavailable
+
+    fileprivate var defaultStatus: Int {
+        switch self {
+        case .succeeded: return 200
+        case .failed: return 400
+        case .internalError: return 500
+        case .busy, .rateLimited: return 429
+        case .unavailable: return 503
+        }
+    }
 }
 
 public struct CloudCommandNormalizedOutcome: Codable, Equatable, Sendable {
     public let code: CloudCommandOutcomeCode
+    public let status: Int
     public let payload: Data?
 
-    public init(code: CloudCommandOutcomeCode, payload: Data? = nil) {
+    public init(code: CloudCommandOutcomeCode, status: Int? = nil, payload: Data? = nil) {
         self.code = code
+        self.status = status ?? code.defaultStatus
         self.payload = payload
+    }
+
+    private enum CodingKeys: String, CodingKey { case code, status, payload }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        code = try values.decode(CloudCommandOutcomeCode.self, forKey: .code)
+        status = try values.decode(Int.self, forKey: .status)
+        payload = try values.decodeIfPresent(Data.self, forKey: .payload)
     }
 }
 
@@ -129,8 +149,12 @@ public struct CloudCommandLedgerRequest: Sendable {
     }
 }
 
-public protocol CloudCommandLedgerStore: AnyObject {
-    func transaction<T>(_ body: (inout [CloudCommandLedgerKey: CloudCommandLedgerRow]) throws -> T) rethrows -> T
+public protocol CloudCommandLedgerStore: AnyObject, Sendable {
+    /// The body always receives a candidate copy. A normal return asks the store to durably
+    /// commit that complete candidate; a body or store error exposes neither its mutations nor
+    /// its return value. `throws`, rather than `rethrows`, is intentional: fsync/rename/recovery
+    /// failures originate in the store, not in the mutation closure.
+    func transaction<T>(_ body: (inout [CloudCommandLedgerKey: CloudCommandLedgerRow]) throws -> T) throws -> T
     func persistedBytes() throws -> Data
 }
 
@@ -144,10 +168,13 @@ public final class InMemoryCloudCommandLedgerStore: CloudCommandLedgerStore, @un
 
     public func transaction<T>(
         _ body: (inout [CloudCommandLedgerKey: CloudCommandLedgerRow]) throws -> T
-    ) rethrows -> T {
+    ) throws -> T {
         lock.lock()
         defer { lock.unlock() }
-        return try body(&rows)
+        var candidate = rows
+        let result = try body(&candidate)
+        rows = candidate
+        return result
     }
 
     public func persistedBytes() throws -> Data {
@@ -234,6 +261,9 @@ public enum CloudCommandLedgerError: Error, Equatable, Sendable {
     case epochUncertain
     case gateUnavailable
     case reservationReleased(CloudCommandPreEffectRefusal)
+    /// A coalesced caller must receive a typed terminal answer when the durable owner can no
+    /// longer prove whether releasing or completing its row committed.
+    case durabilityUnavailable
     case invalidTransition
     case corrupt
     case notFound
@@ -278,11 +308,13 @@ public actor CloudCommandLedger {
         case reserved
         case cached(CloudCommandNormalizedOutcome)
         case wait
+        case capacity(scope: CloudLedgerCapacityScope, reason: CloudLedgerCapacityReason)
     }
 
     private enum WaiterWake {
         case retryAdmission
         case completed(CloudCommandNormalizedOutcome)
+        case terminal(CloudCommandLedgerError)
     }
 
     private let store: any CloudCommandLedgerStore
@@ -296,10 +328,10 @@ public actor CloudCommandLedger {
 
     /// Opening a new process instance atomically recovers rows whose effect point-of-no-return
     /// was never committed. In-progress rows are deliberately left untouched.
-    public init(store: any CloudCommandLedgerStore, clocks: CloudCommandLedgerClocks) {
+    public init(store: any CloudCommandLedgerStore, clocks: CloudCommandLedgerClocks) throws {
         self.store = store
         self.clocks = clocks
-        store.transaction { rows in
+        try store.transaction { rows in
             rows = rows.filter { $0.value.state != .reserved }
         }
     }
@@ -316,9 +348,7 @@ public actor CloudCommandLedger {
             }
 
             var gcReasons: [CloudLedgerGCReason: UInt64] = [:]
-            // The inout store commits mutations even when a later capacity check throws.
-            // Account for those already-committed removals on every exit path.
-            defer { recordGC(gcReasons) }
+            var usedFairnessReserve = false
             let protectedActiveEffects = activeEffects
             let decision: AdmissionDecision = try store.transaction { rows in
                 if let existing = rows[request.key] {
@@ -335,7 +365,11 @@ public actor CloudCommandLedger {
                     case .reserved:
                         return .wait
                     case .inProgress:
-                        if Self.retriesRecoveredInProgress {
+                        if protectedActiveEffects.contains(request.key) {
+                            // This process owns the effect. Exact duplicates join its bounded
+                            // waiter set and receive the one durable outcome.
+                            return .wait
+                        } else if Self.retriesRecoveredInProgress {
                             rows.removeValue(forKey: request.key)
                         } else {
                             throw CloudCommandLedgerError.outcomeUnknown
@@ -367,17 +401,17 @@ public actor CloudCommandLedger {
                     if $1.key.viewerSender == request.key.viewerSender { $0 += 1 }
                 }
                 if actorCount >= Self.normalActorLimit {
-                    try refuseCapacity(scope: .actor, reason: .rowCap)
+                    return .capacity(scope: .actor, reason: .rowCap)
                 }
                 if rows.count >= Self.globalHardLimit {
                     if Self.permitsEvictionAtCapacity, let oldest = rows.min(by: { $0.value.createdAt < $1.value.createdAt })?.key {
                         rows.removeValue(forKey: oldest)
                     } else {
-                        try refuseCapacity(scope: .global, reason: .rowCap)
+                        return .capacity(scope: .global, reason: .rowCap)
                     }
                 }
                 if rows.count >= Self.fairnessReserveStart && actorCount >= Self.fairnessActorLimit {
-                    try refuseCapacity(scope: .actor, reason: .fairness)
+                    return .capacity(scope: .actor, reason: .fairness)
                 }
 
                 let row = CloudCommandLedgerRow(
@@ -399,10 +433,15 @@ public actor CloudCommandLedger {
                 )
                 rows[request.key] = row
                 if rows.count > Self.fairnessReserveStart {
-                    fairnessReserveUsedTotal += 1
+                    usedFairnessReserve = true
                 }
                 return .reserved
             }
+            // Neither metric may get ahead of the store. A transaction that throws after its
+            // mutation closure leaves durable state unchanged and records no successful GC or
+            // fairness reservation.
+            recordGC(gcReasons)
+            if usedFairnessReserve { fairnessReserveUsedTotal += 1 }
 
             switch decision {
             case .reserved:
@@ -421,7 +460,12 @@ public actor CloudCommandLedger {
                     // Re-run the complete admission path so reserved recovery, current deadline
                     // and capacity all apply afresh.
                     continue
+                case .terminal(let error):
+                    throw error
                 }
+            case .capacity(let scope, let reason):
+                capacityRefusals[CloudLedgerCapacityLabel(scope: scope, reason: reason), default: 0] += 1
+                throw CloudCommandLedgerError.idempotencyCapacity(scope: scope, reason: reason)
             }
         }
     }
@@ -469,8 +513,22 @@ public actor CloudCommandLedger {
                 rows[request.key] = row
                 return true
             }
-        } catch {
+        } catch let error as CloudCommandLedgerError {
+            // A semantic miss (for example revoked GC removed the reservation) did not leave a
+            // possibly-uncommitted candidate. Duplicates may safely repeat admission.
             resumeWaiters(for: request.key, wake: .retryAdmission)
+            throw error
+        } catch {
+            // A failed reserved→in-progress commit leaves the durable reserved row behind. Try
+            // to release it before offering a retry; if that second store operation also fails,
+            // every waiter terminates with a typed unavailable result instead of hanging on an
+            // ownerless reservation.
+            do {
+                try removeReserved(request.key, digest: request.requestSHA256)
+                resumeWaiters(for: request.key, wake: .retryAdmission)
+            } catch {
+                resumeWaiters(for: request.key, wake: .terminal(.durabilityUnavailable))
+            }
             throw error
         }
         guard beganEffect else {
@@ -485,20 +543,28 @@ public actor CloudCommandLedger {
         outcome: CloudCommandNormalizedOutcome
     ) throws {
         let completedAt = clocks.wallNow()
-        try store.transaction { rows in
-            guard var row = rows[request.key] else {
-                throw CloudCommandLedgerError.notFound
+        do {
+            try store.transaction { rows in
+                guard var row = rows[request.key] else {
+                    throw CloudCommandLedgerError.notFound
+                }
+                guard row.requestSHA256 == request.requestSHA256 else {
+                    throw CloudCommandLedgerError.idempotencyConflict
+                }
+                guard row.state == .inProgress else {
+                    throw CloudCommandLedgerError.invalidTransition
+                }
+                row.state = .completed
+                row.normalizedOutcome = outcome
+                row.completedAt = completedAt
+                rows[request.key] = row
             }
-            guard row.requestSHA256 == request.requestSHA256 else {
-                throw CloudCommandLedgerError.idempotencyConflict
-            }
-            guard row.state == .inProgress else {
-                throw CloudCommandLedgerError.invalidTransition
-            }
-            row.state = .completed
-            row.normalizedOutcome = outcome
-            row.completedAt = completedAt
-            rows[request.key] = row
+        } catch {
+            activeEffects.remove(request.key)
+            // The effect crossed its point of no return, so a retry would be unsafe. Current
+            // duplicates finish promptly with the same typed uncertainty used after restart.
+            resumeWaiters(for: request.key, wake: .terminal(.outcomeUnknown))
+            throw error
         }
         activeEffects.remove(request.key)
         resumeWaiters(for: request.key, wake: .completed(outcome))
@@ -516,7 +582,7 @@ public actor CloudCommandLedger {
         guard batchLimit > 0 else { return 0 }
         let bootID = clocks.bootID()
         let continuousNow = clocks.continuousNow()
-        let result = store.transaction { rows -> (count: Int, lastKey: CloudCommandLedgerKey?) in
+        let result = try store.transaction { rows -> (count: Int, lastKey: CloudCommandLedgerKey?) in
             let orderedKeys = Self.orderedKeys(in: rows)
             guard !orderedKeys.isEmpty else { return (0, nil) }
             let startIndex: Int
@@ -561,7 +627,7 @@ public actor CloudCommandLedger {
         let wallNow = clocks.wallNow()
         var reasons: [CloudLedgerGCReason: UInt64] = [:]
         let protectedActiveEffects = activeEffects
-        let removed = store.transaction { rows -> Int in
+        let removed = try store.transaction { rows -> Int in
             Self.collectEligibleRows(
                 in: &rows,
                 wallNow: wallNow,
@@ -576,12 +642,12 @@ public actor CloudCommandLedger {
         return removed
     }
 
-    public func row(for key: CloudCommandLedgerKey) -> CloudCommandLedgerRow? {
-        store.transaction { $0[key] }
+    public func row(for key: CloudCommandLedgerKey) throws -> CloudCommandLedgerRow? {
+        try store.transaction { $0[key] }
     }
 
-    public func rowCount() -> Int {
-        store.transaction { $0.count }
+    public func rowCount() throws -> Int {
+        try store.transaction { $0.count }
     }
 
     /// Internal observation seam used by deterministic concurrency tests. This exposes only
@@ -590,11 +656,11 @@ public actor CloudCommandLedger {
         waiters[key]?.count ?? 0
     }
 
-    public func metricsSnapshot() -> CloudCommandLedgerMetricsSnapshot {
+    public func metricsSnapshot() throws -> CloudCommandLedgerMetricsSnapshot {
         let wallNow = clocks.wallNow()
         let continuousNow = clocks.continuousNow()
         let bootID = clocks.bootID()
-        return store.transaction { rows in
+        return try store.transaction { rows in
             let actorCounts = Dictionary(grouping: rows.values, by: { $0.key.viewerSender }).mapValues(\.count)
             var buckets: [CloudLedgerActorRowsBucket: Int] = [:]
             for bucket in CloudLedgerActorRowsBucket.allCases {
@@ -631,14 +697,6 @@ public actor CloudCommandLedger {
         }
     }
 
-    private func refuseCapacity(
-        scope: CloudLedgerCapacityScope,
-        reason: CloudLedgerCapacityReason
-    ) throws -> Never {
-        capacityRefusals[CloudLedgerCapacityLabel(scope: scope, reason: reason), default: 0] += 1
-        throw CloudCommandLedgerError.idempotencyCapacity(scope: scope, reason: reason)
-    }
-
     private func removeReserved(_ key: CloudCommandLedgerKey, digest: Data) throws {
         try store.transaction { rows in
             guard let row = rows[key] else {
@@ -655,8 +713,16 @@ public actor CloudCommandLedger {
     }
 
     private func releaseReserved(_ key: CloudCommandLedgerKey, digest: Data) throws {
-        defer { resumeWaiters(for: key, wake: .retryAdmission) }
-        try removeReserved(key, digest: digest)
+        do {
+            try removeReserved(key, digest: digest)
+            resumeWaiters(for: key, wake: .retryAdmission)
+        } catch let error as CloudCommandLedgerError {
+            resumeWaiters(for: key, wake: .retryAdmission)
+            throw error
+        } catch {
+            resumeWaiters(for: key, wake: .terminal(.durabilityUnavailable))
+            throw error
+        }
     }
 
     private func recordGC(_ reasons: [CloudLedgerGCReason: UInt64]) {

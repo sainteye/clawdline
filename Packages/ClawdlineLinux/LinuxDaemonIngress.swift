@@ -223,13 +223,18 @@ final class LinuxDaemonIngressOwner {
     private let store: LinuxDurableStateStore
     private let runtime: any LinuxLifecyclePerforming
     private let documents: LinuxDocumentReader
+    /// Retaining this value retains both Application stores and their single-writer locks for
+    /// the daemon lifetime. Local-only fixtures omit it; production composition never does.
+    private let durableCloud: LinuxDurableCloudRuntime?
     private let lock = NSLock()
     private var admissionOpen = false
     var faultInjection: ((LinuxIngressFaultPoint) throws -> Void)?
 
-    init(store: LinuxDurableStateStore, runtime: any LinuxLifecyclePerforming) {
+    init(store: LinuxDurableStateStore, runtime: any LinuxLifecyclePerforming,
+         durableCloud: LinuxDurableCloudRuntime? = nil) {
         self.store = store
         self.runtime = runtime
+        self.durableCloud = durableCloud
         self.documents = LinuxDocumentReader(tasksDirectory: store.tasksDirectory,
                                              expectedUID: geteuid())
     }

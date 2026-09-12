@@ -19,10 +19,12 @@ private struct CloudAppBridgeTestTokenProvider: CloudDeviceTokenProviding {
 final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable {
     nonisolated let commands: CloudInboundCommandStream
     nonisolated let readyGenerations: AsyncStream<UInt64>
+    nonisolated let outboundReceipts: AsyncStream<CloudOutboundTransportReceipt>
     private let lock = NSLock()
     private let commandQueue: CloudInboundCommandQueue
     private var refusalHandler: CloudTransport.InboundRefusalHandler?
     private var readyContinuation: AsyncStream<UInt64>.Continuation!
+    private var receiptContinuation: AsyncStream<CloudOutboundTransportReceipt>.Continuation!
     private var sent: [CloudEnvelope] = []
     private var connected = false
     private var stopped = false
@@ -47,6 +49,9 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
         var readyContinuation: AsyncStream<UInt64>.Continuation!
         readyGenerations = AsyncStream { readyContinuation = $0 }
         self.readyContinuation = readyContinuation
+        var receiptContinuation: AsyncStream<CloudOutboundTransportReceipt>.Continuation!
+        outboundReceipts = AsyncStream { receiptContinuation = $0 }
+        self.receiptContinuation = receiptContinuation
         var publicationContinuation: AsyncStream<Void>.Continuation!
         publicationStream = AsyncStream { publicationContinuation = $0 }
         self.publicationContinuation = publicationContinuation
@@ -103,6 +108,7 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
         markStopped()
         commandQueue.finish()
         readyContinuation.finish()
+        receiptContinuation.finish()
         let suspended = takeConnectContinuation()
         if let suspended {
             Task {
@@ -137,12 +143,18 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
         readyContinuation.yield(generation)
     }
     func releasePublications(_ count: Int = 1) { for _ in 0..<count { publicationContinuation.yield(()) } }
-    func yield(_ plaintext: String, sequence: UInt64, commandClass: CloudEnvelopeClass = .ctl,
+    func yield(_ plaintext: String, sequence: UInt64, timestamp: UInt64 = 1,
+               commandClass: CloudEnvelopeClass = .ctl,
                channel: String = "ctl/Mac%20%2F%20%E5%8F%B0%E7%81%A3") {
         _ = commandQueue.admit(CloudInboundCommand(
-            channel: channel, sequence: sequence, timestamp: 1,
+            channel: channel, sequence: sequence, timestamp: timestamp,
             commandClass: commandClass, sender: "viewer", plaintext: Data(plaintext.utf8)
         ))
+    }
+    func acknowledge(_ envelope: CloudEnvelope,
+                     kind: CloudOutboundTransportReceiptKind = .delivered) {
+        receiptContinuation.yield(CloudOutboundTransportReceipt(
+            channel: envelope.ch, sequence: Int64(envelope.seq), kind: kind))
     }
     func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async {
         replaceRefusalHandler(handler)
@@ -1038,6 +1050,7 @@ private func runCloudAppBridgeSnapshotTests() async throws -> Int {
 func runCloudAppBridgeTests() async throws -> Int {
     switch ProcessInfo.processInfo.environment["CLAWDLINE_CLOUD_BRIDGE_CASE"] {
     case "base": return try await runCloudAppBridgeBaseTests()
+    case "durable": return try await runCloudAppBridgeDurableCompositionTests()
     case "lifecycle": return try await runCloudAppBridgeLifecycleTests()
     case "transitive-lifecycle": return try await runCloudAppBridgeTransitiveLifecycleTests()
     case "publication-lifecycle": return try await runCloudAppBridgePublicationLifecycleTests()
@@ -1052,6 +1065,7 @@ func runCloudAppBridgeTests() async throws -> Int {
     case "ingress-refusals": return try await runCloudAppBridgeIngressRefusalTests()
     default:
         let base = try await runCloudAppBridgeBaseTests()
+        let durable = try await runCloudAppBridgeDurableCompositionTests()
         let lifecycle = try await runCloudAppBridgeLifecycleTests()
         let transitiveLifecycle = try await runCloudAppBridgeTransitiveLifecycleTests()
         let publicationLifecycle = try await runCloudAppBridgePublicationLifecycleTests()
@@ -1064,7 +1078,7 @@ func runCloudAppBridgeTests() async throws -> Int {
         let snapshot = try await runCloudAppBridgeSnapshotTests()
         let refusals = try await runCloudCommandRefusalTests()
         let ingressRefusals = try await runCloudAppBridgeIngressRefusalTests()
-        return base + lifecycle + transitiveLifecycle + publicationLifecycle
+        return base + durable + lifecycle + transitiveLifecycle + publicationLifecycle
             + reconnect + concreteReconnect + aba + reads + images + documents + snapshot
             + refusals + ingressRefusals
     }

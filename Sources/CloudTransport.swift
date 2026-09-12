@@ -74,11 +74,16 @@ struct CloudDeviceToken: Equatable, Sendable {
     let value: String
     let expiresAt: Date
     let relayURL: URL?
+    /// Parsed only from the pinned HTTPS response's Date header. Consumers use it to calibrate
+    /// effect-time clock authority; absence stays fail closed.
+    let authenticatedServerDate: Date?
 
-    init(value: String, expiresAt: Date, relayURL: URL? = nil) {
+    init(value: String, expiresAt: Date, relayURL: URL? = nil,
+         authenticatedServerDate: Date? = nil) {
         self.value = value
         self.expiresAt = expiresAt
         self.relayURL = relayURL
+        self.authenticatedServerDate = authenticatedServerDate
     }
 }
 
@@ -136,8 +141,19 @@ struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
         return CloudDeviceToken(
             value: wire.token,
             expiresAt: expiresAt,
-            relayURL: URL(string: wire.relayURL)
+            relayURL: URL(string: wire.relayURL),
+            authenticatedServerDate: Self.parseHTTPDate(
+                http.value(forHTTPHeaderField: "Date"))
         )
+    }
+
+    private static func parseHTTPDate(_ value: String?) -> Date? {
+        guard let value else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss z"
+        return formatter.date(from: value)
     }
 
     private struct DeviceTokenResponse: Decodable {
@@ -751,6 +767,9 @@ actor CloudTransport {
     typealias InboundRefusalHandler = @Sendable (CloudInboundAdmissionRefusal) -> Void
 
     nonisolated let commands: CloudInboundCommandStream
+    /// Correlated replies read from the authenticated socket. Pending ownership stays in the
+    /// Application spool; transport publishes observations and retains no outbound queue.
+    nonisolated let outboundReceipts: AsyncStream<CloudOutboundTransportReceipt>
     /// Emits once after every successful initial or reconnect handshake. Snapshot owners use the
     /// monotonically increasing value to force a fresh full publication for the new relay state.
     /// The buffer coalesces to the newest value: an unconsumed older generation describes relay
@@ -772,6 +791,7 @@ actor CloudTransport {
     private let receiveTimeout: TimeInterval
     private let commandQueue: CloudInboundCommandQueue
     private let readyContinuation: AsyncStream<UInt64>.Continuation
+    private let outboundReceiptContinuation: AsyncStream<CloudOutboundTransportReceipt>.Continuation
 
     private var state: CloudTransportState = .idle
     private var role: CloudTransportRole?
@@ -784,8 +804,10 @@ actor CloudTransport {
     private var generation = 0
     private var droppedReadyGenerations = 0
     private var sequenceTracker = CloudSequenceTracker()
+    private var outboundReceiptEnqueued: UInt64 = 0
+    private var outboundReceiptDropped: UInt64 = 0
+    private var outboundReceiptTerminated: UInt64 = 0
     private var inboundRefusalHandler: InboundRefusalHandler?
-    private var pendingByChannel: [String: CloudEnvelope] = [:]
     /// The generation whose socket `refreshToken` closed on purpose. Read once, by the reconnect
     /// loop, so the retry it triggers is named for what caused it rather than for how it arrived.
     private var rotatingGeneration: Int?
@@ -825,6 +847,14 @@ actor CloudTransport {
             readyContinuation = $0
         }
         self.readyContinuation = readyContinuation
+        var outboundReceiptContinuation: AsyncStream<CloudOutboundTransportReceipt>.Continuation!
+        // Settlement observations are bounded independently of the socket receive loop. Keep the
+        // oldest observations because they are most likely to release the global head; overflow is
+        // explicitly counted and later head progress is still bounded by the spool attempt timer.
+        outboundReceipts = AsyncStream(bufferingPolicy: .bufferingOldest(256)) {
+            outboundReceiptContinuation = $0
+        }
+        self.outboundReceiptContinuation = outboundReceiptContinuation
     }
 
     func connect(role: CloudTransportRole = .machine) async throws {
@@ -846,20 +876,27 @@ actor CloudTransport {
         }
     }
 
-    /// Snapshot producers may call this while a reconnect is in flight. Only the newest envelope
-    /// per channel is retained, matching the relay's last-snapshot semantics.
+    /// Compatibility for direct transport tests. Production hands the exact bytes sealed in the
+    /// durable spool to `sendExactPublishFrame(_:)`.
     func publish(envelope: CloudEnvelope) async throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        try await sendExactPublishFrame(try encoder.encode(CloudPublishFrame(envelope: envelope)))
+    }
+
+    /// One exact-byte socket operation. A reconnecting transport refuses; it never keeps a
+    /// second pending dictionary or chooses a sequence. The spool retains and retries the bytes.
+    func sendExactPublishFrame(_ bytes: Data) async throws {
         guard state != .idle, state != .shutDown else {
             throw CloudTransportError.notConnected
         }
-        guard let socket else {
-            pendingByChannel[envelope.ch] = envelope
-            return
+        guard let socket else { throw CloudTransportError.notConnected }
+        guard let text = String(data: bytes, encoding: .utf8), Data(text.utf8) == bytes else {
+            throw CloudTransportError.unexpectedFrame("non-utf8-publish")
         }
         do {
-            try await sendPublish(envelope, over: socket)
+            try await socket.send(text: text)
         } catch {
-            pendingByChannel[envelope.ch] = envelope
             socket.close()
             throw error
         }
@@ -893,10 +930,10 @@ actor CloudTransport {
         socket = nil
         cachedToken = nil
         rotatingGeneration = nil
-        pendingByChannel.removeAll()
         inboundRefusalHandler = nil
         commandQueue.finish()
         readyContinuation.finish()
+        outboundReceiptContinuation.finish()
         _ = await connector?.result
         if let task { await task.value }
     }
@@ -973,7 +1010,6 @@ actor CloudTransport {
             generation += 1
             let currentGeneration = generation
             let authenticated = CloudAuthenticatedTransportSocket(established: newSocket)
-            try await flushPending(over: authenticated)
             socket = authenticated
             state = .ready
             scheduleRefresh(token: token, generation: currentGeneration)
@@ -1154,7 +1190,22 @@ actor CloudTransport {
             } catch {
                 dropInbound(reason: reason(for: error))
             }
-        case "ack", "subscriptions", "pong":
+        case "ack":
+            let frame = try JSONDecoder().decode(AckFrame.self, from: data)
+            guard frame.seq >= 0, frame.fanout >= 0 else {
+                throw CloudTransportError.unexpectedFrame("ack")
+            }
+            let kind: CloudOutboundTransportReceiptKind
+            switch frame.status {
+            case "delivered": kind = .delivered
+            case "viewer_offline": kind = .viewerOffline
+            case "rejected", "refused": kind = .peerError
+            default: throw CloudTransportError.unexpectedFrame("ack-status")
+            }
+            offerOutboundReceipt(CloudOutboundTransportReceipt(
+                channel: frame.ch, sequence: frame.seq, kind: kind))
+            return
+        case "subscriptions", "pong":
             return
         case "ping":
             guard let socket else { throw CloudTransportError.notConnected }
@@ -1165,6 +1216,34 @@ actor CloudTransport {
         default:
             throw CloudTransportError.unexpectedFrame(header.type)
         }
+    }
+
+    private func offerOutboundReceipt(_ receipt: CloudOutboundTransportReceipt) {
+        let disposition = outboundReceiptContinuation.yield(receipt)
+        switch disposition {
+        case .enqueued:
+            outboundReceiptEnqueued &+= 1
+        case .dropped:
+            outboundReceiptDropped &+= 1
+            logger("CloudTransport outbound receipt dropped reason=bounded_oldest_full")
+        case .terminated:
+            outboundReceiptTerminated &+= 1
+        @unknown default:
+            outboundReceiptDropped &+= 1
+        }
+    }
+
+    /// Deterministic test seam for the bounded owner used by the authenticated ACK parser above.
+    /// It exposes no socket, persistence, or production admission path.
+    func offerOutboundReceiptForTesting(_ receipt: CloudOutboundTransportReceipt) {
+        offerOutboundReceipt(receipt)
+    }
+
+    func outboundReceiptIngestionSnapshot() async -> CloudOutboundReceiptIngestionSnapshot {
+        CloudOutboundReceiptIngestionSnapshot(
+            enqueued: outboundReceiptEnqueued,
+            dropped: outboundReceiptDropped,
+            terminated: outboundReceiptTerminated)
     }
 
     private func acceptInbound(_ envelope: CloudEnvelope) async throws {
@@ -1254,21 +1333,6 @@ actor CloudTransport {
         socket?.close()
     }
 
-    private func flushPending(over socket: CloudAuthenticatedTransportSocket) async throws {
-        let pending = pendingByChannel.values.sorted { $0.ch < $1.ch }
-        pendingByChannel.removeAll()
-        do {
-            for envelope in pending { try await sendPublish(envelope, over: socket) }
-        } catch {
-            for envelope in pending { pendingByChannel[envelope.ch] = envelope }
-            throw error
-        }
-    }
-
-    private func sendPublish(_ envelope: CloudEnvelope, over socket: CloudAuthenticatedTransportSocket) async throws {
-        try await socket.send(text: try encode(PublishFrame(envelope: envelope)))
-    }
-
     private func decodeChallenge(_ text: String) throws -> ChallengeFrame {
         let data = Data(text.utf8)
         let header = try JSONDecoder().decode(FrameHeader.self, from: data)
@@ -1326,14 +1390,17 @@ actor CloudTransport {
         let role: String
     }
 
-    private struct PublishFrame: Encodable {
-        let type = "publish"
-        let envelope: CloudEnvelope
-    }
-
     private struct EnvelopeFrame: Decodable {
         let type: String
         let envelope: CloudEnvelope
+    }
+
+    private struct AckFrame: Decodable {
+        let type: String
+        let ch: String
+        let seq: Int64
+        let fanout: Int
+        let status: String
     }
 
     private struct ErrorFrame: Decodable {

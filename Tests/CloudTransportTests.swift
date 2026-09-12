@@ -337,11 +337,45 @@ func runCloudTransportTests() async throws -> Int {
         masterSecret: master,
         signingKey: machineKey
     )
+    let snapshotReceiptTask = Task {
+        try await nextOutboundReceipt(from: transport.outboundReceipts)
+    }
     try await transport.publish(envelope: snapshot)
     try await waitUntil("relay receives published snapshot") {
         await relay.publishedEnvelopes().contains(snapshot)
     }
     checks += 1
+    let snapshotReceipt = try await snapshotReceiptTask.value
+    try require(snapshotReceipt == CloudOutboundTransportReceipt(
+        channel: snapshot.ch, sequence: Int64(snapshot.seq), kind: .delivered),
+        "an authenticated ack exposes the correlated channel and sequence")
+
+    // The exact receipt assertion above independently proves authenticated parsing. Drive the
+    // shared actor-isolated offer seam on a fresh, unopened transport so neither an iterator nor
+    // socket/handshake scheduling can become the quantity under test.
+    let receiptTransport = CloudTransport(
+        relayBaseURL: relayURL,
+        tokenProvider: CloudTestTokenProvider(tokens: [
+            CloudDeviceToken(value: "unused-receipt-token", expiresAt: Date().addingTimeInterval(3_600))
+        ]),
+        keyProvider: keys,
+        connector: CloudSuspendedHandshakeConnector(socket: CloudSuspendedHandshakeSocket()),
+        logger: { logs.append($0) })
+    for offset in 0..<257 {
+        await receiptTransport.offerOutboundReceiptForTesting(CloudOutboundTransportReceipt(
+            channel: snapshot.ch, sequence: Int64(10_000 + offset), kind: .delivered))
+    }
+    let receiptIngestion = await receiptTransport.outboundReceiptIngestionSnapshot()
+    try require(receiptIngestion.enqueued == 256 && receiptIngestion.dropped == 1
+                    && receiptIngestion.terminated == 0,
+                "receipt ingestion retains 256 oldest observations and exposes one typed drop; "
+                    + "observed enqueued=\(receiptIngestion.enqueued) "
+                    + "dropped=\(receiptIngestion.dropped) "
+                    + "terminated=\(receiptIngestion.terminated)")
+    let connectedTransportState = await transport.currentState()
+    try require(connectedTransportState == .ready,
+                "receipt overflow is isolated from the authenticated connection")
+    await receiptTransport.shutdown()
 
     let command = try CloudEnvelope.seal(
         Data("{\"type\":\"answer\",\"value\":\"yes\"}".utf8),
@@ -423,11 +457,19 @@ func runCloudTransportTests() async throws -> Int {
         masterSecret: master,
         signingKey: machineKey
     )
+    do {
+        try await transport.publish(envelope: queuedSnapshot)
+    } catch let error as CloudTransportError {
+        try require(error == .notConnected,
+                    "a reconnecting transport refuses instead of owning a pending frame")
+    }
+    try await waitUntil("reconnect completes before the durable owner retries", timeout: 2) {
+        await relay.completedHandshakes() > handshakesBeforeDrop
+    }
+    checks += 1
     try await transport.publish(envelope: queuedSnapshot)
-    try await waitUntil("reconnect completes and queued snapshot publishes", timeout: 2) {
-        let completed = await relay.completedHandshakes()
-        let published = await relay.publishedEnvelopes()
-        return completed > handshakesBeforeDrop && published.contains(queuedSnapshot)
+    try await waitUntil("the caller retry publishes after ready", timeout: 2) {
+        await relay.publishedEnvelopes().contains(queuedSnapshot)
     }
     checks += 1
     try await waitUntil("reconnect ready generation is observable", timeout: 2) {
@@ -860,9 +902,7 @@ private func runCloudTransportFlushInvariantTests() async throws -> Int {
             masterSecrets: ["master-1": master],
             pairedDevices: [:]
         ),
-        connector: CloudReconnectProbeConnector(
-            probe: probe, behavior: .failPendingPublish
-        )
+        connector: CloudReconnectProbeConnector(probe: probe, behavior: .stayConnected)
     )
     let connectTask = Task { try await transport.connect(role: .machine) }
     try await waitUntil("token fetch suspends before the flush probe connects") {
@@ -879,23 +919,24 @@ private func runCloudTransportFlushInvariantTests() async throws -> Int {
         masterSecret: master,
         signingKey: machineKey
     )
-    try await transport.publish(envelope: queued)
-    await tokenProvider.release()
     do {
-        try await connectTask.value
-        throw CloudTransportTestFailure(description: "a failing pending flush unexpectedly connected")
+        try await transport.publish(envelope: queued)
+        throw CloudTransportTestFailure(
+            description: "a connecting transport unexpectedly accepted a pending frame")
     } catch let error as CloudTransportError {
         try require(error == .notConnected,
-                    "a pending flush reports the socket's typed send failure")
+                    "a connecting transport refuses a frame instead of buffering it")
     }
+    await tokenProvider.release()
+    try await connectTask.value
     let state = await transport.currentState()
-    try require(state == .idle,
-                "a failed initial pending flush restores the transport to idle")
+    try require(state == .ready,
+                "refusing a pre-ready frame does not poison later connection readiness")
     let socketIsNil = try reflectedSocketIsNil(in: transport)
-    try require(socketIsNil,
-                "a failed pending flush cannot leave a closed authenticated socket installed")
-    try require(probe.snapshot().live == 0,
-                "a failed pending flush disposes the candidate socket")
+    try require(!socketIsNil,
+                "the authenticated socket remains installed after pending ownership is refused")
+    try require(probe.snapshot().live == 1,
+                "only the live authenticated socket remains owned")
     await transport.shutdown()
     return checks
 }
@@ -1406,6 +1447,25 @@ private func nextCommand(
         group.addTask {
             try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
             throw CloudTransportTestFailure(description: "timed out waiting for inbound command")
+        }
+        let result = try await group.next()!
+        group.cancelAll()
+        return result
+    }
+}
+
+private func nextOutboundReceipt(
+    from stream: AsyncStream<CloudOutboundTransportReceipt>,
+    timeout: TimeInterval = 1
+) async throws -> CloudOutboundTransportReceipt? {
+    try await withThrowingTaskGroup(of: CloudOutboundTransportReceipt?.self) { group in
+        group.addTask {
+            var iterator = stream.makeAsyncIterator()
+            return await iterator.next()
+        }
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            throw CloudTransportTestFailure(description: "timed out waiting for outbound receipt")
         }
         let result = try await group.next()!
         group.cancelAll()

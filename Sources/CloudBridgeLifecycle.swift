@@ -3,113 +3,12 @@ import Foundation
 import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
 #endif
 
-/// Durable outbound sequence numbers for `CloudAppBridge`.
-///
-/// `CloudEnvelopeSequencing` says the implementation must be durable because "reusing a sender
-/// sequence after relaunch is a replay". Both ends enforce that: `CloudSequenceTracker` on the
-/// Mac and `sequenceBySender` in `cloud-client.js` refuse an envelope whose `seq` did not
-/// advance, so a counter that restarts at zero does not merely repeat itself — it makes this
-/// Mac silent on every channel until it has climbed back past whatever the viewer already saw.
-///
-/// So what is persisted is a **ceiling**, written before the first number under it is handed
-/// out. A crash therefore skips the rest of a block; it can never repeat one. The block exists
-/// only so that publishing a snapshot is not one `fsync` per envelope.
-actor CloudSequenceFile: CloudEnvelopeSequencing {
-    enum Failure: Error, LocalizedError, Equatable {
-        case unreadable
-        case unwritable
-
-        var errorDescription: String? {
-            switch self {
-            case .unreadable: return "The cloud sequence file could not be read."
-            case .unwritable: return "The cloud sequence file could not be written."
-            }
-        }
-    }
-
-    private let url: URL
-    private let block: UInt64
-    private var reserved: [String: UInt64] = [:]
-    private var next: [String: UInt64] = [:]
-    private var loaded = false
-
-    init(url: URL, block: UInt64 = 64) {
-        self.url = url
-        self.block = max(1, block)
-    }
-
-    init(block: UInt64 = 64) {
-        self.init(url: RemoteAuth.directory.appendingPathComponent("cloud-sequence.json"),
-                  block: block)
-    }
-
-    func nextSequence(sender: String) async throws -> UInt64 {
-        try loadIfNeeded()
-        let value = next[sender] ?? reserved[sender] ?? 0
-        if value >= (reserved[sender] ?? 0) {
-            let ceiling = value &+ block
-            reserved[sender] = ceiling
-            try persist()
-        }
-        next[sender] = value &+ 1
-        // Read back rather than trusting the local copy: `persist()` is the only thing allowed
-        // to have moved the ceiling, and a value handed out above one that was never written is
-        // exactly the reuse this type exists to prevent.
-        guard let ceiling = reserved[sender], value < ceiling else { throw Failure.unwritable }
-        return value
-    }
-
-    /// The ceiling currently promised on disk. Tests use it to prove a relaunch cannot reuse.
-    func reservedCeiling(sender: String) throws -> UInt64 {
-        try loadIfNeeded()
-        return reserved[sender] ?? 0
-    }
-
-    private func loadIfNeeded() throws {
-        guard !loaded else { return }
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            loaded = true
-            return
-        }
-        guard let data = try? Data(contentsOf: url) else { throw Failure.unreadable }
-        guard let value = try? CloudCanonicalJSON.parseStrict(data),
-              case .object(let root) = value,
-              case .int(let version)? = root["v"], version == 1,
-              case .object(let senders)? = root["senders"]
-        else {
-            // Deliberately not "start again from zero". A file we cannot read is a high-water
-            // mark we do not know, and inventing one is the replay. Refusing keeps this Mac
-            // quiet on the cloud until somebody looks, which is the recoverable half.
-            throw Failure.unreadable
-        }
-        var restored: [String: UInt64] = [:]
-        for (sender, entry) in senders {
-            guard case .int(let ceiling) = entry, ceiling >= 0 else { throw Failure.unreadable }
-            restored[sender] = UInt64(ceiling)
-        }
-        reserved = restored
-        next = [:]
-        loaded = true
-    }
-
-    private func persist() throws {
-        var senders: [String: CloudJSONValue] = [:]
-        for (sender, ceiling) in reserved {
-            guard ceiling <= UInt64(Int64.max) else { throw Failure.unwritable }
-            senders[sender] = .int(Int64(ceiling))
-        }
-        let body = CloudCanonicalJSON.canonicalData(.object([
-            "v": .int(1), "senders": .object(senders),
-        ]))
-        do {
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try body.write(to: url, options: [.atomic])
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600], ofItemAtPath: url.path)
-        } catch {
-            throw Failure.unwritable
-        }
+/// Production must never allocate a sequence outside `CloudOutboundSpool`. This non-owning
+/// compatibility value exists only because narrow bridge fixtures still exercise the old
+/// envelope-level seam; production injects `CloudDurableRuntime` and this door is unreachable.
+struct CloudDurableOnlySequencing: CloudEnvelopeSequencing {
+    func nextSequence(sender _: String) async throws -> UInt64 {
+        throw CloudAppBridgeError.sequenceExhausted
     }
 }
 
@@ -155,13 +54,53 @@ struct CloudLifecycleKeyProvider: CloudTransportKeyProviding, Sendable {
 struct CloudSupervisedDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
     let inner: any CloudDeviceTokenProviding
     let onTerminalFailure: @Sendable (CloudTransportError) -> Void
+    let onAuthenticatedServerDate: @Sendable (Date) -> Void
+
+    init(
+        inner: any CloudDeviceTokenProviding,
+        onTerminalFailure: @escaping @Sendable (CloudTransportError) -> Void,
+        onAuthenticatedServerDate: @escaping @Sendable (Date) -> Void = { _ in }
+    ) {
+        self.inner = inner
+        self.onTerminalFailure = onTerminalFailure
+        self.onAuthenticatedServerDate = onAuthenticatedServerDate
+    }
 
     func fetchDeviceToken() async throws -> CloudDeviceToken {
         do {
-            return try await inner.fetchDeviceToken()
+            let token = try await inner.fetchDeviceToken()
+            if let serverDate = token.authenticatedServerDate {
+                onAuthenticatedServerDate(serverDate)
+            }
+            return token
         } catch let error as CloudTransportError where error == .unauthorized {
             onTerminalFailure(error)
             throw error
+        }
+    }
+}
+
+/// Thread-safe owner of the real host epoch guard. Only a Date header from a successful pinned
+/// HTTPS device-token response establishes calibration; every command effect observes the guard
+/// again after durable reservation.
+private final class CloudCommandEpochAuthority: @unchecked Sendable {
+    private static let bootID = UUID().uuidString.lowercased()
+    private let lock = NSLock()
+    private let guardState = EpochGuard(clock: CloudClock(
+        wall: { Date() },
+        continuous: { ProcessInfo.processInfo.systemUptime },
+        bootID: { CloudCommandEpochAuthority.bootID }))
+
+    func acceptAuthenticatedServerDate(_ date: Date) {
+        lock.lock(); defer { lock.unlock() }
+        _ = guardState.acceptServerDate(date)
+    }
+
+    func current() -> CloudEpochGuardState {
+        lock.lock(); defer { lock.unlock() }
+        switch guardState.observe().state {
+        case .ready: return .ready
+        case .uncertain: return .uncertain
         }
     }
 }
@@ -266,8 +205,19 @@ final class CloudBridgeLifecycle {
             @escaping @Sendable (CloudTransportError) -> Void
         ) throws -> any CloudTransporting
         var sequencing: @MainActor (CloudMachineIdentity) -> any CloudEnvelopeSequencing
+        /// Production's fail-closed command ledger and outbound spool. Tests may omit it to use
+        /// envelope-observing fakes; the production factory below always supplies it.
+        var durableRuntime: (@MainActor (CloudMachineIdentity) throws -> CloudDurableRuntime)? = nil
         var attach: @MainActor (CloudAppBridge?) -> Void
         var allowCloudCommands: @Sendable () -> Bool
+        /// Re-reads clock epoch, the current paired roster and the current write gate at the
+        /// durable command's effect point. Production always supplies this closure.
+        var commandEffectAuthority: @MainActor (
+            CloudMachineIdentity
+        ) -> CloudAppBridge.CommandEffectAuthority = { _ in
+            { _, _ in CloudCommandEffectAuthorization(
+                epochState: .uncertain, rosterAllowsSender: false, writeGateAllows: false) }
+        }
         /// The one door a cloud command enters the app through. Production hands back
         /// `RemoteServerCloudCommandRouter`, so authentication, idempotency, image validation
         /// and audit stay the local HTTP route's single implementation rather than a copy.
@@ -399,14 +349,17 @@ final class CloudBridgeLifecycle {
                     self?.authorizationRefused(error, for: identity, generation: owned)
                 }
             }
+            let durableRuntime = try services.durableRuntime?(identity)
             let bridge = CloudAppBridge(
                 transport: transport,
                 identity: restored.app,
                 sequencing: services.sequencing(identity),
                 allowCloudCommands: services.allowCloudCommands,
+                currentCommandEffectAuthority: services.commandEffectAuthority(identity),
                 commandRouter: services.commandRouter(),
                 commandResult: services.commandResult,
-                diagnostic: services.diagnostic)
+                diagnostic: services.diagnostic,
+                durableRuntime: durableRuntime)
             attachedBridge = bridge
             services.attach(bridge)
             services.scheduleWebhooks(identity) { [weak self] in
@@ -499,13 +452,14 @@ extension CloudBridgeLifecycle.Services {
         client: CloudAccountClient = CloudAccountClient(),
         keys: CloudKeys = CloudKeys(),
         pairedDevices: CloudPairedDeviceStore = CloudPairedDeviceStore(),
-        sequenceFile: CloudSequenceFile = CloudSequenceFile(),
         relayBaseURL: URL = CloudBridgeLifecycle.defaultRelayURL
     ) -> CloudBridgeLifecycle.Services {
+        let epochAuthority = CloudCommandEpochAuthority()
         let identityReader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?>(
             label: "clawdline.cloud.bridge-identity"
         ) {
             guard let identity = try client.restoredMachineIdentity() else { return nil }
+            _ = try CloudMachineFilesystemNamespace.component(for: identity.machineID)
             return CloudBridgeLifecycle.RestoredIdentity(
                 machine: identity,
                 app: CloudAppIdentity(
@@ -525,7 +479,10 @@ extension CloudBridgeLifecycle.Services {
                     relayBaseURL: relayBaseURL,
                     tokenProvider: CloudSupervisedDeviceTokenProvider(
                         inner: client.deviceTokenProvider(),
-                        onTerminalFailure: onTerminalFailure),
+                        onTerminalFailure: onTerminalFailure,
+                        onAuthenticatedServerDate: { date in
+                            epochAuthority.acceptAuthenticatedServerDate(date)
+                        }),
                     keyProvider: CloudLifecycleKeyProvider(
                         deviceKey: app.signingKey,
                         masterSecrets: [app.keyID: app.masterSecret],
@@ -533,11 +490,36 @@ extension CloudBridgeLifecycle.Services {
                         pairedDevices: pairedDevices),
                     logger: { Log.write("cloud: \($0)") })
             },
-            sequencing: { _ in sequenceFile },
+            // This compatibility seam owns no counter. The production bridge receives the
+            // durable runtime below, so all sequence allocation belongs to its spool.
+            sequencing: { _ in CloudDurableOnlySequencing() },
+            durableRuntime: { identity in
+                let legacyFence = try CloudLegacySequenceFence(
+                    url: RemoteAuth.directory.appendingPathComponent("cloud-sequence.json"),
+                    sender: identity.machineID)
+                let component = try CloudMachineFilesystemNamespace.component(
+                    for: identity.machineID)
+                return try CloudDurableRuntime.open(
+                    directory: RemoteAuth.directory
+                        .appendingPathComponent("cloud-runtime", isDirectory: true)
+                        .appendingPathComponent(component, isDirectory: true),
+                    runtime: .mac, minimumNextSequence: legacyFence.reservedCeiling,
+                    sequenceFence: legacyFence, strictPersistedFrameValidation: true)
+            },
             attach: { RemoteServer.shared.attachCloudBridge($0) },
             // The same gate the local server uses. A Mac that will not accept a message from
             // the browser on its own network does not accept one from the relay either.
             allowCloudCommands: { Config.shared.remoteWrite },
+            commandEffectAuthority: { identity in
+                { sender, requiresWriteGate in
+                    let rosterAllows = (try? pairedDevices.devices(accountID: identity.accountID)
+                        .contains { $0.deviceID == sender }) == true
+                    return CloudCommandEffectAuthorization(
+                        epochState: epochAuthority.current(),
+                        rosterAllowsSender: rosterAllows,
+                        writeGateAllows: !requiresWriteGate || Config.shared.remoteWrite)
+                }
+            },
             commandRouter: { RemoteServerCloudCommandRouter() },
             // Refusals are the interesting half and the only half that is logged: a refused
             // cloud command is either a write gate doing its job or a viewer talking to the

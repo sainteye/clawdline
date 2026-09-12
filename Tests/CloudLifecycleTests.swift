@@ -108,6 +108,20 @@ private actor LifecycleTimedSequence: CloudEnvelopeSequencing {
     }
 }
 
+/// Lifecycle tests keep a deliberately in-memory compatibility sequencer. Production
+/// composition never calls this seam: `CloudDurableOutboundComposition` owns sequence
+/// reservation through the durable spool.
+private actor LifecycleTestSequence: CloudEnvelopeSequencing {
+    private var next: UInt64 = 0
+
+    init(url _: URL? = nil, block _: UInt64 = 0) {}
+
+    func nextSequence(sender _: String) async throws -> UInt64 {
+        defer { next &+= 1 }
+        return next
+    }
+}
+
 private final class LifecycleSequenceCancellationGate: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Never>?
@@ -171,6 +185,25 @@ private final class LifecycleIdentityBox: @unchecked Sendable {
     }
     func set(_ identity: CloudMachineIdentity?) {
         lock.lock(); self.identity = identity; lock.unlock()
+    }
+}
+
+private final class LifecycleOneShotDurableFault: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    func failFirstPersist(_ point: CloudDurableStoreFaultPoint) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard point == .persist, !fired else { return }
+        fired = true
+        throw CloudDurableStoreFailure.persist
+    }
+
+    var didFire: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return fired
     }
 }
 
@@ -304,37 +337,21 @@ private struct CloudLifecycleTests {
         return url
     }
 
-    // MARK: - Durable sequencing
+    // MARK: - Test-only compatibility sequencing
 
     static func testSequenceFile() async {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("cloud-sequence.json")
 
-        let first = CloudSequenceFile(url: url, block: 4)
+        let first = LifecycleTestSequence(url: url, block: 4)
         var handed: [UInt64] = []
         for _ in 0..<6 { handed.append((try? await first.nextSequence(sender: "mac")) ?? .max) }
         check("the first sequence a machine hands out is zero", handed.first == 0)
         check("sequences advance by exactly one", handed == [0, 1, 2, 3, 4, 5], "\(handed)")
-        let ceiling = (try? await first.reservedCeiling(sender: "mac")) ?? 0
-        check("the ceiling written down is ahead of what has been handed out",
-              ceiling > handed.last!, "ceiling \(ceiling) last \(handed.last!)")
-
-        // A relaunch is a new instance over the same file, which is the whole point.
-        let second = CloudSequenceFile(url: url, block: 4)
-        let afterRelaunch = (try? await second.nextSequence(sender: "mac")) ?? .max
-        check("a relaunch never repeats a sequence it may already have used",
-              afterRelaunch >= ceiling, "\(afterRelaunch) vs ceiling \(ceiling)")
-        check("a relaunch does not restart from zero", afterRelaunch != 0)
-
-        let other = (try? await second.nextSequence(sender: "phone")) ?? .max
-        check("a second sender keeps its own counter", other == 0, "\(other)")
-
-        try? Data("{ not json".utf8).write(to: url)
-        let corrupt = CloudSequenceFile(url: url, block: 4)
-        var refused = false
-        do { _ = try await corrupt.nextSequence(sender: "mac") } catch { refused = true }
-        check("an unreadable sequence file refuses rather than replaying from zero", refused)
+        check("the compatibility seam is not a persisted production authority",
+              CloudContractCandidateAuthority.w0E.authority == "candidate"
+                  && !CloudContractCandidateAuthority.w0E.permitsEmission(wireVersion: 2))
     }
 
     // MARK: - Pinned viewer devices
@@ -657,11 +674,12 @@ private struct CloudLifecycleTests {
         allowCommands: @escaping @Sendable () -> Bool = { false },
         appIdentityFails: Bool = false,
         webhookWorker: ScheduleWebhookWorkerRecorder? = nil,
+        durableRuntime: (@MainActor (CloudMachineIdentity) throws -> CloudDurableRuntime)? = nil,
         sequenceDirectory: URL
     ) -> CloudBridgeLifecycle {
         let signing = CloudDeviceKeyPair()
         let master = try? CloudMasterSecret()
-        let sequence = CloudSequenceFile(
+        let sequence = LifecycleTestSequence(
             url: sequenceDirectory.appendingPathComponent("cloud-sequence.json"))
         let identityReader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?> {
             guard let machine = try identity() else { return nil }
@@ -678,6 +696,7 @@ private struct CloudLifecycleTests {
             identityReader: identityReader,
             makeTransport: { _, _, _ in transports },
             sequencing: { _ in sequence },
+            durableRuntime: durableRuntime,
             attach: { recorder.attach($0) },
             allowCloudCommands: allowCommands,
             commandRouter: { router },
@@ -686,6 +705,49 @@ private struct CloudLifecycleTests {
             scheduleWebhooks: { identity, unauthorized in
                 webhookWorker?.apply(identity, unauthorized)
             }))
+    }
+
+    @MainActor
+    static func testMacLifecycleComposesSharedDurability() async {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let recorder = AttachRecorder()
+        let transport = LifecycleTestTransport()
+        let machine = CloudMachineIdentity(accountID: "acct", machineID: "mac-durable")
+        let lifecycle = makeLifecycle(
+            identity: { machine }, recorder: recorder, transports: transport,
+            durableRuntime: { identity in
+                try CloudDurableRuntime.open(
+                    directory: directory.appendingPathComponent(identity.machineID), runtime: .mac)
+            }, sequenceDirectory: directory)
+        lifecycle.apply()
+        let attached = await eventually { recorder.attachedCount == 1 }
+        check("Mac lifecycle opens the shared ledger and spool before attachment", attached)
+        check("candidate authority cannot cut over, emit, or raise a floor",
+              CloudContractCandidateAuthority.w0E.authority == "candidate"
+                  && CloudContractCandidateAuthority.w0E.cutoverRequired
+                  && !CloudContractCandidateAuthority.w0E.permitsNormativeCutover
+                  && !CloudContractCandidateAuthority.w0E.permitsEmission(wireVersion: 1)
+                  && !CloudContractCandidateAuthority.w0E.permitsClientFloorRaise(to: "2"))
+        lifecycle.signedOut()
+        let detached = await eventually {
+            recorder.detachedCount == 1 && transport.shutdowns() == 1
+        }
+        check("detaching releases the durable Mac composition with its bridge", detached)
+
+        let refusedRecorder = AttachRecorder()
+        let refused = makeLifecycle(
+            identity: { machine }, recorder: refusedRecorder,
+            transports: LifecycleTestTransport(),
+            durableRuntime: { _ in throw CloudDurableStoreFailure.recovery },
+            sequenceDirectory: directory)
+        refused.apply()
+        let failedClosed = await eventually {
+            if case .failed = refused.state { return true }
+            return false
+        }
+        check("a durable-store startup failure prevents Mac bridge attachment",
+              failedClosed && refusedRecorder.attachedCount == 0)
     }
 
     @MainActor
@@ -802,7 +864,7 @@ private struct CloudLifecycleTests {
         let lifecycle = CloudBridgeLifecycle(services: CloudBridgeLifecycle.Services(
             identityReader: reader,
             makeTransport: { _, _, _ in LifecycleTestTransport() },
-            sequencing: { _ in CloudSequenceFile(
+            sequencing: { _ in LifecycleTestSequence(
                 url: directory.appendingPathComponent("cloud-sequence.json")) },
             attach: { recorder.attach($0) },
             allowCloudCommands: { false },
@@ -847,7 +909,7 @@ private struct CloudLifecycleTests {
         let lifecycle = CloudBridgeLifecycle(services: CloudBridgeLifecycle.Services(
             identityReader: reader,
             makeTransport: { _, _, _ in LifecycleTestTransport() },
-            sequencing: { _ in CloudSequenceFile(
+            sequencing: { _ in LifecycleTestSequence(
                 url: directory.appendingPathComponent("cloud-sequence.json")) },
             attach: { recorder.attach($0) },
             allowCloudCommands: { false },
@@ -885,7 +947,7 @@ private struct CloudLifecycleTests {
         let timeoutAfterSignOut = CloudBridgeLifecycle(services: .init(
             identityReader: timeoutAfterSignOutReader,
             makeTransport: { _, _, _ in LifecycleTestTransport() },
-            sequencing: { _ in CloudSequenceFile(
+            sequencing: { _ in LifecycleTestSequence(
                 url: directory.appendingPathComponent("cloud-timeout-after-signout.json")) },
             attach: { timeoutAfterSignOutRecorder.attach($0) },
             allowCloudCommands: { false },
@@ -921,7 +983,7 @@ private struct CloudLifecycleTests {
         let signOutAfterTimeout = CloudBridgeLifecycle(services: .init(
             identityReader: signOutAfterTimeoutReader,
             makeTransport: { _, _, _ in LifecycleTestTransport() },
-            sequencing: { _ in CloudSequenceFile(
+            sequencing: { _ in LifecycleTestSequence(
                 url: directory.appendingPathComponent("cloud-signout-after-timeout.json")) },
             attach: { signOutAfterTimeoutRecorder.attach($0) },
             allowCloudCommands: { false },
@@ -972,7 +1034,7 @@ private struct CloudLifecycleTests {
                 refusal = onTerminalFailure
                 return transport
             },
-            sequencing: { _ in CloudSequenceFile(
+            sequencing: { _ in LifecycleTestSequence(
                 url: directory.appendingPathComponent("cloud-sequence.json")) },
             attach: { recorder.attach($0) },
             allowCloudCommands: { false },
@@ -1433,6 +1495,7 @@ private struct CloudLifecycleTests {
         await testSupervisedTokenProvider()
         await testKeyProvider()
         await testAttachmentIsSingular()
+        await testMacLifecycleComposesSharedDurability()
         await testNoCredentialAndFailures()
         await testSignOutInvalidatesInFlightIdentity()
         await testIdentityReadTimeoutRetainsTerminalReconciliation()
@@ -1546,6 +1609,188 @@ private final class LifecycleWriteGate: @unchecked Sendable {
     func turnOn() { lock.lock(); on = true; lock.unlock() }
 }
 
+/// Normally allows every check. Once armed, the reservation check succeeds and the immediately
+/// following effect-time check observes revocation, pinning the second authorization read.
+private final class LifecycleEffectAuthority: @unchecked Sendable {
+    private let lock = NSLock()
+    private var remainingAllowedChecks: Int?
+
+    func armRevocationAfterReservation() {
+        lock.lock(); remainingAllowedChecks = 1; lock.unlock()
+    }
+
+    func current(requiresWriteGate: Bool) -> CloudCommandEffectAuthorization {
+        lock.lock(); defer { lock.unlock() }
+        guard let remainingAllowedChecks else {
+            return CloudCommandEffectAuthorization(
+                epochState: .ready, rosterAllowsSender: true, writeGateAllows: true)
+        }
+        let allow = remainingAllowedChecks > 0
+        self.remainingAllowedChecks = max(0, remainingAllowedChecks - 1)
+        return CloudCommandEffectAuthorization(
+            epochState: .ready, rosterAllowsSender: allow,
+            writeGateAllows: !requiresWriteGate || allow)
+    }
+}
+
 func runCloudLifecycleTests(vectorsURL: URL) async throws -> Int {
     try await CloudLifecycleTests.run(vectorsURL: vectorsURL)
+}
+
+func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
+    var checks = 0
+    func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+        checks += 1
+        if !condition() { throw CloudAppBridgeTestFailure(description: message) }
+    }
+
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-bridge-durable-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: directory, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    let signingKey = CloudDeviceKeyPair()
+    let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x61, count: 32))
+    let transport = CloudAppBridgeTestTransport()
+    let router = CloudAppBridgeTestRouter()
+    let results = CloudAppBridgeTestResults()
+    let effectAuthority = LifecycleEffectAuthority()
+    var runtime: CloudDurableRuntime? = try CloudDurableRuntime.open(
+        directory: directory, runtime: .mac)
+    var bridge: CloudAppBridge? = CloudAppBridge(
+        transport: transport,
+        identity: CloudAppIdentity(
+            machineID: "durable-mac", deviceID: "durable-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey),
+        sequencing: CloudAppBridgeTestSequence(), allowCloudCommands: { true },
+        currentCommandEffectAuthority: { _, requiresWriteGate in
+            effectAuthority.current(requiresWriteGate: requiresWriteGate)
+        },
+        commandRouter: router,
+        nowMilliseconds: { UInt64(Date().timeIntervalSince1970 * 1_000) },
+        commandResult: { results.append($0) }, durableRuntime: runtime)
+    try await bridge!.start()
+
+    let now = UInt64(Date().timeIntervalSince1970 * 1_000)
+    let command = #"{"type":"send","session":"plain","request":"durable-1","text":"hello","images":[]}"#
+    transport.yield(command, sequence: 1, timestamp: now)
+    try await waitForCloudAppBridge("durable command outcome and reply") {
+        results.all().count == 1 && transport.envelopes().count == 1
+    }
+    let durableRow = try await runtime!.ledger.row(for: CloudCommandLedgerKey(
+        viewerSender: "viewer", requestID: "durable-1"))
+    try require(durableRow?.state == .completed
+                    && durableRow?.normalizedOutcome?.status == 200,
+                "the normalized command outcome is durable before reply")
+    let durableFiles = (FileManager.default.enumerator(
+        at: directory, includingPropertiesForKeys: [.isRegularFileKey]))?
+        .compactMap { $0 as? URL }
+        .compactMap { try? Data(contentsOf: $0) } ?? []
+    try require(durableFiles.allSatisfy { $0.range(of: Data("hello".utf8)) == nil },
+                "durable ledger and spool files contain no plaintext-equivalent command payload")
+    let firstEffectCount = await router.recorded().count
+    try require(firstEffectCount == 1,
+                "the first durable identity reaches effect exactly once")
+
+    let firstReply = transport.envelopes()[0]
+    transport.acknowledge(firstReply)
+    try await waitForCloudAppBridge("first durable reply acknowledgement") {
+        await runtime!.spool.row(seq: Int64(firstReply.seq))?.state == .acked
+    }
+    transport.yield(command, sequence: 2, timestamp: now)
+    try await waitForCloudAppBridge("durable duplicate replay") {
+        results.all().count == 2 && transport.envelopes().count == 2
+    }
+    let duplicateEffectCount = await router.recorded().count
+    try require(duplicateEffectCount == 1,
+                "an exact duplicate replays without repeating the effect")
+
+    let secondReply = transport.envelopes()[1]
+    transport.acknowledge(secondReply)
+    try await waitForCloudAppBridge("second durable reply acknowledgement") {
+        await runtime!.spool.row(seq: Int64(secondReply.seq))?.state == .acked
+    }
+    let conflict = #"{"type":"send","session":"plain","request":"durable-1","text":"changed","images":[]}"#
+    transport.yield(conflict, sequence: 3, timestamp: now)
+    try await waitForCloudAppBridge("durable digest conflict") {
+        results.all().contains { $0.code == "command_idempotency_conflict" }
+    }
+    let conflictEffectCount = await router.recorded().count
+    try require(conflictEffectCount == 1,
+                "a changed digest fails before another effect")
+
+    effectAuthority.armRevocationAfterReservation()
+    let revoked = #"{"type":"send","session":"plain","request":"durable-revoked","text":"no-effect","images":[]}"#
+    transport.yield(revoked, sequence: 4, timestamp: now)
+    try await waitForCloudAppBridge("effect-time authority revocation") {
+        results.all().contains { $0.code == "command_gate_unavailable" }
+    }
+    let revokedEffectCount = await router.recorded().count
+    let revokedRow = try await runtime!.ledger.row(for: CloudCommandLedgerKey(
+        viewerSender: "viewer", requestID: "durable-revoked"))
+    try require(revokedEffectCount == 1 && revokedRow == nil,
+                "effect-time roster/write revocation removes reserved state before any effect")
+
+    await bridge!.stop()
+    bridge = nil
+    runtime = nil
+
+    let deadlineDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-bridge-deadline-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: deadlineDirectory, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: deadlineDirectory) }
+    var deadlineLimits = CloudSpoolLimits()
+    deadlineLimits.attemptWindow = .milliseconds(20)
+    let deadlineRuntime = try CloudDurableRuntime.open(
+        directory: deadlineDirectory, runtime: .mac, limits: deadlineLimits)
+    let deadlineTransport = CloudAppBridgeTestTransport()
+    let deadlineComposition = CloudDurableOutboundComposition(
+        spool: deadlineRuntime.spool, transport: deadlineTransport,
+        identity: CloudAppIdentity(
+            machineID: "durable-mac", deviceID: "durable-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey),
+        nowMilliseconds: { now })
+    try await deadlineComposition.enqueue(
+        Data("deadline-payload".utf8), channel: "s/account/viewer", logicalID: "deadline")
+    try await waitForCloudAppBridge("autonomous attempt deadline wake") {
+        await deadlineRuntime.spool.row(seq: 0)?.state == .burned
+    }
+    let deadlineRow = await deadlineRuntime.spool.row(seq: 0)
+    try require(deadlineRow?.burnReason == .attemptCapExpired,
+                "a sent head burns at its attempt deadline without another outbound event")
+    await deadlineComposition.stop()
+
+    let retryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-bridge-deadline-retry-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: retryDirectory, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    defer { try? FileManager.default.removeItem(at: retryDirectory) }
+    var retryLimits = CloudSpoolLimits()
+    retryLimits.attemptWindow = .milliseconds(20)
+    let retryStore = try CloudFileSpoolStore(url: retryDirectory.appendingPathComponent("spool.json"))
+    let retrySpool = try CloudOutboundSpool(
+        store: retryStore, clock: CloudSystemSpoolClock(), metrics: CloudNoopSpoolMetrics(),
+        runtime: .mac, limits: retryLimits)
+    let retryTransport = CloudAppBridgeTestTransport()
+    let retryComposition = CloudDurableOutboundComposition(
+        spool: retrySpool, transport: retryTransport,
+        identity: CloudAppIdentity(
+            machineID: "durable-mac", deviceID: "durable-device", keyID: "ms-1",
+            masterSecret: masterSecret, signingKey: signingKey),
+        nowMilliseconds: { now }, deadlineFailureRetryDelay: .milliseconds(20))
+    try await retryComposition.enqueue(
+        Data("deadline-retry".utf8), channel: "s/account/viewer", logicalID: "deadline-retry")
+    let retryFault = LifecycleOneShotDurableFault()
+    retryStore.faultInjection = { try retryFault.failFirstPersist($0) }
+    try await waitForCloudAppBridge("deadline wake retries after one persistence failure") {
+        await retrySpool.row(seq: 0)?.state == .burned
+    }
+    try require(retryFault.didFire,
+                "the retry fixture reaches the injected deadline persistence failure")
+    await retryComposition.stop()
+    try? FileManager.default.removeItem(at: directory)
+    return checks
 }

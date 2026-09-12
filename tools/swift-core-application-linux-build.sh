@@ -33,6 +33,9 @@ for member in Packages/ClawdlineCore/CloudCanonicalJSON.swift Packages/Clawdline
   Packages/ClawdlineApplication/ProviderLifecyclePolicy.swift \
   Packages/ClawdlineApplication/SessionLaunchPolicy.swift \
   Packages/ClawdlineApplication/TerminalCommandScheduler.swift \
+  Packages/ClawdlineApplication/CloudCommandLedger.swift \
+  Packages/ClawdlineApplication/CloudOutboundSpool.swift \
+  Packages/ClawdlineApplication/CloudDurableStores.swift \
   Packages/ClawdlineLinux/LinuxComposition.swift \
   Packages/ClawdlineLinux/LinuxContainedFileSystem.swift \
   Packages/ClawdlineLinux/LinuxDaemonIngress.swift \
@@ -41,6 +44,7 @@ for member in Packages/ClawdlineCore/CloudCanonicalJSON.swift Packages/Clawdline
   Packages/ClawdlineLinux/LinuxLocalIngressServer.swift \
   Packages/ClawdlineLinux/LinuxProviderRuntime.swift \
   Packages/ClawdlineLinux/LinuxRuntimeAdapters.swift Packages/ClawdlineLinux/LinuxSHA256.swift \
+  Packages/ClawdlineLinux/LinuxDurableCloudRuntime.swift \
   Packages/ClawdlineLinux/main.swift \
   Packages/ClawdlineLinuxTests/LinuxRuntimeContractTests.swift; do
   [ -e "$member" ] || fail "expected real target member missing: $member"

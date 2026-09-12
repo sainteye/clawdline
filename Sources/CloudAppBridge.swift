@@ -1,17 +1,75 @@
 import Foundation
+import CryptoKit
 
 /// The app-facing surface of `CloudTransport`. Keeping the concrete actor behind this protocol
 /// makes the bridge testable without a relay, Keychain, or terminal process.
 protocol CloudTransporting: Sendable {
     var commands: CloudInboundCommandStream { get }
     var readyGenerations: AsyncStream<UInt64> { get }
+    var outboundReceipts: AsyncStream<CloudOutboundTransportReceipt> { get }
     func connect(role: CloudTransportRole) async throws
     func publish(envelope: CloudEnvelope) async throws
+    func sendExactPublishFrame(_ bytes: Data) async throws
+    func outboundReceiptIngestionSnapshot() async -> CloudOutboundReceiptIngestionSnapshot
     func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async
     func shutdown() async
 }
 
+extension CloudTransporting {
+    /// Compatibility for narrow fakes that still observe envelopes. Production overrides this
+    /// with a byte-preserving socket write and never decodes a spooled frame before sending it.
+    func sendExactPublishFrame(_ bytes: Data) async throws {
+        let frame = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
+        guard frame.type == "publish" else { throw CloudTransportError.unexpectedFrame(frame.type) }
+        try await publish(envelope: frame.envelope)
+    }
+
+    var outboundReceipts: AsyncStream<CloudOutboundTransportReceipt> {
+        AsyncStream { $0.finish() }
+    }
+
+    func outboundReceiptIngestionSnapshot() async -> CloudOutboundReceiptIngestionSnapshot {
+        CloudOutboundReceiptIngestionSnapshot(enqueued: 0, dropped: 0, terminated: 0)
+    }
+}
+
 extension CloudTransport: CloudTransporting {}
+
+enum CloudOutboundTransportReceiptKind: Equatable, Sendable {
+    case delivered
+    case viewerOffline
+    case peerError
+}
+
+struct CloudOutboundTransportReceipt: Equatable, Sendable {
+    let channel: String
+    let sequence: Int64
+    let kind: CloudOutboundTransportReceiptKind
+}
+
+struct CloudOutboundReceiptIngestionSnapshot: Equatable, Sendable {
+    let enqueued: UInt64
+    let dropped: UInt64
+    let terminated: UInt64
+}
+
+struct CloudCommandEffectAuthorization: Equatable, Sendable {
+    let epochState: CloudEpochGuardState
+    let rosterAllowsSender: Bool
+    let writeGateAllows: Bool
+
+    var permitsEffect: Bool { rosterAllowsSender && writeGateAllows }
+}
+
+struct CloudPublishFrame: Codable, Equatable, Sendable {
+    let type: String
+    let envelope: CloudEnvelope
+
+    init(envelope: CloudEnvelope) {
+        type = "publish"
+        self.envelope = envelope
+    }
+}
 
 /// Sequence persistence belongs to configuration/pairing, not to this bridge. The injected
 /// implementation must be durable: reusing a sender sequence after relaunch is a replay.
@@ -253,6 +311,8 @@ enum CloudAppBridgeError: Error, LocalizedError, Equatable {
     case notRunning
     case malformedSessions
     case malformedOrchestrator
+    case sequenceExhausted
+    case unsupportedOutboundChannel
 
     var errorDescription: String? {
         switch self {
@@ -260,6 +320,8 @@ enum CloudAppBridgeError: Error, LocalizedError, Equatable {
         case .notRunning: return "The cloud app bridge has not been explicitly started."
         case .malformedSessions: return "The local session snapshot is malformed."
         case .malformedOrchestrator: return "The local orchestrator snapshot is malformed."
+        case .sequenceExhausted: return "The durable Cloud sequence space is exhausted."
+        case .unsupportedOutboundChannel: return "The Cloud outbound channel is not supported."
         }
     }
 }
@@ -589,6 +651,139 @@ final class CloudRefusalPublicationQueue: @unchecked Sendable {
     }
 }
 
+/// Production's sole outbound sequence, pending, reconnect and publication owner. The logical
+/// bytes and global sequence are committed first, the exact publish frame is sealed second, and
+/// `CloudOutboundSpool` commits `sent` before this adapter asks the transport to write a byte.
+/// The W0-E contract remains candidate-only: this composes the already-deployed legacy-v1
+/// envelope producer and does not opt into candidate authority or raise a client floor.
+actor CloudDurableOutboundComposition {
+    private let spool: CloudOutboundSpool
+    private let transport: any CloudTransporting
+    private let identity: CloudAppIdentity
+    private let nowMilliseconds: CloudAppBridge.Milliseconds
+    private let onDeadlineFailure: @Sendable () -> Void
+    private let deadlineFailureRetryDelay: Duration
+    private var attemptDeadlineTask: Task<Void, Never>?
+    private var attemptDeadlineGeneration: UInt64 = 0
+
+    init(spool: CloudOutboundSpool, transport: any CloudTransporting,
+         identity: CloudAppIdentity, nowMilliseconds: @escaping CloudAppBridge.Milliseconds,
+         onDeadlineFailure: @escaping @Sendable () -> Void = {},
+         deadlineFailureRetryDelay: Duration = .seconds(1)) {
+        self.spool = spool
+        self.transport = transport
+        self.identity = identity
+        self.nowMilliseconds = nowMilliseconds
+        self.onDeadlineFailure = onDeadlineFailure
+        self.deadlineFailureRetryDelay = deadlineFailureRetryDelay
+    }
+
+    func enqueue(_ plaintext: Data, channel: String, logicalID: String) async throws {
+        let spoolChannel = try Self.spoolChannel(channel)
+        let payloadDigest = SHA256.hash(data: plaintext).map { String(format: "%02x", $0) }.joined()
+        // Durable logical metadata carries the quota-relevant size and a one-way content identity,
+        // never plaintext or a base64-equivalent copy. Exact content exists only inside the
+        // authenticated encrypted frame.
+        let logicalRecord: CloudJSONValue = .object([
+            "v": .int(2), "ch": .string(channel), "class": .string("stream"),
+            "key_id": .string(identity.keyID), "logical_id": .string(logicalID),
+            "payload_bytes": .int(Int64(plaintext.count)),
+            "payload_sha256": .string(payloadDigest), "sender": .string(identity.deviceID),
+        ])
+        let sequence = try await spool.reserve(
+            channel: spoolChannel, logicalID: logicalID, ownerID: nil,
+            recipient: channel, record: logicalRecord)
+        guard sequence >= 0 else { throw CloudAppBridgeError.sequenceExhausted }
+        let envelope = try CloudEnvelope.seal(
+            plaintext, ch: channel, seq: UInt64(sequence), ts: nowMilliseconds(),
+            envelopeClass: .stream, keyID: identity.keyID, sender: identity.deviceID,
+            masterSecret: identity.masterSecret, signingKey: identity.signingKey)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let exactFrame = try encoder.encode(CloudPublishFrame(envelope: envelope))
+        try await spool.seal(seq: sequence, sealedEnvelope: exactFrame)
+        _ = try await drain(reconnect: false)
+    }
+
+    @discardableResult
+    func drain(reconnect: Bool) async throws -> CloudSpoolSendDisposition {
+        do {
+            let disposition = try await spool.sendNext(resendSent: reconnect) { [transport] bytes in
+                try await transport.sendExactPublishFrame(bytes)
+            }
+            await scheduleAttemptDeadline()
+            return disposition
+        } catch {
+            // `sendNext` commits sent before the socket call. Even a throwing socket therefore
+            // needs the same autonomous deadline wakeup.
+            await scheduleAttemptDeadline()
+            throw error
+        }
+    }
+
+    func settle(_ receipt: CloudOutboundTransportReceipt) async throws {
+        let channel = try Self.spoolChannel(receipt.channel)
+        let kind: CloudSpoolSettleKind
+        switch receipt.kind {
+        case .delivered: kind = .delivered
+        case .viewerOffline: kind = .viewerOffline
+        case .peerError: kind = .peerError
+        }
+        _ = try await spool.settle(
+            seq: receipt.sequence, channel: channel, fullChannel: receipt.channel, kind)
+        _ = try await drain(reconnect: false)
+    }
+
+    func stop() {
+        attemptDeadlineGeneration &+= 1
+        attemptDeadlineTask?.cancel()
+        attemptDeadlineTask = nil
+    }
+
+    private func scheduleAttemptDeadline(notBefore minimumDelay: Duration = .zero) async {
+        attemptDeadlineGeneration &+= 1
+        let generation = attemptDeadlineGeneration
+        attemptDeadlineTask?.cancel()
+        attemptDeadlineTask = nil
+        guard let nextDelay = await spool.nextAttemptWakeDelay() else { return }
+        let delay = max(nextDelay, minimumDelay)
+        let nanoseconds = Self.nanoseconds(delay)
+        attemptDeadlineTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: nanoseconds) }
+            catch { return }
+            await self?.attemptDeadlineFired(generation: generation)
+        }
+    }
+
+    private func attemptDeadlineFired(generation: UInt64) async {
+        guard generation == attemptDeadlineGeneration, !Task.isCancelled else { return }
+        attemptDeadlineTask = nil
+        do { _ = try await drain(reconnect: false) }
+        catch {
+            onDeadlineFailure()
+            await scheduleAttemptDeadline(notBefore: deadlineFailureRetryDelay)
+        }
+    }
+
+    private static func nanoseconds(_ duration: Duration) -> UInt64 {
+        let parts = duration.components
+        guard parts.seconds >= 0 else { return 0 }
+        let seconds = UInt64(parts.seconds)
+        let nanos = UInt64(max(0, parts.attoseconds / 1_000_000_000))
+        let (whole, overflow) = seconds.multipliedReportingOverflow(by: 1_000_000_000)
+        if overflow { return .max }
+        return whole.addingReportingOverflow(nanos).overflow ? .max : whole + nanos
+    }
+
+    private static func spoolChannel(_ channel: String) throws -> CloudSpoolChannel {
+        guard let prefix = channel.split(separator: "/", maxSplits: 1).first,
+              let parsed = CloudSpoolChannel(rawValue: String(prefix)) else {
+            throw CloudAppBridgeError.unsupportedOutboundChannel
+        }
+        return parsed
+    }
+}
+
 /// Connects the app's existing full-snapshot and HTTP-command seams to CloudTransport.
 ///
 /// Construction has no side effects. `start()` is the explicit attachment/configuration point,
@@ -598,6 +793,8 @@ actor CloudAppBridge {
     static let sessionInventoryID = "__clawdline_inventory_v1__"
     static let sessionInventoryLimit = 512
     typealias CommandGate = @Sendable () -> Bool
+    typealias CommandEffectAuthority = @Sendable (_ sender: String, _ requiresWriteGate: Bool) async
+        -> CloudCommandEffectAuthorization
     typealias Milliseconds = @Sendable () -> UInt64
     typealias CommandResultObserver = @Sendable (CloudCommandResult) -> Void
     typealias DiagnosticLogger = @Sendable (String) -> Void
@@ -620,14 +817,18 @@ actor CloudAppBridge {
     private let identity: CloudAppIdentity
     private let sequencing: any CloudEnvelopeSequencing
     private let allowCloudCommands: CommandGate
+    private let currentCommandEffectAuthority: CommandEffectAuthority
     private let commandRouter: any CloudCommandRouting
     private let nowMilliseconds: Milliseconds
     private let commandResult: CommandResultObserver
     private let diagnostic: DiagnosticLogger
     private let refusalPublications: CloudRefusalPublicationQueue
+    private let commandLedger: CloudCommandLedger?
+    private let durableOutbound: CloudDurableOutboundComposition?
 
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
+    private var outboundReceiptTask: Task<Void, Never>?
     private var connectTask: Task<Void, Error>?
     private var publicationTasks: [UUID: Task<Void, Error>] = [:]
     private var foregroundReadTask: Task<Void, Never>?
@@ -650,22 +851,38 @@ actor CloudAppBridge {
         identity: CloudAppIdentity,
         sequencing: any CloudEnvelopeSequencing,
         allowCloudCommands: @escaping CommandGate = { false },
+        currentCommandEffectAuthority: CommandEffectAuthority? = nil,
         commandRouter: any CloudCommandRouting = RemoteServerCloudCommandRouter(),
         nowMilliseconds: @escaping Milliseconds = {
             UInt64(Date().timeIntervalSince1970 * 1_000)
         },
         commandResult: @escaping CommandResultObserver = { _ in },
         diagnostic: @escaping DiagnosticLogger = { _ in },
-        refusalPublications: CloudRefusalPublicationQueue? = nil
+        refusalPublications: CloudRefusalPublicationQueue? = nil,
+        durableRuntime: CloudDurableRuntime? = nil
     ) {
         self.transport = transport
         self.identity = identity
         self.sequencing = sequencing
         self.allowCloudCommands = allowCloudCommands
+        self.currentCommandEffectAuthority = currentCommandEffectAuthority ?? { _, requiresWriteGate in
+            CloudCommandEffectAuthorization(
+                epochState: .ready, rosterAllowsSender: true,
+                writeGateAllows: !requiresWriteGate || allowCloudCommands())
+        }
         self.commandRouter = commandRouter
         self.nowMilliseconds = nowMilliseconds
         self.commandResult = commandResult
         self.diagnostic = diagnostic
+        commandLedger = durableRuntime?.ledger
+        durableOutbound = durableRuntime.map {
+            CloudDurableOutboundComposition(
+                spool: $0.spool, transport: transport, identity: identity,
+                nowMilliseconds: nowMilliseconds,
+                onDeadlineFailure: {
+                    diagnostic("cloud: durable outbound attempt deadline could not commit")
+                })
+        }
         self.refusalPublications = refusalPublications ?? CloudRefusalPublicationQueue(
             observer: { outcome, metrics in
                 diagnostic("cloud: refusal reply lane outcome=\(outcome.rawValue) "
@@ -728,6 +945,17 @@ actor CloudAppBridge {
                     )
                 }
             }
+            if let durableOutbound {
+                let receipts = transport.outboundReceipts
+                outboundReceiptTask = Task { [weak self] in
+                    for await receipt in receipts {
+                        guard let self else { return }
+                        await self.consumeOutboundReceipt(
+                            receipt, durableOutbound: durableOutbound,
+                            lifecycleGeneration: ownedGeneration)
+                    }
+                }
+            }
         } catch {
             if lifecycleGeneration == ownedGeneration {
                 connectTask = nil
@@ -740,6 +968,7 @@ actor CloudAppBridge {
 
     func stop() async {
         guard running || starting || connectTask != nil || commandTask != nil || readyTask != nil
+                || outboundReceiptTask != nil
                 || foregroundReadTask != nil || backgroundReadTask != nil
                 || !lifecycleRefreshTasks.isEmpty || !publicationTasks.isEmpty
         else { return }
@@ -749,6 +978,7 @@ actor CloudAppBridge {
         running = false
         let command = commandTask
         let ready = readyTask
+        let outboundReceipts = outboundReceiptTask
         let connect = connectTask
         let publications = Array(publicationTasks.values)
         let refusalPublication = refusalPublications.cancelAndReset()
@@ -756,6 +986,7 @@ actor CloudAppBridge {
             + Array(lifecycleRefreshTasks.values)
         commandTask = nil
         readyTask = nil
+        outboundReceiptTask = nil
         connectTask = nil
         publicationTasks.removeAll()
         lifecycleRefreshTasks.removeAll()
@@ -768,12 +999,15 @@ actor CloudAppBridge {
         connect?.cancel()
         command?.cancel()
         ready?.cancel()
+        outboundReceipts?.cancel()
         publications.forEach { $0.cancel() }
         readTasks.forEach { $0.cancel() }
+        await durableOutbound?.stop()
         await transport.shutdown()
         _ = await connect?.result
         await command?.value
         await ready?.value
+        await outboundReceipts?.value
         for publication in publications {
             _ = await publication.result
         }
@@ -963,6 +1197,17 @@ actor CloudAppBridge {
         }
         trace("complete")
         do {
+            if let durableOutbound {
+                stage = "durable_reserve_seal_send"; startedAt = nowMilliseconds(); trace("begin")
+                try await durableOutbound.enqueue(
+                    plaintext, channel: channel,
+                    logicalID: readTraceID ?? UUID().uuidString.lowercased())
+                trace("complete")
+                return
+            }
+            // Fixture-only compatibility. Production construction always supplies
+            // `durableOutbound`; this path lets narrow bridge fakes observe legacy envelopes
+            // without becoming a silent production fallback.
             stage = "sequence"; startedAt = nowMilliseconds(); trace("begin")
             let sequence = try await sequencing.nextSequence(sender: identity.deviceID)
             trace("complete")
@@ -1026,9 +1271,25 @@ actor CloudAppBridge {
 
     private func transportBecameReady(
         _ generation: UInt64, lifecycleGeneration ownedGeneration: UInt64
-    ) {
+    ) async {
         guard running, lifecycleGeneration == ownedGeneration else { return }
+        if let durableOutbound {
+            do { _ = try await durableOutbound.drain(reconnect: true) }
+            catch {
+                diagnostic("cloud: durable outbound reconnect drain failed")
+            }
+        }
         transportReady(generation)
+    }
+
+    private func consumeOutboundReceipt(
+        _ receipt: CloudOutboundTransportReceipt,
+        durableOutbound: CloudDurableOutboundComposition,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        do { try await durableOutbound.settle(receipt) }
+        catch { diagnostic("cloud: correlated outbound receipt could not settle durably") }
     }
 
     private func consume(
@@ -1388,16 +1649,115 @@ actor CloudAppBridge {
             return
         }
 
-        let result = await commandRouter.route(
-            command, sender: inbound.sender,
-            idempotencyKey: inbound.idempotencyKey
-        )
+        let result: CloudCommandResult
+        if let commandLedger {
+            result = await routeDurably(
+                command, body: body, inbound: inbound, ledger: commandLedger,
+                requiresWriteGate: !readLevelCommand)
+        } else {
+            // Fixture-only compatibility. `CloudBridgeLifecycle.Services.production()` always
+            // supplies a durable runtime, so no production effect reaches this branch.
+            result = await commandRouter.route(
+                command, sender: inbound.sender,
+                idempotencyKey: inbound.idempotencyKey)
+        }
         commandResult(result)
         if let reply = commandReply {
             await publishJSONAnswer(name: reply.name, session: reply.session,
                                     status: result.status, body: result.body,
                                     lifecycleGeneration: ownedGeneration)
         }
+    }
+
+    private func routeDurably(
+        _ command: CloudHeadlessCommand, body: [String: Any], inbound: CloudInboundCommand,
+        ledger: CloudCommandLedger, requiresWriteGate: Bool
+    ) async -> CloudCommandResult {
+        let digest = Data(SHA256.hash(data: inbound.plaintext))
+        let logicalRequestID = (body["request_id"] as? String)
+            ?? (body["request"] as? String) ?? inbound.idempotencyKey
+        let timestampSeconds = TimeInterval(inbound.timestamp) / 1_000
+        let deadline = Date(timeIntervalSince1970: timestampSeconds + 300)
+        let continuous = DispatchTime.now().uptimeNanoseconds
+        let effectLimit = continuous.addingReportingOverflow(60_000_000_000)
+        let request = CloudCommandLedgerRequest(
+            viewerSender: inbound.sender, requestID: logicalRequestID,
+            requestSHA256: digest, rawReplyKey: Data(), replyKeyID: identity.keyID,
+            recipientDeviceID: inbound.sender, deadlineAt: deadline,
+            effectNotAfterContinuous: effectLimit.overflow ? .max : effectLimit.partialValue)
+        do {
+            let reservationAuthority = await currentCommandEffectAuthority(
+                inbound.sender, requiresWriteGate)
+            switch try await ledger.reserve(request, epochState: reservationAuthority.epochState) {
+            case .cached(let outcome):
+                return CloudCommandResult(
+                    status: outcome.status,
+                    code: outcome.code == .succeeded ? nil : outcome.code.rawValue,
+                    body: outcome.payload ?? Data())
+            case .reserved:
+                break
+            }
+            // The durable reserve may suspend on disk. Re-read every revocable authority at the
+            // point of no return instead of reusing admission-time facts.
+            let effectAuthority = await currentCommandEffectAuthority(
+                inbound.sender, requiresWriteGate)
+            try await ledger.beginEffect(
+                request, epochState: effectAuthority.epochState,
+                latestRosterAndGateAllow: effectAuthority.permitsEffect)
+        } catch let error as CloudCommandLedgerError {
+            return Self.ledgerRefusal(error)
+        } catch {
+            return Self.durabilityFailure(code: "command_reservation_not_durable")
+        }
+
+        let result = await commandRouter.route(
+            command, sender: inbound.sender, idempotencyKey: inbound.idempotencyKey)
+        let outcome = CloudCommandNormalizedOutcome(
+            code: Self.normalizedOutcomeCode(status: result.status),
+            status: result.status, payload: result.body)
+        do {
+            try await ledger.complete(request, outcome: outcome)
+            return result
+        } catch {
+            // The effect crossed its point of no return but its outcome did not. Never publish
+            // the undurable result; a duplicate observes `outcomeUnknown` after restart.
+            return Self.durabilityFailure(code: "command_outcome_unknown")
+        }
+    }
+
+    private static func normalizedOutcomeCode(status: Int) -> CloudCommandOutcomeCode {
+        switch status {
+        case 200..<300: return .succeeded
+        case 429: return .rateLimited
+        case 503: return .unavailable
+        case 500...599: return .internalError
+        default: return .failed
+        }
+    }
+
+    private static func ledgerRefusal(_ error: CloudCommandLedgerError) -> CloudCommandResult {
+        switch error {
+        case .idempotencyCapacity: return durabilityFailure(code: "command_ledger_capacity", status: 429)
+        case .idempotencyConflict: return durabilityFailure(code: "command_idempotency_conflict", status: 409)
+        case .outcomeUnknown: return durabilityFailure(code: "command_outcome_unknown")
+        case .deadlineExpired: return durabilityFailure(code: "command_deadline_expired", status: 408)
+        case .epochUncertain: return durabilityFailure(code: "command_clock_uncertain")
+        case .gateUnavailable: return durabilityFailure(code: "command_gate_unavailable")
+        case .reservationReleased: return durabilityFailure(code: "command_reservation_released", status: 429)
+        case .durabilityUnavailable, .invalidTransition, .corrupt, .notFound:
+            return durabilityFailure(code: "command_ledger_unavailable")
+        }
+    }
+
+    private static func durabilityFailure(
+        code: String, status: Int = 503
+    ) -> CloudCommandResult {
+        let object: [String: Any] = [
+            "error": ["code": code, "message": "The command durability boundary is unavailable."],
+        ]
+        let bytes = (try? JSONSerialization.data(
+            withJSONObject: object, options: [.withoutEscapingSlashes])) ?? Data()
+        return CloudCommandResult(status: status, code: code, body: bytes)
     }
 
     /// The reads a viewer may name. A closed set, checked before the write gate, so that adding

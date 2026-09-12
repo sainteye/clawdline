@@ -1259,11 +1259,17 @@ enum LinuxDaemonService {
         let runtime = try LinuxProviderRuntime.compose(configuration: configuration)
         let stateStore = try LinuxDurableStateStore(
             stateDirectory: runtime.layout.state, expectedUID: runtime.layout.uid)
+        // Cloud durability is a startup dependency, not a best-effort accessory. A corrupt,
+        // unsafe or multiply-owned ledger/spool leaves the daemon unstarted; no in-memory store
+        // can admit effects or publications in its place.
+        let durableCloud = try LinuxDurableCloudRuntime(
+            stateDirectory: runtime.layout.state, expectedUID: runtime.layout.uid)
         let requestID = "startup-reconciliation"
         runtime.scheduling.setRestartMaintenance(active: true, requestID: requestID)
         let startup = try LinuxStartupReconciler.reconcile(
             store: stateStore, inventory: inventory(from: runtime))
-        let owner = LinuxDaemonIngressOwner(store: stateStore, runtime: runtime)
+        let owner = LinuxDaemonIngressOwner(
+            store: stateStore, runtime: runtime, durableCloud: durableCloud)
         owner.completeStartup(startup)
         let health = makeHealth(receipt: startup,
                                 providerIdentity: runtime.compositionReceipt.identity)

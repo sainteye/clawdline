@@ -1078,7 +1078,13 @@ core_application_packages_root=Packages
 application_policy_sources='Sources/ProjectRootPolicy.swift
 Sources/ProviderLifecyclePolicy.swift
 Sources/SessionLaunchPolicy.swift
-Sources/TerminalCommandScheduler.swift'
+Sources/TerminalCommandScheduler.swift
+Sources/CloudCommandLedger.swift
+Sources/CloudOutboundSpool.swift'
+# W5-1's two Application state machines reach persistence only through their store protocols.
+# This one source is the deliberately shared POSIX host leaf behind those protocols; Mac and
+# Linux compile the same descriptor/owner/link/fsync implementation instead of drifting copies.
+application_host_leaf_sources='Sources/CloudDurableStores.swift'
 while IFS= read -r candidate; do
   [ -n "$candidate" ] || continue
   [ -f "$candidate" ] \
@@ -1121,7 +1127,8 @@ for package_target in ClawdlineCore ClawdlineApplication; do
     [ -f "$member" ] \
       || architecture_guard_fail "$member's symlink target does not resolve to a regular file; it is dangling"
     if ! grep -qxF "Sources/$resolved_basename" "$core_candidates_file" \
-        && ! printf '%s\n' "$application_policy_sources" | grep -qxF "Sources/$resolved_basename"; then
+        && ! printf '%s\n%s\n' "$application_policy_sources" "$application_host_leaf_sources" \
+          | grep -qxF "Sources/$resolved_basename"; then
       architecture_guard_fail "$member mirrors Sources/$resolved_basename, which is neither in $core_candidates_file nor W4-1's exact Application policy set"
     fi
   done < <(find "$package_dir" -maxdepth 1 -name '*.swift' | LC_ALL=C sort)
@@ -1143,7 +1150,10 @@ application_expected_members='HostPorts.swift
 ProjectRootPolicy.swift
 ProviderLifecyclePolicy.swift
 SessionLaunchPolicy.swift
-TerminalCommandScheduler.swift'
+TerminalCommandScheduler.swift
+CloudCommandLedger.swift
+CloudOutboundSpool.swift
+CloudDurableStores.swift'
 mac_expected_dependencies='ClawdlineApplication'
 linux_expected_members='LinuxComposition.swift
 LinuxContainedFileSystem.swift
@@ -1154,6 +1164,7 @@ LinuxLocalIngressServer.swift
 LinuxProviderRuntime.swift
 LinuxRuntimeAdapters.swift
 LinuxSHA256.swift
+LinuxDurableCloudRuntime.swift
 main.swift'
 linux_expected_dependencies='ClawdlineApplication'
 linux_tests_expected_members='LinuxRuntimeContractTests.swift'
@@ -1265,8 +1276,8 @@ linux_disallowed_imports=$(printf '%s\n' "$linux_imports" | grep -Ev '^(Foundati
 [ -z "$linux_disallowed_imports" ] \
   || architecture_guard_fail "ClawdlineLinux imports ${linux_disallowed_imports//$'\n'/, }; its closed import allowlist is Foundation and ClawdlineApplication"
 linux_application_imports=$(printf '%s\n' "$linux_imports" | grep -cx 'ClawdlineApplication' || true)
-[ "${linux_application_imports:-0}" -eq 7 ] \
-  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected once in each of its seven policy-consuming runtime/composition/lifecycle/document source files"
+[ "${linux_application_imports:-0}" -eq 8 ] \
+  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected once in each of its eight policy-consuming runtime/composition/lifecycle/document/cloud source files"
 swift_code_without_comments Packages/ClawdlineLinux/LinuxComposition.swift | grep -q 'HostCapabilityUnavailable\.code' \
   || architecture_guard_fail "ClawdlineLinux does not consume the Application target's typed capability-unavailable vocabulary; a declared edge alone is inert"
 

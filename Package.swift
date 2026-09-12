@@ -33,7 +33,10 @@ import PackageDescription
 // target, and `ClawdlineLinux` each depend only on `ClawdlineApplication` — real,
 // compiler-checked edges pointing inward. W4-1 adds Linux host adapters and shared admission
 // policy. W4-2 adds a long-running systemd composition, durable restart ledger and signed package
-// transition gate without adding a direct Linux-to-Core or Linux-to-Mac dependency.
+// transition gate without adding a direct Linux-to-Core or Linux-to-Mac dependency. W5-1 moves
+// the Cloud command ledger, outbound spool and their portable durable stores into that shared
+// Application target; both host compositions therefore compile the same state machines and file
+// format rather than parallel Mac/Linux copies.
 //
 // **W3-1 correction (`spec-mac-does-not-consume-application`).** The original delivery stopped
 // there: the edge existed in the manifest, but `Clawdline`'s own recursive scan of `Sources/`
@@ -95,6 +98,9 @@ targets.insert(
                 "Assistant.swift",
                 "CloudCanonicalJSON.swift",
                 "CloudClock.swift",
+                "CloudCommandLedger.swift",
+                "CloudOutboundSpool.swift",
+                "CloudDurableStores.swift",
             ]
         ),
     at: 2

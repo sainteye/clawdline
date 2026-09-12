@@ -74,7 +74,7 @@ private final class CloudLedgerTestClock: @unchecked Sendable {
     }
 }
 
-private final class CountingCloudCommandLedgerStore: CloudCommandLedgerStore {
+private final class CountingCloudCommandLedgerStore: CloudCommandLedgerStore, @unchecked Sendable {
     private let underlying: InMemoryCloudCommandLedgerStore
     private(set) var transactionCount = 0
 
@@ -88,7 +88,7 @@ private final class CountingCloudCommandLedgerStore: CloudCommandLedgerStore {
 
     func transaction<T>(
         _ body: (inout [CloudCommandLedgerKey: CloudCommandLedgerRow]) throws -> T
-    ) rethrows -> T {
+    ) throws -> T {
         transactionCount += 1
         return try underlying.transaction(body)
     }
@@ -111,7 +111,7 @@ private final class SignallingCloudCommandLedgerStore: CloudCommandLedgerStore, 
 
     func transaction<T>(
         _ body: (inout [CloudCommandLedgerKey: CloudCommandLedgerRow]) throws -> T
-    ) rethrows -> T {
+    ) throws -> T {
         lock.lock()
         transactionCount += 1
         let currentCount = transactionCount
@@ -134,6 +134,67 @@ private final class SignallingCloudCommandLedgerStore: CloudCommandLedgerStore, 
                 continuation.resume()
             } else {
                 transactionWaiters.append(TransactionWaiter(target: target, continuation: continuation))
+                lock.unlock()
+            }
+        }
+    }
+}
+
+private struct CloudLedgerInjectedStoreFailure: Error {}
+
+/// A transaction fault must occur after the mutation closure has exercised the proposed state,
+/// but before that candidate becomes observable. This is the crash-equivalent boundary the
+/// ledger's waiter and metric bookkeeping has to survive.
+private final class FaultingCloudCommandLedgerStore: CloudCommandLedgerStore, @unchecked Sendable {
+    private struct TransactionWaiter {
+        let target: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private let lock = NSLock()
+    private var rows: [CloudCommandLedgerKey: CloudCommandLedgerRow]
+    private var pendingFailures = 0
+    private var transactionCount = 0
+    private var transactionWaiters: [TransactionWaiter] = []
+
+    init(rows: [CloudCommandLedgerRow] = []) {
+        self.rows = Dictionary(uniqueKeysWithValues: rows.map { ($0.key, $0) })
+    }
+
+    func failNextTransactions(_ count: Int = 1) {
+        lock.lock(); defer { lock.unlock() }
+        pendingFailures = count
+    }
+
+    func transaction<T>(
+        _ body: (inout [CloudCommandLedgerKey: CloudCommandLedgerRow]) throws -> T
+    ) throws -> T {
+        lock.lock(); defer { lock.unlock() }
+        transactionCount += 1
+        let ready = transactionWaiters.filter { $0.target <= transactionCount }
+        transactionWaiters.removeAll { $0.target <= transactionCount }
+        ready.forEach { $0.continuation.resume() }
+        var candidate = rows
+        let result = try body(&candidate)
+        if pendingFailures > 0 {
+            pendingFailures -= 1
+            throw CloudLedgerInjectedStoreFailure()
+        }
+        rows = candidate
+        return result
+    }
+
+    func persistedBytes() throws -> Data { Data() }
+
+    func waitUntilTransactionCount(_ target: Int) async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if transactionCount >= target {
+                lock.unlock()
+                continuation.resume()
+            } else {
+                transactionWaiters.append(TransactionWaiter(
+                    target: target, continuation: continuation))
                 lock.unlock()
             }
         }
@@ -264,10 +325,10 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "crash_before_reserved"
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
-            var first: CloudCommandLedger? = CloudCommandLedger(store: store, clocks: clock.clocks)
+            var first: CloudCommandLedger? = try CloudCommandLedger(store: store, clocks: clock.clocks)
             first = nil
             try checks.expect(first == nil, "第一個實例確實已丟棄", group: group)
-            let reopened = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let reopened = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(deadline: base.addingTimeInterval(60))
             let result = try await reopened.reserve(request)
             try checks.expect(result == .reserved(request.key), "reserved commit 前 crash 可 retry", group: group)
@@ -283,13 +344,13 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
             let request = ledgerRequest(id: "reserved-crash", deadline: base.addingTimeInterval(60))
-            var first: CloudCommandLedger? = CloudCommandLedger(store: store, clocks: clock.clocks)
+            var first: CloudCommandLedger? = try CloudCommandLedger(store: store, clocks: clock.clocks)
             _ = try await first!.reserve(request)
             first = nil
-            let reopened = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let reopened = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let result = try await reopened.reserve(request)
             try checks.expect(result == .reserved(request.key), "重開實例原子清掉 reserved 並允許 retry", group: group)
-            let recoveredCount = await reopened.rowCount()
+            let recoveredCount = try await reopened.rowCount()
             try checks.expect(recoveredCount == 1, "reserved recovery 不留下重複 row", group: group)
         }
         try await runCrashAfterReserved()
@@ -303,13 +364,13 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
             let request = ledgerRequest(id: "effect-return-crash", deadline: base.addingTimeInterval(60))
-            var first: CloudCommandLedger? = CloudCommandLedger(store: store, clocks: clock.clocks)
+            var first: CloudCommandLedger? = try CloudCommandLedger(store: store, clocks: clock.clocks)
             _ = try await first!.reserve(request)
             try await first!.beginEffect(request, epochState: .ready, latestRosterAndGateAllow: true)
             var effectCalls = 0
             effectCalls += 1
             first = nil
-            let reopened = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let reopened = try CloudCommandLedger(store: store, clocks: clock.clocks)
             try await checks.expectError(.outcomeUnknown, "effect 後、completed 前 crash 永遠 unknown", group: group) {
                 _ = try await reopened.reserve(request)
             }
@@ -326,12 +387,12 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
             let request = ledgerRequest(id: "false-unknown", deadline: base.addingTimeInterval(60))
-            var first: CloudCommandLedger? = CloudCommandLedger(store: store, clocks: clock.clocks)
+            var first: CloudCommandLedger? = try CloudCommandLedger(store: store, clocks: clock.clocks)
             _ = try await first!.reserve(request)
             try await first!.beginEffect(request, epochState: .ready, latestRosterAndGateAllow: true)
             let effectCalls = 0
             first = nil
-            let reopened = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let reopened = try CloudCommandLedger(store: store, clocks: clock.clocks)
             try await checks.expectError(.outcomeUnknown, "in_progress commit 後、effect call 前也保守 unknown", group: group) {
                 _ = try await reopened.reserve(request)
             }
@@ -349,10 +410,10 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let store = InMemoryCloudCommandLedgerStore()
             let request = ledgerRequest(id: "completed-crash", deadline: base.addingTimeInterval(60))
             let outcome = CloudCommandNormalizedOutcome(code: .failed, payload: Data("normalized".utf8))
-            var first: CloudCommandLedger? = CloudCommandLedger(store: store, clocks: clock.clocks)
+            var first: CloudCommandLedger? = try CloudCommandLedger(store: store, clocks: clock.clocks)
             try await exerciseCompletedRow(ledger: first!, request: request, outcome: outcome)
             first = nil
-            let reopened = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let reopened = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let duplicate = try await reopened.reserve(request)
             try checks.expect(duplicate == .cached(outcome), "completed 後、publish 前 crash 回 cached outcome", group: group)
         }
@@ -366,22 +427,114 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "coalesced_duplicate"
             let clock = CloudLedgerTestClock(wall: base)
             let store = SignallingCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "coalesce", deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
+            try await ledger.beginEffect(
+                request, epochState: .ready, latestRosterAndGateAllow: true)
             let duplicate = Task { try await ledger.reserve(request) }
-            // Wait for the duplicate to reach the store, not for one turn of the executor:
-            // `clock.advance(wall: 61)` below crosses this request's deadline, and a duplicate
-            // that has not yet read `wallNow()` reads the advanced value and throws.
-            await store.waitUntilTransactionCount(3)
-            try await ledger.beginEffect(request, epochState: .ready, latestRosterAndGateAllow: true)
+            // The duplicate observes the live in-progress owner and parks. It must not receive
+            // the restart-only outcome_unknown result or race a second effect.
+            await store.waitUntilTransactionCount(4)
             let outcome = CloudCommandNormalizedOutcome(code: .succeeded, payload: Data("one-effect".utf8))
             clock.advance(wall: 61)
             try await ledger.complete(request, outcome: outcome)
             let duplicateResult = try await duplicate.value
-            try checks.expect(duplicateResult == .cached(outcome), "active reserved duplicate 即使等待跨過 deadline 仍 coalesce 到 owner outcome", group: group)
+            try checks.expect(duplicateResult == .cached(outcome), "active in-progress duplicate 即使等待跨過 deadline 仍 coalesce 到 owner outcome", group: group)
         }
         try await runCoalescedDuplicate()
+    }
+
+    if checks.includes("store_fault_waiters_and_metrics") {
+        func runStoreFaultWaitersAndMetrics() async throws {
+            let group = "store_fault_waiters_and_metrics"
+
+            do {
+                let store = FaultingCloudCommandLedgerStore()
+                let ledger = try CloudCommandLedger(
+                    store: store, clocks: CloudLedgerTestClock(wall: base).clocks)
+                let request = ledgerRequest(
+                    id: "begin-store-fault", deadline: base.addingTimeInterval(60))
+                _ = try await ledger.reserve(request)
+                let duplicate = Task { try await ledger.reserve(request) }
+                await store.waitUntilTransactionCount(3)
+                store.failNextTransactions()
+                var ownerFailed = false
+                do {
+                    try await ledger.beginEffect(
+                        request, epochState: .ready, latestRosterAndGateAllow: true)
+                } catch is CloudLedgerInjectedStoreFailure {
+                    ownerFailed = true
+                }
+                let retry = try await duplicate.value
+                try checks.expect(ownerFailed && retry == .reserved(request.key),
+                                  "reserved→in-progress commit failure durably releases before one waiter retries",
+                                  group: group)
+            }
+
+            do {
+                let store = FaultingCloudCommandLedgerStore()
+                let ledger = try CloudCommandLedger(
+                    store: store, clocks: CloudLedgerTestClock(wall: base).clocks)
+                let request = ledgerRequest(
+                    id: "complete-store-fault", deadline: base.addingTimeInterval(60))
+                _ = try await ledger.reserve(request)
+                try await ledger.beginEffect(
+                    request, epochState: .ready, latestRosterAndGateAllow: true)
+                let duplicate = Task { try await ledger.reserve(request) }
+                await store.waitUntilTransactionCount(4)
+                store.failNextTransactions()
+                do {
+                    try await ledger.complete(
+                        request, outcome: CloudCommandNormalizedOutcome(code: .succeeded))
+                } catch is CloudLedgerInjectedStoreFailure {}
+                try await checks.expectError(
+                    .outcomeUnknown,
+                    "in-progress completion commit failure terminates the joined duplicate",
+                    group: group
+                ) {
+                    _ = try await duplicate.value
+                }
+            }
+
+            do {
+                let old = base.addingTimeInterval(-CloudCommandLedger.retentionSeconds * 2)
+                let expired = completedRow(
+                    sender: "fault-metrics", id: "expired", createdAt: old,
+                    retainedMilliseconds: CloudCommandLedger.retentionMilliseconds)
+                let store = FaultingCloudCommandLedgerStore(rows: [expired])
+                let ledger = try CloudCommandLedger(
+                    store: store, clocks: CloudLedgerTestClock(wall: base).clocks)
+                store.failNextTransactions()
+                var admissionFailed = false
+                do {
+                    _ = try await ledger.reserve(ledgerRequest(
+                        sender: "fault-metrics", id: "new",
+                        deadline: base.addingTimeInterval(60)), epochState: .ready)
+                } catch is CloudLedgerInjectedStoreFailure {
+                    admissionFailed = true
+                }
+                let snapshot = try await ledger.metricsSnapshot()
+                let retained = try await ledger.row(for: expired.key)
+                try checks.expect(admissionFailed && retained != nil
+                                      && snapshot.gcTotal[.expired, default: 0] == 0,
+                                  "failed durable admission publishes neither candidate GC nor its metric",
+                                  group: group)
+
+                store.failNextTransactions(3)
+                var observationFailures = 0
+                do { _ = try await ledger.row(for: expired.key) }
+                catch is CloudLedgerInjectedStoreFailure { observationFailures += 1 }
+                do { _ = try await ledger.rowCount() }
+                catch is CloudLedgerInjectedStoreFailure { observationFailures += 1 }
+                do { _ = try await ledger.metricsSnapshot() }
+                catch is CloudLedgerInjectedStoreFailure { observationFailures += 1 }
+                try checks.expect(observationFailures == 3,
+                                  "all ledger observation APIs surface store failure instead of empty state",
+                                  group: group)
+            }
+        }
+        try await runStoreFaultWaitersAndMetrics()
     }
 
     if checks.includes("waiter_recovery_deadline") {
@@ -391,7 +544,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "waiter_recovery_deadline"
             let clock = CloudLedgerTestClock(wall: base)
             let store = SignallingCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "waiter-deadline", deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
             let duplicate = Task { try await ledger.reserve(request) }
@@ -407,7 +560,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             try await checks.expectError(.deadlineExpired, "deadline waiter 有限步內重新 admission 並收到 deadlineExpired", group: group) {
                 _ = try await duplicate.value
             }
-            let rowAfterRecovery = await ledger.row(for: request.key)
+            let rowAfterRecovery = try await ledger.row(for: request.key)
             try checks.expect(rowAfterRecovery == nil, "deadline 已到時 recovery 不重建 row", group: group)
         }
         try await runWaiterRecoveryDeadline()
@@ -420,7 +573,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "waiter_recovery_epoch"
             let clock = CloudLedgerTestClock(wall: base)
             let store = SignallingCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "waiter-epoch", deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
             let duplicate = Task { try await ledger.reserve(request) }
@@ -434,7 +587,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             try checks.expect(waitersAfterRefusal == 0, "epoch 拒絕不留下 waiter", group: group)
             let retry = try await duplicate.value
             try checks.expect(retry == .reserved(request.key), "epoch waiter 重新 admission 成為新 owner", group: group)
-            let recoveredRow = await ledger.row(for: request.key)
+            let recoveredRow = try await ledger.row(for: request.key)
             try checks.expect(recoveredRow?.state == .reserved, "epoch recovery 留下新的 reserved row", group: group)
         }
         try await runWaiterRecoveryEpoch()
@@ -447,7 +600,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "waiter_recovery_gate"
             let clock = CloudLedgerTestClock(wall: base)
             let store = SignallingCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "waiter-gate", deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
             let duplicate = Task { try await ledger.reserve(request) }
@@ -461,7 +614,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             try checks.expect(waitersAfterRefusal == 0, "gate 拒絕不留下 waiter", group: group)
             let retry = try await duplicate.value
             try checks.expect(retry == .reserved(request.key), "gate waiter 重新 admission 成為新 owner", group: group)
-            let recoveredRow = await ledger.row(for: request.key)
+            let recoveredRow = try await ledger.row(for: request.key)
             try checks.expect(recoveredRow?.state == .reserved, "gate recovery 留下新的 reserved row", group: group)
         }
         try await runWaiterRecoveryGate()
@@ -476,7 +629,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             do {
                 let clock = CloudLedgerTestClock(wall: base)
                 let store = SignallingCloudCommandLedgerStore()
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "revoked-cancel", id: "parked-cancel", deadline: base.addingTimeInterval(60))
                 _ = try await ledger.reserve(request, epochState: .uncertain)
                 let duplicate = Task { try await ledger.reserve(request, epochState: .uncertain) }
@@ -504,7 +657,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             do {
                 let clock = CloudLedgerTestClock(wall: base)
                 let store = SignallingCloudCommandLedgerStore()
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "revoked-begin", id: "parked-begin", deadline: base.addingTimeInterval(60))
                 _ = try await ledger.reserve(request, epochState: .uncertain)
                 let duplicate = Task { try await ledger.reserve(request, epochState: .uncertain) }
@@ -539,7 +692,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "gc_dual_clock"
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "dual-clock", deadline: base.addingTimeInterval(60))
             try await exerciseCompletedRow(ledger: ledger, request: request)
             clock.advance(wall: CloudCommandLedger.retentionSeconds + 1)
@@ -549,7 +702,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             _ = try await ledger.checkpointRetention()
             let both = try await ledger.garbageCollect(epochState: .ready, batchLimit: 10)
             try checks.expect(both == 1, "wall 與 elapsed 都滿才刪", group: group)
-            let remainingCount = await ledger.rowCount()
+            let remainingCount = try await ledger.rowCount()
             try checks.expect(remainingCount == 0, "雙時鐘到期 row 已移除", group: group)
 
             let exactExpiry = completedRow(
@@ -559,7 +712,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
                 retainedMilliseconds: CloudCommandLedger.retentionMilliseconds
             )
             let exactStore = InMemoryCloudCommandLedgerStore(rows: [exactExpiry])
-            let exactLedger = CloudCommandLedger(store: exactStore, clocks: CloudLedgerTestClock(wall: base).clocks)
+            let exactLedger = try CloudCommandLedger(store: exactStore, clocks: CloudLedgerTestClock(wall: base).clocks)
             let exactRemoved = try await exactLedger.garbageCollect(epochState: .ready, batchLimit: 10)
             try checks.expect(exactRemoved == 1, "wall_now 精確等於 expires_at 時符合 GC 資格", group: group)
         }
@@ -573,14 +726,14 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "gc_wall_jump"
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "wall-attack", deadline: base.addingTimeInterval(60))
             try await exerciseCompletedRow(ledger: ledger, request: request)
             clock.advance(wall: CloudCommandLedger.retentionSeconds * 2, continuousMilliseconds: 300_000)
             _ = try await ledger.checkpointRetention()
             let removed = try await ledger.garbageCollect(epochState: .ready, batchLimit: 10)
             try checks.expect(removed == 0, "五分鐘後 wall forward jump 不得提早刪", group: group)
-            let retainedRow = await ledger.row(for: request.key)
+            let retainedRow = try await ledger.row(for: request.key)
             try checks.expect(retainedRow != nil, "forward jump 後 row 仍保留", group: group)
         }
         try await runGcWallJump()
@@ -593,27 +746,27 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "boot_change"
             let clock = CloudLedgerTestClock(wall: base, continuous: 1_000_000_000)
             let store = InMemoryCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "boot", deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
             clock.advance(continuousMilliseconds: 36_000_000)
             _ = try await ledger.checkpointRetention()
-            let beforeReboot = await ledger.row(for: request.key)!
+            let beforeReboot = try await ledger.row(for: request.key)!
             try checks.expect(beforeReboot.retainedElapsedMilliseconds == 36_000_000, "同 boot 累積 continuous delta", group: group)
             clock.boot = "boot-B"
             clock.continuous = 100
             clock.advance(wall: 99_999)
             _ = try await ledger.checkpointRetention()
-            let afterReboot = await ledger.row(for: request.key)!
+            let afterReboot = try await ledger.row(for: request.key)!
             try checks.expect(afterReboot.retainedElapsedMilliseconds == 36_000_000, "boot 改變保留累積值", group: group)
             try checks.expect(afterReboot.elapsedCheckpointContinuous == nil, "boot 改變清 checkpoint", group: group)
             clock.advance(continuousMilliseconds: 3_600_000)
             _ = try await ledger.checkpointRetention()
-            let established = await ledger.row(for: request.key)!
+            let established = try await ledger.row(for: request.key)!
             try checks.expect(established.retainedElapsedMilliseconds == 36_000_000, "reboot downtime 與首段不計入", group: group)
             clock.advance(continuousMilliseconds: 3_600_000)
             _ = try await ledger.checkpointRetention()
-            let resumed = await ledger.row(for: request.key)!
+            let resumed = try await ledger.row(for: request.key)!
             try checks.expect(resumed.retainedElapsedMilliseconds == 39_600_000, "新 boot checkpoint 後重新累積", group: group)
         }
         try await runBootChange()
@@ -627,7 +780,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             do {
                 let clock = CloudLedgerTestClock(wall: base)
                 let store = InMemoryCloudCommandLedgerStore(rows: admissionRows(total: 5_000, targetSender: "target", targetCount: 999, createdAt: base))
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "target", id: "new-5000-actor-999", deadline: base.addingTimeInterval(60))
                 let admission = try await ledger.reserve(request)
                 try checks.expect(admission == .reserved(request.key), "5,000 且 sender 999 可 admission", group: group)
@@ -635,7 +788,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             do {
                 let clock = CloudLedgerTestClock(wall: base)
                 let store = InMemoryCloudCommandLedgerStore(rows: admissionRows(total: 5_000, targetSender: "target", targetCount: 1_000, createdAt: base))
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "target", id: "reject-5000-actor-1000", deadline: base.addingTimeInterval(60))
                 try await checks.expectError(.idempotencyCapacity(scope: .actor, reason: .rowCap), "5,000 且 sender 1,000 觸發 actor row cap", group: group) {
                     _ = try await ledger.reserve(request)
@@ -644,7 +797,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             do {
                 let clock = CloudLedgerTestClock(wall: base)
                 let store = InMemoryCloudCommandLedgerStore(rows: admissionRows(total: 8_999, targetSender: "target", targetCount: 999, createdAt: base))
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "target", id: "new-8999", deadline: base.addingTimeInterval(60))
                 let admission = try await ledger.reserve(request)
                 try checks.expect(admission == .reserved(request.key), "8,999 且 sender 999 可 admission", group: group)
@@ -652,17 +805,17 @@ func runCloudCommandLedgerTests() async throws -> Int {
             do {
                 let clock = CloudLedgerTestClock(wall: base)
                 let store = InMemoryCloudCommandLedgerStore(rows: admissionRows(total: 9_000, targetSender: "target", targetCount: 99, createdAt: base))
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "target", id: "new-9000", deadline: base.addingTimeInterval(60))
                 let admission = try await ledger.reserve(request)
                 try checks.expect(admission == .reserved(request.key), "9,000 fairness reserve 接受 sender 99", group: group)
-                let fairnessUsed = await ledger.metricsSnapshot().fairnessReserveUsedTotal
+                let fairnessUsed = try await ledger.metricsSnapshot().fairnessReserveUsedTotal
                 try checks.expect(fairnessUsed == 1, "fairness reserve admission 精確累加一次", group: group)
             }
             do {
                 let clock = CloudLedgerTestClock(wall: base)
                 let store = InMemoryCloudCommandLedgerStore(rows: admissionRows(total: 9_000, targetSender: "target", targetCount: 100, createdAt: base))
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "target", id: "reject-100", deadline: base.addingTimeInterval(60))
                 try await checks.expectError(.idempotencyCapacity(scope: .actor, reason: .fairness), "fairness reserve 拒絕 sender 100", group: group) {
                     _ = try await ledger.reserve(request)
@@ -671,7 +824,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             do {
                 let clock = CloudLedgerTestClock(wall: base)
                 let store = InMemoryCloudCommandLedgerStore(rows: admissionRows(total: 9_999, targetSender: "target", targetCount: 99, createdAt: base))
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "target", id: "new-9999", deadline: base.addingTimeInterval(60))
                 let admission = try await ledger.reserve(request)
                 try checks.expect(admission == .reserved(request.key), "9,999 fairness reserve 最後一格接受 sender 99", group: group)
@@ -681,13 +834,13 @@ func runCloudCommandLedgerTests() async throws -> Int {
                 let rows = admissionRows(total: 10_000, targetSender: "target", targetCount: 0, createdAt: base)
                 let oldestKey = rows[0].key
                 let store = InMemoryCloudCommandLedgerStore(rows: rows)
-                let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
                 let request = ledgerRequest(sender: "target", id: "reject-10000", deadline: base.addingTimeInterval(60))
                 try await checks.expectError(.idempotencyCapacity(scope: .global, reason: .rowCap), "10,000 global hard cap 拒絕", group: group) {
                     _ = try await ledger.reserve(request)
                 }
-                let countAfterRefusal = await ledger.rowCount()
-                let oldestAfterRefusal = await ledger.row(for: oldestKey)
+                let countAfterRefusal = try await ledger.rowCount()
+                let oldestAfterRefusal = try await ledger.row(for: oldestKey)
                 try checks.expect(countAfterRefusal == 10_000, "滿載拒絕不改 row 數", group: group)
                 try checks.expect(oldestAfterRefusal != nil, "滿載不 eviction 未過期 active row", group: group)
             }
@@ -708,7 +861,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
                     return eligible
                 }
             let store = CountingCloudCommandLedgerStore(rows: rows)
-            let ledger = CloudCommandLedger(store: store, clocks: CloudLedgerTestClock(wall: base).clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: CloudLedgerTestClock(wall: base).clocks)
             store.resetCount()
             let request = ledgerRequest(sender: "target", id: "atomic-gc-admission", deadline: base.addingTimeInterval(60))
             do {
@@ -718,9 +871,9 @@ func runCloudCommandLedgerTests() async throws -> Int {
                 try checks.expect(false, "滿載但可回收的 store 在首次 admission 即接受（收到 \(error)）", group: group)
             }
             try checks.expect(store.transactionCount == 1, "bounded GC、capacity count、insert 共用唯一 transaction", group: group)
-            let remainingCount = await ledger.rowCount()
+            let remainingCount = try await ledger.rowCount()
             try checks.expect(remainingCount < CloudCommandLedger.globalHardLimit, "bounded batch 回收後新 row 已原子寫入", group: group)
-            let metrics = await ledger.metricsSnapshot()
+            let metrics = try await ledger.metricsSnapshot()
             try checks.expect(metrics.gcTotal[.expired] == UInt64(CloudCommandLedger.admissionGCBatchLimit),
                               "admission GC 精確累加整個 bounded batch", group: group)
         }
@@ -742,7 +895,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
                 )
             }
             let actorAtCap = admissionRows(total: 1_000, targetSender: "target", targetCount: 1_000, createdAt: base)
-            let ledger = CloudCommandLedger(
+            let ledger = try CloudCommandLedger(
                 store: InMemoryCloudCommandLedgerStore(rows: actorAtCap + expired),
                 clocks: CloudLedgerTestClock(wall: base).clocks
             )
@@ -751,10 +904,10 @@ func runCloudCommandLedgerTests() async throws -> Int {
                                          "GC commit 後仍可因 actor cap 拒絕", group: group) {
                 _ = try await ledger.reserve(request, epochState: .ready)
             }
-            let rowsAfterRefusal = await ledger.rowCount()
+            let rowsAfterRefusal = try await ledger.rowCount()
             try checks.expect(rowsAfterRefusal == 1_000,
                               "capacity 拒絕前的五筆 GC 刪除確實已 commit", group: group)
-            let metrics = await ledger.metricsSnapshot()
+            let metrics = try await ledger.metricsSnapshot()
             try checks.expect(metrics.gcTotal[.expired] == 5,
                               "後續 capacity throw 不遺失已 commit 的五筆 GC counter", group: group)
             let actorRowCap = CloudLedgerCapacityLabel(scope: .actor, reason: .rowCap)
@@ -775,7 +928,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
                 completedRow(sender: "cursor", id: "c", createdAt: base),
             ]
             let clock = CloudLedgerTestClock(wall: base)
-            let ledger = CloudCommandLedger(store: InMemoryCloudCommandLedgerStore(rows: rows), clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: InMemoryCloudCommandLedgerStore(rows: rows), clocks: clock.clocks)
             for _ in rows.indices {
                 clock.advance(continuousMilliseconds: 60_000)
                 let processed = try await ledger.checkpointRetention(batchLimit: 1)
@@ -783,7 +936,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             }
             var retained: [UInt64] = []
             for row in rows {
-                if let value = await ledger.row(for: row.key)?.retainedElapsedMilliseconds {
+                if let value = try await ledger.row(for: row.key)?.retainedElapsedMilliseconds {
                     retained.append(value)
                 }
             }
@@ -805,11 +958,11 @@ func runCloudCommandLedgerTests() async throws -> Int {
                 createdAt: old,
                 retainedMilliseconds: CloudCommandLedger.retentionMilliseconds
             )
-            let ledger = CloudCommandLedger(
+            let ledger = try CloudCommandLedger(
                 store: InMemoryCloudCommandLedgerStore(rows: [row]),
                 clocks: CloudLedgerTestClock(wall: base).clocks
             )
-            let snapshot = await ledger.metricsSnapshot()
+            let snapshot = try await ledger.metricsSnapshot()
             let fields = Dictionary(uniqueKeysWithValues: Mirror(reflecting: snapshot).children.compactMap { child in
                 child.label.map { ($0, child.value) }
             })
@@ -830,7 +983,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "digest_conflict"
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let original = ledgerRequest(id: "digest", digest: "digest-original", deadline: base.addingTimeInterval(60))
             let outcome = CloudCommandNormalizedOutcome(code: .succeeded, payload: Data("cached-secret".utf8))
             try await exerciseCompletedRow(ledger: ledger, request: original, outcome: outcome)
@@ -849,13 +1002,13 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "raw_reply_key"
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let raw = Data([0x91, 0x22, 0xE7, 0x04, 0xAC, 0x6D, 0x53, 0xB8, 0x19, 0xFA, 0x30, 0xC1, 0x72, 0xD5, 0x08, 0xEE])
             let request = ledgerRequest(id: "raw-key", digest: "digest-without-raw-key", rawReplyKey: raw, deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
             let allPersistedBytes = try store.persistedBytes()
             try checks.expect(allPersistedBytes.range(of: raw) == nil, "持久層所有 bytes 都不含 raw reply key", group: group)
-            let persistedRow = await ledger.row(for: request.key)
+            let persistedRow = try await ledger.row(for: request.key)
             try checks.expect(persistedRow?.replyKeyID == "reply-key-id-A", "只持久化 reply key id", group: group)
         }
         try await runRawReplyKey()
@@ -870,7 +1023,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let existing = completedRow(sender: expired.key.viewerSender, id: expired.key.requestID, createdAt: base.addingTimeInterval(-100), digest: "expired-digest")
             let store = CountingCloudCommandLedgerStore(rows: [existing])
             let clock = CloudLedgerTestClock(wall: base)
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             store.resetCount()
             try await checks.expectError(.deadlineExpired, "過期 duplicate 不得取得 cached outcome", group: group) {
                 _ = try await ledger.reserve(expired)
@@ -879,7 +1032,7 @@ func runCloudCommandLedgerTests() async throws -> Int {
 
             let exact = ledgerRequest(id: "deadline-equal", deadline: base)
             let exactStore = CountingCloudCommandLedgerStore(rows: [])
-            let exactLedger = CloudCommandLedger(store: exactStore, clocks: clock.clocks)
+            let exactLedger = try CloudCommandLedger(store: exactStore, clocks: clock.clocks)
             exactStore.resetCount()
             try await checks.expectError(.deadlineExpired, "wall_now 精確等於 deadline_at 時拒絕", group: group) {
                 _ = try await exactLedger.reserve(exact)
@@ -899,16 +1052,16 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let revoked = completedRow(sender: "revoked", id: "revoked", createdAt: old, retainedMilliseconds: CloudCommandLedger.retentionMilliseconds)
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore(rows: [normal, revoked])
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let uncertainRemoved = try await ledger.garbageCollect(epochState: .uncertain, permanentlyRevokedSenders: ["revoked"], batchLimit: 10)
             try checks.expect(uncertainRemoved == 1, "EpochGuard uncertain 仍可 permanent-revoke GC", group: group)
-            let revokedAfterUncertain = await ledger.row(for: revoked.key)
-            let normalAfterUncertain = await ledger.row(for: normal.key)
+            let revokedAfterUncertain = try await ledger.row(for: revoked.key)
+            let normalAfterUncertain = try await ledger.row(for: normal.key)
             try checks.expect(revokedAfterUncertain == nil, "revoked row 已刪", group: group)
             try checks.expect(normalAfterUncertain != nil, "EpochGuard uncertain 停止 normal TTL GC", group: group)
             let readyRemoved = try await ledger.garbageCollect(epochState: .ready, batchLimit: 10)
             try checks.expect(readyRemoved == 1, "EpochGuard ready 恢復 normal TTL GC", group: group)
-            let gcTotal = await ledger.metricsSnapshot().gcTotal
+            let gcTotal = try await ledger.metricsSnapshot().gcTotal
             try checks.expect(gcTotal[.revoked] == 1, "explicit GC 精確累加一筆 revoked", group: group)
             try checks.expect(gcTotal[.expired] == 1, "explicit GC 精確累加一筆 expired", group: group)
         }
@@ -927,14 +1080,14 @@ func runCloudCommandLedgerTests() async throws -> Int {
                 createdAt: old,
                 retainedMilliseconds: CloudCommandLedger.retentionMilliseconds
             )
-            let ledger = CloudCommandLedger(
+            let ledger = try CloudCommandLedger(
                 store: InMemoryCloudCommandLedgerStore(rows: [stale]),
                 clocks: CloudLedgerTestClock(wall: base).clocks
             )
             let request = ledgerRequest(sender: "default-epoch", id: "new", deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
-            let staleAfterAdmission = await ledger.row(for: stale.key)
-            let rowsAfterAdmission = await ledger.rowCount()
+            let staleAfterAdmission = try await ledger.row(for: stale.key)
+            let rowsAfterAdmission = try await ledger.rowCount()
             try checks.expect(staleAfterAdmission != nil,
                               "省略 epochState 時採 fail-closed，不執行 TTL GC", group: group)
             try checks.expect(rowsAfterAdmission == 2,
@@ -983,17 +1136,129 @@ func runCloudCommandLedgerTests() async throws -> Int {
                     guard row.key.viewerSender != "actor-10" else { return row }
                     return completedRow(sender: "actor-11", id: "actor-11-\(index)", createdAt: base)
                 }
-            let boundaryLedger = CloudCommandLedger(
+            let boundaryLedger = try CloudCommandLedger(
                 store: InMemoryCloudCommandLedgerStore(rows: actorBoundaryRows),
                 clocks: CloudLedgerTestClock(wall: base).clocks
             )
-            let boundaryBuckets = await boundaryLedger.metricsSnapshot().actorRowsBuckets
+            let boundaryBuckets = try await boundaryLedger.metricsSnapshot().actorRowsBuckets
             try checks.expect(boundaryBuckets[.le10] == 1, "剛好 10 列的 actor 計入 le=10，11 列的 actor 不計入", group: group)
             try checks.expect(boundaryBuckets[.le100] == 2, "10 與 11 列的 actor 都累積計入 le=100", group: group)
             try checks.expect(boundaryBuckets[.le500] == 2, "10 與 11 列的 actor 都累積計入 le=500", group: group)
             try checks.expect(boundaryBuckets[.le1000] == 2, "10 與 11 列的 actor 都累積計入 le=1000", group: group)
         }
         try await runMetricsLabels()
+    }
+
+    if checks.includes("durable_file_faults") {
+        func durableDirectory(_ name: String) throws -> URL {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+                "clawdline-ledger-\(name)-\(UUID().uuidString)", isDirectory: true)
+            try FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+            return directory
+        }
+
+        func injectedFailure(_ point: CloudDurableStoreFaultPoint) -> CloudDurableStoreFailure {
+            switch point {
+            case .persist: return .persist
+            case .fileFsync: return .fileFsync
+            case .rename: return .rename
+            case .directoryFsync: return .directoryFsync
+            case .recovery: return .recovery
+            }
+        }
+
+        func runDurableFileFaults() async throws {
+            let group = "durable_file_faults"
+            for point in [CloudDurableStoreFaultPoint.persist, .fileFsync, .rename,
+                          .directoryFsync] {
+                let expectedFailure = injectedFailure(point)
+                let directory = try durableDirectory(point.rawValue)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let url = directory.appendingPathComponent("ledger.json")
+                let store = try CloudFileCommandLedgerStore(url: url)
+                let clock = CloudLedgerTestClock(wall: base)
+                let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
+                let request = ledgerRequest(
+                    id: "fault-\(point.rawValue)", deadline: base.addingTimeInterval(60))
+                _ = try await ledger.reserve(request, epochState: .ready)
+                let durableBefore = try Data(contentsOf: url)
+                store.faultInjection = { observed in
+                    if observed == point { throw expectedFailure }
+                }
+                var observed: CloudDurableStoreFailure?
+                do {
+                    try await ledger.beginEffect(
+                        request, epochState: .ready, latestRosterAndGateAllow: true)
+                } catch let failure as CloudDurableStoreFailure {
+                    observed = failure
+                }
+                let durableAfter = try Data(contentsOf: url)
+                let memoryAfter = try await ledger.row(for: request.key)
+                try checks.expect(
+                    observed == expectedFailure,
+                    "\(point.rawValue) persist error reaches the effect caller", group: group)
+                try checks.expect(
+                    durableAfter == durableBefore && memoryAfter?.state == .reserved
+                        && memoryAfter?.effectStartedAt == nil,
+                    "\(point.rawValue) keeps the old durable and RAM candidate before effect",
+                    group: group)
+            }
+
+            let reserveDirectory = try durableDirectory("reserve")
+            defer { try? FileManager.default.removeItem(at: reserveDirectory) }
+            let reserveURL = reserveDirectory.appendingPathComponent("ledger.json")
+            let reserveStore = try CloudFileCommandLedgerStore(url: reserveURL)
+            let reserveLedger = try CloudCommandLedger(
+                store: reserveStore, clocks: CloudLedgerTestClock(wall: base).clocks)
+            reserveStore.faultInjection = { point in
+                if point == .persist { throw CloudDurableStoreFailure.persist }
+            }
+            let reserveRequest = ledgerRequest(
+                id: "reserve-commit", deadline: base.addingTimeInterval(60))
+            var reserveFailed = false
+            do { _ = try await reserveLedger.reserve(reserveRequest, epochState: .ready) }
+            catch CloudDurableStoreFailure.persist { reserveFailed = true }
+            let failedReserveRow = try await reserveLedger.row(for: reserveRequest.key)
+            try checks.expect(
+                reserveFailed && failedReserveRow == nil
+                    && !FileManager.default.fileExists(atPath: reserveURL.path),
+                "a crash-equivalent reserve commit failure admits no durable or RAM row",
+                group: group)
+
+            let recoveryDirectory = try durableDirectory("recovery")
+            defer { try? FileManager.default.removeItem(at: recoveryDirectory) }
+            let recoveryURL = recoveryDirectory.appendingPathComponent("ledger.json")
+            var recoveryStore: CloudFileCommandLedgerStore? = try CloudFileCommandLedgerStore(
+                url: recoveryURL)
+            var recoveryLedger: CloudCommandLedger? = try CloudCommandLedger(
+                store: recoveryStore!, clocks: CloudLedgerTestClock(wall: base).clocks)
+            let recoveryRequest = ledgerRequest(
+                id: "recovery", deadline: base.addingTimeInterval(60))
+            _ = try await recoveryLedger!.reserve(recoveryRequest, epochState: .ready)
+            let reservedBytes = try Data(contentsOf: recoveryURL)
+            recoveryLedger = nil
+            recoveryStore = nil
+
+            let reopeningStore = try CloudFileCommandLedgerStore(url: recoveryURL)
+            reopeningStore.faultInjection = { point in
+                if point == .persist { throw CloudDurableStoreFailure.persist }
+            }
+            var recoveryFailed = false
+            do {
+                _ = try CloudCommandLedger(
+                    store: reopeningStore, clocks: CloudLedgerTestClock(wall: base).clocks)
+            } catch CloudDurableStoreFailure.persist {
+                recoveryFailed = true
+            }
+            let recoveredFailureBytes = try Data(contentsOf: recoveryURL)
+            try checks.expect(
+                recoveryFailed && recoveredFailureBytes == reservedBytes,
+                "reserved-row recovery failure stays unready and preserves the original bytes",
+                group: group)
+        }
+        try await runDurableFileFaults()
     }
 
     if checks.includes("pre_effect_release") {
@@ -1003,13 +1268,13 @@ func runCloudCommandLedgerTests() async throws -> Int {
             let group = "pre_effect_release"
             let clock = CloudLedgerTestClock(wall: base)
             let store = InMemoryCloudCommandLedgerStore()
-            let ledger = CloudCommandLedger(store: store, clocks: clock.clocks)
+            let ledger = try CloudCommandLedger(store: store, clocks: clock.clocks)
             let request = ledgerRequest(id: "busy", deadline: base.addingTimeInterval(60))
             _ = try await ledger.reserve(request)
             try await checks.expectError(.reservationReleased(.busy), "pre-effect release 回報具體 busy refusal", group: group) {
                 try await ledger.cancelReservation(request, refusal: .busy)
             }
-            let rowAfterBusy = await ledger.row(for: request.key)
+            let rowAfterBusy = try await ledger.row(for: request.key)
             try checks.expect(rowAfterBusy == nil, "busy 在 PONR 前原子刪 reserved", group: group)
             let retry = try await ledger.reserve(request)
             try checks.expect(retry == .reserved(request.key), "pre-effect refusal 後可 retry", group: group)

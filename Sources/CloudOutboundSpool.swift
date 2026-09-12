@@ -30,7 +30,7 @@ import ClawdlineApplication // W3-1 correction: real cross-module import, see So
 /// are the control request/response channels, which never coalesce (§6.1.5) and whose ready
 /// rows burn at restart when their owner is gone (§6.2). Snapshot coalescing is defined only
 /// for the state-snapshot channel `s`.
-public enum CloudSpoolChannel: String, CaseIterable, Equatable, Sendable {
+public enum CloudSpoolChannel: String, CaseIterable, Codable, Equatable, Sendable {
     case s, t, orch, ctl, ctlr
 
     /// ctl/ctlr — the channels §6.1.5 says never coalesce and §6.2 burns when ownerless.
@@ -39,7 +39,7 @@ public enum CloudSpoolChannel: String, CaseIterable, Equatable, Sendable {
 
 /// §6.1 row states. `acked`, `rejected` and `burned` are terminal; a terminal row never
 /// becomes live again (§6.2: late acks for burned rows are telemetry, not resurrection).
-public enum CloudSpoolRowState: String, CaseIterable, Equatable, Sendable {
+public enum CloudSpoolRowState: String, CaseIterable, Codable, Equatable, Sendable {
     case reserved, ready, sent, acked, rejected, burned
 
     public var isTerminal: Bool {
@@ -50,7 +50,7 @@ public enum CloudSpoolRowState: String, CaseIterable, Equatable, Sendable {
 /// Why a row was burned. Burns are the only path from a live state to `burned`, and every
 /// call site names its reason so tests and telemetry can tell a crash-recovery burn from an
 /// attempt-cap burn without guessing.
-public enum CloudSpoolBurnReason: String, Equatable, Sendable {
+public enum CloudSpoolBurnReason: String, Codable, Equatable, Sendable {
     /// §6.1.2 — a crash left a reserved row with no sealed bytes; recovery burns it durably
     /// before any higher seq is processed.
     case recoveredUnsealedReservation
@@ -73,7 +73,7 @@ public enum CloudSpoolBurnReason: String, Equatable, Sendable {
 
 /// §6.2's attempt marker: a burn at the attempt cap (or the restart burn of a sent row)
 /// records that transport delivery is uncertain — the bytes may or may not have arrived.
-public enum CloudSpoolAttemptOutcome: String, Equatable, Sendable {
+public enum CloudSpoolAttemptOutcome: String, Codable, Equatable, Sendable {
     case transportUncertain = "transport_uncertain"
 }
 
@@ -104,6 +104,32 @@ public struct CloudSpoolRow: Equatable, Sendable {
     /// §6.2 — set when the logical layer tombstones the record; the terminal transport row
     /// is retained for `tombstoneRetention` after this instant, then GC may delete it.
     public internal(set) var logicalTombstoneContinuous: Duration?
+
+    public init(
+        seq: Int64, channel: CloudSpoolChannel, logicalID: String, ownerID: String?,
+        recipient: String, logicalRecordCanonicalBytes: Data, chargedBytes: Int,
+        sealedEnvelopeBytes: Data?, state: CloudSpoolRowState, reservedAt: Date,
+        reservedAtContinuous: Duration, firstSentContinuous: Duration?,
+        attemptNotAfterContinuous: Duration?, attemptOutcome: CloudSpoolAttemptOutcome?,
+        burnReason: CloudSpoolBurnReason?, logicalTombstoneContinuous: Duration?
+    ) {
+        self.seq = seq
+        self.channel = channel
+        self.logicalID = logicalID
+        self.ownerID = ownerID
+        self.recipient = recipient
+        self.logicalRecordCanonicalBytes = logicalRecordCanonicalBytes
+        self.chargedBytes = chargedBytes
+        self.sealedEnvelopeBytes = sealedEnvelopeBytes
+        self.state = state
+        self.reservedAt = reservedAt
+        self.reservedAtContinuous = reservedAtContinuous
+        self.firstSentContinuous = firstSentContinuous
+        self.attemptNotAfterContinuous = attemptNotAfterContinuous
+        self.attemptOutcome = attemptOutcome
+        self.burnReason = burnReason
+        self.logicalTombstoneContinuous = logicalTombstoneContinuous
+    }
 }
 
 // MARK: - Injected persistence, clock, limits
@@ -126,6 +152,18 @@ public struct CloudSpoolPersistedState: Equatable, Sendable {
 public protocol CloudSpoolStore: AnyObject, Sendable {
     func load() throws -> CloudSpoolPersistedState
     func commit(_ state: CloudSpoolPersistedState) throws
+}
+
+/// A rollback-compatible predecessor may own a second on-disk high-water mark. The fence is
+/// advanced before the new spool commits a reservation, so a failed new-store commit can waste
+/// sequence numbers but can never let an older image reuse one the new image returned.
+public protocol CloudSpoolSequenceFence: AnyObject, Sendable {
+    func prepareToReserve(sequence: Int64) throws
+}
+
+public final class CloudNoopSpoolSequenceFence: CloudSpoolSequenceFence, @unchecked Sendable {
+    public init() {}
+    public func prepareToReserve(sequence _: Int64) throws {}
 }
 
 /// Injected clocks (§6.1: the Mac's `continuous` is an injected ContinuousClock, never read
@@ -289,6 +327,8 @@ public enum CloudOutboundSpoolError: Error, Equatable {
     case missingSealedEnvelopeForSend(seq: Int64, state: CloudSpoolRowState)
     /// A ready row has never been sent and therefore cannot already carry `first_sent`.
     case readyRowAlreadyHasFirstSent(seq: Int64)
+    /// A receipt named a real sequence but not the channel sealed into that row.
+    case settlementCorrelationMismatch(seq: Int64)
 }
 
 /// What one publisher step did. The publisher only ever touches the lowest non-terminal seq
@@ -298,6 +338,8 @@ public enum CloudSpoolSendDisposition: Equatable, Sendable {
     case sent(seq: Int64)
     /// §6.2 reconnect: the same sealed bytes were handed to the transport again.
     case resent(seq: Int64)
+    /// A normal drain found an in-window sent head. Only reconnect may resend it.
+    case blockedAwaitingAcknowledgement(headSeq: Int64)
     /// The head seq is reserved and unsealed; nothing may send past it.
     case blockedAwaitingSeal(headSeq: Int64)
 }
@@ -321,11 +363,15 @@ public enum CloudSpoolSettleDisposition: Equatable, Sendable {
 // MARK: - The spool
 
 public actor CloudOutboundSpool {
-    public let runtime: CloudSpoolRuntime
+    /// `nil` is the typed W5-1 state for a platform that has no accepted runtime metric label.
+    /// It suppresses all spool metric publication instead of mislabelling Linux as Mac.
+    public let runtime: CloudSpoolRuntime?
     private let store: CloudSpoolStore
     private let clock: CloudSpoolClock
     private let metrics: CloudSpoolMetrics
     private let limits: CloudSpoolLimits
+    private let sequenceFence: any CloudSpoolSequenceFence
+    private let strictPersistedFrameValidation: Bool
     private var state: CloudSpoolPersistedState
     private var lastGCContinuous: Duration
     private var alertLevels: [CloudSpoolOccupancyDimension: CloudSpoolOccupancyAlert] = [:]
@@ -342,20 +388,24 @@ public actor CloudOutboundSpool {
     public init(store: CloudSpoolStore,
                 clock: CloudSpoolClock,
                 metrics: CloudSpoolMetrics,
-                runtime: CloudSpoolRuntime = .mac,
+                runtime: CloudSpoolRuntime? = .mac,
                 limits: CloudSpoolLimits = CloudSpoolLimits(),
-                liveOwnerIDs: Set<String> = []) throws {
+                liveOwnerIDs: Set<String> = [],
+                sequenceFence: any CloudSpoolSequenceFence = CloudNoopSpoolSequenceFence(),
+                strictPersistedFrameValidation: Bool = false) throws {
         self.store = store
         self.clock = clock
         self.metrics = metrics
         self.runtime = runtime
         self.limits = limits
+        self.sequenceFence = sequenceFence
+        self.strictPersistedFrameValidation = strictPersistedFrameValidation
 
         var working = try store.load()
         let openContinuous = clock.continuousNow
         let openWall = clock.wallNow
         func corrupt(_ error: CloudOutboundSpoolError) -> CloudOutboundSpoolError {
-            metrics.recordStateStoreCorrupt(store: .macSpool)
+            if runtime != nil { metrics.recordStateStoreCorrupt(store: .macSpool) }
             return error
         }
 
@@ -376,12 +426,11 @@ public actor CloudOutboundSpool {
             }
             previousSeq = row.seq
             let parsed: CloudJSONValue
-            do {
-                parsed = try CloudCanonicalJSON.parseStrict(row.logicalRecordCanonicalBytes)
-            } catch {
-                throw corrupt(.corruptRow(
-                    seq: row.seq, detail: "logical record bytes are not canonical JSON"))
-            }
+            do { parsed = try Self.validatePersistedRow(
+                row, strictFrame: strictPersistedFrameValidation) }
+            catch let error as CloudOutboundSpoolError { throw corrupt(error) }
+            catch { throw corrupt(.corruptRow(
+                seq: row.seq, detail: "logical record bytes are not canonical JSON")) }
             // §6.6: recompute charged_bytes on read; a mismatch is corruption, fail closed.
             guard CloudCanonicalJSON.chargedBytes(record: parsed) == row.chargedBytes else {
                 throw corrupt(.corruptRow(
@@ -407,20 +456,22 @@ public actor CloudOutboundSpool {
         // higher seq is processed. The single commit below lands before this init returns,
         // so no send, seal or admission can observe the pre-burn state.
         for index in working.rows.indices where working.rows[index].state == .reserved {
-            Self.burn(&working.rows[index], reason: .recoveredUnsealedReservation, outcome: nil)
+            Self.burn(&working.rows[index], reason: .recoveredUnsealedReservation, outcome: nil,
+                      tombstone: openContinuous)
         }
         // §6.2: old continuous instants are incomparable after restart — every sent row
         // burns (transport uncertain) to release head-of-line.
         for index in working.rows.indices where working.rows[index].state == .sent {
             Self.burn(&working.rows[index], reason: .restartSentUncertain,
-                      outcome: .transportUncertain)
+                      outcome: .transportUncertain, tombstone: openContinuous)
         }
         // §6.2: ownerless ctl/ctlr ready rows burn.
         for index in working.rows.indices
         where working.rows[index].state == .ready && working.rows[index].channel.isControl {
             let owner = working.rows[index].ownerID
             if owner == nil || !liveOwnerIDs.contains(owner!) {
-                Self.burn(&working.rows[index], reason: .ownerlessControlAtRestart, outcome: nil)
+                Self.burn(&working.rows[index], reason: .ownerlessControlAtRestart, outcome: nil,
+                          tombstone: openContinuous)
             }
         }
         // §6.2: a never-sent ready stream row may continue only while its wall-clock ts is
@@ -429,7 +480,8 @@ public actor CloudOutboundSpool {
         where working.rows[index].state == .ready && !working.rows[index].channel.isControl {
             if openWall.timeIntervalSince(working.rows[index].reservedAt)
                 > limits.readyFreshnessSeconds {
-                Self.burn(&working.rows[index], reason: .staleReadyAtRestart, outcome: nil)
+                Self.burn(&working.rows[index], reason: .staleReadyAtRestart, outcome: nil,
+                          tombstone: openContinuous)
             }
         }
         // Tombstone instants from the previous run are incomparable; restart retention now.
@@ -444,8 +496,10 @@ public actor CloudOutboundSpool {
 
         let rows = Self.storedRowCount(of: working)
         let bytes = Self.storedByteCount(of: working)
-        metrics.recordRows(rows, runtime: runtime)
-        metrics.recordBytes(bytes, runtime: runtime)
+        if let runtime {
+            metrics.recordRows(rows, runtime: runtime)
+            metrics.recordBytes(bytes, runtime: runtime)
+        }
     }
 
     // MARK: Reserve (admission)
@@ -544,6 +598,15 @@ public actor CloudOutboundSpool {
         if !withinGlobalBytes { throw refuseAdmission(.byteCap, .global) }
 
         let seq = working.nextSeq
+        // The wire is consumed by JavaScript, so the persisted next value must remain in the
+        // injective ECMAScript safe-integer domain too. Refuse before reserving the last value
+        // whose increment could no longer be represented exactly by both runtimes.
+        guard seq >= 0, seq < CloudCanonicalJSON.maximumSafeInteger else {
+            throw refuseAdmission(.corrupt, .global)
+        }
+        // Rollback safety is ordered before the new authority commit. Advancing the predecessor
+        // and then failing below creates a harmless gap; the reverse order could create reuse.
+        try sequenceFence.prepareToReserve(sequence: seq)
         working.nextSeq += 1
         working.rows.append(CloudSpoolRow(
             seq: seq, channel: channel, logicalID: logicalID, ownerID: ownerID,
@@ -560,7 +623,9 @@ public actor CloudOutboundSpool {
 
     private func refuseAdmission(_ reason: CloudSpoolRefusalReason,
                                  _ scope: CloudSpoolRefusalScope) -> CloudOutboundSpoolError {
-        metrics.recordAdmissionRefusal(runtime: runtime, reason: reason, scope: scope)
+        if let runtime {
+            metrics.recordAdmissionRefusal(runtime: runtime, reason: reason, scope: scope)
+        }
         return .admissionRefused(reason: reason, scope: scope)
     }
 
@@ -583,6 +648,9 @@ public actor CloudOutboundSpool {
         var working = state
         working.rows[index].sealedEnvelopeBytes = sealedEnvelope
         working.rows[index].state = .ready
+        if strictPersistedFrameValidation {
+            _ = try Self.validatePersistedRow(working.rows[index], strictFrame: true)
+        }
         try store.commit(working)
         state = working
     }
@@ -597,15 +665,18 @@ public actor CloudOutboundSpool {
     /// For a ready head the row is durably committed `sent` (first_sent and
     /// attempt_not_after = first_sent + 30s fixed on the first send) *before* the transport
     /// closure runs; a throwing transport leaves the row sent and rethrows (§6.1.4). For a
-    /// still-in-window sent head, the same sealed bytes are handed to the transport again
-    /// (§6.2 reconnect).
+    /// still-in-window sent head, the same sealed bytes are handed to the transport again only
+    /// when `resendSent` names a reconnect (§6.2 reconnect).
     static func lowestNonterminalIndex(in rows: [CloudSpoolRow]) -> Int? {
         rows.indices
             .filter { !rows[$0].state.isTerminal }
             .min { rows[$0].seq < rows[$1].seq }
     }
 
-    public func sendNext(via transport: (Data) throws -> Void) throws -> CloudSpoolSendDisposition {
+    public func sendNext(
+        resendSent: Bool = false,
+        via transport: @Sendable (Data) async throws -> Void
+    ) async throws -> CloudSpoolSendDisposition {
         try gcIfDue()
         try burnExpiredSentRows()
         guard let index = Self.lowestNonterminalIndex(in: state.rows)
@@ -630,7 +701,7 @@ public actor CloudOutboundSpool {
             try store.commit(working)
             state = working
             do {
-                try transport(sealedEnvelope)
+                try await transport(sealedEnvelope)
             } catch {
                 // §6.1.4: a throwing send leaves the row sent. The attempt window, not the
                 // transport error, decides when it stops holding head-of-line.
@@ -638,11 +709,14 @@ public actor CloudOutboundSpool {
             }
             return .sent(seq: head.seq)
         case .sent:
+            guard resendSent else {
+                return .blockedAwaitingAcknowledgement(headSeq: head.seq)
+            }
             guard let sealedEnvelope = head.sealedEnvelopeBytes, !sealedEnvelope.isEmpty else {
                 throw CloudOutboundSpoolError.missingSealedEnvelopeForSend(
                     seq: head.seq, state: head.state)
             }
-            try transport(sealedEnvelope)
+            try await transport(sealedEnvelope)
             return .resent(seq: head.seq)
         case .acked, .rejected, .burned:
             return .idle // unreachable: terminal rows were filtered out above
@@ -658,7 +732,7 @@ public actor CloudOutboundSpool {
         for index in working.rows.indices where working.rows[index].state == .sent {
             if let notAfter = working.rows[index].attemptNotAfterContinuous, now >= notAfter {
                 Self.burn(&working.rows[index], reason: .attemptCapExpired,
-                          outcome: .transportUncertain)
+                          outcome: .transportUncertain, tombstone: now)
                 changed = true
             }
         }
@@ -675,12 +749,21 @@ public actor CloudOutboundSpool {
     /// `viewerOffline` is terminal `acked` exactly like a delivered ack and the effect is
     /// never redone (§6.2); `peerError` rejects. A late outcome for an already-terminal row
     /// is telemetry only — it revives nothing, settles nothing, and blocks nothing (§6.2).
-    public func settle(seq: Int64, _ kind: CloudSpoolSettleKind) throws -> CloudSpoolSettleDisposition {
+    public func settle(
+        seq: Int64, channel: CloudSpoolChannel? = nil, fullChannel: String? = nil,
+        _ kind: CloudSpoolSettleKind
+    ) throws -> CloudSpoolSettleDisposition {
         try gcIfDue()
         guard let index = state.rows.firstIndex(where: { $0.seq == seq }) else {
             throw CloudOutboundSpoolError.rowNotFound(seq: seq)
         }
         let row = state.rows[index]
+        if let channel, channel != row.channel {
+            throw CloudOutboundSpoolError.settlementCorrelationMismatch(seq: seq)
+        }
+        if let fullChannel, fullChannel != row.recipient {
+            throw CloudOutboundSpoolError.settlementCorrelationMismatch(seq: seq)
+        }
         switch row.state {
         case .sent:
             if kind == .viewerOffline && row.channel != .ctlr {
@@ -688,11 +771,14 @@ public actor CloudOutboundSpool {
                                                                           channel: row.channel)
             }
             let terminal: CloudSpoolRowState = kind == .peerError ? .rejected : .acked
-            try updateRow(at: index) { $0.state = terminal }
+            try updateRow(at: index) {
+                $0.state = terminal
+                $0.logicalTombstoneContinuous = self.clock.continuousNow
+            }
             publishOccupancy()
             return .settled(terminal)
         case .acked, .rejected, .burned:
-            metrics.recordLateSettleTelemetry(runtime: runtime)
+            if let runtime { metrics.recordLateSettleTelemetry(runtime: runtime) }
             return .lateIgnored
         case .reserved, .ready:
             throw CloudOutboundSpoolError.settleBeforeSend(seq: seq, state: row.state)
@@ -727,7 +813,8 @@ public actor CloudOutboundSpool {
                 : CloudOutboundSpoolError.coalesceNotReady(seq: oldSeq, state: old.state)
         }
         var working = state
-        Self.burn(&working.rows[index], reason: .replacedByCoalescing, outcome: nil)
+        Self.burn(&working.rows[index], reason: .replacedByCoalescing, outcome: nil,
+                  tombstone: clock.continuousNow)
         let seq = try admitReservation(into: &working, channel: old.channel,
                                        logicalID: old.logicalID, ownerID: old.ownerID,
                                        recipient: old.recipient, record: record)
@@ -782,7 +869,8 @@ public actor CloudOutboundSpool {
         var expiredCount = 0
         for index in working.rows.indices where working.rows[index].state == .reserved {
             if now - working.rows[index].reservedAtContinuous > limits.staleReservedAfter {
-                Self.burn(&working.rows[index], reason: .staleReservation, outcome: nil)
+                Self.burn(&working.rows[index], reason: .staleReservation, outcome: nil,
+                          tombstone: now)
                 changed = true
                 expiredCount += 1
             }
@@ -799,10 +887,10 @@ public actor CloudOutboundSpool {
             state = working
             publishOccupancy()
             for _ in 0..<expiredCount {
-                metrics.recordStateStoreGC(store: .macSpool, reason: .expired)
+                if runtime != nil { metrics.recordStateStoreGC(store: .macSpool, reason: .expired) }
             }
             for _ in 0..<deleted {
-                metrics.recordStateStoreGC(store: .macSpool, reason: .terminal)
+                if runtime != nil { metrics.recordStateStoreGC(store: .macSpool, reason: .terminal) }
             }
         }
         lastGCContinuous = now
@@ -821,6 +909,15 @@ public actor CloudOutboundSpool {
         state.rows.first { $0.seq == seq }
     }
 
+    /// The sole publisher uses this to schedule a cancellable wakeup. It is derived from the
+    /// current head every time, so a stale task cannot authorize a later generation by itself.
+    public func nextAttemptWakeDelay() -> Duration? {
+        guard let index = Self.lowestNonterminalIndex(in: state.rows),
+              state.rows[index].state == .sent,
+              let deadline = state.rows[index].attemptNotAfterContinuous else { return nil }
+        return max(.zero, deadline - clock.continuousNow)
+    }
+
     // MARK: Internals
 
     private func updateRow(at index: Int, _ mutate: (inout CloudSpoolRow) -> Void) throws {
@@ -832,10 +929,12 @@ public actor CloudOutboundSpool {
 
     private static func burn(_ row: inout CloudSpoolRow,
                              reason: CloudSpoolBurnReason,
-                             outcome: CloudSpoolAttemptOutcome?) {
+                             outcome: CloudSpoolAttemptOutcome?,
+                             tombstone: Duration) {
         row.state = .burned
         row.burnReason = reason
         if let outcome { row.attemptOutcome = outcome }
+        row.logicalTombstoneContinuous = tombstone
     }
 
     private static func storedRowCount(of state: CloudSpoolPersistedState) -> Int {
@@ -849,12 +948,118 @@ public actor CloudOutboundSpool {
     /// Publishes the two gauges and raises the §6.6 occupancy alerts (80% warning, 90% page)
     /// on upward crossings, once per crossing.
     private func publishOccupancy() {
+        guard let runtime else { return }
         let rows = Self.storedRowCount(of: state)
         let bytes = Self.storedByteCount(of: state)
         metrics.recordRows(rows, runtime: runtime)
         metrics.recordBytes(bytes, runtime: runtime)
         raiseAlertIfCrossed(.rows, occupancy: rows, cap: limits.globalRowCap)
         raiseAlertIfCrossed(.bytes, occupancy: bytes, cap: limits.globalByteCap)
+    }
+
+    /// Strict production validation is intentionally implemented without importing the Mac-only
+    /// envelope type, so the same Application actor compiles on Linux. The exact published JSON
+    /// shape, signature-sized fields, sequence, full channel and nonsecret logical metadata are
+    /// all bound before socket admission.
+    private static func validatePersistedRow(
+        _ row: CloudSpoolRow, strictFrame: Bool
+    ) throws -> CloudJSONValue {
+        guard row.seq >= 0, !row.logicalID.isEmpty, !row.recipient.isEmpty,
+              row.chargedBytes >= 0 else {
+            throw CloudOutboundSpoolError.corruptRow(seq: row.seq, detail: "invalid row identity")
+        }
+        let logical = try CloudCanonicalJSON.parseStrict(row.logicalRecordCanonicalBytes)
+        guard CloudCanonicalJSON.canonicalData(logical) == row.logicalRecordCanonicalBytes else {
+            throw CloudOutboundSpoolError.corruptRow(
+                seq: row.seq, detail: "logical record is not canonical")
+        }
+        switch row.state {
+        case .reserved:
+            guard row.sealedEnvelopeBytes == nil, row.firstSentContinuous == nil,
+                  row.attemptNotAfterContinuous == nil, row.attemptOutcome == nil,
+                  row.burnReason == nil, row.logicalTombstoneContinuous == nil else {
+                throw CloudOutboundSpoolError.corruptRow(
+                    seq: row.seq, detail: "reserved row has contradictory fields")
+            }
+        case .ready:
+            guard row.sealedEnvelopeBytes != nil, row.firstSentContinuous == nil,
+                  row.attemptNotAfterContinuous == nil, row.attemptOutcome == nil,
+                  row.burnReason == nil, row.logicalTombstoneContinuous == nil else {
+                throw CloudOutboundSpoolError.corruptRow(
+                    seq: row.seq, detail: "ready row has contradictory fields")
+            }
+        case .sent:
+            guard row.sealedEnvelopeBytes != nil, let first = row.firstSentContinuous,
+                  let deadline = row.attemptNotAfterContinuous, deadline >= first,
+                  row.attemptOutcome == nil, row.burnReason == nil,
+                  row.logicalTombstoneContinuous == nil else {
+                throw CloudOutboundSpoolError.corruptRow(
+                    seq: row.seq, detail: "sent row has contradictory fields")
+            }
+        case .acked, .rejected:
+            guard row.sealedEnvelopeBytes != nil, row.firstSentContinuous != nil,
+                  row.attemptNotAfterContinuous != nil, row.burnReason == nil else {
+                throw CloudOutboundSpoolError.corruptRow(
+                    seq: row.seq, detail: "settled row has contradictory fields")
+            }
+        case .burned:
+            guard row.burnReason != nil else {
+                throw CloudOutboundSpoolError.corruptRow(
+                    seq: row.seq, detail: "burned row has no reason")
+            }
+        }
+        guard strictFrame else { return logical }
+        guard case .object(let metadata) = logical,
+              Set(metadata.keys) == ["v", "ch", "class", "key_id", "logical_id",
+                                      "payload_bytes", "payload_sha256", "sender"],
+              case .int(let metadataVersion)? = metadata["v"], metadataVersion == 2,
+              case .string(let channel)? = metadata["ch"], channel == row.recipient,
+              case .string(let logicalID)? = metadata["logical_id"], logicalID == row.logicalID,
+              case .string(let sender)? = metadata["sender"], !sender.isEmpty,
+              case .string(let keyID)? = metadata["key_id"], !keyID.isEmpty,
+              case .string(let envelopeClass)? = metadata["class"], envelopeClass == "stream",
+              case .int(let payloadBytes)? = metadata["payload_bytes"], payloadBytes >= 0,
+              case .string(let payloadDigest)? = metadata["payload_sha256"],
+              payloadDigest.count == 64,
+              payloadDigest.allSatisfy({ "0123456789abcdef".contains($0) }) else {
+            throw CloudOutboundSpoolError.corruptRow(
+                seq: row.seq, detail: "logical metadata is incomplete")
+        }
+        guard let frameBytes = row.sealedEnvelopeBytes else { return logical }
+        let frame = try CloudCanonicalJSON.parseStrict(frameBytes)
+        guard case .object(let frameFields) = frame,
+            Set(frameFields.keys) == ["type", "envelope"],
+            case .string(let type)? = frameFields["type"], type == "publish",
+            case .object(let envelope)? = frameFields["envelope"],
+            Set(envelope.keys) == ["v", "ch", "seq", "ts", "class", "key_id", "nonce",
+                                   "ct", "sender", "sig"] else {
+            throw CloudOutboundSpoolError.corruptRow(seq: row.seq, detail: "invalid publish frame")
+        }
+        guard case .int(let version)? = envelope["v"], version == 1,
+              case .int(let sequence)? = envelope["seq"], sequence == row.seq,
+              case .int(let timestamp)? = envelope["ts"], timestamp >= 0,
+              case .string(let frameChannel)? = envelope["ch"], frameChannel == channel,
+              case .string(let frameSender)? = envelope["sender"], frameSender == sender,
+              case .string(let frameKeyID)? = envelope["key_id"], frameKeyID == keyID,
+              case .string(let frameClass)? = envelope["class"], frameClass == envelopeClass,
+              case .string(let nonce)? = envelope["nonce"], canonicalBase64(nonce, bytes: 12),
+              case .string(let ciphertext)? = envelope["ct"], canonicalBase64(ciphertext, minimumBytes: 16),
+              case .string(let signature)? = envelope["sig"], canonicalBase64(signature, bytes: 64)
+        else {
+            throw CloudOutboundSpoolError.corruptRow(
+                seq: row.seq, detail: "publish frame does not match row identity")
+        }
+        return logical
+    }
+
+    private static func canonicalBase64(
+        _ value: String, bytes: Int? = nil, minimumBytes: Int = 0
+    ) -> Bool {
+        guard let decoded = Data(base64Encoded: value),
+              decoded.base64EncodedString() == value,
+              bytes.map({ decoded.count == $0 }) ?? true,
+              decoded.count >= minimumBytes else { return false }
+        return true
     }
 
     private func raiseAlertIfCrossed(_ dimension: CloudSpoolOccupancyDimension,
@@ -868,7 +1073,7 @@ public actor CloudOutboundSpool {
             level = nil
         }
         let previous = alertLevels[dimension]
-        if let level, previous == nil || previous! < level {
+        if let level, previous == nil || previous! < level, let runtime {
             metrics.recordOccupancyAlert(runtime: runtime, dimension: dimension, level: level)
         }
         alertLevels[dimension] = level

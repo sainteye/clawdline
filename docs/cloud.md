@@ -100,11 +100,20 @@ is where the two are told apart: `CloudAPIDeviceTokenProvider` now raises
 it to the lifecycle, and the lifecycle brings the bridge down and leaves it down until the
 identity changes or somebody presses retry.
 
-**Sequences survive a relaunch.** Both ends refuse an envelope whose sequence did not advance, so
-a counter that restarts at zero does not merely repeat itself — it makes the Mac silent on every
-channel until it has climbed back past whatever the viewer already saw. `CloudSequenceFile` writes
-down a *ceiling* before handing out any number under it, so a crash skips a block and can never
-repeat one. A file it cannot read refuses rather than restarting from zero.
+**One durable spool owns outbound order.** Both ends refuse an envelope whose sequence did not
+advance. `CloudOutboundSpool` therefore reserves one never-reused global sequence across channels,
+persists the logical record, seals the exact publish-frame bytes, and persists `sent` before the
+socket write. `CloudTransport` has no `pendingByChannel`, queue, or sequence allocator: while it is
+not ready it returns `notConnected`, and the spool retains the only retryable bytes. Reconnect may
+resend the exact in-window sent frame; restart burns sent uncertainty, and only a correlated
+authenticated channel/sequence ack or refusal settles a live row. Unreadable or unsafe state never
+restarts from zero. On the first Mac open, the former `cloud-sequence.json` is descriptor-checked
+and its sender ceiling is durably applied as the spool's minimum next sequence before any publish;
+the same schema-compatible file remains a live rollback fence. Before the new spool commits a
+reservation at an old-image block boundary, it first raises the predecessor's ceiling. Rollback may
+skip a block but cannot reuse a sequence already returned by the new image. Missing legacy state
+means no prior floor, while invalid legacy state fails startup and is preserved/quarantined rather
+than being read as zero.
 
 **Commands go through the door they already went through.** `RemoteServerCloudCommandRouter`
 converts a verified cloud command back into an in-process request, so authentication,
@@ -116,6 +125,33 @@ on the existing `action:<request>` channel; an identifiable malformed `shell-kil
 with `400 malformed_command`. Neither refusal reaches the command router. A non-`ctl` envelope is
 outside this reply contract and is rejected without minting an action-channel identity; the shipped
 browser sends `shell-kill` only as `ctl`.
+
+Before that router can cross the effect point, `CloudCommandLedger` durably reserves the
+authenticated `(viewer sender, request id, request digest)` identity. Exact duplicates wait or
+replay the durable normalized outcome; a digest mismatch fails closed. The effect begins only after
+the in-progress transition is durable, and its normalized status/body is durable before any reply
+is offered to the spool. A restart drops never-started reservations and treats recovered
+in-progress work as explicitly unknown. Store-originated persist/fsync/rename/recovery failures
+propagate through admission and startup; no convenience path catches them into an empty ledger.
+The Mac calibrates its real epoch guard only from authenticated server time and re-reads epoch,
+paired-device roster, and (for writes) `remoteWrite` after durable reservation at the effect point.
+A revocation there durably releases the reservation and performs no effect. Live in-progress
+duplicates join the current owner; store failures terminate all waiters with either a retry after
+durable release or a typed uncertainty once an effect has started.
+
+Durable outbound logical rows contain channel/identity, byte count, and a SHA-256 content identity,
+not plaintext or a base64-equivalent payload copy; content exists only inside the encrypted sealed
+frame. Production revalidates complete logical metadata and the sealed frame on load. Settlement
+matches the exact authenticated wire channel plus sequence and creates its tombstone in the same
+commit. A cancellable deadline wake releases a lost-ACK head without waiting for new traffic and
+reschedules with bounded backoff after a transient durable-store failure;
+receipt ingestion keeps at most 256 oldest observations and counts overflow. Authority directories
+and files must be private (0700/0600), newly created directory entries are parent-fsynced, new
+writes use one fixed candidate name, and startup scans at most 128 directory entries before either
+descriptor-validating/removing at most 64 legacy `.writing-*` candidates or failing closed. A
+validated server machine identity is injectively encoded rather than used
+as a raw path. Linux has no accepted runtime metric label, so it suppresses spool metrics instead
+of publishing `runtime=mac`.
 
 **Authenticated command ingress is bounded before execution.** `CloudInboundCommandQueue` is the
 single owner of the pending FIFO and its accounting. Production limits are eight retained commands
@@ -148,7 +184,17 @@ admitted, completed, timed-out, full-drop and cancellation totals expose its deb
 publication is cancelled and remains charged until its task exits, so repeated stalls cannot create
 unbounded work or block receive-loop ping handling. Shutdown is an explicit lifecycle boundary:
 admission then returns typed `finished` without advancing replay or accepted metrics. W5 still owns
-process-restart durability and durable result/spool wiring.
+pairing/key rotation and external Cloud/GCE acceptance; W5-1 now owns the Mac/Ubuntu durable
+command and outbound composition described above.
+
+The public W0-E contract bytes remain a candidate pinned to commit
+`38eb822575e3c309a776a9e3e2874c7062d8fb75`, package tree
+`3ee391a4af73f9688510c19106d38ba325227051`, source SHA-256
+`47c21a3d096813f940026943004791087ea89d628f6123942dd59c02f71a2f3d`, and package SHA-256
+`6ccccea5f05b603fd9a583940f6f7a3fd5a8735ac6d5ce6ef7246620b59b7d6f`.
+`authority=candidate` and `cutover_required=true` are executable gates: W5-1 does not perform
+cutover, raise a floor, or emit an unaccepted candidate version. Existing accepted v1 envelopes
+remain the production wire until a later authority decision.
 
 **The `orch/` snapshot carries three things, and two of them were added because their absence
 was invisible.** `RemoteServer.orchestratorSnapshot()` is the one body both publishers send — the

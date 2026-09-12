@@ -27,7 +27,7 @@ W0-A 現況與契約基線，2026-09-10；source commit
 | 入口／動作 | 固定來源與目前保證 | 接受證據尚需涵蓋 |
 |---|---|---|
 | local HTTP machine／paired device／task secret | [RemoteServer.swift](../Sources/RemoteServer.swift):972–1005 分開三種 authority；task secret 不是 machine token，自身 `/inflight` 是特定唯讀例外 | 不授權 child 讀 machine credential；不能憑同一 token 可讀就推論所有 mutation 也可用 |
-| Cloud encrypted command/read | [CloudTransport.swift](../Sources/CloudTransport.swift):875–896 先辨識 paired sender、驗證簽章／解密，再檢查 sequence；[CloudAppBridge.swift](../Sources/CloudAppBridge.swift):68–98、199–238 保留 typed read vocabulary 與 server gate | W0-E 比對 wire/consumer vectors；W0-C 測量 buffering；W5-1/2 驗證 durable replay／duplicate effects、pairing rotation 與 reconnect，不能由 in-memory tracker 推定重啟安全 |
+| Cloud encrypted command/read | [CloudTransport.swift](../Sources/CloudTransport.swift) 先辨識 paired sender、驗證簽章／解密，再檢查 sequence；[CloudAppBridge.swift](../Sources/CloudAppBridge.swift) 保留 typed read vocabulary 與 server gate。W5-1 的 shared Application ledger 在 effect 前持久保存 request identity／digest／stage，outcome 在 reply 前 durable；shared spool 單獨擁有全域 sequence、exact frame、sent 與 authenticated correlated settlement | W0-E candidate bytes 已被 code pin 住但未 cutover／emit；W5-2 仍須證 pairing／rotation／revocation，W5-3/W6 仍須 live Relay/GCE、restart/restore 與容量證據。不能由 source candidate 或 in-memory receive tracker 推定部署安全 |
 | Board read/write | [ProjectBoardHTTP.swift](../Sources/ProjectBoardHTTP.swift):96–105、117–182 分開 selectors、capabilities 與 write gate | Ubuntu read parity 必須測 project／Session 範圍與無權限拒絕；不改 Board consent、敘事或生命周期 |
 | document read | [ProjectArtifact.swift](../Sources/ProjectArtifact.swift):227–245 解出 project／task artifact root，266–289 檢查相對路徑、resolved containment、file type／size | project artifacts symlink 可成新根；task artifacts 須在 task dir。`:140–150` 明載 hard-link 與 check/read 間 symlink race 不受完整保證，不可宣称抵擋惡意 local writer |
 | task result | [Orchestrator.swift](../Sources/Orchestrator.swift):7905–7923 對 result secret 做 hash 比對 | 檔案到達與 broker 接受只是 delivery 各階段；不等於獨立 review、exact-tree acceptance、landing、release 或人已看到 |
@@ -76,9 +76,28 @@ no-follow/single-link/bounds 走訪；list 不在驗 root 後退回 pathname enu
 failed health 不會先切回讀不懂最新 authority 的舊 image。這些界線不把 localhost identity 推成 Cloud identity，
 也不證明可抵擋同一 service uid 的惡意 process。
 
+W5-1 candidate 將 Cloud command ledger 與 outbound spool 放進共用 Application target，Mac
+production 在 attach bridge 前、Linux daemon 在開 ingress admission 前開啟它們。檔案 store 以
+0700 directory、0600 single-link regular file、owner／size／version checks、single-writer lock 及
+file fsync → rename → directory fsync 的 atomic commit 更新；失敗時 actor snapshot 不超前於
+durable bytes，invalid state 被保留或 quarantine，startup fail closed。正常 reconnect 只由
+spool 重送同一筆 exact sent frame，transport 自身不排隊、不另取 sequence；ack 需同時符合
+authenticated 完整 wire channel 與 sequence 才能 settlement。logical durable row 只保存
+identity、byte count 與 payload digest，明文只存在 encrypted exact frame；0600/0700 權限、
+parent-directory fsync、固定 candidate 名與 bounded orphan cleanup 都 fail closed；cleanup 超過
+128 個 directory entries 或 64 個 legacy candidates 時保留證據並拒絕啟動。Mac command
+在 effect point 重讀真實 epoch guard、paired roster 與 write gate；lost ACK 由 cancellable deadline
+wake 自動 burn，durable-store 暫時失敗時以 bounded backoff 再排程，receipt lane 固定 256 並記錄
+overflow。Linux composition 尚無 Cloud authentication，
+故只有 durable readiness，沒有 publish 能力。Mac 的舊 `cloud-sequence.json` 也以同一 file
+authority checks 讀取；新 spool 先 durable 套用 sender reserved ceiling，且每逢舊 image block
+boundary 都先提升 schema-compatible predecessor ceiling，rollback 只會跳號、不會重用；不能把
+invalid legacy state 當作 zero。這些 source failure-injection fixtures 不等於
+實際 disk-full、live Relay、GCE 或 PID-1 證據。
+
 ## 還不能下的結論與責任
 
-- **W0-E／W0-D**：authority cutover、shared vectors、API／Relay／PWA consumer 與 release identity 尚待交付。W0-A 沒有批准 revocation fail-open／fail-closed policy 的變更。
+- **W0-E／W0-D**：W5-1 code pin 住 public candidate commit/tree/source/package digests，並在 `authority=candidate`、`cutover_required=true` 時拒絕 cutover／emit／reader-floor raise；正式 authority cutover、API／Relay／PWA consumer 與 release identity 仍待接受。W0-A 沒有批准 revocation fail-open／fail-closed policy 的變更。
 - **W0-F／W3**：crypto、networking、Foundation portability 的 compiler／vector 證據待取得；目前 import 掃描不代表 Ubuntu 支援。
-- **W0-C／W5／W6**：disk-full/corruption、overload、slow consumer、duplicate/reconnect、重啟／備份／還原及 redaction runtime 證據待交付；Plan v4 budget 尚不能當本次測量值。
+- **W0-C／W5／W6**：W5-1 的 deterministic source fixtures 涵蓋 persist/file-fsync/rename/directory-fsync、corruption、migration、兩個 writer、duplicate/reconnect/ack loss/reorder；真 disk-full、live Relay、overload、slow consumer、VM restart／備份／還原及 redaction runtime 證據仍待交付。Plan v4 budget 尚不能當本次測量值。
 - **CLA-296 root**：取得獨立安全／架構 review，處置發現、驗證 exact tree、整合。此次交付不變更 production policy、不切 authority、不部署、不代替使用者同意。

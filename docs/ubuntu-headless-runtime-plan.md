@@ -448,9 +448,10 @@ Board/Session/document reads → restart → exact result replay → continue �
 schema-2 succeeded/interrupted replay, existing/missing command authentication indistinguishability,
 acknowledged/incomplete-inventory precedence, result tamper/missing/link commit refusal, held-root
 replacement, exact 200/201/depth/walk listing, migration cutover and failed-health rollback
-injections. They are source/disposable-fixture evidence only. Cloud ledger/spool and pairing remain
-W5-1/W5-2; real provider credentials, GCE, and systemd-as-PID-1 restart remain explicit external
-gates.
+injections. They are source/disposable-fixture evidence only. W5-1 now composes the shared durable
+Cloud ledger/spool before Linux admission, but deliberately exposes no publish door without Cloud
+authentication. Pairing remains W5-2; real provider credentials, GCE, live Relay and
+systemd-as-PID-1 restart remain explicit external gates.
 
 Estimated effort: 2–3 engineer-weeks.
 
@@ -485,9 +486,16 @@ Goal: operate the Ubuntu host remotely through the current Cloud product.
 
 Deliverables:
 
-- Headless device login/pairing flow.
-- Durable credential provisioning and rotation.
-- Cloud publication/reconnect/resume behavior equivalent to the Mac where capabilities match.
+- Shared durable command ledger and outbound spool before Mac bridge/Linux admission, including
+  descriptor-checked atomic persistence, restart classification, exact-frame reconnect resend and
+  authenticated correlated settlement. **Implemented as the W5-1 source candidate; its pinned
+  W0-E authority remains `candidate` and cannot cut over, emit a new version or raise a reader
+  floor. Linux intentionally has no publish door until authentication exists.**
+- Headless device login/pairing flow. **Still W5-2.**
+- Durable credential provisioning and rotation. **Still W5-2.**
+- Live Cloud publication/reconnect/resume behavior equivalent to the Mac where capabilities match.
+  **The W5-1 source composition and deterministic fixtures do not prove a live Relay or accepted
+  contract cutover.**
 - Terraform or reproducible `gcloud` provisioning for the baseline VM, disk, firewall and service account.
 - End-to-end test from hosted UI to an Ubuntu-managed terminal.
 

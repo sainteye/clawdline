@@ -83,6 +83,23 @@ health does not restore an old selector until the latest authority is revalidate
 source/disposable-fixture candidate: Cloud relay/pairing, real provider credentials, GCE and a real
 PID-1 restart are not proven here.
 
+W5-1 adds `CloudCommandLedger.swift`, `CloudOutboundSpool.swift` and
+`CloudDurableStores.swift` to the same Application target. Mac production opens the shared
+ledger/spool before attaching its bridge; the Ubuntu daemon opens and retains the same stores
+before local admission. The host file leaf is single-writer, versioned and descriptor-checked;
+candidate snapshots become visible to the actors only after file fsync, rename and directory
+fsync complete. Invalid state is preserved or quarantined and startup fails rather than switching
+to memory. Mac startup descriptor-checks the former `cloud-sequence.json` and durably raises the
+new spool counter to that sender's reserved ceiling before publication; its live schema-compatible
+rollback fence raises the predecessor ceiling before every old-image block boundary, and invalid
+legacy bytes never become a zero floor. Durable logical rows retain digest/size metadata rather
+than plaintext-equivalent payloads. `CloudTransport` owns no outbound queue or sequence: the Application spool persists a
+global sequence and exact frame, persists `sent`, then performs the async socket write and settles
+only an exact-channel/sequence correlated authenticated receipt. Attempt deadlines wake without
+new traffic; receipt ingestion is bounded and observable. Ubuntu Cloud authentication remains unavailable, so its
+composition exposes no publish door. W0-E is pinned as `authority=candidate` with
+`cutover_required=true`; it authorizes no version emission, cutover, or client-floor raise.
+
 W4-1 also adds four Application-owned policy/ownership members — `ProjectRootPolicy.swift`,
 `ProviderLifecyclePolicy.swift`, `SessionLaunchPolicy.swift` and `TerminalCommandScheduler.swift`.
 The last is the existing Mac serial/nested/maintenance owner moved behind the real Application

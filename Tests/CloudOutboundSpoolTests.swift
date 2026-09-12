@@ -252,6 +252,29 @@ private func tinyRecord(_ value: Int64) -> CloudJSONValue { .int(value) }
 
 private let sealedEnvelopeStub = Data("sealed-envelope".utf8)
 
+private func strictLogicalRecord(channel: String, logicalID: String) -> CloudJSONValue {
+    .object([
+        "v": .int(2), "ch": .string(channel), "class": .string("stream"),
+        "key_id": .string("key-1"), "logical_id": .string(logicalID),
+        "payload_bytes": .int(7), "payload_sha256": .string(String(repeating: "a", count: 64)),
+        "sender": .string("device-1"),
+    ])
+}
+
+private func strictSealedFrame(seq: Int64, channel: String) throws -> Data {
+    try JSONSerialization.data(withJSONObject: [
+        "type": "publish",
+        "envelope": [
+            "v": 1, "ch": channel, "seq": seq, "ts": 1,
+            "class": "stream", "key_id": "key-1",
+            "nonce": Data(repeating: 1, count: 12).base64EncodedString(),
+            "ct": Data(repeating: 2, count: 16).base64EncodedString(),
+            "sender": "device-1",
+            "sig": Data(repeating: 3, count: 64).base64EncodedString(),
+        ],
+    ], options: [.sortedKeys, .withoutEscapingSlashes])
+}
+
 private func reserveSealed(_ spool: CloudOutboundSpool, channel: CloudSpoolChannel,
                            logicalID: String, ownerID: String? = nil, recipient: String,
                            record: CloudJSONValue) async throws -> Int64 {
@@ -352,6 +375,23 @@ private func testOutOfDomainIntegersRefusedWithoutPersistence(
         try h.check(world.store.snapshot == CloudSpoolPersistedState(),
                     "store reopens cleanly after refusing out-of-domain integer \(value)")
     }
+
+    let exhaustedStore = SpoolMemoryStore(initial: CloudSpoolPersistedState(
+        nextSeq: CloudCanonicalJSON.maximumSafeInteger, rows: []))
+    let exhaustedMetrics = SpoolRecordingMetrics()
+    let exhausted = try CloudOutboundSpool(
+        store: exhaustedStore, clock: SpoolFakeClock(), metrics: exhaustedMetrics)
+    try await h.expectSpoolError(
+        .admissionRefused(reason: .corrupt, scope: .global),
+        "sequence exhaustion refuses before nextSeq leaves the shared safe-integer domain"
+    ) {
+        _ = try await exhausted.reserve(
+            channel: .s, logicalID: "exhausted", ownerID: nil,
+            recipient: "viewer", record: tinyRecord(1))
+    }
+    try h.check(exhaustedStore.snapshot.nextSeq == CloudCanonicalJSON.maximumSafeInteger
+                    && exhaustedStore.snapshot.rows.isEmpty,
+                "sequence exhaustion persists no counter or row mutation")
 }
 
 /// §6.6 hard caps measure the durable store, including terminal transport rows that are
@@ -453,6 +493,62 @@ private func testUnsortedPersistedStateFailsClosed(_ h: SpoolTestHarness) async 
                 "unsorted mac spool increments state_store_corrupt_total")
 }
 
+/// Production strict mode binds persisted logical metadata to the complete sealed publish frame.
+/// A structurally valid frame whose sequence was changed is still corruption at the authority
+/// boundary and may not be normalized or emitted after restart.
+private func testStrictPersistedFrameIdentityFailsClosed(_ h: SpoolTestHarness) async throws {
+    let world = SpoolWorld()
+    var spool: CloudOutboundSpool? = try CloudOutboundSpool(
+        store: world.store, clock: world.clock, metrics: world.metrics,
+        runtime: .mac, liveOwnerIDs: [], strictPersistedFrameValidation: true)
+    let channel = "s:account:viewer"
+    let seq = try await spool!.reserve(
+        channel: .s, logicalID: "strict-frame", ownerID: nil,
+        recipient: channel, record: strictLogicalRecord(channel: channel, logicalID: "strict-frame"))
+    try await spool!.seal(seq: seq, sealedEnvelope: strictSealedFrame(seq: seq, channel: channel))
+    spool = nil
+    world.store.tamper { state in
+        state.rows[0].sealedEnvelopeBytes = try? strictSealedFrame(
+            seq: seq + 1, channel: channel)
+    }
+    try await h.expectSpoolError("tampered persisted frame identity fails closed", matching: {
+        if case .corruptRow(let corruptSeq, let detail) = $0 {
+            return corruptSeq == seq && detail == "publish frame does not match row identity"
+        }
+        return false
+    }) {
+        _ = try CloudOutboundSpool(
+            store: world.store, clock: world.clock, metrics: world.metrics,
+            runtime: .mac, liveOwnerIDs: [], strictPersistedFrameValidation: true)
+    }
+}
+
+/// The sequence counter and its new row are one durable candidate. A failed commit must leave
+/// both the store and actor on the old snapshot so retry may still allocate the first sequence.
+private func testCounterAndRowCommitFailureIsAtomic(_ h: SpoolTestHarness) async throws {
+    let world = SpoolWorld()
+    let spool = try world.open()
+    world.store.failNextCommits(1)
+
+    var commitFailed = false
+    do {
+        _ = try await spool.reserve(
+            channel: .s, logicalID: "commit-failure", ownerID: nil,
+            recipient: "viewer-1", record: tinyRecord(1))
+    } catch is SpoolInjectedStoreFailure {
+        commitFailed = true
+    }
+    try h.check(commitFailed, "counter/row admission reports its store commit failure")
+    try h.check(world.store.snapshot.nextSeq == 0 && world.store.snapshot.rows.isEmpty,
+                "failed counter/row commit exposes neither durable nor actor candidate state")
+
+    let retry = try await spool.reserve(
+        channel: .s, logicalID: "commit-failure", ownerID: nil,
+        recipient: "viewer-1", record: tinyRecord(1))
+    try h.check(retry == 0 && world.store.snapshot.nextSeq == 1,
+                "the first sequence remains available after the failed atomic candidate")
+}
+
 /// §6.1.1: the counter is shared across channels and a seq, once reserved, is never reused —
 /// not even when every earlier row has burned across a crash.
 private func testSeqNeverReusedAndSharedCounter(_ h: SpoolTestHarness) async throws {
@@ -541,13 +637,13 @@ private func testAttemptCapBurnReleasesHeadOfLine(_ h: SpoolTestHarness) async t
     let n1 = try await reserveSealed(spool, channel: .t, logicalID: "term-n1",
                                      recipient: "v", record: tinyRecord(2))
 
-    let resent = try await spool.sendNext { log.record($0) }
+    let resent = try await spool.sendNext(resendSent: true) { log.record($0) }
     try h.check(resent == .resent(seq: n) && log.payloads.count == 2
                 && log.payloads[1] == log.payloads[0],
                 "reconnect within the window resends the same sealed bytes")
 
     world.clock.advance(.seconds(29))
-    let stillResent = try await spool.sendNext { log.record($0) }
+    let stillResent = try await spool.sendNext(resendSent: true) { log.record($0) }
     try h.check(stillResent == .resent(seq: n), "29s after first send the row still resends")
 
     world.clock.advance(.seconds(1))
@@ -589,6 +685,45 @@ private func testLateAckAfterBurn(_ h: SpoolTestHarness) async throws {
     try h.check(next == .sent(seq: n2), "late ack for burned N does not block later seqs")
 }
 
+private func testCorrelatedAckLossReorderAndDuplicate(_ h: SpoolTestHarness) async throws {
+    let world = SpoolWorld()
+    let spool = try world.open()
+    let log = SpoolTransportLog()
+    let first = try await reserveSealed(
+        spool, channel: .s, logicalID: "first", recipient: "viewer", record: tinyRecord(1))
+    let second = try await reserveSealed(
+        spool, channel: .t, logicalID: "second", recipient: "viewer", record: tinyRecord(2))
+    _ = try await spool.sendNext { log.record($0) }
+
+    let ackLost = try await spool.sendNext { log.record($0) }
+    try h.check(ackLost == .blockedAwaitingAcknowledgement(headSeq: first)
+                && log.payloads.count == 1,
+                "ack loss leaves the sent head owned without an accidental normal resend")
+    let reconnect = try await spool.sendNext(resendSent: true) { log.record($0) }
+    try h.check(reconnect == .resent(seq: first) && log.payloads[0] == log.payloads[1],
+                "reconnect resends the exact sealed bytes for the uncertain sent head")
+
+    try await h.expectSpoolError(.settleBeforeSend(seq: second, state: .ready),
+                                 "a reordered ack cannot settle an unsent later row") {
+        _ = try await spool.settle(seq: second, channel: .t, .delivered)
+    }
+    try await h.expectSpoolError(.settlementCorrelationMismatch(seq: first),
+                                 "an ack must correlate both global sequence and channel") {
+        _ = try await spool.settle(seq: first, channel: .t, .delivered)
+    }
+    try await h.expectSpoolError(.settlementCorrelationMismatch(seq: first),
+                                 "an ack must correlate the complete wire channel, not its prefix") {
+        _ = try await spool.settle(
+            seq: first, channel: .s, fullChannel: "viewer-other", .delivered)
+    }
+    let settled = try await spool.settle(
+        seq: first, channel: .s, fullChannel: "viewer", .delivered)
+    let duplicate = try await spool.settle(
+        seq: first, channel: .s, fullChannel: "viewer", .delivered)
+    try h.check(settled == .settled(.acked) && duplicate == .lateIgnored,
+                "a correlated ack settles once and a duplicate is telemetry only")
+}
+
 /// §6.1.4: the row is durably sent before the socket write, and a throwing send leaves it
 /// sent — not back to ready.
 private func testSendThrowLeavesRowSent(_ h: SpoolTestHarness) async throws {
@@ -610,7 +745,7 @@ private func testSendThrowLeavesRowSent(_ h: SpoolTestHarness) async throws {
                 == row!.firstSentContinuous! + CloudSpoolLimits().attemptWindow,
                 "first send durably fixed attempt_not_after = first_sent + 30s")
     let log = SpoolTransportLog()
-    let resent = try await spool.sendNext { log.record($0) }
+    let resent = try await spool.sendNext(resendSent: true) { log.record($0) }
     try h.check(resent == .resent(seq: seq) && log.payloads == [sealedEnvelopeStub],
                 "after the throw the same sealed bytes are resent")
 }
@@ -800,24 +935,24 @@ private func testGCDeletesOnlyExpiredTombstonedTerminals(_ h: SpoolTestHarness) 
                                            recipient: "v", record: tinyRecord(1))
     _ = try await spool.sendNext { log.record($0) }
     _ = try await spool.settle(seq: ackedOld, .delivered)
+    try h.check(world.store.row(ackedOld)?.logicalTombstoneContinuous != nil,
+                "settlement commits its production tombstone without a test-only call")
+    world.clock.advance(.seconds(120))
     let ackedRecent = try await reserveSealed(spool, channel: .s, logicalID: "a1",
                                               recipient: "v", record: tinyRecord(2))
     _ = try await spool.sendNext { log.record($0) }
     _ = try await spool.settle(seq: ackedRecent, .delivered)
-    let rejectedNoTombstone = try await reserveSealed(spool, channel: .t, logicalID: "r0",
-                                                      recipient: "v", record: tinyRecord(3))
+    let rejectedRecent = try await reserveSealed(spool, channel: .t, logicalID: "r0",
+                                                 recipient: "v", record: tinyRecord(3))
     _ = try await spool.sendNext { log.record($0) }
-    _ = try await spool.settle(seq: rejectedNoTombstone, .peerError)
+    _ = try await spool.settle(seq: rejectedRecent, .peerError)
     let stillSent = try await reserveSealed(spool, channel: .t, logicalID: "s0",
                                             recipient: "v", record: tinyRecord(4))
     _ = try await spool.sendNext { log.record($0) }
     let stillReady = try await reserveSealed(spool, channel: .s, logicalID: "rdy",
                                              recipient: "v", record: tinyRecord(5))
 
-    try await spool.recordLogicalTombstone(seq: ackedOld)
-    world.clock.advance(.seconds(120))
-    try await spool.recordLogicalTombstone(seq: ackedRecent)
-    world.clock.advance(.seconds(510)) // ackedOld: 10.5 min past tombstone; ackedRecent: 8.5
+    world.clock.advance(.seconds(510)) // ackedOld: 10.5 min; recent terminals: 8.5 min
 
     try await spool.gcTick()
     try h.check(world.store.row(ackedOld) == nil,
@@ -826,8 +961,8 @@ private func testGCDeletesOnlyExpiredTombstonedTerminals(_ h: SpoolTestHarness) 
                 "terminal-row deletion increments mac_spool state_store_gc_total")
     try h.check(world.store.row(ackedRecent)?.state == .acked,
                 "GC keeps a terminal row whose tombstone is younger than 10 minutes")
-    try h.check(world.store.row(rejectedNoTombstone)?.state == .rejected,
-                "GC keeps a terminal row that has no logical tombstone yet")
+    try h.check(world.store.row(rejectedRecent)?.state == .rejected,
+                "GC keeps an automatically tombstoned rejection inside retention")
     try h.check(world.store.row(stillSent)?.state == .sent,
                 "GC never drops a sent row to make room")
     try h.check(world.store.row(stillReady)?.state == .ready,
@@ -861,6 +996,8 @@ private func testGCFailureFailsAdmissionClosed(_ h: SpoolTestHarness) async thro
                 "the gc_failed refusal is counted")
     try h.check(world.store.row(doomed) != nil,
                 "the failed GC deleted nothing — the store is unchanged")
+    try h.check(world.metrics.stateStoreGCCount(.macSpool, .terminal) == 0,
+                "a failed GC commit does not publish a successful-deletion metric")
 
     let seq = try await spool.reserve(channel: .s, logicalID: "new", ownerID: nil,
                                       recipient: "v", record: tinyRecord(2))
@@ -1253,6 +1390,371 @@ private func testByteOccupancyAlertExactBoundaries(_ h: SpoolTestHarness) async 
                 "byte occupancy exactly at 90% raises page, not another warning")
 }
 
+/// The host file leaf is an authority boundary, not a serialization convenience. These cases
+/// use real directory entries so partial/version/link/lock failures cannot pass through a fake.
+private func testLegacySequenceCeilingMigratesWithoutReuse(_ h: SpoolTestHarness) async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-legacy-sequence-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(
+        at: root, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    let legacyURL = root.appendingPathComponent("cloud-sequence.json")
+    let legacyBytes = CloudCanonicalJSON.canonicalData(.object([
+        "v": .int(1),
+        "senders": .object(["machine-1": .int(64), "older-machine": .int(128)]),
+    ]))
+    try legacyBytes.write(to: legacyURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: legacyURL.path)
+
+    var fence: CloudLegacySequenceFence? = try CloudLegacySequenceFence(
+        url: legacyURL, sender: "machine-1")
+    var runtime: CloudDurableRuntime? = try CloudDurableRuntime.open(
+        directory: root.appendingPathComponent("cloud-runtime", isDirectory: true),
+        runtime: .mac, minimumNextSequence: fence!.reservedCeiling,
+        sequenceFence: fence!)
+    let first = try await runtime!.spool.reserve(
+        channel: .s, logicalID: "after-upgrade", ownerID: nil,
+        recipient: "viewer-1", record: tinyRecord(1))
+    try h.check(first == 64,
+                "the first spool sequence starts at the former durable reserved ceiling")
+    try h.check(fence!.reservedCeiling == 128,
+                "the new image advances the old image's high-water before returning seq 64")
+    runtime = nil
+    fence = nil
+
+    let rollbackCeiling = try CloudLegacySequenceMigration.reservedCeiling(
+        at: legacyURL, sender: "machine-1")
+    try h.check(rollbackCeiling == 128,
+                "a true legacy reader restarts beyond every sequence emitted by the new image")
+    var forwardFence: CloudLegacySequenceFence? = try CloudLegacySequenceFence(
+        url: legacyURL, sender: "machine-1")
+    var forwardRuntime: CloudDurableRuntime? = try CloudDurableRuntime.open(
+        directory: root.appendingPathComponent("cloud-runtime", isDirectory: true),
+        runtime: .mac, minimumNextSequence: forwardFence!.reservedCeiling,
+        sequenceFence: forwardFence!)
+    let afterRollback = try await forwardRuntime!.spool.reserve(
+        channel: .s, logicalID: "after-rollback", ownerID: nil,
+        recipient: "viewer-1", record: tinyRecord(2))
+    try h.check(afterRollback == 128,
+                "the forward image also resumes at the rollback fence without reuse or retreat")
+    forwardRuntime = nil
+    forwardFence = nil
+
+    let corruptURL = root.appendingPathComponent("corrupt-sequence.json")
+    try Data("{\"v\":1,\"senders\":".utf8).write(to: corruptURL)
+    var corruptRefused = false
+    do {
+        _ = try CloudLegacySequenceMigration.reservedCeiling(
+            at: corruptURL, sender: "machine-1")
+    } catch CloudDurableStoreFailure.corrupt {
+        corruptRefused = true
+    }
+    let quarantine = root.appendingPathComponent("quarantine", isDirectory: true)
+    let quarantined = (try? FileManager.default.contentsOfDirectory(
+        at: quarantine, includingPropertiesForKeys: nil)) ?? []
+    try h.check(corruptRefused && !quarantined.isEmpty
+                    && !FileManager.default.fileExists(atPath: corruptURL.path),
+                "an unreadable legacy ceiling is quarantined and never treated as zero")
+
+    let ceilingURL = root.appendingPathComponent("safe-integer-sequence.json")
+    let nearCeiling = CloudCanonicalJSON.maximumSafeInteger - 1
+    let ceilingBytes = CloudCanonicalJSON.canonicalData(.object([
+        "v": .int(1), "senders": .object(["machine-1": .int(nearCeiling)]),
+    ]))
+    try ceilingBytes.write(to: ceilingURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: ceilingURL.path)
+    let ceilingFence = try CloudLegacySequenceFence(url: ceilingURL, sender: "machine-1")
+    try ceilingFence.prepareToReserve(sequence: nearCeiling)
+    try h.check(ceilingFence.reservedCeiling == CloudCanonicalJSON.maximumSafeInteger,
+                "the rollback fence clamps its final block to the shared JSON safe-integer ceiling")
+}
+
+private func testDurableFileStoreAuthorityAndMigration(_ h: SpoolTestHarness) throws {
+    func directory(_ name: String) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "clawdline-spool-\(name)-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: url, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        return url
+    }
+
+    func expectLoadFailure(
+        _ expected: CloudDurableStoreFailure, name: String,
+        prepare: (URL, URL) throws -> Void
+    ) throws {
+        let root = try directory(name)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("spool.json")
+        try prepare(root, file)
+        let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+        if attributes?[.type] as? FileAttributeType == .typeRegular {
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: file.path)
+        }
+        let store = try CloudFileSpoolStore(url: file)
+        var observed: CloudDurableStoreFailure?
+        do { _ = try store.load() }
+        catch let failure as CloudDurableStoreFailure { observed = failure }
+        try h.check(observed == expected, "durable store refuses \(name) as \(expected)")
+        let quarantine = root.appendingPathComponent("quarantine", isDirectory: true)
+        let preserved = (try? FileManager.default.contentsOfDirectory(
+            at: quarantine, includingPropertiesForKeys: nil)) ?? []
+        try h.check(!preserved.isEmpty && !FileManager.default.fileExists(atPath: file.path),
+                    "durable store quarantines and preserves \(name)")
+    }
+
+    try expectLoadFailure(.corrupt, name: "partial") { _, file in
+        try Data("{\"schemaVersion\":".utf8).write(to: file)
+    }
+    try expectLoadFailure(.corrupt, name: "corrupt-kind") { _, file in
+        try Data("{\"schemaVersion\":2,\"recordKind\":\"other\",\"nextSeq\":0,\"rows\":[]}".utf8)
+            .write(to: file)
+    }
+    let currentEnvelope: [String: Any] = [
+        "schemaVersion": 2, "minimumReaderVersion": 1,
+        "recordKind": "cloud_outbound_spool", "generation": 0,
+        "nextSeq": 0, "rows": [],
+    ]
+    for required in currentEnvelope.keys.sorted() {
+        try expectLoadFailure(.corrupt, name: "current-missing-\(required)") { _, file in
+            var missing = currentEnvelope
+            missing.removeValue(forKey: required)
+            try JSONSerialization.data(withJSONObject: missing, options: [.sortedKeys])
+                .write(to: file)
+        }
+    }
+    try expectLoadFailure(.corrupt, name: "current-row-missing-logical-id") { _, file in
+        var invalid = currentEnvelope
+        invalid["nextSeq"] = 1
+        invalid["rows"] = [[
+            "seq": 0, "channel": "s", "recipient": "s/account/viewer",
+            "logicalRecordCanonicalBytes": Data("0".utf8).base64EncodedString(),
+            "chargedBytes": 1, "state": "reserved", "reservedAt": 1,
+            "reservedAtNanoseconds": 1,
+        ]]
+        try JSONSerialization.data(withJSONObject: invalid, options: [.sortedKeys]).write(to: file)
+    }
+    try expectLoadFailure(.corrupt, name: "negative-sequence") { _, file in
+        var invalid = currentEnvelope
+        invalid["nextSeq"] = -1
+        try JSONSerialization.data(withJSONObject: invalid, options: [.sortedKeys]).write(to: file)
+    }
+    try expectLoadFailure(.corrupt, name: "exhausted-sequence") { _, file in
+        var invalid = currentEnvelope
+        invalid["nextSeq"] = Int64.max
+        try JSONSerialization.data(withJSONObject: invalid, options: [.sortedKeys]).write(to: file)
+    }
+    try expectLoadFailure(.unknownVersion(99), name: "unknown-version") { _, file in
+        try Data("{\"schemaVersion\":99,\"nextSeq\":0,\"rows\":[]}".utf8).write(to: file)
+    }
+    try expectLoadFailure(.symlink, name: "symlink") { root, file in
+        let target = root.appendingPathComponent("target.json")
+        try Data("preserve-symlink-target".utf8).write(to: target)
+        try FileManager.default.createSymbolicLink(at: file, withDestinationURL: target)
+    }
+    try expectLoadFailure(.nonRegular, name: "non-regular") { _, file in
+        try FileManager.default.createDirectory(at: file, withIntermediateDirectories: false)
+    }
+    try expectLoadFailure(.multipleLinks, name: "multiply-linked") { root, file in
+        let target = root.appendingPathComponent("linked-source.json")
+        try Data("linked".utf8).write(to: target)
+        try FileManager.default.linkItem(at: target, to: file)
+    }
+    try expectLoadFailure(.oversized, name: "oversized") { _, file in
+        try Data(count: CloudFileSpoolStore.maximumBytes + 1).write(to: file)
+    }
+
+    let ownerRoot = try directory("wrong-owner")
+    defer { try? FileManager.default.removeItem(at: ownerRoot) }
+    let ownerURL = ownerRoot.appendingPathComponent("spool.json")
+    let ownerBytes = Data("owner-preserved".utf8)
+    try ownerBytes.write(to: ownerURL)
+    var ownerRefused = false
+    do { _ = try CloudFileSpoolStore(url: ownerURL, expectedUID: .max) }
+    catch CloudDurableStoreFailure.unsafePath { ownerRefused = true }
+    let preservedOwnerBytes = try Data(contentsOf: ownerURL)
+    try h.check(ownerRefused && preservedOwnerBytes == ownerBytes,
+                "a wrong-owner authority is refused and its bytes are preserved")
+
+    let migrationRoot = try directory("migration")
+    defer { try? FileManager.default.removeItem(at: migrationRoot) }
+    let migrationURL = migrationRoot.appendingPathComponent("spool.json")
+    let versionOne = Data("{\"schemaVersion\":1,\"nextSeq\":0,\"rows\":[]}".utf8)
+    try versionOne.write(to: migrationURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: migrationURL.path)
+    var migrationStore: CloudFileSpoolStore? = try CloudFileSpoolStore(url: migrationURL)
+    let migratedState = try migrationStore!.load()
+    let migratedBytes = try Data(contentsOf: migrationURL)
+    let migratedObject = try JSONSerialization.jsonObject(with: migratedBytes) as? [String: Any]
+    try h.check(migratedState == CloudSpoolPersistedState()
+                && migratedObject?["schemaVersion"] as? Int == 2,
+                "schema 1 migrates additively to schema 2")
+    migrationStore = nil
+    let reopened = try CloudFileSpoolStore(url: migrationURL)
+    _ = try reopened.load()
+    let reopenedBytes = try Data(contentsOf: migrationURL)
+    try h.check(reopenedBytes == migratedBytes,
+                "opening migrated schema 2 is idempotent")
+
+    let rollbackRoot = try directory("migration-rollback")
+    defer { try? FileManager.default.removeItem(at: rollbackRoot) }
+    let rollbackURL = rollbackRoot.appendingPathComponent("spool.json")
+    try versionOne.write(to: rollbackURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: rollbackURL.path)
+    let rollbackStore = try CloudFileSpoolStore(url: rollbackURL)
+    rollbackStore.faultInjection = { point in
+        if point == .rename { throw CloudDurableStoreFailure.rename }
+    }
+    var rollbackFailed = false
+    do { _ = try rollbackStore.load() }
+    catch CloudDurableStoreFailure.rename { rollbackFailed = true }
+    let rolledBackBytes = try Data(contentsOf: rollbackURL)
+    try h.check(rollbackFailed && rolledBackBytes == versionOne,
+                "failed migration rolls back to the exact prior bytes")
+
+    let writersRoot = try directory("writers")
+    defer { try? FileManager.default.removeItem(at: writersRoot) }
+    let writersURL = writersRoot.appendingPathComponent("spool.json")
+    let firstWriter = try CloudFileSpoolStore(url: writersURL)
+    var secondWriterRefused = false
+    do { _ = try CloudFileSpoolStore(url: writersURL) }
+    catch CloudDurableStoreFailure.writerLockHeld { secondWriterRefused = true }
+    try h.check(secondWriterRefused, "a second writer is refused while the authority is live")
+    withExtendedLifetime(firstWriter) {}
+
+    let staleRoot = try directory("stale-lock")
+    defer { try? FileManager.default.removeItem(at: staleRoot) }
+    let staleURL = staleRoot.appendingPathComponent("spool.json")
+    let staleLock = staleRoot.appendingPathComponent(".spool.json.writer.lock")
+    try Data("dead-writer-token".utf8).write(to: staleLock)
+    var staleRefused = false
+    do { _ = try CloudFileSpoolStore(url: staleURL) }
+    catch CloudDurableStoreFailure.writerLockHeld { staleRefused = true }
+    let staleBytes = try Data(contentsOf: staleLock)
+    try h.check(staleRefused && staleBytes == Data("dead-writer-token".utf8),
+                "a stale-looking lock is preserved and refused, never stolen")
+
+    let publicRoot = try directory("public-mode")
+    defer { try? FileManager.default.removeItem(at: publicRoot) }
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o777], ofItemAtPath: publicRoot.path)
+    var publicDirectoryRefused = false
+    do { _ = try CloudFileSpoolStore(url: publicRoot.appendingPathComponent("spool.json")) }
+    catch CloudDurableStoreFailure.unsafePermissions { publicDirectoryRefused = true }
+    try h.check(publicDirectoryRefused,
+                "an existing 0777 authority directory is refused rather than silently chmodded")
+
+    let publicFileRoot = try directory("public-file")
+    defer { try? FileManager.default.removeItem(at: publicFileRoot) }
+    let publicFile = publicFileRoot.appendingPathComponent("spool.json")
+    try JSONSerialization.data(withJSONObject: currentEnvelope, options: [.sortedKeys])
+        .write(to: publicFile)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o644], ofItemAtPath: publicFile.path)
+    let publicFileStore = try CloudFileSpoolStore(url: publicFile)
+    var publicFileRefused = false
+    do { _ = try publicFileStore.load() }
+    catch CloudDurableStoreFailure.unsafePermissions { publicFileRefused = true }
+    try h.check(publicFileRefused,
+                "an existing 0644 authority file is quarantined and refused")
+
+    let orphanRoot = try directory("orphan")
+    defer { try? FileManager.default.removeItem(at: orphanRoot) }
+    let orphan = orphanRoot.appendingPathComponent(".spool.json.writing-crashed")
+    let sentinel = Data("W51-PLAINTEXT-SENTINEL".utf8)
+    try sentinel.write(to: orphan)
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: orphan.path)
+    let orphanStore = try CloudFileSpoolStore(
+        url: orphanRoot.appendingPathComponent("spool.json"))
+    _ = try orphanStore.load()
+    let surviving = try FileManager.default.contentsOfDirectory(
+        at: orphanRoot, includingPropertiesForKeys: nil)
+    let survivingBytes = surviving.filter { !$0.hasDirectoryPath }
+        .map { (try? Data(contentsOf: $0)) ?? Data() }
+    try h.check(!FileManager.default.fileExists(atPath: orphan.path)
+                    && !survivingBytes.contains(where: { $0.range(of: sentinel) != nil }),
+                "startup removes bounded crash candidates and leaves no sentinel bytes")
+
+    let crowdedRoot = try directory("crowded-orphan")
+    defer { try? FileManager.default.removeItem(at: crowdedRoot) }
+    let crowdedCandidate = crowdedRoot.appendingPathComponent(".spool.json.writing-crashed")
+    try sentinel.write(to: crowdedCandidate)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: crowdedCandidate.path)
+    for index in 0..<129 {
+        try Data().write(to: crowdedRoot.appendingPathComponent("noise-\(index)"))
+    }
+    var crowdedRefused = false
+    do { _ = try CloudFileSpoolStore(url: crowdedRoot.appendingPathComponent("spool.json")) }
+    catch CloudDurableStoreFailure.recovery { crowdedRefused = true }
+    try h.check(crowdedRefused && FileManager.default.fileExists(atPath: crowdedCandidate.path),
+                "orphan recovery fails closed after a bounded directory scan without deleting evidence")
+
+    let ledgerSchemaRoot = try directory("ledger-schema")
+    defer { try? FileManager.default.removeItem(at: ledgerSchemaRoot) }
+    let ledgerCurrent: [String: Any] = [
+        "schemaVersion": 2, "minimumReaderVersion": 1,
+        "recordKind": "cloud_command_ledger", "generation": 0, "rows": [],
+    ]
+    for required in ledgerCurrent.keys.sorted() {
+        let caseRoot = ledgerSchemaRoot.appendingPathComponent(required, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: caseRoot, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let ledgerURL = caseRoot.appendingPathComponent("ledger.json")
+        var missing = ledgerCurrent
+        missing.removeValue(forKey: required)
+        try JSONSerialization.data(withJSONObject: missing, options: [.sortedKeys])
+            .write(to: ledgerURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: ledgerURL.path)
+        let ledgerStore = try CloudFileCommandLedgerStore(url: ledgerURL)
+        var refused = false
+        do { _ = try ledgerStore.persistedBytes() }
+        catch CloudDurableStoreFailure.corrupt { refused = true }
+        try h.check(refused, "ledger schema 2 refuses missing required field \(required)")
+    }
+    let nestedLedgerRoot = ledgerSchemaRoot.appendingPathComponent("missing-row-key", isDirectory: true)
+    try FileManager.default.createDirectory(
+        at: nestedLedgerRoot, withIntermediateDirectories: false,
+        attributes: [.posixPermissions: 0o700])
+    let nestedLedgerURL = nestedLedgerRoot.appendingPathComponent("ledger.json")
+    var nestedLedger = ledgerCurrent
+    nestedLedger["rows"] = [[
+        "key": ["viewerSender": "viewer", "requestID": "request"],
+        "replyKeyID": "key", "recipientDeviceID": "viewer", "deadlineAt": 1,
+        "state": "reserved", "createdAt": 1, "expiresAt": 2,
+        "retainedElapsedMilliseconds": 0, "elapsedBootID": "boot",
+    ]]
+    try JSONSerialization.data(withJSONObject: nestedLedger, options: [.sortedKeys])
+        .write(to: nestedLedgerURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: nestedLedgerURL.path)
+    let nestedLedgerStore = try CloudFileCommandLedgerStore(url: nestedLedgerURL)
+    var nestedLedgerRefused = false
+    do { _ = try nestedLedgerStore.persistedBytes() }
+    catch CloudDurableStoreFailure.corrupt { nestedLedgerRefused = true }
+    try h.check(nestedLedgerRefused,
+                "ledger schema 2 refuses a row missing required requestSHA256")
+
+    for invalid in ["../machine", ".", "Mac-A", "é", "e\u{301}", "machine/name"] {
+        var refused = false
+        do { _ = try CloudMachineFilesystemNamespace.component(for: invalid) }
+        catch CloudDurableStoreFailure.invalidMachineIdentity { refused = true }
+        try h.check(refused, "machine filesystem namespace rejects noncanonical id \(invalid)")
+    }
+    let namespaceA = try CloudMachineFilesystemNamespace.component(for: "machine-a")
+    let namespaceB = try CloudMachineFilesystemNamespace.component(for: "machine-b")
+    try h.check(namespaceA != namespaceB && !namespaceA.contains("machine-a"),
+                "machine filesystem namespace is injective without using raw server identity")
+}
+
 // MARK: - Runner
 
 public func runCloudOutboundSpoolTests() async throws -> Int {
@@ -1262,12 +1764,15 @@ public func runCloudOutboundSpoolTests() async throws -> Int {
     try testMetricsDomainsAndLimits(h)
     try await testHeadSelectorUsesLowestSeq(h)
     try await testUnsortedPersistedStateFailsClosed(h)
+    try await testStrictPersistedFrameIdentityFailsClosed(h)
     try await testCorruptionFailsClosed(h)
+    try await testCounterAndRowCommitFailureIsAtomic(h)
     try await testSeqNeverReusedAndSharedCounter(h)
     try await testCrashBeforeSealRecovery(h)
     try await testHeadOfLineAcrossChannels(h)
     try await testAttemptCapBurnReleasesHeadOfLine(h)
     try await testLateAckAfterBurn(h)
+    try await testCorrelatedAckLossReorderAndDuplicate(h)
     try await testSendThrowLeavesRowSent(h)
     try await testReadyRowWithFirstSentFailsClosed(h)
     try await testOutOfDomainIntegersRefusedWithoutPersistence(h)
@@ -1288,5 +1793,7 @@ public func runCloudOutboundSpoolTests() async throws -> Int {
     try await testGCBatchLimitExactBoundary(h)
     try await testGCZeroChangeBoundary(h)
     try await testByteOccupancyAlertExactBoundaries(h)
+    try await testLegacySequenceCeilingMigratesWithoutReuse(h)
+    try testDurableFileStoreAuthorityAndMigration(h)
     return h.checks
 }
