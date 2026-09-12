@@ -1796,12 +1796,17 @@ private func testDurableFileStoreAuthorityAndMigration(_ h: SpoolTestHarness) th
     let staleURL = staleRoot.appendingPathComponent("spool.json")
     let staleLock = staleRoot.appendingPathComponent(".spool.json.writer.lock")
     try Data("dead-writer-token".utf8).write(to: staleLock)
-    var staleRefused = false
-    do { _ = try CloudFileSpoolStore(url: staleURL) }
-    catch CloudDurableStoreFailure.writerLockHeld { staleRefused = true }
-    let staleBytes = try Data(contentsOf: staleLock)
-    try h.check(staleRefused && staleBytes == Data("dead-writer-token".utf8),
-                "a stale-looking lock is preserved and refused, never stolen")
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: staleLock.path)
+    var recoveredWriter: CloudFileSpoolStore? = try CloudFileSpoolStore(url: staleURL)
+    let recoveredBytes = try Data(contentsOf: staleLock)
+    try h.check(recoveredBytes != Data("dead-writer-token".utf8)
+                    && recoveredWriter?.load().rows.isEmpty == true,
+                "a stale writer inode is recovered only after its kernel ownership is gone")
+    recoveredWriter = nil
+    let reopenedAfterRecovery = try CloudFileSpoolStore(url: staleURL)
+    try h.check(try reopenedAfterRecovery.load().rows.isEmpty,
+                "a recovered writer lock remains reusable across the next process lifetime")
 
     let publicRoot = try directory("public-mode")
     defer { try? FileManager.default.removeItem(at: publicRoot) }

@@ -85,7 +85,10 @@ private final class CloudDurableFile: @unchecked Sendable {
     private let previousURL: URL
     private let temporaryURL: URL
     private let token = UUID().uuidString.lowercased()
-    private var ownsWriterLock = false
+    /// The inode is only a stable rendezvous name. Ownership is the kernel lock retained by this
+    /// descriptor, so a crash releases authority without asking a later process to guess whether
+    /// the token left on disk is stale.
+    private var writerLockDescriptor: Int32 = -1
 
     init(url: URL, maximumBytes: Int, expectedUID: UInt32) throws {
         guard url.isFileURL, url.path.hasPrefix("/"), !url.pathComponents.contains(".."),
@@ -185,32 +188,63 @@ private final class CloudDurableFile: @unchecked Sendable {
 
     private func acquireWriterLock() throws {
         let descriptor = lockURL.path.withCString {
-            open($0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+            open($0, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, 0o600)
         }
-        guard descriptor >= 0 else {
-            if errno == EEXIST { throw CloudDurableStoreFailure.writerLockHeld }
-            throw CloudDurableStoreFailure.persist
-        }
+        guard descriptor >= 0 else { throw CloudDurableStoreFailure.persist }
+        var ownsKernelLock = false
         do {
+            var opened = stat()
+            guard fstat(descriptor, &opened) == 0 else {
+                throw CloudDurableStoreFailure.unreadable
+            }
+            guard opened.st_mode & S_IFMT == S_IFREG else {
+                throw CloudDurableStoreFailure.nonRegular
+            }
+            guard opened.st_nlink == 1 else { throw CloudDurableStoreFailure.multipleLinks }
+            guard opened.st_uid == expectedUID else { throw CloudDurableStoreFailure.wrongOwner }
+            guard opened.st_mode & 0o777 == 0o600 else {
+                throw CloudDurableStoreFailure.unsafePermissions
+            }
+
+            guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+                if errno == EWOULDBLOCK || errno == EAGAIN {
+                    throw CloudDurableStoreFailure.writerLockHeld
+                }
+                throw CloudDurableStoreFailure.persist
+            }
+            ownsKernelLock = true
+
+            // Hold the opened inode still across the pathname check. An attacker cannot swap a
+            // checked lock out for a fresh inode and let two writers each own a different lock.
+            var named = stat()
+            guard lstat(lockURL.path, &named) == 0,
+                  named.st_mode & S_IFMT == S_IFREG,
+                  named.st_dev == opened.st_dev, named.st_ino == opened.st_ino,
+                  named.st_nlink == opened.st_nlink else {
+                throw CloudDurableStoreFailure.unsafePath
+            }
+
+            guard ftruncate(descriptor, 0) == 0,
+                  lseek(descriptor, 0, SEEK_SET) == 0 else {
+                throw CloudDurableStoreFailure.persist
+            }
             try Self.writeAll(Data(token.utf8), descriptor: descriptor)
             guard fsync(descriptor) == 0 else { throw CloudDurableStoreFailure.fileFsync }
-            guard close(descriptor) == 0 else { throw CloudDurableStoreFailure.persist }
-            ownsWriterLock = true
             try syncDirectory()
+            writerLockDescriptor = descriptor
         } catch {
+            if ownsKernelLock { _ = flock(descriptor, LOCK_UN) }
             _ = close(descriptor)
-            _ = unlink(lockURL.path)
             throw error
         }
     }
 
     private func releaseWriterLock() {
-        guard ownsWriterLock,
-              let bytes = try? Data(contentsOf: lockURL),
-              String(data: bytes, encoding: .utf8) == token else { return }
-        _ = unlink(lockURL.path)
-        try? syncDirectory()
-        ownsWriterLock = false
+        guard writerLockDescriptor >= 0 else { return }
+        let descriptor = writerLockDescriptor
+        writerLockDescriptor = -1
+        _ = flock(descriptor, LOCK_UN)
+        _ = close(descriptor)
     }
 
     private func secureRead(_ source: URL) throws -> Data {
