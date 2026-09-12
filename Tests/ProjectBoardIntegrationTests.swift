@@ -283,6 +283,267 @@ func boardProgramGraphBindingProof() {
           })
 }
 
+func boardHistoricalTaskBindingReconciliationProof() {
+    let d = BoardTestDriver(name: "historical-task-reconciliation-\(UUID().uuidString)")
+    d.createProject()
+    let program = d.create(type: "epic", title: "Canonical Program", owner: "program-root")
+    let programKey = d.item(program)["key"] as? String ?? ""
+    let documentURL = "https://app.clawdline.com/#document=1&machine=mac-a&session=session-a&scope=project&path=historical-reconciliation.md"
+    expect("historical reconciliation fixture imports its canonical Program node",
+           d.send("plan_structure", [
+               "schemaVersion": 1, "itemId": program, "programKey": programKey,
+               "planId": "historical-program", "planVersion": 1,
+               "graphId": "canonical-program-graph", "destination": "Canonical delivery",
+               "document": ["documentId": "historical-program", "version": 1,
+                            "title": "Historical reconciliation", "url": documentURL],
+               "nodes": [["key": "w4-3", "graphNodeId": "w4-3",
+                           "title": "Canonical W4-3", "type": "feature",
+                           "summary": "One canonical Program node.", "owner": "runtime-owner",
+                           "dependsOn": [], "gateKeys": [], "capabilityKeys": [],
+                           "claims": ["Tests/UbuntuLifecycleTests.swift"]]],
+               "gates": [], "capabilities": [],
+           ]).status, 200)
+    let target = (((d.item(program)["programPlan"] as? [String: Any])?["nodes"]
+        as? [[String: Any]])?.first?["itemId"] as? String) ?? ""
+
+    let landed: [String: Any] = [
+        "state": "landed", "verification_origin": "local_target_branch",
+        "verified_commit": "landed-commit", "verified_target_commit": "landed-target",
+        "landed_at": 200.0,
+    ]
+    let implementationTask: [String: Any] = [
+        "id": "historical-implementation", "title": "Inferred implementation",
+        "state": "success", "startedAt": 100.0, "finishedAt": 150.0,
+        "workPhase": "output", "child": ["sessionId": "historical-session"],
+        "graph": ["id": "noncanonical-one-node-graph", "current_node": "w4-3",
+                  "destination": "Inferred delivery"], "landing": landed,
+    ]
+    _ = d.store.ingest(task: implementationTask, projectID: "project-1")
+    _ = d.store.ingest(task: [
+        "id": "historical-review", "title": "Inferred review", "state": "success",
+        "startedAt": 151.0, "finishedAt": 175.0,
+        "review": ["axes": [["findings": [["id": "review-finding",
+                    "summary": "A retained review finding.", "severity": "blocking"]]]]],
+    ], projectID: "project-1")
+    _ = d.store.ingest(task: [
+        "id": "historical-correction", "title": "Inferred correction", "state": "success",
+        "startedAt": 176.0, "finishedAt": 199.0, "landing": landed,
+    ], projectID: "project-1")
+
+    func source(_ taskID: String) -> [String: Any] {
+        let board = d.store.snapshot(project: "project-1")["board"] as? [String: Any]
+        return (board?["items"] as? [[String: Any]])?.first { item in
+            (item["links"] as? [[String: Any]])?.contains {
+                $0["kind"] as? String == "task" && $0["targetId"] as? String == taskID
+            } == true
+        } ?? [:]
+    }
+    func binding(_ taskID: String) -> [String: Any] {
+        let item = source(taskID)
+        let link = (item["links"] as? [[String: Any]])?.first {
+            $0["kind"] as? String == "task" && $0["targetId"] as? String == taskID
+        } ?? [:]
+        let landing = (item["landings"] as? [[String: Any]])?.first
+        return [
+            "taskId": taskID, "sourceItemId": item["id"] as Any,
+            "taskLinkId": link["id"] as Any,
+            "sourceGraphId": link["graphId"] ?? NSNull(),
+            "sourceGraphNodeId": link["graphNodeId"] ?? NSNull(),
+            "landing": landing.map { row in
+                ["evidenceId": row["id"] as Any, "sourceId": row["sourceId"] as Any,
+                 "subject": row["subject"] as Any] as [String: Any]
+            } ?? NSNull(),
+        ]
+    }
+    let bindings = [binding("historical-implementation"), binding("historical-review"),
+                    binding("historical-correction")]
+    let sourcePairs: [(String, String)] = bindings.compactMap { row in
+        guard let taskID = row["taskId"] as? String,
+              let itemID = row["sourceItemId"] as? String else { return nil }
+        return (taskID, itemID)
+    }
+    let sourceItemIDs = Dictionary(uniqueKeysWithValues: sourcePairs)
+    let fields: [String: Any] = [
+        "projectId": "project-1", "programItemId": program, "programKey": programKey,
+        "planId": "historical-program", "planVersion": 1,
+        "programGraphId": "canonical-program-graph", "nodeId": "w4-3",
+        "targetItemId": target, "bindings": bindings,
+    ]
+    func injectedConflict(_ kind: String) -> ProjectBoardStore.Reply {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "historical-\(kind)-conflict-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        var root = try! JSONSerialization.jsonObject(with: Data(contentsOf: d.file))
+            as! [String: Any]
+        var items = root["items"] as! [[String: Any]]
+        let sourceID = sourceItemIDs[kind == "span" ? "historical-implementation"
+                                                    : "historical-review"]!
+        let sourceIndex = items.firstIndex { $0["id"] as? String == sourceID }!
+        let targetIndex = items.firstIndex { $0["id"] as? String == target }!
+        if kind == "span" {
+            let exact = (items[sourceIndex]["spans"] as! [[String: Any]]).first!
+            var collision = exact
+            collision["phase"] = "verification"
+            var rows = items[targetIndex]["spans"] as! [[String: Any]]
+            rows.append(exact); rows.append(collision); items[targetIndex]["spans"] = rows
+        } else if kind == "source-evidence" {
+            var rows = items[sourceIndex]["evidence"] as! [[String: Any]]
+            var collision = rows.first!
+            collision["summary"] = "Different retained source content"
+            rows.append(collision); items[sourceIndex]["evidence"] = rows
+        } else {
+            let exact = (items[sourceIndex]["evidence"] as! [[String: Any]]).first!
+            var collision = exact
+            collision["summary"] = "Different retained content"
+            var rows = items[targetIndex]["evidence"] as! [[String: Any]]
+            rows.append(exact); rows.append(collision); items[targetIndex]["evidence"] = rows
+        }
+        root["items"] = items
+        try! JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]).write(to: file)
+        let store = ProjectBoardStore(url: file)
+        let revision = (store.snapshot()["board"] as? [String: Any])?["revision"] as? Int ?? -1
+        var command = fields
+        command["operation"] = "reconcile_historical_task_binding"
+        command["requestId"] = "historical-\(kind)-conflict"
+        command["expectedRevision"] = revision
+        let reply = store.command(command, actor: "machine", trusted: true)
+        expect("\(kind) conflict leaves the Board revision unchanged",
+               (store.snapshot()["board"] as? [String: Any])?["revision"] as? Int, revision)
+        let board = store.snapshot(project: "project-1")["board"] as? [String: Any]
+        let unchanged = board?["items"] as? [[String: Any]] ?? []
+        let sourceLinks = unchanged.first { $0["id"] as? String == sourceID }?["links"]
+            as? [[String: Any]] ?? []
+        let targetLinks = unchanged.first { $0["id"] as? String == target }?["links"]
+            as? [[String: Any]] ?? []
+        check("\(kind) conflict leaves source and target accounting unmoved",
+              !sourceLinks.isEmpty && targetLinks.isEmpty)
+        return reply
+    }
+    func injectedExactDuplicate() -> ProjectBoardStore.Reply {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("historical-exact-duplicate-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        var root = try! JSONSerialization.jsonObject(with: Data(contentsOf: d.file)) as! [String: Any]
+        var items = root["items"] as! [[String: Any]]
+        let sourceID = sourceItemIDs["historical-review"]!
+        let sourceIndex = items.firstIndex { $0["id"] as? String == sourceID }!
+        let targetIndex = items.firstIndex { $0["id"] as? String == target }!
+        let exact = (items[sourceIndex]["evidence"] as! [[String: Any]]).first!
+        var targetEvidence = items[targetIndex]["evidence"] as! [[String: Any]]
+        targetEvidence.append(exact); items[targetIndex]["evidence"] = targetEvidence
+        root["items"] = items
+        try! JSONSerialization.data(withJSONObject: root, options: [.sortedKeys]).write(to: file)
+        let store = ProjectBoardStore(url: file)
+        let revision = (store.snapshot()["board"] as? [String: Any])?["revision"] as? Int ?? -1
+        var command = fields
+        command["operation"] = "reconcile_historical_task_binding"
+        command["requestId"] = "historical-exact-duplicate"
+        command["expectedRevision"] = revision
+        let reply = store.command(command, actor: "machine", trusted: true)
+        let board = store.snapshot(project: "project-1")["board"] as? [String: Any]; let changed = board?["items"] as? [[String: Any]] ?? []
+        let sourceEvidence = changed.first { $0["id"] as? String == sourceID }?["findings"] as? [[String: Any]] ?? []
+        let targetEvidenceAfter = changed.first { $0["id"] as? String == target }?["findings"] as? [[String: Any]] ?? []; let exactID = exact["id"] as? String
+        check("an exact destination duplicate is safely deduplicated",
+              !sourceEvidence.contains { $0["id"] as? String == exactID }
+                  && targetEvidenceAfter.filter {
+                  $0["id"] as? String == exactID
+              }.count == 1)
+        return reply
+    }
+    expect("different retained evidence refuses the whole repair",
+           boardError(injectedConflict("evidence")), "historical_binding_fact_conflict")
+    expect("different retained span refuses the whole repair",
+           boardError(injectedConflict("span")), "historical_binding_fact_conflict")
+    expect("different same-source evidence refuses before the batch moves",
+           boardError(injectedConflict("source-evidence")), "historical_binding_fact_conflict")
+    expect("byte-identical retained evidence may deduplicate",
+           injectedExactDuplicate().status, 200)
+    let before = d.revision
+    let result = d.send("reconcile_historical_task_binding", fields, actor: "machine",
+                        trusted: true, expected: before, requestId: "historical-rebind")
+    expect("an exact retained-facts reconciliation is accepted atomically", result.status, 200)
+    let receipt = result.body["historicalTaskBindingReceipt"] as? [String: Any]
+    expect("the reconciliation receipt names the canonical Program node", receipt?["nodeId"] as? String,
+           "w4-3")
+    expect("the reconciliation receipt retains every exact task identity",
+           receipt?["taskCount"] as? Int, 3)
+    expect("one reconciliation consumes one Board revision", d.revision, before + 1)
+    let canonical = d.item(target)
+    let canonicalLinks = canonical["links"] as? [[String: Any]] ?? []
+    expect("all historical task facts have one canonical accounting owner",
+           canonicalLinks.filter { $0["kind"] as? String == "task" }.count, 3)
+    expect("broker landing receipts are transferred rather than minted",
+           (canonical["landings"] as? [[String: Any]])?.count, 2)
+    expect("review findings follow their exact task provenance",
+           (canonical["findings"] as? [[String: Any]])?.count, 1)
+    expect("historical reconciliation moves facts without promoting lifecycle",
+           canonical["state"] as? String, "backlog")
+    expect("the selected item exposes one durable reconciliation receipt",
+           (canonical["historicalTaskBindingReconciliations"] as? [[String: Any]])?.count, 1)
+    for taskID in ["historical-implementation", "historical-review", "historical-correction"] {
+        let old = sourceItemIDs[taskID].map(d.item) ?? [:]
+        check("reconciled source \(taskID) keeps its inferred row and audit history",
+              !old.isEmpty && (old["history"] as? [[String: Any]])?.contains {
+                  $0["kind"] as? String == "historical_task_binding_reconciled"
+              } == true)
+        check("reconciled source \(taskID) no longer owns task accounting",
+              (old["links"] as? [[String: Any]])?.contains {
+                  $0["kind"] as? String == "task" && $0["targetId"] as? String == taskID
+              } == false)
+    }
+    let reloaded = ProjectBoardStore(url: d.file)
+    let reloadedTarget = ((reloaded.snapshot(item: target)["board"] as? [String: Any])?["item"]
+        as? [String: Any]) ?? [:]
+    expect("the reconciliation receipt survives restart",
+           (reloadedTarget["historicalTaskBindingReconciliations"] as? [[String: Any]])?.count, 1)
+    let future = reloaded.ingest(task: implementationTask, projectID: "project-1")
+    check("a repaired graph-bearing task remains ingestible after restart",
+          future.persisted && future.status != .unavailable)
+    let futureTarget = ((reloaded.snapshot(item: target)["board"] as? [String: Any])?["item"]
+        as? [String: Any]) ?? [:]
+    expect("future broker ingestion stays on the canonical Program node",
+           (futureTarget["links"] as? [[String: Any]])?.filter {
+               $0["kind"] as? String == "task"
+                   && $0["targetId"] as? String == "historical-implementation"
+           }.count, 1)
+    let futureSource = sourceItemIDs["historical-implementation"].map {
+        ((reloaded.snapshot(item: $0)["board"] as? [String: Any])?["item"] as? [String: Any]) ?? [:]
+    } ?? [:]
+    check("future ingestion preserves the inferred source audit row",
+          (futureSource["history"] as? [[String: Any]])?.contains {
+              $0["kind"] as? String == "historical_task_binding_reconciled"
+          } == true)
+    let replay = d.send("reconcile_historical_task_binding", fields, actor: "machine",
+                        trusted: true, expected: before, requestId: "historical-rebind")
+    expect("the exact command replays after its original CAS revision", replay.status, 200)
+    expect("replay does not create a second reconciliation", d.revision, before + 1)
+    expect("replay is explicit in the returned receipt",
+           (replay.body["historicalTaskBindingReceipt"] as? [String: Any])?["replay"] as? Bool,
+           true)
+
+    let refusal = BoardTestDriver(name: "historical-task-refusal-\(UUID().uuidString)")
+    refusal.createProject()
+    let refusedItem = refusal.create(type: "epic", title: "No authority")
+    let refusedRevision = refusal.revision
+    expect("ordinary Board authority cannot reconcile broker history",
+           refusal.send("reconcile_historical_task_binding", fields.merging([
+               "programItemId": refusedItem, "targetItemId": refusedItem,
+           ]) { _, new in new }, expected: refusedRevision).status, 403)
+    expect("authority refusal leaves the Board revision unchanged", refusal.revision, refusedRevision)
+
+    ProjectBoardHTTP.configureStoreForTesting(refusal.store)
+    defer { ProjectBoardHTTP.configureStoreForTesting(nil) }
+    var publicBody = fields
+    publicBody["operation"] = "reconcile_historical_task_binding"
+    publicBody["requestId"] = "public-reconciliation"
+    publicBody["expectedRevision"] = refusedRevision
+    let publicRequest = remoteRequest("POST", "/v1/board", body: String(data:
+        try! JSONSerialization.data(withJSONObject: publicBody), encoding: .utf8)!)
+    expect("the HTTP door requires the local machine credential before parsing facts",
+           ProjectBoardHTTP.route(publicRequest, machine: false,
+                                  permission: .allowed(device: "admin", caps: [.read, .send, .admin]))?.status,
+           403)
+}
+
 private func boardRootLandingStoreProof() {
     let file = FileManager.default.temporaryDirectory.appendingPathComponent("root-landing-store-\(UUID().uuidString).json")
     defer { try? FileManager.default.removeItem(at: file) }
@@ -602,6 +863,7 @@ private func boardSessionDeliveryProjectionProof() {
 
 func runProjectBoardIntegrationTests() {
 group("broker live transitions reach the Board before task completion") {
+    boardHistoricalTaskBindingReconciliationProof()
     boardSessionDeliveryProjectionProof()
     boardItemKeyPersistenceProof()
     boardRootLandingStoreProof()

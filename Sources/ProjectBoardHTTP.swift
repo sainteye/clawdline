@@ -208,6 +208,12 @@ enum ProjectBoardHTTP {
         if recordsReport && !machine {
             return .response(.error(403, "forbidden", "Only a local root may record a completion report."))
         }
+        let reconcilesHistoricalBinding = body["operation"] as? String
+            == "reconcile_historical_task_binding"
+        if reconcilesHistoricalBinding && !machine {
+            return .response(.error(403, "forbidden",
+                "Only the local machine may reconcile retained historical broker facts."))
+        }
         let commandActor = recordsEvidence ? "root_attestation"
             : (recordsReport ? "root_report" : actor)
         guard let requestID = body["requestId"] as? String, !requestID.isEmpty,
@@ -220,7 +226,7 @@ enum ProjectBoardHTTP {
             viewer: viewer, body: body,
             actor: commandActor,
             trusted: (acceptsArtifact && canAdmin) || (recordsEvidence && machine)
-                || (recordsReport && machine),
+                || (recordsReport && machine) || (reconcilesHistoricalBinding && machine),
             requestID: requestID, fingerprint: fingerprint,
             store: storeForTesting ?? ProjectBoardStore.shared))
     }

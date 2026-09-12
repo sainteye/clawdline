@@ -103,6 +103,21 @@ ingestion uses that same graph-node index and refuses an unknown Program node in
 back to a title or Program container. Program imports, gate decisions, binding receipts and
 document references do not reconcile lifecycle or change scope/evidence/landing/acceptance.
 
+`reconcile_historical_task_binding` is the bounded repair for a retained broker task that was
+admitted without `workItemId`. It is machine-token-only and pins the current Project, Program key,
+Plan id/version/graph, graph node, canonical child item, and every source item/task-link/graph
+identity. A landing pin may name only the exact id, source id and subject of an already retained
+broker landing; the command cannot supply new evidence. The Store validates the complete batch
+before one revision and one persist, transfers task-scoped links, spans, findings, verification and
+landing facts, and leaves each inferred source row plus a task-attributed audit history. Exact
+request replay returns the durable receipt without a second move. Missing, changed, duplicate,
+legacy-unidentifiable or cross-Project facts refuse closed. There is no title matching, registry
+rewrite, public landing producer, lifecycle authority or new verification authority in this repair.
+The durable receipt takes precedence over the obsolete inferred graph on later broker ingestion,
+so catch-up cannot move repaired facts back. A destination identity collision is accepted only
+when the complete stored fact is byte-equivalent; different link, span, evidence or history content
+refuses the whole batch before any source fact is removed.
+
 Intentional standard mode and an unavailable Board store are different states. On a typed Board
 unavailability refusal, a transport carrying both baseline Project readers may fall back to them
 with a visible warning; it must not change the persisted setting. A transport without those readers

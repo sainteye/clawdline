@@ -361,6 +361,9 @@ final class ProjectBoardStore {
         /// Optional keeps stores written before atomic Program planning loadable.
         var programPlan: ProjectBoardProgramPlan.Record? = nil
         var sessionDeliveries: [StoredSessionDelivery]? = nil
+        /// A machine-authorized repair receipt. It moves only retained broker facts and leaves
+        /// the inferred source item in place as provenance.
+        var historicalTaskBindingReconciliations: [StoredHistoricalTaskBindingReceipt]? = nil
     }
 
     private struct StoredProgramPlanReceipt: Codable {
@@ -392,6 +395,32 @@ final class ProjectBoardStore {
         var settledAt: Double
     }
 
+    private struct StoredHistoricalTaskBinding: Codable {
+        var taskId: String
+        var sourceItemId: String
+        var taskLinkId: String
+        var sourceGraphId: String?
+        var sourceGraphNodeId: String?
+        var landingEvidenceId: String?
+        var landingSourceId: String?
+        var landingSubject: String?
+    }
+
+    private struct StoredHistoricalTaskBindingReceipt: Codable {
+        var receiptId: String
+        var projectId: String
+        var programItemId: String
+        var programKey: String
+        var planId: String
+        var planVersion: Int
+        var programGraphId: String
+        var nodeId: String
+        var targetItemId: String
+        var bindings: [StoredHistoricalTaskBinding]
+        var boardRevision: Int
+        var reconciledAt: Double
+    }
+
     private struct StoredReceipt: Codable {
         var actor: String
         var requestId: String
@@ -403,6 +432,7 @@ final class ProjectBoardStore {
         var revision: Int
         var programPlanReceipt: StoredProgramPlanReceipt? = nil
         var programBindingReceipt: StoredProgramBindingReceipt? = nil
+        var historicalTaskBindingReceipt: StoredHistoricalTaskBindingReceipt? = nil
     }
 
     private struct StoredState: Codable {
@@ -540,6 +570,7 @@ final class ProjectBoardStore {
         var itemId: String?
         var programPlanReceipt: StoredProgramPlanReceipt? = nil
         var programBindingReceipt: StoredProgramBindingReceipt? = nil
+        var historicalTaskBindingReceipt: StoredHistoricalTaskBindingReceipt? = nil
     }
 
     private let url: URL
@@ -1091,6 +1122,10 @@ final class ProjectBoardStore {
             return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
                 message: "Delivery references are recorded only by the workflow producer"))
         }
+        if operation == "reconcile_historical_task_binding" && !trusted {
+            return Self.errorReply(BoardError(status: 403, code: "trusted_reconciliation_required",
+                message: "Historical broker facts may be reconciled only by the local machine authority"))
+        }
         if body["supplementRelationId"] != nil {
             guard workflowOrigin else {
                 return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
@@ -1139,7 +1174,7 @@ final class ProjectBoardStore {
                operation != "transition", operation != "create", operation != "record_report",
                operation != "end_span", operation != "record_output", operation != "record_session_delivery",
                !["document_reference", "plan_structure", "approve_program_gate",
-                 "program_binding"].contains(operation),
+                 "program_binding", "reconcile_historical_task_binding"].contains(operation),
                !["assign_session", "decide_session_assignment", "cancel_session_assignment"].contains(operation) {
                 reconcileLifecycle(around: itemID, actor: "board", timestamp: timestamp,
                                    draft: &draft)
@@ -1150,7 +1185,8 @@ final class ProjectBoardStore {
                 actor: actor, requestId: requestId, digest: digest, status: 200,
                 code: nil, message: nil, itemId: applied.itemId, revision: draft.revision,
                 programPlanReceipt: applied.programPlanReceipt,
-                programBindingReceipt: applied.programBindingReceipt),
+                programBindingReceipt: applied.programBindingReceipt,
+                historicalTaskBindingReceipt: applied.historicalTaskBindingReceipt),
                 to: &draft)
             if let persistenceError = persist(draft) {
                 return Self.errorReply(persistenceError)
@@ -1163,6 +1199,10 @@ final class ProjectBoardStore {
             }
             if let receipt = applied.programBindingReceipt {
                 answer["programBindingReceipt"] = programBindingReceiptObject(receipt, replay: false)
+            }
+            if let receipt = applied.historicalTaskBindingReceipt {
+                answer["historicalTaskBindingReceipt"] = historicalTaskBindingReceiptObject(
+                    receipt, replay: false)
             }
             return Reply(status: 200, body: answer)
         } catch let error as BoardError {
@@ -1272,6 +1312,24 @@ final class ProjectBoardStore {
             } else {
                 return AutomaticMutationOutcome(status: .refused, acceptedCount: 0,
                     droppedCount: 1, persisted: true, reason: "graph_node_binding_conflict")
+            }
+        }
+        // A completed historical repair is a stronger task-identity fact than the graph that
+        // originally caused the task to be inferred.  Consult it before the legacy graph fallback
+        // so a later broker replay cannot pull repaired facts back onto the inferred row.
+        if itemIndex == nil, let taskID {
+            let repairedOwners = draft.items.indices.filter { index in
+                draft.items[index].projectId == projectID
+                    && (draft.items[index].historicalTaskBindingReconciliations ?? []).contains {
+                        $0.bindings.contains { $0.taskId == taskID }
+                    }
+            }
+            if repairedOwners.count == 1 {
+                itemIndex = repairedOwners[0]
+            } else if repairedOwners.count > 1 {
+                return AutomaticMutationOutcome(status: .refused, acceptedCount: 0,
+                    droppedCount: 1, persisted: true,
+                    reason: "historical_binding_identity_ambiguous")
             }
         }
         if itemIndex == nil, let graphID,
@@ -2345,6 +2403,177 @@ final class ProjectBoardStore {
                   summary: "A process-bound workflow run was settled on an exact Program node.",
                   at: timestamp)
             return Applied(itemId: node.itemId, programBindingReceipt: receipt)
+
+        case "reconcile_historical_task_binding":
+            guard trusted else { throw Self.trustedEvidenceError() }
+            let projectID = try requiredText(body, "projectId", maximum: 200)
+            let programID = try requiredText(body, "programItemId", maximum: 200)
+            let targetID = try requiredText(body, "targetItemId", maximum: 200)
+            guard let programIndex = draft.items.firstIndex(where: { $0.id == programID }),
+                  let targetIndex = draft.items.firstIndex(where: { $0.id == targetID }),
+                  draft.items[programIndex].projectId == projectID,
+                  draft.items[targetIndex].projectId == projectID,
+                  draft.items[targetIndex].parentId == programID,
+                  let plan = draft.items[programIndex].programPlan,
+                  plan.programKey == body["programKey"] as? String,
+                  plan.planId == body["planId"] as? String,
+                  plan.graphId == body["programGraphId"] as? String,
+                  let planVersion = Self.exactInt(body["planVersion"]),
+                  planVersion == plan.planVersion else {
+                throw BoardError(status: 409, code: "historical_binding_program_conflict",
+                                 message: "The repair must pin the exact current Program and Plan revision")
+            }
+            let nodeID = try requiredText(body, "nodeId", maximum: 80)
+            guard plan.nodes.contains(where: {
+                $0.graphNodeId == nodeID && $0.itemId == targetID
+            }) else {
+                throw BoardError(status: 409, code: "historical_binding_node_conflict",
+                                 message: "The repair target is not the pinned Program node")
+            }
+            guard let rows = body["bindings"] as? [[String: Any]],
+                  !rows.isEmpty, rows.count <= 32 else {
+                throw BoardError(status: 400, code: "invalid_historical_bindings",
+                                 message: "bindings must contain between 1 and 32 exact task identities")
+            }
+            func nullableText(_ row: [String: Any], _ key: String, maximum: Int) throws -> String? {
+                guard let raw = row[key] else {
+                    throw BoardError(status: 400, code: "invalid_historical_binding_fields",
+                                     message: "Every nullable identity field must be present")
+                }
+                if raw is NSNull { return nil }
+                guard let value = Self.boundedText(raw, maximum: maximum) else {
+                    throw BoardError(status: 400, code: "invalid_historical_binding_identity",
+                                     message: "A historical binding identity is malformed")
+                }
+                return value
+            }
+            var bindings: [StoredHistoricalTaskBinding] = []
+            var taskIDs: Set<String> = []
+            var linkIDs: Set<String> = []
+            for row in rows {
+                guard Set(row.keys) == Set(["taskId", "sourceItemId", "taskLinkId",
+                      "sourceGraphId", "sourceGraphNodeId", "landing"]) else {
+                    throw BoardError(status: 400, code: "invalid_historical_binding_fields",
+                                     message: "A historical binding contains missing or unknown fields")
+                }
+                let taskID = try requiredText(row, "taskId", maximum: 200)
+                let sourceItemID = try requiredText(row, "sourceItemId", maximum: 200)
+                let taskLinkID = try requiredText(row, "taskLinkId", maximum: 200)
+                let sourceGraphID = try nullableText(row, "sourceGraphId", maximum: 200)
+                let sourceGraphNodeID = try nullableText(row, "sourceGraphNodeId", maximum: 200)
+                guard taskIDs.insert(taskID).inserted, linkIDs.insert(taskLinkID).inserted,
+                      sourceItemID != targetID, sourceItemID != programID,
+                      let sourceIndex = draft.items.firstIndex(where: { $0.id == sourceItemID }),
+                      draft.items[sourceIndex].projectId == projectID,
+                      draft.items[sourceIndex].inferredSourceKey != nil else {
+                    throw BoardError(status: 409, code: "historical_binding_source_conflict",
+                                     message: "Every task must name one retained inferred source item")
+                }
+                guard draft.items[sourceIndex].links.contains(where: {
+                    $0.id == taskLinkID && $0.kind == "task" && $0.targetId == taskID
+                        && $0.source == "broker" && $0.sourceTaskId == taskID
+                        && $0.graphId == sourceGraphID && $0.graphNodeId == sourceGraphNodeID
+                }) else {
+                    throw BoardError(status: 409, code: "historical_binding_task_conflict",
+                                     message: "The retained task link no longer matches the pinned identity")
+                }
+                let retainedLandings = draft.items[sourceIndex].evidence.filter {
+                    $0.kind == "landing" && $0.source == "broker"
+                        && $0.sourceId.hasPrefix("task:\(taskID):")
+                }
+                var landingEvidenceID: String?
+                var landingSourceID: String?
+                var landingSubject: String?
+                if row["landing"] is NSNull {
+                    guard retainedLandings.isEmpty else {
+                        throw BoardError(status: 409, code: "historical_binding_landing_conflict",
+                                         message: "A retained landing must be pinned rather than omitted")
+                    }
+                } else {
+                    guard let landing = row["landing"] as? [String: Any],
+                          Set(landing.keys) == Set(["evidenceId", "sourceId", "subject"]) else {
+                        throw BoardError(status: 400, code: "invalid_historical_binding_landing",
+                                         message: "landing must be null or one exact retained broker receipt")
+                    }
+                    landingEvidenceID = try requiredText(landing, "evidenceId", maximum: 200)
+                    landingSourceID = try requiredText(landing, "sourceId", maximum: 500)
+                    landingSubject = try requiredText(landing, "subject", maximum: 500)
+                    guard retainedLandings.count == 1,
+                          retainedLandings[0].id == landingEvidenceID,
+                          retainedLandings[0].sourceId == landingSourceID,
+                          retainedLandings[0].subject == landingSubject else {
+                        throw BoardError(status: 409, code: "historical_binding_landing_conflict",
+                                         message: "The retained broker landing no longer matches the pinned identity")
+                    }
+                }
+                bindings.append(StoredHistoricalTaskBinding(
+                    taskId: taskID, sourceItemId: sourceItemID, taskLinkId: taskLinkID,
+                    sourceGraphId: sourceGraphID, sourceGraphNodeId: sourceGraphNodeID,
+                    landingEvidenceId: landingEvidenceID, landingSourceId: landingSourceID,
+                    landingSubject: landingSubject))
+            }
+            // Validate the entire batch before moving anything, so a conflict cannot persist a
+            // half-reconciled roadmap. A destination fact with the same identity is safe only
+            // when every stored byte is identical; otherwise skipping it would discard retained
+            // provenance from the source row.
+            var plannedTarget = draft.items[targetIndex]
+            for binding in bindings {
+                guard let sourceIndex = draft.items.firstIndex(where: {
+                    $0.id == binding.sourceItemId
+                }), !taskFactTransferHasConflict(taskID: binding.taskId,
+                                                 source: draft.items[sourceIndex],
+                                                 plannedTarget: &plannedTarget) else {
+                    throw BoardError(status: 409, code: "historical_binding_fact_conflict",
+                                     message: "A destination fact conflicts with retained broker provenance")
+                }
+            }
+            for binding in bindings {
+                guard let sourceIndex = draft.items.firstIndex(where: {
+                    $0.id == binding.sourceItemId
+                }), let destinationIndex = draft.items.firstIndex(where: {
+                    $0.id == targetID
+                }), reattributeTaskFacts(taskID: binding.taskId, taskOwner: nil,
+                    sessionID: nil, worktreeTarget: nil, from: sourceIndex,
+                    to: destinationIndex, preserveSourceOwner: true, draft: &draft) else {
+                    throw BoardError(status: 409, code: "historical_binding_facts_missing",
+                                     message: "The pinned broker facts could not be transferred atomically")
+                }
+                if let sourceIndex = draft.items.firstIndex(where: {
+                    $0.id == binding.sourceItemId
+                }) {
+                    if draft.items[sourceIndex].ownerSourceTaskId == binding.taskId {
+                        // Keep the historical owner label on the provenance row, but detach the
+                        // task-owned marker so future ingestion cannot move that label away.
+                        draft.items[sourceIndex].ownerSourceTaskId = nil
+                    }
+                    appendHistory(item: &draft.items[sourceIndex], actor: actor,
+                        kind: "historical_task_binding_reconciled",
+                        summary: "Exact broker task facts were transferred to their canonical Program node.",
+                        at: timestamp, sourceTaskId: binding.taskId)
+                    draft.items[sourceIndex].updatedAt = timestamp
+                }
+                var taskItems = draft.taskItems ?? [:]
+                taskItems[Self.taskKey(projectID: projectID, taskID: binding.taskId)] = targetID
+                draft.taskItems = taskItems
+            }
+            let receipt = StoredHistoricalTaskBindingReceipt(
+                receiptId: Self.newID(), projectId: projectID, programItemId: programID,
+                programKey: plan.programKey, planId: plan.planId, planVersion: plan.planVersion,
+                programGraphId: plan.graphId, nodeId: nodeID, targetItemId: targetID,
+                bindings: bindings, boardRevision: draft.revision + 1, reconciledAt: timestamp)
+            var receipts = draft.items[targetIndex].historicalTaskBindingReconciliations ?? []
+            guard receipts.count < Self.maximumChildren else {
+                throw BoardError(status: 409, code: "historical_binding_capacity_reached",
+                                 message: "The historical reconciliation receipt capacity is exhausted")
+            }
+            receipts.append(receipt)
+            draft.items[targetIndex].historicalTaskBindingReconciliations = receipts
+            appendHistory(item: &draft.items[targetIndex], actor: actor,
+                kind: "historical_task_binding_reconciled",
+                summary: "Retained facts for \(bindings.count) historical tasks were reconciled by exact identity.",
+                at: timestamp)
+            draft.items[targetIndex].updatedAt = timestamp
+            return Applied(itemId: targetID, historicalTaskBindingReceipt: receipt)
 
         case "document_reference":
             let index = try itemIndex(body, draft: draft)
@@ -4039,8 +4268,10 @@ final class ProjectBoardStore {
                 return row
             },
             "history": retainedHistory.map {
-                ["id": $0.id, "at": $0.at, "actor": $0.actor,
-                 "kind": $0.kind, "summary": $0.summary]
+                var value: [String: Any] = ["id": $0.id, "at": $0.at, "actor": $0.actor,
+                                            "kind": $0.kind, "summary": $0.summary]
+                if let taskID = $0.sourceTaskId { value["sourceTaskId"] = taskID }
+                return value
             },
             "historyTruncated": (item.historyDroppedCount ?? 0) > 0
                 || retainedHistory.count < item.history.count,
@@ -4121,6 +4352,10 @@ final class ProjectBoardStore {
             answer["programPlan"] = ProjectBoardProgramPlan.projection(
                 plan, progressByItemID: progressByItemID)
         }
+        answer["historicalTaskBindingReconciliations"] =
+            (item.historicalTaskBindingReconciliations ?? []).map {
+                historicalTaskBindingReceiptObject($0, replay: false)
+            }
         let reports = item.completionReports ?? []
         answer["presentation"] = presentationObject(item)
         if item.type == "epic" {
@@ -4576,6 +4811,9 @@ final class ProjectBoardStore {
                                 "planVersion", "graphId", "nodeId", "runId", "sessionId",
                                 "provider", "processGeneration", "requestedClassification",
                                 "requestedItemId"],
+            "reconcile_historical_task_binding": ["projectId", "programItemId", "programKey",
+                                "planId", "planVersion", "programGraphId", "nodeId",
+                                "targetItemId", "bindings"],
             "link": ["itemId", "kind", "targetId", "label"],
             "obligation": ["itemId", "title", "owner", "blocking", "actorKind",
                            "requiredAction", "blockingScope", "supplementRelationId"],
@@ -5116,8 +5354,63 @@ final class ProjectBoardStore {
     /// Move every fact whose provenance names one broker task. This happens in the same draft as
     /// the explicit graph binding, so no persisted revision can expose duplicate accounting or a
     /// half-moved execution history.
+    private static func exactStoredMatch<T: Encodable>(_ left: T, _ right: T) -> Bool {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let leftData = try? encoder.encode(left),
+              let rightData = try? encoder.encode(right) else { return false }
+        return leftData == rightData
+    }
+
+    private func taskFactTransferHasConflict(taskID: String, source: StoredItem,
+                                             plannedTarget: inout StoredItem) -> Bool {
+        let evidencePrefix = "task:\(taskID):"
+        func owns(_ link: StoredLink) -> Bool {
+            link.sourceTaskId == taskID
+                || (link.kind == "task" && link.targetId == taskID && link.source == "broker")
+        }
+        for var link in source.links.filter(owns) {
+            link.sourceTaskId = taskID
+            let matches = plannedTarget.links.filter {
+                $0.kind == link.kind && $0.targetId == link.targetId && $0.source == link.source
+                    && ($0.sourceTaskId ?? taskID) == taskID
+            }
+            if matches.contains(where: { !Self.exactStoredMatch($0, link) }) { return true }
+            if matches.isEmpty { plannedTarget.links.append(link) }
+        }
+        for span in source.spans where span.source == "broker"
+            && span.sourceId == taskID {
+            let matches = plannedTarget.spans.filter {
+                $0.source == span.source && $0.sourceId == span.sourceId
+            }
+            if matches.contains(where: { !Self.exactStoredMatch($0, span) }) { return true }
+            if matches.isEmpty { plannedTarget.spans.append(span) }
+        }
+        for evidence in source.evidence where evidence.source == "broker"
+            && evidence.sourceId.hasPrefix(evidencePrefix) {
+            let matches = plannedTarget.evidence.filter {
+                $0.kind == evidence.kind && $0.sourceId == evidence.sourceId
+            }
+            if matches.contains(where: { !Self.exactStoredMatch($0, evidence) }) { return true }
+            if matches.isEmpty { plannedTarget.evidence.append(evidence) }
+        }
+        func owns(_ history: StoredHistory) -> Bool {
+            history.kind != "historical_task_binding_reconciled"
+                && (history.sourceTaskId == taskID
+                || (history.actor == "broker" && history.summary.contains(taskID))
+                )
+        }
+        for history in source.history.filter(owns) {
+            let matches = plannedTarget.history.filter { $0.id == history.id }
+            if matches.contains(where: { !Self.exactStoredMatch($0, history) }) { return true }
+            if matches.isEmpty { plannedTarget.history.append(history) }
+        }
+        return false
+    }
+
     private func reattributeTaskFacts(taskID: String, taskOwner: String?, sessionID: String?,
                                       worktreeTarget: String?, from: Int, to: Int,
+                                      preserveSourceOwner: Bool = false,
                                       draft: inout StoredState) -> Bool {
         guard from != to else { return false }
         let evidencePrefix = "task:\(taskID):"
@@ -5141,15 +5434,17 @@ final class ProjectBoardStore {
             $0.source == "broker" && $0.sourceId.hasPrefix(evidencePrefix)
         }
         func owns(_ history: StoredHistory) -> Bool {
-            history.sourceTaskId == taskID
-                || (history.actor == "broker" && history.summary.contains(taskID))
+            history.kind != "historical_task_binding_reconciled"
+                && (history.sourceTaskId == taskID
+                    || (history.actor == "broker" && history.summary.contains(taskID)))
         }
         let movedHistory = draft.items[from].history.filter(owns)
-        let ownsOwner = draft.items[from].ownerSourceTaskId == taskID
+        let ownsOwner = !preserveSourceOwner
+            && (draft.items[from].ownerSourceTaskId == taskID
             || (draft.items[from].ownerSourceTaskId == nil
                 && draft.items[from].inferredSourceKey != nil
                 && movedLinks.contains { $0.kind == "task" && $0.targetId == taskID }
-                && taskOwner != nil && draft.items[from].owner == taskOwner)
+                && taskOwner != nil && draft.items[from].owner == taskOwner))
         guard !movedLinks.isEmpty || !movedSpans.isEmpty || !movedEvidence.isEmpty
                 || !movedHistory.isEmpty || ownsOwner else { return false }
 
@@ -5237,12 +5532,17 @@ final class ProjectBoardStore {
     }
 
     private func retireInferredItems(_ ids: Set<String>, draft: inout StoredState) -> Int {
-        let referenced = Set(draft.items.flatMap { item -> [String] in
+        var referenced = Set(draft.items.flatMap { item -> [String] in
             var targets = item.links.filter {
                 Self.itemLinkKinds.contains($0.kind) && ids.contains($0.targetId)
             }.map(\.targetId)
             if let parentID = item.parentId, ids.contains(parentID) { targets.append(parentID) }
             return targets
+        })
+        referenced.formUnion(draft.items.flatMap { item in
+            (item.historicalTaskBindingReconciliations ?? []).flatMap { receipt in
+                receipt.bindings.map(\.sourceItemId)
+            }
         })
         let retired = Set(draft.items.filter {
             ids.contains($0.id) && !referenced.contains($0.id) && canRetireInferredItem($0)
@@ -5390,6 +5690,55 @@ final class ProjectBoardStore {
             && boundary.handoffId.flatMap { boundedText($0, maximum: 200) } != nil
     }
 
+    private static func validHistoricalTaskBindingReceipt(
+        _ receipt: StoredHistoricalTaskBindingReceipt, in state: StoredState
+    ) -> Bool {
+        guard UUID(uuidString: receipt.receiptId) != nil,
+              boundedText(receipt.projectId, maximum: 200) != nil,
+              boundedText(receipt.programItemId, maximum: 200) != nil,
+              boundedText(receipt.programKey, maximum: 64) != nil,
+              boundedText(receipt.planId, maximum: 80) != nil,
+              receipt.planVersion > 0,
+              boundedText(receipt.programGraphId, maximum: 200) != nil,
+              boundedText(receipt.nodeId, maximum: 80) != nil,
+              boundedText(receipt.targetItemId, maximum: 200) != nil,
+              receipt.boardRevision > 0, receipt.boardRevision <= state.revision,
+              receipt.reconciledAt.isFinite, receipt.reconciledAt >= 0,
+              !receipt.bindings.isEmpty, receipt.bindings.count <= 32,
+              Set(receipt.bindings.map(\.taskId)).count == receipt.bindings.count,
+              Set(receipt.bindings.map(\.taskLinkId)).count == receipt.bindings.count,
+              let program = state.items.first(where: { $0.id == receipt.programItemId }),
+              let target = state.items.first(where: { $0.id == receipt.targetItemId }),
+              program.projectId == receipt.projectId, target.projectId == receipt.projectId,
+              target.parentId == program.id else { return false }
+        return receipt.bindings.allSatisfy { binding in
+            guard boundedText(binding.taskId, maximum: 200) != nil,
+                  boundedText(binding.sourceItemId, maximum: 200) != nil,
+                  boundedText(binding.taskLinkId, maximum: 200) != nil,
+                  binding.sourceGraphId.map({ boundedText($0, maximum: 200) != nil }) ?? true,
+                  binding.sourceGraphNodeId.map({ boundedText($0, maximum: 200) != nil }) ?? true,
+                  state.items.contains(where: {
+                      $0.id == binding.sourceItemId && $0.projectId == receipt.projectId
+                          && $0.inferredSourceKey != nil
+                  }), target.links.contains(where: {
+                      $0.id == binding.taskLinkId && $0.kind == "task"
+                          && $0.targetId == binding.taskId && $0.source == "broker"
+                          && $0.sourceTaskId == binding.taskId
+                  }) else { return false }
+            let landingFields = [binding.landingEvidenceId, binding.landingSourceId,
+                                 binding.landingSubject]
+            guard landingFields.allSatisfy({ $0 == nil })
+                    || landingFields.allSatisfy({ $0 != nil }) else { return false }
+            guard let evidenceID = binding.landingEvidenceId,
+                  let sourceID = binding.landingSourceId,
+                  let subject = binding.landingSubject else { return true }
+            return target.evidence.contains(where: {
+                $0.id == evidenceID && $0.kind == "landing" && $0.source == "broker"
+                    && $0.sourceId == sourceID && $0.subject == subject
+            })
+        }
+    }
+
     private static func exactBool(_ raw: Any?) -> Bool? {
         guard let number = raw as? NSNumber,
               CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
@@ -5488,6 +5837,11 @@ final class ProjectBoardStore {
     }
 
     private static func validateStoredState(_ state: StoredState) throws {
+        let historicalTaskKeys = state.items.flatMap { item in
+            (item.historicalTaskBindingReconciliations ?? []).flatMap { receipt in
+                receipt.bindings.map { "\(item.projectId)\u{0}\($0.taskId)" }
+            }
+        }
         guard state.schemaVersion == schemaVersion, state.revision >= 0,
               state.projects.allSatisfy({ ($0.itemKeyHighWater ?? 0) >= 0 }),
               state.projects.count <= maximumProjects, state.items.count <= maximumItems,
@@ -5500,9 +5854,18 @@ final class ProjectBoardStore {
                       && $0.firstObservedAt.isFinite && $0.firstObservedAt >= 0
               }),
               state.updatedAt.isFinite, state.updatedAt >= 0,
+              Set(historicalTaskKeys).count == historicalTaskKeys.count,
               Set(state.projects.map(\.id)).count == state.projects.count,
               Set(state.items.map(\.id)).count == state.items.count,
               state.receipts.allSatisfy({ receipt in
+                  if let historical = receipt.historicalTaskBindingReceipt {
+                      guard receipt.status == 200, receipt.itemId == historical.targetItemId,
+                            validHistoricalTaskBindingReceipt(historical, in: state),
+                            state.items.first(where: { $0.id == historical.targetItemId })?
+                                .historicalTaskBindingReconciliations?.contains(where: {
+                                    $0.receiptId == historical.receiptId
+                                }) == true else { return false }
+                  }
                   guard let binding = receipt.programBindingReceipt else { return true }
                   guard receipt.status == 200, receipt.itemId == binding.effectiveItemId,
                         UUID(uuidString: binding.receiptId) != nil,
@@ -5561,6 +5924,10 @@ final class ProjectBoardStore {
                   item.obligations.count <= maximumChildren,
                   item.spans.count <= maximumChildren,
                   (item.sessionDeliveries ?? []).count <= maximumChildren,
+                  (item.historicalTaskBindingReconciliations ?? []).count <= maximumChildren,
+                  (item.historicalTaskBindingReconciliations ?? []).allSatisfy({
+                      validHistoricalTaskBindingReceipt($0, in: state)
+                  }),
                   Set((item.sessionDeliveries ?? []).map(\.eventId)).count == (item.sessionDeliveries ?? []).count,
                   (item.sessionDeliveries ?? []).allSatisfy({
                       boundedText($0.eventId, maximum: 200) != nil && $0.runId.hasPrefix("run-")
@@ -5775,6 +6142,10 @@ final class ProjectBoardStore {
             if let binding = receipt.programBindingReceipt {
                 answer["programBindingReceipt"] = programBindingReceiptObject(binding, replay: true)
             }
+            if let binding = receipt.historicalTaskBindingReceipt {
+                answer["historicalTaskBindingReceipt"] = historicalTaskBindingReceiptObject(
+                    binding, replay: true)
+            }
             return Reply(status: 200, body: answer)
         }
         return Self.errorReply(BoardError(status: receipt.status,
@@ -5804,6 +6175,34 @@ final class ProjectBoardStore {
          "resolution": receipt.resolution,
          "boardRevision": receipt.boardRevision, "settledAt": receipt.settledAt,
          "authority": "advisory_only", "replay": replay]
+    }
+
+    private func historicalTaskBindingReceiptObject(
+        _ receipt: StoredHistoricalTaskBindingReceipt, replay: Bool
+    ) -> [String: Any] {
+        ["receiptId": receipt.receiptId, "projectId": receipt.projectId,
+         "programItemId": receipt.programItemId, "programKey": receipt.programKey,
+         "planId": receipt.planId, "planVersion": receipt.planVersion,
+         "programGraphId": receipt.programGraphId, "nodeId": receipt.nodeId,
+         "targetItemId": receipt.targetItemId, "taskCount": receipt.bindings.count,
+         "bindings": receipt.bindings.map { binding in
+             var row: [String: Any] = ["taskId": binding.taskId,
+                                       "sourceItemId": binding.sourceItemId,
+                                       "taskLinkId": binding.taskLinkId]
+             row["sourceGraphId"] = binding.sourceGraphId ?? NSNull()
+             row["sourceGraphNodeId"] = binding.sourceGraphNodeId ?? NSNull()
+             if let evidenceID = binding.landingEvidenceId,
+                let sourceID = binding.landingSourceId,
+                let subject = binding.landingSubject {
+                 row["landing"] = ["evidenceId": evidenceID, "sourceId": sourceID,
+                                   "subject": subject]
+             } else {
+                 row["landing"] = NSNull()
+             }
+             return row
+         },
+         "boardRevision": receipt.boardRevision, "reconciledAt": receipt.reconciledAt,
+         "authority": "retained_broker_facts_only", "replay": replay]
     }
 
     private func appendReceipt(_ receipt: StoredReceipt, to draft: inout StoredState) {

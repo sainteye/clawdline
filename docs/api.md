@@ -36,6 +36,18 @@ key, Plan version, graph/node, effective item, run, Session/provider/process gen
 revision, settlement time and whether outbox settlement used a Store replay. Historical receipts
 survive successor Plans but cannot authorize a mismatched current node; the receipt is advisory and
 grants no dispatch authority.
+For broker tasks retained before a work-item binding existed, the local machine credential may
+send `reconcile_historical_task_binding` to `POST /v1/board`. The closed body pins the exact current
+Program/Plan/graph/node and canonical child plus 1–32 retained source item, task link and optional
+broker landing identities. Success moves only those already persisted task-scoped facts in one
+Board revision and returns `historicalTaskBindingReceipt`; the inferred source rows and their
+provenance remain readable. Request replay is idempotent. Paired devices are refused, and stale,
+missing or conflicting identity returns a typed 409 without a partial transfer. The command never
+creates verification, landing, lifecycle or task-registry authority.
+Later broker ingestion consults the durable repair before the legacy graph fallback. Existing
+destination facts are deduplicated only when their complete stored representation is identical;
+an identity match with different content returns `409 historical_binding_fact_conflict` and leaves
+the batch unmoved.
 The semantic workflow adds `program_binding` only inside `begin`, plus a closed `document`
 operation whose protocol `version` is currently 1. Both initially return durable-admission `202`
 and settle through the outbox; unsupported document versions and caller-supplied authority/process
