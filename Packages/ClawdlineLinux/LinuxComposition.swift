@@ -137,13 +137,29 @@ struct LinuxRuntimeConfiguration: Codable, Equatable {
 }
 
 struct LinuxDaemonConfiguration: Codable, Equatable {
-    static let schemaVersion = 1
+    static let schemaVersion = 2
+    static let readableSchemaVersions = 1...2
 
     let version: Int
     let listen: LinuxListenConfiguration
     let stateDirectory: String
+    /// Version 1 derived this beneath `stateDirectory`. Version 2 names the volatile path
+    /// explicitly so systemd's `RuntimeDirectory=` and durable `StateDirectory=` cannot be
+    /// accidentally collapsed into one lifecycle.
+    let runtimeDirectory: String?
     let secretFile: String
     let runtime: LinuxRuntimeConfiguration?
+
+    init(version: Int, listen: LinuxListenConfiguration, stateDirectory: String,
+         runtimeDirectory: String? = nil, secretFile: String,
+         runtime: LinuxRuntimeConfiguration? = nil) {
+        self.version = version
+        self.listen = listen
+        self.stateDirectory = stateDirectory
+        self.runtimeDirectory = runtimeDirectory
+        self.secretFile = secretFile
+        self.runtime = runtime
+    }
 
     static func load(from path: String) throws -> LinuxDaemonConfiguration {
         let bytes: Data
@@ -163,7 +179,7 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
             throw LinuxCompositionError.configuration("config root must be an object")
         }
         let requiredFields = Set(["version", "listen", "stateDirectory", "secretFile"])
-        let allowedFields = requiredFields.union(["runtime"])
+        let allowedFields = requiredFields.union(["runtime", "runtimeDirectory"])
         guard requiredFields.isSubset(of: Set(fields.keys)), Set(fields.keys).isSubset(of: allowedFields) else {
             throw LinuxCompositionError.configuration("config fields must be version, listen, stateDirectory, secretFile, and optional runtime")
         }
@@ -178,8 +194,11 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
         } catch {
             throw LinuxCompositionError.configuration("config values have invalid types")
         }
-        guard configuration.version == schemaVersion else {
+        guard readableSchemaVersions.contains(configuration.version) else {
             throw LinuxCompositionError.configuration("unsupported config version \(configuration.version)")
+        }
+        guard configuration.version == 1 || fields["runtimeDirectory"] != nil else {
+            throw LinuxCompositionError.configuration("config version 2 requires runtimeDirectory")
         }
         guard configuration.listen.host == "127.0.0.1" || configuration.listen.host == "::1" else {
             throw LinuxCompositionError.configuration("W3 accepts only a loopback listen host")
@@ -187,11 +206,17 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
         guard (1...65535).contains(configuration.listen.port) else {
             throw LinuxCompositionError.configuration("listen port must be between 1 and 65535")
         }
-        guard configuration.stateDirectory.hasPrefix("/"), configuration.secretFile.hasPrefix("/") else {
-            throw LinuxCompositionError.configuration("stateDirectory and secretFile must be absolute")
+        guard configuration.stateDirectory.hasPrefix("/"), configuration.secretFile.hasPrefix("/"),
+              configuration.runtimeDirectory.map({ $0.hasPrefix("/") }) ?? true else {
+            throw LinuxCompositionError.configuration("stateDirectory, runtimeDirectory, and secretFile must be absolute")
         }
-        guard configuration.stateDirectory != "/", configuration.secretFile != "/" else {
-            throw LinuxCompositionError.configuration("stateDirectory and secretFile may not be the filesystem root")
+        guard configuration.stateDirectory != "/", configuration.secretFile != "/",
+              configuration.runtimeDirectory != "/" else {
+            throw LinuxCompositionError.configuration("stateDirectory, runtimeDirectory, and secretFile may not be the filesystem root")
+        }
+        if let runtimeDirectory = configuration.runtimeDirectory,
+           ProjectRootPolicy.pathsOverlap(configuration.stateDirectory, runtimeDirectory) {
+            throw LinuxCompositionError.configuration("durable state and volatile runtime directories must not overlap")
         }
         if let runtime = configuration.runtime {
             guard let runtimeObject = fields["runtime"] as? [String: Any],
@@ -312,6 +337,23 @@ struct LinuxRuntimeIdentity: Codable, Equatable {
     let providers: [LinuxProviderCapability]
 }
 
+struct LinuxBinaryReleaseContract: Codable, Equatable {
+    let configurationSchemaVersion: Int
+    let configurationReadableMinimum: Int
+    let durableSchemaVersion: Int
+    let durableReadableMinimum: Int
+    let durableReadableMaximum: Int
+    let protocolIdentity: String
+
+    static let current = LinuxBinaryReleaseContract(
+        configurationSchemaVersion: LinuxDaemonConfiguration.schemaVersion,
+        configurationReadableMinimum: LinuxDaemonConfiguration.readableSchemaVersions.lowerBound,
+        durableSchemaVersion: LinuxDurableState.schemaVersion,
+        durableReadableMinimum: LinuxDurableState.minimumReadableSchemaVersion,
+        durableReadableMaximum: LinuxDurableState.maximumReadableSchemaVersion,
+        protocolIdentity: "clawdline-linux-local-health-v1")
+}
+
 struct LinuxProviderCapability: Codable, Equatable {
     let provider: String
     let executableConfigured: Bool
@@ -378,17 +420,23 @@ struct LinuxErrorEnvelope: Codable {
 
 enum LinuxCompositionCommand {
     case health
+    case releaseContract
+    case configuredHealth(String)
     case checkConfig(String)
     case run(String)
+    case daemon(String)
 
     static func parse(_ arguments: [String]) throws -> LinuxCompositionCommand {
         if arguments == ["health"] { return .health }
+        if arguments == ["release-contract"] { return .releaseContract }
         guard arguments.count == 3, arguments[1] == "--config" else {
-            throw LinuxCompositionError.badArguments("usage: ClawdlineLinux health | check-config --config /absolute/path | run --config /absolute/path")
+            throw LinuxCompositionError.badArguments("usage: ClawdlineLinux release-contract | health [--config /absolute/path] | check-config --config /absolute/path | run --config /absolute/path | daemon --config /absolute/path")
         }
         switch arguments[0] {
+        case "health": return .configuredHealth(arguments[2])
         case "check-config": return .checkConfig(arguments[2])
         case "run": return .run(arguments[2])
+        case "daemon": return .daemon(arguments[2])
         default: throw LinuxCompositionError.badArguments("unknown command \(arguments[0])")
         }
     }
@@ -399,6 +447,11 @@ enum LinuxComposition {
         switch try LinuxCompositionCommand.parse(arguments) {
         case .health:
             return try encode(LinuxRuntimeIdentity.current)
+        case .releaseContract:
+            return try encode(LinuxBinaryReleaseContract.current)
+        case .configuredHealth(let path):
+            let config = try LinuxDaemonConfiguration.load(from: path)
+            return try LinuxDaemonService.health(configuration: config)
         case .checkConfig(let path):
             let config = try LinuxDaemonConfiguration.load(from: path)
             let secret = try LinuxProtectedSecretFile.load(from: config.secretFile)
@@ -415,6 +468,17 @@ enum LinuxComposition {
                 return try encode(runtime.compositionReceipt)
             } catch let failure as LinuxRuntimeFailure {
                 throw LinuxCompositionError.runtime(failure)
+            }
+        case .daemon(let path):
+            let config = try LinuxDaemonConfiguration.load(from: path)
+            let secret = try LinuxProtectedSecretFile.load(from: config.secretFile)
+            do {
+                try LinuxDaemonService.run(configuration: config, authorization: secret)
+                throw LinuxCompositionError.internalFailure
+            } catch let failure as LinuxRuntimeFailure {
+                throw LinuxCompositionError.runtime(failure)
+            } catch let failure as LinuxDurableStateFailure {
+                throw LinuxCompositionError.configuration("\(failure.code): \(failure.message)")
             }
         }
     }

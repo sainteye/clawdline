@@ -1226,3 +1226,20 @@ A one-minute check for anyone merging onto a tree that has had an `enum`-style e
 list the moved symbols out of the new file, then grep your own diff for `Existing.<name>`
 against that list. Calibrate it first — a known-moved symbol must appear in the list, and
 the count of such calls in the post-extraction tree must be zero.
+
+## W4-2 Linux service and durable release boundary
+
+`LinuxDaemonLifecycle.swift` owns durable state/startup and protected health;
+`LinuxDaemonIngress.swift` is the sole serialized local effect-ledger owner; and
+`LinuxLocalIngressServer.swift` is its bounded loopback wire adapter. They consume W4-1's
+`LinuxProviderRuntime` and Application-owned scheduler/ports without a direct Core or Mac dependency.
+The exact SwiftPM source roster and import allowlist remain pinned by the architecture guard.
+
+Runtime effects and release effects remain separate owners. Swift persists a sealed command before
+effect, persists returned stages before response, runs restart classification once per daemon epoch,
+and makes corrupt/future/semantically contradictory state leave a durable recovery obligation.
+`tools/linux-package.sh` delegates descriptor-bound snapshot/extraction/root-state and journaled,
+fsynced link-pair changes to `linux-package-helper.py`; signed metadata is checked against the target
+binary's own release contract before daemon effect. The foreground tmux unit alone owns the socket
+runtime directory, while real PID-1 restart/reboot behavior remains an external Ubuntu gate. Cloud
+pairing/wire lifecycle, GCE policy and Mac restart policy do not cross this boundary.

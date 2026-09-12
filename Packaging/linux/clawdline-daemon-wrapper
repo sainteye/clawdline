@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+release_directory=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+# Both files are either archive-verified or derived from the signed provenance before the release
+# directory is promoted. Their values are restricted to a shell-safe alphabet by the packager.
+. "$release_directory/release.env"
+. "$release_directory/verified.env"
+export CLAWDLINE_PACKAGE_VERSION CLAWDLINE_BUILD_IDENTITY CLAWDLINE_SOURCE_COMMIT
+export CLAWDLINE_PACKAGE_DIGEST
+exec "$release_directory/bin/ClawdlineLinux" "$@"

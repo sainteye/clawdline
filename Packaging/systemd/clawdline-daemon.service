@@ -1,0 +1,45 @@
+[Unit]
+Description=Clawdline headless daemon
+Documentation=https://app.clawdline.com
+After=network-online.target clawdline-tmux.service
+Wants=network-online.target
+Requires=clawdline-tmux.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=clawdline
+Group=clawdline
+UMask=0077
+StateDirectory=clawdline
+StateDirectoryMode=0700
+ConfigurationDirectory=clawdline
+ConfigurationDirectoryMode=0750
+ExecStart=/opt/clawdline/current/bin/clawdline-daemon-wrapper daemon --config /etc/clawdline/daemon.json
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=30s
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+MemoryDenyWriteExecute=true
+ProtectProc=invisible
+ReadWritePaths=/var/lib/clawdline /var/lib/clawdline-projects /run/clawdline
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

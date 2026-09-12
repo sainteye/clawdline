@@ -1147,8 +1147,12 @@ TerminalCommandScheduler.swift'
 mac_expected_dependencies='ClawdlineApplication'
 linux_expected_members='LinuxComposition.swift
 LinuxContainedFileSystem.swift
+LinuxDaemonIngress.swift
+LinuxDaemonLifecycle.swift
+LinuxLocalIngressServer.swift
 LinuxProviderRuntime.swift
 LinuxRuntimeAdapters.swift
+LinuxSHA256.swift
 main.swift'
 linux_expected_dependencies='ClawdlineApplication'
 linux_tests_expected_members='LinuxRuntimeContractTests.swift'
@@ -1260,8 +1264,8 @@ linux_disallowed_imports=$(printf '%s\n' "$linux_imports" | grep -Ev '^(Foundati
 [ -z "$linux_disallowed_imports" ] \
   || architecture_guard_fail "ClawdlineLinux imports ${linux_disallowed_imports//$'\n'/, }; its closed import allowlist is Foundation and ClawdlineApplication"
 linux_application_imports=$(printf '%s\n' "$linux_imports" | grep -cx 'ClawdlineApplication' || true)
-[ "${linux_application_imports:-0}" -eq 4 ] \
-  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected once in each of its four runtime/composition source files"
+[ "${linux_application_imports:-0}" -eq 6 ] \
+  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected once in each of its six policy-consuming runtime/composition/lifecycle source files"
 swift_code_without_comments Packages/ClawdlineLinux/LinuxComposition.swift | grep -q 'HostCapabilityUnavailable\.code' \
   || architecture_guard_fail "ClawdlineLinux does not consume the Application target's typed capability-unavailable vocabulary; a declared edge alone is inert"
 

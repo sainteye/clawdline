@@ -35,13 +35,19 @@ for member in Packages/ClawdlineCore/CloudCanonicalJSON.swift Packages/Clawdline
   Packages/ClawdlineApplication/TerminalCommandScheduler.swift \
   Packages/ClawdlineLinux/LinuxComposition.swift \
   Packages/ClawdlineLinux/LinuxContainedFileSystem.swift \
+  Packages/ClawdlineLinux/LinuxDaemonIngress.swift \
+  Packages/ClawdlineLinux/LinuxDaemonLifecycle.swift \
+  Packages/ClawdlineLinux/LinuxLocalIngressServer.swift \
   Packages/ClawdlineLinux/LinuxProviderRuntime.swift \
-  Packages/ClawdlineLinux/LinuxRuntimeAdapters.swift Packages/ClawdlineLinux/main.swift \
+  Packages/ClawdlineLinux/LinuxRuntimeAdapters.swift Packages/ClawdlineLinux/LinuxSHA256.swift \
+  Packages/ClawdlineLinux/main.swift \
   Packages/ClawdlineLinuxTests/LinuxRuntimeContractTests.swift; do
   [ -e "$member" ] || fail "expected real target member missing: $member"
 done
 command -v tmux >/dev/null 2>&1 || fail "tmux is required for the real Linux provider lifecycle contract"
-command -v python3 >/dev/null 2>&1 || fail "python3 is required for the AF_UNIX containment fixture"
+command -v python3 >/dev/null 2>&1 || fail "python3 is required for the containment and package fixtures"
+command -v openssl >/dev/null 2>&1 || fail "openssl is required for signed package provenance"
+command -v systemd-analyze >/dev/null 2>&1 || fail "systemd-analyze is required for exact packaged-unit parsing"
 
 # A read-only bind mount (the safe default for running an unfamiliar script under Docker) cannot
 # hold SwiftPM's .build directory. The caller's own docker invocation should have already copied
@@ -54,9 +60,9 @@ rm -f .swift-core-application-linux-build.write-probe
 echo "swift-core-application-linux-build: os=$PRETTY_NAME arch=$(uname -m)"
 swift --version
 dpkg-query -W -f='swift-core-application-linux-build: package=${binary:Package} version=${Version}\n' \
-  tmux nodejs python3
+  tmux nodejs python3 openssl systemd
 echo "swift-core-application-linux-build: runtime fixtures"
-dpkg-query -W -f='${Package}=${Version}\n' tmux nodejs python3
+dpkg-query -W -f='${Package}=${Version}\n' tmux nodejs python3 openssl systemd
 
 build_log=$(mktemp)
 contract_root=""
@@ -208,4 +214,8 @@ if grep -q 'linux-contract-secret-sentinel' "$contract_stdout"; then
   fail "runtime composition receipt exposed secret content"
 fi
 
-echo "swift-core-application-linux-build: PASS — ClawdlineLinux graph compiled; focused Swift runtime and protected-startup contracts passed on Ubuntu 24.04 amd64"
+# W4-2's package/systemd slice is part of this same focused Linux acceptance: it uses only private
+# roots and a fake systemctl, so it cannot mutate the runner's host service.
+./tools/linux-systemd-contract.sh
+
+echo "swift-core-application-linux-build: PASS — ClawdlineLinux graph compiled; focused runtime, restart-state, package and protected-startup contracts passed on Ubuntu 24.04 amd64"

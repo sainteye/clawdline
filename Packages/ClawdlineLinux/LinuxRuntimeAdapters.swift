@@ -217,7 +217,8 @@ struct LinuxRuntimeLayout: Equatable {
     let uid: UInt32
     let gid: UInt32
 
-    static func prepare(stateDirectory: String, expectedUID: UInt32? = nil,
+    static func prepare(stateDirectory: String, runtimeDirectory: String? = nil,
+                        expectedUID: UInt32? = nil,
                         expectedGID: UInt32? = nil) throws -> LinuxRuntimeLayout {
         let uid = geteuid()
         let gid = getegid()
@@ -234,17 +235,23 @@ struct LinuxRuntimeLayout: Equatable {
             throw LinuxRuntimeFailure(code: .unsafePath,
                                       message: "The state directory must be one canonical absolute path.")
         }
+        let resolvedRuntime = runtimeDirectory ?? stateDirectory + "/runtime"
+        guard ProjectRootPolicy.isLexicallySafeAbsolute(resolvedRuntime),
+              runtimeDirectory == nil || !ProjectRootPolicy.pathsOverlap(stateDirectory, resolvedRuntime) else {
+            throw LinuxRuntimeFailure(code: .unsafePath,
+                                      message: "The explicit runtime directory must be canonical and separate from durable state.")
+        }
 
         _ = umask(0o077)
         let layout = LinuxRuntimeLayout(
             state: stateDirectory,
             home: stateDirectory + "/home",
-            runtime: stateDirectory + "/runtime",
+            runtime: resolvedRuntime,
             // Project bytes are deliberately a sibling of daemon control state. A root beneath
             // `state` would make an ancestor registration a direct path to secrets and sockets.
             projects: stateDirectory + "-projects",
             secrets: stateDirectory + "/secrets",
-            temporary: stateDirectory + "/tmp",
+            temporary: resolvedRuntime + "/tmp",
             uid: uid,
             gid: gid)
         for path in [layout.state, layout.home, layout.runtime, layout.projects,

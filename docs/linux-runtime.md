@@ -5,6 +5,14 @@ runtime boundary, not a daemon deployment: `ClawdlineLinux run` validates protec
 composes the adapters and prints a receipt. It does not listen, install a service, reconcile after
 restart, connect to Cloud, upgrade or roll back a package.
 
+W4-2 composes those effects into a separate candidate daemon/release boundary. Its loopback listener
+has one serialized ledger owner: the accepted request and recoverable sealed bytes are fsynced before
+an effect, returned lifecycle stages and response bytes are fsynced before response, and an unresolved
+post-effect boundary requires explicit matching recovery rather than blind replay. Startup
+classification runs once per daemon epoch; periodic terminal observation is a separate operation.
+Corrupt, future or semantically invalid state leaves a durable recovery obligation that ordinary
+ticks and restarts cannot reinterpret as a fresh empty installation.
+
 ## Service identity and directory layout
 
 The process refuses uid 0 and refuses a configured uid or gid that differs from its effective
@@ -110,6 +118,18 @@ have empty lifecycle support and typed `capability_unavailable` owned by the W4-
 authentication gate. iTerm remains Mac-only. W4-2 also owns systemd, listener, restart
 reconciliation, durable-record migrations and package upgrade/rollback; W4-3 owns pairing and Cloud
 lifecycle.
+
+The W4-2 package candidate snapshots caller key/provenance/signature/archive paths into a root-owned
+0700 directory through no-follow descriptors and uses only those immutable bytes for verification
+and exact extraction. Signed schema/protocol fields must equal the exact target binary's
+`release-contract` output before daemon effect. A descriptor-bound helper creates or verifies the
+service secret without following service-controlled ancestors/final links; release content,
+directories, selector links, transition journal and receipt are synced. Stale lock recovery verifies
+PID/start identity and journal phase, then restores a complete old pair or completes a committed new
+pair. Only foreground-supervised `clawdline-tmux.service` owns `/run/clawdline`; the daemon unit does
+not co-own/remove that socket directory. Exact parsing and private-root failure injection are local
+evidence, while real PID-1 socket/pane continuity, keeper crash restart and reboot enablement remain a
+typed Ubuntu VM gate.
 
 The pinned Ubuntu 24.04 amd64 job runs as a non-root service user, builds the real SwiftPM graph,
 executes the Linux XCTest target with real tmux and containment probes, and records installed tool

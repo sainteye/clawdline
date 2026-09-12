@@ -371,7 +371,47 @@ focused evidence is not the release-train exact full.
 Current Linux-only residuals are explicit: the final procfs-to-`kill(-pgid, …)` gap remains without
 pidfd group signalling; Landlock/seccomp support is pinned to Ubuntu amd64; AF_UNIX denial may refuse
 provider extensions that require local sockets; apt package versions are recorded but not pinned;
-and real Claude/Codex authentication remains W4-2-owned rather than inferred from a shell fixture.
+and real Claude/Codex authentication still needs an external controlled credential receipt rather
+than being inferred from a shell fixture.
+
+**W4-2 service, durable restart and package candidate (implementation status, 2026-09-12).**
+`ClawdlineLinux daemon` composes the W4-1 ports as the dedicated non-root service, completes one
+startup reconciliation before opening its authenticated bounded loopback listener, and routes all
+create/send/observe/close effects through one serialized durable owner. `clawdline-tmux.service`
+alone owns `/run/clawdline`, runs tmux in the foreground as systemd's real MainPID, and is not
+`PartOf` the daemon; package installation enables both units idempotently. Exact PID-1 restart,
+crash-supervision and reboot behavior still needs the disposable Ubuntu external gate.
+Configuration schema 2 names `/var/lib/clawdline` and `/run/clawdline` separately while retaining a
+read path for schema 1.
+
+The durable writer uses a same-directory 0600 create, complete write, file `fsync`, atomic rename and
+directory `fsync`. Schema 1 records migrate additively without lowering their reader floor. Corrupt,
+unreadable, future or semantically contradictory records first create a durable recovery obligation;
+quarantine, a later tick and process restart therefore cannot turn their missing canonical pathname
+into authoritative empty state. Explicit operator recovery is a separate named action.
+A complete tmux inventory can mark a known pane present or absent; an incomplete inventory marks it
+unknown. Terminal task results and acknowledged command evidence remain terminal, queued commands
+remain queued only with a recoverable sealed payload, accepted-only work becomes interrupted, and
+an executed/delivered effect without terminal evidence becomes unknown rather than successful.
+
+`tools/linux-package.sh` builds an amd64 versioned archive with an exact internal file manifest,
+source/build/config/protocol/durable-schema identity, archive SHA-256, pinned-public-key identity and
+detached RSA/SHA-256 signature. Build metadata is derived from the binary's machine-readable
+contract. Install snapshots all four caller paths through no-follow descriptors into root-owned
+0700 staging, then uses only those bytes for verify/extract. Exact member type/mode/owner/topology,
+existing release payloads and target binary identity are revalidated. Root writes beneath the
+service-owned state directory use descriptor-bound no-follow operations. Release files/directories,
+`current`/`previous`, journal and receipt are fsynced; stale owner/phase recovery selects a complete
+old or new pair. Failed health restores the old image while retaining the failed artifact. Image
+rollback never rewinds state. Private-root/fake-systemctl tests do not mutate host systemd.
+
+The health record distinguishes `serviceReady` (authoritative startup reconciliation plus exact
+release/schema identity) from provider `ready`. Without a real Claude/Codex credential exercise,
+provider rows remain unauthenticated/unusable and readiness stays
+`w4_provider_authentication_not_proven`. Local Docker supplies native Ubuntu/arm64 source/package
+checks; the pinned Ubuntu/amd64 attempt remains QEMU-inconclusive before product execution. Neither
+surface supplies systemd-as-PID-1 production containment or real-provider authentication; those are
+typed external VM/auth boundaries, not fixture-promoted evidence.
 
 Estimated effort: 2–3 engineer-weeks.
 
@@ -382,10 +422,14 @@ Goal: support the complete local managed-session lifecycle on Ubuntu.
 Deliverables:
 
 - Linux `tmux` adapter and process ownership checks. **Implemented by W4-1.**
-- Runtime/state directory layout and crash-safe contained writes. **Implemented by W4-1; durable
-  record migrations remain W4-2.**
-- `systemd` unit, install/upgrade/rollback scripts and health endpoint.
-- Startup reconciliation for terminals, task records, queues and in-flight commands.
+- Runtime/state directory layout and crash-safe contained writes. **Implemented by W4-1; additive
+  durable record migration and quarantine are implemented by the W4-2 candidate.**
+- `systemd` unit, install/upgrade/rollback scripts and exact health endpoint. **Source and
+  private-root behavior are implemented by the W4-2 candidate; a PID-1 VM drill remains external
+  acceptance.**
+- Startup reconciliation and the local serialized terminal/task/queue/command ingress ledger.
+  **Implemented by the W4-2 candidate with consecutive-tick, restart and effect-boundary injection;
+  real PID-1 socket/pane continuity remains the gate below.**
 - Typed terminal capacity/backpressure behavior and failure-injection tests. **Implemented by
   W4-1; transport/Cloud backpressure remains with its owning later slice.**
 

@@ -50,6 +50,20 @@ restore 後避免舊 epoch／sequence 重用，必須和 release/migration ident
 receipt 猜成 success。restore 不得讓舊 receipt、key identity、sequence 或 revocation epoch
 倒退。Mac-only capability 需明確 typed rejection，不能靜默在另一台 Mac 執行。
 
+W4-2 candidate 將這條界線落在兩個沒有 `PartOf` 關係的 unit：只有 foreground-supervised
+`clawdline-tmux.service` 擁有 `/run/clawdline` 生命週期，daemon restart 不刪 tmux socket。
+caller-pinned public key、provenance、signature、archive 先由 descriptor/no-follow 複製到
+root-owned 0700 immutable staging；驗簽、digest、精確解壓全程只使用該組 bytes，且 signed
+schema/protocol 必須等於 target binary 自報 contract。這證明被安裝 bytes 的來源／完整性，
+不證明程式無漏洞。release image 回復不觸碰 `/var/lib/clawdline`；舊 image 讀不了目前 schema
+時 fail closed。壞、未知或語意矛盾 state 先留下 fsynced recovery obligation 再 quarantine，
+普通 tick/restart 不能把缺少 canonical file 誤升為空 store。
+
+exact unit parse、package 與 private-root failure injection 不等於 production systemd-as-PID-1 或 GCE
+隔離實測；本機亦沒有可交付的 Claude/Codex 真 credential receipt。因此 service health 可對
+release/schema/reconciliation 成為 `serviceReady`，provider `ready` 仍維持 false 和
+`w4_provider_authentication_not_proven`，不把 shell fixture 升格為外部 auth 證據。
+
 ## 還不能下的結論與責任
 
 - **W0-E／W0-D**：authority cutover、shared vectors、API／Relay／PWA consumer 與 release identity 尚待交付。W0-A 沒有批准 revocation fail-open／fail-closed policy 的變更。

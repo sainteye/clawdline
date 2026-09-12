@@ -20,6 +20,52 @@ private final class LockedStrings: @unchecked Sendable {
     }
 }
 
+private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
+    var calls: [String] = []
+    var sessionID = "%durable"
+
+    private func receipt(commandID: String, operation: TerminalEffectOperation,
+                         channel: String, sessionID: String?, observed: Bool) throws
+        -> LinuxLifecycleReceipt {
+        var progress = TerminalEffectProgress(commandID: commandID,
+                                              operation: operation, channel: channel)
+        try progress.advance(to: .executed)
+        try progress.advance(to: .delivered)
+        if observed { try progress.advance(to: .observed) }
+        return LinuxLifecycleReceipt(progress: progress, sessionID: sessionID,
+                                     tty: "/dev/pts/42", attachCommand: nil,
+                                     output: operation == .observe ? "screen" : nil)
+    }
+
+    func create(commandID: String, projectRoot: String, assistant: Assistant,
+                model: String?, reasoningEffort: ReasoningEffort?, permission: Permission,
+                additionalDirectory: String?, resumeSessionID: String?) throws
+        -> LinuxLifecycleReceipt {
+        calls.append("create:\(commandID)")
+        return try receipt(commandID: commandID, operation: .create,
+                           channel: projectRoot, sessionID: sessionID, observed: true)
+    }
+
+    func send(commandID: String, sessionID: String, text: String) throws
+        -> LinuxLifecycleReceipt {
+        calls.append("send:\(commandID):\(text)")
+        return try receipt(commandID: commandID, operation: .send,
+                           channel: sessionID, sessionID: sessionID, observed: false)
+    }
+
+    func observe(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt {
+        calls.append("observe:\(commandID)")
+        return try receipt(commandID: commandID, operation: .observe,
+                           channel: sessionID, sessionID: sessionID, observed: true)
+    }
+
+    func close(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt {
+        calls.append("close:\(commandID)")
+        return try receipt(commandID: commandID, operation: .close,
+                           channel: sessionID, sessionID: sessionID, observed: true)
+    }
+}
+
 final class LinuxRuntimeContractTests: XCTestCase {
     func testProjectRootPolicyRejectsTraversalAndSymlink() throws {
         let scratch = canonicalTemporaryDirectory()
@@ -447,6 +493,350 @@ final class LinuxRuntimeContractTests: XCTestCase {
     }
     #endif
 
+    func testW42StartupReconciliationPreservesTerminalQueueAndAcknowledgedTruth() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-reconcile-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        let sealed = Data("recoverable-command".utf8)
+        try store.save(LinuxDurableState(
+            terminals: [
+                .init(id: "%present", taskID: "working", state: .present,
+                      lastObservedAt: nil, evidenceDigest: nil),
+                .init(id: "%gone", taskID: "done", state: .present,
+                      lastObservedAt: nil, evidenceDigest: "terminal-evidence"),
+            ],
+            tasks: [
+                .init(id: "done", terminalID: "%gone", state: .complete,
+                      resultDigest: "result-digest", acknowledgedEvidence: ["ack-digest"]),
+                .init(id: "working", terminalID: "%present", state: .working,
+                      resultDigest: nil, acknowledgedEvidence: []),
+                .init(id: "queued-safe", terminalID: nil, state: .queued,
+                      resultDigest: nil, acknowledgedEvidence: []),
+                .init(id: "queued-unsafe", terminalID: nil, state: .queued,
+                      resultDigest: nil, acknowledgedEvidence: []),
+            ],
+            queue: [
+                .init(id: "q1", taskID: "queued-safe", commandID: "c-safe",
+                      state: .queued, payloadDigest: LinuxSHA256.hex(sealed),
+                      sealedPayloadRecoverable: true,
+                      sealedPayloadBase64: sealed.base64EncodedString()),
+                .init(id: "q2", taskID: "queued-unsafe", commandID: "c-unsafe",
+                      state: .queued, payloadDigest: "missing-seal",
+                      sealedPayloadRecoverable: false),
+            ],
+            commands: [
+                .init(id: "ack", taskID: "done", terminalID: "%gone",
+                      operation: "send", stage: .acknowledged, outcome: .succeeded,
+                      evidenceDigest: "ack-digest", acknowledgedAt: "2026-09-12T00:00:00Z"),
+                .init(id: "accepted", taskID: "queued-safe", terminalID: nil,
+                      operation: "send", stage: .accepted, outcome: .pending,
+                      evidenceDigest: nil, acknowledgedAt: nil),
+                .init(id: "delivered", taskID: "working", terminalID: "%present",
+                      operation: "send", stage: .delivered, outcome: .pending,
+                      evidenceDigest: nil, acknowledgedAt: nil),
+                .init(id: "c-safe", taskID: "queued-safe", terminalID: nil,
+                      operation: "send", stage: .accepted, outcome: .pending,
+                      evidenceDigest: nil, acknowledgedAt: nil),
+                .init(id: "c-unsafe", taskID: "queued-unsafe", terminalID: nil,
+                      operation: "send", stage: .accepted, outcome: .pending,
+                      evidenceDigest: nil, acknowledgedAt: nil),
+            ]))
+
+        let receipt = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete(["%present", "%discovered"]),
+            now: "2026-09-12T01:00:00Z")
+        XCTAssertTrue(receipt.authoritative)
+        XCTAssertEqual(receipt.status, "complete")
+        XCTAssertEqual(receipt.terminalPresent, 2)
+        XCTAssertEqual(receipt.terminalMissing, 1)
+        XCTAssertEqual(receipt.taskTerminal, 1)
+        XCTAssertEqual(receipt.taskReconciling, 1)
+        XCTAssertEqual(receipt.taskUnknown, 1)
+        XCTAssertEqual(receipt.queueRecoverable, 1)
+        XCTAssertEqual(receipt.queueUnknown, 1)
+        XCTAssertEqual(receipt.commandSucceeded, 1)
+        XCTAssertEqual(receipt.commandInterrupted, 3)
+        XCTAssertEqual(receipt.commandUnknown, 1)
+
+        let persisted = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(persisted.tasks.first { $0.id == "done" }?.resultDigest,
+                       "result-digest")
+        XCTAssertEqual(persisted.tasks.first { $0.id == "done" }?.acknowledgedEvidence,
+                       ["ack-digest"])
+        XCTAssertEqual(persisted.commands.first { $0.id == "ack" }?.outcome, .succeeded)
+        XCTAssertEqual(persisted.commands.first { $0.id == "accepted" }?.outcome, .interrupted)
+        XCTAssertEqual(persisted.commands.first { $0.id == "delivered" }?.outcome, .unknown)
+    }
+
+    func testW42IncompleteInventoryAndPartialStateNeverInventAbsenceOrEmptyAuthority() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-partial-state-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        try store.save(LinuxDurableState(terminals: [
+            .init(id: "%1", taskID: nil, state: .present,
+                  lastObservedAt: nil, evidenceDigest: nil),
+        ]))
+        let incomplete = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .incomplete("tmux timeout"),
+            now: "2026-09-12T02:00:00Z")
+        XCTAssertEqual(incomplete.status, "inventory_incomplete")
+        XCTAssertEqual(incomplete.terminalUnknown, 1)
+        XCTAssertEqual(incomplete.terminalMissing, 0)
+
+        try Data("{\"schemaVersion\":2,\"terminals\":[".utf8)
+            .write(to: URL(fileURLWithPath: store.statePath), options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: store.statePath)
+        let corrupt = store.load()
+        XCTAssertFalse(corrupt.authoritative)
+        XCTAssertNil(corrupt.state)
+        XCTAssertEqual(corrupt.disposition, .quarantined)
+        let preserved = try XCTUnwrap(corrupt.preservedOriginal)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: preserved))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.statePath))
+        let secondTick = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete([]), now: "2026-09-12T02:00:10Z")
+        XCTAssertFalse(secondTick.authoritative)
+        XCTAssertEqual(secondTick.stateDisposition, .recoveryRequired)
+        let restartedStore = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        XCTAssertEqual(restartedStore.load().disposition, .recoveryRequired)
+        XCTAssertThrowsError(try restartedStore.authorizeEmptyRecovery(authorization: "implicit"))
+        try restartedStore.authorizeEmptyRecovery(
+            authorization: LinuxDurableStateStore.recoveryAuthorization)
+        XCTAssertEqual(restartedStore.load().disposition, .initialized)
+
+        // Simulate power loss after the recovery obligation's file+directory fsync but before
+        // the canonical corrupt inode is renamed into quarantine. A fresh process must prefer
+        // the obligation over ENOENT/initialization logic and preserve the canonical bytes.
+        let crashBytes = Data("still-corrupt-after-marker".utf8)
+        try crashBytes.write(to: URL(fileURLWithPath: store.statePath), options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: store.statePath)
+        let planned = store.quarantineDirectory + "/runtime-state.planned-crash.json"
+        let obligation = """
+        {"schemaVersion":1,"preservedOriginal":"\(planned)","reason":"simulated marker-before-rename power loss"}
+        """
+        try Data(obligation.utf8).write(
+            to: URL(fileURLWithPath: store.recoveryObligationPath), options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: store.recoveryObligationPath)
+        let afterPowerLoss = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        let blocked = afterPowerLoss.load()
+        XCTAssertEqual(blocked.disposition, .recoveryRequired)
+        XCTAssertEqual(blocked.preservedOriginal, store.statePath)
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: store.statePath)), crashBytes)
+        try afterPowerLoss.authorizeEmptyRecovery(
+            authorization: LinuxDurableStateStore.recoveryAuthorization)
+        XCTAssertEqual(afterPowerLoss.load().disposition, .initialized)
+    }
+
+    func testW42UnknownStateVersionIsQuarantinedAndVersionOneMigratesAdditively() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-state-migration-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        let legacy = """
+        {"schemaVersion":1,"minimumReaderVersion":2,"terminals":[{"id":"%legacy","taskID":"legacy-task","state":"present","lastObservedAt":null,"evidenceDigest":"old-evidence"}],"tasks":[{"id":"legacy-task","terminalID":"%legacy","state":"complete","resultDigest":"old-result"},{"id":"queued","terminalID":null,"state":"queued","resultDigest":null}],"queue":[{"id":"legacy-queue","taskID":"queued","commandID":"legacy-command","payloadDigest":"old-payload"}],"commands":[{"id":"legacy-command","taskID":"queued","terminalID":null,"operation":"send","stage":"accepted","outcome":"pending","evidenceDigest":null,"acknowledgedAt":null}]}
+        """
+        try Data(legacy.utf8).write(to: URL(fileURLWithPath: store.statePath))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: store.statePath)
+        let migrated = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete(["%legacy"]),
+            now: "2026-09-12T03:00:00Z")
+        XCTAssertEqual(migrated.stateDisposition, .migrated)
+        let persisted = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(persisted.schemaVersion, LinuxDurableState.schemaVersion)
+        XCTAssertEqual(persisted.minimumReaderVersion, 2)
+        XCTAssertEqual(persisted.terminals.first?.evidenceDigest, "old-evidence")
+        XCTAssertEqual(persisted.tasks.first?.resultDigest, "old-result")
+        XCTAssertEqual(persisted.tasks.first?.acknowledgedEvidence, [])
+        XCTAssertEqual(persisted.queue.first?.state, .unknown)
+        XCTAssertFalse(persisted.queue.first?.sealedPayloadRecoverable ?? true)
+
+        let future = "{\"schemaVersion\":999,\"terminals\":[],\"tasks\":[],\"queue\":[],\"commands\":[]}"
+        try Data(future.utf8).write(to: URL(fileURLWithPath: store.statePath), options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: store.statePath)
+        let refused = store.load()
+        XCTAssertFalse(refused.authoritative)
+        XCTAssertEqual(refused.disposition, .quarantined)
+        XCTAssertTrue(refused.reason?.contains("schema 999") == true)
+        XCTAssertEqual(store.load().disposition, .recoveryRequired)
+    }
+
+    func testW42SemanticValidationRejectsDuplicateDanglingAndContradictoryRecords() throws {
+        let cases = [
+            #"{"schemaVersion":2,"minimumReaderVersion":1,"daemonEpoch":0,"terminals":[{"id":"%1","taskID":null,"state":"present"},{"id":"%1","taskID":null,"state":"missing"}],"tasks":[],"queue":[],"commands":[]}"#,
+            #"{"schemaVersion":2,"minimumReaderVersion":1,"daemonEpoch":0,"terminals":[],"tasks":[{"id":"task","terminalID":"%missing","state":"working","resultDigest":null,"acknowledgedEvidence":[]}],"queue":[],"commands":[]}"#,
+            #"{"schemaVersion":2,"minimumReaderVersion":1,"daemonEpoch":0,"terminals":[],"tasks":[{"id":"task","terminalID":null,"state":"working","resultDigest":null,"acknowledgedEvidence":[]}],"queue":[],"commands":[{"id":"command","taskID":"task","terminalID":null,"operation":"send","stage":"accepted","outcome":"succeeded","evidenceDigest":"evidence","acknowledgedAt":null}]}"#,
+            #"{"schemaVersion":2,"minimumReaderVersion":1,"daemonEpoch":0,"terminals":[],"tasks":[{"id":"task","terminalID":null,"state":"working","resultDigest":null,"acknowledgedEvidence":[]}],"queue":[],"commands":[{"id":"command","taskID":"task","terminalID":null,"operation":"send","stage":"acknowledged","outcome":"pending","evidenceDigest":null,"acknowledgedAt":"now"}]}"#,
+            #"{"schemaVersion":2,"minimumReaderVersion":1,"daemonEpoch":0,"terminals":[],"tasks":[{"id":"task","terminalID":null,"state":"queued","resultDigest":null,"acknowledgedEvidence":[]}],"queue":[{"id":"queue","taskID":"task","commandID":"command","state":"queued","payloadDigest":"wrong","sealedPayloadRecoverable":true,"sealedPayloadBase64":"c2VhbGVk"}],"commands":[{"id":"command","taskID":"task","terminalID":null,"operation":"send","stage":"accepted","outcome":"pending","evidenceDigest":null,"acknowledgedAt":null}]}"#,
+        ]
+        for source in cases {
+            let scratch = canonicalTemporaryDirectory()
+                .appendingPathComponent("clawdline-invalid-state-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: scratch) }
+            try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+            try Data(source.utf8).write(to: URL(fileURLWithPath: store.statePath))
+            try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                                  ofItemAtPath: store.statePath)
+            let refused = store.load()
+            XCTAssertFalse(refused.authoritative)
+            XCTAssertEqual(refused.disposition, .quarantined)
+            XCTAssertEqual(store.load().disposition, .recoveryRequired)
+        }
+        XCTAssertEqual(LinuxSHA256.hex(Data("abc".utf8)),
+                       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    }
+
+    func testW42PeriodicObservationDoesNotReplayStartupTransition() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-epoch-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        try store.save(LinuxDurableState())
+        let startup = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete([]), now: "2026-09-12T04:00:00Z")
+        XCTAssertEqual(startup.daemonEpoch, 1)
+        var live = try XCTUnwrap(store.load().state)
+        live.tasks.append(.init(id: "live", terminalID: nil, state: .working,
+                                resultDigest: nil, acknowledgedEvidence: []))
+        live.commands.append(.init(id: "live-command", taskID: "live", terminalID: nil,
+                                   operation: "send", stage: .accepted, outcome: .pending,
+                                   evidenceDigest: nil, acknowledgedAt: nil))
+        try store.save(live)
+
+        let tick = try LinuxStartupReconciler.observe(
+            store: store, inventory: .complete([]), now: "2026-09-12T04:00:10Z")
+        XCTAssertEqual(tick.daemonEpoch, 1)
+        let afterTick = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(afterTick.tasks.first?.state, .working)
+        XCTAssertEqual(afterTick.commands.first?.outcome, .pending)
+
+        let restarted = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete([]), now: "2026-09-12T04:01:00Z")
+        XCTAssertEqual(restarted.daemonEpoch, 2)
+        let afterRestart = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(afterRestart.tasks.first?.state, .reconciling)
+        XCTAssertEqual(afterRestart.commands.first?.outcome, .interrupted)
+    }
+
+    func testW42SerializedIngressSealsBeforeEffectAndPersistsBeforeResponse() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-ledger-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        let runtime = FakeLinuxLifecycleRuntime()
+        let startup = try LinuxStartupReconciler.reconcile(store: store, inventory: .complete([]))
+        let owner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+        owner.completeStartup(startup)
+        let create = LinuxIngressRequest(
+            operation: .create, commandID: "create", taskID: "task",
+            projectRoot: "/srv/project", assistant: .claude)
+        _ = try owner.perform(create)
+        XCTAssertEqual(runtime.calls, ["create:create"])
+
+        var injected = false
+        owner.faultInjection = { point in
+            if point == .afterEffectBeforeReceipt, !injected {
+                injected = true
+                throw LinuxIngressFaultPoint.afterEffectBeforeReceipt
+            }
+        }
+        let send = LinuxIngressRequest(
+            operation: .send, commandID: "send", taskID: "task",
+            sessionID: runtime.sessionID, text: "continue")
+        XCTAssertThrowsError(try owner.perform(send))
+        var interrupted = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(interrupted.commands.first { $0.id == "send" }?.stage, .accepted)
+        XCTAssertEqual(interrupted.queue.first { $0.commandID == "send" }?.state, .queued)
+
+        let restart = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete([runtime.sessionID]))
+        XCTAssertEqual(restart.daemonEpoch, 2)
+        interrupted = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(interrupted.commands.first { $0.id == "send" }?.outcome, .interrupted)
+        let restartedOwner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+        restartedOwner.completeStartup(restart)
+        XCTAssertThrowsError(try restartedOwner.perform(send))
+        let recoveredSend = LinuxIngressRequest(
+            operation: .send, commandID: "send", taskID: "task",
+            sessionID: runtime.sessionID, text: "continue", authorizeRecovery: true)
+        _ = try restartedOwner.perform(recoveredSend)
+        XCTAssertEqual(runtime.calls.filter { $0.hasPrefix("send:") }.count, 2)
+
+        var responseFault = false
+        restartedOwner.faultInjection = { point in
+            if point == .afterReceiptBeforeResponse, !responseFault {
+                responseFault = true
+                throw LinuxIngressFaultPoint.afterReceiptBeforeResponse
+            }
+        }
+        let close = LinuxIngressRequest(
+            operation: .close, commandID: "close", taskID: "task",
+            sessionID: runtime.sessionID)
+        XCTAssertThrowsError(try restartedOwner.perform(close))
+        restartedOwner.faultInjection = nil
+        let replayedResponse = try restartedOwner.perform(close)
+        XCTAssertFalse(replayedResponse.isEmpty)
+        XCTAssertEqual(runtime.calls.filter { $0.hasPrefix("close:") }.count, 1)
+        let final = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(final.tasks.first { $0.id == "task" }?.state, .complete)
+        XCTAssertEqual(final.terminals.first { $0.id == runtime.sessionID }?.state, .missing)
+        XCTAssertEqual(final.commands.first { $0.id == "close" }?.outcome, .succeeded)
+    }
+
+    func testW42DaemonHealthSeparatesServiceReconciliationFromProviderAuthentication() throws {
+        let oldPackage = getenv("CLAWDLINE_PACKAGE_VERSION").map { String(cString: $0) }
+        let oldBuild = getenv("CLAWDLINE_BUILD_IDENTITY").map { String(cString: $0) }
+        let oldSource = getenv("CLAWDLINE_SOURCE_COMMIT").map { String(cString: $0) }
+        let oldDigest = getenv("CLAWDLINE_PACKAGE_DIGEST").map { String(cString: $0) }
+        defer {
+            restoreEnvironment("CLAWDLINE_PACKAGE_VERSION", oldPackage)
+            restoreEnvironment("CLAWDLINE_BUILD_IDENTITY", oldBuild)
+            restoreEnvironment("CLAWDLINE_SOURCE_COMMIT", oldSource)
+            restoreEnvironment("CLAWDLINE_PACKAGE_DIGEST", oldDigest)
+        }
+        setenv("CLAWDLINE_PACKAGE_VERSION", "1.2.3", 1)
+        setenv("CLAWDLINE_BUILD_IDENTITY", "build-123", 1)
+        setenv("CLAWDLINE_SOURCE_COMMIT", String(repeating: "a", count: 40), 1)
+        setenv("CLAWDLINE_PACKAGE_DIGEST", String(repeating: "b", count: 64), 1)
+        let receipt = LinuxStartupReconciliationReceipt(
+            authoritative: true, stateDisposition: .loaded, schemaVersion: 2,
+            daemonEpoch: 7, status: "complete", terminalPresent: 0,
+            terminalMissing: 0, terminalUnknown: 0, taskTerminal: 0,
+            taskReconciling: 0, taskUnknown: 0, queueRecoverable: 0,
+            queueUnknown: 0, commandSucceeded: 0, commandInterrupted: 0,
+            commandUnknown: 0, preservedOriginal: nil, reason: nil)
+        let health = LinuxDaemonService.makeHealth(
+            receipt: receipt, providerIdentity: .configured())
+        XCTAssertTrue(health.serviceReady)
+        XCTAssertFalse(health.ready)
+        XCTAssertEqual(health.readinessCode, "w4_provider_authentication_not_proven")
+        XCTAssertEqual(health.release.packageVersion, "1.2.3")
+        XCTAssertEqual(health.durableSchemaVersion, 2)
+        XCTAssertEqual(health.protocolIdentity, "clawdline-linux-local-health-v1")
+        XCTAssertTrue(health.providers.allSatisfy { !$0.authenticated && !$0.usable })
+    }
+
     private func canonicalTemporaryDirectory() -> URL {
         let path = FileManager.default.temporaryDirectory.path
         #if os(macOS)
@@ -457,6 +847,11 @@ final class LinuxRuntimeContractTests: XCTestCase {
         }
         #endif
         return URL(fileURLWithPath: path, isDirectory: true).resolvingSymlinksInPath()
+    }
+
+    private func restoreEnvironment(_ name: String, _ value: String?) {
+        if let value { setenv(name, value, 1) }
+        else { unsetenv(name) }
     }
 
     private struct FixedProjectRootInspector: ProjectRootInspecting {

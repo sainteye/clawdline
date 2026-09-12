@@ -62,6 +62,7 @@ final class LinuxProviderRuntime {
         let runtimeConfiguration = configuration.runtime
         let layout = try LinuxRuntimeLayout.prepare(
             stateDirectory: configuration.stateDirectory,
+            runtimeDirectory: configuration.runtimeDirectory,
             expectedUID: runtimeConfiguration?.uid,
             expectedGID: runtimeConfiguration?.gid)
         let configuredRoots = runtimeConfiguration?.projectRoots ?? [layout.projects]

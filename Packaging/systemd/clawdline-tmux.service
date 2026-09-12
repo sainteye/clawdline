@@ -1,0 +1,39 @@
+[Unit]
+Description=Clawdline persistent tmux server
+Before=clawdline-daemon.service
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=clawdline
+Group=clawdline
+UMask=0077
+RuntimeDirectory=clawdline
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=restart
+ExecStartPre=/usr/bin/rm -f /run/clawdline/clawdline.sock
+ExecStart=/usr/bin/tmux -D -S /run/clawdline/clawdline.sock new-session -s clawdline-service-keeper /bin/sleep infinity
+ExecStop=/usr/bin/tmux -S /run/clawdline/clawdline.sock kill-server
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=30s
+KillMode=mixed
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+ProtectProc=invisible
+ReadWritePaths=/var/lib/clawdline /var/lib/clawdline-projects /run/clawdline
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
