@@ -166,5 +166,84 @@ for (const file of ["skills/clawdline/SKILL.md", "skills/clawdline/SKILL.zh-TW.m
         `${file}: ordinary dispatch still exposes poll-only as a generic switch`);
 }
 
+// The landing-queue concurrency rule, in four documents and four voices.
+//
+// Clawdfather ruled on 2026-09-12 that an empty `contended_paths` releases preparation and not the
+// commit, after a root had waited for the queue holder to land while sharing no path with it: the
+// waiting cost a night and bought nothing, and the half that did need waiting — the ref update and
+// the shared index — was the half nothing in the documents had said out loud.
+//
+// A guard that pinned one identical sentence in four files would be the wrong shape twice over: it
+// would pass while all four said something false, and it would force four voices into one paste.
+// So each document is asked for the claim's own nouns — the contention condition, preparation
+// happening at once, the ref update, the shared checkout, one at a time — and may say them however
+// its own reader is being spoken to. Removing any one of them from any one document is red, and
+// that is proved below against the bytes in the tree rather than asserted.
+const queueConcurrencySections = [
+    ["docs/landing.md", "## The landing queue, when more than one line is waiting", /\n## /],
+    ["docs/dispatching.md", "### Coordinate only on an observed collision", /\n#{1,4} /],
+    ["docs/api.md", "### `GET /v1/orchestrator/landing-queue`", /\n### /],
+    ["docs/clawdline-protocol.html", '<h3 id="landing-queue">', /<h2 /],
+];
+
+const queueConcurrencyClauses = [
+    ["which entries this is about: the ones with no contention between them", [
+        /contended_paths/i, /no declared (?:path )?overlap/i, /no path in common/i,
+    ]],
+    ["that they may prepare at the same time", [
+        /prepar\w*[\s\S]{0,300}?(?:in parallel|at the same time|side by side|simultaneous)/i,
+        /(?:in parallel|at the same time|side by side|simultaneous)[\s\S]{0,300}?prepar\w*/i,
+    ]],
+    ["that the ref update on the target branch is the step that is not parallel", [
+        /updat\w*[\s\S]{0,80}?\bref\b[\s\S]{0,120}?target branch/i,
+    ]],
+    ["that the shared checkout's index is the other half of that step", [
+        /shared (?:checkout|index|tree)/i,
+    ]],
+    ["that those two happen one line at a time", [
+        /one (?:line|entry|root|delivery) at a time/i, /one at a time/i, /serializ\w+/i,
+    ]],
+];
+
+// Tags become a space rather than nothing: the protocol page writes half of this rule inside
+// `<strong>`, and a reader of the rendered page sees words, not markup. Whitespace is collapsed for
+// the reason the skill-stub assertion above collapses it — the subject is whether the document
+// carries the claim, not where a re-wrap happened to break the line.
+const readable = (text) => text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+function queueConcurrencySection(text, [file, opening, closing]) {
+    const start = text.indexOf(opening);
+    assert.ok(start >= 0, `${file}: missing the landing-queue section this rule lives in`);
+    const rest = text.slice(start + opening.length);
+    const end = rest.search(closing);
+    return readable(end < 0 ? rest : rest.slice(0, end));
+}
+
+function validateQueueConcurrency(section, file) {
+    for (const [claim, alternatives] of queueConcurrencyClauses) {
+        assert.ok(alternatives.some((pattern) => pattern.test(section)),
+            `${file}: the landing-queue rule no longer says ${claim}`);
+    }
+}
+
+for (const section of queueConcurrencySections) {
+    const [file] = section;
+    const scoped = queueConcurrencySection(fs.readFileSync(path.join(root, file), "utf8"), section);
+    validateQueueConcurrency(scoped, file);
+
+    // Red-ability, per document and per clause, measured rather than claimed: strike every spelling
+    // this guard would accept for one clause out of that document's own section, and the guard must
+    // fail. A future rewrite that softened this into presence-only could not keep these passing.
+    for (const [claim, alternatives] of queueConcurrencyClauses) {
+        let emptied = scoped;
+        for (const pattern of alternatives) {
+            emptied = emptied.replace(new RegExp(pattern.source, pattern.flags + "g"), " ");
+        }
+        assert.throws(() => validateQueueConcurrency(emptied, `${file} mutation`),
+            `${file}: dropping "${claim}" must make the landing-queue guard red`);
+    }
+}
+
 console.log(`dispatch role contract: ${surfaces.length} surfaces, ${clauses.length} clauses; `
-    + "operational finalizer: 4 clauses");
+    + "operational finalizer: 4 clauses; landing-queue concurrency: "
+    + `${queueConcurrencySections.length} documents, ${queueConcurrencyClauses.length} clauses`);

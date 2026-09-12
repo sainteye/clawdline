@@ -137,6 +137,17 @@ a changed scope boundary, or a user-only decision. Normal cross-session reportin
 events: ownership boundary claimed, blocker materially changed, and delivery landed. Everything
 else stays in the working Session.
 
+**Proceed means prepare.** With no declared overlap, two lines implement, review, run their focused
+proof and pass the candidate gate at the same time as each other; no declared overlap is exactly
+the evidence that they may, and holding one of them back until the other has landed buys nothing.
+The last step is not parallel. **Updating a ref on the same repository and target branch, and
+staging or committing in the shared checkout, happen one line at a time**, because two disjoint
+file sets still share one `main` and one index: the loser of a race overwrites a branch tip it
+never read, or commits what somebody else had staged. Only work in different repositories lands at
+the same time. Nobody negotiates that turn in messages either —
+[`GET /v1/orchestrator/landing-queue`](api.md#get-v1orchestratorlanding-queue) derives its holder on
+every read, so the slot arrives without anybody asking for it twice.
+
 For multi-node work, carry the typed `graph` object as well as any free-text `plan`. While retained,
 one graph id has one destination, node list, fog-of-war list, and out-of-scope boundary; each task
 changes only `current_node`. The broker derives the frontier from durable task, review,

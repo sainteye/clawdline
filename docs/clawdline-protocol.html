@@ -969,6 +969,11 @@ git -C &lt;project_dir&gt; branch -d clawdline/task/&lt;id&gt;       <span class
   <p><code>POST /v1/orchestrator/landing-queue/advance</code> reaches the root that is now at the front, once per holder per order generation, with a message the broker composes rather than a person types. <strong>It prints the whole write set and then says the route wins</strong> — prose summarising a list is the defect that cost three hours, so this prose does not summarise.</p>
 
   <div class="note">
+    <span class="tag">Empty contention is not a commit window</span>
+    <p>Two entries with no path in common may <strong>prepare in parallel</strong>: isolated implementation, review, the focused proof and the candidate gate all run at the same time, and an empty <code>contended_paths</code> is the evidence that they may. The last step does not come with it. <strong>Updating a ref on the same repository and target branch, and staging or committing in the shared checkout, happen one line at a time</strong> — disjoint file sets still share one <code>main</code> and one index, so the loser of a race overwrites a tip it never read or commits what somebody else had staged. Only work in <em>different repositories</em> lands at the same time. Roots do not settle that turn between themselves: nothing here weighs two ready lines against each other, a coordinator may still write an order, and where nobody has, the derived holder is what makes the slot arrive without one.</p>
+  </div>
+
+  <div class="note">
     <span class="tag">Not a replacement for a file wait</span>
     <p>A wait is path-level and registered between two named sessions about specific files. The queue is slot-level and about whole lines of work. A queue entry may register a wait; neither is the other's substitute. And one line can still be absent from the queue: <strong>a person working in the checkout with no Clawdline task at all is invisible to the broker</strong>, so they are invisible here. That is a boundary of what the broker can see, and it is the only one.</p>
   </div>
