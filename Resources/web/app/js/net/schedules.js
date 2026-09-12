@@ -18,14 +18,27 @@ function projectLabel(path) {
     return parts[parts.length - 1] || path || "";
 }
 
-/** The list route deliberately carries no task-template fields. Read each valid row through the
- *  existing detail route so the renderer can say where it will run without widening the ambient
- *  list response. A missing/vanished detail is local to that row: the summary is still truthful
- *  and must not disappear because one follow-up read lost a race with an edit or delete. */
+/** Where each row will run, taken from the list when the list says, and read per row only when it
+ *  does not.
+ *
+ *  **A read that is skipped is the only read that is reliably fast.** The list route used to carry
+ *  no task-template field on the principle that the ambient response stays narrow, and this
+ *  function paid for that with one detail read per valid row — on a refresh that runs every
+ *  minute. Measured on the Cloud path: eight machine-scoped reads a minute from one open tab,
+ *  6,358 in a day, 74 MB, and the answers byte-identical hundreds of times over. They are not free
+ *  merely because they are small: they enter the Mac's single background read lane, and a
+ *  transcript somebody has just opened queues behind all of them.
+ *
+ *  So `project_dir` now comes down with the row. The per-row read stays for a Mac that does not
+ *  send it yet, which is the only case that still costs anything. A missing or vanished detail
+ *  remains local to its row: the summary is still truthful and must not disappear because one
+ *  follow-up read lost a race with an edit or delete. */
 export function loadScheduleProjects(schedules, readSchedule, readPlaces) {
     var list = schedules || [];
-    if (typeof readSchedule !== "function") return Promise.resolve(list);
     var details = Promise.all(list.map(function (schedule) {
+        var carried = schedule && schedule.project_dir;
+        if (typeof carried === "string" && carried) return Promise.resolve(schedule);
+        if (typeof readSchedule !== "function") return Promise.resolve(schedule);
         if (!schedule || !schedule.id || schedule.state === "invalid") {
             return Promise.resolve(schedule);
         }
@@ -59,6 +72,36 @@ export function loadScheduleProjects(schedules, readSchedule, readPlaces) {
     });
 }
 
+/* The Projects list, read at most once every few minutes rather than once a minute.
+ *
+ * It answers one question here — the label and icon for a path this list already holds — and that
+ * answer changes when somebody adds or renames a Project, which is not a per-minute event. On the
+ * Cloud path it was one machine-scoped read every refresh, byte-identical hundreds of times a day,
+ * queued in the same single lane as the transcript somebody had just opened.
+ *
+ * The cache lives here rather than inside `loadScheduleProjects` so that function stays a pure
+ * one, and its tests keep passing their own reader without one run's answer reaching the next.
+ * A refused read is not cached: the next refresh asks again. */
+var placesCacheTTL = 5 * 60 * 1000;
+var placesCache = null;
+
+function cachedPlacesReader() {
+    if (typeof api.places !== "function") return null;
+    return function () {
+        if (placesCache && Date.now() - placesCache.at < placesCacheTTL) {
+            return Promise.resolve(placesCache.value);
+        }
+        return Promise.resolve().then(function () { return api.places(); })
+            .then(function (data) {
+                placesCache = { at: Date.now(), value: data };
+                return data;
+            });
+    };
+}
+
+/** A Project added or renamed while this list is on screen must not wait out the TTL. */
+export function forgetCachedPlaces() { placesCache = null; }
+
 function refresh() {
     if (inFlight || !S.arrived || S.locked || S.conn === "locked"
         || !api || typeof api.schedules !== "function") return;
@@ -77,7 +120,7 @@ function refresh() {
         }), at);
         return loadScheduleProjects(schedules,
             typeof api.schedule === "function" ? api.schedule.bind(api) : null,
-            typeof api.places === "function" ? api.places.bind(api) : null)
+            cachedPlacesReader())
             .then(function (withProjects) {
                 withProjects.forEach(function (schedule) {
                     if (schedule && schedule.id && schedule.project) {

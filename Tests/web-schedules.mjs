@@ -86,6 +86,30 @@ assert.deepEqual(hydrated[0].project, {
 assert.equal(hydrated[1], rows[1], "a failed detail read preserves the usable summary");
 assert.equal(hydrated[2], rows[2], "invalid rows remain local error rows");
 
+// The read that is skipped. A row whose list entry already says where it runs must not open the
+// detail route for it: that read used to happen once per row on a refresh that runs every minute,
+// and on the Cloud path each one queued in the same single background lane as a transcript.
+const carriedReads = [];
+const carried = await loadScheduleProjects([
+    { id: "carried", title: "Nightly", enabled: true, next_fire: 400,
+      project_dir: "/Users/you/code/<clawdline>" },
+    { id: "bare", title: "Older Mac", enabled: true, next_fire: 500 }
+], function (id) {
+    carriedReads.push(id);
+    return Promise.resolve({ schedule: { task: { project_dir: "/Users/you/code/<other>" } } });
+}, function () {
+    return Promise.resolve({ places: [{
+        path: "/Users/you/code/<clawdline>", label: "clawdline", icon: projectIcon
+    }] });
+});
+assert.deepEqual(carriedReads, ["bare"],
+    "only a row without project_dir costs a detail read");
+assert.deepEqual(carried[0].project, {
+    path: "/Users/you/code/<clawdline>", label: "clawdline", icon: projectIcon
+}, "the carried path is resolved against places exactly as a read one is");
+assert.equal(carried[1].project.path, "/Users/you/code/<other>",
+    "a Mac that does not send project_dir yet still resolves through the detail route");
+
 renderSchedules(hydrated, 100);
 assert.match(elements["schedule-rows"].innerHTML,
     /<canvas class="schedule-project-mark" aria-hidden="true"><\/canvas><span class="schedule-project-name" title="\/Users\/you\/code\/&lt;clawdline&gt;">clawdline<\/span>/,

@@ -885,6 +885,17 @@ enum Orchestrator {
             // the screens changed with the API.
             if schedule.when.runsOnce { out["once"] = true }
             if let fired = schedule.firedAt { out["fired_at"] = Int(fired.timeIntervalSince1970) }
+            // Where the row says it will run. This is the one task-template field a schedule list
+            // has always had to draw, and leaving it out did not keep the payload narrow — it
+            // moved the cost somewhere nobody was counting. The console had to open the detail
+            // route once per row to recover it, so a five-schedule list cost five extra reads
+            // every time it refreshed, and on the Cloud path each of those was a separate
+            // round trip through the relay that queued ahead of whatever transcript the person
+            // was actually waiting for. One string here replaces all of them.
+            if let projectDir = schedule.taskTemplate["project_dir"] as? String,
+               !projectDir.isEmpty {
+                out["project_dir"] = projectDir
+            }
             if let last = snapshots.filter({ $0.scheduleID == schedule.id })
                 .max(by: { $0.created < $1.created }) {
                 out["last_run"] = ["task_id": last.id, "state": last.state.rawValue,
