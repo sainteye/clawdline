@@ -20,14 +20,43 @@ struct CloudDurableOnlySequencing: CloudEnvelopeSequencing {
 /// inbound command is what makes "revocation stops routing, effective immediately" true on this
 /// side of the wire as well as on the relay's.
 struct CloudLifecycleKeyProvider: CloudTransportKeyProviding, Sendable {
-    let deviceKey: CloudDeviceKeyPair
-    let masterSecrets: [String: CloudMasterSecret]
-    let accountID: String
-    let pairedDevices: CloudPairedDeviceStore
+    private let deviceKey: CloudDeviceKeyPair?
+    private let masterSecrets: [String: CloudMasterSecret]
+    private let accountID: String?
+    private let pairedDevices: CloudPairedDeviceStore?
+    private let identityAuthority: CloudExecutorIdentityAuthority?
 
-    func deviceKeyPair() async throws -> CloudDeviceKeyPair { deviceKey }
+    init(deviceKey: CloudDeviceKeyPair, masterSecrets: [String: CloudMasterSecret],
+         accountID: String, pairedDevices: CloudPairedDeviceStore) {
+        self.deviceKey = deviceKey
+        self.masterSecrets = masterSecrets
+        self.accountID = accountID
+        self.pairedDevices = pairedDevices
+        identityAuthority = nil
+    }
+
+    init(identityAuthority: CloudExecutorIdentityAuthority) {
+        deviceKey = nil
+        masterSecrets = [:]
+        accountID = nil
+        pairedDevices = nil
+        self.identityAuthority = identityAuthority
+    }
+
+    func deviceKeyPair() async throws -> CloudDeviceKeyPair {
+        if let identityAuthority { return try identityAuthority.transportMaterial().deviceKey }
+        guard let deviceKey else { throw CloudTransportError.unexpectedFrame("identity-unavailable") }
+        return deviceKey
+    }
 
     func masterSecret(for keyID: String) async throws -> CloudMasterSecret {
+        if let identityAuthority {
+            let material = try identityAuthority.transportMaterial()
+            guard material.keyID == keyID else {
+                throw CloudTransportError.unexpectedFrame("unknown-key")
+            }
+            return material.masterSecret
+        }
         guard let secret = masterSecrets[keyID] else {
             throw CloudTransportError.unexpectedFrame("unknown-key")
         }
@@ -35,10 +64,27 @@ struct CloudLifecycleKeyProvider: CloudTransportKeyProviding, Sendable {
     }
 
     func pairedDevicePublicKeys() async -> [String: Data] {
-        guard let devices = try? pairedDevices.devices(accountID: accountID) else { return [:] }
+        if let identityAuthority {
+            return (try? identityAuthority.transportMaterial().pairedDevicePublicKeys) ?? [:]
+        }
+        guard let pairedDevices, let accountID,
+              let devices = try? pairedDevices.devices(accountID: accountID) else { return [:] }
         var keys: [String: Data] = [:]
         for device in devices { keys[device.deviceID] = device.signingKey }
         return keys
+    }
+
+    func transportBinding() async throws -> CloudExecutorTransportBinding? {
+        try identityAuthority?.transportMaterial().binding
+    }
+
+    func admitReconnect(_ binding: CloudExecutorTransportBinding) async throws {
+        guard let identityAuthority else { return }
+        _ = try identityAuthority.verifyReconnect(CloudExecutorReconnectProof(
+            accountID: binding.accountID, machineID: binding.machineID,
+            deviceID: binding.deviceID, identityGeneration: binding.identityGeneration,
+            keyEpoch: binding.keyEpoch, revocationEpoch: binding.revocationEpoch,
+            durableLedgerOpened: true, durableSpoolOpened: true))
     }
 }
 
@@ -344,12 +390,15 @@ final class CloudBridgeLifecycle {
         generation &+= 1
         let owned = generation
         do {
+            // Durable owners are admission prerequisites, not peers of the socket. Opening them
+            // first means `CloudLifecycleKeyProvider.admitReconnect` can truthfully prove both
+            // flags before any initial or reconnect challenge is signed.
+            let durableRuntime = try services.durableRuntime?(identity)
             let transport = try services.makeTransport(identity, restored.app) { [weak self] error in
                 Task { @MainActor [weak self] in
                     self?.authorizationRefused(error, for: identity, generation: owned)
                 }
             }
-            let durableRuntime = try services.durableRuntime?(identity)
             let bridge = CloudAppBridge(
                 transport: transport,
                 identity: restored.app,
@@ -451,7 +500,9 @@ extension CloudBridgeLifecycle.Services {
     static func production(
         client: CloudAccountClient = CloudAccountClient(),
         keys: CloudKeys = CloudKeys(),
-        pairedDevices: CloudPairedDeviceStore = CloudPairedDeviceStore(),
+        identityAuthority: CloudExecutorIdentityAuthority = CloudExecutorIdentityAuthority(
+            store: CloudKeychainStore()),
+        legacyPairedDevices: CloudPairedDeviceStore = CloudPairedDeviceStore(),
         relayBaseURL: URL = CloudBridgeLifecycle.defaultRelayURL
     ) -> CloudBridgeLifecycle.Services {
         let epochAuthority = CloudCommandEpochAuthority()
@@ -460,6 +511,35 @@ extension CloudBridgeLifecycle.Services {
         ) {
             guard let identity = try client.restoredMachineIdentity() else { return nil }
             _ = try CloudMachineFilesystemNamespace.component(for: identity.machineID)
+            switch identityAuthority.readiness(
+                expectedAccountID: identity.accountID,
+                expectedMachineID: identity.machineID) {
+            case .ready:
+                break
+            case .blocked(.protectedStateMissing):
+                let imported = try legacyPairedDevices.beginProtectedMigration(
+                    accountID: identity.accountID).map {
+                    CloudExecutorPairedDevice(
+                        deviceID: $0.deviceID, signingKey: $0.signingKey,
+                        fingerprint: try CloudPairing.ed25519Fingerprint(
+                            publicKeyRaw: $0.signingKey),
+                        pairedAtMilliseconds: $0.pairedAtMilliseconds,
+                        identityGeneration: 1,
+                        capabilities: CloudExecutorIdentityAuthority.defaultCapabilities)
+                }
+                _ = try identityAuthority.provision(
+                    accountID: identity.accountID, machineID: identity.machineID,
+                    deviceKey: keys.loadOrCreateDeviceKeyPair(),
+                    masterSecret: keys.loadOrCreateMasterSecret(),
+                    importedPairedDevices: imported)
+            case .blocked(let error):
+                throw error
+            }
+            // A pre-W5 image must never regain authorization from its stale JSON roster. If a
+            // crash lands between the protected commit and this removal, the next apply repeats
+            // only the removal because provision is already durable and idempotent.
+            try legacyPairedDevices.removeAll()
+            let material = try identityAuthority.transportMaterial()
             return CloudBridgeLifecycle.RestoredIdentity(
                 machine: identity,
                 app: CloudAppIdentity(
@@ -468,9 +548,9 @@ extension CloudBridgeLifecycle.Services {
                     // (`api/src/services/tokens.ts`: `deviceId = machine._id`), so the envelope
                     // sender a viewer pins is the machine id and not a second identifier.
                     deviceID: identity.machineID,
-                    keyID: CloudBridgeLifecycle.masterKeyID,
-                    masterSecret: try keys.loadOrCreateMasterSecret(),
-                    signingKey: try keys.loadOrCreateDeviceKeyPair()))
+                    keyID: material.keyID,
+                    masterSecret: material.masterSecret,
+                    signingKey: material.deviceKey))
         }
         return CloudBridgeLifecycle.Services(
             identityReader: identityReader,
@@ -484,10 +564,7 @@ extension CloudBridgeLifecycle.Services {
                             epochAuthority.acceptAuthenticatedServerDate(date)
                         }),
                     keyProvider: CloudLifecycleKeyProvider(
-                        deviceKey: app.signingKey,
-                        masterSecrets: [app.keyID: app.masterSecret],
-                        accountID: identity.accountID,
-                        pairedDevices: pairedDevices),
+                        identityAuthority: identityAuthority),
                     logger: { Log.write("cloud: \($0)") })
             },
             // This compatibility seam owns no counter. The production bridge receives the
@@ -512,8 +589,9 @@ extension CloudBridgeLifecycle.Services {
             allowCloudCommands: { Config.shared.remoteWrite },
             commandEffectAuthority: { identity in
                 { sender, requiresWriteGate in
-                    let rosterAllows = (try? pairedDevices.devices(accountID: identity.accountID)
-                        .contains { $0.deviceID == sender }) == true
+                    let rosterAllows = (try? identityAuthority.snapshot().pairedDevices.contains {
+                        $0.deviceID == sender
+                    }) == true
                     return CloudCommandEffectAuthorization(
                         epochState: epochAuthority.current(),
                         rosterAllowsSender: rosterAllows,

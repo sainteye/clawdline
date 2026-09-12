@@ -100,6 +100,28 @@ new traffic; receipt ingestion is bounded and observable. Ubuntu Cloud authentic
 composition exposes no publish door. W0-E is pinned as `authority=candidate` with
 `cutover_required=true`; it authorizes no version emission, cutover, or client-floor raise.
 
+W5-2 moves `CloudAccount.swift`, `CloudKeys.swift`, `CloudPairing.swift` and the portable half of
+`CloudTransport.swift` into that same Application target. macOS supplies the login-Keychain leaf;
+Ubuntu supplies its existing descriptor-checked protected-file `SecretStore`. Both enter one
+`CloudExecutorIdentityAuthority`, whose canonical bounded record owns account/machine/device,
+Ed25519 and content keys, paired and revoked viewers, generation/key/revocation epochs, and the
+single pending/completed handover. The normative public client uses identity `start`, four
+role-bound phase writes/polls, and machine identity rotation routes; legacy three-call methods are
+compatibility only. A prepared grant is durable before delivery, confirm receipt precedes pin, and
+exact reply-loss retries return `duplicate`; a second claimant, stale phase or mismatched
+fingerprint cannot replace it. Readiness never creates or falls back to memory. Every initial or
+reconnect signature accepts only the exact current identity/epochs after the W5-1 ledger and spool
+open. `swift-crypto` is
+an exact Linux-only Application dependency at 4.5.2; macOS continues to use CryptoKit. The accepted
+eight-member v1 handover wire, W0-E candidate authority and disabled Linux publish door are
+unchanged. First Mac enrollment atomically renames the existing JSON roster out of the pathname a
+pre-W5 binary understands, imports that fence into protected state, and removes the fence only after
+the protected commit. A crash resumes from the fence, while rollback cannot revive its stale
+authorization. The byte-identical public/private 843-byte route-role vector SHA-256 is
+`2f79369d4ee866976c6da2a41358c1aab5321ab0e6054bf8a3afe16e215f69a9`; the public lifecycle
+extension that pins exact request members, duplicate replay and confirm-receipt timing is
+`79504ce608fd278cecdb2e26f62d6d1c7e915ef66f94a79cc12ff240a95e410e`.
+
 W4-1 also adds four Application-owned policy/ownership members — `ProjectRootPolicy.swift`,
 `ProviderLifecyclePolicy.swift`, `SessionLaunchPolicy.swift` and `TerminalCommandScheduler.swift`.
 The last is the existing Mac serial/nested/maintenance owner moved behind the real Application

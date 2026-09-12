@@ -1,10 +1,9 @@
 import Foundation
 import ClawdlineApplication
 
-/// Ubuntu's production ownership leaf for the shared Application ledger and spool. The daemon
-/// opens both stores before local ingress is admitted and retains their writer locks for its whole
-/// lifetime. Cloud networking/authentication remains unready in W5-1, so this type exposes no
-/// publish door and cannot accidentally promote the W0-E candidate into production authority.
+/// Ubuntu's production ownership leaf for the shared Application ledger, spool, account client
+/// and protected executor identity. It exposes bootstrap but no publish door: W0-E remains a
+/// candidate until the separate contract/cutover authority says otherwise.
 final class LinuxDurableCloudRuntime {
     struct Readiness: Codable, Equatable {
         let durable: Bool
@@ -15,9 +14,12 @@ final class LinuxDurableCloudRuntime {
     }
 
     let runtime: CloudDurableRuntime
+    let accountClient: CloudAccountClient
+    let keys: CloudKeys
+    let identityAuthority: CloudExecutorIdentityAuthority
     let candidateAuthority = CloudContractCandidateAuthority.w0E
 
-    init(stateDirectory: String, expectedUID: UInt32) throws {
+    init(stateDirectory: String, expectedUID: UInt32, secrets: any SecretStore) throws {
         guard ProjectRootPolicy.isLexicallySafeAbsolute(stateDirectory) else {
             throw LinuxDurableStateFailure(
                 code: "unsafe_cloud_state_path",
@@ -30,14 +32,80 @@ final class LinuxDurableCloudRuntime {
             // until an additive accepted label exists; reporting Ubuntu as Mac is forbidden.
             expectedUID: expectedUID, runtime: nil,
             strictPersistedFrameValidation: true)
+        let keyStore = CloudSecretStoreKeyAdapter(store: secrets)
+        let keys = CloudKeys(store: keyStore)
+        self.keys = keys
+        let authority = CloudExecutorIdentityAuthority(store: secrets)
+        identityAuthority = authority
+        accountClient = CloudAccountClient(
+            apiBaseURL: URL(string: "https://api.clawdline.com")!,
+            transport: CloudAccountURLSessionTransport(),
+            credentialStore: keyStore,
+            deviceKeyLoader: {
+                switch authority.readiness() {
+                case .ready:
+                    return try authority.transportMaterial().deviceKey
+                case .blocked(.protectedStateMissing):
+                    // The legacy item is only the explicit pre-enrollment bootstrap source.
+                    return try keys.loadOrCreateDeviceKeyPair()
+                case .blocked(let error):
+                    throw error
+                }
+            })
     }
 
     var readiness: Readiness {
-        Readiness(
-            durable: true,
-            authority: candidateAuthority.authority,
+        let code: String
+        switch identityAuthority.readiness() {
+        case .ready:
+            code = "w0e_contract_cutover_required"
+        case .blocked(let error):
+            switch error {
+            case .protectedStateMissing: code = "w5_executor_identity_missing"
+            case .protectedStateFutureVersion: code = "w5_executor_identity_future_version"
+            case .protectedStateCorrupt: code = "w5_executor_identity_corrupt"
+            case .identityMismatch: code = "w5_executor_identity_wrong_owner"
+            default: code = "w5_executor_identity_unavailable"
+            }
+        }
+        return Readiness(
+            durable: true, authority: candidateAuthority.authority,
             cutoverRequired: candidateAuthority.cutoverRequired,
-            emissionEnabled: candidateAuthority.permitsEmission(wireVersion: 1),
-            code: "w5_cloud_authentication_and_cutover_not_proven")
+            emissionEnabled: candidateAuthority.permitsEmission(wireVersion: 1), code: code)
+    }
+
+    func startDeviceLogin(metadata: CloudMachineMetadata) async throws -> CloudDeviceLoginStart {
+        try await accountClient.startDeviceLogin(metadata: metadata)
+    }
+
+    /// The completed account owner and the keys generated at login-start are committed as one
+    /// protected executor identity before this method reports completion.
+    func continueDeviceLogin(_ started: CloudDeviceLoginStart) async throws
+        -> CloudDeviceLoginPollState {
+        let state = try await accountClient.waitForDeviceLogin(started)
+        if case .complete(let owner) = state {
+            switch identityAuthority.readiness(
+                expectedAccountID: owner.accountID, expectedMachineID: owner.machineID) {
+            case .ready:
+                break
+            case .blocked(.protectedStateMissing):
+                _ = try identityAuthority.provision(
+                    accountID: owner.accountID, machineID: owner.machineID,
+                    deviceKey: keys.loadOrCreateDeviceKeyPair(),
+                    masterSecret: keys.loadOrCreateMasterSecret())
+            case .blocked(let error):
+                throw error
+            }
+        }
+        return state
+    }
+
+    func restoreExecutorIdentity() throws -> CloudExecutorIdentitySnapshot? {
+        guard let owner = try accountClient.restoredMachineIdentity() else { return nil }
+        let snapshot = try identityAuthority.snapshot()
+        guard snapshot.accountID == owner.accountID, snapshot.machineID == owner.machineID else {
+            throw CloudExecutorIdentityError.identityMismatch
+        }
+        return snapshot
     }
 }

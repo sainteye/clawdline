@@ -628,6 +628,60 @@ private struct CloudLedgerFileEnvelope: Codable {
     }
 }
 
+/// Durable JSON stays inside the same integer-only domain as the strict parser. `Date`'s default
+/// Codable representation is a fractional Double, which made a freshly written authority fail
+/// its own strict read on the next process start. Milliseconds preserve the timing precision this
+/// state machine uses while remaining far below the shared safe-integer ceiling.
+private func cloudDurableJSONEncoder() -> JSONEncoder {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    encoder.dateEncodingStrategy = .custom { date, target in
+        let milliseconds = date.timeIntervalSinceReferenceDate * 1_000
+        guard milliseconds.isFinite,
+              milliseconds >= Double(CloudCanonicalJSON.minimumSafeInteger),
+              milliseconds <= Double(CloudCanonicalJSON.maximumSafeInteger) else {
+            throw CloudDurableStoreFailure.persist
+        }
+        var value = target.singleValueContainer()
+        try value.encode(Int64(milliseconds.rounded()))
+    }
+    return encoder
+}
+
+private func cloudDurableJSONDecoder() -> JSONDecoder {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .custom { source in
+        let value = try source.singleValueContainer().decode(Int64.self)
+        return Date(timeIntervalSinceReferenceDate: Double(value) / 1_000)
+    }
+    return decoder
+}
+
+/// Schema v2 was released briefly with Foundation's default Date representation: seconds since
+/// 2001 as a JSON number. This decoder is never used as a general fallback. A caller must also
+/// prove that decoding and re-encoding produces the exact installed bytes before treating them as
+/// that legacy product format.
+private func cloudLegacySchemaTwoDecoder() -> JSONDecoder {
+    JSONDecoder()
+}
+
+private func cloudLegacySchemaTwoEncoder() -> JSONEncoder {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    return encoder
+}
+
+private func decodeExactLegacySchemaTwo<T: Codable>(
+    _ type: T.Type, from bytes: Data, schemaVersion: (T) -> Int
+) throws -> T {
+    let decoded = try cloudLegacySchemaTwoDecoder().decode(type, from: bytes)
+    guard schemaVersion(decoded) == 2,
+          try cloudLegacySchemaTwoEncoder().encode(decoded) == bytes else {
+        throw CloudDurableStoreFailure.corrupt
+    }
+    return decoded
+}
+
 public final class CloudFileCommandLedgerStore: CloudCommandLedgerStore, @unchecked Sendable {
     public static let maximumBytes = 16 * 1024 * 1024
     public var faultInjection: (@Sendable (CloudDurableStoreFaultPoint) throws -> Void)?
@@ -667,20 +721,29 @@ public final class CloudFileCommandLedgerStore: CloudCommandLedgerStore, @unchec
         guard rows == nil else { return }
         guard let bytes = try file.load() else { rows = [:]; return }
         let envelope: CloudLedgerFileEnvelope
+        let rewritesLegacyDateRepresentation: Bool
         do {
-            let value = try CloudCanonicalJSON.parseStrict(bytes)
-            guard case .object(let root) = value,
-                  case .int(let schema)? = root["schemaVersion"] else {
-                throw CloudDurableStoreFailure.corrupt
-            }
-            if schema == CloudLedgerFileEnvelope.currentVersion {
-                guard Set(root.keys) == ["schemaVersion", "minimumReaderVersion", "recordKind",
-                                         "generation", "rows"],
-                      Self.validCurrentSchema(root) else {
+            do {
+                let value = try CloudCanonicalJSON.parseStrict(bytes)
+                guard case .object(let root) = value,
+                      case .int(let schema)? = root["schemaVersion"] else {
                     throw CloudDurableStoreFailure.corrupt
                 }
+                if schema == CloudLedgerFileEnvelope.currentVersion {
+                    guard Set(root.keys) == ["schemaVersion", "minimumReaderVersion", "recordKind",
+                                             "generation", "rows"],
+                          Self.validCurrentSchema(root) else {
+                        throw CloudDurableStoreFailure.corrupt
+                    }
+                }
+                envelope = try cloudDurableJSONDecoder().decode(
+                    CloudLedgerFileEnvelope.self, from: bytes)
+                rewritesLegacyDateRepresentation = false
+            } catch {
+                envelope = try decodeExactLegacySchemaTwo(
+                    CloudLedgerFileEnvelope.self, from: bytes, schemaVersion: \CloudLedgerFileEnvelope.schemaVersion)
+                rewritesLegacyDateRepresentation = true
             }
-            envelope = try JSONDecoder().decode(CloudLedgerFileEnvelope.self, from: bytes)
         }
         catch { try file.quarantineCurrent(); throw CloudDurableStoreFailure.corrupt }
         guard (1...CloudLedgerFileEnvelope.currentVersion).contains(envelope.schemaVersion) else {
@@ -698,7 +761,8 @@ public final class CloudFileCommandLedgerStore: CloudCommandLedgerStore, @unchec
         }
         let loadedRows = Dictionary(uniqueKeysWithValues: envelope.rows.map { ($0.key, $0) })
         generation = envelope.generation
-        if envelope.schemaVersion < CloudLedgerFileEnvelope.currentVersion {
+        if envelope.schemaVersion < CloudLedgerFileEnvelope.currentVersion
+            || rewritesLegacyDateRepresentation {
             try faultInjection?(.recovery)
             try persist(loadedRows)
         }
@@ -722,8 +786,7 @@ public final class CloudFileCommandLedgerStore: CloudCommandLedgerStore, @unchec
             }
             return $0.key.requestID < $1.key.requestID
         }
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let encoder = cloudDurableJSONEncoder()
         do { return try encoder.encode(CloudLedgerFileEnvelope(generation: generation, rows: ordered)) }
         catch { throw CloudDurableStoreFailure.persist }
     }
@@ -883,20 +946,29 @@ public final class CloudFileSpoolStore: CloudSpoolStore, @unchecked Sendable {
         guard state == nil else { return }
         guard let bytes = try file.load() else { state = CloudSpoolPersistedState(); return }
         let envelope: CloudSpoolFileEnvelope
+        let rewritesLegacyDateRepresentation: Bool
         do {
-            let value = try CloudCanonicalJSON.parseStrict(bytes)
-            guard case .object(let root) = value,
-                  case .int(let schema)? = root["schemaVersion"] else {
-                throw CloudDurableStoreFailure.corrupt
-            }
-            if schema == CloudSpoolFileEnvelope.currentVersion {
-                guard Set(root.keys) == ["schemaVersion", "minimumReaderVersion", "recordKind",
-                                         "generation", "nextSeq", "rows"],
-                      Self.validCurrentSchema(root) else {
+            do {
+                let value = try CloudCanonicalJSON.parseStrict(bytes)
+                guard case .object(let root) = value,
+                      case .int(let schema)? = root["schemaVersion"] else {
                     throw CloudDurableStoreFailure.corrupt
                 }
+                if schema == CloudSpoolFileEnvelope.currentVersion {
+                    guard Set(root.keys) == ["schemaVersion", "minimumReaderVersion", "recordKind",
+                                             "generation", "nextSeq", "rows"],
+                          Self.validCurrentSchema(root) else {
+                        throw CloudDurableStoreFailure.corrupt
+                    }
+                }
+                envelope = try cloudDurableJSONDecoder().decode(
+                    CloudSpoolFileEnvelope.self, from: bytes)
+                rewritesLegacyDateRepresentation = false
+            } catch {
+                envelope = try decodeExactLegacySchemaTwo(
+                    CloudSpoolFileEnvelope.self, from: bytes, schemaVersion: \CloudSpoolFileEnvelope.schemaVersion)
+                rewritesLegacyDateRepresentation = true
             }
-            envelope = try JSONDecoder().decode(CloudSpoolFileEnvelope.self, from: bytes)
         }
         catch { try file.quarantineCurrent(); throw CloudDurableStoreFailure.corrupt }
         guard (1...CloudSpoolFileEnvelope.currentVersion).contains(envelope.schemaVersion) else {
@@ -919,7 +991,8 @@ public final class CloudFileSpoolStore: CloudSpoolStore, @unchecked Sendable {
         let loadedState = CloudSpoolPersistedState(
             nextSeq: envelope.nextSeq, rows: envelope.rows.map(\.row))
         generation = envelope.generation
-        if envelope.schemaVersion < CloudSpoolFileEnvelope.currentVersion {
+        if envelope.schemaVersion < CloudSpoolFileEnvelope.currentVersion
+            || rewritesLegacyDateRepresentation {
             try faultInjection?(.recovery)
             try persist(loadedState)
         }
@@ -932,8 +1005,7 @@ public final class CloudFileSpoolStore: CloudSpoolStore, @unchecked Sendable {
             throw CloudDurableStoreFailure.corrupt
         }
         let next = generation + 1
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let encoder = cloudDurableJSONEncoder()
         let bytes: Data
         do { bytes = try encoder.encode(CloudSpoolFileEnvelope(generation: next, state: state)) }
         catch { throw CloudDurableStoreFailure.persist }
@@ -966,7 +1038,10 @@ public final class CloudFileSpoolStore: CloudSpoolStore, @unchecked Sendable {
             return deadline >= first && row.attemptOutcome == nil && row.burnReason == nil
                 && row.logicalTombstoneNanoseconds == nil
         case .acked, .rejected:
-            return row.sealedEnvelopeBytes?.isEmpty == false
+            // Terminal rows written before frame compaction may still carry the last frame;
+            // current writers deliberately clear it after the final send. Accept both durable
+            // representations, but never an explicitly empty frame.
+            return row.sealedEnvelopeBytes?.isEmpty != true
                 && row.firstSentNanoseconds != nil && row.attemptNotAfterNanoseconds != nil
                 && row.burnReason == nil
         case .burned:

@@ -14,6 +14,7 @@ if [ -n "${CLAWDLINE_VERIFY_QUESTION_ID:-}" ] && [ -z "${CLAWDLINE_VERIFICATION_
 fi
 
 cloud_receipt_prefix='CLAWDLINE_CLOUD_TESTS_COMPLETE'
+cloud_focused_receipt_prefix='CLAWDLINE_CLOUD_FOCUSED_TESTS_COMPLETE'
 cloud_suite_roster='CloudEnvelope,CloudAccount,CloudTransport,CloudAppBridge,CloudSettings,ScheduleResume,CloudClock,CloudCanonicalJSON,CloudCommandLedger,CloudOutboundSpool,CloudPairing,CloudLifecycle'
 # Completion counts are observations from this run, not source-controlled expectations. Keeping
 # the previous tree's totals in this file made every legitimate assertion change require a
@@ -54,7 +55,7 @@ report_receipt_direction() {
 
 verify_test_completion_receipts() {
   local log=$1 cloud_lines cloud_count swift_count cloud
-  if [ -n "${CLAWDLINE_TEST_GROUPS:-}" ]; then
+  if [ -n "${CLAWDLINE_TEST_GROUPS:-}" ] || [ -n "${CLAWDLINE_TEST_CLOUD_SUITES:-}" ]; then
     echo 'test.sh: focused_run_cannot_verify_full_receipt' >&2
     return 125
   fi
@@ -78,7 +79,7 @@ verify_test_completion_receipts() {
 
 emit_complete_test_seal_receipt() {
   local log=$1 cloud swift witness cloud_count swift_count
-  if [ -n "${CLAWDLINE_TEST_GROUPS:-}" ]; then
+  if [ -n "${CLAWDLINE_TEST_GROUPS:-}" ] || [ -n "${CLAWDLINE_TEST_CLOUD_SUITES:-}" ]; then
     echo 'test.sh: focused_run_cannot_emit_full_receipt' >&2
     return 125
   fi
@@ -106,7 +107,51 @@ emit_complete_test_seal_receipt() {
 }
 
 is_unfiltered_test_run() {
-  [ -z "${CLAWDLINE_TEST_GROUPS:-}" ]
+  [ -z "${CLAWDLINE_TEST_GROUPS:-}" ] && [ -z "${CLAWDLINE_TEST_CLOUD_SUITES:-}" ]
+}
+
+validate_cloud_focused_selection() {
+  node -e '
+    const [raw, roster] = process.argv.slice(1);
+    if (!raw) { console.error("test.sh: cloud_focused_selection_empty"); process.exit(2); }
+    const requested = raw.split(",");
+    if (requested.some((name) => !name)) {
+      console.error("test.sh: cloud_focused_selection_empty"); process.exit(2);
+    }
+    if (new Set(requested).size !== requested.length) {
+      console.error("test.sh: cloud_focused_selection_duplicate"); process.exit(2);
+    }
+    const ordered = roster.split(",");
+    const unknown = requested.filter((name) => !ordered.includes(name));
+    if (unknown.length) {
+      console.error("test.sh: cloud_focused_selection_unknown: " + unknown.join(",")); process.exit(2);
+    }
+    process.stdout.write(ordered.filter((name) => requested.includes(name)).join(","));
+  ' "${1:-}" "$cloud_suite_roster"
+}
+
+verify_cloud_focused_receipt() {
+  local log=$1 expected=$2
+  node -e '
+    const fs = require("fs");
+    const [path, expected] = process.argv.slice(1);
+    const prefix = "CLAWDLINE_CLOUD_FOCUSED_TESTS_COMPLETE ";
+    const lines = fs.readFileSync(path, "utf8").split("\n").filter((line) => line.startsWith(prefix));
+    if (lines.length !== 1) process.exit(1);
+    const match = /^CLAWDLINE_CLOUD_FOCUSED_TESTS_COMPLETE v=1 suite_count=([1-9][0-9]*) suites=(.+)$/.exec(lines[0]);
+    if (!match) process.exit(2);
+    const entries = match[2].split(",");
+    if (entries.length !== Number(match[1])) process.exit(3);
+    const names = entries.map((entry) => {
+      const pair = /^([A-Za-z][A-Za-z0-9]*):([1-9][0-9]*)$/.exec(entry);
+      if (!pair) process.exit(4);
+      return pair[1];
+    });
+    if (names.join(",") !== expected) process.exit(5);
+  ' "$log" "$expected" || {
+    echo "test.sh: cloud_focused_receipt_invalid — full output kept at $log" >&2
+    return 125
+  }
 }
 
 # >>> clawdline suite roster >>>
@@ -187,6 +232,7 @@ fi
 . tools/swift-test-artifact.sh
 clawdline_swift_focused_only=0
 clawdline_linux_package_focused_only=0
+clawdline_cloud_focused_only=0
 case "${1:-}" in
   "") [ "$#" -eq 0 ] || exit 2 ;;
   --swift-focused)
@@ -197,6 +243,19 @@ case "${1:-}" in
     [ "$#" -eq 1 ] || exit 2
     clawdline_swift_focused_only=1
     clawdline_linux_package_focused_only=1 ;;
+  --cloud-focused)
+    [ "$#" -eq 2 ] || {
+      echo 'test.sh: cloud_focused_selection_empty' >&2
+      exit 2
+    }
+    [ -z "${CLAWDLINE_TEST_GROUPS:-}" ] || {
+      echo 'test.sh: cloud_focused_selection_mixed' >&2
+      exit 2
+    }
+    CLAWDLINE_TEST_CLOUD_SUITES=$(validate_cloud_focused_selection "$2") || exit $?
+    export CLAWDLINE_TEST_CLOUD_SUITES
+    clawdline_swift_focused_only=1
+    clawdline_cloud_focused_only=1 ;;
   *) echo 'test.sh: unknown_test_mode' >&2; exit 2 ;;
 esac
 clawdline_validate_swift_test_selection
@@ -1779,6 +1838,8 @@ fi
 # complete full-suite tuple. Its own `N focused checks passed` receipt is the only one it emits.
 if is_unfiltered_test_run; then
   emit_complete_test_seal_receipt "$LOG" || exit $?
+elif [ "$clawdline_cloud_focused_only" -eq 1 ]; then
+  verify_cloud_focused_receipt "$LOG" "$CLAWDLINE_TEST_CLOUD_SUITES" || exit $?
 else
   clawdline_verify_focused_test_receipt "$LOG" || exit $?
 fi

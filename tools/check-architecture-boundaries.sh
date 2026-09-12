@@ -1080,11 +1080,15 @@ Sources/ProviderLifecyclePolicy.swift
 Sources/SessionLaunchPolicy.swift
 Sources/TerminalCommandScheduler.swift
 Sources/CloudCommandLedger.swift
-Sources/CloudOutboundSpool.swift'
+Sources/CloudOutboundSpool.swift
+Sources/CloudPairing.swift'
 # W5-1's two Application state machines reach persistence only through their store protocols.
 # This one source is the deliberately shared POSIX host leaf behind those protocols; Mac and
 # Linux compile the same descriptor/owner/link/fsync implementation instead of drifting copies.
-application_host_leaf_sources='Sources/CloudDurableStores.swift'
+application_host_leaf_sources='Sources/CloudDurableStores.swift
+Sources/CloudAccount.swift
+Sources/CloudKeys.swift
+Sources/CloudTransport.swift'
 while IFS= read -r candidate; do
   [ -n "$candidate" ] || continue
   [ -f "$candidate" ] \
@@ -1138,7 +1142,7 @@ done
 
 # The exact expected membership of each real target, and of the Mac target's dependency set — not
 # a floor or a contains-check, a pinned set. This is what W3-1 shipped (`Packages/README.md`):
-# three files in ClawdlineCore, five in ClawdlineApplication, and exactly one Mac-to-Application
+# three files in ClawdlineCore, twelve in ClawdlineApplication, and exactly one Mac-to-Application
 # edge. Growing real membership stays possible and stays deliberate — `core-application-candidates.txt`
 # above may only grow on its own — but *this* pinned list may only be edited in the same change
 # that adds the matching symlink(s), never as a side effect of something else moving a file
@@ -1153,7 +1157,11 @@ SessionLaunchPolicy.swift
 TerminalCommandScheduler.swift
 CloudCommandLedger.swift
 CloudOutboundSpool.swift
-CloudDurableStores.swift'
+CloudDurableStores.swift
+CloudAccount.swift
+CloudKeys.swift
+CloudPairing.swift
+CloudTransport.swift'
 mac_expected_dependencies='ClawdlineApplication'
 linux_expected_members='LinuxComposition.swift
 LinuxContainedFileSystem.swift
@@ -1253,13 +1261,33 @@ actual_linux_test_deps=$(graph_field 'ClawdlineLinuxTests\.deps')
   || architecture_guard_fail "ClawdlineLinuxTests depends on [$actual_linux_test_deps], not exactly [$expected_linux_test_deps]"
 
 actual_package_dependencies=$(graph_field 'package\.external-dependencies')
-[ "$actual_package_dependencies" = 0 ] \
-  || architecture_guard_fail "Package.swift declares $actual_package_dependencies external package dependency/dependencies; the production graph is closed and requires an explicit reviewed allowlist before adding one"
-for graph_target in ClawdlineCore ClawdlineApplication Clawdline ClawdlineLinux ClawdlineLinuxTests; do
+[ "$actual_package_dependencies" = 1 ] \
+  || architecture_guard_fail "Package.swift declares $actual_package_dependencies external package dependency/dependencies, expected exactly the reviewed swift-crypto 4.5.2 dependency"
+package_dump=$(swift package --disable-sandbox dump-package 2>/dev/null) \
+  || architecture_guard_fail "swift package dump-package failed; the exact swift-crypto pin cannot be checked"
+printf '%s' "$package_dump" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+deps = d.get("dependencies") or []
+targets = {t["name"]: t for t in d.get("targets") or []}
+try:
+    source = deps[0]["sourceControl"][0]
+    exact = source["requirement"]["exact"][0]
+    product = [x["product"] for x in targets["ClawdlineApplication"]["dependencies"] if "product" in x]
+except (IndexError, KeyError, TypeError):
+    raise SystemExit(1)
+expected = ["Crypto", "swift-crypto", None, {"platformNames": ["linux"]}]
+if len(deps) != 1 or source.get("identity") != "swift-crypto" or exact != "4.5.2" or product != [expected]:
+    raise SystemExit(1)
+' || architecture_guard_fail "the sole external dependency is not exactly swift-crypto 4.5.2 / Crypto for Linux ClawdlineApplication"
+for graph_target in ClawdlineCore Clawdline ClawdlineLinux ClawdlineLinuxTests; do
   actual_external_products=$(graph_field "$graph_target\.external-products")
   [ "$actual_external_products" = 0 ] \
     || architecture_guard_fail "$graph_target has $actual_external_products external product dependency/dependencies; the production graph is closed and requires an explicit reviewed allowlist before adding one"
 done
+actual_application_external_products=$(graph_field 'ClawdlineApplication\.external-products')
+[ "$actual_application_external_products" = 1 ] \
+  || architecture_guard_fail "ClawdlineApplication has $actual_application_external_products external product dependency/dependencies, expected exactly Linux Crypto"
 
 for executable_product in Clawdline ClawdlineLinux; do
   actual_product_targets=$(graph_field "$executable_product\.product-targets")
@@ -1323,7 +1351,15 @@ grep -q 'rollback_state_incompatible' tools/linux-package.sh \
 # second time as an unrelated `Clawdline.*` type, silently defeating every check above — the
 # dependency edge would be exact and the two library targets' membership would be exact, and the
 # Mac target would still hold a duplicate, unconsumed copy of the same vocabulary.
-mac_forbidden_sources=$(printf '%s\n%s\n' "$core_expected_members" "$application_expected_members" | LC_ALL=C sort)
+# CloudTransport has one explicitly conditional shared header and one Mac-only body so the flat
+# compatibility suite and the SwiftPM Mac product still compile the historical implementation.
+# The marker pair is part of the exception: deleting either makes this guard red.
+grep -q '^#if !SWIFT_PACKAGE || CLAWDLINE_APPLICATION_TARGET$' Sources/CloudTransport.swift \
+  || architecture_guard_fail "CloudTransport lost its Application-only shared identity boundary"
+grep -q '^#if !SWIFT_PACKAGE || !CLAWDLINE_APPLICATION_TARGET$' Sources/CloudTransport.swift \
+  || architecture_guard_fail "CloudTransport lost its Mac/flat compatibility implementation boundary"
+mac_forbidden_sources=$(printf '%s\n%s\n' "$core_expected_members" "$application_expected_members" \
+  | grep -v '^CloudTransport\.swift$' | LC_ALL=C sort)
 actual_mac_sources=$(graph_field 'Clawdline\.sources')
 mac_duplicated_sources=$(comm -12 \
   <(printf '%s\n' "$mac_forbidden_sources") \

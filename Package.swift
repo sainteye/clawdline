@@ -65,9 +65,23 @@ import PackageDescription
 var products: [Product] = [
     .executable(name: "ClawdlineLinux", targets: ["ClawdlineLinux"]),
 ]
+let dependencies: [Package.Dependency] = [
+    // Linux has no system CryptoKit module. Pin the same reviewed swift-crypto release as the
+    // Ubuntu Core probe so the shared Application pairing bytes compile on both hosts.
+    .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
+]
 var targets: [Target] = [
         .target(name: "ClawdlineCore", path: "Packages/ClawdlineCore"),
-        .target(name: "ClawdlineApplication", dependencies: ["ClawdlineCore"], path: "Packages/ClawdlineApplication"),
+        .target(
+            name: "ClawdlineApplication",
+            dependencies: [
+                "ClawdlineCore",
+                .product(name: "Crypto", package: "swift-crypto",
+                         condition: .when(platforms: [.linux])),
+            ],
+            path: "Packages/ClawdlineApplication",
+            swiftSettings: [.define("CLAWDLINE_APPLICATION_TARGET")]
+        ),
         .executableTarget(
             name: "ClawdlineLinux",
             dependencies: ["ClawdlineApplication"],
@@ -101,6 +115,9 @@ targets.insert(
                 "CloudCommandLedger.swift",
                 "CloudOutboundSpool.swift",
                 "CloudDurableStores.swift",
+                "CloudAccount.swift",
+                "CloudKeys.swift",
+                "CloudPairing.swift",
             ]
         ),
     at: 2
@@ -111,5 +128,6 @@ let package = Package(
     name: "Clawdline",
     platforms: [.macOS(.v13)],
     products: products,
+    dependencies: dependencies,
     targets: targets
 )

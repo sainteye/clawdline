@@ -388,6 +388,20 @@ private struct CloudLifecycleTests {
         check("the pinned list is readable only by its owner", permissions == 0o600,
               String(permissions, radix: 8))
 
+        let migration = try? store.beginProtectedMigration(accountID: "acct")
+        check("protected migration preserves the exact legacy roster in its fence",
+              migration == replaced)
+        check("protected migration removes the pathname a pre-W5 image authorizes",
+              !FileManager.default.fileExists(atPath: url.path))
+        let restartedMigration = try? CloudPairedDeviceStore(url: url)
+            .beginProtectedMigration(accountID: "acct")
+        check("protected migration resumes from the same fence after restart",
+              restartedMigration == replaced)
+        try? store.finishProtectedMigration()
+        check("the migration fence is removed only by explicit completion",
+              !FileManager.default.fileExists(
+                atPath: url.appendingPathExtension("w5-protected-migration").path))
+
         try? store.forget(deviceID: "viewer-1", accountID: "acct")
         check("forgetting a viewer removes it",
               ((try? store.devices(accountID: "acct")) ?? [CloudPairedDevice(
@@ -712,6 +726,7 @@ private struct CloudLifecycleTests {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let recorder = AttachRecorder()
+        recorder.startAttached = true
         let transport = LifecycleTestTransport()
         let machine = CloudMachineIdentity(accountID: "acct", machineID: "mac-durable")
         let lifecycle = makeLifecycle(
@@ -721,7 +736,9 @@ private struct CloudLifecycleTests {
                     directory: directory.appendingPathComponent(identity.machineID), runtime: .mac)
             }, sequenceDirectory: directory)
         lifecycle.apply()
-        let attached = await eventually { recorder.attachedCount == 1 }
+        let attached = await eventually {
+            recorder.attachedCount == 1 && transport.connects() == 1
+        }
         check("Mac lifecycle opens the shared ledger and spool before attachment", attached)
         check("candidate authority cannot cut over, emit, or raise a floor",
               CloudContractCandidateAuthority.w0E.authority == "candidate"
@@ -1342,7 +1359,6 @@ private struct CloudLifecycleTests {
             return CloudPairingCompleter.production(
                 client: client,
                 keys: CloudKeys(store: keyStore),
-                pairedDevices: store,
                 keychainTimeoutSeconds: timeout,
                 nowMilliseconds: { fixture.now })
         }
@@ -1651,6 +1667,7 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
         attributes: [.posixPermissions: 0o700])
     let signingKey = CloudDeviceKeyPair()
     let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x61, count: 32))
+    let commandChannel = "ctl/durable-mac"
     let transport = CloudAppBridgeTestTransport()
     let router = CloudAppBridgeTestRouter()
     let results = CloudAppBridgeTestResults()
@@ -1673,7 +1690,7 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
 
     let now = UInt64(Date().timeIntervalSince1970 * 1_000)
     let command = #"{"type":"send","session":"plain","request":"durable-1","text":"hello","images":[]}"#
-    transport.yield(command, sequence: 1, timestamp: now)
+    transport.yield(command, sequence: 1, timestamp: now, channel: commandChannel)
     try await waitForCloudAppBridge("durable command outcome and reply") {
         results.all().count == 1 && transport.envelopes().count == 1
     }
@@ -1697,7 +1714,7 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
     try await waitForCloudAppBridge("first durable reply acknowledgement") {
         await runtime!.spool.row(seq: Int64(firstReply.seq))?.state == .acked
     }
-    transport.yield(command, sequence: 2, timestamp: now)
+    transport.yield(command, sequence: 2, timestamp: now, channel: commandChannel)
     try await waitForCloudAppBridge("durable duplicate replay") {
         results.all().count == 2 && transport.envelopes().count == 2
     }
@@ -1711,7 +1728,7 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
         await runtime!.spool.row(seq: Int64(secondReply.seq))?.state == .acked
     }
     let conflict = #"{"type":"send","session":"plain","request":"durable-1","text":"changed","images":[]}"#
-    transport.yield(conflict, sequence: 3, timestamp: now)
+    transport.yield(conflict, sequence: 3, timestamp: now, channel: commandChannel)
     try await waitForCloudAppBridge("durable digest conflict") {
         results.all().contains { $0.code == "command_idempotency_conflict" }
     }
@@ -1721,7 +1738,7 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
 
     effectAuthority.armRevocationAfterReservation()
     let revoked = #"{"type":"send","session":"plain","request":"durable-revoked","text":"no-effect","images":[]}"#
-    transport.yield(revoked, sequence: 4, timestamp: now)
+    transport.yield(revoked, sequence: 4, timestamp: now, channel: commandChannel)
     try await waitForCloudAppBridge("effect-time authority revocation") {
         results.all().contains { $0.code == "command_gate_unavailable" }
     }

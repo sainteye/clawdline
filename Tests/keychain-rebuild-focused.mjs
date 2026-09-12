@@ -11,6 +11,10 @@ const lifecycleSource = resolve(process.env.CLAWDLINE_KEYCHAIN_LIFECYCLE_SOURCE 
   "Sources/CloudBridgeLifecycle.swift");
 const keysSource = resolve(process.env.CLAWDLINE_KEYCHAIN_KEYS_SOURCE ||
   "Sources/CloudKeys.swift");
+const canonicalJSONSource = resolve(process.env.CLAWDLINE_KEYCHAIN_CANONICAL_JSON_SOURCE ||
+  "Sources/CloudCanonicalJSON.swift");
+const pairingSource = resolve(process.env.CLAWDLINE_KEYCHAIN_PAIRING_SOURCE ||
+  "Sources/CloudPairing.swift");
 const buildSource = resolve(process.env.CLAWDLINE_KEYCHAIN_BUILD_SOURCE || "build.sh");
 const setupSource = resolve(process.env.CLAWDLINE_KEYCHAIN_SETUP_SOURCE ||
   "tools/setup-local-signing-identity.sh");
@@ -111,6 +115,20 @@ try {
   const keys = readFileSync(keysSource, "utf8");
   const policy = declaration(lifecycle, "struct CloudIdentityReadPolicy");
   const reader = declaration(keys, "final class CloudKeychainReader");
+  const keyError = declaration(keys, "public enum CloudKeyError");
+  const lockedDeclaration = declaration(keys, "final class CloudLocked");
+  const coordinator = declaration(keys, "public final class CloudKeyStoreCoordinator");
+  const coordinatorPool = declaration(keys, "private final class CloudKeychainCoordinatorPool");
+  const keyStoring = declaration(keys, "public protocol CloudKeyStoring");
+  const keychainStore = declaration(keys, "final class CloudKeychainStore");
+  const base32 = declaration(keys, "private enum CloudBase32");
+  const identityBoundary = keys.indexOf("// MARK: - Cross-platform executor identity authority");
+  if (identityBoundary < 0) throw new Error("missing executor identity boundary in CloudKeys.swift");
+  const legacyKeysSource = join(work, "CloudKeysLegacyFocused.swift");
+  const legacyKeys = keys.slice(0, identityBoundary)
+    .replace(declaration(keys, "public final class CloudSecretStoreKeyAdapter"), "")
+    + `\n${base32}\n`;
+  writeFileSync(legacyKeysSource, legacyKeys, "utf8");
   const swiftHarness = join(work, "main.swift");
   const swiftBinary = join(work, "keychain-concurrency");
   writeFileSync(swiftHarness, `
@@ -253,8 +271,28 @@ print("\\(checks) Swift checks passed")
 
   const storeWork = join(work, "store");
   mkdirSync(storeWork);
+  const storeSource = join(storeWork, "CloudKeychainStore.swift");
   const storeHarness = join(storeWork, "main.swift");
   const storeBinary = join(work, "store-main");
+  // Compile the exact production declarations that own the Keychain boundary. CloudKeys.swift also
+  // contains the portable identity state machine; compiling the whole file here accidentally makes
+  // this focused guard depend on every same-target identity and transport declaration.
+  writeFileSync(storeSource, `
+import Foundation
+import Security
+
+${keyError}
+
+${lockedDeclaration}
+
+${coordinator}
+
+${coordinatorPool}
+
+${keyStoring}
+
+${keychainStore}
+`, "utf8");
   // Top-level code, so the main thread really is the main thread. Inside the Swift suite it is
   // not: `dispatchMain()` parks it, and every later main-*queue* block answers
   // `Thread.isMainThread == false`. A guard spelled on the thread has to be witnessed here.
@@ -303,7 +341,7 @@ if let insertUI = insert[kSecUseAuthenticationUI],
 print("\\(storeChecks) store-boundary checks passed")
 `, "utf8");
   const storeCompile = run("swiftc", ["-swift-version", "5", "-target",
-    "arm64-apple-macos13.0", keysSource, storeHarness, "-framework", "Security",
+    "arm64-apple-macos13.0", storeSource, storeHarness, "-framework", "Security",
     "-o", storeBinary]);
   check(storeCompile.status === 0, `the production Keychain store guard compiles: ${storeCompile.stderr}`);
   const storeProbe = run(storeBinary);
@@ -416,7 +454,7 @@ MainActor.assumeIsolated {
 print("\\(checks) writer checks passed")
 `, "utf8");
   const writerCompile = run("swiftc", ["-swift-version", "5", "-target",
-    "arm64-apple-macos13.0", keysSource, writerHarness, "-framework", "Security",
+    "arm64-apple-macos13.0", legacyKeysSource, writerHarness, "-framework", "Security",
     "-o", writerBinary]);
   check(writerCompile.status === 0, `the bounded Keychain writer compiles: ${writerCompile.stderr}`);
   const writerProbe = run(writerBinary);
@@ -434,9 +472,10 @@ print("\\(checks) writer checks passed")
 import Foundation
 
 // CloudTransport's real provider drags the whole envelope stack in. Only its name is used here.
-struct CloudAPIDeviceTokenProvider: Sendable {
-    typealias AuthorizationHeaderProvider = @Sendable () throws -> String
-    init(apiBaseURL: URL, session: URLSession, authorizationHeader: @escaping AuthorizationHeaderProvider) {}
+public struct CloudAPIDeviceTokenProvider: Sendable {
+    public typealias AuthorizationHeaderProvider = @Sendable () throws -> String
+    public init(apiBaseURL: URL, session: URLSession,
+                authorizationHeader: @escaping AuthorizationHeaderProvider) {}
 }
 
 private actor Wire: CloudAccountHTTPTransport {
@@ -811,7 +850,8 @@ Task {
 dispatchMain()
 `, "utf8");
   const accountCompile = run("swiftc", ["-swift-version", "5", "-target",
-    "arm64-apple-macos13.0", keysSource, accountSource, accountHarness, "-framework", "Security", "-o", accountBinary]);
+    "arm64-apple-macos13.0", legacyKeysSource, canonicalJSONSource, pairingSource,
+    accountSource, accountHarness, "-framework", "Security", "-o", accountBinary]);
   check(accountCompile.status === 0,
     `the production credential client compiles focused: ${accountCompile.stderr}`);
   const accountProbe = run(accountBinary);
@@ -830,9 +870,10 @@ dispatchMain()
   writeFileSync(settingsHarness, `
 import Foundation
 
-struct CloudAPIDeviceTokenProvider: Sendable {
-    typealias AuthorizationHeaderProvider = @Sendable () throws -> String
-    init(apiBaseURL: URL, session: URLSession, authorizationHeader: @escaping AuthorizationHeaderProvider) {}
+public struct CloudAPIDeviceTokenProvider: Sendable {
+    public typealias AuthorizationHeaderProvider = @Sendable () throws -> String
+    public init(apiBaseURL: URL, session: URLSession,
+                authorizationHeader: @escaping AuthorizationHeaderProvider) {}
 }
 
 private struct Refused: Error, LocalizedError {
@@ -944,7 +985,8 @@ MainActor.assumeIsolated {
 print("\\(checks) settings checks passed")
 `, "utf8");
   const settingsCompile = run("swiftc", ["-swift-version", "5", "-target",
-    "arm64-apple-macos13.0", keysSource, accountSource, settingsSource, settingsHarness,
+    "arm64-apple-macos13.0", legacyKeysSource, canonicalJSONSource, pairingSource,
+    accountSource, settingsSource, settingsHarness,
     "-framework", "Security", "-o", settingsBinary]);
   check(settingsCompile.status === 0,
     `the Settings sign-out state machine compiles focused: ${settingsCompile.stderr}`);

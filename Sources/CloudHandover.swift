@@ -1,11 +1,33 @@
 import Foundation
 import CryptoKit
+import Darwin
 #if canImport(ClawdlineApplication)
 import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
 #endif
 
-/// Key handover between a browser viewer and this Mac, over the three pairing calls the
-/// deployed control plane actually exposes.
+#if SWIFT_PACKAGE && canImport(ClawdlineApplication)
+/// Keeps the existing Mac `SecretStore` conformance in `MacHostAdapters.swift` source-compatible
+/// after CloudKeys moved inward. Every operation delegates to Application's store, including its
+/// process-wide coordinator; this is a composition alias, not a second Keychain owner.
+final class CloudKeychainStore {
+    private let applicationStore: ClawdlineApplication.CloudProtectedKeychainStore
+
+    init(service: String = ClawdlineApplication.CloudProtectedKeychainStore.defaultService) {
+        applicationStore = ClawdlineApplication.CloudProtectedKeychainStore(service: service)
+    }
+
+    var coordinator: CloudKeyStoreCoordinator { applicationStore.coordinator }
+    func data(for account: String) throws -> Data? { try applicationStore.data(for: account) }
+    func set(_ data: Data, for account: String) throws {
+        try applicationStore.set(data, for: account)
+    }
+    func remove(_ account: String) throws { try applicationStore.remove(account) }
+}
+#endif
+
+/// Compatibility key handover between a browser viewer and this Mac. The normative W5-2 path is
+/// `CloudIdentityPairingMachineHandover` below; this three-call adapter remains only so an older
+/// console can finish a pairing it started before the identity-route cutover.
 ///
 /// **Why this is not `CloudPairingQR`.** `CloudPairing` carries a four-phase handover
 /// (`offer`, `grant`, `activate`, `confirm`) whose wire form is "the complete request body of
@@ -149,6 +171,7 @@ struct CloudPairingInvitation: Equatable, Sendable {
 /// current one makes the whole file a fresh, empty one rather than something to merge.
 final class CloudPairedDeviceStore: @unchecked Sendable {
     private let url: URL
+    private var migrationURL: URL { url.appendingPathExtension("w5-protected-migration") }
     private let lock = NSLock()
 
     init(url: URL) {
@@ -163,6 +186,35 @@ final class CloudPairedDeviceStore: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return try loadUnlocked(accountID: accountID).devices
+    }
+
+    /// Move the old authority out of the pathname a pre-W5 binary understands before importing
+    /// it. If protected persistence then fails, the fence remains readable to this version while
+    /// an old binary sees no roster to revive. The rename and parent directory are durable before
+    /// any protected write begins.
+    func beginProtectedMigration(accountID: String) throws -> [CloudPairedDevice] {
+        lock.lock()
+        defer { lock.unlock() }
+        let manager = FileManager.default
+        let hasLive = manager.fileExists(atPath: url.path)
+        let hasFence = manager.fileExists(atPath: migrationURL.path)
+        guard !(hasLive && hasFence) else { throw CloudHandoverError.storeUnreadable }
+        if hasLive {
+            do {
+                try manager.moveItem(at: url, to: migrationURL)
+                try syncParentDirectory()
+            } catch {
+                throw CloudHandoverError.storeUnwritable
+            }
+        }
+        guard manager.fileExists(atPath: migrationURL.path) else { return [] }
+        return try loadUnlocked(accountID: accountID, from: migrationURL).devices
+    }
+
+    func finishProtectedMigration() throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try removeIfPresent(migrationURL)
     }
 
     /// Pinning replaces any earlier pin for the same device id: re-pairing a browser that
@@ -190,21 +242,18 @@ final class CloudPairedDeviceStore: @unchecked Sendable {
     func removeAll() throws {
         lock.lock()
         defer { lock.unlock() }
-        do {
-            try FileManager.default.removeItem(at: url)
-        } catch CocoaError.fileNoSuchFile {
-            return
-        } catch let error as NSError where error.domain == NSCocoaErrorDomain
-                    && error.code == NSFileNoSuchFileError {
-            return
-        } catch {
-            throw CloudHandoverError.storeUnwritable
-        }
+        try removeIfPresent(url)
+        try removeIfPresent(migrationURL)
     }
 
     private func loadUnlocked(accountID: String) throws -> (devices: [CloudPairedDevice], stored: String?) {
-        guard FileManager.default.fileExists(atPath: url.path) else { return ([], nil) }
-        guard let data = try? Data(contentsOf: url) else {
+        try loadUnlocked(accountID: accountID, from: url)
+    }
+
+    private func loadUnlocked(accountID: String, from sourceURL: URL)
+        throws -> (devices: [CloudPairedDevice], stored: String?) {
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return ([], nil) }
+        guard let data = try? Data(contentsOf: sourceURL) else {
             throw CloudHandoverError.storeUnreadable
         }
         guard let value = try? CloudCanonicalJSON.parseStrict(data),
@@ -233,6 +282,27 @@ final class CloudPairedDeviceStore: @unchecked Sendable {
                 deviceID: deviceID, signingKey: raw, pairedAtMilliseconds: pairedAt))
         }
         return (devices, storedAccount)
+    }
+
+    private func removeIfPresent(_ candidate: URL) throws {
+        do {
+            try FileManager.default.removeItem(at: candidate)
+            try syncParentDirectory()
+        } catch CocoaError.fileNoSuchFile {
+            return
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+                    && error.code == NSFileNoSuchFileError {
+            return
+        } catch {
+            throw CloudHandoverError.storeUnwritable
+        }
+    }
+
+    private func syncParentDirectory() throws {
+        let descriptor = open(url.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY)
+        guard descriptor >= 0 else { throw CloudHandoverError.storeUnwritable }
+        defer { close(descriptor) }
+        guard fsync(descriptor) == 0 else { throw CloudHandoverError.storeUnwritable }
     }
 
     private func writeUnlocked(devices: [CloudPairedDevice], accountID: String) throws {
@@ -546,7 +616,262 @@ enum CloudHandover {
     }
 }
 
-/// The Mac's half of pairing, as one call a settings control can make.
+public protocol CloudIdentityPairingClient: Sendable {
+    func startIdentityPairing(_ request: CloudIdentityPairingStartRequest) async throws
+        -> CloudIdentityPairingStart
+    func writeIdentityPairingPhase(
+        pairingID: String, phase: CloudPairingPhase, claimNonce: String,
+        wrapper: CloudPairingWrapper
+    ) async throws -> CloudIdentityPairingPhaseReceipt
+    func pollIdentityPairingPhase(
+        pairingID: String, phase: CloudPairingPhase, claimNonce: String
+    ) async throws -> CloudIdentityPairingPoll
+}
+
+extension CloudAccountClient: CloudIdentityPairingClient {}
+
+/// Production machine-side owner of the four-phase identity lifecycle.
+///
+/// Viewer writes `offer`/`activate`; machine writes `grant`/`confirm`. Grant bytes are retained by
+/// `CloudExecutorIdentityAuthority`, and confirm uses a deterministic per-pairing nonce, so an
+/// accepted write whose reply was lost is retried byte-for-byte and receives `duplicate`. The
+/// viewer is pinned only after the confirm receipt is observed.
+public actor CloudIdentityPairingMachineHandover {
+    public enum Progress: Equatable, Sendable {
+        case waitingForOffer(CloudPairingQR)
+        case waitingForActivate(CloudPairingQR)
+        case complete(CloudExecutorIdentitySnapshot)
+    }
+
+    private struct Session: Sendable {
+        let start: CloudIdentityPairingStart
+        let machineEphemeralPrivateKey: Data
+    }
+
+    private let client: any CloudIdentityPairingClient
+    private let authority: CloudExecutorIdentityAuthority
+    private let nowMilliseconds: @Sendable () -> Int64
+    private let randomBytes: @Sendable (Int) -> Data
+    private var sessions: [String: Session] = [:]
+
+    public init(
+        client: any CloudIdentityPairingClient,
+        authority: CloudExecutorIdentityAuthority,
+        nowMilliseconds: @escaping @Sendable () -> Int64 = {
+            Int64(Date().timeIntervalSince1970 * 1_000)
+        },
+        randomBytes: @escaping @Sendable (Int) -> Data = { count in
+            var generator = SystemRandomNumberGenerator()
+            return Data((0..<count).map { _ in
+                UInt8.random(in: .min ... .max, using: &generator)
+            })
+        }
+    ) {
+        self.client = client
+        self.authority = authority
+        self.nowMilliseconds = nowMilliseconds
+        self.randomBytes = randomBytes
+    }
+
+    public func begin(rotationID: String) async throws -> CloudPairingQR {
+        let material = try authority.transportMaterial()
+        let privateKey = randomBytes(32)
+        let pairingNonce = randomBytes(32)
+        guard privateKey.count == 32, pairingNonce.count == 32,
+              material.binding.keyEpoch <= UInt64(Int64.max) else {
+            throw CloudExecutorIdentityError.protectedStateCorrupt
+        }
+        let publicKey = try CloudPairing.x25519PublicKey(privateKeyRaw: privateKey)
+        let epoch = Int64(material.binding.keyEpoch)
+        let request = CloudIdentityPairingStartRequest(
+            machineSigningKey: material.deviceKey.publicKeyRaw.base64EncodedString(),
+            machineFingerprint: material.binding.signingKeyFingerprint,
+            machineEphemeralKey: publicKey.base64EncodedString(),
+            pairingNonce: pairingNonce.base64EncodedString(),
+            previousContentKeyEpoch: max(0, epoch - 1), contentKeyEpoch: epoch,
+            rotationID: rotationID)
+        let started = try await client.startIdentityPairing(request)
+        guard started.rotationID == rotationID,
+              started.qr.accountID == material.binding.accountID,
+              started.qr.machineID == material.binding.machineID,
+              started.qr.machineSigningKey == request.machineSigningKey,
+              started.qr.machineFingerprint == request.machineFingerprint,
+              started.qr.machineEphemeralKey == request.machineEphemeralKey,
+              started.qr.pairingNonce == request.pairingNonce,
+              started.epochs.machineKeyEpoch == epoch,
+              started.contentKeyRotation.newEpoch == epoch else {
+            throw CloudExecutorIdentityError.identityMismatch
+        }
+        sessions[started.qr.pairingID] = Session(
+            start: started, machineEphemeralPrivateKey: privateKey)
+        return started.qr
+    }
+
+    public func advance(pairingID: String) async throws -> Progress {
+        guard let session = sessions[pairingID] else {
+            throw CloudExecutorIdentityError.pairingNotPrepared
+        }
+        let qr = session.start.qr
+        let offerPoll = try await client.pollIdentityPairingPhase(
+            pairingID: pairingID, phase: .offer, claimNonce: qr.claimNonce)
+        guard case .ready(_, _, let offerWrapper, _, _, _) = offerPoll else {
+            return .waitingForOffer(qr)
+        }
+        let viewerEphemeral = try CloudPairing.decodeCanonicalBase64(
+            offerWrapper.ephemeralKey, field: "viewer_ephemeral_key", expectedLength: 32)
+        let shared = try CloudPairing.x25519SharedSecret(
+            privateKeyRaw: session.machineEphemeralPrivateKey,
+            peerPublicKeyRaw: viewerEphemeral)
+        let pairingNonce = try CloudPairing.decodeCanonicalBase64(
+            qr.pairingNonce, field: "pairing_nonce", expectedLength: 32)
+        let claimNonce = try CloudPairing.decodeCanonicalBase64(
+            qr.claimNonce, field: "claim_nonce", expectedLength: 32)
+        let offerKey = try CloudPairing.derive(
+            sharedSecretRaw: shared, pairingNonce: pairingNonce, pairingID: pairingID,
+            claimNonce: claimNonce, phase: .offer)
+        let offerBytes = try CloudPairing.open(
+            offerWrapper, phaseKey: offerKey.phaseKey,
+            viewerEphemeralKey: offerWrapper.ephemeralKey,
+            machineEphemeralKey: qr.machineEphemeralKey)
+        try Self.requireOfferBinding(offerBytes, qr: qr, senderDeviceID: offerWrapper.senderDeviceID)
+        let prepared = try authority.prepareHandover(
+            offerBytes: offerBytes, nowMilliseconds: nowMilliseconds(),
+            machineEphemeralPrivateKey: session.machineEphemeralPrivateKey)
+        let grant = try CloudPairing.decodeWrapper(prepared.wrapperBytes)
+        guard grant.ephemeralKey == qr.machineEphemeralKey else {
+            throw CloudExecutorIdentityError.identityMismatch
+        }
+        let grantReceipt = try await client.writeIdentityPairingPhase(
+            pairingID: pairingID, phase: .grant, claimNonce: qr.claimNonce, wrapper: grant)
+        try Self.requireEpochBinding(grantReceipt.epochs, started: session.start)
+
+        let activatePoll = try await client.pollIdentityPairingPhase(
+            pairingID: pairingID, phase: .activate, claimNonce: qr.claimNonce)
+        guard case .ready(_, _, let activate, let activateSHA, _, _) = activatePoll else {
+            return .waitingForActivate(qr)
+        }
+        let activateKey = try CloudPairing.derive(
+            sharedSecretRaw: shared, pairingNonce: pairingNonce, pairingID: pairingID,
+            claimNonce: claimNonce, phase: .activate)
+        let activateBytes = try CloudPairing.open(
+            activate, phaseKey: activateKey.phaseKey,
+            viewerEphemeralKey: offerWrapper.ephemeralKey,
+            machineEphemeralKey: qr.machineEphemeralKey)
+        let wantedActivate = CloudCanonicalJSON.canonicalData(.object([
+            "v": .int(1), "type": .string("pairing_activate"),
+            "grant_sha256": .string(grantReceipt.phaseSHA256)
+        ]))
+        guard activateBytes == wantedActivate,
+              activate.senderDeviceID == prepared.viewerDeviceID else {
+            throw CloudExecutorIdentityError.identityMismatch
+        }
+        let confirmBytes = CloudCanonicalJSON.canonicalData(.object([
+            "v": .int(1), "type": .string("pairing_confirm"),
+            "activate_sha256": .string(activateSHA)
+        ]))
+        var noncePreimage = Data("clawdline-pairing-confirm-nonce-v1\0".utf8)
+        noncePreimage.append(try CloudPairing.encodeWrapper(activate))
+        let confirmNonce = Data(SHA256.hash(data: noncePreimage).prefix(12))
+        let confirmKey = try CloudPairing.derive(
+            sharedSecretRaw: shared, pairingNonce: pairingNonce, pairingID: pairingID,
+            claimNonce: claimNonce, phase: .confirm)
+        let confirm = try CloudPairing.seal(
+            plaintext: confirmBytes, phase: .confirm, pairingID: pairingID,
+            senderDeviceID: qr.machineID, ephemeralKey: qr.machineEphemeralKey,
+            phaseKey: confirmKey.phaseKey, nonce: confirmNonce)
+        let confirmReceipt = try await client.writeIdentityPairingPhase(
+            pairingID: pairingID, phase: .confirm, claimNonce: qr.claimNonce,
+            wrapper: confirm)
+        try Self.requireEpochBinding(confirmReceipt.epochs, started: session.start)
+        let snapshot = try authority.commitPreparedHandover(
+            pairingID: pairingID, claimNonce: qr.claimNonce,
+            deliveredFingerprint: prepared.viewerFingerprint,
+            nowMilliseconds: nowMilliseconds())
+        sessions.removeValue(forKey: pairingID)
+        return .complete(snapshot)
+    }
+
+    private static func requireEpochBinding(
+        _ actual: CloudIdentityEpochs, started: CloudIdentityPairingStart
+    ) throws {
+        guard actual.identityEpoch == started.epochs.identityEpoch,
+              actual.machineKeyEpoch == started.epochs.machineKeyEpoch,
+              actual.contentKeyEpoch == started.contentKeyRotation.newEpoch,
+              actual.jwksGeneration == started.epochs.jwksGeneration else {
+            throw CloudExecutorIdentityError.invalidReconnectProof
+        }
+    }
+
+    private static func requireOfferBinding(
+        _ bytes: Data, qr: CloudPairingQR, senderDeviceID: String
+    ) throws {
+        guard case .object(let object) = try CloudCanonicalJSON.parseStrict(bytes),
+              case .string(let pairingID)? = object["pairing_id"],
+              case .string(let claimNonce)? = object["claim_nonce"],
+              case .string(let pairingNonce)? = object["pairing_nonce"],
+              case .string(let accountID)? = object["account_id"],
+              case .string(let viewerDeviceID)? = object["viewer_device_id"],
+              pairingID == qr.pairingID, claimNonce == qr.claimNonce,
+              pairingNonce == qr.pairingNonce, accountID == qr.accountID,
+              viewerDeviceID == senderDeviceID else {
+            throw CloudExecutorIdentityError.identityMismatch
+        }
+    }
+}
+
+/// Orders control-plane epoch mutation before the matching protected-state mutation. A server
+/// success followed by a local persistence failure is intentionally fail closed: reconnect still
+/// presents the retired local epoch and is refused. Retrying with the same replacement consumes
+/// the server's `duplicate` receipt and completes the local commit exactly once.
+public struct CloudExecutorIdentityMutationCoordinator: Sendable {
+    private let client: CloudAccountClient
+    private let authority: CloudExecutorIdentityAuthority
+
+    public init(client: CloudAccountClient, authority: CloudExecutorIdentityAuthority) {
+        self.client = client
+        self.authority = authority
+    }
+
+    public func rotateMachine(
+        replacementKey: CloudDeviceKeyPair, replacementMasterSecret: CloudMasterSecret,
+        replacementKeyID: String
+    ) async throws -> CloudExecutorIdentitySnapshot {
+        let before = try authority.snapshot()
+        guard before.keyEpoch < UInt64(Int64.max) else {
+            throw CloudExecutorIdentityError.generationOverflow
+        }
+        let receipt = try await client.rotateMachineIdentity(
+            machineID: before.machineID, expectedKeyEpoch: Int64(before.keyEpoch),
+            publicKey: replacementKey.publicKeyRaw.base64EncodedString(),
+            fingerprint: replacementKey.pairingFingerprint)
+        guard receipt.keyFingerprint == replacementKey.pairingFingerprint,
+              receipt.keyEpoch == Int64(before.keyEpoch + 1) else {
+            throw CloudExecutorIdentityError.identityMismatch
+        }
+        let current = try authority.snapshot()
+        if current.machineFingerprint == replacementKey.pairingFingerprint,
+           current.keyEpoch == UInt64(receipt.keyEpoch) {
+            return current
+        }
+        _ = try authority.rotateKeys(
+            deviceKey: replacementKey, masterSecret: replacementMasterSecret,
+            keyID: replacementKeyID, expectedGeneration: before.identityGeneration)
+        return try authority.snapshot()
+    }
+
+    public func revokeViewer(
+        deviceID: String, browserSessionCookie: String
+    ) async throws -> CloudExecutorIdentitySnapshot {
+        _ = try await client.revokeDevice(
+            id: deviceID, browserSessionCookie: browserSessionCookie)
+        let current = try authority.snapshot()
+        if current.revokedDeviceIDs.contains(deviceID) { return current }
+        return try authority.revokeDevice(
+            deviceID, expectedGeneration: current.identityGeneration)
+    }
+}
+
+/// The Mac's legacy compatibility half of pairing, as one call a settings control can make.
 ///
 /// Deliberately not a `CloudPairingCryptographyProviding` conformance: that protocol's
 /// `makeOpaqueHandover()` takes no arguments, which suits a design where the Mac produces the
@@ -596,11 +921,21 @@ struct CloudPairingCompleter: Sendable {
     var pin: @Sendable (CloudPairedDevice, String) throws -> Void
     var nowMilliseconds: @Sendable () -> Int64
     var randomBytes: @Sendable (Int) -> Data
+    /// Production supplies both closures from the one protected identity authority. `nil` is the
+    /// legacy deterministic fixture seam only; no production factory writes the JSON roster.
+    var prepareIdentity: (@Sendable (
+        CloudMachineIdentity, CloudDeviceKeyPair, CloudMasterSecret, Data, Int64
+    ) async throws -> CloudExecutorPreparedHandover)? = nil
+    var commitIdentity: (@Sendable (
+        String, String, String, Int64
+    ) async throws -> CloudExecutorIdentitySnapshot)? = nil
 
     static func production(
         client: CloudAccountClient = CloudAccountClient(),
         keys: CloudKeys = CloudKeys(),
-        pairedDevices: CloudPairedDeviceStore = CloudPairedDeviceStore(),
+        identityAuthority: CloudExecutorIdentityAuthority = CloudExecutorIdentityAuthority(
+            store: CloudKeychainStore()),
+        legacyPairedDevices: CloudPairedDeviceStore = CloudPairedDeviceStore(),
         keychainTimeoutSeconds: Int = CloudKeychainReader<CloudMachineIdentity?>.defaultTimeoutSeconds,
         nowMilliseconds: @escaping @Sendable () -> Int64 = {
             Int64(Date().timeIntervalSince1970 * 1_000)
@@ -622,7 +957,16 @@ struct CloudPairingCompleter: Sendable {
                     return try await CloudKeychainReader(
                         label: "clawdline.cloud.pairing-device-key",
                         timeoutSeconds: keychainTimeoutSeconds
-                    ) { try keys.loadOrCreateDeviceKeyPair() }.value()
+                    ) {
+                        switch identityAuthority.readiness() {
+                        case .ready:
+                            return try identityAuthority.transportMaterial().deviceKey
+                        case .blocked(.protectedStateMissing):
+                            return try keys.loadOrCreateDeviceKeyPair()
+                        case .blocked(let error):
+                            throw error
+                        }
+                    }.value()
                 } catch CloudKeychainReader<CloudDeviceKeyPair>.AwaitError.timedOut(let seconds) {
                     throw Failure.keychainTimedOut(seconds: seconds)
                 }
@@ -632,7 +976,16 @@ struct CloudPairingCompleter: Sendable {
                     return try await CloudKeychainReader(
                         label: "clawdline.cloud.pairing-master-key",
                         timeoutSeconds: keychainTimeoutSeconds
-                    ) { try keys.loadOrCreateMasterSecret() }.value()
+                    ) {
+                        switch identityAuthority.readiness() {
+                        case .ready:
+                            return try identityAuthority.transportMaterial().masterSecret
+                        case .blocked(.protectedStateMissing):
+                            return try keys.loadOrCreateMasterSecret()
+                        case .blocked(let error):
+                            throw error
+                        }
+                    }.value()
                 } catch CloudKeychainReader<CloudMasterSecret>.AwaitError.timedOut(let seconds) {
                     throw Failure.keychainTimedOut(seconds: seconds)
                 }
@@ -640,13 +993,68 @@ struct CloudPairingCompleter: Sendable {
             deliver: { pairingID, blob in
                 try await client.completePairing(pairingID: pairingID, blob: blob)
             },
-            pin: { device, accountID in try pairedDevices.pin(device, accountID: accountID) },
+            pin: { _, _ in
+                assertionFailure("production pairing must pin through CloudExecutorIdentityAuthority")
+            },
             nowMilliseconds: nowMilliseconds,
             randomBytes: { count in
                 var generator = SystemRandomNumberGenerator()
                 return Data((0..<count).map { _ in
                     UInt8.random(in: .min ... .max, using: &generator)
                 })
+            },
+            prepareIdentity: { identity, deviceKey, masterSecret, offerBytes, now in
+                do {
+                    return try await CloudKeychainReader(
+                        label: "clawdline.cloud.pairing-authority-prepare",
+                        timeoutSeconds: keychainTimeoutSeconds
+                    ) {
+                        switch identityAuthority.readiness(
+                            expectedAccountID: identity.accountID,
+                            expectedMachineID: identity.machineID) {
+                        case .ready:
+                            break
+                        case .blocked(.protectedStateMissing):
+                            let imported = try legacyPairedDevices.beginProtectedMigration(
+                                accountID: identity.accountID).map {
+                                CloudExecutorPairedDevice(
+                                    deviceID: $0.deviceID, signingKey: $0.signingKey,
+                                    fingerprint: try CloudPairing.ed25519Fingerprint(
+                                        publicKeyRaw: $0.signingKey),
+                                    pairedAtMilliseconds: $0.pairedAtMilliseconds,
+                                    identityGeneration: 1,
+                                    capabilities: CloudExecutorIdentityAuthority.defaultCapabilities)
+                            }
+                            _ = try identityAuthority.provision(
+                                accountID: identity.accountID, machineID: identity.machineID,
+                                deviceKey: deviceKey, masterSecret: masterSecret,
+                                importedPairedDevices: imported)
+                        case .blocked(let error):
+                            throw error
+                        }
+                        try legacyPairedDevices.removeAll()
+                        return try identityAuthority.prepareHandover(
+                            offerBytes: offerBytes, nowMilliseconds: now)
+                    }.value()
+                } catch CloudKeychainReader<CloudExecutorPreparedHandover>.AwaitError
+                    .timedOut(let seconds) {
+                    throw Failure.keychainTimedOut(seconds: seconds)
+                }
+            },
+            commitIdentity: { pairingID, claimNonce, fingerprint, now in
+                do {
+                    return try await CloudKeychainReader(
+                        label: "clawdline.cloud.pairing-authority-commit",
+                        timeoutSeconds: keychainTimeoutSeconds
+                    ) {
+                        try identityAuthority.commitPreparedHandover(
+                            pairingID: pairingID, claimNonce: claimNonce,
+                            deliveredFingerprint: fingerprint, nowMilliseconds: now)
+                    }.value()
+                } catch CloudKeychainReader<CloudExecutorIdentitySnapshot>.AwaitError
+                    .timedOut(let seconds) {
+                    throw Failure.keychainTimedOut(seconds: seconds)
+                }
             })
     }
 
@@ -666,13 +1074,31 @@ struct CloudPairingCompleter: Sendable {
         let signing = try await deviceKeyPair()
         let machineFingerprint = try CloudPairing.ed25519Fingerprint(
             publicKeyRaw: signing.publicKeyRaw)
+        let master = try await masterSecret()
+        if let prepareIdentity, let commitIdentity {
+            let offerBytes = CloudCanonicalJSON.canonicalData(offer.cloudJSONValue)
+            let prepared = try await prepareIdentity(identity, signing, master, offerBytes, now)
+            let delivery = try await deliver(
+                offer.pairingID,
+                try CloudOpaquePairingBlob(base64: prepared.wrapperBytes.base64EncodedString()))
+            guard delivery.fingerprint == offer.viewerFingerprint else {
+                throw Failure.fingerprintNotEchoed
+            }
+            _ = try await commitIdentity(
+                offer.pairingID, offer.claimNonce, delivery.fingerprint, now)
+            return Outcome(
+                viewerDeviceID: offer.viewerDeviceID,
+                viewerFingerprint: offer.viewerFingerprint,
+                deliveredFingerprint: delivery.fingerprint,
+                machineFingerprint: prepared.machineFingerprint)
+        }
         let handover = CloudPairingHandover(
             accountID: identity.accountID,
             machineID: identity.machineID,
             machineSigningKey: signing.publicKeyRaw.base64EncodedString(),
             machineFingerprint: machineFingerprint,
             keyID: CloudBridgeLifecycle.masterKeyID,
-            masterSecret: try await masterSecret().rawRepresentation.base64EncodedString())
+            masterSecret: master.rawRepresentation.base64EncodedString())
         let wrapper = try CloudHandover.seal(
             handover, for: offer,
             machineDeviceID: identity.machineID,

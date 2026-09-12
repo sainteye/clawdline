@@ -7,11 +7,14 @@ import ClawdlineApplication
 final class LinuxContainedFileSystemHost: FileSystemHost {
     let roots: [CanonicalProjectRoot]
     let maximumReadBytes: Int
+    private let protectedOwner: (uid: UInt32, gid: UInt32)?
     var capabilities: Set<HostCapability> { [.files] }
 
-    init(roots: [CanonicalProjectRoot], maximumReadBytes: Int = 16 * 1_048_576) {
+    init(roots: [CanonicalProjectRoot], maximumReadBytes: Int = 16 * 1_048_576,
+         protectedOwner: (uid: UInt32, gid: UInt32)? = nil) {
         self.roots = roots.sorted { $0.path.count > $1.path.count }
         self.maximumReadBytes = maximumReadBytes
+        self.protectedOwner = protectedOwner
     }
 
     func contents(atPath path: String) throws -> Data? {
@@ -29,6 +32,7 @@ final class LinuxContainedFileSystemHost: FileSystemHost {
                   metadata.st_size <= maximumReadBytes else {
                 throw failure("The contained path is not a bounded regular file.")
             }
+            try validateProtectedLeaf(metadata, operation: "read")
             var data = Data(count: Int(metadata.st_size))
             var offset = 0
             while offset < data.count {
@@ -63,6 +67,11 @@ final class LinuxContainedFileSystemHost: FileSystemHost {
                 _ = close(descriptor)
                 if keepTemporary { _ = temporary.withCString { unlinkat(parent, $0, 0) } }
             }
+            var temporaryMetadata = stat()
+            guard fstat(descriptor, &temporaryMetadata) == 0 else {
+                throw failure("The atomic write temporary file could not be inspected.")
+            }
+            try validateProtectedLeaf(temporaryMetadata, operation: "write")
             var offset = 0
             while offset < data.count {
                 let count = data.withUnsafeBytes { raw -> Int in
@@ -84,11 +93,27 @@ final class LinuxContainedFileSystemHost: FileSystemHost {
 
     func removeItem(atPath path: String) throws {
         try withParent(of: path) { parent, leaf in
+            let descriptor = leaf.withCString {
+                openat(parent, $0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            }
+            if descriptor < 0, errno == ENOENT { return }
+            guard descriptor >= 0 else {
+                throw failure("The contained remove could not open its leaf safely.")
+            }
+            defer { _ = close(descriptor) }
+            var opened = stat()
+            guard fstat(descriptor, &opened) == 0,
+                  opened.st_mode & S_IFMT == S_IFREG else {
+                throw failure("A contained remove accepts only a regular file.")
+            }
+            try validateProtectedLeaf(opened, operation: "remove")
             var metadata = stat()
             let status = leaf.withCString { fstatat(parent, $0, &metadata, AT_SYMLINK_NOFOLLOW) }
-            if status != 0, errno == ENOENT { return }
-            guard status == 0, metadata.st_mode & S_IFMT != S_IFLNK else {
-                throw failure("A contained remove refuses a symbolic link.")
+            guard status == 0,
+                  metadata.st_mode & S_IFMT == S_IFREG,
+                  metadata.st_dev == opened.st_dev,
+                  metadata.st_ino == opened.st_ino else {
+                throw failure("A contained remove refuses a changed or linked leaf.")
             }
             guard leaf.withCString({ unlinkat(parent, $0, 0) }) == 0, fsync(parent) == 0 else {
                 throw failure("The contained file could not be removed and synchronized.")
@@ -111,13 +136,17 @@ final class LinuxContainedFileSystemHost: FileSystemHost {
         var current = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard current >= 0 else { throw failure("The filesystem root could not be opened safely.") }
         defer { _ = close(current) }
-        for component in root.path.split(separator: "/").map(String.init) {
+        let rootComponents = root.path.split(separator: "/").map(String.init)
+        for (index, component) in rootComponents.enumerated() {
             let next = component.withCString {
                 openat(current, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
             }
             guard next >= 0 else { throw failure("An admitted-root component is missing or linked.") }
             _ = close(current)
             current = next
+            if index == rootComponents.count - 1 {
+                try validateProtectedDirectory(current)
+            }
         }
         for component in components.dropLast() {
             let next = component.withCString {
@@ -126,6 +155,7 @@ final class LinuxContainedFileSystemHost: FileSystemHost {
             guard next >= 0 else { throw failure("A contained parent is missing or linked.") }
             _ = close(current)
             current = next
+            try validateProtectedDirectory(current)
         }
         return try body(current, leaf)
     }
@@ -139,6 +169,30 @@ final class LinuxContainedFileSystemHost: FileSystemHost {
         }
         guard metadata.st_mode & S_IFMT == S_IFREG else {
             throw failure("An atomic contained write replaces only a regular file.")
+        }
+        try validateProtectedLeaf(metadata, operation: "write")
+    }
+
+    private func validateProtectedDirectory(_ descriptor: Int32) throws {
+        guard let protectedOwner else { return }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0,
+              metadata.st_mode & S_IFMT == S_IFDIR,
+              metadata.st_uid == protectedOwner.uid,
+              metadata.st_gid == protectedOwner.gid,
+              metadata.st_mode & 0o077 == 0 else {
+            throw failure("The protected directory chain has unsafe ownership or mode.")
+        }
+    }
+
+    private func validateProtectedLeaf(_ metadata: stat, operation: String) throws {
+        guard let protectedOwner else { return }
+        guard metadata.st_mode & S_IFMT == S_IFREG,
+              metadata.st_uid == protectedOwner.uid,
+              metadata.st_gid == protectedOwner.gid,
+              metadata.st_mode & 0o077 == 0,
+              metadata.st_nlink == 1 else {
+            throw failure("The protected secret cannot be admitted for \(operation).")
         }
     }
 
@@ -182,7 +236,9 @@ final class LinuxProtectedFileSecretStore: SecretStore, @unchecked Sendable {
 
     init(root: CanonicalProjectRoot) {
         self.root = root
-        self.files = LinuxContainedFileSystemHost(roots: [root], maximumReadBytes: 4096)
+        self.files = LinuxContainedFileSystemHost(
+            roots: [root], maximumReadBytes: 4096,
+            protectedOwner: (uid: root.ownerUID, gid: root.ownerGID))
     }
 
     func data(for account: String) throws -> Data? {

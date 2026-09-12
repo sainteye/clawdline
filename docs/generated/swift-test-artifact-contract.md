@@ -20,12 +20,18 @@ CLAWDLINE_TEST_GROUPS='palette colours parse' \
 CLAWDLINE_SWIFT_TEST_ARTIFACT=reuse \
 CLAWDLINE_SWIFT_TEST_CACHE_DIR=/absolute/private/cache \
 TMPDIR=/absolute/private/another-run-tmp ./test.sh --swift-focused
+
+# A direct Cloud suite execution; comma-separate multiple exact names when proving aggregation.
+CLAWDLINE_SWIFT_TEST_ARTIFACT=reuse \
+CLAWDLINE_SWIFT_TEST_CACHE_DIR=/absolute/private/cache \
+TMPDIR=/absolute/private/cloud-run-tmp ./test.sh --cloud-focused CloudOutboundSpool
 ```
 
 Create the cache with permissions `0700`. The helper rejects a cache writable by other users,
 a cache inside the checkout, and an output inside the cache. Set
 `CLAWDLINE_SWIFT_TEST_ARTIFACT=off`, or leave it unset, to use the original compiler invocation.
-Unknown artifact modes and command-line modes are errors. `--swift-focused` also works uncached.
+Unknown artifact modes and command-line modes are errors. `--swift-focused` and
+`--cloud-focused` also work uncached.
 
 `CLAWDLINE_TEST_GROUPS` contains exact group titles separated by newlines. Unset means full
 execution unless `--swift-focused` was requested. An explicitly empty or whitespace-only value,
@@ -39,6 +45,12 @@ the machine lock, test-store isolation, output streaming, exit propagation and r
 The no-argument full entry preserves its entire existing node/browser roster and twelve Cloud
 suites. Supplying groups without `--swift-focused` retains the legacy pre-Swift guard/suite path;
 the Swift result still has focused scope.
+
+`--cloud-focused` accepts one or more comma-separated names from the closed twelve-suite Cloud
+roster. Empty, unknown, duplicate or mixed Swift/Cloud selections fail before compilation. The
+Swift harness skips generic groups, runs the selected Cloud suites in canonical roster order,
+continues after a suite failure so later evidence remains reachable, and emits a focused receipt
+that cannot be mistaken for the full twelve-suite completion receipt.
 
 ## Identity and supported input closure
 

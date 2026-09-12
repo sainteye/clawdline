@@ -53,6 +53,32 @@ let cloudTestSuites: [CloudTestSuite] = [
     }),
 ]
 let cloudTestCompletionReceiptPrefix = "CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites="
+let cloudFocusedTestCompletionReceiptPrefix = "CLAWDLINE_CLOUD_FOCUSED_TESTS_COMPLETE v=1 suite_count="
+
+let selectedCloudTestSuites: [CloudTestSuite]
+if cloudFocusedTestSelectionRaw != nil {
+    guard !cloudFocusedTestSuiteNames.isEmpty,
+          !cloudFocusedTestSuiteNames.contains(where: { $0.isEmpty }) else {
+        FileHandle.standardError.write(Data("cloud_focused_selection_empty\n".utf8))
+        exit(2)
+    }
+    guard cloudFocusedTestSuites.count == cloudFocusedTestSuiteNames.count else {
+        FileHandle.standardError.write(Data("cloud_focused_selection_duplicate\n".utf8))
+        exit(2)
+    }
+    let unknown = cloudFocusedTestSuites.subtracting(expectedCloudSuiteNames).sorted()
+    guard unknown.isEmpty else {
+        FileHandle.standardError.write(Data(
+            "cloud_focused_selection_unknown: \(unknown.joined(separator: ","))\n".utf8
+        ))
+        exit(2)
+    }
+    selectedCloudTestSuites = cloudTestSuites.filter {
+        cloudFocusedTestSuites.contains($0.name)
+    }
+} else {
+    selectedCloudTestSuites = cloudTestSuites
+}
 
 // The transport runner is async. Entering the dispatch main loop keeps Foundation callbacks
 // available while its task runs. A process-wide watchdog prevents an await regression from
@@ -107,6 +133,7 @@ Thread.detachNewThread {
 }
 
 Task {
+    if cloudFocusedTestSelectionRaw == nil {
     let mainQueueIdentity = await mainQueueIdentityProbe()
     check("dispatchMain drains a delayed main-queue block off the main thread",
           !mainQueueIdentity.isMainThread)
@@ -156,6 +183,7 @@ Task {
     }
     check("the two earlier SessionWatch crossings remain queue-identity safe",
           earlier.isEmpty, "\(earlier)")
+    }
 
     var completedCloudSuiteNames: [String] = []
     var completedCloudSuiteReceipts: [String] = []
@@ -192,41 +220,51 @@ Task {
         }
         checks = afterExpectedSetCheck
 
-        for suite in cloudTestSuites {
-            try Task.checkCancellation()
-            let suiteChecks: Int
+        let failureCountBeforeSuites = failures.count
+        // >>> clawdline cloud suite aggregation >>>
+        for suite in selectedCloudTestSuites {
             do {
-                suiteChecks = try await suite.run()
+                try Task.checkCancellation()
+                let suiteChecks = try await suite.run()
+                try Task.checkCancellation()
+                guard suiteChecks > 0 else {
+                    throw CloudTestHarnessFailure(
+                        description: "returned non-positive check count \(suiteChecks)")
+                }
+                let (newTotal, overflow) = checks.addingReportingOverflow(suiteChecks)
+                guard !overflow else {
+                    throw CloudTestHarnessFailure(description: "total check count overflow")
+                }
+                checks = newTotal
+                completedCloudSuiteNames.append(suite.name)
+                completedCloudSuiteReceipts.append("\(suite.name):\(suiteChecks)")
+                print("  ✓ \(suite.name) (\(suiteChecks) checks)")
             } catch {
-                throw CloudTestHarnessFailure(description: "\(suite.name) — \(error)")
+                failures.append("Cloud suite \(suite.name) — \(error)")
+                print("  ✗ \(suite.name)")
             }
-            try Task.checkCancellation()
-            guard suiteChecks > 0 else {
-                throw CloudTestHarnessFailure(
-                    description: "\(suite.name) returned non-positive check count \(suiteChecks)")
-            }
-            let (newTotal, overflow) = checks.addingReportingOverflow(suiteChecks)
-            guard !overflow else {
-                throw CloudTestHarnessFailure(
-                    description: "total check count overflow after \(suite.name)")
-            }
-            checks = newTotal
-            completedCloudSuiteNames.append(suite.name)
-            completedCloudSuiteReceipts.append("\(suite.name):\(suiteChecks)")
-            print("  ✓ \(suite.name) (\(suiteChecks) checks)")
         }
+        // <<< clawdline cloud suite aggregation <<<
 
-        guard completedCloudSuiteNames.count == 12,
-              completedCloudSuiteNames == expectedCloudSuiteNames else {
-            throw CloudTestHarnessFailure(
-                description: "Cloud suite completion order/count did not match the expected registry")
+        let expectedCompletionNames = selectedCloudTestSuites.map(\.name)
+        if failures.count == failureCountBeforeSuites {
+            guard completedCloudSuiteNames == expectedCompletionNames else {
+                throw CloudTestHarnessFailure(
+                    description: "Cloud suite completion order/count did not match its selection")
+            }
+            guard cloudFocusedTestSelectionRaw != nil ||
+                  (completedCloudSuiteNames.count == 12 &&
+                   completedCloudSuiteNames == expectedCloudSuiteNames) else {
+                throw CloudTestHarnessFailure(
+                    description: "Cloud suite completion order/count did not match the expected registry")
+            }
+            let (afterCompletionCheck, completionCheckOverflow) = checks.addingReportingOverflow(1)
+            guard !completionCheckOverflow else {
+                throw CloudTestHarnessFailure(description: "total check count overflow")
+            }
+            checks = afterCompletionCheck
+            cloudReceiptReady = true
         }
-        let (afterCompletionCheck, completionCheckOverflow) = checks.addingReportingOverflow(1)
-        guard !completionCheckOverflow else {
-            throw CloudTestHarnessFailure(description: "total check count overflow")
-        }
-        checks = afterCompletionCheck
-        cloudReceiptReady = true
     } catch {
         failures.append("Cloud suite harness — \(error)")
         print("  ✗ Cloud suite harness")
@@ -248,7 +286,14 @@ Task {
         finalStatus = 1
     }
     if cloudReceiptReady {
-        print(cloudTestCompletionReceiptPrefix + completedCloudSuiteReceipts.joined(separator: ","))
+        if cloudFocusedTestSelectionRaw != nil {
+            print(cloudFocusedTestCompletionReceiptPrefix
+                + "\(completedCloudSuiteReceipts.count) suites="
+                + completedCloudSuiteReceipts.joined(separator: ","))
+        } else {
+            print(cloudTestCompletionReceiptPrefix
+                + completedCloudSuiteReceipts.joined(separator: ","))
+        }
     }
     exit(finalStatus)
 }

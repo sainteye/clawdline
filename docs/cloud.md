@@ -280,102 +280,44 @@ is told `cloud_read_needs_send_prompt` rather than left waiting; widening it is 
 exponential backoff and jitter, and treats a refusal as terminal for the same reason the Mac
 does. Outbound sequences use the same reserve-ahead discipline as the Mac, in `localStorage`.
 
-## Pairing, and the design decision inside it
+## Pairing and executor identity
 
-**The four-phase protocol in `CloudPairing.swift` has no server.** That file describes an
-`offer`/`grant`/`activate`/`confirm` handover whose wire form is "the complete request body of
-the four phase-write APIs". The control plane exposes exactly three pairing routes — `start`,
-`complete`, `claim` — and refuses a second `complete` with `already_completed`, so the account
-has **one** ciphertext slot and it can be written once. `CloudAccountClient`'s
-`startPairing`/`completePairing`/`claimPairing` already speak that three-call shape, and
-`CloudPairingCryptographyProviding` already asks for one opaque blob rather than four. This is a
-real gap between two designs in two repositories, and it is named here rather than papered over.
+The normative W5-2 wire is the four-phase identity protocol. The machine starts it with
+`POST /v1/pairing/identity/start`; phase writers use
+`POST /v1/pairing/identity/phases/:phase`; readers poll
+`POST /v1/pairing/identity/poll`. Viewer writes `offer` and `activate`; machine writes `grant` and
+`confirm`, and each side reads the other side's phases. A phase write is exactly the canonical
+two-member `{claim_nonce,blob}` object produced by `CloudPairing.encodePhaseWriteBody`. An exact
+retry is `duplicate`; a different body for the same phase is refused. The machine pins the viewer
+only after it observes the `confirm` receipt, so a lost grant/confirm response is replayable without
+granting command authority early.
 
-What ships is the **single-blob handover**, built out of `CloudPairing`'s own KDF, wrapper, AAD
-and canonical-JSON primitives. No new cryptography was invented; two document shapes were, because
-none were pinned:
+`CloudAccountClient` implements those exact route identities and strict response shapes.
+`CloudIdentityPairingMachineHandover` connects them to the protected
+`CloudExecutorIdentityAuthority`: start publishes the current machine signing identity and content
+epoch; offer is bound to the QR's account/machine/nonces; the exact grant is durable before upload;
+activate must acknowledge that grant digest; confirm acknowledges activate and is byte-stable on
+retry. `CloudIdentityPairingWireContract.canonicalVector` is the exact 843-byte route-role vector
+also pinned by the private API/Relay; its SHA-256 is
+`2f79369d4ee866976c6da2a41358c1aab5321ab0e6054bf8a3afe16e215f69a9`.
+`canonicalLifecycleVector` separately pins the exact body members, duplicate replay rule and
+`pin_after=confirm_receipt`; its SHA-256 is
+`79504ce608fd278cecdb2e26f62d6d1c7e915ef66f94a79cc12ff240a95e410e`.
 
-- **`pairing_offer`** — eleven members, canonical JSON, carried as base64url. The viewer's
-  `pairing_id` and one-time `claim_nonce` from `POST /v1/pairing/start`, its device id, its
-  Ed25519 and X25519 public keys, its fingerprint, a pairing nonce, and an expiry no further away
-  than ten minutes.
-- **`pairing_handover`** — eight members. The account id, the machine id, the machine's Ed25519
-  public key and fingerprint, the content-key id, and the content key.
+Machine signing-key rotation is `POST /v1/machines/:id/identity/rotate` with exact canonical
+`expected_key_epoch`, `public_key`, and `fingerprint` members. Viewer and machine revocation retain
+the browser-session DELETE routes. Rotation/revocation receipts advance the identity/key,
+capability, content-key, and JWKS transition windows enforced by the control plane and relay; the
+public protected authority advances its matching generation/key/revocation state. Every initial
+socket and reconnect re-reads the protected binding and calls `verifyReconnect` only after the
+W5-1 ledger and spool opened. Stale account, machine/device, identity generation, key epoch, or
+revocation epoch therefore blocks before the challenge is signed.
 
-**The direction, and why.** The blob the API can carry travels from the *sender* (`complete`) to
-the *requester* (`start`, then `claim`), and the content key has to travel Mac → viewer. So the
-**viewer is the requester**: it asks for the handle, shows the offer, and a person carries that
-offer to the Mac. The Mac seals for exactly that offer, writes the one slot, and pins the viewer;
-the viewer claims once and the record is destroyed. The property `PROTOCOL.md` §3 asks for
-survives: an attacker holding the OAuth session can register a device and call `start`, but no Mac
-ever seals for a `pairing_id` that was not physically handed to it.
-
-Both sides pin the other's Ed25519 key out of band — the Mac from the fragment it was handed, the
-viewer from inside the sealed blob — rather than from anything the cloud says. The Mac
-additionally refuses a delivery whose echoed fingerprint disagrees with the fragment, which is the
-one substitution a person comparing codes on two screens cannot see.
-
-**The wire form is checked across three implementations.** `tools/generate-protocol-vectors.swift`
-produces a complete handover into `Tests/protocol-vectors.json`;
-`Tests/CloudLifecycleTests.swift` opens it with `CloudHandover`, and
-`Tests/web-cloud-pairing.mjs` opens it with `cloud-pairing.js`. A drifted mirror is the worst kind
-of broken here — nothing throws, pairing simply never completes for a real person — so the
-agreement is measured rather than asserted in a comment.
-
-**How a person does it.** On an iPhone, open `app.clawdline.com` in Safari, add Clawdline to the
-Home Screen, close Safari, and continue from the installed app. That order is part of the security
-model rather than presentation: Safari and the Home Screen app have isolated IndexedDB stores,
-and neither the viewer's signing key nor the account content key is extractable. The Safari page
-therefore stops before login and before `POST /v1/auth/session`; it does not consume a viewer slot
-whose key could never move into the PWA.
-
-In the installed app, sign in with GitHub. Then on the Mac use Settings → Cloud → *Pair a
-Phone…*. The Mac creates a short-lived secret locally, sends only its SHA-256 to
-`POST /v1/pairing/invitations/start`, and shows `https://app.clawdline.com/#pair=…` as a QR. The
-PWA scans and decodes that QR locally; camera frames never leave the phone. The fragment is kept
-only for this pairing and neither the app server nor the OAuth callback receives it. The PWA makes
-its ordinary viewer offer, encrypts it with AES-GCM under the QR secret, and sends only the secret
-hash and opaque bytes to `POST /v1/pairing/invitations/accept`. The Mac polls
-`POST /v1/pairing/invitations/poll`, decrypts that offer locally, and the existing
-`complete`/`claim` X25519 handover moves the account master secret Mac → viewer.
-
-A desktop browser starts from Settings → Cloud → *Pair a Browser…*. The Mac creates the same
-short-lived invitation used by Phone QR and opens its `https://app.clawdline.com/` fragment URL in
-the default browser. Sign in there if needed and continue pairing; no code copying is required.
-The browser returns its encrypted offer through the existing invitation channel. The Mac then
-comes forward with an explicit fingerprint/access confirmation before releasing keys. Compare
-that fingerprint with the one still visible in the browser, then choose *Pair Browser*; pressing
-Cancel never starts the encrypted handover. While the handover is running Settings exposes only
-*Cancel Pairing*, so signing out cannot race it. Cancellation stops this Settings owner from
-waiting and ignores a late result; it cannot promise to roll back a synchronous Keychain operation
-or Cloud write that already finished. An expired, malformed, oversized, wrong-account or
-fingerprint-mismatched offer fails visibly and must be restarted from the browser. This first Mac
-surface uses English security copy, matching the existing Cloud identity card; translating that
-copy is a presentation follow-up, not a second pairing protocol.
-
-*Paste Browser Code…* remains a compatibility fallback for another browser or a failed automatic
-open. Its focused field supports Command-V/C/X/A/Z via the standard field editor; it does not
-inspect the clipboard in the background. The raw offer and invitation secret are never logged.
-Phone QR is unchanged. Cancelling an invitation prevents a late result from completing a newer
-attempt; it cannot revoke a key handover or Cloud write that has already completed.
-If the default browser already holds account keys, it explicitly says it is already connected,
-removes the unused invitation from that page and grants no new access. Cancel Pairing on the Mac
-in that case, or use the fallback to pair another browser. The Mac invitation simply expires if
-not cancelled; this notice does not claim to cancel it remotely or change existing keys.
-
-The acceptance seam after that poll is bounded too. `CloudPairingCompleter.production` loads the
-restored identity, device signing key and master secret through one-shot `CloudKeychainReader`
-awaits. A locked or non-answering load-or-create returns a visible pairing failure after ten
-seconds; closing the sheet cancels the await immediately. The underlying synchronous Security call
-may still finish, so the UI claims only that this pairing attempt stopped waiting—not that a read or
-key creation was rolled back. The ordinary Settings identity restore uses the callback spelling and
-still accepts a terminal identity that arrives after its timeout warning.
-
-There are deliberately two user-visible checks. GitHub proves the phone and Mac belong to the
-same Clawdline account; scanning the QR proves the phone is pairing with the Mac physically in
-front of the person. Both are required because the Cloud service is only a ciphertext relay: it
-never receives the QR secret, the plaintext viewer offer, or the account master secret. The old
-long offer remains a protocol compatibility seam, not the primary UI.
+The former `start`/`complete`/`claim` single-blob methods remain source compatibility for an older
+console finishing an already-started handover. They are not the normative production identity
+contract and do not authorize a cutover or a reader-floor change. W0-E remains
+`authority=candidate`, `cutover_required=true`; this source correction is not live Relay/GCE or
+release evidence.
 
 ## Building and deploying the hosted console
 

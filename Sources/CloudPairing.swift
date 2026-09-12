@@ -1,6 +1,12 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
-#if canImport(ClawdlineApplication)
+#elseif canImport(Crypto)
+import Crypto
+#else
+#error("CloudPairing requires CryptoKit or swift-crypto")
+#endif
+#if canImport(ClawdlineApplication) && !CLAWDLINE_APPLICATION_TARGET
 import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
 #endif
 
@@ -12,7 +18,7 @@ import ClawdlineApplication // W3-1 correction: real cross-module import, see So
 /// are strictly smaller than any body embedding them, so that check can only over-reject).
 public let PAIRING_PHASE_MAX_BYTES = 65_536
 
-public enum CloudPairingPhase: String, CaseIterable, Hashable {
+public enum CloudPairingPhase: String, CaseIterable, Hashable, Sendable {
     case offer
     case grant
     case activate
@@ -88,7 +94,7 @@ public struct CloudPairingDerivedMaterial: Equatable, CustomStringConvertible,
     }
 }
 
-public struct CloudPairingWrapper: Equatable {
+public struct CloudPairingWrapper: Equatable, Sendable {
     public var version: Int64
     public var phase: CloudPairingPhase
     public var pairingID: String
@@ -128,7 +134,7 @@ public struct CloudPairingWrapper: Equatable {
     }
 }
 
-public struct CloudPairingQR: Equatable {
+public struct CloudPairingQR: Equatable, Sendable {
     public var pairingID: String
     public var claimNonce: String
     public var expiresAt: Int64
@@ -210,6 +216,16 @@ public enum CloudPairing {
             return raw
         } catch let error as CloudPairingError {
             throw error
+        } catch {
+            throw CloudPairingError.invalidKey(field: "x25519")
+        }
+    }
+
+    public static func x25519PublicKey(privateKeyRaw: Data) throws -> Data {
+        try requireLength(privateKeyRaw, field: "private_key", expected: 32)
+        do {
+            return try Curve25519.KeyAgreement.PrivateKey(rawRepresentation: privateKeyRaw)
+                .publicKey.rawRepresentation
         } catch {
             throw CloudPairingError.invalidKey(field: "x25519")
         }

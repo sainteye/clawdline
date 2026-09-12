@@ -209,7 +209,8 @@ private final class SpoolTestHarness {
 
     private func recordPassed(_ name: String) {
         checks += 1
-        if ProcessInfo.processInfo.environment["SPOOL_TEST_TRACE"] == name {
+        let trace = ProcessInfo.processInfo.environment["SPOOL_TEST_TRACE"]
+        if trace == "*" || trace == name {
             print("✓ \(name)")
         }
     }
@@ -756,8 +757,8 @@ private func testSendThrowLeavesRowSent(_ h: SpoolTestHarness) async throws {
 }
 
 /// A ready row has never been sent, so it cannot already carry first_sent. Persistence can
-/// expose that inconsistent shape after restart; publishing must throw a typed invariant error
-/// before committing `sent` or handing any frame to the transport.
+/// expose that inconsistent shape after restart; opening the authority must fail closed before
+/// recovery can normalize it or a publisher can observe it.
 private func testReadyRowWithFirstSentFailsClosed(_ h: SpoolTestHarness) async throws {
     let world = SpoolWorld()
     var spool: CloudOutboundSpool? = try world.open()
@@ -765,15 +766,15 @@ private func testReadyRowWithFirstSentFailsClosed(_ h: SpoolTestHarness) async t
                                       recipient: "viewer", record: tinyRecord(1))
     spool = nil
     world.store.tamper { $0.rows[0].firstSentContinuous = .seconds(7) }
-    spool = try world.open()
-
-    let log = SpoolTransportLog()
-    try await h.expectSpoolError(.readyRowAlreadyHasFirstSent(seq: seq),
-                                 "ready row carrying first_sent fails closed before transport") {
-        _ = try await spool!.sendNext { log.record($0) }
+    let corrupt = world.store.snapshot
+    try await h.expectSpoolError(
+        .corruptRow(seq: seq, detail: "ready row has contradictory fields"),
+        "ready row carrying first_sent fails closed while opening the store"
+    ) {
+        _ = try world.open()
     }
-    try h.check(world.store.row(seq)?.state == .ready && log.payloads.isEmpty,
-                "ready/first_sent invariant failure neither commits sent nor emits a frame")
+    try h.check(world.store.snapshot == corrupt,
+                "ready/first_sent corruption is neither normalized nor committed")
 }
 
 /// §6.1.5: snapshot coalescing burns the never-sent ready snapshot and reserves a fresh seq;
@@ -1435,13 +1436,23 @@ private func testLegacySequenceCeilingMigratesWithoutReuse(_ h: SpoolTestHarness
                 "a true legacy reader restarts beyond every sequence emitted by the new image")
     var forwardFence: CloudLegacySequenceFence? = try CloudLegacySequenceFence(
         url: legacyURL, sender: "machine-1")
-    var forwardRuntime: CloudDurableRuntime? = try CloudDurableRuntime.open(
-        directory: root.appendingPathComponent("cloud-runtime", isDirectory: true),
-        runtime: .mac, minimumNextSequence: forwardFence!.reservedCeiling,
-        sequenceFence: forwardFence!)
-    let afterRollback = try await forwardRuntime!.spool.reserve(
-        channel: .s, logicalID: "after-rollback", ownerID: nil,
-        recipient: "viewer-1", record: tinyRecord(2))
+    var forwardRuntime: CloudDurableRuntime?
+    do {
+        forwardRuntime = try CloudDurableRuntime.open(
+            directory: root.appendingPathComponent("cloud-runtime", isDirectory: true),
+            runtime: .mac, minimumNextSequence: forwardFence!.reservedCeiling,
+            sequenceFence: forwardFence!)
+    } catch {
+        throw CloudOutboundSpoolTestFailure(check: "forward image reopens durable runtime: \(error)")
+    }
+    let afterRollback: Int64
+    do {
+        afterRollback = try await forwardRuntime!.spool.reserve(
+            channel: .s, logicalID: "after-rollback", ownerID: nil,
+            recipient: "viewer-1", record: tinyRecord(2))
+    } catch {
+        throw CloudOutboundSpoolTestFailure(check: "forward image reserves after rollback: \(error)")
+    }
     try h.check(afterRollback == 128,
                 "the forward image also resumes at the rollback fence without reuse or retreat")
     forwardRuntime = nil
@@ -1449,6 +1460,8 @@ private func testLegacySequenceCeilingMigratesWithoutReuse(_ h: SpoolTestHarness
 
     let corruptURL = root.appendingPathComponent("corrupt-sequence.json")
     try Data("{\"v\":1,\"senders\":".utf8).write(to: corruptURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: corruptURL.path)
     var corruptRefused = false
     do {
         _ = try CloudLegacySequenceMigration.reservedCeiling(
@@ -1554,7 +1567,9 @@ private func testDurableFileStoreAuthorityAndMigration(_ h: SpoolTestHarness) th
         try JSONSerialization.data(withJSONObject: invalid, options: [.sortedKeys]).write(to: file)
     }
     try expectLoadFailure(.unknownVersion(99), name: "unknown-version") { _, file in
-        try Data("{\"schemaVersion\":99,\"nextSeq\":0,\"rows\":[]}".utf8).write(to: file)
+        try CloudCanonicalJSON.canonicalData(.object([
+            "schemaVersion": .int(99), "nextSeq": .int(0), "rows": .array([]),
+        ])).write(to: file)
     }
     try expectLoadFailure(.symlink, name: "symlink") { root, file in
         let target = root.appendingPathComponent("target.json")
@@ -1588,7 +1603,9 @@ private func testDurableFileStoreAuthorityAndMigration(_ h: SpoolTestHarness) th
     let migrationRoot = try directory("migration")
     defer { try? FileManager.default.removeItem(at: migrationRoot) }
     let migrationURL = migrationRoot.appendingPathComponent("spool.json")
-    let versionOne = Data("{\"schemaVersion\":1,\"nextSeq\":0,\"rows\":[]}".utf8)
+    let versionOne = CloudCanonicalJSON.canonicalData(.object([
+        "schemaVersion": .int(1), "nextSeq": .int(0), "rows": .array([]),
+    ]))
     try versionOne.write(to: migrationURL)
     try FileManager.default.setAttributes(
         [.posixPermissions: 0o600], ofItemAtPath: migrationURL.path)
@@ -1605,6 +1622,147 @@ private func testDurableFileStoreAuthorityAndMigration(_ h: SpoolTestHarness) th
     let reopenedBytes = try Data(contentsOf: migrationURL)
     try h.check(reopenedBytes == migratedBytes,
                 "opening migrated schema 2 is idempotent")
+
+    // Exact schema-v2 bytes emitted by this product before Date switched from Foundation's
+    // fractional reference-date seconds to canonical integer milliseconds. Keeping these as
+    // literals makes the installed-byte contract independent of the corrected encoder.
+    let legacySpoolBytes = Data(#"{"generation":7,"minimumReaderVersion":1,"nextSeq":7,"recordKind":"cloud_outbound_spool","rows":[{"channel":"s","chargedBytes":1,"logicalID":"reserved-4","logicalRecordCanonicalBytes":"MA==","recipient":"viewer","reservedAt":123.25,"reservedAtNanoseconds":250000000,"seq":4,"state":"reserved"},{"attemptNotAfterNanoseconds":900,"channel":"s","chargedBytes":1,"firstSentNanoseconds":800,"logicalID":"sent-5","logicalRecordCanonicalBytes":"MA==","recipient":"viewer","reservedAt":124.5,"reservedAtNanoseconds":500000000,"sealedEnvelopeBytes":"ZnJhbWU=","seq":5,"state":"sent"},{"attemptNotAfterNanoseconds":1100,"channel":"s","chargedBytes":1,"firstSentNanoseconds":1000,"logicalID":"acked-6","logicalRecordCanonicalBytes":"MA==","logicalTombstoneNanoseconds":1200,"recipient":"viewer","reservedAt":125.75,"reservedAtNanoseconds":750000000,"seq":6,"state":"acked"}],"schemaVersion":2}"#.utf8)
+    var strictSpoolAccepted = true
+    do { _ = try CloudCanonicalJSON.parseStrict(legacySpoolBytes) }
+    catch { strictSpoolAccepted = false }
+    try h.check(!strictSpoolAccepted,
+                "the exact installed fractional spool bytes stay outside canonical parsing")
+
+    let legacySpoolRoot = try directory("schema-two-fractional")
+    defer { try? FileManager.default.removeItem(at: legacySpoolRoot) }
+    let legacySpoolURL = legacySpoolRoot.appendingPathComponent("spool.json")
+    try legacySpoolBytes.write(to: legacySpoolURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: legacySpoolURL.path)
+    var legacySpoolStore: CloudFileSpoolStore? = try CloudFileSpoolStore(url: legacySpoolURL)
+    let legacySpoolState = try legacySpoolStore!.load()
+    let rewrittenSpoolBytes = try Data(contentsOf: legacySpoolURL)
+    try h.check(
+        legacySpoolState.nextSeq == 7
+            && legacySpoolState.rows.map(\.seq) == [4, 5, 6]
+            && legacySpoolState.rows.map(\.state) == [.reserved, .sent, .acked]
+            && legacySpoolState.rows[1].sealedEnvelopeBytes == Data("frame".utf8)
+            && legacySpoolState.rows[2].sealedEnvelopeBytes == nil,
+        "fractional schema 2 migration preserves sequence, pending/sent rows and compacted terminal state")
+    guard case .object(let rewrittenSpool) = try CloudCanonicalJSON.parseStrict(rewrittenSpoolBytes),
+          case .int(8)? = rewrittenSpool["generation"],
+          case .array(let rewrittenSpoolRows)? = rewrittenSpool["rows"],
+          case .object(let rewrittenReserved) = rewrittenSpoolRows[0],
+          case .int(123_250)? = rewrittenReserved["reservedAt"] else {
+        throw CloudOutboundSpoolTestFailure(
+            check: "fractional schema 2 spool did not rewrite into canonical integer milliseconds")
+    }
+    try h.check(rewrittenSpoolBytes != legacySpoolBytes,
+                "fractional schema 2 spool rewrites atomically and advances generation once")
+    legacySpoolStore = nil
+    let idempotentSpoolStore = try CloudFileSpoolStore(url: legacySpoolURL)
+    _ = try idempotentSpoolStore.load()
+    try h.check(try Data(contentsOf: legacySpoolURL) == rewrittenSpoolBytes,
+                "restarting after the fractional spool rewrite is byte-idempotent")
+
+    let spoolRollbackRoot = try directory("schema-two-fractional-rollback")
+    defer { try? FileManager.default.removeItem(at: spoolRollbackRoot) }
+    let spoolRollbackURL = spoolRollbackRoot.appendingPathComponent("spool.json")
+    try legacySpoolBytes.write(to: spoolRollbackURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: spoolRollbackURL.path)
+    var spoolRollbackStore: CloudFileSpoolStore? = try CloudFileSpoolStore(url: spoolRollbackURL)
+    spoolRollbackStore!.faultInjection = { point in
+        if point == .rename { throw CloudDurableStoreFailure.rename }
+    }
+    var spoolRewriteFailed = false
+    do { _ = try spoolRollbackStore!.load() }
+    catch CloudDurableStoreFailure.rename { spoolRewriteFailed = true }
+    try h.check(spoolRewriteFailed && (try Data(contentsOf: spoolRollbackURL)) == legacySpoolBytes,
+                "an injected spool rewrite failure preserves every exact installed byte")
+    spoolRollbackStore = nil
+    let recoveredSpoolStore = try CloudFileSpoolStore(url: spoolRollbackURL)
+    let recoveredSpool = try recoveredSpoolStore.load()
+    try h.check(recoveredSpool == legacySpoolState,
+                "the exact old spool remains migratable after rewrite rollback")
+
+    let legacyLedgerBytes = Data(#"{"generation":9,"minimumReaderVersion":1,"recordKind":"cloud_command_ledger","rows":[{"createdAt":100.25,"deadlineAt":200.5,"effectStartedAt":150.75,"elapsedBootID":"boot-old","expiresAt":300.875,"key":{"requestID":"request-old","viewerSender":"viewer-old"},"recipientDeviceID":"viewer-old","replyKeyID":"reply-old","requestSHA256":"AQ==","retainedElapsedMilliseconds":42,"state":"in_progress"}],"schemaVersion":2}"#.utf8)
+    var strictLedgerAccepted = true
+    do { _ = try CloudCanonicalJSON.parseStrict(legacyLedgerBytes) }
+    catch { strictLedgerAccepted = false }
+    try h.check(!strictLedgerAccepted,
+                "the exact installed fractional ledger bytes stay outside canonical parsing")
+
+    let legacyLedgerRoot = try directory("ledger-schema-two-fractional")
+    defer { try? FileManager.default.removeItem(at: legacyLedgerRoot) }
+    let legacyLedgerURL = legacyLedgerRoot.appendingPathComponent("ledger.json")
+    try legacyLedgerBytes.write(to: legacyLedgerURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: legacyLedgerURL.path)
+    var legacyLedgerStore: CloudFileCommandLedgerStore? = try CloudFileCommandLedgerStore(
+        url: legacyLedgerURL)
+    let rewrittenLedgerBytes = try legacyLedgerStore!.persistedBytes()
+    let ledgerOnDisk = try Data(contentsOf: legacyLedgerURL)
+    guard case .object(let rewrittenLedger) = try CloudCanonicalJSON.parseStrict(ledgerOnDisk),
+          case .int(10)? = rewrittenLedger["generation"],
+          case .array(let rewrittenLedgerRows)? = rewrittenLedger["rows"],
+          case .object(let rewrittenInProgress) = rewrittenLedgerRows[0],
+          case .int(100_250)? = rewrittenInProgress["createdAt"],
+          case .int(150_750)? = rewrittenInProgress["effectStartedAt"] else {
+        throw CloudOutboundSpoolTestFailure(
+            check: "fractional schema 2 ledger did not rewrite into canonical integer milliseconds")
+    }
+    try h.check(rewrittenLedgerBytes == ledgerOnDisk && ledgerOnDisk != legacyLedgerBytes,
+                "fractional schema 2 ledger preserves the ambiguous-effect row and advances generation once")
+    legacyLedgerStore = nil
+    let idempotentLedgerStore = try CloudFileCommandLedgerStore(url: legacyLedgerURL)
+    _ = try idempotentLedgerStore.persistedBytes()
+    try h.check(try Data(contentsOf: legacyLedgerURL) == ledgerOnDisk,
+                "restarting after the fractional ledger rewrite is byte-idempotent")
+
+    let ledgerRollbackRoot = try directory("ledger-schema-two-fractional-rollback")
+    defer { try? FileManager.default.removeItem(at: ledgerRollbackRoot) }
+    let ledgerRollbackURL = ledgerRollbackRoot.appendingPathComponent("ledger.json")
+    try legacyLedgerBytes.write(to: ledgerRollbackURL)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600], ofItemAtPath: ledgerRollbackURL.path)
+    var ledgerRollbackStore: CloudFileCommandLedgerStore? = try CloudFileCommandLedgerStore(
+        url: ledgerRollbackURL)
+    ledgerRollbackStore!.faultInjection = { point in
+        if point == .rename { throw CloudDurableStoreFailure.rename }
+    }
+    var ledgerRewriteFailed = false
+    do { _ = try ledgerRollbackStore!.persistedBytes() }
+    catch CloudDurableStoreFailure.rename { ledgerRewriteFailed = true }
+    try h.check(ledgerRewriteFailed && (try Data(contentsOf: ledgerRollbackURL)) == legacyLedgerBytes,
+                "an injected ledger rewrite failure preserves every exact installed byte")
+    ledgerRollbackStore = nil
+    let recoveredLedgerStore = try CloudFileCommandLedgerStore(url: ledgerRollbackURL)
+    let recoveredLedgerBytes = try recoveredLedgerStore.persistedBytes()
+    try h.check(try CloudCanonicalJSON.parseStrict(recoveredLedgerBytes)
+                    == CloudCanonicalJSON.parseStrict(ledgerOnDisk),
+                "the exact old ledger remains migratable after rewrite rollback")
+
+    let compactedRoot = try directory("compacted-terminal")
+    defer { try? FileManager.default.removeItem(at: compactedRoot) }
+    let compactedURL = compactedRoot.appendingPathComponent("spool.json")
+    var compactedStore: CloudFileSpoolStore? = try CloudFileSpoolStore(url: compactedURL)
+    let logical = CloudOutboundSpool.canonicalRecordBytes(of: tinyRecord(1))
+    let compactedRow = CloudSpoolRow(
+        seq: 0, channel: .s, logicalID: "settled", ownerID: nil, recipient: "viewer",
+        logicalRecordCanonicalBytes: logical, chargedBytes: logical.count,
+        sealedEnvelopeBytes: nil, state: .acked,
+        reservedAt: Date(timeIntervalSince1970: 1_756_000_000),
+        reservedAtContinuous: .seconds(1), firstSentContinuous: .seconds(2),
+        attemptNotAfterContinuous: .seconds(32), attemptOutcome: nil,
+        burnReason: nil, logicalTombstoneContinuous: .seconds(3))
+    try compactedStore!.commit(CloudSpoolPersistedState(nextSeq: 1, rows: [compactedRow]))
+    compactedStore = nil
+    let compactedReopened = try CloudFileSpoolStore(url: compactedURL)
+    let compactedState = try compactedReopened.load()
+    try h.check(compactedState.rows == [compactedRow]
+                    && compactedState.rows[0].sealedEnvelopeBytes == nil,
+                "durable store reopens a settled row after terminal frame compaction")
 
     let rollbackRoot = try directory("migration-rollback")
     defer { try? FileManager.default.removeItem(at: rollbackRoot) }

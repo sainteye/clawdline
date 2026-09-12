@@ -675,7 +675,7 @@ let expectedOrderedTestGroupTitles: [String] = [
 ]
 
 func validateExecutedTestGroupManifest() {
-    if !focusedTestGroups.isEmpty { return }
+    if !focusedTestGroups.isEmpty || cloudFocusedTestSelectionRaw != nil { return }
     guard executedTestGroupTitles == expectedOrderedTestGroupTitles else {
         let mismatch = zip(executedTestGroupTitles, expectedOrderedTestGroupTitles)
             .enumerated().first { $0.element.0 != $0.element.1 }?.offset

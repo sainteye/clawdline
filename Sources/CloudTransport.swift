@@ -1,10 +1,20 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(ClawdlineApplication) && !CLAWDLINE_APPLICATION_TARGET
+import ClawdlineApplication
+#endif
 
-enum CloudTransportRole: String, Sendable {
+// The token and reconnect identity contract belongs to ClawdlineApplication. The flat test
+// graph compiles it from Sources; the separated Mac SwiftPM target imports that one definition.
+#if !SWIFT_PACKAGE || CLAWDLINE_APPLICATION_TARGET
+
+public enum CloudTransportRole: String, Sendable {
     case machine
 }
 
-enum CloudTransportState: Equatable, Sendable {
+public enum CloudTransportState: Equatable, Sendable {
     case idle
     case connecting
     case ready
@@ -12,7 +22,7 @@ enum CloudTransportState: Equatable, Sendable {
     case shutDown
 }
 
-enum CloudTransportError: Error, LocalizedError, Equatable {
+public enum CloudTransportError: Error, LocalizedError, Equatable {
     case alreadyConnected
     case invalidRelayURL
     case invalidTokenResponse
@@ -38,7 +48,7 @@ enum CloudTransportError: Error, LocalizedError, Equatable {
     case unexpectedFrame(String)
     case relay(String, String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .alreadyConnected:
             return "CloudTransport is already connected."
@@ -70,15 +80,15 @@ enum CloudTransportError: Error, LocalizedError, Equatable {
     }
 }
 
-struct CloudDeviceToken: Equatable, Sendable {
-    let value: String
-    let expiresAt: Date
-    let relayURL: URL?
+public struct CloudDeviceToken: Equatable, Sendable {
+    public let value: String
+    public let expiresAt: Date
+    public let relayURL: URL?
     /// Parsed only from the pinned HTTPS response's Date header. Consumers use it to calibrate
     /// effect-time clock authority; absence stays fail closed.
-    let authenticatedServerDate: Date?
+    public let authenticatedServerDate: Date?
 
-    init(value: String, expiresAt: Date, relayURL: URL? = nil,
+    public init(value: String, expiresAt: Date, relayURL: URL? = nil,
          authenticatedServerDate: Date? = nil) {
         self.value = value
         self.expiresAt = expiresAt
@@ -87,20 +97,20 @@ struct CloudDeviceToken: Equatable, Sendable {
     }
 }
 
-protocol CloudDeviceTokenProviding: Sendable {
+public protocol CloudDeviceTokenProviding: Sendable {
     func fetchDeviceToken() async throws -> CloudDeviceToken
 }
 
 /// The concrete `POST /v1/tokens/device` client. Authentication is deliberately a closure:
 /// device-code login owns that credential, while this component owns token lifetime and refresh.
-struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
-    typealias AuthorizationHeaderProvider = @Sendable () async throws -> String
+public struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
+    public typealias AuthorizationHeaderProvider = @Sendable () async throws -> String
 
-    let apiBaseURL: URL
-    let session: URLSession
-    let authorizationHeader: AuthorizationHeaderProvider
+    public let apiBaseURL: URL
+    public let session: URLSession
+    public let authorizationHeader: AuthorizationHeaderProvider
 
-    init(
+    public init(
         apiBaseURL: URL,
         session: URLSession = .shared,
         authorizationHeader: @escaping AuthorizationHeaderProvider
@@ -110,7 +120,7 @@ struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
         self.authorizationHeader = authorizationHeader
     }
 
-    func fetchDeviceToken() async throws -> CloudDeviceToken {
+    public func fetchDeviceToken() async throws -> CloudDeviceToken {
         let url = apiBaseURL.appendingPathComponent("v1/tokens/device")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -171,10 +181,80 @@ struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
     }
 }
 
+/// The immutable identity a socket challenge and every reconnect must prove before a signing key
+/// is released. Key/revocation epochs are supplied by the protected identity authority; sequence
+/// ownership deliberately remains in the W5-1 ledger/spool.
+public struct CloudExecutorTransportBinding: Equatable, Sendable {
+    public let accountID: String
+    public let machineID: String
+    public let deviceID: String
+    public let signingKeyFingerprint: String
+    public let identityGeneration: UInt64
+    public let keyEpoch: UInt64
+    public let revocationEpoch: UInt64
+
+    public init(accountID: String, machineID: String, deviceID: String,
+                signingKeyFingerprint: String, identityGeneration: UInt64,
+                keyEpoch: UInt64, revocationEpoch: UInt64) {
+        self.accountID = accountID
+        self.machineID = machineID
+        self.deviceID = deviceID
+        self.signingKeyFingerprint = signingKeyFingerprint
+        self.identityGeneration = identityGeneration
+        self.keyEpoch = keyEpoch
+        self.revocationEpoch = revocationEpoch
+    }
+}
+
+public struct CloudExecutorReconnectProof: Equatable, Sendable {
+    public let accountID: String
+    public let machineID: String
+    public let deviceID: String
+    public let identityGeneration: UInt64
+    public let keyEpoch: UInt64
+    public let revocationEpoch: UInt64
+    public let durableLedgerOpened: Bool
+    public let durableSpoolOpened: Bool
+
+    public init(accountID: String, machineID: String, deviceID: String,
+                identityGeneration: UInt64, keyEpoch: UInt64,
+                revocationEpoch: UInt64, durableLedgerOpened: Bool,
+                durableSpoolOpened: Bool) {
+        self.accountID = accountID
+        self.machineID = machineID
+        self.deviceID = deviceID
+        self.identityGeneration = identityGeneration
+        self.keyEpoch = keyEpoch
+        self.revocationEpoch = revocationEpoch
+        self.durableLedgerOpened = durableLedgerOpened
+        self.durableSpoolOpened = durableSpoolOpened
+    }
+}
+
+public enum CloudExecutorReconnectDisposition: Equatable, Sendable {
+    case resumeFromDurableLedgerAndSpool
+}
+#endif
+
+// URLSession WebSocket and envelope routing remain the Mac host composition for W5-2. The shared
+// Application half above carries the identity proof it consumes; flat tests compile both halves.
+#if !SWIFT_PACKAGE || !CLAWDLINE_APPLICATION_TARGET
+
 protocol CloudTransportKeyProviding: Sendable {
     func deviceKeyPair() async throws -> CloudDeviceKeyPair
     func masterSecret(for keyID: String) async throws -> CloudMasterSecret
     func pairedDevicePublicKeys() async -> [String: Data]
+    /// `nil` is retained only for deterministic pre-W5 fixtures. Production returns the current
+    /// protected binding on every initial connection and reconnect.
+    func transportBinding() async throws -> CloudExecutorTransportBinding?
+    /// Production re-reads the protected epoch tuple before every initial/reconnect signature.
+    /// The lifecycle opens both durable owners before it permits transport construction.
+    func admitReconnect(_ binding: CloudExecutorTransportBinding) async throws
+}
+
+extension CloudTransportKeyProviding {
+    func transportBinding() async throws -> CloudExecutorTransportBinding? { nil }
+    func admitReconnect(_: CloudExecutorTransportBinding) async throws {}
 }
 
 struct CloudStaticTransportKeys: CloudTransportKeyProviding, Sendable {
@@ -980,7 +1060,17 @@ actor CloudTransport {
                 timeoutError: .authenticationTimedOut
             )
             let challenge = try decodeChallenge(challengeText)
+            let binding = try await keyProvider.transportBinding()
             let key = try await keyProvider.deviceKeyPair()
+            if let binding {
+                guard challenge.account == binding.accountID,
+                      challenge.device == binding.deviceID,
+                      binding.machineID == binding.deviceID,
+                      binding.signingKeyFingerprint == key.pairingFingerprint else {
+                    throw CloudTransportError.unexpectedFrame("identity-binding")
+                }
+                try await keyProvider.admitReconnect(binding)
+            }
             let signed = [challenge.context, challenge.account, challenge.device, challenge.challenge]
                 .joined(separator: "|")
             let signature = try key.signature(for: Data(signed.utf8)).base64EncodedString()
@@ -1409,3 +1499,4 @@ actor CloudTransport {
         let message: String
     }
 }
+#endif

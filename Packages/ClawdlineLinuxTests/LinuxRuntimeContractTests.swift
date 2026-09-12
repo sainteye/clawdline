@@ -20,6 +20,47 @@ private final class LockedStrings: @unchecked Sendable {
     }
 }
 
+private enum DeniedSecretStoreFailure: Error { case denied }
+
+private struct DeniedSecretStore: SecretStore {
+    let capabilities: Set<HostCapability> = [.secrets]
+    func data(for _: String) throws -> Data? { throw DeniedSecretStoreFailure.denied }
+    func set(_: Data, for _: String) throws { throw DeniedSecretStoreFailure.denied }
+    func loadOrCreate(_: String, create _: @Sendable () throws -> Data) throws -> Data {
+        throw DeniedSecretStoreFailure.denied
+    }
+    func rotate(_: String, replace _: @Sendable (Data?) throws -> Data) throws -> Data {
+        throw DeniedSecretStoreFailure.denied
+    }
+    func remove(_: String) throws { throw DeniedSecretStoreFailure.denied }
+}
+
+private final class TestMemorySecretStore: SecretStore, @unchecked Sendable {
+    let capabilities: Set<HostCapability> = [.secrets]
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+
+    func data(for account: String) throws -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        return values[account]
+    }
+    func set(_ data: Data, for account: String) throws {
+        lock.lock(); values[account] = data; lock.unlock()
+    }
+    func loadOrCreate(_ account: String, create: @Sendable () throws -> Data) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        if let value = values[account] { return value }
+        let value = try create(); values[account] = value; return value
+    }
+    func rotate(_ account: String, replace: @Sendable (Data?) throws -> Data) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        let value = try replace(values[account]); values[account] = value; return value
+    }
+    func remove(_ account: String) throws {
+        lock.lock(); values.removeValue(forKey: account); lock.unlock()
+    }
+}
+
 private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
     var calls: [String] = []
     var sessionID = "%durable"
@@ -372,13 +413,21 @@ final class LinuxRuntimeContractTests: XCTestCase {
             attributes: [.posixPermissions: 0o700])
         var metadata = stat()
         XCTAssertEqual(lstat(scratch.path, &metadata), 0)
+        let secretURL = scratch.appendingPathComponent("secrets", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: secretURL, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        let secretRoot = CanonicalProjectRoot(
+            path: secretURL.path, ownerUID: metadata.st_uid, ownerGID: metadata.st_gid)
+        let secrets = LinuxProtectedFileSecretStore(root: secretRoot)
 
         let linux = try LinuxDurableCloudRuntime(
-            stateDirectory: scratch.path, expectedUID: metadata.st_uid)
+            stateDirectory: scratch.path, expectedUID: metadata.st_uid, secrets: secrets)
         XCTAssertTrue(linux.readiness.durable)
         XCTAssertEqual(linux.readiness.authority, "candidate")
         XCTAssertTrue(linux.readiness.cutoverRequired)
         XCTAssertFalse(linux.readiness.emissionEnabled)
+        XCTAssertEqual(linux.readiness.code, "w5_executor_identity_missing")
         XCTAssertEqual(linux.candidateAuthority.publicCommit,
                        "38eb822575e3c309a776a9e3e2874c7062d8fb75")
         XCTAssertEqual(linux.candidateAuthority.packageTree,
@@ -395,9 +444,248 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertNil(metricRuntime, "Linux must suppress unsupported spool metrics, not label them mac")
 
         XCTAssertThrowsError(try LinuxDurableCloudRuntime(
-            stateDirectory: scratch.path, expectedUID: metadata.st_uid)) {
+            stateDirectory: scratch.path, expectedUID: metadata.st_uid, secrets: secrets)) {
             XCTAssertEqual($0 as? CloudDurableStoreFailure, .writerLockHeld)
         }
+    }
+
+    func testW52ProtectedExecutorIdentityPairingRotationAndReconnect() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w52-identity-\(UUID().uuidString)")
+        let secretURL = scratch.appendingPathComponent("secrets", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: secretURL, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        var metadata = stat()
+        XCTAssertEqual(lstat(secretURL.path, &metadata), 0)
+        let secrets = LinuxProtectedFileSecretStore(root: CanonicalProjectRoot(
+            path: secretURL.path, ownerUID: metadata.st_uid, ownerGID: metadata.st_gid))
+        let authority = CloudExecutorIdentityAuthority(store: secrets)
+        XCTAssertEqual(authority.readiness(), .blocked(.protectedStateMissing))
+        XCTAssertEqual(
+            CloudExecutorIdentityAuthority(store: DeniedSecretStore()).readiness(),
+            .blocked(.protectedStateUnavailable))
+
+        let machineKey = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x17, count: 32))
+        let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x29, count: 32))
+        let initial = try authority.provision(
+            accountID: "account-w52", machineID: "machine-w52",
+            deviceKey: machineKey, masterSecret: master)
+        XCTAssertEqual(initial.identityGeneration, 1)
+        XCTAssertEqual(initial.keyEpoch, 1)
+        XCTAssertEqual(initial.machineFingerprint, machineKey.pairingFingerprint)
+        let memory = CloudExecutorIdentityAuthority(store: TestMemorySecretStore())
+        XCTAssertEqual(
+            try memory.provision(accountID: "account-w52", machineID: "machine-w52",
+                                 deviceKey: machineKey, masterSecret: master),
+            initial, "Mac/Linux protected adapters expose one Application identity contract")
+
+        let viewerSigning = try CloudDeviceKeyPair(
+            privateKeyRaw: Data(repeating: 0x35, count: 32))
+        let viewerEphemeralPrivate = Data(repeating: 0x41, count: 32)
+        let viewerEphemeral = try CloudPairing.x25519PublicKey(
+            privateKeyRaw: viewerEphemeralPrivate)
+        let claimNonce = Data(repeating: 0x53, count: 32)
+        let pairingNonce = Data(repeating: 0x67, count: 32)
+        func offer(_ pairingID: String, deviceID: String = "viewer-w52") -> Data {
+            CloudCanonicalJSON.canonicalData(.object([
+                "v": .int(1), "type": .string("pairing_offer"),
+                "pairing_id": .string(pairingID),
+                "claim_nonce": .base64(claimNonce),
+                "pairing_nonce": .base64(pairingNonce),
+                "account_id": .string("account-w52"),
+                "viewer_device_id": .string(deviceID),
+                "viewer_signing_key": .base64(viewerSigning.publicKeyRaw),
+                "viewer_ephemeral_key": .base64(viewerEphemeral),
+                "viewer_fingerprint": .string(viewerSigning.pairingFingerprint),
+                "expires_at": .int(101_000),
+            ]))
+        }
+        let offerBytes = offer("pairing-w52")
+        let prepared = try authority.prepareHandover(
+            offerBytes: offerBytes, nowMilliseconds: 100_000,
+            randomBytes: { count in Data(repeating: count == 12 ? 0x79 : 0x73, count: count) })
+        let retry = try CloudExecutorIdentityAuthority(store: secrets).prepareHandover(
+            offerBytes: offerBytes, nowMilliseconds: 100_100,
+            randomBytes: { count in Data(repeating: 0xff, count: count) })
+        XCTAssertEqual(retry.wrapperBytes, prepared.wrapperBytes)
+        XCTAssertFalse(retry.alreadyCommitted)
+        XCTAssertThrowsError(try authority.prepareHandover(
+            offerBytes: offer("second-claimant"), nowMilliseconds: 100_100)) {
+            XCTAssertEqual($0 as? CloudExecutorIdentityError, .pairingClaimed)
+        }
+
+        let wrapper = try CloudPairing.decodeWrapper(prepared.wrapperBytes)
+        let shared = try CloudPairing.x25519SharedSecret(
+            privateKeyRaw: viewerEphemeralPrivate,
+            peerPublicKeyRaw: try CloudPairing.decodeCanonicalBase64(
+                wrapper.ephemeralKey, field: "ephemeral_key", expectedLength: 32))
+        let derived = try CloudPairing.derive(
+            sharedSecretRaw: shared, pairingNonce: pairingNonce,
+            pairingID: "pairing-w52", claimNonce: claimNonce, phase: .grant)
+        let clear = try CloudPairing.open(
+            wrapper, phaseKey: derived.phaseKey,
+            viewerEphemeralKey: viewerEphemeral.base64EncodedString(),
+            machineEphemeralKey: wrapper.ephemeralKey)
+        guard case .object(let handover) = try CloudCanonicalJSON.parseStrict(clear) else {
+            return XCTFail("handover must be canonical JSON")
+        }
+        XCTAssertEqual(handover["account_id"], .string("account-w52"))
+        XCTAssertEqual(handover["machine_id"], .string("machine-w52"))
+        XCTAssertEqual(handover.count, 8, "W0-E keeps the accepted v1 handover wire unchanged")
+        XCTAssertEqual(initial.keyEpoch, 1)
+        XCTAssertEqual(initial.revocationEpoch, 0)
+        XCTAssertThrowsError(try authority.commitPreparedHandover(
+            pairingID: "pairing-w52", claimNonce: claimNonce.base64EncodedString(),
+            deliveredFingerprint: "wrong", nowMilliseconds: 100_200)) {
+            XCTAssertEqual($0 as? CloudExecutorIdentityError, .pairingFingerprintMismatch)
+        }
+        XCTAssertThrowsError(try authority.commitPreparedHandover(
+            pairingID: "pairing-w52", claimNonce: claimNonce.base64EncodedString(),
+            deliveredFingerprint: viewerSigning.pairingFingerprint,
+            nowMilliseconds: 101_001)) {
+            XCTAssertEqual($0 as? CloudExecutorIdentityError, .pairingExpired)
+        }
+        let paired = try authority.commitPreparedHandover(
+            pairingID: "pairing-w52", claimNonce: claimNonce.base64EncodedString(),
+            deliveredFingerprint: viewerSigning.pairingFingerprint,
+            nowMilliseconds: 100_200)
+        XCTAssertEqual(paired.pairedDevices.map(\.deviceID), ["viewer-w52"])
+        let completedRetry = try CloudExecutorIdentityAuthority(store: secrets).prepareHandover(
+            offerBytes: offerBytes, nowMilliseconds: 100_300)
+        XCTAssertTrue(completedRetry.alreadyCommitted)
+        XCTAssertEqual(completedRetry.wrapperBytes, prepared.wrapperBytes)
+
+        let revoked = try authority.revokeDevice(
+            "viewer-w52", expectedGeneration: paired.identityGeneration)
+        XCTAssertEqual(revoked.revokedDeviceIDs, ["viewer-w52"])
+        XCTAssertTrue(try authority.transportMaterial().pairedDevicePublicKeys.isEmpty)
+        XCTAssertThrowsError(try authority.prepareHandover(
+            offerBytes: offerBytes, nowMilliseconds: 100_400)) {
+            XCTAssertEqual($0 as? CloudExecutorIdentityError, .revokedIdentity)
+        }
+        let replacementKey = try CloudDeviceKeyPair(
+            privateKeyRaw: Data(repeating: 0x7f, count: 32))
+        let replacementMaster = try CloudMasterSecret(
+            rawRepresentation: Data(repeating: 0x83, count: 32))
+        let transition = try authority.rotateKeys(
+            deviceKey: replacementKey, masterSecret: replacementMaster,
+            keyID: "master-v2", expectedGeneration: revoked.identityGeneration)
+        XCTAssertEqual(transition.keyEpoch, 2)
+        XCTAssertEqual(try authority.transportMaterial().deviceKey, replacementKey)
+        let current = try authority.snapshot()
+        let proof = CloudExecutorReconnectProof(
+            accountID: current.accountID, machineID: current.machineID,
+            deviceID: current.deviceID, identityGeneration: current.identityGeneration,
+            keyEpoch: current.keyEpoch, revocationEpoch: current.revocationEpoch,
+            durableLedgerOpened: true, durableSpoolOpened: true)
+        XCTAssertEqual(try authority.verifyReconnect(proof), .resumeFromDurableLedgerAndSpool)
+        let stale = CloudExecutorReconnectProof(
+            accountID: current.accountID, machineID: current.machineID,
+            deviceID: current.deviceID, identityGeneration: revoked.identityGeneration,
+            keyEpoch: 1, revocationEpoch: current.revocationEpoch,
+            durableLedgerOpened: true, durableSpoolOpened: true)
+        XCTAssertThrowsError(try authority.verifyReconnect(stale)) {
+            XCTAssertEqual($0 as? CloudExecutorIdentityError, .invalidReconnectProof)
+        }
+        let noSpool = CloudExecutorReconnectProof(
+            accountID: current.accountID, machineID: current.machineID,
+            deviceID: current.deviceID, identityGeneration: current.identityGeneration,
+            keyEpoch: current.keyEpoch, revocationEpoch: current.revocationEpoch,
+            durableLedgerOpened: true, durableSpoolOpened: false)
+        XCTAssertThrowsError(try authority.verifyReconnect(noSpool)) {
+            XCTAssertEqual($0 as? CloudExecutorIdentityError, .durableResumeUnavailable)
+        }
+
+        let protectedLeaf = secretURL.appendingPathComponent("executor-identity-v1.secret")
+        let goodBytes = try XCTUnwrap(secrets.data(
+            for: CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertLessThanOrEqual(
+            goodBytes.count, CloudExecutorIdentityAuthority.maximumProtectedStateBytes)
+        try secrets.set(Data("{}".utf8), for: CloudExecutorIdentityAuthority.protectedAccount)
+        XCTAssertEqual(authority.readiness(), .blocked(.protectedStateCorrupt))
+        try Data(repeating: 0x78,
+                 count: CloudExecutorIdentityAuthority.maximumProtectedStateBytes + 1)
+            .write(to: protectedLeaf)
+        XCTAssertEqual(authority.readiness(), .blocked(.protectedStateUnavailable))
+        guard case .object(var future) = try CloudCanonicalJSON.parseStrict(goodBytes) else {
+            return XCTFail("stored identity must be an object")
+        }
+        future["v"] = .int(2)
+        try secrets.set(CloudCanonicalJSON.canonicalData(.object(future)),
+                        for: CloudExecutorIdentityAuthority.protectedAccount)
+        XCTAssertEqual(authority.readiness(), .blocked(.protectedStateFutureVersion(2)))
+        try secrets.set(goodBytes, for: CloudExecutorIdentityAuthority.protectedAccount)
+        XCTAssertThrowsError(try authority.provision(
+            accountID: "wrong-owner", machineID: "machine-w52",
+            deviceKey: replacementKey, masterSecret: replacementMaster)) {
+            XCTAssertEqual($0 as? CloudExecutorIdentityError, .identityMismatch)
+        }
+        let linked = scratch.appendingPathComponent("identity-hardlink")
+        try FileManager.default.linkItem(
+            at: secretURL.appendingPathComponent("executor-identity-v1.secret"), to: linked)
+        XCTAssertEqual(authority.readiness(), .blocked(.protectedStateUnavailable))
+        XCTAssertThrowsError(try secrets.set(
+            Data("replacement-must-not-land".utf8),
+            for: CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertThrowsError(try secrets.remove(CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertEqual(try Data(contentsOf: linked), goodBytes,
+                       "write/remove refuse a multiply linked protected leaf without changing it")
+        try FileManager.default.removeItem(at: linked)
+        XCTAssertEqual(authority.readiness(), .ready(current))
+
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o640], ofItemAtPath: protectedLeaf.path)
+        XCTAssertEqual(authority.readiness(), .blocked(.protectedStateUnavailable))
+        XCTAssertThrowsError(try secrets.set(
+            Data("mode-must-not-land".utf8),
+            for: CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertThrowsError(try secrets.remove(CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertEqual(try Data(contentsOf: protectedLeaf), goodBytes)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: protectedLeaf.path)
+
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o750], ofItemAtPath: secretURL.path)
+        XCTAssertEqual(authority.readiness(), .blocked(.protectedStateUnavailable))
+        XCTAssertThrowsError(try secrets.set(
+            Data("directory-mode-must-not-land".utf8),
+            for: CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertThrowsError(try secrets.remove(CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertEqual(try Data(contentsOf: protectedLeaf), goodBytes)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o700], ofItemAtPath: secretURL.path)
+        XCTAssertEqual(authority.readiness(), .ready(current))
+
+        let wrongOwnerStore = LinuxProtectedFileSecretStore(root: CanonicalProjectRoot(
+            path: secretURL.path, ownerUID: .max, ownerGID: metadata.st_gid))
+        XCTAssertThrowsError(try wrongOwnerStore.data(
+            for: CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertThrowsError(try wrongOwnerStore.set(
+            Data("owner-must-not-land".utf8),
+            for: CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertThrowsError(try wrongOwnerStore.remove(
+            CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertEqual(try Data(contentsOf: protectedLeaf), goodBytes)
+
+        let savedLeaf = secretURL.appendingPathComponent("identity-saved-for-type-check")
+        try FileManager.default.moveItem(at: protectedLeaf, to: savedLeaf)
+        try FileManager.default.createDirectory(
+            at: protectedLeaf, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+        XCTAssertEqual(authority.readiness(), .blocked(.protectedStateUnavailable))
+        XCTAssertThrowsError(try secrets.set(
+            Data("type-must-not-land".utf8),
+            for: CloudExecutorIdentityAuthority.protectedAccount))
+        XCTAssertThrowsError(try secrets.remove(
+            CloudExecutorIdentityAuthority.protectedAccount))
+        try FileManager.default.removeItem(at: protectedLeaf)
+        try FileManager.default.moveItem(at: savedLeaf, to: protectedLeaf)
+        XCTAssertEqual(try Data(contentsOf: protectedLeaf), goodBytes,
+                       "non-regular protected leaf is refused without replacing saved bytes")
+        XCTAssertFalse(String(describing: try authority.transportMaterial())
+            .contains(replacementMaster.rawRepresentation.base64EncodedString()))
     }
 
     #if os(Linux)

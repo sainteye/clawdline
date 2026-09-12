@@ -14,6 +14,12 @@ var executedTestGroupTitles: [String] = []
 let focusedTestGroups: Set<String> = Set(
     (ProcessInfo.processInfo.environment["CLAWDLINE_TEST_GROUPS"] ?? "")
         .split(separator: "\n").map(String.init))
+let cloudFocusedTestSelectionRaw =
+    ProcessInfo.processInfo.environment["CLAWDLINE_TEST_CLOUD_SUITES"]
+let cloudFocusedTestSuiteNames: [String] = cloudFocusedTestSelectionRaw.map {
+    $0.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+} ?? []
+let cloudFocusedTestSuites = Set(cloudFocusedTestSuiteNames)
 var matchedFocusedTestGroups: Set<String> = []
 
 func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
@@ -33,6 +39,7 @@ func expectClose(_ name: String, _ got: CGFloat, _ want: CGFloat, _ tolerance: C
 }
 
 func group(_ title: String, _ body: () -> Void) {
+    if cloudFocusedTestSelectionRaw != nil { return }
     if !focusedTestGroups.isEmpty {
         guard focusedTestGroups.contains(title) else { return }
         matchedFocusedTestGroups.insert(title)

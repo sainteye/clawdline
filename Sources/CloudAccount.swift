@@ -2,9 +2,12 @@
 // long-lived machine credential; CloudTransport owns short-lived relay tokens.
 
 import Foundation
-import os
+import CoreFoundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
-enum CloudAccountError: Error, LocalizedError, Equatable {
+public enum CloudAccountError: Error, LocalizedError, Equatable {
     case missingMachineCredential
     case invalidResponse
     case http(status: Int, code: String?)
@@ -13,7 +16,7 @@ enum CloudAccountError: Error, LocalizedError, Equatable {
     case credentialInvalidationFailed(String)
     case credentialCleanupPending(String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .missingMachineCredential:
             return "This Mac is not signed in to Clawdline Cloud."
@@ -44,15 +47,15 @@ enum CloudAccountError: Error, LocalizedError, Equatable {
 /// ignores cancellation still returns a real credential, and by then the person may have signed
 /// out. Comparing this value inside the persistence transaction is what refuses that write —
 /// a check anywhere above the store cannot, because the write is already on its way.
-struct CloudCredentialGeneration: Equatable, Sendable {
+public struct CloudCredentialGeneration: Equatable, Sendable {
     fileprivate let value: UInt64
 
-    init(_ value: UInt64) { self.value = value }
+    public init(_ value: UInt64) { self.value = value }
 }
 
 /// Durable, nonsecret invalidation state. A Keychain item whose embedded epoch is older than
 /// this value is unusable even when `SecItemDelete` failed, including after process restart.
-protocol CloudCredentialInvalidationStoring: Sendable {
+public protocol CloudCredentialInvalidationStoring: Sendable {
     /// Raise the process-local floor synchronously. This is atomic-only and must not touch a
     /// persistence API: Settings calls it before cancelling the in-flight login Task.
     func reserve(atLeast epoch: UInt64) -> UInt64
@@ -60,35 +63,35 @@ protocol CloudCredentialInvalidationStoring: Sendable {
     func advance(to epoch: UInt64) throws
 }
 
-final class CloudInMemoryCredentialInvalidationStore:
+public final class CloudInMemoryCredentialInvalidationStore:
     CloudCredentialInvalidationStoring, @unchecked Sendable
 {
-    private let epoch: OSAllocatedUnfairLock<UInt64>
+    private let epoch: CloudLocked<UInt64>
 
-    init(epoch: UInt64 = 0) {
-        self.epoch = OSAllocatedUnfairLock(initialState: epoch)
+    public init(epoch: UInt64 = 0) {
+        self.epoch = CloudLocked(epoch)
     }
 
-    func reserve(atLeast wanted: UInt64) -> UInt64 {
+    public func reserve(atLeast wanted: UInt64) -> UInt64 {
         epoch.withLock { current in
             current = max(current, wanted)
             return current
         }
     }
 
-    func currentEpoch() throws -> UInt64 { epoch.withLock { $0 } }
+    public func currentEpoch() throws -> UInt64 { epoch.withLock { $0 } }
 
-    func advance(to wanted: UInt64) throws {
+    public func advance(to wanted: UInt64) throws {
         epoch.withLock { current in current = max(current, wanted) }
     }
 }
 
 /// Production persistence for the nonsecret epoch. UserDefaults is intentionally separate from
 /// the Keychain: an unavailable or locked Keychain must not be able to roll invalidation back.
-final class CloudCredentialInvalidationDefaultsStore:
+public final class CloudCredentialInvalidationDefaultsStore:
     CloudCredentialInvalidationStoring, @unchecked Sendable
 {
-    static let defaultKey = "cloud.machine-credential.minimum-valid-epoch"
+    public static let defaultKey = "cloud.machine-credential.minimum-valid-epoch"
 
     private final class ProcessCoordinator: @unchecked Sendable {
         let lock = NSLock()
@@ -99,14 +102,13 @@ final class CloudCredentialInvalidationDefaultsStore:
     /// subject share this read/reserve/write coordinator, so a low writer cannot overtake a high
     /// reservation. The namespace is explicit because a defaults key alone does not identify a
     /// domain; test suites and production must never share a process floor by spelling accident.
-    private static let coordinators = OSAllocatedUnfairLock(
-        initialState: [String: ProcessCoordinator]())
+    private static let coordinators = CloudLocked([String: ProcessCoordinator]())
 
     private let defaults: UserDefaults
     private let key: String
     private let coordinator: ProcessCoordinator
 
-    init(
+    public init(
         defaults: UserDefaults = .standard,
         key: String = defaultKey,
         persistenceNamespace: String = "user-defaults.standard"
@@ -122,14 +124,14 @@ final class CloudCredentialInvalidationDefaultsStore:
         }
     }
 
-    func reserve(atLeast wanted: UInt64) -> UInt64 {
+    public func reserve(atLeast wanted: UInt64) -> UInt64 {
         coordinator.lock.lock()
         defer { coordinator.lock.unlock() }
         coordinator.floor = max(coordinator.floor, wanted)
         return coordinator.floor
     }
 
-    func currentEpoch() throws -> UInt64 {
+    public func currentEpoch() throws -> UInt64 {
         coordinator.lock.lock()
         defer { coordinator.lock.unlock() }
         let durable = (defaults.object(forKey: key) as? NSNumber)?.uint64Value ?? 0
@@ -137,7 +139,7 @@ final class CloudCredentialInvalidationDefaultsStore:
         return coordinator.floor
     }
 
-    func advance(to wanted: UInt64) throws {
+    public func advance(to wanted: UInt64) throws {
         coordinator.lock.lock()
         defer { coordinator.lock.unlock() }
         let durable = (defaults.object(forKey: key) as? NSNumber)?.uint64Value ?? 0
@@ -152,16 +154,16 @@ final class CloudCredentialInvalidationDefaultsStore:
     }
 }
 
-protocol CloudAccountHTTPTransport: Sendable {
+public protocol CloudAccountHTTPTransport: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
 }
 
-struct CloudAccountURLSessionTransport: CloudAccountHTTPTransport, Sendable {
-    let session: URLSession
+public struct CloudAccountURLSessionTransport: CloudAccountHTTPTransport, Sendable {
+    public let session: URLSession
 
-    init(session: URLSession = .shared) { self.session = session }
+    public init(session: URLSession = .shared) { self.session = session }
 
-    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {
             throw CloudAccountError.invalidResponse
@@ -170,62 +172,67 @@ struct CloudAccountURLSessionTransport: CloudAccountHTTPTransport, Sendable {
     }
 }
 
-struct CloudMachineMetadata: Equatable, Sendable {
-    let name: String
-    let platform: String
-    let appVersion: String?
+public struct CloudMachineMetadata: Equatable, Sendable {
+    public let name: String
+    public let platform: String
+    public let appVersion: String?
 
-    init(name: String, platform: String, appVersion: String? = nil) {
+    public init(name: String, platform: String, appVersion: String? = nil) {
         self.name = name
         self.platform = platform
         self.appVersion = appVersion
     }
 }
 
-struct CloudDeviceLoginStart: Equatable, Sendable,
+public struct CloudDeviceLoginStart: Equatable, Sendable,
                               CustomStringConvertible, CustomDebugStringConvertible {
-    let deviceCode: String
-    let userCode: String
-    let verificationURL: URL
-    let verificationCompleteURL: URL
-    let expiresIn: Int
-    let interval: Int
+    public let deviceCode: String
+    public let userCode: String
+    public let verificationURL: URL
+    public let verificationCompleteURL: URL
+    public let expiresIn: Int
+    public let interval: Int
     fileprivate let receivedAt: TimeInterval
     /// Captured when the flow opened, so every poll it later makes is judged against the state
     /// of the world *before* the person could have signed out.
     fileprivate let generation: CloudCredentialGeneration
 
-    var description: String {
+    public var description: String {
         "CloudDeviceLoginStart(deviceCode: <redacted>, userCode: \(userCode), interval: \(interval))"
     }
 
-    var debugDescription: String { description }
+    public var debugDescription: String { description }
 }
 
-struct CloudMachineIdentity: Equatable, Sendable {
-    let accountID: String
-    let machineID: String
+public struct CloudMachineIdentity: Equatable, Sendable {
+    public let accountID: String
+    public let machineID: String
+
+    public init(accountID: String, machineID: String) {
+        self.accountID = accountID
+        self.machineID = machineID
+    }
 }
 
-struct ScheduleWebhookLease: Codable, Equatable, Sendable {
-    let token: String
-    let revision: Int
-    let expiresAt: String
+public struct ScheduleWebhookLease: Codable, Equatable, Sendable {
+    public let token: String
+    public let revision: Int
+    public let expiresAt: String
     enum CodingKeys: String, CodingKey {
         case token, revision
         case expiresAt = "expires_at"
     }
 }
 
-struct ScheduleWebhookClaim: Codable, Equatable, Sendable {
-    var deliveryID: String
-    let hookID: String
-    let hookGeneration: Int
-    let acceptedAt: String
-    let expiresAt: String
-    var deliveryDigest: String
-    let attempt: Int
-    let lease: ScheduleWebhookLease
+public struct ScheduleWebhookClaim: Codable, Equatable, Sendable {
+    public var deliveryID: String
+    public let hookID: String
+    public let hookGeneration: Int
+    public let acceptedAt: String
+    public let expiresAt: String
+    public var deliveryDigest: String
+    public let attempt: Int
+    public let lease: ScheduleWebhookLease
     enum CodingKeys: String, CodingKey {
         case deliveryID = "delivery_id"
         case hookID = "hook_id"
@@ -237,38 +244,38 @@ struct ScheduleWebhookClaim: Codable, Equatable, Sendable {
     }
 }
 
-struct ScheduleWebhookClaimResult: Equatable, Sendable {
-    let delivery: ScheduleWebhookClaim?
-    let serverTime: String
-    let pollAfterMilliseconds: Int
+public struct ScheduleWebhookClaimResult: Equatable, Sendable {
+    public let delivery: ScheduleWebhookClaim?
+    public let serverTime: String
+    public let pollAfterMilliseconds: Int
 }
 
-struct ScheduleWebhookActivation: Equatable, Sendable {
-    let hookID: String
-    let state: String
-    let revision: Int
+public struct ScheduleWebhookActivation: Equatable, Sendable {
+    public let hookID: String
+    public let state: String
+    public let revision: Int
 }
 
-struct ScheduleWebhookReceiptAck: Equatable, Sendable {
-    let deliveryID: String
-    let receiptVersion: Int
-    let state: String
-    let acknowledgedAt: String
-    let duplicate: Bool
+public struct ScheduleWebhookReceiptAck: Equatable, Sendable {
+    public let deliveryID: String
+    public let receiptVersion: Int
+    public let state: String
+    public let acknowledgedAt: String
+    public let duplicate: Bool
 }
 
-struct ScheduleWebhookReceipt: Codable, Equatable, Sendable {
-    let schema: String
-    let receiptVersion: Int
-    let previousReceiptVersion: Int
-    let kind: String
-    let occurredAt: String
-    let macBuild: String
-    let leaseToken: String?
-    let taskID: String?
-    let outcomeCode: String?
-    let taskTerminalState: String?
-    let retryAt: String?
+public struct ScheduleWebhookReceipt: Codable, Equatable, Sendable {
+    public let schema: String
+    public let receiptVersion: Int
+    public let previousReceiptVersion: Int
+    public let kind: String
+    public let occurredAt: String
+    public let macBuild: String
+    public let leaseToken: String?
+    public let taskID: String?
+    public let outcomeCode: String?
+    public let taskTerminalState: String?
+    public let retryAt: String?
     enum CodingKeys: String, CodingKey {
         case schema, kind
         case receiptVersion = "receipt_version"
@@ -282,7 +289,24 @@ struct ScheduleWebhookReceipt: Codable, Equatable, Sendable {
         case retryAt = "retry_at"
     }
 
-    func encode(to encoder: Encoder) throws {
+    public init(schema: String, receiptVersion: Int, previousReceiptVersion: Int,
+                kind: String, occurredAt: String, macBuild: String,
+                leaseToken: String?, taskID: String?, outcomeCode: String?,
+                taskTerminalState: String?, retryAt: String?) {
+        self.schema = schema
+        self.receiptVersion = receiptVersion
+        self.previousReceiptVersion = previousReceiptVersion
+        self.kind = kind
+        self.occurredAt = occurredAt
+        self.macBuild = macBuild
+        self.leaseToken = leaseToken
+        self.taskID = taskID
+        self.outcomeCode = outcomeCode
+        self.taskTerminalState = taskTerminalState
+        self.retryAt = retryAt
+    }
+
+    public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(schema, forKey: .schema)
         try values.encode(receiptVersion, forKey: .receiptVersion)
@@ -323,14 +347,14 @@ enum ScheduleWebhookActivationDecoder {
     }
 }
 
-enum CloudDeviceLoginPollState: Equatable, Sendable {
+public enum CloudDeviceLoginPollState: Equatable, Sendable {
     case authorizationPending
     case slowDown(retryAfter: Int)
     case accessDenied
     case expired
     case complete(CloudMachineIdentity)
 
-    var retryAfter: Int? {
+    public var retryAfter: Int? {
         switch self {
         case .slowDown(let seconds): return seconds
         default: return nil
@@ -338,25 +362,25 @@ enum CloudDeviceLoginPollState: Equatable, Sendable {
     }
 }
 
-struct CloudMachineCredential: Equatable, Codable, Sendable,
+public struct CloudMachineCredential: Equatable, Codable, Sendable,
                                CustomStringConvertible, CustomDebugStringConvertible {
-    let accountID: String
-    let machineID: String
+    public let accountID: String
+    public let machineID: String
     fileprivate let secret: String
     fileprivate let validityEpoch: UInt64
 
-    init(accountID: String, machineID: String, secret: String, validityEpoch: UInt64 = 0) {
+    public init(accountID: String, machineID: String, secret: String, validityEpoch: UInt64 = 0) {
         self.accountID = accountID
         self.machineID = machineID
         self.secret = secret
         self.validityEpoch = validityEpoch
     }
 
-    var description: String {
+    public var description: String {
         "CloudMachineCredential(accountID: \(accountID), machineID: \(machineID), secret: <redacted>)"
     }
 
-    var debugDescription: String { description }
+    public var debugDescription: String { description }
 
     enum CodingKeys: String, CodingKey {
         case accountID = "account_id"
@@ -365,7 +389,7 @@ struct CloudMachineCredential: Equatable, Codable, Sendable,
         case validityEpoch = "validity_epoch"
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         accountID = try values.decode(String.self, forKey: .accountID)
         machineID = try values.decode(String.self, forKey: .machineID)
@@ -374,7 +398,7 @@ struct CloudMachineCredential: Equatable, Codable, Sendable,
         validityEpoch = try values.decodeIfPresent(UInt64.self, forKey: .validityEpoch) ?? 0
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(accountID, forKey: .accountID)
         try values.encode(machineID, forKey: .machineID)
@@ -383,68 +407,68 @@ struct CloudMachineCredential: Equatable, Codable, Sendable,
     }
 }
 
-struct CloudMachine: Equatable, Sendable {
-    let id: String
-    let name: String
-    let platform: String
-    let appVersion: String?
-    let publicKey: String
-    let lastSeenAt: Date?
-    let createdAt: Date
-    let revokedAt: Date?
+public struct CloudMachine: Equatable, Sendable {
+    public let id: String
+    public let name: String
+    public let platform: String
+    public let appVersion: String?
+    public let publicKey: String
+    public let lastSeenAt: Date?
+    public let createdAt: Date
+    public let revokedAt: Date?
 }
 
-struct CloudMachineList: Equatable, Sendable {
-    let machines: [CloudMachine]
-    let active: Int
+public struct CloudMachineList: Equatable, Sendable {
+    public let machines: [CloudMachine]
+    public let active: Int
 }
 
-enum CloudDeviceKind: String, Codable, Sendable {
+public enum CloudDeviceKind: String, Codable, Sendable {
     case browser
     case ios
     case android
 }
 
-enum CloudDeviceCapability: String, Codable, Sendable {
+public enum CloudDeviceCapability: String, Codable, Sendable {
     case readSessions = "read_sessions"
     case readTranscript = "read_transcript"
     case sendPrompt = "send_prompt"
     case startSession = "start_session"
 }
 
-struct CloudViewerDevice: Equatable, Sendable {
-    let id: String
-    let kind: CloudDeviceKind
-    let name: String
-    let capabilities: [CloudDeviceCapability]
-    let publicKey: String
-    let lastSeenAt: Date?
-    let createdAt: Date
-    let revokedAt: Date?
+public struct CloudViewerDevice: Equatable, Sendable {
+    public let id: String
+    public let kind: CloudDeviceKind
+    public let name: String
+    public let capabilities: [CloudDeviceCapability]
+    public let publicKey: String
+    public let lastSeenAt: Date?
+    public let createdAt: Date
+    public let revokedAt: Date?
 }
 
-struct CloudDeviceList: Equatable, Sendable {
-    let devices: [CloudViewerDevice]
-    let active: Int
+public struct CloudDeviceList: Equatable, Sendable {
+    public let devices: [CloudViewerDevice]
+    public let active: Int
 }
 
-struct CloudHeartbeat: Equatable, Sendable {
-    let at: Date
+public struct CloudHeartbeat: Equatable, Sendable {
+    public let at: Date
 }
 
-struct CloudRevocation: Equatable, Sendable {
-    let revokedAt: Date
-    let routing: String
-    let contentKeyRotation: String
+public struct CloudRevocation: Equatable, Sendable {
+    public let revokedAt: Date
+    public let routing: String
+    public let contentKeyRotation: String
 }
 
 /// The server and this client treat the payload only as base64 bytes. Its description is
 /// deliberately redacted so diagnostics cannot accidentally reveal a key handover.
-struct CloudOpaquePairingBlob: Equatable, Sendable,
+public struct CloudOpaquePairingBlob: Equatable, Sendable,
                                CustomStringConvertible, CustomDebugStringConvertible {
     fileprivate let base64: String
 
-    init(base64: String) throws {
+    public init(base64: String) throws {
         guard let decoded = Data(base64Encoded: base64),
               decoded.base64EncodedString() == base64 else {
             throw CloudAccountError.invalidPairingBlob
@@ -452,70 +476,200 @@ struct CloudOpaquePairingBlob: Equatable, Sendable,
         self.base64 = base64
     }
 
-    var description: String { "CloudOpaquePairingBlob(<redacted>)" }
-    var debugDescription: String { description }
+    public var description: String { "CloudOpaquePairingBlob(<redacted>)" }
+    public var debugDescription: String { description }
 
     /// The exact bytes the wire carries. Named so that reading them is a deliberate act: the
     /// only caller is the suite, proving that what went to `POST /v1/pairing/complete` is what
     /// a viewer can open.
-    var wireBase64ForTesting: String { base64 }
+    public var wireBase64ForTesting: String { base64 }
 
     /// The opaque bytes at the transport/cryptography seam. Callers still cannot inspect them
     /// through logs or descriptions; invitation decryption is the second legitimate consumer.
-    var wireBase64: String { base64 }
+    public var wireBase64: String { base64 }
 }
 
-struct CloudPairingStart: Equatable, Sendable,
+public struct CloudPairingStart: Equatable, Sendable,
                           CustomStringConvertible, CustomDebugStringConvertible {
-    let pairingID: String
-    let claimNonce: String
-    let expiresAt: Date
-    let expiresIn: Int
+    public let pairingID: String
+    public let claimNonce: String
+    public let expiresAt: Date
+    public let expiresIn: Int
 
-    var description: String {
+    public var description: String {
         "CloudPairingStart(pairingID: \(pairingID), claimNonce: <redacted>, expiresIn: \(expiresIn))"
     }
 
-    var debugDescription: String { description }
+    public var debugDescription: String { description }
 }
 
-struct CloudPairingDelivery: Equatable, Sendable {
-    let fingerprint: String
+public struct CloudPairingDelivery: Equatable, Sendable {
+    public let fingerprint: String
 }
 
-enum CloudPairingClaim: Equatable, Sendable {
+public enum CloudPairingClaim: Equatable, Sendable {
     case pending
     case complete(blob: CloudOpaquePairingBlob, senderDeviceID: String?)
 }
 
-struct CloudPairingInvitationStart: Equatable, Sendable {
-    let invitationID: String
-    let expiresAt: Date
-    let expiresIn: Int
+public struct CloudPairingInvitationStart: Equatable, Sendable {
+    public let invitationID: String
+    public let expiresAt: Date
+    public let expiresIn: Int
 }
 
-enum CloudPairingInvitationPoll: Equatable, Sendable {
+public enum CloudPairingInvitationPoll: Equatable, Sendable {
     case pending
     case ready(
         accountID: String, viewerDeviceID: String, machineID: String,
         encryptedOffer: CloudOpaquePairingBlob)
 }
 
+/// The public W5-2 machine-side identity protocol. These values deliberately model the exact
+/// canonical-JSON contract rather than an `Encodable` approximation: signatures, duplicate
+/// detection, and reply-loss replay all name the same bytes on every platform.
+public struct CloudIdentityPairingStartRequest: Equatable, Sendable {
+    public let machineSigningKey: String
+    public let machineFingerprint: String
+    public let machineEphemeralKey: String
+    public let pairingNonce: String
+    public let previousContentKeyEpoch: Int64
+    public let contentKeyEpoch: Int64
+    public let rotationID: String
+
+    public init(machineSigningKey: String, machineFingerprint: String,
+                machineEphemeralKey: String, pairingNonce: String,
+                previousContentKeyEpoch: Int64, contentKeyEpoch: Int64,
+                rotationID: String) {
+        self.machineSigningKey = machineSigningKey
+        self.machineFingerprint = machineFingerprint
+        self.machineEphemeralKey = machineEphemeralKey
+        self.pairingNonce = pairingNonce
+        self.previousContentKeyEpoch = previousContentKeyEpoch
+        self.contentKeyEpoch = contentKeyEpoch
+        self.rotationID = rotationID
+    }
+
+    public var canonicalBody: Data {
+        CloudCanonicalJSON.canonicalData(.object([
+            "v": .int(1),
+            "machine_signing_key": .string(machineSigningKey),
+            "machine_fingerprint": .string(machineFingerprint),
+            "machine_ephemeral_key": .string(machineEphemeralKey),
+            "pairing_nonce": .string(pairingNonce),
+            "previous_content_key_epoch": .int(previousContentKeyEpoch),
+            "content_key_epoch": .int(contentKeyEpoch),
+            "rotation_id": .string(rotationID)
+        ]))
+    }
+}
+
+public struct CloudIdentityEpochs: Equatable, Sendable {
+    public let identityEpoch: Int64
+    public let machineKeyEpoch: Int64
+    public let viewerKeyEpoch: Int64?
+    public let contentKeyEpoch: Int64?
+    public let jwksGeneration: Int64
+}
+
+public struct CloudIdentityRotationWindow: Equatable, Sendable {
+    public let oldEpoch: Int64
+    public let newEpoch: Int64
+    public let oldAcceptUntilMilliseconds: Int64
+    public let newAcceptFromMilliseconds: Int64
+}
+
+public struct CloudIdentityPairingStart: Equatable, Sendable {
+    public let qr: CloudPairingQR
+    public let epochs: CloudIdentityEpochs
+    public let rotationID: String
+    public let signingRotation: CloudIdentityRotationWindow
+    public let jwksRotation: CloudIdentityRotationWindow
+    public let contentKeyRotation: CloudIdentityRotationWindow
+}
+
+public struct CloudIdentityPairingPhaseReceipt: Equatable, Sendable {
+    public enum Status: String, Sendable { case recorded, duplicate }
+    public let status: Status
+    public let pairingID: String
+    public let phase: CloudPairingPhase
+    public let phaseSHA256: String
+    public let recordedAtMilliseconds: Int64
+    public let epochs: CloudIdentityEpochs
+}
+
+public enum CloudIdentityPairingPoll: Equatable, Sendable {
+    case pending(pairingID: String, phase: CloudPairingPhase)
+    case ready(pairingID: String, phase: CloudPairingPhase, wrapper: CloudPairingWrapper,
+               phaseSHA256: String, recordedAtMilliseconds: Int64, finalized: Bool)
+}
+
+public struct CloudMachineIdentityRotationReceipt: Equatable, Sendable {
+    public enum Status: String, Sendable { case rotated, duplicate }
+    public let status: Status
+    public let deviceID: String
+    public let identityEpoch: Int64
+    public let keyEpoch: Int64
+    public let capabilityEpoch: Int64
+    public let keyFingerprint: String
+    public let oldAcceptUntilMilliseconds: Int64
+    public let newAcceptFromMilliseconds: Int64
+}
+
+public enum CloudIdentityPairingWireContract {
+    public static let startPath = "/v1/pairing/identity/start"
+    public static let phasePathPrefix = "/v1/pairing/identity/phases/"
+    public static let pollPath = "/v1/pairing/identity/poll"
+    public static let machineRotationPath = "/v1/machines/:id/identity/rotate"
+
+    /// Cross-repository comparison vector. These are byte-for-byte the private API/Relay vector,
+    /// not a public-side re-rendering of the same idea, so the owning root can compare one digest.
+    public static let canonicalVector = Data((
+        "{\"v\":1,\"start\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/start\",\"writer_role\":\"machine\"},\"phases\":[" +
+        "{\"phase\":\"offer\",\"write\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/phases/offer\",\"role\":\"viewer\"},\"poll\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/poll\",\"role\":\"machine\"}}," +
+        "{\"phase\":\"grant\",\"write\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/phases/grant\",\"role\":\"machine\"},\"poll\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/poll\",\"role\":\"viewer\"}}," +
+        "{\"phase\":\"activate\",\"write\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/phases/activate\",\"role\":\"viewer\"},\"poll\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/poll\",\"role\":\"machine\"}}," +
+        "{\"phase\":\"confirm\",\"write\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/phases/confirm\",\"role\":\"machine\"},\"poll\":{\"method\":\"POST\",\"route\":\"/v1/pairing/identity/poll\",\"role\":\"viewer\"}}]}"
+    ).utf8)
+
+    /// Public lifecycle vector adds exact replay members and pin timing without changing the
+    /// smaller shared route vector above.
+    public static let canonicalLifecycleVector = CloudCanonicalJSON.canonicalData(.object([
+        "v": .int(1),
+        "routes": .object([
+            "start": .string(startPath), "phase": .string(phasePathPrefix + ":phase"),
+            "poll": .string(pollPath), "machine_rotation": .string(machineRotationPath)
+        ]),
+        "writers": .object([
+            "offer": .string("viewer"), "grant": .string("machine"),
+            "activate": .string("viewer"), "confirm": .string("machine")
+        ]),
+        "readers": .object([
+            "offer": .string("machine"), "grant": .string("viewer"),
+            "activate": .string("machine"), "confirm": .string("viewer")
+        ]),
+        "pin_after": .string("confirm_receipt"),
+        "phase_write_members": .array([.string("blob"), .string("claim_nonce")]),
+        "poll_members": .array([.string("claim_nonce"), .string("pairing_id"), .string("phase")]),
+        "replay": .string("same_phase_same_canonical_bytes_returns_duplicate")
+    ]))
+}
+
 /// Client-side QR key derivation is intentionally outside this transport seam. A later UX
 /// component must generate that material and decide what bytes become `ciphertext`.
-protocol CloudPairingCryptographyProviding: Sendable {
+public protocol CloudPairingCryptographyProviding: Sendable {
     func makeOpaqueHandover() async throws -> CloudOpaquePairingBlob
     func openOpaqueHandover(_ blob: CloudOpaquePairingBlob) async throws
 }
 
-final class CloudAccountClient: Sendable {
-    typealias DeviceKeyLoader = @Sendable () throws -> CloudDeviceKeyPair
-    typealias Sleeper = @Sendable (TimeInterval) async throws -> Void
-    typealias Clock = @Sendable () -> TimeInterval
+public final class CloudAccountClient: Sendable {
+    public typealias DeviceKeyLoader = @Sendable () throws -> CloudDeviceKeyPair
+    public typealias Sleeper = @Sendable (TimeInterval) async throws -> Void
+    public typealias Clock = @Sendable () -> TimeInterval
 
-    static let machineCredentialAccount = "machine-credential-v1"
+    public static let machineCredentialAccount = "machine-credential-v1"
 
-    let apiBaseURL: URL
+    public let apiBaseURL: URL
     private let transport: any CloudAccountHTTPTransport
     private let credentialStore: any CloudKeyStoring
     private let invalidationStore: any CloudCredentialInvalidationStoring
@@ -526,9 +680,9 @@ final class CloudAccountClient: Sendable {
     /// Keychain call, because the callers that bump it — sign-out and cancel — are the ones a
     /// blocked Keychain would otherwise trap. It only ever increases, so a comparison taken
     /// inside the transaction is sound without holding the same lock.
-    private let loginGeneration: OSAllocatedUnfairLock<UInt64>
+    private let loginGeneration: CloudLocked<UInt64>
 
-    init(
+    public init(
         apiBaseURL: URL,
         transport: any CloudAccountHTTPTransport,
         credentialStore: any CloudKeyStoring,
@@ -551,14 +705,14 @@ final class CloudAccountClient: Sendable {
         self.deviceKeyLoader = deviceKeyLoader
         self.sleeper = sleeper
         self.clock = clock
-        loginGeneration = OSAllocatedUnfairLock(
-            initialState: (try? invalidationStore.currentEpoch()) ?? 0)
+        loginGeneration = CloudLocked((try? invalidationStore.currentEpoch()) ?? 0)
     }
 
-    convenience init(
+#if canImport(Security)
+    public convenience init(
         apiBaseURL: URL = URL(string: "https://api.clawdline.com")!,
         session: URLSession = .shared,
-        credentialStore: any CloudKeyStoring = CloudKeychainStore(),
+        credentialStore: any CloudKeyStoring = CloudProtectedKeychainStore(),
         invalidationStore: any CloudCredentialInvalidationStoring =
             CloudCredentialInvalidationDefaultsStore(),
         keys: CloudKeys = CloudKeys()
@@ -571,9 +725,10 @@ final class CloudAccountClient: Sendable {
             deviceKeyLoader: { try keys.loadOrCreateDeviceKeyPair() }
         )
     }
+#endif
 
     /// The generation a credential must still belong to for the store to accept it.
-    func credentialGeneration() -> CloudCredentialGeneration {
+    public func credentialGeneration() -> CloudCredentialGeneration {
         let durable = (try? invalidationStore.currentEpoch()) ?? 0
         return CloudCredentialGeneration(loginGeneration.withLock { current in
             current = max(current, durable)
@@ -586,7 +741,7 @@ final class CloudAccountClient: Sendable {
     ///
     /// Cheap and non-blocking on purpose: sign-out and cancel both call it from the main actor.
     @discardableResult
-    func reservePendingLoginInvalidation() -> CloudCredentialGeneration {
+    public func reservePendingLoginInvalidation() -> CloudCredentialGeneration {
         let candidate = loginGeneration.withLock { current in
             if current < UInt64.max { current += 1 }
             return current
@@ -601,7 +756,7 @@ final class CloudAccountClient: Sendable {
     /// Persist a reservation off the main actor. UI adapters reserve synchronously (an atomic
     /// increment only), then hand this call to their bounded writer so a slow persistence seam
     /// cannot freeze AppKit.
-    func persistPendingLoginInvalidation(_ generation: CloudCredentialGeneration) throws {
+    public func persistPendingLoginInvalidation(_ generation: CloudCredentialGeneration) throws {
         do {
             try invalidationStore.advance(to: generation.value)
         } catch let error as CloudAccountError {
@@ -612,13 +767,13 @@ final class CloudAccountClient: Sendable {
     }
 
     @discardableResult
-    func invalidatePendingLogins() throws -> CloudCredentialGeneration {
+    public func invalidatePendingLogins() throws -> CloudCredentialGeneration {
         let generation = reservePendingLoginInvalidation()
         try persistPendingLoginInvalidation(generation)
         return generation
     }
 
-    func startDeviceLogin(metadata: CloudMachineMetadata) async throws -> CloudDeviceLoginStart {
+    public func startDeviceLogin(metadata: CloudMachineMetadata) async throws -> CloudDeviceLoginStart {
         let generation = credentialGeneration()
         let key = try deviceKeyLoader()
         let body = DeviceStartRequest(
@@ -656,7 +811,7 @@ final class CloudAccountClient: Sendable {
     /// `startedAt` names the sign-in this poll belongs to. Left out, the poll stands for itself
     /// and is judged from the moment it was made — which still refuses a sign-out that lands
     /// during the round trip, and is the honest default for a single call.
-    func pollDeviceLogin(
+    public func pollDeviceLogin(
         deviceCode: String,
         startedAt generation: CloudCredentialGeneration? = nil
     ) async throws -> CloudDeviceLoginPollState {
@@ -711,7 +866,7 @@ final class CloudAccountClient: Sendable {
 
     /// Polls until the RFC 8628 flow reaches a terminal state. `slow_down` overrides the
     /// normal interval for the next request; all other waiting polls use the advertised interval.
-    func waitForDeviceLogin(
+    public func waitForDeviceLogin(
         _ started: CloudDeviceLoginStart,
         onState: @Sendable (CloudDeviceLoginPollState) async -> Void = { _ in }
     ) async throws -> CloudDeviceLoginPollState {
@@ -739,7 +894,7 @@ final class CloudAccountClient: Sendable {
         }
     }
 
-    func restoredMachineIdentity() throws -> CloudMachineIdentity? {
+    public func restoredMachineIdentity() throws -> CloudMachineIdentity? {
         try withPersistenceTransaction {
             guard let credential = try loadCredentialUnlocked() else { return nil }
             return CloudMachineIdentity(
@@ -747,7 +902,7 @@ final class CloudAccountClient: Sendable {
         }
     }
 
-    func authorizationHeader() throws -> String {
+    public func authorizationHeader() throws -> String {
         try withPersistenceTransaction {
             try authorizationHeaderUnlocked()
         }
@@ -762,12 +917,12 @@ final class CloudAccountClient: Sendable {
     /// the credential this call just removed.
     ///
     /// It must be called off the main thread: ``CloudKeychainStore/remove(_:)`` refuses there.
-    func signOut() throws {
+    public func signOut() throws {
         let invalidation = reservePendingLoginInvalidation()
         try signOut(reservedAt: invalidation)
     }
 
-    func signOut(reservedAt invalidation: CloudCredentialGeneration) throws {
+    public func signOut(reservedAt invalidation: CloudCredentialGeneration) throws {
         try persistPendingLoginInvalidation(invalidation)
         do {
             try withPersistenceTransaction {
@@ -778,14 +933,14 @@ final class CloudAccountClient: Sendable {
         }
     }
 
-    func authorizationHeaderProvider() -> CloudAPIDeviceTokenProvider.AuthorizationHeaderProvider {
+    public func authorizationHeaderProvider() -> CloudAPIDeviceTokenProvider.AuthorizationHeaderProvider {
         { [weak self] in
             guard let self else { throw CloudAccountError.missingMachineCredential }
             return try self.authorizationHeader()
         }
     }
 
-    func deviceTokenProvider(session: URLSession = .shared) -> CloudAPIDeviceTokenProvider {
+    public func deviceTokenProvider(session: URLSession = .shared) -> CloudAPIDeviceTokenProvider {
         CloudAPIDeviceTokenProvider(
             apiBaseURL: apiBaseURL,
             session: session,
@@ -793,7 +948,7 @@ final class CloudAccountClient: Sendable {
         )
     }
 
-    func heartbeat(appVersion: String? = nil) async throws -> CloudHeartbeat {
+    public func heartbeat(appVersion: String? = nil) async throws -> CloudHeartbeat {
         let data = try await send(
             method: "POST", path: ["v1", "machines", "heartbeat"],
             body: HeartbeatRequest(appVersion: appVersion), authorization: .machineCredential
@@ -806,7 +961,7 @@ final class CloudAccountClient: Sendable {
         return CloudHeartbeat(at: date)
     }
 
-    func activateScheduleWebhook(hookID: String, expectedRevision: Int,
+    public func activateScheduleWebhook(hookID: String, expectedRevision: Int,
                                  idempotencyKey: String) async throws
         -> ScheduleWebhookActivation {
         let result = try await rawSend(
@@ -819,7 +974,7 @@ final class CloudAccountClient: Sendable {
             result.data, hookID: hookID, expectedRevision: expectedRevision)
     }
 
-    func claimScheduleWebhookDelivery(waitSeconds: Int = 20) async throws
+    public func claimScheduleWebhookDelivery(waitSeconds: Int = 20) async throws
         -> ScheduleWebhookClaimResult {
         guard (0...25).contains(waitSeconds) else { throw CloudAccountError.invalidResponse }
         let result = try await rawSend(
@@ -856,7 +1011,7 @@ final class CloudAccountClient: Sendable {
                      pollAfterMilliseconds: pollAfter)
     }
 
-    func sendScheduleWebhookReceipt(deliveryID: String, receipt: ScheduleWebhookReceipt)
+    public func sendScheduleWebhookReceipt(deliveryID: String, receipt: ScheduleWebhookReceipt)
         async throws -> ScheduleWebhookReceiptAck {
         let result = try await rawSend(
             method: "POST",
@@ -880,7 +1035,7 @@ final class CloudAccountClient: Sendable {
                      acknowledgedAt: at, duplicate: duplicate)
     }
 
-    func listMachines() async throws -> CloudMachineList {
+    public func listMachines() async throws -> CloudMachineList {
         let data = try await send(
             method: "GET", path: ["v1", "machines"], authorization: .machineCredential)
         let object = try jsonObject(data)
@@ -894,7 +1049,7 @@ final class CloudAccountClient: Sendable {
         return CloudMachineList(machines: machines, active: active)
     }
 
-    func listDevices() async throws -> CloudDeviceList {
+    public func listDevices() async throws -> CloudDeviceList {
         let data = try await send(
             method: "GET", path: ["v1", "devices"], authorization: .machineCredential)
         let object = try jsonObject(data)
@@ -909,7 +1064,7 @@ final class CloudAccountClient: Sendable {
     }
 
     /// Deployed DELETE routes require the PWA's `cl_session`; a machine bearer is not accepted.
-    func revokeMachine(id: String, browserSessionCookie: String) async throws -> CloudRevocation {
+    public func revokeMachine(id: String, browserSessionCookie: String) async throws -> CloudRevocation {
         let startingCredential = try withPersistenceTransaction {
             try loadCredentialUnlocked()
         }
@@ -927,7 +1082,7 @@ final class CloudAccountClient: Sendable {
     }
 
     /// Deployed DELETE routes require the PWA's `cl_session`; a machine bearer is not accepted.
-    func revokeDevice(id: String, browserSessionCookie: String) async throws -> CloudRevocation {
+    public func revokeDevice(id: String, browserSessionCookie: String) async throws -> CloudRevocation {
         let data = try await send(
             method: "DELETE", path: ["v1", "devices", id],
             authorization: .browserSessionCookie(browserSessionCookie)
@@ -935,7 +1090,73 @@ final class CloudAccountClient: Sendable {
         return try decodeRevocation(data, machine: false)
     }
 
-    func startPairing(fingerprint: String) async throws -> CloudPairingStart {
+    public func startIdentityPairing(_ request: CloudIdentityPairingStartRequest) async throws
+        -> CloudIdentityPairingStart {
+        let result = try await rawSend(
+            method: "POST", path: ["v1", "pairing", "identity", "start"],
+            canonicalBody: request.canonicalBody, authorization: .machineCredential)
+        try requireStatus(result, expected: 200)
+        return try Self.decodeIdentityPairingStart(result.data)
+    }
+
+    /// Writes the exact `{claim_nonce,blob}` bytes defined by `CloudPairing`; an ordinary
+    /// `JSONEncoder` is intentionally not in this path because duplicate detection is by digest.
+    public func writeIdentityPairingPhase(
+        pairingID: String, phase: CloudPairingPhase, claimNonce: String,
+        wrapper: CloudPairingWrapper
+    ) async throws -> CloudIdentityPairingPhaseReceipt {
+        guard phase == .grant || phase == .confirm,
+              wrapper.pairingID == pairingID, wrapper.phase == phase else {
+            throw CloudAccountError.invalidResponse
+        }
+        let body = try CloudPairing.encodePhaseWriteBody(
+            claimNonce: claimNonce, wrapper: wrapper)
+        let result = try await rawSend(
+            method: "POST",
+            path: ["v1", "pairing", "identity", "phases", phase.rawValue],
+            canonicalBody: body, authorization: .machineCredential)
+        try requireStatus(result, expected: 200)
+        return try Self.decodeIdentityPhaseReceipt(
+            result.data, expectedPairingID: pairingID, expectedPhase: phase)
+    }
+
+    public func pollIdentityPairingPhase(
+        pairingID: String, phase: CloudPairingPhase, claimNonce: String
+    ) async throws -> CloudIdentityPairingPoll {
+        guard phase == .offer || phase == .activate else {
+            throw CloudAccountError.invalidResponse
+        }
+        let body = CloudCanonicalJSON.canonicalData(.object([
+            "pairing_id": .string(pairingID), "phase": .string(phase.rawValue),
+            "claim_nonce": .string(claimNonce)
+        ]))
+        let result = try await rawSend(
+            method: "POST", path: ["v1", "pairing", "identity", "poll"],
+            canonicalBody: body, authorization: .machineCredential)
+        guard result.response.statusCode == 200 || result.response.statusCode == 202 else {
+            try requireStatus(result, expected: 200)
+            throw CloudAccountError.invalidResponse
+        }
+        return try Self.decodeIdentityPhasePoll(
+            result.data, statusCode: result.response.statusCode,
+            expectedPairingID: pairingID, expectedPhase: phase)
+    }
+
+    public func rotateMachineIdentity(
+        machineID: String, expectedKeyEpoch: Int64, publicKey: String, fingerprint: String
+    ) async throws -> CloudMachineIdentityRotationReceipt {
+        let body = CloudCanonicalJSON.canonicalData(.object([
+            "expected_key_epoch": .int(expectedKeyEpoch),
+            "public_key": .string(publicKey), "fingerprint": .string(fingerprint)
+        ]))
+        let result = try await rawSend(
+            method: "POST", path: ["v1", "machines", machineID, "identity", "rotate"],
+            canonicalBody: body, authorization: .machineCredential)
+        try requireStatus(result, expected: 200)
+        return try Self.decodeMachineIdentityRotation(result.data, expectedMachineID: machineID)
+    }
+
+    public func startPairing(fingerprint: String) async throws -> CloudPairingStart {
         let data = try await send(
             method: "POST", path: ["v1", "pairing", "start"],
             body: PairingStartRequest(fingerprint: fingerprint), authorization: .machineCredential
@@ -951,7 +1172,7 @@ final class CloudAccountClient: Sendable {
             expiresAt: expiresAt, expiresIn: wire.expiresIn)
     }
 
-    func completePairing(pairingID: String, blob: CloudOpaquePairingBlob) async throws -> CloudPairingDelivery {
+    public func completePairing(pairingID: String, blob: CloudOpaquePairingBlob) async throws -> CloudPairingDelivery {
         let data = try await send(
             method: "POST", path: ["v1", "pairing", "complete"],
             body: PairingCompleteRequest(pairingID: pairingID, ciphertext: blob.base64),
@@ -965,7 +1186,7 @@ final class CloudAccountClient: Sendable {
         return CloudPairingDelivery(fingerprint: wire.fingerprint)
     }
 
-    func claimPairing(pairingID: String, claimNonce: String) async throws -> CloudPairingClaim {
+    public func claimPairing(pairingID: String, claimNonce: String) async throws -> CloudPairingClaim {
         let result = try await rawSend(
             method: "POST", path: ["v1", "pairing", "claim"],
             body: PairingClaimRequest(pairingID: pairingID, claimNonce: claimNonce),
@@ -984,7 +1205,7 @@ final class CloudAccountClient: Sendable {
         return .complete(blob: blob, senderDeviceID: wire.senderDeviceID)
     }
 
-    func startPairingInvitation(secretHash: Data) async throws -> CloudPairingInvitationStart {
+    public func startPairingInvitation(secretHash: Data) async throws -> CloudPairingInvitationStart {
         guard secretHash.count == 32 else { throw CloudAccountError.invalidPairingBlob }
         let data = try await send(
             method: "POST", path: ["v1", "pairing", "invitations", "start"],
@@ -1001,7 +1222,7 @@ final class CloudAccountClient: Sendable {
             invitationID: wire.invitationID, expiresAt: expiresAt, expiresIn: wire.expiresIn)
     }
 
-    func pollPairingInvitation(invitationID: String) async throws -> CloudPairingInvitationPoll {
+    public func pollPairingInvitation(invitationID: String) async throws -> CloudPairingInvitationPoll {
         let result = try await rawSend(
             method: "POST", path: ["v1", "pairing", "invitations", "poll"],
             body: PairingInvitationPollRequest(invitationID: invitationID),
@@ -1088,6 +1309,44 @@ final class CloudAccountClient: Sendable {
         let (data, response) = try await transport.data(for: request)
         if response.statusCode == 401,
            let sentCredential,
+           (try? errorCode(data)) == "no_machine_credential" {
+            try withPersistenceTransaction {
+                guard try loadCredentialUnlocked() == sentCredential else { return }
+                try credentialStore.remove(Self.machineCredentialAccount)
+            }
+        }
+        return RawResult(data: data, response: response)
+    }
+
+    private func rawSend(
+        method: String, path: [String], canonicalBody: Data,
+        authorization: Authorization?, headers: [String: String] = [:]
+    ) async throws -> RawResult {
+        let url = try endpoint(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = canonicalBody
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        var sentCredential: CloudMachineCredential?
+        switch authorization {
+        case .machineCredential:
+            let credential = try withPersistenceTransaction { () throws -> CloudMachineCredential in
+                guard let credential = try loadCredentialUnlocked() else {
+                    throw CloudAccountError.missingMachineCredential
+                }
+                return credential
+            }
+            sentCredential = credential
+            request.setValue("Bearer \(credential.secret)", forHTTPHeaderField: "Authorization")
+        case .browserSessionCookie(let cookie):
+            request.setValue("cl_session=\(cookie)", forHTTPHeaderField: "Cookie")
+        case nil:
+            break
+        }
+        let (data, response) = try await transport.data(for: request)
+        if response.statusCode == 401, let sentCredential,
            (try? errorCode(data)) == "no_machine_credential" {
             try withPersistenceTransaction {
                 guard try loadCredentialUnlocked() == sentCredential else { return }
@@ -1218,6 +1477,199 @@ final class CloudAccountClient: Sendable {
         return CloudRevocation(
             revokedAt: date, routing: wire.routing,
             contentKeyRotation: wire.contentKeyRotation)
+    }
+
+    private static func identityObject(_ value: CloudJSONValue, keys: Set<String>) throws
+        -> [String: CloudJSONValue] {
+        guard case .object(let object) = value, Set(object.keys) == keys else {
+            throw CloudAccountError.invalidResponse
+        }
+        return object
+    }
+
+    private static func identityString(_ object: [String: CloudJSONValue], _ key: String)
+        throws -> String {
+        guard case .string(let value)? = object[key], !value.isEmpty else {
+            throw CloudAccountError.invalidResponse
+        }
+        return value
+    }
+
+    private static func identityInt(_ object: [String: CloudJSONValue], _ key: String)
+        throws -> Int64 {
+        guard case .int(let value)? = object[key], value >= 0 else {
+            throw CloudAccountError.invalidResponse
+        }
+        return value
+    }
+
+    private static func identitySHA256(
+        _ object: [String: CloudJSONValue], _ key: String
+    ) throws -> String {
+        let value = try identityString(object, key)
+        guard value.utf8.count == 64,
+              value.utf8.allSatisfy({ (0x30...0x39).contains($0) || (0x61...0x66).contains($0) })
+        else { throw CloudAccountError.invalidResponse }
+        return value
+    }
+
+    private static func decodeEpochs(
+        _ value: CloudJSONValue, phaseReceipt: Bool
+    ) throws -> CloudIdentityEpochs {
+        let keys: Set<String> = phaseReceipt
+            ? ["identity_epoch", "machine_key_epoch", "viewer_key_epoch",
+               "content_key_epoch", "jwks_generation"]
+            : ["identity_epoch", "machine_key_epoch", "jwks_generation"]
+        let object = try identityObject(value, keys: keys)
+        return CloudIdentityEpochs(
+            identityEpoch: try identityInt(object, "identity_epoch"),
+            machineKeyEpoch: try identityInt(object, "machine_key_epoch"),
+            viewerKeyEpoch: phaseReceipt ? try identityInt(object, "viewer_key_epoch") : nil,
+            contentKeyEpoch: phaseReceipt ? try identityInt(object, "content_key_epoch") : nil,
+            jwksGeneration: try identityInt(object, "jwks_generation"))
+    }
+
+    private static func decodeRotationWindow(
+        _ value: CloudJSONValue, generationNames: Bool = false
+    ) throws -> CloudIdentityRotationWindow {
+        let old = generationNames ? "old_generation" : "old_epoch"
+        let new = generationNames ? "new_generation" : "new_epoch"
+        let object = try identityObject(
+            value, keys: [old, new, "old_accept_until_ms", "new_accept_from_ms"])
+        return CloudIdentityRotationWindow(
+            oldEpoch: try identityInt(object, old), newEpoch: try identityInt(object, new),
+            oldAcceptUntilMilliseconds: try identityInt(object, "old_accept_until_ms"),
+            newAcceptFromMilliseconds: try identityInt(object, "new_accept_from_ms"))
+    }
+
+    private static func decodeIdentityPairingStart(_ data: Data) throws
+        -> CloudIdentityPairingStart {
+        let root = try identityObject(try CloudCanonicalJSON.parseStrict(data), keys: [
+            "v", "status", "qr", "identity", "rotation"
+        ])
+        guard try identityInt(root, "v") == 1,
+              try identityString(root, "status") == "pending",
+              let qrValue = root["qr"], let identityValue = root["identity"],
+              let rotationValue = root["rotation"] else {
+            throw CloudAccountError.invalidResponse
+        }
+        let qrObject = try identityObject(qrValue, keys: [
+            "v", "type", "pairing_id", "claim_nonce", "expires_at", "account_id",
+            "machine_id", "machine_signing_key", "machine_fingerprint",
+            "machine_ephemeral_key", "pairing_nonce"
+        ])
+        guard try identityInt(qrObject, "v") == 1,
+              try identityString(qrObject, "type") == "pairing_qr" else {
+            throw CloudAccountError.invalidResponse
+        }
+        let qr = CloudPairingQR(
+            pairingID: try identityString(qrObject, "pairing_id"),
+            claimNonce: try identityString(qrObject, "claim_nonce"),
+            expiresAt: try identityInt(qrObject, "expires_at"),
+            accountID: try identityString(qrObject, "account_id"),
+            machineID: try identityString(qrObject, "machine_id"),
+            machineSigningKey: try identityString(qrObject, "machine_signing_key"),
+            machineFingerprint: try identityString(qrObject, "machine_fingerprint"),
+            machineEphemeralKey: try identityString(qrObject, "machine_ephemeral_key"),
+            pairingNonce: try identityString(qrObject, "pairing_nonce"))
+        _ = try CloudPairing.encodeQRFragment(qr)
+        let epochs = try decodeEpochs(identityValue, phaseReceipt: false)
+        let rotation = try identityObject(
+            rotationValue, keys: ["rotation_id", "signing", "jwks", "content_key"])
+        guard let signing = rotation["signing"], let jwks = rotation["jwks"],
+              let contentKey = rotation["content_key"] else {
+            throw CloudAccountError.invalidResponse
+        }
+        return CloudIdentityPairingStart(
+            qr: qr, epochs: epochs, rotationID: try identityString(rotation, "rotation_id"),
+            signingRotation: try decodeRotationWindow(signing),
+            jwksRotation: try decodeRotationWindow(jwks, generationNames: true),
+            contentKeyRotation: try decodeRotationWindow(contentKey))
+    }
+
+    private static func decodeIdentityPhaseReceipt(
+        _ data: Data, expectedPairingID: String, expectedPhase: CloudPairingPhase
+    ) throws -> CloudIdentityPairingPhaseReceipt {
+        let root = try identityObject(try CloudCanonicalJSON.parseStrict(data), keys: [
+            "v", "status", "pairing_id", "phase", "phase_sha256", "recorded_at_ms",
+            "identity_epoch", "machine_key_epoch", "viewer_key_epoch", "content_key_epoch",
+            "jwks_generation"
+        ])
+        guard try identityInt(root, "v") == 1,
+              let status = CloudIdentityPairingPhaseReceipt.Status(
+                rawValue: try identityString(root, "status")),
+              try identityString(root, "pairing_id") == expectedPairingID,
+              try identityString(root, "phase") == expectedPhase.rawValue else {
+            throw CloudAccountError.invalidResponse
+        }
+        let epochs = try decodeEpochs(.object(root.filter {
+            ["identity_epoch", "machine_key_epoch", "viewer_key_epoch",
+             "content_key_epoch", "jwks_generation"].contains($0.key)
+        }), phaseReceipt: true)
+        return CloudIdentityPairingPhaseReceipt(
+            status: status, pairingID: expectedPairingID, phase: expectedPhase,
+            phaseSHA256: try identitySHA256(root, "phase_sha256"),
+            recordedAtMilliseconds: try identityInt(root, "recorded_at_ms"), epochs: epochs)
+    }
+
+    private static func decodeIdentityPhasePoll(
+        _ data: Data, statusCode: Int, expectedPairingID: String,
+        expectedPhase: CloudPairingPhase
+    ) throws -> CloudIdentityPairingPoll {
+        let value = try CloudCanonicalJSON.parseStrict(data)
+        if statusCode == 202 {
+            let root = try identityObject(value, keys: ["v", "status", "pairing_id", "phase"])
+            guard try identityInt(root, "v") == 1,
+                  try identityString(root, "status") == "pending",
+                  try identityString(root, "pairing_id") == expectedPairingID,
+                  try identityString(root, "phase") == expectedPhase.rawValue else {
+                throw CloudAccountError.invalidResponse
+            }
+            return .pending(pairingID: expectedPairingID, phase: expectedPhase)
+        }
+        let root = try identityObject(value, keys: [
+            "v", "status", "pairing_id", "phase", "blob", "phase_sha256",
+            "recorded_at_ms", "finalized"
+        ])
+        guard try identityInt(root, "v") == 1,
+              try identityString(root, "status") == "ready",
+              try identityString(root, "pairing_id") == expectedPairingID,
+              try identityString(root, "phase") == expectedPhase.rawValue,
+              case .bool(let finalized)? = root["finalized"], let blob = root["blob"] else {
+            throw CloudAccountError.invalidResponse
+        }
+        let wrapper = try CloudPairing.decodeWrapper(CloudCanonicalJSON.canonicalData(blob))
+        guard wrapper.pairingID == expectedPairingID, wrapper.phase == expectedPhase else {
+            throw CloudAccountError.invalidResponse
+        }
+        return .ready(
+            pairingID: expectedPairingID, phase: expectedPhase, wrapper: wrapper,
+            phaseSHA256: try identitySHA256(root, "phase_sha256"),
+            recordedAtMilliseconds: try identityInt(root, "recorded_at_ms"),
+            finalized: finalized)
+    }
+
+    private static func decodeMachineIdentityRotation(
+        _ data: Data, expectedMachineID: String
+    ) throws -> CloudMachineIdentityRotationReceipt {
+        let root = try identityObject(try CloudCanonicalJSON.parseStrict(data), keys: [
+            "v", "status", "device_id", "identity_epoch", "key_epoch", "capability_epoch",
+            "key_fingerprint", "old_accept_until_ms", "new_accept_from_ms"
+        ])
+        guard try identityInt(root, "v") == 1,
+              let status = CloudMachineIdentityRotationReceipt.Status(
+                rawValue: try identityString(root, "status")),
+              try identityString(root, "device_id") == expectedMachineID else {
+            throw CloudAccountError.invalidResponse
+        }
+        return CloudMachineIdentityRotationReceipt(
+            status: status, deviceID: expectedMachineID,
+            identityEpoch: try identityInt(root, "identity_epoch"),
+            keyEpoch: try identityInt(root, "key_epoch"),
+            capabilityEpoch: try identityInt(root, "capability_epoch"),
+            keyFingerprint: try identityString(root, "key_fingerprint"),
+            oldAcceptUntilMilliseconds: try identityInt(root, "old_accept_until_ms"),
+            newAcceptFromMilliseconds: try identityInt(root, "new_accept_from_ms"))
     }
 }
 
@@ -1410,15 +1862,18 @@ private func strictInt(_ value: Any?) -> Int? {
     return Int(number.stringValue)
 }
 
-private let cloudSleepNanosecondsPerSecond: UInt64 = 1_000_000_000
-private let cloudMaximumSleepSeconds = UInt64.max / cloudSleepNanosecondsPerSecond
+@usableFromInline
+internal let cloudSleepNanosecondsPerSecond: UInt64 = 1_000_000_000
+@usableFromInline
+internal let cloudMaximumSleepSeconds = UInt64.max / cloudSleepNanosecondsPerSecond
 
 private func isSchedulableSleepSeconds(_ seconds: Int) -> Bool {
     guard let unsigned = UInt64(exactly: seconds) else { return false }
     return unsigned > 0 && unsigned <= cloudMaximumSleepSeconds
 }
 
-private func checkedSleepNanoseconds(_ seconds: TimeInterval) -> UInt64? {
+@usableFromInline
+internal func checkedSleepNanoseconds(_ seconds: TimeInterval) -> UInt64? {
     guard seconds.isFinite, seconds > 0,
           seconds <= TimeInterval(cloudMaximumSleepSeconds) else { return nil }
     return UInt64(seconds * TimeInterval(cloudSleepNanosecondsPerSecond))

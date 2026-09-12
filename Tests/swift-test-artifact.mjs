@@ -14,6 +14,9 @@ const repository = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const helperSource = readFileSync(join(repository, "tools/swift-test-artifact.sh"), "utf8");
 const runner = readFileSync(join(repository, "test.sh"), "utf8");
 const sourceManifest = readFileSync(join(repository, "tools/swift-source-manifest.sh"), "utf8");
+const cloudRunner = readFileSync(join(repository, "Tests/CloudTestRunner.swift"), "utf8");
+const testHarness = readFileSync(join(repository, "Tests/TestHarness.swift"), "utf8");
+const testGroupManifest = readFileSync(join(repository, "Tests/TestGroupManifest.swift"), "utf8");
 const directory = mkdtempSync(join(tmpdir(), "clawdline-swift-artifact-"));
 const started = Date.now();
 const only = process.argv[2] === "--case" && process.argv.length === 4 ? process.argv[3] : null;
@@ -603,6 +606,36 @@ try {
     assert.equal(r.status, 2);
     assert.match(r.stderr, /focused_selection_empty/);
     assert.equal(f.count(), 0);
+  });
+  for (const [name, selected] of [["absent", null], ["empty", ""], ["unknown", "NoSuchCloudSuite"],
+    ["duplicate", "CloudAppBridge,CloudAppBridge"]]) check(`Cloud focused entry refuses ${name} selection before compiling`, () => {
+    const f = fixture(), env = { ...process.env, ...f.env };
+    delete env.CLAWDLINE_TEST_GROUPS;
+    if (selected === null) delete env.CLAWDLINE_TEST_CLOUD_SUITES;
+    else env.CLAWDLINE_TEST_CLOUD_SUITES = selected;
+    const args = selected === null ? ["test.sh", "--cloud-focused"]
+      : ["test.sh", "--cloud-focused", selected];
+    const r = spawnSync("/bin/bash", args, { cwd: f.root, env, encoding: "utf8" });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /cloud_focused_selection_(empty|unknown|duplicate)/);
+    assert.equal(f.count(), 0);
+  });
+  check("Cloud focused execution has one closed selector shared by the shell and Swift harness", () => {
+    assert.match(runner, /--cloud-focused\)/);
+    assert.match(runner, /export CLAWDLINE_TEST_CLOUD_SUITES/);
+    assert.match(testHarness, /CLAWDLINE_TEST_CLOUD_SUITES/);
+    assert.match(testGroupManifest, /cloudFocusedTestSelectionRaw/);
+    assert.match(cloudRunner, /cloudFocusedTestSuites/);
+    assert.match(cloudRunner, /CLAWDLINE_CLOUD_FOCUSED_TESTS_COMPLETE/);
+  });
+  check("Cloud suite failures are accumulated per suite instead of aborting the remaining roster", () => {
+    const start = cloudRunner.indexOf("// >>> clawdline cloud suite aggregation >>>");
+    const end = cloudRunner.indexOf("// <<< clawdline cloud suite aggregation <<<");
+    assert.ok(start >= 0 && end > start);
+    const block = cloudRunner.slice(start, end);
+    assert.match(block, /for suite in selectedCloudTestSuites/);
+    assert.ok(block.includes('failures.append("Cloud suite \\(suite.name) — \\(error)")'));
+    assert.doesNotMatch(block, /catch \{[\s\S]*?throw CloudTestHarnessFailure/);
   });
   check("current real Swift manifest including literal concatenations is selectable", () => {
     const result = shell('. tools/swift-test-artifact.sh\nclawdline_validate_swift_test_selection required', repository,

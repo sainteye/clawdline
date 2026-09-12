@@ -36,6 +36,10 @@ for member in Packages/ClawdlineCore/CloudCanonicalJSON.swift Packages/Clawdline
   Packages/ClawdlineApplication/CloudCommandLedger.swift \
   Packages/ClawdlineApplication/CloudOutboundSpool.swift \
   Packages/ClawdlineApplication/CloudDurableStores.swift \
+  Packages/ClawdlineApplication/CloudAccount.swift \
+  Packages/ClawdlineApplication/CloudKeys.swift \
+  Packages/ClawdlineApplication/CloudPairing.swift \
+  Packages/ClawdlineApplication/CloudTransport.swift \
   Packages/ClawdlineLinux/LinuxComposition.swift \
   Packages/ClawdlineLinux/LinuxContainedFileSystem.swift \
   Packages/ClawdlineLinux/LinuxDaemonIngress.swift \
@@ -212,8 +216,8 @@ chmod 0644 "$contract_config"
 expect_contract_status 0 run-configured "$linux_binary" run --config "$contract_config"
 grep -q '"configuration":"runtime_adapters_configured_provider_auth_pending"' "$contract_stdout" \
   || fail "run did not return the truthful configured/auth-pending receipt"
-grep -q '"readinessCode":"w4_provider_authentication_not_proven"' "$contract_stdout" \
-  || fail "configured runtime claimed provider authentication readiness"
+grep -q '"readinessCode":"w5_executor_identity_missing"' "$contract_stdout" \
+  || fail "configured runtime did not fail closed on missing protected executor identity"
 grep -q '"umask":"0077"' "$contract_stdout" || fail "run did not report the closed service umask"
 if grep -q 'linux-contract-secret-sentinel' "$contract_stdout"; then
   fail "runtime composition receipt exposed secret content"

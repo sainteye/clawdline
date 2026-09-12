@@ -95,9 +95,31 @@ boundary 都先提升 schema-compatible predecessor ceiling，rollback 只會跳
 invalid legacy state 當作 zero。這些 source failure-injection fixtures 不等於
 實際 disk-full、live Relay、GCE 或 PID-1 證據。
 
+W5-2 candidate 將 account bootstrap、Ed25519／content key、pairing pin、rotation、revocation 與
+reconnect identity 收進單一 Application `CloudExecutorIdentityAuthority`。公開 client 的 normative
+路徑是 identity start、offer/grant/activate/confirm phase write/poll 與 machine identity rotation；
+viewer 寫 offer/activate、machine 寫 grant/confirm，confirm receipt 前不得 pin，reply-loss 重送相同
+canonical bytes 只得 duplicate。三-call 路徑僅相容已開始的舊 handover。Mac 的 Keychain 與
+Ubuntu 的 protected-file store 只是 adapter；兩邊讀寫同一 canonical、4 KiB bounded record，且
+missing／locked／unreadable／corrupt／future／wrong-owner／linked／partial／migration failure 都不會
+改走 memory 或空 identity。Offer 的 exact canonical bytes、claim nonce digest、viewer signing／
+ephemeral key 與 fingerprint、expiry、machine fingerprint 及 sealed grant 在 delivery 前 durable；
+第二 claimant、late/mismatched phase、低階 X25519、nonce reuse 與 fingerprint substitution 在 key
+release 或 pin mutation 前拒絕。Rotation 和 revocation 各自前進明示 epoch/generation，舊 key id
+留在 retired fence；reconnect 只有 exact account/machine/device/epochs 且 W5-1 ledger/spool 都已開啟
+才可 resume。Mac live transport 與 effect-time roster 由此 owner 重讀，不再由舊 JSON roster 決定
+production authorization；初次 enrollment 先 atomic rename＋directory fsync，讓舊 binary 找不到
+authority pathname，再從 fence 匯入 protected state，成功後才刪 fence。Crash 從 fence 重試，降版
+不會復活舊 viewer。每次 initial/reconnect 都在 W5-1 owners 開啟後驗 exact epochs；公私
+byte-identical 公私 843-byte route-role vector SHA-256 為
+`2f79369d4ee866976c6da2a41358c1aab5321ab0e6054bf8a3afe16e215f69a9`；另有 public lifecycle
+extension `79504ce608fd278cecdb2e26f62d6d1c7e915ef66f94a79cc12ff240a95e410e` 固定 exact members、
+duplicate replay 與 confirm receipt 後才 pin。
+既有八欄 v1 handover 與 W0-E candidate bytes 不變，Linux emission 仍關閉。
+
 ## 還不能下的結論與責任
 
 - **W0-E／W0-D**：W5-1 code pin 住 public candidate commit/tree/source/package digests，並在 `authority=candidate`、`cutover_required=true` 時拒絕 cutover／emit／reader-floor raise；正式 authority cutover、API／Relay／PWA consumer 與 release identity 仍待接受。W0-A 沒有批准 revocation fail-open／fail-closed policy 的變更。
-- **W0-F／W3**：crypto、networking、Foundation portability 的 compiler／vector 證據待取得；目前 import 掃描不代表 Ubuntu 支援。
-- **W0-C／W5／W6**：W5-1 的 deterministic source fixtures 涵蓋 persist/file-fsync/rename/directory-fsync、corruption、migration、兩個 writer、duplicate/reconnect/ack loss/reorder；真 disk-full、live Relay、overload、slow consumer、VM restart／備份／還原及 redaction runtime 證據仍待交付。Plan v4 budget 尚不能當本次測量值。
+- **W0-F／W3**：Application/Linux product graph 使用 Linux-only exact `swift-crypto` 4.5.2 並有 focused compile；這仍不是真 Ubuntu VM、network 或 provider receipt。
+- **W0-C／W5／W6**：W5-1/W5-2 deterministic fixtures 涵蓋 durable store、duplicate/reconnect/ack loss/reorder、protected-state refusal、兩 claimant、pair/revoke/rotate/restart 與 Mac/Linux Application parity；private API/Relay epoch enforcement、真 disk-full、live Relay、overload、slow consumer、VM restart／備份／還原及 runtime confidentiality 仍待交付。Plan v4 budget 尚不能當本次測量值。
 - **CLA-296 root**：取得獨立安全／架構 review，處置發現、驗證 exact tree、整合。此次交付不變更 production policy、不切 authority、不部署、不代替使用者同意。

@@ -71,6 +71,77 @@ private struct CloudPairingTestHarness {
         }
     }
 
+    mutating func rejects(_ expected: CloudExecutorIdentityError, _ name: String,
+                          _ operation: () throws -> Void) throws {
+        checks += 1
+        do {
+            try operation()
+            throw CloudPairingTestFailure.failed("check \(checks) failed: \(name); operation was accepted")
+        } catch let error as CloudPairingTestFailure {
+            throw error
+        } catch let error as CloudExecutorIdentityError {
+            guard error == expected else {
+                throw CloudPairingTestFailure.failed(
+                    "check \(checks) failed: \(name); got \(error), expected \(expected)")
+            }
+        } catch {
+            throw CloudPairingTestFailure.failed(
+                "check \(checks) failed: \(name); unexpected error \(error)")
+        }
+    }
+
+}
+
+private final class CloudPairingIdentityTestStore: SecretStore, @unchecked Sendable {
+    let capabilities: Set<HostCapability> = [.secrets]
+    let coordinator = CloudKeyStoreCoordinator()
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+
+    func data(for account: String) throws -> Data? {
+        lock.lock(); defer { lock.unlock() }
+        return values[account]
+    }
+    func set(_ data: Data, for account: String) throws {
+        lock.lock(); values[account] = data; lock.unlock()
+    }
+    func loadOrCreate(_ account: String, create: @Sendable () throws -> Data) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        if let value = values[account] { return value }
+        let value = try create(); values[account] = value; return value
+    }
+    func rotate(_ account: String, replace: @Sendable (Data?) throws -> Data) throws -> Data {
+        lock.lock(); defer { lock.unlock() }
+        let value = try replace(values[account]); values[account] = value; return value
+    }
+    func remove(_ account: String) throws {
+        lock.lock(); values.removeValue(forKey: account); lock.unlock()
+    }
+}
+
+extension CloudPairingIdentityTestStore: CloudKeyStoring {}
+
+private actor IdentityPairingRouteHTTP: CloudAccountHTTPTransport {
+    struct Reply: Sendable { let status: Int; let bytes: Data }
+    private var replies: [Reply] = []
+    private var requests: [URLRequest] = []
+
+    func enqueue(status: Int = 200, bytes: Data) {
+        replies.append(Reply(status: status, bytes: bytes))
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        guard !replies.isEmpty, let url = request.url else {
+            throw CloudAccountError.invalidResponse
+        }
+        requests.append(request)
+        let reply = replies.removeFirst()
+        return (reply.bytes, HTTPURLResponse(
+            url: url, statusCode: reply.status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"])!)
+    }
+
+    func captured() -> [URLRequest] { requests }
 }
 
 private func pairingHex(_ text: String) -> Data {
@@ -177,8 +248,281 @@ private func phaseWriteWrapper(bodyExactByteCount target: Int, claimNonce: Strin
     preconditionFailure("could not construct a wrapper giving a \(target)-byte phase-write body")
 }
 
+private enum IdentityPairingReplyLoss: Error { case afterAcceptedWrite }
+
+private actor IdentityPairingReplayClient: CloudIdentityPairingClient {
+    let pairingID = "pairing-four-phase"
+    let claimNonce = Data(repeating: 0x31, count: 32)
+    let viewerSigning = try! CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x41, count: 32))
+    let viewerAgreementPrivate = Data(repeating: 0x51, count: 32)
+    var request: CloudIdentityPairingStartRequest?
+    var grant: CloudPairingWrapper?
+    var grantSHA: String?
+    var activate: CloudPairingWrapper?
+    var activateSHA: String?
+    var confirm: CloudPairingWrapper?
+    var lostGrantReply = false
+    var lostConfirmReply = false
+
+    func startIdentityPairing(_ request: CloudIdentityPairingStartRequest) async throws
+        -> CloudIdentityPairingStart {
+        self.request = request
+        let qr = CloudPairingQR(
+            pairingID: pairingID, claimNonce: claimNonce.base64EncodedString(),
+            expiresAt: 700_000, accountID: "account-four-phase",
+            machineID: "machine-four-phase", machineSigningKey: request.machineSigningKey,
+            machineFingerprint: request.machineFingerprint,
+            machineEphemeralKey: request.machineEphemeralKey,
+            pairingNonce: request.pairingNonce)
+        let epochs = CloudIdentityEpochs(
+            identityEpoch: 1, machineKeyEpoch: 1, viewerKeyEpoch: nil,
+            contentKeyEpoch: 1, jwksGeneration: 1)
+        let window = CloudIdentityRotationWindow(
+            oldEpoch: 0, newEpoch: 1, oldAcceptUntilMilliseconds: 600_000,
+            newAcceptFromMilliseconds: 100_000)
+        return CloudIdentityPairingStart(
+            qr: qr, epochs: epochs, rotationID: request.rotationID,
+            signingRotation: window, jwksRotation: window, contentKeyRotation: window)
+    }
+
+    func pollIdentityPairingPhase(
+        pairingID: String, phase: CloudPairingPhase, claimNonce: String
+    ) async throws -> CloudIdentityPairingPoll {
+        guard let request, pairingID == self.pairingID,
+              claimNonce == self.claimNonce.base64EncodedString() else {
+            throw CloudAccountError.invalidResponse
+        }
+        let viewerPublic = try CloudPairing.x25519PublicKey(
+            privateKeyRaw: viewerAgreementPrivate)
+        let machinePublic = try CloudPairing.decodeCanonicalBase64(
+            request.machineEphemeralKey, field: "machine_ephemeral_key", expectedLength: 32)
+        let shared = try CloudPairing.x25519SharedSecret(
+            privateKeyRaw: viewerAgreementPrivate, peerPublicKeyRaw: machinePublic)
+        let pairingNonce = try CloudPairing.decodeCanonicalBase64(
+            request.pairingNonce, field: "pairing_nonce", expectedLength: 32)
+        switch phase {
+        case .offer:
+            let clear = CloudCanonicalJSON.canonicalData(.object([
+                "v": .int(1), "type": .string("pairing_offer"),
+                "pairing_id": .string(pairingID), "claim_nonce": .string(claimNonce),
+                "pairing_nonce": .string(request.pairingNonce),
+                "account_id": .string("account-four-phase"),
+                "viewer_device_id": .string("viewer-four-phase"),
+                "viewer_signing_key": .base64(viewerSigning.publicKeyRaw),
+                "viewer_ephemeral_key": .base64(viewerPublic),
+                "viewer_fingerprint": .string(viewerSigning.pairingFingerprint),
+                "expires_at": .int(700_000)
+            ]))
+            let key = try CloudPairing.derive(
+                sharedSecretRaw: shared, pairingNonce: pairingNonce, pairingID: pairingID,
+                claimNonce: self.claimNonce, phase: .offer)
+            let wrapper = try CloudPairing.seal(
+                plaintext: clear, phase: .offer, pairingID: pairingID,
+                senderDeviceID: "viewer-four-phase",
+                ephemeralKey: viewerPublic.base64EncodedString(), phaseKey: key.phaseKey,
+                nonce: Data(repeating: 0x61, count: 12))
+            let digest = pairingSHA256Hex(try CloudPairing.encodeWrapper(wrapper))
+            return .ready(pairingID: pairingID, phase: phase, wrapper: wrapper,
+                          phaseSHA256: digest, recordedAtMilliseconds: 100_010,
+                          finalized: false)
+        case .activate:
+            guard let grantSHA else {
+                return .pending(pairingID: pairingID, phase: phase)
+            }
+            if let activate, let activateSHA {
+                return .ready(pairingID: pairingID, phase: phase, wrapper: activate,
+                              phaseSHA256: activateSHA, recordedAtMilliseconds: 100_030,
+                              finalized: false)
+            }
+            let clear = CloudCanonicalJSON.canonicalData(.object([
+                "v": .int(1), "type": .string("pairing_activate"),
+                "grant_sha256": .string(grantSHA)
+            ]))
+            let key = try CloudPairing.derive(
+                sharedSecretRaw: shared, pairingNonce: pairingNonce, pairingID: pairingID,
+                claimNonce: self.claimNonce, phase: .activate)
+            let wrapper = try CloudPairing.seal(
+                plaintext: clear, phase: .activate, pairingID: pairingID,
+                senderDeviceID: "viewer-four-phase",
+                ephemeralKey: viewerPublic.base64EncodedString(), phaseKey: key.phaseKey,
+                nonce: Data(repeating: 0x62, count: 12))
+            let digest = pairingSHA256Hex(try CloudPairing.encodeWrapper(wrapper))
+            activate = wrapper
+            activateSHA = digest
+            return .ready(pairingID: pairingID, phase: phase, wrapper: wrapper,
+                          phaseSHA256: digest, recordedAtMilliseconds: 100_030,
+                          finalized: false)
+        default:
+            throw CloudAccountError.invalidResponse
+        }
+    }
+
+    func writeIdentityPairingPhase(
+        pairingID: String, phase: CloudPairingPhase, claimNonce: String,
+        wrapper: CloudPairingWrapper
+    ) async throws -> CloudIdentityPairingPhaseReceipt {
+        let bytes = try CloudPairing.encodeWrapper(wrapper)
+        let digest = pairingSHA256Hex(bytes)
+        let duplicate: Bool
+        switch phase {
+        case .grant:
+            duplicate = grant != nil
+            if let grant { guard grant == wrapper else { throw CloudAccountError.invalidResponse } }
+            else { grant = wrapper; grantSHA = digest }
+            if !lostGrantReply { lostGrantReply = true; throw IdentityPairingReplyLoss.afterAcceptedWrite }
+        case .confirm:
+            duplicate = confirm != nil
+            if let confirm { guard confirm == wrapper else { throw CloudAccountError.invalidResponse } }
+            else { confirm = wrapper }
+            if !lostConfirmReply { lostConfirmReply = true; throw IdentityPairingReplyLoss.afterAcceptedWrite }
+        default:
+            throw CloudAccountError.invalidResponse
+        }
+        return CloudIdentityPairingPhaseReceipt(
+            status: duplicate ? .duplicate : .recorded, pairingID: pairingID, phase: phase,
+            phaseSHA256: digest, recordedAtMilliseconds: 100_020,
+            epochs: CloudIdentityEpochs(
+                identityEpoch: 1, machineKeyEpoch: 1, viewerKeyEpoch: 1,
+                contentKeyEpoch: 1, jwksGeneration: 1))
+    }
+}
+
 public func runCloudPairingTests() async throws -> Int {
     var t = CloudPairingTestHarness()
+
+    try t.equal(
+        pairingSHA256Hex(CloudIdentityPairingWireContract.canonicalVector),
+        "2f79369d4ee866976c6da2a41358c1aab5321ab0e6054bf8a3afe16e215f69a9",
+        "public and private identity routes share the sealed canonical vector")
+    try t.equal(
+        pairingSHA256Hex(CloudIdentityPairingWireContract.canonicalLifecycleVector),
+        "79504ce608fd278cecdb2e26f62d6d1c7e915ef66f94a79cc12ff240a95e410e",
+        "public lifecycle vector pins reply replay, exact members, epochs and confirm timing")
+    let identityStartBody = CloudIdentityPairingStartRequest(
+        machineSigningKey: "signing", machineFingerprint: "fingerprint",
+        machineEphemeralKey: "ephemeral", pairingNonce: "nonce",
+        previousContentKeyEpoch: 4, contentKeyEpoch: 5, rotationID: "rotation-5")
+    try t.equal(
+        String(decoding: identityStartBody.canonicalBody, as: UTF8.self),
+        "{\"content_key_epoch\":5,\"machine_ephemeral_key\":\"ephemeral\","
+            + "\"machine_fingerprint\":\"fingerprint\",\"machine_signing_key\":\"signing\","
+            + "\"pairing_nonce\":\"nonce\",\"previous_content_key_epoch\":4,"
+            + "\"rotation_id\":\"rotation-5\",\"v\":1}",
+        "identity start request uses exact canonical member names and ordering")
+
+    let routeHTTP = IdentityPairingRouteHTTP()
+    let routeStore = CloudPairingIdentityTestStore()
+    try routeStore.set(
+        try JSONEncoder().encode(CloudMachineCredential(
+            accountID: "account-route", machineID: "machine-route",
+            secret: "route-secret")),
+        for: CloudAccountClient.machineCredentialAccount)
+    let routeSigning = try CloudDeviceKeyPair(
+        privateKeyRaw: Data(repeating: 0x01, count: 32))
+    let routeEphemeral = try CloudPairing.x25519PublicKey(
+        privateKeyRaw: Data(repeating: 0x02, count: 32))
+    let routeRequest = CloudIdentityPairingStartRequest(
+        machineSigningKey: routeSigning.publicKeyRaw.base64EncodedString(),
+        machineFingerprint: routeSigning.pairingFingerprint,
+        machineEphemeralKey: routeEphemeral.base64EncodedString(),
+        pairingNonce: Data(repeating: 0x03, count: 32).base64EncodedString(),
+        previousContentKeyEpoch: 0, contentKeyEpoch: 1, rotationID: "rotation-route")
+    let routeQR = CloudPairingQR(
+        pairingID: "pairing-route", claimNonce: Data(repeating: 0x04, count: 32).base64EncodedString(),
+        expiresAt: 600_000, accountID: "account-route", machineID: "machine-route",
+        machineSigningKey: routeRequest.machineSigningKey,
+        machineFingerprint: routeRequest.machineFingerprint,
+        machineEphemeralKey: routeRequest.machineEphemeralKey,
+        pairingNonce: routeRequest.pairingNonce)
+    let routeWindow: CloudJSONValue = .object([
+        "old_epoch": .int(0), "new_epoch": .int(1),
+        "old_accept_until_ms": .int(600_000), "new_accept_from_ms": .int(1)
+    ])
+    let routeJWKS: CloudJSONValue = .object([
+        "old_generation": .int(0), "new_generation": .int(1),
+        "old_accept_until_ms": .int(600_000), "new_accept_from_ms": .int(1)
+    ])
+    await routeHTTP.enqueue(bytes: CloudCanonicalJSON.canonicalData(.object([
+        "v": .int(1), "status": .string("pending"), "qr": routeQR.cloudJSONValue,
+        "identity": .object([
+            "identity_epoch": .int(1), "machine_key_epoch": .int(1),
+            "jwks_generation": .int(1)
+        ]),
+        "rotation": .object([
+            "rotation_id": .string("rotation-route"), "signing": routeWindow,
+            "jwks": routeJWKS, "content_key": routeWindow
+        ])
+    ])))
+    let routeClient = CloudAccountClient(
+        apiBaseURL: URL(string: "https://api.example.invalid")!, transport: routeHTTP,
+        credentialStore: routeStore, deviceKeyLoader: { routeSigning })
+    let routeStart = try await routeClient.startIdentityPairing(routeRequest)
+    try t.equal(routeStart.qr, routeQR, "identity/start strictly decodes the exact QR echo")
+    await routeHTTP.enqueue(status: 202, bytes: CloudCanonicalJSON.canonicalData(.object([
+        "v": .int(1), "status": .string("pending"),
+        "pairing_id": .string(routeQR.pairingID), "phase": .string("offer")
+    ])))
+    let routePoll = try await routeClient.pollIdentityPairingPhase(
+        pairingID: routeQR.pairingID, phase: .offer, claimNonce: routeQR.claimNonce)
+    try t.equal(routePoll, .pending(pairingID: routeQR.pairingID, phase: .offer),
+                "identity/poll preserves the typed 202 pending state")
+    let routeGrant = CloudPairingWrapper(
+        phase: .grant, pairingID: routeQR.pairingID, senderDeviceID: routeQR.machineID,
+        ephemeralKey: routeQR.machineEphemeralKey,
+        nonce: Data(repeating: 0x05, count: 12).base64EncodedString(),
+        ciphertext: Data(repeating: 0x06, count: 16).base64EncodedString())
+    await routeHTTP.enqueue(bytes: CloudCanonicalJSON.canonicalData(.object([
+        "v": .int(1), "status": .string("recorded"),
+        "pairing_id": .string(routeQR.pairingID), "phase": .string("grant"),
+        "phase_sha256": .string(String(repeating: "a", count: 64)),
+        "recorded_at_ms": .int(10), "identity_epoch": .int(1),
+        "machine_key_epoch": .int(1), "viewer_key_epoch": .int(1),
+        "content_key_epoch": .int(1), "jwks_generation": .int(1)
+    ])))
+    _ = try await routeClient.writeIdentityPairingPhase(
+        pairingID: routeQR.pairingID, phase: .grant,
+        claimNonce: routeQR.claimNonce, wrapper: routeGrant)
+    await routeHTTP.enqueue(bytes: CloudCanonicalJSON.canonicalData(.object([
+        "v": .int(1), "status": .string("rotated"),
+        "device_id": .string("machine-route"), "identity_epoch": .int(2),
+        "key_epoch": .int(2), "capability_epoch": .int(1),
+        "key_fingerprint": .string(routeSigning.pairingFingerprint),
+        "old_accept_until_ms": .int(600_000), "new_accept_from_ms": .int(1)
+    ])))
+    _ = try await routeClient.rotateMachineIdentity(
+        machineID: "machine-route", expectedKeyEpoch: 1,
+        publicKey: routeSigning.publicKeyRaw.base64EncodedString(),
+        fingerprint: routeSigning.pairingFingerprint)
+    let routeRequests = await routeHTTP.captured()
+    try t.equal(routeRequests.map { $0.url!.path }, [
+        CloudIdentityPairingWireContract.startPath,
+        CloudIdentityPairingWireContract.pollPath,
+        CloudIdentityPairingWireContract.phasePathPrefix + "grant",
+        "/v1/machines/machine-route/identity/rotate"
+    ], "public client emits the exact identity route identities")
+    try t.equal(routeRequests[0].httpBody, routeRequest.canonicalBody,
+                "identity/start sends the canonical request bytes unchanged")
+    try t.equal(routeRequests[1].httpBody, CloudCanonicalJSON.canonicalData(.object([
+        "pairing_id": .string(routeQR.pairingID), "phase": .string("offer"),
+        "claim_nonce": .string(routeQR.claimNonce)
+    ])), "identity/poll sends its exact three-member canonical body")
+    try t.equal(routeRequests[2].httpBody,
+                try CloudPairing.encodePhaseWriteBody(
+                    claimNonce: routeQR.claimNonce, wrapper: routeGrant),
+                "phase write sends exact canonical bytes used for duplicate detection")
+    try t.equal(routeRequests[3].httpBody, CloudCanonicalJSON.canonicalData(.object([
+        "expected_key_epoch": .int(1),
+        "public_key": .string(routeSigning.publicKeyRaw.base64EncodedString()),
+        "fingerprint": .string(routeSigning.pairingFingerprint)
+    ])), "machine rotation sends the exact canonical epoch/key/fingerprint body")
+    var machineOffer = routeGrant
+    machineOffer.phase = .offer
+    do {
+        _ = try await routeClient.writeIdentityPairingPhase(
+            pairingID: routeQR.pairingID, phase: .offer,
+            claimNonce: routeQR.claimNonce, wrapper: machineOffer)
+        throw CloudPairingTestFailure.failed("machine wrote the viewer-owned offer phase")
+    } catch CloudAccountError.invalidResponse {}
 
     let invitationSecret = Data((0..<32).map(UInt8.init))
     let invitation = try CloudPairingInvitation(
@@ -738,6 +1082,185 @@ public func runCloudPairingTests() async throws -> Int {
             try CloudPairing.decodeQRFragment(CloudPairing.encodeQRFragment(printableQR), nowMilliseconds: now), printableQR,
             "QR account_id and machine_id accept \(printableName)"
         )
+    }
+
+    // W5-2: both host adapters enter this same Application owner. This flat focused proof uses
+    // an adapter with the identical `SecretStore` contract; Ubuntu additionally exercises its
+    // real descriptor-checked file adapter in LinuxRuntimeContractTests.
+    let identityStore = CloudPairingIdentityTestStore()
+    let authority = CloudExecutorIdentityAuthority(store: identityStore)
+    try t.equal(authority.readiness(), .blocked(.protectedStateMissing),
+                "identity readiness never provisions an empty fallback")
+    let executorKey = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x91, count: 32))
+    let executorMaster = try CloudMasterSecret(rawRepresentation: Data(repeating: 0xa2, count: 32))
+    let legacyViewerKey = try CloudDeviceKeyPair(
+        privateKeyRaw: Data(repeating: 0x82, count: 32))
+    let executorInitial = try authority.provision(
+        accountID: "account-w52", machineID: "machine-w52",
+        deviceKey: executorKey, masterSecret: executorMaster,
+        importedPairedDevices: [CloudExecutorPairedDevice(
+            deviceID: "viewer-legacy", signingKey: legacyViewerKey.publicKeyRaw,
+            fingerprint: legacyViewerKey.pairingFingerprint,
+            pairedAtMilliseconds: 199_000, identityGeneration: 1,
+            capabilities: CloudExecutorIdentityAuthority.defaultCapabilities)])
+    try t.equal(executorInitial.identityGeneration, 1, "identity enrollment starts generation one")
+    try t.equal(executorInitial.pairedDevices.map(\.deviceID), ["viewer-legacy"],
+                "legacy Mac roster enters the protected owner during enrollment")
+    let viewerIdentityKey = try CloudDeviceKeyPair(
+        privateKeyRaw: Data(repeating: 0xb3, count: 32))
+    let viewerAgreementPrivate = Data(repeating: 0xc4, count: 32)
+    let viewerAgreementPublic = try CloudPairing.x25519PublicKey(
+        privateKeyRaw: viewerAgreementPrivate)
+    let executorClaim = Data(repeating: 0xd5, count: 32)
+    let executorPairingNonce = Data(repeating: 0xe6, count: 32)
+    func executorOffer(_ pairingID: String) -> Data {
+        CloudCanonicalJSON.canonicalData(.object([
+            "v": .int(1), "type": .string("pairing_offer"),
+            "pairing_id": .string(pairingID), "claim_nonce": .base64(executorClaim),
+            "pairing_nonce": .base64(executorPairingNonce),
+            "account_id": .string("account-w52"),
+            "viewer_device_id": .string("viewer-w52"),
+            "viewer_signing_key": .base64(viewerIdentityKey.publicKeyRaw),
+            "viewer_ephemeral_key": .base64(viewerAgreementPublic),
+            "viewer_fingerprint": .string(viewerIdentityKey.pairingFingerprint),
+            "expires_at": .int(201_000),
+        ]))
+    }
+    let executorOfferBytes = executorOffer("pairing-w52")
+    let fixedMachineAgreementPrivate = Data(repeating: 0x18, count: 32)
+    let executorPrepared = try authority.prepareHandover(
+        offerBytes: executorOfferBytes, nowMilliseconds: 200_000,
+        machineEphemeralPrivateKey: fixedMachineAgreementPrivate,
+        randomBytes: { count in Data(repeating: 0xf7, count: count) })
+    let executorRetry = try CloudExecutorIdentityAuthority(store: identityStore).prepareHandover(
+        offerBytes: executorOfferBytes, nowMilliseconds: 200_100,
+        randomBytes: { Data(repeating: 0x29, count: $0) })
+    try t.equal(executorRetry.wrapperBytes, executorPrepared.wrapperBytes,
+                "restart retry returns the exact durable handover")
+    try t.rejects(.pairingClaimed, "a second claimant cannot replace a prepared handover") {
+        _ = try authority.prepareHandover(
+            offerBytes: executorOffer("pairing-second"), nowMilliseconds: 200_100)
+    }
+    let executorWrapper = try CloudPairing.decodeWrapper(executorPrepared.wrapperBytes)
+    try t.equal(
+        executorWrapper.ephemeralKey,
+        try CloudPairing.x25519PublicKey(privateKeyRaw: fixedMachineAgreementPrivate)
+            .base64EncodedString(),
+        "grant is bound to the machine ephemeral key already published by identity/start")
+    let executorShared = try CloudPairing.x25519SharedSecret(
+        privateKeyRaw: viewerAgreementPrivate,
+        peerPublicKeyRaw: try CloudPairing.decodeCanonicalBase64(
+            executorWrapper.ephemeralKey, field: "ephemeral_key", expectedLength: 32))
+    let executorDerived = try CloudPairing.derive(
+        sharedSecretRaw: executorShared, pairingNonce: executorPairingNonce,
+        pairingID: "pairing-w52", claimNonce: executorClaim, phase: .grant)
+    let executorClear = try CloudPairing.open(
+        executorWrapper, phaseKey: executorDerived.phaseKey,
+        viewerEphemeralKey: viewerAgreementPublic.base64EncodedString(),
+        machineEphemeralKey: executorWrapper.ephemeralKey)
+    guard case .object(let executorHandover) = try CloudCanonicalJSON.parseStrict(executorClear) else {
+        throw CloudPairingTestFailure.failed("W5-2 handover was not canonical JSON")
+    }
+    try t.equal(executorHandover.count, 8, "W0-E accepted v1 handover shape is unchanged")
+    let executorPaired = try authority.commitPreparedHandover(
+        pairingID: "pairing-w52", claimNonce: executorClaim.base64EncodedString(),
+        deliveredFingerprint: viewerIdentityKey.pairingFingerprint, nowMilliseconds: 200_200)
+    try t.equal(executorPaired.pairedDevices.map(\.deviceID), ["viewer-legacy", "viewer-w52"],
+                "the exact delivered claimant is pinned once")
+    let executorRevoked = try authority.revokeDevice(
+        "viewer-w52", expectedGeneration: executorPaired.identityGeneration)
+    try t.check(try authority.transportMaterial().pairedDevicePublicKeys["viewer-w52"] == nil,
+                "revocation removes the viewer from live authorization")
+    let rotatedKey = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x3a, count: 32))
+    let rotatedMaster = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x4b, count: 32))
+    _ = try authority.rotateKeys(
+        deviceKey: rotatedKey, masterSecret: rotatedMaster, keyID: "master-v2",
+        expectedGeneration: executorRevoked.identityGeneration)
+    let executorCurrent = try authority.snapshot()
+    let reconnect = CloudExecutorReconnectProof(
+        accountID: executorCurrent.accountID, machineID: executorCurrent.machineID,
+        deviceID: executorCurrent.deviceID,
+        identityGeneration: executorCurrent.identityGeneration,
+        keyEpoch: executorCurrent.keyEpoch, revocationEpoch: executorCurrent.revocationEpoch,
+        durableLedgerOpened: true, durableSpoolOpened: true)
+    try t.equal(try authority.verifyReconnect(reconnect), .resumeFromDurableLedgerAndSpool,
+                "exact current identity resumes only through W5-1 durable owners")
+    let staleReconnect = CloudExecutorReconnectProof(
+        accountID: reconnect.accountID, machineID: reconnect.machineID,
+        deviceID: reconnect.deviceID, identityGeneration: reconnect.identityGeneration,
+        keyEpoch: reconnect.keyEpoch - 1, revocationEpoch: reconnect.revocationEpoch,
+        durableLedgerOpened: true, durableSpoolOpened: true)
+    try t.rejects(.invalidReconnectProof, "a retired key epoch cannot reconnect") {
+        _ = try authority.verifyReconnect(staleReconnect)
+    }
+    for (_, rendered) in pairingRenderings(of: try authority.transportMaterial()) {
+        try t.check(!pairingRenderingLeaks(rendered, secret: rotatedMaster.rawRepresentation),
+                    "executor transport material does not render the content key")
+    }
+
+    let replayStore = CloudPairingIdentityTestStore()
+    let replayAuthority = CloudExecutorIdentityAuthority(store: replayStore)
+    let replaySigning = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x71, count: 32))
+    let replayMaster = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x72, count: 32))
+    _ = try replayAuthority.provision(
+        accountID: "account-four-phase", machineID: "machine-four-phase",
+        deviceKey: replaySigning, masterSecret: replayMaster)
+    let replayClient = IdentityPairingReplayClient()
+    let machineAgreementPrivate = Data(repeating: 0x73, count: 32)
+    let machinePairingNonce = Data(repeating: 0x74, count: 32)
+    let replayRandomCall = CloudLocked(0)
+    let fourPhase = CloudIdentityPairingMachineHandover(
+        client: replayClient, authority: replayAuthority,
+        nowMilliseconds: { 100_000 },
+        randomBytes: { count in
+            replayRandomCall.withLock { call in
+                call += 1
+                return call == 1 ? machineAgreementPrivate : machinePairingNonce
+            }
+        })
+    let fourPhaseQR = try await fourPhase.begin(rotationID: "rotation-four-phase")
+    try t.equal(fourPhaseQR.machineEphemeralKey,
+                try CloudPairing.x25519PublicKey(privateKeyRaw: machineAgreementPrivate)
+                    .base64EncodedString(),
+                "identity/start publishes the machine key later used by grant and confirm")
+    do {
+        _ = try await fourPhase.advance(pairingID: fourPhaseQR.pairingID)
+        throw CloudPairingTestFailure.failed("lost grant reply should surface")
+    } catch IdentityPairingReplyLoss.afterAcceptedWrite {}
+    try t.check(try replayAuthority.snapshot().pairedDevices.isEmpty,
+                "an accepted grant with a lost reply does not pin the viewer")
+    do {
+        _ = try await fourPhase.advance(pairingID: fourPhaseQR.pairingID)
+        throw CloudPairingTestFailure.failed("lost confirm reply should surface")
+    } catch IdentityPairingReplyLoss.afterAcceptedWrite {}
+    try t.check(try replayAuthority.snapshot().pairedDevices.isEmpty,
+                "an accepted confirm with a lost reply remains unpinned until its receipt")
+    guard case .complete(let fourPhaseSnapshot) = try await fourPhase.advance(
+        pairingID: fourPhaseQR.pairingID) else {
+        throw CloudPairingTestFailure.failed("four-phase retry did not complete")
+    }
+    try t.equal(fourPhaseSnapshot.pairedDevices.map(\.deviceID), ["viewer-four-phase"],
+                "duplicate grant/confirm receipts complete exactly one viewer pin")
+    let reconnectProvider = CloudLifecycleKeyProvider(identityAuthority: replayAuthority)
+    guard let admittedBinding = try await reconnectProvider.transportBinding() else {
+        throw CloudPairingTestFailure.failed("production provider had no identity binding")
+    }
+    try await reconnectProvider.admitReconnect(admittedBinding)
+    let postPairRotationKey = try CloudDeviceKeyPair(
+        privateKeyRaw: Data(repeating: 0x75, count: 32))
+    let postPairRotationMaster = try CloudMasterSecret(
+        rawRepresentation: Data(repeating: 0x76, count: 32))
+    _ = try replayAuthority.rotateKeys(
+        deviceKey: postPairRotationKey, masterSecret: postPairRotationMaster,
+        keyID: "master-four-phase-2",
+        expectedGeneration: fourPhaseSnapshot.identityGeneration)
+    do {
+        try await reconnectProvider.admitReconnect(admittedBinding)
+        throw CloudPairingTestFailure.failed("stale production binding reconnected")
+    } catch let error as CloudPairingTestFailure {
+        throw error
+    } catch {
+        try t.check(true, "production reconnect re-reads and rejects a rotated epoch")
     }
 
     print("CloudPairingTests: \(t.checks) checks passed")

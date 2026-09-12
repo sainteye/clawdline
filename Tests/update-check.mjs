@@ -66,13 +66,19 @@ try {
   const compat = readFileSync(compatPath, "utf8");
   const appMain = readFileSync(mainPath, "utf8");
 
-  // ---- no external package dependency was taken on for this -------------------------------------
-  // The README's badge says `dependencies-none` and that is a property of the product, not a mood.
-  // Internal SwiftPM target edges are the product architecture; `.package(...)` would add the
-  // third-party dependency this check exists to refuse. Sparkle is the obvious example.
+  // ---- no updater package dependency was taken on for this ---------------------------------------
+  // The shipped Mac app still embeds no third-party updater. The Linux Application target does need
+  // the one reviewed, exact swift-crypto package because Linux has no system CryptoKit module, so
+  // hold that manifest exception still instead of weakening this into "some package is fine".
   const manifest = readFileSync(packagePath, "utf8");
-  check("Package.swift still declares no external package dependencies",
-        !/\.package\s*\(/.test(manifest));
+  const packageDependencies = manifest.match(/\.package\s*\([^\n]+/g) || [];
+  const compactManifest = manifest.replace(/\s+/g, " ");
+  check("Package.swift permits only exact swift-crypto on the Linux Application edge, never an updater package",
+        packageDependencies.length === 1
+          && packageDependencies[0].includes('url: "https://github.com/apple/swift-crypto.git"')
+          && packageDependencies[0].includes('exact: "4.5.2"')
+          && compactManifest.includes('.product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux]))')
+          && !/Sparkle|SUUpdater|appcast/i.test(manifest));
   check("and the update check imports Foundation and nothing else",
         source.split("\n").filter((line) => /^import /.test(line)).join(",") === "import Foundation");
   check("no third-party updater is named anywhere in it",

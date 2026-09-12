@@ -449,9 +449,11 @@ schema-2 succeeded/interrupted replay, existing/missing command authentication i
 acknowledged/incomplete-inventory precedence, result tamper/missing/link commit refusal, held-root
 replacement, exact 200/201/depth/walk listing, migration cutover and failed-health rollback
 injections. They are source/disposable-fixture evidence only. W5-1 now composes the shared durable
-Cloud ledger/spool before Linux admission, but deliberately exposes no publish door without Cloud
-authentication. Pairing remains W5-2; real provider credentials, GCE, live Relay and
-systemd-as-PID-1 restart remain explicit external gates.
+Cloud ledger/spool before Linux admission. W5-2 adds the same Application-owned protected executor
+identity used by macOS, plus headless start/continue device login and restore. Missing, unreadable,
+corrupt, future, wrong-owner or linked protected bytes block readiness; the daemon still exposes no
+publish door while W0-E cutover and live Cloud authentication are unaccepted. Real provider
+credentials, GCE, live Relay and systemd-as-PID-1 restart remain explicit external gates.
 
 Estimated effort: 2–3 engineer-weeks.
 
@@ -491,8 +493,13 @@ Deliverables:
   authenticated correlated settlement. **Implemented as the W5-1 source candidate; its pinned
   W0-E authority remains `candidate` and cannot cut over, emit a new version or raise a reader
   floor. Linux intentionally has no publish door until authentication exists.**
-- Headless device login/pairing flow. **Still W5-2.**
-- Durable credential provisioning and rotation. **Still W5-2.**
+- Headless device login/pairing flow. **Implemented as the W5-2 public source candidate through
+  identity start and the role-bound offer/grant/activate/confirm routes. Exact reply-loss replay and
+  confirm-before-pin use the shared Application authority; live credentials remain a later gate.**
+- Durable credential provisioning, pairing pin/revocation, rotation epochs and exact-identity
+  reconnect. **Implemented as the W5-2 public source candidate. Protected-file leaf and every
+  admitted directory require the service uid/gid, private mode, regular type and single link;
+  protected-state denial/corruption and restart fixtures remain local, not live Cloud acceptance.**
 - Live Cloud publication/reconnect/resume behavior equivalent to the Mac where capabilities match.
   **The W5-1 source composition and deterministic fixtures do not prove a live Relay or accepted
   contract cutover.**

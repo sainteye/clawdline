@@ -1263,7 +1263,8 @@ enum LinuxDaemonService {
         // unsafe or multiply-owned ledger/spool leaves the daemon unstarted; no in-memory store
         // can admit effects or publications in its place.
         let durableCloud = try LinuxDurableCloudRuntime(
-            stateDirectory: runtime.layout.state, expectedUID: runtime.layout.uid)
+            stateDirectory: runtime.layout.state, expectedUID: runtime.layout.uid,
+            secrets: runtime.secrets)
         let requestID = "startup-reconciliation"
         runtime.scheduling.setRestartMaintenance(active: true, requestID: requestID)
         let startup = try LinuxStartupReconciler.reconcile(
@@ -1271,8 +1272,9 @@ enum LinuxDaemonService {
         let owner = LinuxDaemonIngressOwner(
             store: stateStore, runtime: runtime, durableCloud: durableCloud)
         owner.completeStartup(startup)
-        let health = makeHealth(receipt: startup,
-                                providerIdentity: runtime.compositionReceipt.identity)
+        let health = makeHealth(
+            receipt: startup, providerIdentity: runtime.compositionReceipt.identity,
+            cloudReadiness: durableCloud.readiness)
         try writeHealth(health, runtimeDirectory: runtime.layout.runtime)
         if health.serviceReady {
             runtime.scheduling.setRestartMaintenance(active: false, requestID: requestID)
@@ -1286,7 +1288,8 @@ enum LinuxDaemonService {
         timer.setEventHandler {
             guard let receipt = try? owner.observeInventory(inventory(from: runtime)) else { return }
             let observedHealth = makeHealth(
-                receipt: receipt, providerIdentity: runtime.compositionReceipt.identity)
+                receipt: receipt, providerIdentity: runtime.compositionReceipt.identity,
+                cloudReadiness: durableCloud.readiness)
             try? writeHealth(observedHealth, runtimeDirectory: runtime.layout.runtime)
         }
         timer.resume()
@@ -1322,14 +1325,16 @@ enum LinuxDaemonService {
     }
 
     static func makeHealth(receipt: LinuxStartupReconciliationReceipt,
-                           providerIdentity: LinuxRuntimeIdentity) -> LinuxDaemonHealth {
+                           providerIdentity: LinuxRuntimeIdentity,
+                           cloudReadiness: LinuxDurableCloudRuntime.Readiness? = nil)
+        -> LinuxDaemonHealth {
         let serviceReady = receipt.authoritative && receipt.status == "complete"
         return LinuxDaemonHealth(
             service: "clawdline-daemon",
             serviceReady: serviceReady,
             ready: false,
             readinessCode: serviceReady
-                ? "w4_provider_authentication_not_proven"
+                ? (cloudReadiness?.code ?? "w4_provider_authentication_not_proven")
                 : "startup_reconciliation_incomplete",
             protocolIdentity: "clawdline-linux-local-health-v1",
             configurationSchemaVersion: LinuxDaemonConfiguration.schemaVersion,
