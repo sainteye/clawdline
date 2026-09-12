@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Accumulated W4-2 package/systemd behavior and failure-injection contract. Host systemd is never
+# Accumulated W4-2/W4-3 package/systemd behavior and failure-injection contract. Host systemd is never
 # mutated. Exact unit parsing is local; a real disposable PID-1 Ubuntu gate is reported separately.
 set -Eeuo pipefail
 
@@ -141,8 +141,8 @@ install_release() {
 
 good_binary="$temporary/good-binary"; bad_binary="$temporary/bad-binary"
 schema_one_binary="$temporary/schema-one-binary"
-make_binary "$good_binary" true 2 2
-make_binary "$bad_binary" false 2 2
+make_binary "$good_binary" true 3 3
+make_binary "$bad_binary" false 3 3
 make_binary "$schema_one_binary" true 1 1
 release_one="$temporary/release-one"; release_two="$temporary/release-two"
 old_output="$temporary/old-output"; bad_output="$temporary/bad-output"
@@ -253,16 +253,101 @@ upgrade_root="$temporary/upgrade-root"
 install_release 0.9.0 "$old_output" "$upgrade_root" --systemctl "$fake_systemctl" >/dev/null
 schema_one_target=$(readlink "$upgrade_root/opt/clawdline/current")
 install_release 1.0.0 "$release_one" "$upgrade_root" --systemctl "$fake_systemctl" >/dev/null
-schema_two_target=$(readlink "$upgrade_root/opt/clawdline/current")
-check test "$schema_one_target" != "$schema_two_target"
-mkdir -p "$upgrade_root/var/lib/clawdline/records"
+schema_three_target=$(readlink "$upgrade_root/opt/clawdline/current")
+check test "$schema_one_target" != "$schema_three_target"
+mkdir -p "$upgrade_root/var/lib/clawdline/tasks" "$upgrade_root/var/lib/clawdline/records"
+# The canonical task authority wins over a stale migration source. If package compatibility
+# regresses to the records pathname, this rollback incorrectly succeeds and the check goes red.
+printf '{"schemaVersion":3,"minimumReaderVersion":3}\n' > "$upgrade_root/var/lib/clawdline/tasks/authority.json"
+chmod 0600 "$upgrade_root/var/lib/clawdline/tasks/authority.json"
 printf '{"schemaVersion":1,"minimumReaderVersion":1}\n' > "$upgrade_root/var/lib/clawdline/records/runtime-state.json"
 chmod 0600 "$upgrade_root/var/lib/clawdline/records/runtime-state.json"
+expect_failure tools/linux-package.sh rollback --root "$upgrade_root" --systemctl "$fake_systemctl"
+check test "$(readlink "$upgrade_root/opt/clawdline/current")" = "$schema_three_target"
+# A genuinely schema-1 canonical state remains compatible with the signed schema-1 target.
+printf '{"schemaVersion":1,"minimumReaderVersion":1}\n' > "$upgrade_root/var/lib/clawdline/tasks/authority.json"
+chmod 0600 "$upgrade_root/var/lib/clawdline/tasks/authority.json"
 tools/linux-package.sh rollback --root "$upgrade_root" --systemctl "$fake_systemctl" >/dev/null
 check test "$(readlink "$upgrade_root/opt/clawdline/current")" = "$schema_one_target"
 check grep -q '^enable clawdline-tmux.service clawdline-daemon.service$' "$FAKE_SYSTEMCTL_LOG"
 check cmp "$upgrade_root/opt/clawdline/current/lib/systemd/system/clawdline-daemon.service" \
   Packaging/systemd/clawdline-daemon.service
+
+# A fence is non-authority even when both images otherwise accept schema 3.
+fence_root="$temporary/fence-root"
+install_release 1.0.0 "$release_one" "$fence_root" --systemctl "$fake_systemctl" >/dev/null
+install_release 1.1.0 "$release_two" "$fence_root" --systemctl "$fake_systemctl" >/dev/null
+fence_current=$(readlink "$fence_root/opt/clawdline/current")
+mkdir -p "$fence_root/var/lib/clawdline/records"
+printf '{"schemaVersion":3,"minimumReaderVersion":3,"recordKind":"clawdline_linux_task_authority_rollback_fence"}\n' \
+  > "$fence_root/var/lib/clawdline/records/runtime-state.json"
+chmod 0600 "$fence_root/var/lib/clawdline/records/runtime-state.json"
+expect_failure tools/linux-package.sh rollback --root "$fence_root" --systemctl "$fake_systemctl"
+check test "$(readlink "$fence_root/opt/clawdline/current")" = "$fence_current"
+
+# Restore the schema-3 selector, then prove every other daemon authority predicate fails before a
+# rollback can change that selector: unknown recordKind, service UID, private regular single-link
+# file and bounded bytes.
+install_release 1.0.0 "$release_one" "$upgrade_root" --systemctl "$fake_systemctl" >/dev/null
+check test "$(readlink "$upgrade_root/opt/clawdline/current")" = "$schema_three_target"
+authority="$upgrade_root/var/lib/clawdline/tasks/authority.json"
+legacy_authority="$upgrade_root/var/lib/clawdline/records/runtime-state.json"
+printf '{"schemaVersion":1,"minimumReaderVersion":1,"recordKind":"unknown"}\n' > "$authority"
+chmod 0600 "$authority"
+expect_failure tools/linux-package.sh rollback --root "$upgrade_root" --systemctl "$fake_systemctl"
+check test "$(readlink "$upgrade_root/opt/clawdline/current")" = "$schema_three_target"
+printf '{"schemaVersion":1,"minimumReaderVersion":1}\n' > "$authority"
+chmod 0600 "$authority"
+expect_failure tools/linux-package.sh rollback --root "$upgrade_root" --systemctl "$fake_systemctl" \
+  --service-uid "$(( $(id -u) + 1 ))"
+check test "$(readlink "$upgrade_root/opt/clawdline/current")" = "$schema_three_target"
+authority_original="$temporary/authority-original.json"
+mv "$authority" "$authority_original"
+ln "$authority_original" "$authority"
+expect_failure tools/linux-package.sh rollback --root "$upgrade_root" --systemctl "$fake_systemctl"
+check test "$(readlink "$upgrade_root/opt/clawdline/current")" = "$schema_three_target"
+rm "$authority"; mv "$authority_original" "$authority"; chmod 0644 "$authority"
+expect_failure tools/linux-package.sh rollback --root "$upgrade_root" --systemctl "$fake_systemctl"
+check test "$(readlink "$upgrade_root/opt/clawdline/current")" = "$schema_three_target"
+chmod 0600 "$authority"; truncate -s $((8 * 1024 * 1024 + 1)) "$authority"
+expect_failure tools/linux-package.sh rollback --root "$upgrade_root" --systemctl "$fake_systemctl"
+check test "$(readlink "$upgrade_root/opt/clawdline/current")" = "$schema_three_target"
+printf '{"schemaVersion":1,"minimumReaderVersion":1}\n' > "$authority"; chmod 0600 "$authority"
+
+# A failed-health candidate may have migrated schema-2 bytes to canonical schema 3. Re-read that
+# latest authority before moving the selector: the schema-1 old image must not be restarted, and
+# the journal must carry typed operator recovery instead of silently restoring an unsafe image.
+migration_root="$temporary/failed-health-migration-root"
+install_release 0.9.0 "$old_output" "$migration_root" --systemctl "$fake_systemctl" >/dev/null
+migration_old_target=$(readlink "$migration_root/opt/clawdline/current")
+mkdir -p "$migration_root/var/lib/clawdline/records"
+printf '{"schemaVersion":2,"minimumReaderVersion":1}\n' \
+  > "$migration_root/var/lib/clawdline/records/runtime-state.json"
+chmod 0600 "$migration_root/var/lib/clawdline/records/runtime-state.json"
+migration_systemctl="$temporary/migration-systemctl"
+export MIGRATION_SYSTEMCTL_ROOT="$migration_root" MIGRATION_SYSTEMCTL_LOG="$temporary/migration-systemctl.log"
+cat > "$migration_systemctl" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$MIGRATION_SYSTEMCTL_LOG"
+if [ "$1" = restart ]; then
+  mkdir -p "$MIGRATION_SYSTEMCTL_ROOT/var/lib/clawdline/tasks" \
+    "$MIGRATION_SYSTEMCTL_ROOT/var/lib/clawdline/records"
+  printf '{"schemaVersion":3,"minimumReaderVersion":3}\n' \
+    > "$MIGRATION_SYSTEMCTL_ROOT/var/lib/clawdline/tasks/authority.json"
+  printf '{"schemaVersion":3,"minimumReaderVersion":3,"recordKind":"clawdline_linux_task_authority_rollback_fence"}\n' \
+    > "$MIGRATION_SYSTEMCTL_ROOT/var/lib/clawdline/records/runtime-state.json"
+  chmod 0600 "$MIGRATION_SYSTEMCTL_ROOT/var/lib/clawdline/tasks/authority.json" \
+    "$MIGRATION_SYSTEMCTL_ROOT/var/lib/clawdline/records/runtime-state.json"
+fi
+SH
+chmod 0755 "$migration_systemctl"
+CLAWDLINE_HEALTH_ATTEMPTS=1 expect_failure install_release 1.2.0 "$bad_output" \
+  "$migration_root" --systemctl "$migration_systemctl"
+check test "$(readlink "$migration_root/opt/clawdline/current")" != "$migration_old_target"
+check grep -q '"phase":"recovery_required"' "$migration_root/opt/clawdline/transition.json"
+check grep -q '"code":"rollback_state_incompatible"' \
+  "$migration_root/opt/clawdline/transition.json"
+check test "$(grep -c '^restart clawdline-daemon.service$' "$MIGRATION_SYSTEMCTL_LOG")" = 1
 
 mismatch_binary="$temporary/mismatch-binary"
 make_binary "$mismatch_binary" true 1 1

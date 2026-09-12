@@ -1149,6 +1149,7 @@ linux_expected_members='LinuxComposition.swift
 LinuxContainedFileSystem.swift
 LinuxDaemonIngress.swift
 LinuxDaemonLifecycle.swift
+LinuxDocumentReader.swift
 LinuxLocalIngressServer.swift
 LinuxProviderRuntime.swift
 LinuxRuntimeAdapters.swift
@@ -1264,10 +1265,47 @@ linux_disallowed_imports=$(printf '%s\n' "$linux_imports" | grep -Ev '^(Foundati
 [ -z "$linux_disallowed_imports" ] \
   || architecture_guard_fail "ClawdlineLinux imports ${linux_disallowed_imports//$'\n'/, }; its closed import allowlist is Foundation and ClawdlineApplication"
 linux_application_imports=$(printf '%s\n' "$linux_imports" | grep -cx 'ClawdlineApplication' || true)
-[ "${linux_application_imports:-0}" -eq 6 ] \
-  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected once in each of its six policy-consuming runtime/composition/lifecycle source files"
+[ "${linux_application_imports:-0}" -eq 7 ] \
+  || architecture_guard_fail "ClawdlineLinux imports ClawdlineApplication ${linux_application_imports:-0} times, expected once in each of its seven policy-consuming runtime/composition/lifecycle/document source files"
 swift_code_without_comments Packages/ClawdlineLinux/LinuxComposition.swift | grep -q 'HostCapabilityUnavailable\.code' \
   || architecture_guard_fail "ClawdlineLinux does not consume the Application target's typed capability-unavailable vocabulary; a declared edge alone is inert"
+
+# W4-3 adds one closed Application vocabulary and one Linux read adapter. These checks are a
+# lexical ratchet, not runtime proof: they make removal of the held descriptor-relative walker,
+# read-only Board projection, or canonical package authority predicate turn this cheap guard red.
+for operation in taskCreate taskRead taskMessage taskResult taskAcknowledge taskClose \
+  boardRead sessionRead documentsRead documentRead; do
+  swift_code_without_comments Sources/ProjectRootPolicy.swift | grep -q "case $operation" \
+    || architecture_guard_fail "HeadlessApplicationOperation is missing its closed $operation case"
+done
+swift_code_without_comments Packages/ClawdlineLinux/LinuxDocumentReader.swift \
+  | grep -q 'O_NOFOLLOW' \
+  || architecture_guard_fail "Linux document reads no longer hold a no-follow descriptor walk"
+swift_code_without_comments Packages/ClawdlineLinux/LinuxDocumentReader.swift \
+  | grep -q 'st_nlink == 1' \
+  || architecture_guard_fail "Linux document reads no longer refuse multiply-linked files"
+swift_code_without_comments Packages/ClawdlineLinux/LinuxDocumentReader.swift \
+  | grep -q 'fdopendir' \
+  || architecture_guard_fail "Linux document listing no longer walks a held root descriptor"
+swift_code_without_comments Packages/ClawdlineLinux/LinuxDaemonIngress.swift \
+  | grep -q 'canWrite: false, canManage: false' \
+  || architecture_guard_fail "the Linux Board projection gained a write/manage capability"
+linux_package_task_authority=$(grep -c '/var/lib/clawdline/tasks/authority\.json' \
+  tools/linux-package.sh || true)
+[ "${linux_package_task_authority:-0}" -eq 2 ] \
+  || architecture_guard_fail "Linux install and rollback do not both inspect the canonical task authority"
+linux_package_legacy_fallback=$(grep -c '/var/lib/clawdline/records/runtime-state\.json' \
+  tools/linux-package.sh || true)
+[ "${linux_package_legacy_fallback:-0}" -eq 2 ] \
+  || architecture_guard_fail "Linux install and rollback lost their bounded pre-W4-3 migration fallback"
+grep -q 'compatible.add_argument("--legacy-state")' tools/linux-package-helper.py \
+  || architecture_guard_fail "Linux package compatibility cannot fall back to the legacy migration source when canonical authority does not yet exist"
+grep -q 'compatible.add_argument("--expected-uid"' tools/linux-package-helper.py \
+  || architecture_guard_fail "Linux package compatibility no longer binds authority to the configured service uid"
+grep -q 'package rollback fence is not task authority' tools/linux-package-helper.py \
+  || architecture_guard_fail "Linux package compatibility no longer refuses the migration rollback fence"
+grep -q 'rollback_state_incompatible' tools/linux-package.sh \
+  || architecture_guard_fail "failed Linux health can no longer record typed refusal before unsafe selector rollback"
 
 # `spec-mac-does-not-consume-application`'s other half: Clawdline's own SwiftPM source set must
 # not include a Core/Application-owned file. If it did, `swift build` would compile that file a

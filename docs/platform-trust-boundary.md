@@ -64,6 +64,18 @@ exact unit parse、package 與 private-root failure injection 不等於 producti
 release/schema/reconciliation 成為 `serviceReady`，provider `ready` 仍維持 false 和
 `w4_provider_authentication_not_proven`，不把 shell fixture 升格為外部 auth 證據。
 
+W4-3 candidate 把 Linux task authority 固定在 `/var/lib/clawdline/tasks/authority.json`，並讓
+既有 daemon ingress owner 單獨序列化 task/terminal effects；Board 只由該 authority 唯讀投影，
+沒有第二個 Board writer。Task secret 只保存 digest，並在 command/task existence branch 前
+constant-time 比對；result bytes 在 task root 單獨 fsync，authority 再發布 digest/count/receipt，
+而 startup、cached replay、ack、close 都以 pinned descriptor 重新驗 bytes。Document content
+與 list 從 exact project/Session/task identity 選 computed root，以 descriptor-relative
+no-follow/single-link/bounds 走訪；list 不在驗 root 後退回 pathname enumeration。舊
+`records/runtime-state.json` 僅作一次 migration source，在 atomic fence replacement 前一直保留
+可讀舊 authority；package rollback 同時核對 service UID/private/regular/single-link/bound/recordKind，
+failed health 不會先切回讀不懂最新 authority 的舊 image。這些界線不把 localhost identity 推成 Cloud identity，
+也不證明可抵擋同一 service uid 的惡意 process。
+
 ## 還不能下的結論與責任
 
 - **W0-E／W0-D**：authority cutover、shared vectors、API／Relay／PWA consumer 與 release identity 尚待交付。W0-A 沒有批准 revocation fail-open／fail-closed policy 的變更。

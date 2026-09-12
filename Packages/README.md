@@ -58,15 +58,30 @@ SwiftPM product rather than compiling a second flat source graph. Resolved sourc
 sets and executable-product mappings are checked mechanically in
 `tools/check-architecture-boundaries.sh`, not only asserted here.
 
-This still does not prove a working Ubuntu daemon. W4-1 composes real tmux, procfs, contained-file
-and protected-secret leaves behind the Application ports; `run` validates protected inputs and
-returns a non-root runtime-composition receipt. Its diagnostic health identity remains
+This package graph alone does not prove a working Ubuntu daemon. W4-1 composes real tmux, procfs,
+contained-file and protected-secret leaves behind the Application ports; `run` validates protected
+inputs and returns a non-root runtime-composition receipt. Its diagnostic health identity remains
 `ready=false`, with `w4_runtime_not_configured` before protected configuration and
 `w4_provider_authentication_not_proven` after executable/kernel validation: real-provider auth,
-service supervision, a durable listener, restart reconciliation and Cloud lifecycle remain
-W4-2/W4-3 gates. Capability rows distinguish compiled, configured and usable; fixture success is
-not provider readiness. The wider candidate manifest remains a lexical ratchet, not proof that every
+systemd-as-PID-1 and Cloud lifecycle remain external gates even after the W4-2/W4-3 source
+candidates. Capability rows distinguish compiled, configured and usable; fixture success is not
+provider readiness. The wider candidate manifest remains a lexical ratchet, not proof that every
 candidate has moved into one of the real library targets.
+
+W4-3 extends that same daemon owner with a closed Application task/read vocabulary, durable
+`/var/lib/clawdline/tasks/authority.json`, per-task result bytes and task/project document reads.
+Task publication is authenticated by a stored secret digest before command existence is inspected;
+schema-2 legacy command seals retain byte-for-byte replay identity across migration. Result/ack
+receipts are durable before response, completed result queue classification survives restart, and
+replay/ack/close revalidate the descriptor-pinned result bytes before committing. Board is a
+read-only projection of that task authority, not a second Board store. Document selection is
+limited to a computed project or task artifact root; both content and deterministic bounded listing
+hold descriptor-relative no-follow walks and accept only owned regular single-link files. Package
+upgrade/rollback prefers canonical task authority, permits only genuine pre-migration legacy state,
+checks the configured service UID and refuses fence/recordKind/link/mode/size mismatches. Failed
+health does not restore an old selector until the latest authority is revalidated. This remains a
+source/disposable-fixture candidate: Cloud relay/pairing, real provider credentials, GCE and a real
+PID-1 restart are not proven here.
 
 W4-1 also adds four Application-owned policy/ownership members — `ProjectRootPolicy.swift`,
 `ProviderLifecyclePolicy.swift`, `SessionLaunchPolicy.swift` and `TerminalCommandScheduler.swift`.

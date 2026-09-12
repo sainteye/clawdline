@@ -115,9 +115,10 @@ no protected runtime configuration, `supportedCapabilities` is empty and health 
 `w4_runtime_not_configured`. A successful composition reports validated tmux/process/files/secrets
 as usable but remains `ready=false` / `w4_provider_authentication_not_proven`; both provider rows
 have empty lifecycle support and typed `capability_unavailable` owned by the W4-2 real-provider
-authentication gate. iTerm remains Mac-only. W4-2 also owns systemd, listener, restart
-reconciliation, durable-record migrations and package upgrade/rollback; W4-3 owns pairing and Cloud
-lifecycle.
+authentication gate. iTerm remains Mac-only. W4-2 owns systemd, listener, restart reconciliation
+and the base package lifecycle; W4-3 extends that local authority with task/result/receipt,
+Board/Session/document reads and its schema-3 migration/rollback fence. Pairing, Cloud relay and
+Cloud lifecycle remain W5-owned.
 
 The W4-2 package candidate snapshots caller key/provenance/signature/archive paths into a root-owned
 0700 directory through no-follow descriptors and uses only those immutable bytes for verification
@@ -126,10 +127,12 @@ and exact extraction. Signed schema/protocol fields must equal the exact target 
 service secret without following service-controlled ancestors/final links; release content,
 directories, selector links, transition journal and receipt are synced. Stale lock recovery verifies
 PID/start identity and journal phase, then restores a complete old pair or completes a committed new
-pair. Only foreground-supervised `clawdline-tmux.service` owns `/run/clawdline`; the daemon unit does
-not co-own/remove that socket directory. Exact parsing and private-root failure injection are local
-evidence, while real PID-1 socket/pane continuity, keeper crash restart and reboot enablement remain a
-typed Ubuntu VM gate.
+pair. A failed-health rollback re-reads the latest descriptor-pinned authority before moving the
+selector; an incompatible/missing post-migration authority records typed operator recovery and does
+not restart the old image. Only foreground-supervised `clawdline-tmux.service` owns
+`/run/clawdline`; the daemon unit does not co-own/remove that socket directory. Exact parsing and
+private-root failure injection are local evidence, while real PID-1 socket/pane continuity, keeper
+crash restart and reboot enablement remain a typed Ubuntu VM gate.
 
 The pinned Ubuntu 24.04 amd64 job runs as a non-root service user, builds the real SwiftPM graph,
 executes the Linux XCTest target with real tmux and containment probes, and records installed tool

@@ -373,8 +373,12 @@ PY
 }
 
 state_is_compatible() {
-  local state_file=$1 manifest=$2
-  python3 "$package_helper" state-compatible --state "$state_file" --manifest "$manifest"
+  local state_file=$1 legacy_state_file=$2 manifest=$3 expected_uid=$4
+  local require_authority=${5:-false} options=()
+  [ "$require_authority" = true ] && options+=(--require-authority)
+  python3 "$package_helper" state-compatible --state "$state_file" \
+    --legacy-state "$legacy_state_file" --manifest "$manifest" \
+    --expected-uid "$expected_uid" "${options[@]}"
 }
 
 write_verified_environment() {
@@ -489,6 +493,13 @@ abort_release_transition() {
   package_transition_active=false
 }
 
+mark_release_recovery() {
+  local code=$1 message=$2
+  python3 "$package_helper" transition recovery-required --prefix "$package_prefix" \
+    --owner-pid "$$" --recovery-code "$code" --recovery-message "$message"
+  package_transition_active=false
+}
+
 install_package() {
   local archive= provenance= signature= public_key=
   install_root=/; systemctl_command=/usr/bin/systemctl; restart_service=true
@@ -523,7 +534,8 @@ install_package() {
     || fail "service uid/gid must be numeric"
 
   local prefix releases staging version digest release_name release_directory
-  local current_link previous_link old_target old_previous state_file config_file receipt receipt_base64
+  local current_link previous_link old_target old_previous state_file legacy_state_file
+  local config_file receipt receipt_base64 authority_required=false
   prefix=$(root_path /opt/clawdline)
   package_prefix=$prefix
   releases="$prefix/releases"
@@ -565,8 +577,11 @@ install_package() {
     verify_binary_contract "$prefix/$old_target" \
       || fail "current release binary no longer matches its durable identity"
   fi
-  state_file=$(root_path /var/lib/clawdline/records/runtime-state.json)
-  state_is_compatible "$state_file" "$release_directory/share/clawdline/release-manifest.json" \
+  state_file=$(root_path /var/lib/clawdline/tasks/authority.json)
+  legacy_state_file=$(root_path /var/lib/clawdline/records/runtime-state.json)
+  if [ -e "$state_file" ] || [ -e "$legacy_state_file" ]; then authority_required=true; fi
+  state_is_compatible "$state_file" "$legacy_state_file" \
+    "$release_directory/share/clawdline/release-manifest.json" "$service_uid" \
     || fail "candidate image is incompatible with preserved durable state"
   install_stable_links
   prepare_host_state "$release_directory"
@@ -575,10 +590,19 @@ install_package() {
     "releases/$release_name" "${old_target:-none}"
   if [ "$restart_service" = true ]; then
     if ! restart_and_check "$release_directory" "$config_file"; then
-      abort_release_transition
       if [ -n "$old_target" ]; then
+        if ! state_is_compatible "$state_file" "$legacy_state_file" \
+          "$prefix/$old_target/share/clawdline/release-manifest.json" \
+          "$service_uid" "$authority_required"; then
+          mark_release_recovery rollback_state_incompatible \
+            "Failed health changed durable authority; automatic old-image restart is unsafe."
+          fail "new release failed exact health identity; automatic rollback was refused because the latest durable authority is unsafe for the old image"
+        fi
+        abort_release_transition
         "$systemctl_command" daemon-reload || true
         "$systemctl_command" restart clawdline-daemon.service || true
+      else
+        abort_release_transition
       fi
       fail "new release failed exact health identity; current was restored and staged artifacts were retained"
     fi
@@ -595,16 +619,22 @@ install_package() {
 
 rollback_package() {
   install_root=/; systemctl_command=/usr/bin/systemctl; restart_service=true
+  service_uid=
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --root) install_root=$2; shift 2 ;;
       --systemctl) systemctl_command=$2; shift 2 ;;
+      --service-uid) service_uid=$2; shift 2 ;;
       --no-restart) restart_service=false; shift ;;
       *) fail "unknown rollback option: $1" ;;
     esac
   done
-  local prefix current_link previous_link current_target target target_directory state_file config_file
-  local receipt receipt_base64
+  if [ "$install_root" = / ]; then service_uid=${service_uid:-$(id -u clawdline)}
+  else service_uid=${service_uid:-$(id -u)}
+  fi
+  [[ "$service_uid" =~ ^[0-9]+$ ]] || fail "service uid must be numeric"
+  local prefix current_link previous_link current_target target target_directory
+  local state_file legacy_state_file config_file receipt receipt_base64
   prefix=$(root_path /opt/clawdline)
   package_prefix=$prefix
   current_link="$prefix/current"; previous_link="$prefix/previous"
@@ -622,12 +652,21 @@ rollback_package() {
     || fail "current release artifact is not recoverable"
   verify_binary_contract "$target_directory" \
     || fail "rollback target binary does not match its signed durable identity"
-  state_file=$(root_path /var/lib/clawdline/records/runtime-state.json)
-  state_is_compatible "$state_file" "$target_directory/share/clawdline/release-manifest.json" \
+  state_file=$(root_path /var/lib/clawdline/tasks/authority.json)
+  legacy_state_file=$(root_path /var/lib/clawdline/records/runtime-state.json)
+  state_is_compatible "$state_file" "$legacy_state_file" \
+    "$target_directory/share/clawdline/release-manifest.json" "$service_uid" \
     || fail "rollback refused: image rollback is not database rollback"
   begin_release_transition rollback "$current_target" "$target" "$target" "$current_target"
   config_file=$(root_path /etc/clawdline/daemon.json)
   if [ "$restart_service" = true ] && ! restart_and_check "$target_directory" "$config_file"; then
+    if ! state_is_compatible "$state_file" "$legacy_state_file" \
+      "$prefix/$current_target/share/clawdline/release-manifest.json" \
+      "$service_uid" true; then
+      mark_release_recovery rollback_state_incompatible \
+        "Failed rollback health changed durable authority; restarting the original image is unsafe."
+      fail "rollback image failed exact health identity; original-image restart was refused because the latest durable authority is unsafe"
+    fi
     abort_release_transition
     "$systemctl_command" daemon-reload || true
     "$systemctl_command" restart clawdline-daemon.service || true

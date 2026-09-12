@@ -14,10 +14,19 @@ enum LinuxDurableTerminalState: String, Codable, Equatable {
 enum LinuxDurableTaskState: String, Codable, Equatable {
     case queued
     case working
+    case resultPublished = "result_published"
+    case acknowledged
     case reconciling
     case complete
     case failed
     case unknown
+}
+
+struct LinuxDurableTaskMessage: Codable, Equatable {
+    let requestID: String
+    let textDigest: String
+    let acceptedAt: String
+    var deliveredReceiptDigest: String?
 }
 
 enum LinuxDurableQueueState: String, Codable, Equatable {
@@ -56,18 +65,43 @@ struct LinuxDurableTaskRecord: Codable, Equatable {
     var state: LinuxDurableTaskState
     var resultDigest: String?
     var acknowledgedEvidence: [String]
+    var projectRoot: String?
+    var title: String?
+    var claims: [String]
+    var secretDigest: String?
+    var createdAt: String?
+    var resultByteCount: Int?
+    var resultPublishedAt: String?
+    var resultAcknowledgedAt: String?
+    var messages: [LinuxDurableTaskMessage]
 
     init(id: String, terminalID: String?, state: LinuxDurableTaskState,
-         resultDigest: String?, acknowledgedEvidence: [String]) {
+         resultDigest: String?, acknowledgedEvidence: [String],
+         projectRoot: String? = nil, title: String? = nil, claims: [String] = [],
+         secretDigest: String? = nil, createdAt: String? = nil,
+         resultByteCount: Int? = nil, resultPublishedAt: String? = nil,
+         resultAcknowledgedAt: String? = nil,
+         messages: [LinuxDurableTaskMessage] = []) {
         self.id = id
         self.terminalID = terminalID
         self.state = state
         self.resultDigest = resultDigest
         self.acknowledgedEvidence = acknowledgedEvidence
+        self.projectRoot = projectRoot
+        self.title = title
+        self.claims = claims
+        self.secretDigest = secretDigest
+        self.createdAt = createdAt
+        self.resultByteCount = resultByteCount
+        self.resultPublishedAt = resultPublishedAt
+        self.resultAcknowledgedAt = resultAcknowledgedAt
+        self.messages = messages
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, terminalID, state, resultDigest, acknowledgedEvidence
+        case projectRoot, title, claims, secretDigest, createdAt, resultByteCount
+        case resultPublishedAt, resultAcknowledgedAt, messages
     }
 
     init(from decoder: Decoder) throws {
@@ -78,6 +112,17 @@ struct LinuxDurableTaskRecord: Codable, Equatable {
         resultDigest = try values.decodeIfPresent(String.self, forKey: .resultDigest)
         acknowledgedEvidence = try values.decodeIfPresent([String].self,
                                                            forKey: .acknowledgedEvidence) ?? []
+        projectRoot = try values.decodeIfPresent(String.self, forKey: .projectRoot)
+        title = try values.decodeIfPresent(String.self, forKey: .title)
+        claims = try values.decodeIfPresent([String].self, forKey: .claims) ?? []
+        secretDigest = try values.decodeIfPresent(String.self, forKey: .secretDigest)
+        createdAt = try values.decodeIfPresent(String.self, forKey: .createdAt)
+        resultByteCount = try values.decodeIfPresent(Int.self, forKey: .resultByteCount)
+        resultPublishedAt = try values.decodeIfPresent(String.self, forKey: .resultPublishedAt)
+        resultAcknowledgedAt = try values.decodeIfPresent(String.self,
+                                                           forKey: .resultAcknowledgedAt)
+        messages = try values.decodeIfPresent([LinuxDurableTaskMessage].self,
+                                               forKey: .messages) ?? []
     }
 }
 
@@ -87,8 +132,8 @@ struct LinuxDurableQueueRecord: Codable, Equatable {
     let commandID: String
     var state: LinuxDurableQueueState
     let payloadDigest: String
-    let sealedPayloadRecoverable: Bool
-    let sealedPayloadBase64: String?
+    var sealedPayloadRecoverable: Bool
+    var sealedPayloadBase64: String?
 
     init(id: String, taskID: String, commandID: String, state: LinuxDurableQueueState,
          payloadDigest: String, sealedPayloadRecoverable: Bool,
@@ -147,13 +192,13 @@ struct LinuxDurableCommandRecord: Codable, Equatable {
     }
 }
 
-/// Schema 2 is an additive envelope over schema 1. Decoding intentionally accepts missing new
+/// Schema 3 is an additive envelope over schemas 1 and 2. Decoding intentionally accepts missing new
 /// fields and JSONDecoder intentionally accepts additional fields. A writer never opens an
 /// unknown version, so it cannot erase fields belonging to a future schema it does not know.
 struct LinuxDurableState: Codable, Equatable {
-    static let schemaVersion = 2
+    static let schemaVersion = 3
     static let minimumReadableSchemaVersion = 1
-    static let maximumReadableSchemaVersion = 2
+    static let maximumReadableSchemaVersion = 3
 
     var schemaVersion: Int
     var minimumReaderVersion: Int
@@ -223,6 +268,12 @@ struct LinuxStateLoadOutcome: Equatable {
     let reason: String?
 }
 
+enum LinuxLegacyMigrationFaultPoint: String, Error {
+    case afterAuthorityWrite
+    case afterLegacyArchiveWrite
+    case afterRollbackFenceWrite
+}
+
 /// One descriptor-bound, bounded state file. Failed parsing never falls back to authoritative
 /// empty state; the original is renamed into quarantine when that can be done safely.
 final class LinuxDurableStateStore {
@@ -230,23 +281,34 @@ final class LinuxDurableStateStore {
     static let maximumRecordsPerKind = 10_000
     static let recoveryAuthorization = "authorize-empty-state-after-preserved-recovery"
 
+    /// W4-3's one authoritative task root. Runtime linkage, task identity, accepted commands,
+    /// terminal results and acknowledgement receipts live in one atomic authority file here;
+    /// per-task `artifacts/` directories contain only document bytes referenced by that state.
     let recordsDirectory: String
+    let tasksDirectory: String
+    let legacyRecordsDirectory: String
+    let legacyStatePath: String
     let quarantineDirectory: String
     let statePath: String
     let recoveryObligationPath: String
     private let expectedUID: UInt32
+    var migrationFaultInjection: ((LinuxLegacyMigrationFaultPoint) throws -> Void)?
 
     init(stateDirectory: String, expectedUID: UInt32 = geteuid()) throws {
         guard ProjectRootPolicy.isLexicallySafeAbsolute(stateDirectory) else {
             throw LinuxDurableStateFailure(code: "unsafe_state_path",
                                            message: "The durable state path must be canonical and absolute.")
         }
-        self.recordsDirectory = stateDirectory + "/records"
+        self.tasksDirectory = stateDirectory + "/tasks"
+        self.recordsDirectory = self.tasksDirectory
+        self.legacyRecordsDirectory = stateDirectory + "/records"
+        self.legacyStatePath = self.legacyRecordsDirectory + "/runtime-state.json"
         self.quarantineDirectory = stateDirectory + "/quarantine"
-        self.statePath = recordsDirectory + "/runtime-state.json"
+        self.statePath = recordsDirectory + "/authority.json"
         self.recoveryObligationPath = recordsDirectory + "/recovery-obligation.json"
         self.expectedUID = expectedUID
         try Self.prepareOwnedDirectory(recordsDirectory, expectedUID: expectedUID)
+        try Self.prepareOwnedDirectory(legacyRecordsDirectory, expectedUID: expectedUID)
         try Self.prepareOwnedDirectory(quarantineDirectory, expectedUID: expectedUID)
     }
 
@@ -271,13 +333,30 @@ final class LinuxDurableStateStore {
             break
         }
         let bytes: Data
+        var loadedFromLegacy = false
         switch secureRead(path: statePath) {
         case .missing:
-            return LinuxStateLoadOutcome(
-                state: LinuxDurableState(), authoritative: true, disposition: .initialized,
-                preservedOriginal: nil, reason: nil)
+            switch secureRead(path: legacyStatePath) {
+            case .missing:
+                return LinuxStateLoadOutcome(
+                    state: LinuxDurableState(), authoritative: true, disposition: .initialized,
+                    preservedOriginal: nil, reason: nil)
+            case .unreadable(let reason):
+                let preserved = quarantineOriginal(path: legacyStatePath,
+                                                   sourceDirectory: legacyRecordsDirectory,
+                                                   reason: reason)
+                return LinuxStateLoadOutcome(
+                    state: nil, authoritative: false,
+                    disposition: preserved == nil ? .unreadable : .quarantined,
+                    preservedOriginal: preserved ?? legacyStatePath, reason: reason)
+            case .bytes(let value):
+                bytes = value
+                loadedFromLegacy = true
+            }
         case .unreadable(let reason):
-            let preserved = quarantineOriginal(reason: reason)
+            let preserved = quarantineOriginal(path: statePath,
+                                               sourceDirectory: recordsDirectory,
+                                               reason: reason)
             return LinuxStateLoadOutcome(
                 state: nil, authoritative: false,
                 disposition: preserved == nil ? .unreadable : .quarantined,
@@ -287,6 +366,7 @@ final class LinuxDurableStateStore {
         }
 
         let version: Int
+        var recordKind: String?
         do {
             guard let object = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
                   let value = object["schemaVersion"] as? Int else {
@@ -294,50 +374,97 @@ final class LinuxDurableStateStore {
                                                message: "The durable state envelope has no integer schemaVersion.")
             }
             version = value
+            recordKind = object["recordKind"] as? String
         } catch {
             let reason = "durable state is corrupt and was not treated as empty"
-            let preserved = quarantineOriginal(reason: reason)
+            let sourcePath = loadedFromLegacy ? legacyStatePath : statePath
+            let sourceDirectory = loadedFromLegacy ? legacyRecordsDirectory : recordsDirectory
+            let preserved = quarantineOriginal(path: sourcePath, sourceDirectory: sourceDirectory,
+                                               reason: reason)
             return LinuxStateLoadOutcome(
                 state: nil, authoritative: false,
                 disposition: preserved == nil ? .unreadable : .quarantined,
-                preservedOriginal: preserved ?? statePath,
+                preservedOriginal: preserved ?? sourcePath,
+                reason: reason)
+        }
+
+        if let recordKind {
+            let reason = loadedFromLegacy && recordKind == RollbackFence.kindValue
+                ? "the authoritative task state is missing; its package rollback fence is not task authority"
+                : "a durable task authority carries an unsupported recordKind"
+            let preserved = quarantineOriginal(
+                path: loadedFromLegacy ? legacyStatePath : statePath,
+                sourceDirectory: loadedFromLegacy ? legacyRecordsDirectory : recordsDirectory,
+                reason: reason)
+            return LinuxStateLoadOutcome(
+                state: nil, authoritative: false,
+                disposition: preserved == nil ? .unreadable : .quarantined,
+                preservedOriginal: preserved ?? (loadedFromLegacy ? legacyStatePath : statePath),
                 reason: reason)
         }
 
         let readableVersions = LinuxDurableState.minimumReadableSchemaVersion...LinuxDurableState.maximumReadableSchemaVersion
         guard readableVersions.contains(version) else {
             let reason = "durable state schema \(version) is not readable by this image"
-            let preserved = quarantineOriginal(reason: reason)
+            let sourcePath = loadedFromLegacy ? legacyStatePath : statePath
+            let sourceDirectory = loadedFromLegacy ? legacyRecordsDirectory : recordsDirectory
+            let preserved = quarantineOriginal(path: sourcePath, sourceDirectory: sourceDirectory,
+                                               reason: reason)
             return LinuxStateLoadOutcome(
                 state: nil, authoritative: false,
                 disposition: preserved == nil ? .unreadable : .quarantined,
-                preservedOriginal: preserved ?? statePath,
+                preservedOriginal: preserved ?? sourcePath,
                 reason: reason)
         }
 
+        let state: LinuxDurableState
         do {
-            var state = try JSONDecoder().decode(LinuxDurableState.self, from: bytes)
-            guard state.minimumReaderVersion <= LinuxDurableState.schemaVersion else {
+            var decoded = try JSONDecoder().decode(LinuxDurableState.self, from: bytes)
+            guard decoded.minimumReaderVersion <= LinuxDurableState.schemaVersion else {
                 throw LinuxDurableStateFailure(
                     code: "unknown_state_version",
-                    message: "The state requires reader \(state.minimumReaderVersion).")
+                    message: "The state requires reader \(decoded.minimumReaderVersion).")
             }
-            try Self.validateSemantics(state)
-            let migrated = state.schemaVersion != LinuxDurableState.schemaVersion
-            state.schemaVersion = LinuxDurableState.schemaVersion
-            return LinuxStateLoadOutcome(
-                state: state, authoritative: true,
-                disposition: migrated ? .migrated : .loaded,
-                preservedOriginal: nil, reason: nil)
+            try Self.validateSemantics(decoded)
+            decoded.schemaVersion = LinuxDurableState.schemaVersion
+            state = decoded
         } catch {
             let reason = "durable records failed closed semantic validation and were not treated as empty"
-            let preserved = quarantineOriginal(reason: reason)
+            let sourcePath = loadedFromLegacy ? legacyStatePath : statePath
+            let sourceDirectory = loadedFromLegacy ? legacyRecordsDirectory : recordsDirectory
+            let preserved = quarantineOriginal(path: sourcePath, sourceDirectory: sourceDirectory,
+                                               reason: reason)
             return LinuxStateLoadOutcome(
                 state: nil, authoritative: false,
                 disposition: preserved == nil ? .unreadable : .quarantined,
-                preservedOriginal: preserved ?? statePath,
+                preservedOriginal: preserved ?? sourcePath,
                 reason: reason)
         }
+        let migrated = loadedFromLegacy || version != LinuxDurableState.schemaVersion
+        var preservedLegacy: String?
+        if loadedFromLegacy {
+            do {
+                preservedLegacy = try migrateLegacyState(state, legacyBytes: bytes)
+            } catch let failure as LegacyMigrationFailure {
+                try? recordRecoveryObligation(
+                    preservedOriginal: failure.preservedOriginal,
+                    reason: failure.reason)
+                return LinuxStateLoadOutcome(
+                    state: nil, authoritative: false, disposition: .recoveryRequired,
+                    preservedOriginal: failure.preservedOriginal, reason: failure.reason)
+            } catch {
+                let reason = "legacy task authority could not be migrated durably"
+                try? recordRecoveryObligation(
+                    preservedOriginal: legacyStatePath, reason: reason)
+                return LinuxStateLoadOutcome(
+                    state: nil, authoritative: false, disposition: .recoveryRequired,
+                    preservedOriginal: legacyStatePath, reason: reason)
+            }
+        }
+        return LinuxStateLoadOutcome(
+            state: state, authoritative: true,
+            disposition: migrated ? .migrated : .loaded,
+            preservedOriginal: preservedLegacy, reason: nil)
     }
 
     func save(_ state: LinuxDurableState) throws {
@@ -347,6 +474,59 @@ final class LinuxDurableStateStore {
                                            message: "Refusing to write an unsupported durable schema.")
         }
         try Self.validateSemantics(state)
+        try writeAuthority(state)
+        try writeRollbackFence()
+    }
+
+    /// Installs the new authority before replacing the schema-1/2 pathname. The old bytes remain
+    /// readable by the old image until one atomic fence rename; there is no unlink/rename window in
+    /// which the old image can misread migration as an empty authority.
+    private func migrateLegacyState(_ state: LinuxDurableState,
+                                    legacyBytes: Data) throws -> String {
+        do {
+            try writeAuthority(state)
+            try migrationFaultInjection?(.afterAuthorityWrite)
+        } catch {
+            throw LegacyMigrationFailure(
+                preservedOriginal: legacyStatePath,
+                reason: "legacy task authority could not be copied into the durable task root")
+        }
+        let destination = quarantineDirectory
+            + "/runtime-state.migrated.\(UUID().uuidString.lowercased()).json"
+        do {
+            try Self.atomicWrite(legacyBytes, to: destination,
+                                 directory: quarantineDirectory)
+            try migrationFaultInjection?(.afterLegacyArchiveWrite)
+        } catch {
+            throw LegacyMigrationFailure(
+                preservedOriginal: legacyStatePath,
+                reason: "legacy task authority could not be archived before migration cutover")
+        }
+        do {
+            try writeRollbackFence()
+            try migrationFaultInjection?(.afterRollbackFenceWrite)
+        } catch {
+            throw LegacyMigrationFailure(
+                preservedOriginal: destination,
+                reason: "the migrated authority is durable but its package rollback fence could not be written")
+        }
+        return destination
+    }
+
+    private struct LegacyMigrationFailure: Error {
+        let preservedOriginal: String
+        let reason: String
+    }
+
+    private struct RollbackFence: Encodable {
+        static let kindValue = "clawdline_linux_task_authority_rollback_fence"
+        let schemaVersion = LinuxDurableState.schemaVersion
+        let minimumReaderVersion = LinuxDurableState.schemaVersion
+        let recordKind = Self.kindValue
+        let authorityPath = "tasks/authority.json"
+    }
+
+    private func writeAuthority(_ state: LinuxDurableState) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         let data = try encoder.encode(state)
@@ -355,6 +535,162 @@ final class LinuxDurableStateStore {
                                            message: "Durable state exceeds the bounded record size.")
         }
         try Self.atomicWrite(data, to: statePath, directory: recordsDirectory)
+    }
+
+    private func writeRollbackFence() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try Self.atomicWrite(
+            encoder.encode(RollbackFence()), to: legacyStatePath,
+            directory: legacyRecordsDirectory)
+    }
+
+    private func recordRecoveryObligation(preservedOriginal: String,
+                                          reason: String) throws {
+        let obligation = RecoveryObligation(
+            schemaVersion: 1, preservedOriginal: preservedOriginal, reason: reason)
+        let data = try JSONEncoder().encode(obligation)
+        try Self.atomicWrite(data, to: recoveryObligationPath,
+                             directory: recordsDirectory)
+    }
+
+    /// Creates only the fixed per-task document root. The task id has already crossed the
+    /// Application slug policy; both directories are opened relative to the held task-root
+    /// descriptor and are never allowed to redirect through a link.
+    @discardableResult
+    func prepareTaskArtifacts(taskID: String) throws -> String {
+        guard SessionLaunchPolicy.opaqueCommandID(taskID) == taskID else {
+            throw LinuxDurableStateFailure(code: "invalid_task_identity",
+                                           message: "The task id is not a closed opaque identifier.")
+        }
+        let root = tasksDirectory.withCString {
+            open($0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        guard root >= 0 else {
+            throw LinuxDurableStateFailure(code: "task_root_unavailable",
+                                           message: "The authoritative task root is unavailable.")
+        }
+        defer { _ = close(root) }
+        try prepareDirectory(named: taskID, beneath: root)
+        let task = taskID.withCString {
+            openat(root, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        guard task >= 0 else {
+            throw LinuxDurableStateFailure(code: "task_root_unavailable",
+                                           message: "The task directory is unavailable.")
+        }
+        defer { _ = close(task) }
+        try prepareDirectory(named: "artifacts", beneath: task)
+        guard fsync(task) == 0, fsync(root) == 0 else {
+            throw LinuxDurableStateFailure(code: "task_root_unavailable",
+                                           message: "The task root could not be synchronized.")
+        }
+        return tasksDirectory + "/" + taskID + "/artifacts"
+    }
+
+    /// Result bytes are bounded task-owned evidence, not duplicated inside the global authority
+    /// envelope or completed replay queue. The authority records their digest/count only after
+    /// this file and its parent directory are durable.
+    func publishTaskResult(_ bytes: Data, taskID: String, expectedDigest: String) throws {
+        guard !bytes.isEmpty, bytes.count <= HeadlessDocumentPathPolicy.maximumBytes,
+              LinuxSHA256.hex(bytes) == expectedDigest else {
+            throw LinuxDurableStateFailure(code: "invalid_task_result",
+                                           message: "Task result bytes do not match their bounded digest.")
+        }
+        _ = try prepareTaskArtifacts(taskID: taskID)
+        let path = taskResultPath(taskID)
+        switch secureRead(path: path, maximumBytes: HeadlessDocumentPathPolicy.maximumBytes) {
+        case .missing:
+            try Self.atomicWrite(bytes, to: path,
+                                 directory: tasksDirectory + "/" + taskID)
+        case .bytes(let existing):
+            guard existing == bytes else {
+                throw LinuxDurableStateFailure(
+                    code: "task_result_conflict",
+                    message: "The task result path already holds different durable bytes.")
+            }
+        case .unreadable:
+            throw LinuxDurableStateFailure(
+                code: "task_result_non_authoritative",
+                message: "The task result path is not one safe durable file.")
+        }
+    }
+
+    func readTaskResult(taskID: String, expectedDigest: String,
+                        expectedBytes: Int) throws -> Data {
+        let path = taskResultPath(taskID)
+        guard case .bytes(let bytes) = secureRead(
+            path: path, maximumBytes: HeadlessDocumentPathPolicy.maximumBytes),
+              bytes.count == expectedBytes, LinuxSHA256.hex(bytes) == expectedDigest else {
+            throw LinuxDurableStateFailure(
+                code: "task_result_non_authoritative",
+                message: "The published task result no longer matches its durable authority.")
+        }
+        return bytes
+    }
+
+    /// Mutation commit points and cached result replay call this in addition to startup/periodic
+    /// reconciliation. A missing, replaced or linked result creates a durable typed recovery
+    /// obligation before the caller can acknowledge, close or replay its old receipt.
+    func revalidatePublishedResult(_ task: LinuxDurableTaskRecord) throws {
+        guard let digest = task.resultDigest, let byteCount = task.resultByteCount else {
+            _ = resultRecovery(taskID: task.id,
+                               reason: "published task result metadata is incomplete")
+            throw LinuxDurableStateFailure(
+                code: "task_result_non_authoritative",
+                message: "The published task result metadata is incomplete.")
+        }
+        do {
+            _ = try readTaskResult(taskID: task.id, expectedDigest: digest,
+                                   expectedBytes: byteCount)
+        } catch {
+            _ = resultRecovery(taskID: task.id,
+                               reason: "published task result bytes are missing or unsafe")
+            throw LinuxDurableStateFailure(
+                code: "task_result_non_authoritative",
+                message: "The published task result no longer matches its durable authority.")
+        }
+    }
+
+    /// Startup invokes this once before admission. Missing, replaced, linked, oversized or
+    /// digest-mismatched published results create the same durable recovery obligation as a bad
+    /// authority envelope; no later request can silently downgrade them to an empty result.
+    func validatePublishedResults(_ state: LinuxDurableState) -> LinuxStateLoadOutcome? {
+        for task in state.tasks where task.secretDigest != nil && task.resultDigest != nil {
+            guard let digest = task.resultDigest, let byteCount = task.resultByteCount else {
+                return resultRecovery(taskID: task.id,
+                                      reason: "published task result metadata is incomplete")
+            }
+            do {
+                _ = try readTaskResult(taskID: task.id, expectedDigest: digest,
+                                       expectedBytes: byteCount)
+            } catch {
+                return resultRecovery(taskID: task.id,
+                                      reason: "published task result bytes are missing or unsafe")
+            }
+        }
+        return nil
+    }
+
+    private func resultRecovery(taskID: String, reason: String) -> LinuxStateLoadOutcome {
+        let path = taskResultPath(taskID)
+        let preserved: String
+        switch secureRead(path: path, maximumBytes: HeadlessDocumentPathPolicy.maximumBytes) {
+        case .missing:
+            preserved = statePath
+            try? recordRecoveryObligation(preservedOriginal: statePath, reason: reason)
+        case .bytes, .unreadable:
+            preserved = quarantineOriginal(
+                path: path, sourceDirectory: tasksDirectory + "/" + taskID,
+                reason: reason) ?? path
+        }
+        return LinuxStateLoadOutcome(
+            state: nil, authoritative: false, disposition: .recoveryRequired,
+            preservedOriginal: preserved, reason: reason)
+    }
+
+    private func taskResultPath(_ taskID: String) -> String {
+        tasksDirectory + "/" + taskID + "/result.json"
     }
 
     /// Empty-state recovery is deliberately impossible through an ordinary load/tick. An
@@ -376,6 +712,17 @@ final class LinuxDurableStateStore {
             Self.syncDirectory(quarantineDirectory)
             Self.syncDirectory(recordsDirectory)
         }
+        if case .bytes = secureRead(path: legacyStatePath) {
+            let destination = quarantineDirectory
+                + "/runtime-state.fence-authorized.\(UUID().uuidString.lowercased()).json"
+            guard rename(legacyStatePath, destination) == 0 else {
+                throw LinuxDurableStateFailure(
+                    code: "recovery_obligation_unavailable",
+                    message: "The package rollback fence could not be quarantined.")
+            }
+            Self.syncDirectory(quarantineDirectory)
+            Self.syncDirectory(legacyRecordsDirectory)
+        }
         guard unlink(recoveryObligationPath) == 0 || errno == ENOENT else {
             throw LinuxDurableStateFailure(code: "recovery_obligation_unavailable",
                                            message: "The recovery obligation could not be cleared safely.")
@@ -389,7 +736,8 @@ final class LinuxDurableStateStore {
         case unreadable(String)
     }
 
-    private func secureRead(path: String) -> SecureRead {
+    private func secureRead(path: String,
+                            maximumBytes: Int = LinuxDurableStateStore.maximumBytes) -> SecureRead {
         let descriptor = path.withCString { open($0, O_RDONLY | O_NOFOLLOW | O_CLOEXEC) }
         guard descriptor >= 0 else {
             return errno == ENOENT ? .missing : .unreadable("durable state cannot be opened safely")
@@ -400,8 +748,9 @@ final class LinuxDurableStateStore {
               metadata.st_mode & S_IFMT == S_IFREG,
               metadata.st_uid == expectedUID,
               metadata.st_mode & 0o077 == 0,
+              metadata.st_nlink == 1,
               metadata.st_size > 0,
-              metadata.st_size <= Self.maximumBytes else {
+              metadata.st_size <= maximumBytes else {
             return .unreadable("durable state type, owner, mode, or size is unsafe")
         }
         var bytes = [UInt8](repeating: 0, count: Int(metadata.st_size))
@@ -410,14 +759,20 @@ final class LinuxDurableStateStore {
             let count = bytes.withUnsafeMutableBytes { buffer in
                 read(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
             }
+            if count < 0, errno == EINTR { continue }
             guard count > 0 else {
                 return .unreadable("durable state ended before its descriptor-bound size")
             }
             offset += count
         }
         var extra: UInt8 = 0
-        guard read(descriptor, &extra, 1) == 0 else {
-            return .unreadable("durable state changed while it was being read")
+        while true {
+            let count = read(descriptor, &extra, 1)
+            if count < 0, errno == EINTR { continue }
+            guard count == 0 else {
+                return .unreadable("durable state changed while it was being read")
+            }
+            break
         }
         return .bytes(Data(bytes))
     }
@@ -428,18 +783,40 @@ final class LinuxDurableStateStore {
         let reason: String
     }
 
-    private func quarantineOriginal(reason: String) -> String? {
+    private func prepareDirectory(named name: String, beneath parent: Int32) throws {
+        let made = name.withCString { mkdirat(parent, $0, 0o700) }
+        guard made == 0 || errno == EEXIST else {
+            throw LinuxDurableStateFailure(code: "task_root_unavailable",
+                                           message: "A protected task directory cannot be created.")
+        }
+        let descriptor = name.withCString {
+            openat(parent, $0, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        }
+        guard descriptor >= 0 else {
+            throw LinuxDurableStateFailure(code: "task_root_unavailable",
+                                           message: "A protected task directory cannot be opened safely.")
+        }
+        defer { _ = close(descriptor) }
+        var metadata = stat()
+        guard fstat(descriptor, &metadata) == 0,
+              metadata.st_mode & S_IFMT == S_IFDIR,
+              metadata.st_uid == expectedUID,
+              metadata.st_mode & 0o077 == 0 else {
+            throw LinuxDurableStateFailure(code: "task_root_unavailable",
+                                           message: "A task directory has unsafe ownership or mode.")
+        }
+    }
+
+    private func quarantineOriginal(path: String, sourceDirectory: String,
+                                    reason: String) -> String? {
         let suffix = UUID().uuidString.lowercased()
         let destination = quarantineDirectory + "/runtime-state.\(suffix).json"
-        let obligation = RecoveryObligation(
-            schemaVersion: 1, preservedOriginal: destination, reason: reason)
-        guard let data = try? JSONEncoder().encode(obligation),
-              (try? Self.atomicWrite(data, to: recoveryObligationPath,
-                                     directory: recordsDirectory)) != nil else {
+        guard (try? recordRecoveryObligation(
+            preservedOriginal: destination, reason: reason)) != nil else {
             return nil
         }
-        guard rename(statePath, destination) == 0 else { return statePath }
-        Self.syncDirectory(recordsDirectory)
+        guard rename(path, destination) == 0 else { return path }
+        Self.syncDirectory(sourceDirectory)
         Self.syncDirectory(quarantineDirectory)
         return destination
     }
@@ -455,10 +832,22 @@ final class LinuxDurableStateStore {
         }
         guard state.minimumReaderVersion >= 1,
               state.minimumReaderVersion <= LinuxDurableState.schemaVersion,
-              state.daemonEpoch < UInt64.max else {
+              state.daemonEpoch < UInt64.max / 1_000_000 else {
             try invalid("The durable reader floor or daemon epoch is invalid.")
         }
         func validID(_ value: String) -> Bool { !value.isEmpty && value.utf8.count <= 512 }
+        func validDigest(_ value: String) -> Bool {
+            value.count == 64 && value.allSatisfy {
+                ("0"..."9").contains($0) || ("a"..."f").contains($0)
+            }
+        }
+        func validClaim(_ value: String) -> Bool {
+            guard !value.isEmpty, value.utf8.count <= 512, !value.hasPrefix("/") else {
+                return false
+            }
+            return value.split(separator: "/", omittingEmptySubsequences: false)
+                .allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." }
+        }
         func unique(_ values: [String]) -> Bool { values.allSatisfy(validID) && Set(values).count == values.count }
         let terminalIDs = state.terminals.map(\.id)
         let taskIDs = state.tasks.map(\.id)
@@ -485,9 +874,55 @@ final class LinuxDurableStateStore {
                 try invalid("A recoverable queue row is not bound to its sealed payload bytes.")
             }
         }
-        for row in state.tasks where row.state == .complete || row.state == .failed {
+        for row in state.tasks where row.state == .complete || row.state == .failed
+                || row.state == .resultPublished || row.state == .acknowledged {
             guard row.resultDigest?.isEmpty == false else {
                 try invalid("A terminal task has no result evidence.")
+            }
+        }
+        for row in state.tasks {
+            let hasPublishedResult = row.resultDigest != nil || row.resultByteCount != nil
+                || row.resultPublishedAt != nil || row.resultAcknowledgedAt != nil
+            let authenticatedResultIsValid = !hasPublishedResult || (
+                row.resultDigest.map(validDigest) == true
+                    && row.resultByteCount.map {
+                        $0 > 0 && $0 <= HeadlessDocumentPathPolicy.maximumBytes
+                    } == true
+                    && row.resultPublishedAt != nil
+                    && (row.resultAcknowledgedAt == nil
+                        || row.state == .acknowledged || row.state == .complete)
+            )
+            let legacyResultIsValid = row.resultByteCount == nil
+                && row.resultPublishedAt == nil && row.resultAcknowledgedAt == nil
+            guard row.claims.count <= 256,
+                  row.claims.allSatisfy(validClaim),
+                  Set(row.claims).count == row.claims.count,
+                  row.messages.count <= 1_000,
+                  row.title.map({ !$0.isEmpty && $0.utf8.count <= 1_000 }) ?? true,
+                  row.secretDigest.map(validDigest) ?? true,
+                  (row.secretDigest == nil ? legacyResultIsValid : authenticatedResultIsValid),
+                  row.state != .resultPublished || row.resultPublishedAt != nil,
+                  row.state != .acknowledged || row.resultAcknowledgedAt != nil,
+                  row.secretDigest == nil || row.state != .complete
+                    || row.resultAcknowledgedAt != nil else {
+                try invalid("A durable task identity, result, or message record is contradictory.")
+            }
+            if row.secretDigest != nil {
+                guard row.projectRoot.map(ProjectRootPolicy.isLexicallySafeAbsolute) == true,
+                      row.createdAt != nil else {
+                    try invalid("An authenticated task has no exact project or creation identity.")
+                }
+            }
+            guard Set(row.messages.map(\.requestID)).count == row.messages.count else {
+                try invalid("A durable task contains duplicate message request identities.")
+            }
+            guard row.messages.allSatisfy({ message in
+                validID(message.requestID) && validDigest(message.textDigest)
+                    && !message.acceptedAt.isEmpty
+                    && (message.deliveredReceiptDigest.map(validDigest) == true
+                        || message.deliveredReceiptDigest == nil)
+            }) else {
+                try invalid("A durable task message receipt is invalid.")
             }
         }
         for row in state.commands {
@@ -624,6 +1059,10 @@ enum LinuxStartupReconciler {
         guard var state = loaded.state, loaded.authoritative else {
             return receipt(for: nil, loaded: loaded, status: "state_non_authoritative")
         }
+        if let invalidResult = store.validatePublishedResults(state) {
+            return receipt(for: nil, loaded: invalidResult,
+                           status: "state_non_authoritative")
+        }
 
         switch inventory {
         case .complete(let observedIDs):
@@ -648,7 +1087,7 @@ enum LinuxStartupReconciler {
         let terminals = Dictionary(uniqueKeysWithValues: state.terminals.map { ($0.id, $0.state) })
         for index in state.tasks.indices {
             switch state.tasks[index].state {
-            case .complete, .failed:
+            case .complete, .failed, .resultPublished, .acknowledged:
                 break // terminal evidence is immutable across restart
             case .working, .reconciling:
                 state.tasks[index].state = .reconciling
@@ -660,15 +1099,20 @@ enum LinuxStartupReconciler {
             case .unknown:
                 break
             }
+            let resultTerminalIsImmutable = state.tasks[index].state == .complete
+                || state.tasks[index].state == .failed
+                || state.tasks[index].state == .resultPublished
+                || state.tasks[index].state == .acknowledged
             if let terminalID = state.tasks[index].terminalID,
                terminals[terminalID] == .unknown,
-               state.tasks[index].state != .complete,
-               state.tasks[index].state != .failed {
+               !resultTerminalIsImmutable {
                 state.tasks[index].state = .reconciling
             }
         }
 
-        for index in state.queue.indices where !state.queue[index].sealedPayloadRecoverable {
+        for index in state.queue.indices
+            where !state.queue[index].sealedPayloadRecoverable
+                && state.queue[index].state != .complete {
             state.queue[index].state = .unknown
         }
 
@@ -716,6 +1160,10 @@ enum LinuxStartupReconciler {
         guard var state = loaded.state, loaded.authoritative else {
             return receipt(for: nil, loaded: loaded, status: "state_non_authoritative")
         }
+        if let invalidResult = store.validatePublishedResults(state) {
+            return receipt(for: nil, loaded: invalidResult,
+                           status: "state_non_authoritative")
+        }
         switch inventory {
         case .complete(let observedIDs):
             var known = Set<String>()
@@ -754,7 +1202,10 @@ enum LinuxStartupReconciler {
             terminalPresent: terminals.filter { $0.state == .present }.count,
             terminalMissing: terminals.filter { $0.state == .missing }.count,
             terminalUnknown: terminals.filter { $0.state == .unknown }.count,
-            taskTerminal: tasks.filter { $0.state == .complete || $0.state == .failed }.count,
+            taskTerminal: tasks.filter {
+                $0.state == .complete || $0.state == .failed
+                    || $0.state == .resultPublished || $0.state == .acknowledged
+            }.count,
             taskReconciling: tasks.filter { $0.state == .reconciling }.count,
             taskUnknown: tasks.filter { $0.state == .unknown }.count,
             queueRecoverable: queue.filter {

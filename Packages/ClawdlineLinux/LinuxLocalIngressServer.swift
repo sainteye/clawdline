@@ -4,7 +4,7 @@ import Foundation
 /// loopback address, accepts one bounded request per connection, authenticates before dispatch,
 /// and sends a response only after the durable owner has persisted its receipt.
 final class LinuxLocalIngressServer {
-    static let maximumRequestBytes = 1_048_576
+    static let maximumRequestBytes = 3 * 1_048_576
 
     private let configuration: LinuxListenConfiguration
     private let authorization: Data
@@ -41,6 +41,12 @@ final class LinuxLocalIngressServer {
                        socklen_t(MemoryLayout.size(ofValue: timeout)))
         do {
             let requestBytes = try readRequest(client)
+            guard let object = try JSONSerialization.jsonObject(with: requestBytes)
+                    as? [String: Any],
+                  Set(object.keys).isSubset(of: Self.requestFields) else {
+                throw LinuxDurableStateFailure(code: "invalid_ingress",
+                                               message: "The local request has an unknown field.")
+            }
             let request = try JSONDecoder().decode(LinuxIngressRequest.self, from: requestBytes)
             guard let supplied = request.authorization.flatMap({ Data(base64Encoded: $0) }),
                   constantTimeEqual(supplied, authorization) else {
@@ -65,6 +71,13 @@ final class LinuxLocalIngressServer {
             }
         }
     }
+
+    private static let requestFields: Set<String> = [
+        "authorization", "operation", "commandID", "taskID", "sessionID",
+        "projectRoot", "assistant", "text", "acknowledge", "authorizeRecovery",
+        "taskSecret", "title", "claims", "resultBase64", "resultDigest",
+        "documentScope", "relativePath",
+    ]
 
     private func readRequest(_ descriptor: Int32) throws -> Data {
         var data = Data()

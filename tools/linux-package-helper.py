@@ -283,13 +283,30 @@ def command_verify_release(args):
 
 
 def command_state_compatible(args):
+    loaded_from_legacy = False
     try:
         descriptor, metadata = open_pinned(args.state)
     except FileNotFoundError:
-        return
+        if not args.legacy_state:
+            if args.require_authority:
+                fail("durable authority disappeared before rollback revalidation")
+            return
+        try:
+            descriptor, metadata = open_pinned(args.legacy_state)
+        except FileNotFoundError:
+            if args.require_authority:
+                fail("durable authority disappeared before rollback revalidation")
+            return
+        loaded_from_legacy = True
+    if metadata.st_uid != args.expected_uid:
+        os.close(descriptor)
+        fail("durable state owner is not the configured service uid")
     if stat.S_IMODE(metadata.st_mode) & 0o077:
         os.close(descriptor)
         fail("durable state permissions are not private")
+    if metadata.st_size <= 0 or metadata.st_size > 8 * 1024 * 1024:
+        os.close(descriptor)
+        fail("durable state size is outside the daemon bound")
     try:
         state = json.loads(read_fd(descriptor, 8 * 1024 * 1024))
     finally:
@@ -297,6 +314,12 @@ def command_state_compatible(args):
     if not isinstance(state, dict) or isinstance(state.get("schemaVersion"), bool) \
             or not isinstance(state.get("schemaVersion"), int):
         fail("durable state has no authoritative schema identity")
+    if "recordKind" in state:
+        if state.get("recordKind") == "clawdline_linux_task_authority_rollback_fence":
+            fail("package rollback fence is not task authority")
+        fail("durable task authority has an unsupported recordKind")
+    if loaded_from_legacy and state["schemaVersion"] >= 3:
+        fail("legacy fallback accepts only pre-migration task authority")
     minimum_reader = state.get("minimumReaderVersion", 1)
     if isinstance(minimum_reader, bool) or not isinstance(minimum_reader, int) or minimum_reader < 1:
         fail("durable state has no authoritative minimum-reader identity")
@@ -522,6 +545,10 @@ def recover_stale(prefix):
     journal_path = os.path.join(prefix, "transition.json")
     if os.path.exists(journal_path):
         journal = load_json(journal_path)
+        if journal.get("phase") == "recovery_required":
+            recovery = journal.get("recovery", {})
+            fail("transition requires operator recovery: "
+                 + str(recovery.get("code", "package_recovery_required")))
         if journal.get("phase") == "committing":
             complete_journal(prefix, journal)
         else:
@@ -547,6 +574,14 @@ def command_transition(args):
         fail("package prefix is not a real directory")
     if args.action == "acquire":
         recover_stale(prefix)
+        journal_path = os.path.join(prefix, "transition.json")
+        if os.path.exists(journal_path):
+            journal = load_json(journal_path)
+            if journal.get("phase") == "recovery_required":
+                recovery = journal.get("recovery", {})
+                fail("transition requires operator recovery: "
+                     + str(recovery.get("code", "package_recovery_required")))
+            fail("an unowned package transition journal requires recovery")
         lock = os.path.join(prefix, ".package-lock")
         os.mkdir(lock, 0o700)
         start = proc_start(args.owner_pid)
@@ -602,6 +637,18 @@ def command_transition(args):
         os.unlink(os.path.join(prefix, "transition.json"))
         fsync_directory(prefix)
         remove_lock(prefix)
+    elif args.action == "recovery-required":
+        require_lock(prefix, args.owner_pid)
+        journal = load_json(os.path.join(prefix, "transition.json"))
+        if journal.get("phase") not in ("switched", "health_passed"):
+            fail("transition phase cannot enter recovery")
+        journal["phase"] = "recovery_required"
+        journal["recovery"] = {
+            "code": args.recovery_code,
+            "message": args.recovery_message,
+        }
+        atomic_json(os.path.join(prefix, "transition.json"), journal)
+        remove_lock(prefix)
     elif args.action == "abort":
         require_lock(prefix, args.owner_pid)
         journal_path = os.path.join(prefix, "transition.json")
@@ -649,7 +696,10 @@ def parser():
     verify.set_defaults(function=command_verify_release)
     compatible = commands.add_parser("state-compatible")
     compatible.add_argument("--state", required=True)
+    compatible.add_argument("--legacy-state")
     compatible.add_argument("--manifest", required=True)
+    compatible.add_argument("--expected-uid", required=True, type=int)
+    compatible.add_argument("--require-authority", action="store_true")
     compatible.set_defaults(function=command_state_compatible)
     state = commands.add_parser("prepare-state")
     state.add_argument("--install-root", required=True)
@@ -661,7 +711,8 @@ def parser():
     sync.add_argument("--path", required=True)
     sync.set_defaults(function=command_fsync_tree)
     transition = commands.add_parser("transition")
-    transition.add_argument("action", choices=("acquire", "begin", "health-passed", "commit", "abort"))
+    transition.add_argument("action", choices=(
+        "acquire", "begin", "health-passed", "commit", "recovery-required", "abort"))
     transition.add_argument("--prefix", required=True)
     transition.add_argument("--owner-pid", required=True, type=int)
     transition.add_argument("--operation")
@@ -669,6 +720,8 @@ def parser():
     transition.add_argument("--old-previous", default="none")
     transition.add_argument("--new-current", default="none")
     transition.add_argument("--new-previous", default="none")
+    transition.add_argument("--recovery-code", default="package_recovery_required")
+    transition.add_argument("--recovery-message", default="Package transition requires operator recovery.")
     transition.add_argument("--receipt-base64")
     transition.set_defaults(function=command_transition)
     return value

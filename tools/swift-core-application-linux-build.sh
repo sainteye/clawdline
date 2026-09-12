@@ -37,6 +37,7 @@ for member in Packages/ClawdlineCore/CloudCanonicalJSON.swift Packages/Clawdline
   Packages/ClawdlineLinux/LinuxContainedFileSystem.swift \
   Packages/ClawdlineLinux/LinuxDaemonIngress.swift \
   Packages/ClawdlineLinux/LinuxDaemonLifecycle.swift \
+  Packages/ClawdlineLinux/LinuxDocumentReader.swift \
   Packages/ClawdlineLinux/LinuxLocalIngressServer.swift \
   Packages/ClawdlineLinux/LinuxProviderRuntime.swift \
   Packages/ClawdlineLinux/LinuxRuntimeAdapters.swift Packages/ClawdlineLinux/LinuxSHA256.swift \

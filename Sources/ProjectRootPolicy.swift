@@ -160,3 +160,75 @@ public struct ProjectRootPolicy {
         return .success(relative)
     }
 }
+
+// MARK: - Headless task and read vocabulary
+
+/// The closed Application vocabulary accepted by a headless host.  A host adapter may translate
+/// these cases onto a local transport, but it may not translate an arbitrary route or filesystem
+/// operation.  The four legacy terminal cases stay here while existing W4-2 clients migrate; the
+/// task cases add result/receipt ownership without creating another terminal executor.
+public enum HeadlessApplicationOperation: String, Codable, CaseIterable, Sendable {
+    case create, send, observe, close
+    case taskCreate = "task_create"
+    case taskRead = "task_read"
+    case taskMessage = "task_message"
+    case taskResult = "task_result"
+    case taskAcknowledge = "task_acknowledge"
+    case taskClose = "task_close"
+    case boardRead = "board_read"
+    case sessionRead = "session_read"
+    case documentsRead = "documents_read"
+    case documentRead = "document_read"
+
+    public var isRead: Bool {
+        switch self {
+        case .taskRead, .boardRead, .sessionRead, .documentsRead, .documentRead:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Only the task's own publication lane consumes the task secret.  Local transport
+    /// authentication is a separate prerequisite and is deliberately not represented here.
+    public var requiresTaskSecret: Bool {
+        switch self {
+        case .taskMessage, .taskResult:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
+/// A document caller chooses one of two computed roots, never an absolute pathname.
+public enum HeadlessDocumentScope: String, Codable, CaseIterable, Sendable {
+    case project
+    case task
+}
+
+/// Pure lexical policy shared by direct and relayed headless reads before a host opens anything.
+/// The host still has to walk descriptors, refuse links/devices and re-check size on the opened
+/// descriptor; this policy alone is not filesystem containment.
+public enum HeadlessDocumentPathPolicy {
+    public static let readableExtensions: Set<String> = ["md", "markdown", "txt"]
+    public static let maximumBytes = 2 * 1024 * 1024
+    public static let maximumDepth = 6
+    public static let maximumPathBytes = 512
+    public static let maximumListed = 200
+    public static let maximumWalked = 4_000
+
+    public static func relativePath(_ value: String) -> String? {
+        guard !value.isEmpty, value.utf8.count <= maximumPathBytes,
+              !value.hasPrefix("/"), !value.unicodeScalars.contains(where: {
+                  $0.value < 0x20 || $0.value == 0x7f
+              }) else { return nil }
+        let segments = value.split(separator: "/", omittingEmptySubsequences: false)
+        guard !segments.isEmpty, segments.count <= maximumDepth,
+              segments.allSatisfy({ !$0.isEmpty && !$0.hasPrefix(".") }) else { return nil }
+        let normalized = segments.joined(separator: "/")
+        guard readableExtensions.contains(
+            URL(fileURLWithPath: normalized).pathExtension.lowercased()) else { return nil }
+        return normalized
+    }
+}

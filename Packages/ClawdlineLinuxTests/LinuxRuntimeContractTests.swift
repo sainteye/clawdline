@@ -66,6 +66,38 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
     }
 }
 
+private struct SchemaTwoIngressSeal: Encodable {
+    let authorization: String?
+    let operation: LinuxIngressOperation
+    let commandID: String
+    let taskID: String
+    let sessionID: String?
+    let projectRoot: String?
+    let assistant: String?
+    let text: String?
+    let acknowledge: Bool
+    let authorizeRecovery: Bool
+
+    init(_ request: LinuxIngressRequest) {
+        authorization = nil
+        operation = request.operation
+        commandID = request.commandID
+        taskID = request.taskID
+        sessionID = request.sessionID
+        projectRoot = request.projectRoot
+        assistant = request.assistant
+        text = request.text
+        acknowledge = request.acknowledge
+        authorizeRecovery = false
+    }
+
+    func bytes() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(self)
+    }
+}
+
 final class LinuxRuntimeContractTests: XCTestCase {
     func testProjectRootPolicyRejectsTraversalAndSymlink() throws {
         let scratch = canonicalTemporaryDirectory()
@@ -804,6 +836,600 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertEqual(final.commands.first { $0.id == "close" }?.outcome, .succeeded)
     }
 
+    func testW43SchemaTwoSealsReplaySucceededAndInterruptedCommandsAfterMigration() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w43-schema-two-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        let runtime = FakeLinuxLifecycleRuntime()
+        let succeeded = LinuxIngressRequest(
+            operation: .send, commandID: "schema-two-succeeded", taskID: "legacy-task",
+            sessionID: runtime.sessionID, text: "already delivered")
+        let interrupted = LinuxIngressRequest(
+            operation: .send, commandID: "schema-two-interrupted", taskID: "legacy-task",
+            sessionID: runtime.sessionID, text: "resume me")
+        let succeededSeal = try SchemaTwoIngressSeal(succeeded).bytes()
+        let interruptedSeal = try SchemaTwoIngressSeal(interrupted).bytes()
+        let cached = Data("schema-two-cached-response".utf8)
+        let legacy = LinuxDurableState(
+            schemaVersion: 2, minimumReaderVersion: 1,
+            terminals: [.init(id: runtime.sessionID, taskID: "legacy-task", state: .present,
+                              lastObservedAt: nil, evidenceDigest: nil)],
+            tasks: [.init(id: "legacy-task", terminalID: runtime.sessionID, state: .working,
+                          resultDigest: nil, acknowledgedEvidence: [])],
+            queue: [
+                .init(id: "queue-succeeded", taskID: "legacy-task",
+                      commandID: succeeded.commandID, state: .complete,
+                      payloadDigest: LinuxSHA256.hex(succeededSeal),
+                      sealedPayloadRecoverable: true,
+                      sealedPayloadBase64: succeededSeal.base64EncodedString()),
+                .init(id: "queue-interrupted", taskID: "legacy-task",
+                      commandID: interrupted.commandID, state: .queued,
+                      payloadDigest: LinuxSHA256.hex(interruptedSeal),
+                      sealedPayloadRecoverable: true,
+                      sealedPayloadBase64: interruptedSeal.base64EncodedString()),
+            ],
+            commands: [
+                .init(id: succeeded.commandID, taskID: "legacy-task",
+                      terminalID: runtime.sessionID, operation: "send", stage: .delivered,
+                      outcome: .succeeded, evidenceDigest: LinuxSHA256.hex(cached),
+                      acknowledgedAt: nil, responseBase64: cached.base64EncodedString()),
+                .init(id: interrupted.commandID, taskID: "legacy-task",
+                      terminalID: runtime.sessionID, operation: "send", stage: .accepted,
+                      outcome: .pending, evidenceDigest: nil, acknowledgedAt: nil),
+            ])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(legacy).write(to: URL(fileURLWithPath: store.legacyStatePath))
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: store.legacyStatePath)
+
+        let restart = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete([runtime.sessionID]))
+        XCTAssertEqual(restart.stateDisposition, .migrated)
+        let owner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+        owner.completeStartup(restart)
+        XCTAssertEqual(try succeeded.sealedBytes(), succeededSeal)
+        XCTAssertEqual(try owner.perform(succeeded), cached)
+        XCTAssertEqual(runtime.calls, [])
+
+        let recovery = LinuxIngressRequest(
+            operation: .send, commandID: interrupted.commandID, taskID: "legacy-task",
+            sessionID: runtime.sessionID, text: "resume me", authorizeRecovery: true)
+        XCTAssertEqual(try recovery.sealedBytes(), interruptedSeal)
+        _ = try owner.perform(recovery)
+        XCTAssertEqual(runtime.calls, ["send:schema-two-interrupted:resume me"])
+    }
+
+    func testW43AcknowledgedTaskSurvivesIncompleteInventoryReconciliation() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w43-ack-incomplete-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        let result = Data(#"{"status":"success"}"#.utf8)
+        let digest = LinuxSHA256.hex(result)
+        try store.publishTaskResult(result, taskID: "acknowledged-task", expectedDigest: digest)
+        try store.save(LinuxDurableState(
+            terminals: [.init(id: "%acknowledged", taskID: "acknowledged-task",
+                              state: .present, lastObservedAt: nil, evidenceDigest: nil)],
+            tasks: [.init(
+                id: "acknowledged-task", terminalID: "%acknowledged", state: .acknowledged,
+                resultDigest: digest, acknowledgedEvidence: [], projectRoot: "/srv/project",
+                title: "Acknowledged", claims: [], secretDigest: LinuxSHA256.hex(Data("secret".utf8)),
+                createdAt: "2026-09-12T00:00:00Z", resultByteCount: result.count,
+                resultPublishedAt: "2026-09-12T00:01:00Z",
+                resultAcknowledgedAt: "2026-09-12T00:02:00Z")]))
+
+        let receipt = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .incomplete("tmux inventory unavailable"))
+        XCTAssertEqual(receipt.status, "inventory_incomplete")
+        let persisted = try XCTUnwrap(store.load().state?.tasks.first)
+        XCTAssertEqual(persisted.state, .acknowledged)
+        XCTAssertEqual(persisted.resultAcknowledgedAt, "2026-09-12T00:02:00Z")
+    }
+
+    func testW43CompleteTaskBoardSessionAndDocumentLifecycleAcrossRestart() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w43-flow-\(UUID().uuidString)")
+        let stateRoot = scratch.appendingPathComponent("state")
+        let project = scratch.appendingPathComponent("project")
+        let projectArtifacts = project.appendingPathComponent("artifacts")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        for directory in [scratch, stateRoot, project, projectArtifacts] {
+            try FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+        }
+        try Data("project document".utf8).write(
+            to: projectArtifacts.appendingPathComponent("plan.md"))
+
+        let store = try LinuxDurableStateStore(stateDirectory: stateRoot.path)
+        let runtime = FakeLinuxLifecycleRuntime()
+        let startup = try LinuxStartupReconciler.reconcile(store: store,
+                                                            inventory: .complete([]))
+        let owner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+        owner.completeStartup(startup)
+        let secret = "task-secret-never-persisted"
+        let create = LinuxIngressRequest(
+            operation: .taskCreate, commandID: "w43-create", taskID: "w43-task",
+            projectRoot: project.path, assistant: .codex, taskSecret: secret,
+            title: "Ubuntu lifecycle", claims: ["Sources/Linux.swift"])
+        let createBytes = try owner.perform(create)
+        let createReply = try JSONDecoder().decode(LinuxIngressResponse.self, from: createBytes)
+        XCTAssertEqual(createReply.task?.sessionID, runtime.sessionID)
+        XCTAssertEqual(createReply.task?.state, .working)
+        XCTAssertFalse(String(data: try Data(contentsOf: URL(fileURLWithPath: store.statePath)),
+                              encoding: .utf8)?.contains(secret) ?? true)
+
+        let message = LinuxIngressRequest(
+            operation: .taskMessage, commandID: "w43-message", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            text: "continue", taskSecret: secret)
+        let messageReply = try owner.perform(message)
+        XCTAssertEqual(runtime.calls.filter { $0.hasPrefix("send:w43-message") }.count, 1)
+        XCTAssertEqual(try owner.perform(message), messageReply)
+        XCTAssertEqual(runtime.calls.filter { $0.hasPrefix("send:w43-message") }.count, 1)
+        XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+            operation: .taskMessage, commandID: "w43-message", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            text: "different", taskSecret: secret))) {
+            XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code, "command_id_conflict")
+        }
+        _ = try owner.perform(LinuxIngressRequest(
+            operation: .observe, commandID: "w43-observe", taskID: "w43-task",
+            sessionID: runtime.sessionID))
+
+        let result = Data(#"{"status":"success","summary":"ubuntu"}"#.utf8)
+        let resultDigest = LinuxSHA256.hex(result)
+        let resultRequest = LinuxIngressRequest(
+            operation: .taskResult, commandID: "w43-result", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            taskSecret: secret, resultBase64: result.base64EncodedString(),
+            resultDigest: resultDigest)
+        let publishedBytes = try owner.perform(resultRequest)
+        let published = try JSONDecoder().decode(LinuxIngressResponse.self,
+                                                 from: publishedBytes)
+        XCTAssertEqual(published.resultReceipt?.resultDigest, resultDigest)
+        XCTAssertNil(published.resultReceipt?.acknowledgedAt)
+        XCTAssertEqual(try owner.perform(LinuxIngressRequest(
+            operation: .taskResult, commandID: "w43-result", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            taskSecret: secret, resultBase64: result.base64EncodedString(),
+            resultDigest: resultDigest)), publishedBytes)
+        let resultPath = store.tasksDirectory + "/w43-task/result.json"
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: resultPath)), result)
+        XCTAssertFalse(String(
+            data: try Data(contentsOf: URL(fileURLWithPath: store.statePath)),
+            encoding: .utf8)?.contains(result.base64EncodedString()) ?? true,
+            "published result bytes must not be duplicated in global task authority")
+
+        let taskArtifacts = URL(fileURLWithPath:
+            try store.prepareTaskArtifacts(taskID: "w43-task"))
+        try Data("task document".utf8).write(
+            to: taskArtifacts.appendingPathComponent("delivery.txt"))
+        let stateBeforeReads = try Data(contentsOf: URL(fileURLWithPath: store.statePath))
+        let taskRead = try owner.perform(LinuxIngressRequest(
+            operation: .taskRead, commandID: "read-task", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path))
+        let taskReply = try JSONDecoder().decode(LinuxIngressResponse.self, from: taskRead)
+        XCTAssertEqual(taskReply.task?.resultBase64, result.base64EncodedString())
+        let boardRead = try owner.perform(LinuxIngressRequest(
+            operation: .boardRead, commandID: "read-board", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path))
+        let boardReply = try JSONDecoder().decode(LinuxIngressResponse.self, from: boardRead)
+        XCTAssertEqual(boardReply.board?.authority, "linux_task_projection")
+        XCTAssertEqual(boardReply.board?.canWrite, false)
+        XCTAssertEqual(boardReply.board?.canManage, false)
+        XCTAssertEqual(boardReply.board?.items.map(\.taskID), ["w43-task"])
+        let sessionRead = try owner.perform(LinuxIngressRequest(
+            operation: .sessionRead, commandID: "read-session", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path))
+        XCTAssertEqual(try JSONDecoder().decode(LinuxIngressResponse.self,
+                                                from: sessionRead).session?.taskID,
+                       "w43-task")
+        let projectDocument = try owner.perform(LinuxIngressRequest(
+            operation: .documentRead, commandID: "read-project-document",
+            taskID: "w43-task", sessionID: runtime.sessionID,
+            projectRoot: project.path, documentScope: .project,
+            relativePath: "plan.md"))
+        let projectDocumentReply = try JSONDecoder().decode(
+            LinuxIngressResponse.self, from: projectDocument)
+        XCTAssertEqual(projectDocumentReply.document?.identity.projectRoot, project.path)
+        XCTAssertEqual(projectDocumentReply.document?.identity.sessionID, runtime.sessionID)
+        XCTAssertEqual(projectDocumentReply.document?.identity.taskID, "w43-task")
+        XCTAssertEqual(projectDocumentReply.document?.identity.scope, .project)
+        XCTAssertEqual(Data(base64Encoded: projectDocumentReply.document?.bodyBase64 ?? ""),
+                       Data("project document".utf8))
+        let taskDocuments = try owner.perform(LinuxIngressRequest(
+            operation: .documentsRead, commandID: "list-task-documents",
+            taskID: "w43-task", sessionID: runtime.sessionID,
+            projectRoot: project.path, documentScope: .task))
+        XCTAssertEqual(try JSONDecoder().decode(LinuxIngressResponse.self,
+                                                from: taskDocuments)
+            .documents?.documents.map(\.identity.relativePath), ["delivery.txt"])
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: store.statePath)),
+                       stateBeforeReads, "read capabilities must not mutate task authority")
+
+        XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+            operation: .taskRead, commandID: "wrong-project", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: scratch.path))) {
+            XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code, "read_not_found")
+        }
+        XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+            operation: .taskMessage, commandID: "bad-auth", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            text: "secret", taskSecret: "wrong"))) {
+            XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code, "task_unauthorized")
+        }
+        XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+            operation: .taskMessage, commandID: message.commandID, taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            text: "continue", taskSecret: "wrong"))) {
+            XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code, "task_unauthorized")
+        }
+        XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+            operation: .taskMessage, commandID: "missing-auth", taskID: "missing-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            text: "secret", taskSecret: "wrong"))) {
+            XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code, "task_unauthorized")
+        }
+        XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+            operation: .boardRead, commandID: "read-cannot-write", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path, text: "mutate"))) {
+            XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code, "invalid_ingress")
+        }
+        XCTAssertEqual(try Data(contentsOf: URL(fileURLWithPath: store.statePath)),
+                       stateBeforeReads)
+
+        let restart = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete([runtime.sessionID]))
+        XCTAssertEqual(restart.daemonEpoch, 2)
+        let restartedOwner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+        restartedOwner.completeStartup(restart)
+        XCTAssertEqual(try restartedOwner.perform(resultRequest), publishedBytes)
+        _ = try restartedOwner.perform(LinuxIngressRequest(
+            operation: .taskMessage, commandID: "w43-continue", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            text: "after restart", taskSecret: secret))
+        let acknowledged = try restartedOwner.perform(LinuxIngressRequest(
+            operation: .taskAcknowledge, commandID: "w43-ack", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path,
+            resultDigest: resultDigest))
+        XCTAssertNotNil(try JSONDecoder().decode(LinuxIngressResponse.self,
+                                                 from: acknowledged)
+            .resultReceipt?.acknowledgedAt)
+        _ = try restartedOwner.perform(LinuxIngressRequest(
+            operation: .taskClose, commandID: "w43-close", taskID: "w43-task",
+            sessionID: runtime.sessionID, projectRoot: project.path))
+        let final = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(final.tasks.first?.state, .complete)
+        XCTAssertNotNil(final.tasks.first?.resultAcknowledgedAt)
+        XCTAssertEqual(final.tasks.first?.messages.count, 2)
+        XCTAssertEqual(final.terminals.first?.state, .missing)
+
+        try Data("tampered result".utf8).write(
+            to: URL(fileURLWithPath: resultPath), options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: resultPath)
+        let corruptedResult = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete([]))
+        XCTAssertFalse(corruptedResult.authoritative)
+        XCTAssertEqual(corruptedResult.status, "state_non_authoritative")
+        XCTAssertEqual(corruptedResult.stateDisposition, .recoveryRequired)
+    }
+
+    func testW43ResultReplayAcknowledgeAndCloseRevalidatePinnedBytes() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w43-result-revalidate-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        func publishedFixture(_ name: String) throws
+            -> (LinuxDurableStateStore, LinuxDaemonIngressOwner, LinuxIngressRequest, String, String) {
+            let stateRoot = scratch.appendingPathComponent(name + "-state")
+            let project = scratch.appendingPathComponent(name + "-project")
+            for directory in [stateRoot, project] {
+                try FileManager.default.createDirectory(
+                    at: directory, withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700])
+            }
+            let store = try LinuxDurableStateStore(stateDirectory: stateRoot.path)
+            let runtime = FakeLinuxLifecycleRuntime()
+            let startup = try LinuxStartupReconciler.reconcile(store: store,
+                                                                inventory: .complete([]))
+            let owner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+            owner.completeStartup(startup)
+            let taskID = name + "-task"
+            let secret = name + "-secret"
+            _ = try owner.perform(LinuxIngressRequest(
+                operation: .taskCreate, commandID: name + "-create", taskID: taskID,
+                projectRoot: project.path, assistant: .codex, taskSecret: secret,
+                title: name, claims: []))
+            let result = Data(#"{"status":"success"}"#.utf8)
+            let digest = LinuxSHA256.hex(result)
+            let request = LinuxIngressRequest(
+                operation: .taskResult, commandID: name + "-result", taskID: taskID,
+                sessionID: runtime.sessionID, projectRoot: project.path,
+                taskSecret: secret, resultBase64: result.base64EncodedString(),
+                resultDigest: digest)
+            _ = try owner.perform(request)
+            return (store, owner, request, digest,
+                    store.tasksDirectory + "/" + taskID + "/result.json")
+        }
+
+        do {
+            let (store, owner, request, _, path) = try publishedFixture("tampered-replay")
+            try Data("tampered".utf8).write(to: URL(fileURLWithPath: path), options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+            XCTAssertThrowsError(try owner.perform(request)) {
+                XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code,
+                               "task_result_non_authoritative")
+            }
+            XCTAssertEqual(store.load().disposition, .recoveryRequired)
+        }
+        do {
+            let (store, owner, request, digest, path) = try publishedFixture("missing-ack")
+            try FileManager.default.removeItem(atPath: path)
+            XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+                operation: .taskAcknowledge, commandID: "missing-ack-command",
+                taskID: request.taskID, sessionID: request.sessionID,
+                projectRoot: request.projectRoot, resultDigest: digest))) {
+                XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code,
+                               "task_result_non_authoritative")
+            }
+            XCTAssertEqual(store.load().disposition, .recoveryRequired)
+        }
+        do {
+            let (store, owner, request, digest, path) = try publishedFixture("linked-close")
+            _ = try owner.perform(LinuxIngressRequest(
+                operation: .taskAcknowledge, commandID: "linked-close-ack",
+                taskID: request.taskID, sessionID: request.sessionID,
+                projectRoot: request.projectRoot, resultDigest: digest))
+            let outside = scratch.appendingPathComponent("linked-close-outside.json")
+            try Data("outside".utf8).write(to: outside)
+            try FileManager.default.removeItem(atPath: path)
+            try FileManager.default.createSymbolicLink(
+                at: URL(fileURLWithPath: path), withDestinationURL: outside)
+            XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+                operation: .taskClose, commandID: "linked-close-command",
+                taskID: request.taskID, sessionID: request.sessionID,
+                projectRoot: request.projectRoot))) {
+                XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code,
+                               "task_result_non_authoritative")
+            }
+            XCTAssertEqual(store.load().disposition, .recoveryRequired)
+        }
+    }
+
+    func testW43DocumentListTruncatesOnlyWhenAFileIsOmitted() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w43-list-bound-\(UUID().uuidString)")
+        let project = scratch.appendingPathComponent("project")
+        let artifacts = project.appendingPathComponent("artifacts")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: artifacts, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        for index in 0..<HeadlessDocumentPathPolicy.maximumListed {
+            try Data("x".utf8).write(
+                to: artifacts.appendingPathComponent(String(format: "%03d.md", index)))
+        }
+        let reader = LinuxDocumentReader(tasksDirectory: scratch.path, expectedUID: geteuid())
+        let exact = try reader.list(
+            projectRoot: project.path, sessionID: "%session", taskID: "task", scope: .project)
+        XCTAssertEqual(exact.documents.count, HeadlessDocumentPathPolicy.maximumListed)
+        XCTAssertFalse(exact.truncated)
+
+        try Data("x".utf8).write(to: artifacts.appendingPathComponent("200.md"))
+        let overflow = try reader.list(
+            projectRoot: project.path, sessionID: "%session", taskID: "task", scope: .project)
+        XCTAssertEqual(overflow.documents.count, HeadlessDocumentPathPolicy.maximumListed)
+        XCTAssertTrue(overflow.truncated)
+        XCTAssertEqual(overflow.documents.map(\.identity.relativePath),
+                       (0..<HeadlessDocumentPathPolicy.maximumListed).map {
+                           String(format: "%03d.md", $0)
+                       })
+    }
+
+    func testW43DocumentListHoldsRootAndEnforcesDepthAndWalkBounds() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w43-list-walk-\(UUID().uuidString)")
+        let project = scratch.appendingPathComponent("project")
+        let artifacts = project.appendingPathComponent("artifacts")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: artifacts, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        try Data("held".utf8).write(to: artifacts.appendingPathComponent("held.md"))
+        let heldArtifacts = project.appendingPathComponent("artifacts-held")
+        let reader = LinuxDocumentReader(tasksDirectory: scratch.path, expectedUID: geteuid())
+        reader.afterRootOpenForTesting = { _ in
+            try FileManager.default.moveItem(at: artifacts, to: heldArtifacts)
+            try FileManager.default.createDirectory(
+                at: artifacts, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
+            try Data("replacement".utf8).write(
+                to: artifacts.appendingPathComponent("replacement.md"))
+        }
+        let held = try reader.list(
+            projectRoot: project.path, sessionID: "%session", taskID: "task", scope: .project)
+        XCTAssertEqual(held.documents.map(\.identity.relativePath), ["held.md"])
+
+        let boundedProject = scratch.appendingPathComponent("bounded-project")
+        let boundedArtifacts = boundedProject.appendingPathComponent("artifacts")
+        let deepest = boundedArtifacts.appendingPathComponent("a/b/c/d/e")
+        let tooDeep = deepest.appendingPathComponent("f")
+        try FileManager.default.createDirectory(
+            at: tooDeep, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        try Data("limit".utf8).write(to: deepest.appendingPathComponent("limit.md"))
+        try Data("too deep".utf8).write(to: tooDeep.appendingPathComponent("excluded.md"))
+        let boundedReader = LinuxDocumentReader(
+            tasksDirectory: scratch.path, expectedUID: geteuid())
+        let bounded = try boundedReader.list(
+            projectRoot: boundedProject.path, sessionID: "%session",
+            taskID: "task", scope: .project)
+        XCTAssertEqual(bounded.documents.map(\.identity.relativePath), ["a/b/c/d/e/limit.md"])
+
+        let walkProject = scratch.appendingPathComponent("walk-project")
+        let walkArtifacts = walkProject.appendingPathComponent("artifacts")
+        try FileManager.default.createDirectory(
+            at: walkArtifacts, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        for index in 0...HeadlessDocumentPathPolicy.maximumWalked {
+            XCTAssertTrue(FileManager.default.createFile(
+                atPath: walkArtifacts.appendingPathComponent("ignored-\(index).json").path,
+                contents: Data()))
+        }
+        let walked = try boundedReader.list(
+            projectRoot: walkProject.path, sessionID: "%session",
+            taskID: "task", scope: .project)
+        XCTAssertTrue(walked.documents.isEmpty)
+        XCTAssertTrue(walked.truncated)
+    }
+
+    func testW43LegacyMigrationCutoverHasNoEmptyAuthorityFaultWindow() throws {
+        for point in [LinuxLegacyMigrationFaultPoint.afterAuthorityWrite,
+                      .afterLegacyArchiveWrite, .afterRollbackFenceWrite] {
+            let scratch = canonicalTemporaryDirectory()
+                .appendingPathComponent("clawdline-w43-migration-\(point.rawValue)-\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: scratch) }
+            try FileManager.default.createDirectory(
+                at: scratch, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+            let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+            let legacy = Data(#"{"schemaVersion":2,"minimumReaderVersion":1,"daemonEpoch":0,"terminals":[],"tasks":[],"queue":[],"commands":[]}"#.utf8)
+            try legacy.write(to: URL(fileURLWithPath: store.legacyStatePath))
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: store.legacyStatePath)
+            store.migrationFaultInjection = { observed in
+                if observed == point { throw observed }
+            }
+            let loaded = store.load()
+            XCTAssertFalse(loaded.authoritative)
+            XCTAssertEqual(loaded.disposition, .recoveryRequired)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: store.statePath))
+            let oldPath = try Data(contentsOf: URL(fileURLWithPath: store.legacyStatePath))
+            if point == .afterRollbackFenceWrite {
+                let fence = try XCTUnwrap(
+                    JSONSerialization.jsonObject(with: oldPath) as? [String: Any])
+                XCTAssertEqual(fence["recordKind"] as? String,
+                               "clawdline_linux_task_authority_rollback_fence")
+            } else {
+                XCTAssertEqual(oldPath, legacy,
+                               "the old reader must retain schema-2 authority until fence cutover")
+            }
+        }
+    }
+
+    func testW43DocumentAndAuthorityFilesRefuseTraversalLinksDevicesAndOversize() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w43-refusals-\(UUID().uuidString)")
+        let stateRoot = scratch.appendingPathComponent("state")
+        let project = scratch.appendingPathComponent("project")
+        let artifacts = project.appendingPathComponent("artifacts")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        for directory in [scratch, stateRoot, project, artifacts] {
+            try FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+        }
+        let store = try LinuxDurableStateStore(stateDirectory: stateRoot.path)
+        let runtime = FakeLinuxLifecycleRuntime()
+        let startup = try LinuxStartupReconciler.reconcile(store: store,
+                                                            inventory: .complete([]))
+        let owner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+        owner.completeStartup(startup)
+        _ = try owner.perform(LinuxIngressRequest(
+            operation: .taskCreate, commandID: "create-refusals", taskID: "refusal-task",
+            projectRoot: project.path, assistant: .codex, taskSecret: "secret",
+            title: "Refusals", claims: []))
+
+        let outside = scratch.appendingPathComponent("outside.md")
+        try Data("outside".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(
+            at: artifacts.appendingPathComponent("linked.md"), withDestinationURL: outside)
+        try FileManager.default.linkItem(
+            at: outside, to: artifacts.appendingPathComponent("hard.md"))
+        let fifo = artifacts.appendingPathComponent("device.txt")
+        XCTAssertEqual(fifo.path.withCString { mkfifo($0, 0o600) }, 0)
+        try Data(count: HeadlessDocumentPathPolicy.maximumBytes + 1).write(
+            to: artifacts.appendingPathComponent("large.md"))
+
+        func document(_ command: String, _ path: String) -> LinuxIngressRequest {
+            LinuxIngressRequest(
+                operation: .documentRead, commandID: command, taskID: "refusal-task",
+                sessionID: runtime.sessionID, projectRoot: project.path,
+                documentScope: .project, relativePath: path)
+        }
+        for (command, path) in [("traversal", "../outside.md"),
+                                ("symlink", "linked.md"),
+                                ("hardlink", "hard.md"),
+                                ("device", "device.txt")] {
+            XCTAssertThrowsError(try owner.perform(document(command, path)))
+        }
+        XCTAssertThrowsError(try owner.perform(document("oversize", "large.md"))) {
+            XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code, "document_too_large")
+        }
+
+        // The authority file itself is subject to the same no-follow/regular/single-link rule.
+        let authoritative = try Data(contentsOf: URL(fileURLWithPath: store.statePath))
+        let linkedAuthority = scratch.appendingPathComponent("authority-copy.json")
+        try FileManager.default.moveItem(at: URL(fileURLWithPath: store.statePath),
+                                         to: linkedAuthority)
+        try FileManager.default.linkItem(at: linkedAuthority,
+                                         to: URL(fileURLWithPath: store.statePath))
+        let refused = store.load()
+        XCTAssertFalse(refused.authoritative)
+        XCTAssertEqual(refused.disposition, .quarantined)
+        XCTAssertEqual(try Data(contentsOf: linkedAuthority), authoritative)
+        XCTAssertEqual(store.load().disposition, .recoveryRequired)
+    }
+
+    func testW43MigratesLegacyRecordRootIntoAuthoritativeTaskRoot() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w43-legacy-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        try FileManager.default.createDirectory(
+            atPath: store.legacyRecordsDirectory, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let legacy = LinuxDurableState(schemaVersion: 2)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        try encoder.encode(legacy).write(to: URL(fileURLWithPath: store.legacyStatePath))
+        try FileManager.default.setAttributes([.posixPermissions: 0o600],
+                                              ofItemAtPath: store.legacyStatePath)
+        let loaded = store.load()
+        XCTAssertTrue(loaded.authoritative)
+        XCTAssertEqual(loaded.disposition, .migrated)
+        XCTAssertEqual(loaded.state?.schemaVersion, 3)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.statePath))
+        XCTAssertTrue(store.statePath.hasSuffix("/tasks/authority.json"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.legacyStatePath))
+        XCTAssertNotNil(loaded.preservedOriginal)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: loaded.preservedOriginal ?? ""))
+        let fence = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: URL(fileURLWithPath: store.legacyStatePath))) as? [String: Any]
+        XCTAssertEqual(fence?["schemaVersion"] as? Int, 3)
+        XCTAssertEqual(fence?["minimumReaderVersion"] as? Int, 3)
+        XCTAssertEqual(fence?["authorityPath"] as? String, "tasks/authority.json")
+        try FileManager.default.removeItem(atPath: store.statePath)
+        let missingAuthority = store.load()
+        XCTAssertFalse(missingAuthority.authoritative)
+        XCTAssertEqual(missingAuthority.disposition, .quarantined)
+        XCTAssertTrue(missingAuthority.reason?.contains("rollback fence") == true)
+        XCTAssertEqual(store.load().disposition, .recoveryRequired)
+    }
+
     func testW42DaemonHealthSeparatesServiceReconciliationFromProviderAuthentication() throws {
         let oldPackage = getenv("CLAWDLINE_PACKAGE_VERSION").map { String(cString: $0) }
         let oldBuild = getenv("CLAWDLINE_BUILD_IDENTITY").map { String(cString: $0) }
@@ -820,7 +1446,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         setenv("CLAWDLINE_SOURCE_COMMIT", String(repeating: "a", count: 40), 1)
         setenv("CLAWDLINE_PACKAGE_DIGEST", String(repeating: "b", count: 64), 1)
         let receipt = LinuxStartupReconciliationReceipt(
-            authoritative: true, stateDisposition: .loaded, schemaVersion: 2,
+            authoritative: true, stateDisposition: .loaded, schemaVersion: 3,
             daemonEpoch: 7, status: "complete", terminalPresent: 0,
             terminalMissing: 0, terminalUnknown: 0, taskTerminal: 0,
             taskReconciling: 0, taskUnknown: 0, queueRecoverable: 0,
@@ -832,7 +1458,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertFalse(health.ready)
         XCTAssertEqual(health.readinessCode, "w4_provider_authentication_not_proven")
         XCTAssertEqual(health.release.packageVersion, "1.2.3")
-        XCTAssertEqual(health.durableSchemaVersion, 2)
+        XCTAssertEqual(health.durableSchemaVersion, 3)
         XCTAssertEqual(health.protocolIdentity, "clawdline-linux-local-health-v1")
         XCTAssertTrue(health.providers.allSatisfy { !$0.authenticated && !$0.usable })
     }

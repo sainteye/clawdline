@@ -358,7 +358,8 @@ returns a `partial/text_pasted` receipt. Health is `w4_runtime_not_configured` u
 configuration proves executable descriptors and kernel containment, then
 `w4_provider_authentication_not_proven`: provider lifecycle rows remain unusable and empty until the
 named W4-2 real-provider authentication gate supplies a controlled receipt. W4-2 also owns service
-supervision, restart/reconciliation and package upgrade/rollback, while W4-3 owns Cloud lifecycle.
+supervision, restart/reconciliation and package upgrade/rollback. W4-3 extends that local daemon
+with task/result/receipt authority plus Board, Session and document reads; W5 owns Cloud lifecycle.
 W4-1 does not open a listener, install, restart or publish anything.
 
 The pinned Ubuntu job now builds the Linux-only manifest graph, runs the SwiftPM contracts as a
@@ -402,8 +403,11 @@ contract. Install snapshots all four caller paths through no-follow descriptors 
 existing release payloads and target binary identity are revalidated. Root writes beneath the
 service-owned state directory use descriptor-bound no-follow operations. Release files/directories,
 `current`/`previous`, journal and receipt are fsynced; stale owner/phase recovery selects a complete
-old or new pair. Failed health restores the old image while retaining the failed artifact. Image
-rollback never rewinds state. Private-root/fake-systemctl tests do not mutate host systemd.
+old or new pair. Failed health restores the old image only after a fresh descriptor-pinned authority
+check proves that image can still read the latest bytes. Incompatible or disappeared authority
+keeps the new selector, records typed `rollback_state_incompatible` operator recovery and refuses an
+unsafe old-image restart. Image rollback never rewinds state. Private-root/fake-systemctl tests do
+not mutate host systemd.
 
 The health record distinguishes `serviceReady` (authoritative startup reconciliation plus exact
 release/schema identity) from provider `ready`. Without a real Claude/Codex credential exercise,
@@ -412,6 +416,41 @@ provider rows remain unauthenticated/unusable and readiness stays
 checks; the pinned Ubuntu/amd64 attempt remains QEMU-inconclusive before product execution. Neither
 surface supplies systemd-as-PID-1 production containment or real-provider authentication; those are
 typed external VM/auth boundaries, not fixture-promoted evidence.
+
+**W4-3 task, Board, Session and document lifecycle (implementation status, 2026-09-12).** The
+existing `LinuxDaemonIngressOwner` remains the only command/effect lane. Its Application-owned
+vocabulary now closes task create/read/message/result/ack/close and Board/Session/document reads;
+machine ingress authentication still happens before the owner; task message/result additionally
+bind and constant-time-check the task-secret digest before command existence or outcome, and missing
+task/wrong secret/wrong exact identity share one refusal. Schema-2 terminal commands retain their
+original sealed bytes across schema-3 migration. Task identity,
+project root, Session, claims, accepted message receipts, result digest/count, publication and
+acknowledgement live in `/var/lib/clawdline/tasks/authority.json`. Result bytes live once in the
+same task root, are fsynced before authority publication, and are verified on startup plus cached
+result replay, acknowledgement and close commit points. Completed result queue payloads are
+compacted only after their digest-bound task file is durable, and their completed replay
+classification remains stable across restart.
+
+Board is a read-only projection (`canWrite=false`, `canManage=false`) of that authority rather than
+a Linux Board fork. Reads require the exact recorded project/Session/task tuple and never enter the
+durable mutation ledger. Document scope selects only computed `project/artifacts` or
+`tasks/<task>/artifacts`; bounded relative Markdown/text names are opened by descriptor walk with
+`O_NOFOLLOW`, then checked as service-owned regular single-link files with a 2 MiB limit. Listing
+holds the root descriptor through a deterministic descriptor-relative walk; it sorts a bounded
+candidate set and marks 200 entries truncated only when a 201st valid file or the walk bound omits
+evidence. The old `records/runtime-state.json` stays readable until one atomic replacement installs
+a non-authoritative package rollback fence, removing the former rename-to-fence empty window.
+Installer and rollback prefer canonical task authority and consult the old pathname only for a
+private, single-link, bounded, service-UID-owned pre-migration record without `recordKind`.
+
+The accumulated runtime contracts exercise create → message → observe → result/receipt →
+Board/Session/document reads → restart → exact result replay → continue → ack → close plus
+schema-2 succeeded/interrupted replay, existing/missing command authentication indistinguishability,
+acknowledged/incomplete-inventory precedence, result tamper/missing/link commit refusal, held-root
+replacement, exact 200/201/depth/walk listing, migration cutover and failed-health rollback
+injections. They are source/disposable-fixture evidence only. Cloud ledger/spool and pairing remain
+W5-1/W5-2; real provider credentials, GCE, and systemd-as-PID-1 restart remain explicit external
+gates.
 
 Estimated effort: 2–3 engineer-weeks.
 
@@ -430,6 +469,9 @@ Deliverables:
 - Startup reconciliation and the local serialized terminal/task/queue/command ingress ledger.
   **Implemented by the W4-2 candidate with consecutive-tick, restart and effect-boundary injection;
   real PID-1 socket/pane continuity remains the gate below.**
+- Durable task result/ack authority plus exact Board, Session and descriptor-held document reads.
+  **Implemented by the W4-3 candidate on the same ingress owner; Cloud publication and real PID-1
+  continuity remain later external gates.**
 - Typed terminal capacity/backpressure behavior and failure-injection tests. **Implemented by
   W4-1; transport/Cloud backpressure remains with its owning later slice.**
 
