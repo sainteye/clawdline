@@ -154,6 +154,27 @@ assert.deepEqual({ openId: mirror.openId, selectedId: mirror.selectedId,
 lifecycle.close();
 equal(mirror.openId, null, "legacy state is a projection of the owner, not a second selection owner");
 
+// The list reconciler asks `byId(open)` whether the session on screen is still in the inventory,
+// and that lookup re-keys whatever it is handed. An identity that does not re-key to itself reads
+// as "this session is gone" on every accepted frame, which closes the detail under the reader a
+// second or two after they opened it. Exercise the real consumer, not a spelling of it.
+const { byId } = await import("../Resources/web/app/js/view/derive.js");
+const { S } = await import("../Resources/web/app/js/core/state.js");
+const liveRow = row("%654", "this-mac", "0bddd3cd-ee32-4bf7-bde3-fe8e850f1b44");
+const liveSessions = S.sessions;
+S.sessions = [liveRow];
+const liveLifecycle = createSessionSelectionLifecycle();
+const liveIdentity = liveLifecycle.open(liveRow, [liveRow]).identity;
+equal(sessionSelectionKey(liveIdentity), liveIdentity.key,
+    "a minted identity re-keys to itself instead of dropping its conversation");
+equal(byId(liveIdentity), liveRow,
+    "the open selection still resolves to its row in an unchanged inventory");
+equal(byId(liveLifecycle.snapshot().open), liveRow,
+    "the snapshot the list reconciler reads resolves to the row it came from");
+equal(liveLifecycle.reconcile([liveRow]).openRemoved, false,
+    "an unchanged inventory frame keeps the open detail");
+S.sessions = liveSessions;
+
 const selectionSource = await readFile(
     new URL("../Resources/web/app/js/session/selection.js", import.meta.url), "utf8");
 
@@ -161,7 +182,7 @@ const selectionSource = await readFile(
 // must make the overlapping-response assertion below red.
 if (process.argv.includes("--mutate-lane-guard")) {
     const mutatedSource = selectionSource.replace(
-        "return options.latest === false || latestByLane.get(token.lane) === token.serial;",
+        "return options.latest === false || latestByLane.get(token.laneKey) === token.serial;",
         "return true;");
     assert.notEqual(mutatedSource, selectionSource, "mutation target remains present");
     const mutated = await import("data:text/javascript;base64," +
@@ -198,6 +219,18 @@ if (process.argv.includes("--mutate-nonopen-effect")) {
     });
     assert.equal(subject.effectIsCurrent(token), true,
         "a row action does not need to become the open detail to report its settlement");
+}
+if (process.argv.includes("--mutate-minted-identity")) {
+    const mutatedSource = selectionSource.replace(
+        "    var minted = mintedSelectionIdentity(row);\n    if (minted) return minted;",
+        "    var minted = null;\n    if (minted) return minted;");
+    assert.notEqual(mutatedSource, selectionSource, "minted identity mutation target remains present");
+    const mutated = await import("data:text/javascript;base64," +
+        Buffer.from(mutatedSource).toString("base64"));
+    const subject = mutated.createSessionSelectionLifecycle();
+    const open = subject.open(liveRow, [liveRow]).identity;
+    assert.equal(mutated.sessionSelectionKey(open), open.key,
+        "an identity handed back to the keying function must still name its own row");
 }
 for (const forbidden of ["../view/", "../input/", "../net/api", "../core/state"]) {
     check(!selectionSource.includes(forbidden), "selection owner stays independent from " + forbidden);

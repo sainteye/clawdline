@@ -9,6 +9,21 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Fixed: an open Session closed itself a second after it was opened
+
+Opening a Session — on a phone, or in the console at a desk — drew its conversation and then, a
+second or two later, threw that screen away and went back to the list. Nearly every Session did
+it; the only ones spared were the ones the Mac had not yet tied to a transcript.
+
+The list asks one question of every session frame that arrives: is the Session on screen still in
+the inventory? The lookup that answers re-derives the selection's identity from the fields it is
+handed, and an identity spells its provider conversation `conversation` where a list row spells it
+`sessionId`. So handing a selection back to that lookup produced a key with nothing in the
+conversation position, matched no row, and read as "this Session is gone" — on every frame, which
+is why reading was what exposed it. An identity is now closed: it answers with itself instead of
+being re-derived into a different key. The same lookup also answers for the open transcript's
+refresh, the composer and the Session Board.
+
 ### Fixed: finished work no longer leaves copies, checkouts and credentials behind
 
 Clawdline's cleanup used to reclaim only what the broker itself had created — a task's `work/`

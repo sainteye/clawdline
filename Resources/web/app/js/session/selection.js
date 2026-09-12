@@ -14,8 +14,25 @@ function nonempty(value) {
     return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+/**
+ * An identity this module has already minted is closed. Re-deriving one from row fields would
+ * read a `sessionId` that an identity does not carry — it spells that field `conversation` — and
+ * silently return a key with `null` in the conversation position. Every caller that hands a
+ * snapshot back (`sessionSelectionKey(open)`, and `byId(open)` through it) would then stop
+ * matching the very row the selection came from.
+ */
+function mintedSelectionIdentity(value) {
+    return value && typeof value === "object" && !Array.isArray(value) &&
+        typeof value.key === "string" && value.key &&
+        typeof value.rowId === "string" && value.rowId &&
+        typeof value.machine === "string" && value.machine &&
+        typeof value.session === "string" && value.session ? value : null;
+}
+
 /** The closed, immutable identity used for selection and stale-response checks. */
 export function sessionSelectionIdentity(row, fallbackMachine) {
+    var minted = mintedSelectionIdentity(row);
+    if (minted) return minted;
     if (!row || typeof row !== "object" || Array.isArray(row)) return null;
     var carried = row.identity && typeof row.identity === "object" ? row.identity : null;
     var machine = nonempty(carried && carried.machine) || nonempty(row.machine) ||
@@ -43,9 +60,6 @@ export function sessionSelectionKey(row, fallbackMachine) {
 }
 
 function asSelectionIdentity(value) {
-    if (value && typeof value === "object" && typeof value.key === "string" && value.key &&
-        typeof value.rowId === "string" && value.rowId && typeof value.machine === "string" &&
-        value.machine && typeof value.session === "string" && value.session) return value;
     return sessionSelectionIdentity(value);
 }
 
