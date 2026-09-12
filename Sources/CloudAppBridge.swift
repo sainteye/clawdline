@@ -1,5 +1,8 @@
 import Foundation
 import CryptoKit
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // SwiftPM owns the durable Cloud state machines in the Application target.
+#endif
 
 /// The app-facing surface of `CloudTransport`. Keeping the concrete actor behind this protocol
 /// makes the bridge testable without a relay, Keychain, or terminal process.
