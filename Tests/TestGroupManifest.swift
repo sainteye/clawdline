@@ -338,6 +338,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the landing-time write set survives the isolation that empties the edit-time lease",
     "the landing queue orders the ready candidates in one repository and target",
     "a landing candidate the broker cannot prove stays visible, unordered and unguessed",
+    "the queue's answer says why an entry is a ready candidate or is not",
+    "the slot notice says the turn is the shared checkout and not approval to land",
     "the inventory answers three sections and every row names an action a route accepts",
     "the inventory generation moves on what changes a decision and on nothing else",
     "a dispatch that did not read the inventory is refused and handed the inventory",

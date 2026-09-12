@@ -724,6 +724,178 @@ group("a landing candidate the broker cannot prove stays visible, unordered and 
           })
 }
 
+func landingQueueCandidateRecord(_ reply: Orchestrator.Reply, digest: String) -> [String: Any]? {
+    landingQueueRow(reply, digest: digest)?["candidate"] as? [String: Any]
+}
+
+func landingQueueDerivedRecord(_ reply: Orchestrator.Reply) -> [String: Any] {
+    (landingQueueBody(reply)?["order"] as? [String: Any])?["derived"] as? [String: Any] ?? [:]
+}
+
+group("the queue's answer says why an entry is a ready candidate or is not") {
+    withLandingQueueFixture { repository, base in
+        let now = Date(timeIntervalSince1970: 21_000)
+        let firstID = "a1000000-0000-4000-8000-00000000000a"
+        let secondID = "a2000000-0000-4000-8000-00000000000b"
+        makeLandingQueueDelivery(in: repository, taskID: firstID, base: base,
+                                 writing: ["Sources/First.swift"])
+        makeLandingQueueDelivery(in: repository, taskID: secondID, base: base,
+                                 writing: ["Sources/Second.swift"])
+        Orchestrator.holdScheduleTaskForTesting(landingQueueCandidateTask(
+            id: firstID, root: "answer-one", repository: repository.path, created: 1_000,
+            target: "main", claims: ["Sources/First.swift"], base: base))
+        Orchestrator.holdScheduleTaskForTesting(landingQueueCandidateTask(
+            id: secondID, root: "answer-two", repository: repository.path, created: 2_000,
+            target: "main", claims: ["Sources/Second.swift"], base: base))
+        Orchestrator.holdScheduleTaskForTesting(landingQueueTask(
+            id: "a3000000-0000-4000-8000-00000000000c", title: "children still out",
+            state: .briefed, root: "answer-live", label: "answer-live",
+            projectDir: repository.path, created: 3_000, claims: ["Sources/Third.swift"]))
+        let first = landingQueueDigest("answer-one")
+        let second = landingQueueDigest("answer-two")
+        let live = landingQueueDigest("answer-live")
+
+        let reply = OrchestratorLandingQueue.queueReply(project: repository.path, now: now)
+        expect("every line is answered for", landingQueueRows(reply).count, 3)
+        check("every row carries the whole candidate shape, present whether or not it has values",
+              landingQueueRows(reply).allSatisfy { row in
+                  let candidate = row["candidate"] as? [String: Any] ?? [:]
+                  return Set(candidate.keys) == ["ready", "target", "order", "of", "turn", "why"]
+              })
+        let holder = landingQueueCandidateRecord(reply, digest: first) ?? [:]
+        check("a ready candidate says it is one, on the target it read",
+              holder["ready"] as? Bool == true && holder["target"] as? String == "main"
+                  && holder["why"] is NSNull,
+              "got \(holder)")
+        check("with its place among the candidates sharing that target",
+              holder["order"] as? Int == 1 && holder["of"] as? Int == 2
+                  && holder["turn"] as? Bool == true)
+        let behind = landingQueueCandidateRecord(reply, digest: second) ?? [:]
+        check("the line behind is a candidate too, and knows it does not have the turn",
+              behind["ready"] as? Bool == true && behind["order"] as? Int == 2
+                  && behind["turn"] as? Bool == false)
+        let working = landingQueueCandidateRecord(reply, digest: live) ?? [:]
+        check("a line with live work says which fact stopped it, not nothing",
+              working["ready"] as? Bool == false && working["why"] as? String == "live_work"
+                  && working["order"] is NSNull && working["turn"] as? Bool == false,
+              "got \(working)")
+
+        let derived = landingQueueDerivedRecord(reply)
+        expect("the order names the key it used",
+               derived["basis"] as? String, "coordinator_order_then_oldest_work_then_digest")
+        let targets = derived["targets"] as? [[String: Any]] ?? []
+        expect("one row per target", targets.count, 1)
+        check("naming the target, its order, and who holds the turn on it",
+              targets.first?["target"] as? String == "main"
+                  && targets.first?["keys"] as? [String] == [first, second]
+                  && targets.first?["turn"] as? String == first,
+              "got \(targets)")
+        let unordered = derived["unordered"] as? [[String: Any]] ?? []
+        check("and the lines it would not place, with the reason",
+              unordered.count == 1 && unordered.first?["root_key"] as? String == live
+                  && unordered.first?["why"] as? String == "live_work",
+              "got \(unordered)")
+
+        // The decision this slice rests on, measured rather than asserted: the derived answer is
+        // read, so a read writes nothing. A stored order would have to move `generation`, and a
+        // generation that moves on a GET re-arms a slot notice nobody asked for.
+        check("nothing about this answer reached the store",
+              !FileManager.default.fileExists(atPath: OrchestratorLandingQueue.storeURL.path))
+        expect("so the coordinator's generation is still untouched",
+               (landingQueueBody(reply)?["order"] as? [String: Any])?["generation"] as? Int, 0)
+
+        let placed = OrchestratorLandingQueue.setOrder(
+            project: repository.path, keys: [second, first], ifGeneration: nil,
+            setBy: "clawdfather", now: now)
+        check("an explicit order still wins over the automatic one",
+              (landingQueueCandidateRecord(placed, digest: second) ?? [:])["order"] as? Int == 1
+                  && (landingQueueCandidateRecord(placed, digest: first) ?? [:])["order"] as? Int
+                      == 2)
+        let stored = try? Data(contentsOf: OrchestratorLandingQueue.storeURL)
+        let again = OrchestratorLandingQueue.queueReply(project: repository.path, now: now)
+        let third = OrchestratorLandingQueue.queueReply(project: repository.path, now: now)
+        check("and reading twice more moves neither the generation nor a byte of the store",
+              (landingQueueBody(again)?["order"] as? [String: Any])?["generation"] as? Int == 1
+                  && (landingQueueBody(third)?["order"] as? [String: Any])?["generation"] as? Int
+                      == 1
+                  && (try? Data(contentsOf: OrchestratorLandingQueue.storeURL)) == stored)
+        func derivedKeys(_ reply: Orchestrator.Reply) -> [String]? {
+            (landingQueueDerivedRecord(reply)["targets"] as? [[String: Any]])?
+                .first?["keys"] as? [String]
+        }
+        check("with the same answer both times",
+              derivedKeys(again) == [second, first] && derivedKeys(third) == [second, first],
+              "got \(String(describing: derivedKeys(again))) then "
+                  + "\(String(describing: derivedKeys(third)))")
+    }
+}
+
+group("the slot notice says the turn is the shared checkout and not approval to land") {
+    withLandingQueueFixture { repository, base in
+        let now = Date(timeIntervalSince1970: 22_000)
+        let aheadID = "b1000000-0000-4000-8000-00000000000a"
+        let behindID = "b2000000-0000-4000-8000-00000000000b"
+        makeLandingQueueDelivery(in: repository, taskID: aheadID, base: base,
+                                 writing: ["Sources/Ahead.swift"])
+        makeLandingQueueDelivery(in: repository, taskID: behindID, base: base,
+                                 writing: ["Sources/Behind.swift"])
+        Orchestrator.holdScheduleTaskForTesting(landingQueueCandidateTask(
+            id: aheadID, root: "notice-ahead", repository: repository.path, created: 1_000,
+            target: "main", claims: ["Sources/Ahead.swift", "docs/landing.md"], base: base))
+        Orchestrator.holdScheduleTaskForTesting(landingQueueCandidateTask(
+            id: behindID, root: "notice-behind", repository: repository.path, created: 2_000,
+            target: "main", claims: ["Sources/Behind.swift"], base: base))
+        var typed: [String] = []
+        let delivered = OrchestratorLandingQueue.advance(
+            project: repository.path, now: now,
+            deliver: { _, text in typed.append(text); return nil })
+        check("the front of the queue is reached", landingQueueBody(delivered)?["delivered"]
+                  as? Bool == true)
+        let notice = typed.first ?? ""
+        // The failure this is for: a line whose review has just finished and whose correction has
+        // not been dispatched is terminal-looking, so being called forward must not read as
+        // "land it now".
+        check("the notice says what the slot is",
+              notice.contains("shared-checkout turn and not approval to land"),
+              "got \(notice)")
+        check("and that it is not a review, a passing suite, or an agreement",
+              notice.contains("says nothing about review, tests, or anybody having agreed"))
+        check("it names the ref update and the shared checkout as what the turn is for",
+              notice.contains("update a ref on this repository and target")
+                  && notice.contains("stage or commit here"))
+        check("and it asks for the three re-reads before anything is staged",
+              notice.contains("Re-read HEAD, git status and the index in your own checkout"))
+        check("the holder is told it is a ready candidate and where it sits",
+              notice.contains("Ready candidate for main: 1 of 2 on that target"),
+              "got \(notice)")
+        // The discipline this function already had, unchanged: the whole write set, and the route
+        // rather than the prose as the authority.
+        check("every path is still printed rather than summarised",
+              notice.contains("Sources/Ahead.swift") && notice.contains("docs/landing.md"))
+        check("and the route is still named as the authority over this sentence",
+              notice.contains("GET /v1/orchestrator/landing-queue"))
+
+        // A holder that is not a candidate is told so in the same message, because the two
+        // questions — may I use the checkout, is this line ready — have two answers and a reader
+        // holding one of them must not read it as the other.
+        Orchestrator.holdScheduleTaskForTesting(landingQueueTask(
+            id: "b3000000-0000-4000-8000-00000000000c", title: "still writing", state: .briefed,
+            root: "notice-ahead", label: "notice-ahead", projectDir: repository.path,
+            created: 3_000, claims: ["Sources/Live.swift"]))
+        _ = OrchestratorLandingQueue.setOrder(
+            project: repository.path, keys: [landingQueueDigest("notice-ahead")],
+            ifGeneration: nil, setBy: "clawdfather", now: now)
+        _ = OrchestratorLandingQueue.advance(
+            project: repository.path, now: now,
+            deliver: { _, text in typed.append(text); return nil })
+        check("a holder that is not a ready candidate is told which fact stopped it",
+              typed.last?.contains("not a ready candidate (live_work)") == true,
+              "got \(String(describing: typed.last))")
+        check("and that it still holds the checkout turn it was handed",
+              typed.last?.contains("shared-checkout turn and not approval to land") == true)
+    }
+}
+
 // MARK: - The inventory a dispatch has to have read
 
 /// A described repository: no git, no registry, no subprocess. The three sections and the digest

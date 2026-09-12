@@ -645,6 +645,18 @@ enum OrchestratorLandingQueue {
             "since": Int(entry.member.since.timeIntervalSince1970),
             "age_seconds": ageSeconds(since: entry.member.since, now: now),
             "paths": entry.member.sortedPaths,
+            // Every key is present whether or not it has a value, for the reason the rest of this
+            // row's nullable fields are: a reader deciding whether it may touch the shared
+            // checkout must be able to tell "not a candidate, and here is why" from "this broker
+            // does not answer that question", and an absent key cannot say either.
+            "candidate": [
+                "ready": entry.member.isCandidate,
+                "target": entry.member.target as Any? ?? NSNull(),
+                "order": entry.candidateOrder as Any? ?? NSNull(),
+                "of": entry.candidateGroup as Any? ?? NSNull(),
+                "turn": entry.turn,
+                "why": entry.member.notCandidate?.rawValue as Any? ?? NSNull(),
+            ] as [String: Any],
         ]
         row["tasks"] = entry.member.tasks.map { task -> [String: Any] in
             var out: [String: Any] = ["id": task.id, "title": task.title, "state": task.state,
@@ -666,13 +678,54 @@ enum OrchestratorLandingQueue {
          "entries": contention.entries.map { ["root_key": $0.digest, "source": $0.source.rawValue] }]
     }
 
-    static func orderRecord(_ order: Order, stale: [String], unplaced: [String]) -> [String: Any] {
-        ["keys": order.keys,
-         "generation": order.generation,
-         "updated": order.updated.map { Int($0.timeIntervalSince1970) } as Any? ?? NSNull(),
-         "set_by": order.setBy as Any? ?? NSNull(),
-         "stale": stale,
-         "unplaced": unplaced]
+    /// The stored order, and beside it the one the broker derived for itself.
+    ///
+    /// `keys`, `generation`, `updated`, `set_by`, `stale` and `unplaced` are the coordinator's
+    /// half and are unchanged. `derived` is this side's own answer and is a *reading*, not a
+    /// write: it names the key it used, one row per target in that order, and every entry it
+    /// refused to place with the reason. Nothing in it moves `generation`, because nothing in it
+    /// is stored — a generation that moved on a `GET` would re-arm a slot notice on every read.
+    static func orderRecord(_ order: Order, stale: [String], entries: [Entry]) -> [String: Any] {
+        let groups = candidateGroups(entries)
+        return ["keys": order.keys,
+                "generation": order.generation,
+                "updated": order.updated.map { Int($0.timeIntervalSince1970) } as Any? ?? NSNull(),
+                "set_by": order.setBy as Any? ?? NSNull(),
+                "stale": stale,
+                "unplaced": entries.filter { $0.placement == .unplaced }.map(\.member.digest),
+                "derived": [
+                    "basis": candidateOrderBasis,
+                    "targets": groups.targets.map {
+                        ["target": $0.target, "keys": $0.keys, "turn": $0.keys.first as Any? ?? NSNull()]
+                    },
+                    "unordered": groups.unordered.map { ["root_key": $0.digest, "why": $0.why] },
+                ] as [String: Any]]
+    }
+
+    /// The one place the derived key is written down for a reader, so the route's answer and
+    /// ``candidateOrder(members:placement:)`` cannot drift into describing different sorts.
+    static let candidateOrderBasis = "coordinator_order_then_oldest_work_then_digest"
+
+    /// The derived order as a reader sees it: one row per target in that order, and every entry
+    /// the broker would not place with the reason it would not.
+    static func candidateGroups(_ entries: [Entry])
+        -> (targets: [(target: String, keys: [String])],
+            unordered: [(digest: String, why: String)]) {
+        var byTarget: [String: [(order: Int, digest: String)]] = [:]
+        var unordered: [(digest: String, why: String)] = []
+        for entry in entries {
+            guard let order = entry.candidateOrder, let target = entry.member.target else {
+                unordered.append((entry.member.digest,
+                                  entry.member.notCandidate?.rawValue ?? "unordered"))
+                continue
+            }
+            byTarget[target, default: []].append((order, entry.member.digest))
+        }
+        let targets = byTarget.keys.sorted().map { target in
+            (target: target,
+             keys: (byTarget[target] ?? []).sorted { $0.order < $1.order }.map(\.digest))
+        }
+        return (targets, unordered)
     }
 
     // MARK: - Routes
@@ -684,11 +737,10 @@ enum OrchestratorLandingQueue {
                             "project must be an absolute path inside a Git repository.")
         }
         let state = snapshot(repository: repository, now: now)
-        let unplaced = state.entries.filter { $0.placement == .unplaced }.map(\.member.digest)
         return .ok([
             "repository": repository,
             "queue": state.entries.map { entryRecord($0, now: now) },
-            "order": orderRecord(state.order, stale: state.stale, unplaced: unplaced),
+            "order": orderRecord(state.order, stale: state.stale, entries: state.entries),
             "contended_paths": state.contended.map(contentionRecord),
             "at": Int(now.timeIntervalSince1970),
         ])
@@ -743,11 +795,10 @@ enum OrchestratorLandingQueue {
             "generation": String(order.generation),
         ])
         let after = snapshot(repository: repository, now: now)
-        let unplaced = after.entries.filter { $0.placement == .unplaced }.map(\.member.digest)
         return .ok(["ok": true,
                     "repository": repository,
                     "queue": after.entries.map { entryRecord($0, now: now) },
-                    "order": orderRecord(after.order, stale: after.stale, unplaced: unplaced),
+                    "order": orderRecord(after.order, stale: after.stale, entries: after.entries),
                     "contended_paths": after.contended.map(contentionRecord),
                     "at": Int(now.timeIntervalSince1970)])
     }
@@ -759,6 +810,18 @@ enum OrchestratorLandingQueue {
     /// the waiting line discovered the other three by attempting the merge. Prose summarising a
     /// list is the defect, so this prose does not summarise: it prints every path, and it names
     /// the route that will still be right after this message has aged.
+    ///
+    /// **And it says what the slot is, because the slot is a smaller thing than it reads as.**
+    /// Holding it is permission to use the shared checkout — to update a ref on this repository
+    /// and target, and to stage and commit here — and it is nothing else. It is not a review, not
+    /// a passing suite, and nobody's approval to land. The failure that needs saying out loud is
+    /// concrete: a line whose review has just finished and whose correction has not been
+    /// dispatched is terminal-looking, so it can be called forward while the thing it would land
+    /// is not the thing anybody agreed to; and the queue's own answer is a *reading*, taken before
+    /// this message was typed, of a shared checkout that other roots are still writing in. So the
+    /// notice also asks for the two re-reads that cost seconds — `HEAD`, `git status` and the
+    /// index in the reader's own checkout — rather than assuming the sentence it is holding is
+    /// still true.
     static func slotNotice(repository: String, entry: Entry, total: Int,
                            previous: String?, contended: [Contention]) -> String {
         let position = entry.position.map(String.init) ?? "unplaced"
@@ -787,6 +850,18 @@ enum OrchestratorLandingQueue {
             }
             body += "Also written by entries still in the queue: \(rows.joined(separator: "; ")). "
         }
+        if let target = entry.member.target, let order = entry.candidateOrder {
+            body += "Ready candidate for \(target): \(order) of \(entry.candidateGroup ?? order) "
+                + "on that target. "
+        } else if let why = entry.member.notCandidate?.rawValue {
+            body += "This entry is not a ready candidate (\(why)), so the queue has given it no "
+                + "order on any target. "
+        }
+        body += "Holding the slot is the shared-checkout turn and not approval to land: it says "
+            + "you may update a ref on this repository and target and stage or commit here, and "
+            + "it says nothing about review, tests, or anybody having agreed to this landing. "
+            + "Re-read HEAD, git status and the index in your own checkout before you stage or "
+            + "commit anything. "
         body += "This message is a copy of "
             + "GET /v1/orchestrator/landing-queue?project=\(repository), and that route is the "
             + "authority — read it rather than this sentence before you integrate."
@@ -813,12 +888,11 @@ enum OrchestratorLandingQueue {
                             "Nothing is outstanding in this repository, so there is no slot to "
                                 + "hand on.")
         }
-        let unplaced = state.entries.filter { $0.placement == .unplaced }.map(\.member.digest)
         func answer(_ delivered: Bool, _ note: String) -> Orchestrator.Reply {
             .ok(["ok": true, "repository": repository, "delivered": delivered, "reason": note,
                  "holder": entryRecord(holder, now: now),
                  "queue": state.entries.map { entryRecord($0, now: now) },
-                 "order": orderRecord(state.order, stale: state.stale, unplaced: unplaced),
+                 "order": orderRecord(state.order, stale: state.stale, entries: state.entries),
                  "contended_paths": state.contended.map(contentionRecord),
                  "at": Int(now.timeIntervalSince1970)])
         }
