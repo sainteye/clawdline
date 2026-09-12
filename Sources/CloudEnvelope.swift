@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // SwiftPM owns the W5-2 Cloud identity vocabulary.
+#endif
 
 enum CloudEnvelopeError: Error, LocalizedError, Equatable {
     case invalidVersion

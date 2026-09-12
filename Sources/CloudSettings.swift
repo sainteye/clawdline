@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // SwiftPM owns the W5-2 Cloud identity vocabulary.
+#endif
 
 struct CloudSettingsLoginAttempt: Sendable {
     let userCode: String

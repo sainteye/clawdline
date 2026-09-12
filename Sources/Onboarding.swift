@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // SwiftPM owns the W5-2 Cloud identity vocabulary.
+#endif
 
 /// The launch decision is deliberately independent of AppKit and config.json. A config switch
 /// says what a service should do; it cannot also mean that a person finished being introduced to

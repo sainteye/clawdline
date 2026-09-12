@@ -1,6 +1,9 @@
 import CryptoKit
 import Foundation
 import Network
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // SwiftPM owns the W5-2 Cloud transport vocabulary.
+#endif
 
 enum CloudLoopbackRelayError: Error, LocalizedError {
     case didNotStart
