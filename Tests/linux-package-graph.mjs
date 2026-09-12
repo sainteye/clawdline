@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -155,7 +155,12 @@ for (const [name, changed] of mutations) {
 
 const binary = process.env.CLAWDLINE_LINUX_BINARY;
 if (binary) {
-  const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'clawdline-linux-contract-')));
+  // Darwin's /tmp and /var are aliases that the runtime correctly rejects as linked components.
+  // Use the caller-owned home for this short-lived canonical-path fixture; Linux keeps its normal
+  // temporary directory. The finally block below removes the fixture on every assertion path.
+  const scratchParent = process.platform === 'darwin' ? homedir() : tmpdir();
+  const scratch = realpathSync(mkdtempSync(join(scratchParent, '.clawdline-linux-contract-')));
+  chownSync(scratch, process.getuid(), process.getgid());
   try {
     const secret = join(scratch, 'daemon.secret');
     const config = join(scratch, 'daemon.json');
@@ -243,14 +248,19 @@ if (binary) {
     check(result.status === 78 && errorCode(result) === 'invalid_configuration',
       'W3 skeleton must refuse a public listener rather than imply network support');
 
+    writeConfig({ stateDirectory: `${scratch}/state/../state` });
+    result = run('run', '--config', config);
+    check(result.status === 69 && errorCode(result) === 'unsafe_runtime_path',
+      'a lexically noncanonical runtime path must be refused before containment or an effect');
+
     writeConfig();
     result = run('run', '--config', config);
     if (process.platform === 'linux') {
       check(result.status === 69 && errorCode(result) === 'capability_unavailable',
         'run without validated provider/tmux descriptors must refuse before an effect');
     } else {
-      check(result.status === 69 && errorCode(result) === 'unsafe_runtime_path',
-        'a non-Linux execution must not soften Linux canonical-path evidence to make a local probe green');
+      check(result.status === 69 && errorCode(result) === 'capability_unavailable',
+        'a canonical non-Linux probe must reach the unavailable containment boundary without an effect');
       check(result.stdout === '', 'a refused non-Linux composition emits no partial runtime receipt');
     }
   } finally {
