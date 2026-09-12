@@ -1743,12 +1743,21 @@ private func testDurableFileStoreAuthorityAndMigration(_ h: SpoolTestHarness) th
     try h.check(nestedLedgerRefused,
                 "ledger schema 2 refuses a row missing required requestSHA256")
 
-    for invalid in ["../machine", ".", "Mac-A", "é", "e\u{301}", "machine/name"] {
+    for invalid in ["../machine", ".", "Mac-A", "é", "e\u{301}", "machine/name",
+                    "_mac", "mac_", "-mac", "mac-"] {
         var refused = false
         do { _ = try CloudMachineFilesystemNamespace.component(for: invalid) }
         catch CloudDurableStoreFailure.invalidMachineIdentity { refused = true }
         try h.check(refused, "machine filesystem namespace rejects noncanonical id \(invalid)")
     }
+    // The shape this Mac is actually issued. `api/src/lib/ids.ts` mints `mac_<uuid>`, and a
+    // grammar written against `machine-a` refused every one of them: the bridge read its identity,
+    // threw `invalidMachineIdentity` before a socket was ever opened, and detached for the life of
+    // the process. Fixture ids cannot answer this question; only the minted shape can.
+    let minted = try CloudMachineFilesystemNamespace.component(
+        for: "mac_9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d")
+    try h.check(minted.hasPrefix("machine-v1-") && !minted.contains("_"),
+                "machine filesystem namespace accepts the control plane's minted mac_<uuid> id")
     let namespaceA = try CloudMachineFilesystemNamespace.component(for: "machine-a")
     let namespaceB = try CloudMachineFilesystemNamespace.component(for: "machine-b")
     try h.check(namespaceA != namespaceB && !namespaceA.contains("machine-a"),

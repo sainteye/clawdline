@@ -1013,13 +1013,21 @@ public final class CloudNoopSpoolMetrics: CloudSpoolMetrics, @unchecked Sendable
 /// A server machine id is network identity, never a path component. Production accepts one
 /// canonical ASCII grammar and encodes its exact UTF-8 bytes as lowercase hex under a domain
 /// prefix. The mapping is injective even on case-insensitive and normalization-insensitive filesystems.
+///
+/// **The grammar is the control plane's, not a guess at it.** `api/src/lib/ids.ts` mints
+/// `mac_<uuid>` — a typed prefix, an underscore, then a lowercase UUID — so an id that omitted
+/// `_` admitted nothing this Mac is ever issued. It refused every real identity while the fixture
+/// ids in the tests (`machine-a`, `machine-b`) kept passing, and the bridge detached on every
+/// launch with no automatic retry. Separator characters are not what makes this safe in any case:
+/// the hex encoding below is total over bytes, and the first/last and length bounds are what keep
+/// the component from being a relative path or an overlong name.
 public enum CloudMachineFilesystemNamespace {
     public static func component(for serverMachineID: String) throws -> String {
         let bytes = Array(serverMachineID.utf8)
         guard !bytes.isEmpty, bytes.count <= 128,
               bytes.first.map(isLowercaseLetterOrDigit) == true,
               bytes.last.map(isLowercaseLetterOrDigit) == true,
-              bytes.allSatisfy({ isLowercaseLetterOrDigit($0) || $0 == 0x2d }) else {
+              bytes.allSatisfy({ isLowercaseLetterOrDigit($0) || isSeparator($0) }) else {
             throw CloudDurableStoreFailure.invalidMachineIdentity
         }
         return "machine-v1-" + bytes.map { String(format: "%02x", $0) }.joined()
@@ -1027,6 +1035,11 @@ public enum CloudMachineFilesystemNamespace {
 
     private static func isLowercaseLetterOrDigit(_ byte: UInt8) -> Bool {
         (0x61...0x7a).contains(byte) || (0x30...0x39).contains(byte)
+    }
+
+    /// `-` and `_`, the two the control plane's own ids are built from.
+    private static func isSeparator(_ byte: UInt8) -> Bool {
+        byte == 0x2d || byte == 0x5f
     }
 }
 
