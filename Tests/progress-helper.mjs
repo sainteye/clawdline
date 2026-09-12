@@ -114,6 +114,37 @@ const realCache = join(homedir(), ".claude", "statusline-cache");
 // this file did had touched the real directory. A check that goes red for somebody else's correct
 // behaviour teaches people to ignore it, which is worse than not having it.
 
+// Section 4 needs a working directory whose **key** is long, and the key is the working directory
+// with every `/` turned into a `-`. A fixture under `scratch` is therefore as long as `$TMPDIR`
+// plus its own name, which is somebody else's number: measured on 2026-09-12 at `c7e1b609`, a
+// 36-character `TMPDIR` passed all 107 checks and a 109-character one failed three, because the
+// key reached 263 bytes and the filesystem refuses a name over 255. That is the environment going
+// red, not the helper. So the key fixture gets a root chosen for shortness instead of for being
+// the same root as everything else, and its key is then the same length on every machine — which
+// is also what lets the check names below stop quoting a measured length.
+const keyScratch = (() => {
+    const bases = [];
+    for (const candidate of ["/tmp", tmpdir()]) {
+        let real;
+        try {
+            real = realpathSync(candidate);
+        } catch {
+            continue;
+        }
+        if (!bases.includes(real)) bases.push(real);
+    }
+    bases.sort((a, b) => a.length - b.length);
+    for (const base of bases) {
+        try {
+            return realpathSync(mkdtempSync(join(base, "clawdline-progress-key-")));
+        } catch {
+            continue;
+        }
+    }
+    return null;
+})();
+if (keyScratch === null) stop("there is no writable temporary directory short enough for the key fixture");
+
 const keyFor = (dir) => `run-${dir.replace(/\//g, "-")}.json`;
 const rowOf = (path) => {
     if (!existsSync(path)) return null;
@@ -491,21 +522,30 @@ try {
     //    claude-bestiary. A truncating key was taken out of all three on 2026-09-05 because
     //    `[-48:]` is lossy: two worktrees of one repository differ in the part it cut off.
     {
-        const deep = join(scratch, "a-working-directory-whose-name-is-long", "and-then-some-more",
-                          "so-that-the-key-cannot-fit-in-forty-eight-characters");
+        // `keyScratch`, not `scratch`: the two directories below are the only fixtures in this file
+        // whose *path length* is the thing under test, so they are built where that length is the
+        // suite's own and not `$TMPDIR`'s. The shared tail is 57 characters, which is what makes the
+        // two of them agree on their last 48 whatever their first segment is.
+        const tail = "directory-whose-key-is-longer-than-forty-eight-characters";
+        const deep = join(keyScratch, `deep-${tail}`);
         mkdirSync(deep, { recursive: true });
         const w = { dir: deep, file: join(cache, keyFor(deep)) };
-        runHelper(w, ["run", "--label", "deep", "--", "/bin/echo", "hi"]);
         const expected = keyFor(deep);
-        check(`a key of ${expected.length} characters is written whole, with nothing cut off it`,
-              expected.length > 48 && existsSync(w.file));
+        // Between the two bounds the section is about, by construction and with room to spare. If
+        // some environment ever pushed it out of them, say that rather than reporting the helper.
+        if (expected.length <= 48 || expected.length >= 255) {
+            stop(`the key fixture's own name is ${expected.length} bytes, which is not a long key`
+                 + " comfortably inside the 255-byte name limit");
+        }
+        runHelper(w, ["run", "--label", "deep", "--", "/bin/echo", "hi"]);
+        check("a key well past 48 characters is written whole, with nothing cut off it",
+              existsSync(w.file));
         check("and the row it holds names the whole directory it ran in",
               (rowOf(w.file) || {}).tree === deep);
         // The control that says the check above is answering the right question: the last 48
         // characters of the two sibling directories below are identical, so a truncating key
         // would have written both runs into one file.
-        const sibling = join(scratch, "another-directory-that-is-also-long", "and-then-some-more",
-                             "so-that-the-key-cannot-fit-in-forty-eight-characters");
+        const sibling = join(keyScratch, `another-${tail}`);
         mkdirSync(sibling, { recursive: true });
         const sw = { dir: sibling, file: join(cache, keyFor(sibling)) };
         runHelper(sw, ["run", "--label", "sibling", "--", "/bin/echo", "hi"]);
@@ -1100,17 +1140,19 @@ try {
     }
 
     // And the containment this file promised at the top: nothing this suite ran wrote its file
-    // anywhere but the scratch cache. Every working directory here lives under `scratch`, so every
-    // key this suite could produce begins with that path — a stray is a name, not a count.
-    const scratchKeys = `run-${scratch.replace(/\//g, "-")}`;
+    // anywhere but the scratch cache. Every working directory here lives under `scratch` or under
+    // `keyScratch`, so every key this suite could produce begins with one of those two paths — a
+    // stray is a name, not a count.
+    const suiteKeys = [scratch, keyScratch].map((dir) => `run-${dir.replace(/\//g, "-")}`);
     const strays = existsSync(realCache)
-        ? readdirSync(realCache).filter((n) => n.startsWith(scratchKeys))
+        ? readdirSync(realCache).filter((n) => suiteKeys.some((prefix) => n.startsWith(prefix)))
         : [];
     check("no run file from this suite was written into the real ~/.claude/statusline-cache"
           + (strays.length ? ` — found ${strays.join(", ")}` : ""),
           strays.length === 0);
 } finally {
     rmSync(scratch, { recursive: true, force: true });
+    rmSync(keyScratch, { recursive: true, force: true });
 }
 
 console.log(failures === 0
