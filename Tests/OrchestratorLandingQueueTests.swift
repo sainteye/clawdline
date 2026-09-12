@@ -442,8 +442,12 @@ group("the landing slot is handed on by the broker, once, and re-armed by a re-o
 
         // Nobody ready is its own answer. Nothing is typed, and the receipt is not moved, so the
         // next line that does become ready is a real delivery rather than an `already_notified`.
+        // The obligation loses its target rather than its terminal state, so this asks the route's
+        // question — is anybody ready — without resting on how readiness reads liveness.
         Orchestrator.mutateTaskForTesting("66666666-6666-4666-8666-666666666662") {
-            $0.state = .briefed
+            $0.landing = Orchestrator.Landing(
+                state: .pending, target: nil, delivery: nil, ownerRootKey: "abcd1234",
+                since: Date(timeIntervalSince1970: 2_000), commit: nil, note: nil)
         }
         let beforeRefusal = try? Data(contentsOf: OrchestratorLandingQueue.storeURL)
         let none = OrchestratorLandingQueue.advance(
