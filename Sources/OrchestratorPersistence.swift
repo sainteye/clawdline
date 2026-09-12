@@ -394,11 +394,34 @@ extension RemoteServer {
     /// The one `orch/<machine>` body used by SSE and Cloud publication. An unhealthy registry is
     /// described but never represented by an empty `tasks` array, so existing clients retain the
     /// last authoritative snapshot they observed.
+    /// What a finished task wrote about itself, which is the largest thing a record holds and the
+    /// one thing no reader of the *list* asks for.
+    ///
+    /// Measured on this Mac: `GET /v1/orchestrator/tasks` answered 3.69 MB for 635 tasks, and
+    /// these four fields were 71% of it — `summary` 40%, `review` 13%, `graph` 10%, `progress` 8%.
+    /// The whole snapshot is republished on every task record change, so on a busy machine that is
+    /// several megabytes a minute down the SSE stream, and on the Cloud path one 6.5 MB envelope
+    /// into a spool that has exactly one envelope in flight at a time. A transcript somebody has
+    /// just opened waits behind it.
+    ///
+    /// Every reader of the list was checked rather than assumed: the console draws id, title,
+    /// state, timestamps and the two terminal ids; `build.sh` reads state, id and title; the
+    /// pre-commit guard reads claims, projectDir, isolation, state and both identity blocks. None
+    /// of them names one of these four. The reader that does want them asks for one task, and
+    /// `GET /v1/orchestrator/tasks/:id` still answers with the complete record — it is served from
+    /// `Orchestrator.record(id:)`, which this does not touch.
+    static let taskListOmittedFields: Set<String> = ["summary", "review", "graph", "progress"]
+
+    /// Kept beside the omission it implements, so a reader can see both halves at once.
+    static func taskListProjection(_ record: [String: Any]) -> [String: Any] {
+        record.filter { !taskListOmittedFields.contains($0.key) }
+    }
+
     static func orchestratorSnapshot(now: Date = Date()) -> [String: Any] {
         var out: [String: Any] = ["snippets": Snippets.records(),
                                   "at": Int(now.timeIntervalSince1970), "app": appStamp()]
         if Orchestrator.storeIsAuthoritative() {
-            out["tasks"] = Orchestrator.records()
+            out["tasks"] = Orchestrator.records().map(taskListProjection)
             out["schedules"] = Orchestrator.scheduleRecords(now: now)
         } else {
             out["store"] = Orchestrator.storeHealthRecord()

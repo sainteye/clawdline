@@ -276,4 +276,40 @@ func runOrchestratorPersistenceTests() {
         expect("and a restart cannot resurrect the unsent activation",
                Orchestrator.rootAssignmentForTesting(assignment.id)?.state, .promptReady)
     }
+
+    group("the task list drops a finished task's own account and keeps what its readers name") {
+        // Not a sample record: every key here is one a real reader of the list was checked to
+        // name. The console reads id/title/state/created/root.terminalId/child.terminalId, the
+        // pre-commit guard reads claims/projectDir/isolation/finishedAt/state and both identity
+        // blocks, and `build.sh` reads state/id/title. The four at the end are the ones measured
+        // at 71% of a 3.69 MB answer and named by none of them.
+        let record: [String: Any] = [
+            "id": "t1", "title": "A task", "state": "success", "created": 0, "finishedAt": 1,
+            "claims": ["Sources/"], "projectDir": "/Users/you/code/clawdline",
+            "isolation": "worktree", "assistant": "claude",
+            "root": ["terminalId": "%1", "sessionId": "S1"],
+            "child": ["terminalId": "%2", "sessionId": "S2"],
+            "summary": String(repeating: "x", count: 4096),
+            "review": ["findings": []],
+            "graph": ["nodes": []],
+            "progress": [["at": 1, "text": "half way"]],
+        ]
+        let projected = RemoteServer.taskListProjection(record)
+
+        let named = ["id", "title", "state", "created", "finishedAt", "claims", "projectDir",
+                     "isolation", "assistant", "root", "child"]
+        let missing = named.filter { projected[$0] == nil }
+        check("every field a reader of the list was shown to name survives the projection",
+              missing.isEmpty, missing.joined(separator: ", "))
+
+        // The load-bearing one, and it fails in both directions. Dropping a field nobody declared
+        // breaks a reader silently; keeping a declared one leaves the bytes this exists to remove.
+        let dropped = Set(record.keys).subtracting(projected.keys)
+        check("the projection removes exactly the fields it declares and nothing else",
+              dropped == RemoteServer.taskListOmittedFields,
+              "dropped \(dropped.sorted()), declared \(RemoteServer.taskListOmittedFields.sorted())")
+
+        check("a record holding none of them is returned unchanged",
+              RemoteServer.taskListProjection(["id": "t2"]).keys.sorted() == ["id"])
+    }
 }
