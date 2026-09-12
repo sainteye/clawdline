@@ -108,6 +108,13 @@ not fill every available slot merely because the slots exist.
   task per finding or make the reviewer switch from judge to implementer. Root checks the focused
   correction evidence and opens another reviewer only when the correction materially changes the
   design or crosses a new high-risk boundary.
+- **A brief for destructive work states the decision basis, not the shape that was caught.** For work
+  that deletes, overwrites or releases, write what the decision may rest on — *a path is checked from
+  its root as spelled before any other spelling of it*; *a process is gone only when the system
+  answers that there is no such process*; *unknown never authorises a removal* — and ask for an audit
+  of every site that decides the same question in the same task. On 2026-09-11 two corrections each
+  closed exactly the shape their review named and left the same class next door, where the
+  confirmation round found both: two extra rounds, about two hours.
 - **An interrupted review is handed over, not restarted.** Review is the most expensive node here
   and the one most often thrown away: of 101 review dispatches on this machine 30 never returned a
   verdict, and one re-review spent 6.7M tokens re-reading 1.9M tokens of work somebody had already

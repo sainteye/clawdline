@@ -183,6 +183,17 @@ questions. A second round needs a recurring defect class. A third needs `scope_c
 `new_external_evidence`, or `systemic_pattern`. If the same class escapes again, stop at
 `architecture_hold`; do not dispatch a fourth patch.
 
+**A brief for work that deletes, overwrites or releases states what the decision may rest on**, not
+the shape somebody caught. Naming the shape invites the next patch to close that one spelling and
+leave the class standing. Measured on 2026-09-11: a review named one symlink escape, the correction
+closed it, and the confirmation found the same class inside the helper that correction introduced;
+separately, "the process is gone" was fixed for a process table that cannot be read at all and the
+same reading survived for a table that hides one pid. Two extra correction rounds, about two hours.
+So write the basis — *a path is checked from its root as spelled before any other spelling of it*;
+*a process is gone only when the system answers that there is no such process*; *unknown never
+authorises a removal* — and ask, in the same task, for an audit of every site that decides the same
+question.
+
 **The landing root owns the release candidate's full suite.** Children accumulate related changes
 and use one focused proof near the end; they do not compile once per assertion, file or finding.
 Several compatible Feature slices share one exact release candidate rather than each paying for a

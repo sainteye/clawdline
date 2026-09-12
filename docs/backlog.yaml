@@ -1674,3 +1674,46 @@ items:
       answer for the pid itself, keep three values, and prove it with the counterexample the scratch
       tool now tests: a `ps` that shows pid 1 but not the holder must not read as gone.
     opened: 2026-09-12
+
+  - id: B-ADVANCE-LOOKS-UP-A-CONVERSATION-ID-AMONG-TERMINALS
+    title: Handing on the landing slot fails because the holder is named by conversation id and looked up by terminal id
+    problem: >-
+      `POST /v1/orchestrator/landing-queue/advance` cannot reach a holder whose session is live and
+      resolvable. A queue member's `sessionID` is the root's conversation id — Codex's rollout id or
+      Claude's transcript uuid — while the delivery closure resolves it in the terminal-neutral
+      namespace, so the lookup fails on a shape mismatch rather than on the session being absent, and
+      the route answers `502 handoff_delivery_failed`. The relay a person used to type by hand then
+      does not happen, and the next root is never told it holds the slot.
+
+
+      The same closure's readiness probe fails the other way: it resolves the same id the same way and
+      answers "nothing is blocking" when it finds nothing, so an unreachable holder reads as ready
+      rather than as unknown. Both sit on one string, so one resolution fixes both.
+    evidence: >-
+      Measured on 2026-09-12. At 01:19 the route answered
+      `502 handoff_delivery_failed`, `"No session named 01a08b30-7b5d-7031-9cee-41debb830c61."`, for the
+      holder `784ce0c4` (「Clawdline Refactor：跨平台與可靠性重整」); `GET /v1/orchestrator/sessions`
+      in the same minute listed that root as the live terminal `%493`. At 12:45
+      `GET /v1/orchestrator/whoami?conversation_id=01a08b30-7b5d-7031-9cee-41debb830c61` answered
+      `terminal_id: %493`, so the id was neither stale nor unresolvable — only looked up in the wrong
+      index. The path: `Sources/OrchestratorLandingQueue.swift:204`
+      (`sessionID: root?.rootSessionId`), `:683` (the guard that passes it on), `:705` (the refusal);
+      `Sources/RemoteServer.swift:2277-2285` (the `deliver` closure: `self.session(withID: targetID)`
+      else `"No session named \(targetID)."`) and `:5117` (`coordinationReadiness`, the same lookup
+      returning `nil`). `/whoami` shows the resolver that does work on this id:
+      `StartPoints.sessionName` plus SessionWatch's identity snapshot. Not measured: whether any
+      holder's `sessionID` is ever a terminal-neutral id, so whether this route has ever delivered.
+      The landing that found it went on: the root sent the same facts through
+      `POST /v1/orchestrator/messages`, which takes a conversation id for `from_session` and a
+      terminal id for `to_session`, and that reached the holder.
+    severity: degrades
+    cost: hours
+    who_hurts: contributor
+    trigger: >-
+      Whoever next touches the landing queue, or the next landing that tries to hand its slot on.
+      Resolve the holder's id through the same path `/whoami` uses before the terminal lookup, and
+      make an unresolvable holder a typed refusal of its own rather than a delivery failure, with the
+      readiness probe answering unknown rather than ready. The check that matters is one that could
+      have gone red here: a queue whose holder is named by conversation id delivers, and a holder that
+      cannot be resolved is refused as unreachable rather than reported as not delivered.
+    opened: 2026-09-12
