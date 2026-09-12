@@ -185,12 +185,30 @@ exactly the case a derived queue keeps, because their children were still workin
   **different repositories** lands in parallel. Roots do not negotiate that turn between
   themselves, because the queue already answers it.
 - **The slot hands itself on.** The holder is the first entry still in the queue, so a landing
-  recorded above moves it with no second write. Nothing in the broker watches two ready lines and
-  decides between them: a coordinator may still write an order, and where nobody has, the derived
-  holder is what makes the slot arrive anyway.
+  recorded above moves it with no second write.
   `POST /v1/orchestrator/landing-queue/advance` is what reaches the next root's session, once per
   holder per order generation, with a broker-composed message that prints the whole write set and
   names the route as the authority over its own prose.
+- **And the broker orders the lines that are actually ready.** Two or more entries in one
+  repository sharing a target, all of them ready to land, used to be told only "unplaced, oldest
+  first" — an accident of two timestamps that two roots then settled by asking each other. The
+  queue now derives a deterministic order over them and says who has the turn. A **ready
+  candidate** is an entry whose contributing tasks are all terminal, which still holds something
+  to land, and whose repository, target and candidate identity were all read: one live task
+  disqualifies the whole entry however much of the rest has finished. **Terminal tasks alone are
+  not readiness.** An entry whose target or identity cannot be proved keeps its row and is
+  reported as unordered with the reason — a missing target is never read as `main` — because an
+  order that can be guessed is an order that can be about the wrong branch. A coordinator's
+  explicit order still wins, entries in **different repositories** are never ordered against each
+  other, and the derivation is taken on every read and stored nowhere, so nothing about it moves
+  the order's `generation` or re-arms a notice.
+- **Holding the slot is the shared-checkout turn, and it is not approval to land.** It says the
+  ref update and the shared index are yours for now. It does not say the work was reviewed, that
+  its tests passed, or that anybody agreed to this landing: a line whose review has just finished
+  and whose correction has not been dispatched is terminal-looking, and being called forward must
+  not read as "land it now". The notice says that in those words, and asks for the re-reads that
+  cost seconds — `HEAD`, `git status` and the index in your own checkout — before you stage or
+  commit anything.
 
 **This does not replace a file wait and must not be described as replacing one.** A wait is
 path-level and is registered between two named sessions about specific files; the queue is
