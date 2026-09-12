@@ -336,6 +336,8 @@ let expectedOrderedTestGroupTitles: [String] = [
     "two entries writing one path are told they are writing one path",
     "the landing slot is handed on by the broker, once, and re-armed by a re-order",
     "the landing-time write set survives the isolation that empties the edit-time lease",
+    "the landing queue orders the ready candidates in one repository and target",
+    "a landing candidate the broker cannot prove stays visible, unordered and unguessed",
     "the inventory answers three sections and every row names an action a route accepts",
     "the inventory generation moves on what changes a decision and on nothing else",
     "a dispatch that did not read the inventory is refused and handed the inventory",

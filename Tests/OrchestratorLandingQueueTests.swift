@@ -485,6 +485,245 @@ group("the landing-time write set survives the isolation that empties the edit-t
     }
 }
 
+// MARK: - The order the broker derives for itself
+
+/// One terminal delivery whose root declared where it lands: the ordinary ready-candidate shape.
+/// `target: nil` is the entry that declared an obligation and no branch for it, and
+/// `landing: false` is the one that declared nothing at all — the two shapes that must never be
+/// read as `main`.
+func landingQueueCandidateTask(id: String, root: String, repository: String,
+                               created: TimeInterval, target: String?, landing: Bool = true,
+                               claims: [String] = [], base: String = "base0",
+                               isolated: Bool = true) -> Orchestrator.Task {
+    landingQueueTask(
+        id: id, title: "delivered \(id.prefix(8))", state: .success, root: root, label: root,
+        projectDir: repository, created: created, claims: claims,
+        landing: landing
+            ? Orchestrator.Landing(state: .pending, target: target, delivery: nil,
+                                   ownerRootKey: "abcd1234",
+                                   since: Date(timeIntervalSince1970: created),
+                                   commit: nil, note: nil)
+            : nil,
+        worktree: isolated ? landingQueueWorktree(taskID: id, base: base, repository: repository)
+                           : nil)
+}
+
+func landingQueueBranch(_ id: String) -> String { "clawdline/task/\(id)" }
+
+/// The queue's two pure functions against a described repository: no git, no registry, no
+/// subprocess, so the same state really can be read twice and compared.
+func landingQueueEntries(_ tasks: [Orchestrator.Task], repository: String,
+                         heads: [String: String] = [:], known: Bool = true,
+                         order: OrchestratorLandingQueue.Order = OrchestratorLandingQueue.Order(),
+                         now: TimeInterval = 20_000) -> [OrchestratorLandingQueue.Entry] {
+    let members = OrchestratorLandingQueue.members(
+        tasks: tasks, repository: repository,
+        branches: Orchestrator.RepositoryBranches(heads: heads, merged: [], known: known),
+        retainedPaths: [:], deliveryPaths: [:], now: Date(timeIntervalSince1970: now))
+    return OrchestratorLandingQueue.entries(members: members, order: order)
+}
+
+func landingQueueEntry(_ entries: [OrchestratorLandingQueue.Entry], _ digest: String)
+    -> OrchestratorLandingQueue.Entry? {
+    entries.first { $0.member.digest == digest }
+}
+
+/// What a second reader must see: the derived answer, and nothing that was measured at read time.
+func landingQueueDerived(_ entries: [OrchestratorLandingQueue.Entry])
+    -> [(digest: String, target: String?, order: Int?, of: Int?, turn: Bool)] {
+    entries.map { ($0.member.digest, $0.member.target, $0.candidateOrder, $0.candidateGroup,
+                   $0.turn) }
+}
+
+func landingQueueSameDerived(_ first: [OrchestratorLandingQueue.Entry],
+                             _ second: [OrchestratorLandingQueue.Entry]) -> Bool {
+    let left = landingQueueDerived(first), right = landingQueueDerived(second)
+    return left.count == right.count && zip(left, right).allSatisfy {
+        $0.digest == $1.digest && $0.target == $1.target && $0.order == $1.order
+            && $0.of == $1.of && $0.turn == $1.turn
+    }
+}
+
+group("the landing queue orders the ready candidates in one repository and target") {
+    let repository = "/described/repository"
+    let elsewhere = "/described/other-repository"
+    let firstID = "aa000000-0000-4000-8000-00000000000a"
+    let secondID = "bb000000-0000-4000-8000-00000000000b"
+    // Two lines that are genuinely ready and share no path. Before this, the only thing said
+    // about them was "unplaced, oldest first", which is an accident of two timestamps rather than
+    // an answer, and the two roots asked each other instead.
+    let first = landingQueueCandidateTask(
+        id: firstID, root: "candidate-one", repository: repository, created: 1_000,
+        target: "main", claims: ["Sources/First.swift"])
+    let second = landingQueueCandidateTask(
+        id: secondID, root: "candidate-two", repository: repository, created: 2_000,
+        target: "main", claims: ["Sources/Second.swift"])
+    let heads = [landingQueueBranch(firstID): "commit1", landingQueueBranch(secondID): "commit2"]
+    let firstDigest = landingQueueDigest("candidate-one")
+    let secondDigest = landingQueueDigest("candidate-two")
+
+    let rows = landingQueueEntries([first, second], repository: repository, heads: heads)
+    expect("both lines are in the queue", rows.count, 2)
+    check("both are ready candidates",
+          rows.allSatisfy { $0.member.isCandidate && $0.member.notCandidate == nil })
+    expect("the older contributing work takes the turn",
+           landingQueueEntry(rows, firstDigest)?.candidateOrder, 1)
+    expect("and the other is second on the same target",
+           landingQueueEntry(rows, secondDigest)?.candidateOrder, 2)
+    check("both are told how many candidates they are one of",
+          rows.allSatisfy { $0.candidateGroup == 2 })
+    expect("exactly one entry has the shared-checkout turn", rows.filter(\.turn).count, 1)
+    check("and it is the one the order put first",
+          landingQueueEntry(rows, firstDigest)?.turn == true)
+    // The second is not being told to wait for anything but the ref: no path is shared, so the
+    // whole of preparation is open to it while the first holds the turn.
+    check("the line behind shares no path with the one in front, so it may prepare",
+          OrchestratorLandingQueue.contendedPaths(rows).isEmpty)
+
+    // Deterministic means two readers of one state get one answer. The registry hands tasks back
+    // in whatever order it holds them, so the reversed arm is the one that would catch a key that
+    // was really just input order.
+    check("reading the same state twice gives the same answer",
+          landingQueueSameDerived(rows, landingQueueEntries([first, second],
+                                                            repository: repository, heads: heads)))
+    check("and so does reading it with the tasks in the other order",
+          landingQueueSameDerived(rows, landingQueueEntries([second, first],
+                                                            repository: repository, heads: heads)))
+
+    // Same two lines, two repositories. Nothing compares them, and each holds its own turn —
+    // which is the property that keeps unrelated work from waiting on this queue at all.
+    let away = landingQueueCandidateTask(
+        id: secondID, root: "candidate-two", repository: elsewhere, created: 2_000,
+        target: "main", claims: ["Sources/Second.swift"])
+    let here = landingQueueEntries([first, away], repository: repository, heads: heads)
+    let there = landingQueueEntries([first, away], repository: elsewhere, heads: heads)
+    expect("a queue read names only its own repository's lines", here.count, 1)
+    expect("and the other repository names only the other", there.count, 1)
+    check("each is first on its own target, because they are never ordered against each other",
+          landingQueueEntry(here, firstDigest)?.candidateOrder == 1
+              && landingQueueEntry(here, firstDigest)?.candidateGroup == 1
+              && landingQueueEntry(there, secondDigest)?.candidateOrder == 1
+              && landingQueueEntry(there, secondDigest)?.candidateGroup == 1)
+
+    // Clawdfather's rule, and the whole entry is what it applies to: the delivery below is still
+    // terminal and still unlanded, and one live sibling under the same root is enough.
+    let sibling = landingQueueTask(
+        id: "aa000000-0000-4000-8000-00000000000c", title: "still writing", state: .briefed,
+        root: "candidate-one", label: "candidate-one", projectDir: repository, created: 3_000,
+        claims: ["Sources/Third.swift"])
+    let withLive = landingQueueEntries([first, second, sibling], repository: repository,
+                                       heads: heads)
+    expect("a line with one live task is still in the queue", withLive.count, 2)
+    expect("but it is not a candidate", landingQueueEntry(withLive, firstDigest)?.member.notCandidate,
+           OrchestratorLandingQueue.NotCandidate.liveWork)
+    check("it holds no position and no turn",
+          landingQueueEntry(withLive, firstDigest)?.candidateOrder == nil
+              && landingQueueEntry(withLive, firstDigest)?.turn == false)
+    check("and the line that is ready is first rather than second behind it",
+          landingQueueEntry(withLive, secondDigest)?.candidateOrder == 1
+              && landingQueueEntry(withLive, secondDigest)?.candidateGroup == 1
+              && landingQueueEntry(withLive, secondDigest)?.turn == true)
+
+    // An explicit order wins by being the first component of the key, not by a branch: the
+    // coordinator names the younger line and the clock stops deciding.
+    var placed = OrchestratorLandingQueue.Order()
+    placed.keys = [secondDigest]
+    placed.generation = 4
+    let coordinated = landingQueueEntries([first, second], repository: repository, heads: heads,
+                                          order: placed)
+    expect("a coordinator's placed line takes the turn",
+           landingQueueEntry(coordinated, secondDigest)?.candidateOrder, 1)
+    expect("and the automatic answer falls in behind it",
+           landingQueueEntry(coordinated, firstDigest)?.candidateOrder, 2)
+    check("the coordinator's own fields are untouched by the derivation",
+          placed.generation == 4 && placed.keys == [secondDigest])
+}
+
+group("a landing candidate the broker cannot prove stays visible, unordered and unguessed") {
+    let repository = "/described/repository"
+    let readyID = "cc000000-0000-4000-8000-00000000000c"
+    let namelessID = "dd000000-0000-4000-8000-00000000000d"
+    let silentID = "ee000000-0000-4000-8000-00000000000e"
+    let goneID = "ff000000-0000-4000-8000-00000000000f"
+    let ready = landingQueueCandidateTask(
+        id: readyID, root: "provable", repository: repository, created: 1_000, target: "main",
+        claims: ["Sources/Ready.swift"])
+    // An obligation with no target: `Orchestrator.Landing.target` is optional and this is what
+    // that costs. It is not an entry landing on `main`.
+    let nameless = landingQueueCandidateTask(
+        id: namelessID, root: "no-target", repository: repository, created: 2_000, target: nil,
+        claims: ["Sources/Nameless.swift"])
+    // A delivery nobody declared a landing for at all: unmerged, outstanding, and silent about
+    // where it goes.
+    let silent = landingQueueCandidateTask(
+        id: silentID, root: "no-obligation", repository: repository, created: 3_000, target: nil,
+        landing: false, claims: ["Sources/Silent.swift"])
+    // A declared landing whose branch this repository's git did not answer for: what would land
+    // cannot be named, so the entry is not ready however terminal its tasks are.
+    let gone = landingQueueCandidateTask(
+        id: goneID, root: "branch-gone", repository: repository, created: 4_000, target: "main",
+        claims: ["Sources/Gone.swift"])
+    let heads = [landingQueueBranch(readyID): "commit1", landingQueueBranch(namelessID): "commit2",
+                 landingQueueBranch(silentID): "commit3"]
+    let tasks = [ready, nameless, silent, gone]
+    let rows = landingQueueEntries(tasks, repository: repository, heads: heads)
+    func entry(_ root: String) -> OrchestratorLandingQueue.Entry? {
+        landingQueueEntry(rows, landingQueueDigest(root))
+    }
+
+    expect("every line is still in the queue", rows.count, 4)
+    expect("an obligation with no target is reported rather than placed",
+           entry("no-target")?.member.notCandidate,
+           OrchestratorLandingQueue.NotCandidate.targetUnreadable)
+    check("and its target is empty rather than main",
+          entry("no-target")?.member.target == nil)
+    expect("a delivery that declared no landing at all is the same answer",
+           entry("no-obligation")?.member.notCandidate,
+           OrchestratorLandingQueue.NotCandidate.targetUnreadable)
+    check("it is not guessed onto main either", entry("no-obligation")?.member.target == nil)
+    expect("a delivery whose branch git did not answer for cannot be identified",
+           entry("branch-gone")?.member.notCandidate,
+           OrchestratorLandingQueue.NotCandidate.deliveryUnreadable)
+    check("though its declared target is still reported, because that much was read",
+          entry("branch-gone")?.member.target == "main")
+    check("none of the three holds a position or a turn",
+          ["no-target", "no-obligation", "branch-gone"].allSatisfy {
+              entry($0)?.candidateOrder == nil && entry($0)?.candidateGroup == nil
+                  && entry($0)?.turn == false
+          })
+    // And they do not consume a place: the one provable line is 1 of 1, not 1 of 4.
+    check("the line that can be proved is ordered against the candidates and nobody else",
+          entry("provable")?.candidateOrder == 1 && entry("provable")?.candidateGroup == 1
+              && entry("provable")?.turn == true)
+
+    // Two obligations under one root naming two branches. A queue that picked one would be
+    // choosing a target on somebody's behalf, which is the whole thing this refuses to do.
+    let split = landingQueueCandidateTask(
+        id: "cc000000-0000-4000-8000-00000000001c", root: "provable", repository: repository,
+        created: 5_000, target: "release", claims: ["Sources/Split.swift"])
+    let divided = landingQueueEntries([ready, split], repository: repository,
+                                      heads: heads.merging(
+                                        [landingQueueBranch("cc000000-0000-4000-8000-00000000001c"):
+                                            "commit4"], uniquingKeysWith: { first, _ in first }))
+    expect("one root naming two targets is one entry", divided.count, 1)
+    expect("and it is unordered rather than assigned to either",
+           landingQueueEntry(divided, landingQueueDigest("provable"))?.member.notCandidate,
+           OrchestratorLandingQueue.NotCandidate.targetUnreadable)
+    check("with no target of its own",
+          landingQueueEntry(divided, landingQueueDigest("provable"))?.member.target == nil)
+
+    // git said nothing at all. Membership keeps its fail-safe direction — every line stays
+    // visible — and ordering takes the opposite one, because the two mistakes cost different
+    // amounts.
+    let blind = landingQueueEntries(tasks, repository: repository, heads: [:], known: false)
+    expect("an unreadable repository still shows every line", blind.count, 4)
+    check("and orders none of them",
+          blind.allSatisfy {
+              $0.member.notCandidate == OrchestratorLandingQueue.NotCandidate.repositoryUnreadable
+                  && $0.candidateOrder == nil && !$0.turn
+          })
+}
+
 // MARK: - The inventory a dispatch has to have read
 
 /// A described repository: no git, no registry, no subprocess. The three sections and the digest

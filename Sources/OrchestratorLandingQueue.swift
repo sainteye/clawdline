@@ -56,6 +56,33 @@ enum OrchestratorLandingQueue {
         case ordered, unplaced
     }
 
+    /// Why an entry is **not** a ready candidate, and therefore holds no derived position.
+    ///
+    /// Every value names a fact that was read — the registry's, or git's — rather than a judgement
+    /// about the work. The set is closed because the alternative to a reason is a guess: an entry
+    /// whose target this side cannot read is not an entry landing on `main`, it is an entry whose
+    /// target this side cannot read, and those two are the same row only until somebody lands on
+    /// the wrong branch.
+    enum NotCandidate: String {
+        /// A contributing task is still live. One is enough: however much of the rest of the line
+        /// has finished, a root whose child is mid-flight is not ready to take the shared checkout.
+        case liveWork = "live_work"
+        /// No contributing task named a target, or two named different ones. **Never defaulted to
+        /// `main`.** A landing record's `target` is optional, so an entry that is only an unmerged
+        /// delivery ordinarily has none, and that is this value rather than an assumption.
+        case targetUnreadable = "target_unreadable"
+        /// A contributing delivery names a branch this repository's git did not answer for, so
+        /// what would land cannot be named. Candidate identity is part of being ready.
+        case deliveryUnreadable = "delivery_unreadable"
+        /// git answered nothing about this repository at all
+        /// (``Orchestrator/RepositoryBranches/known`` is false), so every branch fact an order
+        /// would rest on is unknown. Membership stays visible — that fail-safe is
+        /// ``Orchestrator/workVisibility(state:landing:isolated:branchExists:branchMerged:)``'s
+        /// and is not changed here — while ordering fails closed, which is the opposite direction
+        /// on purpose: showing a line costs a glance, ordering an unreadable one costs a landing.
+        case repositoryUnreadable = "repository_unreadable"
+    }
+
     /// Which evidence put a path in an entry's write set. `both` is not a third source; it is the
     /// two agreeing, which is the ordinary case for a delivery that did what it said it would.
     enum PathSource: String {
@@ -79,6 +106,9 @@ enum OrchestratorLandingQueue {
         let branch: String?
         let base: String?
         let head: String?
+        /// The branch this task's landing obligation names, when it declared one. Optional at the
+        /// source (`Orchestrator.Landing.target`), optional here, and never filled in.
+        let target: String?
     }
 
     /// One line of work waiting to land: a root, in a repository, with everything it holds.
@@ -98,8 +128,16 @@ enum OrchestratorLandingQueue {
         let tasks: [MemberTask]
         /// Path → where the evidence came from. Relative to the repository, exactly as declared.
         let paths: [String: PathSource]
+        /// The one branch every contributing obligation names, or nil when none did or they
+        /// disagreed. Nil is never `main`; see ``NotCandidate/targetUnreadable``.
+        let target: String?
+        /// Nil when this entry is a ready candidate, otherwise the one reason it is not.
+        let notCandidate: NotCandidate?
 
         var sortedPaths: [String] { paths.keys.sorted() }
+        /// Terminal, still holding something to land, and provable: repository, target and what
+        /// would land were all read.
+        var isCandidate: Bool { notCandidate == nil }
     }
 
     /// A member with a coordinator's answer attached.
@@ -111,6 +149,18 @@ enum OrchestratorLandingQueue {
         let placement: Placement
         /// The one entry that may land now. Derived, so a slot completing moves it with no write.
         let holder: Bool
+        /// 1-based among the ready candidates sharing this entry's repository **and target**, and
+        /// nil for an entry that is not one. This is the broker's own answer and it is derived on
+        /// every read: nothing about it is stored, so it cannot move ``Order/generation`` and
+        /// cannot re-arm a notice nobody asked for.
+        let candidateOrder: Int?
+        /// How many ready candidates share this entry's target, so `order` can be read as "1 of 2"
+        /// rather than as a rank against an unknown field.
+        let candidateGroup: Int?
+        /// This entry is first among the ready candidates on its target: it has the
+        /// shared-checkout turn. **That is not approval to land** — see ``slotNotice(repository:
+        /// entry:total:previous:contended:)``, which has to say so in words.
+        let turn: Bool
     }
 
     /// One path two or more entries will write when they land.
@@ -176,7 +226,8 @@ enum OrchestratorLandingQueue {
                 visibility: visibility, reason: reason,
                 since: task.landing?.since ?? task.created,
                 branch: branch, base: task.worktree?.base,
-                head: branch.flatMap { branches.heads[$0] } ?? task.worktree?.head)
+                head: branch.flatMap { branches.heads[$0] } ?? task.worktree?.head,
+                target: task.landing?.target)
             byRoot[rootKey(of: task, among: indexed), default: []]
                 .append((task, member))
         }
@@ -198,13 +249,16 @@ enum OrchestratorLandingQueue {
                 reasons.append(reason)
             }
             let root = sorted.first { $0.task.rootSessionId != nil }?.task
+            let tasks = sorted.map(\.member)
+            let candidacy = candidacy(reasons: reasons, tasks: tasks, branches: branches)
             return Member(
                 rootKey: key, digest: rootKeyDigest(key),
                 label: sorted.compactMap { $0.task.rootLabel }.first,
                 sessionID: root?.rootSessionId,
                 reasons: reasons,
                 since: sorted.first?.member.since ?? now,
-                tasks: sorted.map(\.member), paths: paths)
+                tasks: tasks, paths: paths,
+                target: candidacy.target, notCandidate: candidacy.notCandidate)
         }.sorted { first, second in
             first.since == second.since ? first.digest < second.digest : first.since < second.since
         }
@@ -220,6 +274,41 @@ enum OrchestratorLandingQueue {
         task.claims.isEmpty ? (retainedPaths[task.id] ?? []) : task.claims
     }
 
+    // MARK: - Ready candidates
+
+    /// Whether one entry is a **ready candidate**, and the target it would land on.
+    ///
+    /// A ready candidate is an entry every contributing task of which is terminal, which still has
+    /// something to land, and whose repository, target and candidate identity were all *read*. The
+    /// first two are the vocabulary this file already had — ``Reason/unlandedDelivery`` or
+    /// ``Reason/pendingLanding`` present and ``Reason/liveWork`` absent. The third is the half that
+    /// has to be said out loud, because it is the half that fails closed: **terminal tasks alone
+    /// are not readiness.** An entry the broker cannot place is left visible and unordered with the
+    /// reason attached, never given a position by guessing.
+    ///
+    /// The checks are not mutually exclusive and the first that applies is the one reported. The
+    /// order is deliberate: an unreadable repository makes every answer below it unprovable rather
+    /// than false, so it is reported first; a live task is the registry's own answer and disqualifies
+    /// the entry whatever git says; and of the two remaining facts the target is asked for first,
+    /// because it is the one whose absence used to read as `main`.
+    static func candidacy(reasons: [Reason], tasks: [MemberTask],
+                          branches: Orchestrator.RepositoryBranches)
+        -> (target: String?, notCandidate: NotCandidate?) {
+        let declared = Set(tasks.compactMap(\.target)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty })
+        // Two obligations naming two branches is not a target this side may choose between.
+        let target = declared.count == 1 ? declared.first : nil
+        if !branches.known { return (target, .repositoryUnreadable) }
+        if reasons.contains(.liveWork) { return (target, .liveWork) }
+        guard target != nil else { return (nil, .targetUnreadable) }
+        let unreadable = tasks.contains { task in
+            guard let branch = task.branch else { return false }
+            return branches.heads[branch] == nil
+        }
+        return (target, unreadable ? .deliveryUnreadable : nil)
+    }
+
     // MARK: - Position
 
     /// The queue as a reader sees it: the coordinator's order first, then everyone it has not
@@ -229,20 +318,77 @@ enum OrchestratorLandingQueue {
     /// incomplete, out of date, or written by somebody who did not know about a line, and none of
     /// those can remove a row. The cost is that `position` is nullable and the reader has to
     /// notice; the benefit is that there is no state in which the queue is quietly short.
+    ///
+    /// **`holder` is unchanged and `candidateOrder` is the new answer beside it.** They answer two
+    /// different questions and both are worth having: `holder` is the arithmetic this file has
+    /// always published — the first entry still in the queue — and `candidateOrder` is who, among
+    /// the entries that are actually ready, has the shared-checkout turn on each target. An entry
+    /// can hold the slot and not be a candidate; when that happens the reader is told why in the
+    /// same row rather than left to compare two fields and guess which one is stale.
     static func entries(members: [Member], order: Order) -> [Entry] {
         let placement = Dictionary(order.keys.enumerated().map { ($0.element, $0.offset) },
                                    uniquingKeysWith: { first, _ in first })
         let ordered = members.filter { placement[$0.digest] != nil }
             .sorted { (placement[$0.digest] ?? 0) < (placement[$1.digest] ?? 0) }
         let unplaced = members.filter { placement[$0.digest] == nil }
+        let derived = candidateOrder(members: members, placement: placement)
+        func row(_ member: Member, position: Int?, placement: Placement, holder: Bool) -> Entry {
+            let seat = derived[member.digest]
+            return Entry(member: member, position: position, placement: placement, holder: holder,
+                         candidateOrder: seat?.order, candidateGroup: seat?.of,
+                         turn: seat?.order == 1)
+        }
         var out: [Entry] = []
         for (index, member) in ordered.enumerated() {
-            out.append(Entry(member: member, position: index + 1, placement: .ordered,
-                             holder: index == 0))
+            out.append(row(member, position: index + 1, placement: .ordered, holder: index == 0))
         }
         for (index, member) in unplaced.enumerated() {
-            out.append(Entry(member: member, position: nil, placement: .unplaced,
-                             holder: ordered.isEmpty && index == 0))
+            out.append(row(member, position: nil, placement: .unplaced,
+                           holder: ordered.isEmpty && index == 0))
+        }
+        return out
+    }
+
+    /// The broker's own order over ready candidates: digest → where it sits among the candidates
+    /// sharing its target, 1-based.
+    ///
+    /// **Why a key rather than a judgement.** Two roots reading this at the same moment have to get
+    /// the same answer or the whole thing is worse than nothing, so the key is made of values that
+    /// do not move while anybody is reading: a coordinator's stored placement, the oldest
+    /// contributing task's clock — which is already this queue's published sort, so the derived
+    /// order and the row order agree instead of contradicting each other — and the digest, which is
+    /// the identity this route already publishes, as the last tie-break. Nothing in it is measured
+    /// at read time, so the same queue state answers the same way for as long as it lasts.
+    ///
+    /// **An explicit coordinator order always wins**, and it wins by being the first component of
+    /// the key rather than by a branch somewhere below: a placed candidate sorts ahead of every
+    /// unplaced one, in the coordinator's own sequence. A coordinator who has said nothing costs
+    /// nothing, because `Int.max` is every unplaced entry's first component and the clock decides.
+    ///
+    /// **Grouped by target, because that is what serializes.** Entries landing on different
+    /// branches are not racing for the same ref, and entries in different repositories never meet
+    /// here at all — ``members(tasks:repository:branches:retainedPaths:deliveryPaths:now:)`` filters
+    /// by repository before this is reached, so there is no cross-repository comparison to make.
+    static func candidateOrder(members: [Member], placement: [String: Int])
+        -> [String: (order: Int, of: Int)] {
+        let candidates = members.filter(\.isCandidate).sorted { first, second in
+            let left = placement[first.digest] ?? Int.max
+            let right = placement[second.digest] ?? Int.max
+            if left != right { return left < right }
+            if first.since != second.since { return first.since < second.since }
+            return first.digest < second.digest
+        }
+        var byTarget: [String: [String]] = [:]
+        for candidate in candidates {
+            guard let target = candidate.target else { continue }
+            byTarget[target, default: []].append(candidate.digest)
+        }
+        var out: [String: (order: Int, of: Int)] = [:]
+        for target in byTarget.keys.sorted() {
+            let digests = byTarget[target] ?? []
+            for (index, digest) in digests.enumerated() {
+                out[digest] = (order: index + 1, of: digests.count)
+            }
         }
         return out
     }
