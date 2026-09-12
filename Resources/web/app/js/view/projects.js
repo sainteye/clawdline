@@ -112,6 +112,23 @@ function appendText(doc, parent, tag, value, className) {
     return node;
 }
 
+function appendWorktreeIcon(doc, parent) {
+    var make = typeof doc.createElementNS === "function"
+        ? function (name) { return doc.createElementNS("http://www.w3.org/2000/svg", name); }
+        : function (name) { return doc.createElement(name); };
+    var svg = make("svg");
+    svg.setAttribute("class", "project-row-worktree-icon");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("focusable", "false");
+    var path = make("path");
+    // GitHub Octicons' `git-branch` silhouette: familiar repository vocabulary, rendered from
+    // local vector data so the console does not depend on a font, CDN or GitHub at runtime.
+    path.setAttribute("d", "M5.75 2.5a2.5 2.5 0 1 1-3.5 2.291v6.418a2.5 2.5 0 1 1-1.5 0V4.791A2.5 2.5 0 0 1 5.75 2.5Zm-2.5 1.5a1 1 0 1 0 0-2 1 1 0 0 0 0 2Zm0 10a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM14 13a2.5 2.5 0 1 1-3.5-2.291V8.5A1.5 1.5 0 0 0 9 7H6.75a.75.75 0 0 1 0-1.5H9A3 3 0 0 1 12 8.5v2.209A2.5 2.5 0 0 1 14 13Zm-1.5 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z");
+    svg.appendChild(path);
+    parent.appendChild(svg);
+}
+
 /** The words for one rung of the ladder: its name, and what it rests on. */
 function outcomeWords(outcome) {
     if (outcome === "landed") return { name: T.webProjectLanded, say: T.webProjectLandedSay };
@@ -468,10 +485,12 @@ function renderPlaces(context, places) {
             var worktrees = doc.createElement("button");
             worktrees.type = "button";
             worktrees.className = "project-row-worktrees";
-            worktrees.textContent = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "")
+            var worktreeLabel = /^zh/i.test(doc.documentElement && doc.documentElement.lang || "")
                 ? "工作樹" : "Worktrees";
-            worktrees.setAttribute("aria-label", (worktrees.textContent + ": "
+            worktrees.title = worktreeLabel;
+            worktrees.setAttribute("aria-label", (worktreeLabel + ": "
                 + (place.label || place.path)));
+            appendWorktreeIcon(doc, worktrees);
             worktrees.addEventListener("click", function () { context.openLifecycle(place); });
             item.appendChild(worktrees);
         }

@@ -1,14 +1,24 @@
-.project-row-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.project-row-wrap { position: relative; }
+.project-row-wrap .project-row { padding-right: 54px; }
 .project-row-worktrees {
-    min-width: 94px;
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
     border: 1px solid var(--line);
-    border-radius: 12px;
-    padding: 8px 12px;
+    border-radius: 10px;
+    padding: 0;
+    transform: translateY(-50%);
     background: rgba(22, 22, 26, .84);
     color: var(--dim);
-    font: 620 12px/1 var(--sans, sans-serif);
 }
 .project-row-worktrees:hover { border-color: var(--accent-ed); color: var(--ink); background: var(--card-hi); }
+.project-row-worktree-icon { display: block; width: 16px; height: 16px; fill: currentColor; }
 
 .project-worktree-lifecycle { margin-top: 18px; }
 .project-worktree-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -70,8 +80,6 @@ button.worktree-owner-link:hover { border-color: var(--accent-ed); background: v
 .worktree-next-owner { color: var(--faint); }
 
 @media (max-width: 620px) {
-    .project-row-wrap { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: stretch; }
-    .project-row-worktrees { min-width: 76px; min-height: 42px; width: auto; padding-inline: 9px; }
     .project-worktree-heading, .worktree-card-head { align-items: stretch; flex-direction: column; }
     #project-worktree-refresh, .worktree-owner, .worktree-owner-link { max-width: none; width: 100%; }
     .worktree-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); }

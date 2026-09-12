@@ -938,11 +938,15 @@ check(linked.indexOf("projects.css") < linked.indexOf("worktrees.css"),
       "worktree lifecycle styles extend the Project page after its base styles");
 const worktreeCSS = read("Resources/web/app/css/worktrees.css");
 const mobileWorktreeCSS = /@media \(max-width: 620px\) \{([\s\S]*?)\n\}/.exec(worktreeCSS)?.[1] || "";
-check(/\.project-row-wrap\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto;/.test(
-    mobileWorktreeCSS),
-    "the mobile Project card keeps Worktrees as a compact right-side action");
-check(!/\.project-row-worktrees\s*\{[^}]*width:\s*100%/.test(mobileWorktreeCSS),
-    "the mobile Worktrees action never expands into a distracting second row");
+check(/\.project-row-wrap\s*\{[^}]*position:\s*relative/.test(worktreeCSS),
+    "the Project card establishes one positioning frame for its Worktree icon");
+check(/\.project-row-wrap \.project-row\s*\{[^}]*padding-right:\s*54px/.test(worktreeCSS),
+    "the primary Project action reserves room for the embedded icon without nesting buttons");
+check(/\.project-row-worktrees\s*\{[^}]*position:\s*absolute[^}]*right:\s*10px[^}]*top:\s*50%/.test(
+    worktreeCSS), "the Worktree icon is embedded at the Project card's right edge");
+check(!/\.project-row-wrap\s*\{[^}]*grid-template-columns/.test(mobileWorktreeCSS)
+      && !/\.project-row-worktrees\s*\{[^}]*width:\s*100%/.test(mobileWorktreeCSS),
+    "the mobile breakpoint cannot move the embedded icon into a second row");
 
 const liveSource = read("Resources/web/app/js/net/live.js");
 check(liveSource.includes("/v1/orchestrator/usage/project-worktrees?project="),
@@ -1298,13 +1302,28 @@ if (placesBody) {
                 machine: "authenticated-mac-one" }),
             openBoard: () => { boardOpens++; }, openWorktreeOwner: () => {} });
         await pageHarness.page.enter();
-        equal(pageHarness.elements["projects-rows"].querySelectorAll(
-            ".project-row-worktrees").length, 1,
+        const worktreeActions = pageHarness.elements["projects-rows"].querySelectorAll(
+            ".project-row-worktrees");
+        equal(worktreeActions.length, 1,
             "a Board Project exposes one explicit Worktrees secondary action");
+        equal(worktreeActions[0].textContent, "",
+            "the embedded Worktrees action is an icon rather than a second text column");
+        equal(worktreeActions[0].getAttribute("aria-label"), "Worktrees: clawdline",
+            "the icon keeps the full Project-specific action name for assistive technology");
+        equal(worktreeActions[0].title, "Worktrees",
+            "the icon names itself on pointer hover without adding visible clutter");
+        equal(worktreeActions[0].children.length, 1,
+            "the icon action contains exactly one Git branch mark");
+        equal(worktreeActions[0].children[0].getAttribute("class"), "project-row-worktree-icon",
+            "the GitHub-style branch mark has one stable presentation hook");
+        equal(worktreeActions[0].children[0].tagName, "SVG",
+            "the branch mark is a crisp vector at every phone density");
+        equal(worktreeActions[0].parentNode.querySelectorAll(".project-row")[0].children
+            .includes(worktreeActions[0]), false,
+            "the icon is visually embedded but never invalidly nested inside the Project button");
         pageHarness.elements["projects-rows"].querySelectorAll(".project-row")[0].click();
         equal(boardOpens, 1, "the Project row keeps its existing primary Board action");
-        pageHarness.elements["projects-rows"].querySelectorAll(
-            ".project-row-worktrees")[0].click();
+        worktreeActions[0].click();
         await flush();
         equal(pageHarness.elements["projects-detail-view"].hidden, false,
             "the secondary action opens the Project lifecycle detail");
