@@ -722,6 +722,11 @@ private func testCorrelatedAckLossReorderAndDuplicate(_ h: SpoolTestHarness) asy
         seq: first, channel: .s, fullChannel: "viewer", .delivered)
     try h.check(settled == .settled(.acked) && duplicate == .lateIgnored,
                 "a correlated ack settles once and a duplicate is telemetry only")
+    // The frame is what this store rewrites on every later commit, and an acked row can never be
+    // sent again. Holding one 6.5 MB snapshot for the ten-minute tombstone put the real file at
+    // 33 MB and made each new envelope rewrite and fsync all of it.
+    try h.check(world.store.row(first)?.sealedEnvelopeBytes == nil,
+                "an acked row keeps no sealed frame for the tombstone to carry")
 }
 
 /// §6.1.4: the row is durably sent before the socket write, and a throwing send leaves it

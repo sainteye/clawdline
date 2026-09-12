@@ -484,6 +484,15 @@ public actor CloudOutboundSpool {
                           tombstone: openContinuous)
             }
         }
+        // A store written before settling dropped the frame still carries one on every terminal
+        // row, and would carry it through every commit of this run until the tombstone expired.
+        // Dropping it here costs nothing extra: the burns above have already made this commit
+        // necessary, and nothing below sends a terminal row.
+        for index in working.rows.indices
+        where working.rows[index].state.isTerminal
+            && working.rows[index].sealedEnvelopeBytes != nil {
+            working.rows[index].sealedEnvelopeBytes = nil
+        }
         // Tombstone instants from the previous run are incomparable; restart retention now.
         for index in working.rows.indices
         where working.rows[index].logicalTombstoneContinuous != nil {
@@ -774,6 +783,15 @@ public actor CloudOutboundSpool {
             try updateRow(at: index) {
                 $0.state = terminal
                 $0.logicalTombstoneContinuous = self.clock.continuousNow
+                // The frame dies with the row's last use of it. A terminal row is never handed to
+                // the transport again — `sendNext` only ever looks at ready and sent — so from
+                // here the sealed bytes are payload this store rewrites on every later commit and
+                // can never send. Holding them until the ten-minute tombstone expiry is what made
+                // one acked 6.5 MB orchestrator snapshot cost 6.5 MB on every subsequent publish:
+                // five of them put this file at 33 MB, and each new envelope had to rewrite and
+                // fsync all of it. Quota accounting is unaffected — `chargedBytes` is computed
+                // from the logical record, not from this field.
+                $0.sealedEnvelopeBytes = nil
             }
             publishOccupancy()
             return .settled(terminal)
@@ -935,6 +953,9 @@ public actor CloudOutboundSpool {
         row.burnReason = reason
         if let outcome { row.attemptOutcome = outcome }
         row.logicalTombstoneContinuous = tombstone
+        // Terminal, and for the same reason as an ack: nothing sends a burned row, so its frame
+        // is dead weight in every commit until the tombstone expires.
+        row.sealedEnvelopeBytes = nil
     }
 
     private static func storedRowCount(of state: CloudSpoolPersistedState) -> Int {
@@ -997,7 +1018,12 @@ public actor CloudOutboundSpool {
                     seq: row.seq, detail: "sent row has contradictory fields")
             }
         case .acked, .rejected:
-            guard row.sealedEnvelopeBytes != nil, row.firstSentContinuous != nil,
+            // The frame is deliberately absent once a row settles, and a file written before that
+            // change still carries one, so this says nothing about the field either way — the
+            // restart path at `open` has always read terminal rows without requiring it, and a
+            // rule that contradicted its own reader could only ever quarantine a healthy store.
+            // Everything that does order a settled row is still bound here.
+            guard row.firstSentContinuous != nil,
                   row.attemptNotAfterContinuous != nil, row.burnReason == nil else {
                 throw CloudOutboundSpoolError.corruptRow(
                     seq: row.seq, detail: "settled row has contradictory fields")
