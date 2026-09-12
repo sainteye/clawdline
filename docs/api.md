@@ -4508,6 +4508,17 @@ saying which evidence put each entry there — `claims`, `delivery_diff`, or `bo
 agree. This is the answer three lines all changing one line of `tools/check-architecture-boundaries.sh`
 had to discover by tripping over each other.
 
+**An empty `contended_paths` answers the preparation question, not the commit question.** Entries
+that share no path may prepare at the same time — isolated implementation, review, the focused
+proof, the candidate gate — and telling them that before anybody re-measures is what this array is
+for. It does not release the last step. **Updating a ref on this repository and target branch, and
+staging or committing in the shared checkout, remain one entry at a time whatever this array
+says**, because disjoint write sets still share one `main` and one index. `holder` is the field
+that says when that turn has come, and because it is derived on every read, nothing on this side
+examines two ready entries and decides between them: a coordinator may still write an order through
+`POST /v1/orchestrator/landing-queue/order`, and where nobody has, the derived holder is what makes
+the slot arrive without one.
+
 | `code` | status | |
 |---|---|---|
 | `bad_request` | 400 | `project` was missing, relative, or not inside a Git repository |

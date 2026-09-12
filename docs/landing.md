@@ -175,8 +175,19 @@ exactly the case a derived queue keeps, because their children were still workin
   declared `claims` plus what each delivery branch changed against its own base, and
   `contended_paths` names every path more than one entry writes. That constraint is now readable
   before the order is set instead of after somebody has re-measured.
+- **An empty `contended_paths` is permission to prepare, not permission to commit.** Two entries
+  that share no path may run side by side right up to the edge of the shared tree: isolated
+  implementation, review, the focused proof and the candidate gate all happen at the same time, and
+  waiting for the slot before starting any of them buys nothing. What stays one line at a time is
+  the last step — **updating a ref on this repository and target branch, and staging or committing
+  in the shared checkout**. Disjoint file sets do not protect those: two lines can still overwrite
+  each other's `main`, or carry off what the other had left in the shared index. Only work in
+  **different repositories** lands in parallel. Roots do not negotiate that turn between
+  themselves, because the queue already answers it.
 - **The slot hands itself on.** The holder is the first entry still in the queue, so a landing
-  recorded above moves it with no second write.
+  recorded above moves it with no second write. Nothing in the broker watches two ready lines and
+  decides between them: a coordinator may still write an order, and where nobody has, the derived
+  holder is what makes the slot arrive anyway.
   `POST /v1/orchestrator/landing-queue/advance` is what reaches the next root's session, once per
   holder per order generation, with a broker-composed message that prints the whole write set and
   names the route as the authority over its own prose.
