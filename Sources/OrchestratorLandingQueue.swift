@@ -24,9 +24,13 @@ import Foundation
 ///   An order naming somebody who has left is reported as stale rather than reviving them.
 /// - **Contention is computed.** Two entries writing the same path are reported as such, from the
 ///   landing-time write sets and from the delivery branches' own diffs.
-/// - **The slot handoff is the broker's to make.** The holder is the first entry still in the
-///   queue, so a slot completing hands over by arithmetic; ``advance(project:now:readiness:
-///   deliver:)`` is what turns that into a message the next line actually receives, once.
+/// - **The slot handoff is the broker's to make, and there is one slot per repository.** The turn
+///   belongs to the first of this repository's ready candidates, so a slot completing hands over by
+///   arithmetic; ``advance(project:now:readiness:deliver:)`` is what turns that into a message the
+///   next line actually receives, once. One repository is one shared index, one staging area and
+///   one `HEAD`, so two candidates on two target branches of it are not two slots; only different
+///   repositories land in parallel. The older ``Entry/holder`` flag — the first entry in the queue,
+///   ready or not — stays as display and is named as compatibility where it is published.
 ///
 /// **Where a root can still be absent, said out loud because the point of this file is that it
 /// cannot happen.** Three gaps remain and none of them is closed by anything here:
@@ -52,6 +56,11 @@ enum OrchestratorLandingQueue {
     }
 
     /// Whether a coordinator has said where this entry goes.
+    ///
+    /// A coordinator's sentence about rows, and **not landing authority**: it is the first
+    /// component of the derived key — so an explicit order does decide the turn — but `ordered`
+    /// by itself says only that somebody placed this line, including a line that is still
+    /// working. ``Entry/turn`` is the field that says who may use the shared checkout.
     enum Placement: String {
         case ordered, unplaced
     }
@@ -147,19 +156,27 @@ enum OrchestratorLandingQueue {
         /// queue knows about this line and the coordinator has not yet said where it goes.
         let position: Int?
         let placement: Placement
-        /// The one entry that may land now. Derived, so a slot completing moves it with no write.
+        /// **Compatibility display, not landing authority.** The first entry still in the queue,
+        /// which is the arithmetic this file published before ``turn`` existed: it can be an entry
+        /// whose own row says `ready: false`, so a reader that treats it as the turn can call a
+        /// line forward while it is still working. The field stays because readers have it and the
+        /// row is worth seeing; ``turn`` is what says who may use the shared checkout.
         let holder: Bool
-        /// 1-based among the ready candidates sharing this entry's repository **and target**, and
-        /// nil for an entry that is not one. This is the broker's own answer and it is derived on
-        /// every read: nothing about it is stored, so it cannot move ``Order/generation`` and
-        /// cannot re-arm a notice nobody asked for.
+        /// 1-based among the ready candidates sharing this entry's **repository**, and nil for an
+        /// entry that is not one. Target is part of the key and not a group: a repository has one
+        /// shared index, one staging area and one set of refs, so two candidates on two branches
+        /// of it are not parallel. This is the broker's own answer and it is derived on every read:
+        /// nothing about it is stored, so it cannot move ``Order/generation`` and cannot re-arm a
+        /// notice nobody asked for.
         let candidateOrder: Int?
-        /// How many ready candidates share this entry's target, so `order` can be read as "1 of 2"
+        /// How many ready candidates this repository holds, so `order` can be read as "1 of 2"
         /// rather than as a rank against an unknown field.
         let candidateGroup: Int?
-        /// This entry is first among the ready candidates on its target: it has the
-        /// shared-checkout turn. **That is not approval to land** — see ``slotNotice(repository:
-        /// entry:total:previous:contended:)``, which has to say so in words.
+        /// This entry is first among **the repository's** ready candidates: it has the one
+        /// shared-checkout turn, and ``member``'s ``Member/target`` says which branch that turn is
+        /// for. This is the landing-slot authority, and ``holder`` and ``placement`` beside it are
+        /// compatibility display. **It is still not approval to land** — see ``slotNotice(
+        /// repository:entry:total:previous:contended:)``, which has to say so in words.
         let turn: Bool
     }
 
@@ -319,12 +336,14 @@ enum OrchestratorLandingQueue {
     /// those can remove a row. The cost is that `position` is nullable and the reader has to
     /// notice; the benefit is that there is no state in which the queue is quietly short.
     ///
-    /// **`holder` is unchanged and `candidateOrder` is the new answer beside it.** They answer two
-    /// different questions and both are worth having: `holder` is the arithmetic this file has
-    /// always published — the first entry still in the queue — and `candidateOrder` is who, among
-    /// the entries that are actually ready, has the shared-checkout turn on each target. An entry
-    /// can hold the slot and not be a candidate; when that happens the reader is told why in the
-    /// same row rather than left to compare two fields and guess which one is stale.
+    /// **`turn` is the landing authority and `holder` is kept as display.** They are two
+    /// different answers and only one of them may move a ref: `holder` is the arithmetic this file
+    /// published first — the first entry still in the queue, which can be an entry whose own row
+    /// says `ready: false` — and `turn` is who, among the entries in **this repository** that are
+    /// actually ready, has the single shared-checkout turn. Publishing both as peers is what let
+    /// two fields disagree about one index, so the disagreement is now named rather than left for
+    /// a reader to arbitrate: `holder` and `position` stay visible, `turn` decides, and an entry
+    /// that holds the legacy slot without being a candidate is told why in the same row.
     static func entries(members: [Member], order: Order) -> [Entry] {
         let placement = Dictionary(order.keys.enumerated().map { ($0.element, $0.offset) },
                                    uniquingKeysWith: { first, _ in first })
@@ -349,8 +368,8 @@ enum OrchestratorLandingQueue {
         return out
     }
 
-    /// The broker's own order over ready candidates: digest → where it sits among the candidates
-    /// sharing its target, 1-based.
+    /// The broker's own order over ready candidates: digest → where it sits among **the
+    /// repository's** ready candidates, 1-based.
     ///
     /// **Why a key rather than a judgement.** Two roots reading this at the same moment have to get
     /// the same answer or the whole thing is worse than nothing, so the key is made of values that
@@ -365,10 +384,18 @@ enum OrchestratorLandingQueue {
     /// unplaced one, in the coordinator's own sequence. A coordinator who has said nothing costs
     /// nothing, because `Int.max` is every unplaced entry's first component and the clock decides.
     ///
-    /// **Grouped by target, because that is what serializes.** Entries landing on different
-    /// branches are not racing for the same ref, and entries in different repositories never meet
-    /// here at all — ``members(tasks:repository:branches:retainedPaths:deliveryPaths:now:)`` filters
-    /// by repository before this is reached, so there is no cross-repository comparison to make.
+    /// **One turn per repository, because a repository is what serializes.** An earlier version of
+    /// this function grouped the candidates by target and gave each group its own first place, on
+    /// the reasoning that two branches are two refs. Two branches are two refs and **one** index:
+    /// a candidate for `main` and a candidate for `release` in the same checkout stage into the
+    /// same `.git/index`, commit with the same `HEAD`, and leave each other's half-staged files
+    /// behind — which is the failure the whole slot exists to prevent, reintroduced one level down.
+    /// So target is part of the key and never a group: it is part of a candidate's identity, it
+    /// sorts deterministically, and the answer says which target the single turn is for.
+    ///
+    /// Entries in different repositories never meet here at all —
+    /// ``members(tasks:repository:branches:retainedPaths:deliveryPaths:now:)`` filters by
+    /// repository before this is reached — and those are the only genuinely parallel landings.
     static func candidateOrder(members: [Member], placement: [String: Int])
         -> [String: (order: Int, of: Int)] {
         let candidates = members.filter(\.isCandidate).sorted { first, second in
@@ -376,19 +403,12 @@ enum OrchestratorLandingQueue {
             let right = placement[second.digest] ?? Int.max
             if left != right { return left < right }
             if first.since != second.since { return first.since < second.since }
+            if first.target != second.target { return (first.target ?? "") < (second.target ?? "") }
             return first.digest < second.digest
         }
-        var byTarget: [String: [String]] = [:]
-        for candidate in candidates {
-            guard let target = candidate.target else { continue }
-            byTarget[target, default: []].append(candidate.digest)
-        }
         var out: [String: (order: Int, of: Int)] = [:]
-        for target in byTarget.keys.sorted() {
-            let digests = byTarget[target] ?? []
-            for (index, digest) in digests.enumerated() {
-                out[digest] = (order: index + 1, of: digests.count)
-            }
+        for (index, candidate) in candidates.enumerated() {
+            out[candidate.digest] = (order: index + 1, of: candidates.count)
         }
         return out
     }
@@ -638,6 +658,10 @@ enum OrchestratorLandingQueue {
         var row: [String: Any] = [
             "root_key": entry.member.digest,
             "root_label": entry.member.label as Any? ?? NSNull(),
+            // `position`, `placement` and `holder` are compatibility display and are named as such
+            // in `order.derived.compatibility`. `candidate.turn` below is the landing authority:
+            // these three can say `holder: true` about a line that is still working, and a reader
+            // that acted on that would be the second session in one index.
             "position": entry.position as Any? ?? NSNull(),
             "placement": entry.placement.rawValue,
             "holder": entry.holder,
@@ -682,9 +706,14 @@ enum OrchestratorLandingQueue {
     ///
     /// `keys`, `generation`, `updated`, `set_by`, `stale` and `unplaced` are the coordinator's
     /// half and are unchanged. `derived` is this side's own answer and is a *reading*, not a
-    /// write: it names the key it used, one row per target in that order, and every entry it
-    /// refused to place with the reason. Nothing in it moves `generation`, because nothing in it
-    /// is stored — a generation that moved on a `GET` would re-arm a slot notice on every read.
+    /// write: it names the key it used, this repository's ready candidates in that order, the one
+    /// entry holding the turn and the target that turn is for, and every entry it refused to place
+    /// with the reason. Nothing in it moves `generation`, because nothing in it is stored — a
+    /// generation that moved on a `GET` would re-arm a slot notice on every read.
+    ///
+    /// `authority` and `compatibility` are published rather than left to a doc page, because the
+    /// defect they answer was a reader picking the wrong field: two fields that can disagree about
+    /// one shared index must say in the response which of them a landing may rest on.
     static func orderRecord(_ order: Order, stale: [String], entries: [Entry]) -> [String: Any] {
         let groups = candidateGroups(entries)
         return ["keys": order.keys,
@@ -695,23 +724,38 @@ enum OrchestratorLandingQueue {
                 "unplaced": entries.filter { $0.placement == .unplaced }.map(\.member.digest),
                 "derived": [
                     "basis": candidateOrderBasis,
-                    "targets": groups.targets.map {
-                        ["target": $0.target, "keys": $0.keys, "turn": $0.keys.first as Any? ?? NSNull()]
-                    },
+                    "keys": groups.keys,
+                    "turn": groups.turn?.digest as Any? ?? NSNull(),
+                    "turn_target": groups.turn?.target as Any? ?? NSNull(),
+                    "authority": derivedTurnAuthority,
+                    "compatibility": legacySlotFields,
                     "unordered": groups.unordered.map { ["root_key": $0.digest, "why": $0.why] },
                 ] as [String: Any]]
     }
 
+    /// The field a landing may rest on, named in the response beside the fields that may not.
+    static let derivedTurnAuthority = "queue[].candidate.turn"
+
+    /// The two fields that predate the derived turn and are now display only. They are still
+    /// published — a reader that has them keeps working and the rows are worth seeing — and a
+    /// landing that rests on either can be the second one in a shared index.
+    static let legacySlotFields = ["queue[].holder", "queue[].position"]
+
     /// The one place the derived key is written down for a reader, so the route's answer and
     /// ``candidateOrder(members:placement:)`` cannot drift into describing different sorts.
-    static let candidateOrderBasis = "coordinator_order_then_oldest_work_then_digest"
+    static let candidateOrderBasis = "coordinator_order_then_oldest_work_then_target_then_digest"
 
-    /// The derived order as a reader sees it: one row per target in that order, and every entry
-    /// the broker would not place with the reason it would not.
+    /// The derived order as a reader sees it: this repository's ready candidates in that order,
+    /// the one digest holding the turn with the target it is for, and every entry the broker would
+    /// not place with the reason it would not.
+    ///
+    /// There is deliberately no per-target row. A reader given one list per target reads each list
+    /// as a queue with a front, which is the reading that put two lines in one index; the target a
+    /// turn is for is named once, beside the turn.
     static func candidateGroups(_ entries: [Entry])
-        -> (targets: [(target: String, keys: [String])],
+        -> (keys: [String], turn: (digest: String, target: String)?,
             unordered: [(digest: String, why: String)]) {
-        var byTarget: [String: [(order: Int, digest: String)]] = [:]
+        var ordered: [(order: Int, digest: String, target: String)] = []
         var unordered: [(digest: String, why: String)] = []
         for entry in entries {
             guard let order = entry.candidateOrder, let target = entry.member.target else {
@@ -719,13 +763,11 @@ enum OrchestratorLandingQueue {
                                   entry.member.notCandidate?.rawValue ?? "unordered"))
                 continue
             }
-            byTarget[target, default: []].append((order, entry.member.digest))
+            ordered.append((order, entry.member.digest, target))
         }
-        let targets = byTarget.keys.sorted().map { target in
-            (target: target,
-             keys: (byTarget[target] ?? []).sorted { $0.order < $1.order }.map(\.digest))
-        }
-        return (targets, unordered)
+        ordered.sort { $0.order < $1.order }
+        let turn = ordered.first.map { (digest: $0.digest, target: $0.target) }
+        return (ordered.map(\.digest), turn, unordered)
     }
 
     // MARK: - Routes
@@ -813,7 +855,9 @@ enum OrchestratorLandingQueue {
     ///
     /// **And it says what the slot is, because the slot is a smaller thing than it reads as.**
     /// Holding it is permission to use the shared checkout — to update a ref on this repository
-    /// and target, and to stage and commit here — and it is nothing else. It is not a review, not
+    /// and target, and to stage and commit here — and it is nothing else. There is one of it per
+    /// repository, which is why the sentence names the target the turn is *for* rather than
+    /// offering a turn *on* that target: a second branch is not a second index. It is not a review, not
     /// a passing suite, and nobody's approval to land. The failure that needs saying out loud is
     /// concrete: a line whose review has just finished and whose correction has not been
     /// dispatched is terminal-looking, so it can be called forward while the thing it would land
@@ -851,11 +895,15 @@ enum OrchestratorLandingQueue {
             body += "Also written by entries still in the queue: \(rows.joined(separator: "; ")). "
         }
         if let target = entry.member.target, let order = entry.candidateOrder {
-            body += "Ready candidate for \(target): \(order) of \(entry.candidateGroup ?? order) "
-                + "on that target. "
+            body += "Ready candidate \(order) of \(entry.candidateGroup ?? order) in this "
+                + "repository, and the turn is for \(target). "
         } else if let why = entry.member.notCandidate?.rawValue {
+            // `advance` never reaches here: it selects the entry holding the derived turn and
+            // refuses `no_ready_candidate` when there is none. A caller that composes a notice for
+            // some other entry is told the entry holds no turn rather than handed a sentence that
+            // is silent about it.
             body += "This entry is not a ready candidate (\(why)), so the queue has given it no "
-                + "order on any target. "
+                + "turn in this repository. "
         }
         body += "Holding the slot is the shared-checkout turn and not approval to land: it says "
             + "you may update a ref on this repository and target and stage or commit here, and "
@@ -870,11 +918,19 @@ enum OrchestratorLandingQueue {
 
     /// `POST /v1/orchestrator/landing-queue/advance`.
     ///
-    /// The holder is derived, so nothing here decides who is next: the previous holder left the
+    /// The turn is derived, so nothing here decides who is next: the previous holder left the
     /// queue when its landing was recorded and the arithmetic moved on without being told. What
-    /// this route adds is the one thing arithmetic cannot do, which is reach the session that is
-    /// now at the front. The receipt makes it idempotent — a second call after a successful
-    /// delivery answers `already_notified` rather than typing the same paragraph twice.
+    /// this route adds is the one thing arithmetic cannot do, which is reach the session that now
+    /// holds it. The receipt makes it idempotent — a second call after a successful delivery
+    /// answers `already_notified` rather than typing the same paragraph twice.
+    ///
+    /// **It types into ``Entry/turn`` and never into ``Entry/holder``.** The legacy holder is the
+    /// first entry still in the queue, ready or not, so selecting it could type "the landing slot
+    /// is yours" into a session whose own row says `ready: false` — a line whose child is still
+    /// out, or whose delivery branch this side could not read. Those are exactly the entries that
+    /// must not be called forward, so when no entry in this repository holds the turn the route
+    /// refuses `no_ready_candidate`: nothing is typed, no receipt is written, and the legacy holder
+    /// is never notified as a fallback.
     static func advance(project: String, now: Date = Date(),
                         readiness: (String) -> String? = { _ in nil },
                         deliver: (String, String) -> String?) -> Orchestrator.Reply {
@@ -883,10 +939,21 @@ enum OrchestratorLandingQueue {
                             "project must be an absolute path inside a Git repository.")
         }
         let state = snapshot(repository: repository, now: now)
-        guard let holder = state.entries.first(where: \.holder) else {
+        guard !state.entries.isEmpty else {
             return .refused(409, "queue_empty",
                             "Nothing is outstanding in this repository, so there is no slot to "
                                 + "hand on.")
+        }
+        guard let holder = state.entries.first(where: \.turn) else {
+            let groups = candidateGroups(state.entries)
+            return .refused(status: 409, code: "no_ready_candidate",
+                            message: "No entry in this repository is a ready candidate, so there "
+                                + "is nobody this slot may be handed to. Nothing was typed and no "
+                                + "receipt was written; the entry holding the legacy `holder` flag "
+                                + "is display and is never notified in its place.",
+                            extra: ["unordered": groups.unordered.map {
+                                ["root_key": $0.digest, "why": $0.why]
+                            }])
         }
         func answer(_ delivered: Bool, _ note: String) -> Orchestrator.Reply {
             .ok(["ok": true, "repository": repository, "delivered": delivered, "reason": note,
@@ -902,9 +969,9 @@ enum OrchestratorLandingQueue {
         }
         guard let session = holder.member.sessionID else {
             return .refused(status: 409, code: "holder_unreachable",
-                            message: "The entry at the front of the queue has no Clawdline "
-                                + "session to type into, so the slot cannot be handed on "
-                                + "automatically.",
+                            message: "The ready candidate holding this repository's turn has no "
+                                + "Clawdline session to type into, so the slot cannot be handed "
+                                + "on automatically.",
                             extra: ["holder": entryRecord(holder, now: now)])
         }
         if let blocked = readiness(session) {

@@ -336,7 +336,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "two entries writing one path are told they are writing one path",
     "the landing slot is handed on by the broker, once, and re-armed by a re-order",
     "the landing-time write set survives the isolation that empties the edit-time lease",
-    "the landing queue orders the ready candidates in one repository and target",
+    "the landing queue orders the ready candidates in one repository",
     "a landing candidate the broker cannot prove stays visible, unordered and unguessed",
     "the queue's answer says why an entry is a ready candidate or is not",
     "the slot notice says the turn is the shared checkout and not approval to land",
