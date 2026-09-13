@@ -33,7 +33,360 @@ private final class InjectedCloudTime {
     }
 }
 
+// MARK: - Command clock wiring
+
+/// Host time for the command-clock wiring tests. The kernel clocks part ways across a system
+/// sleep the way Darwin's do — measured on this Mac on 2026-09-13, `ProcessInfo.systemUptime`
+/// and `CLOCK_UPTIME_RAW` stood 60,262 s behind both `CLOCK_MONOTONIC_RAW` and wall time since
+/// boot: `CLOCK_UPTIME_RAW` stops while the Mac sleeps and `CLOCK_MONOTONIC_RAW` keeps counting.
+private final class CommandClockHostTime: @unchecked Sendable {
+    private let lock = NSLock()
+    private var wallSeconds: TimeInterval = 1_700_000_000
+    private var awakeNanoseconds: UInt64 = 5_000_000_000_000
+    private var asleepNanoseconds: UInt64 = 0
+    private var unmodelled: [String] = []
+
+    func wall() -> Date {
+        lock.lock(); defer { lock.unlock() }
+        return Date(timeIntervalSince1970: wallSeconds)
+    }
+
+    func kernelNanoseconds(_ clock: clockid_t) -> UInt64 {
+        lock.lock(); defer { lock.unlock() }
+        if clock == CLOCK_MONOTONIC_RAW { return awakeNanoseconds + asleepNanoseconds }
+        if clock == CLOCK_UPTIME_RAW { return awakeNanoseconds }
+        unmodelled.append(String(describing: clock))
+        return 0
+    }
+
+    /// The Mac is awake: wall time and both kernel clocks advance together.
+    func run(_ seconds: TimeInterval) {
+        lock.lock(); defer { lock.unlock() }
+        wallSeconds += seconds
+        awakeNanoseconds += UInt64(seconds * 1_000_000_000)
+    }
+
+    /// The Mac sleeps: wall time and `CLOCK_MONOTONIC_RAW` advance, `CLOCK_UPTIME_RAW` does not.
+    func sleep(_ seconds: TimeInterval) {
+        lock.lock(); defer { lock.unlock() }
+        wallSeconds += seconds
+        asleepNanoseconds += UInt64(seconds * 1_000_000_000)
+    }
+
+    /// Somebody sets the wall clock; no physical time passes.
+    func setWall(by seconds: TimeInterval) {
+        lock.lock(); defer { lock.unlock() }
+        wallSeconds += seconds
+    }
+
+    func unmodelledClocks() -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        return unmodelled
+    }
+}
+
+/// The control plane's side of a device-token fetch: a successful response whose pinned-HTTPS
+/// Date header reads the host's wall time plus the configured offset.
+private final class CommandClockServerTokens: CloudDeviceTokenProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private let time: CommandClockHostTime
+    private var offset: TimeInterval = 0
+
+    init(time: CommandClockHostTime) { self.time = time }
+
+    func setServerOffset(_ seconds: TimeInterval) {
+        lock.lock(); offset = seconds; lock.unlock()
+    }
+
+    func fetchDeviceToken() async throws -> CloudDeviceToken {
+        let serverDate = time.wall().addingTimeInterval(currentOffset())
+        return CloudDeviceToken(value: "token", expiresAt: Date().addingTimeInterval(240),
+                                authenticatedServerDate: serverDate)
+    }
+
+    private func currentOffset() -> TimeInterval {
+        lock.lock(); defer { lock.unlock() }
+        return offset
+    }
+}
+
+/// `Services.production()`'s command-clock wiring driving a real durable bridge. A device-token
+/// fetch reaches `CloudCommandEpochAuthority` through the supervised provider the production
+/// transport receives, and each command's effect-time authorization reaches `CloudCommandLedger`
+/// through `CloudAppBridge`, which maps a refusal to its wire code. Only the host's wall and
+/// kernel clock readings are replaced. 251090b3 was right in each unit and wrong in this wiring,
+/// which is why these scenarios do not stop at `EpochGuard`.
+private final class CommandClockWiringFixture {
+    let time: CommandClockHostTime
+    private let serverTokens: CommandClockServerTokens
+    private let tokens: CloudSupervisedDeviceTokenProvider
+    private let directory: URL
+    private let transport: CloudAppBridgeTestTransport
+    private let results: CloudAppBridgeTestResults
+    private var runtime: CloudDurableRuntime?
+    private var bridge: CloudAppBridge?
+    private var sequence: UInt64 = 0
+
+    init() async throws {
+        let time = CommandClockHostTime()
+        let authority = CloudCommandEpochAuthority(
+            wall: { time.wall() },
+            kernelNanoseconds: { time.kernelNanoseconds($0) })
+        let serverTokens = CommandClockServerTokens(time: time)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "clawdline-command-clock-\(UUID().uuidString)", isDirectory: true)
+        let transport = CloudAppBridgeTestTransport()
+        let results = CloudAppBridgeTestResults()
+        self.time = time
+        self.serverTokens = serverTokens
+        self.tokens = authority.supervisedTokenProvider(
+            inner: serverTokens, onTerminalFailure: { _ in })
+        self.directory = directory
+        self.transport = transport
+        self.results = results
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let runtime = try CloudDurableRuntime.open(directory: directory, runtime: .mac)
+        let bridge = CloudAppBridge(
+            transport: transport,
+            identity: CloudAppIdentity(
+                machineID: "clock-mac", deviceID: "clock-device", keyID: "ms-1",
+                masterSecret: try CloudMasterSecret(
+                    rawRepresentation: Data(repeating: 0x63, count: 32)),
+                signingKey: CloudDeviceKeyPair()),
+            sequencing: CloudAppBridgeTestSequence(), allowCloudCommands: { true },
+            currentCommandEffectAuthority: { _, _ in
+                authority.effectAuthorization(
+                    rosterAllowsSender: true, writeGateAllows: true)
+            },
+            commandRouter: CloudAppBridgeTestRouter(),
+            nowMilliseconds: { UInt64(Date().timeIntervalSince1970 * 1_000) },
+            commandResult: { results.append($0) }, durableRuntime: runtime)
+        try await bridge.start()
+        self.runtime = runtime
+        self.bridge = bridge
+    }
+
+    /// One device-token fetch, as a rotation or a reconnect performs it.
+    func fetchToken(serverOffset: TimeInterval = 0) async throws {
+        serverTokens.setServerOffset(serverOffset)
+        _ = try await tokens.fetchDeviceToken()
+    }
+
+    /// Sends one fresh write command and returns the bridge's result for it.
+    func command() async throws -> CloudCommandResult {
+        sequence += 1
+        let expected = Int(sequence)
+        let now = UInt64(Date().timeIntervalSince1970 * 1_000)
+        transport.yield(
+            #"{"type":"send","session":"plain","request":"clock-\#(sequence)","text":"hi","images":[]}"#,
+            sequence: sequence, timestamp: now, channel: "ctl/clock-mac")
+        let results = self.results
+        let transport = self.transport
+        try await waitForCloudAppBridge("command clock result \(expected)") {
+            results.all().count == expected && transport.envelopes().count == expected
+        }
+        let reply = transport.envelopes()[expected - 1]
+        transport.acknowledge(reply)
+        let runtime = self.runtime
+        try await waitForCloudAppBridge("command clock reply \(expected) acknowledged") {
+            await runtime?.spool.row(seq: Int64(reply.seq))?.state == .acked
+        }
+        return results.all()[expected - 1]
+    }
+
+    func stop() async {
+        await bridge?.stop()
+        bridge = nil
+        runtime = nil
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+/// Collects every wiring check, so one run names each red scenario instead of stopping at the
+/// first failure the way the guard checks below do.
+private final class CommandClockWiringChecks {
+    private(set) var count = 0
+    private(set) var failures: [String] = []
+
+    func check(_ name: String, _ condition: Bool, _ result: CloudCommandResult? = nil) {
+        count += 1
+        guard !condition else { return }
+        failures.append(result.map { "\(name) — got \($0.status) \($0.code ?? "-")" } ?? name)
+    }
+
+    func scenario(_ name: String, _ body: (CommandClockWiringFixture) async throws -> Void) async {
+        do {
+            let fixture = try await CommandClockWiringFixture()
+            do { try await body(fixture) } catch {
+                check("command clock scenario completes: \(name) — \(error)", false)
+            }
+            await fixture.stop()
+        } catch {
+            check("command clock fixture opens: \(name) — \(error)", false)
+        }
+    }
+}
+
+private func isClockRefusal(_ result: CloudCommandResult) -> Bool {
+    result.status == 503 && result.code == "command_clock_uncertain"
+}
+
+private func isAdmitted(_ result: CloudCommandResult) -> Bool {
+    result.status == 200 && result.code == nil
+}
+
+private func runCommandClockWiringScenarios(_ checks: CommandClockWiringChecks) async {
+    await checks.scenario("first calibration") { clock in
+        let unCalibrated = try await clock.command()
+        checks.check("clock: a command before any authenticated server date is refused as command_clock_uncertain",
+                     isClockRefusal(unCalibrated), unCalibrated)
+
+        try await clock.fetchToken()
+        let atSample = try await clock.command()
+        checks.check("clock (b): the first server date alone does not admit a command",
+                     isClockRefusal(atSample), atSample)
+
+        clock.time.run(30)
+        try await clock.fetchToken()
+        clock.time.run(29)
+        let atFiftyNine = try await clock.command()
+        checks.check("clock (b): 59 seconds after the first server date a command is still refused",
+                     isClockRefusal(atFiftyNine), atFiftyNine)
+
+        clock.time.run(1)
+        let atSixty = try await clock.command()
+        checks.check("clock: a token renewal inside the first stability window does not restart it",
+                     isAdmitted(atSixty), atSixty)
+    }
+
+    await checks.scenario("renewal on a ready guard") { clock in
+        try await clock.fetchToken()
+        clock.time.run(60)
+        let ready = try await clock.command()
+        checks.check("clock: a quiet 60 seconds after the first server date admits a command",
+                     isAdmitted(ready), ready)
+
+        try await clock.fetchToken(serverOffset: 1)
+        let afterRenewal = try await clock.command()
+        checks.check("clock (a): a command right after a token renewal still executes on a ready guard",
+                     isAdmitted(afterRenewal), afterRenewal)
+
+        clock.time.run(30)
+        let thirtyAfterRenewal = try await clock.command()
+        checks.check("clock (a): 30 seconds after a token renewal a command still executes",
+                     isAdmitted(thirtyAfterRenewal), thirtyAfterRenewal)
+
+        clock.time.run(210)
+        try await clock.fetchToken(serverOffset: -1)
+        clock.time.run(2)
+        let nextRotation = try await clock.command()
+        checks.check("clock (a): the next four-minute rotation leaves the guard ready too",
+                     isAdmitted(nextRotation), nextRotation)
+    }
+
+    await checks.scenario("renewal carrying clock evidence") { clock in
+        try await clock.fetchToken()
+        clock.time.run(60)
+        _ = try await clock.command()
+
+        try await clock.fetchToken(serverOffset: EpochGuard.maximumServerWallDifference + 1)
+        let farSample = try await clock.command()
+        checks.check("clock: a renewal whose server date is more than five minutes off still refuses commands",
+                     isClockRefusal(farSample), farSample)
+
+        try await clock.fetchToken()
+        clock.time.run(60)
+        let recovered = try await clock.command()
+        checks.check("clock (c): after a rejected far sample the next server date re-establishes calibration",
+                     isAdmitted(recovered), recovered)
+
+        clock.time.run(10)
+        clock.time.setWall(by: 10)
+        try await clock.fetchToken()
+        let jumpAtRenewal = try await clock.command()
+        checks.check("clock: a wall jump that only a renewal observes is still refused, not absorbed",
+                     isClockRefusal(jumpAtRenewal), jumpAtRenewal)
+
+        clock.time.run(60)
+        let afterJump = try await clock.command()
+        checks.check("clock (c): the renewal that observed the jump starts the recovery window itself",
+                     isAdmitted(afterJump), afterJump)
+    }
+
+    await checks.scenario("recovery after invalidation") { clock in
+        try await clock.fetchToken()
+        clock.time.run(60)
+        _ = try await clock.command()
+
+        clock.time.setWall(by: -10)
+        let rollback = try await clock.command()
+        checks.check("clock: a wall rollback on a ready guard refuses the command",
+                     isClockRefusal(rollback), rollback)
+
+        clock.time.run(120)
+        let withoutSample = try await clock.command()
+        checks.check("clock: an invalidated calibration does not heal without a server date",
+                     isClockRefusal(withoutSample), withoutSample)
+
+        try await clock.fetchToken()
+        let atRecoverySample = try await clock.command()
+        checks.check("clock (c): the recovering server date starts a fresh stability window",
+                     isClockRefusal(atRecoverySample), atRecoverySample)
+
+        clock.time.run(60)
+        let recovered = try await clock.command()
+        checks.check("clock (c): the next server date after invalidation re-establishes calibration",
+                     isAdmitted(recovered), recovered)
+    }
+
+    await checks.scenario("system sleep") { clock in
+        try await clock.fetchToken()
+        clock.time.run(60)
+        _ = try await clock.command()
+
+        clock.time.sleep(3_600)
+        let afterWake = try await clock.command()
+        checks.check("clock (d): the first command after an hour of system sleep executes",
+                     isAdmitted(afterWake), afterWake)
+
+        clock.time.run(5)
+        let later = try await clock.command()
+        checks.check("clock (d): commands keep executing after wake without a new server date",
+                     isAdmitted(later), later)
+
+        clock.time.sleep(600)
+        clock.time.setWall(by: 10)
+        let jumpAcrossSleep = try await clock.command()
+        checks.check("clock (d): a wall jump hidden inside a sleep is still refused",
+                     isClockRefusal(jumpAcrossSleep), jumpAcrossSleep)
+
+        let unmodelled = clock.time.unmodelledClocks()
+        checks.check("clock: the host clock reads only kernel clocks this fixture models — read \(unmodelled)",
+                     unmodelled.isEmpty)
+    }
+}
+
 func runCloudClockTests() async throws -> Int {
+    let wiring = CommandClockWiringChecks()
+    await runCommandClockWiringScenarios(wiring)
+    let guardChecks: Int
+    do {
+        guardChecks = try await runCloudClockGuardTests()
+    } catch {
+        let wiringFailures = wiring.failures.isEmpty ? "" : "; wiring: " + wiring.failures.joined(separator: "; ")
+        throw CloudClockTestFailure(description: "\(error)\(wiringFailures)")
+    }
+    guard wiring.failures.isEmpty else {
+        throw CloudClockTestFailure(description:
+            "CloudClock wiring: \(wiring.failures.count)/\(wiring.count) failed — "
+                + wiring.failures.joined(separator: "; "))
+    }
+    return guardChecks + wiring.count
+}
+
+private func runCloudClockGuardTests() async throws -> Int {
     var checks = 0
     let fiveMinutes: TimeInterval = 300
     let sixtySeconds: TimeInterval = 60
