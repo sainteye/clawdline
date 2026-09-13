@@ -113,6 +113,16 @@ It goes to **whatever server is serving the page** — this Mac, directly on the
 through its own tunnel. A page served by anything else answers something else, and the panel prints
 that refusal rather than a tick: what you must never get here is a green mark and no file.
 
+**On the hosted Cloud console there is no server to post to**, so the page sends the Cloud command
+`diagnostics.report` instead ([`cloud-error-transparency.md`](cloud-error-transparency.md) §11.5):
+`{"type":"diagnostics.report","session":"__clawdline_machine__","request":<uuid>,"report":<object>}`.
+The Mac answers it on `action:<request>` by calling the same `DiagnosticReport.save`, so the file,
+the size limit, the rotation, the success body and the refusal codes below are the route's own. Two
+differences, both deliberate: `written_by` is the envelope's sender (the paired device id), and a
+refusal's `error` also carries `layer: "mac_route"` and the envelope `seq`. Like the route, the
+command is read-level: remote writes being off does not refuse it. The audit entry is the same
+`diagnostics.report` event, with `via: cloud`.
+
 **Authentication is the paired device, at read level.** Two decisions, both deliberate:
 
 * **Not the machine-level orchestrator token.** This is one browser handing over what it recorded
@@ -153,6 +163,36 @@ looked like a reading and was not one; a report cut down to the limit would be e
 one layer deeper. Over the limit is a refusal with both numbers in it, and the last good report
 stays where it is.
 
+## The Cloud status file
+
+A second fixed file sits beside the report, and nobody has to press anything for it:
+
+```
+~/Library/Logs/Clawdline/diagnostics/cloud-status.json
+```
+
+It is this Mac's own account of its Clawdline Cloud link — the snapshot described in
+[`cloud.md`](cloud.md#what-is-wired-on-the-mac): transport state and token expiry, the command
+clock guard's state, reason and countdown, the key id, whether the paired-device roster could be
+read, drop counts by code since `counting_since`, the 20 newest dropped envelopes, the 50 newest
+commands with each Mac-side step (`accepted_at_ms`, `executed_at_ms`, `outcome`, `delivered_at_ms`,
+`undeliverable`, `refusal`), the 20 newest notices and the reply-side counts. It is rewritten when
+something changes, at most once every two seconds, as mode `0600`, and only while a Cloud bridge is
+running in this process; it is not written during tests or before the first bridge starts. A phone
+reads the same snapshot with the Cloud read `cloud.status`.
+
+**It is the other half of every Cloud refusal on screen.** A refusal names a layer, a code and a
+reference `sender·seq`; search this file for that `seq` under the same `sender` to see how far the
+command got. The Mac log carries the same reference on one line per refusal:
+`cloud: refusal layer=… code=… sender=… seq=… request=… … reply=…`.
+
+**Check `generated_at` first**, for the same reason as `written_at` above: a file left by a bridge
+that has since stopped keeps its last reading. `counting_since` is when this process started
+counting; the counts do not reset when the connection does.
+
+It holds codes, device ids, sequences, request ids, key ids, counts and times. It never holds a
+command body, a prompt, transcript text, a title or a filesystem path.
+
 ## What it cannot tell you
 
 The file is the page's account of itself. If the page never ran, never reached `Diagnostics.bind`,
@@ -169,4 +209,7 @@ and `dropped` is how you find out that was not enough.
 | the write, the limit and the rotation | `Sources/DiagnosticReport.swift` |
 | the store's behaviour on a real disk | `Tests/diagnostic-report-focused.mjs` |
 | the panel, the completeness block and the two spellings of the route | `Tests/web-diagnostics-send.mjs` |
+| the Cloud command, answered with the same store | `CloudDiagnosticsReportRoute` in `Sources/CloudLocalRoute.swift` |
+| `cloud-status.json`, `cloud.status` and the notice | `Sources/CloudStatus.swift`, fed by `Sources/CloudAppBridge.swift` and `Sources/CloudTransport.swift` |
+| the Cloud report route, status file and notice on real files and fixtures | `Tests/CloudTransparencyTests.swift` |
 | the notification road this was built during | [`docs/notifications.md`](notifications.md) |

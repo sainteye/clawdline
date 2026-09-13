@@ -207,10 +207,11 @@ refusal without entering `CloudCommandRouting`. The reply crosses one eight-outs
 lane with a one-second deadline and completed/timed-out/full/cancelled counters; offering to that
 lane does not await sequence allocation, sealing or socket send.
 
-The replay cursor commits after queue admission. A capacity refusal is terminal for that
-authenticated sequence and installs no persistent predecessor fence: after capacity drains, a
-higher sequence from the same sender can be admitted; replay defense then rejects the older refused
-envelope if it reappears. This matches the existing browser and Relay, neither of which retries the
+The replay window is claimed after authentication and before queue admission, and a claim is never
+given back. A capacity refusal is therefore terminal for that authenticated sequence and installs no
+persistent predecessor fence: after capacity drains, a higher sequence from the same sender can be
+admitted, and the refused envelope is a `replay` if it reappears. The window itself is described in
+[`cloud.md`](cloud.md). This matches the existing browser and Relay, neither of which retries the
 same envelope bytes. Reconnect changes the socket generation but not this FIFO; explicit transport
 shutdown finishes it and subsequent admission returns typed `finished` without advancing replay or
 accepted metrics. The rollback seam is the `CloudInboundCommandStream` facade: callers still use
