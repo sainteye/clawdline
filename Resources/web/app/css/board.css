@@ -38,10 +38,15 @@
     background: var(--card); color: var(--ink); text-align: left; font: inherit; cursor: pointer;
 }
 .board-item-card:hover { border-color: var(--accent-ed); background: var(--card-hi); }
-.board-subtask-card { width: calc(100% - 28px); margin-inline-start: 28px; padding: 17px 18px; gap: 10px; }
+.board-subtask-group { margin: 10px 0 0 28px; border-inline-start: 2px solid var(--line); padding-inline-start: 14px; }
+.board-subtask-group > summary { color: var(--dim); font-size: 13px; }
+.board-subtask-group > summary::marker { color: var(--accent); }
+.board-subtask-grid { margin-top: 10px; }
+.board-subtask-card { padding: 17px 18px; gap: 10px; }
 .board-subtask-card .board-kind-icon { width: 30px; height: 30px; }
 .board-subtask-card .board-card-title { font-size: 15px; }
-.board-card-parent { color: var(--faint); font: 10px/1.5 var(--mono); overflow-wrap: anywhere; }
+.board-card-parent { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--faint); font: 10px/1.5 var(--mono); overflow-wrap: anywhere; }
+.board-subtask-label { border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; color: var(--dim); font-weight: 700; letter-spacing: .04em; }
 .board-agent-details { opacity: .88; }
 .board-agent-details[open] { opacity: 1; }
 .board-agent-card { padding: 16px 18px; gap: 10px; background: transparent; }
@@ -182,7 +187,8 @@ details.board-section[open] > summary { margin-bottom: 14px; color: var(--ink); 
     .board-overview-stat strong { font-size: 28px; }
     .board-overview-stat span { font-size: 11px; }
     .board-item-card { padding: 18px; }
-    .board-subtask-card { width: calc(100% - 14px); margin-inline-start: 14px; padding: 15px 16px; }
+    .board-subtask-group { margin-inline-start: 8px; padding-inline-start: 10px; }
+    .board-subtask-card { padding: 15px 16px; }
     .board-fact { flex-wrap: wrap; gap: 4px 12px; }
     .board-fact-value { text-align: left; }
     .board-completion-report { margin-inline: -4px; padding: 20px 18px; border-radius: 15px; }

@@ -525,9 +525,11 @@ function card(ctx, item) {
     el(ctx, node, "strong", shortTitle(narrative.title || item.key || item.id), "board-card-title");
     if (view.role === "subtask") {
         const parent = ctx.itemById?.get(item.parentId);
-        el(ctx, node, "span", parent
-            ? words(ctx, "Subtask of ", "子任務・隸屬於 ") + shortTitle(parent.key || reading(ctx, parent).title || parent.title)
-            : words(ctx, "Subtask", "子任務"), "board-card-parent");
+        const relation = el(ctx, node, "span", null, "board-card-parent");
+        el(ctx, relation, "span", words(ctx, "Subtask", "子項目"), "board-subtask-label");
+        el(ctx, relation, "span", parent
+            ? words(ctx, "Under ", "隸屬於 ") + shortTitle(parent.key || reading(ctx, parent).title || parent.title)
+            : words(ctx, "Parent unavailable", "上層任務未載入"));
     } else if (view.audience === "agent") {
         el(ctx, node, "span", view.role === "provenance_record"
             ? words(ctx, "Retained provenance", "保留的執行來源")
@@ -565,6 +567,42 @@ function section(ctx, parent, title, collapsed = false, key = title) {
     el(ctx, node, collapsed ? "summary" : "h2", title, "board-section-title");
     return node;
 }
+function humanCards(ctx, part, rows, searching = false) {
+    const primary = [], children = new Map();
+    rows.forEach(row => {
+        if (audienceView(row).role !== "subtask" || !row.parentId) primary.push(row);
+        else children.set(row.parentId, [...(children.get(row.parentId) || []), row]);
+    });
+    if (primary.length) {
+        const list = el(ctx, part, "div", null, "board-card-grid");
+        primary.forEach(row => list.appendChild(card(ctx, row)));
+    }
+    for (const [parentId, childRows] of children) {
+        const parentItem = ctx.itemById?.get(parentId),
+            parentName = parentItem
+                ? shortTitle(parentItem.key || reading(ctx, parentItem).title || parentItem.title)
+                : words(ctx, "Parent unavailable", "上層任務未載入"),
+            key = "subtasks:" + parentId + ":" + (part.dataset.boardSection || "current"),
+            group = section(ctx, part,
+                words(ctx, "Subtasks", "子項目") + " · " + childRows.length + " · " + parentName,
+                true, key);
+        group.className += " board-subtask-group";
+        group.dataset.boardSubtasksFor = parentId;
+        if (searching) group.open = true;
+        el(ctx, group, "p", words(ctx,
+            "Smaller delivery units under this parent. Expand only when you need their detail.",
+            "這些是上層任務底下較小的交付單位；需要細節時再展開。"), "board-section-help");
+        let built = false;
+        const fill = () => {
+            if (!group.open || built) return;
+            built = true;
+            const list = el(ctx, group, "div", null, "board-card-grid board-subtask-grid");
+            childRows.forEach(row => list.appendChild(card(ctx, row)));
+        };
+        group.addEventListener("toggle", fill);
+        fill();
+    }
+}
 function historicalCards(ctx, part, rows, searching) {
     if (searching) part.open = true;
     let built = false;
@@ -573,6 +611,10 @@ function historicalCards(ctx, part, rows, searching) {
     const fill = () => {
         if (!part.open || built) return;
         built = true;
+        if (rows.some(row => audienceView(row).role === "subtask")) {
+            humanCards(ctx, part, rows, searching);
+            return;
+        }
         const list = el(ctx, part, "div", null, "board-card-grid");
         let drawn = 0, more;
         const append = () => {
@@ -1511,11 +1553,9 @@ export function bindBoardPage(elements, environment = {}) {
             ` · ${loaded} ${query ? "項符合搜尋" : "項已載入"}`)
             + (completeCounts ? words(ctx, ` / ${counts[group]} total`, ` / 共 ${counts[group]} 項`) : "");
         if (active.length) {
-            const part = section(ctx, target, words(ctx, "In focus", "現在的工作")),
-                list = el(ctx, part, "div", null, "board-card-grid");
-            active
-                .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-                .forEach((row) => list.appendChild(card(ctx, row)));
+            const part = section(ctx, target, words(ctx, "In focus", "現在的工作"));
+            humanCards(ctx, part,
+                active.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)), !!query);
         } else
             el(
                 ctx,
@@ -1538,9 +1578,8 @@ export function bindBoardPage(elements, environment = {}) {
             );
         if (waiting.length) {
             const part = section(ctx, target, words(ctx, "Ready or needs attention", "等待推進／需要處理")
-                + sectionCount("waiting", waiting.length)),
-                list = el(ctx, part, "div", null, "board-card-grid");
-            waiting.forEach(row => list.appendChild(card(ctx, row)));
+                + sectionCount("waiting", waiting.length));
+            humanCards(ctx, part, waiting, !!query);
         }
         if (planned.length || (completeCounts && counts.planning > 0)) {
             const part = section(ctx, target,

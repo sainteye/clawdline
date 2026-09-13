@@ -331,15 +331,23 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     const visible = p.elements["board-items"].all(".board-card-title").map(node => node.textContent);
     check("default Board list contains only concrete human work",
         visible.some(title => title.startsWith("Human release"))
-            && visible.some(title => title.startsWith("Human acceptance"))
+            && !visible.some(title => title.startsWith("Human acceptance"))
             && !visible.some(title => title.startsWith("Agent review attempt"))
             && !visible.some(title => title.startsWith("Transferred correction provenance")));
     check("human overview counts exclude retained agent records",
         p.elements["board-items"].all(".board-overview-stat")[0]?.textContent === "2正在進行");
-    const childCard = p.elements["board-items"].all(node =>
-        node.dataset.boardItemId === child.id)[0];
-    check("subtasks are visually compact and name their exact loaded parent",
+    const childGroup = p.elements["board-items"].all(node =>
+        node.dataset.boardSubtasksFor === parent.id)[0];
+    check("subtasks are grouped under their exact parent and collapsed by default",
+        childGroup?.tagName === "DETAILS" && !childGroup.open
+            && childGroup.textContent.includes("子項目")
+            && childGroup.textContent.includes("CLA-1")
+            && !childGroup.all(".board-item-card").length);
+    childGroup.open = true; childGroup.dispatch("toggle");
+    const childCard = childGroup.all(node => node.dataset.boardItemId === child.id)[0];
+    check("expanded subtasks are visually compact and clearly marked",
         childCard?.className.includes("board-subtask-card")
+            && childCard.textContent.includes("子項目")
             && childCard.textContent.includes("CLA-1"));
     const agentSection = p.elements["board-items"].all(node =>
         node.dataset.boardSection === "agent-execution-details")[0];
@@ -356,6 +364,12 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
         node.dataset.boardSection === "agent-execution-details")[0];
     check("search can still find agent detail explicitly", searched?.open
         && searched.textContent.includes("Agent review attempt"));
+    p.elements["board-search"].value = "Human acceptance";
+    p.elements["board-search"].dispatch("input");
+    const searchedSubtasks = p.elements["board-items"].all(node =>
+        node.dataset.boardSubtasksFor === parent.id)[0];
+    check("search opens the matching parent's subtask group",
+        searchedSubtasks?.open && searchedSubtasks.textContent.includes("Human acceptance"));
     p.view.leave();
 }
 {
@@ -384,7 +398,13 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     check("historical blocked work and verification debt stay expanded", ["Blocked historical review", "Failed verification", "Explicit blocked", "Open finding"].every(title => visible.includes(title)));
     check("attention partition does not duplicate collapsed history or mutate authority", !p.elements["board-items"].all(".board-unconfirmed-history").length && JSON.stringify([reviewDebt, failed, blocked, finding]) === original);
     area.open = true; area.dispatch("toggle");
-    check("expanding plans exposes the future subtask without changing its lifecycle", area.textContent.includes("Future phase") && planned.state === "backlog");
+    const plannedChildren = area.all(node => node.dataset.boardSubtasksFor === "program")[0];
+    check("expanding plans keeps nested subtasks collapsed and names their parent boundary",
+        plannedChildren?.tagName === "DETAILS" && !plannedChildren.open
+            && plannedChildren.textContent.includes("子項目") && planned.state === "backlog");
+    plannedChildren.open = true; plannedChildren.dispatch("toggle");
+    check("a second explicit expansion exposes the future subtask without changing lifecycle",
+        plannedChildren.textContent.includes("Future phase") && planned.state === "backlog");
     p.elements["board-search"].value = "Future phase"; p.elements["board-search"].dispatch("input");
     const searched = p.elements["board-items"].all(node => node.dataset.boardSection === "planned-work")[0];
     check("search makes matching planned work discoverable", searched?.open && searched.textContent.includes("Future phase"));
