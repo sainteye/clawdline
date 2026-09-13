@@ -1721,6 +1721,20 @@ if [ "$clawdline_linux_package_focused_only" -eq 1 ]; then
     echo "test.sh: expected one Linux package receipt, found $linux_package_receipts — full output kept at $LOG" >&2
     exit 125
   fi
+  # Compile and execute the target's XCTest behavior under the same machine-wide lock. Before
+  # this line the mode's comment promised a behavior proof but only drove the executable's small
+  # Node startup fixture, leaving LinuxRelayRuntimeOwner and the other target-only types untested
+  # on a Mac landing root. The pinned Ubuntu job still supplies the real-Linux evidence.
+  CLAWDLINE_TEST_TMUX="${CLAWDLINE_TEST_TMUX:-$(command -v tmux || true)}" \
+  CLAWDLINE_TEST_LINUX_EXECUTABLE="$linux_package_bin_dir/ClawdlineLinux" \
+    swift test --disable-sandbox --scratch-path "$linux_package_scratch" -c debug \
+      ${clawdline_suite_jobs_flags[@]+"${clawdline_suite_jobs_flags[@]}"} \
+      --filter LinuxRuntimeContractTests 2>&1 | tee -a "$LOG"
+  linux_runtime_receipts=$(grep -Ec '^Test Suite .LinuxRuntimeContractTests. passed at ' "$LOG" || true)
+  if [ "$linux_runtime_receipts" -ne 1 ]; then
+    echo "test.sh: expected one Linux runtime XCTest receipt, found $linux_runtime_receipts — full output kept at $LOG" >&2
+    exit 125
+  fi
   clawdline_suite_lock_phase idle-holding
   clawdline_suite_lock_work_finished
   rm -rf "$linux_package_scratch"

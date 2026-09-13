@@ -1088,7 +1088,9 @@ Sources/CloudPairing.swift'
 application_host_leaf_sources='Sources/CloudDurableStores.swift
 Sources/CloudAccount.swift
 Sources/CloudKeys.swift
-Sources/CloudTransport.swift'
+Sources/CloudTransport.swift
+Sources/CloudEnvelope.swift
+Sources/CloudAppBridge.swift'
 while IFS= read -r candidate; do
   [ -n "$candidate" ] || continue
   [ -f "$candidate" ] \
@@ -1142,7 +1144,7 @@ done
 
 # The exact expected membership of each real target, and of the Mac target's dependency set — not
 # a floor or a contains-check, a pinned set. This is what W3-1 shipped (`Packages/README.md`):
-# three files in ClawdlineCore, twelve in ClawdlineApplication, and exactly one Mac-to-Application
+# three files in ClawdlineCore, fourteen in ClawdlineApplication, and exactly one Mac-to-Application
 # edge. Growing real membership stays possible and stays deliberate — `core-application-candidates.txt`
 # above may only grow on its own — but *this* pinned list may only be edited in the same change
 # that adds the matching symlink(s), never as a side effect of something else moving a file
@@ -1161,7 +1163,9 @@ CloudDurableStores.swift
 CloudAccount.swift
 CloudKeys.swift
 CloudPairing.swift
-CloudTransport.swift'
+CloudTransport.swift
+CloudEnvelope.swift
+CloudAppBridge.swift'
 mac_expected_dependencies='ClawdlineApplication'
 linux_expected_members='LinuxComposition.swift
 LinuxContainedFileSystem.swift
@@ -1351,15 +1355,18 @@ grep -q 'rollback_state_incompatible' tools/linux-package.sh \
 # second time as an unrelated `Clawdline.*` type, silently defeating every check above — the
 # dependency edge would be exact and the two library targets' membership would be exact, and the
 # Mac target would still hold a duplicate, unconsumed copy of the same vocabulary.
-# CloudTransport has one explicitly conditional shared header and one Mac-only body so the flat
-# compatibility suite and the SwiftPM Mac product still compile the historical implementation.
-# The marker pair is part of the exception: deleting either makes this guard red.
+# CloudTransport and CloudAppBridge have explicitly conditional Application bodies so the flat
+# compatibility suite and SwiftPM hosts compile the same production bytes. CloudEnvelope remains
+# visible to the Mac composition until its vocabulary can be promoted in a separately claimed
+# slice; all three exceptions are pinned here rather than silently widening duplicate ownership.
 grep -q '^#if !SWIFT_PACKAGE || CLAWDLINE_APPLICATION_TARGET$' Sources/CloudTransport.swift \
   || architecture_guard_fail "CloudTransport lost its Application-only shared identity boundary"
-grep -q '^#if !SWIFT_PACKAGE || !CLAWDLINE_APPLICATION_TARGET$' Sources/CloudTransport.swift \
-  || architecture_guard_fail "CloudTransport lost its Mac/flat compatibility implementation boundary"
+grep -q '^#if !SWIFT_PACKAGE || CLAWDLINE_APPLICATION_TARGET$' Sources/CloudAppBridge.swift \
+  || architecture_guard_fail "CloudAppBridge lost its Application-only durable outbound boundary"
+grep -q '^#if !SWIFT_PACKAGE || !CLAWDLINE_APPLICATION_TARGET$' Sources/CloudAppBridge.swift \
+  || architecture_guard_fail "CloudAppBridge lost its Mac/flat compatibility bridge boundary"
 mac_forbidden_sources=$(printf '%s\n%s\n' "$core_expected_members" "$application_expected_members" \
-  | grep -v '^CloudTransport\.swift$' | LC_ALL=C sort)
+  | grep -Ev '^(CloudTransport|CloudEnvelope|CloudAppBridge)\.swift$' | LC_ALL=C sort)
 actual_mac_sources=$(graph_field 'Clawdline\.sources')
 mac_duplicated_sources=$(comm -12 \
   <(printf '%s\n' "$mac_forbidden_sources") \

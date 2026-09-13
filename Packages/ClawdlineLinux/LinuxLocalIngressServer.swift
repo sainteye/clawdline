@@ -9,17 +9,23 @@ final class LinuxLocalIngressServer {
     private let configuration: LinuxListenConfiguration
     private let authorization: Data
     private let owner: LinuxDaemonIngressOwner
+    private let relaySupervisor: LinuxRelayRuntimeSupervisor?
 
     init(configuration: LinuxListenConfiguration, authorization: Data,
-         owner: LinuxDaemonIngressOwner) {
+         owner: LinuxDaemonIngressOwner,
+         relaySupervisor: LinuxRelayRuntimeSupervisor? = nil) {
         self.configuration = configuration
         self.authorization = authorization
         self.owner = owner
+        self.relaySupervisor = relaySupervisor
     }
 
     func run() throws -> Never {
         let descriptor = try makeListener()
-        defer { _ = close(descriptor) }
+        defer {
+            _ = close(descriptor)
+            relaySupervisor?.stopAndWait()
+        }
         while true {
             let client = accept(descriptor, nil, nil)
             if client < 0 {

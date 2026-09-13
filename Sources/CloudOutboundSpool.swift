@@ -515,15 +515,14 @@ public actor CloudOutboundSpool {
         // at open and live selection, using the authenticated timestamp inside the exact frame.
         // Control and transcript rows are not coalesced, but impossible-to-accept bytes are still
         // terminal locally instead of being sent into a deterministic peer refusal loop.
-        for index in working.rows.indices
-        where working.rows[index].state == .ready {
-            if Self.isStaleForSend(
-                working.rows[index], wallNow: openWall,
-                freshnessSeconds: limits.sealedFrameFreshnessSeconds
-            ) {
-                Self.burn(&working.rows[index], reason: .staleReadyAtRestart, outcome: nil,
-                          tombstone: openContinuous)
-            }
+        // A never-sent row has no peer observation or late ACK to correlate. Retaining a burned
+        // tombstone for the full terminal window made repeated snapshots consume the global row
+        // cap even though every superseded byte was locally certain. Remove these rows in the
+        // same recovery commit; sent rows above remain durable tombstones.
+        working.rows.removeAll { row in
+            row.state == .ready && Self.isStaleForSend(
+                row, wallNow: openWall,
+                freshnessSeconds: limits.sealedFrameFreshnessSeconds)
         }
         // A store written before settling dropped the frame still carries one on every terminal
         // row, and would carry it through every commit of this run until the tombstone expired.
@@ -606,13 +605,8 @@ public actor CloudOutboundSpool {
         }
         try gcBeforeAdmission()
         var working = state
-        let now = clock.continuousNow
-        for index in working.rows.indices
-        where working.rows[index].state == .ready
-            && working.rows[index].channel == channel
-            && working.rows[index].recipient == recipient {
-            Self.burn(&working.rows[index], reason: .replacedByCoalescing, outcome: nil,
-                      tombstone: now)
+        working.rows.removeAll {
+            $0.state == .ready && $0.channel == channel && $0.recipient == recipient
         }
         let seq = try admitReservation(
             into: &working, channel: channel, logicalID: logicalID, ownerID: ownerID,
@@ -1099,22 +1093,21 @@ public actor CloudOutboundSpool {
         return (sent.count, sent.reduce(0) { $0 + ($1.sealedEnvelopeBytes?.count ?? 0) })
     }
 
-    /// Before every live socket selection, collapse ready latest-value backlogs and terminally
-    /// burn any row whose authenticated sealed timestamp is outside the explicit local policy.
+    /// Before every live socket selection, collapse ready latest-value backlogs and remove any
+    /// never-sent row whose authenticated sealed timestamp is outside the explicit local policy.
     /// One commit makes the whole normalization durable before any later row can be selected.
     private func normalizeReadyRowsForSend() throws {
         var working = state
         let wallNow = clock.wallNow
-        let continuousNow = clock.continuousNow
         var keepLatest = Set<String>()
+        var removeSequences = Set<Int64>()
         var changed = false
         for index in working.rows.indices.reversed()
         where working.rows[index].state == .ready && working.rows[index].channel.isLatestValue {
             let row = working.rows[index]
             let key = row.channel.rawValue + "\u{0}" + row.recipient
             if !keepLatest.insert(key).inserted {
-                Self.burn(&working.rows[index], reason: .replacedByCoalescing, outcome: nil,
-                          tombstone: continuousNow)
+                removeSequences.insert(row.seq)
                 changed = true
             }
         }
@@ -1123,12 +1116,12 @@ public actor CloudOutboundSpool {
                 working.rows[index], wallNow: wallNow,
                 freshnessSeconds: limits.sealedFrameFreshnessSeconds
             ) {
-                Self.burn(&working.rows[index], reason: .staleReadyAtRestart, outcome: nil,
-                          tombstone: continuousNow)
+                removeSequences.insert(working.rows[index].seq)
                 changed = true
             }
         }
         if changed {
+            working.rows.removeAll { removeSequences.contains($0.seq) }
             try store.commit(working)
             state = working
             publishOccupancy()

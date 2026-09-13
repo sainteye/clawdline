@@ -22,7 +22,7 @@ public enum CloudTransportState: Equatable, Sendable {
     case shutDown
 }
 
-public enum CloudTransportError: Error, LocalizedError, Equatable {
+public enum CloudTransportError: Error, LocalizedError, Equatable, Sendable {
     case alreadyConnected
     case invalidRelayURL
     case invalidTokenResponse
@@ -236,11 +236,12 @@ public enum CloudExecutorReconnectDisposition: Equatable, Sendable {
 }
 #endif
 
-// URLSession WebSocket and envelope routing remain the Mac host composition for W5-2. The shared
-// Application half above carries the identity proof it consumes; flat tests compile both halves.
-#if !SWIFT_PACKAGE || !CLAWDLINE_APPLICATION_TARGET
+// URLSession WebSocket, authenticated framing and bounded ingress are host-neutral Foundation
+// runtime. SwiftPM owns them in ClawdlineApplication so Mac and Linux compose the same transport;
+// the flat compatibility suite still compiles these exact source bytes directly.
+#if !SWIFT_PACKAGE || CLAWDLINE_APPLICATION_TARGET
 
-protocol CloudTransportKeyProviding: Sendable {
+public protocol CloudTransportKeyProviding: Sendable {
     func deviceKeyPair() async throws -> CloudDeviceKeyPair
     func masterSecret(for keyID: String) async throws -> CloudMasterSecret
     func pairedDevicePublicKeys() async -> [String: Data]
@@ -255,6 +256,42 @@ protocol CloudTransportKeyProviding: Sendable {
 extension CloudTransportKeyProviding {
     func transportBinding() async throws -> CloudExecutorTransportBinding? { nil }
     func admitReconnect(_: CloudExecutorTransportBinding) async throws {}
+}
+
+/// Production adapter shared by both hosts. Every method reads the protected authority again;
+/// no socket generation retains a stale roster, key epoch or revocation epoch as current truth.
+public struct CloudExecutorIdentityTransportKeys: CloudTransportKeyProviding, Sendable {
+    public let authority: CloudExecutorIdentityAuthority
+
+    public init(authority: CloudExecutorIdentityAuthority) { self.authority = authority }
+
+    public func deviceKeyPair() async throws -> CloudDeviceKeyPair {
+        try authority.transportMaterial().deviceKey
+    }
+
+    public func masterSecret(for keyID: String) async throws -> CloudMasterSecret {
+        let material = try authority.transportMaterial()
+        guard material.keyID == keyID else {
+            throw CloudTransportError.unexpectedFrame("unknown-key")
+        }
+        return material.masterSecret
+    }
+
+    public func pairedDevicePublicKeys() async -> [String: Data] {
+        (try? authority.transportMaterial().pairedDevicePublicKeys) ?? [:]
+    }
+
+    public func transportBinding() async throws -> CloudExecutorTransportBinding? {
+        try authority.transportMaterial().binding
+    }
+
+    public func admitReconnect(_ binding: CloudExecutorTransportBinding) async throws {
+        _ = try authority.verifyReconnect(CloudExecutorReconnectProof(
+            accountID: binding.accountID, machineID: binding.machineID,
+            deviceID: binding.deviceID, identityGeneration: binding.identityGeneration,
+            keyEpoch: binding.keyEpoch, revocationEpoch: binding.revocationEpoch,
+            durableLedgerOpened: true, durableSpoolOpened: true))
+    }
 }
 
 struct CloudStaticTransportKeys: CloudTransportKeyProviding, Sendable {
@@ -274,7 +311,7 @@ struct CloudStaticTransportKeys: CloudTransportKeyProviding, Sendable {
     func pairedDevicePublicKeys() async -> [String: Data] { pairedDevices }
 }
 
-protocol CloudTransportClock: Sendable {
+public protocol CloudTransportClock: Sendable {
     func now() async -> Date
     func sleep(for seconds: TimeInterval) async throws
     func jitterUnit() async -> Double
@@ -291,17 +328,38 @@ struct CloudSystemTransportClock: CloudTransportClock, Sendable {
     func jitterUnit() async -> Double { Double.random(in: 0...1) }
 }
 
-struct CloudInboundCommand: Equatable, Sendable {
-    let channel: String
-    let sequence: UInt64
-    let timestamp: UInt64
-    let commandClass: CloudEnvelopeClass
-    let sender: String
-    let plaintext: Data
+public struct CloudInboundCommand: Equatable, Sendable {
+    public let channel: String
+    public let sequence: UInt64
+    public let timestamp: UInt64
+    public let commandClass: CloudEnvelopeClass
+    public let sender: String
+    public let plaintext: Data
 
     /// HTTP-equivalent idempotency identity for an admitted command. Capacity refusal is terminal
     /// for its sequence; a later request receives a new sequence and therefore a new identity.
-    var idempotencyKey: String { "cloud:\(sender):\(sequence)" }
+    public var idempotencyKey: String { "cloud:\(sender):\(sequence)" }
+    public var isDispatchCommand: Bool { commandClass == .dispatch }
+
+    public init(channel: String, sequence: UInt64, timestamp: UInt64,
+                sender: String, plaintext: Data, isDispatch: Bool = false) {
+        self.channel = channel
+        self.sequence = sequence
+        self.timestamp = timestamp
+        commandClass = isDispatch ? .dispatch : .ctl
+        self.sender = sender
+        self.plaintext = plaintext
+    }
+
+    init(channel: String, sequence: UInt64, timestamp: UInt64,
+         commandClass: CloudEnvelopeClass, sender: String, plaintext: Data) {
+        self.channel = channel
+        self.sequence = sequence
+        self.timestamp = timestamp
+        self.commandClass = commandClass
+        self.sender = sender
+        self.plaintext = plaintext
+    }
 
     /// Retained variable-width bytes charged to the ingress owner. Scalar fields have fixed
     /// storage; channel, sender and plaintext are the command's variable memory debt.
@@ -339,52 +397,52 @@ struct CloudInboundCommandQueueLimits: Equatable, Sendable {
     }
 }
 
-enum CloudInboundAdmissionRefusalReason: String, CaseIterable, Error, Hashable, Sendable {
+public enum CloudInboundAdmissionRefusalReason: String, CaseIterable, Error, Hashable, Sendable {
     case countCap = "count_cap"
     case chargedByteCap = "charged_byte_cap"
     case plaintextCap = "plaintext_cap"
     case finished = "finished"
 }
 
-struct CloudInboundCommandQueueMetrics: Equatable, Sendable {
-    let maximumCount: Int
-    let maximumChargedBytes: Int
-    let maximumPlaintextBytes: Int
-    let currentCount: Int
-    let currentChargedBytes: Int
-    let peakCount: Int
-    let peakChargedBytes: Int
-    let admittedTotal: UInt64
-    let deliveredTotal: UInt64
-    let droppedInvalidTotal: UInt64
-    let refusalTotals: [CloudInboundAdmissionRefusalReason: UInt64]
-    let refusedChargedBytes: UInt64
-    let oldestWaitMilliseconds: UInt64
+public struct CloudInboundCommandQueueMetrics: Equatable, Sendable {
+    public let maximumCount: Int
+    public let maximumChargedBytes: Int
+    public let maximumPlaintextBytes: Int
+    public let currentCount: Int
+    public let currentChargedBytes: Int
+    public let peakCount: Int
+    public let peakChargedBytes: Int
+    public let admittedTotal: UInt64
+    public let deliveredTotal: UInt64
+    public let droppedInvalidTotal: UInt64
+    public let refusalTotals: [CloudInboundAdmissionRefusalReason: UInt64]
+    public let refusedChargedBytes: UInt64
+    public let oldestWaitMilliseconds: UInt64
 }
 
-struct CloudInboundAdmissionRefusal: Sendable {
-    let command: CloudInboundCommand
-    let reason: CloudInboundAdmissionRefusalReason
-    let metrics: CloudInboundCommandQueueMetrics
+public struct CloudInboundAdmissionRefusal: Sendable {
+    public let command: CloudInboundCommand
+    public let reason: CloudInboundAdmissionRefusalReason
+    public let metrics: CloudInboundCommandQueueMetrics
 }
 
 /// A single-consumer command sequence backed by the explicit ingress owner below. This replaces
 /// AsyncStream's opaque, formerly unbounded buffer so dequeue is observable and charged bytes can
 /// be released at the exact handoff boundary.
-struct CloudInboundCommandStream: AsyncSequence, Sendable {
-    typealias Element = CloudInboundCommand
+public struct CloudInboundCommandStream: AsyncSequence, Sendable {
+    public typealias Element = CloudInboundCommand
 
-    struct AsyncIterator: AsyncIteratorProtocol {
+    public struct AsyncIterator: AsyncIteratorProtocol {
         fileprivate let owner: CloudInboundCommandQueue
 
-        mutating func next() async -> CloudInboundCommand? {
+        public mutating func next() async -> CloudInboundCommand? {
             await owner.next()
         }
     }
 
     fileprivate let owner: CloudInboundCommandQueue
 
-    func makeAsyncIterator() -> AsyncIterator { AsyncIterator(owner: owner) }
+    public func makeAsyncIterator() -> AsyncIterator { AsyncIterator(owner: owner) }
 }
 
 /// The one owner of Cloud command ingress count, charged bytes, peaks, drops and refusals.
@@ -583,7 +641,28 @@ final class CloudInboundCommandQueue: @unchecked Sendable {
     }
 }
 
-protocol CloudTransportSocket: AnyObject, Sendable {
+/// Narrow deterministic source for host-composition tests. It exposes the same bounded queue as
+/// production without making its counters or mutation surface part of the runtime API.
+public final class CloudInboundCommandSource: @unchecked Sendable {
+    private let queue: CloudInboundCommandQueue
+    public let stream: CloudInboundCommandStream
+
+    public init() {
+        let queue = CloudInboundCommandQueue()
+        self.queue = queue
+        stream = queue.stream
+    }
+
+    @discardableResult
+    public func yield(_ command: CloudInboundCommand) -> Bool {
+        if case .success = queue.admit(command) { return true }
+        return false
+    }
+
+    public func finish() { queue.finish() }
+}
+
+public protocol CloudTransportSocket: AnyObject, Sendable {
     func send(text: String) async throws
     func receiveText() async throws -> String
     func close()
@@ -591,10 +670,10 @@ protocol CloudTransportSocket: AnyObject, Sendable {
 
 /// A connector can own a started URLSession task internally, but it only exports this value after
 /// the HTTP upgrade has completed. Authentication is a later state, represented separately below.
-struct CloudEstablishedTransportSocket: Sendable {
+public struct CloudEstablishedTransportSocket: Sendable {
     fileprivate let raw: any CloudTransportSocket
 
-    init(_ raw: any CloudTransportSocket) {
+    public init(_ raw: any CloudTransportSocket) {
         self.raw = raw
     }
 
@@ -614,18 +693,18 @@ private struct CloudAuthenticatedTransportSocket: Sendable {
     func close() { established.close() }
 }
 
-protocol CloudTransportSocketConnecting: Sendable {
+public protocol CloudTransportSocketConnecting: Sendable {
     /// Implementations may suspend while establishing a socket, but must terminate promptly when
     /// the calling task is cancelled. `CloudTransport` owns that task and cancels/joins it during
     /// shutdown, before any socket exists that could otherwise be closed.
     func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket
 }
 
-protocol CloudStartedTransportSocket: CloudTransportSocket {
+public protocol CloudStartedTransportSocket: CloudTransportSocket {
     func resume()
 }
 
-protocol CloudURLSessionSocketStarting: Sendable {
+public protocol CloudURLSessionSocketStarting: Sendable {
     func start(
         request: URLRequest,
         configuration: URLSessionConfiguration,
@@ -667,7 +746,9 @@ struct CloudURLSessionSocketConnector: CloudTransportSocketConnecting, Sendable 
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         let observer = CloudWebSocketOpenObserver()
         let configuration = URLSessionConfiguration.ephemeral
+#if !canImport(FoundationNetworking)
         configuration.waitsForConnectivity = false
+#endif
         configuration.timeoutIntervalForRequest = openingTimeout
         configuration.timeoutIntervalForResource = connectionLifetime
         let started = starter.start(
@@ -695,7 +776,7 @@ struct CloudURLSessionSocketConnector: CloudTransportSocketConnecting, Sendable 
 /// URLSession's WebSocket task is only *started* after `resume()`. The delegate callback is the
 /// first evidence that the HTTP upgrade completed, and task completion is where a 401/403 lives.
 /// This one-shot observer converts those callbacks into a bounded async result.
-final class CloudWebSocketOpenObserver: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
+public final class CloudWebSocketOpenObserver: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var outcome: Result<Void, Error>?
     private var continuation: CheckedContinuation<Void, Error>?
@@ -717,9 +798,9 @@ final class CloudWebSocketOpenObserver: NSObject, URLSessionWebSocketDelegate, @
         }
     }
 
-    func opened() { finish(.success(())) }
+    public func opened() { finish(.success(())) }
 
-    func failed(statusCode: Int?, error: Error?) {
+    public func failed(statusCode: Int?, error: Error?) {
         if statusCode == 401 || statusCode == 403 {
             finish(.failure(CloudTransportError.unauthorized))
         } else if let statusCode {
@@ -731,16 +812,25 @@ final class CloudWebSocketOpenObserver: NSObject, URLSessionWebSocketDelegate, @
         }
     }
 
-    func cancel() { finish(.failure(CancellationError())) }
+    public func cancel() { finish(.failure(CancellationError())) }
 
-    func urlSession(
+    public func urlSession(
         _ session: URLSession, webSocketTask: URLSessionWebSocketTask,
         didOpenWithProtocol protocol: String?
     ) {
         opened()
     }
 
-    func urlSession(
+    public func urlSession(
+        _ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?
+    ) {
+        finish(.failure(CloudTransportError.connectionFailed(
+            "the WebSocket closed before opening (code \(closeCode.rawValue))"
+        )))
+    }
+
+    public func urlSession(
         _ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?
     ) {
         failed(statusCode: (task.response as? HTTPURLResponse)?.statusCode, error: error)
@@ -840,22 +930,25 @@ final class CloudURLSessionSocket: CloudStartedTransportSocket, @unchecked Senda
 
 /// The machine-side cloud link. It has no app dependencies: credentials, keys, clock, socket,
 /// and logging are all injected. Failed inbound envelopes never expose ciphertext or plaintext.
-actor CloudTransport {
-    typealias Logger = @Sendable (String) -> Void
+public actor CloudTransport {
+    public typealias Logger = @Sendable (String) -> Void
     /// Called inline from the sole receive loop, so implementations must only offer the refusal to
     /// a bounded lane and return. Publication and any other suspension belong to that lane.
-    typealias InboundRefusalHandler = @Sendable (CloudInboundAdmissionRefusal) -> Void
+    public typealias InboundRefusalHandler = @Sendable (CloudInboundAdmissionRefusal) -> Void
+    /// A positive credential/revocation refusal is terminal until an explicit identity change.
+    /// The callback must enqueue lifecycle work and return; it runs on the receive owner.
+    public typealias TerminalAuthorizationHandler = @Sendable (CloudTransportError) -> Void
 
-    nonisolated let commands: CloudInboundCommandStream
+    public nonisolated let commands: CloudInboundCommandStream
     /// Correlated replies read from the authenticated socket. Pending ownership stays in the
     /// Application spool; transport publishes observations and retains no outbound queue.
-    nonisolated let outboundReceipts: AsyncStream<CloudOutboundTransportReceipt>
+    public nonisolated let outboundReceipts: AsyncStream<CloudOutboundTransportReceipt>
     /// Emits once after every successful initial or reconnect handshake. Snapshot owners use the
     /// monotonically increasing value to force a fresh full publication for the new relay state.
     /// The buffer coalesces to the newest value: an unconsumed older generation describes relay
     /// state that has already been superseded, while the current generation forces the same full
     /// snapshot refresh without allowing reconnect bursts to grow memory without bound.
-    nonisolated let readyGenerations: AsyncStream<UInt64>
+    public nonisolated let readyGenerations: AsyncStream<UInt64>
 
     private let relayBaseURL: URL
     private let tokenProvider: any CloudDeviceTokenProviding
@@ -888,9 +981,23 @@ actor CloudTransport {
     private var outboundReceiptDropped: UInt64 = 0
     private var outboundReceiptTerminated: UInt64 = 0
     private var inboundRefusalHandler: InboundRefusalHandler?
+    private var terminalAuthorizationHandler: TerminalAuthorizationHandler?
     /// The generation whose socket `refreshToken` closed on purpose. Read once, by the reconnect
     /// loop, so the retry it triggers is named for what caused it rather than for how it arrived.
     private var rotatingGeneration: Int?
+
+    /// Host-neutral production constructor. Test clocks and socket connectors remain internal;
+    /// public host compositions can only construct the real URLSession WebSocket transport.
+    public static func production(
+        relayBaseURL: URL,
+        tokenProvider: any CloudDeviceTokenProviding,
+        keyProvider: any CloudTransportKeyProviding,
+        logger: @escaping Logger = { _ in }
+    ) -> CloudTransport {
+        CloudTransport(
+            relayBaseURL: relayBaseURL, tokenProvider: tokenProvider,
+            keyProvider: keyProvider, logger: logger)
+    }
 
     init(
         relayBaseURL: URL,
@@ -937,7 +1044,7 @@ actor CloudTransport {
         self.outboundReceiptContinuation = outboundReceiptContinuation
     }
 
-    func connect(role: CloudTransportRole = .machine) async throws {
+    public func connect(role: CloudTransportRole = .machine) async throws {
         guard state == .idle else { throw CloudTransportError.alreadyConnected }
         self.role = role
         state = .connecting
@@ -951,6 +1058,9 @@ actor CloudTransport {
                 state = .idle
                 self.role = nil
                 logger("CloudTransport initial connection failed reason=\(failureCode(for: error))")
+                if isTerminalAuthorizationFailure(error) {
+                    terminalAuthorizationHandler?(normalizedTerminalAuthorizationFailure(error))
+                }
             }
             throw error
         }
@@ -966,7 +1076,7 @@ actor CloudTransport {
 
     /// One exact-byte socket operation. A reconnecting transport refuses; it never keeps a
     /// second pending dictionary or chooses a sequence. The spool retains and retries the bytes.
-    func sendExactPublishFrame(_ bytes: Data) async throws {
+    public func sendExactPublishFrame(_ bytes: Data) async throws {
         guard state != .idle, state != .shutDown else {
             throw CloudTransportError.notConnected
         }
@@ -982,18 +1092,24 @@ actor CloudTransport {
         }
     }
 
-    func currentState() -> CloudTransportState { state }
+    public func currentState() -> CloudTransportState { state }
     func droppedInboundCount() -> Int {
         Int(clamping: commandQueue.snapshot().droppedInvalidTotal)
     }
     func droppedReadyGenerationCount() -> Int { droppedReadyGenerations }
     func inboundQueueMetrics() -> CloudInboundCommandQueueMetrics { commandQueue.snapshot() }
 
-    func setInboundRefusalHandler(_ handler: InboundRefusalHandler?) {
+    public func setInboundRefusalHandler(_ handler: InboundRefusalHandler?) {
         inboundRefusalHandler = handler
     }
 
-    func shutdown() async {
+    public func setTerminalAuthorizationHandler(_ handler: TerminalAuthorizationHandler?) {
+        terminalAuthorizationHandler = handler
+        logger("CloudTransport terminal authorization owner="
+            + (handler == nil ? "cleared" : "installed"))
+    }
+
+    public func shutdown() async {
         guard state != .shutDown else { return }
         state = .shutDown
         refreshTask?.cancel()
@@ -1011,6 +1127,7 @@ actor CloudTransport {
         cachedToken = nil
         rotatingGeneration = nil
         inboundRefusalHandler = nil
+        terminalAuthorizationHandler = nil
         commandQueue.finish()
         readyContinuation.finish()
         outboundReceiptContinuation.finish()
@@ -1168,6 +1285,23 @@ actor CloudTransport {
                 return
             } catch {
                 if state == .shutDown || Task.isCancelled { return }
+                if isTerminalAuthorizationFailure(error) {
+                    let terminalHandler = terminalAuthorizationHandler
+                    activeSocket.close()
+                    if generation == activeGeneration {
+                        self.socket = nil
+                        refreshTask?.cancel()
+                        refreshTask = nil
+                    }
+                    state = .idle
+                    role = nil
+                    let failure = normalizedTerminalAuthorizationFailure(error)
+                    logger("CloudTransport terminal authorization refusal reason="
+                        + "\(failureCode(for: failure)) owner="
+                        + (terminalHandler == nil ? "missing" : "installed"))
+                    terminalHandler?(failure)
+                    return
+                }
                 if (await clock.now()).timeIntervalSince(connectedAt) >= backoffResetAfter {
                     backoff = initialBackoff
                 }
@@ -1203,6 +1337,17 @@ actor CloudTransport {
                         return
                     } catch {
                         if state == .shutDown || Task.isCancelled { return }
+                        if isTerminalAuthorizationFailure(error) {
+                            let terminalHandler = terminalAuthorizationHandler
+                            state = .idle
+                            role = nil
+                            let failure = normalizedTerminalAuthorizationFailure(error)
+                            logger("CloudTransport terminal authorization refusal reason="
+                                + "\(failureCode(for: failure)) owner="
+                                + (terminalHandler == nil ? "missing" : "installed"))
+                            terminalHandler?(failure)
+                            return
+                        }
                         state = .reconnecting
                         retryError = error
                     }
@@ -1269,6 +1414,36 @@ actor CloudTransport {
         }
     }
 
+    private func isTerminalAuthorizationFailure(_ error: Error) -> Bool {
+        guard let failure = error as? CloudTransportError else { return false }
+        switch failure {
+        case .unauthorized:
+            return true
+        case .upgradeRefused(let statusCode):
+            return statusCode == 401 || statusCode == 403
+        case .relay(let code, _):
+            return Self.terminalAuthorizationCodes.contains(code.lowercased())
+        default:
+            return false
+        }
+    }
+
+    private func normalizedTerminalAuthorizationFailure(
+        _ error: Error
+    ) -> CloudTransportError {
+        guard let failure = error as? CloudTransportError else { return .unauthorized }
+        switch failure {
+        case .upgradeRefused(let statusCode) where statusCode == 401 || statusCode == 403:
+            return .unauthorized
+        default:
+            return failure
+        }
+    }
+
+    private static let terminalAuthorizationCodes: Set<String> = [
+        "unauthorized", "forbidden", "revoked", "device_revoked", "account_revoked",
+    ]
+
     private func handle(_ text: String) async throws {
         let data = Data(text.utf8)
         guard let header = try? JSONDecoder().decode(FrameHeader.self, from: data) else {
@@ -1326,6 +1501,8 @@ actor CloudTransport {
                 logger("CloudTransport ignored inbound frame reason=malformed_error")
                 return
             }
+            let failure = CloudTransportError.relay(frame.code, frame.message)
+            if isTerminalAuthorizationFailure(failure) { throw failure }
             logger("CloudTransport uncorrelated relay error code="
                 + "\(Self.publishErrorCode(frame.code).rawValue)")
         default:
@@ -1381,7 +1558,7 @@ actor CloudTransport {
         offerOutboundReceipt(receipt)
     }
 
-    func outboundReceiptIngestionSnapshot() async -> CloudOutboundReceiptIngestionSnapshot {
+    public func outboundReceiptIngestionSnapshot() async -> CloudOutboundReceiptIngestionSnapshot {
         CloudOutboundReceiptIngestionSnapshot(
             enqueued: outboundReceiptEnqueued,
             dropped: outboundReceiptDropped,

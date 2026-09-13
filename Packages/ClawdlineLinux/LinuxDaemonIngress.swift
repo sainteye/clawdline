@@ -80,6 +80,20 @@ struct LinuxIngressRequest: Codable, Equatable {
         LinuxSHA256.hex(Data(secret.utf8))
     }
 
+    /// Relay callers do not choose durable idempotency identity. The authenticated sender and
+    /// envelope sequence are stable across an exact replay and distinct for a new attempt.
+    func reboundForCloud(sender: String, sequence: UInt64) -> LinuxIngressRequest {
+        let commandID = LinuxSHA256.hex(Data("cloud:\(sender):\(sequence)".utf8))
+        return LinuxIngressRequest(
+            operation: operation, commandID: commandID, taskID: taskID,
+            sessionID: sessionID, projectRoot: projectRoot,
+            assistant: assistant.flatMap(Assistant.init(rawValue:)), text: text,
+            acknowledge: acknowledge, authorizeRecovery: authorizeRecovery,
+            taskSecret: taskSecret, title: title, claims: claims,
+            resultBase64: resultBase64, resultDigest: resultDigest,
+            documentScope: documentScope, relativePath: relativePath)
+    }
+
     private struct Sealed: Codable {
         let operation: LinuxIngressOperation
         let commandID: String
@@ -253,6 +267,25 @@ final class LinuxDaemonIngressOwner {
     }
 
     func perform(_ request: LinuxIngressRequest) throws -> Data {
+        try perform(request, effectAuthorization: nil)
+    }
+
+    /// The authenticated Relay enters the same serialized owner as local ingress. Roster and
+    /// write authority are re-read under this lock immediately before an effect; a refused gate
+    /// releases the just-reserved row durably and never invokes the terminal runtime.
+    func performCloud(
+        _ request: LinuxIngressRequest, sender: String, sequence: UInt64,
+        effectAuthorization: @escaping (_ requiresWriteGate: Bool) throws -> Bool
+    ) throws -> Data {
+        try perform(
+            request.reboundForCloud(sender: sender, sequence: sequence),
+            effectAuthorization: effectAuthorization)
+    }
+
+    private func perform(
+        _ request: LinuxIngressRequest,
+        effectAuthorization: ((_ requiresWriteGate: Bool) throws -> Bool)?
+    ) throws -> Data {
         lock.lock()
         defer { lock.unlock() }
         guard admissionOpen else {
@@ -273,6 +306,19 @@ final class LinuxDaemonIngressOwner {
         // missing secrets, wrong secrets and wrong exact identity all take the same digest compare
         // and return the same refusal, so command existence cannot become a capability oracle.
         try authenticateSecretBearingMutation(request, state: state)
+
+        // Cloud authority is checked once before any task/artifact/queue mutation and, for writes,
+        // again immediately before the terminal effect. The first check prevents an unpaired or
+        // disabled sender from manufacturing durable task/file state; the second closes the race
+        // where pairing, revocation or the protected write gate changes after queue sealing.
+        if let effectAuthorization,
+           try !effectAuthorization(!request.operation.isRead) {
+            throw LinuxDurableStateFailure(
+                code: "cloud_effect_refused",
+                message: request.operation.isRead
+                    ? "The paired sender is no longer authorized for this read."
+                    : "The paired sender or protected write gate does not authorize this effect.")
+        }
 
         // Reads consume the same authoritative task/session projection under this owner's lock,
         // but never enter the command queue and never persist a byte. A read capability therefore
@@ -342,6 +388,17 @@ final class LinuxDaemonIngressOwner {
         }
         try store.save(state)
         try faultInjection?(.afterQueueSeal)
+
+        if let effectAuthorization,
+           try !effectAuthorization(true) {
+            state = try authoritativeState()
+            state.commands.removeAll { $0.id == request.commandID && $0.outcome == .pending }
+            state.queue.removeAll { $0.commandID == request.commandID && $0.state == .queued }
+            try store.save(state)
+            throw LinuxDurableStateFailure(
+                code: "cloud_effect_refused",
+                message: "The paired sender or protected write gate no longer authorizes this effect.")
+        }
 
         let receipt: LinuxLifecycleReceipt?
         do {

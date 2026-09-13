@@ -64,6 +64,11 @@ private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendab
         record(envelope)
     }
 
+    func sendExactPublishFrame(_ bytes: Data) async throws {
+        let frame = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
+        try await publish(envelope: frame.envelope)
+    }
+
     func shutdown() async {
         countShutdown()
         commandQueue.finish()
@@ -72,6 +77,9 @@ private final class LifecycleTestTransport: CloudTransporting, @unchecked Sendab
 
     func deliver(_ command: CloudInboundCommand) { _ = commandQueue.admit(command) }
     func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async {}
+    func setTerminalAuthorizationHandler(
+        _ handler: CloudTransport.TerminalAuthorizationHandler?
+    ) async {}
     func becameReady(_ generation: UInt64) { readyContinuation.yield(generation) }
     func connects() -> Int { lock.lock(); defer { lock.unlock() }; return connectCount }
     func shutdowns() -> Int { lock.lock(); defer { lock.unlock() }; return shutdownCount }

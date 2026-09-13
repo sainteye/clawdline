@@ -410,7 +410,8 @@ prepare_host_state() {
   local release_directory=$1
   python3 "$package_helper" prepare-state --install-root "$install_root" \
     --template "$release_directory/share/clawdline/daemon.json.in" \
-    --uid "$service_uid" --gid "$service_gid"
+    --uid "$service_uid" --gid "$service_gid" \
+    --cloud-commands-enabled "$cloud_commands_enabled"
 }
 
 health_matches_release() {
@@ -503,7 +504,7 @@ mark_release_recovery() {
 install_package() {
   local archive= provenance= signature= public_key=
   install_root=/; systemctl_command=/usr/bin/systemctl; restart_service=true
-  service_uid= service_gid=
+  service_uid= service_gid= cloud_commands_enabled=false
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --archive) archive=$2; shift 2 ;;
@@ -514,6 +515,7 @@ install_package() {
       --systemctl) systemctl_command=$2; shift 2 ;;
       --service-uid) service_uid=$2; shift 2 ;;
       --service-gid) service_gid=$2; shift 2 ;;
+      --cloud-commands-enabled) cloud_commands_enabled=$2; shift 2 ;;
       --no-restart) restart_service=false; shift ;;
       *) fail "unknown install option: $1" ;;
     esac
@@ -532,6 +534,8 @@ install_package() {
   fi
   [[ "$service_uid" =~ ^[0-9]+$ && "$service_gid" =~ ^[0-9]+$ ]] \
     || fail "service uid/gid must be numeric"
+  [ "$cloud_commands_enabled" = true ] || [ "$cloud_commands_enabled" = false ] \
+    || fail "cloud commands gate must be exactly true or false"
 
   local prefix releases staging version digest release_name release_directory
   local current_link previous_link old_target old_previous state_file legacy_state_file

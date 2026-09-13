@@ -93,6 +93,10 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
         }
         append(envelope)
     }
+    func sendExactPublishFrame(_ bytes: Data) async throws {
+        let frame = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
+        try await publish(envelope: frame.envelope)
+    }
     private func markPublicationStarted() {
         lock.lock()
         publicationStarts += 1
@@ -166,6 +170,9 @@ final class CloudAppBridgeTestTransport: CloudTransporting, @unchecked Sendable 
     func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async {
         replaceRefusalHandler(handler)
     }
+    func setTerminalAuthorizationHandler(
+        _ handler: CloudTransport.TerminalAuthorizationHandler?
+    ) async {}
     private func replaceRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) {
         lock.lock()
         refusalHandler = handler

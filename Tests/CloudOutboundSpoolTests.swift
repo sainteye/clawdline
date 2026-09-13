@@ -653,8 +653,7 @@ private func testAttemptCapBurnReleasesHeadOfLine(_ h: SpoolTestHarness) async t
     let spool = try world.open()
     let n = try await reserveSealed(spool, channel: .s, logicalID: "snap-n",
                                     recipient: "v", record: tinyRecord(1))
-    let log = SpoolTransportLog()
-    _ = try await spool.sendNext { log.record($0) }
+    let log = SpoolTransportLog(); _ = try await spool.sendNext { log.record($0) }
     let n1 = try await reserveSealed(spool, channel: .t, logicalID: "term-n1",
                                      recipient: "v", record: tinyRecord(2))
 
@@ -800,55 +799,57 @@ private func testReadyRowWithFirstSentFailsClosed(_ h: SpoolTestHarness) async t
                 "ready/first_sent corruption is neither normalized nor committed")
 }
 
-/// `s` and `orch` are explicit latest-value lanes. Admission burns every older ready value for
-/// the same exact recipient in one transaction, and live selection also collapses a pre-existing
-/// backlog. Transcript and control lanes retain every value.
 private func testLatestValueCoalescing(_ h: SpoolTestHarness) async throws {
     let world = SpoolWorld()
     let spool = try world.open()
-    let old = try await reserveSealed(spool, channel: .s, logicalID: "snap",
-                                      recipient: "viewer-1", record: tinyRecord(1))
-    let replacement = try await spool.reserveLatestValue(
-        channel: .s, logicalID: "snap-new", ownerID: nil,
-        recipient: "viewer-1", record: tinyRecord(22))
+    let old = try await reserveSealed(spool, channel: .s, logicalID: "snap", recipient: "viewer-1",
+                                      record: tinyRecord(1))
+    let replacement = try await spool.reserveLatestValue(channel: .s, logicalID: "snap-new",
+        ownerID: nil, recipient: "viewer-1", record: tinyRecord(22))
     try h.check(replacement > old, "coalescing reserves a strictly newer seq")
-    let oldRow = world.store.row(old)
-    try h.check(oldRow?.state == .burned && oldRow?.burnReason == .replacedByCoalescing,
-                "coalescing burns the old row first")
+    try h.check(world.store.row(old) == nil, "coalescing removes the never-sent row")
     let newRow = world.store.row(replacement)
-    try h.check(newRow?.state == .reserved && newRow?.channel == .s
-                && newRow?.recipient == "viewer-1"
+    try h.check(newRow?.state == .reserved && newRow?.channel == .s && newRow?.recipient == "viewer-1"
                 && newRow?.chargedBytes == CloudOutboundSpool.chargedBytes(of: tinyRecord(22)),
                 "the replacement keeps exact recipient identity and charges the new record")
 
     try await spool.seal(seq: replacement, sealedEnvelope: sealedEnvelopeStub)
-    let orchOld = try await reserveSealed(
-        spool, channel: .orch, logicalID: "orch-old", recipient: "machine", record: tinyRecord(3))
-    let orchNew = try await reserveSealed(
-        spool, channel: .orch, logicalID: "orch-new", recipient: "machine", record: tinyRecord(4))
-    let transcriptOld = try await reserveSealed(
-        spool, channel: .t, logicalID: "t-old", recipient: "viewer", record: tinyRecord(5))
-    let transcriptNew = try await reserveSealed(
-        spool, channel: .t, logicalID: "t-new", recipient: "viewer", record: tinyRecord(6))
+    let orchOld = try await reserveSealed(spool, channel: .orch, logicalID: "orch-old",
+                                          recipient: "machine", record: tinyRecord(3))
+    let orchNew = try await reserveSealed(spool, channel: .orch, logicalID: "orch-new",
+                                          recipient: "machine", record: tinyRecord(4))
+    let transcriptOld = try await reserveSealed(spool, channel: .t, logicalID: "t-old",
+                                                recipient: "viewer", record: tinyRecord(5))
+    let transcriptNew = try await reserveSealed(spool, channel: .t, logicalID: "t-new",
+                                                recipient: "viewer", record: tinyRecord(6))
     let log = SpoolTransportLog()
     _ = try await spool.sendNext { log.record($0) }
-    try h.check(world.store.row(orchOld)?.burnReason == .replacedByCoalescing
-                    && world.store.row(orchNew)?.state == .ready,
+    try h.check(world.store.row(orchOld) == nil && world.store.row(orchNew)?.state == .ready,
                 "live selection collapses an existing orchestrator ready backlog")
-    try h.check(world.store.row(transcriptOld)?.state == .ready
-                    && world.store.row(transcriptNew)?.state == .ready,
+    try h.check(world.store.row(transcriptOld)?.state == .ready && world.store.row(transcriptNew)?.state == .ready,
                 "transcript policy retains ordered non-latest values")
     try await h.expectSpoolError(.latestValuePolicyRequired(channel: .t),
                                  "transcript cannot enter the latest-value admission path") {
-        _ = try await spool.reserveLatestValue(
-            channel: .t, logicalID: "invalid", ownerID: nil,
-            recipient: "viewer", record: tinyRecord(7))
+        _ = try await spool.reserveLatestValue(channel: .t, logicalID: "invalid", ownerID: nil,
+                                                recipient: "viewer", record: tinyRecord(7))
     }
+
+    let boundedWorld = SpoolWorld()
+    let boundedSpool = try boundedWorld.open(); let sentSnapshot = try await reserveSealed(boundedSpool, channel: .s,
+        logicalID: "sent-snapshot", recipient: "viewer-1", record: tinyRecord(8))
+    _ = try await boundedSpool.sendNext { _ in }
+    for index in 0..<200 {
+        let next = try await boundedSpool.reserveLatestValue(channel: .s,
+            logicalID: "replacement-\(index)", ownerID: nil, recipient: "viewer-1",
+            record: tinyRecord(Int64(index + 10)))
+        try await boundedSpool.seal(seq: next, sealedEnvelope: sealedEnvelopeStub)
+    }
+    let retained = boundedWorld.store.snapshot.rows.filter { $0.recipient == "viewer-1" }
+    try h.check(retained.count == 2 && retained.contains { $0.seq == sentSnapshot && $0.state == .sent }
+                && retained.filter({ $0.state == .ready }).count == 1,
+                "repeated replacement stays bounded while preserving the uncertain sent tombstone")
 }
 
-/// §6.2 restart: every sent row burns first (transport uncertain); a still-fresh never-sent
-/// ready stream row sends as usual; ownerless ctl/ctlr ready rows burn; an owned ctlr ready
-/// row survives and viewer_offline settles it as acked.
 private func testRestartNormalization(_ h: SpoolTestHarness) async throws {
     let world = SpoolWorld()
     var spool = try world.open(liveOwners: ["owner-live"])
@@ -858,6 +859,9 @@ private func testRestartNormalization(_ h: SpoolTestHarness) async throws {
     _ = try await spool.sendNext { log.record($0) }
     let staleReady = try await reserveSealed(spool, channel: .s, logicalID: "s1",
                                              recipient: "rA", record: tinyRecord(2))
+    var staleBacklog: [Int64] = []
+    for index in 0..<50 { staleBacklog.append(try await reserveSealed(spool, channel: .t,
+        logicalID: "stale-\(index)", recipient: "r-stale", record: tinyRecord(Int64(index + 20)))) }
 
     world.clock.advance(.seconds(360)) // beyond the 5-minute ready freshness window
 
@@ -876,16 +880,13 @@ private func testRestartNormalization(_ h: SpoolTestHarness) async throws {
                 && sentRow?.burnReason == .restartSentUncertain
                 && sentRow?.attemptOutcome == .transportUncertain,
                 "restart burns every sent row — old continuous instants are incomparable")
-    try h.check(world.store.row(staleReady)?.state == .burned
-                && world.store.row(staleReady)?.burnReason == .staleReadyAtRestart,
-                "restart burns a no-longer-fresh ready stream row")
-    try h.check(world.store.row(freshReady)?.state == .ready,
-                "restart keeps a still-fresh never-sent ready stream row")
+    try h.check(world.store.row(staleReady) == nil, "restart removes a stale never-sent stream row")
+    try h.check(staleBacklog.allSatisfy { world.store.row($0) == nil }, "restart removes stale backlog")
+    try h.check(world.store.row(freshReady)?.state == .ready, "restart keeps a fresh ready row")
     try h.check(world.store.row(ownerlessCtl)?.state == .burned
                 && world.store.row(ownerlessCtl)?.burnReason == .ownerlessControlAtRestart,
                 "restart burns an ownerless ctl ready row")
-    try h.check(world.store.row(ownedCtlr)?.state == .ready,
-                "restart keeps a ctlr ready row whose owner is still live")
+    try h.check(world.store.row(ownedCtlr)?.state == .ready, "restart keeps live-owner ctlr")
 
     let sendFresh = try await spool.sendNext { log.record($0) }
     try h.check(sendFresh == .sent(seq: freshReady),
@@ -1265,18 +1266,17 @@ private func testReadyFreshnessExactBoundary(_ h: SpoolTestHarness) async throws
     _ = spool
     try h.check(world.store.row(exact)?.state == .ready,
                 "a ready stream exactly 240 seconds old remains fresh at restart")
-    try h.check(world.store.row(over)?.state == .burned
-                && world.store.row(over)?.burnReason == .staleReadyAtRestart,
-                "a ready stream 1 millisecond past 240 seconds burns at restart")
+    try h.check(world.store.row(over) == nil, "a stream 1 ms past 240 s is removed at restart")
     world.clock.advance(.milliseconds(1))
     let fresh = try await reserveSealed(spool, channel: .t, logicalID: "fresh", recipient: "R",
                                         record: tinyRecord(2))
     let sent = try await spool.sendNext { _ in }
-    let liveReason = world.store.row(exact)?.burnReason
-    let oldReader = try JSONDecoder().decode(LegacyCloudSpoolBurnReason?.self, from: JSONEncoder().encode(liveReason))
-    try h.check(sent == .sent(seq: fresh) && liveReason == .staleReadyAtRestart &&
-                    oldReader?.rawValue == CloudSpoolBurnReason.staleReadyAtRestart.rawValue,
-                "live stale burn remains decodable by the pre-window rollback reader")
+    let legacyReason = CloudSpoolBurnReason.staleReadyAtRestart
+    let oldReader = try JSONDecoder().decode(LegacyCloudSpoolBurnReason.self,
+                                              from: JSONEncoder().encode(legacyReason))
+    try h.check(sent == .sent(seq: fresh) && world.store.row(exact) == nil &&
+                    oldReader.rawValue == CloudSpoolBurnReason.staleReadyAtRestart.rawValue,
+                "live stale removal preserves legacy burn-reason decoding for rollback readers")
 }
 
 /// Current-run reservation staleness is also strict: equality is retained, and only time

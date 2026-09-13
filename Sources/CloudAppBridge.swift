@@ -1,32 +1,37 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#elseif canImport(Crypto)
+import Crypto
+#else
+#error("Cloud relay runtime requires CryptoKit or swift-crypto")
+#endif
 #if canImport(ClawdlineApplication)
 import ClawdlineApplication // SwiftPM owns the durable Cloud state machines in the Application target.
 #endif
 
+// The transport/outbound owner is shared by the Mac and Linux compositions. SwiftPM compiles
+// these declarations once in ClawdlineApplication; the flat compatibility suite compiles the
+// same bytes together with the Mac-only bridge below.
+#if !SWIFT_PACKAGE || CLAWDLINE_APPLICATION_TARGET
+
 /// The app-facing surface of `CloudTransport`. Keeping the concrete actor behind this protocol
 /// makes the bridge testable without a relay, Keychain, or terminal process.
-protocol CloudTransporting: Sendable {
+public protocol CloudTransporting: Sendable {
     var commands: CloudInboundCommandStream { get }
     var readyGenerations: AsyncStream<UInt64> { get }
     var outboundReceipts: AsyncStream<CloudOutboundTransportReceipt> { get }
     func connect(role: CloudTransportRole) async throws
-    func publish(envelope: CloudEnvelope) async throws
     func sendExactPublishFrame(_ bytes: Data) async throws
     func outboundReceiptIngestionSnapshot() async -> CloudOutboundReceiptIngestionSnapshot
     func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async
+    func setTerminalAuthorizationHandler(
+        _ handler: CloudTransport.TerminalAuthorizationHandler?
+    ) async
     func shutdown() async
 }
 
-extension CloudTransporting {
-    /// Compatibility for narrow fakes that still observe envelopes. Production overrides this
-    /// with a byte-preserving socket write and never decodes a spooled frame before sending it.
-    func sendExactPublishFrame(_ bytes: Data) async throws {
-        let frame = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
-        guard frame.type == "publish" else { throw CloudTransportError.unexpectedFrame(frame.type) }
-        try await publish(envelope: frame.envelope)
-    }
-
+public extension CloudTransporting {
     var outboundReceipts: AsyncStream<CloudOutboundTransportReceipt> {
         AsyncStream { $0.finish() }
     }
@@ -34,17 +39,18 @@ extension CloudTransporting {
     func outboundReceiptIngestionSnapshot() async -> CloudOutboundReceiptIngestionSnapshot {
         CloudOutboundReceiptIngestionSnapshot(enqueued: 0, dropped: 0, terminated: 0)
     }
+
 }
 
 extension CloudTransport: CloudTransporting {}
 
-enum CloudOutboundTransportReceiptKind: Equatable, Sendable {
+public enum CloudOutboundTransportReceiptKind: Equatable, Sendable {
     case delivered
     case viewerOffline
     case peerRejected(CloudOutboundPeerRejection)
 }
 
-enum CloudPublishErrorCode: String, CaseIterable, Equatable, Sendable {
+public enum CloudPublishErrorCode: String, CaseIterable, Equatable, Sendable {
     case badRequest = "bad_request"
     case tooLarge = "too_large"
     case forbidden
@@ -56,7 +62,7 @@ enum CloudPublishErrorCode: String, CaseIterable, Equatable, Sendable {
     case unknown
 }
 
-enum CloudPublishErrorField: String, CaseIterable, Equatable, Sendable {
+public enum CloudPublishErrorField: String, CaseIterable, Equatable, Sendable {
     case version = "v"
     case channel = "ch"
     case sequence = "seq"
@@ -70,28 +76,41 @@ enum CloudPublishErrorField: String, CaseIterable, Equatable, Sendable {
     case unknown
 }
 
-enum CloudPublishErrorDisposition: String, Equatable, Sendable {
+public enum CloudPublishErrorDisposition: String, Equatable, Sendable {
     case terminal
     case retryNewAttempt = "retry_new_attempt"
 }
 
-struct CloudOutboundPeerRejection: Equatable, Sendable {
-    let code: CloudPublishErrorCode
-    let field: CloudPublishErrorField?
-    let disposition: CloudPublishErrorDisposition
+public struct CloudOutboundPeerRejection: Equatable, Sendable {
+    public let code: CloudPublishErrorCode
+    public let field: CloudPublishErrorField?
+    public let disposition: CloudPublishErrorDisposition
+
+    public init(code: CloudPublishErrorCode, field: CloudPublishErrorField?,
+                disposition: CloudPublishErrorDisposition) {
+        self.code = code
+        self.field = field
+        self.disposition = disposition
+    }
 }
 
-struct CloudOutboundTransportReceipt: Equatable, Sendable {
-    let channel: String
-    let sequence: Int64
-    let kind: CloudOutboundTransportReceiptKind
+public struct CloudOutboundTransportReceipt: Equatable, Sendable {
+    public let channel: String
+    public let sequence: Int64
+    public let kind: CloudOutboundTransportReceiptKind
+
+    public init(channel: String, sequence: Int64, kind: CloudOutboundTransportReceiptKind) {
+        self.channel = channel
+        self.sequence = sequence
+        self.kind = kind
+    }
 }
 
-enum CloudDurableOutboundError: Error, Equatable, Sendable {
+public enum CloudDurableOutboundError: Error, Equatable, Sendable {
     case stopped
 }
 
-enum CloudDurableOutboundFailureClass: String, Equatable, Sendable {
+public enum CloudDurableOutboundFailureClass: String, Equatable, Sendable {
     case capacity
     case integrity
     case permissions
@@ -100,18 +119,31 @@ enum CloudDurableOutboundFailureClass: String, Equatable, Sendable {
     case other
 }
 
-struct CloudOutboundReceiptIngestionSnapshot: Equatable, Sendable {
-    let enqueued: UInt64
-    let dropped: UInt64
-    let terminated: UInt64
+public struct CloudOutboundReceiptIngestionSnapshot: Equatable, Sendable {
+    public let enqueued: UInt64
+    public let dropped: UInt64
+    public let terminated: UInt64
+
+    public init(enqueued: UInt64, dropped: UInt64, terminated: UInt64) {
+        self.enqueued = enqueued
+        self.dropped = dropped
+        self.terminated = terminated
+    }
 }
 
-struct CloudCommandEffectAuthorization: Equatable, Sendable {
-    let epochState: CloudEpochGuardState
-    let rosterAllowsSender: Bool
-    let writeGateAllows: Bool
+public struct CloudCommandEffectAuthorization: Equatable, Sendable {
+    public let epochState: CloudEpochGuardState
+    public let rosterAllowsSender: Bool
+    public let writeGateAllows: Bool
 
-    var permitsEffect: Bool { rosterAllowsSender && writeGateAllows }
+    public var permitsEffect: Bool { rosterAllowsSender && writeGateAllows }
+
+    public init(epochState: CloudEpochGuardState, rosterAllowsSender: Bool,
+                writeGateAllows: Bool) {
+        self.epochState = epochState
+        self.rosterAllowsSender = rosterAllowsSender
+        self.writeGateAllows = writeGateAllows
+    }
 }
 
 struct CloudPublishFrame: Codable, Equatable, Sendable {
@@ -126,17 +158,30 @@ struct CloudPublishFrame: Codable, Equatable, Sendable {
 
 /// Sequence persistence belongs to configuration/pairing, not to this bridge. The injected
 /// implementation must be durable: reusing a sender sequence after relaunch is a replay.
-protocol CloudEnvelopeSequencing: Sendable {
+public protocol CloudEnvelopeSequencing: Sendable {
     func nextSequence(sender: String) async throws -> UInt64
 }
 
-struct CloudAppIdentity: @unchecked Sendable {
-    let machineID: String
-    let deviceID: String
-    let keyID: String
-    let masterSecret: CloudMasterSecret
-    let signingKey: CloudDeviceKeyPair
+public struct CloudAppIdentity: @unchecked Sendable {
+    public let machineID: String
+    public let deviceID: String
+    public let keyID: String
+    public let masterSecret: CloudMasterSecret
+    public let signingKey: CloudDeviceKeyPair
+
+    public init(machineID: String, deviceID: String, keyID: String,
+                masterSecret: CloudMasterSecret, signingKey: CloudDeviceKeyPair) {
+        self.machineID = machineID
+        self.deviceID = deviceID
+        self.keyID = keyID
+        self.masterSecret = masterSecret
+        self.signingKey = signingKey
+    }
 }
+
+#endif
+
+#if !SWIFT_PACKAGE || !CLAWDLINE_APPLICATION_TARGET
 
 enum CloudHeadlessCommand: Equatable, Sendable {
     case board(body: Data)
@@ -377,6 +422,11 @@ enum CloudAppBridgeError: Error, LocalizedError, Equatable {
         case .unsupportedOutboundChannel: return "The Cloud outbound channel is not supported."
         }
     }
+}
+
+private struct CloudAppBridgeCompatibilityPublishFrame: Encodable {
+    let type = "publish"
+    let envelope: CloudEnvelope
 }
 
 /// Serializes the RemoteServer's full Cloud snapshots. Session observations are latest-value
@@ -704,21 +754,26 @@ final class CloudRefusalPublicationQueue: @unchecked Sendable {
     }
 }
 
+#endif
+
+#if !SWIFT_PACKAGE || CLAWDLINE_APPLICATION_TARGET
+
 /// Production's sole outbound sequence, pending, reconnect and publication owner. The logical
 /// bytes and global sequence are committed first, the exact publish frame is sealed second, and
 /// `CloudOutboundSpool` commits `sent` before this adapter asks the transport to write a byte.
 /// The W0-E contract remains candidate-only: this composes the already-deployed legacy-v1
 /// envelope producer and does not opt into candidate authority or raise a client floor.
-actor CloudDurableOutboundComposition {
-    typealias EnqueueStageObserver = @Sendable (
+public actor CloudDurableOutboundComposition {
+    public typealias EnqueueStageObserver = @Sendable (
         _ stage: String, _ durationMilliseconds: UInt64, _ outcome: String,
         _ logicalRecordBytes: Int, _ sealedFrameBytes: Int
     ) -> Void
 
     private let spool: CloudOutboundSpool
     private let transport: any CloudTransporting
-    private let identity: CloudAppIdentity
-    private let nowMilliseconds: CloudAppBridge.Milliseconds
+    private var identity: CloudAppIdentity
+    private var identitiesByKeyID: [String: CloudAppIdentity]
+    private let nowMilliseconds: @Sendable () -> UInt64
     private let diagnostic: @Sendable (String) -> Void
     private let deadlineFailureRetryDelay: Duration
     private var attemptDeadlineTask: Task<Void, Never>?
@@ -733,27 +788,38 @@ actor CloudDurableOutboundComposition {
     private var structuralFailure: CloudDurableOutboundFailureClass?
     private var transientFailureCount = 0
 
-    init(spool: CloudOutboundSpool, transport: any CloudTransporting,
-         identity: CloudAppIdentity, nowMilliseconds: @escaping CloudAppBridge.Milliseconds,
+    public init(spool: CloudOutboundSpool, transport: any CloudTransporting,
+         identity: CloudAppIdentity, nowMilliseconds: @escaping @Sendable () -> UInt64,
          diagnostic: @escaping @Sendable (String) -> Void = { _ in },
          deadlineFailureRetryDelay: Duration = .seconds(1)) {
         self.spool = spool
         self.transport = transport
         self.identity = identity
+        identitiesByKeyID = [identity.keyID: identity]
         self.nowMilliseconds = nowMilliseconds
         self.diagnostic = diagnostic
         self.deadlineFailureRetryDelay = deadlineFailureRetryDelay
     }
 
+    /// A ready transport generation has already authenticated these freshly read protected
+    /// epochs. New frames use the current key; uncertain sent rows retain their exact bytes, and
+    /// retry-new-attempt can still open an older in-process frame with its original key.
+    public func replaceIdentity(_ identity: CloudAppIdentity) {
+        guard !stopped else { return }
+        self.identity = identity
+        identitiesByKeyID[identity.keyID] = identity
+    }
+
     /// Producer completion is the durable seal, not a socket acknowledgement. Once the exact
     /// frame is committed ready, this method only wakes the independently owned drain worker and
     /// returns; a slow socket can no longer suspend snapshot/read producers behind itself.
-    func enqueue(
+    public func enqueue(
         _ plaintext: Data, channel: String, logicalID: String,
         observe: EnqueueStageObserver? = nil
     ) async throws {
         guard !stopped else { throw CloudDurableOutboundError.stopped }
         let spoolChannel = try Self.spoolChannel(channel)
+        let identity = identity
         let payloadDigest = SHA256.hash(data: plaintext).map { String(format: "%02x", $0) }.joined()
         // Durable logical metadata carries the quota-relevant size and a one-way content identity,
         // never plaintext or a base64-equivalent copy. Exact content exists only inside the
@@ -785,7 +851,7 @@ actor CloudDurableOutboundComposition {
             recordImmediateFailure(error, stage: "durable_reserve")
             throw error
         }
-        guard sequence >= 0 else { throw CloudAppBridgeError.sequenceExhausted }
+        guard sequence >= 0 else { throw CloudRelayRuntimeError.sequenceExhausted }
         stageStarted = nowMilliseconds()
         let envelope: CloudEnvelope
         do {
@@ -820,7 +886,7 @@ actor CloudDurableOutboundComposition {
         requestDrain(reconnect: false)
     }
 
-    func requestDrain(reconnect: Bool) {
+    public func requestDrain(reconnect: Bool) {
         guard !stopped else { return }
         drainRequested = true
         reconnectRequested = reconnectRequested || reconnect
@@ -832,7 +898,7 @@ actor CloudDurableOutboundComposition {
         }
     }
 
-    func settle(_ receipt: CloudOutboundTransportReceipt) async throws {
+    public func settle(_ receipt: CloudOutboundTransportReceipt) async throws {
         let channel = try Self.spoolChannel(receipt.channel)
         let kind: CloudSpoolSettleKind
         switch receipt.kind {
@@ -856,15 +922,15 @@ actor CloudDurableOutboundComposition {
         }
     }
 
-    func metricsSnapshot() async -> CloudOutboundWindowSnapshot {
+    public func metricsSnapshot() async -> CloudOutboundWindowSnapshot {
         await spool.outboundWindowSnapshot()
     }
 
-    func persistentFailureState() -> CloudDurableOutboundFailureClass? { structuralFailure }
+    public func persistentFailureState() -> CloudDurableOutboundFailureClass? { structuralFailure }
 
     /// Phase one is deliberately non-joining: CloudAppBridge must close the transport socket
     /// before it waits for a production URLSession send that does not observe Task cancellation.
-    func beginStop() {
+    public func beginStop() {
         guard !stopped else { return }
         stopped = true
         drainGeneration &+= 1
@@ -881,14 +947,14 @@ actor CloudDurableOutboundComposition {
         stoppingDeadlineTask = deadline
     }
 
-    func finishStop() async {
+    public func finishStop() async {
         await stoppingDrainWorker?.value
         await stoppingDeadlineTask?.value
         stoppingDrainWorker = nil
         stoppingDeadlineTask = nil
     }
 
-    func stop(unblocking: @Sendable () async -> Void) async {
+    public func stop(unblocking: @Sendable () async -> Void) async {
         beginStop()
         await unblocking()
         await finishStop()
@@ -896,7 +962,7 @@ actor CloudDurableOutboundComposition {
 
     /// Test/helper convenience for cancellation-aware transports. Production uses the explicit
     /// begin/transport-shutdown/finish sequence above.
-    func stop() async {
+    public func stop() async {
         beginStop()
         await finishStop()
     }
@@ -1049,10 +1115,11 @@ actor CloudDurableOutboundComposition {
         guard frame.envelope.ch == row.recipient, Int64(frame.envelope.seq) == row.seq else {
             throw CloudOutboundSpoolError.settlementCorrelationMismatch(seq: row.seq)
         }
-        let deviceID = identity.deviceID
-        let publicKey = identity.signingKey.publicKeyRaw
+        guard let sealingIdentity = identitiesByKeyID[frame.envelope.keyID] else { return }
+        let deviceID = sealingIdentity.deviceID
+        let publicKey = sealingIdentity.signingKey.publicKeyRaw
         let plaintext = try frame.envelope.open(
-            masterSecret: identity.masterSecret,
+            masterSecret: sealingIdentity.masterSecret,
             publicKeyForSender: { sender in
                 sender == deviceID ? publicKey : nil
             })
@@ -1128,11 +1195,27 @@ actor CloudDurableOutboundComposition {
     private static func spoolChannel(_ channel: String) throws -> CloudSpoolChannel {
         guard let prefix = channel.split(separator: "/", maxSplits: 1).first,
               let parsed = CloudSpoolChannel(rawValue: String(prefix)) else {
-            throw CloudAppBridgeError.unsupportedOutboundChannel
+            throw CloudRelayRuntimeError.unsupportedOutboundChannel
         }
         return parsed
     }
 }
+
+public enum CloudRelayRuntimeError: Error, LocalizedError, Equatable, Sendable {
+    case sequenceExhausted
+    case unsupportedOutboundChannel
+
+    public var errorDescription: String? {
+        switch self {
+        case .sequenceExhausted: return "The durable Cloud sequence space is exhausted."
+        case .unsupportedOutboundChannel: return "The Cloud outbound channel is not supported."
+        }
+    }
+}
+
+#endif
+
+#if !SWIFT_PACKAGE || !CLAWDLINE_APPLICATION_TARGET
 
 /// Connects the app's existing full-snapshot and HTTP-command seams to CloudTransport.
 ///
@@ -1589,7 +1672,10 @@ actor CloudAppBridge {
             stage = "lifecycle_check"; startedAt = nowMilliseconds()
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
             stage = "transport_publish"; startedAt = nowMilliseconds(); trace("begin")
-            try await transport.publish(envelope: envelope)
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+            try await transport.sendExactPublishFrame(
+                try encoder.encode(CloudAppBridgeCompatibilityPublishFrame(envelope: envelope)))
             trace("complete")
         } catch {
             trace("failed")
@@ -2994,3 +3080,5 @@ actor CloudAppBridge {
         return ReadOutcome(status: 200, code: nil, body: body, error: nil)
     }
 }
+
+#endif

@@ -155,8 +155,10 @@ internal responses terminally reject the old exact bytes and create a newly seal
 in-memory decryption. Uncorrelated error and unknown authenticated frames are ignored and observed,
 not promoted into reconnect reasons. Before socket selection, the signed envelope `ts` must be no
 older than 240 seconds, leaving one minute inside Relay's 300-second default. This applies explicitly
-to transcript and control rows; `s` and `orch` are latest-value lanes whose older ready values are
-durably burned and stripped of sealed bytes both at admission and live backlog selection.
+to transcript and control rows; `s` and `orch` are latest-value lanes whose older never-sent ready
+values are removed in the same admission/live-normalization commit. Never-sent stale rows likewise
+have zero terminal retention because no peer can ACK them. Sent and restart-uncertain rows keep
+durable tombstones so a late authenticated receipt remains correlatable.
 
 A cancellable maintenance wake burns every expired sent attempt and stale failed reservation without
 waiting for new traffic. Transient durable I/O uses bounded exponential delay; structural capacity,
@@ -208,18 +210,35 @@ Offering never waits for publication; each item has a one-second deadline, and c
 admitted, completed, timed-out, full-drop and cancellation totals expose its debt. A timed-out
 publication is cancelled and remains charged until its task exits, so repeated stalls cannot create
 unbounded work or block receive-loop ping handling. Shutdown is an explicit lifecycle boundary:
-admission then returns typed `finished` without advancing replay or accepted metrics. W5 still owns
-pairing/key rotation and external Cloud/GCE acceptance; W5-1 now owns the Mac/Ubuntu durable
-command and outbound composition described above.
+admission then returns typed `finished` without advancing replay or accepted metrics. W5-4 wires
+this same transport, spool and ledger into the public Linux daemon: one
+`LinuxRelayRuntimeOwner` refreshes protected identity at every ready generation, replays exact sent
+frames, settles ACK/`publish_error`, and hands `ctl/<machine>` plaintext to the existing
+`LinuxDaemonIngressOwner`. Sender plus relay sequence becomes the durable command idempotency key;
+timestamp, roster, revocation and the explicit `cloudCommandsEnabled` write gate are checked again
+before any task/artifact mutation and immediately before an effect. Cancellation or policy failure
+removes a never-started reservation and performs no host effect. One daemon-lifetime supervisor
+strongly retains this sole owner and projects its typed state into health; explicit 401/403 or
+revocation responses terminate reconnect and drive the same awaited stop path. The signed Linux
+template defaults the write gate closed, and install must name `--cloud-commands-enabled true` to
+create or preserve an enabled alpha configuration. Live Relay/GCE and real provider acceptance
+remain external gates.
 
 The public W0-E contract bytes remain a candidate pinned to commit
 `38eb822575e3c309a776a9e3e2874c7062d8fb75`, package tree
 `3ee391a4af73f9688510c19106d38ba325227051`, source SHA-256
 `47c21a3d096813f940026943004791087ea89d628f6123942dd59c02f71a2f3d`, and package SHA-256
 `6ccccea5f05b603fd9a583940f6f7a3fd5a8735ac6d5ce6ef7246620b59b7d6f`.
-`authority=candidate` and `cutover_required=true` are executable gates: W5-1 does not perform
+`authority=candidate` and `cutover_required=true` are executable gates: W5-4 does not perform
 cutover, raise a floor, or emit an unaccepted candidate version. Existing accepted v1 envelopes
 remain the production wire until a later authority decision.
+
+The 2026-09-13 live calibration is residual cost, not a current deadlock: after GC the observed
+spool was about 0.197 MB with `ready=0`, `staleReadyAtRestart=0`, and no durable-reserve failures.
+Socket and spool medians were about 202 ms and 323 ms, while changed Session writes remained
+11.9–19.5 s. The bounded-row correction prevents repeated latest-value replacement from retaining
+one tombstone per update for 600 seconds; it does not claim to explain or resolve that Session-write
+latency.
 
 **The `orch/` snapshot carries three things, and two of them were added because their absence
 was invisible.** `RemoteServer.orchestratorSnapshot()` is the one body both publishers send — the

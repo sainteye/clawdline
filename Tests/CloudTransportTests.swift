@@ -63,6 +63,23 @@ private final class CloudInboundRefusalRecorder: @unchecked Sendable {
     }
 }
 
+private final class CloudTerminalAuthorizationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [CloudTransportError] = []
+
+    func append(_ error: CloudTransportError) {
+        lock.lock()
+        values.append(error)
+        lock.unlock()
+    }
+
+    func all() -> [CloudTransportError] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
 private final class CloudSuspendedHandshakeSocket: CloudTransportSocket, @unchecked Sendable {
     private let lock = NSLock()
     private let continuation: AsyncStream<String>.Continuation
@@ -874,7 +891,6 @@ private func runCloudTransportUnauthorizedUpgradeTests() async throws -> Int {
 
     let probe = CloudReconnectSocketProbe()
     let connector = CloudUnauthorizedReconnectConnector(probe: probe)
-    let clock = CloudReconnectProbeClock()
     let logs = CloudTestLog()
     let transport = CloudTransport(
         relayBaseURL: URL(string: "ws://unauthorized-reconnect.invalid/v1/connect")!,
@@ -885,22 +901,29 @@ private func runCloudTransportUnauthorizedUpgradeTests() async throws -> Int {
         keyProvider: CloudStaticTransportKeys(
             deviceKey: CloudDeviceKeyPair(), masterSecrets: [:], pairedDevices: [:]
         ),
-        clock: clock,
         connector: connector,
-        initialBackoff: 1,
-        maximumBackoff: 8,
+        initialBackoff: 0.01,
+        maximumBackoff: 0.01,
         logger: { logs.append($0) }
     )
-    try await transport.connect(role: .machine)
-    try await waitUntil("unauthorized reconnect fetches a replacement token") {
-        connector.observedTokens().count >= 3
+    let terminal = CloudTerminalAuthorizationRecorder()
+    await transport.setTerminalAuthorizationHandler { error in
+        terminal.append(error)
     }
+    try await transport.connect(role: .machine)
+    try await Task.sleep(nanoseconds: 200_000_000)
     let tokens = connector.observedTokens()
-    try require(logs.lines().contains { $0.contains("reason=unauthorized") },
-                "an unauthorized upgrade keeps its typed reconnect reason")
-    try require(tokens.prefix(3).elementsEqual([
-        "cached-refused-token", "cached-refused-token", "refreshed-token",
-    ]), "an unauthorized upgrade invalidates the cached token before retrying")
+    let terminalErrors = terminal.all()
+    let finalState = await transport.currentState()
+    try require(terminalErrors == [.unauthorized],
+                "unauthorized reconnect reaches the terminal owner; tokens=\(tokens) "
+                    + "state=\(finalState) logs=\(logs.lines())")
+    try require(tokens == ["cached-refused-token", "cached-refused-token"],
+                "an unauthorized WebSocket upgrade is terminal and never reconnects")
+    try require(finalState == .idle,
+                "terminal authorization refusal leaves no reconnecting transport")
+    try require(!logs.lines().contains { $0.contains("reconnect waiting reason=unauthorized") },
+                "terminal authorization refusal never enters reconnect backoff")
     await transport.shutdown()
     return checks
 }
@@ -1640,13 +1663,11 @@ func runCloudOutboundCorrectionTests() async throws -> Int {
     let freshDisposition = try await freshnessSpool.sendNext { _ in }
     let freshnessState = freshnessStore.snapshot().state
     try require(freshDisposition == .sent(seq: fresh),
-                "live selection burns stale predecessors and sends the next fresh row immediately")
-    try require(freshnessState.rows.first { $0.seq == staleTranscript }?.burnReason
-                    == .staleReadyAtRestart,
-                "transcript freshness is an explicit terminal local policy")
-    try require(freshnessState.rows.first { $0.seq == staleControl }?.burnReason
-                    == .staleReadyAtRestart,
-                "control freshness is an explicit terminal local policy")
+                "live selection removes stale predecessors and sends the next fresh row immediately")
+    try require(!freshnessState.rows.contains { $0.seq == staleTranscript },
+                "never-sent transcript freshness has zero terminal retention")
+    try require(!freshnessState.rows.contains { $0.seq == staleControl },
+                "never-sent control freshness has zero terminal retention")
     return checks
 }
 

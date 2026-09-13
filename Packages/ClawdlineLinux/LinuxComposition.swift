@@ -134,6 +134,20 @@ struct LinuxRuntimeConfiguration: Codable, Equatable {
     let projectRoots: [String]
     let tmuxExecutable: String
     let providers: LinuxProviderExecutablesConfiguration
+    /// Protected, explicit effect gate. Reads remain available to paired viewers; every Relay
+    /// mutation re-reads this value at the serialized effect boundary.
+    let cloudCommandsEnabled: Bool?
+
+    init(uid: UInt32, gid: UInt32, projectRoots: [String], tmuxExecutable: String,
+         providers: LinuxProviderExecutablesConfiguration,
+         cloudCommandsEnabled: Bool? = false) {
+        self.uid = uid
+        self.gid = gid
+        self.projectRoots = projectRoots
+        self.tmuxExecutable = tmuxExecutable
+        self.providers = providers
+        self.cloudCommandsEnabled = cloudCommandsEnabled
+    }
 }
 
 struct LinuxDaemonConfiguration: Codable, Equatable {
@@ -220,7 +234,12 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
         }
         if let runtime = configuration.runtime {
             guard let runtimeObject = fields["runtime"] as? [String: Any],
-                  Set(runtimeObject.keys) == Set(["uid", "gid", "projectRoots", "tmuxExecutable", "providers"]),
+                  Set(["uid", "gid", "projectRoots", "tmuxExecutable", "providers"])
+                    .isSubset(of: Set(runtimeObject.keys)),
+                  Set(runtimeObject.keys).isSubset(of: Set([
+                    "uid", "gid", "projectRoots", "tmuxExecutable", "providers",
+                    "cloudCommandsEnabled",
+                  ])),
                   let providers = runtimeObject["providers"] as? [String: Any],
                   Set(providers.keys) == Set(["claude", "codex"]) else {
                 throw LinuxCompositionError.configuration("runtime fields or provider fields are not the exact supported shape")

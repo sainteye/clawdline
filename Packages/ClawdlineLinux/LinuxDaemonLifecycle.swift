@@ -1272,9 +1272,27 @@ enum LinuxDaemonService {
         let owner = LinuxDaemonIngressOwner(
             store: stateStore, runtime: runtime, durableCloud: durableCloud)
         owner.completeStartup(startup)
+        // One Relay owner consumes the already-open Application ledger/spool and the same
+        // serialized ingress owner. Missing enrollment stays detached; no second state owner is
+        // constructed and no candidate W0-E emission permission is consulted or promoted.
+        let relayStatus = LinuxRelayRuntimeStatus()
+        let relayDiagnostic: @Sendable (String) -> Void = { message in
+            FileHandle.standardError.write(Data((message + "\n").utf8))
+        }
+        let relayOwner = try durableCloud.makeRelayOwner(
+            ingress: owner,
+            commandsEnabled: { configuration.runtime?.cloudCommandsEnabled == true },
+            diagnostic: relayDiagnostic,
+            stateObserver: { relayStatus.record($0) })
+        let relaySupervisor = relayOwner.map {
+            LinuxRelayRuntimeSupervisor(
+                owner: $0, status: relayStatus, diagnostic: relayDiagnostic)
+        }
+        relaySupervisor?.start()
         let health = makeHealth(
             receipt: startup, providerIdentity: runtime.compositionReceipt.identity,
-            cloudReadiness: durableCloud.readiness)
+            cloudReadiness: durableCloud.readiness,
+            relayReadinessCode: relaySupervisor?.status.readinessCode)
         try writeHealth(health, runtimeDirectory: runtime.layout.runtime)
         if health.serviceReady {
             runtime.scheduling.setRestartMaintenance(active: false, requestID: requestID)
@@ -1289,13 +1307,15 @@ enum LinuxDaemonService {
             guard let receipt = try? owner.observeInventory(inventory(from: runtime)) else { return }
             let observedHealth = makeHealth(
                 receipt: receipt, providerIdentity: runtime.compositionReceipt.identity,
-                cloudReadiness: durableCloud.readiness)
+                cloudReadiness: durableCloud.readiness,
+                relayReadinessCode: relaySupervisor?.status.readinessCode)
             try? writeHealth(observedHealth, runtimeDirectory: runtime.layout.runtime)
         }
         timer.resume()
+        defer { timer.cancel() }
         return try LinuxLocalIngressServer(
             configuration: configuration.listen, authorization: authorization,
-            owner: owner).run()
+            owner: owner, relaySupervisor: relaySupervisor).run()
     }
 
     static func health(configuration: LinuxDaemonConfiguration) throws -> Data {
@@ -1326,7 +1346,8 @@ enum LinuxDaemonService {
 
     static func makeHealth(receipt: LinuxStartupReconciliationReceipt,
                            providerIdentity: LinuxRuntimeIdentity,
-                           cloudReadiness: LinuxDurableCloudRuntime.Readiness? = nil)
+                           cloudReadiness: LinuxDurableCloudRuntime.Readiness? = nil,
+                           relayReadinessCode: String? = nil)
         -> LinuxDaemonHealth {
         let serviceReady = receipt.authoritative && receipt.status == "complete"
         return LinuxDaemonHealth(
@@ -1334,7 +1355,8 @@ enum LinuxDaemonService {
             serviceReady: serviceReady,
             ready: false,
             readinessCode: serviceReady
-                ? (cloudReadiness?.code ?? "w4_provider_authentication_not_proven")
+                ? (relayReadinessCode ?? cloudReadiness?.code
+                    ?? "w4_provider_authentication_not_proven")
                 : "startup_reconciliation_incomplete",
             protocolIdentity: "clawdline-linux-local-health-v1",
             configurationSchemaVersion: LinuxDaemonConfiguration.schemaVersion,

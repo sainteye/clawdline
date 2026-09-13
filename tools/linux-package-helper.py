@@ -424,9 +424,23 @@ def command_prepare_state(args):
             existing = os.open("daemon.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
                                dir_fd=config_fd)
             metadata = os.fstat(existing)
-            os.close(existing)
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                os.close(existing)
                 fail("existing daemon configuration is unsafe")
+            try:
+                try:
+                    current = json.loads(read_fd(existing, 64 * 1024))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    fail("existing daemon configuration is not valid bounded JSON")
+            finally:
+                os.close(existing)
+            if not isinstance(current, dict) or not isinstance(current.get("runtime"), dict):
+                fail("existing daemon configuration has no typed runtime object")
+            configured = current["runtime"].get("cloudCommandsEnabled")
+            if not isinstance(configured, bool):
+                fail("existing daemon configuration has no explicit boolean cloud write gate")
+            if configured is not args.cloud_commands_enabled:
+                fail("existing daemon configuration has a different explicit cloud write gate")
         except FileNotFoundError:
             # Re-encode only after exact substitutions, avoiding sed/pathname writes as root.
             raw_fd, _ = open_pinned(args.template)
@@ -435,7 +449,9 @@ def command_prepare_state(args):
             finally:
                 os.close(raw_fd)
             content = raw.replace("@SERVICE_UID@", str(args.uid)).replace(
-                "@SERVICE_GID@", str(args.gid)).encode("utf-8")
+                "@SERVICE_GID@", str(args.gid)).replace(
+                "@CLOUD_COMMANDS_ENABLED@",
+                "true" if args.cloud_commands_enabled else "false").encode("utf-8")
             temporary = ".daemon.%s.tmp" % next(tempfile._get_candidate_names())
             output = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL
                              | os.O_NOFOLLOW | os.O_CLOEXEC, 0o640, dir_fd=config_fd)
@@ -706,6 +722,8 @@ def parser():
     state.add_argument("--template", required=True)
     state.add_argument("--uid", required=True, type=int)
     state.add_argument("--gid", required=True, type=int)
+    state.add_argument("--cloud-commands-enabled", choices=("true", "false"), default="false",
+                       type=lambda value: value == "true")
     state.set_defaults(function=command_prepare_state)
     sync = commands.add_parser("fsync-tree")
     sync.add_argument("--path", required=True)

@@ -39,7 +39,9 @@ for member in Packages/ClawdlineCore/CloudCanonicalJSON.swift Packages/Clawdline
   Packages/ClawdlineApplication/CloudAccount.swift \
   Packages/ClawdlineApplication/CloudKeys.swift \
   Packages/ClawdlineApplication/CloudPairing.swift \
+  Packages/ClawdlineApplication/CloudEnvelope.swift \
   Packages/ClawdlineApplication/CloudTransport.swift \
+  Packages/ClawdlineApplication/CloudAppBridge.swift \
   Packages/ClawdlineLinux/LinuxComposition.swift \
   Packages/ClawdlineLinux/LinuxContainedFileSystem.swift \
   Packages/ClawdlineLinux/LinuxDaemonIngress.swift \

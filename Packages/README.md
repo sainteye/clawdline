@@ -83,6 +83,16 @@ health does not restore an old selector until the latest authority is revalidate
 source/disposable-fixture candidate: Cloud relay/pairing, real provider credentials, GCE and a real
 PID-1 restart are not proven here.
 
+W5-4 adds one daemon-lifetime Relay supervisor around exactly one `LinuxRelayRuntimeOwner`. The
+supervisor strongly retains the shared Application ledger/spool owner, projects typed
+starting/running/unauthorized/failed/stopped readiness, reports start failure, and waits for the
+owner's stop path when the local service loop exits. Explicit 401/403/revocation responses stop
+transport retry until a new owner is deliberately composed; transient transport failures retain
+the bounded reconnect policy. The signed daemon template carries `cloudCommandsEnabled`, defaults
+it to `false`, and package installation refuses to silently change an existing explicit value.
+Enabling it is therefore an authenticated release input (`linux-package.sh install
+--cloud-commands-enabled true`), not an inferred consequence of installing W5-4 source.
+
 W5-1 adds `CloudCommandLedger.swift`, `CloudOutboundSpool.swift` and
 `CloudDurableStores.swift` to the same Application target. Mac production opens the shared
 ledger/spool before attaching its bridge; the Ubuntu daemon opens and retains the same stores
@@ -96,8 +106,13 @@ legacy bytes never become a zero floor. Durable logical rows retain digest/size 
 than plaintext-equivalent payloads. `CloudTransport` owns no outbound queue or sequence: the Application spool persists a
 global sequence and exact frame, persists `sent`, then performs the async socket write and settles
 only an exact-channel/sequence correlated authenticated receipt. Attempt deadlines wake without
-new traffic; receipt ingestion is bounded and observable. Ubuntu Cloud authentication remains unavailable, so its
-composition exposes no publish door. W0-E is pinned as `authority=candidate` with
+new traffic; receipt ingestion is bounded and observable. W5-4 composes the public Linux relay
+owner from that same already-open spool and ledger plus the protected identity authority. It
+refreshes identity on every ready generation, replays exact sent frames, settles authenticated
+ACK/`publish_error`, and routes admitted commands through `LinuxDaemonIngressOwner`; write effects
+are separately gated by explicit configuration and rechecked roster/revocation policy immediately
+before the effect. Never-sent replaced or stale rows are removed in their normalization commit,
+while sent tombstones remain durable for late receipt correlation. W0-E is pinned as `authority=candidate` with
 `cutover_required=true`; it authorizes no version emission, cutover, or client-floor raise.
 
 W5-2 moves `CloudAccount.swift`, `CloudKeys.swift`, `CloudPairing.swift` and the portable half of
@@ -113,8 +128,8 @@ fingerprint cannot replace it. Readiness never creates or falls back to memory. 
 reconnect signature accepts only the exact current identity/epochs after the W5-1 ledger and spool
 open. `swift-crypto` is
 an exact Linux-only Application dependency at 4.5.2; macOS continues to use CryptoKit. The accepted
-eight-member v1 handover wire, W0-E candidate authority and disabled Linux publish door are
-unchanged. First Mac enrollment atomically renames the existing JSON roster out of the pathname a
+eight-member v1 handover wire and W0-E candidate authority are unchanged. First Mac enrollment
+atomically renames the existing JSON roster out of the pathname a
 pre-W5 binary understands, imports that fence into protected state, and removes the fence only after
 the protected commit. A crash resumes from the fence, while rollback cannot revive its stale
 authorization. The byte-identical public/private 843-byte route-role vector SHA-256 is

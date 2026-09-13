@@ -555,7 +555,7 @@ extension CloudBridgeLifecycle.Services {
         return CloudBridgeLifecycle.Services(
             identityReader: identityReader,
             makeTransport: { identity, app, onTerminalFailure in
-                CloudTransport(
+                CloudTransport.production(
                     relayBaseURL: relayBaseURL,
                     tokenProvider: CloudSupervisedDeviceTokenProvider(
                         inner: client.deviceTokenProvider(),

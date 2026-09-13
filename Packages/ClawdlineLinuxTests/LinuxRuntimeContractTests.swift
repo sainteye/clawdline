@@ -20,6 +20,14 @@ private final class LockedStrings: @unchecked Sendable {
     }
 }
 
+private final class LockedBool: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Bool
+    init(_ value: Bool) { self.value = value }
+    func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
+    func set(_ next: Bool) { lock.lock(); value = next; lock.unlock() }
+}
+
 private enum DeniedSecretStoreFailure: Error { case denied }
 
 private struct DeniedSecretStore: SecretStore {
@@ -62,8 +70,14 @@ private final class TestMemorySecretStore: SecretStore, @unchecked Sendable {
 }
 
 private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
-    var calls: [String] = []
+    private let callsLock = NSLock()
+    private var storedCalls: [String] = []
+    var calls: [String] { callsLock.lock(); defer { callsLock.unlock() }; return storedCalls }
     var sessionID = "%durable"
+
+    private func record(_ call: String) {
+        callsLock.lock(); storedCalls.append(call); callsLock.unlock()
+    }
 
     private func receipt(commandID: String, operation: TerminalEffectOperation,
                          channel: String, sessionID: String?, observed: Bool) throws
@@ -82,29 +96,81 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
                 model: String?, reasoningEffort: ReasoningEffort?, permission: Permission,
                 additionalDirectory: String?, resumeSessionID: String?) throws
         -> LinuxLifecycleReceipt {
-        calls.append("create:\(commandID)")
+        record("create:\(commandID)")
         return try receipt(commandID: commandID, operation: .create,
                            channel: projectRoot, sessionID: sessionID, observed: true)
     }
 
     func send(commandID: String, sessionID: String, text: String) throws
         -> LinuxLifecycleReceipt {
-        calls.append("send:\(commandID):\(text)")
+        record("send:\(commandID):\(text)")
         return try receipt(commandID: commandID, operation: .send,
                            channel: sessionID, sessionID: sessionID, observed: false)
     }
 
     func observe(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt {
-        calls.append("observe:\(commandID)")
+        record("observe:\(commandID)")
         return try receipt(commandID: commandID, operation: .observe,
                            channel: sessionID, sessionID: sessionID, observed: true)
     }
 
     func close(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt {
-        calls.append("close:\(commandID)")
+        record("close:\(commandID)")
         return try receipt(commandID: commandID, operation: .close,
                            channel: sessionID, sessionID: sessionID, observed: true)
     }
+}
+
+private final class LinuxRelayTestTransport: CloudTransporting, @unchecked Sendable {
+    let source: CloudInboundCommandSource
+    let commands: CloudInboundCommandStream
+    let readyGenerations: AsyncStream<UInt64>
+    let outboundReceipts: AsyncStream<CloudOutboundTransportReceipt>
+    private let readyContinuation: AsyncStream<UInt64>.Continuation
+    private let receiptContinuation: AsyncStream<CloudOutboundTransportReceipt>.Continuation
+    private let lock = NSLock()
+    private var writes: [Data] = []
+    private var shutdownCount = 0
+
+    init() {
+        let source = CloudInboundCommandSource()
+        self.source = source
+        commands = source.stream
+        var ready: AsyncStream<UInt64>.Continuation!
+        readyGenerations = AsyncStream(bufferingPolicy: .bufferingNewest(1)) { ready = $0 }
+        readyContinuation = ready
+        var receipts: AsyncStream<CloudOutboundTransportReceipt>.Continuation!
+        outboundReceipts = AsyncStream { receipts = $0 }
+        receiptContinuation = receipts
+    }
+
+    func connect(role: CloudTransportRole) async throws {
+        XCTAssertEqual(role, .machine)
+        readyContinuation.yield(1)
+    }
+
+    func sendExactPublishFrame(_ bytes: Data) async throws {
+        lock.lock(); writes.append(bytes); lock.unlock()
+    }
+
+    func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async {}
+    func setTerminalAuthorizationHandler(
+        _ handler: CloudTransport.TerminalAuthorizationHandler?
+    ) async {}
+
+    func shutdown() async {
+        lock.lock(); shutdownCount += 1; lock.unlock()
+        source.finish()
+        readyContinuation.finish()
+        receiptContinuation.finish()
+    }
+
+    @discardableResult
+    func deliver(_ command: CloudInboundCommand) -> Bool { source.yield(command) }
+    func ready(_ generation: UInt64) { readyContinuation.yield(generation) }
+    func receipt(_ value: CloudOutboundTransportReceipt) { receiptContinuation.yield(value) }
+    func writtenFrames() -> [Data] { lock.lock(); defer { lock.unlock() }; return writes }
+    func shutdowns() -> Int { lock.lock(); defer { lock.unlock() }; return shutdownCount }
 }
 
 private struct SchemaTwoIngressSeal: Encodable {
@@ -446,6 +512,240 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertThrowsError(try LinuxDurableCloudRuntime(
             stateDirectory: scratch.path, expectedUID: metadata.st_uid, secrets: secrets)) {
             XCTAssertEqual($0 as? CloudDurableStoreFailure, .writerLockHeld)
+        }
+    }
+
+    func testW54LinuxRelayOwnsDurableReplayRotationIngressAndStop() async throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-w54-relay-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let project = scratch.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: project, withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700])
+
+        let secretStore = TestMemorySecretStore()
+        let authority = CloudExecutorIdentityAuthority(store: secretStore)
+        let machineKey = try CloudDeviceKeyPair(
+            privateKeyRaw: Data(repeating: 0x41, count: 32))
+        let viewerKey = try CloudDeviceKeyPair(
+            privateKeyRaw: Data(repeating: 0x42, count: 32))
+        let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x43, count: 32))
+        let initial = try authority.provision(
+            accountID: "account-w54", machineID: "machine-w54",
+            deviceKey: machineKey, masterSecret: master,
+            importedPairedDevices: [CloudExecutorPairedDevice(
+                deviceID: "viewer-w54", signingKey: viewerKey.publicKeyRaw,
+                fingerprint: viewerKey.pairingFingerprint,
+                pairedAtMilliseconds: 1, identityGeneration: 1,
+                capabilities: CloudExecutorIdentityAuthority.defaultCapabilities)])
+        let durable = try CloudDurableRuntime.open(
+            directory: scratch.appendingPathComponent("cloud", isDirectory: true),
+            runtime: nil, strictPersistedFrameValidation: true)
+        let transport = LinuxRelayTestTransport()
+        let appIdentity = CloudAppIdentity(
+            machineID: initial.machineID, deviceID: initial.deviceID,
+            keyID: initial.keyID, masterSecret: master, signingKey: machineKey)
+        let outbound = CloudDurableOutboundComposition(
+            spool: durable.spool, transport: transport, identity: appIdentity,
+            nowMilliseconds: { UInt64(max(0, Date().timeIntervalSince1970 * 1_000)) })
+        let ingressStore = try LinuxDurableStateStore(
+            stateDirectory: scratch.appendingPathComponent("daemon", isDirectory: true).path)
+        let lifecycle = FakeLinuxLifecycleRuntime()
+        let startup = try LinuxStartupReconciler.reconcile(
+            store: ingressStore, inventory: .complete([]))
+        let ingress = LinuxDaemonIngressOwner(store: ingressStore, runtime: lifecycle)
+        ingress.completeStartup(startup)
+        let gate = LockedBool(true)
+        let relayStatus = LinuxRelayRuntimeStatus()
+        let relayDiagnostics = LockedStrings()
+        let relay = LinuxRelayRuntimeOwner(
+            machine: CloudMachineIdentity(accountID: initial.accountID,
+                                          machineID: initial.machineID),
+            identityAuthority: authority, transport: transport, outbound: outbound,
+            ingress: ingress, commandsEnabled: { gate.get() },
+            diagnostic: { relayDiagnostics.append($0) },
+            stateObserver: { relayStatus.record($0) })
+
+        func waitUntil(_ message: String, _ predicate: () async -> Bool) async throws {
+            for _ in 0..<200 {
+                if await predicate() { return }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            XCTFail(message)
+            throw LinuxDurableStateFailure(code: "test_timeout", message: message)
+        }
+
+        func waitUntilDynamic(
+            _ message: () -> String, _ predicate: () async -> Bool
+        ) async throws {
+            for _ in 0..<200 {
+                if await predicate() { return }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            let current = message()
+            XCTFail(current)
+            throw LinuxDurableStateFailure(code: "test_timeout", message: current)
+        }
+
+        try await relay.start()
+        let runningState = await relay.state
+        XCTAssertEqual(runningState, .running)
+        try await waitUntil("initial authenticated ready generation was not observed") {
+            await relay.authenticatedGeneration == 1
+        }
+
+        // Initial publication is sent once; an authenticated ready generation replays the exact
+        // uncertain frame rather than resealing or allocating another sequence.
+        try await relay.publish(
+            Data("snapshot".utf8), channel: "s/machine-w54/session",
+            logicalID: "snapshot-1")
+        try await waitUntil("initial durable publish did not reach the transport") {
+            transport.writtenFrames().count == 1
+        }
+        let firstFrame = try XCTUnwrap(transport.writtenFrames().first)
+        transport.ready(2)
+        try await waitUntil("reconnect did not replay the uncertain exact frame") {
+            transport.writtenFrames().count == 2
+        }
+        XCTAssertEqual(transport.writtenFrames()[1], firstFrame)
+
+        let first = try JSONDecoder().decode(CloudPublishFrame.self, from: firstFrame)
+        transport.receipt(CloudOutboundTransportReceipt(
+            channel: first.envelope.ch, sequence: Int64(first.envelope.seq),
+            kind: .peerRejected(CloudOutboundPeerRejection(
+                code: .forbidden, field: nil, disposition: .terminal))))
+        try await waitUntil("terminal publish refusal was not settled") {
+            await durable.spool.row(seq: Int64(first.envelope.seq))?.state == .rejected
+        }
+        XCTAssertEqual(transport.writtenFrames().count, 2,
+                       "terminal refusal must not enter a reconnect/retry loop")
+
+        try await relay.publish(
+            Data("retry".utf8), channel: "t/machine-w54/session",
+            logicalID: "retry-1")
+        try await waitUntil("retry source did not publish") { transport.writtenFrames().count == 3 }
+        let retrySource = try JSONDecoder().decode(
+            CloudPublishFrame.self, from: transport.writtenFrames()[2])
+        transport.receipt(CloudOutboundTransportReceipt(
+            channel: retrySource.envelope.ch, sequence: Int64(retrySource.envelope.seq),
+            kind: .peerRejected(CloudOutboundPeerRejection(
+                code: .unavailable, field: .ciphertext,
+                disposition: .retryNewAttempt))))
+        try await waitUntil("typed retry refusal did not create a new durable attempt") {
+            transport.writtenFrames().count == 4
+        }
+        let retryAttempt = try JSONDecoder().decode(
+            CloudPublishFrame.self, from: transport.writtenFrames()[3])
+        XCTAssertGreaterThan(retryAttempt.envelope.seq, retrySource.envelope.seq)
+        transport.receipt(CloudOutboundTransportReceipt(
+            channel: retryAttempt.envelope.ch, sequence: Int64(retryAttempt.envelope.seq),
+            kind: .delivered))
+        try await waitUntil("retry attempt delivery did not settle before ingress") {
+            await durable.spool.row(seq: Int64(retryAttempt.envelope.seq))?.state == .acked
+        }
+
+        // A reconnect after protected key rotation adopts the freshly read key for new frames.
+        let rotatedKey = try CloudDeviceKeyPair(
+            privateKeyRaw: Data(repeating: 0x51, count: 32))
+        let rotatedMaster = try CloudMasterSecret(
+            rawRepresentation: Data(repeating: 0x52, count: 32))
+        _ = try authority.rotateKeys(
+            deviceKey: rotatedKey, masterSecret: rotatedMaster, keyID: "master-v2",
+            expectedGeneration: authority.snapshot().identityGeneration)
+        transport.ready(3)
+        try await waitUntil("rotated reconnect did not refresh protected identity") {
+            await relay.authenticatedGeneration == 3
+        }
+        try await relay.publish(
+            Data("rotated".utf8), channel: "s/machine-w54/rotated",
+            logicalID: "rotated-1")
+        try await waitUntil("rotated frame did not publish") { transport.writtenFrames().count >= 5 }
+        let rotatedFrame = try JSONDecoder().decode(
+            CloudPublishFrame.self, from: transport.writtenFrames().last!)
+        XCTAssertEqual(rotatedFrame.envelope.keyID, "master-v2")
+
+        // Cloud sender+sequence, not caller JSON, is the stable idempotency identity.
+        let create = LinuxIngressRequest(
+            operation: .create, commandID: "caller-controlled", taskID: "task-w54",
+            projectRoot: project.path, assistant: .claude)
+        let createBytes = try JSONEncoder().encode(create)
+        let timestamp = UInt64(Date().timeIntervalSince1970 * 1_000)
+        let inbound = CloudInboundCommand(
+            channel: "ctl/machine-w54", sequence: 77, timestamp: timestamp,
+            sender: "viewer-w54", plaintext: createBytes, isDispatch: true)
+        XCTAssertEqual(transport.shutdowns(), 0)
+        XCTAssertTrue(transport.deliver(inbound))
+        XCTAssertTrue(transport.deliver(inbound))
+        let cloudCommandID = LinuxSHA256.hex(Data("cloud:viewer-w54:77".utf8))
+        try await waitUntilDynamic({
+            "serialized cloud ingress did not execute; diagnostics=\(relayDiagnostics.snapshot())"
+        }) {
+            lifecycle.calls.filter { $0 == "create:\(cloudCommandID)" }.count == 1
+        }
+
+        // The gate is read after durable reservation and releases the row before any effect.
+        gate.set(false)
+        let send = LinuxIngressRequest(
+            operation: .send, commandID: "ignored", taskID: "task-w54",
+            sessionID: lifecycle.sessionID, text: "must-not-run")
+        transport.deliver(CloudInboundCommand(
+            channel: "ctl/machine-w54", sequence: 78, timestamp: timestamp,
+            sender: "viewer-w54", plaintext: try JSONEncoder().encode(send)))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertFalse(lifecycle.calls.contains { $0.contains("must-not-run") })
+        XCTAssertNil(ingressStore.load().state?.commands.first {
+            $0.id == LinuxSHA256.hex(Data("cloud:viewer-w54:78".utf8))
+        })
+
+        let refusedTask = "task-w54-refused"
+        let taskCreate = LinuxIngressRequest(
+            operation: .taskCreate, commandID: "ignored", taskID: refusedTask,
+            projectRoot: project.path, assistant: .codex, taskSecret: "refused-secret",
+            title: "Must not exist", claims: [])
+        transport.deliver(CloudInboundCommand(
+            channel: "ctl/machine-w54", sequence: 79, timestamp: timestamp,
+            sender: "viewer-w54", plaintext: try JSONEncoder().encode(taskCreate)))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertFalse(ingressStore.load().state?.tasks.contains {
+            $0.id == refusedTask
+        } ?? true, "preflight refusal must not create durable task authority")
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: ingressStore.tasksDirectory + "/" + refusedTask),
+            "preflight refusal must happen before creating a task artifact directory")
+
+        gate.set(true)
+        _ = try authority.revokeDevice(
+            "viewer-w54", expectedGeneration: authority.snapshot().identityGeneration)
+        transport.deliver(CloudInboundCommand(
+            channel: "ctl/machine-w54", sequence: 80, timestamp: timestamp,
+            sender: "viewer-w54", plaintext: try JSONEncoder().encode(send)))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertFalse(lifecycle.calls.contains { $0.contains("must-not-run") },
+                       "effect-time roster revocation must fail before the terminal effect")
+
+        try secretStore.set(Data("not-canonical".utf8),
+                            for: CloudExecutorIdentityAuthority.protectedAccount)
+        transport.ready(4)
+        try await waitUntil("protected identity mismatch did not complete terminal shutdown") {
+            relayStatus.state == .unauthorized
+        }
+        XCTAssertEqual(transport.shutdowns(), 1,
+                       "identity mismatch must finish transport shutdown without self-joining")
+
+        await relay.stop()
+        let stoppedState = await relay.state
+        XCTAssertEqual(stoppedState, .stopped)
+        XCTAssertEqual(transport.shutdowns(), 1)
+        do {
+            try await relay.publish(Data("late".utf8), channel: "s/machine-w54/late",
+                                    logicalID: "late")
+            XCTFail("stopped Relay owner accepted a publication")
+        } catch {
+            XCTAssertEqual(error as? CloudDurableOutboundError, .stopped)
         }
     }
 

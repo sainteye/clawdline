@@ -17,8 +17,12 @@ const applicationLifecycle = read('Sources/ProviderLifecyclePolicy.swift');
 const applicationRoots = read('Sources/ProjectRootPolicy.swift');
 const applicationScheduler = read('Sources/TerminalCommandScheduler.swift');
 const linuxTests = read('Packages/ClawdlineLinuxTests/LinuxRuntimeContractTests.swift');
+const daemonTemplate = read('Packaging/linux/daemon.json.in');
+const packageHelper = read('tools/linux-package-helper.py');
+const packageTool = read('tools/linux-package.sh');
 const entry = read('Packages/ClawdlineLinux/main.swift');
 const build = read('build.sh');
+const testRunner = read('test.sh');
 const linuxBuild = read('tools/swift-core-application-linux-build.sh');
 const workflow = read('.github/workflows/ci.yml');
 const runtimeOnly = process.env.CLAWDLINE_LINUX_RUNTIME_ONLY === '1';
@@ -82,6 +86,13 @@ check(/--product ClawdlineLinux/.test(linuxBuild),
   'Ubuntu compiler check must build the Linux executable product');
 check(/swift test/.test(linuxBuild) && /CLAWDLINE_TEST_TMUX/.test(linuxBuild),
   'Ubuntu compiler check must execute the real Linux SwiftPM runtime contracts with tmux');
+const macFocusedRuntime = /--filter LinuxRuntimeContractTests/.test(testRunner)
+  && /expected one Linux runtime XCTest receipt/.test(testRunner);
+check(macFocusedRuntime,
+  'the locked Mac Linux-package mode must compile and execute target-only runtime contracts');
+check(!/--filter LinuxRuntimeContractTests/.test(
+  testRunner.replace('--filter LinuxRuntimeContractTests', '--skip LinuxRuntimeContractTests')),
+  'removing the focused Linux runtime filter must make the package guard red');
 check(/swift:6\.1\.3-noble@sha256:/.test(workflow) && /swift-core-application-linux-build\.sh/.test(workflow),
   'CI must keep the pinned real Ubuntu compiler check');
 check(/public final class TerminalCommandScheduler/.test(applicationScheduler)
@@ -103,6 +114,18 @@ check(/testRealTmuxProviderLifecycleOnLinux/.test(linuxTests)
   && /testProcIdentityUsesExactStartTokenAndGroup/.test(linuxTests)
   && /testClosedProviderEnvironmentCannotLeakInheritedCredentials/.test(linuxTests),
   'the Linux SwiftPM target must keep real lifecycle and containment mutation contracts');
+const explicitCloudGate = /"cloudCommandsEnabled":@CLOUD_COMMANDS_ENABLED@/.test(daemonTemplate)
+  && /--cloud-commands-enabled/.test(packageHelper)
+  && /default="false"/.test(packageHelper)
+  && /configured is not args\.cloud_commands_enabled/.test(packageHelper)
+  && /--cloud-commands-enabled "\$cloud_commands_enabled"/.test(packageTool);
+check(explicitCloudGate,
+  'the signed daemon template must carry an explicit closed cloud write gate');
+check(!/"cloudCommandsEnabled":true/.test(daemonTemplate),
+  'the package template must never default hosted writes open');
+check(!/"cloudCommandsEnabled":@CLOUD_COMMANDS_ENABLED@/.test(
+  daemonTemplate.replace('@CLOUD_COMMANDS_ENABLED@', '')),
+  'removing the cloud gate placeholder must make the package guard red');
 
 function inspectCorrectionWave({ scheduler, runtime, adaptersText, compositionText, containedText }) {
   return {

@@ -36,7 +36,9 @@ import PackageDescription
 // transition gate without adding a direct Linux-to-Core or Linux-to-Mac dependency. W5-1 moves
 // the Cloud command ledger, outbound spool and their portable durable stores into that shared
 // Application target; both host compositions therefore compile the same state machines and file
-// format rather than parallel Mac/Linux copies.
+// format rather than parallel Mac/Linux copies. W5-4 adds the envelope, transport-facing durable
+// outbound owner and relay runtime surface to Application; Linux composes those same owners with
+// its protected identity and daemon ingress instead of adding another queue or sequence counter.
 //
 // **W3-1 correction (`spec-mac-does-not-consume-application`).** The original delivery stopped
 // there: the edge existed in the manifest, but `Clawdline`'s own recursive scan of `Sources/`
@@ -118,6 +120,7 @@ targets.insert(
                 "CloudAccount.swift",
                 "CloudKeys.swift",
                 "CloudPairing.swift",
+                "CloudEnvelope.swift",
             ]
         ),
     at: 2

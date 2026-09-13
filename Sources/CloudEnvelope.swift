@@ -1,10 +1,11 @@
+#if canImport(CryptoKit)
 import CryptoKit
-import Foundation
-#if canImport(ClawdlineApplication)
-import ClawdlineApplication // SwiftPM owns the W5-2 Cloud identity vocabulary.
+#else
+import Crypto
 #endif
+import Foundation
 
-enum CloudEnvelopeError: Error, LocalizedError, Equatable {
+public enum CloudEnvelopeError: Error, LocalizedError, Equatable, Sendable {
     case invalidVersion
     case unsafeInteger(String)
     case invalidChannel
@@ -18,7 +19,7 @@ enum CloudEnvelopeError: Error, LocalizedError, Equatable {
     case badSignature
     case replay
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .invalidVersion: return "Unsupported cloud envelope version."
         case .unsafeInteger(let field): return "\(field) is outside the relay's safe integer range."
@@ -36,7 +37,7 @@ enum CloudEnvelopeError: Error, LocalizedError, Equatable {
     }
 }
 
-enum CloudEnvelopeClass: String, Codable, CaseIterable {
+public enum CloudEnvelopeClass: String, Codable, CaseIterable, Sendable {
     case stream
     case ctl
     case dispatch
@@ -47,23 +48,23 @@ enum CloudEnvelopeClass: String, Codable, CaseIterable {
 ///
 /// `nonce`, `ct`, and `sig` intentionally retain their canonical, padded standard-base64
 /// spelling: the relay signs the UTF-8 text, not a re-encoded byte array.
-struct CloudEnvelope: Codable, Equatable {
-    static let version = 1
-    static let nonceByteCount = 12 // D16: AES-256-GCM with a 96-bit nonce.
-    static let tagByteCount = 16
-    static let signatureByteCount = 64
-    static let maximumRelayInteger: UInt64 = 9_007_199_254_740_991
+public struct CloudEnvelope: Codable, Equatable, Sendable {
+    public static let version = 1
+    public static let nonceByteCount = 12 // D16: AES-256-GCM with a 96-bit nonce.
+    public static let tagByteCount = 16
+    public static let signatureByteCount = 64
+    public static let maximumRelayInteger: UInt64 = 9_007_199_254_740_991
 
-    let v: Int
-    let ch: String
-    let seq: UInt64
-    let ts: UInt64
-    let envelopeClass: CloudEnvelopeClass
-    let keyID: String
-    let nonce: String
-    let ct: String
-    let sender: String
-    let sig: String
+    public let v: Int
+    public let ch: String
+    public let seq: UInt64
+    public let ts: UInt64
+    public let envelopeClass: CloudEnvelopeClass
+    public let keyID: String
+    public let nonce: String
+    public let ct: String
+    public let sender: String
+    public let sig: String
 
     enum CodingKeys: String, CodingKey, CaseIterable {
         case v, ch, seq, ts
@@ -72,7 +73,7 @@ struct CloudEnvelope: Codable, Equatable {
         case nonce, ct, sender, sig
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let dynamic = try decoder.container(keyedBy: CloudDynamicCodingKey.self)
         let received = Set(dynamic.allKeys.map(\.stringValue))
         let expected = Set(CodingKeys.allCases.map(\.rawValue))
@@ -100,7 +101,7 @@ struct CloudEnvelope: Codable, Equatable {
         )
     }
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(v, forKey: .v)
         try values.encode(ch, forKey: .ch)
@@ -114,7 +115,7 @@ struct CloudEnvelope: Codable, Equatable {
         try values.encode(sig, forKey: .sig)
     }
 
-    init(
+    public init(
         v: Int = CloudEnvelope.version,
         ch: String,
         seq: UInt64,
@@ -140,20 +141,20 @@ struct CloudEnvelope: Codable, Equatable {
     }
 
     /// `v|ch|seq|ts|class|key_id|nonce|ct`, encoded as UTF-8 exactly as relay/envelope.ts does.
-    var signingString: String {
+    public var signingString: String {
         [
             String(v), ch, String(seq), String(ts), envelopeClass.rawValue,
             keyID, nonce, ct,
         ].joined(separator: "|")
     }
 
-    var signingBytes: Data { Data(signingString.utf8) }
+    public var signingBytes: Data { Data(signingString.utf8) }
 
-    static func decodeJSON(_ data: Data) throws -> CloudEnvelope {
+    public static func decodeJSON(_ data: Data) throws -> CloudEnvelope {
         try JSONDecoder().decode(CloudEnvelope.self, from: data)
     }
 
-    func encodeJSON(prettyPrinted: Bool = false) throws -> Data {
+    public func encodeJSON(prettyPrinted: Bool = false) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes] : [.sortedKeys]
         return try encoder.encode(self)
@@ -162,7 +163,7 @@ struct CloudEnvelope: Codable, Equatable {
     /// Seals then signs an envelope. Production callers must omit `nonceForTesting`.
     /// Fixed AES-GCM nonces are exposed only so checked-in protocol vectors are reproducible;
     /// reusing one with the same master secret in production destroys AEAD security.
-    static func seal(
+    public static func seal(
         _ plaintext: Data,
         ch: String,
         seq: UInt64,
@@ -207,7 +208,7 @@ struct CloudEnvelope: Codable, Equatable {
 
     /// Resolving by sender is deliberate: `sender` is not part of the protocol's base string,
     /// so changing it must select another pinned key (or no key), never reuse a caller-supplied key.
-    func verify(using publicKeyForSender: (String) -> Data?) -> Bool {
+    public func verify(using publicKeyForSender: (String) -> Data?) -> Bool {
         do {
             try validateWireShape()
             guard let publicKeyRaw = publicKeyForSender(sender) else { return false }
@@ -219,7 +220,7 @@ struct CloudEnvelope: Codable, Equatable {
         }
     }
 
-    func open(
+    public func open(
         masterSecret: CloudMasterSecret,
         publicKeyForSender: (String) -> Data?
     ) throws -> Data {
