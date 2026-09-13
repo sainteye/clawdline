@@ -344,3 +344,114 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
 | 帳本 row 要過期，必須 `retainedElapsedMilliseconds` 往前走，但沒有任何 production 呼叫會推進它 | `CloudCommandLedger.swift:772-774`；磁碟上 13 筆全部是 0 | **待驗證。** 磁碟上只有 13 筆、橫跨 48 分鐘，log 卻有 842 次 Cloud POST，看起來 store 會被重置。要先確認實務上會不會真的累積到每台 1,000 筆的上限 |
 | Onboarding 讀的是舊的 roster store，而 production 遷移完成後會刪掉它 | `Onboarding.swift:1403`、`CloudBridgeLifecycle.swift:541` | 待驗證（目前只從程式推論） |
 | relay 每條連線最多 8 個訂閱，但瀏覽器的訂閱清單只增不減 | relay README；`cloud-client.js` | 待驗證 |
+
+## 11. 線上格式（實作兩端的唯一依據）
+
+前端、Mac、relay 分別由不同的人實作。兩端碰到彼此的地方**只以這一節為準**；與前面各節有出入時，這一節對。
+改這一節要同時通知三端的實作者。
+
+### 11.1 Mac 回覆裡的 `error`
+
+沿用今天 `t/<machine>/<session>` 上的 `{"read":<name>,"status":<int>,"error":{…}}`，`error` 物件：
+
+| 欄位 | 型別 | 說明 |
+|---|---|---|
+| `code` | string | 既有，snake_case，1–64 字元 |
+| `message` | string | 既有，英文；只留給舊 console |
+| `layer` | string | **新增**。`mac_transport`、`mac_preflight`、`mac_ledger`、`mac_route`、`mac_reply` 之一 |
+| `seq` | integer | **新增**。被回覆的那筆指令的信封 seq |
+| `detail` | object | **新增**，選填。只放該 code 白名單內的欄位（§11.6） |
+
+今天已經放在 `error` 最上層的 `reason`、`app`、`lost`、`retry_after`、`lane`、`limit` 維持原位，不搬進 `detail`；
+瀏覽器正規化時，把白名單內的最上層欄位一併複製進 `CloudFailure.detail`。
+
+舊 Mac 的回覆沒有 `layer`：瀏覽器記成 `layer:"mac"`（只為相容而存在的第八個值），畫面照常由 `code` 決定。
+
+### 11.2 notice：`orch/<machine>` 快照裡的 `cloud_status`
+
+Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status`，序列化後 ≤ 8 KiB：
+
+```json
+"cloud_status": {
+  "v": 1,
+  "generated_at_ms": 1789290000000,
+  "counting_since_ms": 1789280000000,
+  "clock_guard": { "state": "ready", "reason": null, "clears_at_ms": null },
+  "token_expires_at_ms": 1789290240000,
+  "key_id": "ms-2",
+  "roster_readable": true,
+  "dropped": { "key_id_mismatch": 790, "replay": 13 },
+  "recent_drops": [
+    { "at_ms": 1789289990000, "sender": "web_…", "seq": 1234, "code": "key_id_mismatch",
+      "key_id": "ms-1", "expected_key_id": "ms-2", "highest_seq": null }
+  ],
+  "recent_notices": [
+    { "at_ms": 1789289990000, "sender": "web_…", "seq": 1235, "request": null,
+      "layer": "mac_preflight", "code": "malformed_command" }
+  ]
+}
+```
+
+- `clock_guard.state`：`ready` 或 `uncertain`。`reason` 是 snake_case 或 `null`。
+- `recent_drops`：解密前或序號層的丟棄，最多 10 筆，新的在前。沒有的欄位寫 `null`，不省略。
+- `recent_notices`：解密後、但找不到回覆位置而改走 notice 的拒絕，最多 10 筆，新的在前。
+- **發佈時機**：bridge 保留最近一次收到的 orchestrator payload；`cloud_status` 有變化時，把它併進那份 payload 重發，
+  合併後最多每 5 秒一次。bridge 從沒收過 orchestrator payload 時，發佈只含 `cloud_status` 的物件。
+  `RemoteServer.swift` 不改。
+- **能力訊號**：瀏覽器看到任何一台 Mac 的 `cloud_status.v >= 1`，才對那台 Mac 啟用依賴新 Mac 行為的功能（§11.4）。
+
+### 11.3 Cloud 讀取 `cloud.status`
+
+- 請求：沿用 `_machineRequest(machine, "cloud.status", {}, "read")`，也就是 session `__clawdline_machine__`、
+  payload `{"type":"cloud.status","session":"__clawdline_machine__","request":<uuid>}`。
+- 回覆：`t/<machine>/__clawdline_machine__` 上的 `{"read":"read:<request>","status":200,"body":<§4.1 完整快照>}`。
+- §4.1 快照的 `commands` 每一筆：`{"sender","seq","request"|null,"type"|null,"session"|null,
+  "accepted_at_ms"|null,"executed_at_ms"|null,"outcome"|null,"delivered_at_ms"|null,
+  "undeliverable":null|"<snake>","refusal":null|{"layer","code"}}`。最多 50 筆，新的在前。
+
+### 11.4 指令一律帶 `request`
+
+- Mac：**每一種指令都接受選填的 `request`（小寫 UUID）**，包括 `answer`、`key`、`send`、`dispatch`；不因為多了這個鍵就回 `malformed_command`。
+- 瀏覽器：`answer`、`key`、以及沒帶 `request` 的 `send`，**只在那台 Mac 已經送出 `cloud_status.v >= 1` 之後**才補上 `request`。
+  否則照舊送出，避免新 console 配舊 Mac 時按不了選單。
+
+### 11.5 Cloud 指令 `diagnostics.report`
+
+- 請求：`_machineRequest(machine, "diagnostics.report", {"report": <object>}, "action")`。
+- Mac：用 `DiagnosticReport.save` 寫同一組固定檔案，`written_by` 是信封的 sender。
+  回覆 `action:<request>`，body 與 `POST /v1/diagnostics/report` 成功時相同；錯誤碼與那條 route 相同（`report_not_json`、`report_too_large`、`report_write_failed`），
+  `layer` 為 `mac_route`。
+- 瀏覽器：送出前先檢查序列化後的大小，超過 relay 對 `ctl` 類別的上限（見 `clawdline-cloud/docs/DECISIONS.md` D17 與 relay 的 per-class cap）
+  或 `DiagnosticReport.maxBytes` 中較小的那個，就在本機以 `browser · report_too_large` 失敗，不送出。
+
+### 11.6 `detail` 白名單
+
+| code | 允許的 `detail` 欄位 |
+|---|---|
+| `command_clock_uncertain` | `reason`、`clears_in_ms` |
+| `key_id_mismatch` | `key_id`、`expected_key_id` |
+| `replay` | `highest_seq` |
+| `cloud_ingress_busy`、`cloud_read_busy` | `retry_after`、`lane`、`limit` |
+| `no_whisper` | `reason` |
+| `terminal_closed` | `app` |
+| `would_lose_work` | `lost` |
+| `publish_error` 來的任何 code | `field` |
+| 其他 | 無 |
+
+新增 code 或欄位時，同時更新這張表與兩端的白名單。
+
+### 11.7 Relay
+
+- `ack`、`publish_error` 的形狀不變；瀏覽器以 `(ch, seq)` 對應請求。
+- 新 code `token_superseded`：identity epoch 被取代時使用，close code 4401，瀏覽器視為可重連。
+- 升級前的拒絕改成：接受升級 → 送 `{"type":"error","code":<code>,"message":<english>}` → 以 `errors.ts` 的 `WS_CLOSE` 對應碼關閉。
+  瀏覽器記下最後一個 error frame 的 `code` 與 close event 的 `code`。
+- 新增的 log 只寫 `code`、`field`、channel 種類、`seq`、device id；不寫信封內容。
+
+### 11.8 Mac 的 replay 窗口
+
+- 每個 sender 記住目前最高的 seq，與最高值以下 1,024 個位置裡「已經接受過」的集合。
+- 接受：seq 大於最高值；或 seq 在窗口內且沒被接受過。
+- 拒絕（`replay`，`detail.highest_seq`）：seq 在窗口內且已被接受過；或 seq 比窗口更舊。
+- **判斷依據只有一條：同一個 `(sender, seq)` 在這個 process 裡最多被接受一次；說不準的一律拒絕。**
+  既有的 300 秒信封期限與帳本 request 冪等保持不變，不能拿它們來取代這一條。
