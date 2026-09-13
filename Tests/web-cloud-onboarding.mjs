@@ -73,13 +73,19 @@ const connectedBody = main.slice(main.indexOf("{", connectedStart) + 1, connecte
 for (const hasInvitation of [true, false]) {
     let cleared = 0, noticed = 0, hidden = 0, used = 0, bound = 0, repaired = 0;
     let stopped = 0, resumed = 0, repairOptions = null, resumeAfterRepair = null;
+    let clientEvent = null, accessProblem = null;
+    const connectionStates = [];
     const invitation = hasInvitation ? { invitation_id: "one-time" } : null;
     const context = { cloudInvitation: hasInvitation ? { invitation_id: "one-time" } : null,
-        cloudGateUp: true, window: { sessionStorage: {} }, update: { client: {} },
+        cloudGateUp: true, window: { sessionStorage: {} }, S: { arrived: false },
+        update: { client: { events(callback) { clientEvent = callback; } } },
         cloudConnection: { stop() { stopped++; } }, cloudSession: {},
-        handlers: { conn(state) { assert.equal(state, "locked"); } },
+        handlers: { conn(state) { connectionStates.push(state); } },
         clearCloudPairingInvitation() { cleared++; },
         showCloudAlreadyPaired(options) { noticed++; repaired = options.onRepair; },
+        cloudSessionAccessProblem(error) { return error && error.code === "unreadable_envelope"
+            ? "encryption" : null; },
+        showCloudSessionAccessProblem(kind) { accessProblem = kind; },
         showCloudPairing(session, options) {
             assert.equal(session, context.cloudSession);
             repairOptions = options;
@@ -93,10 +99,14 @@ for (const hasInvitation of [true, false]) {
         "an already-paired browser offers an explicit encrypted-key repair");
     assert.equal(context.cloudGateUp, hasInvitation);
     assert.equal(used, 1); assert.equal(bound, 1);
+    assert.equal(typeof clientEvent, "function", "Cloud readability is observed separately from socket readiness");
+    assert.deepEqual(connectionStates, ["connecting"],
+        "an authenticated socket is not called live before a Session inventory arrives");
     if (hasInvitation) {
         assert.equal(hidden, 0);
         repaired();
         assert.equal(stopped, 1, "repair retires the stale-key connection before replacing it");
+        assert.deepEqual(connectionStates, ["connecting", "locked"]);
         assert.deepEqual(repairOptions.invitation, invitation);
         assert.equal(cleared, 0);
         repairOptions.onPaired();
@@ -107,6 +117,14 @@ for (const hasInvitation of [true, false]) {
     } else {
         assert.equal(context.cloudGateUp, false);
         assert.equal(hidden, 1);
+        clientEvent({ type: "error", error: { code: "unreadable_envelope" } });
+        assert.equal(accessProblem, "encryption");
+        assert.equal(context.cloudGateUp, true);
+        assert.equal(connectionStates.at(-1), "locked",
+            "an unreadable encrypted stream cannot leave the connection chip live");
+        clientEvent({ type: "sessions", data: { sessions: [] } });
+        assert.equal(connectionStates.at(-1), "live",
+            "an actual Session inventory, including an empty one, establishes readable live state");
     }
 }
 const pairingUI = readFileSync("Resources/web/app/js/input/cloud-pairing.js", "utf8");
@@ -177,6 +195,17 @@ globalThis.window = {
 // process-long in a browser. Keep that unrelated ticker from holding this Node contract open.
 globalThis.setInterval = function () { return 0; };
 const cloudDoor = await import("../Resources/web/app/js/input/cloud-pairing.js");
+
+assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "forbidden" }), "permission");
+assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "unreadable_envelope" }), "encryption");
+assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "replay" }), null,
+    "a harmless duplicate envelope does not become a permission prompt");
+cloudDoor.showCloudSessionAccessProblem("permission");
+assert.match(elements["cloud-door-lede"].textContent, /cannot read Sessions/i);
+assert.match(elements["cloud-door-guide"].textContent, /permission/i);
+cloudDoor.showCloudSessionAccessProblem("encryption");
+assert.match(elements["cloud-door-lede"].textContent, /cannot decrypt Sessions/i);
+assert.match(elements["cloud-door-guide"].textContent, /Pair a Browser/i);
 
 let navigated = null;
 cloudDoor.showCloudSignIn("https://api.clawdline.com/v1/auth/oauth/start", {

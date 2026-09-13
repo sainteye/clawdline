@@ -30,9 +30,10 @@ import { handlers } from "./net/handlers.js";
 import { createBillingClient } from "./net/billing.js";
 import { ScheduleWebhookClient } from "./net/schedule-webhooks.js";
 import {
-    captureCloudPairingInvitation, clearCloudPairingInvitation, showCloudInstallGate,
+    captureCloudPairingInvitation, clearCloudPairingInvitation, cloudSessionAccessProblem,
+    showCloudInstallGate,
     hideCloudGate, deferCloudGate, showCloudGate, showCloudBootError, showCloudDeviceRecovery,
-    showCloudPairing, showCloudSignIn, showCloudAlreadyPaired
+    showCloudPairing, showCloudSignIn, showCloudAlreadyPaired, showCloudSessionAccessProblem
 } from "./input/cloud-pairing.js";
 import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onboarding.js";
 import "./door/door.js";
@@ -265,6 +266,30 @@ if (transportKind === "cloud") {
             cloudConnection = keepConnected(cloudSession, {
                 onState: function (update) {
                     if (update.state === "connected") {
+                        // Relay readiness proves the socket and viewer identity only. Do not call
+                        // it live until a decryptable Session inventory — even an authoritative
+                        // empty one — arrives. A typed access/key error raises the pairing door
+                        // instead of rendering an ordinary "no sessions" answer.
+                        if (update.client && typeof update.client.events === "function") {
+                            update.client.events(function (event) {
+                                if (event && event.type === "sessions") {
+                                    handlers.conn("live");
+                                    if (!cloudInvitation) {
+                                        cloudGateUp = false;
+                                        hideCloudGate();
+                                    }
+                                    return;
+                                }
+                                var accessProblem = event && event.type === "error"
+                                    ? cloudSessionAccessProblem(event.error) : null;
+                                if (!accessProblem) return;
+                                S.locked = true;
+                                handlers.conn("locked");
+                                cloudGateUp = true;
+                                if (!cloudInvitation) showCloudSessionAccessProblem(accessProblem);
+                            });
+                        }
+                        handlers.conn(S.arrived ? "live" : "connecting");
                         cloudGateUp = !!cloudInvitation;
                         if (cloudInvitation) {
                             // A viewer signing identity may remain authorized after its local

@@ -445,7 +445,19 @@ export class CloudClient {
     async _receiveEnvelope(envelope, realign) {
         var key = await this._senderKey(envelope && envelope.sender, envelope);
         if (!key) throw cloudError("unknown_sender", "the envelope sender is not paired");
-        var clear = await openEnvelope(envelope, await this._masterKey(envelope.key_id), key);
+        var clear;
+        try {
+            clear = await openEnvelope(envelope, await this._masterKey(envelope.key_id), key);
+        } catch (error) {
+            // Relay readiness proves the viewer's signing identity, not that the account content
+            // key in this browser still matches the Mac. WebCrypto otherwise reports a bare
+            // OperationError, which left the page claiming "live" over an empty Session list.
+            // Preserve our own typed key-store failures; normalize signature/decryption failures
+            // so the composition root can offer the existing same-device repair flow.
+            if (error && (error.code === "unknown_key" || error.code === "extractable_key")) throw error;
+            throw cloudError("unreadable_envelope",
+                "this browser cannot decrypt the paired Mac's Session data");
+        }
         var channel = parseEnvelopeChannel(envelope.ch);
         var previous = this.sequenceBySender.get(envelope.sender);
         if (realign) {

@@ -105,6 +105,32 @@ export function clearCloudPairingInvitation(storage) {
     storage.removeItem(INVITATION_STORAGE_KEY);
 }
 
+/** Classify only errors that prove Cloud access is unusable; transient/replay errors stay quiet. */
+export function cloudSessionAccessProblem(error) {
+    var code = error && typeof error.code === "string" ? error.code : "";
+    if (["forbidden", "unauthorized", "revoked", "missing_capability",
+        "capability_denied"].indexOf(code) >= 0) return "permission";
+    if (["unknown_key", "unknown_sender", "extractable_key",
+        "unreadable_envelope"].indexOf(code) >= 0) return "encryption";
+    return null;
+}
+
+/** Explain why an authenticated Relay socket still cannot produce a Session inventory. */
+export function showCloudSessionAccessProblem(kind) {
+    if (!cloudDoor()) return;
+    hideCloudControls();
+    var permission = kind === "permission";
+    byId("cloud-door-lede").textContent = permission
+        ? "This browser cannot read Sessions"
+        : "This browser cannot decrypt Sessions";
+    byId("cloud-door-guide").textContent = permission
+        ? "Cloud accepted the connection, but this browser does not have Session read permission. "
+            + "On the Mac, choose Pair a Browser to review and grant access."
+        : "Cloud accepted the connection, but this browser's encryption keys no longer match the Mac. "
+            + "On the Mac, choose Pair a Browser, then open its invitation here to repair the connection.";
+    say("No Session data has been shown. The green connection alone is not enough.", false);
+}
+
 /** Let the same signed viewer replace drifted E2E keys without registering a new device. */
 export function showCloudAlreadyPaired(options) {
     if (!cloudDoor()) return;

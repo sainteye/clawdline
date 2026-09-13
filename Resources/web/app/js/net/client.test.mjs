@@ -685,6 +685,17 @@ assert.deepEqual((await connectedCloud.sessions()).sessions[0].identity,
     "a verified cloud snapshot is stored under (machine, session)");
 assert.equal(liveEvents.some(function (event) { return event.type === "sessions"; }), true);
 
+const driftedMasterKey = await importMasterSecret(Buffer.alloc(32, 17));
+const unreadableEnvelope = await sealEnvelope({
+    ch: "s/mac-01/session-key-drift", seq: 19, ts: 1787817600001, class: "stream",
+    key_id: "ms-1", sender: "device-vector-01"
+}, JSON.stringify({ id: "session-key-drift" }), driftedMasterKey, signingKey);
+fakeSocket.receive({ type: "envelope", envelope: unreadableEnvelope });
+await connectedCloud.messageChain;
+assert.equal(liveEvents.some(function (event) {
+    return event.type === "error" && event.error && event.error.code === "unreadable_envelope";
+}), true, "a valid paired sender with a mismatched content key emits a typed repairable error");
+
 const secondSnapshotEnvelope = await sealEnvelope({
     ch: "s/mac-01/session-02", seq: 21, ts: 1787817600001, class: "stream",
     key_id: "ms-1", sender: "device-vector-01"
