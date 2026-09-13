@@ -104,8 +104,10 @@ final class RemoteServer: @unchecked Sendable {
     }
     private var listener: NWListener?
     private var streams: [ObjectIdentifier: Stream] = [:]
-    private var pendingFreshWaiters:
+    var pendingFreshWaiters:
         [ObjectIdentifier: SlowReadings.Readings.WaiterToken] = [:]
+    var pendingProjectReads:
+        [ObjectIdentifier: ProjectReadCoordinator.Token] = [:]
     private var nextEventID = 0
     private lazy var transcriptRevisionStream = TranscriptRevisionStream { [weak self] id, signature in
         self?.queue.async { [weak self] in
@@ -272,12 +274,9 @@ final class RemoteServer: @unchecked Sendable {
     /// on the tunnel queues, is shed by the same budgets, and is told `transcript_busy` or the
     /// reading lane's 429 in the same words.
     ///
-    /// **And the other four queue where a phone queues too, which is the shared queue.** An
-    /// agent, a shell, a session's skills and its Git panel are not lane reads on the direct path
-    /// either: `isTranscriptReading` and `isSlowReading` both say no to them, exactly as they do
-    /// to the same four paths arriving over HTTP, so they fall through to `dispatch` here for the
-    /// same reason they fall through to it there. Putting them in a lane would not be following
-    /// the direct path, it would be a second policy nobody measured.
+    /// Agents, shells and skills still take the direct shared path. Git, links and typed project
+    /// artifacts share the uncached project-reading lane with HTTP, so Cloud cannot reintroduce
+    /// the serial-queue stall that the local route avoids.
     ///
     /// There is no idempotency key and no write switch: a retried GET is not a second anything,
     /// and `.verifiedCloud` already carries `.read`.
@@ -294,6 +293,8 @@ final class RemoteServer: @unchecked Sendable {
                     self.startTranscriptRead(request) { continuation.resume(returning: $0) }
                 } else if Self.isSlowReading(request.path) {
                     self.startSlowReading(request) { continuation.resume(returning: $0) }
+                } else if Self.isProjectReading(request.path) {
+                    self.startProjectReading(request) { continuation.resume(returning: $0) }
                 } else if request.path == "/v1/board" { self.startBoardRequest(request) { continuation.resume(returning: $0) }
                 } else if request.path == "/v1/timeline" { self.startTimelineRequest(request) { continuation.resume(returning: $0) }
                 } else if ProjectWorktreeHTTP.owns(request.path) { self.startWorktreeRequest(request) { continuation.resume(returning: $0) }
@@ -541,6 +542,8 @@ final class RemoteServer: @unchecked Sendable {
             guard let self else { return }
             for token in self.pendingFreshWaiters.values { self.slowReadings.cancel(token) }
             self.pendingFreshWaiters.removeAll()
+            for token in self.pendingProjectReads.values { self.projectReads.cancel(token) }
+            self.pendingProjectReads.removeAll()
             self.streams.removeAll()
             self.httpReliability.resetActive()
             self.transcriptRevisionStream.stop()
@@ -582,6 +585,9 @@ final class RemoteServer: @unchecked Sendable {
     private func connectionClosed(_ id: ObjectIdentifier) {
         if let token = pendingFreshWaiters.removeValue(forKey: id) {
             slowReadings.cancel(token)
+        }
+        if let token = pendingProjectReads.removeValue(forKey: id) {
+            projectReads.cancel(token)
         }
         streams.removeValue(forKey: id)
         if streams.isEmpty { transcriptRevisionStream.stop() }
@@ -689,6 +695,10 @@ final class RemoteServer: @unchecked Sendable {
         }
         if request.method == "GET", Self.isSlowReading(request.path) {
             readSlowly(request, on: conn)
+            return
+        }
+        if request.method == "GET", Self.isProjectReading(request.path) {
+            readProject(request, on: conn)
             return
         }
         if (request.method == "POST" || request.method == "DELETE"),
@@ -827,7 +837,7 @@ final class RemoteServer: @unchecked Sendable {
     /// A step of its own rather than four lines inside `route`, because dictation does not go
     /// through `route` — it is written to the connection from another queue — and an answer that
     /// went out around the door would be the one response here a browser is free to guess about.
-    private func withCachePolicy(_ response: Response) -> Response {
+    func withCachePolicy(_ response: Response) -> Response {
         var response = response
         if response.headers["Cache-Control"] == nil {
             response.headers["Cache-Control"] = "no-store"
@@ -1057,6 +1067,10 @@ final class RemoteServer: @unchecked Sendable {
                                    "approval": "implementation_default_pending_w6"],
                         "metrics": slowReadings.waiterMetrics.object,
                     ]
+                    object["project_reads"] = [
+                        "limits": projectReads.limits.object,
+                        "metrics": projectReads.metrics.object,
+                    ]
                     return object
                 }(),
             ])
@@ -1214,6 +1228,9 @@ final class RemoteServer: @unchecked Sendable {
                 return .error(404, "not_a_repo", "That session is not inside a Git repository")
             case .failed:
                 return .error(500, "git_failed", "Could not read that repository")
+            case .timedOut:
+                return .error(504, "git_timeout",
+                              "That repository did not answer inside the Git read deadline")
             }
 
         // **What that terminal is showing, now.** The one route in this file whose subject is a
@@ -4167,20 +4184,6 @@ final class RemoteServer: @unchecked Sendable {
     /// Optional file/subprocess readers leave the shared server queue so they cannot delay health
     /// or SSE. Transcript has a separate bounded worker because first paint must not wait behind
     /// `/info`'s screen/Git/project work. Match the whole route shape, not a suffix.
-    static func isSlowReading(_ path: String) -> Bool {
-        if path == "/v1/places" { return true }
-        // The live-screen state view asks tmux about every pane on the machine, which is one
-        // subprocess. `/v1/sessions/:id/screen` deliberately is *not* here: it is a lock and a
-        // dictionary read, and putting it behind this budget would let a busy `/info` refuse the
-        // route a phone asks for on every change.
-        if path == "/v1/screens" { return true }
-        guard path.hasPrefix("/v1/sessions/") else { return false }
-        let rest = path.dropFirst("/v1/sessions/".count)
-        let parts = rest.split(separator: "/", omittingEmptySubsequences: false)
-        guard parts.count == 2, !parts[0].isEmpty else { return false }
-        return parts[1] == "info" || parts[1] == "live"
-    }
-
     static func isUsageAnalyticsReading(_ path: String) -> Bool {
         path == "/v1/orchestrator/usage/analytics"
             || path == "/v1/orchestrator/usage/analytics.csv"
@@ -4275,22 +4278,12 @@ final class RemoteServer: @unchecked Sendable {
     /// route and keeps the limiter away from the worker thread.
     /// The optional reads, answered from the last good reading while the next one is taken. The
     /// lane's depth now refuses only a request that had nothing to serve; policy in `SlowReadings`.
-    private func readSlowly(_ request: Request, on conn: NWConnection) {
-        let id = ObjectIdentifier(conn)
-        let token = startSlowReading(request) { [weak self] response in
-            guard let self else { conn.cancel(); return }
-            self.pendingFreshWaiters.removeValue(forKey: id)
-            self.send(response, on: conn)
-        }
-        if let token { pendingFreshWaiters[id] = token }
-    }
-
     /// The same lane, delivered to a closure instead of a socket. A cloud viewer's `/info` is the
     /// second caller and must share this budget rather than open a second one: the measurement
     /// that produced the lane — five `/info` in flight answering `/v1/health` in 3.143 seconds —
     /// is about the Mac, not about which transport asked.
     @discardableResult
-    private func startSlowReading(_ request: Request,
+    func startSlowReading(_ request: Request,
                                   deliver: @escaping (Response) -> Void)
         -> SlowReadings.Readings.WaiterToken? {
         if let refusal = slowReadingRefusal(request) {
@@ -4314,6 +4307,8 @@ final class RemoteServer: @unchecked Sendable {
     }
 
     private let slowReadings = SlowReadings.Readings()
+    lazy var projectReads = ProjectReadCoordinator(
+        deliverOnOwner: { [queue] work in queue.async(execute: work) })
 
     /// Analytics is independently shed and independently executed. Its SQLite work is bounded,
     /// but a full analytics queue still cannot be allowed to turn `/info` into 429 or park the
@@ -5601,7 +5596,7 @@ final class RemoteServer: @unchecked Sendable {
 
     // MARK: - Writing a response out
 
-    private func send(_ response: Response, on conn: NWConnection) {
+    func send(_ response: Response, on conn: NWConnection) {
         httpReliability.sendResponse(response.wire, on: conn)
     }
 }
@@ -5754,6 +5749,7 @@ extension RemoteServer {
             case 413: return "Payload Too Large"
             case 431: return "Request Header Fields Too Large"
             case 503: return "Service Unavailable"
+            case 504: return "Gateway Timeout"
             default:  return "Error"
             }
         }

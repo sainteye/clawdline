@@ -59,8 +59,11 @@ chmod 600 "$header"
 command cat > "$body"
 [ "$(wc -c < "$body" | tr -d ' ')" -le 65536 ] \
     || { echo "clawdline-board-workflow: command_too_large" >&2; exit 65; }
+connect_timeout=2
+request_timeout=15
 
-curl --fail-with-body -sS -G "http://127.0.0.1:$port/v1/orchestrator/whoami" \
+curl --fail-with-body -sS --connect-timeout "$connect_timeout" --max-time "$request_timeout" \
+    -G "http://127.0.0.1:$port/v1/orchestrator/whoami" \
     -H "@$header" \
     --data-urlencode "conversation_id=$conversation_id" > "$identity"
 terminal_id=$(/usr/bin/plutil -extract terminal_id raw -o - "$identity" 2>/dev/null || true)
@@ -73,7 +76,8 @@ case "$terminal_id" in
     *) terminal_segment=$terminal_id ;;
 esac
 
-curl --fail-with-body -sS -X POST \
+curl --fail-with-body -sS --connect-timeout "$connect_timeout" --max-time "$request_timeout" \
+    -X POST \
     "http://127.0.0.1:$port/v1/orchestrator/sessions/$terminal_segment/workflow" \
     -H "@$header" \
     -H "Idempotency-Key: $request_id" \

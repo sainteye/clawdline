@@ -486,16 +486,17 @@ enum Whisper {
 
     // MARK: - Plumbing
 
-    private static func run(_ launch: String, _ args: [String]) -> String? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: launch)
-        task.arguments = args
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = FileHandle.nullDevice
-        do { try task.run() } catch { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitQuietly()
-        return String(data: data, encoding: .utf8)
+    private static let processTimeout: TimeInterval = 60
+
+    private static func run(_ launch: String, _ args: [String],
+                            timeout: TimeInterval = processTimeout) -> String? {
+        let receipt = Process.collect(launch, args, timeout: timeout)
+        guard let receipt, receipt.status == 0 else { return nil }
+        return String(data: receipt.output, encoding: .utf8)
+    }
+
+    static func runForTesting(_ launch: String, _ args: [String],
+                              timeout: TimeInterval) -> String? {
+        run(launch, args, timeout: timeout)
     }
 }

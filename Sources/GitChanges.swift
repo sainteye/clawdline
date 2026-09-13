@@ -35,7 +35,17 @@ enum GitChanges {
         case snapshot(Status)
         case notRepository
         case failed
+        case timedOut
     }
+
+    enum RunResult {
+        case output(String)
+        case failed
+        case timedOut
+    }
+
+    typealias Runner = (_ arguments: [String], _ cwd: String,
+                        _ timeout: TimeInterval) -> RunResult
 
     /// Parse `git status --porcelain=v2 --branch`.
     static func parseStatus(_ text: String) -> Status {
@@ -142,12 +152,34 @@ enum GitChanges {
     /// Read only when somebody asks for the panel. All commands are lock-free and bounded: this
     /// endpoint must not leave an index lock behind or pin the server queue on a wedged checkout.
     static func read(cwd: String) -> ReadResult {
-        guard let status = run(["status", "--porcelain=v2", "--branch"], cwd: cwd) else {
-            return .notRepository
+        read(cwd: cwd, totalTimeout: 8, now: monotonicNow, execute: run)
+    }
+
+    static func read(cwd: String, totalTimeout: TimeInterval,
+                     now: () -> TimeInterval, execute: Runner) -> ReadResult {
+        let deadline = now() + totalTimeout
+        func next(_ arguments: [String]) -> RunResult? {
+            let remaining = deadline - now()
+            guard remaining > 0 else { return nil }
+            return execute(arguments, cwd, min(5, remaining))
         }
-        guard let unstaged = run(["diff", "--numstat"], cwd: cwd),
-              let staged = run(["diff", "--cached", "--numstat"], cwd: cwd) else {
-            return .failed
+        let status: String
+        switch next(["status", "--porcelain=v2", "--branch"]) {
+        case .output(let text): status = text
+        case .timedOut, nil: return .timedOut
+        case .failed: return .notRepository
+        }
+        let unstaged: String
+        switch next(["diff", "--numstat"]) {
+        case .output(let text): unstaged = text
+        case .timedOut, nil: return .timedOut
+        case .failed: return .failed
+        }
+        let staged: String
+        switch next(["diff", "--cached", "--numstat"]) {
+        case .output(let text): staged = text
+        case .timedOut, nil: return .timedOut
+        case .failed: return .failed
         }
         return .snapshot(assemble(status: status, unstaged: unstaged, staged: staged))
     }
@@ -190,8 +222,12 @@ enum GitChanges {
         return String(after)
     }
 
-    private static func run(_ arguments: [String], cwd: String,
-                            timeout: TimeInterval = 5) -> String? {
+    private static func monotonicNow() -> TimeInterval {
+        TimeInterval(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+    }
+
+    private static func run(_ arguments: [String], _ cwd: String,
+                            _ timeout: TimeInterval) -> RunResult {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         task.arguments = arguments
@@ -211,14 +247,26 @@ enum GitChanges {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
 
-        do { try task.run() } catch { return nil }
-        let killer = DispatchWorkItem { if task.isRunning { task.terminate() } }
+        do { try task.run() } catch { return .failed }
+        let state = NSLock()
+        var deadlineFired = false
+        let killer = DispatchWorkItem {
+            state.lock()
+            deadlineFired = task.isRunning
+            state.unlock()
+            if task.isRunning { task.terminate() }
+        }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout,
                                                        execute: killer)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         task.waitQuietly()
         killer.cancel()
-        guard task.terminationStatus == 0 else { return nil }
-        return String(data: data, encoding: .utf8)
+        state.lock()
+        let timedOut = deadlineFired
+        state.unlock()
+        if timedOut { return .timedOut }
+        guard task.terminationStatus == 0,
+              let output = String(data: data, encoding: .utf8) else { return .failed }
+        return .output(output)
     }
 }

@@ -261,6 +261,10 @@ those seconds out loud for exactly the reason the bar does — twelve seconds of
 number beside it cannot be told apart from a hang — and says what is being waited for once the
 count runs long.
 
+The recognizer subprocess has a hard sixty-second ceiling. A model that does not return by then is
+terminated and contributes no partial transcript; the dictation queue continues with the next
+bounded request rather than retaining a wedged process indefinitely.
+
 **One at a time on this Mac, and two is the queue.** Transcription runs on a queue of its own, so
 that a phone's dictation cannot hold up the event stream and every other page in the house while it
 runs; that queue is serial, because two whispers at once on one machine finish later than two in a

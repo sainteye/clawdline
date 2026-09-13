@@ -445,6 +445,8 @@ authenticates the credential. A refused identity lookup never proceeds to the se
 Terminal identifiers are validated before URL encoding, including the normal leading `%`.
 The caller's stable idempotency key and exact JSON are forwarded unchanged; the helper does not
 retry a refused or uncertain request and never resends the person's terminal input.
+Both loopback hops have a two-second connect timeout and a fifteen-second whole-transfer timeout,
+so a wedged local listener cannot retain the calling terminal indefinitely.
 
 A successful terminal response whose workflow status is `unrecorded` produces a non-retrying UI
 warning and diagnostic; it does not pretend the terminal send failed.

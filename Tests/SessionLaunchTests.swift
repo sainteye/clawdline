@@ -85,6 +85,10 @@ group("workflow coverage distinguishes managed ingress from native observation")
             && helperSource.contains("umask 077")
             && !helperSource.contains("X-Clawdline-Orchestrator: $token")
             && !helperSource.contains("token=$("))
+    check("both helper network hops have a finite connect and transfer deadline",
+          helperSource.components(separatedBy: "curl --fail-with-body -sS").count - 1 == 2
+            && helperSource.components(separatedBy: "--connect-timeout \"$connect_timeout\"").count - 1 == 2
+            && helperSource.components(separatedBy: "--max-time \"$request_timeout\"").count - 1 == 2)
     let instructions = (try? String(
         contentsOfFile: "Resources/board-workflow.md", encoding: .utf8)) ?? ""
     check("the adapter instruction preserves evidence and coverage boundaries",
@@ -149,7 +153,8 @@ group("a browser token is adopted before its credential leaves the address bar")
             && metrics?["streams"] is [String: Any]
             && metrics?["stream_bytes"] is [String: Any]
             && metrics?["deadline_tasks"] is [String: Any]
-            && reliability?["fresh_read_waiters"] is [String: Any])
+            && reliability?["fresh_read_waiters"] is [String: Any]
+            && reliability?["project_reads"] is [String: Any])
     check("reliability health contains no per-connection identity",
           !String(data: health.body, encoding: .utf8)!.contains("connection_id"))
 }
@@ -157,6 +162,7 @@ group("a browser token is adopted before its credential leaves the address bar")
 group("the expensive remote reads take exactly one bounded side door") {
     func slow(_ path: String) -> Bool { RemoteServer.isSlowReading(path) }
     func transcript(_ path: String) -> Bool { RemoteServer.isTranscriptReading(path) }
+    func project(_ path: String) -> Bool { RemoteServer.isProjectReading(path) }
     func limited(_ path: String) -> Bool { RemoteServer.isLimitedSlowReading(path) }
 
     check("the places list leaves the shared server queue", slow("/v1/places"))
@@ -172,6 +178,20 @@ group("the expensive remote reads take exactly one bounded side door") {
     check("the session transcript cannot queue behind info or places",
           !slow("/v1/sessions/ABC/transcript"))
     check("an encoded session id is still one segment", slow("/v1/sessions/A%2FB/info"))
+    check("Git, links and typed artifacts use the uncached bounded project lane",
+          project("/v1/sessions/ABC/git")
+            && project("/v1/sessions/ABC/links")
+            && project("/v1/sessions/ABC/artifacts/milestone"))
+    check("project reads are neither cached slow reads nor transcript reads",
+          ["/v1/sessions/ABC/git", "/v1/sessions/ABC/links",
+           "/v1/sessions/ABC/artifacts/milestone"].allSatisfy {
+              project($0) && !slow($0) && !transcript($0)
+          })
+    check("the project lane matches complete route shapes only",
+          !project("/v1/sessions/ABC/artifacts")
+            && !project("/v1/sessions/ABC/artifacts/milestone/extra")
+            && !project("/v1/artifacts/images/opaque")
+            && !project("/v1/sessions//git"))
 
     check("a places subroute is not selected", !slow("/v1/places/anything"))
     check("the sessions list is not selected", !slow("/v1/sessions"))
@@ -191,6 +211,37 @@ group("the expensive remote reads take exactly one bounded side door") {
           !RemoteServer.infoIncludesDeferredComponents(["parts": "summary"]))
     check("legacy info keeps every deferred component",
           RemoteServer.infoIncludesDeferredComponents([:]))
+
+    var now: TimeInterval = 100
+    var budgets: [TimeInterval] = []
+    let bounded = GitChanges.read(cwd: "/fixture", totalTimeout: 8, now: { now }) {
+        arguments, _, timeout in
+        budgets.append(timeout)
+        now += arguments.first == "status" ? 4 : 3
+        return .output(arguments.first == "status"
+            ? "# branch.oid abc\n# branch.head main\n# branch.ab +0 -0\n" : "")
+    }
+    if case .snapshot = bounded {
+        check("one Git read shares a decreasing whole-request budget", true)
+    } else {
+        check("one Git read shares a decreasing whole-request budget", false)
+    }
+    check("no subprocess receives more than its share of the eight-second deadline",
+          budgets.count == 3 && budgets[0] == 5 && budgets[1] == 4 && budgets[2] == 1)
+
+    now = 200
+    var launches = 0
+    let exhausted = GitChanges.read(cwd: "/fixture", totalTimeout: 2, now: {
+        defer { now += 3 }; return now
+    }) { _, _, _ in
+        launches += 1
+        return .output("")
+    }
+    if case .timedOut = exhausted {
+        check("an exhausted whole-request budget is typed without starting Git", launches == 0)
+    } else {
+        check("an exhausted whole-request budget is typed without starting Git", false)
+    }
 }
 
 group("the slow-reading gate agrees with dispatch") {

@@ -1650,10 +1650,12 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     // Their local routes keep the direct path's classification. The Cloud bridge's separate
     // background worker is an upstream admission boundary, not a claim that these HTTP paths
     // belong to the local transcript or slow-read coordinator.
-    for path in [agentRequest.path, shellRequest.path, skillsRequest.path, gitRequest.path] {
+    for path in [agentRequest.path, shellRequest.path, skillsRequest.path] {
         try require(!RemoteServer.isTranscriptReading(path) && !RemoteServer.isSlowReading(path),
                     "\(path) is not a lane read here, because it is not one on the direct path")
     }
+    try require(RemoteServer.isProjectReading(gitRequest.path),
+                "Git uses the same uncached bounded project lane through Cloud and local HTTP")
 
     return checks
 }

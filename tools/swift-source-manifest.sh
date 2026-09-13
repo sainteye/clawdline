@@ -122,6 +122,7 @@ clawdline_production_sources=(
   Sources/RemotePage.swift
   Sources/RemoteQR.swift
   Sources/RemoteServer.swift
+  Sources/RemoteServerProjectReading.swift
   Sources/RemoteServerSessionLanding.swift
   Sources/RemoteTunnel.swift
   Sources/Schedules.swift

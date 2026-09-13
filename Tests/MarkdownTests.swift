@@ -1987,4 +1987,13 @@ group("the transcript pane's text view") {
     check("link styling is left to the renderer",
           view.linkTextAttributes?[.foregroundColor] == nil)
 }
+
+group("Whisper subprocesses stop at their hard deadline") {
+    let started = Date()
+    let answer = Whisper.runForTesting(
+        "/bin/sleep", ["5"], timeout: 0.05)
+    check("a timed out recognizer produces no partial transcript", answer == nil)
+    check("the caller returns without waiting for the abandoned recognizer",
+          Date().timeIntervalSince(started) < 1)
+}
 }

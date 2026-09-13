@@ -641,4 +641,40 @@ func runReadingFreshnessTests() {
               ReadingTrace.percentile(Array(1...100), 0.99) == 99)
         check("p100 is the slowest", ReadingTrace.percentile(Array(1...100), 1.0) == 100)
     }
+
+    group("uncached project reads have bounded parallelism, queueing and deadlines") {
+        var now: TimeInterval = 1_000
+        var workers: [() -> Void] = []
+        var answers: [ProjectReadCoordinator.Outcome] = []
+        let reads = ProjectReadCoordinator(
+            limits: .init(active: 2, outstanding: 3, queueWaitSeconds: 1,
+                          requestSeconds: 4),
+            now: { now }, execute: { workers.append($0) },
+            deliverOnOwner: { $0() }, startTimer: false)
+        for _ in 0..<3 {
+            _ = reads.start(work: { .status(200) }, deliver: { answers.append($0) })
+        }
+        expect("only the active limit is launched", workers.count, 2)
+        expect("all active and queued work is accounted", reads.metrics.current, 3)
+        _ = reads.start(work: { .status(200) }, deliver: { answers.append($0) })
+        expect("work above the explicit outstanding cap is refused",
+               answers, [.capacity(limit: 3, current: 3)])
+
+        now += 2
+        reads.expireForTesting()
+        check("the queued request expires without ever executing",
+              answers.contains(.queueTimeout(seconds: 1)) && workers.count == 2)
+        workers.removeFirst()()
+        check("one completed worker returns its response", answers.contains(.response(.status(200))))
+
+        now += 3
+        reads.expireForTesting()
+        check("an active read answers once at the whole-request deadline",
+              answers.contains(.requestTimeout(seconds: 4)))
+        let before = answers.count
+        workers.removeFirst()()
+        expect("late worker completion cannot answer the same request twice", answers.count, before)
+        check("all actual workers finishing reclaims the lane", reads.metrics.current == 0,
+              "current=\(reads.metrics.current) active=\(reads.metrics.active) workers=\(workers.count)")
+    }
 }

@@ -644,6 +644,14 @@ page from whatever produced it. An untrusted dev stack stays silent rather than 
 Project artifacts use the authenticated routes below, so a paired phone can open them without the
 server disclosing an absolute filesystem path.
 
+`links` and the project-backed artifact route below share a fresh, uncached project-read lane with
+`git`. At most two reads execute and six remain outstanding. A request that cannot start within one
+second returns `503 project_read_queue_timeout`; a seventh request returns
+`429 project_read_busy`; and every caller receives an answer within twelve seconds or
+`504 project_read_timeout`. A timed-out synchronous reader remains charged until it actually
+unwinds, so the deadline cannot silently turn into extra concurrency. Local HTTP and verified
+Cloud reads consume the same bound.
+
 ### `GET /v1/sessions/:id/artifacts/:kind`
 
 `kind` is exactly `backlog` or `milestone`. The server resolves the corresponding path from that
@@ -1147,9 +1155,13 @@ $ curl -s -H "Authorization: Bearer $TOKEN" .../v1/sessions/$ID/git
 | `staged`, `unstaged` | the two columns of porcelain v2's `XY` state; both may be true |
 | `additions`, `deletions` | staged and unstaged numstat totals; null for binary or untracked files |
 
-The route runs status and both numstat views with `GIT_OPTIONAL_LOCKS=0` and a timeout. It never
-changes the worktree or index. A session outside a Git repository answers `404 not_a_repo` in the
-standard [error envelope](#the-error-envelope).
+The route runs status and both numstat views with `GIT_OPTIONAL_LOCKS=0`. They share one eight-second
+monotonic budget; no command receives more than five seconds, and unused time is all that the next
+command may spend. Exhausting that budget returns `504 git_timeout`. The surrounding uncached
+project-read lane has the separate twelve-second response deadline and bounded concurrency
+described under [`links`](#get-v1sessionsidlinks). It never changes the worktree or index. A
+session outside a Git repository answers `404 not_a_repo` in the standard
+[error envelope](#the-error-envelope).
 
 ### `GET /v1/sessions/:id/screen`
 

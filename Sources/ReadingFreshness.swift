@@ -457,6 +457,270 @@ enum SlowReadings {
     }
 }
 
+/// Fresh, on-demand project reads that must not borrow the remote server's serial owner queue.
+///
+/// Unlike ``FreshReadings``, this deliberately stores no answer: Git changes, link metadata and
+/// artifact lists are opened because the caller wants the state now. What it does store is the
+/// finite debt created by asking. Two workers may execute, four more may wait, queued work loses
+/// its place after one second, and every caller receives a terminal answer inside twelve seconds.
+/// A timed-out worker remains charged until its synchronous subprocess unwinds, so a deadline can
+/// never become permission to exceed the concurrency bound.
+final class ProjectReadCoordinator {
+    typealias Executor = (@escaping () -> Void) -> Void
+
+    struct Limits: Equatable {
+        let active: Int
+        let outstanding: Int
+        let queueWaitSeconds: TimeInterval
+        let requestSeconds: TimeInterval
+
+        static let implementationDefault = Limits(
+            active: 2, outstanding: 6, queueWaitSeconds: 1, requestSeconds: 12)
+
+        init(active: Int, outstanding: Int, queueWaitSeconds: TimeInterval,
+             requestSeconds: TimeInterval) {
+            precondition(active > 0 && outstanding >= active)
+            precondition(queueWaitSeconds > 0 && requestSeconds >= queueWaitSeconds)
+            self.active = active
+            self.outstanding = outstanding
+            self.queueWaitSeconds = queueWaitSeconds
+            self.requestSeconds = requestSeconds
+        }
+
+        var object: [String: Any] {
+            ["active": active, "outstanding": outstanding,
+             "queue_wait_seconds": queueWaitSeconds, "request_seconds": requestSeconds,
+             "approval": "implementation_default_pending_w6"]
+        }
+    }
+
+    enum Outcome: Equatable {
+        case response(RemoteServer.Response)
+        case capacity(limit: Int, current: Int)
+        case queueTimeout(seconds: TimeInterval)
+        case requestTimeout(seconds: TimeInterval)
+
+        static func == (lhs: Outcome, rhs: Outcome) -> Bool {
+            switch (lhs, rhs) {
+            case (.response(let a), .response(let b)):
+                return a.status == b.status && a.headers == b.headers && a.body == b.body
+            case (.capacity(let al, let ac), .capacity(let bl, let bc)):
+                return al == bl && ac == bc
+            case (.queueTimeout(let a), .queueTimeout(let b)),
+                 (.requestTimeout(let a), .requestTimeout(let b)):
+                return a == b
+            default: return false
+            }
+        }
+    }
+
+    struct Token: Hashable { fileprivate let id: UInt64 }
+
+    struct Metrics: Equatable {
+        fileprivate(set) var current = 0
+        fileprivate(set) var active = 0
+        fileprivate(set) var peak = 0
+        fileprivate(set) var capacityRefusals = 0
+        fileprivate(set) var queueTimeouts = 0
+        fileprivate(set) var requestTimeouts = 0
+        fileprivate(set) var completed = 0
+        fileprivate(set) var cancelled = 0
+
+        var object: [String: Any] {
+            ["current": current, "active": active, "peak": peak,
+             "capacity_refusals": capacityRefusals, "queue_timeouts": queueTimeouts,
+             "request_timeouts": requestTimeouts, "completed": completed,
+             "cancelled": cancelled]
+        }
+    }
+
+    private enum State { case queued, running, timedOut, cancelled }
+    private final class Job {
+        let id: UInt64
+        let admittedAt: TimeInterval
+        let work: () -> RemoteServer.Response
+        var deliver: ((Outcome) -> Void)?
+        var state: State = .queued
+
+        init(id: UInt64, admittedAt: TimeInterval,
+             work: @escaping () -> RemoteServer.Response,
+             deliver: @escaping (Outcome) -> Void) {
+            self.id = id; self.admittedAt = admittedAt
+            self.work = work; self.deliver = deliver
+        }
+    }
+
+    let limits: Limits
+    private let now: () -> TimeInterval
+    private let execute: Executor
+    private let deliverOnOwner: Executor
+    private let lock = NSLock()
+    private var jobs: [UInt64: Job] = [:]
+    private var order: [UInt64] = []
+    private var nextID: UInt64 = 0
+    private var storedMetrics = Metrics()
+    private let timerQueue = DispatchQueue(
+        label: "com.tsunamiworks.clawdline.remote.project-reading.deadline")
+    private var timer: DispatchSourceTimer?
+
+    init(limits: Limits = .implementationDefault,
+         now: @escaping () -> TimeInterval = {
+             TimeInterval(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+         },
+         execute: Executor? = nil,
+         deliverOnOwner: @escaping Executor,
+         startTimer: Bool = true) {
+        self.limits = limits
+        self.now = now
+        self.execute = execute ?? { work in
+            DispatchQueue.global(qos: .utility).async(execute: work)
+        }
+        self.deliverOnOwner = deliverOnOwner
+        if startTimer {
+            let timer = DispatchSource.makeTimerSource(queue: timerQueue)
+            timer.schedule(deadline: .now() + .milliseconds(100),
+                           repeating: .milliseconds(100), leeway: .milliseconds(20))
+            timer.setEventHandler { [weak self] in self?.expire() }
+            self.timer = timer
+            timer.resume()
+        }
+    }
+
+    deinit { timer?.cancel() }
+
+    var metrics: Metrics {
+        lock.lock(); defer { lock.unlock() }
+        return storedMetrics
+    }
+
+    @discardableResult
+    func start(work: @escaping () -> RemoteServer.Response,
+               deliver: @escaping (Outcome) -> Void) -> Token? {
+        var launches: [() -> Void] = []
+        var refusal: Outcome?
+        var token: Token?
+        lock.lock()
+        if jobs.count >= limits.outstanding {
+            storedMetrics.capacityRefusals += 1
+            refusal = .capacity(limit: limits.outstanding, current: jobs.count)
+        } else {
+            nextID &+= 1
+            let job = Job(id: nextID, admittedAt: now(), work: work, deliver: deliver)
+            jobs[job.id] = job; order.append(job.id)
+            storedMetrics.current = jobs.count
+            storedMetrics.peak = max(storedMetrics.peak, storedMetrics.current)
+            token = Token(id: job.id)
+            launches = claimLaunchesLocked()
+        }
+        lock.unlock()
+        if let refusal { deliverOnOwner { deliver(refusal) } }
+        for launch in launches { execute(launch) }
+        return token
+    }
+
+    @discardableResult
+    func cancel(_ token: Token) -> Bool {
+        lock.lock()
+        guard let job = jobs[token.id] else { lock.unlock(); return false }
+        storedMetrics.cancelled += 1
+        job.deliver = nil
+        switch job.state {
+        case .queued:
+            removeLocked(job.id)
+        case .running:
+            job.state = .cancelled
+        case .timedOut, .cancelled:
+            break
+        }
+        lock.unlock()
+        return true
+    }
+
+    func expireForTesting() { expire() }
+
+    private func claimLaunchesLocked() -> [() -> Void] {
+        var launches: [() -> Void] = []
+        while storedMetrics.active < limits.active,
+              let id = order.first(where: { jobs[$0]?.state == .queued }),
+              let job = jobs[id] {
+            job.state = .running
+            storedMetrics.active += 1
+            launches.append { [weak self] in self?.perform(id) }
+        }
+        return launches
+    }
+
+    private func perform(_ id: UInt64) {
+        var launches: [() -> Void] = []
+        lock.lock()
+        guard let job = jobs[id] else {
+            lock.unlock(); return
+        }
+        if job.state == .timedOut || job.state == .cancelled {
+            storedMetrics.active -= 1
+            removeLocked(id)
+            launches = claimLaunchesLocked()
+            lock.unlock()
+            for launch in launches { execute(launch) }
+            return
+        }
+        guard job.state == .running else { lock.unlock(); return }
+        let work = job.work
+        lock.unlock()
+        finish(id, response: work())
+    }
+
+    private func finish(_ id: UInt64, response: RemoteServer.Response) {
+        var delivery: ((Outcome) -> Void)?
+        var launches: [() -> Void] = []
+        lock.lock()
+        guard let job = jobs[id] else { lock.unlock(); return }
+        precondition(job.state != .queued)
+        storedMetrics.active -= 1
+        if job.state == .running {
+            storedMetrics.completed += 1
+            delivery = job.deliver
+        }
+        removeLocked(id)
+        launches = claimLaunchesLocked()
+        lock.unlock()
+        if let delivery { deliverOnOwner { delivery(.response(response)) } }
+        for launch in launches { execute(launch) }
+    }
+
+    private func expire() {
+        var deliveries: [((Outcome) -> Void, Outcome)] = []
+        let instant = now()
+        lock.lock()
+        for id in Array(order) {
+            guard let job = jobs[id] else { continue }
+            let age = max(0, instant - job.admittedAt)
+            if job.state == .queued, age >= limits.queueWaitSeconds {
+                if let deliver = job.deliver {
+                    deliveries.append((deliver, .queueTimeout(seconds: limits.queueWaitSeconds)))
+                }
+                storedMetrics.queueTimeouts += 1
+                removeLocked(id)
+            } else if job.state == .running, age >= limits.requestSeconds {
+                if let deliver = job.deliver {
+                    deliveries.append((deliver, .requestTimeout(seconds: limits.requestSeconds)))
+                }
+                storedMetrics.requestTimeouts += 1
+                job.deliver = nil
+                job.state = .timedOut
+            }
+        }
+        lock.unlock()
+        for (deliver, outcome) in deliveries { deliverOnOwner { deliver(outcome) } }
+    }
+
+    private func removeLocked(_ id: UInt64) {
+        jobs.removeValue(forKey: id)
+        order.removeAll { $0 == id }
+        storedMetrics.current = jobs.count
+    }
+}
+
 /// The clock readings are stamped with, and the one bound they share.
 ///
 /// It lives outside ``FreshReadings`` because Swift has no static storage in a generic type, and
