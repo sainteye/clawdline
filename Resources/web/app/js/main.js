@@ -413,7 +413,7 @@ if (MOCK && params.get("cloud-onboarding") === "install") showCloudInstallGate()
 if (MOCK && params.get("cloud-onboarding") === "scan") {
     showCloudPairing({}, { scan: true });
 }
-Diagnostics.bind({ state: S, elements: els });
+Diagnostics.bind({ state: S, elements: els, transport: function () { return api; } });
 
 // Usage lives in the same stamped module graph as the rest of the page. Keeping its import here
 // makes the preload URL and the runtime request one identity, while these literal lookups keep the

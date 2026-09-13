@@ -2,6 +2,8 @@
    keeps only layout and state-machine facts — never transcript text, titles, paths or ids — and
    persists recent stable anomalies so the next load can explain the one that just vanished. */
 
+import { refText } from "../net/cloud-failure.js";
+
 var TRACE_LIMIT = 80;
 var INCIDENT_LIMIT = 5;
 var STORAGE_KEY = "clawdline.layout-debug.last";
@@ -419,6 +421,32 @@ function debugUI(force, reveal) {
     });
     var send = button("Send to Mac", function () {
         send.disabled = true;
+        // **Over Cloud this is a command, not a fetch** (B8). The hosted console's own origin has
+        // no `/v1/diagnostics/report`, so the POST below reached nothing and the report never left
+        // the phone. The Cloud transport sends it as `diagnostics.report`, checks its size against
+        // the relay and the Mac first, and adds its recent-command trail; the answer is the same
+        // receipt the HTTP route gives, and a refusal is said as `layer · code · ref`.
+        var transport = context && typeof context.transport === "function" ? context.transport() : null;
+        if (transport && transport.trail && typeof transport.diagnosticsReport === "function") {
+            say("Sending to the Mac over Cloud\u2026");
+            var asked;
+            try { asked = Promise.resolve(transport.diagnosticsReport(report())); }
+            catch (e) { asked = Promise.reject(e); }
+            asked.then(function (data) {
+                if (data && data.path) {
+                    say("Written to " + data.path + "\n" + data.bytes + " bytes on disk" +
+                        (data.previous ? "\nthe press before it: " + data.previous : "") +
+                        (data.completeness_stated ? "" : "\nthis build sent no completeness block"));
+                    return;
+                }
+                say("Refused: mac \u00b7 bad_payload \u2014 the Mac answered without a path");
+            }, function (e) {
+                var named = e && e.ref ? refText(e.ref) : "";
+                say("Refused: " + ((e && e.layer) || "browser") + " \u00b7 " +
+                    ((e && e.code) || "unexpected_error") + (named ? " \u00b7 " + named : ""));
+            }).then(function () { send.disabled = false; });
+            return;
+        }
         say("Sending to this Mac\u2026");
         if (typeof fetch !== "function") {
             say("This browser has no fetch, so the report cannot be sent.");
