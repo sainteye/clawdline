@@ -1,7 +1,7 @@
 > **這是一份設計，不是現況說明。** 撰寫於 2026-09-13。量測對象：本 repo commit `517480fb` 的工作樹、
 > `~/Library/Logs/Clawdline.log`（08-31 起，659,523 行）、私有 repo `~/code/clawdline-cloud` 的 `bdb5b84`。
 > 實作一開始，行號就會漂移；行號的用途是記下每一條路徑當時在哪裡決定，不是給讀者對照現在的檔案。
-> 拍板結果記在 §8；還沒拍板的地方都標了「建議」。
+> 拍板結果記在 §8；§3–§7 裡寫著「建議」的地方，§8 已經定案。
 
 # Cloud 錯誤與認證透明化
 
@@ -132,7 +132,7 @@ cloud: refusal layer=mac_ledger code=command_clock_uncertain sender=web_f052dcb8
 
 ### 3.2 Relay（`relay`）
 
-這一節的程式在私有 repo `~/code/clawdline-cloud`，要不要部署是使用者的決定（§8 決定 3）。
+這一節的程式在私有 repo `~/code/clawdline-cloud`，這一輪納入（§8 決定 3）；要不要部署仍是使用者的決定。
 
 | ID | 路徑 | 今天 | 之後 | 測試 |
 |---|---|---|---|---|
@@ -210,7 +210,7 @@ cloud: refusal layer=mac_ledger code=command_clock_uncertain sender=web_f052dcb8
 | 手機，指令還送得進去時 | Cloud 讀取 `cloud.status`，在機器層 pseudo-session 上回覆完整快照 | 按一下就拿到最近 50 筆指令各自走到哪一步 |
 | 手機，指令送不進去時（key_id 不符、replay…） | **notice**：把摘要（計數、最近 10 筆丟棄、時鐘守衛、token）併進 Mac 已經在發佈、而且手機本來就收得到的機器層快照。有丟棄或拒絕時合併起來重發，最多每 5 秒一次 | 送不進去的時候，任何「請求／回覆」都沒用，只能靠 Mac 主動發。relay 會快取最後一份，所以新開的分頁一連上就看得到 |
 
-notice 要放在哪條 channel，是 **決定 1**（§8）。
+notice 併進機器層快照（§8 決定 1）。
 
 ### 4.3 手機上怎麼呈現
 
@@ -241,7 +241,7 @@ notice 要放在哪條 channel，是 **決定 1**（§8）。
 |---|---|---|
 | 6.1 配對：sender 不在 roster 裡 | 只有 Mac log 的 `unknown_sender`，而且沒寫是哪個 sender | notice 帶 sender。瀏覽器發現那是自己的 device 時，顯示「這台 Mac 不認得這個瀏覽器」，並附配對入口 |
 | 6.2 金鑰漂移：key_id 不符 | 沒有人 | 兩端都偵測：瀏覽器在本機比對收到的 key_id（B9）；Mac 的 notice 帶 `key_id` 與 `expected_key_id`（M1） |
-| 6.3 同一 device 多分頁撞號 | 沒有人 | 瀏覽器在 notice 裡看到自己的 seq 被判 replay，就顯示「這台裝置在別的分頁也開著」；同時用 `BroadcastChannel` 偵測同一 device 的其他分頁並提示。**要不要把撞號修掉**是決定 2 |
+| 6.3 同一 device 多分頁撞號 | 沒有人 | 瀏覽器在 notice 裡看到自己的 seq 被判 replay，就顯示「這台裝置在別的分頁也開著」；同時用 `BroadcastChannel` 偵測同一 device 的其他分頁並提示。撞號本身由滑動窗口修掉（§8 決定 2） |
 | 6.4 device token 過期、被取代、被撤銷 | 只有 relay 知道（它關閉連線，但瀏覽器沒讀 close code） | 讀 close code（B3）；relay 分開 `token_superseded` 與 `revoked`（R3）；升級前的拒絕也讀得到（R2） |
 | 6.5 roster 讀不到（Keychain） | 看起來跟未配對一樣 | 狀態快照顯示 `roster_readable:false`；代碼 `command_roster_unreadable`（L3） |
 
@@ -301,26 +301,23 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
 
 製造 replay 會弄亂使用者自己正在用的分頁。驗收前先說一聲，結束後請他重新整理那個分頁。
 
-## 8. 待拍板的決定
+## 8. 決定（2026-09-13 使用者以選項介面拍板）
 
-每一題都會用選項介面單獨問。拍板之後，把結果寫回這一節。
+四題都選了建議選項。以下是拍板的結果，以及當時有、但沒被選的替代方案（留作記錄）。
 
-1. **Mac 的 notice 走哪條路。**
-   - 建議：併進 Mac 已經在發佈的機器層快照。加密、同帳號的所有 viewer 都收得到、不必改 relay。
-   - 替代 A：relay 已經有的逐裝置通道 `ctlr/<machine>/<device>`。只送給那一台，但 Mac 與瀏覽器兩端都還沒實作，
-     要先走 `ctl-response-seam` 那份還沒授權的 reply key 設計，也要部署 relay。
-   - 替代 B：只寫 Mac 端的檔案。手機上看不到自己被丟掉的指令。
-2. **多分頁撞號要不要修掉。**
-   - 建議：修。Mac 的 replay 檢查從「嚴格遞增」改成滑動窗口：記住最高值以下 1,024 個已經收過的 seq，
-     沒收過的照樣接受、收過的照樣拒絕；再加上既有的 300 秒信封期限與帳本的 request 冪等。
-     這是在改一條安全規則，要獨立複審。
-   - 替代：只讓它看得見。第二個分頁的指令繼續被丟，但畫面會說出原因。
-3. **這一輪要不要包含 relay 的改動。**
-   - 建議：包含 R1–R5。改動不大，但要你部署 relay。
-   - 替代：這一輪不碰 relay，只讀 relay 本來就會送的 `ack`、`publish_error`、error frame；升級前的拒絕仍然顯示成 offline。
-4. **一般畫面上要不要顯示代碼與 ref。**
-   - 建議：顯示，用小字放在句子後面。
-   - 替代：只在 Cloud 狀態 sheet 裡看得到。
+1. **Mac 的 notice 併進機器層快照。** 加密、同帳號的所有 viewer 都收得到、不改 relay；摘要上限約 8 KiB，
+   有丟棄或拒絕時合併起來重發，最多每 5 秒一次。
+   - 沒選：relay 的逐裝置通道 `ctlr/<machine>/<device>`（兩端都沒實作，要先審 reply key 設計並部署 relay）；
+     只寫 Mac 端檔案（手機上看不到被丟掉的指令）。
+2. **多分頁撞號要修掉。** Mac 的 replay 檢查改成滑動窗口：記住最高值以下 1,024 個已經收過的 seq，
+   沒收過的照樣接受、收過的照樣拒絕；仍受 300 秒信封期限與帳本 request 冪等保護。
+   這是在改一條指令安全規則，那一件交付後要派一次獨立複審。
+   - 沒選：只讓它看得見。
+3. **這一輪包含 relay 的 R1–R5。** 由 child 在 `~/code/clawdline-cloud` 實作並跑 workerd 測試；
+   **部署 relay 之前另外問使用者。**
+   - 沒選：這一輪不碰 relay，升級前的拒絕仍顯示成 offline。
+4. **一般畫面上顯示代碼與 ref**，用小字放在句子後面，整行可以點開狀態 sheet。
+   - 沒選：只在 Cloud 狀態 sheet 裡看得到。
 
 ## 9. 排程與相依
 
@@ -331,7 +328,7 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
   2. **Mac 錯誤契約與狀態快照**：M1–M5、P1–P2、L1–L4、F1、G1–G2、`CloudStatus.swift`、`cloud-status.json`。
      等 7dddfed6；會動到 `CloudTransport.swift`、`CloudAppBridge.swift`、`CloudCommandLedger.swift`。
   3. **手機的狀態 sheet**：`cloud.status` 讀取、notice 的呈現、Cloud 上的 `diagnostics.report`。依賴 1 與 2。
-  4. **Relay**：R1–R5，在 `~/code/clawdline-cloud`，看決定 3。
+  4. **Relay**：R1–R5，在 `~/code/clawdline-cloud`。不依賴另外兩件，可以先做。
 - **不動 `Sources/RemoteServer.swift`。** 狀態走檔案與 Cloud 讀取，不加 HTTP route。
   機器層快照是在 `RemoteServer.swift` 組好之後交給 `CloudAppBridge.publishOrchestrator`，notice 的摘要要併在 bridge 裡。
   如果之後要加 `GET /v1/cloud/status`，那一件要把 ceiling 與 governance 表一起算進範圍。
