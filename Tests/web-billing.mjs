@@ -531,8 +531,11 @@ check(/if \(cloudGateUp\) showCloudGate\(\);/.test(mainSource),
       "and leaving brings it back, because what it was about has not been answered");
 check(/cloudGateUp = false;\s+hideCloudGate\(\);/.test(mainSource),
       "a connected viewer clears it, so the door does not come back after pairing succeeds");
-check((mainSource.match(/cloudGateUp = true;/g) || []).length === 2,
-      "raised by exactly the two states that block a signed-in browser");
+check((mainSource.match(/cloudGateUp = true;/g) || []).length === 3,
+      "raised by exactly the three states that block a signed-in browser: no account key yet, "
+      + "the viewer-device limit, and a Session inventory this browser cannot read");
+check(/cloudSessionAccessProblem\(event\.error\)[\s\S]{0,400}cloudGateUp = true;/.test(mainSource),
+      "the third is the unreadable Session inventory, raised from a typed access or key error");
 
 // The QR decoder's worker. `default-src 'none'` with no `worker-src` forbids every worker,
 // including the blob worker `qr-scanner` falls back to when there is no `BarcodeDetector` — which
