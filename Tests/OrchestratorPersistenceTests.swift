@@ -312,4 +312,45 @@ func runOrchestratorPersistenceTests() {
         check("a record holding none of them is returned unchanged",
               RemoteServer.taskListProjection(["id": "t2"]).keys.sorted() == ["id"])
     }
+
+    group("the task list carries only what a console reader can still ask about") {
+        let onScreen: Set<String> = ["%10", "%11"]
+        func relevant(_ record: [String: Any]) -> Bool {
+            RemoteServer.taskListRelevant(record, liveTerminals: onScreen)
+        }
+
+        // Every state this build knows, checked against the one definition of terminal rather
+        // than against a list retyped here. A task still running is drawn wherever its terminals
+        // are, so it travels regardless of who is on screen.
+        let states: [Orchestrator.State] = [
+            .queued, .spawning, .briefed,
+            .success, .failure, .timeout, .cancelled, .spawnFailed,
+        ]
+        let disagreeing = states.filter { state in
+            relevant(["state": state.rawValue]) != !state.isTerminal
+        }
+        check("a running task travels and a finished orphan does not, for every known state",
+              disagreeing.isEmpty,
+              "disagreed on \(disagreeing.map(\.rawValue).sorted())")
+
+        // The other half of the contract: `taskOfChild` and `tasksOfRoot` look up a terminal that
+        // is on screen, so a finished task keeps travelling while either of its sides is.
+        check("a finished task whose child terminal is on screen still travels",
+              relevant(["state": "success", "child": ["terminalId": "%10"]]))
+        check("a finished task whose root terminal is on screen still travels",
+              relevant(["state": "success", "root": ["terminalId": "%11"]]))
+        check("a finished task whose terminals are both gone does not",
+              !relevant(["state": "success",
+                         "child": ["terminalId": "%98"], "root": ["terminalId": "%99"]]))
+        check("an empty terminal id matches nothing",
+              !relevant(["state": "success", "child": ["terminalId": ""]]))
+
+        // Fails open on purpose. Keeping one task too many costs bytes; dropping one the console
+        // wanted costs a row its header, silently — and a non-terminal state added later would
+        // otherwise start vanishing from the list on an older Mac.
+        check("a state this build cannot parse is kept",
+              relevant(["state": "some_state_from_a_newer_build"]))
+        check("a record with no state at all is kept",
+              relevant(["id": "t3"]))
+    }
 }

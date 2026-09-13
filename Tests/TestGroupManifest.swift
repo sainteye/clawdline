@@ -462,6 +462,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "installation secrets are created only when absent and invalid originals are preserved",
     "Root Assignment effects remain behind a successful durable write",
     "the task list drops a finished task's own account and keeps what its readers name",
+    "the task list carries only what a console reader can still ask about",
     "a coordinator is explicitly registered, durable, singleton and process-bound",
     "registration availability is a closed word derived from the durable store",
     "an offline coordinator can be rebound without changing its durable identity",

@@ -417,11 +417,56 @@ extension RemoteServer {
         record.filter { !taskListOmittedFields.contains($0.key) }
     }
 
-    static func orchestratorSnapshot(now: Date = Date()) -> [String: Any] {
+    /// Whether a list reader can still ask this snapshot about that task.
+    ///
+    /// **This is one half of a contract, and the other half is in the console.** `S.tasks` is read
+    /// through exactly three functions in `view/derive.js` — `taskLive`, `taskOfChild` and
+    /// `tasksOfRoot` — and every one of them asks only about a task that is either still running
+    /// or whose child/root terminal is a session currently on screen. A finished task belonging to
+    /// a terminal nobody is looking at cannot change one pixel, and shipping it costs the whole
+    /// record on every republish.
+    ///
+    /// Measured here: 645 tasks projected to 1,604,415 bytes, of which the answer to this question
+    /// was 210 tasks and 580,572 bytes — the sealed frame goes from 1.99 MB to about 0.72 MB. That
+    /// frame is the p99 of everything this Mac writes to the socket (the rest are 2-8 KB session
+    /// rows), and while it is being written the session snapshot behind it waits: `changed=11`
+    /// publications sit at a p50 of 379 ms and a p95 of 14,477 ms.
+    ///
+    /// **It fails open, deliberately.** A state this build cannot parse, or a record with no state
+    /// at all, is kept. The cost of keeping one task too many is bytes; the cost of dropping one
+    /// the console still wanted is a row that silently loses its header, and a new non-terminal
+    /// state added to `Orchestrator.State` would otherwise start disappearing from the list on an
+    /// older Mac. `GET /v1/orchestrator/tasks` is unfiltered and unaffected — that is what
+    /// `build.sh` and the pre-commit guard read, and the guard does not fail when it loses a task,
+    /// it stops refusing.
+    static func taskListRelevant(_ record: [String: Any], liveTerminals: Set<String>) -> Bool {
+        guard let raw = record["state"] as? String else { return true }
+        guard let state = Orchestrator.State(rawValue: raw) else { return true }
+        if !state.isTerminal { return true }
+        for side in ["child", "root"] {
+            guard let block = record[side] as? [String: Any],
+                  let terminal = block["terminalId"] as? String, !terminal.isEmpty
+            else { continue }
+            if liveTerminals.contains(terminal) { return true }
+        }
+        return false
+    }
+
+    /// `liveTerminals` is injectable so the contract above can be tested without a screen. The
+    /// production answer comes from the same published inventory the session snapshot is built
+    /// from, which is lock-guarded and safe to read from whichever thread a record change
+    /// arrived on.
+    static func orchestratorSnapshot(
+        now: Date = Date(), liveTerminals: Set<String>? = nil
+    ) -> [String: Any] {
         var out: [String: Any] = ["snippets": Snippets.records(),
                                   "at": Int(now.timeIntervalSince1970), "app": appStamp()]
         if Orchestrator.storeIsAuthoritative() {
-            out["tasks"] = Orchestrator.records().map(taskListProjection)
+            let terminals = liveTerminals
+                ?? Set(SessionWatch.shared.publishedInventory().targets.map(\.id))
+            out["tasks"] = Orchestrator.records()
+                .filter { taskListRelevant($0, liveTerminals: terminals) }
+                .map(taskListProjection)
             out["schedules"] = Orchestrator.scheduleRecords(now: now)
         } else {
             out["store"] = Orchestrator.storeHealthRecord()

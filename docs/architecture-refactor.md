@@ -234,8 +234,10 @@ only closed code/field labels, settle exactly their `(channel, sequence)` row, n
 socket, and follow Relay disposition: terminal and unknown codes end the row; retryable codes decrypt
 only in memory and reseal a new sequence instead of replaying rejected bytes. Before every send, the
 authenticated sealed `ts` must be within the local 240-second policy, strictly inside Relay's
-300-second default; stale `t` and control rows terminate, while `s`/`orch` additionally coalesce all
-older ready values durably. Duplicate, late, out-of-order and mismatched receipts retain their
+300-second default. Never-sent stale rows and replaced `s`/`orch` ready values are removed in one
+durable normalization commit rather than occupying the 600-second terminal window; sent and
+restart-uncertain tombstones remain durable for late ACK correlation. Duplicate, late,
+out-of-order and mismatched receipts retain their
 existing fail-closed behavior. Attempt deadlines select the earliest sent or stale-reservation wake.
 Stop/detach first fences and cancels scheduling, then shuts down the transport to unblock a production
 socket send, and only then joins the drain/deadline tasks.
@@ -245,6 +247,18 @@ identities or secrets; process-local peaks, ready wall-clock age and refusal-att
 measurement subjects explicitly. The existing opaque publication trace id remains only for stage
 correlation. Structural durable failures become a typed persistent state and are not retried at 1 Hz;
 transient durable I/O uses bounded exponential delay.
+
+### W5-4 public Linux Relay runtime owner
+
+`ClawdlineApplication` now owns the shared envelope, transport-facing durable outbound composition,
+and production transport surface. The Linux daemon constructs exactly one `LinuxRelayRuntimeOwner`
+after its protected identity, command ledger and outbound spool are open. Every ready generation
+re-reads the protected identity/epoch tuple before replaying the spool's exact sent frames; ACK and
+typed `publish_error` receipts settle only their correlated row. Inbound `ctl/<machine>` commands
+reuse `LinuxDaemonIngressOwner`, with durable `cloud:<sender>:<sequence>` identity and an effect-time
+timestamp/roster/revocation/explicit-write-gate check. A cancelled or refused command releases its
+never-started durable reservation before any terminal effect. This is source/package candidate
+evidence only: it does not promote W0-E, change protocol bytes, build, restart or deploy a Relay.
 
 The nearby durable-file change is deliberately smaller: atomic replacement keeps its existing
 fsync/rename/recovery protocol, but validates the old file through descriptor metadata and pathname
@@ -1064,7 +1078,7 @@ is written, and this document is not that place for any of them.
 
 | | value on this tree | the one place it is written |
 |---|---:|---|
-| ordered groups | 665 | `Tests/TestGroupManifest.swift`, counted by the guard |
+| ordered groups | 666 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 53 | `Tests/main.swift`, counted by the guard |
 | suite files | 67 | `Tests/*Tests.swift`, counted by the guard |
 | `Orchestrator.swift` ceiling | 10,687 | the ratchet in `tools/check-architecture-boundaries.sh` |
