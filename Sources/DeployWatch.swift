@@ -65,9 +65,13 @@ enum DeployWatch {
             let repo: String?
             if let cached = remotes[cwd] {
                 repo = cached
-            } else {
-                repo = Project.info(cwd: cwd)?.remote
+            } else if let info = Project.info(cwd: cwd) {
+                repo = info.remote
                 remotes[cwd] = repo
+            } else {
+                // git did not answer in time. That is not "this project has no remote", and
+                // caching it as one would silence this project's deploys until the app restarts.
+                continue
             }
             guard let repo, seen[repo] == nil else { continue }
             let file = ProjectStatus.cacheDirectory.appendingPathComponent("ghrun-\(repo).json")

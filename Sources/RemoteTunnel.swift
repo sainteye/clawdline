@@ -421,17 +421,16 @@ final class RemoteTunnel {
         return FileManager.default.fileExists(atPath: path) ? path : nil
     }
 
-    private static func capture(_ launch: String, _ args: [String]) -> String {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: launch)
-        task.arguments = args
-        let out = Pipe()
-        task.standardOutput = out
-        task.standardError = Pipe()
-        guard (try? task.run()) != nil else { return "" }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        task.waitQuietly()
-        return String(data: data, encoding: .utf8) ?? ""
+    /// **Bounded, because it runs on the main thread and asks Cloudflare's API.** `start` is
+    /// reached through `onMain`, and the remote server's queue crosses to main synchronously, so a
+    /// `tunnel list` waiting on a network that is not there could hold the bar and every HTTP route
+    /// with it. Fifteen seconds is this repository's other outbound HTTP deadline (`UpdateCheck`,
+    /// `WebPush`), not a measurement of cloudflared. Past it the listing is empty, which is the
+    /// documented "could not be resolved" answer above. `collect` also drains stderr, which the
+    /// undrained `Pipe()` this used to hand cloudflared did not.
+    static func capture(_ launch: String, _ args: [String], timeout: TimeInterval = 15) -> String {
+        guard let answer = Process.collect(launch, args, timeout: timeout) else { return "" }
+        return String(data: answer.output, encoding: .utf8) ?? ""
     }
 
     // MARK: - Reading what it says
