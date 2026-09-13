@@ -799,8 +799,24 @@ group("every word the page can draw is a word the page is sent") {
     // And the other direction, which is the cheaper mistake but still a mistake: a key the page
     // is sent that no longer exists on `Copy` is a key nothing can ever change again.
     let known = Set(Mirror(reflecting: English()).children.compactMap { $0.label })
+    // A member `Copy` declares with an English default in its extension is still a member: every
+    // locale reads it, and a locale that translates it overrides it. The Cloud failure words
+    // arrived that way (Traditional Chinese translated, the rest English until they are), and a
+    // stored-property walk cannot see a default. Read from the protocol's own declaration rather
+    // than listed here, for the reason above: a list you have to remember to extend is what failed.
+    let stringsSource = (try? String(contentsOfFile: "Sources/Strings.swift", encoding: .utf8)) ?? ""
+    let protocolBody = stringsSource.components(separatedBy: "protocol Copy {").dropFirst().first?
+        .components(separatedBy: "\n}\n").first ?? ""
+    let declared = Set(protocolBody.split(separator: "\n").compactMap { line -> String? in
+        let words = line.trimmingCharacters(in: .whitespaces).split(separator: " ")
+        guard words.count >= 4, words[0] == "var", words[2] == "String", words[3] == "{" else { return nil }
+        let name = words[1].hasSuffix(":") ? String(words[1].dropLast()) : String(words[1])
+        return name.hasPrefix("web") ? name : nil
+    })
+    check("the protocol's own declarations were read", declared.contains("webShellFailed"),
+          "found \(declared.count) web declarations in Sources/Strings.swift")
     let orphans = sent.keys.filter {
-        $0.hasPrefix("web") && !known.contains($0) && !derived.contains($0)
+        $0.hasPrefix("web") && !known.contains($0) && !declared.contains($0) && !derived.contains($0)
     }
     check("and nothing is sent under a name Copy does not have", orphans.isEmpty,
           "sent but not in Copy: " + orphans.sorted().joined(separator: ", "))
