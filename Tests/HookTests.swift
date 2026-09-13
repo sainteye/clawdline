@@ -85,6 +85,68 @@ group("hooks: reading a note") {
     expect("which become the existing numbered menu", question?.menu?.options.map(\.number),
            [1, 2])
 
+    // **A note does not know which of several questions is up.** Its first question's menu was
+    // drawn over the second and over the review screen until 2026-09-14, on buttons whose digits
+    // answered something their labels did not say: "2 先不要 push" would have answered "現在 push
+    // 整個 main", and on the review screen sent `Cancel`. With two questions a note offers no menu
+    // of its own; its words — and the transcript's — reach a screen that read only through
+    // `QuestionSteps.refill`, which proves the rows first. These are that matcher's cases.
+    let pair = HookBridge.parse(Data(#"{"event":"PreToolUse","kind":"ask_user_question","tty":"ttys004","at":3,"tool_input":{"questions":[{"header":"haven push","question":"haven 的 main 要 push 嗎？","options":[{"label":"push 整個 main","description":"連同舊 commit"},{"label":"先不要 push","description":"之後再決定"}]},{"header":"clawdline","question":"clawdline 的 main 要 push 嗎？","options":[{"label":"交給發版流程","description":"讓 release train 處理"},{"label":"現在 push 整個 main","description":"179 個 commit"}]}]}}"#.utf8))
+    check("a two-question note reads", pair?.questions.count == 2)
+    check("and offers no menu of its own", pair != nil && pair?.menu == nil)
+    let both = pair?.asked ?? []
+    func row(_ number: Int, _ label: String) -> SessionState.Menu.Option {
+        .init(number: number, label: label, detail: "clipped", selected: number == 1)
+    }
+    var second = SessionState.Menu(question: nil, options: [row(1, "交給發版流程"), row(2, "現在 push 整個 main"),
+                                                            row(3, "Type something.")], selected: 1)
+    second.steps = [.init(label: "haven push", answered: true), .init(label: "clawdline", answered: false)]
+    let heard = QuestionSteps.refill(second, from: both)
+    expect("a screen on question two gets question two's words", heard.options.map(\.detail),
+           ["讓 release train 處理", "179 個 commit", "clipped"])
+    expect("under question two", heard.question, "clawdline 的 main 要 push 嗎？")
+    expect("keeping its own numbers, caret, dialog rows and tab bar",
+           [heard.options.map(\.number) == [1, 2, 3], heard.selected == 1, heard.steps == second.steps],
+           [true, true, true])
+    let first = SessionState.Menu(question: nil, options: [row(1, "push 整個 main"), row(2, "先不要 push")], selected: 1)
+    expect("a screen on question one still gets its own", QuestionSteps.showing(first, among: both), 0)
+
+    // The review screen belongs to no asked question, so nothing may be drawn over it.
+    let review = SessionState.Menu(question: "Ready to submit your answers?",
+                                   options: [row(1, "Submit answers"), row(2, "Cancel")], selected: 1)
+    expect("the review screen keeps exactly what the screen read", QuestionSteps.refill(review, from: both), review)
+
+    // A narrow pane wraps a long label, so a capture holds its start; Chinese wraps between any
+    // two characters and the join adds a space the original never had.
+    let wrapped = SessionState.Menu(question: nil, options: [row(1, "交給 發版"), row(2, "現在 push 整\u{2026}")],
+                                    selected: 1)
+    expect("a wrapped or clipped label still names its question", QuestionSteps.showing(wrapped, among: both), 1)
+    // One row is not proof, since two questions can share a first answer; an empty one is no row.
+    let lone = SessionState.Menu(question: nil, options: [row(1, "交給發版流程")], selected: 1)
+    let blank = SessionState.Menu(question: nil, options: [row(1, ""), row(2, "現在 push 整個 main")], selected: 1)
+    expect("a single row or an empty label names nothing",
+           [QuestionSteps.showing(lone, among: both), QuestionSteps.showing(blank, among: both)], [nil, nil])
+
+    // **The same answers asked twice** are told apart by the question above them, or not at all.
+    let twice: [QuestionSteps.Asked] = [
+        .init(text: "要先部署測試站嗎？", options: [.init(label: "要", note: "測試站"), .init(label: "不要", note: "")]),
+        .init(text: "要接著部署正式站嗎？", options: [.init(label: "要", note: "正式站"), .init(label: "不要", note: "")]),
+    ]
+    var same = SessionState.Menu(question: nil, options: [row(1, "要"), row(2, "不要")], selected: 1)
+    expect("identical rows with no question read change nothing", QuestionSteps.refill(same, from: twice), same)
+    same.question = "要接著部署 正式站嗎？"
+    expect("the question the screen read settles it", QuestionSteps.showing(same, among: twice), 1)
+
+    // Refilled by number, so a dialog whose first rows scrolled out of the capture still puts each
+    // row's own words on it.
+    let three: [QuestionSteps.Asked] = [.init(text: "哪一個？", options: [
+        .init(label: "甲", note: "一"), .init(label: "乙", note: "二"), .init(label: "丙", note: "三")])]
+    let scrolled = SessionState.Menu(question: nil, options: [row(2, "乙"), row(3, "丙")], selected: nil)
+    expect("rows are refilled by their own number, not their position",
+           QuestionSteps.refill(scrolled, from: three).options.map(\.detail), ["二", "三"])
+    check("a note that is not a question has nothing to match",
+          HookBridge.Note(event: .stop, tty: "ttys004", at: Date(), session: nil).asked.isEmpty)
+
     // An event this version does not know about is not an error to report; it is a note from a
     // newer script, and the right answer is to ignore it rather than to draw something wrong.
     check("an unknown event is dropped",

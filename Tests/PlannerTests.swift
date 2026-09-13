@@ -1725,7 +1725,7 @@ group("the words under an option come from the transcript, which has all of them
     "content":[{"type":"tool_result","tool_use_id":"toolu_x","content":"answered"}]}}
     """
 
-    guard let open = Transcript.openQuestion(inTail: call) else {
+    guard let open = Transcript.openQuestions(inTail: call)?.first else {
         check("an unanswered call is an open question", false); return
     }
     expect("with the question it asked", open.text, "Which way out?")
@@ -1734,9 +1734,9 @@ group("the words under an option come from the transcript, which has all of them
            open.options[0].note, "Three of the eleven bindings are primary.")
 
     check("once the answer lands it is not open any more",
-          Transcript.openQuestion(inTail: call + "\n" + answer) == nil)
+          Transcript.openQuestions(inTail: call + "\n" + answer) == nil)
     check("and an ordinary transcript has no open question",
-          Transcript.openQuestion(inTail: answer) == nil)
+          Transcript.openQuestions(inTail: answer) == nil)
 
     // The rows reach the phone as a menu, and the note has to travel with them — dropping it was
     // the whole bug: the buttons arrived with their headlines and none of the reasoning.
@@ -1744,6 +1744,16 @@ group("the words under an option come from the transcript, which has all of them
     expect("the note becomes the row's detail", menu?.options[0].detail,
            "Three of the eleven bindings are primary.")
     expect("for every row", menu?.options[1].detail, "Nothing in the code changes.")
+    // Every question of a call is read, and only the one on screen lends its words: on 2026-09-14
+    // the first question's were drawn over the second. The matcher's own cases are in HookTests.
+    let pair = #"{"type":"assistant","timestamp":"2026-09-13T21:39:18.821Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t","name":"AskUserQuestion","input":{"questions":[{"question":"haven？","options":[{"label":"push 整個 main"},{"label":"先不要 push"}]},{"question":"clawdline？","options":[{"label":"交給發版流程","description":"release train"},{"label":"現在 push 整個 main"}]}]}}]}}"#
+    let both = Transcript.openQuestions(inTail: pair)?.map(\.asked) ?? []
+    let onSecond = SessionState.Menu(question: nil, options: [.init(number: 1, label: "交給發版流程", selected: true),
+                                                              .init(number: 2, label: "現在 push 整個 main", selected: false)], selected: 1)
+    expect("every question of an open call is read", both.count, 2)
+    expect("and a screen on the second keeps the second's labels, with its words",
+           QuestionSteps.refill(onSecond, from: both).options.map { $0.label + ($0.detail ?? "") },
+           ["交給發版流程release train", "現在 push 整個 main"])
 }
 
 group("the question above a visual menu") {

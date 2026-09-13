@@ -1559,6 +1559,11 @@ enum Transcript {
             return SessionState.Menu(question: text.isEmpty ? nil : text,
                                      options: rows, selected: 1)
         }
+
+        /// This question in the shape ``QuestionSteps/showing(_:among:)`` matches a screen against.
+        var asked: QuestionSteps.Asked {
+            .init(text: text, options: options.map { .init(label: $0.label, note: $0.note) })
+        }
     }
 
     /// The questions in an ``askTool`` call, ready to travel as an entry's text.
@@ -1598,7 +1603,13 @@ enum Transcript {
         return askMarker + json
     }
 
-    /// The question a session is showing **right now**, whole, out of its own transcript.
+    /// The questions a session's open picker asked, whole, out of its own transcript.
+    ///
+    /// **All of them, and not "the one on screen".** One call can ask several and Claude Code
+    /// shows them one at a time; which one is up is something only the screen knows. This used to
+    /// answer the first question, and its caller drew that question's words over whichever one
+    /// the screen was showing — see ``QuestionSteps/showing(_:among:)``, which is now the only
+    /// place that decides.
     ///
     /// **The screen is a lossy copy of this.** Claude Code lays a dialog out to fit the window and
     /// squeezes the paragraph under each option to whatever height is left, so what a capture
@@ -1616,17 +1627,17 @@ enum Transcript {
     /// the file; the moment it is answered a `toolResult` lands behind it. So the newest entry
     /// decides, and anything else — a result, an assistant turn, a file that cannot be read —
     /// returns nil and leaves the screen as the source it has always been.
-    static func openQuestion(of session: TargetSession) -> Question? {
+    static func openQuestions(of session: TargetSession) -> [Question]? {
         guard let record = record(of: session), record.assistant == .claude,
               let jsonl = tail(of: record.url, bytes: 64_000) else { return nil }
-        return openQuestion(inTail: jsonl)
+        return openQuestions(inTail: jsonl)
     }
 
     /// The rule on its own, so it can be checked against a transcript rather than a terminal.
-    static func openQuestion(inTail jsonl: String) -> Question? {
+    static func openQuestions(inTail jsonl: String) -> [Question]? {
         guard let last = parse(jsonl, limit: 12).last, last.kind == .tool,
               last.tool == askTool else { return nil }
-        return askQuestions(in: last.text)?.first
+        return askQuestions(in: last.text)
     }
 
     /// The other end of ``askPayload(input:)``. `nil` when this is an ordinary tool call.

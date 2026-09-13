@@ -120,6 +120,11 @@ enum HookBridge {
             let label: String
             let note: String
         }
+
+        /// This question in the shape ``QuestionSteps/showing(_:among:)`` matches a screen against.
+        var asked: QuestionSteps.Asked {
+            .init(text: text, options: options.map { .init(label: $0.label, note: $0.note) })
+        }
     }
 
     /// One note, as the script left it.
@@ -145,11 +150,16 @@ enum HookBridge {
             self.questions = questions
         }
 
-        /// The first picker Claude Code is showing, as buttons the existing answer path knows.
-        /// Multiple questions are presented one at a time; a later transcript refresh still
-        /// carries all of them, while the live menu represents the first unanswered picker.
+        /// The picker as buttons, for when the screen could not be read at all — **and only for a
+        /// call that asked one question.**
+        ///
+        /// With several, Claude Code shows them one at a time and nothing in a note says which is
+        /// up. This used to answer the first, which put question 1's buttons over question 2 and
+        /// over the review screen; a phone would then send a digit that answered something its
+        /// label did not say. Where the screen did read, the note's words reach it through
+        /// ``QuestionSteps/refill(_:from:)`` instead, which proves the match first.
         var menu: SessionState.Menu? {
-            guard kind == .askUserQuestion, let question = questions.first,
+            guard kind == .askUserQuestion, questions.count == 1, let question = questions.first,
                   question.options.count >= 2 else { return nil }
             let options = question.options.enumerated().map { index, option in
                 SessionState.Menu.Option(number: index + 1, label: option.label,
@@ -157,6 +167,12 @@ enum HookBridge {
             }
             return SessionState.Menu(question: question.text.isEmpty ? nil : question.text,
                                      options: options, selected: 1)
+        }
+
+        /// What the note says was asked, for matching against the screen. Empty for every note
+        /// that is not the opening of a question.
+        var asked: [QuestionSteps.Asked] {
+            kind == .askUserQuestion ? questions.map(\.asked) : []
         }
 
         /// This note lets the screen parser trust the one ambiguous terminal shape: an

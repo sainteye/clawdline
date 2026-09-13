@@ -648,13 +648,18 @@ final class SessionWatch {
             // capture would be a set of buttons for a question nobody is asking any more.
             var menus = screens.menus.filter { states[$0.key] == .waiting }
 
-            // Structured hook data carries the original labels. Prefer it over the terminal
-            // drawing, where a narrow pane clips precisely the words a phone needs to offer as
-            // buttons. The screen remains the fallback for permission notes and AskUserQuestion,
-            // whose opening hook is currently omitted by Claude Code.
+            // Structured hook data carries the original labels, where a narrow pane clips
+            // precisely the words a phone needs to offer as buttons. **A screen that read keeps
+            // its menu** and takes only words the note proves are for the rows on it; a note's own
+            // menu stands in only where nothing read, and only for a one-question call. The screen
+            // remains the fallback for permission notes and AskUserQuestion, whose opening hook is
+            // currently omitted by Claude Code.
             for session in sessions where states[session.id] == .waiting {
                 let bare = session.tty.replacingOccurrences(of: "/dev/", with: "")
-                if let menu = notes[bare]?.menu {
+                guard let note = notes[bare] else { continue }
+                if let screen = menus[session.id] {
+                    menus[session.id] = QuestionSteps.refill(screen, from: note.asked)
+                } else if let menu = note.menu {
                     menus[session.id] = menu
                 }
             }
@@ -663,25 +668,20 @@ final class SessionWatch {
             // fits its dialog to the window and squeezes the explanations to whatever height is
             // left, so a capture carries the first line of a paragraph with the middle cut out of
             // it — and that is what a phone was being asked to choose on. The call is on disk in
-            // full while the picker is still open (see ``Transcript/openQuestion(of:)``), so the
+            // full while the picker is still open (see ``Transcript/openQuestions(of:)``), so the
             // rows are refilled from it here.
             //
-            // **Positional, and only as far as the transcript reaches.** The dialog draws rows the
-            // question does not contain — `Type something.`, `Chat about this` — and those keep
-            // the words the screen gave them. Everything else about the menu stays the screen's:
-            // which row the caret is on, the numbers, whether there is a Submit under it. The
-            // transcript knows what was asked; only the terminal knows where the caret is.
+            // **Only from the question the screen is showing.** One call can ask several, and on
+            // 2026-09-14 the first one's words were drawn over the second and over the review
+            // screen, on buttons whose digits answered something else. ``QuestionSteps/refill``
+            // matches the rows first and changes nothing it cannot match. Everything else about
+            // the menu stays the screen's: which row the caret is on, the numbers, whether there
+            // is a Submit under it. The transcript knows what was asked; only the terminal knows
+            // which question is up and where the caret is.
             for session in sessions where states[session.id] == .waiting {
-                guard var menu = menus[session.id], !menu.options.isEmpty,
-                      let asked = Transcript.openQuestion(of: session),
-                      asked.options.count >= 2 else { continue }
-                for index in 0..<min(menu.options.count, asked.options.count) {
-                    menu.options[index].label = asked.options[index].label
-                    let note = asked.options[index].note
-                    menu.options[index].detail = note.isEmpty ? nil : note
-                }
-                if !asked.text.isEmpty { menu.question = asked.text }
-                menus[session.id] = menu
+                guard let screen = menus[session.id], !screen.options.isEmpty,
+                      let asked = Transcript.openQuestions(of: session) else { continue }
+                menus[session.id] = QuestionSteps.refill(screen, from: asked.map(\.asked))
             }
 
             // Every background agent these sessions have going, which is a question the screen

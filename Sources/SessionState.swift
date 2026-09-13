@@ -112,7 +112,7 @@ enum SessionState: Equatable {
         // that the session is waiting, and only when it is the last caret on screen; otherwise
         // an echoed numbered message would become a menu again. The transcript cannot supply the
         // missing gate — it says what was asked, never where the caret is. It *can* supply the
-        // labels, and does: see ``Transcript/openQuestion(of:)``, which corrects what this comment
+        // labels, and does: see ``Transcript/openQuestions(of:)``, which corrects what this comment
         // used to claim. Measured on 2026-08-26, the call sat on disk in full for twenty-seven
         // seconds before the answer landed.
         var flushLeftSelection: Int? = nil

@@ -118,6 +118,102 @@ enum QuestionSteps {
     }
 }
 
+// MARK: - Which of the asked questions is on screen
+
+extension QuestionSteps {
+
+    /// One question as it was asked, reduced to what matching it against a screen needs.
+    ///
+    /// The transcript and the hook note each carry their own copy of a question, in two types
+    /// that grew up separately. Both are turned into this so the rule below exists once.
+    struct Asked: Equatable {
+        struct Option: Equatable {
+            let label: String
+            let note: String
+        }
+        let text: String
+        let options: [Option]
+    }
+
+    /// Which of `asked` the menu on screen is — **only when the screen proves it**, and nil
+    /// otherwise.
+    ///
+    /// **The bug this exists because of.** A call that asks several questions has all of them in
+    /// the transcript, and the screen shows one at a time. The words used to be taken from the
+    /// first question whatever the screen was showing, so on 2026-09-14 a phone drew question 1's
+    /// labels over question 2 and then over the review screen: "2 先不要 push" on a button that
+    /// would have answered "現在 push 整個 main", and on the review screen would have sent
+    /// `Cancel`. The digit comes from the screen, so a label from anywhere else has to be proven
+    /// to belong to the same rows — a position in the call is not that proof.
+    ///
+    /// **The proof is the rows themselves.** Every row the screen numbers within the question's
+    /// own options has to be the start of that option's label: a narrow pane wraps a long label
+    /// onto the next line, so what a capture holds is a prefix of it. Rows past the question's own
+    /// options are the dialog's (`Type something.`, `Chat about this`) and are not compared. Two
+    /// questions whose rows both fit — the same two answers asked twice — are told apart by the
+    /// question the screen read above them, and if that does not settle it, nothing does: **an
+    /// unknown never authorises a replacement**, because the screen's own words are the ones the
+    /// keystroke acts on.
+    static func showing(_ menu: SessionState.Menu, among asked: [Asked]) -> Int? {
+        let fits = asked.indices.filter { rows(of: menu, fit: asked[$0]) }
+        if fits.count == 1 { return fits[0] }
+        guard fits.count > 1, let read = menu.question.map(squeezed), !read.isEmpty else { return nil }
+        let named = fits.filter { squeezed(asked[$0].text).contains(read) }
+        return named.count == 1 ? named[0] : nil
+    }
+
+    /// The menu with the words the screen had no room for, from the question it is showing.
+    ///
+    /// Everything that decides what a tap does stays the screen's: the numbers, the caret, the
+    /// Submit row, the tab bar. Only a label, the paragraph under it and the question change, and
+    /// only when ``showing(_:among:)`` names the question. Refilled **by number**, not by
+    /// position, so a dialog whose first rows scrolled out of the capture still gets each row's
+    /// own words.
+    static func refill(_ menu: SessionState.Menu, from asked: [Asked]) -> SessionState.Menu {
+        guard let index = showing(menu, among: asked) else { return menu }
+        let question = asked[index]
+        var out = menu
+        for row in out.options.indices {
+            let number = out.options[row].number
+            guard number >= 1, number <= question.options.count else { continue }
+            let option = question.options[number - 1]
+            out.options[row].label = option.label
+            out.options[row].detail = option.note.isEmpty ? nil : option.note
+        }
+        if !question.text.isEmpty { out.question = question.text }
+        return out
+    }
+
+    /// Every row the question owns is the start of that option's label, and there are at least
+    /// two of them — one row is what any two questions sharing a first answer have in common.
+    private static func rows(of menu: SessionState.Menu, fit question: Asked) -> Bool {
+        var compared = 0
+        for row in menu.options {
+            guard row.number >= 1, row.number <= question.options.count else { continue }
+            let seen = squeezed(row.label)
+            // An empty prefix is a prefix of everything, which is not agreement.
+            guard !seen.isEmpty,
+                  squeezed(question.options[row.number - 1].label).hasPrefix(seen) else { return false }
+            compared += 1
+        }
+        return compared >= 2
+    }
+
+    /// Text with its whitespace taken out and a clipping ellipsis taken off the end.
+    ///
+    /// A wrapped line is joined back with a space that the original may not have had — Chinese
+    /// wraps between any two characters — so spaces are not evidence either way.
+    private static func squeezed(_ text: String) -> String {
+        var out = String(text.unicodeScalars.filter {
+            !CharacterSet.whitespacesAndNewlines.contains($0)
+        })
+        for tail in ["\u{2026}", "..."] where out.hasSuffix(tail) {
+            out.removeLast(tail.count)
+        }
+        return out
+    }
+}
+
 extension RemoteServer {
 
     /// A menu as rows a finger can hit.
