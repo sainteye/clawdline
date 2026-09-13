@@ -1787,7 +1787,7 @@ func runCloudAppBridgeDurableCompositionTests() async throws -> Int {
     let revoked = #"{"type":"send","session":"plain","request":"durable-revoked","text":"no-effect","images":[]}"#
     transport.yield(revoked, sequence: 4, timestamp: now, channel: commandChannel)
     try await waitForCloudAppBridge("effect-time authority revocation") {
-        results.all().contains { $0.code == "command_gate_unavailable" }
+        results.all().contains { $0.code == "unknown_sender" }
     }
     let revokedEffectCount = await router.recorded().count
     let revokedRow = try await runtime!.ledger.row(for: CloudCommandLedgerKey(

@@ -357,18 +357,134 @@ public struct CloudEnvelope: Codable, Equatable, Sendable {
     }
 }
 
-/// Per-sender replay protection. A fresh tracker accepts any first non-negative relay sequence,
-/// then requires strict increase independently for every sender.
+/// Per-sender replay protection: the highest sequence accepted from each sender, and which of the
+/// `windowSize` positions below it were accepted too (design `cloud-error-transparency.md` §11.8).
+///
+/// **The one rule: the same `(sender, seq)` is claimed at most once, and anything this cannot
+/// decide is refused.** A sequence above the highest is new. One inside the window is new only if
+/// its bit is clear. One older than the window cannot be decided — its bit has fallen off — so it
+/// is refused exactly as a repeat is. The 300-second envelope deadline and the ledger's request
+/// idempotency are separate owners and are not what makes this safe.
+///
+/// A strictly increasing tracker used to stand here, and it refused the lower-numbered tab
+/// whenever one device had two tabs open, because each tab reserves its own block of sequences.
+///
+/// A claim is final. The caller claims only after authentication and never gives a claim back,
+/// including when capacity then refuses the command, so a refused envelope sent again is a replay.
 struct CloudSequenceTracker {
-    private var highestBySender: [String: UInt64] = [:]
+    static let windowSize: UInt64 = 1_024
+    /// Every tracked sender costs a fixed 16-word window. A sender that would exceed this is refused
+    /// rather than tracked by evicting another, because an evicted window can no longer decide.
+    static let defaultMaximumSenders = 4_096
+    private static let words = Int(windowSize / 64)
 
-    mutating func accept(sender: String, sequence: UInt64) -> Bool {
-        if let highest = highestBySender[sender], sequence <= highest { return false }
-        highestBySender[sender] = sequence
-        return true
+    enum Decision: Equatable {
+        case accepted
+        case replay(highestSequence: UInt64)
+        case senderCapacity
     }
 
-    func highestSequence(for sender: String) -> UInt64? { highestBySender[sender] }
+    private struct Window {
+        var highest: UInt64
+        /// Bit `i` is set when `highest - 1 - i` was claimed.
+        var seen: [UInt64]
+    }
+
+    private var windows: [String: Window] = [:]
+    let maximumSenders: Int
+
+    init(maximumSenders: Int = CloudSequenceTracker.defaultMaximumSenders) {
+        precondition(maximumSenders > 0)
+        self.maximumSenders = maximumSenders
+    }
+
+    mutating func claim(sender: String, sequence: UInt64) -> Decision {
+        guard var window = windows[sender] else {
+            guard windows.count < maximumSenders else { return .senderCapacity }
+            windows[sender] = Window(
+                highest: sequence, seen: Array(repeating: 0, count: Self.words))
+            return .accepted
+        }
+        if sequence > window.highest {
+            let distance = sequence - window.highest
+            Self.advance(&window.seen, by: distance)
+            window.highest = sequence
+            windows[sender] = window
+            return .accepted
+        }
+        let offset = window.highest - sequence
+        guard offset >= 1, offset <= Self.windowSize else {
+            return .replay(highestSequence: window.highest)
+        }
+        let bit = offset - 1
+        let word = Int(bit / 64)
+        let mask = UInt64(1) << (bit % 64)
+        guard window.seen[word] & mask == 0 else {
+            return .replay(highestSequence: window.highest)
+        }
+        window.seen[word] |= mask
+        windows[sender] = window
+        return .accepted
+    }
+
+    func highestSequence(for sender: String) -> UInt64? { windows[sender]?.highest }
+
+    var trackedSenderCount: Int { windows.count }
+
+    /// Moves every recorded position `distance` further from the new highest and records the old
+    /// highest itself, which sits at offset `distance`. Positions past the window fall off.
+    private static func advance(_ seen: inout [UInt64], by distance: UInt64) {
+        if distance >= windowSize {
+            for index in seen.indices { seen[index] = 0 }
+        } else {
+            let wordShift = Int(distance / 64)
+            let bitShift = distance % 64
+            for index in stride(from: words - 1, through: 0, by: -1) {
+                let source = index - wordShift
+                var value: UInt64 = 0
+                if source >= 0 {
+                    value = seen[source] << bitShift
+                    if bitShift > 0, source - 1 >= 0 {
+                        value |= seen[source - 1] >> (64 - bitShift)
+                    }
+                }
+                seen[index] = value
+            }
+        }
+        let oldHighestBit = distance - 1
+        guard oldHighestBit < windowSize else { return }
+        seen[Int(oldHighestBit / 64)] |= UInt64(1) << (oldHighestBit % 64)
+    }
+}
+
+/// The process-lifetime owner of inbound replay state. `CloudTransport.production` shares
+/// `process` across every transport this process builds, because a bridge rebuilt after sign-out,
+/// retry or an identity change would otherwise start from an empty window and accept an
+/// envelope the previous transport had already accepted. Internal transports built by tests pass
+/// their own instance so unrelated fixtures cannot see each other's sequences.
+final class CloudInboundReplayWindow: @unchecked Sendable {
+    static let process = CloudInboundReplayWindow()
+
+    private let lock = NSLock()
+    private var tracker: CloudSequenceTracker
+
+    init(maximumSenders: Int = CloudSequenceTracker.defaultMaximumSenders) {
+        tracker = CloudSequenceTracker(maximumSenders: maximumSenders)
+    }
+
+    /// Decides and records in one critical section, so two transports alive during a bridge
+    /// replacement cannot both accept the same envelope.
+    func claim(sender: String, sequence: UInt64) -> CloudSequenceTracker.Decision {
+        lock.lock()
+        defer { lock.unlock() }
+        return tracker.claim(sender: sender, sequence: sequence)
+    }
+
+    func highestSequence(for sender: String) -> UInt64? {
+        lock.lock()
+        defer { lock.unlock() }
+        return tracker.highestSequence(for: sender)
+    }
 }
 
 private struct CloudDynamicCodingKey: CodingKey {

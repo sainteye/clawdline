@@ -74,6 +74,29 @@ struct CloudLifecycleKeyProvider: CloudTransportKeyProviding, Sendable {
         return keys
     }
 
+    /// The same read as `pairedDevicePublicKeys()`, except that a Keychain refusal is reported as
+    /// unreadable instead of becoming the empty roster an unpaired Mac also has.
+    func pairedDeviceRoster() async -> CloudPairedDeviceRosterReading {
+        if let identityAuthority {
+            guard let material = try? identityAuthority.transportMaterial() else {
+                return .unreadable
+            }
+            return .readable(material.pairedDevicePublicKeys)
+        }
+        guard let pairedDevices, let accountID,
+              let devices = try? pairedDevices.devices(accountID: accountID) else {
+            return .unreadable
+        }
+        var keys: [String: Data] = [:]
+        for device in devices { keys[device.deviceID] = device.signingKey }
+        return .readable(keys)
+    }
+
+    func currentKeyID() async -> String? {
+        if let identityAuthority { return try? identityAuthority.transportMaterial().keyID }
+        return masterSecrets.count == 1 ? masterSecrets.keys.first : nil
+    }
+
     func transportBinding() async throws -> CloudExecutorTransportBinding? {
         try identityAuthority?.transportMaterial().binding
     }
@@ -180,22 +203,57 @@ final class CloudCommandEpochAuthority: @unchecked Sendable {
         _ = guardState.offerServerDate(date)
     }
 
-    func current() -> CloudEpochGuardState {
+    func current() -> CloudEpochGuardState { detail().state }
+
+    /// The guard's state with the words a refusal and the status snapshot need. The ledger still
+    /// receives only `.ready` or `.uncertain`; the reason and countdown are reported beside it.
+    func detail() -> CloudClockGuardDetail {
         lock.lock(); defer { lock.unlock() }
         switch guardState.observe().state {
-        case .ready: return .ready
-        case .uncertain: return .uncertain
+        case .ready:
+            return CloudClockGuardDetail(state: .ready, reason: nil, clearsInMilliseconds: nil)
+        case .uncertain(let reason):
+            let remaining = guardState.stabilityRemaining()
+            return CloudClockGuardDetail(
+                state: .uncertain,
+                reason: Self.reasonName(reason, calibrated: remaining != nil),
+                clearsInMilliseconds: remaining.map { UInt64(($0 * 1_000).rounded(.up)) })
         }
     }
 
     func effectAuthorization(
-        rosterAllowsSender: Bool, writeGateAllows: Bool
+        rosterAllowsSender: Bool, writeGateAllows: Bool, rosterReadable: Bool = true
     ) -> CloudCommandEffectAuthorization {
-        CloudCommandEffectAuthorization(
-            epochState: current(),
+        let clock = detail()
+        return CloudCommandEffectAuthorization(
+            epochState: clock.state,
             rosterAllowsSender: rosterAllowsSender,
-            writeGateAllows: writeGateAllows)
+            writeGateAllows: writeGateAllows,
+            rosterReadable: rosterReadable,
+            epochReason: clock.reason,
+            epochClearsInMilliseconds: clock.clearsInMilliseconds)
     }
+
+    /// `stability_period_incomplete` with no live calibration means no server time has been
+    /// accepted yet, which is a different wait from a window that is counting down.
+    static func reasonName(_ reason: EpochGuardUncertaintyReason, calibrated: Bool) -> String {
+        switch reason {
+        case .stabilityPeriodIncomplete:
+            return calibrated ? "stability_period_incomplete" : "awaiting_server_time"
+        case .serverSampleTooFar: return "server_sample_too_far"
+        case .wallRollback: return "wall_rollback"
+        case .forwardJump: return "forward_jump"
+        case .bootIDChanged: return "boot_id_changed"
+        case .continuousWentBackwards: return "continuous_went_backwards"
+        }
+    }
+}
+
+/// One reading of the command clock guard for refusals and the Cloud status snapshot.
+struct CloudClockGuardDetail: Equatable, Sendable {
+    let state: CloudEpochGuardState
+    let reason: String?
+    let clearsInMilliseconds: UInt64?
 }
 
 /// The small state machine between a main-actor lifecycle request and a potentially blocking
@@ -325,6 +383,9 @@ final class CloudBridgeLifecycle {
         var scheduleWebhooks: @MainActor (
             CloudMachineIdentity?, @escaping @Sendable () -> Void
         ) -> Void = { _, _ in }
+        /// The process-lifetime status owner every bridge this lifecycle builds records into.
+        /// Tests omit it; production passes `CloudStatus.shared`, which also writes the file.
+        var status: CloudStatus? = nil
     }
 
     /// `nonisolated` because `Services.production()` is not on the main actor and these are
@@ -455,7 +516,8 @@ final class CloudBridgeLifecycle {
                 commandRouter: services.commandRouter(),
                 commandResult: services.commandResult,
                 diagnostic: services.diagnostic,
-                durableRuntime: durableRuntime)
+                durableRuntime: durableRuntime,
+                status: services.status)
             attachedBridge = bridge
             services.attach(bridge)
             services.scheduleWebhooks(identity) { [weak self] in
@@ -530,7 +592,17 @@ final class CloudBridgeLifecycle {
     private func set(_ next: State) {
         guard next != state else { return }
         state = next
+        services.status?.setBridgeState(Self.statusLabel(next))
         onChange?()
+    }
+
+    static func statusLabel(_ state: State) -> String {
+        switch state {
+        case .detached: return "detached"
+        case .attached: return "attached"
+        case .unauthorized: return "unauthorized"
+        case .failed: return "failed"
+        }
     }
 
     private static func message(for error: Error) -> String {
@@ -553,6 +625,8 @@ extension CloudBridgeLifecycle.Services {
         relayBaseURL: URL = CloudBridgeLifecycle.defaultRelayURL
     ) -> CloudBridgeLifecycle.Services {
         let epochAuthority = CloudCommandEpochAuthority()
+        let status = CloudStatus.shared
+        status.setClockProvider { epochAuthority.detail() }
         let identityReader = CloudKeychainReader<CloudBridgeLifecycle.RestoredIdentity?>(
             label: "clawdline.cloud.bridge-identity"
         ) {
@@ -624,7 +698,8 @@ extension CloudBridgeLifecycle.Services {
                     directory: RemoteAuth.directory
                         .appendingPathComponent("cloud-runtime", isDirectory: true)
                         .appendingPathComponent(component, isDirectory: true),
-                    runtime: .mac, minimumNextSequence: legacyFence.reservedCeiling,
+                    runtime: .mac, metrics: CloudStatusSpoolMetrics(status: status),
+                    minimumNextSequence: legacyFence.reservedCeiling,
                     sequenceFence: legacyFence, strictPersistedFrameValidation: true)
             },
             attach: { RemoteServer.shared.attachCloudBridge($0) },
@@ -633,22 +708,23 @@ extension CloudBridgeLifecycle.Services {
             allowCloudCommands: { Config.shared.remoteWrite },
             commandEffectAuthority: { identity in
                 { sender, requiresWriteGate in
-                    let rosterAllows = (try? identityAuthority.snapshot().pairedDevices.contains {
+                    // Read once, and keep "could not read" apart from "not in it": the refusal
+                    // names them differently (`command_roster_unreadable`, `unknown_sender`).
+                    let roster = try? identityAuthority.snapshot()
+                    let rosterAllows = roster?.pairedDevices.contains {
                         $0.deviceID == sender
-                    }) == true
+                    } == true
                     return epochAuthority.effectAuthorization(
                         rosterAllowsSender: rosterAllows,
-                        writeGateAllows: !requiresWriteGate || Config.shared.remoteWrite)
+                        writeGateAllows: !requiresWriteGate || Config.shared.remoteWrite,
+                        rosterReadable: roster != nil)
                 }
             },
             commandRouter: { RemoteServerCloudCommandRouter() },
-            // Refusals are the interesting half and the only half that is logged: a refused
-            // cloud command is either a write gate doing its job or a viewer talking to the
-            // wrong Mac, and both are things somebody reading the log wants to see.
-            commandResult: { result in
-                guard result.status < 200 || result.status >= 300 else { return }
-                Log.write("cloud: command refused \(result.status) \(result.code ?? "-")")
-            },
+            // Refusals are logged by the bridge itself, one `cloud: refusal layer=… code=…` line
+            // each, because only the bridge knows the layer, the reference and whether the viewer
+            // was answered. This observer used to write a second, reference-free line.
+            commandResult: { _ in },
             log: { Log.write($0) },
             diagnostic: { Log.write($0) },
             scheduleWebhooks: { identity, onUnauthorized in
@@ -660,6 +736,7 @@ extension CloudBridgeLifecycle.Services {
                         await ScheduleWebhookRuntime.shared.stop()
                     }
                 }
-            })
+            },
+            status: status)
     }
 }

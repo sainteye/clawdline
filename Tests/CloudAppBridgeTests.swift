@@ -1077,6 +1077,7 @@ func runCloudAppBridgeTests() async throws -> Int {
     case "snapshot": return try await runCloudAppBridgeSnapshotTests()
     case "refusals": return try await runCloudCommandRefusalTests()
     case "ingress-refusals": return try await runCloudAppBridgeIngressRefusalTests()
+    case "transparency": return try await runCloudBridgeTransparencyTests()
     default:
         let base = try await runCloudAppBridgeBaseTests()
         let durable = try await runCloudAppBridgeDurableCompositionTests()
@@ -1092,9 +1093,10 @@ func runCloudAppBridgeTests() async throws -> Int {
         let snapshot = try await runCloudAppBridgeSnapshotTests()
         let refusals = try await runCloudCommandRefusalTests()
         let ingressRefusals = try await runCloudAppBridgeIngressRefusalTests()
+        let transparency = try await runCloudBridgeTransparencyTests()
         return base + durable + lifecycle + transitiveLifecycle + publicationLifecycle
             + reconnect + concreteReconnect + aba + reads + images + documents + snapshot
-            + refusals + ingressRefusals
+            + refusals + ingressRefusals + transparency
     }
 }
 
@@ -1964,8 +1966,13 @@ private func runCloudAppBridgeDocumentTests() async throws -> Int {
     let afterMalformed = await router.recordedReads().count
     try require(afterMalformed == beforeMalformed,
                 "no malformed scope or path reaches the local router")
-    try require(transport.envelopes().count == 4,
-                "a malformed read publishes no uncorrelated answer")
+    // P1: the six that name a request are answered on it; the two that do not stay notices.
+    try await waitForCloudAppBridge("malformed reads naming a request") { transport.envelopes().count == 10 }
+    try require(transport.envelopes().suffix(6).map { try? opened($0) }.allSatisfy {
+        let error = $0?["error"] as? [String: Any]
+        return $0?["read"] as? String == "read:r" && error?["code"] as? String == "malformed_read"
+            && error?["layer"] as? String == "mac_preflight"
+    }, "a malformed read answers only on the request it names, never an uncorrelated one")
 
     await bridge.stop()
 

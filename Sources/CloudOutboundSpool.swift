@@ -303,6 +303,21 @@ public protocol CloudSpoolMetrics: AnyObject, Sendable {
     func recordStateStoreGC(store: CloudStateStore, reason: CloudStateStoreGCReason)
     /// Counter `state_store_corrupt_total{store}`.
     func recordStateStoreCorrupt(store: CloudStateStore)
+    /// One live outbound row that ended without a relay receipt. `sequence` is this spool's own
+    /// outbound sequence, which a status reader correlates with the reply it sealed.
+    func recordExpiry(runtime: CloudSpoolRuntime, expiry: CloudSpoolExpiry, sequence: Int64)
+}
+
+/// Why a live outbound row ended without a correlated receipt.
+public enum CloudSpoolExpiry: String, CaseIterable, Equatable, Sendable {
+    /// Never sent, and its sealed timestamp became too old to send (`sealedFrameFreshnessSeconds`).
+    case readyExpired = "ready_expired"
+    /// Sent, and the attempt window closed with no ack or refusal (`attemptWindow`).
+    case receiptExpired = "receipt_expired"
+}
+
+public extension CloudSpoolMetrics {
+    func recordExpiry(runtime _: CloudSpoolRuntime, expiry _: CloudSpoolExpiry, sequence _: Int64) {}
 }
 
 // MARK: - Typed errors and dispositions
@@ -860,18 +875,23 @@ public actor CloudOutboundSpool {
     private func burnExpiredSentRows() throws {
         let now = clock.continuousNow
         var working = state
-        var changed = false
+        var burned: [Int64] = []
         for index in working.rows.indices where working.rows[index].state == .sent {
             if let notAfter = working.rows[index].attemptNotAfterContinuous, now >= notAfter {
                 Self.burn(&working.rows[index], reason: .attemptCapExpired,
                           outcome: .transportUncertain, tombstone: now)
-                changed = true
+                burned.append(working.rows[index].seq)
             }
         }
-        if changed {
+        if !burned.isEmpty {
             try store.commit(working)
             state = working
             publishOccupancy()
+            if let runtime {
+                for sequence in burned {
+                    metrics.recordExpiry(runtime: runtime, expiry: .receiptExpired, sequence: sequence)
+                }
+            }
         }
     }
 
@@ -1101,6 +1121,7 @@ public actor CloudOutboundSpool {
         let wallNow = clock.wallNow
         var keepLatest = Set<String>()
         var removeSequences = Set<Int64>()
+        var expiredSequences: [Int64] = []
         var changed = false
         for index in working.rows.indices.reversed()
         where working.rows[index].state == .ready && working.rows[index].channel.isLatestValue {
@@ -1116,7 +1137,9 @@ public actor CloudOutboundSpool {
                 working.rows[index], wallNow: wallNow,
                 freshnessSeconds: limits.sealedFrameFreshnessSeconds
             ) {
-                removeSequences.insert(working.rows[index].seq)
+                if removeSequences.insert(working.rows[index].seq).inserted {
+                    expiredSequences.append(working.rows[index].seq)
+                }
                 changed = true
             }
         }
@@ -1125,6 +1148,11 @@ public actor CloudOutboundSpool {
             try store.commit(working)
             state = working
             publishOccupancy()
+            if let runtime {
+                for sequence in expiredSequences {
+                    metrics.recordExpiry(runtime: runtime, expiry: .readyExpired, sequence: sequence)
+                }
+            }
         }
     }
 

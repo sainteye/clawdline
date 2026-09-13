@@ -140,6 +140,15 @@ public final class EpochGuard {
         return observed
     }
 
+    /// How much of the stability window is left as of the last observation, or `nil` when no
+    /// calibration is live — then the window cannot close until a new server sample arrives, and
+    /// no honest countdown exists. A report, never an input to admission.
+    public func stabilityRemaining() -> TimeInterval? {
+        guard case .uncertain(.stabilityPeriodIncomplete) = state,
+              let calibration, let lastContinuous else { return nil }
+        return max(0, Self.requiredStableDuration - (lastContinuous - calibration.continuous))
+    }
+
     /// Observes one injected clock snapshot and advances or invalidates the guard.
     public func observe() -> EpochGuardUpdate {
         let wall = clock.wall()

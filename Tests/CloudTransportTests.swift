@@ -285,6 +285,7 @@ func runCloudTransportTests() async throws -> Int {
     case "flush-invariant": return try await runCloudTransportFlushInvariantTests()
     case "timeouts": return try await runCloudTransportTimeoutTests()
     case "inbound-budget": return try await runCloudTransportInboundBudgetTests()
+    case "transparency": return try await runCloudTransportTransparencyTests()
     default: break
     }
     var checks = 0
@@ -459,9 +460,13 @@ func runCloudTransportTests() async throws -> Int {
         await transport.droppedInboundCount() == 2
     }
     checks += 1
-    let dropLogs = logs.lines().filter { $0.contains("dropped inbound envelope") }
-    try require(dropLogs.count == 2, "each rejected envelope has one counted log")
-    try require(dropLogs.allSatisfy { !$0.contains("unknown-device") && !$0.contains(command.ct) }, "drop logs contain no envelope content")
+    let dropLogs = logs.lines().filter { $0.hasPrefix("refusal layer=mac_transport ") }
+    try require(dropLogs.count == 2, "each rejected envelope has one refusal line")
+    try require(dropLogs.first?.contains("code=unknown_sender sender=unknown-device seq=2 ") == true
+                    && dropLogs.last?.contains("code=bad_signature sender=viewer-device seq=3 ") == true,
+                "each drop line names its own code and the envelope's outside reference")
+    try require(dropLogs.allSatisfy { !$0.contains(command.ct) && !$0.contains(forged.ct) },
+                "drop logs contain no envelope content")
 
     try await relay.send(envelope: command)
     try await waitUntil("replayed command is dropped") {
@@ -542,6 +547,7 @@ func runCloudTransportTests() async throws -> Int {
     checks += try await runCloudTransportFlushInvariantTests()
     checks += try await runCloudTransportTimeoutTests()
     checks += try await runCloudTransportInboundBudgetTests()
+    checks += try await runCloudTransportTransparencyTests()
     return checks
 }
 
@@ -1451,9 +1457,11 @@ private func runCloudTransportInboundBudgetTests() async throws -> Int {
     try require(recovered.currentCount == 0 && recovered.admittedTotal == 3
                     && recovered.deliveredTotal == 3 && recovered.droppedInvalidTotal == 1,
                 "recovery accounts admitted, delivered and stale-replay stages without loss")
-    try require(logs.lines().contains { $0.contains("reason=count_cap") }
-                    && logs.lines().allSatisfy { !$0.contains("budget-viewer") },
-                "overload logging exposes typed debt without sender or plaintext")
+    try require(logs.lines().contains {
+                    $0.hasPrefix("refusal layer=mac_transport code=replay sender=budget-viewer seq=3 ")
+                }
+                    && logs.lines().allSatisfy { !$0.contains(refused.ct) && !$0.contains(later.ct) },
+                "the stale predecessor is one refusal line with its reference and without content")
 
     await transport.shutdown()
     await relay.stop()

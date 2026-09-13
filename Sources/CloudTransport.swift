@@ -241,6 +241,108 @@ public enum CloudExecutorReconnectDisposition: Equatable, Sendable {
 // the flat compatibility suite still compiles these exact source bytes directly.
 #if !SWIFT_PACKAGE || CLAWDLINE_APPLICATION_TARGET
 
+/// The Mac's Cloud layers, as named in design `cloud-error-transparency.md` §1. A closed set: a
+/// refusal names exactly one of these, and a viewer decides nothing from anything else.
+public enum CloudRefusalLayer: String, CaseIterable, Sendable {
+    case macTransport = "mac_transport"
+    case macPreflight = "mac_preflight"
+    case macLedger = "mac_ledger"
+    case macRoute = "mac_route"
+    case macReply = "mac_reply"
+}
+
+/// Why an inbound envelope was dropped before it became a command. `reason=invalid` used to cover
+/// the first five of these, so a key mismatch and a malformed frame read the same in the log.
+public enum CloudInboundDropCode: String, CaseIterable, Sendable {
+    case envelopeMalformed = "envelope_malformed"
+    case wrongChannel = "wrong_channel"
+    case unknownSender = "unknown_sender"
+    /// The roster could not be read, so no sender could be recognised. Today's Keychain failure
+    /// used to become an empty roster and read exactly like an unpaired device.
+    case rosterUnreadable = "roster_unreadable"
+    case keyIDMismatch = "key_id_mismatch"
+    /// This Mac could not read its own master secret, so no key id could be compared.
+    case keyUnreadable = "key_unreadable"
+    case badSignature = "bad_signature"
+    case decryptFailed = "decrypt_failed"
+    case replay
+    /// The replay owner tracks a bounded number of senders and cannot decide for one more.
+    case replayWindowFull = "replay_window_full"
+}
+
+/// One dropped envelope, carrying only what the envelope's outside already said: device id,
+/// sequence and key ids. Nothing here came from ciphertext.
+public struct CloudInboundDrop: Equatable, Sendable {
+    public let code: CloudInboundDropCode
+    public let sender: String?
+    public let sequence: UInt64?
+    public let keyID: String?
+    public let expectedKeyID: String?
+    public let highestSequence: UInt64?
+    /// `nil` when the roster was not consulted before this drop was decided.
+    public let rosterReadable: Bool?
+
+    public init(code: CloudInboundDropCode, sender: String? = nil, sequence: UInt64? = nil,
+                keyID: String? = nil, expectedKeyID: String? = nil,
+                highestSequence: UInt64? = nil, rosterReadable: Bool? = nil) {
+        self.code = code
+        self.sender = sender
+        self.sequence = sequence
+        self.keyID = keyID
+        self.expectedKeyID = expectedKeyID
+        self.highestSequence = highestSequence
+        self.rosterReadable = rosterReadable
+    }
+}
+
+/// What the transport learned about its own connection, for a status reader. Emitted from actor
+/// turns that already happen; the observer must record and return.
+public enum CloudTransportConnectionEvent: Equatable, Sendable {
+    case ready(generation: UInt64, tokenExpiresAtMilliseconds: UInt64, refreshAheadMilliseconds: UInt64)
+    case reconnecting(reason: String)
+    case stopped(reason: String)
+    /// The roster as the last inbound envelope read it, reported only when it changed.
+    case roster(readable: Bool, deviceIDs: [String])
+}
+
+/// A roster read that can say it failed. `pairedDevicePublicKeys()` answers an empty dictionary
+/// for both "nobody is paired" and "the Keychain refused", and those two need different words.
+public enum CloudPairedDeviceRosterReading: Equatable, Sendable {
+    case readable([String: Data])
+    case unreadable
+}
+
+/// The one spelling of a Cloud refusal in the Mac log (design §2.3):
+///
+/// `refusal layer=… code=… sender=… seq=… request=… type=… session=… status=… reply=… <extras>`
+///
+/// Callers prefix it with `cloud: `. A value that is absent is `-`; every value is reduced to a
+/// safe token so a device-supplied string cannot forge a second field. `reply` is `published`,
+/// `notice`, or `silent:<why>` — a `silent:` line is a path nothing answers yet.
+public enum CloudRefusalLog {
+    public static func line(
+        layer: CloudRefusalLayer, code: String, sender: String?, sequence: UInt64?,
+        request: String?, type: String?, session: String?, status: Int?, reply: String,
+        extras: [(String, String?)] = []
+    ) -> String {
+        var fields: [(String, String?)] = [
+            ("layer", layer.rawValue), ("code", code), ("sender", sender),
+            ("seq", sequence.map(String.init)), ("request", request), ("type", type),
+            ("session", session), ("status", status.map(String.init)), ("reply", reply),
+        ]
+        fields.append(contentsOf: extras)
+        return "refusal " + fields.map { "\($0.0)=\(token($0.1))" }.joined(separator: " ")
+    }
+
+    public static func token(_ value: String?) -> String {
+        guard let value, !value.isEmpty else { return "-" }
+        var allowed = CharacterSet.alphanumerics
+        allowed.insert(charactersIn: "-_.~:")
+        let bounded = String(value.prefix(128))
+        return bounded.addingPercentEncoding(withAllowedCharacters: allowed) ?? "-"
+    }
+}
+
 public protocol CloudTransportKeyProviding: Sendable {
     func deviceKeyPair() async throws -> CloudDeviceKeyPair
     func masterSecret(for keyID: String) async throws -> CloudMasterSecret
@@ -251,11 +353,23 @@ public protocol CloudTransportKeyProviding: Sendable {
     /// Production re-reads the protected epoch tuple before every initial/reconnect signature.
     /// The lifecycle opens both durable owners before it permits transport construction.
     func admitReconnect(_ binding: CloudExecutorTransportBinding) async throws
+    /// The roster, able to say it could not be read. Defaults to `pairedDevicePublicKeys()`.
+    func pairedDeviceRoster() async -> CloudPairedDeviceRosterReading
+    /// The key id this Mac currently opens envelopes with, when it can be read.
+    func currentKeyID() async -> String?
 }
 
 extension CloudTransportKeyProviding {
     func transportBinding() async throws -> CloudExecutorTransportBinding? { nil }
     func admitReconnect(_: CloudExecutorTransportBinding) async throws {}
+}
+
+public extension CloudTransportKeyProviding {
+    func pairedDeviceRoster() async -> CloudPairedDeviceRosterReading {
+        .readable(await pairedDevicePublicKeys())
+    }
+
+    func currentKeyID() async -> String? { nil }
 }
 
 /// Production adapter shared by both hosts. Every method reads the protected authority again;
@@ -279,6 +393,15 @@ public struct CloudExecutorIdentityTransportKeys: CloudTransportKeyProviding, Se
 
     public func pairedDevicePublicKeys() async -> [String: Data] {
         (try? authority.transportMaterial().pairedDevicePublicKeys) ?? [:]
+    }
+
+    public func pairedDeviceRoster() async -> CloudPairedDeviceRosterReading {
+        guard let material = try? authority.transportMaterial() else { return .unreadable }
+        return .readable(material.pairedDevicePublicKeys)
+    }
+
+    public func currentKeyID() async -> String? {
+        try? authority.transportMaterial().keyID
     }
 
     public func transportBinding() async throws -> CloudExecutorTransportBinding? {
@@ -309,6 +432,11 @@ struct CloudStaticTransportKeys: CloudTransportKeyProviding, Sendable {
     }
 
     func pairedDevicePublicKeys() async -> [String: Data] { pairedDevices }
+
+    /// The expected key id is only nameable when exactly one secret is held.
+    func currentKeyID() async -> String? {
+        masterSecrets.count == 1 ? masterSecrets.keys.first : nil
+    }
 }
 
 public protocol CloudTransportClock: Sendable {
@@ -402,6 +530,24 @@ public enum CloudInboundAdmissionRefusalReason: String, CaseIterable, Error, Has
     case chargedByteCap = "charged_byte_cap"
     case plaintextCap = "plaintext_cap"
     case finished = "finished"
+
+    /// The code a viewer is told. A single plaintext over the ceiling will never fit, so it is a
+    /// terminal `command_too_large` rather than a busy answer that invites the same retry.
+    public var refusalCode: String {
+        switch self {
+        case .countCap, .chargedByteCap: return "cloud_ingress_busy"
+        case .plaintextCap: return "command_too_large"
+        case .finished: return "cloud_ingress_closed"
+        }
+    }
+
+    public var refusalStatus: Int {
+        switch self {
+        case .countCap, .chargedByteCap: return 429
+        case .plaintextCap: return 413
+        case .finished: return 503
+        }
+    }
 }
 
 public struct CloudInboundCommandQueueMetrics: Equatable, Sendable {
@@ -935,6 +1081,11 @@ public actor CloudTransport {
     /// Called inline from the sole receive loop, so implementations must only offer the refusal to
     /// a bounded lane and return. Publication and any other suspension belong to that lane.
     public typealias InboundRefusalHandler = @Sendable (CloudInboundAdmissionRefusal) -> Void
+    /// Called inline from the receive loop for every envelope dropped before admission. The
+    /// owner records the drop and returns; with no owner the drop is logged `reply=silent:`.
+    public typealias InboundDropHandler = @Sendable (CloudInboundDrop) -> Void
+    /// Records a connection fact and returns; it runs on this actor.
+    public typealias ConnectionObserver = @Sendable (CloudTransportConnectionEvent) -> Void
     /// A positive credential/revocation refusal is terminal until an explicit identity change.
     /// The callback must enqueue lifecycle work and return; it runs on the receive owner.
     public typealias TerminalAuthorizationHandler = @Sendable (CloudTransportError) -> Void
@@ -976,11 +1127,14 @@ public actor CloudTransport {
     private var refreshTask: Task<Void, Never>?
     private var generation = 0
     private var droppedReadyGenerations = 0
-    private var sequenceTracker = CloudSequenceTracker()
+    private let replayWindow: CloudInboundReplayWindow
     private var outboundReceiptEnqueued: UInt64 = 0
     private var outboundReceiptDropped: UInt64 = 0
     private var outboundReceiptTerminated: UInt64 = 0
     private var inboundRefusalHandler: InboundRefusalHandler?
+    private var inboundDropHandler: InboundDropHandler?
+    private var connectionObserver: ConnectionObserver?
+    private var lastReportedRoster: (readable: Bool, deviceIDs: [String])?
     private var terminalAuthorizationHandler: TerminalAuthorizationHandler?
     /// The generation whose socket `refreshToken` closed on purpose. Read once, by the reconnect
     /// loop, so the retry it triggers is named for what caused it rather than for how it arrived.
@@ -996,7 +1150,7 @@ public actor CloudTransport {
     ) -> CloudTransport {
         CloudTransport(
             relayBaseURL: relayBaseURL, tokenProvider: tokenProvider,
-            keyProvider: keyProvider, logger: logger)
+            keyProvider: keyProvider, replayWindow: .process, logger: logger)
     }
 
     init(
@@ -1012,6 +1166,7 @@ public actor CloudTransport {
         authenticationTimeout: TimeInterval = 15,
         receiveTimeout: TimeInterval = 90,
         inboundQueueLimits: CloudInboundCommandQueueLimits = CloudInboundCommandQueueLimits(),
+        replayWindow: CloudInboundReplayWindow = CloudInboundReplayWindow(),
         logger: @escaping Logger = { _ in }
     ) {
         self.relayBaseURL = relayBaseURL
@@ -1026,6 +1181,7 @@ public actor CloudTransport {
         self.authenticationTimeout = max(0.01, authenticationTimeout)
         self.receiveTimeout = max(0.01, receiveTimeout)
         self.logger = logger
+        self.replayWindow = replayWindow
         let commandQueue = CloudInboundCommandQueue(limits: inboundQueueLimits)
         self.commandQueue = commandQueue
         commands = commandQueue.stream
@@ -1103,6 +1259,18 @@ public actor CloudTransport {
         inboundRefusalHandler = handler
     }
 
+    /// `async` on purpose. `CloudTransporting` gives fixtures a no-op `async` default, and in an
+    /// async context Swift prefers an `async` overload over a synchronous actor method, so a
+    /// synchronous spelling here was silently passed over and no drop owner was ever installed.
+    public func setInboundDropHandler(_ handler: InboundDropHandler?) async {
+        inboundDropHandler = handler
+    }
+
+    public func setConnectionObserver(_ observer: ConnectionObserver?) async {
+        connectionObserver = observer
+        lastReportedRoster = nil
+    }
+
     public func setTerminalAuthorizationHandler(_ handler: TerminalAuthorizationHandler?) {
         terminalAuthorizationHandler = handler
         logger("CloudTransport terminal authorization owner="
@@ -1126,7 +1294,10 @@ public actor CloudTransport {
         socket = nil
         cachedToken = nil
         rotatingGeneration = nil
+        connectionObserver?(.stopped(reason: "shutdown"))
         inboundRefusalHandler = nil
+        inboundDropHandler = nil
+        connectionObserver = nil
         terminalAuthorizationHandler = nil
         commandQueue.finish()
         readyContinuation.finish()
@@ -1220,6 +1391,10 @@ public actor CloudTransport {
             socket = authenticated
             state = .ready
             scheduleRefresh(token: token, generation: currentGeneration)
+            connectionObserver?(.ready(
+                generation: UInt64(currentGeneration),
+                tokenExpiresAtMilliseconds: Self.milliseconds(token.expiresAt),
+                refreshAheadMilliseconds: UInt64(refreshAhead * 1_000)))
             switch readyContinuation.yield(UInt64(currentGeneration)) {
             case .dropped:
                 droppedReadyGenerations += 1
@@ -1299,6 +1474,7 @@ public actor CloudTransport {
                     logger("CloudTransport terminal authorization refusal reason="
                         + "\(failureCode(for: failure)) owner="
                         + (terminalHandler == nil ? "missing" : "installed"))
+                    connectionObserver?(.stopped(reason: failureCode(for: failure)))
                     terminalHandler?(failure)
                     return
                 }
@@ -1324,6 +1500,7 @@ public actor CloudTransport {
                     let jitter = 0.75 + (await clock.jitterUnit() * 0.5)
                     let delay = min(maximumBackoff, backoff) * jitter
                     logger("CloudTransport reconnect waiting reason=\(failureCode(for: retryError)) retry_in_ms=\(Int(delay * 1_000))")
+                    connectionObserver?(.reconnecting(reason: failureCode(for: retryError)))
                     do {
                         try await clock.sleep(for: delay)
                         backoff = min(maximumBackoff, backoff * 2)
@@ -1345,6 +1522,7 @@ public actor CloudTransport {
                             logger("CloudTransport terminal authorization refusal reason="
                                 + "\(failureCode(for: failure)) owner="
                                 + (terminalHandler == nil ? "missing" : "installed"))
+                            connectionObserver?(.stopped(reason: failureCode(for: failure)))
                             terminalHandler?(failure)
                             return
                         }
@@ -1452,12 +1630,17 @@ public actor CloudTransport {
         }
         switch header.type {
         case "envelope":
+            let frame: EnvelopeFrame
             do {
-                let frame = try JSONDecoder().decode(EnvelopeFrame.self, from: data)
-                try await acceptInbound(frame.envelope)
+                frame = try JSONDecoder().decode(EnvelopeFrame.self, from: data)
             } catch {
-                dropInbound(reason: reason(for: error))
+                let outside = Self.outsideOfMalformedEnvelope(data)
+                dropInbound(CloudInboundDrop(
+                    code: .envelopeMalformed, sender: outside.sender,
+                    sequence: outside.sequence, keyID: outside.keyID))
+                return
             }
+            await acceptInbound(frame.envelope)
         case "ack":
             guard let frame = try? JSONDecoder().decode(AckFrame.self, from: data),
                   frame.seq >= 0, frame.fanout >= 0, !frame.ch.isEmpty else {
@@ -1565,54 +1748,129 @@ public actor CloudTransport {
             terminated: outboundReceiptTerminated)
     }
 
-    private func acceptInbound(_ envelope: CloudEnvelope) async throws {
+    /// Every exit from here is either an admission, a typed refusal handed to the refusal owner,
+    /// or a typed drop. The order is the order of what each check needs: the outside of the
+    /// envelope, the roster, this Mac's key, the signature and plaintext, and only then the replay
+    /// window — so an unauthenticated envelope can never consume a sequence.
+    private func acceptInbound(_ envelope: CloudEnvelope) async {
+        let sender = envelope.sender
+        let sequence = envelope.seq
         guard envelope.envelopeClass == .ctl || envelope.envelopeClass == .dispatch,
               envelope.ch.hasPrefix("ctl/") else {
-            throw CloudTransportError.unexpectedFrame("non-command-envelope")
+            dropInbound(CloudInboundDrop(
+                code: .wrongChannel, sender: sender, sequence: sequence))
+            return
         }
-        let paired = await keyProvider.pairedDevicePublicKeys()
-        guard paired[envelope.sender] != nil else { throw CloudEnvelopeError.unknownSender }
-        let secret = try await keyProvider.masterSecret(for: envelope.keyID)
-        let plaintext = try envelope.open(
-            masterSecret: secret,
-            publicKeyForSender: { paired[$0] }
-        )
-        if let highest = sequenceTracker.highestSequence(for: envelope.sender),
-           envelope.seq <= highest {
-            throw CloudEnvelopeError.replay
+        let paired: [String: Data]
+        switch await keyProvider.pairedDeviceRoster() {
+        case .readable(let keys):
+            paired = keys
+            reportRoster(readable: true, deviceIDs: keys.keys.sorted())
+        case .unreadable:
+            reportRoster(readable: false, deviceIDs: [])
+            dropInbound(CloudInboundDrop(
+                code: .rosterUnreadable, sender: sender, sequence: sequence, rosterReadable: false))
+            return
+        }
+        guard paired[sender] != nil else {
+            dropInbound(CloudInboundDrop(
+                code: .unknownSender, sender: sender, sequence: sequence, rosterReadable: true))
+            return
+        }
+        let secret: CloudMasterSecret
+        do {
+            secret = try await keyProvider.masterSecret(for: envelope.keyID)
+        } catch {
+            let expected = await keyProvider.currentKeyID()
+            let unknownKey = (error as? CloudTransportError) == .unexpectedFrame("unknown-key")
+            let mismatch = unknownKey || (expected != nil && expected != envelope.keyID)
+            dropInbound(CloudInboundDrop(
+                code: mismatch ? .keyIDMismatch : .keyUnreadable, sender: sender,
+                sequence: sequence, keyID: envelope.keyID, expectedKeyID: expected))
+            return
+        }
+        let plaintext: Data
+        do {
+            plaintext = try envelope.open(
+                masterSecret: secret,
+                publicKeyForSender: { paired[$0] }
+            )
+        } catch CloudEnvelopeError.unknownSender {
+            dropInbound(CloudInboundDrop(
+                code: .unknownSender, sender: sender, sequence: sequence, rosterReadable: true))
+            return
+        } catch CloudEnvelopeError.badSignature {
+            dropInbound(CloudInboundDrop(code: .badSignature, sender: sender, sequence: sequence))
+            return
+        } catch {
+            dropInbound(CloudInboundDrop(code: .decryptFailed, sender: sender, sequence: sequence))
+            return
+        }
+        switch replayWindow.claim(sender: sender, sequence: sequence) {
+        case .accepted:
+            break
+        case .replay(let highest):
+            dropInbound(CloudInboundDrop(
+                code: .replay, sender: sender, sequence: sequence, highestSequence: highest))
+            return
+        case .senderCapacity:
+            dropInbound(CloudInboundDrop(
+                code: .replayWindowFull, sender: sender, sequence: sequence))
+            return
         }
         let command = CloudInboundCommand(
             channel: envelope.ch,
-            sequence: envelope.seq,
+            sequence: sequence,
             timestamp: envelope.ts,
             commandClass: envelope.envelopeClass,
-            sender: envelope.sender,
+            sender: sender,
             plaintext: plaintext
         )
-        switch commandQueue.admit(command) {
-        case .success:
-            guard sequenceTracker.accept(sender: envelope.sender, sequence: envelope.seq) else {
-                preconditionFailure("Cloud inbound replay cursor changed outside its actor")
-            }
-        case .failure(let reason):
+        // The claim above is final: a capacity refusal is terminal for this sequence, so the same
+        // envelope sent again is a replay rather than a second chance to execute.
+        if case .failure(let reason) = commandQueue.admit(command) {
             refuseInbound(command, reason: reason)
         }
     }
 
-    private func dropInbound(reason: String) {
-        let count = commandQueue.recordInvalidDrop()
-        logger("CloudTransport dropped inbound envelope reason=\(reason) count=\(count)")
+    private func dropInbound(_ drop: CloudInboundDrop) {
+        _ = commandQueue.recordInvalidDrop()
+        let reply = inboundDropHandler == nil ? "silent:no_status_owner" : "notice"
+        logger(CloudRefusalLog.line(
+            layer: .macTransport, code: drop.code.rawValue, sender: drop.sender,
+            sequence: drop.sequence, request: nil, type: nil, session: nil, status: nil,
+            reply: reply, extras: Self.logExtras(for: drop)))
+        inboundDropHandler?(drop)
+    }
+
+    static func logExtras(for drop: CloudInboundDrop) -> [(String, String?)] {
+        var extras: [(String, String?)] = []
+        switch drop.code {
+        case .keyIDMismatch, .keyUnreadable:
+            extras.append(("key_id", drop.keyID))
+            extras.append(("expected_key_id", drop.expectedKeyID))
+        case .replay:
+            extras.append(("highest_seq", drop.highestSequence.map(String.init)))
+        default:
+            break
+        }
+        if let readable = drop.rosterReadable {
+            extras.append(("roster_readable", readable ? "true" : "false"))
+        }
+        return extras
     }
 
     private func refuseInbound(
         _ command: CloudInboundCommand, reason: CloudInboundAdmissionRefusalReason
     ) {
         let metrics = commandQueue.snapshot()
-        logger("CloudTransport refused authenticated inbound command reason=\(reason.rawValue) "
-            + "current_count=\(metrics.currentCount) current_charged_bytes=\(metrics.currentChargedBytes) "
-            + "refused_total=\(metrics.refusalTotals[reason, default: 0])")
         guard let inboundRefusalHandler else {
-            logger("CloudTransport authenticated inbound refusal has no reply handler")
+            logger(CloudRefusalLog.line(
+                layer: .macTransport, code: reason.refusalCode, sender: command.sender,
+                sequence: command.sequence, request: nil, type: nil, session: nil,
+                status: reason.refusalStatus,
+                reply: reason == .finished ? "silent:shutdown" : "silent:no_reply_owner",
+                extras: [("detail.reason", reason.rawValue)]))
             return
         }
         inboundRefusalHandler(CloudInboundAdmissionRefusal(
@@ -1620,14 +1878,68 @@ public actor CloudTransport {
         ))
     }
 
-    private func reason(for error: Error) -> String {
-        guard let envelopeError = error as? CloudEnvelopeError else { return "invalid" }
-        switch envelopeError {
-        case .unknownSender: return "unknown_sender"
-        case .badSignature: return "bad_signature"
-        case .replay: return "replay"
-        default: return "invalid"
+    private func reportRoster(readable: Bool, deviceIDs: [String]) {
+        guard let connectionObserver else { return }
+        if let last = lastReportedRoster, last.readable == readable, last.deviceIDs == deviceIDs {
+            return
         }
+        lastReportedRoster = (readable, deviceIDs)
+        connectionObserver(.roster(readable: readable, deviceIDs: deviceIDs))
+    }
+
+    /// What a malformed frame's outside still says, kept only when each value has the shape the
+    /// envelope contract allows. It names the drop; it is never used to route anything.
+    static func outsideOfMalformedEnvelope(
+        _ data: Data
+    ) -> (sender: String?, sequence: UInt64?, keyID: String?) {
+        guard let frame = try? JSONDecoder().decode(MalformedEnvelopeOutside.self, from: data)
+        else { return (nil, nil, nil) }
+        func token(_ value: String?, maximum: Int) -> String? {
+            guard let value, !value.isEmpty, value.utf8.count <= maximum,
+                  value.utf8.allSatisfy({ $0 >= 0x21 && $0 <= 0x7e && $0 != 0x2f && $0 != 0x7c })
+            else { return nil }
+            return value
+        }
+        let sequence = frame.envelope?.seq.flatMap {
+            $0 <= CloudEnvelope.maximumRelayInteger ? $0 : nil
+        }
+        return (token(frame.envelope?.sender, maximum: 128), sequence,
+                token(frame.envelope?.keyID, maximum: 64))
+    }
+
+    private struct MalformedEnvelopeOutside: Decodable {
+        struct Outside: Decodable {
+            let sender: String?
+            let seq: UInt64?
+            let keyID: String?
+
+            enum CodingKeys: String, CodingKey {
+                case sender, seq
+                case keyID = "key_id"
+            }
+
+            init(from decoder: Decoder) throws {
+                let values = try decoder.container(keyedBy: CodingKeys.self)
+                sender = try? values.decodeIfPresent(String.self, forKey: .sender)
+                seq = try? values.decodeIfPresent(UInt64.self, forKey: .seq)
+                keyID = try? values.decodeIfPresent(String.self, forKey: .keyID)
+            }
+        }
+
+        let envelope: Outside?
+
+        enum CodingKeys: String, CodingKey { case envelope }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            envelope = try? values.decodeIfPresent(Outside.self, forKey: .envelope)
+        }
+    }
+
+    static func milliseconds(_ date: Date) -> UInt64 {
+        let value = date.timeIntervalSince1970 * 1_000
+        guard value.isFinite, value > 0 else { return 0 }
+        return value >= Double(UInt64.max) ? .max : UInt64(value)
     }
 
     private func scheduleRefresh(token: CloudDeviceToken, generation: Int) {

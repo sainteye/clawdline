@@ -127,10 +127,14 @@ idempotency, menu safety, image validation and audit stay the local HTTP route's
 implementation. The write gate is the same one: a Mac with `remote_write` off refuses a cloud
 command with `cloud_commands_disabled`, exactly as it refuses one from the browser on its own
 network. If the command carried a safe bounded request identity, the Mac also publishes that 403
-on the existing `action:<request>` channel; an identifiable malformed `shell-kill` does the same
-with `400 malformed_command`. Neither refusal reaches the command router. A non-`ctl` envelope is
-outside this reply contract and is rejected without minting an action-channel identity; the shipped
-browser sends `shell-kill` only as `ctl`.
+on the existing `action:<request>` channel, and every other preflight refusal — `malformed_command`,
+`unknown_command`, `cloud_dispatch_unpinned`, a malformed request-scoped read — does the same.
+None of them reaches the command router. A Session command answers on its own Session's channel; a
+machine command, and any type this Mac does not know, answers only on `__clawdline_machine__`, so a
+malformed body can never name a Session channel. A non-`ctl` envelope is outside this reply
+contract except `dispatch`, which answers on the machine channel when it names a request. Every
+command type accepts an optional lowercase `request` (design §11.4): `answer`, `key` and a `send`
+that carries one are answered on `action:<request>`, and older pages that send none are unchanged.
 
 Before that router can cross the effect point, `CloudCommandLedger` durably reserves the
 authenticated `(viewer sender, request id, request digest)` identity. Exact duplicates wait or
@@ -196,17 +200,21 @@ all three configured limits, current and peak count and charge, admitted and del
 invalid drops, per-reason refusals, refused charged bytes and oldest pending wait. These are source
 budgets and runtime counters for W6 measurement, not a claim that the values are load-tested.
 
-The receive path authenticates and decrypts first, checks replay next, and advances the replay
-cursor only after this owner admits the command. Count, aggregate charged-byte and single-command
-overflow return `cloud_ingress_busy` (HTTP-equivalent status 429) through the existing encrypted
-request-scoped command or read answer only when the plaintext has the same safe bounded identity
-the bridge normally accepts. The refusal path applies the exact machine channel and remote-write
-gates first, returning `wrong_machine` or `cloud_commands_disabled` instead of an impossible retry
-instruction. No safe identity means no invented reply channel. Capacity refusal is terminal for
-that authenticated sequence and does not fence a later sequence; after capacity drains, a new
-request can be admitted. The existing browser and Relay do not retry the same envelope bytes, and
-R-1 does not add such a protocol. Thus a refusal is not an admission, an admission is not execution,
-encrypted publication is not relay ACK, and none of them asserts human observation.
+The receive path authenticates and decrypts first and claims the envelope's `(sender, seq)` in the
+replay window next; only then does this owner admit or refuse it. A claim is never given back, so a
+capacity refusal is terminal for that authenticated sequence and the same envelope sent again is a
+`replay`. Count and aggregate charged-byte overflow return `cloud_ingress_busy` (HTTP-equivalent
+status 429, `detail.lane`, `detail.limit`, `detail.retry_after`); a single plaintext over the
+ceiling returns the terminal `command_too_large` (413), because the same bytes will never fit. Both
+reach the existing encrypted request-scoped command or read answer when the plaintext has the same
+safe bounded identity the bridge normally accepts. The refusal path applies the exact machine
+channel and remote-write gates first, returning `wrong_machine` or `cloud_commands_disabled`
+instead of an impossible retry instruction. No safe identity means no invented reply channel: the
+refusal is announced as a notice instead (below). A refused sequence does not fence a later one;
+after capacity drains, a new request can be admitted. The existing browser and Relay do not retry
+the same envelope bytes, and R-1 does not add such a protocol. Thus a refusal is not an admission,
+an admission is not execution, encrypted publication is not relay ACK, and none of them asserts
+human observation.
 
 The command FIFO survives WebSocket reconnect and token rotation for the life of the transport; it
 is never coalesced with snapshots and an admitted row is never evicted for a newer command. The
@@ -246,6 +254,78 @@ Socket and spool medians were about 202 ms and 323 ms, while changed Session wri
 11.9–19.5 s. The bounded-row correction prevents repeated latest-value replacement from retaining
 one tombstone per update for 600 seconds; it does not claim to explain or resolve that Session-write
 latency.
+
+**Every refusal names its layer, its code and the command it refused.** Design
+[`cloud-error-transparency.md`](cloud-error-transparency.md) §11 is the wire contract; this is what
+the Mac does with it. A reference is the envelope's `(sender, seq)`, which exists before
+decryption, plus the plaintext's `request`, `type` and `session` once they can be read safely.
+
+- **Dropped before admission** (`mac_transport`). `CloudTransport` reports each drop to one owner
+  with its own code — `envelope_malformed`, `wrong_channel`, `unknown_sender`, `roster_unreadable`
+  (the roster read failed, which used to look exactly like an unpaired device), `key_id_mismatch`
+  with both key ids, `key_unreadable`, `bad_signature`, `decrypt_failed`, `replay` with
+  `highest_seq`, and `replay_window_full`. These replaced a single `reason=invalid`.
+- **Refused before routing** (`mac_preflight`), **by the ledger** (`mac_ledger`), **by the route**
+  (`mac_route`) and **after execution** (`mac_reply`). A published answer's `error` object gains
+  `layer`, `seq` and a `detail` limited to the §11.6 whitelist; `message` stays for old consoles.
+  Ledger refusals each carry their own words and code: `command_clock_uncertain` with
+  `detail.reason` (the clock guard's own reason, such as `awaiting_server_time` or
+  `stability_period_incomplete`) and `detail.clears_in_ms` when a window is counting down;
+  `command_roster_unreadable`, `unknown_sender` and `command_writes_disabled` in place of the one
+  `command_gate_unavailable` that could not say which.
+- **One log line.** Every one of them is written once as
+  `cloud: refusal layer=… code=… sender=… seq=… request=… type=… session=… status=… reply=…`,
+  with `key_id=`/`expected_key_id=`/`highest_seq=`/`roster_readable=`/`detail.*=` where they apply.
+  `reply=` is `published`, `notice`, or `silent:<why>`. The remaining `silent:` lines are an
+  admission refused during transport shutdown (`silent:shutdown`), a transport composed without a
+  drop or refusal owner (the Linux daemon: `silent:no_status_owner`, `silent:no_reply_owner`), and a
+  command dequeued after its bridge stopped (`silent:bridge_stopped`). The old
+  `cloud: command refused …`, `CloudTransport dropped inbound envelope … count=…` and
+  `cloud: command ingress refused …` lines are gone; counts live in the status snapshot.
+
+**`CloudStatus` is the one place that state is kept** (`Sources/CloudStatus.swift`). Transport state
+and token expiry, the clock guard's state, reason and countdown, the key id, roster readability and
+paired device ids, drop counts by code with the 20 newest drops, the 50 newest commands with each
+Mac-side step (`accepted_at_ms`, `executed_at_ms`, `outcome`, `delivered_at_ms` from the relay
+receipt for the reply's spool row, `undeliverable` — `command_answer_undeliverable`,
+`peer_rejected`, `receipt_expired`, `ready_expired` — and `refusal`), the 20 newest notices, and
+reply-side counts (`undeliverable`, `expired_ready`, `expired_receipt`, `lane_dropped`). Counts last
+for the process, not the connection, and `counting_since` says when they started. It is a lock, not
+an actor, because the transport records drops inline from its receive loop. Reads are not recorded
+as command rows unless they are refused, so a polling transcript cannot push commands out of the
+ring. It holds codes, ids, sequences, key ids, counts and times, and never a command body, prompt,
+transcript text, title or path. Three readers share it: the fixed file
+`~/Library/Logs/Clawdline/diagnostics/cloud-status.json` (see [`diagnostics.md`](diagnostics.md)),
+the `cloud.status` read on `__clawdline_machine__`, and the notice.
+
+**The notice is how a phone hears about a command it could not get in.** When a drop or an
+unanswerable refusal happens, the bridge splices a `cloud_status` digest (§11.2: counts, clock guard,
+token expiry, key id, roster readability, the ten newest drops and notices) into the newest
+`orch/<machine>` payload it received and republishes it, at most once every five seconds; the
+orchestrator snapshot's own bytes are kept and the digest is inserted before its closing brace.
+Serialized it is at most 8 KiB, enforced by trimming the two recent lists. Before any orchestrator
+payload has arrived it publishes an object holding only `cloud_status`. **`orch/<machine>` is
+published whether or not the orchestrator is enabled**: `RemoteServer.cloudTransportBecameReady`
+publishes `orchestratorSnapshot()` on every ready generation — every connect and every token
+rotation — and that snapshot always carries `snippets`, `at` and `app`, with `tasks` and
+`schedules` only when the store is authoritative. Bridges composed without a status owner (the test
+fixtures) record into a private one and publish no notice.
+
+**`diagnostics.report` is the Cloud door to the report files.** The command (§11.5) is read-level,
+like the HTTP route: it is not behind `remote_write`. `RemoteServerCloudCommandRouter` answers it
+with `CloudDiagnosticsReportRoute`, which calls the same `DiagnosticReport.save`, audits
+`diagnostics.report`, records the envelope sender as `written_by` and answers the route's own body
+or its refusal codes with `layer=mac_route`.
+
+**The replay window accepts the same `(sender, seq)` at most once per process.** Each sender has a
+highest sequence and a 1,024-position bitmap below it (design §11.8), so a second tab of the same
+device, whose sequences arrive out of order, is no longer refused. Anything older than the window
+cannot be decided and is refused as `replay`. The window belongs to the process, not the transport:
+`CloudTransport.production` shares `CloudInboundReplayWindow.process`, so a bridge rebuilt after
+sign-out, retry or an identity change cannot accept an envelope its predecessor already accepted. A
+new sender beyond 4,096 tracked is refused rather than tracked by evicting another. The 300-second
+envelope deadline and the ledger's request idempotency are separate owners and are not what makes
+this safe.
 
 **The `orch/` snapshot carries three things, and two of them were added because their absence
 was invisible.** `RemoteServer.orchestratorSnapshot()` is the one body both publishers send — the

@@ -121,11 +121,15 @@ func runCloudEnvelopeTests(vectorsURL: URL) throws -> Int {
     }
 
     var tracker = CloudSequenceTracker()
-    try require(tracker.accept(sender: "a", sequence: 5), "first sequence")
-    try require(!tracker.accept(sender: "a", sequence: 5), "duplicate sequence")
-    try require(!tracker.accept(sender: "a", sequence: 4), "older sequence")
-    try require(tracker.accept(sender: "a", sequence: 6), "newer sequence")
-    try require(tracker.accept(sender: "b", sequence: 1), "independent sender")
+    try require(tracker.claim(sender: "a", sequence: 5) == .accepted, "first sequence")
+    try require(tracker.claim(sender: "a", sequence: 5) == .replay(highestSequence: 5),
+                "duplicate sequence")
+    try require(tracker.claim(sender: "a", sequence: 4) == .accepted,
+                "an older unseen sequence inside the window")
+    try require(tracker.claim(sender: "a", sequence: 4) == .replay(highestSequence: 5),
+                "that older sequence once claimed")
+    try require(tracker.claim(sender: "a", sequence: 6) == .accepted, "newer sequence")
+    try require(tracker.claim(sender: "b", sequence: 1) == .accepted, "independent sender")
     try require(tracker.highestSequence(for: "a") == 6, "highest sequence")
 
     let memoryStore = CloudInMemoryKeyStore()

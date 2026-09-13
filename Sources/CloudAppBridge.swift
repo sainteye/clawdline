@@ -25,6 +25,8 @@ public protocol CloudTransporting: Sendable {
     func sendExactPublishFrame(_ bytes: Data) async throws
     func outboundReceiptIngestionSnapshot() async -> CloudOutboundReceiptIngestionSnapshot
     func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async
+    func setInboundDropHandler(_ handler: CloudTransport.InboundDropHandler?) async
+    func setConnectionObserver(_ observer: CloudTransport.ConnectionObserver?) async
     func setTerminalAuthorizationHandler(
         _ handler: CloudTransport.TerminalAuthorizationHandler?
     ) async
@@ -40,6 +42,10 @@ public extension CloudTransporting {
         CloudOutboundReceiptIngestionSnapshot(enqueued: 0, dropped: 0, terminated: 0)
     }
 
+    /// Fixtures that never drop an envelope have nothing to report.
+    func setInboundDropHandler(_: CloudTransport.InboundDropHandler?) async {}
+
+    func setConnectionObserver(_: CloudTransport.ConnectionObserver?) async {}
 }
 
 extension CloudTransport: CloudTransporting {}
@@ -135,14 +141,25 @@ public struct CloudCommandEffectAuthorization: Equatable, Sendable {
     public let epochState: CloudEpochGuardState
     public let rosterAllowsSender: Bool
     public let writeGateAllows: Bool
+    /// False when the roster could not be read at all, which `rosterAllowsSender` alone cannot
+    /// tell apart from a sender that is not in it.
+    public let rosterReadable: Bool
+    /// The clock guard's own reason while uncertain, in snake_case, and how long until its
+    /// stability window would close if nothing else happens. Both are only reported, never used.
+    public let epochReason: String?
+    public let epochClearsInMilliseconds: UInt64?
 
     public var permitsEffect: Bool { rosterAllowsSender && writeGateAllows }
 
     public init(epochState: CloudEpochGuardState, rosterAllowsSender: Bool,
-                writeGateAllows: Bool) {
+                writeGateAllows: Bool, rosterReadable: Bool = true,
+                epochReason: String? = nil, epochClearsInMilliseconds: UInt64? = nil) {
         self.epochState = epochState
         self.rosterAllowsSender = rosterAllowsSender
         self.writeGateAllows = writeGateAllows
+        self.rosterReadable = rosterReadable
+        self.epochReason = epochReason
+        self.epochClearsInMilliseconds = epochClearsInMilliseconds
     }
 }
 
@@ -207,6 +224,8 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case pushUnsubscribe(id: String)
     case pushTest(session: String)
     case voice(audio: String, rate: Int)
+    /// A browser's diagnostic report, as `POST /v1/diagnostics/report` takes it (design §11.5).
+    case diagnosticsReport(body: Data)
 }
 
 /// The reads a paired viewer may ask this Mac for over the relay.
@@ -388,6 +407,9 @@ struct RemoteServerCloudCommandRouter: CloudCommandRouting, @unchecked Sendable 
             return await CloudVoiceCommandRouter.shared.route(
                 audio: audio, rate: rate, sender: sender, idempotencyKey: idempotencyKey)
         }
+        if case .diagnosticsReport(let body) = command {
+            return CloudDiagnosticsReportRoute.route(body: body, sender: sender)
+        }
         let response = await server.routeVerifiedCloudCommand(
             command, sender: sender, idempotencyKey: idempotencyKey
         )
@@ -559,7 +581,9 @@ final class CloudRefusalPublicationQueue: @unchecked Sendable {
         self.observer = observer
     }
 
-    func enqueue(_ work: @escaping Work) {
+    /// `false` means the lane was full and `work` will never run; the caller owns saying so.
+    @discardableResult
+    func enqueue(_ work: @escaping Work) -> Bool {
         lock.lock()
         let current = currentCountLocked()
         guard current < maximumCount else {
@@ -567,13 +591,14 @@ final class CloudRefusalPublicationQueue: @unchecked Sendable {
             let metrics = snapshotLocked()
             lock.unlock()
             observer(.droppedFull, metrics)
-            return
+            return false
         }
         pending.append(work)
         admittedTotal = Self.addingClamped(admittedTotal, 1)
         peakCount = max(peakCount, current + 1)
         startWorkerLocked()
         lock.unlock()
+        return true
     }
 
     func snapshot() -> CloudRefusalPublicationQueueMetrics {
@@ -813,10 +838,13 @@ public actor CloudDurableOutboundComposition {
     /// Producer completion is the durable seal, not a socket acknowledgement. Once the exact
     /// frame is committed ready, this method only wakes the independently owned drain worker and
     /// returns; a slow socket can no longer suspend snapshot/read producers behind itself.
+    /// The answer is the spool sequence the frame was sealed under, which is also the sequence a
+    /// relay receipt for it will carry.
+    @discardableResult
     public func enqueue(
         _ plaintext: Data, channel: String, logicalID: String,
         observe: EnqueueStageObserver? = nil
-    ) async throws {
+    ) async throws -> Int64 {
         guard !stopped else { throw CloudDurableOutboundError.stopped }
         let spoolChannel = try Self.spoolChannel(channel)
         let identity = identity
@@ -884,6 +912,7 @@ public actor CloudDurableOutboundComposition {
             throw error
         }
         requestDrain(reconnect: false)
+        return sequence
     }
 
     public func requestDrain(reconnect: Bool) {
@@ -1236,14 +1265,50 @@ actor CloudAppBridge {
     private enum ReadLane: String { case foreground, background }
     private struct PendingRead: Sendable {
         let read: CloudHeadlessRead
-        let sender: String
+        let reference: CommandReference
         let lifecycleGeneration: UInt64
         let admittedAt: UInt64
     }
     private struct ReadRefusal {
+        let layer: CloudRefusalLayer
         let status: Int
         let code: String
         let message: String
+        var detail: [String: Any] = [:]
+    }
+    /// Who asked, as far as this Mac can tell: the envelope's `(sender, seq)` always, and the
+    /// request, type and session once a plaintext names them safely. Every refusal carries it.
+    struct CommandReference: Sendable {
+        let sender: String
+        let sequence: UInt64
+        var request: String?
+        var type: String?
+        var session: String?
+
+        init(sender: String, sequence: UInt64, request: String? = nil, type: String? = nil,
+             session: String? = nil) {
+            self.sender = sender
+            self.sequence = sequence
+            self.request = request
+            self.type = type
+            self.session = session
+        }
+
+        init(_ inbound: CloudInboundCommand, body: [String: Any]?) {
+            sender = inbound.sender
+            sequence = inbound.sequence
+            request = CloudStatus.identifier(
+                CloudAppBridge.requestName(body?["request"])
+                    ?? CloudAppBridge.requestName(body?["request_id"]))
+            type = CloudStatus.identifier(body?["type"] as? String)
+            session = CloudStatus.identifier(body?["session"] as? String)
+        }
+    }
+    private struct RoutedCommand {
+        let result: CloudCommandResult
+        let layer: CloudRefusalLayer
+        let executed: Bool
+        var detail: [String: Any] = [:]
     }
 
     private let transport: any CloudTransporting
@@ -1258,6 +1323,15 @@ actor CloudAppBridge {
     private let refusalPublications: CloudRefusalPublicationQueue
     private let commandLedger: CloudCommandLedger?
     private let durableOutbound: CloudDurableOutboundComposition?
+    private let status: CloudStatus
+    /// Notices are published only for a status owner the composition supplied. Fixtures that pass
+    /// none still record into a private owner, and their `orch/` bytes stay exactly as given.
+    private let noticesEnabled: Bool
+    private let noticeIntervalMilliseconds: UInt64
+    private var noticeTask: Task<Void, Never>?
+    private var lastNoticeAt: UInt64?
+    /// The newest orchestrator snapshot, so a notice can be republished inside it (§11.2).
+    private var lastOrchestratorPayload: Data?
 
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
@@ -1292,8 +1366,13 @@ actor CloudAppBridge {
         commandResult: @escaping CommandResultObserver = { _ in },
         diagnostic: @escaping DiagnosticLogger = { _ in },
         refusalPublications: CloudRefusalPublicationQueue? = nil,
-        durableRuntime: CloudDurableRuntime? = nil
+        durableRuntime: CloudDurableRuntime? = nil,
+        status: CloudStatus? = nil,
+        noticeIntervalMilliseconds: UInt64 = 5_000
     ) {
+        self.status = status ?? CloudStatus()
+        noticesEnabled = status != nil
+        self.noticeIntervalMilliseconds = noticeIntervalMilliseconds
         self.transport = transport
         self.identity = identity
         self.sequencing = sequencing
@@ -1332,11 +1411,32 @@ actor CloudAppBridge {
         starting = true
         let transport = self.transport
         let refusalPublications = self.refusalPublications
-        await transport.setInboundRefusalHandler { [weak self, refusalPublications] refusal in
-            refusalPublications.enqueue { [weak self] in
+        let status = self.status
+        let diagnostic = self.diagnostic
+        await transport.setInboundRefusalHandler {
+            [weak self, refusalPublications, status, diagnostic] refusal in
+            let admitted = refusalPublications.enqueue { [weak self] in
                 await self?.consumeInboundRefusal(
                     refusal, lifecycleGeneration: ownedGeneration
                 )
+            }
+            guard !admitted else { return }
+            // The lane is full, so no answer will be published. Say so in the log and the notice
+            // from here: nothing else will ever see this refusal.
+            let command = refusal.command
+            status.recordLaneDropped()
+            status.recordRefusal(
+                sender: command.sender, sequence: command.sequence, request: nil, type: nil,
+                session: nil, layer: .macTransport, code: refusal.reason.refusalCode, reply: .notice)
+            diagnostic("cloud: " + Self.laneDropLine(refusal))
+        }
+        await transport.setInboundDropHandler { [status] drop in status.recordDrop(drop) }
+        await transport.setConnectionObserver { [status] event in status.record(event) }
+        status.setKeyID(identity.keyID)
+        if noticesEnabled {
+            status.enableFileWriting()
+            status.setNoticeObserver { [weak self] in
+                Task { await self?.noticeRequested(lifecycleGeneration: ownedGeneration) }
             }
         }
         let connect = Task {
@@ -1391,6 +1491,9 @@ actor CloudAppBridge {
                 connectTask = nil
                 starting = false
                 await transport.setInboundRefusalHandler(nil)
+                await transport.setInboundDropHandler(nil)
+                await transport.setConnectionObserver(nil)
+                if noticesEnabled { status.setNoticeObserver(nil) }
             }
             throw error
         }
@@ -1403,6 +1506,11 @@ actor CloudAppBridge {
                 || !lifecycleRefreshTasks.isEmpty || !publicationTasks.isEmpty
         else { return }
         await transport.setInboundRefusalHandler(nil)
+        await transport.setInboundDropHandler(nil)
+        await transport.setConnectionObserver(nil)
+        if noticesEnabled { status.setNoticeObserver(nil) }
+        noticeTask?.cancel()
+        noticeTask = nil
         lifecycleGeneration &+= 1
         starting = false
         running = false
@@ -1571,13 +1679,105 @@ actor CloudAppBridge {
         _ payload: Data, lifecycleGeneration ownedGeneration: UInt64
     ) async throws {
         try requireActivePublication(lifecycleGeneration: ownedGeneration)
-        guard JSONSerialization.isValidJSONObject(
-            (try? JSONSerialization.jsonObject(with: payload)) as Any
-        ) else { throw CloudAppBridgeError.malformedOrchestrator }
+        guard let object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any],
+              JSONSerialization.isValidJSONObject(object)
+        else { throw CloudAppBridgeError.malformedOrchestrator }
+        guard noticesEnabled else {
+            try await publish(
+                payload, channel: "orch/" + Self.channelSegment(identity.machineID),
+                lifecycleGeneration: ownedGeneration
+            )
+            return
+        }
+        lastOrchestratorPayload = payload
+        try await publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+    }
+
+    /// The last orchestrator snapshot with the current `cloud_status` digest spliced in as one
+    /// more top-level key, or a status-only object when no snapshot has arrived yet (§11.2). The
+    /// snapshot's own bytes are kept: the digest is inserted before its closing brace rather than
+    /// re-serializing a document that can be a megabyte.
+    private func publishOrchestratorWithNotice(
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async throws {
+        status.clearNoticeRequest()
+        lastNoticeAt = nowMilliseconds()
+        let digest = try JSONSerialization.data(
+            withJSONObject: status.noticeDigest(), options: [.withoutEscapingSlashes])
+        let merged = Self.splice(cloudStatus: digest, into: lastOrchestratorPayload)
         try await publish(
-            payload, channel: "orch/" + Self.channelSegment(identity.machineID),
+            merged, channel: "orch/" + Self.channelSegment(identity.machineID),
             lifecycleGeneration: ownedGeneration
         )
+    }
+
+    static func splice(cloudStatus digest: Data, into payload: Data?) -> Data {
+        let key = Data(#""cloud_status":"#.utf8)
+        guard let payload,
+              let object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any],
+              object["cloud_status"] == nil,
+              let close = payload.lastIndex(where: { !Self.isJSONWhitespace($0) }),
+              payload[close] == UInt8(ascii: "}")
+        else {
+            if let payload,
+               var object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any],
+               let status = try? JSONSerialization.jsonObject(with: digest) {
+                object["cloud_status"] = status
+                if let bytes = try? JSONSerialization.data(
+                    withJSONObject: object, options: [.withoutEscapingSlashes]) {
+                    return bytes
+                }
+            }
+            return Data("{".utf8) + key + digest + Data("}".utf8)
+        }
+        var merged = Data(payload[payload.startIndex..<close])
+        if !object.isEmpty { merged.append(UInt8(ascii: ",")) }
+        merged.append(key)
+        merged.append(digest)
+        merged.append(payload[close...])
+        return merged
+    }
+
+    private static func isJSONWhitespace(_ byte: UInt8) -> Bool {
+        byte == 0x20 || byte == 0x0a || byte == 0x0d || byte == 0x09
+    }
+
+    /// Called at most once per announcement cycle (see `CloudStatus.setNoticeObserver`). Publishes
+    /// now when the last notice is older than the interval, otherwise once the interval has passed.
+    private func noticeRequested(lifecycleGeneration ownedGeneration: UInt64) {
+        guard noticesEnabled, running, lifecycleGeneration == ownedGeneration,
+              noticeTask == nil else { return }
+        let now = nowMilliseconds()
+        let elapsed = lastNoticeAt.map { now >= $0 ? now - $0 : 0 }
+        let wait = elapsed.map { $0 >= noticeIntervalMilliseconds ? 0 : noticeIntervalMilliseconds - $0 } ?? 0
+        noticeTask = Task { [weak self] in
+            if wait > 0 {
+                do { try await Task.sleep(nanoseconds: wait * 1_000_000) } catch { return }
+            }
+            await self?.publishNotice(lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func publishNotice(lifecycleGeneration ownedGeneration: UInt64) async {
+        noticeTask = nil
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        do {
+            try await runPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+            }
+        } catch {
+            diagnostic("cloud: notice publication failed")
+        }
+    }
+
+    private static func laneDropLine(_ refusal: CloudInboundAdmissionRefusal) -> String {
+        CloudRefusalLog.line(
+            layer: .macTransport, code: refusal.reason.refusalCode,
+            sender: refusal.command.sender, sequence: refusal.command.sequence,
+            request: nil, type: nil, session: nil, status: refusal.reason.refusalStatus,
+            reply: "notice", extras: [("detail.reason", refusal.reason.rawValue),
+                                      ("lane", "dropped_full")])
     }
 
     static func channelSegment(_ value: String) -> String {
@@ -1616,7 +1816,8 @@ actor CloudAppBridge {
 
     private func publish(
         _ plaintext: Data, channel: String, lifecycleGeneration ownedGeneration: UInt64,
-        readTraceID: String? = nil, scheduledAt: UInt64? = nil
+        readTraceID: String? = nil, scheduledAt: UInt64? = nil,
+        replyFor reference: CommandReference? = nil
     ) async throws {
         try requireActivePublication(lifecycleGeneration: ownedGeneration)
         var stage = "task_wait"
@@ -1647,10 +1848,14 @@ actor CloudAppBridge {
                 } else {
                     stageObserver = nil
                 }
-                try await durableOutbound.enqueue(
+                let spoolSequence = try await durableOutbound.enqueue(
                     plaintext, channel: channel,
                     logicalID: readTraceID ?? UUID().uuidString.lowercased(),
                     observe: stageObserver)
+                if let reference {
+                    status.recordReplySealed(sender: reference.sender, sequence: reference.sequence,
+                                             spoolSequence: spoolSequence)
+                }
                 trace("complete")
                 return
             }
@@ -1737,6 +1942,14 @@ actor CloudAppBridge {
         lifecycleGeneration ownedGeneration: UInt64
     ) async {
         guard running, lifecycleGeneration == ownedGeneration else { return }
+        switch receipt.kind {
+        case .delivered:
+            status.recordReplyReceipt(spoolSequence: receipt.sequence, delivered: true)
+        case .peerRejected:
+            status.recordReplyReceipt(spoolSequence: receipt.sequence, delivered: false)
+        case .viewerOffline:
+            break
+        }
         do { try await durableOutbound.settle(receipt) }
         catch { diagnostic("cloud: correlated outbound receipt could not settle durably") }
     }
@@ -1744,37 +1957,64 @@ actor CloudAppBridge {
     private func consume(
         _ inbound: CloudInboundCommand, lifecycleGeneration ownedGeneration: UInt64
     ) async {
-        guard running, lifecycleGeneration == ownedGeneration else { return }
-        let wantedChannel = "ctl/" + Self.channelSegment(identity.machineID)
-        guard inbound.channel == wantedChannel else {
-            commandResult(CloudCommandResult(status: 409, code: "wrong_machine"))
-            return
-        }
         // Parsed before the write gate rather than after it, because the gate is not the same
         // question for a read: `Config.shared.remoteWrite` is "may a remote device type into a
         // session on this Mac", and a transcript read types into nothing. Everything that is not
         // a read — an unparseable body included — meets that gate exactly where it always did.
         let parsed = (try? JSONSerialization.jsonObject(with: inbound.plaintext)) as? [String: Any]
         let requestedType = parsed?["type"] as? String
+        var reference = CommandReference(inbound, body: parsed)
+        guard running, lifecycleGeneration == ownedGeneration else {
+            diagnostic("cloud: " + CloudRefusalLog.line(
+                layer: .macPreflight, code: "bridge_stopped", sender: inbound.sender,
+                sequence: inbound.sequence, request: reference.request, type: reference.type,
+                session: reference.session, status: nil, reply: "silent:bridge_stopped"))
+            return
+        }
+        status.recordInboundAccepted()
+        let wantedChannel = "ctl/" + Self.channelSegment(identity.machineID)
+        guard inbound.channel == wantedChannel else {
+            // The viewer listens on the channel it addressed, which is not one this Mac publishes;
+            // an answer on this Mac's own channel would be read by nobody. The notice is the reply.
+            await refuse(
+                reference, layer: .macPreflight, status: 409, code: "wrong_machine",
+                message: "This Cloud request addresses another Mac.", replyTo: nil,
+                viaLane: false, lifecycleGeneration: ownedGeneration)
+            return
+        }
+        if requestedType == "cloud.status" {
+            await serveCloudStatus(parsed ?? [:], inbound: inbound, reference: reference,
+                                   lifecycleGeneration: ownedGeneration)
+            return
+        }
         if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
             await serveRead(requestedType, body: parsed, inbound: inbound,
                             lifecycleGeneration: ownedGeneration)
             return
         }
         // Registering this already-paired browser as a notification destination is read-level on
-        // the direct route. It must not inherit the separate switch for typing into a session.
-        let readLevelCommand = requestedType == "push-subscribe"
-            || requestedType == "push-unsubscribe" || requestedType == "push-test"
+        // the direct route, and so is handing over a diagnostic report. Neither may inherit the
+        // separate switch for typing into a session.
+        let readLevelCommand = Self.readLevelCommandTypes.contains(requestedType ?? "")
+        status.recordCommand(
+            sender: reference.sender, sequence: reference.sequence, request: reference.request,
+            type: reference.type, session: reference.session)
+        func malformed() async {
+            await enqueueCommandRefusal(
+                reference, body: parsed, type: requestedType, commandClass: inbound.commandClass,
+                status: 400, code: "malformed_command", message: "This Cloud command is malformed.",
+                lifecycleGeneration: ownedGeneration)
+        }
         guard readLevelCommand || allowCloudCommands() else {
-            enqueueCommandRefusal(
-                body: parsed, type: requestedType, commandClass: inbound.commandClass,
+            await enqueueCommandRefusal(
+                reference, body: parsed, type: requestedType, commandClass: inbound.commandClass,
                 status: 403, code: "cloud_commands_disabled",
                 message: "Cloud commands are disabled on this Mac.",
                 lifecycleGeneration: ownedGeneration)
             return
         }
         guard let body = parsed, let type = requestedType else {
-            commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+            await malformed()
             return
         }
 
@@ -1792,28 +2032,39 @@ actor CloudAppBridge {
                   let session = body["session"] as? String, !session.isEmpty,
                   let text = body["text"] as? String, let images = body["images"] as? [String]
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .send(session: session, text: text, images: images)
             if sendKeys.contains("request") {
                 guard let request = Self.requestName(body["request"]) else {
-                    commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                    await malformed()
                     return
                 }
                 commandReply = (session, "action:" + request)
             }
         case "answer", "key":
+            // `request` is optional (§11.4): an older page sends none, and a newer one names the
+            // channel an answer or a refusal can reach it on.
             let allowedKeys: Set<String> = type == "answer"
                 ? ["type", "session", "answer"] : ["type", "session", "key"]
-            guard inbound.commandClass == .ctl, Set(body.keys) == allowedKeys,
+            let keys = Set(body.keys)
+            guard inbound.commandClass == .ctl,
+                  keys == allowedKeys || keys == allowedKeys.union(["request"]),
                   let session = body["session"] as? String, !session.isEmpty,
                   let key = body[type == "answer" ? "answer" : "key"] as? String
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .answer(session: session, key: key)
+            if keys.contains("request") {
+                guard let request = Self.requestName(body["request"]) else {
+                    await malformed()
+                    return
+                }
+                commandReply = (session, "action:" + request)
+            }
         case "start":
             guard inbound.commandClass == .ctl,
                   Set(body.keys) == ["type", "session", "request", "place", "assistant", "model"],
@@ -1824,7 +2075,7 @@ actor CloudAppBridge {
                   let assistant = body["assistant"] as? String,
                   let model = body["model"] as? String
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .start(place: place, assistant: assistant, model: model)
@@ -1839,7 +2090,7 @@ actor CloudAppBridge {
                   let past = body["past"] as? String, !past.isEmpty,
                   let assistant = body["assistant"] as? String
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .resume(place: place, session: past, assistant: assistant)
@@ -1853,7 +2104,7 @@ actor CloudAppBridge {
                   let acceptLoss = body["accept_loss"] as? Bool,
                   let closeability = body["expected_closeability_version"] as? String
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .end(session: session, acceptLoss: acceptLoss,
@@ -1867,7 +2118,7 @@ actor CloudAppBridge {
                   let session = body["session"] as? String, !session.isEmpty,
                   let request = Self.requestName(body["request"])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .focus(session: session)
@@ -1881,8 +2132,8 @@ actor CloudAppBridge {
                   let shell = body["shell"] as? String, !shell.isEmpty,
                   let request = Self.requestName(body["request"])
             else {
-                enqueueCommandRefusal(
-                    body: body, type: type, commandClass: inbound.commandClass,
+                await enqueueCommandRefusal(
+                    reference, body: body, type: type, commandClass: inbound.commandClass,
                     status: 400, code: "malformed_command",
                     message: "The shell-kill command is malformed.",
                     lifecycleGeneration: ownedGeneration)
@@ -1900,7 +2151,7 @@ actor CloudAppBridge {
                   let data = try? JSONSerialization.data(withJSONObject: object),
                   data.count <= 64 * 1024
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .board(body: data)
@@ -1915,7 +2166,7 @@ actor CloudAppBridge {
                   let data = try? JSONSerialization.data(withJSONObject: object),
                   data.count <= 256 * 1024
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .timeline(body: data)
@@ -1933,14 +2184,14 @@ actor CloudAppBridge {
                   let data = try? JSONSerialization.data(
                     withJSONObject: schedule, options: [.withoutEscapingSlashes])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             if type == "schedule-create" {
                 command = .scheduleCreate(body: data)
             } else {
                 guard let id = body["id"] as? String, !id.isEmpty else {
-                    commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                    await malformed()
                     return
                 }
                 command = .scheduleUpdate(id: id, body: data)
@@ -1954,7 +2205,7 @@ actor CloudAppBridge {
                   let request = Self.requestName(body["request"]),
                   let id = body["id"] as? String, !id.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = type == "schedule-delete" ? .scheduleDelete(id: id) : .scheduleRun(id: id)
@@ -1972,14 +2223,14 @@ actor CloudAppBridge {
                   let data = try? JSONSerialization.data(
                     withJSONObject: snippet, options: [.withoutEscapingSlashes])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             if type == "snippet-create" {
                 command = .snippetCreate(body: data)
             } else {
                 guard let id = body["id"] as? String, !id.isEmpty else {
-                    commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                    await malformed()
                     return
                 }
                 command = .snippetUpdate(id: id, body: data)
@@ -1993,7 +2244,7 @@ actor CloudAppBridge {
                   let request = Self.requestName(body["request"]),
                   let id = body["id"] as? String, !id.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .snippetDelete(id: id)
@@ -2009,7 +2260,7 @@ actor CloudAppBridge {
                   let data = try? JSONSerialization.data(
                     withJSONObject: ordering, options: [.withoutEscapingSlashes])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .snippetOrder(body: data)
@@ -2024,7 +2275,7 @@ actor CloudAppBridge {
                   let scheduleID = body["schedule_id"] as? String,
                   body["replace_hook_id"] is NSNull || body["replace_hook_id"] is String
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .scheduleWebhookBind(
@@ -2042,7 +2293,7 @@ actor CloudAppBridge {
                   let data = try? JSONSerialization.data(
                     withJSONObject: subscription, options: [.withoutEscapingSlashes])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .pushSubscribe(body: data)
@@ -2055,7 +2306,7 @@ actor CloudAppBridge {
                   let request = Self.requestName(body["request"]),
                   let id = body["id"] as? String, !id.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .pushUnsubscribe(id: id)
@@ -2068,7 +2319,7 @@ actor CloudAppBridge {
                   let request = Self.requestName(body["request"]),
                   let target = body["target"] as? String
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .pushTest(session: target)
@@ -2082,46 +2333,96 @@ actor CloudAppBridge {
                   let audio = body["audio"] as? String, !audio.isEmpty,
                   let rate = body["rate"] as? Int, rate == Int(RemoteServer.voiceRate)
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_command"))
+                await malformed()
                 return
             }
             command = .voice(audio: audio, rate: rate)
+            commandReply = (session, "action:" + request)
+        case "diagnostics.report":
+            // §11.5: the same store and refusal words as `POST /v1/diagnostics/report`. A `report`
+            // that is not an object still reaches that store, which names it `report_not_json`.
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "report"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let report = body["report"],
+                  let data = try? JSONSerialization.data(
+                    withJSONObject: report, options: [.fragmentsAllowed, .withoutEscapingSlashes])
+            else {
+                await malformed()
+                return
+            }
+            command = .diagnosticsReport(body: data)
             commandReply = (session, "action:" + request)
         case "dispatch":
             // cloud-client.js sends only `{task}`. The local broker protocol requires a materialized
             // task.json plus task_id and secret, and no pinned wire shape says how those are carried
             // or where the file is authorized to be written. Refuse instead of inventing one.
-            commandResult(CloudCommandResult(status: 409, code: "cloud_dispatch_unpinned"))
+            await refuse(
+                reference, layer: .macPreflight, status: 409, code: "cloud_dispatch_unpinned",
+                message: "Cloud dispatch has no pinned wire shape on this Mac.",
+                replyTo: Self.commandRefusalReply(
+                    body: body, type: type, commandClass: inbound.commandClass),
+                viaLane: false, lifecycleGeneration: ownedGeneration)
             return
         default:
-            commandResult(CloudCommandResult(status: 400, code: "unknown_command"))
+            await refuse(
+                reference, layer: .macPreflight, status: 400, code: "unknown_command",
+                message: "This Mac does not know that Cloud command.",
+                replyTo: Self.commandRefusalReply(
+                    body: body, type: type, commandClass: inbound.commandClass),
+                viaLane: false, lifecycleGeneration: ownedGeneration)
             return
         }
+        if let reply = commandReply {
+            reference.request = CloudStatus.identifier(String(reply.name.dropFirst("action:".count)))
+                ?? reference.request
+        }
 
-        let result: CloudCommandResult
+        let routed: RoutedCommand
         if let commandLedger {
-            result = await routeDurably(
+            routed = await routeDurably(
                 command, body: body, inbound: inbound, ledger: commandLedger,
                 requiresWriteGate: !readLevelCommand)
         } else {
             // Fixture-only compatibility. `CloudBridgeLifecycle.Services.production()` always
             // supplies a durable runtime, so no production effect reaches this branch.
-            result = await commandRouter.route(
-                command, sender: inbound.sender,
-                idempotencyKey: inbound.idempotencyKey)
+            routed = RoutedCommand(
+                result: await commandRouter.route(
+                    command, sender: inbound.sender,
+                    idempotencyKey: inbound.idempotencyKey),
+                layer: .macRoute, executed: true)
         }
+        let result = routed.result
         commandResult(result)
-        if let reply = commandReply {
-            await publishJSONAnswer(name: reply.name, session: reply.session,
-                                    status: result.status, body: result.body,
-                                    lifecycleGeneration: ownedGeneration)
+        let succeeded = (200..<300).contains(result.status)
+        let code = result.code ?? (succeeded ? "succeeded" : "command_failed")
+        if routed.executed {
+            status.recordExecuted(sender: inbound.sender, sequence: inbound.sequence,
+                                  outcome: succeeded ? "succeeded" : code)
+        }
+        guard let reply = commandReply else {
+            if !succeeded {
+                noteRefusal(reference, layer: routed.layer, code: code, status: result.status,
+                            reply: .notice, detail: routed.detail)
+            }
+            return
+        }
+        let delivered = await publishJSONAnswer(
+            name: reply.name, session: reply.session, status: result.status, body: result.body,
+            layer: routed.layer, reference: reference, detail: routed.detail,
+            lifecycleGeneration: ownedGeneration)
+        if !succeeded {
+            noteRefusal(reference, layer: routed.layer, code: code, status: result.status,
+                        reply: delivered ? .published : .notice, detail: routed.detail)
         }
     }
 
     private func routeDurably(
         _ command: CloudHeadlessCommand, body: [String: Any], inbound: CloudInboundCommand,
         ledger: CloudCommandLedger, requiresWriteGate: Bool
-    ) async -> CloudCommandResult {
+    ) async -> RoutedCommand {
         let digest = Data(SHA256.hash(data: inbound.plaintext))
         let logicalRequestID = (body["request_id"] as? String)
             ?? (body["request"] as? String) ?? inbound.idempotencyKey
@@ -2134,29 +2435,34 @@ actor CloudAppBridge {
             requestSHA256: digest, rawReplyKey: Data(), replyKeyID: identity.keyID,
             recipientDeviceID: inbound.sender, deadlineAt: deadline,
             effectNotAfterContinuous: effectLimit.overflow ? .max : effectLimit.partialValue)
+        var effectAuthority: CloudCommandEffectAuthorization?
         do {
             let reservationAuthority = await currentCommandEffectAuthority(
                 inbound.sender, requiresWriteGate)
             switch try await ledger.reserve(request, epochState: reservationAuthority.epochState) {
             case .cached(let outcome):
-                return CloudCommandResult(
-                    status: outcome.status,
-                    code: outcome.code == .succeeded ? nil : outcome.code.rawValue,
-                    body: outcome.payload ?? Data())
+                let code = outcome.code == .succeeded ? nil : outcome.code.rawValue
+                return RoutedCommand(
+                    result: CloudCommandResult(
+                        status: outcome.status, code: Self.routeCode(outcome.payload) ?? code,
+                        body: outcome.payload ?? Data()),
+                    layer: .macRoute, executed: false)
             case .reserved:
                 break
             }
             // The durable reserve may suspend on disk. Re-read every revocable authority at the
             // point of no return instead of reusing admission-time facts.
-            let effectAuthority = await currentCommandEffectAuthority(
-                inbound.sender, requiresWriteGate)
+            let authority = await currentCommandEffectAuthority(inbound.sender, requiresWriteGate)
+            effectAuthority = authority
             try await ledger.beginEffect(
-                request, epochState: effectAuthority.epochState,
-                latestRosterAndGateAllow: effectAuthority.permitsEffect)
+                request, epochState: authority.epochState,
+                latestRosterAndGateAllow: authority.permitsEffect)
         } catch let error as CloudCommandLedgerError {
-            return Self.ledgerRefusal(error)
+            return Self.ledgerRefusal(error, authority: effectAuthority)
         } catch {
-            return Self.durabilityFailure(code: "command_reservation_not_durable")
+            return RoutedCommand(
+                result: Self.durabilityFailure(code: "command_reservation_not_durable"),
+                layer: .macLedger, executed: false)
         }
 
         let result = await commandRouter.route(
@@ -2166,12 +2472,21 @@ actor CloudAppBridge {
             status: result.status, payload: result.body)
         do {
             try await ledger.complete(request, outcome: outcome)
-            return result
+            return RoutedCommand(result: result, layer: .macRoute, executed: true)
         } catch {
             // The effect crossed its point of no return but its outcome did not. Never publish
             // the undurable result; a duplicate observes `outcomeUnknown` after restart.
-            return Self.durabilityFailure(code: "command_outcome_unknown")
+            return RoutedCommand(
+                result: Self.durabilityFailure(code: "command_outcome_unknown"),
+                layer: .macLedger, executed: true)
         }
+    }
+
+    private static func routeCode(_ payload: Data?) -> String? {
+        guard let payload,
+              let object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any]
+        else { return nil }
+        return (object["error"] as? [String: Any])?["code"] as? String
     }
 
     private static func normalizedOutcomeCode(status: Int) -> CloudCommandOutcomeCode {
@@ -2184,28 +2499,71 @@ actor CloudAppBridge {
         }
     }
 
-    private static func ledgerRefusal(_ error: CloudCommandLedgerError) -> CloudCommandResult {
+    /// One ledger refusal with its own code and words (L1). `gateUnavailable` is told apart with
+    /// the same effect-time reading that refused it: an unreadable roster, a sender that is not in
+    /// the roster, and remote writes switched off are three different things to do about it.
+    private static func ledgerRefusal(
+        _ error: CloudCommandLedgerError, authority: CloudCommandEffectAuthorization?
+    ) -> RoutedCommand {
+        var detail: [String: Any] = [:]
+        let refused: CloudCommandResult
         switch error {
-        case .idempotencyCapacity: return durabilityFailure(code: "command_ledger_capacity", status: 429)
-        case .idempotencyConflict: return durabilityFailure(code: "command_idempotency_conflict", status: 409)
-        case .outcomeUnknown: return durabilityFailure(code: "command_outcome_unknown")
-        case .deadlineExpired: return durabilityFailure(code: "command_deadline_expired", status: 408)
-        case .epochUncertain: return durabilityFailure(code: "command_clock_uncertain")
-        case .gateUnavailable: return durabilityFailure(code: "command_gate_unavailable")
-        case .reservationReleased: return durabilityFailure(code: "command_reservation_released", status: 429)
+        case .idempotencyCapacity:
+            refused = durabilityFailure(code: "command_ledger_capacity", status: 429)
+        case .idempotencyConflict:
+            refused = durabilityFailure(code: "command_idempotency_conflict", status: 409)
+        case .outcomeUnknown:
+            refused = durabilityFailure(code: "command_outcome_unknown")
+        case .deadlineExpired:
+            refused = durabilityFailure(code: "command_deadline_expired", status: 408)
+        case .epochUncertain:
+            if let reason = authority?.epochReason { detail["reason"] = reason }
+            if let clears = authority?.epochClearsInMilliseconds { detail["clears_in_ms"] = clears }
+            refused = durabilityFailure(code: "command_clock_uncertain", detail: detail)
+        case .gateUnavailable:
+            if authority?.rosterReadable == false {
+                refused = durabilityFailure(code: "command_roster_unreadable")
+            } else if authority?.rosterAllowsSender == false {
+                refused = durabilityFailure(code: "unknown_sender", status: 403)
+            } else if authority?.writeGateAllows == false {
+                refused = durabilityFailure(code: "command_writes_disabled", status: 403)
+            } else {
+                refused = durabilityFailure(code: "command_gate_unavailable")
+            }
+        case .reservationReleased:
+            refused = durabilityFailure(code: "command_reservation_released", status: 429)
         case .durabilityUnavailable, .invalidTransition, .corrupt, .notFound:
-            return durabilityFailure(code: "command_ledger_unavailable")
+            refused = durabilityFailure(code: "command_ledger_unavailable")
         }
+        return RoutedCommand(result: refused, layer: .macLedger, executed: false, detail: detail)
     }
 
+    private static let ledgerMessages: [String: String] = [
+        "command_ledger_capacity": "This Mac's command ledger is full; try again later.",
+        "command_idempotency_conflict": "That request id was already used for a different command.",
+        "command_outcome_unknown": "This Mac cannot tell whether that command ran.",
+        "command_deadline_expired": "That command arrived after its deadline.",
+        "command_clock_uncertain": "This Mac is still confirming the time; try again shortly.",
+        "command_roster_unreadable": "This Mac could not read its paired devices.",
+        "unknown_sender": "This Mac does not recognise this device.",
+        "command_writes_disabled": "Cloud commands are disabled on this Mac.",
+        "command_gate_unavailable": "This Mac could not confirm the command is allowed.",
+        "command_reservation_released": "That command was released before it ran; try again.",
+        "command_ledger_unavailable": "This Mac's command ledger is unavailable.",
+        "command_reservation_not_durable": "This Mac could not record that command durably.",
+    ]
+
     private static func durabilityFailure(
-        code: String, status: Int = 503
+        code: String, status: Int = 503, detail: [String: Any] = [:]
     ) -> CloudCommandResult {
-        let object: [String: Any] = [
-            "error": ["code": code, "message": "The command durability boundary is unavailable."],
+        var error: [String: Any] = [
+            "code": code,
+            "message": ledgerMessages[code] ?? "The command durability boundary is unavailable.",
         ]
+        let filtered = CloudErrorContract.detail(code: code, detail)
+        if !filtered.isEmpty { error["detail"] = filtered }
         let bytes = (try? JSONSerialization.data(
-            withJSONObject: object, options: [.withoutEscapingSlashes])) ?? Data()
+            withJSONObject: ["error": error], options: [.withoutEscapingSlashes])) ?? Data()
         return CloudCommandResult(status: status, code: code, body: bytes)
     }
 
@@ -2225,7 +2583,12 @@ actor CloudAppBridge {
         "project-worktree-lifecycle", "project-worktree-lifecycle-refresh",
     ]
 
-    private static func requestName(_ value: Any?) -> String? {
+    /// Commands a paired device may send with remote writes switched off.
+    static let readLevelCommandTypes: Set<String> = [
+        "push-subscribe", "push-unsubscribe", "push-test", "diagnostics.report",
+    ]
+
+    fileprivate static func requestName(_ value: Any?) -> String? {
         guard let value = value as? String, !value.isEmpty, value.count <= 128,
               value.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7f })
         else { return nil }
@@ -2238,7 +2601,17 @@ actor CloudAppBridge {
     private static func commandRefusalReply(
         body: [String: Any]?, type: String?, commandClass: CloudEnvelopeClass
     ) -> (session: String, name: String)? {
-        guard commandClass == .ctl, let body, let type else { return nil }
+        guard let body, let type else { return nil }
+        if type == "dispatch" {
+            // A dispatch names no Session; with a request it is answered where every machine
+            // request is. Any `session` it carries must already be that channel.
+            guard let request = requestName(body["request"]) else { return nil }
+            if let session = body["session"], session as? String != machineReplySession {
+                return nil
+            }
+            return (machineReplySession, "action:" + request)
+        }
+        guard commandClass == .ctl else { return nil }
         if type == "schedule-webhook-bind-v1" {
             guard let request = body["request_id"] as? String,
                   UUID(uuidString: request) != nil, request == request.lowercased()
@@ -2250,16 +2623,32 @@ actor CloudAppBridge {
               !session.isEmpty, session.count <= 256,
               session.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7f })
         else { return nil }
-        let sessionCommands: Set<String> = ["send", "end", "focus", "shell-kill"]
-        let machineCommands: Set<String> = [
-            "start", "resume", "board-command", "timeline-command",
-            "schedule-create", "schedule-update", "schedule-delete", "schedule-run",
-            "snippet-create", "snippet-update", "snippet-delete", "snippet-order",
-            "push-subscribe", "push-unsubscribe", "push-test", "voice",
-        ]
+        let sessionCommands: Set<String> = ["send", "answer", "key", "end", "focus", "shell-kill"]
         if sessionCommands.contains(type) { return (session, "action:" + request) }
-        guard machineCommands.contains(type), session == machineReplySession else { return nil }
+        // Every machine command, and any word this Mac does not know, is answered only on the one
+        // machine reply channel, so neither a malformed nor an unknown body can name a Session.
+        guard session == machineReplySession else { return nil }
         return (session, "action:" + request)
+    }
+
+    /// Where a refused read is answered: only a request-scoped read that names its request (P1).
+    /// A Session read without one — a transcript, an agent, a picture — is announced as a notice
+    /// instead, because a malformed body cannot be trusted to name the waiter it would settle.
+    private static func readRefusalReply(
+        type: String, body: [String: Any]
+    ) -> (session: String, name: String)? {
+        let requestReads: Set<String> = [
+            "document", "board", "timeline", "places", "project-worktrees",
+            "project-worktree-lifecycle", "project-worktree-lifecycle-refresh", "past-sessions",
+            "schedules", "snippets", "schedule", "push-key", "cloud.status",
+        ]
+        guard requestReads.contains(type),
+              let request = requestName(body["request"]),
+              let session = body["session"] as? String, !session.isEmpty, session.count <= 256,
+              session.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value != 0x7f }),
+              type == "document" || session == machineReplySession
+        else { return nil }
+        return (session, "read:" + request)
     }
 
     /// A cheap copy of the local route's lexical boundary, before any filesystem is touched.
@@ -2319,10 +2708,22 @@ actor CloudAppBridge {
         _ type: String, body: [String: Any], inbound: CloudInboundCommand,
         lifecycleGeneration ownedGeneration: UInt64, refusal: ReadRefusal? = nil
     ) async {
+        let reference = CommandReference(inbound, body: body)
+        // A read that cannot be parsed is still answered where its fields safely say it would
+        // have been. An ingress refusal keeps its own code: the body was never the problem.
+        func malformedRead() async {
+            await refuse(
+                reference, layer: refusal?.layer ?? .macPreflight,
+                status: refusal?.status ?? 400, code: refusal?.code ?? "malformed_read",
+                message: refusal?.message ?? "This Cloud read is malformed.",
+                detail: refusal?.detail ?? [:],
+                replyTo: Self.readRefusalReply(type: type, body: body),
+                viaLane: refusal == nil, lifecycleGeneration: ownedGeneration)
+        }
         // A read rides the command channel and therefore its class, which is what the relay bills
         // and what `CloudEnvelope` pins. `dispatch` is a command class and never a read.
         guard inbound.commandClass == .ctl else {
-            commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+            await malformedRead()
             return
         }
         let read: CloudHeadlessRead
@@ -2334,7 +2735,7 @@ actor CloudAppBridge {
                   let session = body["session"] as? String, !session.isEmpty,
                   let limit = body["limit"] as? Int, (1...1000).contains(limit)
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             let priority: CloudTranscriptPriority
@@ -2346,7 +2747,7 @@ actor CloudAppBridge {
                 // agents learned to send `background` in the same release that added this field.
                 priority = .foreground
             } else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .transcript(session: session, limit: limit, priority: priority)
@@ -2356,7 +2757,7 @@ actor CloudAppBridge {
                   let parts = body["parts"] as? String,
                   parts == "full" || parts == "summary"
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .info(session: session, parts: parts)
@@ -2369,7 +2770,7 @@ actor CloudAppBridge {
                   let agent = body["agent"] as? String, !agent.isEmpty,
                   let limit = body["limit"] as? Int, (1...1000).contains(limit)
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .agent(session: session, agent: agent, limit: limit)
@@ -2383,7 +2784,7 @@ actor CloudAppBridge {
                   let shell = body["shell"] as? String, !shell.isEmpty,
                   let bytes = body["bytes"] as? Int, ((1 << 10)...(1 << 20)).contains(bytes)
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .shell(session: session, shell: shell, bytes: bytes)
@@ -2394,7 +2795,7 @@ actor CloudAppBridge {
             guard Set(body.keys) == ["type", "session"],
                   let session = body["session"] as? String, !session.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .skills(session: session)
@@ -2402,7 +2803,7 @@ actor CloudAppBridge {
             guard Set(body.keys) == ["type", "session"],
                   let session = body["session"] as? String, !session.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .git(session: session)
@@ -2410,7 +2811,7 @@ actor CloudAppBridge {
             guard Set(body.keys) == ["type", "session"],
                   let session = body["session"] as? String, !session.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .screen(session: session)
@@ -2423,7 +2824,7 @@ actor CloudAppBridge {
                   let session = body["session"] as? String, !session.isEmpty,
                   let id = body["id"] as? String, !id.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .image(session: session, id: id)
@@ -2431,7 +2832,7 @@ actor CloudAppBridge {
             guard Set(body.keys) == ["type", "session"],
                   let session = body["session"] as? String, !session.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .documents(session: session)
@@ -2445,7 +2846,7 @@ actor CloudAppBridge {
                   (scope == "project" && task.isEmpty)
                     || (scope == "task" && OrchestratorDraft.isTaskID(task))
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .document(session: session, request: request, scope: scope,
@@ -2458,7 +2859,7 @@ actor CloudAppBridge {
                   let project = body["project"] as? String, project.count <= 200,
                   let item = body["item"] as? String, item.count <= 200
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .board(session: session, request: request, project: project, item: item)
@@ -2475,7 +2876,7 @@ actor CloudAppBridge {
                   let category = body["category"] as? String, category.count <= 32,
                   let upcoming = body["upcoming"] as? Bool
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .timeline(session: session, request: request, project: project, entry: entry,
@@ -2487,7 +2888,7 @@ actor CloudAppBridge {
                   session == Self.machineReplySession,
                   let request = Self.requestName(body["request"])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .places(session: session, request: request)
@@ -2498,7 +2899,7 @@ actor CloudAppBridge {
                   let request = Self.requestName(body["request"]),
                   let project = body["project"] as? String, !project.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .projectWorktrees(session: session, request: request, project: project)
@@ -2511,7 +2912,7 @@ actor CloudAppBridge {
                   let request = Self.requestName(body["request"]),
                   let project = body["project"] as? String, !project.isEmpty, project.count <= 200
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = type == "project-worktree-lifecycle"
@@ -2525,7 +2926,7 @@ actor CloudAppBridge {
                   let place = body["place"] as? String, !place.isEmpty,
                   let assistant = body["assistant"] as? String
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .pastSessions(session: session, request: request,
@@ -2536,7 +2937,7 @@ actor CloudAppBridge {
                   session == Self.machineReplySession,
                   let request = Self.requestName(body["request"])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .schedules(session: session, request: request)
@@ -2546,7 +2947,7 @@ actor CloudAppBridge {
                   session == Self.machineReplySession,
                   let request = Self.requestName(body["request"])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .snippets(session: session, request: request)
@@ -2557,7 +2958,7 @@ actor CloudAppBridge {
                   let request = Self.requestName(body["request"]),
                   let id = body["id"] as? String, !id.isEmpty
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .schedule(session: session, request: request, id: id)
@@ -2567,7 +2968,7 @@ actor CloudAppBridge {
                   session == Self.machineReplySession,
                   let request = Self.requestName(body["request"])
             else {
-                commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+                await malformedRead()
                 return
             }
             read = .pushKey(session: session, request: request)
@@ -2575,31 +2976,58 @@ actor CloudAppBridge {
             // `readTypes` admitted a word this switch does not know, which means the two lists
             // have come apart. Fail closed rather than reading it as whichever case sits last —
             // that is how a misspelled `info` would have become a transcript.
-            commandResult(CloudCommandResult(status: 400, code: "malformed_read"))
+            await malformedRead()
             return
         }
 
         if let refusal {
-            commandResult(CloudCommandResult(status: refusal.status, code: refusal.code))
-            await publishReadRefusal(
-                read, status: refusal.status, code: refusal.code, message: refusal.message,
-                lifecycleGeneration: ownedGeneration
-            )
+            await refuse(
+                reference, layer: refusal.layer, status: refusal.status, code: refusal.code,
+                message: refusal.message, detail: refusal.detail,
+                replyTo: (read.session, read.name), viaLane: false,
+                lifecycleGeneration: ownedGeneration)
         } else {
-            enqueueRead(read, sender: inbound.sender, lifecycleGeneration: ownedGeneration)
+            await enqueueRead(read, reference: reference, lifecycleGeneration: ownedGeneration)
         }
     }
 
+    /// `cloud.status` (§11.3): the whole snapshot, answered on the machine reply channel. It reads
+    /// memory this bridge already owns, so it skips the read lanes rather than waiting in one.
+    private func serveCloudStatus(
+        _ body: [String: Any], inbound: CloudInboundCommand, reference: CommandReference,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        guard inbound.commandClass == .ctl,
+              Set(body.keys) == ["type", "session", "request"],
+              let session = body["session"] as? String,
+              session == Self.machineReplySession,
+              let request = Self.requestName(body["request"])
+        else {
+            await refuse(
+                reference, layer: .macPreflight, status: 400, code: "malformed_read",
+                message: "This Cloud read is malformed.",
+                replyTo: Self.readRefusalReply(type: "cloud.status", body: body),
+                viaLane: true, lifecycleGeneration: ownedGeneration)
+            return
+        }
+        let payload: [String: Any] = [
+            "read": "read:" + request, "status": 200, "body": status.snapshot(),
+        ]
+        commandResult(CloudCommandResult(status: 200, code: nil))
+        _ = await publishPayload(payload, session: session, reference: nil,
+                                 lifecycleGeneration: ownedGeneration)
+    }
+
     private func enqueueRead(
-        _ read: CloudHeadlessRead, sender: String, lifecycleGeneration ownedGeneration: UInt64
-    ) {
+        _ read: CloudHeadlessRead, reference: CommandReference,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
         if case .projectWorktreeLifecycleRefresh = read {
             let limit = 4
             let depth = lifecycleRefreshTasks.count
             guard depth < limit else {
-                commandResult(CloudCommandResult(status: 429, code: "cloud_read_busy"))
-                enqueueReadRefusal(
-                    read, status: 429, code: "cloud_read_busy",
+                await enqueueReadRefusal(
+                    read, reference: reference, status: 429, code: "cloud_read_busy",
                     message: "That Cloud read lane is full; retry shortly.",
                     extra: ["lane": ReadLane.background.rawValue, "limit": limit,
                             "retry_after": 1], lifecycleGeneration: ownedGeneration
@@ -2610,7 +3038,7 @@ actor CloudAppBridge {
             let admittedAt = nowMilliseconds()
             lifecycleRefreshTasks[id] = Task { [weak self] in
                 guard let self else { return }
-                await self.performRead(read, sender: sender,
+                await self.performRead(read, reference: reference,
                                        lifecycleGeneration: ownedGeneration, admittedAt: admittedAt)
                 await self.finishLifecycleRefresh(id, lifecycleGeneration: ownedGeneration)
             }
@@ -2626,11 +3054,10 @@ actor CloudAppBridge {
             : backgroundReads.count + (backgroundReadActive ? 1 : 0)
         let limit = lane == .foreground ? 4 : 16
         guard depth < limit else {
-            commandResult(CloudCommandResult(status: 429, code: "cloud_read_busy"))
             diagnostic("cloud: read refused read=\(read.name) lane=\(lane.rawValue) "
                 + "depth=\(depth) limit=\(limit) code=cloud_read_busy")
-            enqueueReadRefusal(
-                read, status: 429, code: "cloud_read_busy",
+            await enqueueReadRefusal(
+                read, reference: reference, status: 429, code: "cloud_read_busy",
                 message: "That Cloud read lane is full; retry shortly.",
                 extra: ["lane": lane.rawValue, "limit": limit, "retry_after": 1],
                 lifecycleGeneration: ownedGeneration
@@ -2638,7 +3065,7 @@ actor CloudAppBridge {
             return
         }
         let pending = PendingRead(
-            read: read, sender: sender, lifecycleGeneration: ownedGeneration,
+            read: read, reference: reference, lifecycleGeneration: ownedGeneration,
             admittedAt: nowMilliseconds()
         )
         if lane == .foreground {
@@ -2665,45 +3092,17 @@ actor CloudAppBridge {
         lifecycleRefreshTasks[id] = nil
     }
 
+    /// `lane`, `limit` and `retry_after` stay top-level on this answer, where they always were
+    /// (§11.1); the browser copies them into its own `detail`.
     private func enqueueReadRefusal(
-        _ read: CloudHeadlessRead, status: Int, code: String, message: String,
-        extra: [String: Any] = [:], lifecycleGeneration ownedGeneration: UInt64
-    ) {
-        refusalPublications.enqueue { [weak self] in
-            await self?.publishReadRefusal(
-                read, status: status, code: code, message: message, extra: extra,
-                lifecycleGeneration: ownedGeneration
-            )
-        }
-    }
-
-    private func publishReadRefusal(
-        _ read: CloudHeadlessRead, status: Int, code: String, message: String,
-        extra: [String: Any] = [:], lifecycleGeneration ownedGeneration: UInt64
+        _ read: CloudHeadlessRead, reference: CommandReference, status httpStatus: Int,
+        code: String, message: String, extra: [String: Any] = [:],
+        lifecycleGeneration ownedGeneration: UInt64
     ) async {
-        var error: [String: Any] = ["code": code, "message": message]
-        extra.forEach { error[$0.key] = $0.value }
-        let payload: [String: Any] = [
-            "read": read.name, "status": status, "error": error,
-        ]
-        guard running, lifecycleGeneration == ownedGeneration,
-              let bytes = try? JSONSerialization.data(
-                  withJSONObject: payload, options: [.withoutEscapingSlashes]
-              )
-        else { return }
-        do {
-            try await runPublication { [weak self] in
-                guard let self else { throw CancellationError() }
-                try await self.publish(
-                    bytes, channel: transcriptChannel(read.session),
-                    lifecycleGeneration: ownedGeneration
-                )
-            }
-            diagnostic("cloud: read refusal delivered read=\(read.name) "
-                + "status=\(status) code=\(code)")
-        } catch {
-            commandResult(CloudCommandResult(status: 503, code: "read_answer_undeliverable"))
-        }
+        await refuse(
+            reference, layer: .macPreflight, status: httpStatus, code: code,
+            message: message, extra: extra, replyTo: (read.session, read.name),
+            viaLane: true, lifecycleGeneration: ownedGeneration)
     }
 
     private func drainReads(
@@ -2720,7 +3119,7 @@ actor CloudAppBridge {
             }
             guard let next else { break }
             await performRead(
-                next.read, sender: next.sender,
+                next.read, reference: next.reference,
                 lifecycleGeneration: next.lifecycleGeneration, admittedAt: next.admittedAt
             )
             if lane == .foreground { foregroundReadActive = false }
@@ -2731,9 +3130,10 @@ actor CloudAppBridge {
     }
 
     private func performRead(
-        _ read: CloudHeadlessRead, sender: String,
+        _ read: CloudHeadlessRead, reference: CommandReference,
         lifecycleGeneration ownedGeneration: UInt64, admittedAt: UInt64
     ) async {
+        let sender = reference.sender
         let traceID = String(UUID().uuidString.prefix(8)).lowercased()
         let receivedAt = nowMilliseconds()
         let safeSender = Self.channelSegment(sender)
@@ -2750,20 +3150,35 @@ actor CloudAppBridge {
             + "route_ms=\(Self.elapsedMilliseconds(from: receivedAt, to: routedAt)) "
             + "status=\(outcome.status) bytes=\(answer.body.count)")
         commandResult(CloudCommandResult(status: outcome.status, code: outcome.code))
-        guard running, lifecycleGeneration == ownedGeneration else { return }
+        let failed = !(200..<300).contains(outcome.status)
+        guard running, lifecycleGeneration == ownedGeneration else {
+            if failed {
+                diagnostic("cloud: " + CloudRefusalLog.line(
+                    layer: .macRoute, code: outcome.code ?? "read_failed", sender: sender,
+                    sequence: reference.sequence, request: reference.request,
+                    type: reference.type, session: reference.session, status: outcome.status,
+                    reply: "silent:bridge_stopped"))
+            }
+            return
+        }
         var payload: [String: Any] = ["read": read.name, "status": outcome.status]
         if let body = outcome.body {
             payload["body"] = body
         } else {
             // Whatever went wrong, the viewer gets a code it can branch on rather than silence.
-            payload["error"] = outcome.error
+            let code = outcome.code ?? "read_failed"
+            payload["error"] = CloudErrorContract.error(
+                outcome.error ?? [:], code: code, layer: .macRoute, sequence: reference.sequence)
         }
         guard JSONSerialization.isValidJSONObject(payload),
               let bytes = try? JSONSerialization.data(
-                  withJSONObject: payload, options: [.withoutEscapingSlashes]
-              )
+                  withJSONObject: payload, options: [.withoutEscapingSlashes])
         else {
-            commandResult(CloudCommandResult(status: 500, code: "unserializable_read"))
+            await refuse(
+                reference, layer: .macRoute, status: 500, code: "unserializable_read",
+                message: "This read's answer could not be serialized.",
+                replyTo: (read.session, read.name), viaLane: false,
+                lifecycleGeneration: ownedGeneration)
             return
         }
         let channel = transcriptChannel(read.session)
@@ -2781,15 +3196,22 @@ actor CloudAppBridge {
                 + "publish_ms=\(Self.elapsedMilliseconds(from: publishStartedAt, to: deliveredAt)) "
                 + "total_ms=\(Self.elapsedMilliseconds(from: receivedAt, to: deliveredAt)) "
                 + "status=\(outcome.status)")
+            if failed {
+                noteRefusal(reference, layer: .macRoute, code: outcome.code ?? "read_failed",
+                            status: outcome.status, reply: .published)
+            }
         } catch {
             // The answer's own channel is the only way back to the asker, so a publication that
-            // cannot leave has nothing to report with. It is recorded here and the viewer's read
-            // ages out at its end, which is the honest end state for a bridge that is going down.
+            // cannot leave is recorded and announced in the notice instead.
             commandResult(CloudCommandResult(status: 503, code: "read_answer_undeliverable"))
             let failedAt = nowMilliseconds()
             diagnostic("cloud: read delivery_failed id=\(traceID) read=\(read.name) "
                 + "publish_ms=\(Self.elapsedMilliseconds(from: publishStartedAt, to: failedAt)) "
                 + "total_ms=\(Self.elapsedMilliseconds(from: receivedAt, to: failedAt))")
+            status.recordUndeliverable(sender: sender, sequence: reference.sequence,
+                                       reason: "read_answer_undeliverable")
+            noteRefusal(reference, layer: .macReply, code: "read_answer_undeliverable",
+                        status: 503, reply: .notice)
         }
     }
 
@@ -2798,36 +3220,159 @@ actor CloudAppBridge {
         return end - start
     }
 
+    /// Publishes a command's answer. A non-2xx answer's `error` gains `layer`, `seq` and a
+    /// whitelisted `detail` (§11.1). `false` means it could not be handed to the outbound owner,
+    /// in which case the refusal is recorded as undeliverable and announced as a notice.
+    @discardableResult
     private func publishJSONAnswer(
-        name: String, session: String, status: Int, body: Data,
+        name: String, session: String, status httpStatus: Int, body: Data,
+        layer: CloudRefusalLayer, reference: CommandReference, detail: [String: Any] = [:],
         lifecycleGeneration ownedGeneration: UInt64
-    ) async {
+    ) async -> Bool {
         let parsed = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
-        var payload: [String: Any] = ["read": name, "status": status]
-        if (200..<300).contains(status), let parsed {
+        var payload: [String: Any] = ["read": name, "status": httpStatus]
+        if (200..<300).contains(httpStatus), let parsed {
             payload["body"] = parsed
         } else {
-            payload["error"] = (parsed?["error"] as? [String: Any])
+            let base = (parsed?["error"] as? [String: Any])
                 ?? ["code": "command_failed", "message": "This command could not be completed."]
+            let code = base["code"] as? String ?? "command_failed"
+            var candidate = detail
+            if let routeDetail = base["detail"] as? [String: Any] {
+                candidate.merge(routeDetail) { current, _ in current }
+            }
+            var error = base
+            error.removeValue(forKey: "detail")
+            payload["error"] = CloudErrorContract.error(
+                error, code: code, layer: layer, sequence: reference.sequence, detail: candidate)
         }
+        let delivered = await publishPayload(
+            payload, session: session, reference: reference, lifecycleGeneration: ownedGeneration)
+        if !delivered {
+            commandResult(CloudCommandResult(status: 503, code: "command_answer_undeliverable"))
+            status.recordUndeliverable(sender: reference.sender, sequence: reference.sequence,
+                                       reason: "command_answer_undeliverable")
+            if (200..<300).contains(httpStatus) {
+                noteRefusal(reference, layer: .macReply, code: "command_answer_undeliverable",
+                            status: 503, reply: .notice)
+            }
+        }
+        return delivered
+    }
+
+    /// `true` once the payload is sealed into the outbound owner. That is not a relay receipt;
+    /// a later receipt for the same spool row marks the command `delivered`.
+    private func publishPayload(
+        _ payload: [String: Any], session: String, reference: CommandReference?,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async -> Bool {
         guard running, lifecycleGeneration == ownedGeneration,
               JSONSerialization.isValidJSONObject(payload),
               let bytes = try? JSONSerialization.data(
                 withJSONObject: payload, options: [.withoutEscapingSlashes])
-        else { return }
+        else { return false }
         do {
             try await runPublication { [weak self] in
                 guard let self else { throw CancellationError() }
                 try await self.publish(bytes, channel: transcriptChannel(session),
-                                       lifecycleGeneration: ownedGeneration)
+                                       lifecycleGeneration: ownedGeneration,
+                                       replyFor: reference)
             }
+            return true
         } catch {
-            commandResult(CloudCommandResult(status: 503, code: "command_answer_undeliverable"))
+            return false
         }
     }
 
+    /// A preflight command refusal: answered through the bounded refusal lane on the action channel
+    /// its identity safely names, or announced as a notice when it names none.
+    private func enqueueCommandRefusal(
+        _ reference: CommandReference, body: [String: Any]?, type: String?,
+        commandClass: CloudEnvelopeClass, status httpStatus: Int, code: String, message: String,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        await refuse(
+            reference, layer: .macPreflight, status: httpStatus, code: code, message: message,
+            replyTo: Self.commandRefusalReply(body: body, type: type, commandClass: commandClass),
+            viaLane: true, lifecycleGeneration: ownedGeneration)
+    }
+
+    /// Every refusal the bridge decides goes through here: the observer result, the status
+    /// snapshot, one §2.3 log line, and either a published answer or a notice. Nothing that
+    /// reaches this function is silent.
+    private func refuse(
+        _ reference: CommandReference, layer: CloudRefusalLayer, status httpStatus: Int,
+        code: String, message: String, detail: [String: Any] = [:], extra: [String: Any] = [:],
+        replyTo: (session: String, name: String)?, viaLane: Bool,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        var base: [String: Any] = ["code": code, "message": message]
+        extra.forEach { base[$0.key] = $0.value }
+        let error = CloudErrorContract.error(
+            base, code: code, layer: layer, sequence: reference.sequence, detail: detail)
+        let bytes = (try? JSONSerialization.data(
+            withJSONObject: ["error": error], options: [.withoutEscapingSlashes])) ?? Data()
+        commandResult(CloudCommandResult(status: httpStatus, code: code, body: bytes))
+        guard let replyTo else {
+            noteRefusal(reference, layer: layer, code: code, status: httpStatus, reply: .notice,
+                        detail: detail)
+            return
+        }
+        let payload: [String: Any] = ["read": replyTo.name, "status": httpStatus, "error": error]
+        guard viaLane else {
+            await deliverRefusal(payload, to: replyTo.session, reference: reference, layer: layer,
+                                 code: code, status: httpStatus, detail: detail,
+                                 lifecycleGeneration: ownedGeneration)
+            return
+        }
+        let admitted = refusalPublications.enqueue { [weak self] in
+            await self?.deliverRefusal(
+                payload, to: replyTo.session, reference: reference, layer: layer, code: code,
+                status: httpStatus, detail: detail, lifecycleGeneration: ownedGeneration)
+        }
+        if !admitted {
+            status.recordLaneDropped()
+            noteRefusal(reference, layer: layer, code: code, status: httpStatus, reply: .notice,
+                        detail: detail, extras: [("lane", "dropped_full")])
+        }
+    }
+
+    private func deliverRefusal(
+        _ payload: [String: Any], to session: String, reference: CommandReference,
+        layer: CloudRefusalLayer, code: String, status httpStatus: Int, detail: [String: Any],
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        let delivered = await publishPayload(
+            payload, session: session, reference: reference, lifecycleGeneration: ownedGeneration)
+        if !delivered {
+            status.recordUndeliverable(sender: reference.sender, sequence: reference.sequence,
+                                       reason: "refusal_undeliverable")
+        }
+        noteRefusal(reference, layer: layer, code: code, status: httpStatus,
+                    reply: delivered ? .published : .notice, detail: detail)
+    }
+
+    /// Records one refusal in the status snapshot and writes its one log line.
+    private func noteRefusal(
+        _ reference: CommandReference, layer: CloudRefusalLayer, code: String, status httpStatus: Int,
+        reply: CloudStatus.Reply, detail: [String: Any] = [:], extras: [(String, String?)] = []
+    ) {
+        status.recordRefusal(
+            sender: reference.sender, sequence: reference.sequence, request: reference.request,
+            type: reference.type, session: reference.session, layer: layer, code: code, reply: reply)
+        var fields = extras
+        for key in detail.keys.sorted() {
+            fields.append(("detail." + key, detail[key].map { "\($0)" }))
+        }
+        diagnostic("cloud: " + CloudRefusalLog.line(
+            layer: layer, code: code, sender: reference.sender, sequence: reference.sequence,
+            request: reference.request, type: reference.type, session: reference.session,
+            status: httpStatus, reply: reply == .published ? "published" : "notice",
+            extras: fields))
+    }
+
     /// A command rejected before routing still has two observers: local diagnostics and the
-    /// request-scoped Cloud caller. Publish to the latter only when its action identity is safe.
+    /// request-scoped Cloud caller. It runs inside the refusal lane, so it publishes directly.
     private func consumeInboundRefusal(
         _ refusal: CloudInboundAdmissionRefusal,
         lifecycleGeneration ownedGeneration: UInt64
@@ -2836,93 +3381,59 @@ actor CloudAppBridge {
         let inbound = refusal.command
         let parsed = (try? JSONSerialization.jsonObject(with: inbound.plaintext)) as? [String: Any]
         let requestedType = parsed?["type"] as? String
-        diagnostic("cloud: command ingress refused reason=\(refusal.reason.rawValue) "
-            + "current_count=\(refusal.metrics.currentCount) "
-            + "current_charged_bytes=\(refusal.metrics.currentChargedBytes)")
+        let reference = CommandReference(inbound, body: parsed)
         let wantedChannel = "ctl/" + Self.channelSegment(identity.machineID)
         if inbound.channel != wantedChannel {
-            if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
-                await serveRead(
-                    requestedType, body: parsed, inbound: inbound,
-                    lifecycleGeneration: ownedGeneration,
-                    refusal: ReadRefusal(
-                        status: 409, code: "wrong_machine",
-                        message: "This Cloud request addresses another Mac."
-                    )
-                )
-            } else {
-                await publishCommandRefusal(
-                    body: parsed, type: requestedType, commandClass: inbound.commandClass,
-                    status: 409, code: "wrong_machine",
-                    message: "This Cloud request addresses another Mac.",
-                    lifecycleGeneration: ownedGeneration
-                )
-            }
+            await refuse(
+                reference, layer: .macPreflight, status: 409, code: "wrong_machine",
+                message: "This Cloud request addresses another Mac.", replyTo: nil,
+                viaLane: false, lifecycleGeneration: ownedGeneration)
             return
         }
-        if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
+        let limit = refusal.reason == .chargedByteCap
+            ? refusal.metrics.maximumChargedBytes : refusal.metrics.maximumCount
+        let busyDetail: [String: Any] = refusal.reason == .plaintextCap
+            ? [:] : ["lane": "ingress", "limit": limit, "retry_after": 1]
+        let code = refusal.reason.refusalCode
+        let message = refusal.reason == .plaintextCap
+            ? "This command is larger than this Mac accepts over Cloud."
+            : "This request was not accepted because Cloud ingress is full; try again shortly."
+        if let parsed, let requestedType,
+           Self.readTypes.contains(requestedType) || requestedType == "cloud.status" {
+            if requestedType == "cloud.status" {
+                await refuse(
+                    reference, layer: .macTransport, status: refusal.reason.refusalStatus,
+                    code: code, message: message, detail: busyDetail,
+                    replyTo: Self.readRefusalReply(type: requestedType, body: parsed),
+                    viaLane: false, lifecycleGeneration: ownedGeneration)
+                return
+            }
             await serveRead(
                 requestedType, body: parsed, inbound: inbound,
                 lifecycleGeneration: ownedGeneration,
                 refusal: ReadRefusal(
-                    status: 429, code: "cloud_ingress_busy",
-                    message: "This request was not accepted because Cloud ingress is full; try again shortly."
-                )
+                    layer: .macTransport, status: refusal.reason.refusalStatus, code: code,
+                    message: message, detail: busyDetail)
             )
             return
         }
-        let readLevelCommand = requestedType == "push-subscribe"
-            || requestedType == "push-unsubscribe" || requestedType == "push-test"
+        let readLevelCommand = Self.readLevelCommandTypes.contains(requestedType ?? "")
+        let reply = Self.commandRefusalReply(
+            body: parsed, type: requestedType, commandClass: inbound.commandClass)
+        status.recordCommand(
+            sender: reference.sender, sequence: reference.sequence, request: reference.request,
+            type: reference.type, session: reference.session)
         if !readLevelCommand && !allowCloudCommands() {
-            await publishCommandRefusal(
-                body: parsed, type: requestedType, commandClass: inbound.commandClass,
-                status: 403, code: "cloud_commands_disabled",
-                message: "Cloud commands are disabled on this Mac.",
-                lifecycleGeneration: ownedGeneration
-            )
+            await refuse(
+                reference, layer: .macPreflight, status: 403, code: "cloud_commands_disabled",
+                message: "Cloud commands are disabled on this Mac.", replyTo: reply,
+                viaLane: false, lifecycleGeneration: ownedGeneration)
             return
         }
-        await publishCommandRefusal(
-            body: parsed, type: parsed?["type"] as? String,
-            commandClass: inbound.commandClass,
-            status: 429, code: "cloud_ingress_busy",
-            message: "This request was not accepted because Cloud ingress is full; try again shortly.",
-            lifecycleGeneration: ownedGeneration
-        )
-    }
-
-    private func enqueueCommandRefusal(
-        body: [String: Any]?, type: String?, commandClass: CloudEnvelopeClass,
-        status: Int, code: String, message: String,
-        lifecycleGeneration ownedGeneration: UInt64
-    ) {
-        let object: [String: Any] = ["error": ["code": code, "message": message]]
-        let bytes = (try? JSONSerialization.data(
-            withJSONObject: object, options: [.withoutEscapingSlashes])) ?? Data()
-        commandResult(CloudCommandResult(status: status, code: code, body: bytes))
-        guard let reply = Self.commandRefusalReply(
-            body: body, type: type, commandClass: commandClass) else { return }
-        refusalPublications.enqueue { [weak self] in
-            await self?.publishJSONAnswer(
-                name: reply.name, session: reply.session, status: status,
-                body: bytes, lifecycleGeneration: ownedGeneration
-            )
-        }
-    }
-
-    private func publishCommandRefusal(
-        body: [String: Any]?, type: String?, commandClass: CloudEnvelopeClass,
-        status: Int, code: String, message: String,
-        lifecycleGeneration ownedGeneration: UInt64
-    ) async {
-        let object: [String: Any] = ["error": ["code": code, "message": message]]
-        let bytes = (try? JSONSerialization.data(
-            withJSONObject: object, options: [.withoutEscapingSlashes])) ?? Data()
-        commandResult(CloudCommandResult(status: status, code: code, body: bytes))
-        guard let reply = Self.commandRefusalReply(
-            body: body, type: type, commandClass: commandClass) else { return }
-        await publishJSONAnswer(name: reply.name, session: reply.session, status: status,
-                                body: bytes, lifecycleGeneration: ownedGeneration)
+        await refuse(
+            reference, layer: .macTransport, status: refusal.reason.refusalStatus, code: code,
+            message: message, detail: busyDetail, replyTo: reply, viaLane: false,
+            lifecycleGeneration: ownedGeneration)
     }
 
     /// One answered read, resolved into the two things the payload can hold.
