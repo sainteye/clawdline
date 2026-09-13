@@ -173,12 +173,12 @@ func runCloudAppBridgeIngressRefusalTests() async throws -> Int {
         sequence: 3, channel: "ctl/another-machine"
     ), reason: .countCap)
     try await waitForCloudAppBridge("wrong-machine ingress refusal") {
-        transport.envelopes().count == 3
+        results.all().contains { $0.code == "wrong_machine" }
     }
-    let wrongMachineAnswer = try opened(transport.envelopes()[2])
-    try require(wrongMachineAnswer["status"] as? Int == 409
-                    && (wrongMachineAnswer["error"] as? [String: Any])?["code"] as? String
-                        == "wrong_machine",
+    // The viewer reads the channel it addressed, and this Mac cannot publish there, so the
+    // refusal is a notice rather than an answer nobody would read.
+    try require(transport.envelopes().count == 2
+                    && !results.all().contains { $0.code == "cloud_ingress_busy" },
                 "ingress refusal applies the exact machine-channel gate before reporting capacity")
 
     await transport.refuse(refused(
@@ -186,9 +186,9 @@ func runCloudAppBridgeIngressRefusalTests() async throws -> Int {
         sequence: 4
     ), reason: .countCap)
     try await waitForCloudAppBridge("terminal capacity refusal") {
-        transport.envelopes().count == 4
+        transport.envelopes().count == 3
     }
-    let capacityAnswer = try opened(transport.envelopes()[3])
+    let capacityAnswer = try opened(transport.envelopes()[2])
     let capacityError = capacityAnswer["error"] as? [String: Any]
     try require(capacityAnswer["status"] as? Int == 429
                     && capacityError?["code"] as? String == "cloud_ingress_busy"

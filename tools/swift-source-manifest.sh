@@ -27,6 +27,7 @@ clawdline_production_sources=(
   Sources/CloudOutboundSpool.swift
   Sources/CloudPairing.swift
   Sources/CloudSettings.swift
+  Sources/CloudStatus.swift
   Sources/CloudTransport.swift
   Sources/CloudTransportFakes.swift
   Sources/Codex.swift
@@ -179,6 +180,7 @@ clawdline_test_sources=(
   Tests/CloudPairingTests.swift
   Tests/CloudSettingsTests.swift
   Tests/CloudTestRunner.swift
+  Tests/CloudTransparencyTests.swift
   Tests/CloudTransportTests.swift
   Tests/CodexSessionTests.swift
   Tests/ConversationTests.swift
