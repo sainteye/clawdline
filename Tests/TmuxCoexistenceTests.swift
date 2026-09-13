@@ -819,6 +819,25 @@ group("Clawdline starts a tmux server rather than telling a phone to go and run 
           !opened(0).contains("codex"), opened(0))
     check("it is typed too", opened(1) == "send-keys -t %7 -l codex", opened(1))
 
+    // Terminal writes may overlap: completion notices, user sends and a newly spawned child's
+    // briefing all cross this path on independent terminal-command channels. The tmux paste
+    // buffer is server-global, so reusing one fixed name lets a second writer replace the first
+    // writer's bytes between load-buffer and paste-buffer. The observed failure was a task
+    // secret arriving in its root pane while the exact new child pane remained empty.
+    let beforeMessages = fake.calls.count
+    expect("the first message reaches its exact pane", Tmux.send("first secret", to: "%7"), nil)
+    expect("the second message reaches its exact pane", Tmux.send("ordinary reply", to: "%8"), nil)
+    let messages = Array(fake.calls.dropFirst(beforeMessages))
+    let loadedBuffers = messages.filter { $0.hasPrefix("load-buffer -b ") }
+        .compactMap { $0.split(separator: " ").dropFirst(2).first.map(String.init) }
+    let pastedBuffers = messages.filter { $0.hasPrefix("paste-buffer -d -b ") }
+        .compactMap { $0.split(separator: " ").dropFirst(3).first.map(String.init) }
+    expect("each overlapping-capable send owns one paste buffer", loadedBuffers.count, 2)
+    check("and two sends never share the server-global buffer name",
+          Set(loadedBuffers).count == 2, loadedBuffers.joined(separator: " / "))
+    expect("each owned buffer is deleted only by its matching paste", pastedBuffers,
+           loadedBuffers)
+
     check("the sentence a person needs names the session they would attach to",
           Tmux.attachCommand.contains(Tmux.startedSessionName), Tmux.attachCommand)
     // The socket that sentence is about is the default one, which is the assumption this app

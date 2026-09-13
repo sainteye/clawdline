@@ -645,7 +645,14 @@ enum Tmux {
     static func send(_ text: String, to paneID: String,
                      submit shouldSubmit: Bool = true) -> String? {
         guard binary != nil else { return "tmux not found — set \"tmux_path\" in the config" }
-        let buffer = "clawdline"
+        // tmux buffers belong to the server, not to a pane. Terminal commands are serialized per
+        // destination so two different panes may be written concurrently; one fixed buffer name
+        // therefore lets the later load replace the earlier message before its paste. That is a
+        // confidentiality failure for orchestrator briefings, whose line contains the child's
+        // task secret. Give every send its own closed, argument-safe name. `paste-buffer -d`
+        // removes exactly this buffer after use, so concurrent sends cannot read or delete one
+        // another's bytes.
+        let buffer = "clawdline-\(UUID().uuidString.lowercased())"
         let pasteStart = ["1b", "5b", "32", "30", "30", "7e"]   // ESC [ 2 0 0 ~
         let pasteEnd = ["1b", "5b", "32", "30", "31", "7e"]     // ESC [ 2 0 1 ~
 
