@@ -82,6 +82,16 @@ check(/st_uid/.test(composition) && /st_mode/.test(composition) && /st_size/.tes
 check(/case \.internalFailure/.test(composition) && /"internal_failure"/.test(composition)
   && /\.internalFailure/.test(entry),
   'unexpected failures must report internal_failure with EX_SOFTWARE');
+const protectedCloudLogin = /case "cloud-login": return \.cloudLogin/.test(composition)
+  && /LinuxProtectedFileSecretStore/.test(composition)
+  && /authorization_required/.test(composition)
+  && /already_enrolled/.test(composition)
+  && !/deviceCode\s*=/.test(composition);
+check(protectedCloudLogin,
+  'Linux enrollment must be explicit, idempotent, protected, and omit the opaque device code');
+check(!/case "cloud-login": return \.cloudLogin/.test(
+  composition.replace('case "cloud-login": return .cloudLogin', 'case "cloud-login-disabled": return .cloudLogin')),
+  'removing the Linux enrollment command must make the package guard red');
 check(/--product ClawdlineLinux/.test(linuxBuild),
   'Ubuntu compiler check must build the Linux executable product');
 check(/swift test/.test(linuxBuild) && /CLAWDLINE_TEST_TMUX/.test(linuxBuild),

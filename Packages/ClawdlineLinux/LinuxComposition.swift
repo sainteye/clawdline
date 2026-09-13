@@ -6,6 +6,7 @@ enum LinuxCompositionError: Error, Equatable {
     case configuration(String)
     case secret(String)
     case runtime(LinuxRuntimeFailure)
+    case cloudEnrollment(String)
     case internalFailure
 
     var code: String {
@@ -14,6 +15,7 @@ enum LinuxCompositionError: Error, Equatable {
         case .configuration: return "invalid_configuration"
         case .secret: return "invalid_secret_file"
         case .runtime(let failure): return failure.code.rawValue
+        case .cloudEnrollment: return "cloud_enrollment_failed"
         case .internalFailure: return "internal_failure"
         }
     }
@@ -23,6 +25,7 @@ enum LinuxCompositionError: Error, Equatable {
         case .badArguments(let message), .configuration(let message), .secret(let message):
             return message
         case .runtime(let failure): return failure.message
+        case .cloudEnrollment(let message): return message
         case .internalFailure:
             return "unexpected startup failure"
         }
@@ -409,6 +412,141 @@ struct LinuxConfigurationReceipt: Codable {
     let identity: LinuxRuntimeIdentity
 }
 
+struct LinuxCloudLoginInvitation: Codable, Equatable {
+    let event: String
+    let userCode: String
+    let verificationURL: String
+    let verificationCompleteURL: String
+    let expiresInSeconds: Int
+    let pollIntervalSeconds: Int
+
+    init(event: String = "authorization_required", userCode: String,
+         verificationURL: String, verificationCompleteURL: String,
+         expiresInSeconds: Int, pollIntervalSeconds: Int) {
+        self.event = event
+        self.userCode = userCode
+        self.verificationURL = verificationURL
+        self.verificationCompleteURL = verificationCompleteURL
+        self.expiresInSeconds = expiresInSeconds
+        self.pollIntervalSeconds = pollIntervalSeconds
+    }
+
+    init(_ started: CloudDeviceLoginStart) {
+        self.init(
+            userCode: started.userCode,
+            verificationURL: started.verificationURL.absoluteString,
+            verificationCompleteURL: started.verificationCompleteURL.absoluteString,
+            expiresInSeconds: started.expiresIn,
+            pollIntervalSeconds: started.interval)
+    }
+}
+
+struct LinuxCloudLoginReceipt: Codable, Equatable {
+    let event: String
+    let status: String
+    let accountID: String
+    let machineID: String
+    let protectedIdentity: Bool
+}
+
+enum LinuxCloudEnrollmentOutcome: Equatable {
+    case accessDenied
+    case expired
+    case complete(accountID: String, machineID: String)
+}
+
+enum LinuxCloudEnrollment {
+    typealias Begin = @Sendable (CloudMachineMetadata) async throws
+        -> (LinuxCloudLoginInvitation, @Sendable () async throws -> LinuxCloudEnrollmentOutcome)
+
+    static func execute(
+        configuration: LinuxDaemonConfiguration,
+        emit: @Sendable (Data) -> Void,
+        state: () throws -> LinuxDurableCloudRuntime.EnrollmentState,
+        begin: Begin
+    ) async throws -> Data {
+        switch try state() {
+        case .enrolled(let accountID, let machineID):
+            return try LinuxComposition.encode(LinuxCloudLoginReceipt(
+                event: "enrollment_complete", status: "already_enrolled",
+                accountID: accountID, machineID: machineID, protectedIdentity: true))
+        case .missing:
+            break
+        }
+
+        let metadata = CloudMachineMetadata(
+            name: "Clawdline Linux \(ProcessInfo.processInfo.hostName)",
+            platform: "linux",
+            appVersion: LinuxReleaseIdentity.current.packageVersion)
+        let (invitation, waitForCompletion) = try await begin(metadata)
+        emit(try LinuxComposition.encode(invitation))
+        switch try await waitForCompletion() {
+        case .accessDenied:
+            throw LinuxCompositionError.cloudEnrollment("Cloud device authorization was denied.")
+        case .expired:
+            throw LinuxCompositionError.cloudEnrollment("Cloud device authorization expired.")
+        case .complete(let accountID, let machineID):
+            return try LinuxComposition.encode(LinuxCloudLoginReceipt(
+                event: "enrollment_complete", status: "enrolled",
+                accountID: accountID, machineID: machineID, protectedIdentity: true))
+        }
+    }
+
+    static func execute(
+        configuration: LinuxDaemonConfiguration,
+        emit: @escaping @Sendable (Data) -> Void
+    ) async throws -> Data {
+        do {
+            let runtimeConfiguration = configuration.runtime
+            let layout = try LinuxRuntimeLayout.prepare(
+                stateDirectory: configuration.stateDirectory,
+                runtimeDirectory: configuration.runtimeDirectory,
+                expectedUID: runtimeConfiguration?.uid,
+                expectedGID: runtimeConfiguration?.gid)
+            let secretRoot = CanonicalProjectRoot(
+                path: layout.secrets, ownerUID: layout.uid, ownerGID: layout.gid)
+            let runtime = try LinuxDurableCloudRuntime(
+                stateDirectory: layout.state, expectedUID: layout.uid,
+                secrets: LinuxProtectedFileSecretStore(root: secretRoot))
+            return try await execute(
+                configuration: configuration, emit: emit,
+                state: { try runtime.enrollmentState() },
+                begin: { metadata in
+                    let started = try await runtime.startDeviceLogin(metadata: metadata)
+                    return (LinuxCloudLoginInvitation(started), {
+                        switch try await runtime.continueDeviceLogin(started) {
+                        case .authorizationPending, .slowDown:
+                            throw LinuxCompositionError.cloudEnrollment(
+                                "Cloud device authorization ended in an invalid waiting state.")
+                        case .accessDenied:
+                            return .accessDenied
+                        case .expired:
+                            return .expired
+                        case .complete(let identity):
+                            return .complete(
+                                accountID: identity.accountID, machineID: identity.machineID)
+                        }
+                    })
+                })
+        } catch let error as LinuxCompositionError {
+            throw error
+        } catch let error as LinuxRuntimeFailure {
+            throw LinuxCompositionError.runtime(error)
+        } catch let error as CloudExecutorIdentityError {
+            throw LinuxCompositionError.cloudEnrollment(
+                error.errorDescription ?? "Protected executor identity is unavailable.")
+        } catch let error as CloudAccountError {
+            throw LinuxCompositionError.cloudEnrollment(
+                error.errorDescription ?? "Cloud account enrollment failed.")
+        } catch let error as CloudDurableStoreFailure {
+            throw LinuxCompositionError.cloudEnrollment(
+                "Cloud durable enrollment state was refused: \(error).")
+        } catch {
+            throw LinuxCompositionError.cloudEnrollment("Cloud account enrollment failed.")
+        }
+    }
+}
+
 struct LinuxRuntimeCompositionReceipt: Codable {
     let configuration: String
     let uid: UInt32
@@ -437,33 +575,50 @@ struct LinuxErrorEnvelope: Codable {
     let error: Body
 }
 
-enum LinuxCompositionCommand {
+enum LinuxCompositionCommand: Equatable {
     case health
     case releaseContract
     case configuredHealth(String)
     case checkConfig(String)
     case run(String)
     case daemon(String)
+    case cloudLogin(String)
 
     static func parse(_ arguments: [String]) throws -> LinuxCompositionCommand {
         if arguments == ["health"] { return .health }
         if arguments == ["release-contract"] { return .releaseContract }
         guard arguments.count == 3, arguments[1] == "--config" else {
-            throw LinuxCompositionError.badArguments("usage: ClawdlineLinux release-contract | health [--config /absolute/path] | check-config --config /absolute/path | run --config /absolute/path | daemon --config /absolute/path")
+            throw LinuxCompositionError.badArguments("usage: ClawdlineLinux release-contract | health [--config /absolute/path] | check-config --config /absolute/path | cloud-login --config /absolute/path | run --config /absolute/path | daemon --config /absolute/path")
         }
         switch arguments[0] {
         case "health": return .configuredHealth(arguments[2])
         case "check-config": return .checkConfig(arguments[2])
         case "run": return .run(arguments[2])
         case "daemon": return .daemon(arguments[2])
+        case "cloud-login": return .cloudLogin(arguments[2])
         default: throw LinuxCompositionError.badArguments("unknown command \(arguments[0])")
         }
     }
 }
 
 enum LinuxComposition {
+    static func executeAsync(
+        arguments: [String], emit: @escaping @Sendable (Data) -> Void
+    ) async throws -> Data {
+        let command = try LinuxCompositionCommand.parse(arguments)
+        if case .cloudLogin(let path) = command {
+            let config = try LinuxDaemonConfiguration.load(from: path)
+            return try await LinuxCloudEnrollment.execute(configuration: config, emit: emit)
+        }
+        return try execute(command: command)
+    }
+
     static func execute(arguments: [String]) throws -> Data {
-        switch try LinuxCompositionCommand.parse(arguments) {
+        try execute(command: LinuxCompositionCommand.parse(arguments))
+    }
+
+    private static func execute(command: LinuxCompositionCommand) throws -> Data {
+        switch command {
         case .health:
             return try encode(LinuxRuntimeIdentity.current)
         case .releaseContract:
@@ -499,6 +654,8 @@ enum LinuxComposition {
             } catch let failure as LinuxDurableStateFailure {
                 throw LinuxCompositionError.configuration("\(failure.code): \(failure.message)")
             }
+        case .cloudLogin:
+            throw LinuxCompositionError.internalFailure
         }
     }
 
@@ -507,7 +664,7 @@ enum LinuxComposition {
         return (try? encode(envelope)) ?? Data("{\"error\":{\"code\":\"encoding_failed\"}}\n".utf8)
     }
 
-    private static func encode<T: Encodable>(_ value: T) throws -> Data {
+    static func encode<T: Encodable>(_ value: T) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         var bytes = try encoder.encode(value)

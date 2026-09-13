@@ -6,7 +6,9 @@ if linuxArguments.count == 2, linuxArguments[0] == LinuxProviderSandbox.command 
 }
 
 do {
-    let output = try LinuxComposition.execute(arguments: linuxArguments)
+    let output = try await LinuxComposition.executeAsync(
+        arguments: linuxArguments,
+        emit: { FileHandle.standardOutput.write($0) })
     FileHandle.standardOutput.write(output)
 } catch let error as LinuxCompositionError {
     FileHandle.standardError.write(LinuxComposition.errorData(error))
@@ -15,7 +17,7 @@ do {
         exit(64)
     case .configuration, .secret:
         exit(78)
-    case .runtime:
+    case .runtime, .cloudEnrollment:
         exit(69)
     case .internalFailure:
         exit(70)

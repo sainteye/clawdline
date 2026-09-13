@@ -93,6 +93,15 @@ it to `false`, and package installation refuses to silently change an existing e
 Enabling it is therefore an authenticated release input (`linux-package.sh install
 --cloud-commands-enabled true`), not an inferred consequence of installing W5-4 source.
 
+A fresh host is enrolled before the daemon starts by running `ClawdlineLinux cloud-login
+--config /etc/clawdline/daemon.json` as the configured non-root service user. The command opens
+only the protected Linux state and secret stores, prints a JSON-line invitation containing the
+one-time user code and verification URLs, waits for authorization, and atomically stores the
+machine credential plus executor key material before printing its completion receipt. It never
+prints the opaque device code, credential, private key, or master secret. A matching enrolled
+identity is idempotent; partial, future, corrupt, or mismatched protected state fails closed rather
+than creating a second machine identity.
+
 W5-1 adds `CloudCommandLedger.swift`, `CloudOutboundSpool.swift` and
 `CloudDurableStores.swift` to the same Application target. Mac production opens the shared
 ledger/spool before attaching its bridge; the Ubuntu daemon opens and retains the same stores

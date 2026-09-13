@@ -239,6 +239,14 @@ template defaults the write gate closed, and install must name `--cloud-commands
 create or preserve an enabled alpha configuration. Live Relay/GCE and real provider acceptance
 remain external gates.
 
+A newly installed Linux executor has an explicit enrollment step before its first daemon start:
+run `ClawdlineLinux cloud-login --config /etc/clawdline/daemon.json` as the configured service
+user, approve the printed one-time code at the printed Clawdline URL, and then start the daemon.
+The command's first JSON line contains only the public authorization invitation; its final line is
+a nonsecret protected-identity receipt. Device codes, machine credentials, signing keys, and
+content secrets are never emitted. Re-running it for the same protected identity is idempotent,
+while a credential/identity mismatch is a typed failure and never an implicit repair.
+
 The public W0-E contract bytes remain a candidate pinned to commit
 `38eb822575e3c309a776a9e3e2874c7062d8fb75`, package tree
 `3ee391a4af73f9688510c19106d38ba325227051`, source SHA-256

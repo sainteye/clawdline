@@ -5,6 +5,11 @@ import ClawdlineApplication
 /// and protected executor identity. It exposes bootstrap but no publish door: W0-E remains a
 /// candidate until the separate contract/cutover authority says otherwise.
 final class LinuxDurableCloudRuntime {
+    enum EnrollmentState: Equatable {
+        case missing
+        case enrolled(accountID: String, machineID: String)
+    }
+
     struct Readiness: Codable, Equatable {
         let durable: Bool
         let authority: String
@@ -72,6 +77,27 @@ final class LinuxDurableCloudRuntime {
             durable: true, authority: candidateAuthority.authority,
             cutoverRequired: candidateAuthority.cutoverRequired,
             emissionEnabled: candidateAuthority.permitsEmission(wireVersion: 1), code: code)
+    }
+
+    /// Enrollment is a three-way protected-state decision, not "try login if restore returned
+    /// nil". A retained credential without its executor identity (or the reverse) is corruption
+    /// and must never be repaired by silently creating a second machine identity.
+    func enrollmentState() throws -> EnrollmentState {
+        let restored = try accountClient.restoredMachineIdentity()
+        switch identityAuthority.readiness() {
+        case .ready(let snapshot):
+            guard let restored,
+                  restored.accountID == snapshot.accountID,
+                  restored.machineID == snapshot.machineID else {
+                throw CloudExecutorIdentityError.identityMismatch
+            }
+            return .enrolled(accountID: snapshot.accountID, machineID: snapshot.machineID)
+        case .blocked(.protectedStateMissing):
+            guard restored == nil else { throw CloudExecutorIdentityError.identityMismatch }
+            return .missing
+        case .blocked(let error):
+            throw error
+        }
     }
 
     func startDeviceLogin(metadata: CloudMachineMetadata) async throws -> CloudDeviceLoginStart {

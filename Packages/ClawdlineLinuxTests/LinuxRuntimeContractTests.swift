@@ -515,6 +515,73 @@ final class LinuxRuntimeContractTests: XCTestCase {
         }
     }
 
+    func testW54CloudLoginStreamsOnlyPublicInvitationThenProtectedReceipt() async throws {
+        let config = LinuxDaemonConfiguration(
+            version: 2,
+            listen: LinuxListenConfiguration(host: "127.0.0.1", port: 7717),
+            stateDirectory: "/var/lib/clawdline",
+            runtimeDirectory: "/run/clawdline",
+            secretFile: "/var/lib/clawdline/daemon.secret")
+        let invitation = LinuxCloudLoginInvitation(
+            userCode: "ABCD-EFGH",
+            verificationURL: "https://api.clawdline.com/device",
+            verificationCompleteURL: "https://api.clawdline.com/device?user_code=ABCD-EFGH",
+            expiresInSeconds: 600,
+            pollIntervalSeconds: 5)
+        let emitted = LockedStrings()
+        let receipt = try await LinuxCloudEnrollment.execute(
+            configuration: config,
+            emit: { emitted.append(String(decoding: $0, as: UTF8.self)) },
+            state: { .missing },
+            begin: { metadata in
+                XCTAssertEqual(metadata.platform, "linux")
+                XCTAssertTrue(metadata.name.hasPrefix("Clawdline Linux "))
+                return (invitation, {
+                    .complete(accountID: "usr_alpha", machineID: "machine_alpha")
+                })
+            })
+        let publicOutput = emitted.snapshot().joined()
+        XCTAssertTrue(publicOutput.contains("ABCD-EFGH"))
+        XCTAssertTrue(publicOutput.contains("authorization_required"))
+        XCTAssertFalse(publicOutput.contains("deviceCode"))
+        XCTAssertFalse(publicOutput.contains("device_code"))
+        XCTAssertFalse(publicOutput.contains("machine_credential"))
+        XCTAssertFalse(publicOutput.contains("private"))
+        let finalOutput = String(decoding: receipt, as: UTF8.self)
+        XCTAssertTrue(finalOutput.contains("enrollment_complete"))
+        XCTAssertTrue(finalOutput.contains("protectedIdentity"))
+        XCTAssertFalse(finalOutput.contains("credential"))
+    }
+
+    func testW54CloudLoginIsIdempotentAndDoesNotOpenAnotherAuthorization() async throws {
+        let config = LinuxDaemonConfiguration(
+            version: 2,
+            listen: LinuxListenConfiguration(host: "127.0.0.1", port: 7717),
+            stateDirectory: "/var/lib/clawdline",
+            runtimeDirectory: "/run/clawdline",
+            secretFile: "/var/lib/clawdline/daemon.secret")
+        let began = LockedBool(false)
+        let receipt = try await LinuxCloudEnrollment.execute(
+            configuration: config,
+            emit: { _ in XCTFail("an enrolled machine must not emit a new invitation") },
+            state: { .enrolled(accountID: "usr_alpha", machineID: "machine_alpha") },
+            begin: { _ in
+                began.set(true)
+                throw LinuxCompositionError.internalFailure
+            })
+        XCTAssertFalse(began.get())
+        XCTAssertTrue(String(decoding: receipt, as: UTF8.self).contains("already_enrolled"))
+    }
+
+    func testW54CloudLoginCommandHasAnExplicitProtectedConfigBoundary() throws {
+        XCTAssertEqual(
+            try LinuxCompositionCommand.parse([
+                "cloud-login", "--config", "/etc/clawdline/daemon.json"
+            ]),
+            .cloudLogin("/etc/clawdline/daemon.json"))
+        XCTAssertThrowsError(try LinuxCompositionCommand.parse(["cloud-login"]))
+    }
+
     func testW54LinuxRelayOwnsDurableReplayRotationIngressAndStop() async throws {
         let scratch = canonicalTemporaryDirectory()
             .appendingPathComponent("clawdline-w54-relay-\(UUID().uuidString)")
