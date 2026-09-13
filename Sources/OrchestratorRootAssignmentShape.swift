@@ -70,8 +70,9 @@ extension Orchestrator {
         return answeredTrustMenu ? .none : .accept(row: choices.accept)
     }
 
+    /// No `transcriptKnown` and no retry delay: a Root Assignment is typed at most once, so
+    /// nothing about the record or the clock can license a second send (see the step decision).
     struct RootAssignmentDeliveryEvidence: Equatable {
-        let transcriptKnown: Bool
         let recorded: Bool
         /// When the assistant's own record says that user turn happened — the delivery itself,
         /// never the beat that got round to reading it. `nil` is a record carrying the turn
@@ -80,13 +81,9 @@ extension Orchestrator {
         /// The end of the pre-brief window this delivery had to land inside, kept beside the
         /// event so the comparison cannot quietly become "when did the broker look".
         let deadline: Date?
-        let retryDelayElapsed: Bool
 
-        init(transcriptKnown: Bool, recorded: Bool, recordedAt: Date? = nil,
-             deadline: Date? = nil, retryDelayElapsed: Bool) {
-            self.transcriptKnown = transcriptKnown; self.recorded = recorded
-            self.recordedAt = recordedAt; self.deadline = deadline
-            self.retryDelayElapsed = retryDelayElapsed
+        init(recorded: Bool, recordedAt: Date? = nil, deadline: Date? = nil) {
+            self.recorded = recorded; self.recordedAt = recordedAt; self.deadline = deadline
         }
 
         /// A prompt that reached the assistant inside the window, however late it was observed.
@@ -97,6 +94,18 @@ extension Orchestrator {
             guard let recordedAt, let deadline else { return true }
             return recordedAt <= deadline
         }
+    }
+
+    /// Where this record's pre-brief window opened, and whether `now` is past its deadline. One
+    /// reading for the lifecycle half of a beat and its delivery half, so the two cannot disagree.
+    static func rootAssignmentPromptWindow(_ assignment: RootAssignment, now: Date)
+        -> (openedAt: Date, timedOut: Bool) {
+        let openedAt = rootAssignmentPromptTimeoutAnchor(
+            terminalOpenedAt: assignment.terminalOpenedAt ?? assignment.created,
+            trustResumedAt: assignment.promptTimeoutStartedAt)
+        return (openedAt, rootAssignmentPromptTimedOut(
+            state: assignment.state, openedAt: openedAt, now: now,
+            briefed: assignment.briefedAt != nil))
     }
 
     enum RootAssignmentStepDecision: Equatable {
@@ -122,15 +131,18 @@ extension Orchestrator {
         if state == .promptReady {
             // Once a prompt has been sent, its exact transcript receipt is authoritative even if
             // the assistant is now working and the broker first observes it after the deadline.
-            // Composer readiness only decides whether a retry is safe; it never gates observation.
+            // Composer readiness decides only when the one send may happen; it never gates
+            // observation.
             guard let delivery else { return .inspectDelivery }
             if delivery.deliveredInWindow { return .briefed }
             if promptTimedOut { return .fail("prompt_timeout") }
-            guard inputReady else { return .wait }
-            if injectAttempts > 0 && !delivery.transcriptKnown { return .wait }
-            guard delivery.retryDelayElapsed else { return .wait }
-            return injectAttempts >= briefingAttemptLimit
-                ? .fail("delivery_unconfirmed") : .inject
+            // At most one send. A missing receipt cannot tell a prompt that never arrived from one
+            // that arrived unrecognised, and an empty composer is exactly what a Root that has
+            // finished its first turn looks like: 8cd9479d's Root ended that turn at 07:33:32.122Z
+            // and was typed the same briefing again 1.5 seconds later. Once an attempt is counted,
+            // only a receipt or the deadline moves this record.
+            guard injectAttempts == 0 else { return .wait }
+            return inputReady ? .inject : .wait
         }
         if promptTimedOut { return .fail("prompt_timeout") }
         guard inputReady else { return .wait }

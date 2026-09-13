@@ -2044,9 +2044,17 @@ eventually observes it. Once the record is `prompt_ready`, every beat checks the
 process/conversation transcript receipt before the current composer state or observer timeout: a
 receipt whose event time is at or before the deadline advances to `briefed` even if it is first
 observed later. With no exact receipt, or one whose event time is after the deadline, a beat truly
-past the deadline fails with typed `prompt_timeout`. A busy composer is never used as evidence that
-delivery failed and is never typed into again; late observation neither resends the prompt nor
-opens another tab, and the durable transition remains at most once.
+past the deadline fails with typed `prompt_timeout`. The briefing is typed **at most once** per
+assignment: the attempt is counted, in the same registry hold that proves none was counted before,
+and persisted before any keystroke. From then on no composer state, missing receipt or elapsed time
+is evidence that delivery failed — an idle composer is also what a Root that has finished its
+first turn looks like — so no beat types the briefing again, and only an in-window receipt
+(`briefed`) or the deadline (`prompt_timeout`) settles the record. A crash between that receipt and
+the keystrokes therefore ends in `prompt_timeout`, never in a second briefing. Late observation
+neither resends the prompt nor opens another tab, and the durable transition remains at most once.
+The receipt is the exact briefing compared as the transcript reader renders a user turn, not as raw
+bytes: that reader trims a turn and removes dropped-image paths, so a caller field that ends in a
+newline or cites a screenshot still matches the turn that recorded it.
 The current build has no automatic workspace-trust authority; a future positive policy adapter
 must explicitly justify acceptance, and the broker durably records `answered_trust_menu` before
 such an adapter may answer the picker so one picker is answered at most once.
@@ -2063,7 +2071,8 @@ with only `accepted` persisted is `launch_receipt_lost`: reopening could duplica
 effect happened just before the crash. Reconciliation adopts only one exact process/conversation
 tuple. Ambiguity is `ambiguous_identity`; incomplete inventory waits as `stale_inventory`; a
 confirmed loss is `process_lost_before_briefing` or `process_lost_after_briefing`. Other typed
-failures include `assistant_unavailable`, `prompt_timeout`, `delivery_unconfirmed`,
+failures include `assistant_unavailable`, `prompt_timeout`, `delivery_unconfirmed` (written only by
+builds that still retried the briefing),
 `workspace_trust_required`, `restart_identity_incomplete`, `idempotency_mismatch`, and
 `persistence_failed`. Each typed `blocked`, `failed`, or `inactive` transition writes one durable
 transition receipt and one audit event with assignment id, state, reason and the exact available
