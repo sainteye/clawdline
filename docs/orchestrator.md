@@ -53,8 +53,8 @@ between the count and the save would otherwise hand the next beat an uncounted r
 that only an in-window transcript receipt or the pre-brief deadline settles the record: a missing
 receipt cannot tell a prompt that never arrived from one that arrived unrecognised, an idle composer
 is also what a Root that has already finished its first turn looks like, and a send the terminal
-refuses may already have delivered the text. That refusal is still kept, with the terminal's error,
-on the record and in the `root_assignment.inject_failed` audit, so the deadline can say what the
+refuses may already have delivered the text. That refusal is still stored durably with the
+terminal's error and audited as `root_assignment.inject_failed`, so the deadline can say what the
 broker knows: `delivery_failed` for a refused send, `delivery_unconfirmed` for an unrefused one
 whose conversation record holds no receipt, `delivery_unobserved` for one whose record could not be
 read, and `prompt_timeout` when nothing was typed or the turn arrived after the window. The receipt

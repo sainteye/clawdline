@@ -2051,8 +2051,8 @@ From then on no composer state, missing receipt, elapsed time or terminal error 
 delivery failed — an idle composer is also what a Root that has finished its first turn looks like,
 and a send the terminal reports as failed may already have put the text or its Enter into the tab —
 so no beat types the briefing again, and only an in-window receipt (`briefed`) or the deadline
-settles the record. A send the terminal refuses is kept on the record with the terminal's error
-and audited at once as `root_assignment.inject_failed`, but it does not fail the record early: a
+settles the record. A send the terminal refuses is stored durably with the terminal's error and
+audited at once as `root_assignment.inject_failed`, but it does not fail the record early: a
 failed record is terminal, and the receipt that proves the text arrived would then have nowhere to
 land. With no in-window receipt, a beat truly past the deadline fails with the typed reason for
 what the broker knows: `prompt_timeout` when nothing was typed or the turn's event time is after
