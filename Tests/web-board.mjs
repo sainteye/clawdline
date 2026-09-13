@@ -1124,8 +1124,11 @@ check(
     await p.view.open("a", current.id);
     p.elements["board-detail"].all(".board-report-history-button")[0].click();
     await flush();
+    // Said by its code, never by the message it was thrown with (`core/failure-text.js`).
     check("report-version failure stays inside history reader",
-        p.elements["board-detail"].textContent.includes("version offline"));
+        p.elements["board-detail"].textContent.includes("The report could not be read.")
+        && p.elements["board-detail"].textContent.includes("unexpected_error")
+        && !p.elements["board-detail"].textContent.includes("version offline"));
     check("report-version failure never clears the current report or item selection",
         p.elements["board-detail"].textContent.includes("Current body stays readable")
             && p.view.state.item.id === current.id && p.view.state.readStatus !== "error");
@@ -1533,7 +1536,8 @@ check("multiple envelope candidates fail visible instead of partly hiding prose"
     transport = { board: async () => { throw Object.assign(new Error("denied"), {code:"forbidden"}); } };
     await p.view.refresh();
     check("real refusal is not disguised as connecting", p.view.state.readStatus === "error"
-        && p.elements["board-status"].textContent.includes("denied"));
+        && p.elements["board-status"].textContent.includes("(forbidden)")
+        && !p.elements["board-status"].textContent.includes("denied"));
     p.view.leave();
     check("leaving cancels pending retries", p.timers.size === 0);
 }

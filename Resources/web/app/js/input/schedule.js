@@ -2,6 +2,7 @@ import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint, toast } from "../core/util.js";
+import { failureSentence } from "../core/failure-text.js";
 import { drawIcon } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { Schedules } from "../net/schedules.js";
@@ -666,21 +667,16 @@ export var Schedule = (function () {
      *  `T.webRequestFailed` instead. See finding 6 in the plan. */
     function why(e, fallback) {
         var code = e && e.code;
-        if (code === "offline") return e.message;          // already this page's own sentence
-        if (code === "write_disabled") return T.webStartOff;
-        // `takeScheduleWriteRate()`'s ten-in-ten-minutes refusal — `rate_limited` is the current
-        // code, `busy` is what an older Mac still says for the same wait. Either way the server
-        // already wrote the sentence a person can act on ("Try again shortly."), so it is shown
-        // as it arrived, the same reasoning as `bad_request` just below.
-        if (code === "rate_limited" || code === "busy") return e.message;
-        // The parser's own sentence, about the one field it did not like. Shown as it arrived —
-        // not translated, not replaced — because it is the only thing that says which field.
-        if (code === "bad_request") return e.message;
-        // The GET this sheet opens with, and the PATCH or DELETE it can now send, all three 404
-        // with the same plain sentence when the file is gone — a second tab's delete, most often.
-        // Shown as it arrived, same reasoning as `bad_request` above.
-        if (code === "not_found") return e.message;
-        return fallback;
+        // The server's own English sentence used to be shown for `rate_limited`, `busy`,
+        // `bad_request` and `not_found`. A page may not show a server's `message`
+        // (`docs/cloud-error-transparency.md` §5), so each is said by its code instead, with the
+        // code on the line: `bad_request` no longer names its field in words, and the sheet's own
+        // checks before sending are what name it.
+        return failureSentence(e, {
+            sentence: code === "write_disabled" ? T.webStartOff
+                : code === "rate_limited" || code === "busy" ? T.webFailRateLimited : "",
+            fallback: fallback
+        });
     }
 
     /** Create and Save both land here — one button, and `editingId` says which of the two this

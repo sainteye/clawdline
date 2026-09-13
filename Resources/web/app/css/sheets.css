@@ -654,3 +654,12 @@ a.dep:hover .host { color: var(--accent); }
 /* Last, and spelled out, so `hidden` beats every rule above it. */
 .schedule-sheet [hidden] { display: none; }
 .schedule-sheet .block .row[hidden] { display: none; }
+
+/* The Cloud status sheet (`input/cloud-status.js`). Taller than the other small sheets and
+   scrolling inside itself, because fifty commands are a list, and a phone is where it is read. */
+.cloud-status-sheet { max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain; }
+.cloud-status-sheet .block { margin-bottom: 14px; }
+.cloud-status-sheet .say.mono, .cloud-status-sheet .said.mono { font-family: var(--mono); font-size: 11.5px; margin: 2px 0; word-break: break-word; }
+.cloud-status-command { padding: 7px 0; border-top: 1px solid var(--line); }
+.cloud-status-command .mono { word-break: break-all; }
+.cloud-status-command.focus { background: rgba(217, 119, 87, 0.08); box-shadow: inset 2px 0 0 var(--accent); padding-left: 8px; }

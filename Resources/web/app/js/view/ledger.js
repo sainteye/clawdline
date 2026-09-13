@@ -1,4 +1,5 @@
 import { T, fill } from "../core/i18n.js";
+import { failureSentence } from "../core/failure-text.js";
 
 /* ==========================================================================
    The verification ledger
@@ -381,9 +382,10 @@ function renderDetail(context, feature) {
  */
 function refusalText(error) {
     var code = error && (error.code || (error.body && error.body.code));
-    if (code === "graph_not_found") return T.webLedgerNotFound;
-    var message = error && (error.message || (error.body && error.body.message));
-    return message ? String(message) : T.webLedgerFailed;
+    return failureSentence(Object.assign({}, error, { code: code }), {
+        sentence: code === "graph_not_found" ? T.webLedgerNotFound : "",
+        fallback: T.webLedgerFailed
+    });
 }
 
 export function bindLedgerPage(elements, environment) {

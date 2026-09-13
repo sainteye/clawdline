@@ -15,6 +15,10 @@ import {
 } from "./cloud-crypto.js";
 import { T } from "../core/i18n.js";
 import {
+    CloudTrail, DIAGNOSTIC_REPORT_MAX_BYTES, RELAY_CTL_MAX_BYTES, asCloudFailure, cloudFailure,
+    failureFromMac, failureFromRelay, closeCodeName, isFailureCode
+} from "./cloud-failure.js";
+import {
     documentAnswer, documentListing, normalizeDocumentIdentity, normalizeDocumentLocator
 } from "./document-links.js";
 
@@ -94,6 +98,23 @@ const SHELL_BYTES = 64 * 1024;
 const IMAGE_READS_IN_FLIGHT = 3;
 const MACHINE_REPLY_SESSION = "__clawdline_machine__";
 
+/**
+ * How long a command that waits only for the relay's word waits for it. The relay answers every
+ * publish with `ack` or `publish_error` in the same turn (`account-do.ts`), so this is a bound on
+ * a socket that has stopped talking, not a guess at latency; at the bound the command resolves as
+ * it always did, having been written to the socket.
+ */
+const ACK_TIMEOUT_MS = 10000;
+
+/** How long a timed-out read waits for the Mac's `cloud.status` before it says only "no answer". */
+const STATUS_PROBE_TIMEOUT_MS = 10000;
+
+/**
+ * This page's name among other tabs of the same device (§6.3). One per page load, not per
+ * client: a token renewal replaces the client inside the same tab, and that is not a second tab.
+ */
+const TAB_ID = requestID();
+
 function requestID() {
     if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
         return globalThis.crypto.randomUUID();
@@ -138,10 +159,9 @@ function imageAnswerBytes(id, body) {
     return { id: id, media_type: body.media_type, bytes: bytes };
 }
 
+/** A refusal this page makes itself: `layer: "browser"`, and a code a page can name. */
 function cloudError(code, message) {
-    var error = new Error(message || code);
-    error.code = code;
-    return error;
+    return cloudFailure(code, message);
 }
 
 /**
@@ -158,13 +178,11 @@ function readAnswer(payload) {
     if (typeof payload.read !== "string" || !payload.read) return null;
     var error = payload.error;
     if (error && typeof error === "object" && !Array.isArray(error)) {
-        const refusal = cloudError(typeof error.code === "string" && error.code
-            ? error.code : "read_failed", error.message);
-        // Preserve the authenticated Mac's typed refusal. A caller must distinguish a
-        // deterministic 4xx from an unknown delivery before releasing its retry intent.
-        if (Number.isInteger(payload.status) && payload.status >= 400 && payload.status <= 599)
-            refusal.status = payload.status;
-        return { read: payload.read, body: null, error: refusal };
+        // Preserve the authenticated Mac's typed refusal: its layer, the sequence it answers,
+        // the status a caller branches on before releasing a retry intent, and the `detail`
+        // fields §11.6 allows for that code — which used to be dropped here, so Cloud could not
+        // tell `no_model` from `no_binary` or put `{app}` into a sentence (B6).
+        return { read: payload.read, body: null, error: failureFromMac(error, payload.status, null) };
     }
     return { read: payload.read, body: payload.body === undefined ? null : payload.body,
         error: null };
@@ -271,6 +289,21 @@ export class CloudClient {
         this.sequenceBySender = new Map();
         this.realignSequenceByChannel = new Map();
         this.messageChain = Promise.resolve();
+        // The failure contract (`docs/cloud-error-transparency.md` §2, §11). The trail and the
+        // Macs that have shown `cloud_status.v >= 1` belong to the viewer, so a renewal carries
+        // them like the session rows; pending sequences belong to one socket and never do.
+        this.trail = options.trail
+            || (sameViewer && prior.trail instanceof CloudTrail ? prior.trail : new CloudTrail());
+        this.macCapabilities = sameViewer ? new Set(prior.macCapabilities) : new Set();
+        this.pendingBySequence = new Map();
+        this.lastRelayError = null;
+        this.closedFailure = null;
+        this.ackTimeoutMs = options.ackTimeoutMs || ACK_TIMEOUT_MS;
+        this.statusProbeTimeoutMs = options.statusProbeTimeoutMs || STATUS_PROBE_TIMEOUT_MS;
+        this.tabID = options.tabID || TAB_ID;
+        this.BroadcastChannel = options.BroadcastChannel !== undefined
+            ? options.BroadcastChannel : globalThis.BroadcastChannel;
+        this.tabChannel = null;
     }
 
     events(listener) {
@@ -288,7 +321,7 @@ export class CloudClient {
 
     async start(options) {
         if (this.socket) return;
-        if (!this.WebSocket) throw new Error("WebSocket is unavailable");
+        if (!this.WebSocket) throw cloudError("websocket_unavailable", "WebSocket is unavailable");
         if (!this.devicePrivateKey) throw cloudError("missing_device_key", "the viewer device key is unavailable");
         this.connectionAnnounced = !(options && options.quiet === true);
         if (this.connectionAnnounced && this.handlers && this.handlers.conn) {
@@ -308,37 +341,70 @@ export class CloudClient {
         ws.onerror = function () {
             self._emit({ type: "error", error: cloudError("socket_error", "the cloud connection failed") });
         };
-        ws.onclose = function () {
-            if (self.socket === ws) self.socket = null;
+        ws.onclose = function (event) {
+            // A socket this client closed itself (`stop`, `retire`) has already failed what it
+            // held, and its trail may belong to the replacement by now: nothing below is its to say.
+            var ours = self.socket === ws;
+            if (ours) self.socket = null;
             self.ready = false;
-            self._settleReady(cloudError("offline", "the cloud connection dropped"));
+            // B3: the relay's own word for why, which used to be thrown away with the event. The
+            // last `error` frame names it best; the close code is the fallback (§11.7).
+            var closeCode = event && Number.isInteger(event.code) ? event.code : null;
+            // Most relay `error` frames refuse one frame and deliberately keep the socket open.
+            // A later network close must not inherit that old refusal. `token_superseded` is the
+            // only closing reason that is more specific than its 4401 close code.
+            var framedCode = self.lastRelayError && self.lastRelayError.code;
+            var relayCode = framedCode === "token_superseded" && closeCode === 4401
+                ? framedCode : closeCodeName(closeCode);
+            var dropped = relayCode
+                ? failureFromRelay(relayCode, { message: "the relay closed the connection" })
+                : cloudError("offline", "the cloud connection dropped");
+            if (ours) {
+                self.closedFailure = dropped;
+                self.trail.closed(closeCode);
+                self.trail.connectionState("offline");
+            }
+            self._closeTabChannel();
+            self._settleReady(dropped);
             // Every read still waiting was waiting on this socket. Left alone they would sit out
             // their whole timeout behind a skeleton for a connection that is already gone.
-            self._failAllReads(cloudError("offline", "the cloud connection dropped"));
+            self._failAllReads(dropped);
             if (self.connectionAnnounced && self.handlers && self.handlers.conn) {
                 self.handlers.conn("offline");
             }
-            self._emit({ type: "connection", state: "offline" });
+            self._emit({ type: "connection", state: "offline", code: closeCode,
+                failure: relayCode || null });
         };
     }
 
     stop() {
-        var ws = this.socket;
-        this.socket = null;
-        this.ready = false;
-        var stopped = cloudError("offline", "the cloud connection was stopped");
-        this._settleReady(stopped);
-        this._failAllReads(stopped);
-        if (ws) ws.close(1000, "viewer stopped");
+        this._shutdown(cloudError("offline", "the cloud connection was stopped"));
     }
 
     /** Hand an authenticated replacement client the UI before closing this socket. A retired
      *  socket may still fail its own in-flight reads, but it must not overwrite the replacement's
-     *  connection indicator with an `offline` callback. */
+     *  connection indicator with an `offline` callback.
+     *
+     *  What it fails them with is `cloud_reconnecting` (B7): a renewal is this page's own
+     *  credential maintenance, the person can press again at once, and "the cloud connection
+     *  dropped" said the opposite of both. */
     retire() {
         this.connectionAnnounced = false;
         this.handlers = null;
-        this.stop();
+        this._shutdown(cloudError("cloud_reconnecting", "the cloud connection is being renewed"),
+            cloudError("delivery_unconfirmed",
+                "the key was written before the cloud connection renewed; delivery is unknown"));
+    }
+
+    _shutdown(failure, acknowledgementFailure) {
+        var ws = this.socket;
+        this.socket = null;
+        this.ready = false;
+        this.closedFailure = failure;
+        this._closeTabChannel();
+        this._settleReady(failure);
+        this._failAllReads(failure, acknowledgementFailure);
+        if (ws) ws.close(1000, "viewer stopped");
     }
 
     /** Opening a WebSocket is not authentication. The hosted boot must not install this client
@@ -382,12 +448,28 @@ export class CloudClient {
             this._send({ type: "pong" });
             return;
         }
-        if (frame.type === "subscriptions" || frame.type === "ack" || frame.type === "pong") {
+        if (frame.type === "ack") {
+            this._relayAnswered(frame, null);
+            this._emit(frame);
+            return;
+        }
+        if (frame.type === "publish_error") {
+            this._relayAnswered(frame, failureFromRelay(frame.code, {
+                field: frame.field, fromPublishError: true,
+                message: "the relay refused this publish"
+            }));
+            this._emit(frame);
+            return;
+        }
+        if (frame.type === "subscriptions" || frame.type === "pong") {
             this._emit(frame);
             return;
         }
         if (frame.type === "error") {
-            throw cloudError(frame.code || "relay_error", frame.message || "the relay refused a frame");
+            var relayCode = isFailureCode(frame.code) ? frame.code : "relay_error";
+            this.lastRelayError = { code: relayCode };
+            this.trail.relayError(relayCode);
+            throw failureFromRelay(relayCode, { message: "the relay refused a frame" });
         }
         throw cloudError("bad_frame", "unknown relay frame type");
     }
@@ -420,6 +502,10 @@ export class CloudClient {
         }
         this.ready = true;
         this.connectionAnnounced = true;
+        this.lastRelayError = null;
+        this.closedFailure = null;
+        this.trail.connectionState("live");
+        this._openTabChannel();
         this._settleReady(null);
         if (this.handlers && this.handlers.hello) this.handlers.hello({ write: this.allowWrites });
         if (this.handlers && this.handlers.conn) this.handlers.conn("live");
@@ -452,6 +538,7 @@ export class CloudClient {
     }
 
     async _receiveEnvelope(envelope, realign) {
+        this._compareKeyID(envelope);
         var key = await this._senderKey(envelope && envelope.sender, envelope);
         if (!key) throw cloudError("unknown_sender", "the envelope sender is not paired");
         var clear;
@@ -595,6 +682,7 @@ export class CloudClient {
         if (channel.kind === "orch") {
             var machine = decodedChannelSegment(channel.machine);
             this.orchestratorSnapshots.set(machine, payload || {});
+            this._consumeCloudStatus(machine, payload && payload.cloud_status);
             var tasks = this._allOrchestratorRows("tasks");
             if (this.handlers && this.handlers.tasks) this.handlers.tasks(tasks);
             this._sawAppStamp(payload);
@@ -630,8 +718,13 @@ export class CloudClient {
      * first.
      */
     _sessionIdentity(value) {
-        if (value && typeof value === "object") return sessionIdentity(value);
-        if (typeof value !== "string" || !value) return sessionIdentity(value);
+        if (!value || (typeof value !== "object" && typeof value !== "string")) {
+            throw cloudError("malformed_read", "this request names no session");
+        }
+        if (typeof value === "object") {
+            try { return sessionIdentity(value); }
+            catch (error) { throw cloudError("malformed_read", error.message); }
+        }
         var found = [];
         this.sessionSnapshots.forEach(function (row) {
             if (!row || (row.id !== value && row.session !== value)) return;
@@ -688,7 +781,7 @@ export class CloudClient {
         throw cloudError("not_found", "this schedule is not in the Cloud inventory");
     }
 
-    _machineRequest(machine, type, extra, kind, timeoutMs) {
+    _machineRequest(machine, type, extra, kind, timeoutMs, readOptions) {
         if (typeof machine !== "string" || !machine) {
             return Promise.reject(cloudError("cloud_read_unavailable",
                 "no Mac has published an inventory to this account yet"));
@@ -696,7 +789,90 @@ export class CloudClient {
         var request = requestID();
         return this._read({ machine: machine, session: MACHINE_REPLY_SESSION }, type,
             Object.assign({ request: request }, extra || {}), (kind || "read") + ":" + request,
-            timeoutMs);
+            timeoutMs, readOptions);
+    }
+
+    /**
+     * The Mac's Cloud status snapshot (§4.1, §11.3), asked of one Mac or of every Mac this
+     * account has published. The fleet form never rejects for one Mac: each row carries its own
+     * `status` or its own typed `error`, because the sheet that asks has to show both.
+     */
+    cloudStatus(machine) {
+        if (machine !== undefined && machine !== null) {
+            if (typeof machine !== "string" || !machine) {
+                return Promise.reject(cloudError("cloud_machine_unavailable",
+                    "this Mac has not published a current Cloud inventory"));
+            }
+            return this._readCloudStatus(machine, undefined)
+                .then(function (status) { return { machine: machine, status: status }; });
+        }
+        var machines = this._knownMachines();
+        if (!machines.length) {
+            return Promise.reject(cloudError("cloud_read_unavailable",
+                "no Mac has published an inventory to this account yet"));
+        }
+        var self = this;
+        return Promise.all(machines.map(function (name) {
+            // A Mac that has never published `cloud_status` does not know the read either, and an
+            // older one answers an unknown command with silence: asking it would hold the sheet on
+            // "reading" for a minute to learn what the missing digest already said.
+            if (!self.macCapabilities.has(name)) {
+                return { machine: name, status: null, error: null, capable: false };
+            }
+            return self._readCloudStatus(name, undefined).then(function (status) {
+                return { machine: name, status: status, error: null,
+                    capable: self.macCapabilities.has(name) };
+            }, function (error) {
+                return { machine: name, status: null, error: asCloudFailure(error),
+                    capable: self.macCapabilities.has(name) };
+            });
+        })).then(function (rows) { return { machines: rows }; });
+    }
+
+    _readCloudStatus(machine, timeoutMs) {
+        return this._machineRequest(machine, "cloud.status", {}, "read", timeoutMs, { probe: false })
+            .then(function (body) {
+                if (!body || typeof body !== "object" || Array.isArray(body)) {
+                    throw cloudError("bad_payload", "the Cloud status answer is not an object");
+                }
+                return body;
+            });
+    }
+
+    /**
+     * The diagnostics report, sent to the Mac as a Cloud command (B8, §11.5) — the hosted
+     * console has no `/v1/diagnostics/report` of its own, so the old `fetch` reached the page's
+     * own origin and nothing else.
+     *
+     * The size is checked here first, against the smaller of the relay's `ctl` ceiling and
+     * `DiagnosticReport.maxBytes`: a report over it is refused as `browser · report_too_large`
+     * without spending a sequence, rather than being dropped at one end and timing out at the
+     * other. The browser's recent-command trail rides along — sequences, steps and codes only.
+     */
+    diagnosticsReport(report, machine) {
+        try {
+            if (!report || typeof report !== "object" || Array.isArray(report)) {
+                throw cloudError("report_not_json", "a diagnostics report must be a JSON object");
+            }
+            var body = Object.assign({}, report, { cloud_trail: this.trail.snapshot() });
+            var bytes = textEncoder.encode(JSON.stringify(body)).length;
+            var limit = Math.min(DIAGNOSTIC_REPORT_MAX_BYTES, RELAY_CTL_MAX_BYTES);
+            if (bytes > limit) {
+                throw cloudFailure("report_too_large", "the report is " + bytes +
+                    " bytes and the limit is " + limit, { detail: {} });
+            }
+            if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+                throw cloudError("cloud_machine_unavailable",
+                    "this Mac has not published a current Cloud inventory");
+            }
+            var target = machine || this._onlyMachine("diagnostics");
+            if (!this.macCapabilities.has(target)) {
+                throw cloudError("cloud_feature_unavailable",
+                    "this Mac build does not support Cloud diagnostics reports");
+            }
+            return this._machineRequest(target,
+                "diagnostics.report", { report: body }, "action");
+        } catch (error) { return Promise.reject(error); }
     }
 
     /**
@@ -1107,7 +1283,7 @@ export class CloudClient {
         try { identity = this._sessionIdentity(value); }
         catch (error) { return Promise.reject(error); }
         var artifact = String(id == null ? "" : id);
-        if (!artifact) return Promise.reject(new TypeError("image() needs an artifact id"));
+        if (!artifact) return Promise.reject(cloudError("malformed_read", "image() needs an artifact id"));
         var self = this;
         return this._whenImageSlotFree(function () {
             return self._read(identity, "image", { id: artifact }, "image." + artifact)
@@ -1156,10 +1332,11 @@ export class CloudClient {
      * rather than spending another envelope sequence, which is what the direct path's own
      * transcript coalescing does for the same reason.
      */
-    _read(value, type, extra, answer, timeoutMs) {
+    _read(value, type, extra, answer, timeoutMs, readOptions) {
         var identity;
         try { identity = this._sessionIdentity(value); }
         catch (error) { return Promise.reject(error); }
+        var probe = !(readOptions && readOptions.probe === false);
         // The refusal that is deliberate, and it is the relay's rather than this page's: PROTOCOL
         // §12 says publishing to `ctl/` needs `send_prompt`, in either class, and a read has to
         // ask on `ctl/` because that is the only channel a viewer may publish on at all. So a
@@ -1178,37 +1355,253 @@ export class CloudClient {
                 waiters.waiting.push({ resolve: resolve, reject: reject });
                 return;
             }
-            waiters = { waiting: [{ resolve: resolve, reject: reject }], timer: null };
+            waiters = { waiting: [{ resolve: resolve, reject: reject }], timer: null, ref: null,
+                machine: identity.machine, request: extra && typeof extra.request === "string"
+                    ? extra.request : null,
+                retireUncertain: !!(readOptions && readOptions.retireUncertain) };
             self.readWaiters.set(key, waiters);
             waiters.timer = self.setTimeout(function () {
-                self._settleRead(key, null,
-                    cloudError("cloud_read_timeout", "the Mac did not answer this read"));
+                if (self.readWaiters.get(key) !== waiters) return;
+                waiters.timer = null;
+                self._readTimedOut(key, waiters, probe);
             }, timeoutMs || self.readTimeoutMs);
-            self.subscribe(["t/" + channelSegment(identity.machine) + "/"
-                + channelSegment(identity.session)]);
+            try {
+                self.subscribe(["t/" + channelSegment(identity.machine) + "/"
+                    + channelSegment(identity.session)]);
+            } catch (error) {
+                self._settleRead(key, null, cloudError("malformed_read", error.message));
+                return;
+            }
             Promise.resolve()
                 .then(function () {
                     return self._publishCommand(identity.machine, type,
-                        Object.assign({ session: identity.session }, extra), "ctl");
+                        Object.assign({ session: identity.session }, extra), "ctl",
+                        { key: key, waiters: waiters });
                 })
                 .catch(function (error) { self._settleRead(key, null, error); });
         });
     }
 
+    /**
+     * Sixty seconds without an answer. `relayed` proves only that the relay wrote the envelope to
+     * the Mac's socket (§2.4), so before saying "the Mac did not answer" this asks a Mac that can
+     * say — one that has shown `cloud_status.v >= 1` — what became of this very `ref`. A Mac that
+     * executed it and could not deliver the reply is a different sentence (G1), and so is one that
+     * refused it and had nowhere to send the refusal. The waiter stays registered while it asks,
+     * so a late answer still wins.
+     */
+    _readTimedOut(key, waiters, probe) {
+        var ref = waiters.ref;
+        var timeout = cloudError("cloud_read_timeout", "the Mac did not answer this read");
+        if (!probe || !ref || !this.macCapabilities.has(waiters.machine)) {
+            this._settleRead(key, null, timeout);
+            return;
+        }
+        var self = this;
+        this._readCloudStatus(waiters.machine, this.statusProbeTimeoutMs).then(function (status) {
+            var rows = Array.isArray(status.commands) ? status.commands : [];
+            var row = rows.find(function (candidate) {
+                return candidate && candidate.sender === ref.sender && candidate.seq === ref.seq;
+            });
+            if (!row) return timeout;
+            if (row.refusal && isFailureCode(row.refusal.code)) {
+                return failureFromMac({ code: row.refusal.code, layer: row.refusal.layer }, null, ref);
+            }
+            if (isFailureCode(row.undeliverable) || Number.isFinite(row.executed_at_ms)) {
+                return cloudFailure(isFailureCode(row.undeliverable)
+                    ? row.undeliverable : "reply_not_received",
+                    "the Mac executed this command and its reply did not arrive",
+                    { layer: "mac_reply", ref: ref });
+            }
+            return timeout;
+        }, function () { return timeout; }).then(function (failure) {
+            // The original read may settle while its status probe is in flight, and a new read
+            // can legitimately reuse the same key. Never apply the old probe to that waiter.
+            if (self.readWaiters.get(key) === waiters) self._settleRead(key, null, failure);
+        });
+    }
+
+    /**
+     * Every settle of a read goes through here, success or refusal, so the trail sees each one
+     * and every rejection leaves as a `CloudFailure` carrying the `ref` it was sent under.
+     */
     _settleRead(key, body, error) {
         var waiters = this.readWaiters.get(key);
         if (!waiters) return;
         this.readWaiters.delete(key);
         if (waiters.timer !== null) this.clearTimeout(waiters.timer);
+        var ref = waiters.ref;
+        if (ref) this.pendingBySequence.delete(ref.seq);
+        if (error) {
+            error = this._withRef(error, ref);
+            this.trail.refused(error.ref, error);
+        } else if (ref) {
+            this.trail.step(ref, "observed");
+        }
         waiters.waiting.forEach(function (waiter) {
             if (error) waiter.reject(error); else waiter.resolve(body);
         });
     }
 
-    _failAllReads(error) {
+    /** A rejection named: its `ref`, and a way for the page that draws it to mark `acknowledged`. */
+    _withRef(error, ref) {
+        var failure = asCloudFailure(error, ref);
+        if (ref && failure.ref && !failure.ref.sender) {
+            failure.ref = { sender: ref.sender, seq: failure.ref.seq === null ? ref.seq : failure.ref.seq,
+                request: failure.ref.request || ref.request || null };
+        }
+        if (failure.ref && typeof failure.acknowledge !== "function") {
+            var trail = this.trail;
+            var named = failure.ref;
+            Object.defineProperty(failure, "acknowledge", {
+                configurable: true, enumerable: false,
+                value: function () { trail.step(named, "acknowledged"); }
+            });
+        }
+        return failure;
+    }
+
+    _failAllReads(error, acknowledgementError) {
         var keys = Array.from(this.readWaiters.keys());
         var self = this;
-        keys.forEach(function (key) { self._settleRead(key, null, error); });
+        keys.forEach(function (key) {
+            var waiters = self.readWaiters.get(key);
+            self._settleRead(key, null,
+                acknowledgementError && waiters && waiters.retireUncertain
+                    ? acknowledgementError : error);
+        });
+        Array.from(this.pendingBySequence.entries()).forEach(function (entry) {
+            if (entry[1].ack) self._failPending(entry[0], acknowledgementError || error);
+        });
+    }
+
+    /**
+     * The relay's answer to one publish (B1, B2): `ack` with `delivered` or `machine_offline`, or
+     * `publish_error`. Both name `(ch, seq)`, so the request they are about is found by sequence
+     * and settled now — not sixty seconds later by a timer that has lost the code.
+     */
+    _relayAnswered(frame, refusal) {
+        var seq = frame && frame.seq;
+        if (!Number.isSafeInteger(seq)) return;
+        var pending = this.pendingBySequence.get(seq);
+        var ref = pending ? pending.ref : { sender: this.deviceID, seq: seq };
+        if (pending && typeof frame.ch === "string" && frame.ch !== "ctl/" + channelSegment(pending.machine)) {
+            return;
+        }
+        if (!refusal && frame.status === "machine_offline") {
+            refusal = failureFromRelay("machine_offline", { message: "the Mac is not connected to the relay" });
+        }
+        if (!refusal) {
+            this.trail.step(ref, "relayed");
+            if (pending && pending.ack) {
+                this.pendingBySequence.delete(seq);
+                pending.ack.settle(null);
+            }
+            return;
+        }
+        if (frame.status === "machine_offline") this.trail.step(ref, "machine_offline");
+        refusal.ref = ref;
+        if (pending) this._failPending(seq, refusal);
+        else this.trail.refused(ref, refusal);
+    }
+
+    _failPending(seq, failure) {
+        var pending = this.pendingBySequence.get(seq);
+        if (!pending) return;
+        this.pendingBySequence.delete(seq);
+        if (pending.key) {
+            this._settleRead(pending.key, null, failure);
+            return;
+        }
+        var named = this._withRef(failure, pending.ref);
+        this.trail.refused(named.ref, named);
+        if (pending.ack) pending.ack.settle(named);
+    }
+
+    /**
+     * B9: the key this browser seals with, against the key each Mac envelope arrives under.
+     * Checked before anything tries to open the envelope, because a mismatch is exactly the case
+     * where opening it fails and nothing else gets to say why.
+     */
+    _compareKeyID(envelope) {
+        if (!envelope || typeof envelope.key_id !== "string" || !envelope.key_id) return;
+        var machine;
+        try { machine = decodedChannelSegment(parseEnvelopeChannel(envelope.ch).machine); }
+        catch (e) { return; }
+        if (!machine) return;
+        this.trail.sawKeyID(machine, this.keyID, envelope.key_id);
+    }
+
+    /**
+     * §11.2: the Mac's notice digest, riding its `orch/<machine>` snapshot. It is the only way a
+     * Mac can speak about a command it could not answer — one it dropped before decrypting, or
+     * refused with no reply address — so an entry naming this device and a sequence still waiting
+     * settles that request now, in the Mac's own layer and code. `v >= 1` is also this Mac's
+     * capability signal (§11.4).
+     */
+    _consumeCloudStatus(machine, status) {
+        if (!status || typeof status !== "object" || Array.isArray(status)) return;
+        if (!Number.isInteger(status.v) || status.v < 1) return;
+        this.macCapabilities.add(machine);
+        var entries = function (value) { return Array.isArray(value) ? value.slice(0, 10) : []; };
+        var drops = entries(status.recent_drops);
+        var notices = entries(status.recent_notices);
+        this.trail.macDigest(machine, {
+            v: status.v,
+            generated_at_ms: Number.isFinite(status.generated_at_ms) ? status.generated_at_ms : null,
+            counting_since_ms: Number.isFinite(status.counting_since_ms) ? status.counting_since_ms : null,
+            clock_guard: status.clock_guard && typeof status.clock_guard === "object" ? {
+                state: isFailureCode(status.clock_guard.state) ? status.clock_guard.state : null,
+                reason: isFailureCode(status.clock_guard.reason) ? status.clock_guard.reason : null,
+                clears_at_ms: Number.isFinite(status.clock_guard.clears_at_ms)
+                    ? status.clock_guard.clears_at_ms : null
+            } : null,
+            token_expires_at_ms: Number.isFinite(status.token_expires_at_ms) ? status.token_expires_at_ms : null,
+            key_id: typeof status.key_id === "string" ? status.key_id.slice(0, 64) : null,
+            roster_readable: typeof status.roster_readable === "boolean" ? status.roster_readable : null,
+            dropped: countTable(status.dropped),
+            recent_drops: drops.filter(isNotice).map(noticeRow),
+            recent_notices: notices.filter(isNotice).map(noticeRow)
+        });
+        var self = this;
+        drops.concat(notices).forEach(function (entry, index) {
+            if (!isNotice(entry) || entry.sender !== self.deviceID) return;
+            var ref = { sender: entry.sender, seq: entry.seq,
+                request: typeof entry.request === "string" ? entry.request : null };
+            var failure = failureFromMac(Object.assign({}, entry,
+                { layer: index < drops.length ? "mac_transport" : entry.layer }), null, ref);
+            if (failure.code === "replay" && self.trail.find(ref.sender, ref.seq)) {
+                self.trail.sawReplay(machine, ref.seq,
+                    Number.isSafeInteger(entry.highest_seq) ? entry.highest_seq : null);
+            }
+            if (self.pendingBySequence.has(ref.seq)) self._failPending(ref.seq, failure);
+            else self.trail.refused(ref, failure);
+        });
+    }
+
+    /** §6.3: other tabs of this device, found by asking on a channel only this origin can hear. */
+    _openTabChannel() {
+        if (this.tabChannel || typeof this.BroadcastChannel !== "function" || !this.deviceID) return;
+        var channel;
+        try { channel = new this.BroadcastChannel("clawdline.cloud.tabs." + this.deviceID); }
+        catch (e) { return; }
+        this.tabChannel = channel;
+        var self = this;
+        channel.onmessage = function (event) {
+            var message = event && event.data;
+            if (!message || typeof message.tab !== "string" || message.tab === self.tabID) return;
+            self.trail.sawOtherTab(message.tab);
+            if (message.type === "hello") {
+                try { channel.postMessage({ type: "here", tab: self.tabID }); } catch (e) { }
+            }
+        };
+        try { channel.postMessage({ type: "hello", tab: this.tabID }); } catch (e) { }
+    }
+
+    _closeTabChannel() {
+        if (!this.tabChannel) return;
+        try { this.tabChannel.close(); } catch (e) { }
+        this.tabChannel = null;
     }
 
     subscribe(channels) {
@@ -1435,13 +1828,60 @@ export class CloudClient {
         });
     }
 
+    /**
+     * A keypress or menu answer. It has no reply of its own to wait for, so it waits for the
+     * relay's word on it instead: `machine_offline` or a `publish_error` rejects at once (B1, B2)
+     * rather than resolving as if the key had landed.
+     *
+     * `request` is added only for a Mac that has shown `cloud_status.v >= 1` (§11.4). An older
+     * Mac checks this command's key set exactly and would refuse the extra key, which would make
+     * every menu on a new console unpressable against an old app.
+     */
     answer(value, answer) {
         var identity;
         try { identity = this._sessionIdentity(value); }
         catch (error) { return Promise.reject(error); }
-        return this._publishCommand(identity.machine, "answer", {
-            session: identity.session, answer: String(answer)
-        }, "ctl");
+        var body = { session: identity.session, answer: String(answer) };
+        if (!this.macCapabilities.has(identity.machine)) {
+            return this._publishAcknowledged(identity.machine, "answer", body, "ctl");
+        }
+        var request = requestID();
+        // A capable Mac promises an action:<request> result. Keep the relay ack as immediate
+        // machine_offline/publish_error evidence, but resolve only from the Mac's result so a
+        // preflight refusal can never look like a successfully delivered keypress.
+        return this._read(identity, "answer", { request: request, answer: body.answer },
+            "action:" + request, undefined, { retireUncertain: true });
+    }
+
+    _publishAcknowledged(machine, type, body, envelopeClass) {
+        var self = this;
+        return new Promise(function (resolve, reject) {
+            var pending = { ack: null };
+            var envelope = null;
+            var relayed = false;
+            var timer = null;
+            pending.ack = {
+                settle: function (failure) {
+                    if (timer !== null) { self.clearTimeout(timer); timer = null; }
+                    if (failure) { reject(failure); return; }
+                    // The relay can answer inside the same turn the frame was written, before
+                    // `_publishCommand` has handed the envelope back; resolve with it once it has.
+                    relayed = true;
+                    if (envelope) resolve(envelope);
+                }
+            };
+            self._publishCommand(machine, type, body, envelopeClass, pending).then(function (sealed) {
+                envelope = sealed;
+                if (relayed) { resolve(sealed); return; }
+                if (self.pendingBySequence.get(sealed.seq) !== pending.registered) return;   // refused already
+                timer = self.setTimeout(function () {
+                    timer = null;
+                    if (self.pendingBySequence.get(sealed.seq) !== pending.registered) return;
+                    self.pendingBySequence.delete(sealed.seq);
+                    resolve(sealed);
+                }, self.ackTimeoutMs);
+            }, reject);
+        });
     }
 
     key(value, answer) { return this.answer(value, answer); }
@@ -1547,14 +1987,19 @@ export class CloudClient {
             machine = machine.machine;
         }
         if (typeof machine !== "string" || !machine) {
-            return Promise.reject(new TypeError("dispatch needs a machine"));
+            return Promise.reject(cloudError("malformed_command", "dispatch needs a machine"));
         }
         return this._publishCommand(machine, "dispatch", { task: task }, "dispatch");
     }
 
-    async _publishCommand(machine, type, body, envelopeClass) {
+    /**
+     * Seal and write one command. `pending`, when given, is registered under the sequence before
+     * the frame is written, so the relay's `ack` or `publish_error` — and a Mac notice — can find
+     * the request it is about however soon it arrives.
+     */
+    async _publishCommand(machine, type, body, envelopeClass, pending) {
         if (!this.allowWrites) throw cloudError("cloud_read_only", "cloud writes are disabled");
-        if (!this.ready) throw cloudError("offline", "the cloud connection is not ready");
+        if (!this.ready) throw this.closedFailure || cloudError("offline", "the cloud connection is not ready");
         if (!this.devicePrivateKey || !this.deviceID) throw cloudError("missing_device_key", "the viewer device key is unavailable");
         var sequence = await this.nextSequence(this.deviceID);
         if (!Number.isSafeInteger(sequence) || sequence < 0) {
@@ -1569,14 +2014,68 @@ export class CloudClient {
             sender: this.deviceID
         }, JSON.stringify(Object.assign({ type: type }, body)),
         await this._masterKey(this.keyID), this.devicePrivateKey);
-        this._send({ type: "publish", envelope: envelope });
+        var ref = { sender: this.deviceID, seq: sequence,
+            request: body && typeof body.request === "string" ? body.request : null };
+        if (pending) {
+            if (pending.waiters) {
+                if (this.readWaiters.get(pending.key) !== pending.waiters) {
+                    throw cloudError("cloud_read_settled", "the read settled before it was sent");
+                }
+                pending.waiters.ref = ref;
+            }
+            pending.registered = { ref: ref, machine: machine,
+                key: pending.key || null, ack: pending.ack || null };
+            this.pendingBySequence.set(sequence, pending.registered);
+        }
+        this.trail.sealed({ sender: ref.sender, seq: sequence, request: ref.request, type: type,
+            machine: machine });
+        try {
+            this._send({ type: "publish", envelope: envelope });
+        } catch (error) {
+            this.pendingBySequence.delete(sequence);
+            if (pending && pending.waiters) pending.waiters.ref = null;
+            throw this.closedFailure || error;
+        }
         return envelope;
     }
 
     _send(frame) {
-        if (!this.socket || this.socket.readyState !== 1) throw cloudError("offline", "the cloud socket is not open");
+        if (!this.socket || this.socket.readyState !== 1) {
+            throw this.closedFailure || cloudError("offline", "the cloud socket is not open");
+        }
         this.socket.send(JSON.stringify(frame));
     }
+}
+
+/** A notice row this client can act on: a sender, a sequence, a code (§11.2). */
+function isNotice(entry) {
+    return !!entry && typeof entry === "object" && typeof entry.sender === "string" &&
+        Number.isSafeInteger(entry.seq) && isFailureCode(entry.code);
+}
+
+/** The fields of a notice row the status sheet may show; nothing else crosses. */
+function noticeRow(entry) {
+    return {
+        at_ms: Number.isFinite(entry.at_ms) ? entry.at_ms : null,
+        sender: entry.sender.slice(0, 128), seq: entry.seq,
+        request: typeof entry.request === "string" ? entry.request.slice(0, 64) : null,
+        layer: isFailureCode(entry.layer) ? entry.layer : null,
+        code: entry.code,
+        key_id: typeof entry.key_id === "string" ? entry.key_id.slice(0, 64) : null,
+        expected_key_id: typeof entry.expected_key_id === "string" ? entry.expected_key_id.slice(0, 64) : null,
+        highest_seq: Number.isSafeInteger(entry.highest_seq) ? entry.highest_seq : null
+    };
+}
+
+function countTable(value) {
+    var counts = {};
+    if (!value || typeof value !== "object" || Array.isArray(value)) return counts;
+    Object.keys(value).slice(0, 32).forEach(function (code) {
+        if (isFailureCode(code) && Number.isSafeInteger(value[code]) && value[code] >= 0) {
+            counts[code] = value[code];
+        }
+    });
+    return counts;
 }
 
 function bytesToBase64(value) {

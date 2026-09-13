@@ -495,8 +495,10 @@ async function sheetScenario(scenario) {
         // word over the row's.
         await answer(client, socket, "mac-01", { read: "action:" + start.request, status: 404,
             error: { code: "not_found", message: "No place named that" } });
-        await until(function () { return said() === T.webStartGone; },
-            "the gone project to be said. Said: " + said());
+        // The sheet's own sentence for the code, then the code and the ref it was sent under.
+        await until(function () {
+            return said().startsWith(T.webStartGone) && said().includes("not_found · ");
+        }, "the gone project to be said with its code and ref. Said: " + said());
         await answer(client, socket, "mac-01", { read: "read:" + rereading.request, status: 200,
             body: placesBody([]) });
         await until(function () { return say() === T.webStartEmpty && rows().length === 0; },
@@ -516,8 +518,10 @@ async function sheetScenario(scenario) {
         Start.open();
         await nextCommand(socket, "places");
         readTimers.splice(0).forEach(function (fire) { fire(); });
-        await until(function () { return said() === T.webStartFailed; },
-            "the timed-out read to be said. Said: " + said());
+        // A read nobody answered is said as that, by its code — no longer the sheet's catch-all.
+        await until(function () {
+            return said().startsWith(T.webFailNoAnswer) && said().includes("cloud_read_timeout · ");
+        }, "the timed-out read to be said with its code and ref. Said: " + said());
         assert.equal(rows().length, 1, "the rows the Mac sent before stay on screen");
         press(id);
         const start = await nextCommand(socket, "start");
@@ -531,7 +535,11 @@ async function sheetScenario(scenario) {
         let start = await nextCommand(socket, "start");
         await answer(client, socket, "mac-01", { read: "action:" + start.request, status: 503,
             error: CLOCK_REFUSAL });
-        await until(function () { return said() === T.webStartFailed && settled(); },
+        // `command_clock_uncertain` is said by its code, with the code and ref after it.
+        const clockSaid = function () {
+            return said().startsWith(T.webFailClock) && said().includes("command_clock_uncertain · ");
+        };
+        await until(function () { return clockSaid() && settled(); },
             "the control refusal to settle. Said: " + said());
 
         // The Mac refuses with 503 command_clock_uncertain in the minute after a token renewal,
@@ -548,7 +556,7 @@ async function sheetScenario(scenario) {
             start = await nextCommand(socket, "start");
             await answer(client, socket, "mac-01", { read: "action:" + start.request, status: 503,
                 error: CLOCK_REFUSAL });
-            await until(function () { return said() === T.webStartFailed && settled(); },
+            await until(function () { return clockSaid() && settled(); },
                 "the " + attempt + " refusal after renewal to settle. Said: " + said());
         }
         Start.close();
@@ -582,7 +590,7 @@ async function sheetScenario(scenario) {
         // load
         try { Start.open(); }
         catch (error) { assert.fail("Start.open threw at its caller: " + error.message); }
-        await until(function () { return said() === T.webStartFailed; },
+        await until(function () { return said().startsWith(T.webStartFailed); },
             "a throwing places read to be said. Said: " + said());
         Start.close();
         placesThrows = false;
@@ -592,7 +600,7 @@ async function sheetScenario(scenario) {
 
         // press
         press("place-one");
-        await until(function () { return said() === T.webStartFailed && settled(); },
+        await until(function () { return said().startsWith(T.webStartFailed) && settled(); },
             "a throwing start to settle. Said: " + said());
         Start.close();
         assert.equal(elementWithID("start").hidden, true, "Close closes after a throwing start");
@@ -602,7 +610,7 @@ async function sheetScenario(scenario) {
         await until(function () { return rows().length === 1; }, "the row after reopening");
         elementWithID("start-resume").children[0].onclick();
         press("place-one");
-        await until(function () { return said() === T.webStartFailed && say() !== T.webLoading; },
+        await until(function () { return said().startsWith(T.webStartFailed) && say() !== T.webLoading; },
             "a throwing history read to settle. Said: " + said() + " Say: " + say());
 
         // pick
@@ -613,7 +621,7 @@ async function sheetScenario(scenario) {
             "the conversation row");
         try { Start.pick("thread-one"); }
         catch (error) { assert.fail("Start.pick threw at its caller: " + error.message); }
-        await until(function () { return said() === T.webStartFailed && settled(); },
+        await until(function () { return said().startsWith(T.webStartFailed) && settled(); },
             "a throwing resume to settle. Said: " + said());
         Start.close();
         assert.equal(elementWithID("start").hidden, true, "Close closes after a throwing resume");

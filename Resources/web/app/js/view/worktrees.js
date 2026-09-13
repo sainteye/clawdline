@@ -1,6 +1,8 @@
 /* A Project's worktree lifecycle is a bounded read model produced by the Mac.
    This renderer never probes Git and deliberately has no cleanup transport. */
 
+import { failureSentence } from "../core/failure-text.js";
+
 const CLASSES = new Set([
     "active_in_use", "landed_identical_residue", "genuinely_unlanded",
     "mixed_conflicted", "task_owned_temporary", "prunable_stale_metadata",
@@ -133,7 +135,7 @@ export function worktreeRowPresentation(row, environment = {}) {
         },
         storage: bytes(storage.bytes, storage.complete === true, language),
         storageComplete: storage.complete === true,
-        storageError: storage.error && (storage.error.message || storage.error.code) || null,
+        storageError: storage.error && storage.error.code || null,
         counts: {
             staged: count(row.status && row.status.staged, statusComplete),
             modified: count(row.status && row.status.modified, statusComplete),
@@ -144,7 +146,7 @@ export function worktreeRowPresentation(row, environment = {}) {
         local, canonical, group,
         cleanupEligible: !!(row.cleanup && row.cleanup.eligible === true),
         blockers: Array.isArray(row.cleanup && row.cleanup.blockers)
-            ? row.cleanup.blockers.map(value => value && (value.message || value.code)).filter(Boolean)
+            ? row.cleanup.blockers.map(value => value && value.code).filter(Boolean)
             : [],
         nextOwner: row.cleanup && typeof row.cleanup.nextOwner === "string"
             ? row.cleanup.nextOwner : null,
@@ -238,11 +240,17 @@ export function renderWorktreeRows(container, rows, environment = {}) {
     });
 }
 
+/** A lifecycle refusal said by its code (`core/failure-text.js`); the Mac's English never shows. */
 function refusal(error, language) {
     const code = error && error.code;
-    const message = error && error.message;
-    return (message || words(language, "Worktree status could not be read.",
-        "無法讀取工作樹狀態。")) + (code ? " (" + code + (error.status ? " · " + error.status : "") + ")" : "");
+    return failureSentence(error, {
+        sentence: code === "worktree_lifecycle_busy"
+            ? words(language, "Refresh is busy; try again shortly.", "重新觀測忙碌中，請稍後再試。")
+            : code === "not_observed"
+                ? words(language, "Active inventory was not observed.", "尚未觀測到使用中的工作樹清單。")
+                : "",
+        fallback: words(language, "Worktree status could not be read.", "無法讀取工作樹狀態。")
+    }) + (error && error.status ? " · " + error.status : "");
 }
 
 export function bindWorktreeLifecycle(elements, environment = {}) {

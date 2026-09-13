@@ -14,14 +14,14 @@ import { S } from "./core/state.js";
 import { els } from "./core/dom.js";
 import { Pages } from "./core/pages.js";
 import { Diagnostics } from "./core/layout-diagnostics.js";
-import { clockOf, tint } from "./core/util.js";
+import { clockOf, tint, toastFailure } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
 import { api, useApi } from "./net/api.js";
 import { Build } from "./net/build.js";
 import "./net/fetch.js";
 import { Schedules } from "./net/schedules.js";
 import { Live } from "./net/live.js";
-import { Mock } from "./net/mock.js";
+import { Mock, cloudStatusFixture } from "./net/mock.js";
 import {
     CloudViewerSession, chooseTransport, cloudStringsURL, idleClient, keepConnected,
     readCloudConfig
@@ -35,6 +35,7 @@ import {
     hideCloudGate, deferCloudGate, showCloudGate, showCloudBootError, showCloudDeviceRecovery,
     showCloudPairing, showCloudSignIn, showCloudAlreadyPaired, showCloudSessionAccessProblem
 } from "./input/cloud-pairing.js";
+import { CloudStatus } from "./input/cloud-status.js";
 import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onboarding.js";
 import "./door/door.js";
 import "./view/derive.js";
@@ -232,6 +233,17 @@ if (transportKind === "cloud") {
     // binding — once the relay handshake has actually completed.
     useApi(idleClient());
     handlers.conn("connecting");
+    // Every failure line on this page opens the Cloud status sheet at its `ref` from here on, and
+    // the sheet's key-drift row leads to the same encryption repair the Cloud door already offers.
+    CloudStatus.bindFailureLines();
+    CloudStatus.onRepair(function () {
+        // The door a typed key error raises, reached through that same event rather than a copy
+        // of its handler below: the connected client's listener decides it is `encryption`.
+        if (api && typeof api._emit === "function") {
+            api._emit({ type: "error", error: Object.assign(new Error("key id drift"),
+                { code: "unreadable_envelope" }) });
+        }
+    });
     var cloudOnboarding = cloudOnboardingMode(window);
     if (cloudOnboarding === "install") {
         // Do not call ensureSession here. A Safari viewer would consume a device slot and its
@@ -398,10 +410,21 @@ if (scheduleWebhookManagement) {
 // A deterministic visual fixture for the same bundled page. It never runs outside mock mode,
 // never opens a Cloud session, and lets mobile layout checks hold the install/scan screen still.
 if (MOCK && params.get("cloud-onboarding") === "install") showCloudInstallGate();
+// The Cloud failure line and status sheet, held still for a layout check: a toast that says a
+// fixed refusal with its `code · ref`, and with `open` the sheet it opens. Mock mode only.
+if (MOCK && /^(line|open)$/.test(params.get("cloud-status") || "")) {
+    var cloudFixture = cloudStatusFixture();
+    useApi(Object.assign(Object.create(Mock), cloudFixture.transport));
+    CloudStatus.bindFailureLines();
+    setTimeout(function () {
+        toastFailure(cloudFixture.failure);
+        if (params.get("cloud-status") === "open") CloudStatus.open({ ref: cloudFixture.failure.ref });
+    }, 800);
+}
 if (MOCK && params.get("cloud-onboarding") === "scan") {
     showCloudPairing({}, { scan: true });
 }
-Diagnostics.bind({ state: S, elements: els });
+Diagnostics.bind({ state: S, elements: els, transport: function () { return api; } });
 
 // Usage lives in the same stamped module graph as the rest of the page. Keeping its import here
 // makes the preload URL and the runtime request one identity, while these literal lookups keep the

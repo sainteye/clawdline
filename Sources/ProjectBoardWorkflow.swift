@@ -2210,8 +2210,16 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     /// Board item id (a human key such as `CLA-395`), is unresolved and skipped. This reads only
     /// the in-memory journal under the caller's lock.
     private static func previousItemID(in state: State, identity: Identity, epoch: Int) -> String? {
-        let refusedLinks = Set(state.outbox.lazy
+        // A terminal link refusal may still be a raw outbox row or may already have been compacted
+        // into its source event. Both are the same durable fact: that run never established the
+        // item binding and therefore cannot become the next begin hint.
+        var refusedLinks = Set(state.outbox.lazy
             .filter { $0.kind == "link" && $0.status == "failed" }.map(\.runID))
+        for run in state.runs where run.events.contains(where: { event in
+            (event.failedIntents ?? []).contains { $0.kind == "link" }
+        }) {
+            refusedLinks.insert(run.id)
+        }
         return state.runs.last(where: { run in
             guard run.identity.provider == identity.provider,
                   run.identity.conversationID == identity.conversationID,

@@ -74,6 +74,8 @@ const pushStandalone =
     .replace('import { T } from "../core/i18n.js";', "const T = globalThis.__pushEnv.T;")
     .replace('import { els } from "../core/dom.js";', "const els = globalThis.__pushEnv.els;")
     .replace('import { toast } from "../core/util.js";', "const toast = globalThis.__pushEnv.toast;")
+    .replace('import { failureSentence } from "../core/failure-text.js";',
+      "const failureSentence = globalThis.__pushEnv.failureSentence;")
     .replace('import { api } from "../net/api.js";', "const api = globalThis.__pushEnv.api;")
     .replace('import { Settings } from "./settings.js";', "const Settings = globalThis.__pushEnv.Settings;")
     .replace('import { Diagnostics } from "../core/layout-diagnostics.js";',
@@ -131,6 +133,7 @@ check("the push harness replaced every import", !/^import /m.test(pushStandalone
          webNotifyHomeScreen: "Home", webNotifyOnFailed: "Failed", webNotifyOffFailed: "Failed" },
     els: elements,
     toast: () => {},
+    failureSentence: (error, fallback) => fallback + " (" + ((error && error.code) || "unexpected_error") + ")",
     api: {
       pushKey: () => Promise.resolve({ key: "AQ" }),
       pushSubscribe: () => Promise.resolve({ id: "push-1" }),

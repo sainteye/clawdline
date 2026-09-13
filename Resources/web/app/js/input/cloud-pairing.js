@@ -14,6 +14,7 @@
    -------------------------------------------------------------------------- */
 
 import { T } from "../core/i18n.js";
+import { failureSentence } from "../core/failure-text.js";
 import { pairViewer, pairViewerFromInvitation } from "../net/cloud-boot.js";
 import { decodePairingInvitation } from "../net/cloud-pairing.js";
 import { scanCloudPairingInvitation } from "../net/cloud-qr-scanner.js";
@@ -266,8 +267,7 @@ export function showCloudDeviceRecovery(session, problem, options) {
                             return;
                         }
                         revoke.disabled = false;
-                        say(error && error.message
-                            ? error.message : "That device could not be revoked. Try again.", false);
+                        say(failureSentence(error, "That device could not be revoked. Try again."), false);
                     });
                 };
                 row.appendChild(revoke);
@@ -280,8 +280,7 @@ export function showCloudDeviceRecovery(session, problem, options) {
                 showCloudSignIn(session.signInURL(), { navigate: options.navigate });
                 throw error;
             }
-            say(error && error.message
-                ? error.message : "The viewer-device list could not be loaded.", false);
+            say(failureSentence(error, "The viewer-device list could not be loaded."), false);
             if (restart) {
                 restart.hidden = false;
                 restart.textContent = "Try loading devices again";
@@ -305,8 +304,7 @@ export function showCloudBootError(update, options) {
     if (guide) guide.textContent = retrying
         ? "Check this device's connection. Clawdline is keeping this error visible and will retry automatically."
         : "This response will not be retried automatically because it needs an explicit action.";
-    var message = update && update.error && update.error.message
-        ? update.error.message : "The Cloud session could not be started.";
+    var message = failureSentence(update && update.error, "The Cloud session could not be started.");
     if (retrying && Number.isSafeInteger(update.afterMs)) {
         message += " Retrying in about " + Math.max(1, Math.ceil(update.afterMs / 1000)) + "s.";
     }

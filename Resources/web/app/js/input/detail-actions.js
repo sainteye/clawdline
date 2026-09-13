@@ -1,7 +1,8 @@
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
-import { toast } from "../core/util.js";
+import { toast, toastFailure } from "../core/util.js";
+import { failureSentence } from "../core/failure-text.js";
 import { api } from "../net/api.js";
 import { closingID, closingKey, render, renderList, setClosingID } from "../view/list.js";
 import { renderTranscript } from "../view/transcript.js";
@@ -38,7 +39,7 @@ els["tx-focus"].addEventListener("click", function () {
     api.focus(selected.route).then(function () {
         if (SessionSelection.effectIsCurrent(effect)) toast(T.webShowOnMacAsked);
     }).catch(function (e) {
-        if (SessionSelection.effectIsCurrent(effect)) toast(e.message, true);
+        if (SessionSelection.effectIsCurrent(effect)) toastFailure(e, T.webRequestFailed);
     }).then(function () { SessionSelection.finishEffect(effect); });
 });
 
@@ -124,7 +125,7 @@ export var SessionActions = {
         api.focus(selected.route).then(function () {
             if (SessionSelection.effectIsCurrent(effect)) toast(T.webShowOnMacAsked);
         }).catch(function (e) {
-            if (SessionSelection.effectIsCurrent(effect)) toast(e.message, true);
+            if (SessionSelection.effectIsCurrent(effect)) toastFailure(e, T.webRequestFailed);
         }).then(function () { SessionSelection.finishEffect(effect); });
     },
 
@@ -157,7 +158,7 @@ export var SessionActions = {
             }
             toast(action + " ✓");
         }).catch(function (e) {
-            if (SessionSelection.effectIsCurrent(effect)) toast(e.message, true);
+            if (SessionSelection.effectIsCurrent(effect)) toastFailure(e, T.webRequestFailed);
         }).then(function () { SessionSelection.finishEffect(effect); });
     },
 
@@ -221,7 +222,8 @@ export var SessionActions = {
                 (!open || SessionSelection.matches(effect.identity, open))) closeDetail();
             else render();
             self.endWasOpen = false;
-            toast(ok ? T.webEndSession + " ✓" : ((error && error.message) || T.webRequestFailed), !ok);
+            if (ok) toast(T.webEndSession + " ✓", false);
+            else toastFailure(error, T.webRequestFailed);
         });
     },
 

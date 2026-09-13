@@ -606,6 +606,12 @@ node Resources/web/app/js/net/client.test.mjs
 # surviving a re-read, a renewal and a failed read, and the sheet to settling whatever happened.
 # On a line of its own so `browser_contract_suites`' sealed count stays the landing root's to move.
 node Tests/web-start-sheet-failures.mjs
+# Every Cloud failure names its layer, code and ref, and nothing on the transport hangs or throws
+# (`docs/cloud-error-transparency.md` §3.1 B1–B9, §5, §11). A relay in a box answers publishes the
+# way the relay does; both §5 guards — no synchronous throw from `CloudClient`, no error `.message`
+# on screen — carry their own mutation proof. On a line of its own so `browser_contract_suites`'
+# sealed count stays the landing root's to move.
+node Tests/web-cloud-failures.mjs
 # The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
 # what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05
 # and none of them could be enlarged — `index.html` turns the browser's pinch off page-wide — so

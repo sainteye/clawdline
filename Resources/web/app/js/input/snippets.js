@@ -1,5 +1,6 @@
 import { S } from "../core/state.js";
 import { T } from "../core/i18n.js";
+import { failureSentence } from "../core/failure-text.js";
 import { api } from "../net/api.js";
 import { byId } from "../view/derive.js";
 import { Optimistic } from "../view/waits.js";
@@ -321,9 +322,9 @@ function refresh(options) {
         drawAnswer(answer, { keepScroll: opts.keepScroll });
     }).catch(function (error) {
         if (ticket !== reading || overlay.hidden || sessionIdentity !== selected) return;
-        // The transport's own sentence, unedited — `cloud_snippets_unpublished` says a Mac is
-        // running a build older than this page, and no string of ours could say it better.
-        draw(null, { error: (error && error.message) || String(error) });
+        // Said by its code: `cloud_snippets_unpublished` is a Mac older than this page, and the
+        // code on the line says so to whoever is asked, in place of the transport's English.
+        draw(null, { error: failureSentence(error, T.webRequestFailed) });
     });
 }
 
@@ -391,7 +392,7 @@ function write(work, options) {
         busy = false;
         // Nothing was redrawn, so the button the press came from is still there holding focus.
         pendingFocus = null;
-        var message = (error && error.message) || String(error);
+        var message = failureSentence(error, T.webRequestFailed);
         if (editorOverlay.hidden) say(message);
         else editorSaid.textContent = message;
         return false;

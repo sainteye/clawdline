@@ -4,6 +4,7 @@ import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, toast } from "../core/util.js";
+import { bindFailureLine, failureSentence } from "../core/failure-text.js";
 import { assistantLogo } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId, closeabilityLines, closeabilityPlainReasons, owedBadgeHTML,
@@ -54,9 +55,10 @@ export var Info = (function () {
     var permissionConfirming = 0;
 
     function say(w) { els["info-say"].textContent = w || ""; els["info-say"].hidden = !w; }
-    function said(w, calm) {
+    function said(w, calm, error) {
         els["info-said"].textContent = w || "";
         els["info-said"].className = "said" + (calm ? " calm" : "");
+        bindFailureLine(els["info-said"], error || null);
     }
     /// What the Mac refused with. `busy` is the third of its kind on this page — see
     /// `webVoiceBusy` and `webCommandBusy` — and it is the one thing here that fixes itself: this
@@ -64,9 +66,11 @@ export var Info = (function () {
     /// Drawn as "could not read this session's info" it reads as a session gone wrong instead.
     function why(e) {
         var code = e && e.code;
-        if (code === "offline") return e.message;   // already this page's own sentence
-        if (code === "busy") return T.webInfoBusy;
-        return T.webInfoFailed;
+        return failureSentence(e, {
+            sentence: code === "busy" ? T.webInfoBusy
+                : code === "unsupported" && e.layer === "browser" ? T.webInfoTitleCloud : "",
+            fallback: T.webInfoFailed
+        });
     }
 
     /** `1d 2h`, `2h 14m`, `14m` — the status line's own spelling, which needs no translating. */
@@ -517,7 +521,7 @@ export var Info = (function () {
         }).catch(function (e) {
             if (mine !== ticket) return;
             loading = false;
-            said(why(e));
+            said(why(e), false, e);
             draw();
         });
     }
@@ -692,7 +696,7 @@ export var Info = (function () {
                 if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
                 clearTimeout(confirming);
-                said((e && e.message) || T.webInfoFailed);
+                said(why(e), false, e);
                 draw();
             }).then(function () { SessionSelection.finishEffect(effect); });
         },
@@ -719,7 +723,7 @@ export var Info = (function () {
                 busy = false;
                 fastModePending = null;
                 clearTimeout(fastModeConfirming);
-                said((e && e.message) || T.webInfoFailed);
+                said(why(e), false, e);
                 draw();
             }).then(function () { SessionSelection.finishEffect(effect); });
         },
@@ -748,7 +752,7 @@ export var Info = (function () {
                 busy = false;
                 permissionPending = null;
                 clearTimeout(permissionConfirming);
-                said((e && e.message) || T.webInfoFailed);
+                said(why(e), false, e);
                 draw();
             }).then(function () { SessionSelection.finishEffect(effect); });
         },
@@ -800,7 +804,7 @@ export var Info = (function () {
             }).catch(function (e) {
                 if (forId !== id || !SessionSelection.effectIsCurrent(effect)) return;
                 busy = false;
-                said((e && e.message) || T.webInfoFailed);
+                said(why(e), false, e);
                 draw();
             }).then(function () { SessionSelection.finishEffect(effect); });
         },

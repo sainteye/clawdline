@@ -1588,8 +1588,13 @@ group("the page is given the words it draws the start sheet with") {
           stillAsking.isEmpty,
           stillAsking.map { "\($0).js: \(refusalCondition($0, "terminal_unsupported"))" }
             .joined(separator: " | "))
-    let generic = pages.filter {
-        !refusalAnswer($0, "terminal_unsupported").contains("webStartTerminalUnsupported")
+    let generic = pages.filter { page in
+        let answer = refusalAnswer(page, "terminal_unsupported")
+        // Pages may draw the refusal directly or pass the branch-selected sentence through the
+        // shared Cloud failure renderer. In the latter shape the assignment above is what binds
+        // `own` to this refusal; the return must then preserve `own` as the selected sentence.
+        return !answer.contains("webStartTerminalUnsupported")
+            && !(answer.contains("failureSentence") && answer.contains("sentence: own"))
     }
     check("and each draws the sentence written for it rather than its own dead end",
           generic.isEmpty,

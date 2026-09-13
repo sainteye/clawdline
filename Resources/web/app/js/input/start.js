@@ -1,7 +1,8 @@
 import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
-import { clockOf, shortPath, tint, toast } from "../core/util.js";
+import { clockOf, shortPath, tint, toast, toastFailure } from "../core/util.js";
+import { bindFailureLine, failureSentence } from "../core/failure-text.js";
 import { bandSpin, drawIcon, drawSpinner, setBandSpin, setStartSpin, spinPhase, spinners, startSpin } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId, bySessionId } from "../view/derive.js";
@@ -114,7 +115,8 @@ export var Start = (function () {
                 return;
             }
             var error = result && result.error;
-            toast(error && error.message ? error.message : T.webCoordReadFailed, true);
+            if (error) toastFailure(error, T.webCoordReadFailed);
+            else toast(T.webCoordReadFailed, true);
         }
     });
     // The getter, not `api` itself. This IIFE runs while `main.js` is still resolving its own
@@ -135,7 +137,10 @@ export var Start = (function () {
     });
 
     function say(words) { els["start-say"].textContent = words || ""; }
-    function said(words) { els["start-said"].textContent = words || ""; }
+    function said(words, error) {
+        els["start-said"].textContent = words || "";
+        bindFailureLine(els["start-said"], error || null);
+    }
 
     /**
      * A transport call as a promise, whatever the transport did.
@@ -157,13 +162,16 @@ export var Start = (function () {
      *
      * The server's `message` is English, and the reader may not be — so the codes that have a
      * translated sentence get it, and the terminal's name comes out of the error object rather
-     * than out of the sentence it was written into. Everything else is one dead end: `forbidden`
-     * is a token without the capability, `bad_request` is this page having sent something wrong,
-     * and neither is a thing the person holding the phone can do anything about.
+     * than out of the sentence it was written into. Every other code is said by
+     * `core/failure-text.js`, and every line — this sheet's own sentences included — ends in its
+     * `code · ref`: "That could not be started." alone used to be the whole of what a phone knew.
      */
     function why(e) {
+        return failureSentence(e, { sentence: ownWhy(e), fallback: T.webStartFailed });
+    }
+
+    function ownWhy(e) {
         var code = e && e.code;
-        if (code === "offline") return e.message;          // already this page's own sentence
         if (code === "write_disabled") return T.webStartOff;
         if (code === "not_found") return T.webStartGone;
         // `terminal_closed` carries `app` and its sentence is written around the name; without
@@ -175,7 +183,7 @@ export var Start = (function () {
         // whole. Guarding it on `e.app` too is what made the one refusal with a person behind it
         // arrive as "That could not be started."
         if (code === "terminal_unsupported") return T.webStartTerminalUnsupported;
-        return T.webStartFailed;
+        return "";
     }
 
     function matching() {
@@ -555,7 +563,7 @@ export var Start = (function () {
             }
         }).catch(function (e) {
             places = places || [];
-            said(why(e));
+            said(why(e), e);
         }).then(function () {
             loading = false;
             draw();
@@ -595,7 +603,7 @@ export var Start = (function () {
                 places = null;
                 load();
             }
-            said(why(e));
+            said(why(e), e);
         }).then(function () {
             reading = false;
             draw();
@@ -653,7 +661,7 @@ export var Start = (function () {
                     places = null;
                     load();
                 }
-                said(why(e));
+                said(why(e), e);
                 draw();
             });
         });
@@ -712,7 +720,7 @@ export var Start = (function () {
                     enter(place);
                     return;
                 }
-                said(why(e));
+                said(why(e), e);
                 draw();
             });
         });

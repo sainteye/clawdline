@@ -3,6 +3,7 @@ import { commandSpin, drawSpinner, setCommandSpin, spinPhase } from "../core/pix
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint } from "../core/util.js";
+import { failureSentence } from "../core/failure-text.js";
 import { drawIcon } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId } from "../view/derive.js";
@@ -341,11 +342,10 @@ export var Command = (function () {
 
     function whyIntents(e) {
         var code = e && e.code;
-        if (code === "offline") return e.message;         // already this page's own sentence
-        if (code === "write_disabled") return T.webStartOff;
-        if (code === "no_planner") return T.webCommandNoPlanner;
-        if (code === "busy") return T.webCommandBusy;
-        return T.webCommandFailed;
+        var own = code === "write_disabled" ? T.webStartOff
+            : code === "no_planner" ? T.webCommandNoPlanner
+            : code === "busy" ? T.webCommandBusy : "";
+        return failureSentence(e, { sentence: own, fallback: T.webCommandFailed });
     }
 
     /* ---- opening it -----------------------------------------------------------
@@ -445,14 +445,14 @@ export var Command = (function () {
 
     function whyStart(e) {
         var code = e && e.code;
-        if (code === "offline") return e.message;
-        if (code === "write_disabled") return T.webStartOff;
-        if (code === "not_found") return T.webStartGone;
-        if (e && e.app && code === "terminal_closed") return fill(T.webStartTerminalClosed, { app: e.app });
+        var own = "";
+        if (code === "write_disabled") own = T.webStartOff;
+        else if (code === "not_found") own = T.webStartGone;
+        else if (e && e.app && code === "terminal_closed") own = fill(T.webStartTerminalClosed, { app: e.app });
         // No `e.app` guard: `terminal_unsupported` never carries a name, and its sentence has no
         // hole to fill. See `input/start.js` for why the guard was wrong here.
-        if (code === "terminal_unsupported") return T.webStartTerminalUnsupported;
-        return T.webStartFailed;
+        else if (code === "terminal_unsupported") own = T.webStartTerminalUnsupported;
+        return failureSentence(e, { sentence: own, fallback: T.webStartFailed });
     }
 
     /* ---- the two presses ---------------------------------------------------- */

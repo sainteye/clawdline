@@ -2,6 +2,7 @@ import { T, fill } from "../core/i18n.js";
 import { els } from "../core/dom.js";
 import { reduced } from "../core/env.js";
 import { toast } from "../core/util.js";
+import { failureSentence } from "../core/failure-text.js";
 import { drawSpinner, setVoiceSpin, spinPhase } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { renderComposer } from "../view/composer.js";
@@ -199,15 +200,18 @@ export var Voice = (function () {
     /// "install Whisper" and "Whisper is here but has no model" are two different afternoons.
     function complain(e) {
         var code = e && e.code;
-        if (code === "busy") return T.webVoiceBusy;
-        if (code === "no_whisper") {
-            return e.reason === "no_model" ? T.webVoiceNoModel : T.webVoiceNoBinary;
-        }
+        var own = "";
+        if (code === "busy") own = T.webVoiceBusy;
+        else if (code === "no_whisper") own = e.reason === "no_model" ? T.webVoiceNoModel : T.webVoiceNoBinary;
         // `bad_request` from this route means the audio was not what the server would take, and
         // the audio was built here — so it is this page's fault and this page's sentence, not a
         // server message to pass along untranslated.
-        if (code === "bad_request") return T.webVoiceFailed;
-        return (e && e.message) || T.webVoiceFailed;
+        else if (code === "bad_request") own = T.webVoiceFailed;
+        else if (code === "no_resampler") own = T.webVoiceUnsupported;
+        // A recording too short to send is not a failure of anything, so it is said without a
+        // code; everything else — this page's own refusals included — says its code and ref.
+        if (code === "too_short") return T.webVoiceTooShort;
+        return failureSentence(e, { sentence: own, fallback: T.webVoiceFailed });
     }
 
     /// An error with words somebody can read and a code this file can branch on. The browser's

@@ -1859,12 +1859,111 @@ protocol Copy {
     /// five, so the fix it refuses to offer is the one being sold.
     var webPlanFromGate: String { get }
     // clawdline:plan-strings:end
+    // The Cloud failure contract and the Cloud status sheet (`core/failure-text.js`). English
+    // defaults below; a locale overrides what it has translated.
+    var webFailUnknown: String { get }
+    var webFailWithTag: String { get }
+    var webFailTap: String { get }
+    var webFailMachineOffline: String { get }
+    var webFailReconnecting: String { get }
+    var webFailSignedOut: String { get }
+    var webFailForbidden: String { get }
+    var webFailRateLimited: String { get }
+    var webFailTooLarge: String { get }
+    var webFailNoAnswer: String { get }
+    var webFailReplyLost: String { get }
+    var webFailClock: String { get }
+    var webFailClockIn: String { get }
+    var webFailKeyMismatch: String { get }
+    var webFailOtherTab: String { get }
+    var webFailUnknownSender: String { get }
+    var webFailMacBusy: String { get }
+    var webFailMacWritesOff: String { get }
+    var webFailReadOnly: String { get }
+    var webFailRoster: String { get }
+    var webFailNoMac: String { get }
+    var webFailWhichMac: String { get }
+    var webFailMismatch: String { get }
+    var webFailDecrypt: String { get }
+    var webFailNotFound: String { get }
+    var webCloudStatus: String { get }
+    var webCloudStatusSay: String { get }
+    var webCloudStatusOpen: String { get }
+    var webCloudStatusBrowser: String { get }
+    var webCloudStatusCommands: String { get }
+    var webCloudStatusNoCommands: String { get }
+    var webCloudStatusReading: String { get }
+    var webCloudStatusReadFailed: String { get }
+    var webCloudStatusOldMac: String { get }
+    var webCloudStatusKeyDrift: String { get }
+    var webCloudStatusRepair: String { get }
+    var webCloudStatusConnection: String { get }
+    var webCloudStatusLastRefusal: String { get }
+    var webCloudStatusClosed: String { get }
+    var webCloudStatusClock: String { get }
+    var webCloudStatusToken: String { get }
+    var webCloudStatusKey: String { get }
+    var webCloudStatusDropped: String { get }
+    var webCloudStatusNoDrops: String { get }
+    var webCloudStatusMac: String { get }
 }
 
 extension Copy {
     /// Languages that do not inflect this sentence may keep their established form twice.
     var closeabilityBlockedOne: String { closeabilityBlocked }
     var closeabilityBlockedMany: String { closeabilityBlocked }
+
+    // The 45 keys between these markers are the explicit temporarily-English Cloud batch.
+    // Traditional Chinese overrides all 45; the other locales intentionally inherit these
+    // defaults until their translations land. PlannerTests counts and pins this marked batch so
+    // adding a hidden default cannot silently bypass the translation guard.
+    // clawdline:cloud-default-copy:begin
+    var webFailUnknown: String { "That did not work." }
+    var webFailWithTag: String { "{text} ({tag})" }
+    var webFailTap: String { "Show this in Cloud status" }
+    var webFailMachineOffline: String { "The Mac is not online right now." }
+    var webFailReconnecting: String { "The Cloud connection is renewing. Try again in a moment." }
+    var webFailSignedOut: String { "Cloud did not accept this browser's credential." }
+    var webFailForbidden: String { "Cloud does not allow this device to do that." }
+    var webFailRateLimited: String { "Cloud is limiting requests. Try again shortly." }
+    var webFailTooLarge: String { "This is too large to send over Cloud." }
+    var webFailNoAnswer: String { "The Mac did not answer." }
+    var webFailReplyLost: String { "The Mac did it, but its reply did not arrive." }
+    var webFailClock: String { "The Mac is confirming its clock. Try again shortly." }
+    var webFailClockIn: String { "The Mac is confirming its clock. Try again in about {n} seconds." }
+    var webFailKeyMismatch: String { "This browser's encryption key does not match the Mac's." }
+    var webFailOtherTab: String { "This device is also open in another tab." }
+    var webFailUnknownSender: String { "This Mac does not recognise this browser." }
+    var webFailMacBusy: String { "The Mac is busy. Try again shortly." }
+    var webFailMacWritesOff: String { "The Mac is not accepting commands from Cloud right now." }
+    var webFailReadOnly: String { "This device is not allowed to send commands." }
+    var webFailRoster: String { "The Mac cannot read its list of paired browsers." }
+    var webFailNoMac: String { "No Mac has connected to this account yet." }
+    var webFailWhichMac: String { "More than one Mac matches, so nothing was sent." }
+    var webFailMismatch: String { "This page and the Mac do not understand each other. Updating one of them should fix it." }
+    var webFailDecrypt: String { "This browser cannot decrypt what the Mac sent." }
+    var webFailNotFound: String { "The Mac no longer has this." }
+    var webCloudStatus: String { "Cloud status" }
+    var webCloudStatusSay: String { "What this browser and each Mac saw of recent Cloud commands." }
+    var webCloudStatusOpen: String { "Open Cloud status" }
+    var webCloudStatusBrowser: String { "This browser" }
+    var webCloudStatusCommands: String { "Recent commands" }
+    var webCloudStatusNoCommands: String { "No commands sent from this page yet." }
+    var webCloudStatusReading: String { "Reading each Mac's status…" }
+    var webCloudStatusReadFailed: String { "Could not read this Mac's status." }
+    var webCloudStatusOldMac: String { "This Mac's build does not report Cloud status yet." }
+    var webCloudStatusKeyDrift: String { "Keys differ: this browser sends with {sent}, the Mac is on {mac}." }
+    var webCloudStatusRepair: String { "Repair encryption" }
+    var webCloudStatusConnection: String { "Connection: {state}" }
+    var webCloudStatusLastRefusal: String { "Last relay refusal: {code}" }
+    var webCloudStatusClosed: String { "Last close: {code}" }
+    var webCloudStatusClock: String { "Clock check: {state}" }
+    var webCloudStatusToken: String { "Mac token expires {at}" }
+    var webCloudStatusKey: String { "Mac key: {key}" }
+    var webCloudStatusDropped: String { "Dropped by the Mac since {at}: {list}" }
+    var webCloudStatusNoDrops: String { "The Mac has dropped nothing since {at}." }
+    var webCloudStatusMac: String { "Mac {machine}" }
+    // clawdline:cloud-default-copy:end
 
     // New Session-info explanations fall back to plain English until a locale supplies its own
     // copy. That is still more legible than the snake_case broker codes these sentences replace;

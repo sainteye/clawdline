@@ -1,4 +1,5 @@
 import { boardReportSelection } from "../net/client.js";
+import { failureSentence } from "../core/failure-text.js";
 import { CANONICAL_DOCUMENT_ORIGIN, documentLocatorFromHash } from "../net/document-links.js";
 import { sessionShareURL } from "../net/session-links.js";
 
@@ -118,6 +119,21 @@ function clear(node) {
 function localized(ctx, pair) {
     return pair[/^zh/i.test(ctx.doc.documentElement.lang || "") ? 1 : 0];
 }
+/**
+ * A Board read refusal in this page's own words where it has some, chosen by the code; the
+ * sentence an `Error` was built with is never what is shown (`core/failure-text.js`).
+ */
+function boardRefusal(ctx, error) {
+    const code = error && error.code;
+    return failureSentence(error, {
+        sentence: code === "project_not_found"
+            ? words(ctx, "Project records are unavailable; the directory response does not contain this project.",
+                "專案紀錄目前無法取得；目錄回應未包含這個專案。")
+            : code === "board_response_incomplete"
+                ? words(ctx, "Board response is incomplete.", "看板回應不完整。") : ""
+    });
+}
+
 function words(ctx, en, zh) {
     return localized(ctx, [en, zh]);
 }
@@ -961,7 +977,7 @@ function openBoardConversation(ctx, item, record) {
             ctx.status(words(ctx,
                 "This conversation has no unique Session to open. Nothing was resumed.",
                 "這段對話目前沒有可唯一開啟的 Session；未恢復任何對話。"), true);
-    }).catch(error => ctx.status(error.message || String(error), true));
+    }).catch(error => ctx.status(failureSentence(error, words(ctx, "That did not work.", "沒有成功。")), true));
 }
 function renderSessionOwnership(ctx, parent, item) {
     const groups = boardSessionGroups(item,
@@ -1398,7 +1414,7 @@ export function bindBoardPage(elements, environment = {}) {
             ctx.status(words(ctx, "Board link copied.", "已複製看板連結。"));
             return { ok: true, url };
         }).catch(error => {
-            ctx.status((error && error.message) || String(error), true);
+            ctx.status(failureSentence(error, words(ctx, "The link could not be copied.", "無法複製連結。")), true);
             return { error: "copy_failed" };
         });
     };
@@ -1721,16 +1737,15 @@ export function bindBoardPage(elements, environment = {}) {
                     !Array.isArray(board.projects) ||
                     !Array.isArray(board.items)
                 )
-                    throw new Error(words(ctx, "Board response is incomplete.", "看板回應不完整。"));
+                    throw Object.assign(new Error("Board response is incomplete."),
+                        { code: "board_response_incomplete" });
                 if (typeof board.revision !== "number" || board.revision < state.revision) return;
                 state.revision = board.revision;
                 state.projects = board.projects;
                 state.readStatus = board.readState && board.readState.status || "ready";
                 if (project && !["loading", "error"].includes(state.readStatus)
                     && !board.projects.some((row) => row.id === project)) {
-                    const unavailable = new Error(words(ctx,
-                        "Project records are unavailable; the directory response does not contain this project.",
-                        "專案紀錄目前無法取得；目錄回應未包含這個專案。"));
+                    const unavailable = new Error("Project records are unavailable.");
                     unavailable.code = "project_not_found";
                     throw unavailable;
                 }
@@ -1789,7 +1804,7 @@ export function bindBoardPage(elements, environment = {}) {
                             ctx,
                             "Could not update. Displayed records may be old. ",
                             "更新失敗，畫面上的紀錄可能不是最新。"
-                        ) + (error.message || ""),
+                        ) + boardRefusal(ctx, error),
                         true
                     );
                 }
@@ -1834,7 +1849,7 @@ export function bindBoardPage(elements, environment = {}) {
                 if (!state.active || ticket !== state.reportTicket
                     || project !== state.projectId || item !== state.itemId) return;
                 state.reportSelection = {
-                    id: report, status: "error", error: error.message || String(error)
+                    id: report, status: "error", error: failureSentence(error, words(ctx, "The report could not be read.", "無法讀取報告。"))
                 };
                 render();
             });
@@ -1878,7 +1893,7 @@ export function bindBoardPage(elements, environment = {}) {
             })
             .catch((error) => {
                 if (state.active && ticket === state.collectionTickets[kind])
-                    ctx.status((error && error.message) || String(error), true);
+                    ctx.status(failureSentence(error, words(ctx, "That did not work.", "沒有成功。")), true);
             });
     };
     function open(project, item, presentation, machine, routeError, locatorBacked = false) {

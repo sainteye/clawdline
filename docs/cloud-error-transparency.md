@@ -67,7 +67,7 @@
   "ref": { "sender": "web_f052dcb8-…", "seq": 1234, "request": "3bff2f2b-…" },
   "status": 503,
   "retryable": true,
-  "detail": { "reason": "token_rotation_window", "clears_in_ms": 41000 }
+  "detail": { "reason": "stability_period_incomplete", "clears_in_ms": 41000 }
 }
 ```
 
@@ -85,7 +85,7 @@ Mac 回覆的 `error` 物件新增三個欄位：`layer`、`seq`、`detail`（`r
 所有 Cloud 拒絕與丟棄都改寫成同一種行：
 
 ```
-cloud: refusal layer=mac_ledger code=command_clock_uncertain sender=web_f052dcb8-… seq=1234 request=3bff2f2b-… type=voice session=%25690 status=503 reply=published detail.reason=token_rotation_window
+cloud: refusal layer=mac_ledger code=command_clock_uncertain sender=web_f052dcb8-… seq=1234 request=3bff2f2b-… type=voice session=%25690 status=503 reply=published detail.reason=stability_period_incomplete
 ```
 
 - 解密前就丟掉的那種，沒有 `request`、`type`、`session`，這三欄寫 `-`；另外多出 `key_id=`／`expected_key_id=` 或 `highest_seq=`。
@@ -164,7 +164,7 @@ cloud: refusal layer=mac_ledger code=command_clock_uncertain sender=web_f052dcb8
 | ID | 路徑 | 今天 | 之後 | 測試 |
 |---|---|---|---|---|
 | L1 | 所有帳本拒絕的回覆訊息都是同一句 `The command durability boundary is unavailable.`（`CloudAppBridge.swift:2201-2210`） | 語音直接顯示這句英文 | 回覆帶 `layer`、`code`、`detail`，畫面文字由 code 決定 | T-L1 |
-| L2 | `command_clock_uncertain`：時鐘守衛的原因在 `CloudBridgeLifecycle.swift:147-150` 被丟掉。**這個窗口本身由 task 7dddfed6 修**，這裡只負責讓它看得見 | 同 L1 | `detail.reason`（例如 `token_rotation_window`）加上 `clears_in_ms`；畫面顯示「Mac 正在確認時間，約 N 秒後再試」 | T-L2 |
+| L2 | `command_clock_uncertain`：時鐘守衛的原因在 `CloudBridgeLifecycle.swift:147-150` 被丟掉。**這個窗口本身由 task 7dddfed6 修**，這裡只負責讓它看得見 | 同 L1 | `detail.reason`（例如 `stability_period_incomplete`）加上 `clears_in_ms`；畫面顯示「Mac 正在確認時間，約 N 秒後再試」 | T-L2 |
 | L3 | `command_gate_unavailable` 一個代碼同時代表「roster 讀不到」和「寫入開關關著」（`CloudBridgeLifecycle.swift:592-598`） | 分不出是哪一個 | 拆成 `command_roster_unreadable` 與 `command_writes_disabled` | T-L3 |
 | L4 | 帳本 row 不記指令種類、seq、session，也不記回覆有沒有送到；效果發生前的拒絕會把 reserved row 直接刪掉（`CloudCommandLedger.swift:715-726`），不留痕跡 | 事後查不到 | 另外在記憶體裡放一個「最近 N 筆指令」的 ring（§4.1），**不改帳本的持久格式** | T-L4 |
 
@@ -191,7 +191,7 @@ cloud: refusal layer=mac_ledger code=command_clock_uncertain sender=web_f052dcb8
   "bridge": "attached",
   "transport": { "state": "connected", "connected_since": "…", "last_close": "token_rotation" },
   "token": { "expires_at": "…", "next_rotation_at": "…" },
-  "clock_guard": { "state": "uncertain", "reason": "token_rotation_window", "since": "…", "clears_at": "…" },
+  "clock_guard": { "state": "uncertain", "reason": "stability_period_incomplete", "since": "…", "clears_at": "…" },
   "identity": { "key_id": "ms-2", "roster_readable": true, "devices": [{ "device": "web_f052dcb8-…", "label": "iPhone" }] },
   "inbound": { "accepted": 812, "dropped": { "key_id_mismatch": 790, "replay": 13 }, "recent_drops": ["最多 20 筆"] },
   "commands": ["最多 50 筆：ref、type、各步驟時間、refusal{layer,code}"],
@@ -294,7 +294,7 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
 
 | 情境 | 怎麼製造 | 畫面應該說 |
 |---|---|---|
-| token 輪替窗口 | 在 `reconnect waiting reason=token_rotation` 之後 10 秒內送語音。如果 7dddfed6 已經把窗口修掉，改用測試開關強制讓時鐘守衛 uncertain | `mac_ledger · command_clock_uncertain · ref`，原因 `token_rotation_window` |
+| 時鐘穩定窗口 | 用測試開關強制讓時鐘守衛在 `stability_period_incomplete`（或另一個目前的七種守衛原因） | `mac_ledger · command_clock_uncertain · ref`，原因與 Mac 當下守衛值一致 |
 | replay | 同一個 Chrome profile 開第二個分頁，先在新分頁送一筆，再回到舊分頁送一筆 | `mac_transport · replay · ref`，「這台裝置在別的分頁也開著」 |
 | 金鑰不符 | 只在測試分頁的記憶體裡把 `keyID` 改成舊值再送出，不動 Keychain | 本機顯示 `key_id_drift`，Mac notice 顯示 `key_id_mismatch`，兩個 key_id 都在 |
 | Mac 離線 | 把 Clawdline 的 Cloud 開關關掉後送出 | 立刻顯示 `relay · machine_offline · ref` |
@@ -408,12 +408,16 @@ Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status
 - §4.1 快照的 `commands` 每一筆：`{"sender","seq","request"|null,"type"|null,"session"|null,
   "accepted_at_ms"|null,"executed_at_ms"|null,"outcome"|null,"delivered_at_ms"|null,
   "undeliverable":null|"<snake>","refusal":null|{"layer","code"}}`。最多 50 筆，新的在前。
+- `undeliverable` 的封閉詞彙是 `command_answer_undeliverable`、
+  `read_answer_undeliverable`、`refusal_undeliverable`、`peer_rejected`、
+  `receipt_expired`、`ready_expired`；瀏覽器對這一組都說回覆未抵達。
 
 ### 11.4 指令一律帶 `request`
 
 - Mac：**每一種指令都接受選填的 `request`（小寫 UUID）**，包括 `answer`、`key`、`send`、`dispatch`；不因為多了這個鍵就回 `malformed_command`。
-- 瀏覽器：`answer`、`key`、以及沒帶 `request` 的 `send`，**只在那台 Mac 已經送出 `cloud_status.v >= 1` 之後**才補上 `request`。
-  否則照舊送出，避免新 console 配舊 Mac 時按不了選單。
+- 瀏覽器：`answer`、`key` **只在那台 Mac 已經送出 `cloud_status.v >= 1` 之後**才補上 `request`；`send` 本來就一律帶。
+  capable Mac 的 `answer`／`key` 在 relay ack 後仍等待 `action:<request>`，由 Mac 的成功或拒絕結案；relay 的
+  `machine_offline`／`publish_error` 仍可立即拒絕。舊 Mac 照舊走 ack-only，避免精確欄位檢查把新欄位當 malformed。
 
 ### 11.5 Cloud 指令 `diagnostics.report`
 
@@ -421,7 +425,7 @@ Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status
 - Mac：用 `DiagnosticReport.save` 寫同一組固定檔案，`written_by` 是信封的 sender。
   回覆 `action:<request>`，body 與 `POST /v1/diagnostics/report` 成功時相同；錯誤碼與那條 route 相同（`report_not_json`、`report_too_large`、`report_write_failed`），
   `layer` 為 `mac_route`。
-- 瀏覽器：送出前先檢查序列化後的大小，超過 relay 對 `ctl` 類別的上限（見 `clawdline-cloud/docs/DECISIONS.md` D17 與 relay 的 per-class cap）
+- 瀏覽器：只有已宣告 `cloud_status.v >= 1` 的 Mac 才收到這個新指令；舊 Mac 立即回本機的版本不相容提示。送出前先檢查序列化後的大小，超過 relay 對 `ctl` 類別的上限（見 `clawdline-cloud/docs/DECISIONS.md` D17 與 relay 的 per-class cap）
   或 `DiagnosticReport.maxBytes` 中較小的那個，就在本機以 `browser · report_too_large` 失敗，不送出。
 
 ### 11.6 `detail` 白名單

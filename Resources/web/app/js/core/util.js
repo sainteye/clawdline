@@ -1,5 +1,6 @@
 import { T, fill } from "./i18n.js";
 import { els } from "./dom.js";
+import { failureOpener, failureSentence } from "./failure-text.js";
 
 /* ==========================================================================
    2. Small helpers
@@ -70,10 +71,20 @@ export function uuid() {
 }
 
 var toastTimer = null;
-export function toast(text, bad) {
+export function toast(text, bad, onPress) {
     els.toast.textContent = text;
-    els.toast.className = "toast" + (bad ? " err" : "");
+    els.toast.className = "toast" + (bad ? " err" : "") + (onPress ? " failure-open" : "");
+    els.toast.onclick = onPress || null;
     els.toast.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { els.toast.hidden = true; }, 3200);
+    // A failure that can be pressed stays long enough to be pressed.
+    toastTimer = setTimeout(function () { els.toast.hidden = true; }, onPress ? 6000 : 3200);
+}
+
+/**
+ * A failure as a toast: its sentence and `code · ref` (`core/failure-text.js`), never its
+ * `message`, and a press on it opens the Cloud status sheet at that ref where there is one.
+ */
+export function toastFailure(error, fallback) {
+    toast(failureSentence(error, fallback), true, failureOpener(error));
 }

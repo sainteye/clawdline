@@ -1,6 +1,7 @@
 import { T } from "../core/i18n.js";
 import { els } from "../core/dom.js";
 import { toast } from "../core/util.js";
+import { failureSentence } from "../core/failure-text.js";
 import { api } from "../net/api.js";
 import { Settings } from "./settings.js";
 import { Diagnostics } from "../core/layout-diagnostics.js";
@@ -95,7 +96,7 @@ export var Push = (function () {
     }
 
     function taggedError(error, stage) {
-        var tagged = new Error(error && error.message ? error.message : T.webNotifyOnFailed);
+        var tagged = new Error(T.webNotifyOnFailed);
         tagged.stage = stage;
         tagged.code = error && (error.code || error.name) || "push_failed";
         return tagged;
@@ -230,7 +231,7 @@ export var Push = (function () {
             });
             var detail = " [" + (e && e.stage || "enable") + ": "
                 + (e && e.code || "push_failed") + "]";
-            toast((e && e.message ? e.message : T.webNotifyOnFailed) + detail, true);
+            toast(failureSentence(e, T.webNotifyOnFailed) + detail, true);
         });
     }
 
@@ -253,7 +254,7 @@ export var Push = (function () {
             busy = false; draw();
         }).catch(function (e) {
             busy = false; draw();
-            toast(e && e.message ? e.message : T.webNotifyOffFailed, true);
+            toast(failureSentence(e, T.webNotifyOffFailed), true);
         });
     }
 

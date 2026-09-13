@@ -268,9 +268,11 @@ cloudDoor.showCloudBootError({
 assert.equal(elements["cloud-door-lede"].textContent, "Cloud is temporarily unavailable");
 assert.ok(elements["cloud-door-guide"].textContent.includes("retry automatically"),
     "retryable transport failures are visibly distinct from terminal conflicts");
-assert.ok(elements["cloud-door-say"].textContent.includes("network unavailable")
+// The error is said by its code (`core/failure-text.js`), never by the message it was thrown with.
+assert.ok(elements["cloud-door-say"].textContent.includes("(unexpected_error)")
+    && !elements["cloud-door-say"].textContent.includes("network unavailable")
     && elements["cloud-door-say"].textContent.includes("Retrying in about 1s"),
-    "the visible retry state includes the transport error and backoff");
+    "the visible retry state includes the transport error's code and backoff");
 assert.equal(elements["cloud-door-restart"].hidden, true,
     "automatic transport retry does not masquerade as a terminal manual action");
 

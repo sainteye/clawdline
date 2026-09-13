@@ -113,15 +113,30 @@ It goes to **whatever server is serving the page** — this Mac, directly on the
 through its own tunnel. A page served by anything else answers something else, and the panel prints
 that refusal rather than a tick: what you must never get here is a green mark and no file.
 
-**On the hosted Cloud console there is no server to post to**, so the page sends the Cloud command
-`diagnostics.report` instead ([`cloud-error-transparency.md`](cloud-error-transparency.md) §11.5):
+**On the hosted console it is a Cloud command instead**, because `app.clawdline.com` has no such
+route and the POST reached nothing. The panel hands the report to the Cloud transport, which sends
+`diagnostics.report` to the Mac (`docs/cloud-error-transparency.md` §11.5) with the browser's recent
+command trail attached as `cloud_trail` — sequences, steps and codes, no contents. It checks the
+serialized size first against the smaller of `DiagnosticReport.maxBytes` and the relay's `ctl`
+ceiling (16 MiB since `clawdline-cloud` D17), and over it the panel says `browser · report_too_large`
+without sending anything. The Mac writes the same two files with the envelope's sender as
+`written_by` and answers with the receipt below; the panel prints that `path`, or the refusal as
+`layer · code · ref`.
+
+The exact command is
 `{"type":"diagnostics.report","session":"__clawdline_machine__","request":<uuid>,"report":<object>}`.
-The Mac answers it on `action:<request>` by calling the same `DiagnosticReport.save`, so the file,
-the size limit, the rotation, the success body and the refusal codes below are the route's own. Two
-differences, both deliberate: `written_by` is the envelope's sender (the paired device id), and a
-refusal's `error` also carries `layer: "mac_route"` and the envelope `seq`. Like the route, the
-command is read-level: remote writes being off does not refuse it. The audit entry is the same
-`diagnostics.report` event, with `via: cloud`.
+The Mac answers on `action:<request>` by calling the same `DiagnosticReport.save`, so the size
+limit, rotation, success body and refusal codes below remain the route's own. Two differences are
+deliberate: `written_by` is the paired device id, and a refusal also carries
+`layer: "mac_route"` plus the envelope sequence. The command is read-level and is not refused just
+because remote writes are off. An older Mac that has never advertised `cloud_status.v >= 1` is not
+sent this command; the page immediately says that the versions do not understand each other.
+
+**The Cloud status sheet is the other half.** Settings has a "Cloud status" row in Cloud mode, and
+every failure line on the page opens it at its `ref`: this browser's steps for each recent command,
+each Mac's `cloud.status` steps and refusal for the same ref, the clock guard, token expiry, key id,
+drop counts, key-id drift and the other-tab hint. The same `ref` is what `cloud-status.json` on the
+Mac is indexed by. See [`cloud.md`](cloud.md#what-is-wired-in-the-browser).
 
 **Authentication is the paired device, at read level.** Two decisions, both deliberate:
 
@@ -212,4 +227,5 @@ and `dropped` is how you find out that was not enough.
 | the Cloud command, answered with the same store | `CloudDiagnosticsReportRoute` in `Sources/CloudLocalRoute.swift` |
 | `cloud-status.json`, `cloud.status` and the notice | `Sources/CloudStatus.swift`, fed by `Sources/CloudAppBridge.swift` and `Sources/CloudTransport.swift` |
 | the Cloud report route, status file and notice on real files and fixtures | `Tests/CloudTransparencyTests.swift` |
+| the Cloud command, its size check and the status sheet's data | `Tests/web-cloud-failures.mjs` |
 | the notification road this was built during | [`docs/notifications.md`](notifications.md) |
