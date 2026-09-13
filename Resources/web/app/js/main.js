@@ -35,6 +35,7 @@ import {
     hideCloudGate, deferCloudGate, showCloudGate, showCloudBootError, showCloudDeviceRecovery,
     showCloudPairing, showCloudSignIn, showCloudAlreadyPaired, showCloudSessionAccessProblem
 } from "./input/cloud-pairing.js";
+import { CloudStatus } from "./input/cloud-status.js";
 import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onboarding.js";
 import "./door/door.js";
 import "./view/derive.js";
@@ -232,6 +233,15 @@ if (transportKind === "cloud") {
     // binding — once the relay handshake has actually completed.
     useApi(idleClient());
     handlers.conn("connecting");
+    // Every failure line on this page opens the Cloud status sheet at its `ref` from here on, and
+    // the sheet's key-drift row leads to the same encryption repair the Cloud door already offers.
+    CloudStatus.bindFailureLines();
+    CloudStatus.onRepair(function () {
+        S.locked = true;
+        handlers.conn("locked");
+        cloudGateUp = true;
+        showCloudSessionAccessProblem("encryption");
+    });
     var cloudOnboarding = cloudOnboardingMode(window);
     if (cloudOnboarding === "install") {
         // Do not call ensureSession here. A Safari viewer would consume a device slot and its

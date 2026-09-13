@@ -8,6 +8,7 @@ import { api } from "../net/api.js";
 import { renderTranscript } from "../view/transcript.js";
 import { BoardControls } from "./board-settings.js";
 import { callSessionUI } from "../session/ui.js";
+import { CloudStatus } from "./cloud-status.js";
 
 var Push = {
     redraw: function () { return callSessionUI("redrawPush"); },
@@ -97,6 +98,7 @@ export var Settings = (function () {
             els["settings-version"].textContent =
                 version ? fill(T.webSettingsVersion, { v: version }) : "";
             bindDiagnosticsDoor();
+            CloudStatus.drawSettingsRow(els["settings-sheet"]);
             Push.redraw();
             this.drawAssistantIcons();
             this.drawOrder();

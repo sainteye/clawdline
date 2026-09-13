@@ -54,3 +54,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 
 .mono { font-family: var(--mono); font-size: 12px; letter-spacing: -0.1px; }
 
+
+/* A failure's `code · ref`, after its sentence (`core/failure-text.js`). Small, because the sentence
+   is what a person reads; there, because it is what whoever debugs it will ask them for. The line
+   it sits in opens the Cloud status sheet at that ref when the page has one. */
+.failure-tag { font: 500 10.5px/1.3 var(--mono); color: var(--faint); letter-spacing: -0.1px; white-space: nowrap; }
+.failure-open { cursor: pointer; }
+.toast.failure-open { cursor: pointer; }
