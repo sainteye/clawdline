@@ -337,6 +337,41 @@ is told `cloud_read_needs_send_prompt` rather than left waiting; widening it is 
 exponential backoff and jitter, and treats a refusal as terminal for the same reason the Mac
 does. Outbound sequences use the same reserve-ahead discipline as the Mac, in `localStorage`.
 
+**Every failure names its layer, code and ref** ([`cloud-error-transparency.md`](cloud-error-transparency.md)
+§11 is the wire contract). `net/cloud-failure.js` turns every rejection into one shape —
+`{layer, code, ref: {sender, seq, request}, status, retryable, detail}` — whatever said it: a Mac
+reply `error` (a Mac that names no layer is recorded as `mac`), a relay `ack` with
+`machine_offline` or a `publish_error` (matched to the request by `(ch, seq)` and settled at once),
+the last relay `error` frame and the WebSocket close code (kept in the connection state and carried
+by every later request on that socket), or this page itself (`browser`). `detail` keeps only the
+§11.6 whitelist, and `retryable` comes from a table here — an unknown code is terminal. A token
+renewal retires in-flight work as `cloud_reconnecting`. No public `CloudClient` method throws
+synchronously; `Tests/web-cloud-failures.mjs` calls all of them in three broken states.
+
+**The words come from the code.** Every UI error site goes through `core/failure-text.js`:
+a known code gets its sentence, an unknown one the screen's fallback, and each line ends in
+`code · ref` (`f052dcb8·1234`). No screen shows an error's `message`; the same suite scans
+`js/input`, `js/view` and `js/session` for it. A failure line opens the Cloud status sheet.
+
+**What the Mac says when it cannot answer.** A Mac that publishes `cloud_status` in its
+`orch/<machine>` snapshot (§11.2) is marked capable. A `recent_drops` or `recent_notices` entry
+naming this device and a sequence still waiting settles that request in the Mac's own layer and
+code; a `replay` of a sequence this tab sent says the device is open in another tab. Only a capable
+Mac is sent `request` on `answer`, `key` and `send` (§11.4), asked `cloud.status` when a read times
+out (so an executed command whose reply was lost says so), and asked for the status sheet.
+
+**This browser checks its own key id.** Every Mac envelope's `key_id` is compared with the key this
+browser seals with; a difference is `key_id_drift` with both ids on the status sheet, whose repair
+button raises the same encryption door a key error does. Other tabs of the same device are found
+over `BroadcastChannel`.
+
+**The Cloud status sheet** (`input/cloud-status.js`, data in `view/cloud-status.js`) opens from any
+failure line — scrolled to that ref — and from the Settings row that appears only in Cloud mode. It
+joins the browser's bounded trail of its last 50 commands (sequence, type, Mac, step times, refusal;
+never contents) with each capable Mac's `cloud.status` snapshot, read once when the sheet opens,
+plus the Mac's clock guard, token expiry, key id and drop counts. A failed read is a typed line on
+the sheet. `?mock=1&cloud-status=line|open` draws a fixed failure and sheet for layout checks.
+
 ## Pairing and executor identity
 
 The normative W5-2 wire is the four-phase identity protocol. The machine starts it with

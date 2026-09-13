@@ -823,7 +823,7 @@ export var T = {
     webFailNoAnswer: "The Mac did not answer.",
     webFailReplyLost: "The Mac did it, but its reply did not arrive.",
     webFailClock: "The Mac is confirming its clock. Try again shortly.",
-    webFailClockIn: "The Mac is confirming its clock. Try again in about {n} s.",
+    webFailClockIn: "The Mac is confirming its clock. Try again in about {n} seconds.",
     webFailKeyMismatch: "This browser's encryption key does not match the Mac's.",
     webFailOtherTab: "This device is also open in another tab.",
     webFailUnknownSender: "This Mac does not recognise this browser.",

@@ -1927,7 +1927,7 @@ extension Copy {
     var webFailNoAnswer: String { "The Mac did not answer." }
     var webFailReplyLost: String { "The Mac did it, but its reply did not arrive." }
     var webFailClock: String { "The Mac is confirming its clock. Try again shortly." }
-    var webFailClockIn: String { "The Mac is confirming its clock. Try again in about {n} s." }
+    var webFailClockIn: String { "The Mac is confirming its clock. Try again in about {n} seconds." }
     var webFailKeyMismatch: String { "This browser's encryption key does not match the Mac's." }
     var webFailOtherTab: String { "This device is also open in another tab." }
     var webFailUnknownSender: String { "This Mac does not recognise this browser." }

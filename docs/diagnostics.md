@@ -113,6 +113,22 @@ It goes to **whatever server is serving the page** — this Mac, directly on the
 through its own tunnel. A page served by anything else answers something else, and the panel prints
 that refusal rather than a tick: what you must never get here is a green mark and no file.
 
+**On the hosted console it is a Cloud command instead**, because `app.clawdline.com` has no such
+route and the POST reached nothing. The panel hands the report to the Cloud transport, which sends
+`diagnostics.report` to the Mac (`docs/cloud-error-transparency.md` §11.5) with the browser's recent
+command trail attached as `cloud_trail` — sequences, steps and codes, no contents. It checks the
+serialized size first against the smaller of `DiagnosticReport.maxBytes` and the relay's `ctl`
+ceiling (16 MiB since `clawdline-cloud` D17), and over it the panel says `browser · report_too_large`
+without sending anything. The Mac writes the same two files with the envelope's sender as
+`written_by` and answers with the receipt below; the panel prints that `path`, or the refusal as
+`layer · code · ref`.
+
+**The Cloud status sheet is the other half.** Settings has a "Cloud status" row in Cloud mode, and
+every failure line on the page opens it at its `ref`: this browser's steps for each recent command,
+each Mac's `cloud.status` steps and refusal for the same ref, the clock guard, token expiry, key id,
+drop counts, key-id drift and the other-tab hint. The same `ref` is what `cloud-status.json` on the
+Mac is indexed by. See [`cloud.md`](cloud.md#what-is-wired-in-the-browser).
+
 **Authentication is the paired device, at read level.** Two decisions, both deliberate:
 
 * **Not the machine-level orchestrator token.** This is one browser handing over what it recorded
@@ -169,4 +185,5 @@ and `dropped` is how you find out that was not enough.
 | the write, the limit and the rotation | `Sources/DiagnosticReport.swift` |
 | the store's behaviour on a real disk | `Tests/diagnostic-report-focused.mjs` |
 | the panel, the completeness block and the two spellings of the route | `Tests/web-diagnostics-send.mjs` |
+| the Cloud command, its size check and the status sheet's data | `Tests/web-cloud-failures.mjs` |
 | the notification road this was built during | [`docs/notifications.md`](notifications.md) |
