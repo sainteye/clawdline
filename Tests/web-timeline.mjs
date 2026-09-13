@@ -87,10 +87,12 @@ assert.deepEqual(calls.at(-1)[2], {
     project: "project-one", entry: "entry-one", cursor: "40",
     environment: "production", category: "feature", upcoming: true,
 });
-assert.throws(() => CloudClient.prototype.board.call(cloud, "p", "i", null, "gone"),
+const callsBeforeGone = calls.length;
+await assert.rejects(CloudClient.prototype.board.call(cloud, "p", "i", null, "gone"),
     error => error.code === "cloud_machine_unavailable");
-assert.throws(() => CloudClient.prototype.timeline.call(cloud, "p", "e", "", "production", "", false, "gone"),
+await assert.rejects(CloudClient.prototype.timeline.call(cloud, "p", "e", "", "production", "", false, "gone"),
     error => error.code === "cloud_machine_unavailable");
+assert.equal(calls.length, callsBeforeGone, "a Mac that is gone is refused before any request is made");
 
 const timelineSource = readFileSync(new URL("../Resources/web/app/js/view/timeline.js", import.meta.url), "utf8");
 assert.doesNotMatch(timelineSource, /environment\.onMode\(snapshot\)/,

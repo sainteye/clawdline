@@ -188,6 +188,12 @@ function socketURL(input) {
 /**
  * The browser viewer transport.  Reads are on by construction; writes require
  * `allowWrites: true` as well as both device and master keys.
+ *
+ * **A method a page awaits answers every failure as a rejected promise, never as a throw.** The
+ * page writes `api.x(…).then(ok).catch(say)` and puts its in-flight flag down in that settle; a
+ * synchronous throw skips both. On the start sheet it left "Starting…" on a row, every other row
+ * shut and Close dead until the page was reloaded. `Tests/web-start-sheet-failures.mjs` finds
+ * these methods by enumeration and calls each one with inputs that fail.
  */
 export class CloudClient {
     constructor(options) {
@@ -250,7 +256,10 @@ export class CloudClient {
         }, this);
         this.transcriptSnapshots = new Map();
         this.orchestratorSnapshots = new Map();
-        this.placeRoutes = new Map();
+        // The rows a page was handed by `places()` outlive the socket that read them: the start
+        // sheet keeps its list on screen across a renewal, and a press on one of those rows used
+        // to find this Map empty and die before reaching any Mac.
+        this.placeRoutes = sameViewer ? new Map(prior.placeRoutes) : new Map();
         this.readWaiters = new Map();
         this.imageReadsInFlight = options.imageReadsInFlight || IMAGE_READS_IN_FLIGHT;
         this.imageReadQueue = [];
@@ -690,7 +699,21 @@ export class CloudClient {
             timeoutMs);
     }
 
-    /** Projects and the start sheet are account views, so each Mac answers its own inventory. */
+    /**
+     * Projects and the start sheet are account views, so each Mac answers its own inventory.
+     *
+     * **The route table is replaced only by a complete answer.** It used to be cleared before
+     * the first Mac was asked, and it stayed empty until every Mac had answered — for ever, if
+     * one of them failed or timed out. Meanwhile the pages that called this keep the list they
+     * already have on screen, so a press on one of its rows found no route. Now the table is the
+     * list of the last read that succeeded, which is the list those pages are showing.
+     *
+     * A retained route can name a project that has since gone from its Mac. That is not a
+     * guess this page makes: the route only says which Mac to ask, and that Mac answers a place
+     * it no longer has with `not_found`, which the start sheet already answers by reading the
+     * list again. What the table no longer does is refuse, on the Mac's behalf, a project
+     * nobody has said is gone.
+     */
     places() {
         var machines = this._knownMachines();
         if (!machines.length) {
@@ -698,7 +721,6 @@ export class CloudClient {
                 "no Mac has published an inventory to this account yet"));
         }
         var self = this;
-        self.placeRoutes.clear();
         return Promise.all(machines.map(function (machine) {
             return self._machineRequest(machine, "places", {}, "read").then(function (answer) {
                 var places = answer && Array.isArray(answer.places) ? answer.places : [];
@@ -709,11 +731,12 @@ export class CloudClient {
             var places = [];
             var assistants = [];
             var assistantIDs = new Set();
+            var routes = new Map();
             answers.forEach(function (answer) {
                 answer.places.forEach(function (place) {
                     if (!place || typeof place.id !== "string" || !place.id) return;
                     var id = cloudPlaceID(answer.machine, place.id);
-                    self.placeRoutes.set(id, { machine: answer.machine, id: place.id,
+                    routes.set(id, { machine: answer.machine, id: place.id,
                         path: place.path || "" });
                     places.push(Object.assign({}, place, { id: id, machine: answer.machine }));
                 });
@@ -724,10 +747,12 @@ export class CloudClient {
                     assistants.push(assistant);
                 });
             });
+            self.placeRoutes = routes;
             return { places: places, assistants: assistants };
         });
     }
 
+    /** Throws; every public caller turns that into a rejection. */
     _place(value) {
         var id = value && typeof value === "object" ? value.id : value;
         var route = this.placeRoutes.get(String(id || ""));
@@ -736,10 +761,12 @@ export class CloudClient {
     }
 
     projectWorktrees(project) {
-        var route = this._place(project);
-        return this._machineRequest(route.machine, "project-worktrees",
-            { project: (project && typeof project === "object" && project.path) || route.path },
-            "read");
+        try {
+            var route = this._place(project);
+            return this._machineRequest(route.machine, "project-worktrees",
+                { project: (project && typeof project === "object" && project.path) || route.path },
+                "read");
+        } catch (error) { return Promise.reject(error); }
     }
 
     /** The Project worktree lifecycle read model from one Mac, named by its Board Project id.
@@ -760,79 +787,95 @@ export class CloudClient {
             return Promise.reject(cloudError("malformed_read",
                 "a Project worktree read needs a bounded Project id"));
         }
-        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
-            throw cloudError("cloud_machine_unavailable",
-                "this Mac has not published a current Cloud inventory");
-        }
-        var route = machine || this._onlyMachine("Project worktrees");
-        var timeout = type === "project-worktree-lifecycle-refresh" ? 130000 : undefined;
-        return this._machineRequest(route, type, { project: project }, "read", timeout)
-            .then(function (answer) { return Object.assign({}, answer, { machine: route }); });
+        try {
+            if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+                throw cloudError("cloud_machine_unavailable",
+                    "this Mac has not published a current Cloud inventory");
+            }
+            var route = machine || this._onlyMachine("Project worktrees");
+            var timeout = type === "project-worktree-lifecycle-refresh" ? 130000 : undefined;
+            return this._machineRequest(route, type, { project: project }, "read", timeout)
+                .then(function (answer) { return Object.assign({}, answer, { machine: route }); });
+        } catch (error) { return Promise.reject(error); }
     }
 
     board(project, item, report, machine) {
-        if (report) item = boardReportSelection(item, report);
-        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
-            throw cloudError("cloud_machine_unavailable",
-                "this Mac has not published a current Cloud inventory");
-        }
-        return this._machineRequest(machine || this._onlyMachine("Project Board"), "board",
-            { project: project || "", item: item || "" }, "read");
+        try {
+            if (report) item = boardReportSelection(item, report);
+            if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+                throw cloudError("cloud_machine_unavailable",
+                    "this Mac has not published a current Cloud inventory");
+            }
+            return this._machineRequest(machine || this._onlyMachine("Project Board"), "board",
+                { project: project || "", item: item || "" }, "read");
+        } catch (error) { return Promise.reject(error); }
     }
 
     boardCommand(body, machine) {
-        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
-            throw cloudError("cloud_machine_unavailable",
-                "this Mac has not published a current Cloud inventory");
-        }
-        return this._machineRequest(machine || this._onlyMachine("Project Board"), "board-command",
-            { command: body }, "action");
+        try {
+            if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+                throw cloudError("cloud_machine_unavailable",
+                    "this Mac has not published a current Cloud inventory");
+            }
+            return this._machineRequest(machine || this._onlyMachine("Project Board"),
+                "board-command", { command: body }, "action");
+        } catch (error) { return Promise.reject(error); }
     }
 
     timeline(project, entry, cursor, environment, category, includeUpcoming, machine) {
-        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
-            throw cloudError("cloud_machine_unavailable",
-                "this Mac has not published a current Cloud inventory");
-        }
-        return this._machineRequest(machine || this._onlyMachine("Project Timeline"), "timeline", {
-            project: project || "", entry: entry || "", cursor: cursor ? String(cursor) : "",
-            environment: environment || "production", category: category || "",
-            upcoming: !!includeUpcoming
-        }, "read");
+        try {
+            if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+                throw cloudError("cloud_machine_unavailable",
+                    "this Mac has not published a current Cloud inventory");
+            }
+            return this._machineRequest(machine || this._onlyMachine("Project Timeline"), "timeline", {
+                project: project || "", entry: entry || "", cursor: cursor ? String(cursor) : "",
+                environment: environment || "production", category: category || "",
+                upcoming: !!includeUpcoming
+            }, "read");
+        } catch (error) { return Promise.reject(error); }
     }
 
     timelineCommand(body, machine) {
-        if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
-            throw cloudError("cloud_machine_unavailable",
-                "this Mac has not published a current Cloud inventory");
-        }
-        return this._machineRequest(machine || this._onlyMachine("Project Timeline"),
-            "timeline-command", { command: body }, "action");
+        try {
+            if (machine !== undefined && (!machine || !this._knownMachines().includes(machine))) {
+                throw cloudError("cloud_machine_unavailable",
+                    "this Mac has not published a current Cloud inventory");
+            }
+            return this._machineRequest(machine || this._onlyMachine("Project Timeline"),
+                "timeline-command", { command: body }, "action");
+        } catch (error) { return Promise.reject(error); }
     }
 
     pastSessions(place, assistant) {
-        var route = this._place(place);
-        return this._machineRequest(route.machine, "past-sessions",
-            { place: route.id, assistant: assistant || "" }, "read");
+        try {
+            var route = this._place(place);
+            return this._machineRequest(route.machine, "past-sessions",
+                { place: route.id, assistant: assistant || "" }, "read");
+        } catch (error) { return Promise.reject(error); }
     }
 
     startPlace(place, assistant, model) {
-        var route = this._place(place);
-        return this._machineRequest(route.machine, "start", {
-            place: route.id, assistant: assistant || "", model: model || ""
-        }, "action");
+        try {
+            var route = this._place(place);
+            return this._machineRequest(route.machine, "start", {
+                place: route.id, assistant: assistant || "", model: model || ""
+            }, "action");
+        } catch (error) { return Promise.reject(error); }
     }
 
     resumePlace(place, past, assistant, actionRequestId) {
-        var route = this._place(place);
-        if (actionRequestId) {
-            return this._read({ machine: route.machine, session: MACHINE_REPLY_SESSION }, "resume", {
-                request: actionRequestId, place: route.id, past: String(past || ""), assistant: assistant || ""
-            }, "action:" + actionRequestId);
-        }
-        return this._machineRequest(route.machine, "resume", {
-            place: route.id, past: String(past || ""), assistant: assistant || ""
-        }, "action");
+        try {
+            var route = this._place(place);
+            if (actionRequestId) {
+                return this._read({ machine: route.machine, session: MACHINE_REPLY_SESSION }, "resume", {
+                    request: actionRequestId, place: route.id, past: String(past || ""), assistant: assistant || ""
+                }, "action:" + actionRequestId);
+            }
+            return this._machineRequest(route.machine, "resume", {
+                place: route.id, past: String(past || ""), assistant: assistant || ""
+            }, "action");
+        } catch (error) { return Promise.reject(error); }
     }
 
     /** End the session on the Mac that published it, with the same two close gates as HTTP. */
@@ -960,7 +1003,9 @@ export class CloudClient {
      * interactive, while revision refreshes and agent reads remain background work.
      */
     transcript(value, phases, demand) {
-        var identity = this._sessionIdentity(value);
+        var identity;
+        try { identity = this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
         var priority = demand && demand.foreground ? "foreground" : "background";
         return this._read(identity, "transcript",
             { limit: TRANSCRIPT_LIMIT, priority: priority }, "transcript")
@@ -1058,7 +1103,9 @@ export class CloudClient {
      * together and come back on one channel in whatever order the disk gives them.
      */
     image(value, id) {
-        var identity = this._sessionIdentity(value);
+        var identity;
+        try { identity = this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
         var artifact = String(id == null ? "" : id);
         if (!artifact) return Promise.reject(new TypeError("image() needs an artifact id"));
         var self = this;
@@ -1110,7 +1157,9 @@ export class CloudClient {
      * transcript coalescing does for the same reason.
      */
     _read(value, type, extra, answer, timeoutMs) {
-        var identity = this._sessionIdentity(value);
+        var identity;
+        try { identity = this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
         // The refusal that is deliberate, and it is the relay's rather than this page's: PROTOCOL
         // §12 says publishing to `ctl/` needs `send_prompt`, in either class, and a read has to
         // ask on `ctl/` because that is the only channel a viewer may publish on at all. So a
@@ -1370,7 +1419,9 @@ export class CloudClient {
     }
 
     send(value, text, images) {
-        var identity = this._sessionIdentity(value);
+        var identity;
+        try { identity = this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
         if (!this.allowWrites) {
             return Promise.reject(cloudError("cloud_read_only", "cloud writes are disabled"));
         }
@@ -1385,7 +1436,9 @@ export class CloudClient {
     }
 
     answer(value, answer) {
-        var identity = this._sessionIdentity(value);
+        var identity;
+        try { identity = this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
         return this._publishCommand(identity.machine, "answer", {
             session: identity.session, answer: String(answer)
         }, "ctl");
@@ -1440,7 +1493,8 @@ export class CloudClient {
      * is exactly the kind of literal `tools/check-web-strings.py` exists to keep out.
      */
     title(value) {
-        this._sessionIdentity(value);
+        try { this._sessionIdentity(value); }
+        catch (error) { return Promise.reject(error); }
         return Promise.reject(cloudError("unsupported", T.webInfoTitleCloud));
     }
 
@@ -1492,7 +1546,9 @@ export class CloudClient {
             task = task || machine.task;
             machine = machine.machine;
         }
-        if (typeof machine !== "string" || !machine) throw new TypeError("dispatch needs a machine");
+        if (typeof machine !== "string" || !machine) {
+            return Promise.reject(new TypeError("dispatch needs a machine"));
+        }
         return this._publishCommand(machine, "dispatch", { task: task }, "dispatch");
     }
 
