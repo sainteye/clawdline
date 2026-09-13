@@ -187,12 +187,20 @@ rows fill the remaining budget. Omitted rows are actionable through selectors
 wire limit. Materialization constructs `childrenByParentID` and the progress cache once, then uses
 those same dictionaries for summaries, details and remaining-work rows.
 
-`listSummary:{coverage:"complete",group,attention}` is a bounded materialized display projection
+`listSummary:{coverage:"complete",group,attention,view}` is a bounded materialized display projection
 shared by compact cards and selected details. `attention` counts unresolved `blockingObligations`,
 explicit `userDecisions` (including nonblocking choices), `blockingFindings` and
 `failedVerifications` from the complete retained item, not a truncated detail prefix. Missing
 actor kind stays unknown; titles do not establish a user decision. No raw obligation/remaining-work
 arrays are added to list payloads.
+
+`view:{audience,role,defaultVisible,reasonCodes}` separates human work from retained agent execution
+detail without deleting either. Explicit Board items have `audience:"human"` and role
+`primary_work` or `subtask` according to their exact `parentId`. A broker fallback with a durable
+`inferredSourceKey` has `audience:"agent"` and role `execution_record` while task/span/evidence facts
+remain, otherwise `provenance_record`. Titles (including “review”, “test” and “correction”), age,
+state and key similarity are never classification inputs. Old responses without `view` remain
+visible for compatibility rather than being guessed away.
 
 The exclusive display groups are `active`, `planning`, `waiting`, `history`, `completed`, `canceled`
 and `coordination`. Existing active/terminal/coordination progress takes precedence. Non-active
@@ -201,6 +209,11 @@ A required future checklist is scope, not a present blocker. Active planning is 
 activity, never proof of implementation. This classification changes no lifecycle or evidence.
 Project `summary.listGroups` counts this same partition over all retained items, including zeros;
 legacy `summary.waiting` remains the old combined waiting/planning count for compatibility.
+`summary.humanListGroups` and `summary.agentListGroups` account for the two audiences independently.
+Catalog rows retain `itemCount` as the audit total and add `humanItemCount`,
+`currentHumanItemCount`, `humanLandedItemCount`, `agentRecordCount` and `archivedRecordCount`.
+The human reader uses the human counts; moving a row out of the default view is presentation only,
+not deletion, settlement, verification or landing.
 
 The reader displays separate planning/waiting totals only when the complete category model and
 summary coverage are present, never by subtracting partial loaded rows from a project total.
@@ -438,8 +451,11 @@ case never creates or selects a second relation.
 Export `bindBoardPage(elements, environment)` returning `{enter,leave,refresh,escape,open,state}`. `elements` has `board`, `board-title`, `board-subtitle`, `board-items`, `board-detail`, `board-status`, `board-search`, `board-back`, `board-refresh`. `environment` has `read(project?,item?)`, `navigate`, `openSession(id,projectPresentation)`, `onMode(board)` and optionally `onProjects(projects)` and injectable timers. The Promise-compatible Session callback receives the selected Project presentation and resolves a durable conversation ID to exactly one live terminal ID; zero or multiple matches return a visible typed refusal. The view does not start resume by itself. Traditional Chinese and English copy is local to the view module. DOM uses safe textContent, not unsanitized HTML.
 
 The Projects page opens the board within one selected Project. Render an overview, visual lifecycle,
-scoped search and item cards; unresolved historical records and completed/canceled history are
-collapsed separately and render in batches on expansion. Detail leads with
+scoped search and human work-item cards. Exact-parent subtasks are smaller, name their loaded parent
+and can navigate back to it. Unresolved historical records and completed/canceled human history are
+collapsed separately. Agent execution/provenance records live in one additional collapsed,
+searchable technical section and never inflate the human work totals. All collapsed sections render
+in batches on expansion. Detail leads with
 objective and progress, then a concise remaining-work/user-decision split and a prominent five-part
 report when present (absence is a collapsed note). Typed Original plan, Decisions & changes and
 Reference documents remain distinct from Outputs before progressively disclosing token spending, Session and

@@ -38,6 +38,15 @@
     background: var(--card); color: var(--ink); text-align: left; font: inherit; cursor: pointer;
 }
 .board-item-card:hover { border-color: var(--accent-ed); background: var(--card-hi); }
+.board-subtask-card { width: calc(100% - 28px); margin-inline-start: 28px; padding: 17px 18px; gap: 10px; }
+.board-subtask-card .board-kind-icon { width: 30px; height: 30px; }
+.board-subtask-card .board-card-title { font-size: 15px; }
+.board-card-parent { color: var(--faint); font: 10px/1.5 var(--mono); overflow-wrap: anywhere; }
+.board-agent-details { opacity: .88; }
+.board-agent-details[open] { opacity: 1; }
+.board-agent-card { padding: 16px 18px; gap: 10px; background: transparent; }
+.board-agent-card .board-kind-icon { width: 28px; height: 28px; }
+.board-agent-card .board-card-title { color: var(--dim); font-size: 14px; }
 .board-card-top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; }
 .board-kind { display: inline-flex; align-items: center; gap: 10px; color: var(--kind-ink, var(--ink)); flex-shrink: 0; }
 .board-kind-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--kind-bg, var(--card-hi)); border: 1px solid currentColor; }
@@ -173,6 +182,7 @@ details.board-section[open] > summary { margin-bottom: 14px; color: var(--ink); 
     .board-overview-stat strong { font-size: 28px; }
     .board-overview-stat span { font-size: 11px; }
     .board-item-card { padding: 18px; }
+    .board-subtask-card { width: calc(100% - 14px); margin-inline-start: 14px; padding: 15px 16px; }
     .board-fact { flex-wrap: wrap; gap: 4px 12px; }
     .board-fact-value { text-align: left; }
     .board-completion-report { margin-inline: -4px; padding: 20px 18px; border-radius: 15px; }

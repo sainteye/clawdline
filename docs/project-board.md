@@ -373,6 +373,15 @@ background updates. Failed updates retain the last model and distinguish failure
 that is actually running. Collapsed history initially creates no card DOM; expansion renders it
 in batches of 30, without changing authoritative Project totals.
 
+The default Board is a human work view, not a transcript of every agent step. Explicitly created
+Features, Epics, Tasks and Bugs remain the primary cards; an exact `parentId` renders a smaller
+subtask card linked to its parent. Broker-created fallback rows for review, testing, correction,
+coordination attempts and transferred provenance remain durable and searchable, but appear only in
+the collapsed **Agent execution details** section. The distinction comes from stored source and
+parent identities, never words in a title. “Removing” these rows from the ordinary Board therefore
+means removing distraction from the default presentation, not erasing evidence needed for audits,
+reconciliation or replay.
+
 Historical delivery and current exact-scope acceptance answer different questions. A broker-verified
 historical landing may be displayed as landed without forging exact-tree verification. An old
 landing must not hide newer active work, failed proof or reopened scope. Child success alone is

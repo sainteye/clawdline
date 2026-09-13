@@ -294,6 +294,71 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     p.view.leave();
 }
 {
+    const parent = item("Human release", "execution");
+    parent.key = "CLA-1";
+    parent.listSummary = { coverage: "complete", group: "active", view: {
+        audience: "human", role: "primary_work", defaultVisible: true, reasonCodes: ["explicit_work_item"]
+    } };
+    const child = item("Human acceptance", "execution");
+    child.key = "CLA-2";
+    child.parentId = parent.id;
+    child.listSummary = { coverage: "complete", group: "active", view: {
+        audience: "human", role: "subtask", defaultVisible: true, reasonCodes: ["explicit_parent"]
+    } };
+    const review = item("Agent review attempt", "review_testing");
+    review.listSummary = { coverage: "complete", group: "history", view: {
+        audience: "agent", role: "execution_record", defaultVisible: false,
+        reasonCodes: ["inferred_broker_record"]
+    } };
+    const provenance = item("Transferred correction provenance", "landed");
+    provenance.listSummary = { coverage: "complete", group: "completed", view: {
+        audience: "agent", role: "provenance_record", defaultVisible: false,
+        reasonCodes: ["inferred_provenance"]
+    } };
+    const project = { id: "a", name: "Clawdline", itemCount: 4, humanItemCount: 2,
+        currentHumanItemCount: 2, agentRecordCount: 2,
+        summaryCoverage: { status: "complete" }, summary: {
+            active: 1, waiting: 0, landed: 1,
+            humanListGroups: { active: 2, planning: 0, waiting: 0, history: 0,
+                completed: 0, canceled: 0, coordination: 0 },
+            agentListGroups: { active: 0, planning: 0, waiting: 0, history: 1,
+                completed: 1, canceled: 0, coordination: 0 }
+        } };
+    const p = page({ read: async () => envelope({
+        projects: [project], items: [parent, child, review, provenance]
+    }) });
+    await p.view.open("a");
+    const visible = p.elements["board-items"].all(".board-card-title").map(node => node.textContent);
+    check("default Board list contains only concrete human work",
+        visible.some(title => title.startsWith("Human release"))
+            && visible.some(title => title.startsWith("Human acceptance"))
+            && !visible.some(title => title.startsWith("Agent review attempt"))
+            && !visible.some(title => title.startsWith("Transferred correction provenance")));
+    check("human overview counts exclude retained agent records",
+        p.elements["board-items"].all(".board-overview-stat")[0]?.textContent === "2正在進行");
+    const childCard = p.elements["board-items"].all(node =>
+        node.dataset.boardItemId === child.id)[0];
+    check("subtasks are visually compact and name their exact loaded parent",
+        childCard?.className.includes("board-subtask-card")
+            && childCard.textContent.includes("CLA-1"));
+    const agentSection = p.elements["board-items"].all(node =>
+        node.dataset.boardSection === "agent-execution-details")[0];
+    check("agent execution is retained in one collapsed technical section",
+        agentSection?.tagName === "DETAILS" && !agentSection.open
+            && agentSection.textContent.includes("2") && !agentSection.all(".board-item-card").length);
+    agentSection.open = true; agentSection.dispatch("toggle");
+    check("expanding technical detail reveals retained records without promoting them",
+        agentSection.textContent.includes("Agent review attempt")
+            && agentSection.textContent.includes("Transferred correction provenance"));
+    p.elements["board-search"].value = "Agent review";
+    p.elements["board-search"].dispatch("input");
+    const searched = p.elements["board-items"].all(node =>
+        node.dataset.boardSection === "agent-execution-details")[0];
+    check("search can still find agent detail explicitly", searched?.open
+        && searched.textContent.includes("Agent review attempt"));
+    p.view.leave();
+}
+{
     const planned = item("Future phase", "planning"); planned.parentId = "program";
     const livePlan = item("Live discovery", "planning");
     livePlan.progress = { state: "planning", group: "active", active: true };

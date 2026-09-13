@@ -3872,6 +3872,30 @@ final class ProjectBoardStore {
 
     /// Read-model partition, not a lifecycle transition. Compute from full retained facts before
     /// truncating detail collections; compact cards and Project totals consume the same result.
+    private func audienceView(_ item: StoredItem) -> [String: Any] {
+        // The inferred source identity is the authority here. Titles such as "Review" and
+        // lifecycle states are deliberately not classification inputs: either can also describe
+        // a concrete work item that a person explicitly created.
+        if item.inferredSourceKey != nil {
+            let hasExecutionFacts = item.links.contains {
+                $0.source == "broker" && ($0.kind == "task" || $0.sourceTaskId != nil)
+            } || item.spans.contains { $0.source == "broker" }
+                || item.evidence.contains { $0.source == "broker" }
+            return [
+                "audience": "agent",
+                "role": hasExecutionFacts ? "execution_record" : "provenance_record",
+                "defaultVisible": false,
+                "reasonCodes": [hasExecutionFacts ? "inferred_broker_record" : "inferred_provenance"],
+            ]
+        }
+        return [
+            "audience": "human",
+            "role": item.parentId == nil ? "primary_work" : "subtask",
+            "defaultVisible": true,
+            "reasonCodes": [item.parentId == nil ? "explicit_work_item" : "explicit_parent"],
+        ]
+    }
+
     private func listSummary(_ item: StoredItem, progress: [String: Any]) -> [String: Any] {
         let blocking = item.obligations.filter { !$0.resolved && $0.blocking }.count
         let decisions = item.obligations.filter { !$0.resolved && $0.actorKind == "user" }.count
@@ -3891,7 +3915,8 @@ final class ProjectBoardStore {
             // Required future checklist scope is not a present blocker or execution activity.
             displayGroup = "planning"
         } else { displayGroup = group }
-        return ["group": displayGroup, "coverage": "complete", "attention": attention]
+        return ["group": displayGroup, "coverage": "complete", "attention": attention,
+                "view": audienceView(item)]
     }
 
     private func buildMaterializedReadSeedLocked() -> MaterializedReadSeed {
@@ -3930,13 +3955,28 @@ final class ProjectBoardStore {
             var active = 0, waiting = 0, history = 0, settled = 0
             var listGroups = Dictionary(uniqueKeysWithValues:
                 ["active", "planning", "waiting", "history", "completed", "canceled", "coordination"].map { ($0, 0) })
+            var humanListGroups = listGroups
+            var agentListGroups = listGroups
+            var humanItemCount = 0, humanLandedItemCount = 0, agentRecordCount = 0
             for item in items {
-                if let group = index.listSummaryByItemID[item.id]?["group"] as? String {
+                var isHuman = true
+                if let list = index.listSummaryByItemID[item.id],
+                   let group = list["group"] as? String {
                     listGroups[group, default: 0] += 1
+                    let view = list["view"] as? [String: Any]
+                    if view?["audience"] as? String == "agent" {
+                        isHuman = false
+                        agentRecordCount += 1
+                        agentListGroups[group, default: 0] += 1
+                    } else {
+                        humanItemCount += 1
+                        humanListGroups[group, default: 0] += 1
+                    }
                 }
                 if item.type == "coordination" { coordination += 1; continue }
                 let progress = index.progressByItemID[item.id] ?? progressObject(item)
                 let progressState = progress["state"] as? String ?? "unknown"
+                if isHuman && progressState == "landed" { humanLandedItemCount += 1 }
                 switch progress["group"] as? String {
                 case "active": active += 1
                 case "waiting": waiting += 1
@@ -3956,16 +3996,33 @@ final class ProjectBoardStore {
                 }
             }
             let updatedAt = items.map(\.updatedAt).max() ?? state.updatedAt
+            // Planned/not-started work is available inside the Project, but it is not current
+            // activity on the Project catalog card.
+            let currentHumanItemCount = ["active", "waiting"].reduce(0) {
+                $0 + (humanListGroups[$1] ?? 0)
+            }
+            let archivedRecordCount = (humanListGroups["history"] ?? 0)
+                + (humanListGroups["completed"] ?? 0)
+                + (humanListGroups["canceled"] ?? 0) + agentRecordCount
             catalog.append([
                 "id": project.id, "name": project.name, "itemCount": items.count,
+                "humanItemCount": humanItemCount,
+                "currentHumanItemCount": currentHumanItemCount,
+                "humanLandedItemCount": humanLandedItemCount,
+                "agentRecordCount": agentRecordCount,
+                "archivedRecordCount": archivedRecordCount,
                 "activeItemCount": active, "updatedAt": updatedAt,
                 "revision": state.revision, "observedAt": state.updatedAt,
                 "isStartPoint": false,
                 "summary": ["open": open, "needsClarity": needsClarity,
                             "landed": landed, "coordination": coordination,
                             "active": active, "waiting": waiting, "history": history,
-                            "settled": settled, "listGroups": listGroups],
+                            "settled": settled, "listGroups": listGroups,
+                            "humanListGroups": humanListGroups,
+                            "agentListGroups": agentListGroups],
                 "summaryCoverage": ["status": "complete", "retainedCount": items.count,
+                                    "humanRetainedCount": humanItemCount,
+                                    "agentRetainedCount": agentRecordCount,
                                     "omittedCount": 0, "reasons": [] as [String]],
             ])
         }

@@ -291,6 +291,18 @@ function listGroup(item) {
     if (needsAttention(item)) return "waiting";
     return planningOnly(item) ? "planning" : group;
 }
+function audienceView(item) {
+    const view = item?.listSummary?.view;
+    if (view?.audience === "agent") return {
+        audience: "agent",
+        role: ["execution_record", "provenance_record", "coordination_record"].includes(view.role)
+            ? view.role : "execution_record",
+        defaultVisible: false
+    };
+    // Older servers did not project an audience. Keep their rows visible and use only an exact
+    // parent UUID for the harmless visual hierarchy fallback.
+    return { audience: "human", role: item?.parentId ? "subtask" : "primary_work", defaultVisible: true };
+}
 function say(ctx, item) {
     if (item.type === "coordination")
         return words(
@@ -499,14 +511,28 @@ function renderLargeProgress(ctx, parent, item, compact = false) {
 }
 function card(ctx, item) {
     const node = button(ctx, null, null, "item", () => ctx.openItem(item.id), "board-item-card");
+    const view = audienceView(item);
     node.dataset.boardItemId = item.id;
     node.dataset.boardType = item.type;
     node.dataset.boardState = boardProgress(item);
+    node.dataset.boardRole = view.role;
+    if (view.role === "subtask") node.className += " board-subtask-card";
+    if (view.audience === "agent") node.className += " board-agent-card";
     const top = el(ctx, node, "span", null, "board-card-top");
     typeMark(ctx, top, item);
     badge(ctx, top, item);
     const narrative = reading(ctx, item);
     el(ctx, node, "strong", shortTitle(narrative.title || item.key || item.id), "board-card-title");
+    if (view.role === "subtask") {
+        const parent = ctx.itemById?.get(item.parentId);
+        el(ctx, node, "span", parent
+            ? words(ctx, "Subtask of ", "子任務・隸屬於 ") + shortTitle(parent.key || reading(ctx, parent).title || parent.title)
+            : words(ctx, "Subtask", "子任務"), "board-card-parent");
+    } else if (view.audience === "agent") {
+        el(ctx, node, "span", view.role === "provenance_record"
+            ? words(ctx, "Retained provenance", "保留的執行來源")
+            : words(ctx, "Agent execution detail", "Agent 執行細節"), "board-card-parent");
+    }
     if (narrative.summary) el(ctx, node, "span", narrative.summary, "board-card-summary");
     const blocker = (item.obligations || []).find((row) => row.blocking && !row.resolved);
     el(ctx, node, "span", blocker ? blocker.title : say(ctx, item), "board-card-next");
@@ -967,6 +993,11 @@ function detail(ctx) {
     badge(ctx, identity, item);
     const narrative = reading(ctx, item);
     el(ctx, head, "h2", narrative.title || item.title, "board-detail-title");
+    const parent = item.parentId && (ctx.itemById?.get(item.parentId)
+        || ctx.state.items.find(row => row.id === item.parentId));
+    if (parent) button(ctx, head,
+        words(ctx, "View parent ", "查看上層任務 ") + shortTitle(parent.key || parent.title),
+        "parent-item", () => ctx.openItem(parent.id), "board-button board-parent-link");
     button(ctx, head, words(ctx, "Copy item link", "複製項目連結"),
         "copy-item-link", () => ctx.copyLink(item.id), "board-button board-copy-link");
     if (narrative.summary) el(ctx, head, "p", narrative.summary, "board-detail-summary");
@@ -1391,7 +1422,10 @@ export function bindBoardPage(elements, environment = {}) {
                 );
                 const body = el(ctx, node, "span", null, "board-project-copy");
                 el(ctx, body, "strong", row.label || row.name);
-                el(ctx, body, "span", row.itemCount + words(ctx, " work items", " 個工作項目"));
+                const current = Number.isSafeInteger(row.currentHumanItemCount)
+                    ? row.currentHumanItemCount : row.itemCount;
+                if (current > 0)
+                    el(ctx, body, "span", current + words(ctx, " current work items", " 個目前工作項目"));
                 el(ctx, node, "span", "↗", "board-project-arrow");
             });
             if (!state.projects.length)
@@ -1413,12 +1447,16 @@ export function bindBoardPage(elements, environment = {}) {
             "copy-project-link", () => ctx.copyLink(null));
         const all = state.items.filter((row) => row.projectId === state.projectId),
             query = elements["board-search"].value.trim().toLocaleLowerCase();
-        const rows = all.filter(
+        ctx.itemById = new Map(all.map(row => [row.id, row]));
+        const matches = all.filter(
             (row) =>
                 !query ||
                 [row.title, row.summary, reading(ctx, row).title, reading(ctx, row).summary, row.key, row.owner].join(" ").toLocaleLowerCase().includes(query)
         );
-        const delivery = all.filter((row) => row.type !== "coordination"),
+        const humanAll = all.filter(row => audienceView(row).audience === "human"),
+            rows = matches.filter(row => audienceView(row).audience === "human"),
+            agentRows = matches.filter(row => audienceView(row).audience === "agent"),
+            delivery = humanAll.filter((row) => row.type !== "coordination"),
             coordinated = rows.filter((row) => row.type === "coordination");
         const active = rows.filter(row => listGroup(row) === "active"),
             planned = rows.filter(row => listGroup(row) === "planning"),
@@ -1427,7 +1465,8 @@ export function bindBoardPage(elements, environment = {}) {
             history = rows.filter(row => ["completed", "canceled"].includes(listGroup(row)));
         const overview = el(ctx, target, "div", null, "board-overview");
         const summary = project && project.summary;
-        const counts = summary?.listGroups;
+        const projectedHumanCounts = summary?.humanListGroups;
+        const counts = projectedHumanCounts || summary?.listGroups;
         const completeCounts = project?.summaryCoverage?.status === "complete"
             && LIST_GROUPS.every(key => Number.isSafeInteger(counts?.[key]) && counts[key] >= 0);
         const modelCount = (key, loaded) => summary && Number.isInteger(summary[key]) && summary[key] >= 0
@@ -1436,7 +1475,8 @@ export function bindBoardPage(elements, environment = {}) {
             [counts.active, "Active now", "正在進行"],
             [counts.waiting, "Ready or needs attention", "等待推進／需要處理"],
             [counts.planning, "Planning · not started", "規劃・尚未開始"],
-            [modelCount("landed", 0), "Landed", "已落地"]
+            [Number.isSafeInteger(project?.humanLandedItemCount)
+                ? project.humanLandedItemCount : modelCount("landed", 0), "Landed", "已落地"]
         ] : [
             [
                 modelCount("active", delivery.filter(row => boardGroup(row) === "active").length),
@@ -1455,13 +1495,18 @@ export function bindBoardPage(elements, environment = {}) {
             el(ctx, stat, "strong", count);
             el(ctx, stat, "span", words(ctx, en, chinese));
         });
-        const total = Number.isSafeInteger(project?.itemCount) && project.itemCount >= all.length
-            ? project.itemCount : null;
+        const total = Number.isSafeInteger(project?.humanItemCount) && project.humanItemCount >= humanAll.length
+            ? project.humanItemCount
+            : Number.isSafeInteger(project?.itemCount) && project.itemCount >= all.length
+              ? project.itemCount : null;
         el(ctx, target, "p", words(ctx,
-            `Loaded ${all.length}${total === null ? " / total unknown" : ` / ${total}`} items`,
-            `已載入 ${all.length}${total === null ? " / 總數未提供" : ` / ${total}`} 項`)
-            + (query ? words(ctx, ` · ${rows.length} search matches (loaded items only)`,
-                ` · 搜尋符合 ${rows.length} 項（僅搜尋已載入）`) : ""), "board-section-help");
+            `Loaded ${humanAll.length}${total === null ? " / total unknown" : ` / ${total}`} human work items`,
+            `已載入 ${humanAll.length}${total === null ? " / 總數未提供" : ` / ${total}`} 個人類工作項目`)
+            + (project?.agentRecordCount > 0 ? words(ctx,
+                ` · ${project.agentRecordCount} agent records kept separately`,
+                ` · ${project.agentRecordCount} 筆 Agent 紀錄分開保留`) : "")
+            + (query ? words(ctx, ` · ${matches.length} search matches (loaded items only)`,
+                ` · 搜尋符合 ${matches.length} 項（僅搜尋已載入）`) : ""), "board-section-help");
         const sectionCount = (group, loaded) => words(ctx, ` · ${loaded} ${query ? "matches" : "loaded"}`,
             ` · ${loaded} ${query ? "項符合搜尋" : "項已載入"}`)
             + (completeCounts ? words(ctx, ` / ${counts[group]} total`, ` / 共 ${counts[group]} 項`) : "");
@@ -1551,6 +1596,23 @@ export function bindBoardPage(elements, environment = {}) {
                 "board-section-help"
             );
             historicalCards(ctx, part, coordinated, !!query);
+        }
+        if (agentRows.length || (!query && project?.agentRecordCount > 0)) {
+            const agentTotal = Number.isSafeInteger(project?.agentRecordCount)
+                ? project.agentRecordCount : agentRows.length;
+            const part = section(ctx, target,
+                words(ctx, "Agent execution details", "Agent 執行細節") + " · "
+                    + (query ? agentRows.length : agentTotal),
+                true, "agent-execution-details");
+            part.className += " board-agent-details";
+            el(ctx, part, "p", words(ctx,
+                "Review, test, correction and provenance records stay searchable here for audit; they are not concrete human tasks.",
+                "Review、測試、修正與來源紀錄保留在這裡供稽核及搜尋；它們不是給人的具體任務。"),
+                "board-section-help");
+            historicalCards(ctx, part, agentRows, !!query);
+            if (!agentRows.length) el(ctx, part, "p", words(ctx,
+                "Agent records exist but are not loaded in this view.",
+                "尚有 Agent 紀錄未載入此畫面。"), "board-section-help");
         }
     }
     function render() {

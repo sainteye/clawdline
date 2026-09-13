@@ -475,5 +475,79 @@ group("Board narrative locale auto follows the system reading") {
            "zh-TW")
     expect("auto falls back to current locale", ProjectBoardNarrative.locale(
         configured: "auto", preferred: [], currentIdentifier: "fr_FR"), "fr-FR")
+
+    // Human-facing work and retained execution records share one Store, but not one default list.
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-board-human-agent-\(UUID().uuidString)")
+    try! FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = ProjectBoardStore(url: root.appendingPathComponent("board.json"))
+    _ = store.ensureProject(id: "project-1", name: "Clawdline")
+    var request = 0
+    func send(_ operation: String, _ fields: [String: Any]) -> ProjectBoardStore.Reply {
+        request += 1
+        var body = fields
+        body["operation"] = operation
+        body["requestId"] = "human-agent-\(request)"
+        body["expectedRevision"] = store.readHeader().revision
+        return store.command(body, actor: "owner")
+    }
+    func create(_ type: String, _ title: String, parent: String? = nil) -> String {
+        var fields: [String: Any] = ["projectId": "project-1", "type": type, "title": title]
+        if let parent { fields["parentId"] = parent }
+        return send("create", fields).body["itemId"] as? String ?? ""
+    }
+    let parent = create("epic", "Release program")
+    let child = create("task", "Review the customer contract", parent: parent)
+    let explicitReview = create("task", "Review the launch wording")
+    store.ingest(task: [
+        "id": "agent-review-task", "title": "Ship the customer-visible dashboard",
+        "state": "success", "workPhase": "review_testing",
+    ], projectID: "project-1")
+    store.ingest(task: [
+        "id": "agent-coordination-task", "title": "Coordinate the release",
+        "state": "success", "graph": [
+            "id": "agent-coordination-graph", "destination": "Coordinate the release",
+            "current_node": "review", "kind": "review",
+        ],
+    ], projectID: "project-1")
+
+    let board = store.readSeed(rebuild: true).seed
+        .envelope(project: "project-1")["board"] as? [String: Any]
+    let rows = board?["items"] as? [[String: Any]] ?? []
+    func view(_ id: String) -> [String: Any] {
+        (rows.first { $0["id"] as? String == id }?["listSummary"] as? [String: Any])?["view"]
+            as? [String: Any] ?? [:]
+    }
+    expect("an explicit parent remains human work", view(parent)["audience"] as? String, "human")
+    expect("an explicit child is presented as a subtask", view(child)["role"] as? String, "subtask")
+    expect("an explicit Review title is not guessed to be agent detail",
+           view(explicitReview)["audience"] as? String, "human")
+    let inferred = rows.first { row in
+        (row["links"] as? [[String: Any]])?.contains {
+            $0["kind"] as? String == "task" && $0["targetId"] as? String == "agent-review-task"
+        } == true
+    } ?? [:]
+    let inferredView = (inferred["listSummary"] as? [String: Any])?["view"] as? [String: Any]
+    expect("an unbound broker attempt is agent execution regardless of its friendly title",
+           inferredView?["role"] as? String, "execution_record")
+    expect("agent execution is retained but hidden from the default human list",
+           inferredView?["defaultVisible"] as? Bool, false)
+    let graphFallback = rows.first { $0["title"] as? String == "Coordinate the release" } ?? [:]
+    expect("an unbound graph fallback is also agent execution detail",
+           ((graphFallback["listSummary"] as? [String: Any])?["view"] as? [String: Any])?["audience"] as? String,
+           "agent")
+
+    let project = (board?["projects"] as? [[String: Any]])?.first ?? [:]
+    expect("Project totals count concrete human work separately", project["humanItemCount"] as? Int, 3)
+    expect("planned human work does not inflate current Project activity",
+           project["currentHumanItemCount"] as? Int, 0)
+    expect("Project totals retain agent records without calling them work items",
+           project["agentRecordCount"] as? Int, 2)
+    let summary = project["summary"] as? [String: Any]
+    let humanGroups = summary?["humanListGroups"] as? [String: Int]
+    let agentGroups = summary?["agentListGroups"] as? [String: Int]
+    expect("human list groups account only for human work", humanGroups?.values.reduce(0, +), 3)
+    expect("agent list groups account only for execution records", agentGroups?.values.reduce(0, +), 2)
 }
 }
