@@ -967,6 +967,12 @@ public final class CloudExecutorIdentityAuthority: @unchecked Sendable {
                     return (false, pending.prepared(alreadyCommitted: false))
                 }
             }
+            // `completed` is the idempotency receipt for the most recently delivered grant.
+            // Once a different pairing is accepted for preparation, retaining that receipt beside
+            // the new pending wrapper can exceed the protected record's bounded size. The prior
+            // row is safe to retire here: it was already delivered, while the exact-same pairing
+            // retry returned above before reaching this point.
+            record.completed = nil
             let ephemeralPrivate = machineEphemeralPrivateKey ?? randomBytes(32)
             let nonce = randomBytes(12)
             guard ephemeralPrivate.count == 32, nonce.count == 12 else {
@@ -1547,9 +1553,11 @@ public final class CloudExecutorIdentityAuthority: @unchecked Sendable {
                   Set(paired.map(\.deviceID)).isDisjoint(with: Set(revoked.map(\.deviceID))),
                   retiredKeyIDs == Array(Set(retiredKeyIDs)).sorted(),
                   !retiredKeyIDs.contains(keyID), paired == paired.sorted(by: { $0.deviceID < $1.deviceID }),
-                  revoked.map(\.deviceID) == revoked.map(\.deviceID).sorted(),
-                  encoded().count <= CloudExecutorIdentityAuthority.maximumProtectedStateBytes else {
+                  revoked.map(\.deviceID) == revoked.map(\.deviceID).sorted() else {
                 throw CloudExecutorIdentityError.protectedStateCorrupt
+            }
+            guard encoded().count <= CloudExecutorIdentityAuthority.maximumProtectedStateBytes else {
+                throw CloudExecutorIdentityError.capacityExceeded
             }
             let key = try CloudDeviceKeyPair(privateKeyRaw: machinePrivateKey)
             guard key.publicKeyRaw == machinePublicKey,

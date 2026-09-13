@@ -1167,8 +1167,25 @@ public func runCloudPairingTests() async throws -> Int {
         deliveredFingerprint: viewerIdentityKey.pairingFingerprint, nowMilliseconds: 200_200)
     try t.equal(executorPaired.pairedDevices.map(\.deviceID), ["viewer-legacy", "viewer-w52"],
                 "the exact delivered claimant is pinned once")
+    _ = try authority.prepareHandover(
+        offerBytes: executorOffer("pairing-w52-repair"), nowMilliseconds: 200_300,
+        machineEphemeralPrivateKey: fixedMachineAgreementPrivate,
+        randomBytes: { count in Data(repeating: 0xa7, count: count) })
+    guard let repairStateBytes = try identityStore.data(
+        for: CloudExecutorIdentityAuthority.protectedAccount),
+          case .object(let repairState) = try CloudCanonicalJSON.parseStrict(repairStateBytes)
+    else {
+        throw CloudPairingTestFailure.failed("repair state was not canonical protected JSON")
+    }
+    try t.equal(repairState["completed_handover"], .null,
+                "a new repair retires the prior completed handover before persisting pending state")
+    let executorRepaired = try authority.commitPreparedHandover(
+        pairingID: "pairing-w52-repair", claimNonce: executorClaim.base64EncodedString(),
+        deliveredFingerprint: viewerIdentityKey.pairingFingerprint, nowMilliseconds: 200_400)
+    try t.equal(executorRepaired.pairedDevices.map(\.deviceID), ["viewer-legacy", "viewer-w52"],
+                "same-device repair replaces keys without consuming another device slot")
     let executorRevoked = try authority.revokeDevice(
-        "viewer-w52", expectedGeneration: executorPaired.identityGeneration)
+        "viewer-w52", expectedGeneration: executorRepaired.identityGeneration)
     try t.check(try authority.transportMaterial().pairedDevicePublicKeys["viewer-w52"] == nil,
                 "revocation removes the viewer from live authorization")
     let rotatedKey = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x3a, count: 32))
