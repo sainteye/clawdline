@@ -1258,13 +1258,16 @@ for (const [method, type] of [["projectWorktreeLifecycle", "project-worktree-lif
         type + " returns the service snapshot under its success wrapper");
     assert.equal(answer.machine, "mac-01", type + " is located under the authenticated route machine");
 }
-assert.throws(function () { lifecycleCloud.projectWorktreeLifecycle(lifecycleProject, "mac-99"); },
+const lifecycleWritesBeforeRefusals = publishedReads(lifecycleSocket).length;
+await assert.rejects(lifecycleCloud.projectWorktreeLifecycle(lifecycleProject, "mac-99"),
     function (error) { return error.code === "cloud_machine_unavailable"; },
     "a lifecycle read never guesses a Mac the account has not published");
 lifecycleCloud.orchestratorSnapshots.set("mac-02", { tasks: [] });
-assert.throws(function () { lifecycleCloud.projectWorktreeLifecycle(lifecycleProject); },
+await assert.rejects(lifecycleCloud.projectWorktreeLifecycle(lifecycleProject),
     function (error) { return error.code === "cloud_machine_ambiguous"; },
     "a lifecycle read never guesses between two published Macs");
+assert.equal(publishedReads(lifecycleSocket).length, lifecycleWritesBeforeRefusals,
+    "and neither refusal reaches the relay");
 lifecycleCloud.orchestratorSnapshots.delete("mac-02");
 await assert.rejects(lifecycleCloud.projectWorktreeLifecycle("", "mac-01"),
     function (error) { return error.code === "malformed_read"; },
@@ -2005,10 +2008,12 @@ assert.equal(typeof LocalClient.revalidate, "function",
     await c.boardCommand(proposal,'mac-b');
     assert.deepEqual(routed,['mac-b','board-command',{command:proposal},'action'],
         'Board assignment uses selected Mac, not arbitrary inventory order');
+    routed=null;
     for(const machine of [null,'','missing',{},['mac-b']]) {
-        assert.throws(()=>c.boardCommand(proposal,machine),e=>e.code==='cloud_machine_unavailable');
+        await assert.rejects(c.boardCommand(proposal,machine),e=>e.code==='cloud_machine_unavailable');
     }
-    assert.throws(()=>c.boardCommand(proposal),e=>e.code==='cloud_machine_ambiguous');
+    await assert.rejects(c.boardCommand(proposal),e=>e.code==='cloud_machine_ambiguous');
+    assert.equal(routed,null,'a refused Board command never routes a request');
 }
 console.log("web cloud client tests passed: golden vectors, mutations, identity, heartbeat, challenge, local seam, cloud reads, transcript images");
 process.exit(0);

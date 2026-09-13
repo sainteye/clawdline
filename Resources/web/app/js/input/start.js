@@ -138,6 +138,21 @@ export var Start = (function () {
     function said(words) { els["start-said"].textContent = words || ""; }
 
     /**
+     * A transport call as a promise, whatever the transport did.
+     *
+     * Every request on this sheet raises a flag first — `loading`, `reading`, `pressing` — and
+     * only its settle puts the flag down. A transport that throws instead of rejecting skips
+     * that settle, and the flag then shuts every row and Close until the page is reloaded: the
+     * Cloud client did exactly that for a press on a row it had no route for. The transports
+     * are held to rejecting (`Tests/web-start-sheet-failures.mjs`), and this is the second layer,
+     * because a fourth transport will not have read that test.
+     */
+    function asked(request) {
+        try { return Promise.resolve(request()); }
+        catch (e) { return Promise.reject(e); }
+    }
+
+    /**
      * What a refusal means, said in this page's own words.
      *
      * The server's `message` is English, and the reader may not be — so the codes that have a
@@ -401,7 +416,10 @@ export var Start = (function () {
             : (loading && !places) ? T.webLoading
             : (places && !places.length) ? T.webStartEmpty
             : T.webStartPick);
-        said("");
+        // Nothing is written into `start-said` here. Every refusal on this screen is said and
+        // then drawn, so a clear at this line erased each one in the turn it was written — a
+        // refused start looked like a press that did nothing. The sentence is cleared where a
+        // new question is asked instead: opening the sheet, a press, entering or leaving a project.
 
         // Forty is the most the Mac will ever offer and three fit on a phone without scrolling.
         // Under nine, a box to narrow them down is furniture in front of the answer.
@@ -526,7 +544,7 @@ export var Start = (function () {
         if (loading || typeof api.places !== "function") return;
         loading = true;
         draw();
-        api.places().then(function (d) {
+        asked(function () { return api.places(); }).then(function (d) {
             places = (d && d.places) || [];
             // The Mac's list, not this page's. Whether Codex is installed is a question only
             // that end can answer, and a chip for something that is not there opens a tab
@@ -563,7 +581,7 @@ export var Start = (function () {
         said("");
         reading = true;
         draw();
-        api.pastSessions(place.id, with_).then(function (d) {
+        asked(function () { return api.pastSessions(place.id, with_); }).then(function (d) {
             if (!at || at.id !== place.id) return;   // gone back while this was in flight
             pasts = (d && d.sessions) || [];
             capped = !!(d && d.more);
@@ -613,7 +631,7 @@ export var Start = (function () {
         said("");
         draw();
         Waits.startPress.start();
-        api.startPlace(id, with_).then(function (d) {
+        asked(function () { return api.startPlace(id, with_); }).then(function (d) {
             Waits.startPress.settle(function () {
                 pressing = null;
                 // From here the tab exists on the Mac. Nothing after this line is allowed to read
@@ -675,7 +693,7 @@ export var Start = (function () {
         said("");
         draw();
         Waits.startPress.start();
-        api.resumePlace(place.id, sessionID, with_).then(function (d) {
+        asked(function () { return api.resumePlace(place.id, sessionID, with_); }).then(function (d) {
             Waits.startPress.settle(function () {
                 pressing = null;
                 began(d && d.id, { label: row.title, path: place.path, icon: place.icon },

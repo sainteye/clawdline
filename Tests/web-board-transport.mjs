@@ -57,7 +57,7 @@ equal(cloudCalls[1], ["owning-machine", "board", { project: "p", item: "report:i
 await CloudClient.prototype.boardCommand.call(context, body);
 equal(cloudCalls[2], ["owning-machine", "board-command", { command: body }, "action"], "Cloud command preserves same command identity");
 context._onlyMachine = () => { throw Object.assign(new Error("ambiguous"), { code: "ambiguous_machine" }); };
-assert.throws(() => CloudClient.prototype.board.call(context), { code: "ambiguous_machine" }); checks++;
+await assert.rejects(CloudClient.prototype.board.call(context), { code: "ambiguous_machine" }); checks++;
 equal(cloudCalls.length, 3, "ambiguous machine never dispatches a request");
 
 const { createBoardMock } = await import("../Resources/web/app/js/net/board-mock.js");

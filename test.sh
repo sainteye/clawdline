@@ -600,6 +600,12 @@ node Tests/web-board-transport.mjs
 node Tests/web-timeline.mjs
 node Tests/board-request-capacity-focused.mjs
 node Resources/web/app/js/net/client.test.mjs
+# The start sheet's press always ends. On 2026-09-13 the hosted console left "Starting…" on a
+# row until reload: the Cloud client threw instead of rejecting, and `start.js` had no settle for
+# a throw. Every promise-shaped `CloudClient` method is held to rejecting, the place routes to
+# surviving a re-read, a renewal and a failed read, and the sheet to settling whatever happened.
+# On a line of its own so `browser_contract_suites`' sealed count stays the landing root's to move.
+node Tests/web-start-sheet-failures.mjs
 # The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
 # what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05
 # and none of them could be enlarged — `index.html` turns the browser's pinch off page-wide — so
