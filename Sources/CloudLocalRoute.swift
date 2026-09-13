@@ -92,6 +92,11 @@ struct CloudLocalRoute: Sendable {
         case .voice(let audio, let rate):
             route = "/v1/voice"
             object = ["audio": audio, "rate": rate]
+        case .diagnosticsReport(let data):
+            // `RemoteServerCloudCommandRouter` answers this itself so `written_by` is the
+            // envelope sender; the mapping keeps the vocabulary total and names the same route.
+            route = "/v1/diagnostics/report"
+            encodedBody = data
         }
         method = routeMethod
         path = route
@@ -174,6 +179,38 @@ struct CloudLocalRoute: Sendable {
 
     private static func segment(_ value: String) -> String {
         CloudAppBridge.channelSegment(value)
+    }
+}
+
+/// `diagnostics.report` over Cloud (design `cloud-error-transparency.md` §11.5).
+///
+/// The same store, limit and refusal words as `POST /v1/diagnostics/report` — this calls the one
+/// `DiagnosticReport.save` that route calls — with the envelope's sender as `written_by`. It does
+/// not go through `dispatch` because that route would record `cloud:<sender>` as the device.
+enum CloudDiagnosticsReportRoute {
+    typealias Audit = @Sendable (_ event: String, _ fields: [String: String]) -> Void
+
+    static func route(
+        body: Data, sender: String, root: URL? = nil,
+        audit: Audit = { RemoteAuth.audit($0, $1) }
+    ) -> CloudCommandResult {
+        switch DiagnosticReport.save(body, device: sender, root: root) {
+        case .success(let receipt):
+            audit("diagnostics.report", [
+                "device": sender, "ok": "1", "bytes": String(receipt.bytes), "via": "cloud",
+            ])
+            let bytes = (try? JSONSerialization.data(
+                withJSONObject: receipt.payload, options: [.withoutEscapingSlashes])) ?? Data()
+            return CloudCommandResult(status: 200, code: nil, body: bytes)
+        case .failure(let refusal):
+            audit("diagnostics.report", [
+                "device": sender, "ok": "0", "why": refusal.code, "via": "cloud",
+            ])
+            let bytes = (try? JSONSerialization.data(
+                withJSONObject: ["error": ["code": refusal.code, "message": refusal.message]],
+                options: [.withoutEscapingSlashes])) ?? Data()
+            return CloudCommandResult(status: refusal.status, code: refusal.code, body: bytes)
+        }
     }
 }
 
