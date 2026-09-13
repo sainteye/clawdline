@@ -17,6 +17,7 @@
 import assert from "node:assert/strict";
 
 const boot = await import("../Resources/web/app/js/net/cloud-boot.js");
+const cloudCrypto = await import("../Resources/web/app/js/net/cloud-crypto.js");
 
 /* ---- fakes ---------------------------------------------------------------- */
 
@@ -169,6 +170,73 @@ assert.throws(function () {
     boot.durableSequence(fakeStorage({ seq: "-3" }), "seq")();
 }, function (error) { return error.code === "bad_sequence_store"; },
 "an unusable stored ceiling refuses rather than restarting from zero");
+
+/* ---- the pairing key identity survives into the encrypted connection ------ */
+
+{
+    const key = { extractable: false };
+    const migrated = boot.masterKeyConnection(key, null);
+    assert.equal(migrated.keyID, "master-v1",
+        "a browser paired before key-id persistence sends with the Mac's current key id");
+    assert.deepEqual(Object.keys(migrated.masterKeys).sort(), ["master-v1", "ms-1"],
+        "the bounded migration can still decrypt either shipped pre-metadata key id");
+    assert.equal(migrated.masterKeys["master-v1"], key);
+    assert.equal(migrated.masterKeys["ms-1"], key);
+
+    const exact = boot.masterKeyConnection(key, "rotated-v2");
+    assert.equal(exact.keyID, "rotated-v2");
+    assert.deepEqual(Object.keys(exact.masterKeys), ["rotated-v2"],
+        "once pairing stored an exact key id, aliases cannot silently broaden it");
+}
+
+{
+    const indexedDB = fakeIndexedDB();
+    const master = { extractable: false, kind: "master" };
+    const sender = { extractable: false, kind: "sender" };
+    await cloudCrypto.storePairingCryptoKeys({
+        masterName: "master", masterKeyIDName: "master-id", masterKey: master,
+        keyID: "master-v1", senderName: "sender", senderKey: sender
+    }, indexedDB);
+    assert.equal(await cloudCrypto.loadCryptoKeyID("master-id", indexedDB), "master-v1",
+        "the handover key id is durable beside the non-extractable keys");
+    assert.equal(indexedDB.store.get("master"), master);
+    assert.equal(indexedDB.store.get("sender"), sender);
+}
+
+{
+    let captured = null;
+    class CapturingClient {
+        constructor(options) { captured = options; this.ready = true; }
+        async start() {}
+        async whenReady() {}
+        stop() {}
+    }
+    const existingMaster = { extractable: false };
+    const migratedBrowser = makeSession({
+        "POST /v1/tokens/device": response(200, {
+            token: "device-token", expires_at: "2099-01-01T00:00:00.000Z",
+            relay_url: "wss://relay.clawdline.com/v1/connect"
+        })
+    }, { Client: CapturingClient });
+    migratedBrowser.account = "acct-1";
+    migratedBrowser.deviceID = "web-existing";
+    migratedBrowser.devicePrivateKey = { extractable: false };
+    migratedBrowser.caps = ["read_sessions", "send_prompt"];
+    migratedBrowser.ensureSession = async function () { return { state: "ready" }; };
+    migratedBrowser.accountKey = async function () { return existingMaster; };
+    migratedBrowser.accountKeyID = async function () { return null; };
+
+    const connected = await migratedBrowser.connect();
+    assert.equal(connected.state, "connected");
+    assert.equal(captured.keyID, "master-v1",
+        "the actual CloudClient sends with the current Mac key id after migration");
+    assert.equal(captured.masterKeys["master-v1"], existingMaster,
+        "the actual CloudClient can decrypt the current Mac's envelopes without another Pair");
+    assert.equal(captured.masterKeys["ms-1"], existingMaster,
+        "the same bounded migration can finish draining a legacy envelope");
+    assert.equal("masterKey" in captured, false,
+        "connect does not put the key back under CloudClient's old default id");
+}
 
 /* ---- session, device registration, capabilities, token -------------------- */
 

@@ -204,12 +204,58 @@ export async function storeCryptoKey(name, key, indexedDBValue) {
     });
 }
 
+/**
+ * Persist the complete result of one pairing handover in a single IndexedDB
+ * transaction. `key_id` is not secret, but it is part of the envelope identity:
+ * losing it while retaining the AES key produces a socket that is authenticated
+ * and connected but cannot decrypt any payload.
+ */
+export async function storePairingCryptoKeys(value, indexedDBValue) {
+    if (!value || !value.masterKey || value.masterKey.extractable !== false ||
+        !value.senderKey || value.senderKey.extractable !== false) {
+        throw new TypeError("only non-extractable pairing CryptoKeys are stored");
+    }
+    if (!validToken(value.keyID, 64)) throw new TypeError("bad pairing key id");
+    ["masterName", "masterKeyIDName", "senderName"].forEach(function (field) {
+        if (typeof value[field] !== "string" || !value[field]) {
+            throw new TypeError("pairing key storage name is missing");
+        }
+    });
+    var db = await keyDatabase(indexedDBValue);
+    return new Promise(function (resolve, reject) {
+        var tx = db.transaction("keys", "readwrite");
+        var keys = tx.objectStore("keys");
+        keys.put(value.masterKey, value.masterName);
+        keys.put(value.keyID, value.masterKeyIDName);
+        keys.put(value.senderKey, value.senderName);
+        tx.oncomplete = function () { db.close(); resolve(value); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+        tx.onabort = tx.onerror;
+    });
+}
+
 export async function loadCryptoKey(name, indexedDBValue) {
     var db = await keyDatabase(indexedDBValue);
     return new Promise(function (resolve, reject) {
         var tx = db.transaction("keys", "readonly");
         var request = tx.objectStore("keys").get(name);
         request.onsuccess = function () { db.close(); resolve(request.result || null); };
+        request.onerror = function () { db.close(); reject(request.error); };
+    });
+}
+
+export async function loadCryptoKeyID(name, indexedDBValue) {
+    var db = await keyDatabase(indexedDBValue);
+    return new Promise(function (resolve, reject) {
+        var tx = db.transaction("keys", "readonly");
+        var request = tx.objectStore("keys").get(name);
+        request.onsuccess = function () {
+            db.close();
+            var value = request.result;
+            if (value === undefined || value === null) return resolve(null);
+            if (!validToken(value, 64)) return reject(new TypeError("bad stored pairing key id"));
+            resolve(value);
+        };
         request.onerror = function () { db.close(); reject(request.error); };
     });
 }

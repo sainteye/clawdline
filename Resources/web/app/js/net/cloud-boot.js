@@ -18,7 +18,10 @@
    -------------------------------------------------------------------------- */
 
 import { CloudClient } from "./cloud-client.js";
-import { importSenderPublicKey, loadCryptoKey, storeCryptoKey } from "./cloud-crypto.js";
+import {
+    importSenderPublicKey, loadCryptoKey, loadCryptoKeyID, storeCryptoKey,
+    storePairingCryptoKeys
+} from "./cloud-crypto.js";
 import {
     createPairingOffer, ed25519Fingerprint, encryptPairingOfferForInvitation,
     openPairingHandover, pairingError
@@ -33,6 +36,23 @@ const DEVICE_KEY = "clawdline.viewer.device";
 const DEVICE_PUBLIC_KEY = "clawdline.viewer.public";
 const SEQUENCE_KEY = "clawdline.viewer.sequence";
 const SEQUENCE_BLOCK = 64;
+const CURRENT_MASTER_KEY_ID = "master-v1";
+const PRE_METADATA_MASTER_KEY_IDS = Object.freeze(["ms-1", CURRENT_MASTER_KEY_ID]);
+
+/**
+ * Pairing releases before key-id persistence stored the right AES CryptoKey but
+ * CloudClient indexed it under its old `ms-1` default. Keep that already-paired
+ * browser usable with the two IDs Clawdline has actually shipped. Once pairing
+ * has stored an exact ID, use only that ID so future rotation stays fail-closed.
+ */
+export function masterKeyConnection(masterKey, storedKeyID) {
+    var keyID = storedKeyID || CURRENT_MASTER_KEY_ID;
+    var masterKeys = {};
+    (storedKeyID ? [storedKeyID] : PRE_METADATA_MASTER_KEY_IDS).forEach(function (candidate) {
+        masterKeys[candidate] = masterKey;
+    });
+    return { keyID: keyID, masterKeys: masterKeys };
+}
 
 export function bootError(code, message, options) {
     options = options || {};
@@ -204,6 +224,7 @@ export class CloudViewerSession {
         this.crypto = options.crypto || globalThis.crypto;
         this.now = options.now || function () { return Date.now(); };
         this.WebSocket = options.WebSocket || globalThis.WebSocket;
+        this.Client = options.Client || CloudClient;
         this.handlers = options.handlers || null;
         this.deviceName = options.deviceName || "Browser";
         this.deviceKind = ["browser", "ios", "android"].indexOf(options.deviceKind) >= 0
@@ -383,10 +404,15 @@ export class CloudViewerSession {
     }
 
     masterKeyName() { return "clawdline.master:" + this.account; }
+    masterKeyIDName() { return "clawdline.master-key-id:" + this.account; }
     senderKeyName(sender) { return "clawdline.sender:" + this.account + ":" + sender; }
 
     async accountKey() {
         return (await loadCryptoKey(this.masterKeyName(), this.indexedDB)) || null;
+    }
+
+    async accountKeyID() {
+        return await loadCryptoKeyID(this.masterKeyIDName(), this.indexedDB);
     }
 
     /**
@@ -507,9 +533,15 @@ export class CloudViewerSession {
         if (opened.accountID !== this.account) {
             throw pairingError("wrong_account", "that handover is for another account");
         }
-        await storeCryptoKey(this.masterKeyName(), opened.masterKey, this.indexedDB);
-        await storeCryptoKey(this.senderKeyName(opened.machineDeviceID),
-            await importSenderPublicKey(opened.machineSigningKey), this.indexedDB);
+        var senderKey = await importSenderPublicKey(opened.machineSigningKey);
+        await storePairingCryptoKeys({
+            masterName: this.masterKeyName(),
+            masterKeyIDName: this.masterKeyIDName(),
+            masterKey: opened.masterKey,
+            keyID: opened.keyID,
+            senderName: this.senderKeyName(opened.machineDeviceID),
+            senderKey: senderKey
+        }, this.indexedDB);
         return opened;
     }
 
@@ -519,16 +551,18 @@ export class CloudViewerSession {
         if (session.state !== "ready") return session;
         var master = await this.accountKey();
         if (!master) return { state: "pairing_required", accountID: this.account };
+        var keyConnection = masterKeyConnection(master, await this.accountKeyID());
         var token = await this.deviceToken();
         var self = this;
         var previous = this.client;
-        var client = new CloudClient({
+        var client = new this.Client({
             relayURL: token.relayURL,
             deviceToken: token.token,
             devicePrivateKey: this.devicePrivateKey,
             deviceID: this.deviceID,
             account: this.account,
-            masterKey: master,
+            keyID: keyConnection.keyID,
+            masterKeys: keyConnection.masterKeys,
             resolveSenderKey: function (sender) {
                 return loadCryptoKey(self.senderKeyName(sender), self.indexedDB);
             },
