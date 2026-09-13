@@ -1,0 +1,349 @@
+> **這是一份設計，不是現況說明。** 撰寫於 2026-09-13。量測對象：本 repo commit `517480fb` 的工作樹、
+> `~/Library/Logs/Clawdline.log`（08-31 起，659,523 行）、私有 repo `~/code/clawdline-cloud` 的 `bdb5b84`。
+> 實作一開始，行號就會漂移；行號的用途是記下每一條路徑當時在哪裡決定，不是給讀者對照現在的檔案。
+> 拍板結果記在 §8；還沒拍板的地方都標了「建議」。
+
+# Cloud 錯誤與認證透明化
+
+讀者：要拍板這份設計的人，以及之後實作、除錯 Clawdline Cloud（`app.clawdline.com` ↔ relay ↔ Mac）的 agent。
+
+## 0. 要解決的問題
+
+一筆 Cloud 指令從手機走到 Mac，中間要經過七層（§1）。**每一層都有拒絕時什麼都不說的路徑**；
+就算有說，使用者多半只看到一句英文，或一句「這個開不起來。」。除錯的人只能拿時間戳去 Mac log 對。
+
+今天量到的三個例子（量法在最後一欄）：
+
+| 事件 | 使用者看到 | Mac log 寫了什麼 | 量法 |
+|---|---|---|---|
+| 09-12 21:25 到 09-13 12:18，Mac 丟掉 790 筆入站信封 | 沒反應 | `CloudTransport dropped inbound envelope reason=invalid count=N`，沒有 sender、seq、key_id | `grep -a -c 'dropped inbound envelope reason=invalid'` ＝ 790 行。`count=` 是**每條連線各自累計、重連就歸零**的數字，把它加總會得到 258,086，是錯的讀法 |
+| 09-13 14:56–15:01，6 筆 `command_clock_uncertain` | 語音顯示 `The command durability boundary is unavailable.` | `cloud: command refused 503 command_clock_uncertain`，沒有指令種類、sender、request | 6 筆都落在 `reconnect waiting reason=token_rotation` 之後 2–42 秒 |
+| 09-13 15:06–15:09，13 筆 `reason=replay` | 沒反應 | 同第一列的格式 | 同一台 device 在同一個 Chrome profile 開了第二個分頁 |
+
+**目標：** 任何一次「按了沒反應／卡住／被拒」，畫面上都說得出「哪一層、什麼原因、哪一筆」；Mac 上也有一個固定位置，
+讀得到同一筆、同一個代號。
+
+## 1. 一筆指令走過的七層
+
+| # | `layer` | 在哪裡 | 會怎麼失敗 |
+|---|---|---|---|
+| 1 | `browser` | `Resources/web/app/js/net/cloud-client.js` | 還沒連上、沒有裝置金鑰、序號儲存壞掉、同步 throw |
+| 2 | `relay` | `~/code/clawdline-cloud/relay` | token 過期、被撤銷或被取代；簽章不符；容量；Mac 不在線（`machine_offline`） |
+| 3 | `mac_transport` | `CloudTransport.acceptInbound` | 信封格式、sender 未配對、key_id 不符、簽章、解密、replay、入站佇列滿 |
+| 4 | `mac_preflight` | `CloudAppBridge.consume`／`serveRead` | 寫入開關關著、指令格式錯、未知指令、dispatch 未釘選 |
+| 5 | `mac_ledger` | `routeDurably` → `CloudCommandLedger` | 時鐘不確定、期限已過、冪等衝突、容量、roster 讀不到 |
+| 6 | `mac_route` | `RemoteServer` 的 route、`CloudLocalRoute` | route 自己的錯（`not_found`、`busy`、`terminal_io_failed`…） |
+| 7 | `mac_reply` | `publishJSONAnswer` → 出站 spool | 已經執行了，但回覆送不出去，或在 spool 裡過期 |
+
+任務書點名的四層（relay、入站丟棄、command ledger、router）是第 2、3、5、6 層。盤點時發現第 1、4、7 層也一樣會靜默，所以一起納入。
+
+## 2. 錯誤契約
+
+### 2.1 同一筆指令的代號：`ref`
+
+三邊都看得到的只有信封外層的 `(sender, seq)`：
+
+- relay 看得到。它的 `ack` 與 `publish_error` 本來就是用 `(ch, seq)` 對應請求。
+- Mac 在**解密之前**就看得到。所以連 key_id 不符、解不開的那一筆，也能指名。
+- 瀏覽器是配號的人。
+
+`request`（瀏覽器用 `crypto.randomUUID()` 產生，放在密文裡）只有 Mac 解密後才看得到，relay 永遠看不到。
+
+**契約：**
+
+- 跨層代號 `ref` ＝ `sender` ＋ `seq`。畫面顯示成 `f052dcb8·1234`，也就是 sender 去掉 `web_` 前綴後的前 8 碼、一個 `·`、再接 seq。
+- `request` 是第二把鍵。Mac 解密之後的每一行 log、每一個回覆都帶著它；最近指令紀錄（§4.1）同時記 `seq` 與 `request`。
+- **不在信封外層加新的 request id。** 信封固定 10 個鍵、受簽章涵蓋，relay 與 Mac 都嚴格驗形狀，加欄位等於協定改版。
+  而 `(sender, seq)` 本來就應該唯一；會重複的時候（撞號），那正是要被指名的錯誤（§6.3）。
+
+### 2.2 一個拒絕帶什麼
+
+瀏覽器內部把所有失敗統一成一個形狀 `CloudFailure`。Mac 回覆裡的 `error` 物件、relay 的 frame，都先正規化成它：
+
+```json
+{
+  "layer": "mac_ledger",
+  "code": "command_clock_uncertain",
+  "ref": { "sender": "web_f052dcb8-…", "seq": 1234, "request": "3bff2f2b-…" },
+  "status": 503,
+  "retryable": true,
+  "detail": { "reason": "token_rotation_window", "clears_in_ms": 41000 }
+}
+```
+
+- `code`：1–64 字元的小寫 snake_case，保持穩定。**畫面上的文字只由 `code` 決定**，永遠不顯示 `message`。
+- `layer`：§1 的七個值之一，是封閉集合。
+- `detail`：每個 code 各自列出允許的欄位（白名單），其他一律丟掉。不放路徑、標題或逐字稿。
+- `retryable`：由瀏覽器依 code 查表決定，不照伺服器說的。沿用 relay `publishErrorDisposition` 的原則：
+  未知代碼一律當成終止，未來的伺服器不能讓舊的 client 陷入重試。
+
+Mac 回覆的 `error` 物件新增三個欄位：`layer`、`seq`、`detail`（`request` 已經在 `read: "action:<request>"` 裡）。
+`message` 仍然保留，給還沒更新的舊 console 用；新版 console 不讀它。
+
+### 2.3 Mac log 只用一種格式
+
+所有 Cloud 拒絕與丟棄都改寫成同一種行：
+
+```
+cloud: refusal layer=mac_ledger code=command_clock_uncertain sender=web_f052dcb8-… seq=1234 request=3bff2f2b-… type=voice session=%25690 status=503 reply=published detail.reason=token_rotation_window
+```
+
+- 解密前就丟掉的那種，沒有 `request`、`type`、`session`，這三欄寫 `-`；另外多出 `key_id=`／`expected_key_id=` 或 `highest_seq=`。
+- `reply=` 記錄 sender 有沒有收到東西：`published`（收到回覆）｜`notice`（只進狀態摘要，見 §4.2）｜`silent:<原因>`。
+  **只要還看得到 `silent:` 的行，就代表那條路這份設計還沒蓋到。**
+- 這一行取代今天的 `cloud: command refused <status> <code>`、`CloudTransport dropped inbound envelope reason=… count=…`
+  與 `cloud: command ingress refused …`。`count=` 拿掉，計數改由狀態快照提供（§4.1），而且會寫明從什麼時候開始算。
+
+### 2.4 一筆指令的步驟
+
+任務書要求分清楚 accepted、executed、delivered、observed、acknowledged。對一筆 Cloud 指令來說，每一步由誰、憑什麼證明：
+
+| 步驟 | 誰看得到 | 證據 |
+|---|---|---|
+| `sealed` | 瀏覽器 | 配到 seq、簽好信封、寫進 socket |
+| `relayed`／`machine_offline` | 瀏覽器 | relay `ack` 的 `status` 與 `fanout` |
+| `accepted`／`dropped` | Mac | 解密、序號、入站佇列都通過；或是丟棄的原因 |
+| `executed` | Mac | 帳本 row 變成 `completed`，帶 outcome |
+| `delivered`／`undeliverable` | Mac | 回覆在出站 spool 收到 relay 的 receipt；或是送不出去、過期 |
+| `observed` | 瀏覽器 | 回覆對上了等待中的請求 |
+| `acknowledged` | 瀏覽器 | 結果或錯誤已經畫在畫面上 |
+
+`relayed` 只證明 relay 把信封寫進了 Mac 的 socket。`clawdline-cloud/contracts/cloud/v1/vocabularies.json` 的
+`relay_fanout` 明寫它不證明 Mac 收下了。所以一筆指令 `relayed` 之後 60 秒沒有回覆，畫面要說「Mac 沒有回應」，
+並附上狀態快照裡同一個 `ref` 走到哪一步（如果有的話）。
+
+## 3. 靜默路徑盤點與處置
+
+欄位說明：**今天**是使用者現在看到什麼，**之後**是新的呈現方式，**測試**對應 §7 的編號。
+
+### 3.1 瀏覽器（`browser`）
+
+| ID | 路徑（出處） | 今天 | 之後 | 測試 |
+|---|---|---|---|---|
+| B1 | relay 回 `ack status=machine_offline`，但 `cloud-client.js:376-378` 只 `_emit`，沒人等 | 60 秒後才出現「Mac 沒有回應這個讀取」 | 立刻失敗：`relay · machine_offline`，「Mac 目前不在線上」 | T-B1 |
+| B2 | relay 回 `publish_error`，`cloud-client.js:383` 沒有這個分支，落到 `bad_frame` | 60 秒後逾時，code 遺失 | 用 `(ch, seq)` 對上請求，立刻失敗：`relay · <code>`，帶 `field` | T-B2 |
+| B3 | relay 送 `error` frame 後關閉連線；`onclose` 從來沒讀 close code（`cloud-client.js:292-312`） | 連線狀態變 offline，原因不明 | close code 與原因記進連線狀態；之後的請求失敗時帶 `relay · <code>` | T-B3 |
+| B4 | transport 同步 throw：大約 20 個公開方法會同步丟例外（`_place`、`_onlyMachine`、`_sessionIdentity`、`_read`、`_send`、`subscribe` 等），其中至少 12 個 UI 呼叫點沒有接住 | 只出現在瀏覽器 console；`sending`、`pressing` 這類旗標卡住不放 | 契約：CloudClient 的每個公開方法一律回 Promise，不准同步 throw。守衛會列舉 prototype 上的全部方法逐一檢查（§5） | T-B4 |
+| B5 | UI 直接顯示原始 `e.message`（`composer.js`、`detail-actions.js`、`voice.js` 的 `complain()`、`shell-panel.js`、`agent.js`、`snippets.js` 等約 20 處）；或是把 code 丟掉、顯示通用句（`start.js` 的 `why()`、`git-panel.js`、`terminal.js`） | 一句英文，或「這個開不起來。」 | 共用 `describeFailure(error)`：已知 code 顯示在地化句子，未知 code 顯示「沒有成功（`code` · `ref`）」。錯誤那一行可以點，點下去打開 §4.3 的狀態 sheet | T-B5 |
+| B6 | `readAnswer` 只保留 `code`、`message`、`status`（`cloud-client.js:156-171`），`reason`、`app`、`lost`、`retry_after` 都被丟掉 | Cloud 上分不出 `no_model` 與 `no_binary`，`{app}` 也填不進句子 | 依 code 的白名單保留 `detail` | T-B6 |
+| B7 | token 輪替時，`keepConnected` 會 retire 舊 client，所有還在飛的讀取一起變成 `offline`（`cloud-boot.js:731-734`） | 英文「the cloud connection dropped」 | 新代碼 `cloud_reconnecting`（`browser` 層、可重試），在地化 | T-B7 |
+| B8 | 診斷面板的「Send to Mac」在 Cloud 上是 `fetch` 到 hosted console 自己的網域（`layout-diagnostics.js:428`） | 報告送不到 Mac | 改走 Cloud 指令 `diagnostics.report`，Mac 端沿用 `DiagnosticReport.save` 與固定檔案 | T-B8 |
+| B9 | 收到的 Mac 信封 `key_id`，和這個瀏覽器送指令用的 `this.keyID`（`cloud-client.js:209`）不一樣 | 這種狀態下兩端都不會說 | 瀏覽器自己就偵測得到：狀態顯示「金鑰不一致：這個瀏覽器用 `ms-1` 送出，Mac 目前是 `ms-2`」，並提供既有的配對修復入口 | T-B9 |
+
+### 3.2 Relay（`relay`）
+
+這一節的程式在私有 repo `~/code/clawdline-cloud`，要不要部署是使用者的決定（§8 決定 3）。
+
+| ID | 路徑 | 今天 | 之後 | 測試 |
+|---|---|---|---|---|
+| R1 | 所有拒絕都不寫 log：`publish_error`、`malformed_envelope`、關閉連線、handshake 失敗、`machine_offline`。設計文件 `artifacts/2026-08-27-ctl-response-seam.md:2202` 寫說會記，程式裡沒有 | 營運端看不到任何拒絕 | 結構化的 `console.error({at:"publish_refused", code, field, ch_kind, seq, dev})`，每條連線、每個 code 限流 | T-R1 |
+| R2 | WebSocket 升級前的拒絕（401、403、429、502）只存在 HTTP 回應裡，瀏覽器的 WebSocket API 讀不到 | 一律顯示成 offline | 在 Worker 先接受升級，送出 `{"type":"error","code":…}`，再用 44xx close，讓瀏覽器讀得到 | T-R2 |
+| R3 | 帳號的 identity epoch 前進時（例如別台裝置被撤銷），既有 socket 被關閉的訊息寫「this device has been revoked」（`account-do.ts:526,1519`） | 誤以為自己被撤銷 | 新代碼 `token_superseded`，意思是重連就好 | T-R3 |
+| R4 | `/v1/ingest` 的 `clock_skew` 不在 `errors.ts` 的狀態表裡，所以回 500 | — | 補進表裡，回 400 | T-R4 |
+| R5 | `publish_error code=internal` 實際上會發生（`account-do.ts:753,763`），表上卻標成 `forward`（尚未發出） | — | 表與測試改成 reachable | T-R4 |
+
+### 3.3 Mac 入站（`mac_transport`）
+
+| ID | 路徑 | 今天 | 之後 | 測試 |
+|---|---|---|---|---|
+| M1 | `reason=invalid` 一個字蓋掉大約十種原因：信封形狀、channel、key_id 不符（`CloudBridgeLifecycle.swift:53-58` 丟出 `unexpectedFrame("unknown-key")`）、解密失敗…（原因表在 `CloudTransport.swift` 的 `reason(for:)`） | log 一行，沒有 sender、seq、key_id；sender 什麼都收不到 | 細分成 `envelope_malformed`、`wrong_channel`、`key_id_mismatch`、`decrypt_failed`；照 §2.3 格式寫 log；記進狀態快照的丟棄紀錄（§4.1），並以 notice 送出（§4.2） | T-M1 |
+| M2 | `unknown_sender`、`bad_signature`。另外，Keychain 讀取失敗時 roster 會退回空的 `[:]`（`CloudBridgeLifecycle.swift:66-69`），看起來就跟未配對一模一樣 | 同 M1 | 同 M1，並記錄 roster 當下讀不讀得到 | T-M2 |
+| M3 | `replay`（`CloudTransport.swift:1580`）；序號追蹤只存在記憶體裡 | 沒反應 | `replay` 帶 `seq` 與 `highest_seq`，送 notice。瀏覽器看到自己配的 seq 被判 replay 時，畫面說「這台裝置在別的分頁也開著」 | T-M3 |
+| M4 | 入站佇列拒絕（`count_cap`、`charged_byte_cap`、`plaintext_cap`）只有在 `commandRefusalReply` 找得到回覆位置時才會回。`answer`、`key`、沒帶 `request` 的 `send`、`dispatch` 全部靜默。`plaintext_cap` 是永久性的，訊息卻說「稍後再試」。`wrong_machine` 的回覆發到了錯的 channel | 多半沒反應 | 瀏覽器的所有指令一律帶 `request`（`answer`、`key`、`send` 補上），每一筆就都有回覆位置。`plaintext_cap` 改成不可重試的 `command_too_large`。仍然找不到回覆位置的，改送 notice | T-M4 |
+| M5 | 拒絕回覆的 lane 塞滿（`dropped_full`）或逾時（`timed_out`）。本機 log：11 次 `timed_out`，7 次 `completed` | 沒反應 | 計數記進狀態快照；逾時或被丟的那一筆改送 notice | T-M5 |
+
+### 3.4 Mac 預檢（`mac_preflight`）
+
+| ID | 路徑 | 今天 | 之後 | 測試 |
+|---|---|---|---|---|
+| P1 | `wrong_machine`、`malformed_command`（`shell-kill` 除外）、`cloud_dispatch_unpinned`、`unknown_command`、`malformed_read`、`unserializable_read`（`CloudAppBridge.swift:1749-2098`、`:2324`、`:2761`） | 沒反應，60 秒後逾時 | 有 `request` 就回覆，沒有就送 notice；一律帶 `layer=mac_preflight` | T-P1 |
+| P2 | `cloud_commands_disabled` 在解析指令之前就判定（`:1768`） | 有時候有回覆，有時候沒有 | 同 P1，固定回覆 | T-P1 |
+
+### 3.5 帳本（`mac_ledger`）
+
+| ID | 路徑 | 今天 | 之後 | 測試 |
+|---|---|---|---|---|
+| L1 | 所有帳本拒絕的回覆訊息都是同一句 `The command durability boundary is unavailable.`（`CloudAppBridge.swift:2201-2210`） | 語音直接顯示這句英文 | 回覆帶 `layer`、`code`、`detail`，畫面文字由 code 決定 | T-L1 |
+| L2 | `command_clock_uncertain`：時鐘守衛的原因在 `CloudBridgeLifecycle.swift:147-150` 被丟掉。**這個窗口本身由 task 7dddfed6 修**，這裡只負責讓它看得見 | 同 L1 | `detail.reason`（例如 `token_rotation_window`）加上 `clears_in_ms`；畫面顯示「Mac 正在確認時間，約 N 秒後再試」 | T-L2 |
+| L3 | `command_gate_unavailable` 一個代碼同時代表「roster 讀不到」和「寫入開關關著」（`CloudBridgeLifecycle.swift:592-598`） | 分不出是哪一個 | 拆成 `command_roster_unreadable` 與 `command_writes_disabled` | T-L3 |
+| L4 | 帳本 row 不記指令種類、seq、session，也不記回覆有沒有送到；效果發生前的拒絕會把 reserved row 直接刪掉（`CloudCommandLedger.swift:715-726`），不留痕跡 | 事後查不到 | 另外在記憶體裡放一個「最近 N 筆指令」的 ring（§4.1），**不改帳本的持久格式** | T-L4 |
+
+### 3.6 Route 與回覆（`mac_route`、`mac_reply`）
+
+| ID | 路徑 | 今天 | 之後 | 測試 |
+|---|---|---|---|---|
+| F1 | route 錯誤：`remote:` 那行有 path 與 sender，但沒有 request；`busy` 路徑連 `remote:` 行都不寫 | 看得到 code，但 message 是英文 | 回覆帶 `layer=mac_route`；log 用 §2.3 格式 | T-F1 |
+| G1 | 回覆發佈失敗，產生 `command_answer_undeliverable` 或 `read_answer_undeliverable`（本機 log 合計 170 次）。**這時效果已經執行了**，瀏覽器卻等到逾時 | 逾時，看起來像沒做 | 最近指令紀錄標成 `undeliverable`。瀏覽器逾時前先讀狀態；如果同一個 ref 已經 `executed`，就顯示「Mac 已經執行，但回覆沒送到」 | T-G1 |
+| G2 | 已經進 spool 的回覆，超過 240 秒的 ready 期限或 30 秒的 receipt 期限就被燒掉，不寫 log；spool 的 metrics sink 是 no-op（`CloudDurableStores.swift:1157-1170`） | 同 G1 | 計數與最近 N 筆都記進狀態快照 | T-G1 |
+
+## 4. 診斷讀取
+
+### 4.1 Mac 端的 Cloud 狀態快照
+
+新增一個 actor（新檔 `Sources/CloudStatus.swift`），把今天散在各處、在 production 裡**完全沒有人讀**的狀態收在一起：
+入站佇列、拒絕 lane、帳本、出站 window 的 metrics，時鐘守衛狀態，token 到期時間，transport 狀態。
+
+```json
+{
+  "clawdline_cloud_status": 1,
+  "generated_at": "2026-09-13T07:01:05Z",
+  "counting_since": "2026-09-13T06:40:12Z",
+  "bridge": "attached",
+  "transport": { "state": "connected", "connected_since": "…", "last_close": "token_rotation" },
+  "token": { "expires_at": "…", "next_rotation_at": "…" },
+  "clock_guard": { "state": "uncertain", "reason": "token_rotation_window", "since": "…", "clears_at": "…" },
+  "identity": { "key_id": "ms-2", "roster_readable": true, "devices": [{ "device": "web_f052dcb8-…", "label": "iPhone" }] },
+  "inbound": { "accepted": 812, "dropped": { "key_id_mismatch": 790, "replay": 13 }, "recent_drops": ["最多 20 筆"] },
+  "commands": ["最多 50 筆：ref、type、各步驟時間、refusal{layer,code}"],
+  "reply": { "undeliverable": 2, "expired_ready": 0, "expired_receipt": 0, "lane_dropped": 0 }
+}
+```
+
+- 計數跟著 process 的生命週期，**不會因為重連歸零**，並用 `counting_since` 說明是從何時開始算的。
+- 不存 transcript、標題或路徑。
+
+### 4.2 三種讀者、三條路
+
+| 讀者 | 路 | 為什麼這樣走 |
+|---|---|---|
+| 在 Mac 上除錯的 agent | 固定檔案 `~/Library/Logs/Clawdline/diagnostics/cloud-status.json`，有變化時寫入，最多每 2 秒一次 | 和 [`diagnostics.md`](diagnostics.md) 同一個目錄、同樣是「路徑固定」的原則；app 的 HTTP 掛了也讀得到；不必動 `RemoteServer.swift` |
+| 手機，指令還送得進去時 | Cloud 讀取 `cloud.status`，在機器層 pseudo-session 上回覆完整快照 | 按一下就拿到最近 50 筆指令各自走到哪一步 |
+| 手機，指令送不進去時（key_id 不符、replay…） | **notice**：把摘要（計數、最近 10 筆丟棄、時鐘守衛、token）併進 Mac 已經在發佈、而且手機本來就收得到的機器層快照。有丟棄或拒絕時合併起來重發，最多每 5 秒一次 | 送不進去的時候，任何「請求／回覆」都沒用，只能靠 Mac 主動發。relay 會快取最後一份，所以新開的分頁一連上就看得到 |
+
+notice 要放在哪條 channel，是 **決定 1**（§8）。
+
+### 4.3 手機上怎麼呈現
+
+- **錯誤那一行本身可以點。** 點下去打開「Cloud 狀態」sheet，自動捲到同一個 `ref`：這一筆走到哪一步、在哪一層被拒、代碼、原因。
+- **設定頁新增一列「Cloud 狀態」**，不必再連點五下版本號。
+- **「Send to Mac」在 Cloud 上可以用了**（B8）。報告裡一併附上瀏覽器端的最近指令 ring（只有 seq、步驟、code，沒有內容）。
+- sheet 的資料全部來自 §4.1 的快照與瀏覽器自己的 ring。**使用者要做的事，上限是按一下。**
+
+## 5. 前端呈現的兩條規則
+
+1. **畫面上的文字只由 `code` 決定。**
+   - 新增共用模組 `Resources/web/app/js/core/failure-text.js`，提供 `describeFailure(error) → { text, code, ref, layer, retryable }`。
+   - 未知代碼顯示「沒有成功（`code` · `ref`）」。
+   - 守衛：靜態掃描 `js/input`、`js/view`、`js/session`，toast 與錯誤文字不准直接用 `.message`。
+     現有 `worktrees.js`、`documents.js` 那種 `code: message` 的寫法，也一併改走這個函式。
+2. **transport 不准同步 throw。**
+   - CloudClient 的公開方法一律是 `async`，或回傳 Promise。
+   - 守衛列舉 `CloudClient.prototype` 上的全部公開方法，在「沒有機器」「沒有 session」「socket 關著」三種狀態下各呼叫一次，
+     斷言：沒有同步例外、回傳值是 thenable、reject 時帶 typed code。
+   - 現有四處測試**把同步 throw 當成預期行為**釘住了，要一起改：`client.test.mjs:1261-1267`、`client.test.mjs:2008-2011`、
+     `Tests/web-board-transport.mjs:60`、`Tests/web-timeline.mjs:90-93`。
+   - task ae4e7f05 正在修 `_place` 的同步 throw。這條規則要等它落地之後，再把它的做法推廣到全部方法，
+     避免兩個 worktree 同時改 `cloud-client.js`。
+
+## 6. 認證相關
+
+| 情境 | 今天誰知道 | 之後怎麼看得見 |
+|---|---|---|
+| 6.1 配對：sender 不在 roster 裡 | 只有 Mac log 的 `unknown_sender`，而且沒寫是哪個 sender | notice 帶 sender。瀏覽器發現那是自己的 device 時，顯示「這台 Mac 不認得這個瀏覽器」，並附配對入口 |
+| 6.2 金鑰漂移：key_id 不符 | 沒有人 | 兩端都偵測：瀏覽器在本機比對收到的 key_id（B9）；Mac 的 notice 帶 `key_id` 與 `expected_key_id`（M1） |
+| 6.3 同一 device 多分頁撞號 | 沒有人 | 瀏覽器在 notice 裡看到自己的 seq 被判 replay，就顯示「這台裝置在別的分頁也開著」；同時用 `BroadcastChannel` 偵測同一 device 的其他分頁並提示。**要不要把撞號修掉**是決定 2 |
+| 6.4 device token 過期、被取代、被撤銷 | 只有 relay 知道（它關閉連線，但瀏覽器沒讀 close code） | 讀 close code（B3）；relay 分開 `token_superseded` 與 `revoked`（R3）；升級前的拒絕也讀得到（R2） |
+| 6.5 roster 讀不到（Keychain） | 看起來跟未配對一樣 | 狀態快照顯示 `roster_readable:false`；代碼 `command_roster_unreadable`（L3） |
+
+### 6.3 為什麼撞號今天一定會發生
+
+瀏覽器的序號配置器（`cloud-boot.js` 的 `durableSequence`）每次向 `localStorage` 預留 64 個號碼。
+Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增**。
+
+兩個分頁共用同一個 sender：分頁 A 預留了 100–163，分頁 B 接著預留 164–227。
+只要 B 先送出 164，A 之後送的 101 就會被判成 replay。每次 token 輪替都會重建配置器、重新讀天花板，兩個分頁會互相跳過對方。
+所以只要開兩個分頁，序號較低的那個，大部分指令都會被丟掉。
+
+## 7. Failure-injection 測試清單
+
+每一條都要**先在修正前的樹上跑紅，再在修正後跑綠**（[`verification-workflow.md`](verification-workflow.md) 的 guard 規則）。
+前端用 node 測試（`client.test.mjs` 已經有假 socket）；Mac 用 `CloudTransportFakes.swift` 的假 relay；relay 用 `relay/test-workers/relay.test.ts`。
+
+| 編號 | 注入什麼 | 斷言看得到什麼 |
+|---|---|---|
+| T-B1 | 假 relay 對 publish 回 `ack status=machine_offline` | 請求在一個 tick 內 reject：`layer=relay code=machine_offline`，ref 的 seq 等於送出的 seq；不是等 60 秒 |
+| T-B2 | 假 relay 回 `publish_error code=forbidden field=capability` | 同 T-B1，另有 `detail.field=capability` |
+| T-B3 | 假 relay 送 error frame，再以 4401 關閉 | 連線狀態記下 `unauthorized`；之後的請求 reject 時帶這個 code |
+| T-B4 | 在三種壞狀態下呼叫全部公開方法 | 沒有同步例外、每個都回 thenable、reject 有 typed code。把其中一個方法故意改回同步 throw，守衛必須變紅 |
+| T-B5 | 注入未知代碼 `zz_unknown` 與一個已知代碼 | 畫面文字含 `zz_unknown` 與 ref，不含 message 原文；在程式裡插入一行 `toast(e.message)`，靜態守衛必須變紅 |
+| T-B6 | Mac 回 `no_whisper`，帶 `reason=no_model` | 顯示 NoModel 那一句 |
+| T-B7 | 請求還在飛時觸發 token 輪替 | reject `cloud_reconnecting`，文字已在地化 |
+| T-B8 | Cloud 模式下按 Send to Mac | 送出的是 `diagnostics.report` 指令，不是 fetch 到頁面自己的網域 |
+| T-B9 | 收到 key_id `ms-2` 的 session 快照，而自己用 `ms-1` 送 | 狀態出現 `key_id_drift`，兩個 id 都在 |
+| T-R1 | workerd 測試送一個簽章錯誤的 publish | log 出現 `publish_refused code=forbidden field=sig` |
+| T-R2 | 用過期 token 連線 | 瀏覽器收到 error frame 與 4401，不是沒有代碼的 1006 |
+| T-R3 | 撤銷另一台裝置，讓 epoch 前進 | 既有 socket 關閉時帶 `token_superseded` |
+| T-R4 | ingest 送過期的 ts；製造 revocation race | 回 400 `clock_skew`；`internal` 在表上標成 reachable |
+| T-M1 | 假 relay 送 key_id `ms-1`，Mac 目前是 `ms-2` | log 一行 `layer=mac_transport code=key_id_mismatch sender=… seq=… key_id=ms-1 expected_key_id=ms-2 reply=notice`；狀態快照 `dropped.key_id_mismatch` 加 1、`recent_drops` 有這一筆；notice 有發出去 |
+| T-M2 | 未配對的 sender；簽章錯誤；roster 讀取丟錯 | 三個不同的 code；roster 讀取失敗時 `roster_readable:false` |
+| T-M3 | 同一個 sender 先送 seq 10，再送 seq 5 | `replay` 帶 `highest_seq=10`；notice 有發出去 |
+| T-M4 | 塞滿入站佇列後送一個 `key`（今天沒帶 request 的那種） | 瀏覽器收到 `cloud_ingress_busy` 回覆，不是逾時 |
+| T-M5 | 塞滿拒絕回覆 lane | `lane_dropped` 加 1；notice 有發出去 |
+| T-P1 | 未知指令、格式錯誤、寫入開關關著 | 各自回覆，帶 `layer=mac_preflight` |
+| T-L1 | 任何一種帳本拒絕 | 回覆有 `layer`、`code`、`detail`；瀏覽器不顯示 message |
+| T-L2 | 讓時鐘守衛變成 uncertain | `detail.reason` 與 `clears_in_ms` 出現在回覆與畫面上 |
+| T-L3 | roster 讀不到；寫入開關關著 | 兩個不同的 code |
+| T-L4 | 送三筆指令：一筆成功、一筆被帳本拒絕、一筆回覆失敗 | 狀態快照的 `commands` 三筆，步驟各自正確 |
+| T-F1 | route 回 `busy` | 回覆帶 `layer=mac_route`；log 有 §2.3 格式那一行 |
+| T-G1 | spool 發佈丟錯；receipt 逾時 | `undeliverable`、`expired_receipt` 各加 1；瀏覽器的逾時訊息變成「已經執行，但回覆沒送到」 |
+
+### 7.1 在 hosted console 上的驗收（第二階段）
+
+任務書要求的四種情境。每一種都要能在畫面或狀態 sheet 上說出層級、代碼與 ref，
+而且在 `cloud-status.json` 裡找得到同一個 ref。
+
+| 情境 | 怎麼製造 | 畫面應該說 |
+|---|---|---|
+| token 輪替窗口 | 在 `reconnect waiting reason=token_rotation` 之後 10 秒內送語音。如果 7dddfed6 已經把窗口修掉，改用測試開關強制讓時鐘守衛 uncertain | `mac_ledger · command_clock_uncertain · ref`，原因 `token_rotation_window` |
+| replay | 同一個 Chrome profile 開第二個分頁，先在新分頁送一筆，再回到舊分頁送一筆 | `mac_transport · replay · ref`，「這台裝置在別的分頁也開著」 |
+| 金鑰不符 | 只在測試分頁的記憶體裡把 `keyID` 改成舊值再送出，不動 Keychain | 本機顯示 `key_id_drift`，Mac notice 顯示 `key_id_mismatch`，兩個 key_id 都在 |
+| Mac 離線 | 把 Clawdline 的 Cloud 開關關掉後送出 | 立刻顯示 `relay · machine_offline · ref` |
+
+製造 replay 會弄亂使用者自己正在用的分頁。驗收前先說一聲，結束後請他重新整理那個分頁。
+
+## 8. 待拍板的決定
+
+每一題都會用選項介面單獨問。拍板之後，把結果寫回這一節。
+
+1. **Mac 的 notice 走哪條路。**
+   - 建議：併進 Mac 已經在發佈的機器層快照。加密、同帳號的所有 viewer 都收得到、不必改 relay。
+   - 替代 A：relay 已經有的逐裝置通道 `ctlr/<machine>/<device>`。只送給那一台，但 Mac 與瀏覽器兩端都還沒實作，
+     要先走 `ctl-response-seam` 那份還沒授權的 reply key 設計，也要部署 relay。
+   - 替代 B：只寫 Mac 端的檔案。手機上看不到自己被丟掉的指令。
+2. **多分頁撞號要不要修掉。**
+   - 建議：修。Mac 的 replay 檢查從「嚴格遞增」改成滑動窗口：記住最高值以下 1,024 個已經收過的 seq，
+     沒收過的照樣接受、收過的照樣拒絕；再加上既有的 300 秒信封期限與帳本的 request 冪等。
+     這是在改一條安全規則，要獨立複審。
+   - 替代：只讓它看得見。第二個分頁的指令繼續被丟，但畫面會說出原因。
+3. **這一輪要不要包含 relay 的改動。**
+   - 建議：包含 R1–R5。改動不大，但要你部署 relay。
+   - 替代：這一輪不碰 relay，只讀 relay 本來就會送的 `ack`、`publish_error`、error frame；升級前的拒絕仍然顯示成 offline。
+4. **一般畫面上要不要顯示代碼與 ref。**
+   - 建議：顯示，用小字放在句子後面。
+   - 替代：只在 Cloud 狀態 sheet 裡看得到。
+
+## 9. 排程與相依
+
+- **先等兩件落地：** task ae4e7f05（`cloud-client.js`、`start.js`、`i18n.js`）與 task 7dddfed6
+  （`CloudBridgeLifecycle.swift`、`CloudClock.swift`、`docs/cloud.md`）。在那之前，這條線只動**新檔**與不重疊的檔案。
+- **切成四件，每件都能獨立落地：**
+  1. **前端錯誤呈現**：B1–B7、B9、`failure-text.js`、transport 契約守衛。等 ae4e7f05。
+  2. **Mac 錯誤契約與狀態快照**：M1–M5、P1–P2、L1–L4、F1、G1–G2、`CloudStatus.swift`、`cloud-status.json`。
+     等 7dddfed6；會動到 `CloudTransport.swift`、`CloudAppBridge.swift`、`CloudCommandLedger.swift`。
+  3. **手機的狀態 sheet**：`cloud.status` 讀取、notice 的呈現、Cloud 上的 `diagnostics.report`。依賴 1 與 2。
+  4. **Relay**：R1–R5，在 `~/code/clawdline-cloud`，看決定 3。
+- **不動 `Sources/RemoteServer.swift`。** 狀態走檔案與 Cloud 讀取，不加 HTTP route。
+  機器層快照是在 `RemoteServer.swift` 組好之後交給 `CloudAppBridge.publishOrchestrator`，notice 的摘要要併在 bridge 裡。
+  如果之後要加 `GET /v1/cloud/status`，那一件要把 ceiling 與 governance 表一起算進範圍。
+- **編譯：** Mac 那件需要一次完整 Swift 編譯，排在 `./test.sh` 的機器鎖後面。重建 app 前一定先告知使用者。
+- **部署（全部是使用者的決定）：** 重建 Mac app、部署 hosted console 到 Pages、部署 relay。
+  相容性：新 console 配舊 Mac、舊 console 配新 Mac 都要能跑，所以只新增欄位，不改既有欄位。
+
+## 10. 順帶發現、不在這一輪範圍
+
+| 發現 | 出處 | 建議 |
+|---|---|---|
+| Root Assignment 的收據比對失敗，broker 對同一個 root 把任務書打了兩次，還把活著的 root 記成 `failed/prompt_timeout` | `~/.config/clawdline/orchestrator.json` 裡記著 `inject_attempts: 2`；`Sources/Orchestrator.swift` 的 `rootAssignmentTranscriptReceipt` | 另開一件（已列給使用者） |
+| 帳本 row 要過期，必須 `retainedElapsedMilliseconds` 往前走，但沒有任何 production 呼叫會推進它 | `CloudCommandLedger.swift:772-774`；磁碟上 13 筆全部是 0 | **待驗證。** 磁碟上只有 13 筆、橫跨 48 分鐘，log 卻有 842 次 Cloud POST，看起來 store 會被重置。要先確認實務上會不會真的累積到每台 1,000 筆的上限 |
+| Onboarding 讀的是舊的 roster store，而 production 遷移完成後會刪掉它 | `Onboarding.swift:1403`、`CloudBridgeLifecycle.swift:541` | 待驗證（目前只從程式推論） |
+| relay 每條連線最多 8 個訂閱，但瀏覽器的訂閱清單只增不減 | relay README；`cloud-client.js` | 待驗證 |

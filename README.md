@@ -867,6 +867,7 @@ link to them.
 | [Hooks](docs/hooks.md) | the eight events, and why the screen still decides |
 | [Notifications](docs/notifications.md) | who hears what, and why depth decides the audience rather than the volume |
 | [Reading a browser-side defect](docs/diagnostics.md) | the fixed file the app writes its own diagnostic to, so nobody has to paste one |
+| [Cloud error transparency (design)](docs/cloud-error-transparency.md) | every place a Cloud command can be refused without a word, and how each one will say which layer, which code, which request |
 | [Waiting](docs/waiting.md) | where the work runs, and the two ways waiting for a subprocess has broken this |
 | [Runtime performance](docs/runtime-performance.md) | measured local and Cloud latency, bounded transcript reads, indexed Session projection, and long-run memory limits |
 | [Backgrounded conversations](docs/background-conversations.md) | the tab that stops writing its own file, and what reads it instead |
