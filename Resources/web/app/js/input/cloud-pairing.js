@@ -105,18 +105,22 @@ export function clearCloudPairingInvitation(storage) {
     storage.removeItem(INVITATION_STORAGE_KEY);
 }
 
-/** A connected viewer already has account keys; an invitation must not silently hang the Mac. */
+/** Let the same signed viewer replace drifted E2E keys without registering a new device. */
 export function showCloudAlreadyPaired(options) {
     if (!cloudDoor()) return;
     hideCloudControls();
-    byId("cloud-door-lede").textContent = "This browser is already connected";
-    byId("cloud-door-guide").textContent = "No new access was granted. Choose Cancel Pairing on the Mac. "
-        + "To pair a different browser, open that browser and use Paste Browser Code on the Mac.";
-    say("The unused invitation was removed from this page. Your existing connection is unchanged.", true);
+    byId("cloud-door-lede").textContent = "Repair this browser's encrypted connection";
+    byId("cloud-door-guide").textContent = "This keeps the same browser device and permissions, "
+        + "but refreshes its encryption keys from the Mac. No new access was granted.";
+    say("Use the one-time Mac invitation to replace keys that can no longer read your Sessions.", true);
     var button = byId("cloud-door-restart");
     button.hidden = false;
-    button.textContent = "Continue to my Sessions";
-    button.onclick = options.onContinue;
+    button.textContent = "Repair encrypted connection";
+    button.onclick = function () {
+        button.disabled = true;
+        button.onclick = null;
+        options.onRepair();
+    };
 }
 
 /**

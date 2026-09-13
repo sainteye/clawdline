@@ -260,21 +260,32 @@ if (transportKind === "cloud") {
         } catch (invitationError) {
             console.error("clawdline: " + invitationError.message);
         }
+        var cloudConnection = null;
         var startCloudViewer = function () {
-            keepConnected(cloudSession, {
+            cloudConnection = keepConnected(cloudSession, {
                 onState: function (update) {
                     if (update.state === "connected") {
                         cloudGateUp = !!cloudInvitation;
                         if (cloudInvitation) {
-                            // Existing account keys skip pairing_required. Do not leave a stale
-                            // invitation or imply that this visit granted any new authority.
-                            clearCloudPairingInvitation(window.sessionStorage);
-                            cloudInvitation = null;
-                            showCloudAlreadyPaired({ onContinue: function () {
-                                cloudGateUp = false;
-                                hideCloudGate();
+                            // A viewer signing identity may remain authorized after its local
+                            // account key drifts. Keep the invitation until an explicit repair
+                            // replaces those E2E keys; the Mac accepts only this same signed
+                            // device, so this neither creates a device nor expands authority.
+                            showCloudAlreadyPaired({ onRepair: function () {
+                                var repairInvitation = cloudInvitation;
+                                if (!repairInvitation) return;
+                                if (cloudConnection) cloudConnection.stop();
+                                handlers.conn("locked");
+                                showCloudPairing(cloudSession, {
+                                    invitation: repairInvitation,
+                                    onPaired: function () {
+                                        clearCloudPairingInvitation(window.sessionStorage);
+                                        cloudInvitation = null;
+                                    }
+                                }).then(startCloudViewer);
                             } });
                         } else {
+                            cloudGateUp = false;
                             hideCloudGate();
                         }
                         useApi(update.client);

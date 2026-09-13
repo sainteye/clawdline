@@ -71,22 +71,43 @@ const connectedStart = main.indexOf('if (update.state === "connected")');
 const connectedEnd = main.indexOf('} else if (update.state === "sign_in")', connectedStart);
 const connectedBody = main.slice(main.indexOf("{", connectedStart) + 1, connectedEnd);
 for (const hasInvitation of [true, false]) {
-    let cleared = 0, noticed = 0, hidden = 0, used = 0, bound = 0, continuation;
+    let cleared = 0, noticed = 0, hidden = 0, used = 0, bound = 0, repaired = 0;
+    let stopped = 0, resumed = 0, repairOptions = null, resumeAfterRepair = null;
+    const invitation = hasInvitation ? { invitation_id: "one-time" } : null;
     const context = { cloudInvitation: hasInvitation ? { invitation_id: "one-time" } : null,
         cloudGateUp: true, window: { sessionStorage: {} }, update: { client: {} },
+        cloudConnection: { stop() { stopped++; } }, cloudSession: {},
+        handlers: { conn(state) { assert.equal(state, "locked"); } },
         clearCloudPairingInvitation() { cleared++; },
-        showCloudAlreadyPaired(options) { noticed++; continuation = options.onContinue; },
+        showCloudAlreadyPaired(options) { noticed++; repaired = options.onRepair; },
+        showCloudPairing(session, options) {
+            assert.equal(session, context.cloudSession);
+            repairOptions = options;
+            return { then(callback) { resumeAfterRepair = callback; } };
+        },
+        startCloudViewer() { resumed++; },
         hideCloudGate() { hidden++; }, useApi() { used++; }, bindTranscriptEvents() { bound++; } };
     vm.runInNewContext(connectedBody, context);
-    assert.equal(cleared, hasInvitation ? 1 : 0);
+    assert.equal(cleared, 0, "the one-time invitation remains available until repair succeeds");
     assert.equal(noticed, hasInvitation ? 1 : 0,
-        "already-paired browser explicitly reports no new pairing instead of silently consuming the URL");
-    assert.equal(context.cloudInvitation, null);
+        "an already-paired browser offers an explicit encrypted-key repair");
     assert.equal(context.cloudGateUp, hasInvitation);
     assert.equal(used, 1); assert.equal(bound, 1);
-    if (hasInvitation) { assert.equal(hidden, 0); continuation(); }
-    assert.equal(context.cloudGateUp, false);
-    assert.equal(hidden, 1);
+    if (hasInvitation) {
+        assert.equal(hidden, 0);
+        repaired();
+        assert.equal(stopped, 1, "repair retires the stale-key connection before replacing it");
+        assert.deepEqual(repairOptions.invitation, invitation);
+        assert.equal(cleared, 0);
+        repairOptions.onPaired();
+        assert.equal(cleared, 1, "the invitation is consumed only after the new keys are stored");
+        assert.equal(context.cloudInvitation, null);
+        resumeAfterRepair();
+        assert.equal(resumed, 1);
+    } else {
+        assert.equal(context.cloudGateUp, false);
+        assert.equal(hidden, 1);
+    }
 }
 const pairingUI = readFileSync("Resources/web/app/js/input/cloud-pairing.js", "utf8");
 const noticeStart = pairingUI.indexOf("export function showCloudAlreadyPaired(");
@@ -95,15 +116,16 @@ const noticeEnd = pairingUI.indexOf("\nexport function ", noticeStart + 1);
 const noticeSource = pairingUI.slice(noticeStart, noticeEnd).replace("export function", "function");
 const fields = new Map();
 const field = id => { if (!fields.has(id)) fields.set(id, {}); return fields.get(id); };
-let continued = 0;
+let repaired = 0;
 const noticeContext = { byId: field, cloudDoor: () => ({}), hideCloudControls() {}, say() {},
     fetch() { assert.fail("already-paired notice must not call an API"); } };
-vm.runInNewContext(noticeSource + ";showCloudAlreadyPaired({onContinue(){}});", noticeContext);
+vm.runInNewContext(noticeSource + ";showCloudAlreadyPaired({onRepair(){}});", noticeContext);
 assert.match(field("cloud-door-guide").textContent, /No new access was granted/);
-assert.match(field("cloud-door-guide").textContent, /Cancel Pairing/);
-noticeContext.showCloudAlreadyPaired({ onContinue() { continued++; } });
+assert.match(field("cloud-door-guide").textContent, /refresh.*encryption keys/i);
+assert.equal(field("cloud-door-restart").textContent, "Repair encrypted connection");
+noticeContext.showCloudAlreadyPaired({ onRepair() { repaired++; } });
 field("cloud-door-restart").onclick();
-assert.equal(continued, 1);
+assert.equal(repaired, 1);
 assert.ok(main.indexOf('cloudOnboarding === "install"') < main.indexOf("new CloudViewerSession"),
     "the install gate is selected before a Cloud session can register a Safari viewer");
 assert.ok(main.indexOf("clearCloudPairingInvitation(window.sessionStorage)")
