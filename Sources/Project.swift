@@ -18,14 +18,22 @@ enum Project {
 
     /// Everything in one `git` invocation. Three separate ones per refresh is three processes
     /// for something that sits in a footer.
-    static func info(cwd: String) -> ProjectInfo? {
+    ///
+    /// nil when git did not answer inside `timeout`, which is the same answer as "could not be
+    /// started": there is nothing to show either way. See ``run(_:_:timeout:)`` for why a deadline.
+    static func info(cwd: String, timeout: TimeInterval = infoTimeout) -> ProjectInfo? {
         guard !cwd.isEmpty else { return nil }
         let script = "git -C \(shellQuoted(cwd)) rev-parse --show-toplevel"
             + " && git -C \(shellQuoted(cwd)) remote get-url origin"
             + " ; git -C \(shellQuoted(cwd)) status --porcelain=v2 --branch"
-        guard let out = run("/bin/sh", ["-c", script]) else { return nil }
+        guard let out = run("/bin/sh", ["-c", script], timeout: timeout) else { return nil }
         return parse(out, fallbackPath: cwd)
     }
+
+    /// The whole script, all three `git`s. Measured 0.043 to 0.089 seconds on three working
+    /// repositories on this Mac (2026-09-14); `SessionInfo.files` gives the same `git status` three
+    /// seconds on the same `/info` request and `GitChanges` gives each of its commands five.
+    static let infoTimeout: TimeInterval = 5
 
     /// The pure half, so the shape of git's output can be tested without a repository.
     ///
@@ -85,7 +93,19 @@ enum Project {
         "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    private static func run(_ launch: String, _ args: [String]) -> String? {
+    /// **Never left to hang.** `/v1/sessions/:id/links` and `/artifacts/:kind` reach ``info(cwd:)``
+    /// on the remote server's one shared queue, and `/info` reaches it on the serial reading lane.
+    /// This used to wait for as long as git took, and nothing bounded that: a `git status` waiting
+    /// on a stuck fsmonitor hook (the test reproduces one) would stop every route on that queue,
+    /// the event stream and its heartbeat, until the hook gave up, if it did. nil at the deadline.
+    ///
+    /// `terminate()` rather than `kill(pid, SIGTERM)`, and that is measured rather than taste. On
+    /// this Mac (Darwin 24.6.0) a `/bin/sh -c` child is started as its own process-group leader;
+    /// after `terminate()` the command the shell was waiting on was gone and the read below
+    /// returned in 0.001 s, while after `kill` of the shell's pid alone the orphaned child still
+    /// held the pipe and the read was still blocked three seconds later. The same `terminate()`
+    /// also took down the fsmonitor hook a stuck `git status` was waiting on, three levels down.
+    static func run(_ launch: String, _ args: [String], timeout: TimeInterval) -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: launch)
         task.arguments = args
@@ -93,8 +113,14 @@ enum Project {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         do { try task.run() } catch { return nil }
+        let killer = DispatchWorkItem { if task.isRunning { task.terminate() } }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: killer)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         task.waitQuietly()
+        killer.cancel()
+        // A shell that ended on a signal did not finish its script, whoever sent the signal, and
+        // half of a status is a dirty count that reads lower than the truth.
+        guard task.terminationReason == .exit else { return nil }
         return String(data: data, encoding: .utf8)
     }
 }

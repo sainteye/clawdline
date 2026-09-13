@@ -188,6 +188,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "the slow-reading depth is paired on every exit",
     "terminal writes cannot hold the remote server queue",
     "key and end terminal mutations leave health and SSE turns responsive",
+    "a git, a version or a tunnel list that never answers is abandoned at its deadline",
     "a project folder says which directory it is, and is not taken at its word",
     "the line a new tab is given, before anything types it",
     "which terminal a session is started in, and when none of them will do",

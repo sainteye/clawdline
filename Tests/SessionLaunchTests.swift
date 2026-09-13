@@ -901,6 +901,53 @@ group("key and end terminal mutations leave health and SSE turns responsive") {
     expect("the verified Cloud run receives the route response", cloudResult.snapshot().status, 200)
 }
 
+group("a git, a version or a tunnel list that never answers is abandoned at its deadline") {
+    // `/links` and `/artifacts/` read `Project.info` on the shared server queue, and the other two
+    // run on main, which that queue crosses to synchronously. None of the three had a deadline.
+    // The stuck program is a real `git status` waiting on its fsmonitor hook, not a stand-in.
+    let repository = FileManager.default.temporaryDirectory
+        .appendingPathComponent("clawdline-stuck-git-\(UUID().uuidString)", isDirectory: true)
+    try! FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: repository) }
+    expect("the fixture repository initializes",
+           testGit(["init", "-q", "-b", "main"], cwd: repository).status, 0)
+    let answered = Project.info(cwd: repository.path)
+    expect("a repository that answers is still read", answered?.branch, "main")
+    expect("and named after its own folder", answered?.name, repository.lastPathComponent)
+
+    let hook = repository.appendingPathComponent(".git/stuck-fsmonitor")
+    let hookPID = repository.appendingPathComponent(".git/stuck-fsmonitor.pid")
+    try! Data("#!/bin/sh\necho $$ > '\(hookPID.path)'\nexec sleep 30\n".utf8).write(to: hook)
+    chmod(hook.path, 0o755)
+    expect("the fixture's git status now waits on a hook that does not return",
+           testGit(["config", "core.fsmonitor", hook.path], cwd: repository).status, 0)
+    let began = Date()
+    let stuck = Project.info(cwd: repository.path, timeout: 0.5)
+    let waited = Date().timeIntervalSince(began)
+    check("a git that never answers is no answer", stuck == nil, "got \(String(describing: stuck))")
+    check("given up at the deadline, not whenever git finishes", waited < 5, "waited \(waited)s")
+    let pid = (try? String(contentsOf: hookPID, encoding: .utf8))
+        .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+    check("the hook the git was waiting on really ran", pid != nil)
+    if let pid {
+        check("and was taken down with the shell, not orphaned holding the pipe",
+              eventually { kill(pid, 0) == -1 && errno == ESRCH })
+    }
+
+    let versionBegan = Date()
+    check("a --version that never returns is nothing to say",
+          Compat.run(["/bin/sleep", "30"], timeout: 0.3) == nil)
+    check("and says so promptly", Date().timeIntervalSince(versionBegan) < 5)
+    expect("a --version that answers is read", Compat.run(["/bin/echo", "codex-cli 1.2.3"]),
+           "codex-cli 1.2.3\n")
+
+    let listBegan = Date()
+    expect("a tunnel list that never returns is an empty listing",
+           RemoteTunnel.capture("/bin/sleep", ["30"], timeout: 0.3), "")
+    check("and is handed back promptly", Date().timeIntervalSince(listBegan) < 5)
+    expect("a tunnel list that answers is read", RemoteTunnel.capture("/bin/echo", ["[]"]), "[]\n")
+}
+
 group("a project folder says which directory it is, and is not taken at its word") {
     // Claude Code names the folder after the working directory with every character that is not
     // a letter or a digit turned into a dash. That map is many-to-one, so the name can never be

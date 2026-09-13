@@ -414,7 +414,15 @@ enum Compat {
         return found
     }
 
-    private static func run(_ argv: [String]) -> String? {
+    /// **Bounded, because the first caller is a menu on the main thread.** The remote server's
+    /// queue crosses to main synchronously, so a `--version` that never returned would have held
+    /// the menu, the bar and every HTTP route behind it. Measured 0.059 s for `claude` and 0.105 s
+    /// for `codex` on this Mac (2026-09-14); a timeout is cached as "nothing to say", like a miss.
+    ///
+    /// Written out rather than `Process.collect`, because `Tests/update-check.mjs` and
+    /// `Tests/codex-client-identity.mjs` compile this whole file beside a stand-in for
+    /// `waitQuietly` and nothing else from `Subprocess.swift`.
+    static func run(_ argv: [String], timeout: TimeInterval = 5) -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: argv[0])
         task.arguments = Array(argv.dropFirst())
@@ -422,9 +430,12 @@ enum Compat {
         task.standardOutput = pipe
         task.standardError = FileHandle.nullDevice
         guard (try? task.run()) != nil else { return nil }
+        let killer = DispatchWorkItem { if task.isRunning { task.terminate() } }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: killer)
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         task.waitQuietly()
-        guard task.terminationStatus == 0 else { return nil }
+        killer.cancel()
+        guard task.terminationReason == .exit, task.terminationStatus == 0 else { return nil }
         return String(decoding: data, as: UTF8.self)
     }
 
