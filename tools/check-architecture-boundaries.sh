@@ -726,8 +726,9 @@ done
 # 62 with W1-5's store-health/corruption suite.
 # 63 with Tests/W2ApplicationOwnershipTests.swift, W2-1's owner-uniqueness suite.
 # 66 with Tests/CloudCommandRefusalTests.swift closing W2-2's typed Cloud refusal proof.
-# 67 with Tests/HostPortsTests.swift, W2-3's fake host-port lifecycle suite.
-suite_count_expected=67
+# 68 with ProjectBoardWorkflowCapacityTests.swift, which keeps durable-capacity failure injection
+# out of the already sealed 2,000-line ProjectBoardWorkflowTests.swift.
+suite_count_expected=68
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's held-lock doors are closed. `withTransactionOnHeldLock` and its two adapters,

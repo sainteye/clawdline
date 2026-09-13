@@ -34,6 +34,25 @@ assert.equal(observeBoardWorkflowSend({ workflow: {
 } }, effects), true, "a failed post-send journal settlement is also visible");
 assert.equal(notes.length, 2);
 assert.equal(observeBoardWorkflowSend({ workflow: {
+    status: "unrecorded", code: "workflow_capacity_reached"
+} }, effects), true, "machine-wide capacity pressure remains visible");
+assert.equal(toasts.length, 3);
+assert.doesNotMatch(toasts.at(-1).message, /workflow_capacity_reached/,
+    "a person sees an explanation instead of an internal code");
+assert.equal(observeBoardWorkflowSend({ workflow: {
+    status: "unrecorded", code: "workflow_capacity_reached"
+} }, effects), true, "repeated sends still record diagnostics");
+assert.equal(notes.length, 4);
+assert.equal(toasts.length, 3,
+    "one machine-wide condition does not toast on every successful message send");
+assert.equal(observeBoardWorkflowSend({ workflow: { status: "ingress_recorded" } }, effects),
+    false, "a recovered admission clears the machine-wide condition");
+assert.equal(observeBoardWorkflowSend({ workflow: {
+    status: "unrecorded", code: "workflow_capacity_reached"
+} }, effects), true);
+assert.equal(toasts.length, 4,
+    "a genuinely recurring capacity condition becomes visible once again");
+assert.equal(observeBoardWorkflowSend({ workflow: {
     status: 200, code: "workflow_delivery_recorded"
 } }, effects), false, "a recorded delivery is not shown as a gap");
 assert.doesNotThrow(() => observeBoardWorkflowSend({ workflow: { status: "unrecorded" } }, {

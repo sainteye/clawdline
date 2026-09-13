@@ -36,7 +36,7 @@ private func workflowLegacyArtifactProof(_ seedData: Data, root: URL, identity: 
             reopened.drainForTesting(); reopened = open(); reopened.drainForTesting()
             expect("\(name) restart never replays completed artifacts", calls, 0)
             let saved = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as! [String: Any]
-            expect("\(name) migration durably writes schema3", saved["schemaVersion"] as? Int, 3)
+            expect("\(name) migration durably writes schema4", saved["schemaVersion"] as? Int, 4)
             let remaining = saved["outbox"] as! [[String: Any]]
             expect("\(name) preserves exact failed identities", remaining.map { $0["id"] as! String }.sorted(),
                 oldRows.filter { $0["status"] as? String != "complete" }.map { $0["id"] as! String }.sorted())
@@ -183,8 +183,9 @@ private func workflowSettledCapacityProof() {
         expect("migration and second restart never replay old completed mutations", legacyCalls, 0)
         let migrated = try JSONSerialization.jsonObject(with: Data(contentsOf: legacyFile)) as! [String: Any]
         let retained = migrated["outbox"] as! [[String: Any]]
-        expect("failed-visible rows remain pinned, not erased by compaction", retained.count, 1)
-        expect("failed identity/reason survives migration", retained.first?["failureCode"] as? String, "retained_refusal")
+        expect("terminal failed rows leave executable storage after compaction", retained.count, 0)
+        let failureSummary = (migrated["runs"] as! [[String: Any]])[0]["terminalFailures"] as? [String: Any]
+        expect("failed reason survives migration as bounded run evidence", (failureSummary?["failureCodes"] as? [String: Int])?["retained_refusal"], 1)
         let migratedRuns = migrated["runs"] as! [[String: Any]]
         let legacyStart = migratedRuns[0]["spanStart"] as? [String: Any]
         expect("legacy evicted begin retains exact successful span request",
@@ -1483,6 +1484,8 @@ group("managed Board ingress is durable, bounded and identity-bound") {
 }
 
 group("workflow receipts stay attested and reconcile through a bounded durable outbox") {
+    workflowAbandonedCapacityRecoveryProof()
+    workflowTerminalFailureCompactionProof()
     workflowSettledCapacityProof()
     workflowProgramBindingAndDocumentProof()
     workflowSessionAssignmentProof()
@@ -1670,9 +1673,7 @@ group("workflow receipts stay attested and reconcile through a bounded durable o
     expect("schema-1 receipts migrate into their exact durable request scope",
            migratedReplay.code, "workflow_begin_recorded")
     let migratedText = (try? String(contentsOf: journalURL, encoding: .utf8)) ?? ""
-    check("receipt migration is explicit and writes schema 2 with requestScope",
-          migratedText.contains("\"schemaVersion\":3")
-            && migratedText.contains("\"requestScope\":"))
+    check("receipt migration is explicit and writes schema 4 with requestScope", migratedText.contains("\"schemaVersion\":4") && migratedText.contains("\"requestScope\":"))
 
     var transientBodies: [[String: Any]] = []
     let transient = ProjectBoardWorkflow(
@@ -1701,7 +1702,6 @@ group("workflow receipts stay attested and reconcile through a bounded durable o
             && transientBodies[0]["requestId"] as? String
                 == transientBodies[1]["requestId"] as? String)
 }
-
 group("a blocked Board consumer cannot block managed terminal send admission") {
     let root = workflowTestDirectory("blocked-consumer")
     defer { try? FileManager.default.removeItem(at: root) }

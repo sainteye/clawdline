@@ -231,6 +231,7 @@ clawdline_test_sources=(
   Tests/ProjectBoardIntegrationTests.swift
   Tests/ProjectBoardNarrativeTests.swift
   Tests/ProjectBoardWorkflowPresentationTests.swift
+  Tests/ProjectBoardWorkflowCapacityTests.swift
   Tests/ProjectBoardWorkflowTests.swift
   Tests/ProjectTimelineTests.swift
   Tests/VerificationLedgerTests.swift

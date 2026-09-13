@@ -104,9 +104,14 @@ no `beginHint` and replays the legacy envelope it was first sent with. Together 
 a constant 337 bytes to a hinted envelope.
 
 **Byte identity lasts only as long as the retried run is retained.** The journal holds at most 256
-runs. At that capacity a new admission evicts the earliest run whose delivery is no longer
-`pending` (it is `delivered` or `rejected`), whose `missingFollowUp` is empty, and which no outbox
-row short of `complete` protects; its outbox rows and receipts go with it. Once the retried run has
+runs. At that capacity a new admission evicts the oldest safe candidate: either a fully followed-up
+run, or a delivered/rejected run whose missing follow-up has been abandoned for 24 hours. Only a
+`pending`/`inflight` outbox row protects a run; a terminal `failed` row remains visible as retired
+gap accounting but cannot pin the hot journal forever. The retired summary durably counts runs
+missing `begin`, runs missing `deliver`, terminal-failed outbox runs and rows, and provider totals.
+Terminal failure codes are counted as well, so retirement does not erase the reason.
+It is unproved history, not a claim that the omitted work was repaired. The evicted run's payload,
+outbox rows and receipts leave together. Once the retried run has
 been evicted, a later identical retry finds no run. It is a new admission: it derives the hint again
 from the journal as it is at that moment, under the same deterministic run id, so its
 `previous_item` can differ from the original send. When the original was delivered, that retry
@@ -115,15 +120,17 @@ not something this field introduced: the replay cache lives only in memory for t
 it forgets, even a retained run's retry is typed again. Root owns that gap as a separate line of
 work. No tombstone or other durable state is kept for an evicted run.
 
-**A downgrade drops the frozen hint.** `beginHint` is an optional field on schema-3 runs, not a
-schema bump. An older App that reads schema 3 loads a journal containing it, ignores the field, and
+**A downgrade from schema 3 drops the frozen hint.** `beginHint` was an optional field on schema-3
+runs, not a schema bump. An older App that reads schema 3 loads a journal containing it, ignores the field, and
 drops it the next time it persists, because every persist re-encodes the whole journal from that
 App's own types. After re-upgrading, those runs have no `beginHint`, so a retry of one replays the
 legacy envelope, which both decoders still accept. A schema bump was the alternative and was
 rejected: the older App would refuse the whole journal as `workflow_store_invalid`, and every
 managed send would then go out unrecorded (`workflow_persistence_failed`) until the upgrade came
 back. Failing closed would stop Board workflow recording on a downgrade to protect an advisory
-field.
+field. Schema 4 deliberately chooses that stronger rollback boundary for retirement evidence:
+schema-3 binaries refuse a schema-4 journal rather than silently dropping `retiredGaps`, per-run
+terminal failure totals, or exact failed-intent identities during their next whole-file rewrite.
 
 Compatibility: the native (`Transcript.swift`) and web (`board-workflow-record.js`) decoders accept a
 legacy envelope without either key and a new envelope with valid values. They still reject unknown
@@ -385,11 +392,15 @@ ending an interval still works after begin-event retention and restart; no span 
 Legacy completed rows whose source event was already evicted can leave without rematerialization,
 but their exact span-start identity is preserved. Conflicting live rows and settled IDs are refused.
 Admission reserves deferred create/binding/child fanout before any Board mutation executes, so
-settlement cannot silently exceed live outbox capacity. Failed-visible rows still occupy capacity;
-`outbox_pending: 0` is not a claim that failed rows or deferred intents are absent.
+settlement cannot silently exceed live outbox capacity. A terminal failed row becomes bounded
+failure evidence and leaves the executable queue atomically; `outbox_pending: 0` is still not a
+claim that terminal failure history is absent.
 
-Journal schema 3 reads legacy schema 1/2 within the existing byte limit, validates source identity,
-and compacts proven completed rows before testing live capacity. This includes legacy 514-row
+Journal schema 4 reads legacy schema 1/2/3 within the existing byte limit, validates source
+identity, and compacts proven completed and terminal-failed rows before testing live capacity.
+Terminal failures retain a bounded per-run code/count summary and exact identity beside a retained
+source event, but their raw queue rows leave atomically and cannot reserve executable capacity.
+This includes legacy 514-row
 journals created by the former post-create fanout overflow. Migration must be durably synchronized
 before it is installed in memory. Unknown/conflicting settlement identity, unresolved over-capacity
 work, and persistence errors remain explicit refusals; no journal clearing or blind resend is used.
@@ -402,14 +413,22 @@ The focused migration fixture can additionally consume a read-only journal copy 
 stub Board sink. A passing copy test proves migration and the semantic begin boundary, not a
 successful helper call against the installed runtime; that still requires post-rollout acceptance.
 
-Pending, in-flight, and failed-visible outbox subjects protect their run from capacity eviction;
+Pending and in-flight outbox subjects protect their run from capacity eviction;
 settlement re-finds an immutable outbox id and verifies its version, run, event, and kind instead of
 using an array position held across an unlocked Board call. Failed reconciliation remains visible
 in GET status with a typed failure code. `GET /v1/orchestrator/workflow/gaps` is a fixed 32-run,
 machine-authenticated journal projection that remains readable after the old process disappears.
-Missing `begin`,
-unresolved obligations, and next action remain on the run rather than being inferred from silence.
-No elapsed-time rule converts inactivity into failure or completion.
+Its `retired` block durably counts expired missing-begin/missing-deliver runs, terminal-failed
+outbox runs and rows, failure codes, and accountable providers after those payloads leave the hot
+journal. Missing `begin`, unresolved obligations, and next action remain on the live run rather
+than being inferred from silence. No elapsed-time rule converts inactivity into failure or
+completion.
+
+A journal run exists only after the producer deliberately admitted managed ingress. Every such
+envelope requires `begin`, including `question` and `clarification`; a delivered run that still
+misses `begin` is therefore an agent protocol omission, not evidence that the turn should have
+been unmanaged. Expiry keeps that omission measurable while preventing it from disabling all
+later sends on the machine.
 
 ## Helper and coverage
 

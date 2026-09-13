@@ -98,6 +98,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var programBinding: ProgramBinding? = nil
         var document: WorkflowDocument? = nil
         var settledIntents: [SettledIntent]? = nil
+        /// Terminal Board refusals are exact intent identities, not executable work. Keeping the
+        /// identity beside its source event prevents rematerialization until ordinary bounded
+        /// event retention removes both; aggregate counts remain on the run after that.
+        var failedIntents: [FailedIntent]? = nil
         /// Versioned fanout leaves old pending command bodies and receipt identities unchanged.
         var deliveryProjectionVersion: Int? = nil
     }
@@ -107,6 +111,14 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var kind: String
         var index: Int
         var createdItemID: String?
+    }
+
+    private struct FailedIntent: Codable, Equatable {
+        var id: String
+        var kind: String
+        var index: Int
+        var code: String
+        var at: Double
     }
 
     private struct SpanStart: Codable, Equatable {
@@ -215,6 +227,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var events: [Event]
         var bindingReceipt: BindingReceipt? = nil
         var spanStart: SpanStart? = nil
+        var terminalFailures: TerminalFailureSummary? = nil
         /// Advisory `begin` assistance frozen when this run was admitted. An identical retry can
         /// reach the terminal again (an uncached `429`, or a replay once the ten-minute send cache
         /// or the process is gone), so its envelope is rebuilt from this and never re-derived from
@@ -262,6 +275,30 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var at: Double
     }
 
+    /// Bounded evidence for history retired under run-capacity pressure. Individual stale runs
+    /// leave the hot journal, while their missing protocol work and terminal Board refusals remain
+    /// visible as durable counts. This is advisory history, never repaired workflow authority.
+    private struct RetiredGapSummary: Codable {
+        var runs = 0
+        var missingBeginRuns = 0
+        var missingDeliverRuns = 0
+        var terminalFailedOutboxRuns = 0
+        var terminalFailedOutboxRows = 0
+        var providers: [String: Int] = [:]
+        var failureCodes: [String: Int] = [:]
+        var oldestRunCreatedAt: Double?
+        var lastRetiredAt: Double?
+    }
+
+    /// A run can generate many terminal refusals while remaining in the hot journal. The raw
+    /// outbox rows must not grow with that history, so only bounded code counts and a watermark
+    /// survive after each exact failure identity is attached to its bounded source event.
+    private struct TerminalFailureSummary: Codable {
+        var rows = 0
+        var failureCodes: [String: Int] = [:]
+        var lastFailedAt: Double?
+    }
+
     private struct PreparedOutbox {
         var id: String
         var version: Int
@@ -273,7 +310,9 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     }
 
     private struct State: Codable {
-        var schemaVersion = 3
+        // Schema 4 is the rollback boundary for retired/compacted gap evidence. A schema-3
+        // binary refuses it instead of decoding an unknown field and rewriting the only summary.
+        var schemaVersion = 4
         var enabledEpoch = 0
         var observedEnabled: Bool?
         var observedRevision = 0
@@ -282,6 +321,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var receipts: [Receipt] = []
         var outbox: [Outbox] = []
         var settlementFailures: [SettlementFailure]?
+        var retiredGaps: RetiredGapSummary?
     }
 
     private static let production = ProjectBoardWorkflow(url: defaultURL())
@@ -417,13 +457,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             in: state, identity: identity, epoch: state.enabledEpoch))
         var draft = state
         if draft.runs.count >= limits.runs {
-            if let removable = draft.runs.firstIndex(where: {
-                $0.delivery != "pending" && $0.missingFollowUp.isEmpty
-                    && !Self.outboxProtectsRun($0.id, in: draft)
-            }) {
-                let removedID = draft.runs.remove(at: removable).id
-                draft.outbox.removeAll { $0.runID == removedID }
-                draft.receipts.removeAll { $0.runID == removedID }
+            if let removable = retirementIndex(in: draft) {
+                retireRun(at: removable, from: &draft)
             } else {
                 return .refused(code: "workflow_capacity_reached")
             }
@@ -545,10 +580,12 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         var draft = state
         apply(parsed, to: &draft.runs[runIndex])
         let protectedEvents = Set(draft.outbox.filter {
-            $0.runID == runID && $0.status != "complete"
+            $0.runID == runID && ["pending", "inflight"].contains($0.status)
         }.map(\.eventID)).union(draft.runs[runIndex].events.filter {
-            !plannedIntentIDs($0, run: draft.runs[runIndex])
-                .subtracting(Set(($0.settledIntents ?? []).map(\.id))).isEmpty
+            let terminal = Set(($0.settledIntents ?? []).map(\.id))
+                .union(($0.failedIntents ?? []).map(\.id))
+            return !plannedIntentIDs($0, run: draft.runs[runIndex])
+                .subtracting(terminal).isEmpty
         }.map(\.id))
         while draft.runs[runIndex].events.count >= limits.eventsPerRun {
             guard let evictable = draft.runs[runIndex].events.firstIndex(where: {
@@ -682,6 +719,12 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard let run = state.runs.first(where: { $0.id == runID }) else { return nil }
         let rows = state.outbox.filter { $0.runID == runID }
+        let terminal = run.terminalFailures ?? TerminalFailureSummary()
+        let rawFailures = rows.filter { $0.status == "failed" }
+        var failureCounts = terminal.failureCodes
+        for row in rawFailures {
+            failureCounts[row.failureCode ?? "unknown", default: 0] += 1
+        }
         var answer: [String: Any] = [
             "run_id": run.id,
             "epoch": run.epoch,
@@ -693,8 +736,9 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             "missing_follow_up": run.missingFollowUp,
             "outbox": [
                 "pending": rows.filter { $0.status == "pending" }.count,
-                "failed": rows.filter { $0.status == "failed" }.count,
-                "failures": rows.compactMap(\.failureCode),
+                "failed": terminal.rows + rawFailures.count,
+                "failures": failureCounts.keys.sorted(),
+                "failure_counts": failureCounts,
             ] as [String: Any],
             "identity": [
                 "terminal_id": run.identity.terminalID,
@@ -734,6 +778,11 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             "mode_available": state.modeAvailable,
             "runs": runs.map { run in
                 let rows = state.outbox.filter { $0.runID == run.id }
+                let terminal = run.terminalFailures ?? TerminalFailureSummary()
+                var failureCounts = terminal.failureCodes
+                for row in rows where row.status == "failed" {
+                    failureCounts[row.failureCode ?? "unknown", default: 0] += 1
+                }
                 return [
                     "run_id": run.id, "delivery": run.delivery,
                     "classification": run.classification ?? NSNull(),
@@ -741,7 +790,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     "completion": run.completion ?? NSNull(),
                     "missing_follow_up": run.missingFollowUp,
                     "outbox_pending": rows.filter { $0.status == "pending" }.count,
-                    "outbox_failures": rows.compactMap(\.failureCode),
+                    "outbox_failures": failureCounts.keys.sorted(),
+                    "outbox_failure_counts": failureCounts,
                 ] as [String: Any]
             },
         ]
@@ -755,16 +805,35 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             let rows = state.outbox.filter { $0.runID == run.id }
             return run.delivery == "pending" || !run.missingFollowUp.isEmpty
                 || rows.contains { $0.status != "complete" }
+                || (run.terminalFailures?.rows ?? 0) > 0
         }
         let gapRuns = allGapRuns.suffix(32)
+        let retired = state.retiredGaps ?? RetiredGapSummary()
         return [
             "schema_version": 2,
             "authority": "machine_authenticated_durable_journal",
             "limit": 32,
             "storage_failure": storageFailure ?? NSNull(),
             "omitted_count": max(0, allGapRuns.count - gapRuns.count),
+            "retired": [
+                "runs": retired.runs,
+                "missing_begin_runs": retired.missingBeginRuns,
+                "missing_deliver_runs": retired.missingDeliverRuns,
+                "terminal_failed_outbox_runs": retired.terminalFailedOutboxRuns,
+                "terminal_failed_outbox_rows": retired.terminalFailedOutboxRows,
+                "providers": retired.providers,
+                "failure_codes": retired.failureCodes,
+                "oldest_run_created_at": retired.oldestRunCreatedAt ?? NSNull(),
+                "last_retired_at": retired.lastRetiredAt ?? NSNull(),
+                "authority": "retired_unproved_history",
+            ] as [String: Any],
             "runs": gapRuns.map { run in
                 let rows = state.outbox.filter { $0.runID == run.id }
+                let terminal = run.terminalFailures ?? TerminalFailureSummary()
+                var failureCounts = terminal.failureCodes
+                for row in rows where row.status == "failed" {
+                    failureCounts[row.failureCode ?? "unknown", default: 0] += 1
+                }
                 return [
                     "run_id": run.id,
                     "delivery": run.delivery,
@@ -772,7 +841,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                     "outbox_pending": rows.filter {
                         $0.status == "pending" || $0.status == "inflight"
                     }.count,
-                    "outbox_failures": rows.compactMap(\.failureCode),
+                    "outbox_failures": failureCounts.keys.sorted(),
+                    "outbox_failure_counts": failureCounts,
                     "identity": [
                         "terminal_id": run.identity.terminalID,
                         "provider": run.identity.provider,
@@ -1144,7 +1214,8 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     private func appendIntent(id: String, run: Run, event: Event, kind: String, index: Int,
                               draft: inout State, targetItemID: String? = nil) {
         guard !draft.outbox.contains(where: { $0.id == id }),
-              !(event.settledIntents ?? []).contains(where: { $0.id == id }) else { return }
+              !(event.settledIntents ?? []).contains(where: { $0.id == id }),
+              !(event.failedIntents ?? []).contains(where: { $0.id == id }) else { return }
         draft.outbox.append(Outbox(
             id: id, version: 1, runID: run.id, eventID: event.id, kind: kind, index: index,
             status: "pending", attempts: 0, preparedRequestID: nil,
@@ -1185,10 +1256,15 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     }
 
     private func reservedOutboxCount(_ value: State) -> Int {
-        var ids = Set(value.outbox.filter { $0.status != "complete" }.map(\.id))
+        let terminalFailures = Set(value.outbox.filter { $0.status == "failed" }.map(\.id))
+        var ids = Set(value.outbox.filter {
+            !["complete", "failed"].contains($0.status)
+        }.map(\.id))
         for run in value.runs {
             for event in run.events {
                 let settled = Set((event.settledIntents ?? []).map(\.id))
+                    .union((event.failedIntents ?? []).map(\.id))
+                    .union(terminalFailures)
                 ids.formUnion(plannedIntentIDs(event, run: run).subtracting(settled))
             }
         }
@@ -1259,15 +1335,116 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         return entry.kind != "supplement_child_create" || boundedText(entry.createdItemID, 200) != nil
     }
 
+    private func validFailed(_ entry: FailedIntent, event: Event, run: Run) -> Bool {
+        let identity = SettledIntent(id: entry.id, kind: entry.kind, index: entry.index,
+                                     createdItemID: nil)
+        return entry.id == settledID(identity, eventID: event.id)
+            && plannedIntentIDs(event, run: run).contains(entry.id)
+            && bounded(entry.code, 100) && entry.at.isFinite && entry.at >= 0
+    }
+
+    private static func validTerminalFailures(_ summary: TerminalFailureSummary?) -> Bool {
+        guard let summary else { return true }
+        guard summary.rows >= 0, summary.rows <= 1_000_000_000,
+              summary.failureCodes.count <= 64,
+              summary.failureCodes.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 100 }),
+              summary.failureCodes.values.allSatisfy({ $0 > 0 && $0 <= summary.rows }),
+              summary.failureCodes.values.reduce(0, +) == summary.rows else { return false }
+        return summary.lastFailedAt.map { $0.isFinite && $0 >= 0 } ?? (summary.rows == 0)
+    }
+
+    private func normalizedFailureCode(_ rawCode: String?, summary: TerminalFailureSummary) -> String {
+        let requested = (rawCode.flatMap { bounded($0, 100) ? $0 : nil }) ?? "unknown"
+        return summary.failureCodes[requested] != nil || summary.failureCodes.count < 63
+            ? requested : "other"
+    }
+
+    private func incrementTerminalFailure(code: String, at: Double,
+                                          run: inout Run) -> Bool {
+        guard at.isFinite, at >= 0 else { return false }
+        var summary = run.terminalFailures ?? TerminalFailureSummary()
+        guard summary.rows < 1_000_000_000 else { return false }
+        summary.rows += 1
+        summary.failureCodes[code, default: 0] += 1
+        summary.lastFailedAt = max(summary.lastFailedAt ?? at, at)
+        guard Self.validTerminalFailures(summary) else { return false }
+        run.terminalFailures = summary
+        return true
+    }
+
+    /// Terminal Board refusals have no executable retry authority. Persist their exact identity
+    /// with the bounded source event, aggregate their evidence on the run, then remove the raw
+    /// queue row in the same journal commit. This keeps failures visible without letting them pin
+    /// outbox/event/byte capacity forever.
+    private func compactTerminalFailures(_ draft: inout State) -> Bool {
+        var terminalIDs = Set<String>()
+        for run in draft.runs {
+            guard Self.validTerminalFailures(run.terminalFailures) else { return false }
+            var retainedCounts: [String: Int] = [:]
+            for event in run.events {
+                let settled = Set((event.settledIntents ?? []).map(\.id))
+                for entry in event.failedIntents ?? [] {
+                    guard !settled.contains(entry.id), terminalIDs.insert(entry.id).inserted,
+                          validFailed(entry, event: event, run: run) else { return false }
+                    retainedCounts[entry.code, default: 0] += 1
+                }
+            }
+            let summary = run.terminalFailures ?? TerminalFailureSummary()
+            guard retainedCounts.values.reduce(0, +) <= summary.rows,
+                  retainedCounts.allSatisfy({ summary.failureCodes[$0.key, default: 0] >= $0.value })
+            else { return false }
+        }
+        var seenRaw = Set<String>()
+        let failedRows = draft.outbox.filter { $0.status == "failed" }
+        for row in failedRows {
+            guard seenRaw.insert(row.id).inserted, !terminalIDs.contains(row.id),
+                  row.version == nil || row.version == 1,
+                  let runIndex = draft.runs.firstIndex(where: { $0.id == row.runID }) else {
+                return false
+            }
+            let at = row.updatedAt
+            let code = normalizedFailureCode(row.failureCode,
+                                             summary: draft.runs[runIndex].terminalFailures
+                                                ?? TerminalFailureSummary())
+            guard incrementTerminalFailure(code: code, at: at,
+                                           run: &draft.runs[runIndex]) else { return false }
+            if let eventIndex = draft.runs[runIndex].events.firstIndex(where: {
+                $0.id == row.eventID
+            }) {
+                let entry = FailedIntent(id: row.id, kind: row.kind, index: row.index,
+                                         code: code, at: at)
+                guard validFailed(entry, event: draft.runs[runIndex].events[eventIndex],
+                                  run: draft.runs[runIndex]) else { return false }
+                var failures = draft.runs[runIndex].events[eventIndex].failedIntents ?? []
+                failures.append(entry)
+                draft.runs[runIndex].events[eventIndex].failedIntents = failures
+                terminalIDs.insert(row.id)
+            } else {
+                // A legacy journal may have evicted the source before failed rows became terminal
+                // evidence. The aggregate is retained, but no identity is invented.
+                appendSettlementFailure("workflow_outbox_failed_source_missing",
+                                        outboxID: row.id, draft: &draft, at: at)
+            }
+        }
+        draft.outbox.removeAll { $0.status == "failed" }
+        return true
+    }
+
     /// Atomic with settlement/migration. A tombstone retains the exact dependency result so
     /// replay cannot create another child or retarget its link. Unknown identities fail closed.
     private func compactCompleted(_ draft: inout State) -> Bool {
         var settledIDs = Set<String>()
+        var failedIDs = Set<String>()
         for run in draft.runs {
+            guard Self.validTerminalFailures(run.terminalFailures) else { return false }
             for event in run.events {
                 for entry in event.settledIntents ?? [] {
                     guard settledIDs.insert(entry.id).inserted,
                           validSettled(entry, event: event, run: run) else { return false }
+                }
+                for entry in event.failedIntents ?? [] {
+                    guard !settledIDs.contains(entry.id), failedIDs.insert(entry.id).inserted,
+                          validFailed(entry, event: event, run: run) else { return false }
                 }
             }
         }
@@ -1275,7 +1452,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         for row in draft.outbox {
             guard seen.insert(row.id).inserted else { return false }
             guard row.status == "complete" else {
-                guard !settledIDs.contains(row.id) else { return false }
+                guard !settledIDs.contains(row.id), !failedIDs.contains(row.id) else { return false }
                 continue
             }
             guard row.version == nil || row.version == 1,
@@ -1376,9 +1553,11 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                   $0.id == state.outbox[index].eventID
               }) else {
             if state.outbox.indices.contains(index) {
-                state.outbox[index].status = "failed"
-                state.outbox[index].failureCode = "workflow_outbox_subject_missing"
-                _ = persist(state)
+                var draft = state
+                let row = draft.outbox.remove(at: index)
+                appendSettlementFailure("workflow_outbox_subject_missing", outboxID: row.id,
+                                        draft: &draft, at: now().timeIntervalSince1970)
+                if persist(draft) { state = draft }
             }
             return nil
         }
@@ -1390,6 +1569,9 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             draft.outbox[index].failureCode = !header.available ? "board_unavailable"
                 : (!header.enabled ? "board_disabled" : "workflow_epoch_stale")
             draft.outbox[index].updatedAt = now().timeIntervalSince1970
+            guard compactTerminalFailures(&draft) else {
+                storageFailure = "workflow_store_invalid"; return nil
+            }
             if persist(draft) { state = draft }
             return nil
         }
@@ -1416,6 +1598,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             var invalid = state
             invalid.outbox[index].status = "failed"
             invalid.outbox[index].failureCode = "workflow_outbox_invalid"
+            invalid.outbox[index].updatedAt = now().timeIntervalSince1970
+            guard compactTerminalFailures(&invalid) else {
+                storageFailure = "workflow_store_invalid"; return nil
+            }
             if persist(invalid) { state = invalid }
             return nil
         }
@@ -1571,6 +1757,9 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         var draft = state
         guard let index = settlementIndex(prepared, draft: &draft) else {
+            guard compactTerminalFailures(&draft) else {
+                storageFailure = "workflow_store_invalid"; return
+            }
             if persist(draft) { state = draft }
             return
         }
@@ -1586,6 +1775,10 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                   bindingReceiptMatches(settledBinding, run: draft.runs[runIndex]) else {
                 draft.outbox[index].status = "failed"
                 draft.outbox[index].failureCode = "workflow_binding_receipt_invalid"
+                draft.outbox[index].updatedAt = now().timeIntervalSince1970
+                guard compactTerminalFailures(&draft) else {
+                    storageFailure = "workflow_store_invalid"; return
+                }
                 guard persist(draft) else { return }
                 state = draft
                 return
@@ -1608,6 +1801,11 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             }
             materializeIntents(runIndex: runIndex, draft: &draft)
         }
+        if status == "failed" {
+            guard compactTerminalFailures(&draft) else {
+                storageFailure = "workflow_store_invalid"; return
+            }
+        }
         _ = backfillSettledDeliveries(&draft)
         guard reservedOutboxCount(draft) <= limits.outbox else {
             storageFailure = "workflow_outbox_reservation_invalid"; return
@@ -1621,6 +1819,9 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         var draft = state
         guard let index = settlementIndex(prepared, draft: &draft) else {
+            guard compactTerminalFailures(&draft) else {
+                storageFailure = "workflow_store_invalid"; return
+            }
             if persist(draft) { state = draft }
             return
         }
@@ -1638,6 +1839,11 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
             draft.outbox[index].failureCode = terminalCode
         }
         draft.outbox[index].updatedAt = now().timeIntervalSince1970
+        if draft.outbox[index].status == "failed" {
+            guard compactTerminalFailures(&draft) else {
+                storageFailure = "workflow_store_invalid"; return
+            }
+        }
         guard persist(draft) else { return }
         state = draft
     }
@@ -1663,10 +1869,15 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
 
     private func appendSettlementFailure(_ code: String, prepared: PreparedOutbox,
                                          draft: inout State) {
+        appendSettlementFailure(code, outboxID: prepared.id, draft: &draft,
+                                at: now().timeIntervalSince1970)
+    }
+
+    private func appendSettlementFailure(_ code: String, outboxID: String,
+                                         draft: inout State, at: Double) {
         var rows = draft.settlementFailures ?? []
         if rows.count >= 64 { rows.removeFirst(rows.count - 63) }
-        rows.append(SettlementFailure(outboxID: prepared.id, code: code,
-                                      at: now().timeIntervalSince1970))
+        rows.append(SettlementFailure(outboxID: outboxID, code: code, at: at))
         draft.settlementFailures = rows
     }
 
@@ -1680,19 +1891,23 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 storageFailure = "workflow_store_too_large"; return
             }
             var decoded = try JSONDecoder().decode(State.self, from: data)
-            guard [1, 2, 3].contains(decoded.schemaVersion),
+            guard [1, 2, 3, 4].contains(decoded.schemaVersion),
                   decoded.runs.count <= limits.runs,
                   decoded.receipts.count <= limits.receipts,
+                  Self.validRetiredGaps(decoded.retiredGaps),
+                  decoded.runs.allSatisfy({ Self.validTerminalFailures($0.terminalFailures) }),
                   decoded.runs.allSatisfy({ $0.events.count <= limits.eventsPerRun
                       && $0.events.allSatisfy { $0.deliveryProjectionVersion == nil
                           || ($0.deliveryProjectionVersion == 1 && $0.operation == "deliver") }
                   }) else {
                 storageFailure = "workflow_store_invalid"; return
             }
-            var migrated = decoded.schemaVersion != 3 || decoded.outbox.contains { $0.status == "complete" }
+            var migrated = decoded.schemaVersion != 4
+                || decoded.outbox.contains { ["complete", "failed"].contains($0.status) }
             // Legacy producers could write 514 rows after deferred create fanout. The byte cap
             // still bounds decoding; compact proven completions BEFORE validating live capacity.
-            guard compactCompleted(&decoded), reservedOutboxCount(decoded) <= limits.outbox else {
+            guard compactCompleted(&decoded), compactTerminalFailures(&decoded),
+                  reservedOutboxCount(decoded) <= limits.outbox else {
                 storageFailure = "workflow_store_invalid"; return
             }
             for index in decoded.receipts.indices where decoded.receipts[index].requestScope == nil {
@@ -1730,7 +1945,7 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
                 }
             }
             migrated = backfillSettledDeliveries(&decoded) || migrated
-            decoded.schemaVersion = 3
+            decoded.schemaVersion = 4
             if migrated, !persist(decoded) {
                 state = decoded
                 if storageFailure == nil { storageFailure = "workflow_persistence_failed" }
@@ -1864,7 +2079,80 @@ final class ProjectBoardWorkflow: @unchecked Sendable {
     }
 
     private static func outboxProtectsRun(_ runID: String, in state: State) -> Bool {
-        state.outbox.contains { $0.runID == runID && $0.status != "complete" }
+        state.outbox.contains {
+            $0.runID == runID && !["complete", "failed"].contains($0.status)
+        }
+    }
+
+    private func lastActivityAt(run: Run, in state: State) -> Double {
+        var values = [run.createdAt]
+        if let deliveredAt = run.deliveredAt { values.append(deliveredAt) }
+        values.append(contentsOf: run.events.map(\.at))
+        values.append(contentsOf: state.outbox.filter { $0.runID == run.id }.map(\.updatedAt))
+        values.append(contentsOf: state.receipts.filter { $0.runID == run.id }.map(\.at))
+        if let settledAt = run.bindingReceipt?.settledAt { values.append(settledAt) }
+        if let failedAt = run.terminalFailures?.lastFailedAt { values.append(failedAt) }
+        return values.filter { $0.isFinite && $0 >= 0 }.max() ?? run.createdAt
+    }
+
+    private func retirementIndex(in state: State) -> Int? {
+        let expiredBefore = now().timeIntervalSince1970 - 24 * 60 * 60
+        return state.runs.indices.filter { index in
+            let run = state.runs[index]
+            guard run.delivery != "pending", !Self.outboxProtectsRun(run.id, in: state)
+            else { return false }
+            return run.missingFollowUp.isEmpty || lastActivityAt(run: run, in: state) <= expiredBefore
+        }.min { left, right in
+            let lhs = lastActivityAt(run: state.runs[left], in: state)
+            let rhs = lastActivityAt(run: state.runs[right], in: state)
+            return lhs == rhs ? left < right : lhs < rhs
+        }
+    }
+
+    private func retireRun(at index: Int, from state: inout State) {
+        let run = state.runs[index]
+        let terminal = run.terminalFailures ?? TerminalFailureSummary()
+        if !run.missingFollowUp.isEmpty || terminal.rows > 0 {
+            var summary = state.retiredGaps ?? RetiredGapSummary()
+            summary.runs += 1
+            if run.missingFollowUp.contains("begin") { summary.missingBeginRuns += 1 }
+            if run.missingFollowUp.contains("deliver") { summary.missingDeliverRuns += 1 }
+            if terminal.rows > 0 {
+                summary.terminalFailedOutboxRuns += 1
+                summary.terminalFailedOutboxRows += terminal.rows
+                for (code, count) in terminal.failureCodes {
+                    summary.failureCodes[code, default: 0] += count
+                }
+            }
+            summary.providers[run.identity.provider, default: 0] += 1
+            summary.oldestRunCreatedAt = min(summary.oldestRunCreatedAt ?? run.createdAt,
+                                             run.createdAt)
+            summary.lastRetiredAt = now().timeIntervalSince1970
+            state.retiredGaps = summary
+        }
+        state.runs.remove(at: index)
+        state.outbox.removeAll { $0.runID == run.id }
+        state.receipts.removeAll { $0.runID == run.id }
+    }
+
+    private static func validRetiredGaps(_ summary: RetiredGapSummary?) -> Bool {
+        guard let summary else { return true }
+        let counts = [summary.runs, summary.missingBeginRuns, summary.missingDeliverRuns,
+                      summary.terminalFailedOutboxRuns, summary.terminalFailedOutboxRows]
+        guard counts.allSatisfy({ $0 >= 0 && $0 <= 1_000_000_000 }),
+              summary.missingBeginRuns <= summary.runs,
+              summary.missingDeliverRuns <= summary.runs,
+              summary.terminalFailedOutboxRuns <= summary.runs,
+              summary.providers.keys.allSatisfy({ ["codex", "claude"].contains($0) }),
+              summary.providers.values.allSatisfy({ $0 >= 0 && $0 <= summary.runs }),
+              summary.providers.values.reduce(0, +) == summary.runs,
+              summary.failureCodes.keys.allSatisfy({ !$0.isEmpty && $0.utf8.count <= 100 }),
+              summary.failureCodes.values.allSatisfy({
+                  $0 >= 0 && $0 <= summary.terminalFailedOutboxRows
+              }), summary.failureCodes.values.reduce(0, +) == summary.terminalFailedOutboxRows
+        else { return false }
+        return [summary.oldestRunCreatedAt, summary.lastRetiredAt].compactMap { $0 }
+            .allSatisfy { $0.isFinite && $0 >= 0 }
     }
 
     private static func supplementSourceScope(_ supplement: Supplement) -> String {
