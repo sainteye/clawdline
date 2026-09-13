@@ -3,6 +3,7 @@ import { ASK_MARK, uuid } from "../core/util.js";
 import { handlers } from "./handlers.js";
 import { Door } from "../door/door.js";
 import { createBoardMock } from "./board-mock.js";
+import { CloudTrail, cloudFailure } from "./cloud-failure.js";
 import {
     documentBytesAnswer, normalizeDocumentIdentity, normalizeDocumentLocator
 } from "./document-links.js";
@@ -69,6 +70,52 @@ function mockLedgerDetail(graphID) {
           evidence: ["Sources/UsageLedger.swift:3118"] }
     ];
     return { schemaVersion: 1, feature: feature };
+}
+
+/**
+ * A fixed Cloud failure and the status sheet behind it, for `?mock=1&cloud-status=line|open`.
+ *
+ * The failure line and the Cloud status sheet only exist on the hosted console, which a layout
+ * check cannot reach; this is the same page with a trail and a `cloud.status` answer that never
+ * change, so a screenshot of either is the same picture twice. Nothing here is sent anywhere.
+ */
+export function cloudStatusFixture() {
+    var sender = "web_f052dcb8-5a1e-4c3b-9d0f-2f1c6a7b8e90";
+    var clock = 1789290000000;
+    var trail = new CloudTrail({ now: function () { return clock; } });
+    [[1232, "transcript", "observed"], [1233, "send", "observed"], [1234, "voice", null]].forEach(function (row) {
+        trail.sealed({ sender: sender, seq: row[0], request: null, type: row[1], machine: "mac-studio" });
+        clock += 900;
+        trail.step({ sender: sender, seq: row[0] }, "relayed");
+        if (row[2]) trail.step({ sender: sender, seq: row[0] }, row[2]);
+        clock += 2100;
+    });
+    var failure = cloudFailure("command_clock_uncertain", "fixture", { layer: "mac_ledger", status: 503,
+        ref: { sender: sender, seq: 1234, request: null },
+        detail: { reason: "token_rotation_window", clears_in_ms: 41000 } });
+    trail.refused(failure.ref, failure);
+    trail.sawKeyID("mac-studio", "ms-1", "ms-2");
+    trail.sawOtherTab("fixture-tab");
+    trail.connectionState("live");
+    var status = {
+        clawdline_cloud_status: 1, counting_since: new Date(clock - 3600000).toISOString(),
+        clock_guard: { state: "uncertain", reason: "token_rotation_window" },
+        token: { expires_at: new Date(clock + 240000).toISOString() },
+        identity: { key_id: "ms-2", roster_readable: true },
+        inbound: { accepted: 812, dropped: { key_id_mismatch: 3, replay: 1 } },
+        commands: [{ sender: sender, seq: 1234, request: null, type: "voice", session: null,
+            accepted_at_ms: clock - 2000, executed_at_ms: null, outcome: null, delivered_at_ms: clock - 1500,
+            undeliverable: null, refusal: { layer: "mac_ledger", code: "command_clock_uncertain" } }]
+    };
+    return {
+        failure: failure,
+        transport: {
+            trail: trail,
+            cloudStatus: function () {
+                return Promise.resolve({ machines: [{ machine: "mac-studio", status: status, error: null, capable: true }] });
+            }
+        }
+    };
 }
 
 export var Mock = (function () {

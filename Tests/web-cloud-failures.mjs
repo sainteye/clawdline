@@ -750,7 +750,9 @@ await check("§4.3 the sheet joins this browser's steps with the Mac's for the s
 
 await check("§4.3 the Cloud client answers cloud.status for every published Mac, one typed error per Mac", async function () {
     const { client, socket } = await fleetOfOne();
-    await fromMac(client, socket, "orch/mac-02", { tasks: [] });
+    await capable(client, socket);
+    await fromMac(client, socket, "orch/mac-02", { tasks: [], cloud_status: { v: 1 } });
+    await fromMac(client, socket, "orch/mac-03", { tasks: [] });
     const asking = client.cloudStatus();
     const first = await nextCommand(socket, "cloud.status");
     const second = await nextCommand(socket, "cloud.status");
@@ -762,6 +764,8 @@ await check("§4.3 the Cloud client answers cloud.status for every published Mac
     const rows = Object.fromEntries(ended.value.machines.map((row) => [row.machine, row]));
     assert.deepEqual(rows["mac-01"].status, { commands: [] });
     assert.deepEqual([rows["mac-02"].error.layer, rows["mac-02"].error.code], ["mac", "unknown_command"]);
+    assert.deepEqual([rows["mac-03"].status, rows["mac-03"].error, rows["mac-03"].capable], [null, null, false],
+        "a Mac that never published cloud_status is not asked");
 });
 
 /* ---- ends ---------------------------------------------------------------------------------- */

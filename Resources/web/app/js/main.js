@@ -14,14 +14,14 @@ import { S } from "./core/state.js";
 import { els } from "./core/dom.js";
 import { Pages } from "./core/pages.js";
 import { Diagnostics } from "./core/layout-diagnostics.js";
-import { clockOf, tint } from "./core/util.js";
+import { clockOf, tint, toastFailure } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
 import { api, useApi } from "./net/api.js";
 import { Build } from "./net/build.js";
 import "./net/fetch.js";
 import { Schedules } from "./net/schedules.js";
 import { Live } from "./net/live.js";
-import { Mock } from "./net/mock.js";
+import { Mock, cloudStatusFixture } from "./net/mock.js";
 import {
     CloudViewerSession, chooseTransport, cloudStringsURL, idleClient, keepConnected,
     readCloudConfig
@@ -410,6 +410,17 @@ if (scheduleWebhookManagement) {
 // A deterministic visual fixture for the same bundled page. It never runs outside mock mode,
 // never opens a Cloud session, and lets mobile layout checks hold the install/scan screen still.
 if (MOCK && params.get("cloud-onboarding") === "install") showCloudInstallGate();
+// The Cloud failure line and status sheet, held still for a layout check: a toast that says a
+// fixed refusal with its `code · ref`, and with `open` the sheet it opens. Mock mode only.
+if (MOCK && /^(line|open)$/.test(params.get("cloud-status") || "")) {
+    var cloudFixture = cloudStatusFixture();
+    useApi(Object.assign(Object.create(Mock), cloudFixture.transport));
+    CloudStatus.bindFailureLines();
+    setTimeout(function () {
+        toastFailure(cloudFixture.failure);
+        if (params.get("cloud-status") === "open") CloudStatus.open({ ref: cloudFixture.failure.ref });
+    }, 800);
+}
 if (MOCK && params.get("cloud-onboarding") === "scan") {
     showCloudPairing({}, { scan: true });
 }

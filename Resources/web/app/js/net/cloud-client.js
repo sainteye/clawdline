@@ -806,6 +806,12 @@ export class CloudClient {
         }
         var self = this;
         return Promise.all(machines.map(function (name) {
+            // A Mac that has never published `cloud_status` does not know the read either, and an
+            // older one answers an unknown command with silence: asking it would hold the sheet on
+            // "reading" for a minute to learn what the missing digest already said.
+            if (!self.macCapabilities.has(name)) {
+                return { machine: name, status: null, error: null, capable: false };
+            }
             return self._readCloudStatus(name, undefined).then(function (status) {
                 return { machine: name, status: status, error: null,
                     capable: self.macCapabilities.has(name) };
