@@ -1068,7 +1068,10 @@ old reading is a floor rather than an estimate, so each `availability` ages diff
 `unknown` rather than `ok`, because the new window has no reading of its own yet. `low` keeps
 reading `low` however old, but is marked `stale`. `ok` decays to `unknown` past its own staleness
 window (5% of the tightest window's length, clamped 15 minutes–6 hours — a convention, not a
-measurement, and documented as such in the source). `unknown` is already the floor.
+measurement, and documented as such in the source). When that old `ok` includes a provider reset
+that is still in the future, its exact window, observation time and reset remain in the payload as
+a `stale` lower bound even though `availability` is `unknown`; a window with no live reset identity
+is discarded rather than carried into a later cycle. `unknown` is already the floor.
 
 **Codex's one extra rule.** Once its primary bucket is full, the next `token_count` record often
 answers from an unnamed credits bucket instead — `rate_limits.limit_id` turns from `"codex"` to

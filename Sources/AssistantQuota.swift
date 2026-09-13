@@ -152,7 +152,9 @@ extension AssistantQuota {
     ///   with no reading of its own yet just started.
     /// - `low` keeps saying `low` however old, but is marked `stale` past `staleAfter`.
     /// - `ok` is only good until `staleAfter`; past that it becomes `unknown` with `lastKnown`
-    ///   set, because an old "fine" promises nothing about the account right now.
+    ///   set, because an old "fine" promises nothing about the account right now. A provider
+    ///   window whose own reset is still in the future remains visible as a stale lower bound;
+    ///   a window with no live reset identity is discarded rather than carried into a new cycle.
     /// - `unknown` is already the floor and nothing here changes it.
     static func decayed(_ quota: AssistantQuota, now: Date = Date()) -> AssistantQuota {
         var quota = quota
@@ -178,11 +180,24 @@ extension AssistantQuota {
             if age > staleAfter(windowMinutes: windowMinutes) {
                 quota.lastKnown = .ok
                 quota.availability = .unknown
-                quota.observedAt = nil
-                quota.resetsAt = nil
-                quota.windows = []
-                quota.stale = false
-                quota.detail = "unknown; last known ok"
+                let nowEpoch = now.timeIntervalSince1970
+                let liveWindows = quota.windows.filter { window in
+                    guard let resetsAt = window.resetsAt else { return false }
+                    return Double(resetsAt) > nowEpoch
+                }
+                if liveWindows.isEmpty {
+                    quota.observedAt = nil
+                    quota.resetsAt = nil
+                    quota.windows = []
+                    quota.stale = false
+                    quota.detail = "unknown; last known ok"
+                } else {
+                    quota.windows = liveWindows
+                    quota.resetsAt = tightestWindowResetsAt(liveWindows)
+                    quota.stale = true
+                    quota.detail = detail(windows: liveWindows, availability: .unknown,
+                                          lastKnown: .ok, now: now) + "; stale lower bound"
+                }
             }
         case .unknown:
             break

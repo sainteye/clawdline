@@ -1090,6 +1090,29 @@ group("an assistant's quota reads as one of four values, and ages by its own rul
     expect("an old ok decays to unknown rather than staying ok", decayedOk.availability, .unknown)
     expect("keeping what it was, so a client can say so", decayedOk.lastKnown, .ok)
 
+    // Codex does not necessarily append another rate_limits record every six hours. The last
+    // provider percentage is still a monotonic lower bound until its own reset: it is unsafe to
+    // dispatch as `ok`, but deleting the window makes the Session UI claim the provider never
+    // reported its 7-day usage at all. This is the exact live shape from 2026-09-13: a 20% 7d
+    // reading nine hours old whose reset was still six days away.
+    let weeklyReset = Int(now.timeIntervalSince1970) + 6 * 86_400
+    let oldWeekly = AssistantQuota(
+        assistant: .codex, installed: true, loggedIn: nil, plan: nil,
+        availability: .ok, source: .observed,
+        observedAt: Int(now.timeIntervalSince1970) - 9 * 3_600,
+        resetsAt: weeklyReset, detail: "x",
+        windows: [window("7d", 20, resetsAt: weeklyReset)])
+    let decayedWeekly = AssistantQuota.decayed(oldWeekly, now: now)
+    expect("a stale weekly ok is not trusted for dispatch", decayedWeekly.availability, .unknown)
+    check("but its provider window remains visible as a stale lower bound",
+          decayedWeekly.stale && decayedWeekly.windows == oldWeekly.windows)
+    expect("and the provider timestamp remains available to date that lower bound",
+           decayedWeekly.observedAt, oldWeekly.observedAt)
+    expect("the live reset identity remains attached to the retained window",
+           decayedWeekly.resetsAt, weeklyReset)
+    expect("the printable detail labels the retained percentage as stale",
+           decayedWeekly.detail, "7d 20%; stale lower bound")
+
     let noSignal = AssistantQuota(assistant: .claude, installed: true, loggedIn: nil, plan: nil,
                                   availability: .unknown, source: .observed, observedAt: nil,
                                   resetsAt: nil, detail: "x", windows: [])
