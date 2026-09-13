@@ -70,8 +70,9 @@ extension Orchestrator {
         return answeredTrustMenu ? .none : .accept(row: choices.accept)
     }
 
-    /// No `transcriptKnown` and no retry delay: a Root Assignment is typed at most once, so
-    /// nothing about the record or the clock can license a second send (see the step decision).
+    /// No retry delay: a Root Assignment is typed at most once, so nothing about the record, the
+    /// terminal or the clock can license a second send (see the step decision). `observed` and
+    /// `sendFailed` only name the failure a deadline writes.
     struct RootAssignmentDeliveryEvidence: Equatable {
         let recorded: Bool
         /// When the assistant's own record says that user turn happened — the delivery itself,
@@ -81,9 +82,16 @@ extension Orchestrator {
         /// The end of the pre-brief window this delivery had to land inside, kept beside the
         /// event so the comparison cannot quietly become "when did the broker look".
         let deadline: Date?
+        /// This beat read a candidate record of the conversation, receipt or not. A receipt is
+        /// itself an observation.
+        let observed: Bool
+        /// The terminal reported that typing the one counted attempt failed (`injectFailure`).
+        let sendFailed: Bool
 
-        init(recorded: Bool, recordedAt: Date? = nil, deadline: Date? = nil) {
+        init(recorded: Bool, recordedAt: Date? = nil, deadline: Date? = nil,
+             observed: Bool = false, sendFailed: Bool = false) {
             self.recorded = recorded; self.recordedAt = recordedAt; self.deadline = deadline
+            self.observed = observed || recorded; self.sendFailed = sendFailed
         }
 
         /// A prompt that reached the assistant inside the window, however late it was observed.
@@ -115,7 +123,8 @@ extension Orchestrator {
 
     /// The lifecycle choice is pure; terminal capture, transcript reads, persistence and typing
     /// happen only after this answer. Keeping the whole branch table here makes timeout, trust,
-    /// receipt and retry failure injection executable without opening somebody's terminal.
+    /// receipt, the single send and the typed deadline failures executable without opening
+    /// somebody's terminal.
     static func rootAssignmentStepDecision(
         state: RootAssignmentState, promptTimedOut: Bool,
         trust: RootAssignmentTrustDecision, answeredTrustMenu: Bool,
@@ -135,12 +144,17 @@ extension Orchestrator {
             // observation.
             guard let delivery else { return .inspectDelivery }
             if delivery.deliveredInWindow { return .briefed }
-            if promptTimedOut { return .fail("prompt_timeout") }
+            if promptTimedOut {
+                return .fail(rootAssignmentDeadlineFailure(delivery,
+                                                           injectAttempts: injectAttempts))
+            }
             // At most one send. A missing receipt cannot tell a prompt that never arrived from one
             // that arrived unrecognised, and an empty composer is exactly what a Root that has
             // finished its first turn looks like: 8cd9479d's Root ended that turn at 07:33:32.122Z
             // and was typed the same briefing again 1.5 seconds later. Once an attempt is counted,
-            // only a receipt or the deadline moves this record.
+            // only a receipt or the deadline moves this record — a send the terminal refused
+            // included, because the refusal can follow text or an Enter that already reached the
+            // tab, and a failed record could no longer take the receipt that proves it did.
             guard injectAttempts == 0 else { return .wait }
             return inputReady ? .inject : .wait
         }
@@ -148,6 +162,21 @@ extension Orchestrator {
         guard inputReady else { return .wait }
         if state == .terminalOpened || state == .blocked { return .promptReady }
         return .wait
+    }
+
+    /// The typed failure a prompt-ready record takes at its deadline: what the broker knows about
+    /// its one attempt, not only that time ran out. Nothing typed, or a turn recorded after the
+    /// window closed, is `prompt_timeout`. A counted attempt the terminal refused is
+    /// `delivery_failed`. An unrefused one is `delivery_unconfirmed` when this beat read the
+    /// conversation's record and it holds no receipt — which still cannot tell a turn never
+    /// recorded from one recorded where the broker did not read — and `delivery_unobserved` when
+    /// no record could be read. A crash between the durable count and the keystrokes also leaves
+    /// an unrefused attempt, so it ends in one of those two.
+    static func rootAssignmentDeadlineFailure(_ delivery: RootAssignmentDeliveryEvidence,
+                                              injectAttempts: Int) -> String {
+        guard injectAttempts > 0, !delivery.recorded else { return "prompt_timeout" }
+        if delivery.sendFailed { return "delivery_failed" }
+        return delivery.observed ? "delivery_unconfirmed" : "delivery_unobserved"
     }
 
     struct RootAssignment {
@@ -168,6 +197,9 @@ extension Orchestrator {
         var briefedAt, activeAt, endedAt: Date?
         var injectAttempts = 0
         var lastInjectAt, missingObservedAt: Date?
+        /// The terminal's error for the one counted attempt, when it reported one. Kept for the
+        /// deadline's typed failure; it never withdraws the count or licenses another send.
+        var injectFailure: String?
         var answeredTrustMenu = false
         var blocker, failure, reconciliation: String?
         /// The durable at-most-once receipt for the last blocked/failed/inactive audit event.

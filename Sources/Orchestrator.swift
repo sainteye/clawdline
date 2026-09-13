@@ -1242,6 +1242,7 @@ enum Orchestrator {
         }
         var fields = ["assignment": id, "state": assignment.state.rawValue,
                       "why": notice.reason, "transition": notice.receipt]
+        if let error = assignment.injectFailure { fields["inject_failure"] = error }
         if let identity = assignment.identity {
             fields["terminal"] = identity.terminalID
             fields["assistant"] = identity.assistant.rawValue
@@ -1366,6 +1367,8 @@ enum Orchestrator {
     static var finalizationStageBoundaryForTesting: ((String) -> Void)?
     static var rootAssignmentAuditObserverForTesting:
         ((String, [String: String]) -> Void)?
+    /// Between a Root Assignment's counted attempt and its save: where a forced reload can land.
+    static var rootAssignmentInjectionCountedForTesting: ((String) -> Void)?
     static var attachedSenderForTesting: ((String, TargetSession) -> String?)?
     /// The session inventory an attachment resolves against, and the starter a tab-opening
     /// dispatch uses.
@@ -7172,7 +7175,9 @@ enum Orchestrator {
         let line = rootAssignmentLine(for: assignment)
         let window = rootAssignmentPromptWindow(assignment, now: now)
         var receipt = RootAssignmentTranscriptReceipt(recorded: false, at: nil)
+        var observed = false
         transcripts { text in
+            observed = observed || text != nil
             let candidate = rootAssignmentTranscriptReceipt(
                 text, assistant: assignment.assistant, assignmentID: id, line: line)
             if candidate.recorded { receipt = candidate }
@@ -7183,7 +7188,8 @@ enum Orchestrator {
             answeredTrustMenu: assignment.answeredTrustMenu, inputReady: inputReady,
             delivery: RootAssignmentDeliveryEvidence(
                 recorded: receipt.recorded, recordedAt: receipt.at,
-                deadline: rootAssignmentPromptDeadline(openedAt: window.openedAt)),
+                deadline: rootAssignmentPromptDeadline(openedAt: window.openedAt),
+                observed: observed, sendFailed: assignment.injectFailure != nil),
             injectAttempts: assignment.injectAttempts)
         switch deliveryDecision {
         case .briefed:
@@ -7207,16 +7213,31 @@ enum Orchestrator {
                 $0.rootAssignment(id)?.injectAttempts == 0
                     && $0.recordRootAssignmentInjection(id, at: now)
             }) else { return false }
-            guard persistRootAssignmentInjection(id, at: now) else { return false }
-            if send(line) != nil {
-                OrchestratorRegistry.withCoordinationRecords {
-                    $0.withdrawRootAssignmentInjectionTime(id, at: now)
-                }
-            }
+            rootAssignmentInjectionCountedForTesting?(id)
+            // A forced reload before this save installs the uncounted image and the save writes
+            // it, so the keystrokes also need the saved registry to still hold this attempt.
+            guard persistRootAssignmentInjection(id, at: now),
+                  OrchestratorRegistry.withCoordinationRecords({
+                      $0.holdsRootAssignmentInjection(id, at: now) }) else { return false }
+            if let error = send(line) { recordRootAssignmentSendFailure(id, at: now, error: error) }
             return true
         default:
             return false
         }
+    }
+
+    /// The terminal refused the one counted attempt: broker knowledge, kept on the record for the
+    /// deadline's `delivery_failed` and audited now. The record still waits for a receipt or that
+    /// deadline, because the refusal can follow text or an Enter that already reached the tab.
+    private static func recordRootAssignmentSendFailure(_ id: String, at: Date, error: String) {
+        let error = String(error.prefix(500))
+        let kept = OrchestratorRegistry.withCoordinationRecords {
+            $0.recordRootAssignmentInjectionFailure(id, at: at, error: error)
+        } && save()
+        let fields = ["assignment": id, "error": error, "persisted": kept ? "true" : "false"]
+        if let observer = rootAssignmentAuditObserverForTesting {
+            observer("root_assignment.inject_failed", fields)
+        } else { RemoteAuth.audit("root_assignment.inject_failed", fields) }
     }
 
     /// Advance one handoff while it is waiting for a composer or a transcript receipt. This is
@@ -10613,6 +10634,7 @@ enum Orchestrator {
             workspaceOverlapObserverForTesting = nil
             rootNotificationObserverForTesting = nil
             rootAssignmentAuditObserverForTesting = nil
+            rootAssignmentInjectionCountedForTesting = nil
             attachedSenderForTesting = nil
             attachmentInventoryForTesting = nil
             taskStarterForTesting = nil

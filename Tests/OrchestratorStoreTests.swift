@@ -123,6 +123,7 @@ private func assignmentFields(_ row: Orchestrator.RootAssignment?) -> [(String, 
             ("answered_trust_menu", String(row.answeredTrustMenu)),
             ("blocker", fieldText(row.blocker)),
             ("failure", fieldText(row.failure)),
+            ("inject_failure", fieldText(row.injectFailure)),
             ("reconciliation", fieldText(row.reconciliation)),
             ("reported_transition", fieldText(row.reportedTransition)),
             ("missing_generation", fieldText(row.missingGeneration)),
@@ -483,6 +484,7 @@ func runOrchestratorStoreTests() {
         full.answeredTrustMenu = true
         full.blocker = "workspace_trust_required"
         full.failure = "no"
+        full.injectFailure = "that tmux pane is gone"
         full.reconciliation = "rebound"
         full.reportedTransition = "root_assignment.blocked"
         full.missingGeneration = 7
@@ -501,16 +503,17 @@ func runOrchestratorStoreTests() {
                                assignmentFields(value))
         }
 
-        // Three fields postdate the record. Their absence is the legacy shape, and each has a
+        // Four fields postdate the record. Their absence is the legacy shape, and each has a
         // documented default rather than a refusal.
         var legacy = OrchestratorStore.stored(full)
-        for key in ["language", "project_approved", "answered_trust_menu"] {
+        for key in ["language", "project_approved", "answered_trust_menu", "inject_failure"] {
             legacy.removeValue(forKey: key)
         }
         let decoded = OrchestratorStore.rootAssignment(from: legacy)
-        check("a row written before language, trust and approval keeps its old bytes",
+        check("a row written before language, trust, approval and send errors keeps its old bytes",
               decoded?.language == nil && decoded?.projectApproved == false
-                  && decoded?.answeredTrustMenu == false && decoded?.id == taskID)
+                  && decoded?.answeredTrustMenu == false && decoded?.injectFailure == nil
+                  && decoded?.id == taskID)
         var crossedIdentity = OrchestratorStore.stored(full)
         crossedIdentity["identity"] = ["terminal_id": "terminal-1", "assistant": "codex"]
         check("an identity naming another assistant is dropped, not believed",

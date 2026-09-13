@@ -143,8 +143,10 @@ group("root assignments are a closed durable fourth primitive") {
         {"timestamp":"\(stamp.string(from: moment))","type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":\(String(data: try! JSONEncoder().encode(line), encoding: .utf8)!)}]}}}
         """
     }
-    func evidence(_ at: Date?, recorded: Bool = true) -> Orchestrator.RootAssignmentDeliveryEvidence {
-        .init(recorded: recorded, recordedAt: at, deadline: promptDeadline)
+    func evidence(_ at: Date?, recorded: Bool = true, observed: Bool = false,
+                  sendFailed: Bool = false) -> Orchestrator.RootAssignmentDeliveryEvidence {
+        .init(recorded: recorded, recordedAt: at, deadline: promptDeadline, observed: observed,
+              sendFailed: sendFailed)
     }
     expect("the pre-brief deadline is arithmetic on the anchor the timeout already reads", promptDeadline, openedAt.addingTimeInterval(Orchestrator.readyLimit))
     expect("a delivery receipt carries the user turn's own event time", Orchestrator.rootAssignmentTranscriptReceipt(rollout(recordedAt: deliveredAt), assistant: .codex, assignmentID: "assignment-1", line: line).at, deliveredAt)
@@ -160,8 +162,13 @@ group("root assignments are a closed durable fourth primitive") {
     expect("a prompt the assistant has already taken is still read for a receipt", step(.promptReady, ready: false), .inspectDelivery)
     expect("a delivery inside the window outranks the clock that observed it late", step(.promptReady, timeout: true, ready: false, delivery: evidence(deliveredAt), attempts: 1), .briefed)
     expect("an undated receipt is a delivery whose moment is unknown, not a timeout", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil), attempts: 1), .briefed)
-    expect("a record that never carried the turn still reaches typed prompt_timeout", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false), attempts: 1), .fail("prompt_timeout"))
+    // The deadline names what the broker knows about the one attempt, not only that time ran out.
+    expect("a typed attempt whose record was read without the turn fails as delivery_unconfirmed", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false, observed: true), attempts: 1), .fail("delivery_unconfirmed"))
+    expect("a typed attempt whose record could not be read fails as delivery_unobserved", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false), attempts: 1), .fail("delivery_unobserved"))
+    expect("an attempt the terminal refused fails as delivery_failed whatever was read", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false, observed: true, sendFailed: true), attempts: 1), .fail("delivery_failed"))
+    expect("a prompt-ready record never typed into still reaches typed prompt_timeout", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false, observed: true), attempts: 0), .fail("prompt_timeout"))
     expect("a user turn recorded after the window closed is not a pre-deadline delivery", step(.promptReady, timeout: true, ready: false, delivery: evidence(openedAt.addingTimeInterval(Orchestrator.readyLimit + 1)), attempts: 1), .fail("prompt_timeout"))
+    expect("and a late turn outranks the terminal's refusal: the text did arrive", step(.promptReady, timeout: true, ready: false, delivery: evidence(openedAt.addingTimeInterval(Orchestrator.readyLimit + 1), sendFailed: true), attempts: 1), .fail("prompt_timeout"))
     expect("an unconfirmed delivery waits rather than typing into a busy composer", step(.promptReady, ready: false, delivery: evidence(nil, recorded: false), attempts: 1), .wait)
     expect("an empty composer with no receipt is not typed into a second time", step(.promptReady, ready: true, delivery: evidence(nil, recorded: false), attempts: 1), .wait)
     expect("the beat after briefing activates instead of briefing one receipt twice", step(.briefed, ready: false, delivery: evidence(deliveredAt), attempts: 1), .activate)
@@ -498,14 +505,15 @@ group("root assignments are a closed durable fourth primitive") {
     }
     var typed: [String] = []
     func deliveryBeat(_ id: String, after seconds: TimeInterval, record: String?,
-                      snapshot: Orchestrator.RootAssignment? = nil) -> Bool {
+                      snapshot: Orchestrator.RootAssignment? = nil,
+                      refusal: String? = nil) -> Bool {
         guard let current = snapshot ?? Orchestrator.rootAssignmentForTesting(id) else {
             return false
         }
         return Orchestrator.rootAssignmentDelivery(
             current, now: incidentOpenedAt.addingTimeInterval(seconds), inputReady: true,
             transcripts: { offer in if let record { _ = offer(record) } },
-            send: { typed.append($0); return nil })
+            send: { typed.append($0); return refusal })
     }
 
     // (a) Root Assignment 8cd9479d on 2026-09-13, reduced to its shape. Every field its caller
@@ -591,8 +599,8 @@ group("root assignments are a closed durable fourth primitive") {
            typed.count, 1)
     let expired = deliveryBeat(lost.id, after: 241, record: lostRecord)
     let lostAfter = Orchestrator.rootAssignmentForTesting(lost.id)
-    check("(c) past the deadline it fails with the contract's typed prompt_timeout",
-          expired && lostAfter?.state == .failed && lostAfter?.failure == "prompt_timeout")
+    check("(c) past the deadline, with the record read and no receipt, it is delivery_unconfirmed",
+          expired && lostAfter?.state == .failed && lostAfter?.failure == "delivery_unconfirmed")
     _ = deliveryBeat(lost.id, after: 300, record: lostRecord)
     expect("(c) and neither the failure nor a later beat sends it again", typed.count, 1)
 
@@ -603,6 +611,60 @@ group("root assignments are a closed durable fourth primitive") {
     _ = deliveryBeat(raced.id, after: 9, record: nil)
     _ = deliveryBeat(raced.id, after: 30, record: nil, snapshot: raced)
     expect("a beat holding a snapshot from before the counted attempt cannot type again",
+           typed.count, 1)
+
+    // (d) A send the terminal refuses. `Tmux.send` can refuse after the paste or before the Enter
+    // lands, so the refusal is still the one attempt and never a licence to type again — but it
+    // is the broker's own knowledge, so it has to reach the disk, the audit and the deadline.
+    let refused = heldDelivery(.claude, fields: plainFields)
+    var refusalNotices: [(String, [String: String])] = []
+    Orchestrator.rootAssignmentAuditObserverForTesting = { refusalNotices.append(($0, $1)) }
+    typed = []
+    _ = deliveryBeat(refused.id, after: 9, record: lostRecord, refusal: "that tmux pane is gone")
+    _ = Orchestrator.load(force: true)
+    let refusedAfter = Orchestrator.rootAssignmentForTesting(refused.id)
+    check("(d) a refused send is kept on the durable record with the terminal's error",
+          refusedAfter?.injectFailure == "that tmux pane is gone"
+              && refusedAfter?.injectAttempts == 1 && typed.count == 1)
+    expect("(d) and audited when it happens", refusalNotices.map { [$0.0, $0.1["error"] ?? ""] },
+           [["root_assignment.inject_failed", "that tmux pane is gone"]])
+    for seconds in [30.0, 120, 239] { _ = deliveryBeat(refused.id, after: seconds, record: lostRecord) }
+    check("(d) the refusal neither ends the record early nor sends it again",
+          typed.count == 1 && Orchestrator.rootAssignmentForTesting(refused.id)?.state == .promptReady)
+    _ = deliveryBeat(refused.id, after: 241, record: lostRecord)
+    expect("(d) at the deadline the typed failure says the terminal refused it",
+           Orchestrator.rootAssignmentForTesting(refused.id)?.failure, "delivery_failed")
+    expect("(d) and the failure audit carries the terminal's error",
+           refusalNotices.last.map { [$0.0, $0.1["inject_failure"] ?? ""] },
+           ["root_assignment.failed", "that tmux pane is gone"])
+    let refusedButArrived = heldDelivery(.codex, fields: plainFields)
+    _ = deliveryBeat(refusedButArrived.id, after: 9, record: nil,
+                     refusal: "tmux typed the line but Enter did not land.")
+    _ = deliveryBeat(refusedButArrived.id, after: 250, record: codexTurn(
+        Orchestrator.rootAssignmentLine(for: refusedButArrived), after: 10))
+    expect("(d) a refused send whose turn was recorded inside the window is still briefed",
+           Orchestrator.rootAssignmentForTesting(refusedButArrived.id)?.state, .briefed)
+
+    // (e) A typed attempt whose conversation record the broker could never read.
+    let unread = heldDelivery(.claude, fields: plainFields)
+    for seconds in [9.0, 241] { _ = deliveryBeat(unread.id, after: seconds, record: nil) }
+    expect("(e) an unrefused attempt with no readable record fails as delivery_unobserved",
+           Orchestrator.rootAssignmentForTesting(unread.id)?.failure, "delivery_unobserved")
+
+    // (f) cleanup() answers a refused save with load(force: true), which installs whatever the
+    // store holds. Landing between a beat's count and that beat's save, it hands the save the
+    // image from before the count, which the save writes; typing then would leave the next beat
+    // an uncounted record and an empty composer to type the same briefing into again.
+    let reloaded = heldDelivery(.claude, fields: plainFields)
+    Orchestrator.saveForTesting()
+    typed = []
+    Orchestrator.rootAssignmentInjectionCountedForTesting = { _ in _ = Orchestrator.load(force: true) }
+    _ = deliveryBeat(reloaded.id, after: 9, record: nil)
+    Orchestrator.rootAssignmentInjectionCountedForTesting = nil
+    expect("(f) a reload between the count and its save leaves that beat typing nothing",
+           typed.count, 0)
+    for seconds in [30.0, 60, 120] { _ = deliveryBeat(reloaded.id, after: seconds, record: nil) }
+    expect("(f) so across the beats that follow the briefing is typed exactly once",
            typed.count, 1)
 }
 }

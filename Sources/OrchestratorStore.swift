@@ -346,6 +346,7 @@ enum OrchestratorStore {
         put("missing_observed_at", assignment.missingObservedAt)
         if let blocker = assignment.blocker { out["blocker"] = blocker }
         if let failure = assignment.failure { out["failure"] = failure }
+        if let error = assignment.injectFailure { out["inject_failure"] = error }
         if let reconciliation = assignment.reconciliation {
             out["reconciliation"] = reconciliation
         }
@@ -783,6 +784,7 @@ enum OrchestratorStore {
         assignment.answeredTrustMenu = obj["answered_trust_menu"] as? Bool ?? false
         assignment.blocker = obj["blocker"] as? String
         assignment.failure = obj["failure"] as? String
+        assignment.injectFailure = obj["inject_failure"] as? String
         assignment.reconciliation = obj["reconciliation"] as? String
         assignment.reportedTransition = obj["reported_transition"] as? String
         return assignment
