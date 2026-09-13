@@ -458,6 +458,68 @@ private func runCloudClockGuardTests() async throws -> Int {
         try check(guardUnderTest.observe().state == .ready, "a full quiet stability window after the last server sample becomes ready")
     }
 
+    func checkOfferedServerDates() throws {
+        let startTime = InjectedCloudTime()
+        let starting = EpochGuard(clock: startTime.clock)
+        try check(starting.offerServerDate(startTime.wallDate)
+                    == EpochGuardUpdate(state: .uncertain(.stabilityPeriodIncomplete), effect: .none),
+                  "an offered sample calibrates an uncalibrated guard")
+        startTime.advance(wall: 30, continuous: 30)
+        try check(starting.offerServerDate(startTime.wallDate)
+                    == EpochGuardUpdate(state: .uncertain(.stabilityPeriodIncomplete), effect: .none),
+                  "an offered sample inside the stability window leaves it running")
+        startTime.advance(wall: 30, continuous: 30)
+        try check(starting.observe().state == .ready, "an offered sample does not restart the stability window")
+
+        let readyTime = InjectedCloudTime()
+        let ready = try readyGuard(readyTime)
+        try check(ready.offerServerDate(readyTime.wallDate.addingTimeInterval(1))
+                    == EpochGuardUpdate(state: .ready, effect: .none),
+                  "an offered renewal within bounds leaves a ready guard ready with no cleanup")
+        try check(ready.requestAdmission == .available, "an offered renewal keeps admission open")
+
+        let edgeTime = InjectedCloudTime()
+        let edge = try readyGuard(edgeTime)
+        try check(edge.offerServerDate(Date(timeIntervalSince1970: edgeTime.wall + fiveMinutes)).state == .ready,
+                  "an offered sample exactly five minutes off is within bounds")
+
+        let farTime = InjectedCloudTime()
+        let far = try readyGuard(farTime)
+        try check(far.offerServerDate(Date(timeIntervalSince1970: farTime.wall + fiveMinutes + 0.001))
+                    == EpochGuardUpdate(state: .uncertain(.serverSampleTooFar),
+                                        effect: .deleteReservedRow(.serverSampleTooFar)),
+                  "an offered sample more than five minutes off invalidates a ready guard")
+        farTime.advance(wall: 60, continuous: 60)
+        try check(far.observe().state == .uncertain(.serverSampleTooFar), "a rejected offered sample cannot become ready")
+        _ = far.offerServerDate(farTime.wallDate)
+        farTime.advance(wall: 60, continuous: 60)
+        try check(far.observe().state == .ready, "after a rejected sample the next offered sample recalibrates")
+
+        let jumpTime = InjectedCloudTime()
+        let jumped = try readyGuard(jumpTime)
+        jumpTime.advance(wall: 12.001, continuous: 10)
+        try check(jumped.offerServerDate(jumpTime.wallDate)
+                    == EpochGuardUpdate(state: .uncertain(.stabilityPeriodIncomplete),
+                                        effect: .deleteReservedRow(.forwardJump)),
+                  "a jump observed by an offered sample invalidates, owes cleanup, and recalibrates from that sample")
+        jumpTime.advance(wall: 59, continuous: 59)
+        try check(jumped.observe().state == .uncertain(.stabilityPeriodIncomplete), "recovery from an offered sample still waits the full window")
+        jumpTime.advance(wall: 1, continuous: 1)
+        try check(jumped.observe().state == .ready, "recovery from an offered sample completes after the window")
+
+        let bootTime = InjectedCloudTime()
+        let booted = try readyGuard(bootTime)
+        bootTime.bootID = "boot-b"
+        try check(booted.offerServerDate(bootTime.wallDate).effect == .deleteReservedRow(.bootIDChanged),
+                  "a boot id change observed by an offered sample still owes cleanup")
+
+        let reversedTime = InjectedCloudTime()
+        let reversed = try readyGuard(reversedTime)
+        reversedTime.advance(wall: 0, continuous: -0.001)
+        try check(reversed.offerServerDate(reversedTime.wallDate).effect == .deleteReservedRow(.continuousWentBackwards),
+                  "a continuous reversal observed by an offered sample still owes cleanup")
+    }
+
     do {
         let time = InjectedCloudTime()
         let guardUnderTest = EpochGuard(clock: time.clock)
@@ -584,6 +646,7 @@ private func runCloudClockGuardTests() async throws -> Int {
     try checkReadyServerRearmCleanup()
     try checkCumulativeStabilityDrift()
     try checkServerSampleCadenceContract()
+    try checkOfferedServerDates()
 
     do {
         let time = InjectedCloudTime()

@@ -133,6 +133,19 @@ struct CloudSupervisedDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
 /// Both halves of that wiring live here — the token provider that feeds the guard and the
 /// effect-time authorization that reads it — so `Services.production()` and the tests compose
 /// the same code. Tests replace only the two leaf readings, the wall clock and the kernel clock.
+///
+/// The device token rotates every four minutes and every rotation or reconnect carries a server
+/// date, so a date is offered, never forced: it calibrates only a guard that has no live
+/// calibration. Re-arming on each one refused every command for the minute after each rotation.
+///
+/// The guard's continuous clock is `CLOCK_MONOTONIC_RAW` (`mach_continuous_time`), which keeps
+/// counting while the Mac sleeps. `ProcessInfo.systemUptime` and `CLOCK_UPTIME_RAW` stop, so the
+/// guard read every wake as a forward wall jump and refused commands until the next token fetch
+/// plus a full window; measured on this Mac on 2026-09-13 they stood 60,262 s behind
+/// wall time since boot, while `CLOCK_MONOTONIC_RAW` stood within 6 s of it over 913,711 s.
+/// The ledger's own `continuousNow` and `effectNotAfterContinuous` stay on
+/// `DispatchTime.uptimeNanoseconds`: those values are compared only with each other, and none of
+/// this guard's readings leaves it — the ledger receives `.ready` or `.uncertain`, nothing more.
 final class CloudCommandEpochAuthority: @unchecked Sendable {
     typealias KernelNanoseconds = (clockid_t) -> UInt64
 
@@ -146,7 +159,7 @@ final class CloudCommandEpochAuthority: @unchecked Sendable {
     ) {
         guardState = EpochGuard(clock: CloudClock(
             wall: wall,
-            continuous: { TimeInterval(kernelNanoseconds(CLOCK_UPTIME_RAW)) / 1_000_000_000 },
+            continuous: { TimeInterval(kernelNanoseconds(CLOCK_MONOTONIC_RAW)) / 1_000_000_000 },
             bootID: { CloudCommandEpochAuthority.bootID }))
     }
 
@@ -164,7 +177,7 @@ final class CloudCommandEpochAuthority: @unchecked Sendable {
 
     func acceptAuthenticatedServerDate(_ date: Date) {
         lock.lock(); defer { lock.unlock() }
-        _ = guardState.acceptServerDate(date)
+        _ = guardState.offerServerDate(date)
     }
 
     func current() -> CloudEpochGuardState {
