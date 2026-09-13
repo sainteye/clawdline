@@ -251,13 +251,14 @@ enum Transcript {
     /// that consisted of exactly `text`, or `nil` when such a turn would yield no user entry.
     ///
     /// **`parse` is a display projection, so bytes typed into a terminal are not what it returns.**
-    /// A user turn comes back trimmed, without machine blocks and without dropped-image paths. A
-    /// delivery receipt that searches that projection for the raw bytes it typed misses every
-    /// briefing the projection changed: Root Assignment 8cd9479d ended in a newline, its recorded
-    /// turn was byte-identical to the line, and the trimmed entry could never contain it — so the
-    /// broker typed the briefing again into a Root that was already working (2026-09-13). The
-    /// expected side is rendered by `parse` itself, from the row shape each assistant records,
-    /// rather than by a second copy of its rules that could drift from the first.
+    /// A user turn comes back trimmed and without dropped-image paths, and a Claude turn also without
+    /// machine blocks. A delivery receipt that searches that projection for the raw bytes it typed
+    /// misses every briefing the projection changed: Root Assignment 8cd9479d ended in a newline,
+    /// its recorded turn was byte-identical to the line, and the trimmed entry could never contain
+    /// it — so the broker typed the briefing again into a Root that had already taken it and
+    /// finished its first turn (2026-09-13). The expected side is rendered by `parse` itself, from
+    /// the row shape each assistant records, rather than by a second copy of its rules that could
+    /// drift from the first.
     static func userTurnText(_ text: String, assistant: Assistant) -> String? {
         let row: [String: Any]
         switch assistant {
