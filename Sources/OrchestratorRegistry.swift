@@ -786,11 +786,23 @@ enum OrchestratorRegistry {
             }
         }
 
-        /// The typed attempt did not reach the terminal: keep the count, release the receipt
-        /// window — but only the window this attempt opened.
-        func withdrawRootAssignmentInjectionTime(_ id: String, at: Date) {
-            guard OrchestratorRegistry.rootAssignments[id]?.lastInjectAt == at else { return }
-            updateRootAssignment(id) { $0.lastInjectAt = nil }
+        /// Whether the attempt counted at `at` is still this record's. A forced reload installs
+        /// whatever the store held, which is the image from before the count when it lands between
+        /// the count and its save. Compared to the millisecond, because a reload after that save
+        /// hands the time back from the store's seconds since 1970, not as the counted `Date`.
+        func holdsRootAssignmentInjection(_ id: String, at: Date) -> Bool {
+            guard let assignment = OrchestratorRegistry.rootAssignments[id],
+                  assignment.injectAttempts > 0,
+                  let counted = assignment.lastInjectAt else { return false }
+            return abs(counted.timeIntervalSince(at)) < 0.001
+        }
+
+        /// The terminal refused the attempt counted at `at`. The count stays: the refusal may
+        /// follow text that already reached the tab, so it only names the deadline's failure.
+        @discardableResult
+        func recordRootAssignmentInjectionFailure(_ id: String, at: Date, error: String) -> Bool {
+            guard holdsRootAssignmentInjection(id, at: at) else { return false }
+            return updateRootAssignment(id) { $0.injectFailure = error }
         }
 
         /// Write the at-most-once audit receipt. Returns the record and the receipt it replaced,

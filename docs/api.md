@@ -2047,10 +2047,30 @@ measured against the exact completed user turn's transcript event time, not agai
 eventually observes it. Once the record is `prompt_ready`, every beat checks the exact
 process/conversation transcript receipt before the current composer state or observer timeout: a
 receipt whose event time is at or before the deadline advances to `briefed` even if it is first
-observed later. With no exact receipt, or one whose event time is after the deadline, a beat truly
-past the deadline fails with typed `prompt_timeout`. A busy composer is never used as evidence that
-delivery failed and is never typed into again; late observation neither resends the prompt nor
-opens another tab, and the durable transition remains at most once.
+observed later. The briefing is typed **at most once** per assignment: the attempt is counted, in
+the same registry hold that proves none was counted before, and persisted before any keystroke; the
+keystrokes also wait until the registry, after that save, still holds this counted attempt, so a
+forced reload that restores the uncounted image between the count and its save leaves nothing typed.
+From then on no composer state, missing receipt, elapsed time or terminal error is evidence that
+delivery failed — an idle composer is also what a Root that has finished its first turn looks like,
+and a send the terminal reports as failed may already have put the text or its Enter into the tab —
+so no beat types the briefing again, and only an in-window receipt (`briefed`) or the deadline
+settles the record. A send the terminal refuses is stored durably with the terminal's error and
+audited at once as `root_assignment.inject_failed`, but it does not fail the record early: a
+failed record is terminal, and the receipt that proves the text arrived would then have nowhere to
+land. With no in-window receipt, a beat truly past the deadline fails with the typed reason for
+what the broker knows: `prompt_timeout` when nothing was typed or the turn's event time is after
+the deadline; `delivery_failed` when the terminal refused the one send; `delivery_unconfirmed`
+when it did not, and the conversation record read at the deadline holds no receipt — which cannot
+tell a turn never recorded from one recorded where the broker did not read; and
+`delivery_unobserved` when it did not, and no record of the conversation could be read. A crash
+between the persisted attempt count and the keystrokes leaves an attempt with no terminal error,
+so it ends in `delivery_unconfirmed` or `delivery_unobserved`, never in a second briefing. Late
+observation neither resends the prompt nor opens another tab, and the durable transition remains
+at most once.
+The receipt is the exact briefing compared as the transcript reader renders a user turn, not as raw
+bytes: that reader trims a turn and removes dropped-image paths, so a caller field that ends in a
+newline or cites a screenshot still matches the turn that recorded it.
 The current build has no automatic workspace-trust authority; a future positive policy adapter
 must explicitly justify acceptance, and the broker durably records `answered_trust_menu` before
 such an adapter may answer the picker so one picker is answered at most once.
@@ -2067,13 +2087,15 @@ with only `accepted` persisted is `launch_receipt_lost`: reopening could duplica
 effect happened just before the crash. Reconciliation adopts only one exact process/conversation
 tuple. Ambiguity is `ambiguous_identity`; incomplete inventory waits as `stale_inventory`; a
 confirmed loss is `process_lost_before_briefing` or `process_lost_after_briefing`. Other typed
-failures include `assistant_unavailable`, `prompt_timeout`, `delivery_unconfirmed`,
-`workspace_trust_required`, `restart_identity_incomplete`, `idempotency_mismatch`, and
-`persistence_failed`. Each typed `blocked`, `failed`, or `inactive` transition writes one durable
-transition receipt and one audit event with assignment id, state, reason and the exact available
-terminal/process/conversation identity. The receipt prevents timer beats or restart recovery from
-spamming the same transition; the audit keeps a pre-brief orphan tab findable without ever
-cascade-closing a genuinely briefed independent Root.
+failures include `assistant_unavailable`, `prompt_timeout`, `delivery_failed`,
+`delivery_unconfirmed` (which builds that retried the briefing wrote when their retries ran out),
+`delivery_unobserved`, `workspace_trust_required`, `restart_identity_incomplete`,
+`idempotency_mismatch`, and `persistence_failed`. Each typed `blocked`, `failed`, or `inactive`
+transition writes one durable transition receipt and one audit event with assignment id, state,
+reason, the terminal's error when the one send was refused (`inject_failure`) and the exact
+available terminal/process/conversation identity. The receipt prevents timer beats or restart
+recovery from spamming the same transition; the audit keeps a pre-brief orphan tab findable without
+ever cascade-closing a genuinely briefed independent Root.
 
 `GET /v1/orchestrator/root-assignments` returns `root_assignments`; the `/:id` form returns one
 `root_assignment`. Session rows carry the bounded nested projection

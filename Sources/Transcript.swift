@@ -247,6 +247,35 @@ enum Transcript {
         }
     }
 
+    /// The text ``parse(_:assistant:limit:sidechains:imageStore:now:)`` gives a completed user turn
+    /// that consisted of exactly `text`, or `nil` when such a turn would yield no user entry.
+    ///
+    /// **`parse` is a display projection, so bytes typed into a terminal are not what it returns.**
+    /// A user turn comes back trimmed and without dropped-image paths, and a Claude turn also without
+    /// machine blocks. A delivery receipt that searches that projection for the raw bytes it typed
+    /// misses every briefing the projection changed: Root Assignment 8cd9479d ended in a newline,
+    /// its recorded turn was byte-identical to the line, and the trimmed entry could never contain
+    /// it — so the broker typed the briefing again into a Root that had already taken it and
+    /// finished its first turn (2026-09-13). The expected side is rendered by `parse` itself, from
+    /// the row shape each assistant records, rather than by a second copy of its rules that could
+    /// drift from the first.
+    static func userTurnText(_ text: String, assistant: Assistant) -> String? {
+        let row: [String: Any]
+        switch assistant {
+        case .claude:
+            row = ["type": "user", "message": ["role": "user", "content": text]]
+        case .codex:
+            let item: [String: Any] = ["type": "UserMessage",
+                                       "content": [["type": "text", "text": text]]]
+            row = ["type": "event_msg",
+                   "payload": ["type": "item_completed", "item": item] as [String: Any]]
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: row),
+              let record = String(data: data, encoding: .utf8) else { return nil }
+        return parse(record, assistant: assistant, limit: Int.max)
+            .first(where: { $0.kind == .user })?.text
+    }
+
     /// Whether the bounded beginning of a transcript contains any completed user turn.
     /// Startup metadata alone cannot disprove an identity: both assistants create their file
     /// before the first message is durable, so that state must remain eligible for another read.

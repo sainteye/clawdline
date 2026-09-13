@@ -122,9 +122,12 @@ group("root assignments are a closed durable fourth primitive") {
     expect("the step seam turns an expired ordinary prompt into typed failure", step(.terminalOpened, timeout: true), .fail("prompt_timeout"))
     expect("the step seam holds an unapproved workspace at the trust boundary", step(.terminalOpened, trust: .block), .block)
     expect("answering trust exposes a prompt-ready transition after the picker leaves", step(.blocked, ready: true), .promptReady)
-    expect("a transcript receipt advances the independent root to briefed", step(.promptReady, ready: true, delivery: .init(transcriptKnown: true, recorded: true, retryDelayElapsed: true), attempts: 1), .briefed)
+    expect("a transcript receipt advances the independent root to briefed", step(.promptReady, ready: true, delivery: .init(recorded: true), attempts: 1), .briefed)
     expect("the next observed beat advances a briefed root to active", step(.briefed, ready: true, attempts: 1), .activate)
-    expect("the retry ceiling produces delivery_unconfirmed instead of another send", step(.promptReady, ready: true, delivery: .init(transcriptKnown: true, recorded: false, retryDelayElapsed: true), attempts: Orchestrator.briefingAttemptLimit), .fail("delivery_unconfirmed"))
+    expect("the first send needs only an empty composer inside the window", step(.promptReady, ready: true, delivery: .init(recorded: false), attempts: 0), .inject)
+    for attempts in [1, 2, Orchestrator.briefingAttemptLimit] {
+        expect("a counted attempt (\(attempts)) with no receipt waits instead of sending again", step(.promptReady, ready: true, delivery: .init(recorded: false), attempts: attempts), .wait)
+    }
     // The delivery observation false negative, as a fixture. Codex took the prompt four seconds
     // after the tab opened, and stopped being an empty composer at that instant — so the broker
     // first read the record long after the four-minute window had closed. Comparing the deadline
@@ -140,8 +143,10 @@ group("root assignments are a closed durable fourth primitive") {
         {"timestamp":"\(stamp.string(from: moment))","type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":\(String(data: try! JSONEncoder().encode(line), encoding: .utf8)!)}]}}}
         """
     }
-    func evidence(_ at: Date?, recorded: Bool = true, known: Bool = true, retried: Bool = true) -> Orchestrator.RootAssignmentDeliveryEvidence {
-        .init(transcriptKnown: known, recorded: recorded, recordedAt: at, deadline: promptDeadline, retryDelayElapsed: retried)
+    func evidence(_ at: Date?, recorded: Bool = true, observed: Bool = false,
+                  sendFailed: Bool = false) -> Orchestrator.RootAssignmentDeliveryEvidence {
+        .init(recorded: recorded, recordedAt: at, deadline: promptDeadline, observed: observed,
+              sendFailed: sendFailed)
     }
     expect("the pre-brief deadline is arithmetic on the anchor the timeout already reads", promptDeadline, openedAt.addingTimeInterval(Orchestrator.readyLimit))
     expect("a delivery receipt carries the user turn's own event time", Orchestrator.rootAssignmentTranscriptReceipt(rollout(recordedAt: deliveredAt), assistant: .codex, assignmentID: "assignment-1", line: line).at, deliveredAt)
@@ -157,10 +162,15 @@ group("root assignments are a closed durable fourth primitive") {
     expect("a prompt the assistant has already taken is still read for a receipt", step(.promptReady, ready: false), .inspectDelivery)
     expect("a delivery inside the window outranks the clock that observed it late", step(.promptReady, timeout: true, ready: false, delivery: evidence(deliveredAt), attempts: 1), .briefed)
     expect("an undated receipt is a delivery whose moment is unknown, not a timeout", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil), attempts: 1), .briefed)
-    expect("a record that never carried the turn still reaches typed prompt_timeout", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false), attempts: 1), .fail("prompt_timeout"))
+    // The deadline names what the broker knows about the one attempt, not only that time ran out.
+    expect("a typed attempt whose record was read without the turn fails as delivery_unconfirmed", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false, observed: true), attempts: 1), .fail("delivery_unconfirmed"))
+    expect("a typed attempt whose record could not be read fails as delivery_unobserved", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false), attempts: 1), .fail("delivery_unobserved"))
+    expect("an attempt the terminal refused fails as delivery_failed whatever was read", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false, observed: true, sendFailed: true), attempts: 1), .fail("delivery_failed"))
+    expect("a prompt-ready record never typed into still reaches typed prompt_timeout", step(.promptReady, timeout: true, ready: false, delivery: evidence(nil, recorded: false, observed: true), attempts: 0), .fail("prompt_timeout"))
     expect("a user turn recorded after the window closed is not a pre-deadline delivery", step(.promptReady, timeout: true, ready: false, delivery: evidence(openedAt.addingTimeInterval(Orchestrator.readyLimit + 1)), attempts: 1), .fail("prompt_timeout"))
+    expect("and a late turn outranks the terminal's refusal: the text did arrive", step(.promptReady, timeout: true, ready: false, delivery: evidence(openedAt.addingTimeInterval(Orchestrator.readyLimit + 1), sendFailed: true), attempts: 1), .fail("prompt_timeout"))
     expect("an unconfirmed delivery waits rather than typing into a busy composer", step(.promptReady, ready: false, delivery: evidence(nil, recorded: false), attempts: 1), .wait)
-    expect("an empty composer with no receipt still retries the ordinary way", step(.promptReady, ready: true, delivery: evidence(nil, recorded: false), attempts: 1), .inject)
+    expect("an empty composer with no receipt is not typed into a second time", step(.promptReady, ready: true, delivery: evidence(nil, recorded: false), attempts: 1), .wait)
     expect("the beat after briefing activates instead of briefing one receipt twice", step(.briefed, ready: false, delivery: evidence(deliveredAt), attempts: 1), .activate)
     let store = Orchestrator.storeURL
     let before = try? Data(contentsOf: store)
@@ -397,8 +407,7 @@ group("root assignments are a closed durable fourth primitive") {
               == Optional(Orchestrator.rootAssignmentLine(for: answered))
           && legacy?.language == nil && !legacyLine.contains("LANGUAGE CONTRACT")
           && step(.promptReady, ready: true,
-                  delivery: .init(transcriptKnown: true, recorded: legacyReceipt.recorded,
-                                  retryDelayElapsed: true), attempts: 1) == .briefed)
+                  delivery: .init(recorded: legacyReceipt.recorded), attempts: 1) == .briefed)
     var audited = assignmentFixture(state: .blocked); audited.blocker = "workspace_trust_required"
     Orchestrator.holdRootAssignmentForTesting(audited)
     var notices: [(String, [String: String])] = []
@@ -452,5 +461,210 @@ group("root assignments are a closed durable fourth primitive") {
     var limited = base; let limitedID = UUID().uuidString.lowercased(); limited["request_id"] = limitedID
     let limitedReply = Orchestrator.rootAssignment(limited, idempotencyKey: limitedID, assistantAvailable: { _ in true }, start: { _, _, _ in .started(id: "%rate-limited", backend: .tmux, attach: nil) })
     expect("the shared launch brake has a typed creation refusal", refusalCode(limitedReply), "rate_limited")
+
+    // Delivery on the production path. `rootAssignmentDelivery` is the half of every beat that
+    // reads the record, decides, writes the durable receipt and types. Here its terminal is a
+    // counted sender and its transcript is exactly what the record held at that beat.
+    let incidentOpenedAt = Date(timeIntervalSince1970: 1_789_284_598.684)
+    func jsonRow(_ fields: [String: Any]) -> String {
+        String(data: try! JSONSerialization.data(withJSONObject: fields), encoding: .utf8)!
+    }
+    func stamp(_ seconds: TimeInterval) -> String {
+        let format = ISO8601DateFormatter()
+        format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return format.string(from: incidentOpenedAt.addingTimeInterval(seconds))
+    }
+    func codexTurn(_ text: String, after seconds: TimeInterval) -> String {
+        let item: [String: Any] = ["type": "UserMessage",
+                                   "content": [["type": "text", "text": text]]]
+        let payload: [String: Any] = ["type": "item_completed", "item": item]
+        return jsonRow(["timestamp": stamp(seconds), "type": "event_msg", "payload": payload])
+    }
+    let plainFields = ["objective", "scope", "constraints", "references", "acceptance"]
+    func heldDelivery(_ assistant: Assistant, fields: [String], attempts: Int = 0,
+                      lastInjectAt: Date? = nil) -> Orchestrator.RootAssignment {
+        var row = Orchestrator.RootAssignment(
+            id: UUID().uuidString.lowercased(), requestID: UUID().uuidString.lowercased(),
+            requestDigest: String(repeating: "b", count: 64), assistant: assistant, model: "opus",
+            projectDir: "/tmp", label: "Delivered Feature Root", objective: fields[0],
+            scope: fields[1], constraints: fields[2], relevantReferences: fields[3],
+            acceptance: fields[4], projectApproved: false, created: incidentOpenedAt,
+            state: .promptReady,
+            language: Orchestrator.RootAssignmentLanguage(
+                tag: "zh-Hant", name: "Traditional Chinese (繁體中文)"))
+        row.identity = Orchestrator.RootAssignmentIdentity(
+            terminalID: "%delivery-\(row.id.prefix(8))", assistant: assistant,
+            tty: "/dev/ttys015", pid: 51_037, processStart: 1_789_284_602,
+            conversationID: UUID().uuidString.lowercased())
+        row.terminalOpenedAt = incidentOpenedAt
+        row.promptReadyAt = incidentOpenedAt.addingTimeInterval(9)
+        row.injectAttempts = attempts
+        row.lastInjectAt = lastInjectAt
+        Orchestrator.holdRootAssignmentForTesting(row)
+        return row
+    }
+    var typed: [String] = []
+    func deliveryBeat(_ id: String, after seconds: TimeInterval, record: String?,
+                      snapshot: Orchestrator.RootAssignment? = nil,
+                      refusal: String? = nil) -> Bool {
+        guard let current = snapshot ?? Orchestrator.rootAssignmentForTesting(id) else {
+            return false
+        }
+        return Orchestrator.rootAssignmentDelivery(
+            current, now: incidentOpenedAt.addingTimeInterval(seconds), inputReady: true,
+            transcripts: { offer in if let record { _ = offer(record) } },
+            send: { typed.append($0); return refusal })
+    }
+
+    // (a) Root Assignment 8cd9479d on 2026-09-13, reduced to its shape. Every field its caller
+    // wrote ended in a newline, so the briefing did; Claude recorded the turn byte for byte as a
+    // string `message.content` (jsonl line 6), and the trimmed entry the reader returns could
+    // never contain the untrimmed line. The Root ended that first turn at 07:33:32.122Z with an
+    // empty composer, and at 07:33:33.670Z the broker typed the whole briefing again (line 195).
+    let incidentFields = [
+        "讓 Cloud 的錯誤與認證問題對使用者和除錯的 agent 都透明。\n", "先規劃再實作。\n",
+        "共用工作樹：只 stage 自己的檔案。\n", "Clawdline.log 只寫 status 與 code。\n",
+        "畫面或診斷讀取都能說出層級、代碼與 request id。\n"]
+    let incident = heldDelivery(.claude, fields: incidentFields, attempts: 1,
+                                lastInjectAt: incidentOpenedAt.addingTimeInterval(9.6))
+    let incidentLine = Orchestrator.rootAssignmentLine(for: incident)
+    let incidentRecord = [
+        jsonRow(["parentUuid": NSNull(), "isSidechain": false,
+                 "promptId": "e90d1db8-8046-4fce-bc2b-348738a10f99", "type": "user",
+                 "uuid": "f6b8faf6-80a2-4703-bce5-c15297f04bbd",
+                 "timestamp": "2026-09-13T07:30:08.509Z", "permissionMode": "auto",
+                 "origin": ["kind": "human"], "promptSource": "typed", "userType": "external",
+                 "entrypoint": "cli", "cwd": "/Users/sainteye/code/clawdline",
+                 "sessionId": incident.identity?.conversationID ?? "", "version": "2.1.270",
+                 "gitBranch": "main", "message": ["role": "user", "content": incidentLine]]),
+        jsonRow(["type": "assistant", "timestamp": "2026-09-13T07:33:32.122Z",
+                 "isSidechain": false, "message": [
+                    "role": "assistant", "stop_reason": "end_turn",
+                    "content": [["type": "text", "text": "三路盤點都還在背景跑。"]]] as [String: Any]]),
+        jsonRow(["type": "system", "subtype": "turn_duration",
+                 "timestamp": "2026-09-13T07:33:32.303Z"]),
+    ].joined(separator: "\n") + "\n"
+    check("(a) the incident fixture keeps what defeated the receipt: a line ending in a newline",
+          incidentLine.hasSuffix("\n"))
+    typed = []
+    let incidentBeat = deliveryBeat(incident.id, after: 214.986, record: incidentRecord)
+    let incidentAfter = Orchestrator.rootAssignmentForTesting(incident.id)
+    check("(a) a delivered briefing ending in a newline is briefed on the delivery path",
+          incidentBeat && incidentAfter?.state == .briefed)
+    check("(a) and the Root that finished its first turn is not typed the briefing again",
+          typed.isEmpty && incidentAfter?.injectAttempts == 1)
+    let codexIncident = heldDelivery(.codex, fields: incidentFields)
+    let codexLine = Orchestrator.rootAssignmentLine(for: codexIncident)
+    check("(a) a Codex rollout of the same newline-ended briefing is a receipt as well",
+          Orchestrator.rootAssignmentTranscriptReceipt(
+            codexTurn(codexLine, after: 10), assistant: .codex,
+            assignmentID: codexIncident.id, line: codexLine).recorded)
+    // The same class, a different byte: the reader also takes a dropped screenshot's path out of
+    // a user turn, and a references field is exactly where somebody cites one.
+    let screenshot = Drop.directory.path + "/clawdline-\(UUID().uuidString).png"
+    let cited = heldDelivery(.claude, fields: [
+        "objective", "scope", "constraints", "The refusal is in \(screenshot) today.", "acceptance"])
+    let citedLine = Orchestrator.rootAssignmentLine(for: cited)
+    check("a briefing citing a dropped screenshot is still its own receipt",
+          Orchestrator.rootAssignmentTranscriptReceipt(
+            jsonRow(["type": "user", "timestamp": stamp(10),
+                     "message": ["role": "user", "content": citedLine]]),
+            assistant: .claude, assignmentID: cited.id, line: citedLine).recorded)
+
+    // (b) A receipt that lands after the beats that looked for it. Plain fields, so only the send
+    // rule is under test: every beat before the row lands sees an empty composer and no receipt,
+    // which the old retry read as a lost prompt once fifteen seconds had passed.
+    let late = heldDelivery(.codex, fields: plainFields)
+    let lateLine = Orchestrator.rootAssignmentLine(for: late)
+    let lateMeta = jsonRow(["timestamp": stamp(9), "type": "session_meta",
+                            "payload": ["id": late.identity?.conversationID ?? "", "cwd": "/tmp"]])
+    typed = []
+    _ = deliveryBeat(late.id, after: 9, record: lateMeta)
+    expect("(b) the first beat with an empty composer types the briefing once", typed, [lateLine])
+    expect("(b) and has counted that one attempt durably",
+           Orchestrator.rootAssignmentForTesting(late.id)?.injectAttempts, 1)
+    for seconds in [30.0, 60, 215] { _ = deliveryBeat(late.id, after: seconds, record: lateMeta) }
+    expect("(b) beats that observe before the receipt lands never type it again", typed.count, 1)
+    _ = deliveryBeat(late.id, after: 220, record: lateMeta + "\n" + codexTurn(lateLine, after: 10))
+    expect("(b) the receipt that lands later still briefs the Root",
+           Orchestrator.rootAssignmentForTesting(late.id)?.state, .briefed)
+    expect("(b) with exactly one send in total", typed.count, 1)
+
+    // (c) A briefing that genuinely never arrived.
+    let lost = heldDelivery(.claude, fields: plainFields)
+    let lostRecord = jsonRow(["type": "system", "subtype": "turn_duration", "timestamp": stamp(5)])
+    typed = []
+    for seconds in [9.0, 30, 120, 239] { _ = deliveryBeat(lost.id, after: seconds, record: lostRecord) }
+    expect("(c) a briefing that never arrives is typed once and not again inside the window",
+           typed.count, 1)
+    let expired = deliveryBeat(lost.id, after: 241, record: lostRecord)
+    let lostAfter = Orchestrator.rootAssignmentForTesting(lost.id)
+    check("(c) past the deadline, with the record read and no receipt, it is delivery_unconfirmed",
+          expired && lostAfter?.state == .failed && lostAfter?.failure == "delivery_unconfirmed")
+    _ = deliveryBeat(lost.id, after: 300, record: lostRecord)
+    expect("(c) and neither the failure nor a later beat sends it again", typed.count, 1)
+
+    // A beat that began from a snapshot taken before another beat counted its attempt: the
+    // durable count, not the snapshot, decides whether anything may be typed.
+    let raced = heldDelivery(.claude, fields: plainFields)
+    typed = []
+    _ = deliveryBeat(raced.id, after: 9, record: nil)
+    _ = deliveryBeat(raced.id, after: 30, record: nil, snapshot: raced)
+    expect("a beat holding a snapshot from before the counted attempt cannot type again",
+           typed.count, 1)
+
+    // (d) A send the terminal refuses. `Tmux.send` can refuse after the paste or before the Enter
+    // lands, so the refusal is still the one attempt and never a licence to type again — but it
+    // is the broker's own knowledge, so it has to reach the disk, the audit and the deadline.
+    let refused = heldDelivery(.claude, fields: plainFields)
+    var refusalNotices: [(String, [String: String])] = []
+    Orchestrator.rootAssignmentAuditObserverForTesting = { refusalNotices.append(($0, $1)) }
+    typed = []
+    _ = deliveryBeat(refused.id, after: 9, record: lostRecord, refusal: "that tmux pane is gone")
+    _ = Orchestrator.load(force: true)
+    let refusedAfter = Orchestrator.rootAssignmentForTesting(refused.id)
+    check("(d) a refused send is kept on the durable record with the terminal's error",
+          refusedAfter?.injectFailure == "that tmux pane is gone"
+              && refusedAfter?.injectAttempts == 1 && typed.count == 1)
+    expect("(d) and audited when it happens", refusalNotices.map { [$0.0, $0.1["error"] ?? ""] },
+           [["root_assignment.inject_failed", "that tmux pane is gone"]])
+    for seconds in [30.0, 120, 239] { _ = deliveryBeat(refused.id, after: seconds, record: lostRecord) }
+    check("(d) the refusal neither ends the record early nor sends it again",
+          typed.count == 1 && Orchestrator.rootAssignmentForTesting(refused.id)?.state == .promptReady)
+    _ = deliveryBeat(refused.id, after: 241, record: lostRecord)
+    expect("(d) at the deadline the typed failure says the terminal refused it",
+           Orchestrator.rootAssignmentForTesting(refused.id)?.failure, "delivery_failed")
+    expect("(d) and the failure audit carries the terminal's error",
+           refusalNotices.last.map { [$0.0, $0.1["inject_failure"] ?? ""] },
+           ["root_assignment.failed", "that tmux pane is gone"])
+    let refusedButArrived = heldDelivery(.codex, fields: plainFields)
+    _ = deliveryBeat(refusedButArrived.id, after: 9, record: nil,
+                     refusal: "tmux typed the line but Enter did not land.")
+    _ = deliveryBeat(refusedButArrived.id, after: 250, record: codexTurn(
+        Orchestrator.rootAssignmentLine(for: refusedButArrived), after: 10))
+    expect("(d) a refused send whose turn was recorded inside the window is still briefed",
+           Orchestrator.rootAssignmentForTesting(refusedButArrived.id)?.state, .briefed)
+
+    // (e) A typed attempt whose conversation record the broker could never read.
+    let unread = heldDelivery(.claude, fields: plainFields)
+    for seconds in [9.0, 241] { _ = deliveryBeat(unread.id, after: seconds, record: nil) }
+    expect("(e) an unrefused attempt with no readable record fails as delivery_unobserved",
+           Orchestrator.rootAssignmentForTesting(unread.id)?.failure, "delivery_unobserved")
+
+    // (f) cleanup() answers a refused save with load(force: true), which installs whatever the
+    // store holds. Landing between a beat's count and that beat's save, it hands the save the
+    // image from before the count, which the save writes; typing then would leave the next beat
+    // an uncounted record and an empty composer to type the same briefing into again.
+    let reloaded = heldDelivery(.claude, fields: plainFields)
+    Orchestrator.saveForTesting()
+    typed = []
+    Orchestrator.rootAssignmentInjectionCountedForTesting = { _ in _ = Orchestrator.load(force: true) }
+    _ = deliveryBeat(reloaded.id, after: 9, record: nil)
+    Orchestrator.rootAssignmentInjectionCountedForTesting = nil
+    expect("(f) a reload between the count and its save leaves that beat typing nothing",
+           typed.count, 0)
+    for seconds in [30.0, 60, 120] { _ = deliveryBeat(reloaded.id, after: seconds, record: nil) }
+    expect("(f) so across the beats that follow the briefing is typed exactly once",
+           typed.count, 1)
 }
 }

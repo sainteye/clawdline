@@ -42,10 +42,26 @@ The request cannot choose a language. When the broker accepts a new assignment, 
 Mac Clawdline interface language, stores its canonical catalog tag and rendered name on that
 durable assignment, and puts an explicit language contract in the briefing. That contract covers
 the Root's first response, commentary, questions, progress, final response and every other
-user-facing message. Initial injection, retry, restart reconciliation and transcript matching all
-rebuild the same bytes from the stored value; changing Settings afterwards cannot change the
-accepted briefing or its receipt. A legacy durable row with no language field keeps the historical
-briefing bytes so an already delivered turn remains a match and is not resent.
+user-facing message. The one injection, restart reconciliation and transcript matching all rebuild
+the same bytes from the stored value; changing Settings afterwards cannot change the accepted
+briefing or its receipt. A legacy durable row with no language field keeps the historical briefing
+bytes so an already delivered turn remains a match rather than ending in a typed delivery failure.
+
+The briefing is typed at most once. Its attempt is counted durably before the keystrokes — which
+also wait until the registry still holds that attempt after its save, since a forced reload landing
+between the count and the save would otherwise hand the next beat an uncounted record — and after
+that only an in-window transcript receipt or the pre-brief deadline settles the record: a missing
+receipt cannot tell a prompt that never arrived from one that arrived unrecognised, an idle composer
+is also what a Root that has already finished its first turn looks like, and a send the terminal
+refuses may already have delivered the text. That refusal is still stored durably with the
+terminal's error and audited as `root_assignment.inject_failed`, so the deadline can say what the
+broker knows: `delivery_failed` for a refused send, `delivery_unconfirmed` for an unrefused one
+whose conversation record holds no receipt, `delivery_unobserved` for one whose record could not be
+read, and `prompt_timeout` when nothing was typed or the turn arrived after the window. The receipt
+is compared as the transcript reader renders a user turn — trimmed, dropped-image paths removed — so
+a caller field ending in a newline still matches. Root Assignment 8cd9479d (2026-09-13) is the case
+that settled both: its briefing ended in a newline, went unrecognised, was typed a second time into
+the working Root, and the record was then marked `failed/prompt_timeout`.
 
 The broker records `accepted` before opening a tab, then `terminal_opened`, `prompt_ready`,
 `briefed`, and `active`, with `blocked`, `failed`, and `inactive` as explicit alternatives. The

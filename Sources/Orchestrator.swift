@@ -1242,6 +1242,7 @@ enum Orchestrator {
         }
         var fields = ["assignment": id, "state": assignment.state.rawValue,
                       "why": notice.reason, "transition": notice.receipt]
+        if let error = assignment.injectFailure { fields["inject_failure"] = error }
         if let identity = assignment.identity {
             fields["terminal"] = identity.terminalID
             fields["assistant"] = identity.assistant.rawValue
@@ -1366,6 +1367,8 @@ enum Orchestrator {
     static var finalizationStageBoundaryForTesting: ((String) -> Void)?
     static var rootAssignmentAuditObserverForTesting:
         ((String, [String: String]) -> Void)?
+    /// Between a Root Assignment's counted attempt and its save: where a forced reload can land.
+    static var rootAssignmentInjectionCountedForTesting: ((String) -> Void)?
     static var attachedSenderForTesting: ((String, TargetSession) -> String?)?
     /// The session inventory an attachment resolves against, and the starter a tab-opening
     /// dispatch uses.
@@ -3471,14 +3474,18 @@ enum Orchestrator {
                                                 assignmentID: String, line: String)
         -> RootAssignmentTranscriptReceipt {
         let absent = RootAssignmentTranscriptReceipt(recorded: false, at: nil)
+        // The entries are a display projection, so the line is compared as that projection renders
+        // it (`Transcript.userTurnText`): five caller-written fields may end in a newline.
         guard let transcript,
               line.hasPrefix("You are an independently owned Clawdline Feature Root for Root "
-                           + "Assignment \(assignmentID).") else { return absent }
+                           + "Assignment \(assignmentID)."),
+              let rendered = Transcript.userTurnText(line, assistant: assistant),
+              !rendered.isEmpty else { return absent }
         // This receipt may first be observed after a busy Root has already written hundreds of
         // newer rows. A UI-tail limit would turn observation lag back into prompt_timeout, so this
         // delivery-only path searches the complete record that its caller has already read.
         guard let turn = Transcript.parse(transcript, assistant: assistant, limit: Int.max)
-            .first(where: { $0.kind == .user && $0.text.contains(line) }) else { return absent }
+            .first(where: { $0.kind == .user && $0.text.contains(rendered) }) else { return absent }
         return RootAssignmentTranscriptReceipt(recorded: true, at: turn.time)
     }
 
@@ -7073,12 +7080,7 @@ enum Orchestrator {
             return false
         }
         let now = Date()
-        let promptWindowOpenedAt = rootAssignmentPromptTimeoutAnchor(
-            terminalOpenedAt: assignment.terminalOpenedAt ?? assignment.created,
-            trustResumedAt: assignment.promptTimeoutStartedAt)
-        let timedOut = rootAssignmentPromptTimedOut(
-            state: assignment.state, openedAt: promptWindowOpenedAt,
-            now: now, briefed: assignment.briefedAt != nil)
+        let timedOut = rootAssignmentPromptWindow(assignment, now: now).timedOut
         guard let target = target(withID: identity.terminalID),
               target.assistant == assignment.assistant else { return false }
         let screen = Targets.capture(target)
@@ -7143,42 +7145,51 @@ enum Orchestrator {
         case .briefed, .inject:
             return false
         }
+        let openedAt = assignment.terminalOpenedAt ?? assignment.created
+        return rootAssignmentDelivery(assignment, now: now, inputReady: inputReady,
+            transcripts: { offer in
+                switch assignment.assistant {
+                case .claude:
+                    _ = Transcript.locate(cwd: assignment.projectDir, tabTitle: target.name,
+                        startedAt: openedAt, sessionID: identity.conversationID,
+                        accepting: { offer(try? String(contentsOf: $0, encoding: .utf8)) })
+                case .codex:
+                    if let url = Codex.locate(cwd: assignment.projectDir, startedAt: openedAt,
+                                              pid: identity.pid),
+                       let text = try? String(contentsOf: url, encoding: .utf8) { _ = offer(text) }
+                }
+            },
+            send: { Targets.send($0, to: target) })
+    }
+
+    /// The delivery half of one beat: look for the exact receipt, decide, write the durable
+    /// receipt, and type at most once. The terminal is reached only through `transcripts`, which
+    /// offers each candidate record of this conversation until one carries the receipt, and
+    /// `send`, so the focused suite drives this decision and bookkeeping without a live tab.
+    @discardableResult
+    static func rootAssignmentDelivery(
+        _ assignment: RootAssignment, now: Date, inputReady: Bool,
+        transcripts: (_ offer: @escaping (String?) -> Bool) -> Void,
+        send: (String) -> String?) -> Bool {
+        let id = assignment.id
         let line = rootAssignmentLine(for: assignment)
-        var transcriptKnown = false
+        let window = rootAssignmentPromptWindow(assignment, now: now)
         var receipt = RootAssignmentTranscriptReceipt(recorded: false, at: nil)
-        switch assignment.assistant {
-        case .claude:
-            _ = Transcript.locate(cwd: assignment.projectDir, tabTitle: target.name,
-                startedAt: assignment.terminalOpenedAt ?? assignment.created,
-                sessionID: identity.conversationID, accepting: { url in
-                    transcriptKnown = true
-                    let text = try? String(contentsOf: url, encoding: .utf8)
-                    let candidate = rootAssignmentTranscriptReceipt(
-                        text, assistant: .claude, assignmentID: id, line: line)
-                    if candidate.recorded { receipt = candidate }
-                    return candidate.recorded
-                })
-        case .codex:
-            if let url = Codex.locate(cwd: assignment.projectDir,
-                                      startedAt: assignment.terminalOpenedAt ?? assignment.created,
-                                      pid: identity.pid),
-               let text = try? String(contentsOf: url, encoding: .utf8) {
-                transcriptKnown = true
-                receipt = rootAssignmentTranscriptReceipt(
-                    text, assistant: .codex, assignmentID: id, line: line)
-            }
+        var observed = false
+        transcripts { text in
+            observed = observed || text != nil
+            let candidate = rootAssignmentTranscriptReceipt(
+                text, assistant: assignment.assistant, assignmentID: id, line: line)
+            if candidate.recorded { receipt = candidate }
+            return candidate.recorded
         }
-        let retryDelayElapsed = assignment.lastInjectAt.map {
-            now.timeIntervalSince($0) >= briefingReceiptDelay
-        } ?? true
         let deliveryDecision = rootAssignmentStepDecision(
-            state: assignment.state, promptTimedOut: timedOut, trust: .none,
+            state: assignment.state, promptTimedOut: window.timedOut, trust: .none,
             answeredTrustMenu: assignment.answeredTrustMenu, inputReady: inputReady,
             delivery: RootAssignmentDeliveryEvidence(
-                transcriptKnown: transcriptKnown, recorded: receipt.recorded,
-                recordedAt: receipt.at,
-                deadline: rootAssignmentPromptDeadline(openedAt: promptWindowOpenedAt),
-                retryDelayElapsed: retryDelayElapsed),
+                recorded: receipt.recorded, recordedAt: receipt.at,
+                deadline: rootAssignmentPromptDeadline(openedAt: window.openedAt),
+                observed: observed, sendFailed: assignment.injectFailure != nil),
             injectAttempts: assignment.injectAttempts)
         switch deliveryDecision {
         case .briefed:
@@ -7196,19 +7207,37 @@ enum Orchestrator {
             reportRootAssignmentTransition(id)
             return true
         case .inject:
+            // Counted in the same hold that proves no attempt was counted before, so the durable
+            // receipt, not this beat's snapshot, is what keeps the send below at most once.
             guard OrchestratorRegistry.withCoordinationRecords({
-                $0.recordRootAssignmentInjection(id, at: now)
+                $0.rootAssignment(id)?.injectAttempts == 0
+                    && $0.recordRootAssignmentInjection(id, at: now)
             }) else { return false }
-            guard persistRootAssignmentInjection(id, at: now) else { return false }
-            if Targets.send(line, to: target) != nil {
-                OrchestratorRegistry.withCoordinationRecords {
-                    $0.withdrawRootAssignmentInjectionTime(id, at: now)
-                }
-            }
+            rootAssignmentInjectionCountedForTesting?(id)
+            // A forced reload before this save installs the uncounted image and the save writes
+            // it, so the keystrokes also need the saved registry to still hold this attempt.
+            guard persistRootAssignmentInjection(id, at: now),
+                  OrchestratorRegistry.withCoordinationRecords({
+                      $0.holdsRootAssignmentInjection(id, at: now) }) else { return false }
+            if let error = send(line) { recordRootAssignmentSendFailure(id, at: now, error: error) }
             return true
         default:
             return false
         }
+    }
+
+    /// The terminal refused the one counted attempt: broker knowledge, kept on the record for the
+    /// deadline's `delivery_failed` and audited now. The record still waits for a receipt or that
+    /// deadline, because the refusal can follow text or an Enter that already reached the tab.
+    private static func recordRootAssignmentSendFailure(_ id: String, at: Date, error: String) {
+        let error = String(error.prefix(500))
+        let kept = OrchestratorRegistry.withCoordinationRecords {
+            $0.recordRootAssignmentInjectionFailure(id, at: at, error: error)
+        } && save()
+        let fields = ["assignment": id, "error": error, "persisted": kept ? "true" : "false"]
+        if let observer = rootAssignmentAuditObserverForTesting {
+            observer("root_assignment.inject_failed", fields)
+        } else { RemoteAuth.audit("root_assignment.inject_failed", fields) }
     }
 
     /// Advance one handoff while it is waiting for a composer or a transcript receipt. This is
@@ -10605,6 +10634,7 @@ enum Orchestrator {
             workspaceOverlapObserverForTesting = nil
             rootNotificationObserverForTesting = nil
             rootAssignmentAuditObserverForTesting = nil
+            rootAssignmentInjectionCountedForTesting = nil
             attachedSenderForTesting = nil
             attachmentInventoryForTesting = nil
             taskStarterForTesting = nil
