@@ -119,6 +119,9 @@ final class CloudStatus: @unchecked Sendable {
     private var expiredReceiptTotal: UInt64 = 0
     private var laneDroppedTotal: UInt64 = 0
     private var replySequences: [(spool: Int64, sender: String, sequence: UInt64)] = []
+    /// A receipt can overtake the bridge recording which command a spool row answers; it waits
+    /// here, bounded, until that record arrives.
+    private var earlyReceipts: [(spool: Int64, delivered: Bool, at: UInt64)] = []
     private var noticeObserver: NoticeObserver?
     private var noticePending = false
     private var writeScheduled = false
@@ -242,12 +245,17 @@ final class CloudStatus: @unchecked Sendable {
 
     /// The reply for `(sender, sequence)` was sealed as spool row `spoolSequence`.
     func recordReplySealed(sender: String, sequence: UInt64, spoolSequence: Int64) {
-        mutate(write: false) { status in
+        announce { status in
             status.replySequences.removeAll { $0.spool == spoolSequence }
             status.replySequences.append((spoolSequence, sender, sequence))
             if status.replySequences.count > CloudStatus.recentCommandLimit {
                 status.replySequences.removeFirst()
             }
+            guard let early = status.earlyReceipts.firstIndex(where: { $0.spool == spoolSequence })
+            else { return false }
+            let receipt = status.earlyReceipts.remove(at: early)
+            return status.applyReceipt(sender: sender, sequence: sequence,
+                                       delivered: receipt.delivered, at: receipt.at)
         }
     }
 
@@ -256,17 +264,26 @@ final class CloudStatus: @unchecked Sendable {
         let now = nowMilliseconds()
         announce { status in
             guard let owner = status.replySequences.first(where: { $0.spool == spoolSequence })
-            else { return false }
-            status.updateRow(sender: owner.sender, sequence: owner.sequence, create: false) { row in
-                if delivered {
-                    row.deliveredAt = now
-                } else {
-                    row.undeliverable = "peer_rejected"
-                }
+            else {
+                status.earlyReceipts.append((spoolSequence, delivered, now))
+                if status.earlyReceipts.count > 16 { status.earlyReceipts.removeFirst() }
+                return false
             }
-            if !delivered { status.undeliverableTotal &+= 1 }
-            return !delivered
+            return status.applyReceipt(sender: owner.sender, sequence: owner.sequence,
+                                       delivered: delivered, at: now)
         }
+    }
+
+    private func applyReceipt(sender: String, sequence: UInt64, delivered: Bool, at: UInt64) -> Bool {
+        updateRow(sender: sender, sequence: sequence, create: false) { row in
+            if delivered {
+                row.deliveredAt = at
+            } else {
+                row.undeliverable = "peer_rejected"
+            }
+        }
+        if !delivered { undeliverableTotal &+= 1 }
+        return !delivered
     }
 
     func recordUndeliverable(sender: String, sequence: UInt64, reason: String) {
@@ -339,9 +356,9 @@ final class CloudStatus: @unchecked Sendable {
         return [
             "clawdline_cloud_status": Self.schemaVersion,
             "generated_at": Self.iso(now),
-            "generated_at_ms": now,
+            "generated_at_ms": Self.json(now),
             "counting_since": Self.iso(countingSince),
-            "counting_since_ms": countingSince,
+            "counting_since_ms": Self.json(countingSince),
             "bridge": bridge,
             "transport": transport,
             "token": [
@@ -357,17 +374,17 @@ final class CloudStatus: @unchecked Sendable {
                 "devices": deviceIDs.map { ["device": $0] },
             ] as [String: Any],
             "inbound": [
-                "accepted": acceptedTotal,
+                "accepted": Self.json(acceptedTotal),
                 "dropped": droppedObject(),
                 "recent_drops": recentDrops.map(dropObject),
             ] as [String: Any],
             "commands": commands.map(commandObject),
             "notices": notices.map(noticeObject),
             "reply": [
-                "undeliverable": undeliverableTotal,
-                "expired_ready": expiredReadyTotal,
-                "expired_receipt": expiredReceiptTotal,
-                "lane_dropped": laneDroppedTotal,
+                "undeliverable": Self.json(undeliverableTotal),
+                "expired_ready": Self.json(expiredReadyTotal),
+                "expired_receipt": Self.json(expiredReceiptTotal),
+                "lane_dropped": Self.json(laneDroppedTotal),
             ] as [String: Any],
         ]
     }
@@ -382,8 +399,8 @@ final class CloudStatus: @unchecked Sendable {
         var recentNotices = Array(notices.prefix(Self.digestNoticeLimit)).map(noticeObject)
         var digest: [String: Any] = [
             "v": Self.schemaVersion,
-            "generated_at_ms": now,
-            "counting_since_ms": countingSince,
+            "generated_at_ms": Self.json(now),
+            "counting_since_ms": Self.json(countingSince),
             "clock_guard": clockObject(clock, now: now, full: false),
             "token_expires_at_ms": Self.json(tokenExpiresAt),
             "key_id": keyID ?? NSNull(),
@@ -528,13 +545,13 @@ final class CloudStatus: @unchecked Sendable {
 
     private func droppedObject() -> [String: Any] {
         var object: [String: Any] = [:]
-        for (code, count) in dropped { object[code.rawValue] = count }
+        for (code, count) in dropped { object[code.rawValue] = Int(clamping: count) }
         return object
     }
 
     private func dropObject(_ row: DropRow) -> [String: Any] {
         [
-            "at_ms": row.at,
+            "at_ms": Self.json(row.at),
             "sender": row.drop.sender ?? NSNull(),
             "seq": Self.json(row.drop.sequence),
             "code": row.drop.code.rawValue,
@@ -546,7 +563,7 @@ final class CloudStatus: @unchecked Sendable {
 
     private func noticeObject(_ row: NoticeRow) -> [String: Any] {
         [
-            "at_ms": row.at, "sender": row.sender, "seq": row.sequence,
+            "at_ms": Self.json(row.at), "sender": row.sender, "seq": Self.json(row.sequence),
             "request": row.request ?? NSNull(), "layer": row.layer.rawValue, "code": row.code,
         ]
     }
@@ -554,7 +571,7 @@ final class CloudStatus: @unchecked Sendable {
     private func commandObject(_ row: CommandRow) -> [String: Any] {
         [
             "sender": row.sender,
-            "seq": row.sequence,
+            "seq": Self.json(row.sequence),
             "request": row.request ?? NSNull(),
             "type": row.type ?? NSNull(),
             "session": row.session ?? NSNull(),
@@ -598,7 +615,10 @@ final class CloudStatus: @unchecked Sendable {
         return word.isEmpty ? "unknown" : word
     }
 
-    private static func json(_ value: UInt64?) -> Any { value.map { $0 as Any } ?? NSNull() }
+    /// Every number leaves as `Int`, the type JSON readers and `as? Int` both expect.
+    private static func json(_ value: UInt64?) -> Any {
+        value.map { Int(clamping: $0) as Any } ?? NSNull()
+    }
 
     private static func iso(_ milliseconds: UInt64?) -> Any {
         guard let milliseconds else { return NSNull() }

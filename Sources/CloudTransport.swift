@@ -1259,18 +1259,16 @@ public actor CloudTransport {
         inboundRefusalHandler = handler
     }
 
-    public func setInboundDropHandler(_ handler: InboundDropHandler?) {
+    /// `async` on purpose. `CloudTransporting` gives fixtures a no-op `async` default, and in an
+    /// async context Swift prefers an `async` overload over a synchronous actor method, so a
+    /// synchronous spelling here was silently passed over and no drop owner was ever installed.
+    public func setInboundDropHandler(_ handler: InboundDropHandler?) async {
         inboundDropHandler = handler
     }
 
-    public func setConnectionObserver(_ observer: ConnectionObserver?) {
+    public func setConnectionObserver(_ observer: ConnectionObserver?) async {
         connectionObserver = observer
         lastReportedRoster = nil
-    }
-
-    /// Envelopes that entered this process's replay window for `sender`, as its highest sequence.
-    func highestAcceptedSequence(for sender: String) -> UInt64? {
-        replayWindow.highestSequence(for: sender)
     }
 
     public func setTerminalAuthorizationHandler(_ handler: TerminalAuthorizationHandler?) {

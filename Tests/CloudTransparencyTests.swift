@@ -221,6 +221,9 @@ func runCloudTransportTransparencyTests() async throws -> Int {
         try await link.relay.send(envelope: cloudTransparencySeal(
             "other secret", sequence: 6, sender: "viewer-m2", key: viewerKey, keyID: "ms-2",
             master: otherMaster))
+        // The relay delivers through the receive loop; the malformed frame below does not, so wait
+        // for the four delivered drops before it to keep the order the assertion names.
+        _ = await cloudTransparencyEventually { link.drops.all().count >= 4 }
         try await link.transport.handleAuthenticatedFrameForTesting(
             #"{"type":"envelope","envelope":{"sender":"viewer-x","seq":12,"key_id":"ms-2","v":9}}"#)
         _ = await cloudTransparencyEventually { link.drops.all().count >= 5 }
@@ -462,13 +465,19 @@ final class CloudTransparencyAuthority: @unchecked Sendable {
     }
 }
 
+/// A transport whose publications either fail or take `delayMilliseconds`, recorded without an
+/// `AsyncStream`, so several publications may wait at once.
 final class CloudTransparencyFailingTransport: CloudTransporting, @unchecked Sendable {
     nonisolated let commands: CloudInboundCommandStream
     nonisolated let readyGenerations: AsyncStream<UInt64>
     private let queue: CloudInboundCommandQueue
     private let readyContinuation: AsyncStream<UInt64>.Continuation
+    private let delayMilliseconds: UInt64?
+    private let lock = NSLock()
+    private var sent: [CloudEnvelope] = []
 
-    init() {
+    init(delayMilliseconds: UInt64? = nil) {
+        self.delayMilliseconds = delayMilliseconds
         let queue = CloudInboundCommandQueue()
         self.queue = queue
         commands = queue.stream
@@ -478,7 +487,20 @@ final class CloudTransparencyFailingTransport: CloudTransporting, @unchecked Sen
     }
 
     func connect(role: CloudTransportRole) async throws {}
-    func sendExactPublishFrame(_ bytes: Data) async throws { throw CloudTransportError.notConnected }
+    func sendExactPublishFrame(_ bytes: Data) async throws {
+        guard let delayMilliseconds else { throw CloudTransportError.notConnected }
+        try await Task.sleep(nanoseconds: delayMilliseconds * 1_000_000)
+        let frame = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
+        lock.lock()
+        sent.append(frame.envelope)
+        lock.unlock()
+    }
+
+    func envelopes() -> [CloudEnvelope] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sent
+    }
     func setInboundRefusalHandler(_ handler: CloudTransport.InboundRefusalHandler?) async {}
     func setTerminalAuthorizationHandler(
         _ handler: CloudTransport.TerminalAuthorizationHandler?
@@ -566,6 +588,84 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
     let checks = CloudTransparencyChecks()
     let keys = try CloudTransparencyBridgeKeys()
 
+    // T-M1 and T-M3 end to end: a real transport under a real bridge, through the loopback relay.
+    // The bridge installs the drop owner through `any CloudTransporting`, which is the seam a
+    // fixture transport cannot exercise.
+    do {
+        let machineKey = CloudDeviceKeyPair()
+        let viewerKey = CloudDeviceKeyPair()
+        let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x75, count: 32))
+        let relay = CloudLoopbackRelay(
+            account: "transparency-account", deviceID: "machine-e2e",
+            devicePublicKey: machineKey.publicKeyRaw, allowedTokens: ["transparency-token"])
+        let lines = CloudTransparencyRecorder<String>()
+        let transport = CloudTransport(
+            relayBaseURL: URL(string: "ws://loopback.invalid/v1/connect")!,
+            tokenProvider: CloudTransparencyTokens(),
+            keyProvider: CloudStaticTransportKeys(
+                deviceKey: machineKey, masterSecrets: ["ms-2": master],
+                pairedDevices: ["viewer-e2e": viewerKey.publicKeyRaw]),
+            connector: CloudLoopbackSocketConnector(relay: relay),
+            inboundQueueLimits: CloudInboundCommandQueueLimits(),
+            replayWindow: CloudInboundReplayWindow(), logger: { lines.append($0) })
+        let status = CloudStatus()
+        let bridge = CloudAppBridge(
+            transport: transport,
+            identity: CloudAppIdentity(machineID: "machine-e2e", deviceID: "machine-e2e",
+                                       keyID: "ms-2", masterSecret: master, signingKey: machineKey),
+            sequencing: CloudAppBridgeTestSequence(), commandRouter: CloudTransparencyRouter(),
+            status: status, noticeIntervalMilliseconds: 50)
+        try await bridge.start()
+        try await relay.send(envelope: cloudTransparencySeal(
+            "mismatch", sequence: 7, sender: "viewer-e2e", key: viewerKey, keyID: "ms-1",
+            master: master, channel: "ctl/machine-e2e"))
+        func notices() async -> [[String: Any]] {
+            await relay.publishedEnvelopes().filter { $0.ch == "orch/machine-e2e" }.compactMap {
+                let bytes = try? $0.open(masterSecret: master, publicKeyForSender: {
+                    $0 == "machine-e2e" ? machineKey.publicKeyRaw : nil })
+                return bytes.flatMap {
+                    (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
+                }?["cloud_status"] as? [String: Any]
+            }
+        }
+        let published = await cloudTransparencyEventually(timeout: 3) {
+            await notices().contains { digest in
+                (digest["recent_drops"] as? [[String: Any]] ?? []).contains {
+                    $0["code"] as? String == "key_id_mismatch" && $0["seq"] as? Int == 7
+                        && $0["key_id"] as? String == "ms-1"
+                        && $0["expected_key_id"] as? String == "ms-2"
+                }
+            }
+        }
+        let afterMismatch = await notices()
+        checks.check("T-M1 the key mismatch reaches orch/<machine> as a notice", published,
+                     "notices=\(afterMismatch)")
+        checks.check("T-M1 with a bridge attached the drop line says reply=notice",
+                     lines.all().contains {
+                        $0.hasPrefix("refusal layer=mac_transport code=key_id_mismatch sender=viewer-e2e seq=7 ")
+                            && $0.contains(" reply=notice ")
+                     }, "lines=\(lines.all())")
+        let ten = try cloudTransparencySeal(
+            "ten", sequence: 10, sender: "viewer-e2e", key: viewerKey, keyID: "ms-2",
+            master: master, channel: "ctl/machine-e2e")
+        try await relay.send(envelope: ten)
+        try await relay.send(envelope: ten)
+        let replayed = await cloudTransparencyEventually(timeout: 3) {
+            await notices().contains { digest in
+                (digest["recent_drops"] as? [[String: Any]] ?? []).contains {
+                    $0["code"] as? String == "replay" && $0["highest_seq"] as? Int == 10
+                }
+            }
+        }
+        let afterReplay = await notices()
+        checks.check("T-M3 the replay reaches the notice with highest_seq", replayed,
+                     "notices=\(afterReplay)")
+        checks.check("T-M1 the status snapshot counts both drops by code",
+                     status.droppedCount(.keyIDMismatch) == 1 && status.droppedCount(.replay) == 1)
+        await bridge.stop()
+        await relay.stop()
+    }
+
     // T-P1, P2, M4 reply locations, §11.4 request on answer and dispatch, T-F1, cloud.status and
     // diagnostics.report — one fixture bridge with a status owner.
     do {
@@ -634,9 +734,9 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
         checks.check("T-P1 the unanswerable refusals are notices",
                      await cloudTransparencyEventually {
                         let notices = status.snapshot()["notices"] as? [[String: Any]] ?? []
-                        let pairs = notices.map { ("\($0["seq"] ?? ""))", $0["code"] as? String ?? "") }
-                        return pairs.contains { $0 == ("55", "malformed_command") }
-                            && pairs.contains { $0 == ("56", "wrong_machine") }
+                        let pairs = notices.map { ($0["seq"] as? Int ?? -1, $0["code"] as? String ?? "") }
+                        return pairs.contains { $0 == (55, "malformed_command") }
+                            && pairs.contains { $0 == (56, "wrong_machine") }
                      }, "\(String(describing: status.snapshot()["notices"]))")
         checks.check("M4 wrong_machine publishes nothing on a channel the viewer never reads",
                      !transport.envelopes().contains {
@@ -770,13 +870,13 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
 
     // T-M5: a full refusal lane counts the drop and announces it.
     do {
-        let transport = CloudAppBridgeTestTransport(suspendPublication: true)
+        let transport = CloudTransparencyFailingTransport(delayMilliseconds: 400)
         let lines = CloudTransparencyRecorder<String>()
         let status = CloudStatus()
         let bridge = CloudAppBridge(
             transport: transport, identity: keys.identity, sequencing: CloudAppBridgeTestSequence(),
             commandRouter: CloudTransparencyRouter(), diagnostic: { lines.append($0) },
-            refusalPublications: CloudRefusalPublicationQueue(maximumCount: 1, deadlineMilliseconds: 300),
+            refusalPublications: CloudRefusalPublicationQueue(maximumCount: 1, deadlineMilliseconds: 2_000),
             status: status, noticeIntervalMilliseconds: 50)
         try await bridge.start()
         transport.yield(#"{"type":"send","session":"plain","request":"m5-a","text":"x","images":[]}"#,
@@ -801,7 +901,6 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
                             }
                         }
                      }, "notices=\(keys.notices(transport.envelopes()))")
-        transport.releasePublications(8)
         await bridge.stop()
     }
 
@@ -1023,15 +1122,17 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
     // §11.2 the 8 KiB cap, enforced by trimming the recent lists.
     do {
         let status = CloudStatus()
-        let wide = String(repeating: "w", count: 128)
+        // The widest values the envelope grammar allows: 128-byte senders and 64-byte key ids made
+        // of `"`, which JSON must escape to two bytes each.
+        let wide = String(repeating: "\"", count: 128)
         for sequence in 0..<20 {
             status.recordDrop(CloudInboundDrop(
-                code: .keyIDMismatch, sender: wide + "\(sequence)", sequence: UInt64(sequence),
-                keyID: String(repeating: "k", count: 64),
-                expectedKeyID: String(repeating: "e", count: 64)))
+                code: .keyIDMismatch, sender: wide, sequence: UInt64(sequence),
+                keyID: String(repeating: "\"", count: 64),
+                expectedKeyID: String(repeating: "\"", count: 64)))
             status.recordRefusal(
                 sender: wide, sequence: UInt64(1_000 + sequence),
-                request: String(repeating: "r", count: 128), type: "send", session: "plain",
+                request: String(repeating: "\"", count: 128), type: "send", session: "plain",
                 layer: .macPreflight, code: "malformed_command", reply: .notice)
         }
         let digest = status.noticeDigest()

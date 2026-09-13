@@ -178,7 +178,7 @@ func runCloudAppBridgeIngressRefusalTests() async throws -> Int {
     // The viewer reads the channel it addressed, and this Mac cannot publish there, so the
     // refusal is a notice rather than an answer nobody would read.
     try require(transport.envelopes().count == 2
-                    && !results.all().contains { $0.code == "cloud_ingress_busy" },
+                    && results.all().filter { $0.code == "cloud_ingress_busy" }.count == 1,
                 "ingress refusal applies the exact machine-channel gate before reporting capacity")
 
     await transport.refuse(refused(
