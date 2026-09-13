@@ -89,7 +89,7 @@ export var BoardControls = {
                 node("settings-board-status").textContent = words("Saved", "已儲存");
             }).catch(function (error) {
                 operationError = true;
-                if (error.code && !/offline|busy|timeout|unavailable|network|connection|persistence_failed/.test(error.code)) pending = null;
+                if (error.code && error.retryable !== true && !/offline|busy|timeout|unavailable|network|connection|persistence_failed/.test(error.code)) pending = null;
                 node("settings-board-status").textContent = failureSentence(error, words("Save failed", "儲存失敗"));
             }).finally(function () { saving = false; BoardControls.apply(latest); });
         });
@@ -107,7 +107,7 @@ export var BoardControls = {
                 node("settings-board-status").textContent = words("Saved", "已儲存");
             }).catch(function (error) {
                 // A network loss may follow a successful write: retry the same request.
-                if (error.code && !/offline|busy|timeout|unavailable|network|connection|persistence_failed/.test(error.code)) {
+                if (error.code && error.retryable !== true && !/offline|busy|timeout|unavailable|network|connection|persistence_failed/.test(error.code)) {
                     pending = null; BoardControls.refresh();
                 }
                 operationError = true;

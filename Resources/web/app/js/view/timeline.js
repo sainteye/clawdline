@@ -275,7 +275,9 @@ export function bindTimelinePage(elements, environment) {
         let changed = false, refreshAfterRefusal = false;
         try { const answer = await environment.command(state.pendingMode); state.pendingMode = null; apply(answer.timeline); settingsStatus(""); changed = true; }
         catch (error) {
-            const uncertain = !error?.code || /offline|busy|timeout|unavailable|network|connection|persistence_failed/.test(error.code);
+            // `retryable` is the Cloud failure table's word for the same question (a renewal is
+            // `cloud_reconnecting`, which none of these spellings name).
+            const uncertain = !error?.code || error.retryable === true || /offline|busy|timeout|unavailable|network|connection|persistence_failed/.test(error.code);
             if (!uncertain) { state.pendingMode = null; refreshAfterRefusal = true; }
             settingsStatus(failureSentence(error, words(locale(), "Try again", "請重試")));
         }
