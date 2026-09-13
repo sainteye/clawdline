@@ -1,6 +1,7 @@
 import { phone, releaseKeyboardFocus } from "../core/env.js";
 import { Diagnostics } from "../core/layout-diagnostics.js";
 import { T } from "../core/i18n.js";
+import { failureSentence } from "../core/failure-text.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
@@ -204,8 +205,7 @@ function settleTranscript(key, ticket, outcome, context) {
  * `renderTranscript`, which has had both branches all along and only ever reached the empty one.
  */
 function whyTranscript(e) {
-    if (e && e.code === "offline") return e.message;   // already this page's own sentence
-    return T.webTranscriptFailed;
+    return failureSentence(e, T.webTranscriptFailed);
 }
 
 export function atBottom() {

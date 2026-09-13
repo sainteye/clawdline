@@ -2,6 +2,7 @@ import {
     documentShareURL, normalizeDocumentIdentity, normalizeDocumentLocator, shareDocument
 } from "../net/document-links.js";
 import { documentBodyHTML } from "./document-render.js";
+import { failureSentence } from "../core/failure-text.js";
 
 function words(language) {
     var zh = /^zh(?:-|$)/i.test(language || "");
@@ -19,10 +20,11 @@ function words(language) {
     };
 }
 
+/** A refusal as its code first, then the sentence its code chooses (`core/failure-text.js`). */
 function typedError(error) {
     var code = error && typeof error.code === "string" ? error.code : "document_read_failed";
-    var message = error && error.message ? error.message : "The document could not be read.";
-    return code + ": " + message;
+    return code + ": " + failureSentence(Object.assign({}, error, { code: code }),
+        "The document could not be read.");
 }
 
 /**
@@ -287,12 +289,13 @@ export function bindDocumentsPage(elements, services) {
             if (error || !value) {
                 reset(false);
                 services.navigate("documents", { hash: false });
-                say("malformed_document_locator: " + (error || "Invalid document link."), true);
+                say(typedError({ code: "malformed_document_locator" }).replace(
+                    "The document could not be read.", "Invalid document link."), true);
                 return false;
             }
             var nextLocator;
             try { nextLocator = normalizeDocumentLocator(value); }
-            catch (caught) { return this.openDirect(null, caught.message); }
+            catch (caught) { return this.openDirect(null, caught); }
             reset(false);
             locator = nextLocator;
             displayTitle = locator.path;

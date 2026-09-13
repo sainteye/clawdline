@@ -1,4 +1,5 @@
 import { T, fill } from "../core/i18n.js";
+import { failureSentence } from "../core/failure-text.js";
 import { bindWorktreeLifecycle } from "./worktrees.js";
 
 /** The local places route has an authenticated implicit machine. Attach it at the UI adapter
@@ -417,10 +418,12 @@ function clearAnswer(context) {
  */
 function refusalText(error) {
     var code = error && error.code;
-    if (code === "project_not_found") return T.webProjectNotFound;
-    if (code === "ambiguous_project") return T.webProjectAmbiguous;
-    if (code === "usage_analytics_busy") return T.webProjectBusy;
-    return (error && error.message) || T.webProjectFailed;
+    return failureSentence(error, {
+        sentence: code === "project_not_found" ? T.webProjectNotFound
+            : code === "ambiguous_project" ? T.webProjectAmbiguous
+            : code === "usage_analytics_busy" ? T.webProjectBusy : "",
+        fallback: T.webProjectFailed
+    });
 }
 
 function projectActivity(place, chinese) {
@@ -509,7 +512,7 @@ export async function readProjectPlaces(transport, onMode) {
             var board = answer && answer.board;
             if (!board || board.available === false || typeof board.enabled !== "boolean"
                 || !Array.isArray(board.projects)) {
-                var invalid = new Error(board && board.error && board.error.message || "Board unavailable");
+                var invalid = new Error("Board unavailable");
                 invalid.code = board && board.error && board.error.code || "board_unavailable";
                 throw invalid;
             }
@@ -531,7 +534,7 @@ export async function readProjectPlaces(transport, onMode) {
             if (!baseline || !(/^(board_|http_503$)/.test(error.code || "") || error.status === 503)) throw error;
             var fallback = await transport.places();
             return Object.assign({}, fallback, { boardUnavailable: {
-                code: error.code || "board_unavailable", message: error.message || "Board unavailable"
+                code: error.code || "board_unavailable", message: "Board unavailable"
             } });
         }
     }

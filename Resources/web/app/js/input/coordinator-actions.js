@@ -1,5 +1,6 @@
 import { esc } from "../core/esc.js";
 import { T, fill } from "../core/i18n.js";
+import { failureSentence } from "../core/failure-text.js";
 import { api } from "../net/api.js";
 
 /* --------------------------------------------------------------------------
@@ -619,7 +620,7 @@ export var CoordinatorControls = {
             if (mine !== self.ticket || !self.dom || self.dom.overlay.hidden ||
                 self.session !== target) return;
             var code = nonempty(error && error.code) || "send_failed";
-            var message = nonempty(error && error.message) || T.webRequestFailed;
+            var message = failureSentence(error, T.webRequestFailed);
             panel.innerHTML = '<h3>' + esc(T.webCoordCmdDeepAudit) + '</h3>' +
                 '<p class="coordinator-answer-err">' +
                 esc(fill(T.webCoordAuditFailed, { code: code, message: message })) + "</p>";

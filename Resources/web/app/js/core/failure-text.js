@@ -91,11 +91,15 @@ function detailedSentence(code, error) {
  * `text` is the sentence; `tag` is `code · ref` (just `code` when the failure never reached the
  * wire); `known` says whether the sentence came from the code rather than the fallback. Drawing
  * it is acknowledgement (§2.4), so a Cloud failure is marked `acknowledged` on the trail here.
+ *
+ * `options.sentence` is a screen's own words for this code — the start sheet's "that project is
+ * gone" is better than the general "the Mac no longer has this" — and wins when given.
+ * `options.fallback` is its words for a code nobody here knows. Neither is ever `message`.
  */
 export function describeFailure(error, options) {
-    options = options || {};
+    options = typeof options === "string" ? { fallback: options } : (options || {});
     var code = error && isFailureCode(error.code) ? error.code : "unexpected_error";
-    var sentence = detailedSentence(code, error);
+    var sentence = options.sentence || detailedSentence(code, error);
     var name = SENTENCES[code];
     if (!sentence && name && typeof T[name] === "string") sentence = T[name];
     var known = !!sentence;
@@ -117,9 +121,12 @@ export function describeFailure(error, options) {
     };
 }
 
-/** The sentence and its tag as one line of plain text, for places that can only hold text. */
-export function failureSentence(error, fallback) {
-    var said = describeFailure(error, { fallback: fallback });
+/**
+ * The sentence and its tag as one line of plain text, for places that can only hold text.
+ * The second argument is the fallback sentence, or `{ sentence, fallback }`.
+ */
+export function failureSentence(error, options) {
+    var said = describeFailure(error, options);
     return fill(T.webFailWithTag, { text: said.text, tag: said.tag });
 }
 
@@ -140,6 +147,26 @@ export function failureOpener(error) {
 }
 
 /**
+ * Make a line that already holds a failure's text open the status sheet when pressed — or,
+ * given no error, stop doing so, because the same line says the next success too.
+ */
+export function bindFailureLine(element, error) {
+    if (!element) return;
+    var open = error ? failureOpener(error) : null;
+    // A line that cannot be made pressable still says its failure: nothing here may throw into
+    // the settle that called it, which is the hang `Tests/web-start-sheet-failures.mjs` is about.
+    try {
+        element.onclick = open;
+        if (element.classList && typeof element.classList.toggle === "function") {
+            element.classList.toggle("failure-open", !!open);
+        }
+        if (typeof element.setAttribute === "function" && typeof element.removeAttribute === "function") {
+            if (open) element.setAttribute("title", T.webFailTap); else element.removeAttribute("title");
+        }
+    } catch (e) { /* the words are already on the line */ }
+}
+
+/**
  * Draw one failure into an element: the sentence, then the tag in small type, and the whole
  * line pressable when a status sheet is there to open. Plain text is the fallback wherever the
  * element cannot hold children.
@@ -157,11 +184,6 @@ export function renderFailure(element, error, fallback) {
     tag.className = "failure-tag";
     tag.textContent = said.tag;
     element.appendChild(tag);
-    var open = failureOpener(error);
-    if (open) {
-        element.classList && element.classList.add("failure-open");
-        element.setAttribute && element.setAttribute("title", T.webFailTap);
-        element.onclick = open;
-    }
+    bindFailureLine(element, error);
     return said;
 }

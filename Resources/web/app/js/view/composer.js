@@ -3,7 +3,7 @@ import { esc } from "../core/esc.js";
 import { T, fill, words } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
-import { toast } from "../core/util.js";
+import { toast, toastFailure } from "../core/util.js";
 import { drawSpinner, setLiveSpin, spinPhase } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId } from "./derive.js";
@@ -465,7 +465,7 @@ els.waiting.addEventListener("click", function (ev) {
             })
             .catch(function (e) {
                 if (!selectionEffectCurrent(effect)) return;
-                toast(e.message, true);
+                toastFailure(e, T.webRequestFailed);
                 // Drawn again from scratch, and the cache has to be cleared to allow it: the
                 // markup has not changed, so the guard in `renderWaiting` would keep the dead
                 // buttons on screen and leave nothing to press.
@@ -481,7 +481,7 @@ els.waiting.addEventListener("click", function (ev) {
         if (refresh.getAttribute && refresh.getAttribute("aria-disabled") === "true") return;
         if (refresh.ariaDisabled === "true" || !api ||
             typeof api.refreshSessionEvidence !== "function") return;
-        api.refreshSessionEvidence().catch(function (e) { toast(e.message, true); });
+        api.refreshSessionEvidence().catch(function (e) { toastFailure(e, T.webRequestFailed); });
         return;
     }
 
@@ -514,7 +514,7 @@ els.waiting.addEventListener("click", function (ev) {
     api.focus(selected.route).then(function () {
         if (selectionEffectCurrent(effect)) toast(T.webShowOnMacAsked);
     }).catch(function (e) {
-        if (selectionEffectCurrent(effect)) toast(e.message, true);
+        if (selectionEffectCurrent(effect)) toastFailure(e, T.webRequestFailed);
     }).then(function () { finishSelectionEffect(effect); });
 });
 

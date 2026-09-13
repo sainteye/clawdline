@@ -1,4 +1,5 @@
 import { api } from "../net/api.js";
+import { failureSentence } from "../core/failure-text.js";
 import { Pages } from "../core/pages.js";
 
 function words(en, zh) {
@@ -65,7 +66,7 @@ export var BoardControls = {
             if (!operationError && !saving && node("settings-board-status")) node("settings-board-status").textContent = "";
             return result;
         }).catch(function (error) {
-            if (node("settings-board-status")) node("settings-board-status").textContent = error.message || words("Board unavailable", "無法讀取看板設定");
+            if (node("settings-board-status")) node("settings-board-status").textContent = failureSentence(error, words("Board unavailable", "無法讀取看板設定"));
             return null;
         }).finally(function () { reading = null; });
         return reading;
@@ -89,7 +90,7 @@ export var BoardControls = {
             }).catch(function (error) {
                 operationError = true;
                 if (error.code && !/offline|busy|timeout|unavailable|network|connection|persistence_failed/.test(error.code)) pending = null;
-                node("settings-board-status").textContent = error.message || words("Save failed", "儲存失敗");
+                node("settings-board-status").textContent = failureSentence(error, words("Save failed", "儲存失敗"));
             }).finally(function () { saving = false; BoardControls.apply(latest); });
         });
         node("settings-board-toggle").addEventListener("click", function () {
@@ -110,7 +111,7 @@ export var BoardControls = {
                     pending = null; BoardControls.refresh();
                 }
                 operationError = true;
-                node("settings-board-status").textContent = (error.message || "Save failed") +
+                node("settings-board-status").textContent = failureSentence(error, words("Save failed", "儲存失敗")) +
                     words(" · Press again to retry.", " · 再按一次重試。");
             }).finally(function () {
                 saving = false;

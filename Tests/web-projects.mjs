@@ -256,7 +256,7 @@ const module = await import(pathToFileURL(join(root, "Resources/web/app/js/view/
 check(typeof module.bindProjectsPage === "function",
       "view/projects.js exports the executable bindProjectsPage");
 
-const { T } = await import(pathToFileURL(join(root, "Resources/web/app/js/core/i18n.js")).href);
+const { T, fill } = await import(pathToFileURL(join(root, "Resources/web/app/js/core/i18n.js")).href);
 
 function harness(options = {}) {
     const doc = new FakeDocument();
@@ -413,8 +413,8 @@ for (const [count, status, coverage, expected, tone] of [
     });
     await page.enter();
     await flush();
-    equal(elements["projects-status"].textContent, "Busy",
-          "a refusal from /v1/places is the Mac's own words, not an empty list");
+    equal(elements["projects-status"].textContent, fill(T.webFailWithTag, { text: T.webFailMacBusy, tag: "busy" }),
+          "a refusal from /v1/places is said by its code with the code on the line, not an empty list and not the Mac's English");
     equal(elements["projects-rows"].children.length, 0, "and nothing stale is left under it");
 }
 
@@ -706,7 +706,8 @@ for (const [code, expected, why] of [
     await flush();
     elements["projects-rows"].querySelectorAll(".project-row")[0].click();
     await flush();
-    equal(elements["project-status"].textContent, expected, `${code}: ${why}`);
+    equal(elements["project-status"].textContent, fill(T.webFailWithTag, { text: expected, tag: code }),
+          `${code}: ${why}`);
     equal(elements["project-read"].textContent, "",
           `${code}: a refusal carries no receipt, which is how it is told from an empty answer`);
     equal(elements["project-delivered"].hidden, true, `${code}: and draws no count`);
@@ -722,8 +723,9 @@ for (const [code, expected, why] of [
     await flush();
     elements["projects-rows"].querySelectorAll(".project-row")[0].click();
     await flush();
-    equal(elements["project-status"].textContent, "Failed to fetch",
-          "an error the page has no sentence for keeps the one it was given");
+    equal(elements["project-status"].textContent,
+          fill(T.webFailWithTag, { text: T.webProjectFailed, tag: "unexpected_error" }),
+          "an error the page has no code for is this page's sentence, never the message it was thrown with");
 }
 
 /* ---- the scan that hit its ceiling --------------------------------------- */
@@ -898,8 +900,8 @@ for (const [id, key] of [["nav-projects", "webProjects"], ["projects-title", "we
 }
 
 const imports = [...moduleSource.matchAll(/^import\s[^;]*?from\s+"([^"]+)"/gm)].map((m) => m[1]);
-equal(imports.join(","), "../core/i18n.js,./worktrees.js",
-      "view/projects.js imports only words and the DOM-injected lifecycle renderer, so Node can drive it");
+equal(imports.join(","), "../core/i18n.js,../core/failure-text.js,./worktrees.js",
+      "view/projects.js imports only words, failure words and the DOM-injected lifecycle renderer, so Node can drive it");
 check(!/document\.getElementById/.test(moduleSource),
       "and reaches for no element of its own: the table arrives from main.js");
 /* Where the words come from. `tools/check-web-strings.py` holds `T.<name>` against the fallback

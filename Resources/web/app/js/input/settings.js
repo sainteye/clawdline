@@ -9,6 +9,7 @@ import { renderTranscript } from "../view/transcript.js";
 import { BoardControls } from "./board-settings.js";
 import { callSessionUI } from "../session/ui.js";
 import { CloudStatus } from "./cloud-status.js";
+import { failureSentence } from "../core/failure-text.js";
 
 var Push = {
     redraw: function () { return callSessionUI("redrawPush"); },
@@ -177,7 +178,7 @@ export var Settings = (function () {
                 // a one-sentence way out of it, and saying the sentence is more use than an
                 // error toast with a number in it.
                 say(e && e.code === "not_subscribed" ? T.webNotifyTestNone
-                    : (e && e.message) || T.webNotifyTestFailed);
+                    : failureSentence(e, T.webNotifyTestFailed));
             }).then(function () {
                 testing = false;
                 Push.redraw();

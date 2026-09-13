@@ -237,10 +237,12 @@ if (transportKind === "cloud") {
     // the sheet's key-drift row leads to the same encryption repair the Cloud door already offers.
     CloudStatus.bindFailureLines();
     CloudStatus.onRepair(function () {
-        S.locked = true;
-        handlers.conn("locked");
-        cloudGateUp = true;
-        showCloudSessionAccessProblem("encryption");
+        // The door a typed key error raises, reached through that same event rather than a copy
+        // of its handler below: the connected client's listener decides it is `encryption`.
+        if (api && typeof api._emit === "function") {
+            api._emit({ type: "error", error: Object.assign(new Error("key id drift"),
+                { code: "unreadable_envelope" }) });
+        }
     });
     var cloudOnboarding = cloudOnboardingMode(window);
     if (cloudOnboarding === "install") {

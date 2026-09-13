@@ -3,7 +3,8 @@ import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { api } from "../net/api.js";
-import { toast } from "../core/util.js";
+import { toast, toastFailure } from "../core/util.js";
+import { failureSentence } from "../core/failure-text.js";
 import { ActionConfirm } from "./action-confirm.js";
 import { byId } from "../view/derive.js";
 import { SessionSelection } from "../session/selection.js";
@@ -146,7 +147,7 @@ export var ShellPanel = (function () {
             // A command that ended while this was open has its row taken off the strip, and the
             // route answers 404 for an id the session no longer lists. That is the ordinary end
             // of watching one, not a failure to report.
-            error = e && e.code === "not_found" ? null : (e.message || T.webShellFailed);
+            error = e && e.code === "not_found" ? null : failureSentence(e, T.webShellFailed);
             if (!error) {
                 snapshot = { text: (snapshot && snapshot.text) || "", ended: true };
                 els["shell-stop"].hidden = true;
@@ -194,7 +195,7 @@ export var ShellPanel = (function () {
                     if (forSelection === sid && shellId === id) load(true);
                 }).catch(function (e) {
                     if (SessionSelection.effectIsCurrent(effect)) {
-                        toast(e.message || T.webShellStopFailed, true);
+                        toastFailure(e, T.webShellStopFailed);
                     }
                 }).then(function () { SessionSelection.finishEffect(effect); });
             }

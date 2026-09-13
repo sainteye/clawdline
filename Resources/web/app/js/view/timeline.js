@@ -1,3 +1,5 @@
+import { failureSentence } from "../core/failure-text.js";
+
 const STATUS = {
     available: ["Available", "已上線", "success"],
     limited: ["Limited rollout", "有限上線", "warning"],
@@ -259,7 +261,7 @@ export function bindTimelinePage(elements, environment) {
             apply(snapshot); drawProject(snapshot); drawEntries(rendered); drawDetail(snapshot.selected);
             status((snapshot.status === "stale" ? words(locale(), "Showing retained history while sources refresh. ", "來源更新中，先顯示保留的歷史。") : "") + historyCoverage(snapshot));
             return snapshot;
-        } catch (error) { status(error.message || words(locale(), "Timeline unavailable", "Timeline 無法讀取")); return null; }
+        } catch (error) { status(failureSentence(error, words(locale(), "Timeline unavailable", "Timeline 無法讀取"))); return null; }
         finally { state.loading = false; apply({ enabled: state.enabled, revision: state.revision }); }
     }
     async function openEntry(id) { state.entryId = id; await refresh(); }
@@ -275,7 +277,7 @@ export function bindTimelinePage(elements, environment) {
         catch (error) {
             const uncertain = !error?.code || /offline|busy|timeout|unavailable|network|connection|persistence_failed/.test(error.code);
             if (!uncertain) { state.pendingMode = null; refreshAfterRefusal = true; }
-            settingsStatus(error.message || words(locale(), "Try again", "請重試"));
+            settingsStatus(failureSentence(error, words(locale(), "Try again", "請重試")));
         }
         finally { state.loading = false; apply({ enabled: state.enabled, revision: state.revision }); }
         if (changed || refreshAfterRefusal) await refresh();

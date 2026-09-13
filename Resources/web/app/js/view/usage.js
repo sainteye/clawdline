@@ -1,6 +1,8 @@
 /* Project Portfolio rendering. Accounting decisions are made by UsageQueryService; this module
    only turns its typed availability and reason codes into visible, keyboard-reachable UI. */
 
+import { failureSentence } from "../core/failure-text.js";
+
 export function formatUsageNumber(value) {
     if (value === null || value === undefined) return "Unknown";
     return new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
@@ -116,14 +118,24 @@ function featureRoleText(reading) {
 
 function errorFrom(response) {
     return response.json().catch(function () { return {}; }).then(function (body) {
-        var error = body.error || {}, code = error.code || "usage_error";
-        if (code === "usage_analytics_busy") {
-            throw new Error("Usage Analytics is busy; sessions remain available. Try again shortly.");
-        }
-        if (code === "export_too_large") {
-            throw new Error("This range exceeds the matched-row export limit. Narrow the dates or filters and try again.");
-        }
-        throw new Error(error.message || "Usage could not be read (" + response.status + ").");
+        var error = body.error || {}, code = typeof error.code === "string" && error.code ? error.code : "usage_error";
+        var refused = new Error(code);
+        refused.code = code;
+        refused.status = response.status;
+        throw refused;
+    });
+}
+
+/** A Usage refusal in this page's words, chosen by its code, with the code after it. */
+function usageRefusal(error) {
+    var code = error && error.code;
+    return failureSentence(error, {
+        sentence: code === "usage_analytics_busy"
+            ? "Usage Analytics is busy; sessions remain available. Try again shortly."
+            : code === "export_too_large"
+                ? "This range exceeds the matched-row export limit. Narrow the dates or filters and try again."
+                : "",
+        fallback: "Usage could not be read" + (error && error.status ? " (" + error.status + ")." : ".")
     });
 }
 
@@ -636,7 +648,7 @@ export function bindUsagePortfolio(elements, environment) {
             URL.revokeObjectURL(url);
             elements["usage-status"].textContent = "Export downloaded.";
         }).catch(function (error) {
-            elements["usage-status"].textContent = error.message;
+            elements["usage-status"].textContent = usageRefusal(error);
         }).finally(function () { state.exporting = false; });
     }
 
@@ -672,7 +684,7 @@ export function bindUsagePortfolio(elements, environment) {
             render(body.usage, append);
             elements["usage-status"].textContent = "";
         }).catch(function (error) {
-            elements["usage-status"].textContent = error.message;
+            elements["usage-status"].textContent = usageRefusal(error);
             if (!append && state.data) {
                 var oldRange = state.data.range || {};
                 var oldLabel = (oldRange.from || "unbounded") + "…" + (oldRange.to || "unbounded");

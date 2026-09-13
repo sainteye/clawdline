@@ -4,7 +4,7 @@ import { appendGap, appendedText } from "../core/compose-text.js";
 import { T } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
-import { toast } from "../core/util.js";
+import { toast, toastFailure } from "../core/util.js";
 import { api } from "../net/api.js";
 import { byId, sessionSuggestedReply, replySessionIdentity } from "../view/derive.js";
 import { closingID, closingKey } from "../view/list.js";
@@ -424,7 +424,7 @@ function submit() {
         // The words are still in the box — they were never taken out of it — so the press can
         // simply be repeated. A composer that clears itself and then fails is a composer that
         // ate somebody's message.
-        toast(e.message || T.sendFailed, true);
+        toastFailure(e, T.sendFailed);
     }).then(function () {
         SessionSelection.finishEffect(effect);
         sending = false;

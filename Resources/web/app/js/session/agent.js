@@ -1,5 +1,6 @@
 import { phone, reduced } from "../core/env.js";
 import { T, fill } from "../core/i18n.js";
+import { failureSentence } from "../core/failure-text.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { api } from "../net/api.js";
@@ -113,7 +114,7 @@ export function loadAgent(sid, agentId, quiet) {
             a.selectionKey !== selected.identity.key) { return; }
         a.entries = [];
         a.loading = false;
-        a.error = e.message || T.webTranscriptFailed;
+        a.error = failureSentence(e, T.webTranscriptFailed);
         Waits.tx.settle(renderTranscript);
     });
 }
