@@ -9,9 +9,15 @@ import Foundation
 /// valid response. Every accepted sample starts a fresh 60-second stability window. Keeping time
 /// accumulated before that new calibration would combine evidence from different baselines, so a
 /// caller must leave one complete window after its last sample before expecting admission.
+/// A caller whose samples arrive on their own schedule — a token renewal, a reconnect — offers
+/// each one through `offerServerDate(_:)` instead, which calibrates only when no calibration is
+/// live. Feeding every renewal to `acceptServerDate(_:)` closes admission for a full window after
+/// each one: on 2026-09-13 that refused Cloud commands for 60 of every 240 seconds.
 /// The three time inputs are closures so tests and callers can provide one coherent snapshot
-/// without consulting real time. The caller must only pass a TLS-authenticated, pinned-HTTPS
-/// server `Date` to `acceptServerDate(_:)`; an unauthenticated value defeats this guard.
+/// without consulting real time. `continuous` must keep counting while the host sleeps; a counter
+/// that stops reads every sleep as a forward wall jump. The caller must only pass a
+/// TLS-authenticated, pinned-HTTPS server `Date` to either entry; an unauthenticated value
+/// defeats this guard.
 public struct CloudClock {
     public typealias Wall = () -> Date
     public typealias Continuous = () -> TimeInterval
@@ -112,6 +118,26 @@ public final class EpochGuard {
             state: state,
             effect: wasReady ? .deleteReservedRow(.stabilityPeriodIncomplete) : .none
         )
+    }
+
+    /// Offers a TLS-authenticated server sample that arrived for its own reasons, such as a
+    /// device-token renewal. Arriving is not evidence that the clock became uncertain, so the
+    /// sample calibrates only when no calibration is live: at startup, and after an anomaly or a
+    /// rejected sample invalidated the last one. While a calibration is live — a stability window
+    /// in progress or `.ready` — the guard first observes the current snapshot, so a discontinuity
+    /// since the last observation still invalidates and this same sample then recovers, and the
+    /// sample must still lie within `maximumServerWallDifference` of the wall clock.
+    public func offerServerDate(_ serverDate: Date) -> EpochGuardUpdate {
+        guard calibration != nil else { return acceptServerDate(serverDate) }
+        let observed = observe()
+        guard calibration != nil, let observedWall = lastWall else {
+            let recovered = acceptServerDate(serverDate)
+            return EpochGuardUpdate(state: recovered.state, effect: observed.effect)
+        }
+        guard abs(serverDate.timeIntervalSince(observedWall)) <= Self.maximumServerWallDifference else {
+            return becomeUncertain(.serverSampleTooFar, invalidateCalibration: true)
+        }
+        return observed
     }
 
     /// Observes one injected clock snapshot and advances or invalidates the guard.

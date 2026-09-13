@@ -141,6 +141,13 @@ in-progress work as explicitly unknown. Store-originated persist/fsync/rename/re
 propagate through admission and startup; no convenience path catches them into an empty ledger.
 The Mac calibrates its real epoch guard only from authenticated server time and re-reads epoch,
 paired-device roster, and (for writes) `remoteWrite` after durable reservation at the effect point.
+Every device-token fetch carries that server time, and the token rotates every four minutes, so a
+fetch only offers it: the sample establishes calibration at startup or after an anomaly invalidated
+the last one, and otherwise leaves a ready guard or a running 60-second window alone while still
+observing wall rollback, forward jump, boot-id change, continuous reversal and a sample more than
+five minutes off. The guard's continuous clock is `CLOCK_MONOTONIC_RAW`, which counts through system
+sleep, so waking is not read as a wall jump; the ledger's own continuous deadlines stay on
+`DispatchTime` and never meet the guard's readings.
 A revocation there durably releases the reservation and performs no effect. Live in-progress
 duplicates join the current owner; store failures terminate all waiters with either a retry after
 durable release or a typed uncertainty once an effect has started.

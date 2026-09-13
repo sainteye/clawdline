@@ -129,17 +129,55 @@ struct CloudSupervisedDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
 /// Thread-safe owner of the real host epoch guard. Only a Date header from a successful pinned
 /// HTTPS device-token response establishes calibration; every command effect observes the guard
 /// again after durable reservation.
-private final class CloudCommandEpochAuthority: @unchecked Sendable {
+///
+/// Both halves of that wiring live here — the token provider that feeds the guard and the
+/// effect-time authorization that reads it — so `Services.production()` and the tests compose
+/// the same code. Tests replace only the two leaf readings, the wall clock and the kernel clock.
+///
+/// The device token rotates every four minutes and every rotation or reconnect carries a server
+/// date, so a date is offered, never forced: it calibrates only a guard that has no live
+/// calibration. Re-arming on each one refused every command for the minute after each rotation.
+///
+/// The guard's continuous clock is `CLOCK_MONOTONIC_RAW` (`mach_continuous_time`), which keeps
+/// counting while the Mac sleeps. `ProcessInfo.systemUptime` and `CLOCK_UPTIME_RAW` stop, so the
+/// guard read every wake as a forward wall jump and refused commands until the next token fetch
+/// plus a full window; measured on this Mac on 2026-09-13 they stood 60,262 s behind
+/// wall time since boot, while `CLOCK_MONOTONIC_RAW` stood within 6 s of it over 913,711 s.
+/// The ledger's own `continuousNow` and `effectNotAfterContinuous` stay on
+/// `DispatchTime.uptimeNanoseconds`: those values are compared only with each other, and none of
+/// this guard's readings leaves it — the ledger receives `.ready` or `.uncertain`, nothing more.
+final class CloudCommandEpochAuthority: @unchecked Sendable {
+    typealias KernelNanoseconds = (clockid_t) -> UInt64
+
     private static let bootID = UUID().uuidString.lowercased()
     private let lock = NSLock()
-    private let guardState = EpochGuard(clock: CloudClock(
-        wall: { Date() },
-        continuous: { ProcessInfo.processInfo.systemUptime },
-        bootID: { CloudCommandEpochAuthority.bootID }))
+    private let guardState: EpochGuard
+
+    init(
+        wall: @escaping () -> Date = { Date() },
+        kernelNanoseconds: @escaping KernelNanoseconds = { clock_gettime_nsec_np($0) }
+    ) {
+        guardState = EpochGuard(clock: CloudClock(
+            wall: wall,
+            continuous: { TimeInterval(kernelNanoseconds(CLOCK_MONOTONIC_RAW)) / 1_000_000_000 },
+            bootID: { CloudCommandEpochAuthority.bootID }))
+    }
+
+    func supervisedTokenProvider(
+        inner: any CloudDeviceTokenProviding,
+        onTerminalFailure: @escaping @Sendable (CloudTransportError) -> Void
+    ) -> CloudSupervisedDeviceTokenProvider {
+        CloudSupervisedDeviceTokenProvider(
+            inner: inner,
+            onTerminalFailure: onTerminalFailure,
+            onAuthenticatedServerDate: { [self] date in
+                acceptAuthenticatedServerDate(date)
+            })
+    }
 
     func acceptAuthenticatedServerDate(_ date: Date) {
         lock.lock(); defer { lock.unlock() }
-        _ = guardState.acceptServerDate(date)
+        _ = guardState.offerServerDate(date)
     }
 
     func current() -> CloudEpochGuardState {
@@ -148,6 +186,15 @@ private final class CloudCommandEpochAuthority: @unchecked Sendable {
         case .ready: return .ready
         case .uncertain: return .uncertain
         }
+    }
+
+    func effectAuthorization(
+        rosterAllowsSender: Bool, writeGateAllows: Bool
+    ) -> CloudCommandEffectAuthorization {
+        CloudCommandEffectAuthorization(
+            epochState: current(),
+            rosterAllowsSender: rosterAllowsSender,
+            writeGateAllows: writeGateAllows)
     }
 }
 
@@ -557,12 +604,9 @@ extension CloudBridgeLifecycle.Services {
             makeTransport: { identity, app, onTerminalFailure in
                 CloudTransport.production(
                     relayBaseURL: relayBaseURL,
-                    tokenProvider: CloudSupervisedDeviceTokenProvider(
+                    tokenProvider: epochAuthority.supervisedTokenProvider(
                         inner: client.deviceTokenProvider(),
-                        onTerminalFailure: onTerminalFailure,
-                        onAuthenticatedServerDate: { date in
-                            epochAuthority.acceptAuthenticatedServerDate(date)
-                        }),
+                        onTerminalFailure: onTerminalFailure),
                     keyProvider: CloudLifecycleKeyProvider(
                         identityAuthority: identityAuthority),
                     logger: { Log.write("cloud: \($0)") })
@@ -592,8 +636,7 @@ extension CloudBridgeLifecycle.Services {
                     let rosterAllows = (try? identityAuthority.snapshot().pairedDevices.contains {
                         $0.deviceID == sender
                     }) == true
-                    return CloudCommandEffectAuthorization(
-                        epochState: epochAuthority.current(),
+                    return epochAuthority.effectAuthorization(
                         rosterAllowsSender: rosterAllows,
                         writeGateAllows: !requiresWriteGate || Config.shared.remoteWrite)
                 }
