@@ -194,6 +194,24 @@ build_package() {
   [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] || fail "source commit must be 40 lowercase hex characters"
   [[ "$source_epoch" =~ ^[0-9]+$ ]] || fail "source-date-epoch must be an integer"
 
+  # Real Linux ELF packages carry one executable and no Swift runtime directory. Refuse the exact
+  # fresh-host failure where a container-built binary needs libswift/Foundation shared objects
+  # that the archive never installs. Script fixtures are intentionally non-ELF and skip this host
+  # linkage check; the real Ubuntu build gate above exercises the ELF path.
+  if python3 - "$binary" <<'PY'
+import sys
+with open(sys.argv[1], "rb") as handle:
+    raise SystemExit(0 if handle.read(4) == b"\x7fELF" else 1)
+PY
+  then
+    require_command ldd
+    local linkage
+    linkage=$(ldd "$binary" 2>&1) || fail "could not inspect package binary linkage"
+    if printf '%s\n' "$linkage" | grep -Eq 'libswift|libFoundation|=> not found'; then
+      fail "package binary depends on an unavailable Swift/Foundation runtime"
+    fi
+  fi
+
   local contract_json configuration_schema configuration_read_minimum
   local binary_write binary_read_minimum binary_read_maximum protocol_identity
   contract_json=$("$binary" release-contract 2>/dev/null) \

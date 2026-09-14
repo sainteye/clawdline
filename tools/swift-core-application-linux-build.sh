@@ -108,7 +108,8 @@ trap cleanup EXIT
 swift_build_configuration=${SWIFT_CORE_APPLICATION_LINUX_BUILD_CONFIGURATION:-debug}
 swift_build_jobs=${SWIFT_CORE_APPLICATION_LINUX_BUILD_JOBS:-1}
 if swift build --product ClawdlineLinux \
-  -c "$swift_build_configuration" -j "$swift_build_jobs" 2>&1 | tee "$build_log"; then
+  -c "$swift_build_configuration" -j "$swift_build_jobs" --static-swift-stdlib \
+  2>&1 | tee "$build_log"; then
   build_status=0
 else
   build_status=$?
@@ -126,8 +127,16 @@ linux_binary="$linux_bin_dir/ClawdlineLinux"
 # command cannot quietly turn into a lexical or mock-only proof on Ubuntu.
 CLAWDLINE_TEST_TMUX=$(command -v tmux) \
 CLAWDLINE_TEST_LINUX_EXECUTABLE="$linux_binary" swift test \
-  -c "$swift_build_configuration" -j "$swift_build_jobs" \
+  -c "$swift_build_configuration" -j "$swift_build_jobs" --static-swift-stdlib \
   --filter LinuxRuntimeContractTests
+
+# The signed package installs only this executable, not a Swift runtime tree. A dynamically linked
+# product can pass every container test and still fail immediately on a fresh Ubuntu host. Keep
+# the package input self-contained while allowing ordinary system libraries such as libcurl.
+linux_linkage=$(ldd "$linux_binary" 2>&1) || fail "could not inspect Linux product linkage"
+if printf '%s\n' "$linux_linkage" | grep -Eq 'libswift|libFoundation|=> not found'; then
+  fail "ClawdlineLinux package input still depends on an absent Swift/Foundation runtime"
+fi
 
 # Execute the protected-input and not-ready contract on the Linux runtime that CI ships. This is
 # POSIX-shell driven so the job does not rely on Node being present in the Swift container.

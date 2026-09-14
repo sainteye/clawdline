@@ -93,6 +93,11 @@ it to `false`, and package installation refuses to silently change an existing e
 Enabling it is therefore an authenticated release input (`linux-package.sh install
 --cloud-commands-enabled true`), not an inferred consequence of installing W5-4 source.
 
+The Ubuntu release build uses `--static-swift-stdlib`, and both the build gate and package builder
+reject an ELF that still names a Swift/Foundation shared object or any unresolved dependency.
+The archive therefore remains runnable on a fresh Ubuntu 24.04 host without installing a separate
+Swift toolchain; ordinary distribution libraries such as libcurl remain host dependencies.
+
 A fresh host is enrolled before the daemon starts by running `ClawdlineLinux cloud-login
 --config /etc/clawdline/daemon.json` as the configured non-root service user. The command opens
 only the protected Linux state and secret stores, prints a JSON-line invitation containing the

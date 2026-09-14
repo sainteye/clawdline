@@ -94,6 +94,14 @@ check(!/case "cloud-login": return \.cloudLogin/.test(
   'removing the Linux enrollment command must make the package guard red');
 check(/--product ClawdlineLinux/.test(linuxBuild),
   'Ubuntu compiler check must build the Linux executable product');
+const selfContainedPackage = /--static-swift-stdlib/.test(linuxBuild)
+  && /grep -Eq 'libswift\|libFoundation\|=> not found'/.test(linuxBuild)
+  && /package binary depends on an unavailable Swift\/Foundation runtime/.test(packageTool);
+check(selfContainedPackage,
+  'the signed Linux package must carry a fresh-host self-contained Swift product');
+check(!/--static-swift-stdlib/.test(
+  linuxBuild.replaceAll('--static-swift-stdlib', '--dynamic-swift-stdlib')),
+  'removing static Swift linkage must make the package guard red');
 check(/swift test/.test(linuxBuild) && /CLAWDLINE_TEST_TMUX/.test(linuxBuild),
   'Ubuntu compiler check must execute the real Linux SwiftPM runtime contracts with tmux');
 const macFocusedRuntime = /--filter LinuxRuntimeContractTests/.test(testRunner)
