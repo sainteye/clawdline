@@ -1340,7 +1340,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
                 "a command's tail reaches the broker with the bound it was asked for")
     let shellName = try opened(transport.envelopes()[6])["read"] as? String
     try require(shellName == "shell:sh-9", "and its answer names the command, not the kind")
-
     await router.answerReadsWith(CloudReadResult(
         status: 200, body: Data(#"{"agent":{"id":"a-1"},"entries":[]}"#.utf8)
     ))
@@ -1354,7 +1353,6 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     let secondAgentRead = await router.recordedReads().last?.read
     try require(secondAgentRead == .agent(session: "plain", agent: "a-2", limit: 200),
                 "and the second reaches the broker as its own agent with its own window")
-
     let wellFormed: [String: String] = [
         "transcript": #"{"type":"transcript","session":"typed","limit":200}"#,
         "info": #"{"type":"info","session":"typed","parts":"full"}"#,
@@ -1382,12 +1380,14 @@ private func runCloudAppBridgeReadTests() async throws -> Int {
     for type in CloudAppBridge.readTypes.sorted() {
         let readsBeforeType = await router.recordedReads().count
         let envelopesBeforeType = transport.envelopes().count
+        if CloudV2ReadCatalog.requiresWriteGate(for: type) { gate.set(true) }
         transport.yield(wellFormed[type]!, sequence: typedSequence)
         typedSequence += 1
         try await waitForCloudAppBridge("the \(type) read type to parse and route") {
             await router.recordedReads().count == readsBeforeType + 1 }
         try await waitForCloudAppBridge("the \(type) read type to be answered") {
             transport.envelopes().count == envelopesBeforeType + 1 }
+        if CloudV2ReadCatalog.requiresWriteGate(for: type) { gate.set(false) }
     }
     let typedReads = await router.recordedReads().suffix(wellFormed.count)
     let typedNames = Set(typedReads.map(\.read.name))

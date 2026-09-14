@@ -20,7 +20,7 @@ struct CloudTestHarnessFailure: Error, CustomStringConvertible {
 
 let expectedCloudSuiteNames = [
     "CloudEnvelope", "CloudAccount", "CloudTransport", "CloudAppBridge", "CloudSettings",
-    "ScheduleResume", "CloudClock", "CloudCanonicalJSON", "CloudCommandLedger",
+    "ScheduleResume", "CloudClock", "CloudCanonicalJSON", "CloudV2Protocol", "CloudCommandLedger",
     "CloudOutboundSpool", "CloudPairing", "CloudLifecycle",
 ]
 let cloudTestSuites: [CloudTestSuite] = [
@@ -35,6 +35,9 @@ let cloudTestSuites: [CloudTestSuite] = [
     CloudTestSuite(name: "CloudClock", run: { try await runCloudClockTests() }),
     CloudTestSuite(name: "CloudCanonicalJSON", run: {
         try await runCloudCanonicalJSONTests()
+    }),
+    CloudTestSuite(name: "CloudV2Protocol", run: {
+        try await runCloudV2ProtocolTests()
     }),
     // The ledger suite creates unstructured tasks to prove duplicate coalescing. Run its complete
     // lifecycle from the generic executor, matching its independently verified standalone entry,
@@ -52,7 +55,7 @@ let cloudTestSuites: [CloudTestSuite] = [
         try await runCloudLifecycleTests(vectorsURL: cloudVectorsURL)
     }),
 ]
-let cloudTestCompletionReceiptPrefix = "CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=12 suites="
+let cloudTestCompletionReceiptPrefix = "CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=13 suites="
 let cloudFocusedTestCompletionReceiptPrefix = "CLAWDLINE_CLOUD_FOCUSED_TESTS_COMPLETE v=1 suite_count="
 
 let selectedCloudTestSuites: [CloudTestSuite]
@@ -190,9 +193,9 @@ Task {
     var cloudReceiptReady = false
     do {
         let registeredNames = cloudTestSuites.map(\.name)
-        guard cloudTestSuites.count == 12 else {
+        guard cloudTestSuites.count == 13 else {
             throw CloudTestHarnessFailure(
-                description: "Cloud suite registry has \(cloudTestSuites.count) entries, expected 12")
+                description: "Cloud suite registry has \(cloudTestSuites.count) entries, expected 13")
         }
         let (afterRegistryCountCheck, registryCountOverflow) = checks.addingReportingOverflow(1)
         guard !registryCountOverflow else {
@@ -253,7 +256,7 @@ Task {
                     description: "Cloud suite completion order/count did not match its selection")
             }
             guard cloudFocusedTestSelectionRaw != nil ||
-                  (completedCloudSuiteNames.count == 12 &&
+                  (completedCloudSuiteNames.count == 13 &&
                    completedCloudSuiteNames == expectedCloudSuiteNames) else {
                 throw CloudTestHarnessFailure(
                     description: "Cloud suite completion order/count did not match the expected registry")

@@ -15,7 +15,7 @@ fi
 
 cloud_receipt_prefix='CLAWDLINE_CLOUD_TESTS_COMPLETE'
 cloud_focused_receipt_prefix='CLAWDLINE_CLOUD_FOCUSED_TESTS_COMPLETE'
-cloud_suite_roster='CloudEnvelope,CloudAccount,CloudTransport,CloudAppBridge,CloudSettings,ScheduleResume,CloudClock,CloudCanonicalJSON,CloudCommandLedger,CloudOutboundSpool,CloudPairing,CloudLifecycle'
+cloud_suite_roster='CloudEnvelope,CloudAccount,CloudTransport,CloudAppBridge,CloudSettings,ScheduleResume,CloudClock,CloudCanonicalJSON,CloudV2Protocol,CloudCommandLedger,CloudOutboundSpool,CloudPairing,CloudLifecycle'
 # Completion counts are observations from this run, not source-controlled expectations. Keeping
 # the previous tree's totals in this file made every legitimate assertion change require a
 # measurement full, a source rewrite, and a second identical full. The runtime receipt still
@@ -1565,6 +1565,7 @@ required_cloud_test_files=(
   Tests/ScheduleResumeTests.swift
   Tests/CloudClockTests.swift
   Tests/CloudCanonicalJSONTests.swift
+  Tests/CloudV2ProtocolTests.swift
   Tests/CloudCommandLedgerTests.swift
   Tests/CloudOutboundSpoolTests.swift
   Tests/CloudPairingTests.swift

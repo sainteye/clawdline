@@ -948,7 +948,8 @@ export class CloudClient {
     /** The Project worktree lifecycle read model from one Mac, named by its Board Project id.
      * The service knows nothing about Cloud identity, so this client attaches the authenticated
      * route machine to the answer: a row is located by (machine, owner.sessionId), never a title.
-     * The refresh is a read-admitted bounded observation. No cleanup method exists here. */
+     * Refresh is command-classified because it runs processes and mutates the Mac cache; Cloud
+     * therefore requires the Mac's remote-write authority. No cleanup method exists here. */
     projectWorktreeLifecycle(project, machine) {
         return this._worktreeLifecycle("project-worktree-lifecycle", project, machine);
     }

@@ -113,6 +113,7 @@ targets.insert(
                 "TerminalCommandScheduler.swift",
                 "Assistant.swift",
                 "CloudCanonicalJSON.swift",
+                "CloudV2Protocol.swift",
                 "CloudClock.swift",
                 "CloudCommandLedger.swift",
                 "CloudOutboundSpool.swift",

@@ -1081,7 +1081,7 @@ is written, and this document is not that place for any of them.
 |---|---:|---|
 | ordered groups | 669 | `Tests/TestGroupManifest.swift`, counted by the guard |
 | ordered runners | 53 | `Tests/main.swift`, counted by the guard |
-| suite files | 69 | `Tests/*Tests.swift`, counted by the guard |
+| suite files | 70 | `Tests/*Tests.swift`, counted by the guard |
 | `Orchestrator.swift` ceiling | 10,687 | the ratchet in `tools/check-architecture-boundaries.sh` |
 | `RemoteServer.swift` ceiling | 5,761 | the receipt in `tools/check-architecture-boundaries.sh` |
 

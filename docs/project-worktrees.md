@@ -137,12 +137,16 @@ ledger that exists but cannot be read is `cleanup_ledger_unavailable`, and its b
 |---|---|---|---|
 | orchestrator token (a local process) | yes | yes | yes |
 | paired device with `read` | yes | yes | `403 machine_token_required` |
-| verified Cloud viewer | `project-worktree-lifecycle` | `project-worktree-lifecycle-refresh` | not in the vocabulary; `403` if reached |
+| verified Cloud viewer | `project-worktree-lifecycle` | command-authorized `project-worktree-lifecycle-refresh` | not in the vocabulary; `403` if reached |
 
 A read capability never implies a cleanup capability, and a Cloud request is never treated as the
 machine credential whatever it carries. The Web transports expose exactly two methods,
 `projectWorktreeLifecycle(project)` and `projectWorktreeLifecycleRefresh(project)`, and no cleanup
-method.
+method. The Cloud refresh compatibility spelling runs processes and mutates the lifecycle cache,
+so the Mac checks its pinned sender roster, guarded clock, and remote-write gate at admission and
+again immediately before the effect. Its typed authority refusals are `cloud_commands_disabled`,
+`unknown_sender`, `command_clock_uncertain`, and `command_roster_unreadable`. Direct local paired
+device route admission remains the read-capability contract shown above.
 
 ## Bounds
 

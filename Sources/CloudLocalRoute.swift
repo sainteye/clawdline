@@ -157,7 +157,7 @@ struct CloudLocalRoute: Sendable {
         case .projectWorktreeLifecycle(_, _, let project):
             route = "/v1/projects/\(Self.segment(project))/worktrees"
         case .projectWorktreeLifecycleRefresh(_, _, let project):
-            // A read-admitted observation: POST only because the local GET never probes.
+            // A process-running cache mutation: Cloud rechecks remote-write authority before it.
             routeMethod = "POST"
             route = "/v1/projects/\(Self.segment(project))/worktrees/refresh"
         case .pastSessions(_, _, let place, let assistant):

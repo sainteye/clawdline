@@ -731,7 +731,8 @@ done
 # out of the already sealed 2,000-line ProjectBoardWorkflowTests.swift.
 # 69 with Tests/CloudTransparencyTests.swift, the Cloud error-transparency failure-injection suite;
 # it has its own file because Tests/CloudAppBridgeTests.swift is nine lines from the limit above.
-suite_count_expected=69
+# 70 with Tests/CloudV2ProtocolTests.swift, the verified storage and closed read-catalog contract.
+suite_count_expected=70
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's held-lock doors are closed. `withTransactionOnHeldLock` and its two adapters,
@@ -1094,7 +1095,8 @@ Sources/CloudAccount.swift
 Sources/CloudKeys.swift
 Sources/CloudTransport.swift
 Sources/CloudEnvelope.swift
-Sources/CloudAppBridge.swift'
+Sources/CloudAppBridge.swift
+Sources/CloudV2Protocol.swift'
 while IFS= read -r candidate; do
   [ -n "$candidate" ] || continue
   [ -f "$candidate" ] \
@@ -1169,7 +1171,8 @@ CloudKeys.swift
 CloudPairing.swift
 CloudTransport.swift
 CloudEnvelope.swift
-CloudAppBridge.swift'
+CloudAppBridge.swift
+CloudV2Protocol.swift'
 mac_expected_dependencies='ClawdlineApplication'
 linux_expected_members='LinuxComposition.swift
 LinuxContainedFileSystem.swift

@@ -883,7 +883,7 @@ and what is reachable is a closed list named in `CloudHeadlessRead`:
 | `{"type":"places","session":"__clawdline_machine__","request":"…"}` | `read: "read:<request>"` | `GET /v1/places` |
 | `{"type":"project-worktrees","session":"__clawdline_machine__","request":"…","project":"…"}` | `read: "read:<request>"` | `GET /v1/orchestrator/usage/project-worktrees?project=…` |
 | `{"type":"project-worktree-lifecycle","session":"__clawdline_machine__","request":"…","project":"project-…"}` | `read: "read:<request>"` | [`GET /v1/projects/:id/worktrees`](#project-worktree-lifecycle) |
-| `{"type":"project-worktree-lifecycle-refresh","session":"__clawdline_machine__","request":"…","project":"project-…"}` | `read: "read:<request>"` | `POST /v1/projects/:id/worktrees/refresh` — read-admitted, observation only |
+| `{"type":"project-worktree-lifecycle-refresh","session":"__clawdline_machine__","request":"…","project":"project-…"}` | `read: "read:<request>"` | `POST /v1/projects/:id/worktrees/refresh` — command-classified compatibility spelling; runs processes and mutates the lifecycle cache |
 | `{"type":"past-sessions","session":"__clawdline_machine__","request":"…","place":"…","assistant":"…"}` | `read: "read:<request>"` | `GET /v1/places/:id/sessions/:assistant` |
 
 **An agent, a shell, an image and one document name themselves in the answer; the single-instance reads do not
@@ -970,13 +970,17 @@ lazily — only for tiles a render actually created — and keeps at most three 
 a transcript with forty screenshots in it is forty requests paced three at a time rather than
 forty envelopes together. Nothing is refused by that pacing; the fourth picture waits.
 
-**Reads do not consult the remote-write switch, and commands still do.** `Settings → Remote`'s
+**Effect-free reads do not consult the remote-write switch; commands do.** `Settings → Remote`'s
 write switch is the answer to "may a remote device type into a session on this Mac"; a transcript
 read types into nothing, and on the direct path a paired device reads one whatever that switch
 says. The session rows this Mac publishes to the relay cross without consulting it either, so a
 viewer that can see every row and not the messages inside one would be showing less than the same
-device sees through the tunnel, for no reason anybody chose. `send`, `answer` and `key` still meet
-`cloud_commands_disabled` exactly where they always did. When a request-carrying `ctl` command has
+device sees through the tunnel, for no reason anybody chose. `send`, `answer`, `key`, and the Cloud
+compatibility spelling `project-worktree-lifecycle-refresh` still require the Mac's pinned roster,
+guarded clock, and remote-write gate at admission and immediately before their effect. Refresh can
+therefore return `cloud_commands_disabled`, `unknown_sender`, `command_clock_uncertain`, or
+`command_roster_unreadable`; it is not an effect-free read merely because its result is an
+observation. When a request-carrying `ctl` command has
 a safe bounded identity, a 403 gate refusal—or an identifiable malformed `shell-kill` 400—is also
 published on `action:<request>`. This settles the caller's existing waiter without routing the
 command or granting any new command authority. A body that arrives under any non-`ctl` envelope

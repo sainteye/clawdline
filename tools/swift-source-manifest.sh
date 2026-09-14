@@ -30,6 +30,7 @@ clawdline_production_sources=(
   Sources/CloudStatus.swift
   Sources/CloudTransport.swift
   Sources/CloudTransportFakes.swift
+  Sources/CloudV2Protocol.swift
   Sources/Codex.swift
   Sources/CodexNaming.swift
   Sources/StructuredModelProcess.swift
@@ -184,6 +185,7 @@ clawdline_test_sources=(
   Tests/CloudTestRunner.swift
   Tests/CloudTransparencyTests.swift
   Tests/CloudTransportTests.swift
+  Tests/CloudV2ProtocolTests.swift
   Tests/CodexSessionTests.swift
   Tests/ConversationTests.swift
   Tests/CoordinatorTests.swift

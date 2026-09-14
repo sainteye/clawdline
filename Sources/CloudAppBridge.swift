@@ -269,7 +269,7 @@ enum CloudHeadlessRead: Equatable, Sendable {
     case document(session: String, request: String, scope: String, task: String, path: String)
     case places(session: String, request: String)
     case projectWorktrees(session: String, request: String, project: String)
-    /// The Project worktree lifecycle read model, and its read-admitted bounded observation.
+    /// The Project worktree lifecycle read model and its separately command-classified refresh.
     case projectWorktreeLifecycle(session: String, request: String, project: String)
     case projectWorktreeLifecycleRefresh(session: String, request: String, project: String)
     case pastSessions(session: String, request: String, place: String, assistant: String)
@@ -2074,6 +2074,24 @@ actor CloudAppBridge {
             return
         }
         if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
+            // One legacy spelling performs a local refresh before returning its snapshot. The v2
+            // catalog classifies that operation as a command, and this check makes the
+            // classification an admission boundary rather than documentation: it cannot bypass
+            // the same remote-write switch that protects every other effect.
+            if CloudV2ReadCatalog.requiresWriteGate(for: requestedType) {
+                status.recordCommand(
+                    sender: reference.sender, sequence: reference.sequence,
+                    request: reference.request, type: reference.type, session: reference.session)
+                let authority = await currentCommandEffectAuthority(inbound.sender, true)
+                if let denied = Self.refreshAuthorizationRefusal(authority) {
+                    await refuse(
+                        reference, layer: .macPreflight, status: denied.status,
+                        code: denied.code, message: denied.message, detail: denied.detail,
+                        replyTo: Self.readRefusalReply(type: requestedType, body: parsed),
+                        viaLane: false, lifecycleGeneration: ownedGeneration)
+                    return
+                }
+            }
             await serveRead(requestedType, body: parsed, inbound: inbound,
                             lifecycleGeneration: ownedGeneration)
             return
@@ -2653,21 +2671,16 @@ actor CloudAppBridge {
         return CloudCommandResult(status: status, code: code, body: bytes)
     }
 
-    /// The reads a viewer may name. A closed set, checked before the write gate, so that adding
-    /// another one is a deliberate edit here rather than a spelling that slipped past.
+    /// The reads a viewer may name. Cloud v2 owns the exhaustive classification catalog, so a new
+    /// bridge spelling cannot be admitted without deciding whether it is replicated, an
+    /// effect-free live query, a command, or unsupported.
     ///
     /// This and the switch in `serveRead` are two lists that have to agree, which is why that
     /// switch ends in a `default` that refuses rather than in the last read: a word admitted here
     /// and unknown there fails closed instead of being parsed as whichever case happens to sit at
     /// the bottom. `every read type this bridge admits also parses` walks this set and asks each
     /// member for a well-formed body, so the two cannot come apart quietly.
-    static let readTypes: Set<String> = [
-        "transcript", "info", "agent", "shell", "skills", "git", "image",
-        "documents", "document",
-        "screen", "board", "timeline", "places", "project-worktrees", "past-sessions", "schedules",
-        "snippets", "schedule", "push-key",
-        "project-worktree-lifecycle", "project-worktree-lifecycle-refresh",
-    ]
+    static let readTypes: Set<String> = CloudV2ReadCatalog.readTypeNames
 
     /// Commands a paired device may send with remote writes switched off.
     static let readLevelCommandTypes: Set<String> = [
@@ -3124,8 +3137,20 @@ actor CloudAppBridge {
             let admittedAt = nowMilliseconds()
             lifecycleRefreshTasks[id] = Task { [weak self] in
                 guard let self else { return }
-                await self.performRead(read, reference: reference,
-                                       lifecycleGeneration: ownedGeneration, admittedAt: admittedAt)
+                // Admission may wait behind other lifecycle work. Re-read roster, guarded clock,
+                // and the write gate immediately before the process-running cache mutation.
+                let authority = await self.currentCommandEffectAuthority(reference.sender, true)
+                if let denied = Self.refreshAuthorizationRefusal(authority) {
+                    await self.refuse(
+                        reference, layer: .macPreflight, status: denied.status,
+                        code: denied.code, message: denied.message, detail: denied.detail,
+                        replyTo: (read.session, read.name), viaLane: false,
+                        lifecycleGeneration: ownedGeneration)
+                } else {
+                    await self.performRead(
+                        read, reference: reference, lifecycleGeneration: ownedGeneration,
+                        admittedAt: admittedAt)
+                }
                 await self.finishLifecycleRefresh(id, lifecycleGeneration: ownedGeneration)
             }
             diagnostic("cloud: read admitted read=\(read.name) lane=lifecycle-refresh "
@@ -3494,6 +3519,15 @@ actor CloudAppBridge {
                     viaLane: false, lifecycleGeneration: ownedGeneration)
                 return
             }
+            if CloudV2ReadCatalog.requiresWriteGate(for: requestedType), !allowCloudCommands() {
+                await refuse(
+                    reference, layer: .macPreflight, status: 403,
+                    code: "cloud_commands_disabled",
+                    message: "Cloud commands are disabled on this Mac.",
+                    replyTo: Self.readRefusalReply(type: requestedType, body: parsed),
+                    viaLane: false, lifecycleGeneration: ownedGeneration)
+                return
+            }
             await serveRead(
                 requestedType, body: parsed, inbound: inbound,
                 lifecycleGeneration: ownedGeneration,
@@ -3520,6 +3554,32 @@ actor CloudAppBridge {
             reference, layer: .macTransport, status: refusal.reason.refusalStatus, code: code,
             message: message, detail: busyDetail, replyTo: reply, viaLane: false,
             lifecycleGeneration: ownedGeneration)
+    }
+
+    private static func refreshAuthorizationRefusal(
+        _ authority: CloudCommandEffectAuthorization
+    ) -> (status: Int, code: String, message: String, detail: [String: Any])? {
+        if authority.epochState != .ready {
+            var detail: [String: Any] = [:]
+            if let reason = authority.epochReason { detail["reason"] = reason }
+            if let clears = authority.epochClearsInMilliseconds {
+                detail["clears_in_ms"] = clears
+            }
+            return (503, "command_clock_uncertain",
+                    "This Mac is still confirming the time; try again shortly.", detail)
+        }
+        if !authority.rosterReadable {
+            return (503, "command_roster_unreadable",
+                    "This Mac could not read its paired devices.", [:])
+        }
+        if !authority.rosterAllowsSender {
+            return (403, "unknown_sender", "This Mac does not recognise this device.", [:])
+        }
+        if !authority.writeGateAllows {
+            return (403, "cloud_commands_disabled",
+                    "Cloud commands are disabled on this Mac.", [:])
+        }
+        return nil
     }
 
     /// One answered read, resolved into the two things the payload can hold.
