@@ -4944,12 +4944,10 @@ enum Orchestrator {
     }
 
     private static func sendAgentPush(source: String, title: String, body: String,
-                                      projectDir: String?, sessionID: String?,
+                                      projectDir: String?, url: String,
                                       tag: String) -> WebPush.Delivery {
+        // The caller chooses a durable locator when it has one and the live-pane fallback otherwise.
         let displayedTitle = "\(source): \(title)"
-        // The session the agent is speaking from — a task's own tab, or the root that named
-        // itself on the machine-token route. Unchecked, per ``pushURL(forSessionID:)``.
-        let url = pushURL(forSessionID: sessionID)
         let icon = projectDir.flatMap { RemoteIcon.projectPath(for: ProjectIcon.grid(forCwd: $0)) }
         if let observer = agentPushForTesting {
             return observer(displayedTitle, body, url, tag, icon)
@@ -5069,7 +5067,7 @@ enum Orchestrator {
         let source = current.scheduleID == nil ? current.title : (current.rootLabel ?? current.title)
         let delivery = sendAgentPush(source: source, title: title, body: body,
                                      projectDir: current.projectDir,
-                                     sessionID: current.childTerminalId,
+                                     url: pushURL(forTask: current),
                                      tag: "agent-task-\(taskID)")
         return agentDeliveryReply(taskID: taskID, title: title, delivery: delivery,
                                   ticket: ticket)
@@ -5108,7 +5106,8 @@ enum Orchestrator {
                             "Too many agent notifications; wait for the hourly window.")
         }
         let delivery = sendAgentPush(source: "Clawdline", title: title, body: body,
-                                     projectDir: nil, sessionID: sessionID, tag: "agent-root")
+                                     projectDir: nil, url: pushURL(forSessionID: sessionID),
+                                     tag: "agent-root")
         return agentDeliveryReply(taskID: nil, title: title, delivery: delivery,
                                   ticket: ticket)
     }
@@ -10639,6 +10638,7 @@ enum Orchestrator {
             attachmentInventoryForTesting = nil
             taskStarterForTesting = nil
             agentPushForTesting = nil
+            notificationMachineIDForTesting = nil
             sessionDeliveryPushForTesting = nil
             resetSessionLandingTesting()
             watchedSessionIDsForTesting = nil

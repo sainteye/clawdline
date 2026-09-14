@@ -533,6 +533,38 @@ enum WebPush {
         return "/#session=" + (encoded ?? "")
     }
 
+    /// A Session address that survives its terminal pane and is unambiguous across Macs.
+    ///
+    /// The hosted reader owns the matching parser in `session-links.js`. Keep this builder closed
+    /// to the same fields: a Cloud machine, the provider's durable conversation UUID, and an
+    /// optional canonical Project id which lets the reader offer an exact resume after the live
+    /// pane has gone. A caller without all of the identity it knows it needs falls back to the
+    /// terminal-only address instead of emitting a locator the reader cannot honor.
+    static func sessionLocatorURL(machineID: String, conversationID: String,
+                                  projectID: String?) -> String? {
+        guard !machineID.isEmpty, machineID != "this-mac", machineID.utf8.count <= 200,
+              !machineID.unicodeScalars.contains(where: {
+                  $0.value <= 0x20 || (0x7f...0x9f).contains($0.value)
+              }),
+              let conversation = UUID(uuidString: conversationID)?.uuidString.lowercased()
+        else { return nil }
+        if let projectID {
+            guard projectID.count == 32, projectID.hasPrefix("project-"),
+                  projectID.dropFirst(8).unicodeScalars.allSatisfy({ scalar in
+                      (0x30...0x39).contains(scalar.value)
+                          || (0x61...0x66).contains(scalar.value)
+                  }) else { return nil }
+        }
+        var components = URLComponents()
+        components.queryItems = [
+            URLQueryItem(name: "session_ref", value: "1"),
+            URLQueryItem(name: "machine", value: machineID),
+            URLQueryItem(name: "conversation", value: conversation),
+        ]
+        if let projectID { components.queryItems?.append(URLQueryItem(name: "project", value: projectID)) }
+        return components.percentEncodedQuery.map { "/#" + $0 }
+    }
+
     /// RFC 3986 §2.3: the characters that never need encoding anywhere in a URI.
     private static let unreservedForSessionID: CharacterSet = {
         var set = CharacterSet.alphanumerics

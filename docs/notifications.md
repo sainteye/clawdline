@@ -251,7 +251,7 @@ there with nothing on screen to say why.
 | --- | --- | --- |
 | `StateHook.sendPush` | the session that stopped to ask | that session |
 | `Orchestrator.announceDelivery` | the session that delivered | that session |
-| `Orchestrator.notify` (a task's own secret) | the task, by its title | the tab that task is running in |
+| `Orchestrator.notify` (a task's own secret) | the task, by its title | its Cloud machine + durable conversation + canonical Project; the live pane is only the compatibility fallback when durable identity is unavailable |
 | `Orchestrator.agentNotify` (the machine token) | whatever the root called it | the session the caller named, when it named one |
 | `Orchestrator.announce` | the root's own label | the root; failing that, a task of the batch the watch still holds |
 | a scheduled task that failed or timed out | the schedule's title | the tab it ran in |

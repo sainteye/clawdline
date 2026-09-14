@@ -1198,6 +1198,25 @@ group("a notification's deep link carries a session id a browser can read back")
     let fragment = String(written.dropFirst("/#session=".count))
     expect("and the fragment decodes back to exactly the pane it named",
            fragment.removingPercentEncoding, "%141")
+
+    let durable = WebPush.sessionLocatorURL(
+        machineID: "mac&two", conversationID: "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
+        projectID: "project-0123456789abcdef01234567")
+    expect("a durable notification locator encodes its Mac and canonicalizes its conversation",
+           durable, "/#session_ref=1&machine=mac%26two"
+            + "&conversation=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            + "&project=project-0123456789abcdef01234567")
+    check("a local alias cannot escape as a durable Cloud locator",
+          WebPush.sessionLocatorURL(machineID: "this-mac",
+                                    conversationID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                                    projectID: nil) == nil)
+    check("a locator never emits fields the browser's closed parser will reject",
+          WebPush.sessionLocatorURL(machineID: "",
+                                    conversationID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                                    projectID: nil) == nil
+            && WebPush.sessionLocatorURL(machineID: "mac-two",
+                                         conversationID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                                         projectID: "project-0123456789ABCDEF01234567") == nil)
 }
 
 group("a notification that names a session carries its address, and one that names none does not") {

@@ -69,6 +69,7 @@ clawdline_production_sources=(
   Sources/Markdown.swift
   Sources/Mascot.swift
   Sources/NotchIsland.swift
+  Sources/NotificationAddress.swift
   Sources/Onboarding.swift
   Sources/Orchestrator.swift
   Sources/OrchestratorDraft.swift

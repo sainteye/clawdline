@@ -22,6 +22,7 @@ group("both agent-notification lanes open the session they were sent from") {
     defer {
         Config.shared.orchestratorAgentNotify = agentNotifyWasEnabled
         Orchestrator.agentPushForTesting = nil
+        Orchestrator.notificationMachineIDForTesting = nil
         if let before {
             try? before.write(to: store, options: .atomic)
         } else {
@@ -42,6 +43,8 @@ group("both agent-notification lanes open the session they were sent from") {
         "created": Date().addingTimeInterval(-120).timeIntervalSince1970,
         "secret_hash": Orchestrator.hash(ofSecret: secret), "artifacts": [],
         "child_terminal": childTab,
+        "child_session": "11111111-1111-4111-8111-111111111111",
+        "repository_common_dir": "/tmp/daily-weather/.git",
     ]]
     let stored = (try? JSONSerialization.data(withJSONObject: ["version": 1, "tasks": rows]))
         ?? Data()
@@ -49,6 +52,7 @@ group("both agent-notification lanes open the session they were sent from") {
                                              withIntermediateDirectories: true)
     try? stored.write(to: store, options: .atomic)
     Orchestrator.forget()
+    Orchestrator.notificationMachineIDForTesting = { "machine-notification-test" }
 
     var urls: [String] = []
     Orchestrator.agentPushForTesting = { _, _, url, _, _ in
@@ -65,7 +69,18 @@ group("both agent-notification lanes open the session they were sent from") {
     let fromTask = notify("/v1/orchestrator/tasks/\(taskID)/notify",
                           ["title": "forecast", "body": "sunny", "secret": secret])
     expect("the task lane accepts a notification from its own child", fromTask.status, 200)
-    expect("and that notification opens the tab the task is running in",
+    let project = ProjectBoardIntegration.projectID("/tmp/daily-weather")
+    expect("and that notification carries the durable Session rather than only its pane",
+           urls.last ?? "", "/#session_ref=1&machine=machine-notification-test"
+            + "&conversation=11111111-1111-4111-8111-111111111111&project=\(project)")
+
+    Orchestrator.notificationMachineIDForTesting = { nil }
+    let withoutCloudIdentity = notify("/v1/orchestrator/tasks/\(taskID)/notify",
+                                      ["title": "forecast later", "body": "still sunny",
+                                       "secret": secret])
+    expect("the task lane still sends when no durable Cloud machine is known",
+           withoutCloudIdentity.status, 200)
+    expect("and preserves the live-pane fallback instead of making an invalid locator",
            urls.last ?? "", "/#session=%25208")
 
     // The machine token proves this Mac's user is asking and can never say which root did, so a
@@ -85,7 +100,7 @@ group("both agent-notification lanes open the session they were sent from") {
     expect("a caller holding the machine token and no session still sends", fromScript.status, 200)
     expect("and its notification goes to the list, exactly as it always has",
            urls.last ?? "", "/")
-    expect("three notifications, three separate addresses", urls.count, 3)
+    expect("four notifications, four separate address decisions", urls.count, 4)
 }
 
 group("a test push is a test loop, and its words are what keep it one") {
