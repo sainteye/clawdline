@@ -237,7 +237,7 @@ private final class CloudOpeningBudgetClock: CloudTransportClock, @unchecked Sen
     func waitUntilMonotonic(_ deadline: TimeInterval) async throws {
         let id = UUID()
         try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 lock.lock()
                 if Task.isCancelled {
                     lock.unlock(); continuation.resume(throwing: CancellationError()); return

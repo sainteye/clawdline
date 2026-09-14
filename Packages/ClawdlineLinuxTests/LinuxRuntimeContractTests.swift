@@ -300,7 +300,8 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let pong = try XCTUnwrap(try control.readOutbound(as: WebSocketFrame.self))
         XCTAssertEqual(pong.opcode, .pong)
         _ = try control.writeInbound(frame(.text, "one", channel: control))
-        XCTAssertEqual(try await controlPipe.receiveText(), "one")
+        let receivedControlText = try await controlPipe.receiveText()
+        XCTAssertEqual(receivedControlText, "one")
 
         _ = try control.writeInbound(frame(.connectionClose, "bye", channel: control))
         control.embeddedEventLoop.run()
@@ -321,7 +322,8 @@ final class LinuxRuntimeContractTests: XCTestCase {
         _ = try burst.writeInbound(frame(.text, "first", channel: burst))
         _ = try? burst.writeInbound(frame(.text, "second", channel: burst))
         burst.embeddedEventLoop.run()
-        XCTAssertEqual(try await burstPipe.receiveText(), "first",
+        let firstBurstText = try await burstPipe.receiveText()
+        XCTAssertEqual(firstBurstText, "first",
                        "overflow retains the oldest admitted message and never overtakes it")
         do {
             _ = try await burstPipe.receiveText()
@@ -346,9 +348,9 @@ final class LinuxRuntimeContractTests: XCTestCase {
     func testRelayTerminalAuthorizationCodeNormalizationIsClosed() {
         let terminal: [CloudTransportError] = [
             .unauthorized, .upgradeRefused(statusCode: 401),
-            .upgradeRefused(statusCode: 403), .relay(code: "forbidden", message: "refused"),
-            .relay(code: "device_revoked", message: "refused"),
-            .relay(code: "account_revoked", message: "refused")
+            .upgradeRefused(statusCode: 403), .relay("forbidden", "refused"),
+            .relay("device_revoked", "refused"),
+            .relay("account_revoked", "refused")
         ]
         XCTAssertTrue(terminal.allSatisfy(LinuxRelayRuntimeOwner.isTerminalAuthorization))
         XCTAssertFalse(LinuxRelayRuntimeOwner.isTerminalAuthorization(
