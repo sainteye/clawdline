@@ -235,6 +235,10 @@ Common failure classifications:
 - `swift test` reports `Unknown option '--static-swift-stdlib'`: static linkage belongs on the
   product `swift build` command, not the XCTest invocation; use the repository script containing
   this correction.
+- XCTest linking reports missing `_FoundationCollections`, `_FoundationCShims`,
+  `_DispatchStubs`, or `CoreFoundation` after the static product succeeds: do not reuse the
+  product's `.build` objects for the dynamically linked test runner. The repository source gate
+  deliberately uses `.build-linux-tests` for XCTest and `.build` for the packaged static binary.
 - apt mirror timeout with otherwise healthy HTTPS: the restricted egress policy still references
   `http://` package sources.
 - S3 `AccessDenied`: the EC2 instance profile lacks exact-prefix `s3:GetObject`; do not make the

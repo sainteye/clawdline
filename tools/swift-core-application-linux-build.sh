@@ -137,6 +137,7 @@ linux_binary="$linux_bin_dir/ClawdlineLinux"
 CLAWDLINE_TEST_TMUX=$(command -v tmux) \
 CLAWDLINE_TEST_LINUX_EXECUTABLE="$linux_binary" swift test \
   -c "$swift_build_configuration" -j "$swift_build_jobs" \
+  --scratch-path .build-linux-tests \
   --disable-automatic-resolution \
   --filter LinuxRuntimeContractTests
 

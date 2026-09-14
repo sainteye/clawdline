@@ -87,6 +87,9 @@ ALLOWED = [
      "taken, and changing it would make them less true rather than more"),
     ("docs/remote.md", None,
      "the same, for the remote page's example reply"),
+    ("docs/cloud-request-architecture-v2.md", "installed " + ".".join(("0", "8", "0")) + " app",
+     "dated incident evidence naming the release installed when its latency measurements were "
+     "taken; rewriting it to the current stamp would falsify the observation"),
     ("Resources/web/app/js/net/mock.js", None,
      "a mock version deliberately unlike any real one, so a mock reading cannot be mistaken for a "
      "live one"),

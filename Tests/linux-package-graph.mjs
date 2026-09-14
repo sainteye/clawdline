@@ -450,6 +450,8 @@ check(/systemd-sysusers "\$script_dir\/\.\.\/Packaging\/linux\/clawdline\.conf"/
   'host installation must resolve sysusers config from the package tool, not caller cwd');
 check(/swift test/.test(linuxBuild) && /CLAWDLINE_TEST_TMUX/.test(linuxBuild),
   'Ubuntu compiler check must execute the real Linux SwiftPM runtime contracts with tmux');
+check(/swift test[\s\S]{0,260}--scratch-path \.build-linux-tests/.test(linuxBuild),
+  'static product and dynamically linked XCTest artifacts use separate SwiftPM scratch paths');
 const macFocusedRuntime = /--filter LinuxRuntimeContractTests/.test(testRunner)
   && /expected one Linux runtime XCTest receipt/.test(testRunner);
 check(macFocusedRuntime,
