@@ -154,7 +154,8 @@ async function check(name, run) {
 
 // Called for their synchronous effect and never as a promise. Everything else on the prototype is
 // found by enumeration, so a method added tomorrow is held to the rule without anyone listing it.
-const SYNCHRONOUS = new Set(["constructor", "events", "subscribe", "stop", "retire"]);
+const SYNCHRONOUS = new Set(["constructor", "events", "subscribe", "stop", "retire",
+    "forgetMachinePairingAnswer", "machineAccess", "machineDescriptor"]);
 // Snapshot reads with no failure to reach; every other method must be seen to reject at least
 // once below, or the inputs never walked the path this guard exists for.
 const CANNOT_FAIL = new Set(["sessions", "tasks"]);

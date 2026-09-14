@@ -488,8 +488,10 @@ enum CloudViewerEventLog {
             kept.append(id)
             kept.append(0x0A)
         }
+        // One fixed name: only `append` rewrites the index, and it does so under `lock`.
         let temporary = index.deletingLastPathComponent()
-            .appendingPathComponent(".\(batchIndexFileName).\(UUID().uuidString)")
+            .appendingPathComponent(".\(batchIndexFileName).rewrite")
+        try? manager.removeItem(at: temporary)
         do {
             guard manager.createFile(atPath: temporary.path, contents: nil,
                                      attributes: [.posixPermissions: 0o600]) else { return }
