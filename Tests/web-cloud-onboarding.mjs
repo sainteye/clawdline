@@ -232,8 +232,8 @@ assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "unreadable_envelope" }
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "machine_pairing_required" }),
     "machine_pairing");
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "machine_key_incomplete" }),
-    "machine_pairing",
-    "a partial machine-scoped key record is an actionable pairing state, not an outage");
+    null,
+    "a partial machine-scoped key record stays on that device instead of hiding the whole account");
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "machine_not_paired" }), null,
     "an envelope from a machine this browser holds no pairing or sender key for is that machine's state, not a door");
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "replay" }), null,

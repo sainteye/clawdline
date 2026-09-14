@@ -113,7 +113,11 @@ export function cloudSessionAccessProblem(error) {
         "capability_denied"].indexOf(code) >= 0) return "permission";
     if (["unknown_key", "unknown_sender", "extractable_key",
         "unreadable_envelope"].indexOf(code) >= 0) return "encryption";
-    if (["machine_pairing_required", "machine_key_incomplete"].indexOf(code) >= 0) {
+    // `machine_key_incomplete` is recorded against one routed machine and surfaced by Devices.
+    // Inbound envelopes cover every machine on the account, so promoting it here would hide
+    // healthy Mac Sessions merely because an AWS executor has a stale half-pairing. An explicit
+    // command to the selected machine still returns `machine_pairing_required` and opens this gate.
+    if (code === "machine_pairing_required") {
         return "machine_pairing";
     }
     return null;

@@ -465,10 +465,10 @@ Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status
 
 瀏覽器收件失敗與解密門的自動紀錄，不需要任何按鍵。怎麼讀、欄位、每個 `stage` 與它會不會開門、H1a／H1b／H2–H4 對照：[`diagnostics.md`](diagnostics.md#the-viewer-events-file)。
 H1 在 per-machine pairing 之後分成兩種：H1a 是本瀏覽器**沒有配對**的第二台機器，
-H1b 是**有配對**但配對不完整（`machine_key_incomplete`，開的是配對門不是解密門）或 key_id 不同（`pairing_key_id` 的 `unknown_key`）的機器。
+H1b 是**有配對**但配對不完整（`machine_key_incomplete`，只標在該機器的修復狀態，不開帳號門）或 key_id 不同（`pairing_key_id` 的 `unknown_key`）的機器。
 H1a 現在是那台機器自己的狀態：envelope 路由到一台本瀏覽器沒有 pairing、也沒有該 sender pin 的機器時，丟 `machine_not_paired`（`detail.machine`），
 `cloudSessionAccessProblem` 不分類它，所以不開整個帳號的解密門；`CloudClient.machineAccess(machine)` 保留 `not_paired` 狀態（renewal 後仍在），
-給「為選定機器配對」的介面使用。有 pairing、有 legacy 綁定、或有 sender pin 的情況照舊，真正的金鑰漂移（含尚未綁定前帳號金鑰就漂移的 legacy 瀏覽器）仍開解密門。
+給「為選定機器配對」的介面使用。`machine_key_incomplete` 同樣只留在該機器，等使用者真的對它操作時再由 `machine_pairing_required` 顯示配對門；真正的金鑰漂移（含尚未綁定前帳號金鑰就漂移的 legacy 瀏覽器）仍開解密門。
 
 - 請求：`{"type":"diagnostics.events","session":"__clawdline_machine__","request":<uuid>,"batch":<object>}`，`ctl` 類別，
   read-level（和 `diagnostics.report` 一樣不需要遠端寫入開關）。
