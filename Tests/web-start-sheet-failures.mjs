@@ -388,6 +388,7 @@ const SCENARIOS = {
     "failed-read": "(c) sheet: press an old row after the places read timed out",
     "refused": "(d) sheet: the Mac refuses with 503 — the error shows, the row presses again, Close closes",
     "machine-picker": "fleet sheet: machine is chosen before Projects and assistants are read",
+    "machine-syncing": "fleet sheet: one early Mac does not hide that AWS inventory is still loading",
     "duplicate-arrival": "fleet sheet: arrival is matched by machine and id, not a duplicate bare id",
     "late-machine": "fleet sheet: stale machines require an explicit probe and a fresh Session refreshes",
     "close-reopen-read": "sheet: closing during a Project read cannot wedge the next opening",
@@ -590,6 +591,7 @@ async function sheetScenario(scenario) {
     // Every Cloud scenario begins where the person was: the sheet open over a list the Mac sent.
     let client = cloudClient();
     let socket = await ready(client);
+    if (scenario === "machine-syncing") client.descriptorStorage = {};
     client.orchestratorSnapshots.set("mac-01", { tasks: [],
         at: scenario === "late-machine" ? (Date.now() - 600_000) / 1000 : Date.now() / 1000,
         machine: {
@@ -602,6 +604,26 @@ async function sheetScenario(scenario) {
     }
     useApi(client);
     Start.open();
+    if (scenario === "machine-syncing") {
+        await until(function () {
+            return published(socket).length > 0 ||
+                elementWithID("start-machine").children.length === 2;
+        }, "the first machine inventory answer to be applied");
+        assert.equal(say(), T.webLoading,
+            "the fleet synchronization state remains visible after the first machine appears");
+        assert.equal(published(socket).length, 0,
+            "the first machine is not silently selected while another machine may still arrive");
+        client.readyAt -= 61_000;
+        Start.sync();
+        const currentRead = await nextCommand(socket, "places");
+        assert.equal(currentRead.ch, "ctl/mac-01",
+            "after the bounded inventory window the sole current machine may use the fast path");
+        await answer(client, socket, "mac-01", { read: "read:" + currentRead.request, status: 200,
+            body: placesBody([PORTFOLIO]) });
+        await until(function () { return rows().length === 1; }, "the sole machine's Project row");
+        console.log("start sheet scenario " + scenario + " passed");
+        return;
+    }
     if (scenario === "late-machine") {
         await until(function () {
             return elementWithID("start-machine").children.length === 2;

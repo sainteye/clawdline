@@ -46,6 +46,11 @@ function readKey(identity, read) {
 const READ_TIMEOUT_MS = 60000;
 const VOICE_TIMEOUT_MS = 6 * 60 * 1000;
 const MACHINE_INVENTORY_FRESH_MS = 5 * 60 * 1000;
+// Relay realignment is channel-by-channel and has no end marker. Keep the fleet surface honest
+// for one bounded window after authentication: rows already recovered are usable, while the UI
+// still says that other machines may be arriving.
+const MACHINE_INVENTORY_SYNC_MS = 60 * 1000;
+const MACHINE_DESCRIPTOR_CACHE = "clawdline.machine-descriptors.v1:";
 
 /** The agent or shell a read is about, as the string the Mac will echo back inside `read`. */
 function readSubject(value) {
@@ -231,6 +236,10 @@ export class CloudClient {
         }
         this.deviceID = options.deviceID || null;
         this.account = options.account || null;
+        // Display metadata only. The route remains the opaque authenticated channel id. A full
+        // PWA process restart used to forget names until the next `orch/` envelope happened to
+        // realign, even though Session rows (and therefore opaque ids) had already arrived.
+        this.descriptorStorage = options.descriptorStorage || null;
         // Deliberately excludes the short-lived viewer token. `useClient` uses this value to
         // distinguish credential rotation from a real relay/account/device replacement.
         this.selectionTransportIdentity = ["cloud", this.url, this.account || "",
@@ -350,7 +359,8 @@ export class CloudClient {
         // What each authenticated `orch/<machine>` snapshot said the machine is — its descriptor
         // and app build — kept apart from the snapshot, which a renewal starts empty, so the
         // renewed client still knows a Linux executor from a Mac before any snapshot is realigned.
-        this.machineDescriptors = sameViewer ? new Map(prior.machineDescriptors) : new Map();
+        this.machineDescriptors = sameViewer
+            ? new Map(prior.machineDescriptors) : this._loadMachineDescriptors();
         // Machines whose envelopes this browser cannot attribute to any pairing: no pairing, no
         // legacy binding, no key for the sender (`_openEnvelopeFrame`). Per machine, never the
         // account's door; a renewal keeps it, and a pairing found for the machine clears it.
@@ -1142,7 +1152,7 @@ export class CloudClient {
         var sessions = Array.from(this.sessionSnapshots.values()).map(function (row) {
             var snapshot = this.orchestratorSnapshots.get(row.machine) || {};
             var descriptor = snapshot.machine && typeof snapshot.machine === "object"
-                ? snapshot.machine : null;
+                ? snapshot.machine : this.machineDescriptors.get(row.machine)?.machine || null;
             return descriptor ? Object.assign({}, row, { machineInfo: descriptor }) : row;
         }, this);
         return { sessions: sessions,
@@ -1196,6 +1206,7 @@ export class CloudClient {
 
     _knownMachines() {
         var found = new Set(this.orchestratorSnapshots.keys());
+        this.machineDescriptors.forEach(function (_, machine) { found.add(machine); });
         this.machineObservedAt.forEach(function (_, machine) { found.add(machine); });
         // A viewer may see a machine-scoped route before it can open that machine's descriptor.
         // Devices must keep that opaque route visible as "not paired" instead of making a healthy
@@ -1221,6 +1232,8 @@ export class CloudClient {
      * the opaque id encoded in the envelope channel. */
     machines() {
         var now = Date.now();
+        var retryAfterMs = this.descriptorStorage && Number.isFinite(this.readyAt)
+            ? Math.max(0, this.readyAt + MACHINE_INVENTORY_SYNC_MS - this.viewerEvents.now()) : 0;
         var rows = this._knownMachines().map(function (id) {
             var snapshot = this.orchestratorSnapshots.get(id) || {};
             var remembered = this.machineDescriptors.get(id);
@@ -1254,9 +1267,10 @@ export class CloudClient {
             var fleet = machinePresentationForFleet(row, rows, T);
             return Object.freeze(Object.assign({}, row, { label: fleet.label }));
         });
-        if (!rows.length) return Promise.reject(cloudError("cloud_read_unavailable",
+        if (!rows.length && retryAfterMs <= 0) return Promise.reject(cloudError("cloud_read_unavailable",
             "no machine has published an inventory to this account yet"));
-        return Promise.resolve({ machines: rows });
+        return Promise.resolve({ machines: rows, syncing: retryAfterMs > 0,
+            retryAfterMs: retryAfterMs });
     }
 
     /** A machine-scoped control cannot guess in a fleet. Push subscriptions and dictation belong
@@ -1479,7 +1493,50 @@ export class CloudClient {
             if (this.machineDescriptors.size > 16) {
                 this.machineDescriptors.delete(this.machineDescriptors.keys().next().value);
             }
+            this._persistMachineDescriptors();
         } catch (e) { /* remembering a descriptor must never refuse the snapshot */ }
+    }
+
+    _descriptorStorageKey() {
+        return this.account ? MACHINE_DESCRIPTOR_CACHE + encodeURIComponent(this.account) : null;
+    }
+
+    _loadMachineDescriptors() {
+        var out = new Map();
+        var key = this._descriptorStorageKey();
+        if (!key || !this.descriptorStorage || typeof this.descriptorStorage.getItem !== "function") return out;
+        try {
+            var parsed = JSON.parse(this.descriptorStorage.getItem(key) || "null");
+            var rows = parsed && parsed.v === 1 && Array.isArray(parsed.machines) ? parsed.machines : [];
+            rows.slice(-16).forEach(function (row) {
+                if (!row || typeof row.id !== "string" || !row.id || !row.machine ||
+                    typeof row.machine !== "object" || Array.isArray(row.machine)) return;
+                var kept = {};
+                Object.keys(row.machine).slice(0, 16).forEach(function (field) {
+                    var value = row.machine[field];
+                    if (typeof value === "string") kept[field] = value.slice(0, 128);
+                    else if (typeof value === "number" || typeof value === "boolean") kept[field] = value;
+                });
+                if (!Object.keys(kept).length) return;
+                var build = typeof row.build === "string" ? row.build.slice(0, 64)
+                    : Number.isFinite(row.build) ? String(row.build) : null;
+                out.set(row.id, { machine: kept, build: build,
+                    at_ms: Number.isFinite(row.at_ms) ? row.at_ms : 0 });
+            });
+        } catch (e) { /* a display cache is optional and never blocks Cloud */ }
+        return out;
+    }
+
+    _persistMachineDescriptors() {
+        var key = this._descriptorStorageKey();
+        if (!key || !this.descriptorStorage || typeof this.descriptorStorage.setItem !== "function") return;
+        try {
+            var rows = Array.from(this.machineDescriptors.entries()).slice(-16).map(function (entry) {
+                return { id: entry[0], machine: entry[1].machine, build: entry[1].build,
+                    at_ms: entry[1].at_ms };
+            });
+            this.descriptorStorage.setItem(key, JSON.stringify({ v: 1, machines: rows }));
+        } catch (e) { /* quota/private mode may refuse optional display metadata */ }
     }
 
     /**

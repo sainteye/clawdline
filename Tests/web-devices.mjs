@@ -140,4 +140,43 @@ await (async function () {
     assert.equal(listener, null);
 })();
 
+await (async function () {
+    const doc = new FakeDocument();
+    const ids = ["devices-title", "devices-lede", "devices-close", "devices-status",
+        "devices-empty", "devices-rows"];
+    const elements = Object.fromEntries(ids.map((id) => [id, new FakeNode(doc)]));
+    let answer = { syncing: true, retryAfterMs: 12_000, machines: [{
+        id: "mac-01", label: "Mac · Studio", freshness: "current",
+        pairing: "paired", sessions: 8, selectable: true
+    }] };
+    let retry = null;
+    const page = bindDevicesPage(elements, {
+        machines: () => Promise.resolve(answer),
+        setTimeout: (fn, ms) => { retry = { fn, ms }; return 1; },
+        clearTimeout: () => { retry = null; }
+    });
+    page.enter();
+    await new Promise((done) => setImmediate(done));
+    await new Promise((done) => setImmediate(done));
+    check("the page keeps a visible loading state while other machine inventories are realigning", function () {
+        assert.equal(elements["devices-status"].textContent, T.webLoading);
+        assert.equal(elements["devices-rows"].children.length, 1,
+            "already-known devices remain useful while AWS is still loading");
+        assert.deepEqual([retry && retry.ms > 0, retry && retry.ms <= 12_000], [true, true]);
+    });
+    answer = { syncing: false, machines: answer.machines.concat([{
+        id: "aws-01", label: "Linux / AWS · Builder", freshness: "current",
+        pairing: "paired", sessions: 0, selectable: true
+    }]) };
+    const finish = retry.fn;
+    finish();
+    await new Promise((done) => setImmediate(done));
+    await new Promise((done) => setImmediate(done));
+    check("the loading state clears only after the bounded inventory window", function () {
+        assert.equal(elements["devices-status"].textContent, "");
+        assert.equal(elements["devices-rows"].children.length, 2);
+    });
+    page.leave();
+})();
+
 console.log(`\n${checks} web device checks passed`);

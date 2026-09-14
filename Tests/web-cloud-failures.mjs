@@ -1602,6 +1602,31 @@ await check("viewer events · pairing · an unpaired second machine opens no doo
     assert.equal(hooks.lookups.length - asked, 3, "a machine this viewer found paired is asked again every time, never remembered as absent");
 });
 
+await check("viewer events · device names · a fresh PWA restores the last authenticated Mac descriptor before its orch snapshot", async function () {
+    const storage = new FakeStorage();
+    const first = cloudClient({ descriptorStorage: storage });
+    const firstSocket = await ready(first);
+    await fromMac(first, firstSocket, "orch/mac-01", {
+        machine: { name: "Sean MacBook Pro", platform: "macos" },
+        app: { build: "mac-build-name" }, tasks: []
+    });
+
+    // A PWA process restart has no `resumeFrom`. Session realignment is intentionally allowed to
+    // arrive before the much larger orchestrator snapshot, which is the order that exposed the
+    // opaque `e38e32bf` label on the phone.
+    const reloaded = cloudClient({ descriptorStorage: storage });
+    const reloadedSocket = await ready(reloaded);
+    await fromMac(reloaded, reloadedSocket, "s/mac-01/s1", {
+        session: { id: "s1", title: "one" }
+    });
+    const mac = (await reloaded.machines()).machines.find((row) => row.id === "mac-01");
+    assert.equal(mac.label, "Mac · Sean MacBook Pro",
+        "a verified display name survives a full PWA reload without becoming a routing authority");
+    assert.equal(reloaded._sessionResponse(0).sessions[0].machineInfo.name, "Sean MacBook Pro",
+        "the Session row uses the same verified display cache while orch is still realigning");
+    assert.equal(reloaded.machineDescriptor("mac-01").build, "mac-build-name");
+});
+
 await check("viewer events · pairing · a paired Mac under a drifted key, and a legacy browser whose key drifted before binding, still get the door", async function () {
     const otherMaster = await importMasterSecret(Buffer.alloc(32, 0x45).toString("base64"));
     const paired = pairedClient(new Map([["mac-01", pairingFor("mac-01", { masterKey: otherMaster })]]));

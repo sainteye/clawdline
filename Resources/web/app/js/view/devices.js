@@ -40,6 +40,11 @@ export function bindDevicesPage(elements, environment) {
     environment = environment || {};
     var generation = 0;
     var stopEvents = null;
+    var settleTimer = null;
+    var timers = {
+        setTimeout: environment.setTimeout || globalThis.setTimeout.bind(globalThis),
+        clearTimeout: environment.clearTimeout || globalThis.clearTimeout.bind(globalThis)
+    };
 
     function node(id) { return elements[id] || null; }
     function text(id, value) { var el = node(id); if (el) el.textContent = value || ""; }
@@ -97,10 +102,19 @@ export function bindDevicesPage(elements, environment) {
 
     function load() {
         var own = ++generation;
+        if (settleTimer !== null) timers.clearTimeout(settleTimer);
+        settleTimer = null;
         text("devices-status", T.webLoading);
         return Promise.resolve().then(function () { return environment.machines(); }).then(function (answer) {
             if (own !== generation) return;
-            text("devices-status", ""); draw(answer);
+            text("devices-status", answer && answer.syncing ? T.webLoading : ""); draw(answer);
+            if (answer && answer.syncing && Number.isFinite(answer.retryAfterMs)
+                && answer.retryAfterMs > 0) {
+                settleTimer = timers.setTimeout(function () {
+                    settleTimer = null; load();
+                }, Math.max(1, Math.min(answer.retryAfterMs, 60 * 1000)));
+                if (settleTimer && typeof settleTimer.unref === "function") settleTimer.unref();
+            }
         }).catch(function () {
             if (own !== generation) return;
             text("devices-status", T.webStartMachineNone); draw({ machines: [] });
@@ -122,6 +136,8 @@ export function bindDevicesPage(elements, environment) {
         },
         leave: function () {
             generation += 1;
+            if (settleTimer !== null) timers.clearTimeout(settleTimer);
+            settleTimer = null;
             if (typeof stopEvents === "function") stopEvents();
             stopEvents = null;
         },

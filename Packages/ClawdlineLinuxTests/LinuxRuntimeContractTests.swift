@@ -1762,6 +1762,11 @@ final class LinuxRuntimeContractTests: XCTestCase {
         else
           printf 'SOCKET-DENIED\\n'
         fi
+        if /usr/bin/python3 -c "import socket; a,b=socket.socketpair(); a.close(); b.close()" >/dev/null 2>&1; then
+          printf 'SOCKETPAIR-READY\\n'
+        else
+          printf 'SOCKETPAIR-DENIED\\n'
+        fi
         if printf escaped > \(quotedOutside) 2>/dev/null; then
           printf 'OUTSIDE-WRITABLE\\n'
         else
@@ -1826,6 +1831,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         }
         XCTAssertTrue(observed.contains("SECRET-DENIED"))
         XCTAssertTrue(observed.contains("SOCKET-DENIED"))
+        XCTAssertTrue(observed.contains("SOCKETPAIR-READY"))
         XCTAssertTrue(observed.contains("OUTSIDE-DENIED"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
 

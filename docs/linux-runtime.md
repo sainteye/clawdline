@@ -61,11 +61,13 @@ Environment isolation is not the authority boundary. Before the provider executa
 `ClawdlineLinux` launcher sets `no_new_privs`, installs a Landlock ABI 3+ filesystem allowlist, and
 installs a seccomp filter. The provider and all descendants may read/execute the system runtime and
 may write only the admitted project roots, HOME and tmp. Daemon state, secrets and runtime are not
-Landlock rules. AF_UNIX socket creation is denied, so a provider receiving no socket descriptor
-cannot connect to the tmux/daemon control sockets; `ptrace`, `process_vm_*` and `pidfd_getfd` are
-also denied. Composition returns `capability_unavailable` before a terminal effect if the kernel or
-any executable cannot prove this boundary. The AF_UNIX denial is an intentional current Linux
-limitation and may make provider extensions that require local Unix sockets unusable.
+Landlock rules. Addressable AF_UNIX socket creation is denied, so a provider receiving no socket
+descriptor cannot connect to the tmux/daemon control sockets; anonymous `socketpair` remains
+available for provider runtime IPC because it cannot name or connect to an external socket.
+`ptrace`, `process_vm_*` and `pidfd_getfd` are also denied. Composition returns
+`capability_unavailable` before a terminal effect if the kernel or any executable cannot prove
+this boundary. Provider extensions that require a pathname-based local Unix socket remain
+unsupported.
 
 ## Terminal and process lifecycle
 

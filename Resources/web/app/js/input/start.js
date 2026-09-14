@@ -70,6 +70,8 @@ export var Start = (function () {
     var machineExplicit = false; // a stale route may be probed only after the person presses it
     var preferredMachineID = null; // a Devices card may name the route before this sheet reads it
     var machineLoading = false;
+    var machineSyncing = false; // relay is still realigning retained per-machine channels
+    var machineSyncTimer = null;
     var machineGeneration = 0;
     var placesGeneration = 0;
     var assistants = [];  // what the Mac will start — [{ id, label }], its list and not this one
@@ -480,7 +482,7 @@ export var Start = (function () {
             return candidate.autoSelectable === true;
         });
         say(wait ? T.webStartWaiting
-            : (machineLoading && !machines) ? T.webLoading
+            : (machineLoading || machineSyncing) ? T.webLoading
             : (machines && !currentMachines.length) ? T.webStartMachineNone
             : (machines && machines.length > 1 && !machine) ? T.webStartMachinePick
             : (loading && !places) ? T.webLoading
@@ -645,15 +647,21 @@ export var Start = (function () {
             if (!refresh && typeof api.machines !== "function") load();
             return;
         }
+        if (machineSyncTimer !== null) clearTimeout(machineSyncTimer);
+        machineSyncTimer = null;
         var generation = ++machineGeneration;
         var previousMachine = machine;
         var previousExplicit = refresh && machineExplicit;
         if (!refresh) { machines = null; machine = null; machineExplicit = false; }
         machineLoading = true;
+        var retryAfterMs = 0;
         draw();
         asked(function () { return api.machines(); }).then(function (answer) {
             if (generation !== machineGeneration) return;
             machines = (answer && Array.isArray(answer.machines)) ? answer.machines : [];
+            machineSyncing = !!(answer && answer.syncing);
+            retryAfterMs = answer && Number.isFinite(answer.retryAfterMs)
+                ? Math.max(0, Math.min(answer.retryAfterMs, 60 * 1000)) : 0;
             var preferred = preferredMachineID && machines.find(function (candidate) {
                 return candidate.id === preferredMachineID && candidate.selectable === true;
             });
@@ -667,7 +675,7 @@ export var Start = (function () {
             var current = machines.filter(function (candidate) {
                 return candidate.autoSelectable === true;
             });
-            if (!machine && current.length === 1 && machines.length === 1) {
+            if (!machine && current.length === 1 && machines.length === 1 && !machineSyncing) {
                 machine = current[0];
                 machineExplicit = false;
                 if (previousMachine && previousMachine.id !== machine.id) {
@@ -687,11 +695,21 @@ export var Start = (function () {
         }).catch(function (error) {
             if (generation !== machineGeneration) return;
             machines = [];
+            machineSyncing = false;
             said(why(error), error);
         }).then(function () {
             if (generation !== machineGeneration) return;
             machineLoading = false;
             draw();
+            if (machineSyncing && retryAfterMs > 0 && !els.start.hidden) {
+                machineSyncTimer = setTimeout(function () {
+                    machineSyncTimer = null;
+                    if (!els.start.hidden && !machineLoading) loadMachines(true);
+                }, Math.max(1, retryAfterMs));
+                if (machineSyncTimer && typeof machineSyncTimer.unref === "function") {
+                    machineSyncTimer.unref();
+                }
+            }
         });
     }
 
@@ -938,6 +956,9 @@ export var Start = (function () {
         placesGeneration += 1;
         loading = false;
         machineLoading = false;
+        machineSyncing = false;
+        if (machineSyncTimer !== null) clearTimeout(machineSyncTimer);
+        machineSyncTimer = null;
         els.start.hidden = true;
         setStartSpin(null);
     }

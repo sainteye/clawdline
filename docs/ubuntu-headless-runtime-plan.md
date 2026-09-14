@@ -341,7 +341,8 @@ Provider processes run non-root under the configured uid/gid, with process umask
 isolated durable HOME, and an environment constructed from the exact HOME/PATH/LANG/LC_ALL/TERM/
 TMPDIR allowlist. That is no longer treated as containment: the provider launcher requires Landlock
 ABI 3+, installs a filesystem allowlist for the admitted projects/HOME/tmp, then installs a seccomp
-filter denying AF_UNIX socket creation and same-uid process-inspection syscalls before `execve`.
+filter denying addressable AF_UNIX socket creation and same-uid process-inspection syscalls before
+`execve`; anonymous socketpairs remain available for provider runtime IPC.
 Daemon secrets/runtime/socket paths have no provider rule. Project roots are outside the control
 state, protected-config allowlisted, canonical, owner-bound, symlink/traversal refusing, and rejected
 for overlap with any reserved control path in either ancestor direction. File effects walk
@@ -370,8 +371,8 @@ Landlock, secret/socket/outside-write, compensation and partial-send lifecycle. 
 focused evidence is not the release-train exact full.
 
 Current Linux-only residuals are explicit: the final procfs-to-`kill(-pgid, …)` gap remains without
-pidfd group signalling; Landlock/seccomp support is pinned to Ubuntu amd64; AF_UNIX denial may refuse
-provider extensions that require local sockets; apt package versions are recorded but not pinned;
+pidfd group signalling; Landlock/seccomp support is pinned to Ubuntu amd64; pathname AF_UNIX denial
+may refuse provider extensions that require local sockets; apt package versions are recorded but not pinned;
 and real Claude/Codex authentication still needs an external controlled credential receipt rather
 than being inferred from a shell fixture.
 

@@ -578,10 +578,11 @@ enum LinuxDaemonSafeExec {
 }
 
 /// The provider enters a Landlock filesystem allowlist before `execve`, then a seccomp filter
-/// denies AF_UNIX socket creation and process-inspection syscalls. Thus the same-uid provider can
-/// use its project/HOME/tmp and Internet sockets but cannot open daemon secrets, write outside the
-/// admitted trees, connect to the tmux control socket, or ptrace the daemon. Both restrictions are
-/// inherited by every descendant and cannot be relaxed after `no_new_privs`.
+/// denies addressable AF_UNIX socket creation and process-inspection syscalls. Thus the same-uid
+/// provider can use its project/HOME/tmp, Internet sockets and anonymous in-process socketpairs,
+/// but cannot open daemon secrets, write outside the admitted trees, connect to the tmux control
+/// socket, or ptrace the daemon. Both restrictions are inherited by every descendant and cannot
+/// be relaxed after `no_new_privs`.
 enum LinuxProviderSandbox {
     static let command = "__clawdline_sandbox_provider_v1"
 
@@ -816,18 +817,17 @@ enum LinuxProviderSandbox {
                                            value: syscallNumber))
             filters.append(LinuxSockFilter(code: value, jumpTrue: 0, jumpFalse: 0, value: deny))
         }
-        // AF_UNIX is deliberately unavailable to providers. They receive no inherited socket;
-        // without one they cannot address the daemon/tmux control paths even though Internet
-        // sockets remain available for model APIs.
-        for syscallNumber: UInt32 in [41, 53] { // socket, socketpair on Linux amd/amd64
-            filters.append(LinuxSockFilter(code: equal, jumpTrue: 0, jumpFalse: 4,
-                                           value: syscallNumber))
-            filters.append(LinuxSockFilter(code: load, jumpTrue: 0, jumpFalse: 0, value: 16))
-            filters.append(LinuxSockFilter(code: equal, jumpTrue: 0, jumpFalse: 1,
-                                           value: UInt32(AF_UNIX)))
-            filters.append(LinuxSockFilter(code: value, jumpTrue: 0, jumpFalse: 0, value: deny))
-            filters.append(LinuxSockFilter(code: value, jumpTrue: 0, jumpFalse: 0, value: allow))
-        }
+        // Providers receive no inherited control socket and cannot create an addressable AF_UNIX
+        // socket with which to reach the daemon/tmux paths. Anonymous `socketpair(AF_UNIX)` is
+        // deliberately allowed: it has no pathname or peer outside the creating process tree,
+        // and runtimes such as Tokio require it for their own signal machinery.
+        filters.append(LinuxSockFilter(code: equal, jumpTrue: 0, jumpFalse: 4,
+                                       value: 41)) // socket on Linux amd64
+        filters.append(LinuxSockFilter(code: load, jumpTrue: 0, jumpFalse: 0, value: 16))
+        filters.append(LinuxSockFilter(code: equal, jumpTrue: 0, jumpFalse: 1,
+                                       value: UInt32(AF_UNIX)))
+        filters.append(LinuxSockFilter(code: value, jumpTrue: 0, jumpFalse: 0, value: deny))
+        filters.append(LinuxSockFilter(code: value, jumpTrue: 0, jumpFalse: 0, value: allow))
         filters.append(LinuxSockFilter(code: value, jumpTrue: 0, jumpFalse: 0, value: allow))
         let installed = filters.withUnsafeMutableBufferPointer { buffer -> Int32 in
             var program = LinuxSockProgram(length: UInt16(buffer.count), filters: buffer.baseAddress)
