@@ -1102,10 +1102,23 @@ final class LinuxTmuxTerminalHost: TerminalHost {
                                     operation: .close)
             let remaining = LinuxProcfs.row(pid: expected.pid)?.identity
             let processGone = remaining == nil || remaining?.startToken != expected.startToken
-            if readBack.status != 0, processGone { return true }
+            if Self.compensationReadBackProvesPaneGone(
+                status: readBack.status, output: readBack.stdout, expectedPane: created.id),
+               processGone { return true }
             usleep(20_000)
         }
         return false
+    }
+
+    /// tmux 3.4 may report exit zero for a missing pane while rendering an empty field. The
+    /// process-identity check remains the second half of the compensation proof; this helper only
+    /// decides whether the exact pane receipt has disappeared from tmux's own namespace.
+    static func compensationReadBackProvesPaneGone(status: Int32, output: Data,
+                                                    expectedPane: String) -> Bool {
+        guard status == 0 else { return true }
+        let rendered = String(decoding: output, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return paneID(rendered) != expectedPane
     }
 
     func close(_ session: TargetSession) throws -> String? {

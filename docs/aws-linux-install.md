@@ -273,6 +273,11 @@ Common failure classifications:
   pane-only resize for a single-pane detached window. Use a release that resolves the pane's exact
   window identity, resizes that owned window, and reads the pane dimensions back before reporting
   success.
+- a failed post-create readiness check removes the provider but reports an uncertain effect:
+  tmux 3.4 can return exit zero and an empty `#{pane_id}` field when `display-message` addresses a
+  pane just removed by `kill-pane`. Use a release that compares the returned canonical pane id and
+  separately proves the pinned PID/start token disappeared. Do not use command status alone, and
+  do not manually kill a different pane to make reconciliation look complete.
 - daemon active but no hosted Sessions: inspect typed Relay authorization/readiness and the
   authoritative per-session channels; do not infer readiness from systemd alone.
 - `clawdline-tmux` restart loop: compare the installed unit's `ExecStart` byte-for-byte with the

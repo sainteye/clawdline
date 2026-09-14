@@ -1583,6 +1583,17 @@ final class LinuxRuntimeContractTests: XCTestCase {
             .contains(where: { $0.id == pane }))
     }
 
+    func testTmuxCompensationAcceptsEmptySuccessfulMissingPaneReadback() {
+        XCTAssertTrue(LinuxTmuxTerminalHost.compensationReadBackProvesPaneGone(
+            status: 1, output: Data(), expectedPane: "%7"))
+        XCTAssertTrue(LinuxTmuxTerminalHost.compensationReadBackProvesPaneGone(
+            status: 0, output: Data("\n".utf8), expectedPane: "%7"))
+        XCTAssertTrue(LinuxTmuxTerminalHost.compensationReadBackProvesPaneGone(
+            status: 0, output: Data("%8\n".utf8), expectedPane: "%7"))
+        XCTAssertFalse(LinuxTmuxTerminalHost.compensationReadBackProvesPaneGone(
+            status: 0, output: Data("%7\n".utf8), expectedPane: "%7"))
+    }
+
     func testComposeRefusesReservedRootsAndMissingExecutablesBeforeEffect() throws {
         let tmux = try XCTUnwrap(ProcessInfo.processInfo.environment["CLAWDLINE_TEST_TMUX"])
         let linuxExecutable = try XCTUnwrap(
