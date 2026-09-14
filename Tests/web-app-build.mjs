@@ -95,6 +95,15 @@ try {
     assert.ok(worker.includes('addEventListener("push"')
         && worker.includes('addEventListener("notificationclick"'),
         "the hosted worker displays legacy push payloads and routes a notification tap");
+    assert.ok(worker.includes('var CLAWDLINE_BUILD = "' + stamp + '";'),
+        "the hosted worker changes bytes with every immutable app build");
+    assert.ok(worker.includes('addEventListener("fetch"')
+        && worker.includes('event.request.mode !== "navigate"')
+        && worker.includes('cache: "reload"'),
+        "an installed PWA navigation bypasses a stale browser document cache");
+    assert.ok(worker.includes("clawdline-pwa-update-bridge-v1")
+        && worker.includes("client.navigate(client.url)"),
+        "the first corrected worker replaces a currently open stale PWA document once");
     assert.equal(config.strings["zh-TW"], "zh-Hant",
         "the declaration routes a Taiwan device to Traditional Chinese");
     const traditional = JSON.parse(readFileSync(

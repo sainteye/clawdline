@@ -665,6 +665,7 @@ export class CloudClient {
         if (!value) return null;
         if (value.machineID !== machine || typeof value.senderID !== "string" || !value.senderID ||
             typeof value.keyID !== "string" || !value.keyID || !value.masterKey || !value.senderKey) {
+            this._noteUnpairedMachine(machine, value && value.senderID, "machine_key_incomplete");
             throw cloudError("machine_key_incomplete",
                 "This browser's pairing for the selected machine is incomplete. "
                 + "Start the Pair a Browser flow on that machine, then try again.");
@@ -692,7 +693,8 @@ export class CloudClient {
      */
     machineAccess(machine) {
         var seen = this.unpairedMachines.get(machine);
-        return seen ? Object.assign({ state: "not_paired", code: "machine_not_paired" }, seen) : null;
+        return seen ? Object.assign({ state: "not_paired",
+            code: seen.code || "machine_not_paired" }, seen) : null;
     }
 
     /** The descriptor and app build the last authenticated `orch/` snapshot of `machine` named. */
@@ -873,11 +875,12 @@ export class CloudClient {
     }
 
     /** One machine's "not paired in this browser" state, bounded to the last eight machines. */
-    _noteUnpairedMachine(machine, sender) {
+    _noteUnpairedMachine(machine, sender, code) {
         var seen = this.unpairedMachines.get(machine);
         var now = this.viewerEvents.now();
         this.unpairedMachines.delete(machine);
         this.unpairedMachines.set(machine, { sender: typeof sender === "string" ? sender.slice(0, 128) : null,
+            code: code || seen && seen.code || "machine_not_paired",
             since_ms: seen ? seen.since_ms : now, last_ms: now, envelopes: seen ? seen.envelopes + 1 : 1 });
         if (this.unpairedMachines.size > 8) {
             this.unpairedMachines.delete(this.unpairedMachines.keys().next().value);
@@ -1194,6 +1197,10 @@ export class CloudClient {
     _knownMachines() {
         var found = new Set(this.orchestratorSnapshots.keys());
         this.machineObservedAt.forEach(function (_, machine) { found.add(machine); });
+        // A viewer may see a machine-scoped route before it can open that machine's descriptor.
+        // Devices must keep that opaque route visible as "not paired" instead of making a healthy
+        // executor look absent.
+        this.unpairedMachines.forEach(function (_, machine) { found.add(machine); });
         this.sessionSnapshots.forEach(function (row) {
             if (row && typeof row.machine === "string" && row.machine) found.add(row.machine);
         });
@@ -1229,9 +1236,9 @@ export class CloudClient {
             }, null);
             var autoSelectable = observedAt !== null &&
                 Math.abs(now - observedAt) <= MACHINE_INVENTORY_FRESH_MS;
-            var pairing = this.viewerVerified.has(id) || this.pairingSeen.has(id) ? "paired"
-                : this.unpairedMachines.has(id) || this.pairingLookups.get(id) === false
-                    ? "not_paired" : "unknown";
+            var pairing = this.unpairedMachines.has(id) ? "not_paired"
+                : this.viewerVerified.has(id) || this.pairingSeen.has(id) ? "paired"
+                    : this.pairingLookups.get(id) === false ? "not_paired" : "unknown";
             var sessions = 0;
             this.sessionSnapshots.forEach(function (session) {
                 if (session && session.machine === id) sessions += 1;
@@ -1241,7 +1248,7 @@ export class CloudClient {
                 pairing: pairing, sessions: sessions,
                 // Being named by an authenticated channel is enough to issue a manual bounded
                 // places probe.  It is not enough to silently choose this route for the user.
-                selectable: true, autoSelectable: autoSelectable }));
+                selectable: pairing !== "not_paired", autoSelectable: autoSelectable }));
         }, this);
         rows = rows.map(function (row) {
             var fleet = machinePresentationForFleet(row, rows, T);

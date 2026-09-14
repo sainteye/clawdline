@@ -131,6 +131,9 @@ def module_preloads(assets, stamp):
 def build(out, app_origin, api_origin, relay_url):
     assets = collect_assets()
     string_catalogs = [(path.stem, path.read_bytes()) for path in sorted(STRINGS.glob("*.json"))]
+    worker_source = CLOUD_WORKER.read_text()
+    if worker_source.count("__CLAWDLINE_BUILD__") != 1:
+        return fail("cloud-sw.js must contain exactly one build marker")
     if not assets:
         return fail("no console assets were found under Resources/web/app")
     index_source = INDEX.read_text()
@@ -151,6 +154,9 @@ def build(out, app_origin, api_origin, relay_url):
         digest.update(b"\0")
         digest.update(sha256_hex(body).encode("ascii"))
         digest.update(b"\0")
+    digest.update(b"cloud-sw.js\0")
+    digest.update(sha256_hex(worker_source.encode("utf-8")).encode("ascii"))
+    digest.update(b"\0")
     digest.update("|".join([app_origin, api_origin, relay_url]).encode("utf-8"))
     stamp = "b" + digest.hexdigest()[:24]
 
@@ -203,7 +209,7 @@ def build(out, app_origin, api_origin, relay_url):
     }
     write("manifest.webmanifest",
           (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode("utf-8"))
-    write("sw.js", CLOUD_WORKER.read_bytes())
+    write("sw.js", worker_source.replace("__CLAWDLINE_BUILD__", stamp).encode("utf-8"))
 
     api_host = urlsplit(api_origin)
     relay_host = urlsplit(relay_url)

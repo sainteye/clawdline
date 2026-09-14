@@ -112,7 +112,10 @@ export function bindDevicesPage(elements, environment) {
             labels();
             if (!stopEvents && typeof environment.events === "function") {
                 stopEvents = environment.events(function (event) {
-                    if (event && (event.type === "orchestrator" || event.type === "sessions")) load();
+                    var code = event && event.error && event.error.code;
+                    if (event && (event.type === "orchestrator" || event.type === "sessions"
+                        || event.type === "error" && (code === "machine_not_paired"
+                            || code === "machine_key_incomplete"))) load();
                 });
             }
             load();

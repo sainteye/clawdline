@@ -124,6 +124,18 @@ await (async function () {
     check("a descriptor arriving after Session rows redraws the open Devices page", function () {
         assert.equal(elements["devices-rows"].textContent.includes("Mac · Sean MacBook Pro"), true);
     });
+    answer = { machines: [{
+        id: "linux-aws-02", label: "linux-aws-02", freshness: "unknown",
+        pairing: "not_paired", sessions: 0, selectable: false
+    }] };
+    listener({ type: "error", error: { code: "machine_key_incomplete" } });
+    await new Promise((done) => setImmediate(done));
+    await new Promise((done) => setImmediate(done));
+    check("an incomplete machine-pairing event redraws Devices without enabling New Session", function () {
+        const card = elements["devices-rows"].children[0];
+        assert.equal(card.textContent.includes(T.webDeviceNotPaired), true);
+        assert.equal(card.children.some((child) => child.className === "device-start"), false);
+    });
     page.leave();
     assert.equal(listener, null);
 })();

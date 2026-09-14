@@ -1267,6 +1267,12 @@ await check("viewer events · pairing · machine_key_incomplete is attributed to
         [["machine_pairing_lookup", "mac-02", true, "ms-1"], ["legacy_binding", "mac-03", false, null]],
         "a stored pairing missing its sender key, then a pin whose binding came back without a content key");
     assert.deepEqual(hooks.bindings, [["mac-03", DEVICE, "ms-1"]], "the binder ran once, after the decrypt");
+    const machines = await client.machines();
+    const incomplete = machines.machines.find((row) => row.id === "mac-02");
+    assert.deepEqual([incomplete && incomplete.pairing, incomplete && incomplete.selectable,
+        client.machineAccess("mac-02") && client.machineAccess("mac-02").code],
+    ["not_paired", false, "machine_key_incomplete"],
+    "an incomplete persisted pairing stays visible but cannot receive a command");
 });
 
 await check("viewer events · pairing · a pairing store that rejects after answering is stage machine_pairing_lookup with pairing_found_before", async function () {
@@ -1572,6 +1578,12 @@ await check("viewer events · pairing · an unpaired second machine opens no doo
     assert.deepEqual(errors.map((error) => error.code), ["machine_not_paired", "machine_not_paired"],
         "only that machine's code, which the door does not classify");
     assert.ok(client.sessionSnapshots.size >= 1, "the Mac's Session applied between them");
+    const machines = await client.machines();
+    const rows = Object.fromEntries(machines.machines.map((row) => [row.id, row]));
+    assert.deepEqual([Object.keys(rows).sort(), rows["linux-01"].pairing,
+        rows["linux-01"].selectable, rows["mac-01"].pairing],
+    [["linux-01", "mac-01"], "not_paired", false, "paired"],
+    "an observed second machine stays visible but cannot receive commands before pairing");
     assert.deepEqual([client.machineAccess("linux-01").state, client.machineAccess("linux-01").envelopes, client.machineAccess("mac-01")],
         ["not_paired", 2, null]);
     assert.equal(hooks.lookups.filter((machine) => machine === "linux-01").length, 1, "F4: the answer none is kept");
