@@ -22,6 +22,9 @@ import {
 import {
     documentAnswer, documentListing, normalizeDocumentIdentity, normalizeDocumentLocator
 } from "./document-links.js";
+import {
+    VIEWER_EVENTS_COMMAND, ViewerEventLog, envelopeMetadata, errorFields, pageContext
+} from "./cloud-viewer-events.js";
 
 const textDecoder = new TextDecoder();
 const textEncoder = new TextEncoder();
@@ -314,6 +317,36 @@ export class CloudClient {
         this.trail = options.trail
             || (sameViewer && prior.trail instanceof CloudTrail ? prior.trail : new CloudTrail());
         this.macCapabilities = sameViewer ? new Set(prior.macCapabilities) : new Set();
+        // What this browser saw fail, kept until the paired Mac's receipt names it
+        // (`cloud-viewer-events.js`). The log outlives a renewal like the trail. Delivery runs only
+        // for a log the composition root handed in, so a client a test builds never sends on its
+        // own and never adds a timer to the read timers a test counts.
+        var handedLog = options.viewerEvents instanceof ViewerEventLog;
+        this.viewerEvents = handedLog ? options.viewerEvents
+            : sameViewer && prior.viewerEvents instanceof ViewerEventLog ? prior.viewerEvents
+                : new ViewerEventLog();
+        this.viewerEventDelivery = handedLog || (sameViewer && prior.viewerEventDelivery === true);
+        this.viewerEventTimers = options.viewerEventTimers
+            || (sameViewer && prior.viewerEventTimers)
+            || { setTimeout: function (fn, ms) {
+                var timer = globalThis.setTimeout(fn, ms);
+                // Under node a pending delivery must not hold a finished suite open.
+                if (timer && typeof timer.unref === "function") timer.unref();
+                return timer;
+            }, clearTimeout: globalThis.clearTimeout.bind(globalThis) };
+        this.viewerEventTimer = null;
+        this.viewerEventsOff = null;
+        this.lastViewerDelivery = null;
+        this.webBuild = typeof options.webBuild === "string" ? options.webBuild.slice(0, 64)
+            : sameViewer && typeof prior.webBuild === "string" ? prior.webBuild : "";
+        // Receive-failure context. `readyAt` and the open counts belong to one socket; the sender
+        // and machine-pairing lookups and the machines seen signing an `orch/` snapshot belong to
+        // the viewer.
+        this.readyAt = null;
+        this.opensSinceReady = new Map();
+        this.senderKeyLookups = sameViewer ? new Map(prior.senderKeyLookups) : new Map();
+        this.pairingLookups = sameViewer ? new Map(prior.pairingLookups) : new Map();
+        this.viewerVerified = sameViewer ? new Map(prior.viewerVerified) : new Map();
         this.pendingBySequence = new Map();
         this.lastRelayError = null;
         this.closedFailure = null;
@@ -354,6 +387,7 @@ export class CloudClient {
             self.messageChain = self.messageChain.then(function () {
                 return self._receive(event.data);
             }).catch(function (error) {
+                self._recordFrameFailure(error, event.data);
                 self._emit({ type: "error", error: error });
             });
         };
@@ -383,6 +417,7 @@ export class CloudClient {
                 self.trail.closed(closeCode);
                 self.trail.connectionState("offline");
             }
+            self._disarmViewerEvents();
             self._closeTabChannel();
             self._settleReady(dropped);
             // Every read still waiting was waiting on this socket. Left alone they would sit out
@@ -420,6 +455,7 @@ export class CloudClient {
         this.socket = null;
         this.ready = false;
         this.closedFailure = failure;
+        this._disarmViewerEvents();
         this._closeTabChannel();
         this._settleReady(failure);
         this._failAllReads(failure, acknowledgementFailure);
@@ -520,10 +556,13 @@ export class CloudClient {
             throw cloudError("bad_ready", "the relay ready frame does not match the challenge");
         }
         this.ready = true;
+        this.readyAt = this.viewerEvents.now();
+        this.opensSinceReady = new Map();
         this.connectionAnnounced = true;
         this.lastRelayError = null;
         this.closedFailure = null;
         this.trail.connectionState("live");
+        this._armViewerEvents();
         this._openTabChannel();
         this._settleReady(null);
         if (this.handlers && this.handlers.hello) this.handlers.hello({ write: this.allowWrites });
@@ -534,9 +573,29 @@ export class CloudClient {
         }
     }
 
-    async _senderKey(sender, envelope) {
+    async _senderKey(sender, envelope, probe) {
         var value = this.senderKeys.get(sender);
-        if (value === undefined && this.resolveSenderKey) value = await this.resolveSenderKey(sender, envelope);
+        var source = value === undefined ? null : "memory";
+        if (value === undefined && this.resolveSenderKey) {
+            source = "store";
+            if (probe) probe.senderKeySource = source;
+            var asked = Date.now();
+            try { value = await this.resolveSenderKey(sender, envelope); }
+            finally { if (probe) probe.senderKeyLookupMs = Math.max(0, Date.now() - asked); }
+        }
+        // Observation only: whether a key was found, and where. The key itself is not kept here
+        // — a store answer is still read again for the next envelope, exactly as before.
+        if (probe) {
+            probe.senderKeySource = source;
+            probe.senderKeyFound = !!value;
+        }
+        if (typeof sender === "string" && sender) {
+            this.senderKeyLookups.delete(sender);
+            this.senderKeyLookups.set(sender, !!value);
+            if (this.senderKeyLookups.size > 8) {
+                this.senderKeyLookups.delete(this.senderKeyLookups.keys().next().value);
+            }
+        }
         if (!value) return null;
         if (typeof value === "string" || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
             value = await importSenderPublicKey(value);
@@ -556,12 +615,29 @@ export class CloudClient {
         return value;
     }
 
-    async _machinePairing(machine) {
+    async _machinePairing(machine, probe) {
+        if (probe) {
+            probe.pairingFoundBefore = this.pairingLookups.has(machine)
+                ? this.pairingLookups.get(machine) : null;
+        }
         var value = this.machinePairings.get(machine);
+        var source = value === undefined ? null : "memory";
         if (value === undefined && this.resolveMachinePairing) {
-            value = await this.resolveMachinePairing(machine);
+            source = "store";
+            if (probe) probe.pairingSource = source;
+            var asked = Date.now();
+            try { value = await this.resolveMachinePairing(machine); }
+            finally { if (probe) probe.pairingLookupMs = Math.max(0, Date.now() - asked); }
             if (value) this.machinePairings.set(machine, value);
         }
+        // Observation only: whether this browser holds a pairing for the machine, which kind, and
+        // under which key id. The record is written before the checks below, so a pairing they
+        // refuse is still named in the row that reports the refusal.
+        if (probe) {
+            probe.pairingSource = source;
+            probe.pairing = value || null;
+        }
+        this._notePairingLookup(machine, value);
         if (!value) return null;
         if (value.machineID !== machine || typeof value.senderID !== "string" || !value.senderID ||
             typeof value.keyID !== "string" || !value.keyID || !value.masterKey || !value.senderKey) {
@@ -573,6 +649,16 @@ export class CloudClient {
             throw cloudError("extractable_key", "the paired machine keys are extractable");
         }
         return value;
+    }
+
+    /** Which machines this viewer's store answered with a pairing and which with none; ids only. */
+    _notePairingLookup(machine, value) {
+        if (typeof machine !== "string" || !machine) return;
+        this.pairingLookups.delete(machine);
+        this.pairingLookups.set(machine, !!value);
+        if (this.pairingLookups.size > 8) {
+            this.pairingLookups.delete(this.pairingLookups.keys().next().value);
+        }
     }
 
     async _outboundMachinePairing(machine) {
@@ -587,24 +673,53 @@ export class CloudClient {
             + "Start the Pair a Browser flow on that machine, then try again.");
     }
 
+    /**
+     * One envelope, and — when it fails — one row saying where and why (`cloud-viewer-events.js`).
+     *
+     * The row is written here, at the failure, rather than by whoever listens to the `error`
+     * event: by then `unreadable_envelope` has already replaced the exception that meant
+     * something. `probe.stage` is set before each step, so the stage is where it threw.
+     */
     async _receiveEnvelope(envelope, realign) {
+        var probe = { stage: "other", original: null, cause: null, senderKeyFound: null,
+            senderKeySource: null, senderKeyLookupMs: null, routedMachine: null,
+            pairing: undefined, pairingSource: null, pairingLookupMs: null, pairingFoundBefore: null };
+        try {
+            return await this._openEnvelopeFrame(envelope, realign, probe);
+        } catch (error) {
+            this._recordReceiveFailure(error, envelope, realign, probe);
+            throw error;
+        }
+    }
+
+    async _openEnvelopeFrame(envelope, realign, probe) {
+        probe.stage = "channel_parse";
         var channel = parseEnvelopeChannel(envelope && envelope.ch);
         var routedMachine = channel.kind === "session" || channel.kind === "transcript" ||
             channel.kind === "orch" || channel.kind === "ctl"
             ? decodedChannelSegment(channel.machine) : null;
-        var pairing = routedMachine ? await this._machinePairing(routedMachine) : null;
+        probe.routedMachine = routedMachine;
+        probe.stage = "machine_pairing_lookup";
+        var pairing = routedMachine ? await this._machinePairing(routedMachine, probe) : null;
+        probe.stage = "pairing_key_id";
         this._compareKeyID(envelope, routedMachine, pairing && pairing.keyID);
         if (pairing && pairing.keyID !== envelope.key_id) {
             throw cloudError("unknown_key",
                 "the envelope does not match the selected machine's pairing");
         }
+        probe.stage = "sender_key_lookup";
+        if (pairing) {
+            probe.senderKeySource = "pairing";
+            probe.senderKeyFound = true;
+        }
         var key = pairing ? pairing.senderKey
-            : await this._senderKey(envelope && envelope.sender, envelope);
+            : await this._senderKey(envelope && envelope.sender, envelope, probe);
         if (!key) throw cloudError("unknown_sender", "the envelope sender is not paired");
         var clear;
         try {
-            clear = await openEnvelope(envelope, pairing ? pairing.masterKey
-                : await this._masterKey(envelope.key_id), key);
+            probe.stage = "master_key_lookup";
+            var master = pairing ? pairing.masterKey : await this._masterKey(envelope.key_id);
+            clear = await openEnvelope(envelope, master, key, probe);
         } catch (error) {
             // Relay readiness proves the viewer's signing identity, not that the account content
             // key in this browser still matches the Mac. WebCrypto otherwise reports a bare
@@ -612,12 +727,15 @@ export class CloudClient {
             // Preserve our own typed key-store failures; normalize signature/decryption failures
             // so the composition root can offer the existing same-device repair flow.
             if (error && (error.code === "unknown_key" || error.code === "extractable_key")) throw error;
+            // The row keeps what this sentence replaces.
+            probe.original = error;
             throw cloudError("unreadable_envelope",
                 "this browser cannot decrypt the paired Mac's Session data");
         }
         // `sender` is the one clear envelope field excluded from the signature. Select the key
         // from the persisted machine binding, verify/decrypt the channel, and only then accept
         // that clear sender spelling as the owner of the authenticated route.
+        probe.stage = "paired_sender";
         if (pairing && pairing.senderID !== envelope.sender) {
             throw cloudError("unknown_sender",
                 "the authenticated machine channel does not match its paired sender");
@@ -626,6 +744,7 @@ export class CloudClient {
         // them. The signed channel and successful decrypt are the only safe migration witness:
         // never persist a route from the clear sender/header before both checks have passed.
         if (routedMachine && !pairing) {
+            probe.stage = "legacy_binding";
             var migrated = this.bindLegacyMachine
                 ? await this.bindLegacyMachine(routedMachine, envelope.sender, envelope.key_id)
                 : { machineID: routedMachine, senderID: envelope.sender, keyID: this.keyID,
@@ -637,6 +756,8 @@ export class CloudClient {
             }
             this.machinePairings.set(routedMachine, migrated);
         }
+        this._sawAuthenticatedEnvelope(envelope, channel, routedMachine);
+        probe.stage = "sequence";
         var previous = this.sequenceBySender.get(envelope.sender);
         if (realign) {
             var realignKey = envelope.sender + "\n" + envelope.ch;
@@ -651,10 +772,136 @@ export class CloudClient {
         if (previous === undefined || envelope.seq > previous) {
             this.sequenceBySender.set(envelope.sender, envelope.seq);
         }
+        probe.stage = "payload";
         var payload;
         try { payload = clear.length ? JSON.parse(textDecoder.decode(clear)) : null; }
         catch (e) { throw cloudError("bad_payload", "the decrypted stream payload is not JSON"); }
+        probe.stage = "apply";
         this._applySnapshot(channel, payload, envelope, realign);
+    }
+
+    /**
+     * An envelope this browser's pairing for its machine accepted — signature, decrypt, paired
+     * sender and any legacy binding all passed: counted per sender, and an `orch/` one names its
+     * machine as one delivery may go to. Never throws: the receive path does not wait on it.
+     */
+    _sawAuthenticatedEnvelope(envelope, channel, routedMachine) {
+        try {
+            var sender = envelope.sender;
+            this.opensSinceReady.set(sender, (this.opensSinceReady.get(sender) || 0) + 1);
+            if (channel.kind !== "orch" || !routedMachine) return;
+            var seen = this.viewerVerified.get(routedMachine);
+            this.viewerVerified.set(routedMachine, { sender: sender, at_ms: this.viewerEvents.now() });
+            // A Mac to deliver to may only just have become known.
+            if (!seen || seen.sender !== sender) this._scheduleViewerEvents();
+        } catch (e) { /* observing a success must never become a failure */ }
+    }
+
+    /** The Mac rows go to if one can be named without refusing, and the sender that signs for it. */
+    _targetMachineHint() {
+        try { return this._viewerEventTarget(); } catch (e) { return null; }
+    }
+
+    /**
+     * One `cloud.receive.failed` row: the code that is about to be thrown, the stage it was thrown
+     * from and the exception underneath it, the envelope's metadata, and the context that tells a
+     * machine this browser is not paired with (H1a) from a paired one whose pairing is incomplete
+     * or under another key id (H1b), a realigned old snapshot (H2), a key store failing on resume
+     * (H3) and an envelope that was never valid (H4). Never throws; never holds nonce, ct, sig or
+     * any key — of a pairing only its kind, key id and sender id.
+     */
+    _recordReceiveFailure(error, envelope, realign, probe) {
+        try {
+            var now = this.viewerEvents.now();
+            var thrown = errorFields(error);
+            // The code is what was thrown; the name and words are the exception it replaced.
+            var original = probe.original ? errorFields(probe.original) : thrown;
+            var cause = probe.cause ? errorFields(probe.cause) : null;
+            var meta = envelopeMetadata(envelope, realign);
+            var target = this._targetMachineHint();
+            var pairing = probe.pairing && typeof probe.pairing === "object" ? probe.pairing : null;
+            var withPairing = [];
+            var withoutPairing = [];
+            this.machinePairings.forEach(function (_, machine) { withPairing.push(machine); });
+            this.pairingLookups.forEach(function (had, machine) {
+                if (had && withPairing.indexOf(machine) < 0) withPairing.push(machine);
+                if (!had && withoutPairing.indexOf(machine) < 0) withoutPairing.push(machine);
+            });
+            var found = [];
+            var missing = [];
+            this.senderKeys.forEach(function (_, sender) { if (found.indexOf(sender) < 0) found.push(sender); });
+            this.senderKeyLookups.forEach(function (had, sender) {
+                if (had && found.indexOf(sender) < 0) found.push(sender);
+                if (!had && missing.indexOf(sender) < 0) missing.push(sender);
+            });
+            var opensTotal = 0;
+            this.opensSinceReady.forEach(function (count) { opensTotal += count; });
+            var data = Object.assign(meta, {
+                code: thrown.code,
+                stage: probe.stage,
+                error_name: original.name,
+                error_message: original.message,
+                cause_name: cause ? cause.name : null,
+                cause_message: cause ? cause.message : null,
+                browser_key_id: typeof this.keyID === "string" ? this.keyID.slice(0, 64) : null,
+                socket_ready: this.ready,
+                ms_since_ready: this.readyAt === null ? null : Math.max(0, now - this.readyAt),
+                opens_since_ready_sender: meta.sender ? this.opensSinceReady.get(meta.sender) || 0 : 0,
+                opens_since_ready_total: opensTotal,
+                sender_key_found: probe.senderKeyFound,
+                sender_key_source: probe.senderKeySource,
+                sender_key_lookup_ms: probe.senderKeyLookupMs,
+                senders_with_keys: found.slice(0, 8),
+                senders_without_keys: missing.slice(0, 8),
+                routed_machine: typeof probe.routedMachine === "string"
+                    ? probe.routedMachine.slice(0, 128) : null,
+                // `undefined` is "never looked up" (the channel did not parse, or names no machine).
+                pairing_found: probe.pairing === undefined ? null : !!pairing,
+                // What this viewer's previous lookup for the same machine answered: a store that
+                // said yes and now says no is not a machine that was never paired.
+                pairing_found_before: probe.pairingFoundBefore,
+                pairing_legacy: pairing ? pairing.legacy === true : null,
+                pairing_key_id: pairing && typeof pairing.keyID === "string" ? pairing.keyID.slice(0, 64) : null,
+                pairing_sender: pairing && typeof pairing.senderID === "string"
+                    ? pairing.senderID.slice(0, 128) : null,
+                pairing_source: probe.pairingSource,
+                pairing_lookup_ms: probe.pairingLookupMs,
+                machines_with_pairing: withPairing.slice(0, 8),
+                machines_without_pairing: withoutPairing.slice(0, 8),
+                target_machine: target ? target.machine : null,
+                target_sender: target ? target.sender : null,
+                sender_is_target: target && target.sender && meta.sender
+                    ? target.sender === meta.sender : null,
+                web_build: this.webBuild || null
+            }, pageContext(now));
+            var outcome = this.viewerEvents.record("cloud.receive.failed", data, [
+                "cloud.receive.failed", thrown.code, probe.stage, meta.channel_kind, meta.machine,
+                meta.sender, meta.key_id, original.name, meta.realign
+            ].join("|"));
+            if (error && typeof error === "object") {
+                Object.defineProperty(error, "viewerEvent", { configurable: true, enumerable: false,
+                    value: outcome });
+            }
+        } catch (e) { /* observing a failure must never become a second one */ }
+    }
+
+    /** A frame that failed before or outside an envelope: one generic row, rate limited like the rest. */
+    _recordFrameFailure(error, raw) {
+        try {
+            if (error && typeof error === "object" && error.viewerEvent) return;
+            var thrown = errorFields(error);
+            var type = typeof raw === "string"
+                ? ((/"type"\s*:\s*"([a-z_]{1,32})"/.exec(raw.slice(0, 256)) || [])[1] || null) : "binary";
+            var now = this.viewerEvents.now();
+            this.viewerEvents.record("cloud.frame.failed", Object.assign({
+                frame_type: type, code: thrown.code, layer: error && typeof error.layer === "string"
+                    ? error.layer.slice(0, 32) : null,
+                error_name: thrown.name, error_message: thrown.message,
+                socket_ready: this.ready,
+                ms_since_ready: this.readyAt === null ? null : Math.max(0, now - this.readyAt),
+                web_build: this.webBuild || null
+            }, pageContext(now)), ["cloud.frame.failed", type, thrown.code, thrown.name].join("|"));
+        } catch (e) { /* observing a failure must never become a second one */ }
     }
 
     _applySnapshot(channel, payload, envelope, realign) {
@@ -923,11 +1170,15 @@ export class CloudClient {
     }
 
     _machineRequest(machine, type, extra, kind, timeoutMs, readOptions) {
+        return this._machineRequestAs(requestID(), machine, type, extra, kind, timeoutMs, readOptions);
+    }
+
+    /** `_machineRequest` under a request id the caller keeps, so a resend is the same request. */
+    _machineRequestAs(request, machine, type, extra, kind, timeoutMs, readOptions) {
         if (typeof machine !== "string" || !machine) {
             return Promise.reject(cloudError("cloud_read_unavailable",
                 "no Mac has published an inventory to this account yet"));
         }
-        var request = requestID();
         return this._read({ machine: machine, session: MACHINE_REPLY_SESSION }, type,
             Object.assign({ request: request }, extra || {}), (kind || "read") + ":" + request,
             timeoutMs, readOptions);
@@ -1014,6 +1265,179 @@ export class CloudClient {
             return this._machineRequest(target,
                 "diagnostics.report", { report: body }, "action");
         } catch (error) { return Promise.reject(error); }
+    }
+
+    /* ---- viewer events: automatic delivery to the paired Mac ------------------------------- */
+
+    /**
+     * The Mac these rows belong to, named explicitly rather than by `_onlyMachine`: an account
+     * with a second machine — an enrolled Linux executor — is exactly the case being diagnosed,
+     * and "more than one machine" must not become "nowhere to report it".
+     *
+     * A candidate is a machine this browser is paired with, is a Mac, and has said it takes the
+     * command:
+     *
+     * - **paired**: its `orch/<machine>` snapshot was accepted by `_receiveEnvelope`, which happens
+     *   only through this browser's pairing for that machine — an exact one from the store, or a
+     *   legacy pin bound to it after the signature and decrypt proved it. A machine this browser
+     *   is not paired with never opens and so is never here. The send itself is sealed by
+     *   `_outboundMachinePairing`, so a pairing gone since is refused there, before the wire;
+     * - **a Mac**: its descriptor does not name another platform (a Linux executor says `linux`);
+     * - **capable**: it published `cloud_status.v >= 1`, which only the Mac does. A Linux executor
+     *   publishes none and does not implement `diagnostics.events` — it drops the command without
+     *   a reply — so it is excluded by two independent facts, not one.
+     *
+     * One candidate is the answer. With none, the Mac chosen on an earlier page is used unless
+     * this page has since authenticated that machine and found it no longer qualifies, so a page
+     * that cannot open any envelope yet can still report that it cannot. Two Macs are refused as
+     * ambiguous; a Mac that has not shown the capability is `cloud_feature_unavailable`.
+     */
+    _viewerEventTarget(remember) {
+        var candidates = [];
+        var incapable = false;
+        this.viewerVerified.forEach(function (seen, machine) {
+            var snapshot = this.orchestratorSnapshots.get(machine) || {};
+            var descriptor = snapshot.machine && typeof snapshot.machine === "object" ? snapshot.machine : {};
+            var platform = typeof descriptor.platform === "string" ? descriptor.platform.toLowerCase() : "";
+            if (platform && platform !== "macos" && platform !== "darwin") return;
+            if (!this.macCapabilities.has(machine)) { incapable = true; return; }
+            candidates.push({ machine: machine, sender: seen.sender, capable: true });
+        }, this);
+        if (candidates.length > 1) {
+            throw cloudError("cloud_machine_ambiguous",
+                "viewer events need one paired Mac, and this browser has authenticated more than one");
+        }
+        if (candidates.length === 1) {
+            if (remember) this.viewerEvents.rememberTarget(candidates[0]);
+            return candidates[0];
+        }
+        var remembered = this.viewerEvents.target();
+        if (remembered && remembered.machine && !this.viewerVerified.has(remembered.machine)) {
+            return { machine: remembered.machine, sender: remembered.sender,
+                capable: remembered.capable === true, remembered: true };
+        }
+        if (incapable) {
+            throw cloudError("cloud_feature_unavailable",
+                "the paired Mac has not published cloud_status, so it does not take viewer events");
+        }
+        throw cloudError("cloud_machine_unavailable",
+            "no paired Mac has published an authenticated snapshot to this browser yet");
+    }
+
+    _macBuild(machine) {
+        var snapshot = this.orchestratorSnapshots.get(machine);
+        var app = snapshot && snapshot.app;
+        return app && typeof app.build === "string" ? app.build.slice(0, 64)
+            : app && Number.isFinite(app.build) ? String(app.build) : null;
+    }
+
+    /**
+     * A refusal sending again cannot change: the Mac answered and said no (a 4xx other than
+     * timeout and rate), or this device may not publish at all. Anything else — offline, a
+     * renewal, a read timeout, a 5xx — is tried again later under the backoff.
+     */
+    _viewerEventsRefusalIsFinal(failure) {
+        if (failure.code === "cloud_read_needs_send_prompt" || failure.code === "cloud_read_only") return true;
+        if (failure.layer === "browser" || failure.layer === "relay") return false;
+        return Number.isInteger(failure.status) && failure.status >= 400 && failure.status < 500 &&
+            failure.status !== 408 && failure.status !== 429;
+    }
+
+    _armViewerEvents() {
+        if (!this.viewerEventDelivery) return;
+        if (!this.viewerEventsOff) {
+            var self = this;
+            this.viewerEventsOff = this.viewerEvents.onRecord(function () { self._scheduleViewerEvents(); });
+        }
+        this._scheduleViewerEvents();
+    }
+
+    _disarmViewerEvents() {
+        if (this.viewerEventsOff) { this.viewerEventsOff(); this.viewerEventsOff = null; }
+        if (this.viewerEventTimer !== null) {
+            try { this.viewerEventTimers.clearTimeout(this.viewerEventTimer); } catch (e) { }
+            this.viewerEventTimer = null;
+        }
+    }
+
+    /**
+     * One timer at a time: after a row, the burst's debounce; never before the log's spacing,
+     * backoff and daily budget allow. A delivery that could not reach a Mac waits for the next
+     * row, the next `ready`, or a Mac becoming known — it does not poll.
+     */
+    _scheduleViewerEvents() {
+        if (!this.viewerEventDelivery || !this.ready || this.viewerEventTimer !== null) return;
+        var log = this.viewerEvents;
+        try {
+            if (!log.pending()) return;
+            var wait = Math.max(log.limits.debounceMs, log.nextSendAt() - log.now());
+            var self = this;
+            this.viewerEventTimer = this.viewerEventTimers.setTimeout(function () {
+                self.viewerEventTimer = null;
+                self._deliverViewerEvents().then(function (outcome) {
+                    self.lastViewerDelivery = outcome;
+                    var again = outcome.state === "delivered" || outcome.state === "failed" ||
+                        (outcome.state === "deferred" &&
+                            (outcome.why === "spacing" || outcome.why === "other_tab"));
+                    if (again) self._scheduleViewerEvents();
+                });
+            }, wait);
+        } catch (e) { this.viewerEventTimer = null; }
+    }
+
+    /**
+     * Send the waiting batch to the paired Mac as `diagnostics.events` and remove it only on a
+     * receipt that names it. Resolves with what happened — `delivered`, `empty`, `deferred`,
+     * `blocked` or `failed` — and never rejects: the rows are the record, and they stay.
+     *
+     * Accepted, delivered and acknowledged stay three facts: the relay's `ack` is the trail's
+     * `relayed` step; the Mac's receipt, written after it appended the line, is `observed`; and
+     * `acknowledge` removing the outbox is the last thing, not the first.
+     */
+    _deliverViewerEvents() {
+        var self = this;
+        var log = this.viewerEvents;
+        return Promise.resolve().then(function () {
+            if (!log.pending()) return { state: "empty" };
+            if (!self.ready) return { state: "deferred", why: "not_ready" };
+            var target;
+            try { target = self._viewerEventTarget(true); }
+            catch (failure) { return { state: "deferred", why: failure.code, failure: failure }; }
+            if (!target.capable) {
+                return { state: "deferred", why: "cloud_feature_unavailable", machine: target.machine };
+            }
+            var macBuild = self._macBuild(target.machine);
+            var blocked = log.blockedFor(target.machine, macBuild, self.webBuild || null);
+            if (blocked) return { state: "blocked", code: blocked.code, machine: target.machine };
+            var at = log.nextSendAt();
+            if (at > log.now()) return { state: "deferred", why: "spacing", at: at };
+            if (!log.claimLease(self.tabID)) return { state: "deferred", why: "other_tab" };
+            var outbox = log.takeBatch({ device: self.deviceID, tab: self.tabID, webBuild: self.webBuild });
+            if (!outbox) return { state: "empty" };
+            var batch = JSON.parse(outbox.body);
+            log.noteAttempt();
+            return self._machineRequestAs(outbox.request, target.machine, VIEWER_EVENTS_COMMAND,
+                { batch: batch }, "action", undefined, { probe: false }).then(function (receipt) {
+                if (!receipt || receipt.batch_id !== outbox.batch_id || receipt.rows !== outbox.rows) {
+                    var wrong = cloudError("bad_payload", "the Mac's receipt does not name this batch");
+                    log.noteFailure(wrong);
+                    return { state: "failed", failure: wrong, machine: target.machine };
+                }
+                log.acknowledge(outbox.batch_id, receipt);
+                return { state: "delivered", receipt: receipt, machine: target.machine };
+            }, function (error) {
+                var failure = asCloudFailure(error);
+                log.noteFailure(failure);
+                if (self._viewerEventsRefusalIsFinal(failure)) {
+                    log.block({ machine: target.machine, code: failure.code, layer: failure.layer,
+                        macBuild: macBuild, webBuild: self.webBuild || null });
+                    return { state: "blocked", code: failure.code, failure: failure, machine: target.machine };
+                }
+                return { state: "failed", failure: failure, machine: target.machine };
+            });
+        }).catch(function (error) {
+            return { state: "failed", failure: asCloudFailure(error) };
+        });
     }
 
     /**

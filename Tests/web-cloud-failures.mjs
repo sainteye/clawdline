@@ -838,6 +838,288 @@ await check("§4.3 the Cloud client answers cloud.status for every published Mac
         "a Mac that never published cloud_status is not asked");
 });
 
+/* ---- viewer events · receive failures reach the paired Mac's fixed file --------------------- */
+
+// `net/cloud-viewer-events.js` and the delivery half of `CloudClient`: every receive failure leaves
+// a row naming its stage and original error, rows survive a reload, and they go to the paired Mac
+// as `diagnostics.events` on their own — removed only when that Mac's receipt names the batch.
+const viewerModule = await optional("../Resources/web/app/js/net/cloud-viewer-events.js");
+
+/** `localStorage` as a page sees it, with a switch that makes every write throw. */
+class FakeStorage {
+    constructor() { this.map = new Map(); this.failWrites = false; }
+    getItem(key) { return this.map.has(key) ? this.map.get(key) : null; }
+    setItem(key, value) {
+        if (this.failWrites) throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError" });
+        this.map.set(key, String(value));
+    }
+    removeItem(key) { this.map.delete(key); }
+}
+
+function viewerTimers() {
+    const pending = [];
+    return { pending,
+        setTimeout(fn, ms) { pending.push({ fn, ms }); return pending.length; },
+        clearTimeout() { },
+        fire() { const due = pending.splice(0); due.forEach((timer) => timer.fn()); return due.length; } };
+}
+
+let viewerClock = 1_789_400_000_000;
+function viewerLog(storage) {
+    need(viewerModule, "net/cloud-viewer-events.js");
+    return new viewerModule.ViewerEventLog({ storage: storage || null, key: "test.viewer-events",
+        now: () => viewerClock });
+}
+
+const MAC_STATUS = { v: 1, generated_at_ms: 1789290000000, counting_since_ms: 1789280000000,
+    clock_guard: { state: "ready", reason: null, clears_at_ms: null }, token_expires_at_ms: 1789290240000,
+    key_id: "ms-1", roster_readable: true, dropped: {}, recent_drops: [], recent_notices: [] };
+
+/** A connected client with a log and manual delivery timers, and mac-01 authenticated on orch/. */
+async function viewerFleet(options) {
+    options = options || {};
+    const storage = options.storage || new FakeStorage();
+    const log = options.log || viewerLog(storage);
+    const timers = viewerTimers();
+    const errors = [];
+    const client = cloudClient(Object.assign({ viewerEvents: log, viewerEventTimers: timers,
+        webBuild: "web-build-1" }, options.client || {}));
+    client.events((event) => { if (event.type === "error") errors.push(event.error); });
+    const socket = await ready(client);
+    if (options.orch !== false) {
+        await fromMac(client, socket, "orch/mac-01", Object.assign({ tasks: [],
+            machine: { name: "Mac", platform: "macos" }, app: { build: options.macBuild || "mac-build-1" },
+            cloud_status: MAC_STATUS }, options.orch || {}));
+    }
+    return { client, socket, log, storage, timers, errors };
+}
+
+async function sealedFromMac(fields, payload, master) {
+    return sealEnvelope(Object.assign({ ch: "s/mac-01/s1", seq: ++macSequence, ts: 1787817600000,
+        class: "stream", key_id: "ms-1", sender: DEVICE }, fields || {}),
+    JSON.stringify(payload === undefined ? { session: { id: "s1" } } : payload), master || masterKey, signingKey);
+}
+
+async function receiveEnvelope(client, socket, envelope, realign) {
+    socket.receive({ type: "envelope", envelope: envelope, realign: realign === true });
+    await client.messageChain;
+}
+
+function failureRows(log) {
+    return log.snapshot().rows.filter((row) => row.event === "cloud.receive.failed");
+}
+
+await check("viewer events · an unknown sender (a second machine) is a row with the sender, the keys held and the paired Mac", async function () {
+    const { client, socket, log, errors } = await viewerFleet();
+    const stranger = await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] });
+    await receiveEnvelope(client, socket, stranger);
+    assert.equal(errors.at(-1) && errors.at(-1).code, "unknown_sender", "the emitted code is unchanged");
+    const rows = failureRows(log);
+    assert.equal(rows.length, 1, "one row for one failure");
+    const data = rows[0].data;
+    assert.deepEqual([data.code, data.stage, data.channel_kind, data.machine, data.sender, data.key_id, data.browser_key_id],
+        ["unknown_sender", "sender_key_lookup", "orch", "linux-01", "linux-executor", "ms-1", "ms-1"]);
+    assert.deepEqual([data.sender_key_found, data.paired_machine, data.paired_sender, data.sender_is_paired_machine],
+        [false, "mac-01", DEVICE, false], "H1: not the paired Mac's sender, and no key for it");
+    assert.ok(data.senders_with_keys.includes(DEVICE) && !data.senders_with_keys.includes("linux-executor"));
+    assert.ok(data.opens_since_ready_total >= 1 && data.opens_since_ready_sender === 0 && Number.isInteger(data.ms_since_ready));
+    assert.equal(data.web_build, "web-build-1");
+    assert.equal(errors.at(-1).viewerEvent.n, rows[0].n, "the thrown failure names its row, for the door's row");
+});
+
+await check("viewer events · the same key id under a different master secret fails at decrypt with OperationError", async function () {
+    const { client, socket, log, errors } = await viewerFleet();
+    const otherMaster = await importMasterSecret(Buffer.alloc(32, 0x42).toString("base64"));
+    await receiveEnvelope(client, socket, await sealedFromMac({ seq: 7001 }, { session: { id: "s1" } }, otherMaster), true);
+    assert.equal(errors.at(-1).code, "unreadable_envelope");
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.code, data.stage, data.error_name, data.sender_key_found, data.sender_is_paired_machine,
+        data.key_id, data.seq, data.realign, data.class],
+    ["unreadable_envelope", "decrypt", "OperationError", true, true, "ms-1", 7001, true, "stream"],
+    "signature verified with the paired key; AES-GCM refused the ciphertext");
+    assert.ok(Number.isInteger(data.ct_bytes) && data.ct_bytes >= 16, "the ciphertext's length, not the ciphertext");
+});
+
+await check("viewer events · an envelope failing validateEnvelope is stage validate with the TypeError's words", async function () {
+    const { client, socket, log, errors } = await viewerFleet();
+    const valid = await sealedFromMac({}, { session: { id: "s1" } });
+    await receiveEnvelope(client, socket, Object.assign({}, valid, { extra: 1 }));
+    assert.equal(errors.at(-1).code, "unreadable_envelope");
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.stage, data.error_name, data.error_message],
+        ["validate", "TypeError", "envelope fields do not match protocol v1"],
+        "H4: the original exception rather than unreadable_envelope's sentence");
+    assert.ok(data.field_names.includes("extra") && data.field_names.includes("nonce"), "field names only: " + data.field_names);
+});
+
+await check("viewer events · a key store that rejects is stage sender_key_lookup with its DOMException name", async function () {
+    let storeDown = false;
+    const { client, socket, log, errors } = await viewerFleet({ client: { senderKeys: {},
+        resolveSenderKey: (sender) => storeDown
+            ? Promise.reject(Object.assign(new Error("The operation failed for reasons unrelated to the database itself"), { name: "UnknownError" }))
+            : Promise.resolve(sender === DEVICE ? senderKey : null) } });
+    await fromMac(client, socket, "s/mac-01/s1", { session: { id: "s1" } });
+    storeDown = true;
+    await receiveEnvelope(client, socket, await sealedFromMac());
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.code, data.stage, data.error_name, data.sender_key_source, data.sender_is_paired_machine],
+        [null, "sender_key_lookup", "UnknownError", "store", true],
+        "H3: the store failed for the paired sender after it had worked on this socket");
+    assert.ok(data.opens_since_ready_sender >= 2, "earlier opens from the same sender: " + data.opens_since_ready_sender);
+    assert.equal(errors.at(-1).code, undefined, "the transport emits the raw error exactly as before");
+});
+
+await check("viewer events · a storage write that throws is counted, never thrown, and the rows still leave", async function () {
+    const { client, socket, log, storage, timers } = await viewerFleet();
+    storage.failWrites = true;
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    await fromMac(client, socket, "s/mac-01/s2", { session: { id: "s2" } });
+    assert.ok(client.sessionSnapshots.size >= 1, "the transport kept working through a failing store");
+    assert.equal(failureRows(log).length, 1, "the row is held in memory");
+    storage.failWrites = false;
+    timers.fire();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    assert.ok(sent.batch.completeness.storage_errors >= 1, "the batch states the failed writes: " + sent.batch.completeness.storage_errors);
+    assert.equal(sent.batch.rows.length, 1);
+    await answer(client, socket, "mac-01", { read: "action:" + sent.request, status: 200,
+        body: { ok: true, batch_id: sent.batch.batch_id, rows: 1 } });
+    await until(() => client.lastViewerDelivery && client.lastViewerDelivery.state === "delivered", "the receipt");
+    storage.failWrites = true;
+    log.rememberTarget({ machine: "mac-02", sender: "other", capable: true });
+    viewerClock += 5 * 60 * 1000;
+    const before = published(socket).length;
+    const attempt = await outcome(client._deliverViewerEvents(), 200);
+    assert.deepEqual([log.pending(), attempt.state, attempt.value && attempt.value.state, published(socket).length],
+        [false, "resolved", "empty", before], "a store that keeps refusing does not send batches of nothing");
+});
+
+await check("viewer events · an older Mac's unknown_command keeps the rows and does not retry until a build changes", async function () {
+    const { client, socket, log, timers } = await viewerFleet();
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    assert.ok(timers.pending.length === 1 && timers.pending[0].ms >= 5000, "a row schedules one debounced delivery");
+    timers.fire();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    assert.deepEqual([sent.ch, sent.session], ["ctl/mac-01", MACHINE_REPLY], "addressed to the paired Mac, not the only machine");
+    await answer(client, socket, "mac-01", { read: "action:" + sent.request, status: 400,
+        error: { code: "unknown_command", layer: "mac_preflight", message: "This Mac does not know that Cloud command." } });
+    await until(() => client.lastViewerDelivery, "the delivery outcome");
+    assert.deepEqual([client.lastViewerDelivery.state, client.lastViewerDelivery.code], ["blocked", "unknown_command"]);
+    assert.equal(log.snapshot().outbox.batch_id, sent.batch.batch_id, "the batch is still on the phone");
+    viewerClock += 10 * 60 * 1000;
+    const before = published(socket).length;
+    const again = await client._deliverViewerEvents();
+    assert.deepEqual([again.state, published(socket).length], ["blocked", before], "no second publish to the same build");
+    assert.equal(timers.pending.length, 0, "and nothing scheduled to try");
+    await fromMac(client, socket, "orch/mac-01", { tasks: [], machine: { platform: "macos" },
+        app: { build: "mac-build-2" }, cloud_status: MAC_STATUS });
+    const retried = client._deliverViewerEvents();
+    const resent = await nextCommand(socket, "diagnostics.events");
+    assert.deepEqual([resent.request, JSON.stringify(resent.batch)], [sent.request, JSON.stringify(sent.batch)],
+        "a rebuilt Mac is asked again with the same request and the same bytes");
+    await answer(client, socket, "mac-01", { read: "action:" + resent.request, status: 413,
+        error: { code: "viewer_events_too_large", layer: "mac_route", message: "too large" } });
+    assert.deepEqual([(await retried).state, log.snapshot().outbox && log.snapshot().outbox.rows], ["blocked", 1],
+        "a batch the Mac will not take is kept too");
+});
+
+await check("viewer events · a burst of 50 failures keeps bounded rows and the exact dropped count", async function () {
+    const { client, socket, log, timers } = await viewerFleet();
+    for (let i = 0; i < 50; i += 1) {
+        await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/linux-01/t" + i, sender: "linux-executor" }), true);
+    }
+    const state = log.snapshot();
+    assert.equal(failureRows(log).length, 3, "three rows for one key in one window");
+    assert.equal(state.counts.rate_limited, 47);
+    timers.fire();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    const completeness = sent.batch.completeness;
+    assert.deepEqual([completeness.rows, completeness.dropped_rate_limited, completeness.dropped_overflow],
+        [3, 47, 0]);
+    assert.equal(completeness.rows + completeness.dropped_overflow, completeness.n_to - completeness.n_from + 1,
+        "every kept or overflowed row consumed one n");
+    assert.equal(completeness.rate_limited.length, 1);
+    assert.deepEqual([completeness.rate_limited[0].dropped, completeness.rate_limited[0].event],
+        [47, "cloud.receive.failed"]);
+});
+
+await check("viewer events · no row or batch ever holds nonce, ct, sig or plaintext", async function () {
+    const { client, socket, log, storage, timers } = await viewerFleet();
+    const secret = "TOP-SECRET-SESSION-TITLE-" + "x".repeat(8);
+    const envelopes = [
+        await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [], title: secret }),
+        await sealedFromMac({}, { session: secret }),
+        await sealedFromMac({}, { session: { id: "s1", title: secret } },
+            await importMasterSecret(Buffer.alloc(32, 0x43).toString("base64")))
+    ];
+    const tampered = Object.assign({}, envelopes[1], { sig: envelopes[0].sig });
+    for (const envelope of envelopes.concat([tampered])) await receiveEnvelope(client, socket, envelope);
+    const stages = failureRows(log).map((row) => row.data.stage);
+    assert.deepEqual(stages.sort(), ["decrypt", "payload", "sender_key_lookup", "signature_verify"],
+        "four failures, four stages");
+    assert.deepEqual(log.record("test.fields", { nonce: "n", ct: "c", sig: "s", plaintext: "p", title: "t", token: "k", kept: 1 }).rateLimited, false);
+    timers.fire();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    const stored = Array.from(storage.map.values()).join("\n");
+    const wire = JSON.stringify(sent.batch);
+    for (const text of [stored, wire]) {
+        assert.ok(!text.includes(secret), "no plaintext");
+        for (const envelope of envelopes.concat([tampered])) {
+            for (const field of ["nonce", "ct", "sig"]) assert.ok(!text.includes(envelope[field]), "no " + field + " value");
+        }
+        assert.ok(!/"(nonce|ct|sig|plaintext|title|token)":/.test(text), "no field named for a secret");
+    }
+    assert.deepEqual(sent.batch.rows.find((row) => row.event === "test.fields").data, { kept: 1 });
+});
+
+await check("viewer events · rows survive a reload and leave the phone only on a receipt naming their batch", async function () {
+    const storage = new FakeStorage();
+    const first = await viewerFleet({ storage });
+    await receiveEnvelope(first.client, first.socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    first.client.stop();
+    const reloaded = viewerLog(storage);
+    assert.equal(reloaded.snapshot().rows.length, 1, "a new page reads the rows the last one kept");
+    const second = await viewerFleet({ storage, log: reloaded });
+    viewerClock += 1000;
+    second.timers.fire();
+    const sent = await nextCommand(second.socket, "diagnostics.events");
+    assert.equal(sent.batch.rows[0].data.sender, "linux-executor");
+    assert.equal(reloaded.snapshot().outbox.batch_id, sent.batch.batch_id, "sent is not removed");
+    await answer(second.client, second.socket, "mac-01", { read: "action:" + sent.request, status: 200,
+        body: { ok: true, batch_id: "some-other-batch", rows: 1 } });
+    await until(() => second.client.lastViewerDelivery, "the first outcome");
+    assert.equal(second.client.lastViewerDelivery.state, "failed", "a receipt for another batch is not an acknowledgement");
+    assert.ok(viewerModule.ViewerEventLog && new viewerModule.ViewerEventLog({ storage, key: "test.viewer-events" }).snapshot().outbox,
+        "and a reload still finds the batch");
+    viewerClock += 61_000;
+    const delivering = second.client._deliverViewerEvents();
+    const resent = await nextCommand(second.socket, "diagnostics.events");
+    assert.equal(resent.request, sent.request, "the resend is the same request, so the Mac's ledger does not append twice");
+    await answer(second.client, second.socket, "mac-01", { read: "action:" + resent.request, status: 200,
+        body: { ok: true, batch_id: sent.batch.batch_id, rows: 1, path: "/Users/x/Library/Logs/Clawdline/diagnostics/cloud-viewer-events.jsonl" } });
+    const ended = await delivering;
+    assert.equal(ended.state, "delivered");
+    const after = new viewerModule.ViewerEventLog({ storage, key: "test.viewer-events" }).snapshot();
+    assert.deepEqual([after.outbox, after.rows.length, after.acknowledged.batch_id], [null, 0, sent.batch.batch_id]);
+});
+
+await check("viewer events · a second machine does not stop delivery, and a Mac without cloud_status is never asked", async function () {
+    const withLinux = await viewerFleet();
+    await fromMac(withLinux.client, withLinux.socket, "orch/linux-01", { tasks: [], machine: { platform: "linux" } });
+    assert.throws(() => withLinux.client._onlyMachine("diagnostics"), (error) => error.code === "cloud_machine_ambiguous",
+        "the fleet that breaks _onlyMachine");
+    await receiveEnvelope(withLinux.client, withLinux.socket, await sealedFromMac({ ch: "s/mac-01/s1", sender: "nobody" }));
+    withLinux.timers.fire();
+    assert.equal((await nextCommand(withLinux.socket, "diagnostics.events")).ch, "ctl/mac-01");
+
+    const old = await viewerFleet({ orch: { cloud_status: undefined } });
+    await receiveEnvelope(old.client, old.socket, await sealedFromMac({ sender: "nobody" }));
+    const before = published(old.socket).length;
+    const outcomeOld = await old.client._deliverViewerEvents();
+    assert.deepEqual([outcomeOld.state, outcomeOld.why, published(old.socket).length],
+        ["deferred", "cloud_feature_unavailable", before], "typed, local, nothing published, rows kept");
+    assert.equal(failureRows(old.log).length, 1);
+});
+
 /* ---- ends ---------------------------------------------------------------------------------- */
 
 if (failures.length) {

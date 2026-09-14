@@ -270,6 +270,7 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
 | T-B7 | 請求還在飛時觸發 token 輪替 | reject `cloud_reconnecting`，文字已在地化 |
 | T-B8 | Cloud 模式下按 Send to Mac | 送出的是 `diagnostics.report` 指令，不是 fetch 到頁面自己的網域 |
 | T-B9 | 收到 key_id `ms-2` 的 session 快照，而自己用 `ms-1` 送 | 狀態出現 `key_id_drift`，兩個 id 都在 |
+| T-V1 | 未知 sender、同 key_id 不同 master、`validateEnvelope` 失敗、IndexedDB 拒絕、storage 寫入丟錯、Mac 回 `unknown_command`／`viewer_events_too_large`、50 筆連發、重新載入 | 每筆一列，`stage` 與原始例外正確；列裡沒有 nonce／ct／sig／明文；連發只留有界列數且丟棄數精確；拒絕時列留在手機且不重試；收據對上 batch 才刪（§11.9，`web-cloud-failures.mjs` 的 `viewer events ·`） |
 | T-R1 | workerd 測試送一個簽章錯誤的 publish | log 出現 `publish_refused code=forbidden field=sig` |
 | T-R2 | 用過期 token 連線 | 瀏覽器收到 error frame 與 4401，不是沒有代碼的 1006 |
 | T-R3 | 撤銷另一台裝置，讓 epoch 前進 | 既有 socket 關閉時帶 `token_superseded` |
@@ -459,3 +460,22 @@ Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status
 - 拒絕（`replay`，`detail.highest_seq`）：seq 在窗口內且已被接受過；或 seq 比窗口更舊。
 - **判斷依據只有一條：同一個 `(sender, seq)` 在這個 process 裡最多被接受一次；說不準的一律拒絕。**
   既有的 300 秒信封期限與帳本 request 冪等保持不變，不能拿它們來取代這一條。
+
+### 11.9 Cloud 指令 `diagnostics.events`
+
+瀏覽器收件失敗與解密門的自動紀錄，不需要任何按鍵。怎麼讀、欄位、H1–H4 對照：[`diagnostics.md`](diagnostics.md#the-viewer-events-file)。
+
+- 請求：`{"type":"diagnostics.events","session":"__clawdline_machine__","request":<uuid>,"batch":<object>}`，`ctl` 類別，
+  read-level（和 `diagnostics.report` 一樣不需要遠端寫入開關）。
+- 對象：瀏覽器用自己配對金鑰驗證過其 `orch/<machine>` 快照、descriptor 沒有標成非 Mac 平台、並送出過 `cloud_status.v >= 1` 的那一台。
+  **不用 `_onlyMachine`**；兩台 Mac → 本機 `cloud_machine_ambiguous`，列留在手機。
+- `batch`：`{v:1, batch_id, created_at_ms, device, tab, web_build, rows:[{n, at_ms, event, data}], completeness:{n_from, n_to, rows,
+  dropped_rate_limited, dropped_overflow, storage_errors, counting_since_ms, rate_limited:[{key, event, dropped, first_at_ms, last_at_ms, sample_n}], limits}}`，
+  鍵集合精確比對；`data` 是一層的 scalar 或短陣列，不認得任何事件名稱。
+- Mac：`CloudViewerEventLog.append` 在 `~/Library/Logs/Clawdline/diagnostics/cloud-viewer-events.jsonl` 追加一行（0600，超過 4 MiB 先輪替成 `.1`），
+  `device` 是信封的 sender；`Clawdline.log` 寫一行只有計數的紀錄。成功回 `action:<request>`，body `{ok, batch_id, rows, path, line_bytes, file_bytes, rotated}`。
+  拒絕碼：`viewer_events_empty`（400）、`viewer_events_malformed`（400，訊息只寫欄位路徑、不寫值）、`viewer_events_too_large`（413，上限 256 KiB）、
+  `viewer_events_write_failed`（500），`layer` 為 `mac_route`。
+- 瀏覽器：同一批用同一個 `request`、同樣的位元組重送，Mac 帳本回既有結果，不會寫兩次。收據的 `batch_id` 與 `rows` 相符才刪。
+  Mac 以 4xx（408、429 除外）拒絕、或本裝置沒有 `send_prompt` → 封鎖到 Mac build 或頁面 build 改變（最多一天），期間不重試；
+  其他失敗照退避重試（至少 60 秒、每次加倍到 30 分鐘、每日最多 48 次，同一台裝置一次只有一個分頁送）。

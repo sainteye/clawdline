@@ -18,6 +18,7 @@
    -------------------------------------------------------------------------- */
 
 import { CloudClient } from "./cloud-client.js";
+import { viewerEventLogFor } from "./cloud-viewer-events.js";
 import {
     importSenderPublicKey, loadCryptoKey, loadCryptoKeyID, loadPairingBinding,
     storeCryptoKey, storePairingBinding, storePairingCryptoKeys
@@ -644,6 +645,10 @@ export class CloudViewerSession {
             // out here rather than at the first refused envelope.
             allowWrites: this.caps.indexOf("send_prompt") >= 0,
             nextSequence: durableSequence(this.storage, SEQUENCE_KEY + ":" + this.deviceID),
+            // Receive failures and the door, kept on this device and delivered to the paired Mac
+            // with nobody pressing anything (`cloud-viewer-events.js`, `docs/diagnostics.md`).
+            viewerEvents: viewerEventLogFor(this.storage, this.account, this.deviceID),
+            webBuild: this.config && typeof this.config.build === "string" ? this.config.build : "",
             WebSocket: this.WebSocket,
             handlers: this.handlers,
             // Reconnect realignment is channel-by-channel, not one atomic account inventory.

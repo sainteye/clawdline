@@ -792,6 +792,29 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
                         && reportCommands.contains { $0.hasPrefix("diagnosticsReport(") },
                      "commands=\(reportCommands)")
 
+        // diagnostics.events, still with remote writes switched off: the page sends it without a
+        // press, so it must not need the switch for typing into a session.
+        transport.yield(#"{"type":"diagnostics.events","session":"__clawdline_machine__","request":"ve-1","batch":{"v":1}}"#,
+                        sequence: 82)
+        transport.yield(#"{"type":"diagnostics.events","session":"__clawdline_machine__","request":"ve-2","batch":[1]}"#,
+                        sequence: 83)
+        _ = await cloudTransparencyEventually {
+            let names = keys.answers(transport.envelopes())
+            return names["action:ve-1"] != nil && names["action:ve-2"] != nil
+        }
+        let eventAnswers = keys.answers(transport.envelopes())
+        let eventCommands = await router.recorded()
+        checks.check("diagnostics.events is read-level and routed as its own command",
+                     eventAnswers["action:ve-1"]?["status"] as? Int == 200
+                        && eventCommands.contains { $0.hasPrefix("diagnosticsEvents(") },
+                     "commands=\(eventCommands) answer=\(String(describing: eventAnswers["action:ve-1"]))")
+        let notABatch = transparencyError(eventAnswers["action:ve-2"])
+        checks.check("diagnostics.events whose batch is not an object is answered malformed_command",
+                     eventAnswers["action:ve-2"]?["status"] as? Int == 400
+                        && notABatch["code"] as? String == "malformed_command"
+                        && notABatch["layer"] as? String == "mac_preflight",
+                     "\(String(describing: eventAnswers["action:ve-2"]))")
+
         // §11.3 cloud.status.
         transport.yield(#"{"type":"cloud.status","session":"__clawdline_machine__","request":"cs-1"}"#,
                         sequence: 91)
@@ -1208,6 +1231,117 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
         checks.check("§11.5 the write is audited like the HTTP route",
                      audits.all() == ["diagnostics.report:1"], "\(audits.all())")
         try? FileManager.default.removeItem(at: root)
+    }
+
+    // diagnostics.events at its store: one fixed JSONL file beside report.json, one line per
+    // batch stating its own completeness, bounded input, rotation, one counts-only log line.
+    do {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(
+            "clawdline-viewer-events-\(UUID().uuidString)", isDirectory: true)
+        func viewerBatch(_ id: String, rows: Int, data: [String: Any]? = nil,
+                         n: Any? = nil) -> Data {
+            let kept = (0..<rows).map { index -> [String: Any] in
+                ["n": n ?? (index + 1), "at_ms": 1_789_400_000_000 + index,
+                 "event": "cloud.receive.failed",
+                 "data": data ?? ["code": "unknown_sender", "stage": "sender_key_lookup",
+                                  "seq": 9, "realign": true, "senders_with_keys": ["mac-device"]]]
+            }
+            let batch: [String: Any] = [
+                "v": 1, "batch_id": id, "created_at_ms": 1_789_400_000_500,
+                "device": "viewer-device", "tab": "tab-1", "web_build": "b0123",
+                "rows": kept,
+                "completeness": [
+                    "n_from": 1, "n_to": rows, "rows": rows, "dropped_rate_limited": 47,
+                    "dropped_overflow": 0, "storage_errors": 0,
+                    "counting_since_ms": 1_789_400_000_000,
+                    "rate_limited": [["key": "cloud.receive.failed|unknown_sender",
+                                      "event": "cloud.receive.failed", "dropped": 47,
+                                      "first_at_ms": 1, "last_at_ms": 2, "sample_n": 3]
+                                     as [String: Any]],
+                    "limits": ["rows": 100, "per_key_per_window": 3],
+                ] as [String: Any],
+            ]
+            return (try? JSONSerialization.data(withJSONObject: batch)) ?? Data()
+        }
+        let audits = CloudTransparencyRecorder<String>()
+        let logs = CloudTransparencyRecorder<String>()
+        func send(_ body: Data) -> CloudCommandResult {
+            CloudViewerEventsRoute.route(
+                body: body, sender: "viewer-device", root: root,
+                audit: { event, fields in audits.append(event + ":" + (fields["ok"] ?? "")) },
+                log: { logs.append($0) })
+        }
+        let url = CloudViewerEventLog.fileURL(root: root)
+        func lines() -> [[String: Any]] {
+            ((try? String(contentsOf: url, encoding: .utf8)) ?? "").split(separator: "\n").compactMap {
+                (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+            }
+        }
+        let first = send(viewerBatch("b-1", rows: 3))
+        let receipt = (try? JSONSerialization.jsonObject(with: first.body)) as? [String: Any]
+        let line = lines().first
+        checks.check("viewer events land in cloud-viewer-events.jsonl beside report.json",
+                     url == DiagnosticReport.directory(root: root)
+                        .appendingPathComponent("cloud-viewer-events.jsonl"), url.path)
+        checks.check("an accepted batch answers a receipt naming its batch and its rows",
+                     first.status == 200 && receipt?["batch_id"] as? String == "b-1"
+                        && receipt?["rows"] as? Int == 3 && receipt?["path"] as? String == url.path,
+                     "\(first) \(String(describing: receipt))")
+        checks.check("the line names the envelope sender and states its own completeness",
+                     lines().count == 1 && line?["device"] as? String == "viewer-device"
+                        && line?["row_count"] as? Int == 3
+                        && line?["completeness_consistent"] as? Bool == true
+                        && (line?["completeness"] as? [String: Any])?["dropped_rate_limited"] as? Int == 47
+                        && ((line?["rows"] as? [[String: Any]])?.first?["data"] as? [String: Any])?["stage"]
+                            as? String == "sender_key_lookup",
+                     "\(String(describing: line))")
+        let mode = (try? manager.attributesOfItem(atPath: url.path))?[.posixPermissions] as? NSNumber
+        checks.check("the viewer events file is 0600", mode?.intValue == 0o600, "\(String(describing: mode))")
+        checks.check("an accepted batch writes one counts-only Clawdline.log line",
+                     logs.all().count == 1
+                        && logs.all()[0].hasPrefix("cloud viewer events: appended rows=3 dropped_rate_limited=47 dropped_overflow=0 storage_errors=0 consistent=1 ")
+                        && !logs.all()[0].contains("unknown_sender"),
+                     "\(logs.all())")
+        _ = send(viewerBatch("b-2", rows: 1))
+        checks.check("a second batch appends a second line", lines().count == 2, "\(lines().count)")
+
+        let huge = send(Data(repeating: 0x20, count: CloudViewerEventLog.maxBatchBytes + 1))
+        let nested = send(viewerBatch("b-3", rows: 1, data: ["kept": ["secret_value": "TOPSECRET"]]))
+        let boolean = send(viewerBatch("b-4", rows: 1, n: true))
+        checks.check("an oversized batch is refused by name before it is parsed",
+                     huge.status == 413 && huge.code == "viewer_events_too_large", "\(huge)")
+        let nestedMessage = String(data: nested.body, encoding: .utf8) ?? ""
+        checks.check("a nested value is malformed at its path, and the refusal repeats no value",
+                     nested.status == 400 && nested.code == "viewer_events_malformed"
+                        && nestedMessage.contains("rows[0].data.kept")
+                        && !nestedMessage.contains("TOPSECRET"),
+                     nestedMessage)
+        checks.check("a boolean is not a row number",
+                     boolean.status == 400 && boolean.code == "viewer_events_malformed"
+                        && (String(data: boolean.body, encoding: .utf8) ?? "").contains("rows[0].n"),
+                     "\(boolean)")
+        checks.check("refused batches write nothing and log only their code",
+                     lines().count == 2
+                        && logs.all().contains("cloud viewer events: refused code=viewer_events_too_large received_bytes=\(CloudViewerEventLog.maxBatchBytes + 1)")
+                        && audits.all() == ["diagnostics.events:1", "diagnostics.events:1",
+                                            "diagnostics.events:0", "diagnostics.events:0",
+                                            "diagnostics.events:0"],
+                     "\(audits.all()) \(logs.all())")
+        checks.check("viewer events never touch report.json or previous.json",
+                     !manager.fileExists(atPath: DiagnosticReport.reportURL(root: root).path)
+                        && !manager.fileExists(atPath: DiagnosticReport.previousURL(root: root).path))
+
+        let size = ((try? manager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
+        let rolled = CloudViewerEventLog.append(viewerBatch("b-5", rows: 1), device: "viewer-device",
+                                                root: root, maxFileBytes: size + 16)
+        let rotatedLines = ((try? String(contentsOf: CloudViewerEventLog.rotatedURL(root: root),
+                                         encoding: .utf8)) ?? "").split(separator: "\n")
+        checks.check("a line that would pass the bound rotates the file to .1 first",
+                     (try? rolled.get())?.rotated == true && lines().count == 1
+                        && lines().first?["batch_id"] as? String == "b-5" && rotatedLines.count == 2,
+                     "\(rolled) rotated=\(rotatedLines.count) current=\(lines().count)")
+        try? manager.removeItem(at: root)
     }
 
     // L2 at its source: the real guard's reason and countdown.

@@ -208,6 +208,67 @@ counting; the counts do not reset when the connection does.
 It holds codes, device ids, sequences, request ids, key ids, counts and times. It never holds a
 command body, a prompt, transcript text, a title or a filesystem path.
 
+## The viewer events file
+
+The third fixed file is the phone's side of the Cloud link, and nobody presses anything for it
+either:
+
+```
+~/Library/Logs/Clawdline/diagnostics/cloud-viewer-events.jsonl
+~/Library/Logs/Clawdline/diagnostics/cloud-viewer-events.1.jsonl   (the previous 4 MiB, after rotation)
+```
+
+The hosted console keeps a row whenever an envelope it receives fails to open or apply, and whenever
+the "This browser cannot decrypt Sessions" door rises or falls. The rows wait in the page's
+`localStorage` (bounded, surviving a reload or a killed Home Screen app) and go to the paired Mac as
+the Cloud command `diagnostics.events` about five seconds after a burst and again after the next
+`ready`. The Mac appends **one line per batch** here, mode `0600`, and writes one counts-only line to
+`Clawdline.log` (`cloud viewer events: appended rows=… dropped_rate_limited=… …`). A row leaves the
+phone only when this Mac's receipt names its batch. The paired Mac is the one whose `orch/<machine>`
+snapshot the page authenticated with a key from its own pairing store — never "the only machine", so
+a second machine on the account does not stop delivery. Wire format:
+[`cloud-error-transparency.md` §11.9](cloud-error-transparency.md#119-cloud-指令-diagnosticsevents).
+
+**Each line states its own completeness.** `device` is the envelope's authenticated sender; then
+`web_build`, `tab`, `batch_id`, `written_at`, `row_count` and `completeness`. Every kept or
+overflowed row consumed one `n`, so `rows + dropped_overflow = n_to - n_from + 1`, and the Mac writes
+whether that held as `completeness_consistent`. `dropped_rate_limited` counts rows a burst limit
+refused (three per key, thirty in all, per minute); `completeness.rate_limited[]` names each key,
+its count and `sample_n`, the kept row that carries that key's metadata. `storage_errors` counts
+failed `localStorage` writes on a page that lived to report them.
+
+**A row is `{n, at_ms, event, data}`,** and `data` is flat. Adding an event changes neither the
+route nor this file's writer. The events so far:
+
+| event | `data` |
+|---|---|
+| `cloud.receive.failed` | `code` the transport threw (`null` for a raw error); `stage` — `sender_key_lookup`, `master_key_lookup`, `validate`, `signature_verify`, `decrypt`, `payload` or `other`, set before each step, so it is where the exception came from; `error_name`/`error_message`, the original exception rather than `unreadable_envelope`'s sentence; `cause_name`/`cause_message`, what signature verification swallowed; envelope metadata `channel_kind`, `channel_prefix`, `machine`, `session`, `sender`, `key_id`, `seq`, `ts`, `class`, `realign`, `ct_bytes`, `field_names`; `browser_key_id`; `socket_ready`, `ms_since_ready`, `opens_since_ready_sender`, `opens_since_ready_total`; `sender_key_found`, `sender_key_source`, `sender_key_lookup_ms`, `senders_with_keys`, `senders_without_keys`; `paired_machine`, `paired_sender`, `sender_is_paired_machine`; `visibility`, `ms_since_visibility_change`, `ms_since_page_load`, `online`, `web_build` |
+| `cloud.frame.failed` | a relay frame that failed outside an envelope: `frame_type`, `code`, `layer`, `error_name`, `error_message`, `socket_ready`, `ms_since_ready` |
+| `cloud.door.raised` | `kind`, `code`, `cause_n` (the `cloud.receive.failed` row behind it; `cause_rate_limited`/`cause_key` when that row was not kept), `invitation` |
+| `cloud.door.hidden` | `by` (`sessions` or `connected`), `raised_n`, `ms_raised`, `failures_while_raised`, and the lowering envelope's `channel_kind`, `machine`, `sender`, `seq`, `realign`, `authoritative`, `self_healed` |
+
+**Reading an intermittent decrypt door.** These are what each open hypothesis would look like; none
+of them is established:
+
+| hypothesis | the rows that would say so |
+|---|---|
+| H1 — a second machine publishes with a key this browser never received | `code: unknown_sender`, `sender_is_paired_machine: false`, `sender` absent from `senders_with_keys`, a `machine` other than `paired_machine`; with the same `key_id` and another master secret, `stage: decrypt`, `error_name: OperationError` from a sender that is not the paired one |
+| H2 — a realign replays envelopes sealed under an older key or sender | `realign: true` with a small `ms_since_ready`, `stage: decrypt` or `signature_verify` (or `code: replay`), old `ts`, a `key_id` unlike `browser_key_id`, then `cloud.door.hidden` `by: sessions` soon after |
+| H3 — the key store fails on resume | `stage: sender_key_lookup` for `sender_is_paired_machine: true` with `sender_key_source: store`, and either `sender_key_found: false` or an `error_name` such as `UnknownError`, after `opens_since_ready_sender > 0`, with a small `ms_since_visibility_change` |
+| H4 — an envelope that was never valid | `stage: validate`, `error_name: TypeError` with the validator's sentence, `field_names` or `channel_kind: unparsed` |
+
+A key store that **rejects** throws a raw error with `code: null`, which does not raise the door; one
+that answers **nothing** is `unknown_sender` and does. Both leave a row.
+
+**What it cannot tell you.** A page whose account key is wrong cannot seal a command this Mac can
+open, so its rows wait on the phone until the keys are repaired. A device without `send_prompt`
+cannot publish at all (`cloud_read_needs_send_prompt`). A browser that has authenticated two Macs
+refuses to guess (`cloud_machine_ambiguous`). A Mac that has never published `cloud_status` is not
+asked; one that answers `unknown_command` or refuses the batch is not asked again until its build,
+the page's build or the day changes. In every one of those the rows stay on the phone. Sends are at
+least a minute apart, doubling per failed attempt to thirty minutes, at most 48 a day, from one tab
+of a device at a time.
+
 ## What it cannot tell you
 
 The file is the page's account of itself. If the page never ran, never reached `Diagnostics.bind`,
@@ -228,4 +289,7 @@ and `dropped` is how you find out that was not enough.
 | `cloud-status.json`, `cloud.status` and the notice | `Sources/CloudStatus.swift`, fed by `Sources/CloudAppBridge.swift` and `Sources/CloudTransport.swift` |
 | the Cloud report route, status file and notice on real files and fixtures | `Tests/CloudTransparencyTests.swift` |
 | the Cloud command, its size check and the status sheet's data | `Tests/web-cloud-failures.mjs` |
+| receive-failure rows, their buffer and automatic delivery | `Resources/web/app/js/net/cloud-viewer-events.js`, `_recordReceiveFailure` and `_deliverViewerEvents` in `net/cloud-client.js`, `noteCloudDoor` in `main.js` |
+| `cloud-viewer-events.jsonl`, its bounds and its log line | `CloudViewerEventLog` in `Sources/DiagnosticReport.swift`, `CloudViewerEventsRoute` in `Sources/CloudLocalRoute.swift` |
+| the rows' failure injection, delivery and red proofs | the `viewer events ·` checks in `Tests/web-cloud-failures.mjs`, the door rows in `Tests/web-cloud-onboarding.mjs`, the `diagnostics.events` checks in `Tests/CloudTransparencyTests.swift` |
 | the notification road this was built during | [`docs/notifications.md`](notifications.md) |

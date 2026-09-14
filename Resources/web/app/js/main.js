@@ -27,6 +27,7 @@ import {
     readCloudConfig
 } from "./net/cloud-boot.js";
 import { handlers } from "./net/handlers.js";
+import { envelopeMetadata, errorFields } from "./net/cloud-viewer-events.js";
 import { createBillingClient } from "./net/billing.js";
 import { ScheduleWebhookClient } from "./net/schedule-webhooks.js";
 import {
@@ -217,6 +218,47 @@ var returningFromCheckout = location.pathname === "/billing/done";
    it is closed again. */
 var cloudGateUp = false;
 
+/* The encryption/permission door as rows the paired Mac receives (`net/cloud-viewer-events.js`):
+   which receive failure raised it, what lowered it, how long it stood and how many more failures
+   arrived meanwhile. Observation only — nothing below decides whether the door shows. A raise
+   while it is already up is counted rather than recorded, so one realign cannot fill the log. */
+var cloudDoorRaised = null;
+function noteCloudDoor(client, change, detail) {
+    try {
+        var log = client && client.viewerEvents;
+        if (!log || typeof log.record !== "function") return;
+        var now = log.now();
+        if (change === "raised") {
+            if (cloudDoorRaised) { cloudDoorRaised.failures += 1; return; }
+            var thrown = errorFields(detail.error);
+            var cause = detail.error && detail.error.viewerEvent;
+            var row = log.record("cloud.door.raised", {
+                kind: detail.kind, code: thrown.code, error_name: thrown.name,
+                error_message: thrown.message,
+                cause_n: cause ? cause.n : null,
+                cause_rate_limited: cause ? cause.rateLimited === true : null,
+                cause_key: cause ? cause.key : null,
+                invitation: detail.invitation === true
+            }, "cloud.door.raised|" + detail.kind + "|" + thrown.code);
+            cloudDoorRaised = { n: row.n, at_ms: now, kind: detail.kind, failures: 0 };
+            return;
+        }
+        if (!cloudDoorRaised) return;
+        var raised = cloudDoorRaised;
+        cloudDoorRaised = null;
+        var event = detail.event || {};
+        var meta = event.envelope ? envelopeMetadata(event.envelope, event.realign) : {};
+        log.record("cloud.door.hidden", {
+            by: detail.by, kind: raised.kind, raised_n: raised.n,
+            ms_raised: Math.max(0, now - raised.at_ms), failures_while_raised: raised.failures,
+            channel_kind: meta.channel_kind || null, machine: meta.machine || null,
+            sender: meta.sender || null, seq: meta.seq === undefined ? null : meta.seq,
+            realign: event.realign === true, authoritative: event.authoritative === true,
+            self_healed: event.selfHealed === true
+        }, "cloud.door.hidden|" + detail.by);
+    } catch (e) { /* observing the door must never move it */ }
+}
+
 var cloudConfig = null;
 try {
     cloudConfig = readCloudConfig(window);
@@ -287,6 +329,8 @@ if (transportKind === "cloud") {
                                 if (event && event.type === "sessions") {
                                     handlers.conn("live");
                                     if (!cloudInvitation) {
+                                        noteCloudDoor(update.client, "hidden",
+                                            { by: "sessions", event: event });
                                         cloudGateUp = false;
                                         hideCloudGate();
                                     }
@@ -295,6 +339,8 @@ if (transportKind === "cloud") {
                                 var accessProblem = event && event.type === "error"
                                     ? cloudSessionAccessProblem(event.error) : null;
                                 if (!accessProblem) return;
+                                noteCloudDoor(update.client, "raised", { kind: accessProblem,
+                                    error: event.error, invitation: !!cloudInvitation });
                                 S.locked = true;
                                 handlers.conn("locked");
                                 cloudGateUp = true;
@@ -322,6 +368,7 @@ if (transportKind === "cloud") {
                                 }).then(startCloudViewer);
                             } });
                         } else {
+                            noteCloudDoor(update.client, "hidden", { by: "connected" });
                             cloudGateUp = false;
                             hideCloudGate();
                         }
