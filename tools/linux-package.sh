@@ -7,6 +7,8 @@ set -euo pipefail
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 package_helper="$script_dir/linux-package-helper.py"
+dependency_lock_helper="$script_dir/linux-dependency-lock.py"
+repo_root=$(realpath "$script_dir/..")
 
 package_temporary_paths=()
 package_prefix=
@@ -92,7 +94,7 @@ with open(sys.argv[1], "rb") as handle:
 keys = {"schemaVersion", "packageVersion", "buildIdentity", "sourceCommit",
         "architecture", "archiveFile", "archiveSha256", "publicKeySha256",
         "signatureAlgorithm", "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
-        "protocolIdentity"}
+        "protocolIdentity", "dependencyLockSha256"}
 if set(value) != keys:
     raise SystemExit("provenance has unknown or missing fields")
 if value["schemaVersion"] != 1 or value["signatureAlgorithm"] != "openssl-rsa-sha256":
@@ -104,7 +106,7 @@ for name in ("buildIdentity", "architecture", "protocolIdentity"):
         raise SystemExit("unsafe provenance token: " + name)
 if not re.fullmatch(r"[0-9a-f]{40}", value["sourceCommit"]):
     raise SystemExit("sourceCommit must be an exact lowercase git object id")
-for name in ("archiveSha256", "publicKeySha256"):
+for name in ("archiveSha256", "publicKeySha256", "dependencyLockSha256"):
     if not re.fullmatch(r"[0-9a-f]{64}", value[name]):
         raise SystemExit("invalid digest: " + name)
 if value["archiveFile"] != value["packageVersion"] + "-linux-amd64.tar.gz":
@@ -189,6 +191,11 @@ build_package() {
   [ -x "$binary" ] || fail "--binary must name an executable regular file"
   [ -f "$signing_key" ] || fail "--signing-key is required"
   [ -n "$output_directory" ] || fail "--output-dir is required"
+  # Refuse before archive staging or provenance digest generation. This fixed root resolution is
+  # the one Linux compile/test consumes with automatic resolution disabled.
+  python3 "$dependency_lock_helper" verify --resolved "$repo_root/Package.resolved" \
+    --lock "$repo_root/Packaging/linux/dependencies.lock.json" \
+    || fail "SwiftPM dependency resolution does not match signed Linux lock"
   safe_version "$version"
   safe_token "$build_identity" buildIdentity
   [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] || fail "source commit must be 40 lowercase hex characters"
@@ -264,6 +271,8 @@ PY
   install -m 0644 Packaging/systemd/clawdline-tmux.service "$stage/lib/systemd/system/clawdline-tmux.service"
   install -m 0644 Packaging/linux/clawdline.conf "$stage/lib/sysusers.d/clawdline.conf"
   install -m 0644 Packaging/linux/daemon.json.in "$stage/share/clawdline/daemon.json.in"
+  install -m 0644 Packaging/linux/dependencies.lock.json \
+    "$stage/share/clawdline/dependencies.lock.json"
   printf 'CLAWDLINE_PACKAGE_VERSION=%s\nCLAWDLINE_BUILD_IDENTITY=%s\nCLAWDLINE_SOURCE_COMMIT=%s\n' \
     "$version" "$build_identity" "$source_commit" > "$stage/release.env"
   chmod 0644 "$stage/release.env"
@@ -278,7 +287,7 @@ paths = [
     "lib/systemd/system/clawdline-daemon.service",
     "lib/systemd/system/clawdline-tmux.service",
     "lib/sysusers.d/clawdline.conf", "release.env",
-    "share/clawdline/daemon.json.in",
+    "share/clawdline/daemon.json.in", "share/clawdline/dependencies.lock.json",
 ]
 files = {}
 for path in paths:
@@ -295,6 +304,7 @@ manifest = {
     "durableSchema": {"writeVersion": int(write), "readMinimum": int(read_min),
                       "readMaximum": int(read_max)},
     "protocolIdentity": protocol,
+    "dependencyLockSha256": files["share/clawdline/dependencies.lock.json"],
     "files": files,
 }
 with open(os.path.join(root, "share/clawdline/release-manifest.json"), "w", encoding="utf-8") as handle:
@@ -336,11 +346,14 @@ PY
     | { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; } \
     | awk '{print $1}')
   provenance="$output_directory/$version-linux-amd64.provenance.json"
+  local dependency_lock_digest
+  dependency_lock_digest=$(sha256_file Packaging/linux/dependencies.lock.json)
   python3 - "$provenance" "$version" "$build_identity" "$source_commit" \
     "$archive_digest" "$key_digest" "$configuration_schema" "$configuration_read_minimum" \
-    "$write_schema" "$read_minimum" "$read_maximum" "$protocol_identity" <<'PY'
+    "$write_schema" "$read_minimum" "$read_maximum" "$protocol_identity" \
+    "$dependency_lock_digest" <<'PY'
 import json, os, sys
-path, version, build, source, archive_digest, key_digest, config, config_min, write, read_min, read_max, protocol = sys.argv[1:]
+path, version, build, source, archive_digest, key_digest, config, config_min, write, read_min, read_max, protocol, dependency_lock = sys.argv[1:]
 value = {
     "schemaVersion": 1, "packageVersion": version, "buildIdentity": build,
     "sourceCommit": source, "architecture": "amd64",
@@ -351,6 +364,7 @@ value = {
     "durableSchema": {"writeVersion": int(write), "readMinimum": int(read_min),
                       "readMaximum": int(read_max)},
     "protocolIdentity": protocol,
+    "dependencyLockSha256": dependency_lock,
 }
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(value, handle, sort_keys=True, separators=(",", ":")); handle.write("\n")

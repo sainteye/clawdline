@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, chownSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18,6 +18,11 @@ const applicationRoots = read('Sources/ProjectRootPolicy.swift');
 const applicationScheduler = read('Sources/TerminalCommandScheduler.swift');
 const linuxTests = read('Packages/ClawdlineLinuxTests/LinuxRuntimeContractTests.swift');
 const daemonTemplate = read('Packaging/linux/daemon.json.in');
+const dependencyLock = JSON.parse(read('Packaging/linux/dependencies.lock.json'));
+const resolvedLock = JSON.parse(read('Package.resolved'));
+const tmuxUnit = read('Packaging/systemd/clawdline-tmux.service');
+const cloudTransport = read('Sources/CloudTransport.swift');
+const durableCloud = read('Packages/ClawdlineLinux/LinuxDurableCloudRuntime.swift');
 const packageHelper = read('tools/linux-package-helper.py');
 const packageTool = read('tools/linux-package.sh');
 const entry = read('Packages/ClawdlineLinux/main.swift');
@@ -52,6 +57,97 @@ if (!runtimeOnly) {
 const packageShape = inspectPackage(manifest, build);
 check(Object.values(packageShape).every(Boolean),
   `SwiftPM product graph or Mac wrapper is incomplete: ${JSON.stringify(packageShape)}`);
+check(/\.package\(url: "https:\/\/github\.com\/apple\/swift-nio\.git", exact: "2\.102\.0"\)/.test(manifest)
+  && /\.package\(url: "https:\/\/github\.com\/apple\/swift-nio-ssl\.git", exact: "2\.37\.4"\)/.test(manifest)
+  && dependencyLock.packages.some((row) => row.identity === 'swift-nio' && row.version === '2.102.0')
+  && dependencyLock.packages.some((row) => row.identity === 'swift-nio-ssl' && row.version === '2.37.4'),
+  'Linux WebSocket and TLS dependencies must be exact and retained in signed provenance');
+const dependencyVerifier = join(root, 'tools/linux-dependency-lock.py');
+const verifyResolution = (resolved, lock) => spawnSync('python3', [dependencyVerifier, 'verify',
+  '--resolved', resolved, '--lock', lock], { encoding: 'utf8' });
+const dependencyFixture = mkdtempSync(join(tmpdir(), 'clawdline-linux-dependencies-'));
+try {
+  const resolvedPath = join(dependencyFixture, 'Package.resolved');
+  const lockPath = join(dependencyFixture, 'dependencies.lock.json');
+  writeFileSync(resolvedPath, JSON.stringify(resolvedLock));
+  writeFileSync(lockPath, JSON.stringify(dependencyLock));
+  check(verifyResolution(resolvedPath, lockPath).status === 0,
+    'the exact SwiftPM resolution must equal the signed dependency lock');
+
+  const missing = structuredClone(dependencyLock);
+  missing.packages.pop();
+  writeFileSync(lockPath, JSON.stringify(missing));
+  check(verifyResolution(resolvedPath, lockPath).status !== 0,
+    'an unsigned extra SwiftPM pin must make dependency verification red');
+
+  const omitted = structuredClone(resolvedLock);
+  omitted.pins.pop();
+  writeFileSync(lockPath, JSON.stringify(dependencyLock));
+  writeFileSync(resolvedPath, JSON.stringify(omitted));
+  check(verifyResolution(resolvedPath, lockPath).status !== 0,
+    'a missing SwiftPM pin must make dependency verification red');
+
+  const drift = structuredClone(resolvedLock);
+  drift.pins[0].state.revision = '0'.repeat(40);
+  writeFileSync(resolvedPath, JSON.stringify(drift));
+  check(verifyResolution(resolvedPath, lockPath).status !== 0,
+    'a revision drift must make dependency verification red');
+
+  check(verifyResolution(join(dependencyFixture, 'absent.resolved'), lockPath).status !== 0,
+    'a missing Package.resolved must fail closed');
+} finally {
+  rmSync(dependencyFixture, { recursive: true, force: true });
+}
+const compileLockCheck = linuxBuild.indexOf('linux-dependency-lock.py');
+const compileStarts = linuxBuild.indexOf('if swift build --product ClawdlineLinux');
+const packageLockCheck = packageTool.indexOf('python3 "$dependency_lock_helper" verify',
+  packageTool.indexOf('build_package()'));
+const packageStage = packageTool.indexOf('stage=$(mktemp', packageLockCheck);
+const provenanceDigest = packageTool.indexOf('dependency_lock_digest=', packageLockCheck);
+check(compileLockCheck >= 0 && compileStarts > compileLockCheck
+  && (linuxBuild.match(/--disable-automatic-resolution/g) || []).length >= 3,
+  'Linux compile and test must verify then consume the fixed SwiftPM resolution');
+check(packageLockCheck >= 0 && packageStage > packageLockCheck && provenanceDigest > packageLockCheck,
+  'package signing must verify resolution before archive staging or provenance digest generation');
+const packageGateFixture = mkdtempSync(join(tmpdir(), 'clawdline-linux-package-gate-'));
+try {
+  const fixtureTools = join(packageGateFixture, 'tools');
+  const fixtureLockDir = join(packageGateFixture, 'Packaging', 'linux');
+  mkdirSync(fixtureTools, { recursive: true });
+  mkdirSync(fixtureLockDir, { recursive: true });
+  const fixturePackageTool = packageTool
+    .replace('package_temporary_paths=()', 'package_temporary_paths=(/nonexistent-test-path)')
+    .replace('[ "$(uname -s)" = Linux ] || fail "Linux packaging requires a Linux host or private container"',
+      ': # fixture executes only the pre-effect dependency gate');
+  writeFileSync(join(fixtureTools, 'linux-package.sh'), fixturePackageTool);
+  writeFileSync(join(fixtureTools, 'linux-package-helper.py'), packageHelper);
+  writeFileSync(join(fixtureTools, 'linux-dependency-lock.py'), read('tools/linux-dependency-lock.py'));
+  writeFileSync(join(fixtureLockDir, 'dependencies.lock.json'), JSON.stringify(dependencyLock));
+  const dummyBinary = join(packageGateFixture, 'binary');
+  const dummyKey = join(packageGateFixture, 'key');
+  writeFileSync(dummyBinary, '#!/bin/sh\nexit 1\n');
+  writeFileSync(dummyKey, 'not-a-key\n');
+  chmodSync(dummyBinary, 0o755);
+  const refused = spawnSync('bash', [join(fixtureTools, 'linux-package.sh'), 'build',
+    '--binary', dummyBinary, '--version', '1.0.0', '--build-identity', 'fixture',
+    '--source-commit', '0'.repeat(40), '--signing-key', dummyKey,
+    '--output-dir', join(packageGateFixture, 'out')], { encoding: 'utf8' });
+  check(refused.status !== 0 && /Package\.resolved.*missing|resolution does not match/.test(refused.stderr)
+    && !existsSync(join(packageGateFixture, 'out')),
+    `linux-package build must refuse a missing consumed resolution before producing output: ${JSON.stringify({status: refused.status, stderr: refused.stderr})}`);
+} finally {
+  rmSync(packageGateFixture, { recursive: true, force: true });
+}
+check(/^ExecStart=\/usr\/bin\/tmux -D -S \/run\/clawdline\/clawdline\.sock$/m.test(tmuxUnit),
+  'the tmux service must run one foreground server without an invalid keeper command');
+check(/#if os\(Linux\)[\s\S]*CloudNIOLinuxSocketConnector/.test(cloudTransport)
+  && /maxFrameSize: 32 \* 1024 \* 1024/.test(cloudTransport)
+  && /certificateVerification = \.fullVerification/.test(cloudTransport)
+  && /CloudURLSessionSocketConnector\(\)/.test(cloudTransport),
+  'Linux must use pinned NIO TLS/WebSocket while preserving the Mac URLSession connector');
+check(/case degraded/.test(durableCloud) && /delay = min\(30, delay \* 2\)/.test(durableCloud)
+  && /case \.unauthorized/.test(durableCloud),
+  'initial transient Relay failure must back off while authorization refusal remains terminal');
 
 // Representative red proofs for the two graph/build failure classes. These mutate only in memory:
 // the test must be capable of rejecting an inert Linux edge and a return to flat compilation.

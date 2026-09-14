@@ -60,6 +60,11 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required for the containm
 command -v openssl >/dev/null 2>&1 || fail "openssl is required for signed package provenance"
 command -v systemd-analyze >/dev/null 2>&1 || fail "systemd-analyze is required for exact packaged-unit parsing"
 
+# This root lock is what the disabled-resolution build below consumes. Compare it with the
+# separately signed package lock before any compiler process starts.
+python3 tools/linux-dependency-lock.py verify --resolved Package.resolved \
+  --lock Packaging/linux/dependencies.lock.json
+
 # A read-only bind mount (the safe default for running an unfamiliar script under Docker) cannot
 # hold SwiftPM's .build directory. The caller's own docker invocation should have already copied
 # the tree somewhere writable; this is a clear failure rather than a confusing permission error if
@@ -109,6 +114,7 @@ swift_build_configuration=${SWIFT_CORE_APPLICATION_LINUX_BUILD_CONFIGURATION:-de
 swift_build_jobs=${SWIFT_CORE_APPLICATION_LINUX_BUILD_JOBS:-1}
 if swift build --product ClawdlineLinux \
   -c "$swift_build_configuration" -j "$swift_build_jobs" --static-swift-stdlib \
+  --disable-automatic-resolution \
   2>&1 | tee "$build_log"; then
   build_status=0
 else
@@ -118,7 +124,8 @@ fi
 grep -q "Build of product 'ClawdlineLinux' complete!" "$build_log" \
   || fail "missing SwiftPM's own ClawdlineLinux product completion line"
 
-linux_bin_dir=$(swift build -c "$swift_build_configuration" --show-bin-path)
+linux_bin_dir=$(swift build -c "$swift_build_configuration" --show-bin-path \
+  --disable-automatic-resolution)
 linux_binary="$linux_bin_dir/ClawdlineLinux"
 [ -x "$linux_binary" ] || fail "compiled ClawdlineLinux executable missing at $linux_binary"
 
@@ -128,6 +135,7 @@ linux_binary="$linux_bin_dir/ClawdlineLinux"
 CLAWDLINE_TEST_TMUX=$(command -v tmux) \
 CLAWDLINE_TEST_LINUX_EXECUTABLE="$linux_binary" swift test \
   -c "$swift_build_configuration" -j "$swift_build_jobs" --static-swift-stdlib \
+  --disable-automatic-resolution \
   --filter LinuxRuntimeContractTests
 
 # The signed package installs only this executable, not a Swift runtime tree. A dynamically linked

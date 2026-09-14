@@ -1272,33 +1272,39 @@ actual_linux_test_deps=$(graph_field 'ClawdlineLinuxTests\.deps')
   || architecture_guard_fail "ClawdlineLinuxTests depends on [$actual_linux_test_deps], not exactly [$expected_linux_test_deps]"
 
 actual_package_dependencies=$(graph_field 'package\.external-dependencies')
-[ "$actual_package_dependencies" = 1 ] \
-  || architecture_guard_fail "Package.swift declares $actual_package_dependencies external package dependency/dependencies, expected exactly the reviewed swift-crypto 4.5.2 dependency"
+[ "$actual_package_dependencies" = 3 ] \
+  || architecture_guard_fail "Package.swift declares $actual_package_dependencies external package dependencies, expected exactly the reviewed swift-crypto, swift-nio and swift-nio-ssl pins"
 package_dump=$(swift package --disable-sandbox dump-package 2>/dev/null) \
-  || architecture_guard_fail "swift package dump-package failed; the exact swift-crypto pin cannot be checked"
+  || architecture_guard_fail "swift package dump-package failed; the exact Linux dependency pins cannot be checked"
 printf '%s' "$package_dump" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
 deps = d.get("dependencies") or []
 targets = {t["name"]: t for t in d.get("targets") or []}
 try:
-    source = deps[0]["sourceControl"][0]
-    exact = source["requirement"]["exact"][0]
-    product = [x["product"] for x in targets["ClawdlineApplication"]["dependencies"] if "product" in x]
-except (IndexError, KeyError, TypeError):
+    pins = {x["sourceControl"][0]["identity"]: x["sourceControl"][0]["requirement"]["exact"][0] for x in deps}
+    products = [x["product"] for x in targets["ClawdlineApplication"]["dependencies"] if "product" in x]
+except (IndexError, KeyError, TypeError, ValueError):
     raise SystemExit(1)
-expected = ["Crypto", "swift-crypto", None, {"platformNames": ["linux"]}]
-if len(deps) != 1 or source.get("identity") != "swift-crypto" or exact != "4.5.2" or product != [expected]:
+expected_pins = {"swift-crypto":"4.5.2", "swift-nio":"2.102.0", "swift-nio-ssl":"2.37.4"}
+expected_products = [
+ ["Crypto", "swift-crypto"], ["NIOCore", "swift-nio"], ["NIOPosix", "swift-nio"],
+ ["NIOHTTP1", "swift-nio"], ["NIOWebSocket", "swift-nio"], ["NIOSSL", "swift-nio-ssl"]]
+actual_products = sorted([[x[0], x[1]] for x in products])
+if pins != expected_pins or actual_products != sorted(expected_products):
     raise SystemExit(1)
-' || architecture_guard_fail "the sole external dependency is not exactly swift-crypto 4.5.2 / Crypto for Linux ClawdlineApplication"
+' || architecture_guard_fail "the Linux external dependency graph is not the exact reviewed Crypto/NIO/TLS pin set"
+python3 tools/linux-dependency-lock.py verify --resolved Package.resolved \
+  --lock Packaging/linux/dependencies.lock.json >/dev/null \
+  || architecture_guard_fail "the SwiftPM resolution is not the exact signed Linux dependency lock"
 for graph_target in ClawdlineCore Clawdline ClawdlineLinux ClawdlineLinuxTests; do
   actual_external_products=$(graph_field "$graph_target\.external-products")
   [ "$actual_external_products" = 0 ] \
     || architecture_guard_fail "$graph_target has $actual_external_products external product dependency/dependencies; the production graph is closed and requires an explicit reviewed allowlist before adding one"
 done
 actual_application_external_products=$(graph_field 'ClawdlineApplication\.external-products')
-[ "$actual_application_external_products" = 1 ] \
-  || architecture_guard_fail "ClawdlineApplication has $actual_application_external_products external product dependency/dependencies, expected exactly Linux Crypto"
+[ "$actual_application_external_products" = 6 ] \
+  || architecture_guard_fail "ClawdlineApplication has $actual_application_external_products external products, expected exactly Linux Crypto plus NIOCore/NIOPosix/NIOHTTP1/NIOWebSocket/NIOSSL"
 
 for executable_product in Clawdline ClawdlineLinux; do
   actual_product_targets=$(graph_field "$executable_product\.product-targets")

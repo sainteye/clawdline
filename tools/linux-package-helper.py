@@ -26,6 +26,7 @@ EXPECTED_MODES = {
     "lib/sysusers.d/clawdline.conf": 0o644,
     "release.env": 0o644,
     "share/clawdline/daemon.json.in": 0o644,
+    "share/clawdline/dependencies.lock.json": 0o644,
 }
 MANIFEST_PATH = "share/clawdline/release-manifest.json"
 EXPECTED_FILES = set(EXPECTED_MODES) | {MANIFEST_PATH}
@@ -189,12 +190,12 @@ def validate_manifest(root, provenance, require_owner=True):
     manifest = load_json(os.path.join(root, MANIFEST_PATH))
     keys = {"schemaVersion", "packageVersion", "buildIdentity", "sourceCommit", "architecture",
             "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
-            "protocolIdentity", "files"}
+            "protocolIdentity", "dependencyLockSha256", "files"}
     if set(manifest) != keys or manifest["schemaVersion"] != 1:
         fail("internal release manifest has unknown or missing fields")
     for name in ("packageVersion", "buildIdentity", "sourceCommit", "architecture",
                  "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
-                 "protocolIdentity"):
+                 "protocolIdentity", "dependencyLockSha256"):
         if manifest[name] != provenance[name]:
             fail("internal and signed release identities differ: " + name)
     if set(manifest["files"]) != set(EXPECTED_MODES):

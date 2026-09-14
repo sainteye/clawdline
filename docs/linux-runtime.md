@@ -120,6 +120,21 @@ and the base package lifecycle; W4-3 extends that local authority with task/resu
 Board/Session/document reads and its schema-3 migration/rollback fence. Pairing, Cloud relay and
 Cloud lifecycle remain W5-owned.
 
+On Linux, W5 uses pinned SwiftNIO/NIOWebSocket/NIOSSL because Swift 6.1.3 FoundationNetworking
+rejects both `wss:` and `https:` URLSession WebSocket tasks with
+`NSURLErrorUnsupportedURL` before an HTTP upgrade. macOS keeps the Foundation URLSession
+connector. The Linux connector requires `wss:`, system trust and SNI, sends the protected device
+Bearer only in the upgrade request, limits opening to 15 seconds and aggregate text messages to
+32 MiB, rejects binary frames, and preserves typed 401/403 versus other HTTP refusals. An initial
+transient connection failure leaves the daemon degraded and retries with a capped 0.25…30 second
+backoff; a positive authorization refusal remains terminal. Exact direct and transitive dependency
+versions/revisions are recorded in `Packaging/linux/dependencies.lock.json`, whose digest is part
+of both the signed package manifest and provenance. The tracked root `Package.resolved` is the
+resolution SwiftPM consumes with automatic resolution disabled. Both the Ubuntu compile gate and
+package-signing entry point first compare its exact identity, source-control kind, location,
+version and revision set with the signed lock; missing, extra or drifting pins stop before compile
+or provenance generation.
+
 The W4-2 package candidate snapshots caller key/provenance/signature/archive paths into a root-owned
 0700 directory through no-follow descriptors and uses only those immutable bytes for verification
 and exact extraction. Signed schema/protocol fields must equal the exact target binary's
@@ -133,6 +148,10 @@ not restart the old image. Only foreground-supervised `clawdline-tmux.service` o
 `/run/clawdline`; the daemon unit does not co-own/remove that socket directory. Exact parsing and
 private-root failure injection are local evidence, while real PID-1 socket/pane continuity, keeper
 crash restart and reboot enablement remain a typed Ubuntu VM gate.
+
+The tmux unit runs `/usr/bin/tmux -D -S /run/clawdline/clawdline.sock` exactly. `-D` keeps the
+server in the foreground and disables exit-empty; appending a `new-session` keeper command is not
+a valid tmux 3.4 invocation and causes systemd to restart the unit continuously.
 
 The pinned Ubuntu 24.04 amd64 job runs as a non-root service user, builds the real SwiftPM graph,
 executes the Linux XCTest target with real tmux and containment probes, and records installed tool

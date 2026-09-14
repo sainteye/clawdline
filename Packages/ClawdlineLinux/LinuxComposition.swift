@@ -140,22 +140,29 @@ struct LinuxRuntimeConfiguration: Codable, Equatable {
     /// Protected, explicit effect gate. Reads remain available to paired viewers; every Relay
     /// mutation re-reads this value at the serialized effect boundary.
     let cloudCommandsEnabled: Bool?
+    /// A display-only bounded label. It is not authority and never replaces the channel machine id.
+    let displayName: String?
+    /// Infrastructure presentation is explicit configuration, never inferred from hostname.
+    let infrastructureProvider: String?
 
     init(uid: UInt32, gid: UInt32, projectRoots: [String], tmuxExecutable: String,
          providers: LinuxProviderExecutablesConfiguration,
-         cloudCommandsEnabled: Bool? = false) {
+         cloudCommandsEnabled: Bool? = false, displayName: String? = nil,
+         infrastructureProvider: String? = nil) {
         self.uid = uid
         self.gid = gid
         self.projectRoots = projectRoots
         self.tmuxExecutable = tmuxExecutable
         self.providers = providers
         self.cloudCommandsEnabled = cloudCommandsEnabled
+        self.displayName = displayName
+        self.infrastructureProvider = infrastructureProvider
     }
 }
 
 struct LinuxDaemonConfiguration: Codable, Equatable {
-    static let schemaVersion = 2
-    static let readableSchemaVersions = 1...2
+    static let schemaVersion = 3
+    static let readableSchemaVersions = 1...3
 
     let version: Int
     let listen: LinuxListenConfiguration
@@ -215,7 +222,7 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
             throw LinuxCompositionError.configuration("unsupported config version \(configuration.version)")
         }
         guard configuration.version == 1 || fields["runtimeDirectory"] != nil else {
-            throw LinuxCompositionError.configuration("config version 2 requires runtimeDirectory")
+            throw LinuxCompositionError.configuration("config version 2 or later requires runtimeDirectory")
         }
         guard configuration.listen.host == "127.0.0.1" || configuration.listen.host == "::1" else {
             throw LinuxCompositionError.configuration("W3 accepts only a loopback listen host")
@@ -241,7 +248,7 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
                     .isSubset(of: Set(runtimeObject.keys)),
                   Set(runtimeObject.keys).isSubset(of: Set([
                     "uid", "gid", "projectRoots", "tmuxExecutable", "providers",
-                    "cloudCommandsEnabled",
+                    "cloudCommandsEnabled", "displayName", "infrastructureProvider",
                   ])),
                   let providers = runtimeObject["providers"] as? [String: Any],
                   Set(providers.keys) == Set(["claude", "codex"]) else {
@@ -256,8 +263,21 @@ struct LinuxDaemonConfiguration: Codable, Equatable {
                   ProjectRootPolicy.isLexicallySafeAbsolute(runtime.providers.codex) else {
                 throw LinuxCompositionError.configuration("runtime identity, roots, or executable paths are invalid")
             }
+            guard Self.displayValue(runtime.displayName, maximumBytes: 80),
+                  Self.displayValue(runtime.infrastructureProvider, maximumBytes: 32),
+                  runtime.infrastructureProvider == nil
+                    || runtime.infrastructureProvider == "aws" else {
+                throw LinuxCompositionError.configuration(
+                    "runtime displayName or infrastructureProvider is not a supported bounded value")
+            }
         }
         return configuration
+    }
+
+    private static func displayValue(_ value: String?, maximumBytes: Int) -> Bool {
+        guard let value else { return true }
+        return !value.isEmpty && value.utf8.count <= maximumBytes
+            && value.unicodeScalars.allSatisfy { $0.value >= 0x20 && $0.value != 0x7f }
     }
 }
 
@@ -475,7 +495,7 @@ enum LinuxCloudEnrollment {
         }
 
         let metadata = CloudMachineMetadata(
-            name: "Clawdline Linux \(ProcessInfo.processInfo.hostName)",
+            name: configuration.runtime?.displayName ?? "Clawdline Linux",
             platform: "linux",
             appVersion: LinuxReleaseIdentity.current.packageVersion)
         let (invitation, waitForCompletion) = try await begin(metadata)

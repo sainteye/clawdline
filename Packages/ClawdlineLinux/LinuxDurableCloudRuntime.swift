@@ -141,6 +141,9 @@ final class LinuxDurableCloudRuntime {
     func makeRelayOwner(
         ingress: LinuxDaemonIngressOwner,
         commandsEnabled: @escaping @Sendable () -> Bool,
+        presentation: LinuxRelayMachinePresentation,
+        places: [LinuxRelayPlace],
+        inventory: @escaping @Sendable () -> TerminalInventory,
         relayBaseURL: URL = URL(string: "wss://relay.clawdline.com/v1/connect")!,
         diagnostic: @escaping @Sendable (String) -> Void = { _ in },
         stateObserver: @escaping @Sendable (LinuxRelayRuntimeState) -> Void = { _ in }
@@ -166,6 +169,7 @@ final class LinuxDurableCloudRuntime {
                     UInt64(max(0, Date().timeIntervalSince1970 * 1_000))
                 }, diagnostic: diagnostic),
             ingress: ingress, commandsEnabled: commandsEnabled, diagnostic: diagnostic,
+            presentation: presentation, places: places, inventory: inventory,
             stateObserver: stateObserver)
         return relay
     }
@@ -186,10 +190,22 @@ enum LinuxRelayRuntimeState: Equatable, Sendable {
     case idle
     case starting
     case running
+    case degraded
     case stoppingAuthorization
     case unauthorized
     case failed
     case stopped
+}
+
+struct LinuxRelayMachinePresentation: Equatable, Sendable {
+    let displayName: String
+    let provider: String?
+}
+
+struct LinuxRelayPlace: Equatable, Sendable {
+    let id: String
+    let label: String
+    let path: String
 }
 
 /// Synchronous projection used by health/log code without creating a second runtime owner.
@@ -210,6 +226,7 @@ final class LinuxRelayRuntimeStatus: @unchecked Sendable {
         case .idle: return "w5_linux_relay_idle"
         case .starting: return "w5_linux_relay_starting"
         case .running: return "w5_linux_relay_running_candidate_cutover_required"
+        case .degraded: return "w5_linux_relay_degraded_retrying"
         case .stoppingAuthorization: return "w5_linux_relay_stopping_unauthorized"
         case .unauthorized: return "w5_linux_relay_unauthorized"
         case .failed: return "w5_linux_relay_failed"
@@ -224,13 +241,18 @@ final class LinuxRelayRuntimeSupervisor: @unchecked Sendable {
     private let diagnostic: @Sendable (String) -> Void
     private let lock = NSLock()
     private var startTask: Task<Void, Never>?
+    private let sleep: @Sendable (TimeInterval) async throws -> Void
     let status: LinuxRelayRuntimeStatus
 
     init(owner: LinuxRelayRuntimeOwner, status: LinuxRelayRuntimeStatus,
-         diagnostic: @escaping @Sendable (String) -> Void) {
+         diagnostic: @escaping @Sendable (String) -> Void,
+         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = {
+             try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000))
+         }) {
         self.owner = owner
         self.status = status
         self.diagnostic = diagnostic
+        self.sleep = sleep
     }
 
     func start() {
@@ -238,10 +260,22 @@ final class LinuxRelayRuntimeSupervisor: @unchecked Sendable {
         guard startTask == nil else { lock.unlock(); return }
         let owner = owner
         let diagnostic = diagnostic
+        let sleep = sleep
         startTask = Task {
-            do { try await owner.start() }
-            catch is CancellationError { diagnostic("linux cloud: Relay start cancelled") }
-            catch { diagnostic("linux cloud: Relay start failed code=relay_start_failed") }
+            var delay = 0.25
+            while !Task.isCancelled {
+                do { try await owner.startOrRetry(); return }
+                catch is CancellationError {
+                    diagnostic("linux cloud: Relay start cancelled")
+                    return
+                } catch let error as CloudTransportError where error == .unauthorized {
+                    return
+                } catch {
+                    diagnostic("linux cloud: Relay unavailable; retrying with bounded backoff")
+                    do { try await sleep(delay) } catch { return }
+                    delay = min(30, delay * 2)
+                }
+            }
         }
         lock.unlock()
     }
@@ -257,6 +291,10 @@ final class LinuxRelayRuntimeSupervisor: @unchecked Sendable {
         }
         completed.wait()
     }
+
+    func publishInventory(_ inventory: TerminalInventory) {
+        Task { await owner.publishInventory(inventory) }
+    }
 }
 
 /// Exactly one instance is composed by `LinuxDaemonService`. It owns the transport generation,
@@ -271,15 +309,20 @@ actor LinuxRelayRuntimeOwner {
     private let commandsEnabled: @Sendable () -> Bool
     private let diagnostic: @Sendable (String) -> Void
     private let stateObserver: @Sendable (LinuxRelayRuntimeState) -> Void
+    private let presentation: LinuxRelayMachinePresentation
+    private let places: [LinuxRelayPlace]
+    private let inventory: @Sendable () -> TerminalInventory
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
     private var receiptTask: Task<Void, Never>?
     private var transportStopped = false
+    private var streamsInstalled = false
     private(set) var state: LinuxRelayRuntimeState = .idle {
         didSet { stateObserver(state) }
     }
     private(set) var authenticatedGeneration: UInt64 = 0
     private var lifecycleGeneration: UInt64 = 0
+    private var lastInventoryDigest: String?
 
     init(
         machine: CloudMachineIdentity,
@@ -289,6 +332,10 @@ actor LinuxRelayRuntimeOwner {
         ingress: LinuxDaemonIngressOwner,
         commandsEnabled: @escaping @Sendable () -> Bool,
         diagnostic: @escaping @Sendable (String) -> Void = { _ in },
+        presentation: LinuxRelayMachinePresentation = .init(
+            displayName: "Clawdline Linux", provider: nil),
+        places: [LinuxRelayPlace] = [],
+        inventory: @escaping @Sendable () -> TerminalInventory = { TerminalInventory() },
         stateObserver: @escaping @Sendable (LinuxRelayRuntimeState) -> Void = { _ in }
     ) {
         self.machine = machine
@@ -298,38 +345,47 @@ actor LinuxRelayRuntimeOwner {
         self.ingress = ingress
         self.commandsEnabled = commandsEnabled
         self.diagnostic = diagnostic
+        self.presentation = presentation
+        self.places = places
+        self.inventory = inventory
         self.stateObserver = stateObserver
     }
 
-    func start() async throws {
-        guard state == .idle else { throw CloudTransportError.alreadyConnected }
+    func startOrRetry() async throws {
+        guard state == .idle || state == .degraded else {
+            throw CloudTransportError.alreadyConnected
+        }
         state = .starting
         await transport.setTerminalAuthorizationHandler { [weak self] _ in
             Task { await self?.authorizationRefused() }
         }
-        lifecycleGeneration &+= 1
+        if !streamsInstalled {
+            streamsInstalled = true
+            lifecycleGeneration &+= 1
+            let owned = lifecycleGeneration
+            let commandStream = transport.commands
+            let readyStream = transport.readyGenerations
+            let receipts = transport.outboundReceipts
+            commandTask = Task { [weak self] in
+                for await command in commandStream {
+                    guard let self else { return }
+                    await self.consume(command, generation: owned)
+                }
+            }
+            readyTask = Task { [weak self] in
+                for await generation in readyStream {
+                    guard let self else { return }
+                    await self.ready(generation, lifecycleGeneration: owned)
+                }
+            }
+            receiptTask = Task { [weak self] in
+                for await receipt in receipts {
+                    guard let self else { return }
+                    await self.settle(receipt, lifecycleGeneration: owned)
+                }
+            }
+        }
         let owned = lifecycleGeneration
-        let commandStream = transport.commands
-        let readyStream = transport.readyGenerations
-        let receipts = transport.outboundReceipts
-        commandTask = Task { [weak self] in
-            for await command in commandStream {
-                guard let self else { return }
-                await self.consume(command, generation: owned)
-            }
-        }
-        readyTask = Task { [weak self] in
-            for await generation in readyStream {
-                guard let self else { return }
-                await self.ready(generation, lifecycleGeneration: owned)
-            }
-        }
-        receiptTask = Task { [weak self] in
-            for await receipt in receipts {
-                guard let self else { return }
-                await self.settle(receipt, lifecycleGeneration: owned)
-            }
-        }
         do {
             try await transport.connect(role: .machine)
             guard lifecycleGeneration == owned, state == .starting else {
@@ -337,11 +393,18 @@ actor LinuxRelayRuntimeOwner {
             }
             state = .running
         } catch {
-            if lifecycleGeneration == owned, state == .starting { state = .failed }
-            await stopStreamsAndTransport()
+            if lifecycleGeneration == owned, state == .starting {
+                if error as? CloudTransportError == .unauthorized {
+                    await authorizationRefused()
+                } else {
+                    state = .degraded
+                }
+            }
             throw error
         }
     }
+
+    func start() async throws { try await startOrRetry() }
 
     func stop() async {
         guard state != .stopped else { return }
@@ -377,6 +440,10 @@ actor LinuxRelayRuntimeOwner {
             await outbound.replaceIdentity(LinuxDurableCloudRuntime.appIdentity(material))
             await outbound.requestDrain(reconnect: true)
             authenticatedGeneration = generation
+            if !places.isEmpty {
+                try await publishDescriptor()
+                await publishInventory(inventory(), force: true)
+            }
             diagnostic("linux cloud: authenticated Relay ready generation=\(generation)")
         } catch {
             diagnostic("linux cloud: protected identity changed incompatibly; Relay stopped")
@@ -406,36 +473,201 @@ actor LinuxRelayRuntimeOwner {
             diagnostic("linux cloud: authenticated command refused code=command_expired")
             return
         }
-        let request: LinuxIngressRequest
-        do { request = try JSONDecoder().decode(LinuxIngressRequest.self, from: inbound.plaintext) }
+        let command: LinuxBrowserCommand
+        do { command = try adaptBrowserCommand(inbound) }
         catch {
             diagnostic("linux cloud: authenticated command refused code=malformed_command")
             return
         }
-        do {
-            let response = try ingress.performCloud(
-                request, sender: inbound.sender, sequence: inbound.sequence,
-                effectAuthorization: { [identityAuthority, commandsEnabled, machine] write in
-                    let snapshot = try identityAuthority.snapshot()
-                    guard snapshot.accountID == machine.accountID,
-                          snapshot.machineID == machine.machineID,
-                          snapshot.deviceID == machine.machineID,
-                          !snapshot.revokedDeviceIDs.contains(inbound.sender),
-                          snapshot.pairedDevices.contains(where: {
-                              $0.deviceID == inbound.sender
-                          }) else { return false }
-                    return !write || commandsEnabled()
-                })
-            let session = request.sessionID ?? request.taskID
-            try await outbound.enqueue(
-                response,
-                channel: "t/" + channelSegment(machine.machineID) + "/" + channelSegment(session),
-                logicalID: inbound.idempotencyKey)
-        } catch let failure as LinuxDurableStateFailure {
-            diagnostic("linux cloud: command refused code=\(failure.code)")
-        } catch {
-            diagnostic("linux cloud: command failed before durable response")
+        switch command {
+        case .places(let requestID):
+            do {
+                guard try isAuthorized(sender: inbound.sender, requiresWrite: false) else {
+                    throw LinuxDurableStateFailure(code: "cloud_read_refused", message: "Paired read refused.")
+                }
+                try await outbound.enqueue(
+                    try placesPayload(requestID: requestID), channel: machineReplyChannel(),
+                    logicalID: "read:" + requestID)
+            } catch { diagnostic("linux cloud: authenticated places read refused") }
+            return
+        case .start(let requestID, let request):
+            do {
+                let response = try ingress.performCloud(
+                    request, sender: inbound.sender, sequence: inbound.sequence,
+                    effectAuthorization: { [identityAuthority, commandsEnabled, machine] write in
+                        let snapshot = try identityAuthority.snapshot()
+                        guard snapshot.accountID == machine.accountID,
+                              snapshot.machineID == machine.machineID,
+                              snapshot.deviceID == machine.machineID,
+                              !snapshot.revokedDeviceIDs.contains(inbound.sender),
+                              snapshot.pairedDevices.contains(where: {
+                                  $0.deviceID == inbound.sender
+                              }) else { return false }
+                        return !write || commandsEnabled()
+                    })
+                try await outbound.enqueue(
+                    try actionPayload(response: response, requestID: requestID),
+                    channel: machineReplyChannel(), logicalID: "action:" + requestID)
+                await publishInventory(inventory(), force: true)
+            } catch let failure as LinuxDurableStateFailure {
+                diagnostic("linux cloud: command refused code=\(failure.code)")
+            } catch {
+                diagnostic("linux cloud: command failed before durable response")
+            }
+            return
+        case .native(let request):
+            do {
+                let response = try ingress.performCloud(
+                    request, sender: inbound.sender, sequence: inbound.sequence,
+                    effectAuthorization: { [identityAuthority, commandsEnabled, machine] write in
+                        let snapshot = try identityAuthority.snapshot()
+                        guard snapshot.accountID == machine.accountID,
+                              snapshot.machineID == machine.machineID,
+                              snapshot.deviceID == machine.machineID,
+                              !snapshot.revokedDeviceIDs.contains(inbound.sender),
+                              snapshot.pairedDevices.contains(where: {
+                                  $0.deviceID == inbound.sender
+                              }) else { return false }
+                        return !write || commandsEnabled()
+                    })
+                let session = request.sessionID ?? request.taskID
+                try await outbound.enqueue(
+                    response,
+                    channel: "t/" + channelSegment(machine.machineID) + "/" + channelSegment(session),
+                    logicalID: inbound.idempotencyKey)
+                if request.operation == .create || request.operation == .close {
+                    await publishInventory(inventory(), force: true)
+                }
+            } catch let failure as LinuxDurableStateFailure {
+                diagnostic("linux cloud: command refused code=\(failure.code)")
+            } catch {
+                diagnostic("linux cloud: command failed before durable response")
+            }
+            return
         }
+    }
+
+    func publishInventory(_ snapshot: TerminalInventory, force: Bool = false) async {
+        guard state == .running, !places.isEmpty, snapshot.sessions.count <= 512 else { return }
+        let allowed = Set(places.map(\.path))
+        let rows = snapshot.assistantSessions.sorted { $0.id < $1.id }
+        let digest = rows.map {
+            "\($0.id)|\($0.name)|\($0.assistant?.rawValue ?? "")|\(allowed.contains($0.cwd ?? "") ? $0.cwd ?? "" : "")"
+        }.joined(separator: "\n")
+        guard force || digest != lastInventoryDigest else { return }
+        do {
+            let now = Int(Date().timeIntervalSince1970)
+            for row in rows {
+                var session: [String: Any] = [
+                    "id": row.id, "name": row.name,
+                    "assistant": row.assistant?.rawValue ?? "", "backend": "tmux",
+                    "window": row.windowIndex, "tab": row.tabIndex
+                ]
+                if let cwd = row.cwd, allowed.contains(cwd) { session["cwd"] = cwd }
+                try await outbound.enqueue(
+                    try Self.json(["session": session, "at": now,
+                                   "scan": ["complete": snapshot.isComplete]]),
+                    channel: "s/" + channelSegment(machine.machineID),
+                    logicalID: "linux-session:" + row.id)
+            }
+            if snapshot.isComplete {
+                try await outbound.enqueue(
+                    try Self.json(["inventory": ["version": 1,
+                                                  "sessions": rows.map(\.id)]]),
+                    channel: "s/" + channelSegment(machine.machineID),
+                    logicalID: "linux-session-inventory")
+                lastInventoryDigest = digest
+            }
+        } catch { diagnostic("linux cloud: inventory publication failed") }
+    }
+
+    private enum LinuxBrowserCommand {
+        case places(String)
+        case start(String, LinuxIngressRequest)
+        case native(LinuxIngressRequest)
+    }
+
+    private func adaptBrowserCommand(_ inbound: CloudInboundCommand) throws -> LinuxBrowserCommand {
+        if let native = try? JSONDecoder().decode(LinuxIngressRequest.self, from: inbound.plaintext) {
+            return .native(native)
+        }
+        guard let body = try JSONSerialization.jsonObject(with: inbound.plaintext) as? [String: Any],
+              let type = body["type"] as? String,
+              let request = body["request"] as? String,
+              request.utf8.count > 0, request.utf8.count <= 128,
+              SessionLaunchPolicy.opaqueCommandID(request) == request else {
+            throw LinuxDurableStateFailure(code: "malformed_command", message: "Browser command is malformed.")
+        }
+        if type == "places" {
+            guard Set(body.keys) == ["type", "session", "request"],
+                  body["session"] as? String == "__clawdline_machine__" else {
+                throw LinuxDurableStateFailure(code: "malformed_command", message: "Places command is malformed.")
+            }
+            return .places(request)
+        }
+        guard type == "start",
+              Set(body.keys) == ["type", "session", "request", "place", "assistant", "model"],
+              body["session"] as? String == "__clawdline_machine__",
+              let placeID = body["place"] as? String,
+              let place = places.first(where: { $0.id == placeID }),
+              let assistantName = body["assistant"] as? String,
+              let assistant = Assistant(rawValue: assistantName),
+              let model = body["model"] as? String,
+              model.isEmpty || SessionLaunchPolicy.modelName(model) != nil else {
+            throw LinuxDurableStateFailure(code: "malformed_command", message: "Start command is malformed.")
+        }
+        let id = LinuxSHA256.hex(Data("browser:\(inbound.sender):\(inbound.sequence)".utf8))
+        return .start(request, LinuxIngressRequest(
+            operation: .create, commandID: id, taskID: id,
+            projectRoot: place.path, assistant: assistant))
+    }
+
+    private func isAuthorized(sender: String, requiresWrite: Bool) throws -> Bool {
+        let snapshot = try identityAuthority.snapshot()
+        guard snapshot.accountID == machine.accountID,
+              snapshot.machineID == machine.machineID,
+              snapshot.deviceID == machine.machineID,
+              !snapshot.revokedDeviceIDs.contains(sender),
+              snapshot.pairedDevices.contains(where: { $0.deviceID == sender }) else { return false }
+        return !requiresWrite || commandsEnabled()
+    }
+
+    private func publishDescriptor() async throws {
+        var payload: [String: Any] = ["v": 1, "label": presentation.displayName,
+                                      "platform": "linux",
+                                      "at": Int(Date().timeIntervalSince1970)]
+        if let provider = presentation.provider { payload["provider"] = provider }
+        try await outbound.enqueue(
+            try Self.json(payload), channel: "orch/" + channelSegment(machine.machineID),
+            logicalID: "linux-machine-descriptor")
+    }
+
+    private func placesPayload(requestID: String) throws -> Data {
+        try Self.json(["read": "read:" + requestID, "status": 200, "body": [
+            "places": places.map { ["id": $0.id, "label": $0.label, "path": $0.path] },
+            "assistants": Assistant.allCases.map {
+                ["id": $0.rawValue, "label": $0.rawValue, "availability": "available"]
+            }
+        ]])
+    }
+
+    private func actionPayload(response: Data, requestID: String) throws -> Data {
+        let decoded = try JSONDecoder().decode(LinuxIngressResponse.self, from: response)
+        guard let receipt = decoded.receipt, let id = receipt.sessionID else {
+            throw LinuxDurableStateFailure(code: "missing_receipt", message: "Start receipt is incomplete.")
+        }
+        return try Self.json(["read": "action:" + requestID, "status": 200, "body": [
+            "ok": true, "id": id, "tty": receipt.tty ?? "",
+            "attach": receipt.attachCommand ?? "", "backend": "tmux"
+        ]])
+    }
+
+    private func machineReplyChannel() -> String {
+        "t/" + channelSegment(machine.machineID) + "/__clawdline_machine__"
+    }
+
+    private static func json(_ value: Any) throws -> Data {
+        try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
     }
 
     private func stopStreamsAndTransport() async {

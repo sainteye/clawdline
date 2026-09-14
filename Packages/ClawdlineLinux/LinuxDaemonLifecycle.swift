@@ -1282,6 +1282,19 @@ enum LinuxDaemonService {
         let relayOwner = try durableCloud.makeRelayOwner(
             ingress: owner,
             commandsEnabled: { configuration.runtime?.cloudCommandsEnabled == true },
+            presentation: LinuxRelayMachinePresentation(
+                displayName: configuration.runtime?.displayName ?? "Clawdline Linux",
+                provider: configuration.runtime?.infrastructureProvider),
+            places: (configuration.runtime?.projectRoots ?? []).map { path in
+                LinuxRelayPlace(
+                    id: LinuxSHA256.hex(Data(path.utf8)),
+                    label: URL(fileURLWithPath: path).lastPathComponent,
+                    path: path)
+            },
+            inventory: {
+                (try? runtime.terminal.inventory()) ?? TerminalInventory(
+                    error: "tmux inventory was unavailable", isComplete: false)
+            },
             diagnostic: relayDiagnostic,
             stateObserver: { relayStatus.record($0) })
         let relaySupervisor = relayOwner.map {
@@ -1304,7 +1317,14 @@ enum LinuxDaemonService {
             label: "app.clawdline.linux-observation"))
         timer.schedule(deadline: .now() + 10, repeating: 10)
         timer.setEventHandler {
-            guard let receipt = try? owner.observeInventory(inventory(from: runtime)) else { return }
+            let snapshot = (try? runtime.terminal.inventory()) ?? TerminalInventory(
+                error: "tmux inventory could not be read", isComplete: false)
+            let evidence = snapshot.isComplete
+                ? LinuxTerminalInventoryEvidence.complete(Set(
+                    snapshot.sessions.filter { $0.assistant != nil }.map(\.id)))
+                : .incomplete(snapshot.error ?? "terminal inventory is incomplete")
+            guard let receipt = try? owner.observeInventory(evidence) else { return }
+            relaySupervisor?.publishInventory(snapshot)
             let observedHealth = makeHealth(
                 receipt: receipt, providerIdentity: runtime.compositionReceipt.identity,
                 cloudReadiness: durableCloud.readiness,

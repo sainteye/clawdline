@@ -59,8 +59,7 @@ one(tmux, "Service", "Type", "simple")
 one(tmux, "Service", "RuntimeDirectory", "clawdline")
 one(tmux, "Service", "RuntimeDirectoryPreserve", "restart")
 one(tmux, "Service", "ExecStartPre", "/usr/bin/rm -f /run/clawdline/clawdline.sock")
-if " -D " not in one(tmux, "Service", "ExecStart"):
-    raise SystemExit("systemd must supervise the tmux foreground server PID")
+one(tmux, "Service", "ExecStart", "/usr/bin/tmux -D -S /run/clawdline/clawdline.sock")
 if "RemainAfterExit" in tmux["Service"]:
     raise SystemExit("tmux keeper may not claim active after its PID exits")
 PY
@@ -115,7 +114,7 @@ if [ "${1:-}" = release-contract ]; then
   exit 0
 fi
 if [ "${1:-}" != health ]; then exit 64; fi
-printf '{"service":"clawdline-daemon","serviceReady":%s,"ready":false,"readinessCode":"w4_provider_authentication_not_proven","protocolIdentity":"clawdline-linux-local-health-v1","configurationSchemaVersion":2,"configurationReadableMinimum":1,"durableSchemaVersion":%s,"durableReadableMinimum":1,"durableReadableMaximum":%s,"release":{"packageVersion":"%s","buildIdentity":"%s","sourceCommit":"%s","packageDigest":"%s"},"reconciliation":{"authoritative":true,"stateDisposition":"loaded","schemaVersion":%s,"daemonEpoch":1,"status":"complete","terminalPresent":0,"terminalMissing":0,"terminalUnknown":0,"taskTerminal":0,"taskReconciling":0,"taskUnknown":0,"queueRecoverable":0,"queueUnknown":0,"commandSucceeded":0,"commandInterrupted":0,"commandUnknown":0,"preservedOriginal":null,"reason":null},"providers":[]}\n' \
+printf '{"service":"clawdline-daemon","serviceReady":%s,"ready":false,"readinessCode":"w4_provider_authentication_not_proven","protocolIdentity":"clawdline-linux-local-health-v1","configurationSchemaVersion":3,"configurationReadableMinimum":1,"durableSchemaVersion":%s,"durableReadableMinimum":1,"durableReadableMaximum":%s,"release":{"packageVersion":"%s","buildIdentity":"%s","sourceCommit":"%s","packageDigest":"%s"},"reconciliation":{"authoritative":true,"stateDisposition":"loaded","schemaVersion":%s,"daemonEpoch":1,"status":"complete","terminalPresent":0,"terminalMissing":0,"terminalUnknown":0,"taskTerminal":0,"taskReconciling":0,"taskUnknown":0,"queueRecoverable":0,"queueUnknown":0,"commandSucceeded":0,"commandInterrupted":0,"commandUnknown":0,"preservedOriginal":null,"reason":null},"providers":[]}\n' \
   "$ready" "$write" "$maximum" "$CLAWDLINE_PACKAGE_VERSION" "$CLAWDLINE_BUILD_IDENTITY" \
   "$CLAWDLINE_SOURCE_COMMIT" "$CLAWDLINE_PACKAGE_DIGEST" "$write"
 SH

@@ -131,8 +131,11 @@ private final class LinuxRelayTestTransport: CloudTransporting, @unchecked Senda
     private let lock = NSLock()
     private var writes: [Data] = []
     private var shutdownCount = 0
+    private var connectFailures: [CloudTransportError]
+    private var connectCount = 0
 
-    init() {
+    init(connectFailures: [CloudTransportError] = []) {
+        self.connectFailures = connectFailures
         let source = CloudInboundCommandSource()
         self.source = source
         commands = source.stream
@@ -146,6 +149,11 @@ private final class LinuxRelayTestTransport: CloudTransporting, @unchecked Senda
 
     func connect(role: CloudTransportRole) async throws {
         XCTAssertEqual(role, .machine)
+        lock.lock()
+        connectCount += 1
+        let failure = connectFailures.isEmpty ? nil : connectFailures.removeFirst()
+        lock.unlock()
+        if let failure { throw failure }
         readyContinuation.yield(1)
     }
 
@@ -171,6 +179,7 @@ private final class LinuxRelayTestTransport: CloudTransporting, @unchecked Senda
     func receipt(_ value: CloudOutboundTransportReceipt) { receiptContinuation.yield(value) }
     func writtenFrames() -> [Data] { lock.lock(); defer { lock.unlock() }; return writes }
     func shutdowns() -> Int { lock.lock(); defer { lock.unlock() }; return shutdownCount }
+    func connects() -> Int { lock.lock(); defer { lock.unlock() }; return connectCount }
 }
 
 private struct SchemaTwoIngressSeal: Encodable {
@@ -612,7 +621,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let durable = try CloudDurableRuntime.open(
             directory: scratch.appendingPathComponent("cloud", isDirectory: true),
             runtime: nil, strictPersistedFrameValidation: true)
-        let transport = LinuxRelayTestTransport()
+        let transport = LinuxRelayTestTransport(connectFailures: [.connectionFailed("transient")])
         let appIdentity = CloudAppIdentity(
             machineID: initial.machineID, deviceID: initial.deviceID,
             keyID: initial.keyID, masterSecret: master, signingKey: machineKey)
@@ -658,9 +667,20 @@ final class LinuxRuntimeContractTests: XCTestCase {
             throw LinuxDurableStateFailure(code: "test_timeout", message: current)
         }
 
-        try await relay.start()
+        let retryDelays = LockedStrings()
+        let supervisor = LinuxRelayRuntimeSupervisor(
+            owner: relay, status: relayStatus, diagnostic: { relayDiagnostics.append($0) },
+            sleep: { retryDelays.append(String($0)) })
+        supervisor.start()
+        try await waitUntil("transient initial connection was not retried") {
+            await relay.state == .running
+        }
         let runningState = await relay.state
         XCTAssertEqual(runningState, .running)
+        XCTAssertEqual(transport.connects(), 2)
+        XCTAssertEqual(retryDelays.snapshot(), ["0.25"])
+        XCTAssertEqual(transport.shutdowns(), 0,
+                       "transient initial failure must not terminate the durable owner")
         try await waitUntil("initial authenticated ready generation was not observed") {
             await relay.authenticatedGeneration == 1
         }
@@ -814,6 +834,130 @@ final class LinuxRuntimeContractTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? CloudDurableOutboundError, .stopped)
         }
+    }
+
+    func testLinuxRelayPublishesBoundedDiscoveryAndAdaptsClosedBrowserCommands() async throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-linux-discovery-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let project = scratch.appendingPathComponent("reaver", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: project, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let secrets = TestMemorySecretStore()
+        let authority = CloudExecutorIdentityAuthority(store: secrets)
+        let machineKey = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x61, count: 32))
+        let viewerKey = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x62, count: 32))
+        let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x63, count: 32))
+        let identity = try authority.provision(
+            accountID: "account-discovery", machineID: "machine-linux",
+            deviceKey: machineKey, masterSecret: master,
+            importedPairedDevices: [CloudExecutorPairedDevice(
+                deviceID: "viewer-linux", signingKey: viewerKey.publicKeyRaw,
+                fingerprint: viewerKey.pairingFingerprint, pairedAtMilliseconds: 1,
+                identityGeneration: 1,
+                capabilities: CloudExecutorIdentityAuthority.defaultCapabilities)])
+        let durable = try CloudDurableRuntime.open(
+            directory: scratch.appendingPathComponent("cloud"), runtime: nil,
+            strictPersistedFrameValidation: true)
+        let transport = LinuxRelayTestTransport()
+        let outbound = CloudDurableOutboundComposition(
+            spool: durable.spool, transport: transport,
+            identity: CloudAppIdentity(
+                machineID: identity.machineID, deviceID: identity.deviceID,
+                keyID: identity.keyID, masterSecret: master, signingKey: machineKey),
+            nowMilliseconds: { UInt64(Date().timeIntervalSince1970 * 1_000) })
+        let ingressStore = try LinuxDurableStateStore(
+            stateDirectory: scratch.appendingPathComponent("daemon").path)
+        let lifecycle = FakeLinuxLifecycleRuntime()
+        let startup = try LinuxStartupReconciler.reconcile(
+            store: ingressStore, inventory: .complete([]))
+        let ingress = LinuxDaemonIngressOwner(store: ingressStore, runtime: lifecycle)
+        ingress.completeStartup(startup)
+        let gate = LockedBool(true)
+        let row = TargetSession(
+            backend: .tmux, id: "%7", name: "Linux work", tty: "/dev/pts/7",
+            windowIndex: 0, tabIndex: 0, assistant: .codex, cwd: project.path)
+        let relay = LinuxRelayRuntimeOwner(
+            machine: CloudMachineIdentity(accountID: identity.accountID,
+                                          machineID: identity.machineID),
+            identityAuthority: authority, transport: transport, outbound: outbound,
+            ingress: ingress, commandsEnabled: { gate.get() },
+            presentation: LinuxRelayMachinePresentation(
+                displayName: "AWS worker", provider: "aws"),
+            places: [LinuxRelayPlace(id: "reaver", label: "reaver", path: project.path)],
+            inventory: { TerminalInventory(sessions: [row]) })
+        try await relay.start()
+        var initialFrames: [CloudPublishFrame] = []
+        for wanted in 1...3 {
+            for _ in 0..<200 where transport.writtenFrames().count < wanted {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            let frame = try JSONDecoder().decode(
+                CloudPublishFrame.self, from: transport.writtenFrames()[wanted - 1])
+            initialFrames.append(frame)
+            transport.receipt(CloudOutboundTransportReceipt(
+                channel: frame.envelope.ch, sequence: Int64(frame.envelope.seq), kind: .delivered))
+        }
+        XCTAssertEqual(initialFrames.count, 3)
+        func plaintexts(_ frames: [CloudPublishFrame]) throws -> [[String: Any]] {
+            try frames.map { frame in
+                let envelope = frame.envelope
+                let clear = try envelope.open(
+                    masterSecret: master,
+                    publicKeyForSender: { $0 == identity.machineID ? machineKey.publicKeyRaw : nil })
+                return try XCTUnwrap(JSONSerialization.jsonObject(with: clear) as? [String: Any])
+            }
+        }
+        let initial = try plaintexts(initialFrames)
+        XCTAssertTrue(initial.contains { $0["platform"] as? String == "linux"
+            && $0["provider"] as? String == "aws" && $0["label"] as? String == "AWS worker" })
+        XCTAssertTrue(initial.contains {
+            ($0["session"] as? [String: Any])?["cwd"] as? String == project.path
+        })
+        XCTAssertTrue(initial.contains {
+            (($0["inventory"] as? [String: Any])?["sessions"] as? [String]) == ["%7"]
+        })
+
+        let now = UInt64(Date().timeIntervalSince1970 * 1_000)
+        let places = try JSONSerialization.data(withJSONObject: [
+            "type": "places", "session": "__clawdline_machine__", "request": "places-1"
+        ])
+        XCTAssertTrue(transport.deliver(CloudInboundCommand(
+            channel: "ctl/machine-linux", sequence: 9, timestamp: now,
+            sender: "viewer-linux", plaintext: places)))
+        for _ in 0..<200 where transport.writtenFrames().count < 4 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let placesFrame = try JSONDecoder().decode(
+            CloudPublishFrame.self, from: transport.writtenFrames()[3])
+        let placesAnswer = try XCTUnwrap(try plaintexts([placesFrame]).first)
+        XCTAssertEqual(placesAnswer["read"] as? String, "read:places-1")
+        transport.receipt(CloudOutboundTransportReceipt(
+            channel: placesFrame.envelope.ch, sequence: Int64(placesFrame.envelope.seq),
+            kind: .delivered))
+        let start = try JSONSerialization.data(withJSONObject: [
+            "type": "start", "session": "__clawdline_machine__", "request": "start-1",
+            "place": "reaver", "assistant": "codex", "model": ""
+        ])
+        XCTAssertTrue(transport.deliver(CloudInboundCommand(
+            channel: "ctl/machine-linux", sequence: 10, timestamp: now,
+            sender: "viewer-linux", plaintext: start)))
+        for _ in 0..<200 where lifecycle.calls.filter({ $0.hasPrefix("create:") }).isEmpty {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(lifecycle.calls.filter { $0.hasPrefix("create:") }.count, 1)
+        let before = lifecycle.calls.count
+        let arbitrary = try JSONSerialization.data(withJSONObject: [
+            "type": "start", "session": "__clawdline_machine__", "request": "start-2",
+            "place": "/etc", "assistant": "codex", "model": ""
+        ])
+        XCTAssertTrue(transport.deliver(CloudInboundCommand(
+            channel: "ctl/machine-linux", sequence: 11, timestamp: now,
+            sender: "viewer-linux", plaintext: arbitrary)))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertEqual(lifecycle.calls.count, before, "the browser cannot supply an arbitrary path")
+        await relay.stop()
     }
 
     func testW52ProtectedExecutorIdentityPairingRotationAndReconnect() throws {

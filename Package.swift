@@ -71,6 +71,11 @@ let dependencies: [Package.Dependency] = [
     // Linux has no system CryptoKit module. Pin the same reviewed swift-crypto release as the
     // Ubuntu Core probe so the shared Application pairing bytes compile on both hosts.
     .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
+    // FoundationNetworking's URLSessionWebSocketTask returns NSURLErrorUnsupportedURL on the
+    // pinned Ubuntu 24.04 / Swift 6.1.3 image. These exact releases are the reviewed Linux-only
+    // transport; macOS continues to use Foundation's URLSession implementation.
+    .package(url: "https://github.com/apple/swift-nio.git", exact: "2.102.0"),
+    .package(url: "https://github.com/apple/swift-nio-ssl.git", exact: "2.37.4"),
 ]
 var targets: [Target] = [
         .target(name: "ClawdlineCore", path: "Packages/ClawdlineCore"),
@@ -79,6 +84,16 @@ var targets: [Target] = [
             dependencies: [
                 "ClawdlineCore",
                 .product(name: "Crypto", package: "swift-crypto",
+                         condition: .when(platforms: [.linux])),
+                .product(name: "NIOCore", package: "swift-nio",
+                         condition: .when(platforms: [.linux])),
+                .product(name: "NIOPosix", package: "swift-nio",
+                         condition: .when(platforms: [.linux])),
+                .product(name: "NIOHTTP1", package: "swift-nio",
+                         condition: .when(platforms: [.linux])),
+                .product(name: "NIOWebSocket", package: "swift-nio",
+                         condition: .when(platforms: [.linux])),
+                .product(name: "NIOSSL", package: "swift-nio-ssl",
                          condition: .when(platforms: [.linux])),
             ],
             path: "Packages/ClawdlineApplication",

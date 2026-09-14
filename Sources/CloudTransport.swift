@@ -2,6 +2,13 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+#if os(Linux)
+import NIOCore
+import NIOHTTP1
+import NIOPosix
+import NIOSSL
+import NIOWebSocket
+#endif
 #if canImport(ClawdlineApplication) && !CLAWDLINE_APPLICATION_TARGET
 import ClawdlineApplication
 #endif
@@ -919,6 +926,238 @@ struct CloudURLSessionSocketConnector: CloudTransportSocketConnecting, Sendable 
     }
 }
 
+#if os(Linux)
+/// FoundationNetworking's WebSocket implementation on Swift 6.1.3/Noble returns
+/// NSURLErrorUnsupportedURL before issuing an upgrade. Linux therefore uses the pinned NIO stack;
+/// macOS continues to use URLSession and never links this implementation.
+struct CloudNIOLinuxSocketConnector: CloudTransportSocketConnecting, Sendable {
+    let openingTimeout: TimeInterval
+
+    init(openingTimeout: TimeInterval = 15) {
+        self.openingTimeout = max(0.01, openingTimeout)
+    }
+
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        guard url.scheme?.lowercased() == "wss", let host = url.host, !host.isEmpty else {
+            throw CloudTransportError.invalidRelayURL
+        }
+        let port = url.port ?? 443
+        let path = (url.path.isEmpty ? "/" : url.path)
+            + (url.query.map { "?" + $0 } ?? "")
+        let connection = CloudNIOConnectionBox()
+        let promiseBox = CloudNIOPromiseBox()
+        let group = MultiThreadedEventLoopGroup.singleton
+        let bootstrap = ClientBootstrap(group: group)
+            .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .connectTimeout(.milliseconds(Int64(openingTimeout * 1_000)))
+            .channelInitializer { channel in
+                do {
+                    var tls = TLSConfiguration.makeClientConfiguration()
+                    tls.certificateVerification = .fullVerification
+                    let context = try NIOSSLContext(configuration: tls)
+                    let tlsHandler = try NIOSSLClientHandler(context: context, serverHostname: host)
+                    let http = CloudNIOHTTPUpgradeHandler(
+                        host: port == 443 ? host : "\(host):\(port)", path: path,
+                        bearerToken: bearerToken, promise: promiseBox)
+                    let upgrader = NIOWebSocketClientUpgrader(
+                        maxFrameSize: 32 * 1024 * 1024,
+                        upgradePipelineHandler: { channel, _ in
+                            let pipe = CloudNIOTextPipe(channel: channel)
+                            return channel.pipeline.addHandlers([
+                                NIOWebSocketFrameAggregator(
+                                    minNonFinalFragmentSize: 1,
+                                    maxAccumulatedFrameCount: 1_024,
+                                    maxAccumulatedFrameSize: 32 * 1024 * 1024),
+                                CloudNIOFrameHandler(pipe: pipe)
+                            ]).map {
+                                promiseBox.succeed(CloudEstablishedTransportSocket(pipe))
+                            }
+                        })
+                    let upgrade: NIOHTTPClientUpgradeSendableConfiguration = (
+                        upgraders: [upgrader],
+                        completionHandler: { context in
+                            context.pipeline.syncOperations.removeHandler(http, promise: nil)
+                        })
+                    return channel.pipeline.addHandler(tlsHandler).flatMap {
+                        channel.pipeline.addHTTPClientHandlers(withClientUpgrade: upgrade)
+                    }.flatMap {
+                        channel.pipeline.addHandler(http)
+                    }
+                } catch {
+                    return channel.eventLoop.makeFailedFuture(error)
+                }
+            }
+
+        let connectFuture = bootstrap.connect(host: host, port: port)
+        connectFuture.whenSuccess { channel in connection.set(channel) }
+        connectFuture.whenFailure { error in promiseBox.fail(error) }
+        do {
+            return try await withTaskCancellationHandler {
+                try await withThrowingTaskGroup(of: CloudEstablishedTransportSocket.self) { tasks in
+                    tasks.addTask { try await promiseBox.value() }
+                    tasks.addTask {
+                        try await Task.sleep(
+                            nanoseconds: UInt64(self.openingTimeout * 1_000_000_000))
+                        throw CloudTransportError.connectionTimedOut
+                    }
+                    defer { tasks.cancelAll() }
+                    guard let result = try await tasks.next() else {
+                        throw CloudTransportError.connectionTimedOut
+                    }
+                    return result
+                }
+            } onCancel: {
+                connection.close()
+                promiseBox.fail(CancellationError())
+            }
+        } catch {
+            connection.close()
+            if error is CancellationError { throw error }
+            if let error = error as? CloudTransportError { throw error }
+            throw CloudTransportError.connectionFailed(String(describing: error))
+        }
+    }
+}
+
+private final class CloudNIOConnectionBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var channel: Channel?
+    func set(_ channel: Channel) { lock.lock(); self.channel = channel; lock.unlock() }
+    func close() { lock.lock(); let channel = channel; lock.unlock(); channel?.close(promise: nil) }
+}
+
+private final class CloudNIOPromiseBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<CloudEstablishedTransportSocket, Error>?
+    private var continuation: CheckedContinuation<CloudEstablishedTransportSocket, Error>?
+
+    func value() async throws -> CloudEstablishedTransportSocket {
+        try await withCheckedThrowingContinuation { continuation in
+            lock.lock()
+            if let result { lock.unlock(); continuation.resume(with: result) }
+            else { self.continuation = continuation; lock.unlock() }
+        }
+    }
+    func succeed(_ socket: CloudEstablishedTransportSocket) { finish(.success(socket)) }
+    func fail(_ error: Error) { finish(.failure(error)) }
+    private func finish(_ result: Result<CloudEstablishedTransportSocket, Error>) {
+        lock.lock()
+        guard self.result == nil else { lock.unlock(); return }
+        self.result = result
+        let continuation = continuation
+        self.continuation = nil
+        lock.unlock()
+        continuation?.resume(with: result)
+    }
+}
+
+private final class CloudNIOHTTPUpgradeHandler: ChannelInboundHandler,
+    RemovableChannelHandler, @unchecked Sendable {
+    typealias InboundIn = HTTPClientResponsePart
+    typealias OutboundOut = HTTPClientRequestPart
+    private let host: String
+    private let path: String
+    private let bearerToken: String
+    private let promise: CloudNIOPromiseBox
+
+    init(host: String, path: String, bearerToken: String, promise: CloudNIOPromiseBox) {
+        self.host = host; self.path = path; self.bearerToken = bearerToken; self.promise = promise
+    }
+    func channelActive(context: ChannelHandlerContext) {
+        var headers = HTTPHeaders()
+        headers.add(name: "Host", value: host)
+        headers.add(name: "Authorization", value: "Bearer " + bearerToken)
+        context.write(wrapOutboundOut(.head(HTTPRequestHead(
+            version: .http1_1, method: .GET, uri: path, headers: headers))), promise: nil)
+        context.writeAndFlush(wrapOutboundOut(.end(nil)), promise: nil)
+    }
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        if case .head(let head) = unwrapInboundIn(data), head.status.code != 101 {
+            let code = Int(head.status.code)
+            promise.fail(code == 401 || code == 403
+                ? CloudTransportError.unauthorized
+                : CloudTransportError.upgradeRefused(statusCode: code))
+            context.close(promise: nil)
+        }
+    }
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        promise.fail(error)
+        context.close(promise: nil)
+    }
+}
+
+private actor CloudNIOTextInbox {
+    private var iterator: AsyncThrowingStream<String, Error>.AsyncIterator
+    init(_ stream: AsyncThrowingStream<String, Error>) { iterator = stream.makeAsyncIterator() }
+    func next() async throws -> String {
+        guard let text = try await iterator.next() else {
+            throw CloudTransportError.connectionFailed("the WebSocket closed")
+        }
+        return text
+    }
+}
+
+private final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable {
+    let channel: Channel
+    let continuation: AsyncThrowingStream<String, Error>.Continuation
+    let inbox: CloudNIOTextInbox
+    init(channel: Channel) {
+        self.channel = channel
+        var continuation: AsyncThrowingStream<String, Error>.Continuation!
+        let stream = AsyncThrowingStream<String, Error>(bufferingPolicy: .bufferingNewest(256)) {
+            continuation = $0
+        }
+        self.continuation = continuation
+        inbox = CloudNIOTextInbox(stream)
+    }
+    func send(text: String) async throws {
+        try await channel.eventLoop.submit {
+            var bytes = channel.allocator.buffer(capacity: text.utf8.count)
+            bytes.writeString(text)
+            return channel.writeAndFlush(WebSocketFrame(fin: true, opcode: .text, data: bytes))
+        }.flatMap { $0 }.get()
+    }
+    func receiveText() async throws -> String { try await inbox.next() }
+    func close() { continuation.finish(); channel.close(promise: nil) }
+}
+
+private final class CloudNIOFrameHandler: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = WebSocketFrame
+    private let pipe: CloudNIOTextPipe
+    init(pipe: CloudNIOTextPipe) { self.pipe = pipe }
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        var frame = unwrapInboundIn(data)
+        switch frame.opcode {
+        case .text:
+            guard let text = frame.unmaskedData.readString(length: frame.unmaskedData.readableBytes) else {
+                pipe.continuation.finish(throwing: CloudTransportError.unexpectedFrame("text"))
+                context.close(promise: nil); return
+            }
+            if case .dropped = pipe.continuation.yield(text) {
+                pipe.continuation.finish(throwing: CloudTransportError.connectionFailed(
+                    "the inbound text buffer overflowed"))
+                context.close(promise: nil)
+            }
+        case .ping:
+            context.writeAndFlush(NIOAny(WebSocketFrame(
+                fin: true, opcode: .pong, data: frame.unmaskedData)), promise: nil)
+        case .connectionClose:
+            pipe.continuation.finish()
+            context.close(promise: nil)
+        default:
+            pipe.continuation.finish(throwing: CloudTransportError.unexpectedFrame(
+                String(describing: frame.opcode)))
+            context.close(promise: nil)
+        }
+    }
+    func errorCaught(context: ChannelHandlerContext, error: Error) {
+        pipe.continuation.finish(throwing: error)
+        context.close(promise: nil)
+    }
+    func channelInactive(context: ChannelHandlerContext) { pipe.continuation.finish() }
+}
+#endif
+
 /// URLSession's WebSocket task is only *started* after `resume()`. The delegate callback is the
 /// first evidence that the HTTP upgrade completed, and task completion is where a 401/403 lives.
 /// This one-shot observer converts those callbacks into a bounded async result.
@@ -1148,9 +1387,15 @@ public actor CloudTransport {
         keyProvider: any CloudTransportKeyProviding,
         logger: @escaping Logger = { _ in }
     ) -> CloudTransport {
-        CloudTransport(
+#if os(Linux)
+        let connector: any CloudTransportSocketConnecting = CloudNIOLinuxSocketConnector()
+#else
+        let connector: any CloudTransportSocketConnecting = CloudURLSessionSocketConnector()
+#endif
+        return CloudTransport(
             relayBaseURL: relayBaseURL, tokenProvider: tokenProvider,
-            keyProvider: keyProvider, replayWindow: .process, logger: logger)
+            keyProvider: keyProvider, connector: connector,
+            replayWindow: .process, logger: logger)
     }
 
     init(
