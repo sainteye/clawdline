@@ -1270,7 +1270,10 @@ private actor CloudNIOTextInbox {
     private var iterator: AsyncThrowingStream<String, Error>.AsyncIterator
     init(_ stream: AsyncThrowingStream<String, Error>) { iterator = stream.makeAsyncIterator() }
     func next() async throws -> String {
-        guard let text = try await iterator.next() else {
+        var ownedIterator = iterator
+        let value = try await ownedIterator.next()
+        iterator = ownedIterator
+        guard let text = value else {
             throw CloudTransportError.connectionFailed("the WebSocket closed")
         }
         return text
@@ -1280,7 +1283,7 @@ private actor CloudNIOTextInbox {
 final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable {
     let channel: Channel
     let continuation: AsyncThrowingStream<String, Error>.Continuation
-    let inbox: CloudNIOTextInbox
+    private let inbox: CloudNIOTextInbox
     private let closeLock = NSLock()
     private var didBeginClose = false
     init(channel: Channel) {
@@ -1293,6 +1296,7 @@ final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable {
         inbox = CloudNIOTextInbox(stream)
     }
     func send(text: String) async throws {
+        let channel = self.channel
         try await channel.eventLoop.submit {
             var bytes = channel.allocator.buffer(capacity: text.utf8.count)
             bytes.writeString(text)
@@ -1310,6 +1314,7 @@ final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable {
         didBeginClose = true
         closeLock.unlock()
         continuation.finish()
+        let channel = self.channel
         channel.eventLoop.execute {
             let empty = channel.allocator.buffer(capacity: 0)
             channel.writeAndFlush(WebSocketFrame(
@@ -1331,7 +1336,8 @@ final class CloudNIOFrameHandler: ChannelInboundHandler, @unchecked Sendable {
         var frame = unwrapInboundIn(data)
         switch frame.opcode {
         case .text:
-            guard let text = frame.unmaskedData.readString(length: frame.unmaskedData.readableBytes) else {
+            var bytes = frame.unmaskedData
+            guard let text = bytes.readString(length: bytes.readableBytes) else {
                 pipe.continuation.finish(throwing: CloudTransportError.unexpectedFrame("text"))
                 context.close(promise: nil); return
             }
