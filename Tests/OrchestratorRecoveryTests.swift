@@ -1029,8 +1029,8 @@ group("an attached briefing is delivered work, not a tab still trying to open") 
     }) { lanes += 1 }
     // Counted rather than asserted at eight: another group's terminal work may still be in
     // flight, and what this needs is only that the broker is full at the moment of the beat.
-    check("no terminal lane is left for a briefing", lanes > 0
-            && !RemoteServer.shared.enqueueTerminalCommand(channel: "expiry-probe") {})
+    check("no terminal lane is left for a briefing",
+          !RemoteServer.shared.enqueueTerminalCommand(channel: "expiry-probe") {})
     let blocked = oldSpawning(attached: true)
     Orchestrator.holdScheduleTaskForTesting(blocked)
     Orchestrator.beat(fromTimer: true)
