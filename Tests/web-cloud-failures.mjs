@@ -1257,7 +1257,8 @@ await check("viewer events · pairing · machine_key_incomplete is attributed to
     const { options, hooks } = pairedClient(store);
     const { client, socket, log, errors } = await viewerFleet({ client: options });
     await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-02/s1" }));
-    assert.equal(errors.at(-1).code, "machine_key_incomplete");
+    assert.equal(errors.at(-1).code, "machine_not_paired",
+        "an incomplete pairing on a routed second machine is device state, not the account-wide pairing door");
     hooks.bind = (machine, sender, keyID) => Promise.resolve({ machineID: machine, senderID: sender, keyID: keyID,
         masterKey: null, senderKey: senderKey, legacy: true });
     await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-03/s1" }));

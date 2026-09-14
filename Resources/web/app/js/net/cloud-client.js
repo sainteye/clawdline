@@ -676,6 +676,16 @@ export class CloudClient {
         if (value.machineID !== machine || typeof value.senderID !== "string" || !value.senderID ||
             typeof value.keyID !== "string" || !value.keyID || !value.masterKey || !value.senderKey) {
             this._noteUnpairedMachine(machine, value && value.senderID, "machine_key_incomplete");
+            // An inbound envelope can name any enrolled machine on the account. A stale or
+            // half-written pairing for a second machine is that device's actionable state; it
+            // must not raise the account-wide pairing door and hide Sessions from healthy
+            // machines. Outbound work has selected this machine explicitly, so it keeps the
+            // actionable `machine_key_incomplete` error below.
+            if (probe) {
+                throw cloudFailure("machine_not_paired",
+                    "this browser's pairing for the envelope's machine is incomplete",
+                    { detail: { machine: machine, reason: "machine_key_incomplete" } });
+            }
             throw cloudError("machine_key_incomplete",
                 "This browser's pairing for the selected machine is incomplete. "
                 + "Start the Pair a Browser flow on that machine, then try again.");
