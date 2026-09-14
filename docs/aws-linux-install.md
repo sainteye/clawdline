@@ -239,6 +239,10 @@ Common failure classifications:
   `http://` package sources.
 - S3 `AccessDenied`: the EC2 instance profile lacks exact-prefix `s3:GetObject`; do not make the
   object public.
+- Git reports `detected dubious ownership` after a root SSM step hands the checkout to the non-root
+  build user: run subsequent Git commands as that checkout owner. For a root-only orchestration
+  step, scope `git -c safe.directory=/the/exact/checkout ...` to that one canonical path; never set
+  global `safe.directory=*`.
 - daemon active but no hosted Sessions: inspect typed Relay authorization/readiness and the
   authoritative per-session channels; do not infer readiness from systemd alone.
 - `clawdline-tmux` restart loop: compare the installed unit's `ExecStart` byte-for-byte with the
