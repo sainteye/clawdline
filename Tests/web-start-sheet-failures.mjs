@@ -370,7 +370,7 @@ const SCENARIOS = {
     "refused": "(d) sheet: the Mac refuses with 503 — the error shows, the row presses again, Close closes",
     "machine-picker": "fleet sheet: machine is chosen before Projects and assistants are read",
     "duplicate-arrival": "fleet sheet: arrival is matched by machine and id, not a duplicate bare id",
-    "late-machine": "fleet sheet: stale machines fail closed and a late fresh snapshot refreshes",
+    "late-machine": "fleet sheet: stale machines require an explicit probe and a fresh Session refreshes",
     "close-reopen-read": "sheet: closing during a Project read cannot wedge the next opening",
     "sync-throw": "sheet: a transport that throws synchronously still settles load, press, enter and pick"
 };
