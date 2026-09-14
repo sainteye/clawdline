@@ -88,6 +88,78 @@ prefix, verify the bundle SHA-256 before `git fetch`, and keep the bucket privat
 An SSM command does not inherit access merely because an administrator can download the object.
 Do not use a public object or presigned URL as a credential workaround.
 
+Keep the run prefix and the instance-role policy in the same immutable acceptance manifest. A role
+restricted to `runs/20260913a/source/*` correctly returns `403` when the next operator uploads to
+`runs/20260914/source/*`, even though both keys are in the same bucket. For a new run, either update
+the role to that one exact prefix before starting the instance or deliberately retain the already
+authorized run prefix and use new, content-addressed object names beneath it. Do not respond by
+granting bucket-wide `GetObject`.
+
+Git archives can preserve a checkout's group-write bit. After extraction and before the dependency
+gate, make the two authority files owned by the non-root build identity and remove group/other
+write permission; do not weaken `linux-dependency-lock.py`:
+
+```sh
+sudo chown build-user:build-user Package.resolved Packaging/linux/dependencies.lock.json
+sudo chmod 0644 Package.resolved Packaging/linux/dependencies.lock.json
+```
+
+The verifier deliberately refuses `0664` as “writable by another identity,” even when the file
+bytes and SHA-256 are otherwise correct. Run the gate **and the package build/verify container**
+as the same identity that owns those files. A source gate run as UID 1000 followed by a packaging
+container run as root still fails with `Package.resolved is not owned by the build identity`.
+Do not chown the accepted source back to root or weaken the verifier. Instead, give UID 1000 a
+dedicated mode-0700 package workspace, generate the ephemeral signing key inside that workspace,
+and run both `linux-package.sh build` and `verify` with `--user 1000:1000`.
+
+Preflight **peak build space**, not only the installed package size. A 16 GiB EC2 root volume was
+exhausted while copying a 609 MiB SwiftPM cache because Docker layers, two independent Swift build
+directories, extracted source trees, package workspaces, and earlier receipts shared the same
+filesystem. The inode count was healthy; bytes were the exhausted resource. Use at least a 32 GiB
+root volume for an on-instance source build, keep durable Clawdline state on its separate encrypted
+volume, and require a comfortable free-space margin before starting the compiler:
+
+```sh
+df -hT /
+df -i /
+docker system df
+du -sh .build .build-linux-tests 2>/dev/null || true
+```
+
+Do not react to `No space left on device` by starting a second build or deleting the live service
+state. First prove that no compiler is still running, retain the failed log, then either expand the
+root EBS volume and filesystem or remove only a named, reproducible build workspace. On Nitro EC2
+with an ext4 root partition, a typical online expansion after increasing the EBS volume is:
+
+```sh
+sudo growpart /dev/nvme0n1 1
+sudo resize2fs /dev/nvme0n1p1
+df -hT /
+```
+
+Confirm device and partition names with `lsblk` first; they are not portable constants.
+
+Do not make a long source build the body of one SSM Run Command. In one observed failure, the
+document worker reported `ipc messaging received timeout signal`, the instance still appeared
+`Online`, and even a subsequent `/bin/true` command failed immediately with empty output until the
+instance restarted. A short SSM request should instead verify the script digest and start a named
+durable systemd unit without waiting:
+
+```sh
+printf '%s  %s\n' "$EXPECTED_SHA256" /opt/clawdline-build.sh | sha256sum -c -
+sudo systemd-run --no-block \
+  --unit=clawdline-package-build \
+  --property=Type=oneshot \
+  --property=RemainAfterExit=yes \
+  /bin/bash /opt/clawdline-build.sh
+```
+
+Poll `systemctl show clawdline-package-build.service` and read its bounded journal or a dedicated
+log with later, short SSM commands. Record `Result`, `ExecMainStatus`, the verified script digest,
+source commit/tree, and package hashes. Before retrying after an SSM failure, inspect `ps` and this
+unit so a surviving compiler is never duplicated. `PingStatus=Online` is transport presence, not
+proof that the Run Command worker can execute documents.
+
 ## 3. Build and verify a signed package
 
 Generate a release signing key outside durable service state. The private key is release input and
@@ -213,7 +285,8 @@ The installation is accepted only when all of these are observed on the exact si
    python3 - <<'PY'
    import json, socket
    request = {"authorization":"aW52YWxpZC1wcm9iZQ==","operation":"observe",
-              "commandID":"listener-probe","taskID":"listener-probe","sessionID":"%999999"}
+              "commandID":"listener-probe","taskID":"listener-probe","sessionID":"%999999",
+              "acknowledge":False,"authorizeRecovery":False}
    with socket.create_connection(("127.0.0.1", 7718), timeout=5) as connection:
        connection.sendall(json.dumps(request, separators=(",", ":")).encode() + b"\n")
        connection.shutdown(socket.SHUT_WR)
@@ -224,7 +297,11 @@ The installation is accepted only when all of these are observed on the exact si
    PY
    ```
 3. The Relay authenticates without logging the Bearer or plaintext Session data. Revocation stops
-   reconnect; transient failure retries with the bounded policy.
+   reconnect; transient failure retries with the bounded policy. Treat daemon health and Relay
+   readiness as separate observations. After boot, poll the current boot journal with a bounded
+   deadline for `linux cloud: authenticated Relay ready`; do not require that line immediately and
+   do not accept an old-boot line. A cold network path can consume several bounded authentication
+   attempts before becoming ready even while configured health already reports `serviceReady`.
 4. `app.clawdline.com` shows the Linux/AWS machine label on its Session rows. The New Session sheet
    can select that machine and only the configured project (`reaver`).
 5. A hosted command creates a Claude Code or Codex Session, applies one benign change on a new
@@ -258,7 +335,32 @@ Common failure classifications:
 - apt mirror timeout with otherwise healthy HTTPS: the restricted egress policy still references
   `http://` package sources.
 - S3 `AccessDenied`: the EC2 instance profile lacks exact-prefix `s3:GetObject`; do not make the
-  object public.
+  object public. If only a newly dated run fails, compare the object key with the role's exact run
+  prefix before changing permissions.
+- `linux-dependency-lock: ... is writable by another identity` immediately after source
+  extraction: inspect owner and numeric mode of both `Package.resolved` and
+  `Packaging/linux/dependencies.lock.json`. Normalize only those exact source authorities to the
+  non-root build identity and `0644`; never bypass the verifier or run the product build as root.
+- `linux-dependency-lock: SwiftPM Package.resolved is not owned by the build identity` after the
+  complete source gate has already passed: the package container changed back to root. Reuse the
+  exact compiled source, but run package build and verify under the same numeric UID/GID as the
+  source gate. Put output and the ephemeral signing key in a new workspace owned only by that
+  identity, and delete the exact private-key file after retaining the archive, provenance,
+  signature and public key. This is a packaging-identity failure, not a reason to rerun the long
+  source compilation.
+- an apparently quiet first Linux compile can be rebuilding the pinned `swift-crypto` BoringSSL
+  graph (hundreds of C/assembly compilation steps). Inspect the one owned build process and its
+  log before deciding it is stalled. Do not start a second compiler against the same `.build`.
+- `No space left on device` while copying or rebuilding `.build`, even though the final package is
+  small: inspect root-volume bytes, Docker layers and every build/work directory. A 16 GiB root
+  disk is not a supported source-build budget; expand it (32 GiB or more is the current practical
+  floor) or use an external build host. Keep `/var/lib/clawdline` and its encrypted state volume
+  out of build cleanup.
+- SSM shows the instance `Online` but Run Command returns status 1 with no stdout/stderr, often
+  after `ipc messaging received timeout signal`: treat the command worker as unhealthy, not the
+  build as failed. Inspect the named systemd build unit before retrying. If even a bounded liveness
+  probe cannot execute, restart the SSM agent or reboot the disposable executor, then read the
+  durable unit/log; never assume the prior compiler died merely because SSM lost its worker.
 - Git reports `detected dubious ownership` after a root SSM step hands the checkout to the non-root
   build user: run subsequent Git commands as that checkout owner. For a root-only orchestration
   step, scope `git -c safe.directory=/the/exact/checkout ...` to that one canonical path; never set
@@ -290,6 +392,34 @@ Common failure classifications:
   do not manually kill a different pane to make reconciliation look complete.
 - daemon active but no hosted Sessions: inspect typed Relay authorization/readiness and the
   authoritative per-session channels; do not infer readiness from systemd alone.
+- configured health is ready after reboot but the first Relay attempts end in
+  `authentication_timeout`: keep the existing bounded reconnect policy and poll the **current
+  boot** journal for a finite acceptance window. In one real EC2 reboot, three 15-second attempts
+  timed out and the fourth authenticated about 49 seconds after service start. An acceptance
+  script that checks the journal only once can therefore report a false failure; an unbounded wait
+  can hide a real outage. Record both the earlier typed failures and the eventual ready timestamp.
+- both units are active and Relay authentication succeeds, but configured health says
+  `startup_reconciliation_incomplete` with `inventory_incomplete` on a fresh machine: run the
+  exact `tmux -S /run/clawdline/clawdline.sock list-panes -a ...` probe as the service user. A
+  dedicated tmux 3.4 server with zero Sessions returns status 1 and exactly `no current target`.
+  Releases used for first-session creation must classify that one refusal as a complete empty
+  inventory while keeping permission errors and malformed output fail-closed. Otherwise startup
+  requires a Session before the first Session can be created.
+- the first health read immediately after `systemctl restart` says `daemon health is unavailable`
+  while the unit is active: active means the process was admitted, not that startup reconciliation
+  has durably published `/run/clawdline/health.json`. Poll the configured-health command with a
+  bounded deadline and require its exact release tuple; do not convert the first read into either
+  success or a permanent configuration failure.
+- the hosted console still remembers a paired machine while both Linux units are inactive: pairing
+  is durable account identity, not a liveness receipt. Require both units to remain active, the
+  configured-health tuple to match the signed package, and a fresh Relay inventory publication
+  before offering that machine as ready for a new Session.
+- the listener probe returns `ingress_failed` instead of `ingress_unauthorized`: first compare the
+  probe with the current `LinuxIngressRequest` schema. `acknowledge` and `authorizeRecovery` are
+  explicit Boolean fields even for an observe request. If they are absent, decoding correctly
+  fails before authentication is evaluated, so the result proves neither listener authorization
+  nor its refusal. Keep the deliberately invalid credential, add the required false values, and
+  require the typed `ingress_unauthorized` result.
 - `clawdline-tmux` restart loop: compare the installed unit's `ExecStart` byte-for-byte with the
   foreground command above.
 - package health rollback refusal: preserve the transition journal and durable authority. Never
