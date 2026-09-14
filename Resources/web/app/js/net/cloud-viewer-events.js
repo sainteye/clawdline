@@ -40,8 +40,14 @@ export const VIEWER_EVENTS_VERSION = 1;
 export const VIEWER_EVENT_LIMITS = Object.freeze({
     /** Rows waiting for a batch. Beyond it the middle row goes: the onset and the latest stay. */
     rows: 100,
-    /** One row, serialized. `data` is shrunk to fit rather than the row being refused. */
-    rowBytes: 1536,
+    /**
+     * One row, serialized. `data` is shrunk to fit rather than the row being refused. With the
+     * pairing fields, 36-character machine and device ids and a 25-character build, receive
+     * failures measured 1,510 bytes (an unpaired second machine) and 1,626 (a paired Mac's changed
+     * sender beside one) under node, where visibility and online read null — so 1,536 cut real rows.
+     * 100 rows at this bound stay under the Mac's 256 KiB batch limit.
+     */
+    rowBytes: 2048,
     /** At most this many rows per key, and per event overall, in one window. */
     windowMs: 60000,
     perKeyInWindow: 3,

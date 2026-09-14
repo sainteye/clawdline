@@ -1334,6 +1334,36 @@ await check("viewer events · pairing · a target whose pairing is gone is refus
         "not a final refusal: the batch stays and the backoff decides the next attempt");
 });
 
+await check("viewer events · pairing · a receive failure named with production-length ids is kept whole", async function () {
+    const mac = "3f6a1c2e-8b4d-4e7f-9a10-2c3d4e5f6a7b";
+    const linux = "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a";
+    const macDevice = "dev_" + "0123456789abcdef0123456789abcdef";
+    const linuxDevice = "dev_" + "fedcba9876543210fedcba9876543210";
+    const reenrolled = "dev_" + "00112233445566778899aabbccddeeff";
+    const store = new Map([[mac, pairingFor(mac, { senderID: macDevice, keyID: "master-v1" })]]);
+    const { options } = pairedClient(store, { keyID: "master-v1", masterKeys: { "master-v1": masterKey },
+        senderKeys: { [macDevice]: senderKey }, webBuild: "b0123456789abcdef01234567" });
+    const { client, socket, log } = await viewerFleet({ orch: false, client: options });
+    // The page a phone actually holds: its Mac authenticated, an unpaired executor publishing beside
+    // it, then an envelope from the Mac's channel under a sender its pairing does not name.
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/" + mac, sender: macDevice, key_id: "master-v1" },
+        { tasks: [], machine: { platform: "macos" }, cloud_status: MAC_STATUS }));
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/" + linux, sender: linuxDevice, key_id: "master-v1" },
+        { tasks: [] }));
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/" + mac, sender: reenrolled, key_id: "master-v1" },
+        { tasks: [] }));
+    const row = failureRows(log)[1];
+    const bytes = JSON.stringify(row).length;
+    assert.equal(row.data.row_truncated, undefined, "not shrunk: " + bytes + " bytes");
+    assert.ok(bytes > 1536, "a row the previous 1,536-byte bound would have cut: " + bytes);
+    assert.deepEqual([row.data.stage, row.data.pairing_sender, row.data.sender, row.data.target_machine,
+        row.data.machines_with_pairing, row.data.machines_without_pairing, row.data.senders_without_keys,
+        row.data.field_names.length],
+    ["paired_sender", macDevice, reenrolled, mac, [mac], [linux], [linuxDevice], 10],
+    "every id and every envelope field name survives");
+    assert.ok(Object.keys(row.data).length <= 48, "within the Mac's 48-field row: " + Object.keys(row.data).length);
+});
+
 /* ---- ends ---------------------------------------------------------------------------------- */
 
 if (failures.length) {
