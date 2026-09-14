@@ -1116,9 +1116,11 @@ await check("viewer events · a second machine does not stop delivery, and a Mac
     const old = await viewerFleet({ orch: { cloud_status: undefined } });
     await receiveEnvelope(old.client, old.socket, await sealedFromMac({ sender: "nobody" }));
     const before = published(old.socket).length;
-    const outcomeOld = await old.client._deliverViewerEvents();
-    assert.deepEqual([outcomeOld.state, outcomeOld.why, published(old.socket).length],
-        ["deferred", "cloud_feature_unavailable", before], "typed, local, nothing published, rows kept");
+    // Bounded: were the Mac asked, its answer would wait on a read timer this suite never fires.
+    const outcomeOld = await outcome(old.client._deliverViewerEvents(), 200);
+    assert.deepEqual([outcomeOld.state, outcomeOld.value && outcomeOld.value.state, outcomeOld.value && outcomeOld.value.why,
+        published(old.socket).length], ["resolved", "deferred", "cloud_feature_unavailable", before],
+    "typed, local, nothing published, rows kept");
     assert.equal(failureRows(old.log).length, 1);
 });
 
@@ -1299,9 +1301,10 @@ await check("viewer events · pairing · an unknown_command from one target does
     assert.equal(sent.ch, "ctl/mac-old", "a page that has opened nothing uses the Mac chosen before");
     await answer(client, socket, "mac-old", { read: "action:" + sent.request, status: 400,
         error: { code: "unknown_command", layer: "mac_preflight", message: "This Mac does not know that Cloud command." } });
-    assert.deepEqual([(await first).state, log.snapshot().blocked.machine], ["blocked", "mac-old"]);
-    await fromMac(client, socket, "orch/mac-01", { tasks: [], machine: { platform: "macos" },
-        app: { build: "mac-build-1" }, cloud_status: MAC_STATUS });
+    assert.deepEqual([(await first).state, log.snapshot().blocked.machine, log.snapshot().blocked.mac_build],
+        ["blocked", "mac-old", null]);
+    // No app stamp, so this Mac's build reads as the same null the block recorded: only the machine differs.
+    await fromMac(client, socket, "orch/mac-01", { tasks: [], machine: { platform: "macos" }, cloud_status: MAC_STATUS });
     viewerClock += 61_000;
     const next = client._deliverViewerEvents();
     const resent = await nextCommand(socket, "diagnostics.events");
