@@ -228,8 +228,204 @@ private struct SchemaTwoIngressSeal: Encodable {
     }
 }
 
+#if os(Linux)
+private struct LinuxTransportTokenProvider: CloudDeviceTokenProviding {
+    func fetchDeviceToken() async throws -> CloudDeviceToken {
+        CloudDeviceToken(value: "linux-transport-token",
+                         expiresAt: Date().addingTimeInterval(3_600))
+    }
+}
+
+private struct LinuxTransportKeys: CloudTransportKeyProviding {
+    let key = CloudDeviceKeyPair()
+    func deviceKeyPair() async throws -> CloudDeviceKeyPair { key }
+    func masterSecret(for keyID: String) async throws -> CloudMasterSecret {
+        try CloudMasterSecret(rawRepresentation: Data(repeating: 0x71, count: 32))
+    }
+    func pairedDevicePublicKeys() async -> [String: Data] { [:] }
+}
+
+private final class LinuxTransportSocket: CloudTransportSocket, @unchecked Sendable {
+    private let lock = NSLock()
+    private let respondsToPing: Bool
+    private let sendsReady: Bool
+    private let continuation: AsyncThrowingStream<String, Error>.Continuation
+    private var iterator: AsyncThrowingStream<String, Error>.Iterator
+    private var sentHello = false
+    private var closed = false
+    private var pings = 0
+
+    init(respondsToPing: Bool, sendsReady: Bool = true) {
+        self.respondsToPing = respondsToPing
+        self.sendsReady = sendsReady
+        var continuation: AsyncThrowingStream<String, Error>.Continuation!
+        let stream = AsyncThrowingStream<String, Error> { continuation = $0 }
+        self.continuation = continuation
+        iterator = stream.makeAsyncIterator()
+        let nonce = Data(repeating: 0x72, count: 32).base64EncodedString()
+        continuation.yield("{\"type\":\"challenge\",\"v\":1,\"context\":\"clawdline-challenge-v1\",\"account\":\"linux-account\",\"device\":\"linux-device\",\"challenge\":\"\(nonce)\",\"expires_in_ms\":15000}")
+    }
+
+    func send(text: String) async throws {
+        let (first, isClosed) = beginSend()
+        guard !isClosed else { throw CloudTransportError.notConnected }
+        if first, sendsReady {
+            continuation.yield("{\"type\":\"ready\",\"v\":1,\"account\":\"linux-account\",\"device\":\"linux-device\",\"role\":\"machine\",\"connected_at\":0,\"token_expires_at\":3600000}")
+        } else if text == "{\"type\":\"ping\"}" {
+            recordPing()
+            if respondsToPing { continuation.yield("{\"type\":\"pong\"}") }
+        }
+    }
+
+    private func beginSend() -> (first: Bool, closed: Bool) {
+        lock.lock()
+        let first = !sentHello
+        if first { sentHello = true }
+        let isClosed = closed
+        lock.unlock()
+        return (first, isClosed)
+    }
+
+    private func recordPing() {
+        lock.lock(); pings += 1; lock.unlock()
+    }
+
+    func receiveText() async throws -> String {
+        guard let text = try await iterator.next() else { throw CloudTransportError.notConnected }
+        return text
+    }
+
+    func close() {
+        lock.lock()
+        guard !closed else { lock.unlock(); return }
+        closed = true
+        lock.unlock()
+        continuation.finish()
+    }
+
+    func snapshot() -> (pings: Int, closed: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        return (pings, closed)
+    }
+}
+
+private struct LinuxTransportConnector: CloudTransportSocketConnecting {
+    let socket: LinuxTransportSocket
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        CloudEstablishedTransportSocket(socket)
+    }
+}
+
+private final class LinuxUpgradeByteCapture: ChannelInboundHandler, @unchecked Sendable {
+    typealias InboundIn = ByteBuffer
+    private let lock = NSLock()
+    private var bytes = Data()
+    func channelRead(context: ChannelHandlerContext, data: NIOAny) {
+        var buffer = unwrapInboundIn(data)
+        let next = buffer.readBytes(length: buffer.readableBytes) ?? []
+        lock.lock(); bytes.append(contentsOf: next); lock.unlock()
+    }
+    func snapshot() -> Data { lock.lock(); defer { lock.unlock() }; return bytes }
+}
+
+private final class LinuxRawWebSocketUpgrader: NIOHTTPClientProtocolUpgrader,
+    @unchecked Sendable {
+    let supportedProtocol = "websocket"
+    let requiredUpgradeHeaders: [String] = []
+    let capture: LinuxUpgradeByteCapture
+    init(capture: LinuxUpgradeByteCapture) { self.capture = capture }
+    func addCustom(upgradeRequestHeaders: inout HTTPHeaders) {}
+    func shouldAllowUpgrade(upgradeResponse: HTTPResponseHead) -> Bool { true }
+    func upgrade(
+        context: ChannelHandlerContext, upgradeResponse: HTTPResponseHead
+    ) -> EventLoopFuture<Void> {
+        context.pipeline.addHandler(capture)
+    }
+}
+#endif
+
 final class LinuxRuntimeContractTests: XCTestCase {
 #if os(Linux)
+    func testNIOUpgradeStrategyForwardsCoalescedFrameBytes() throws {
+        let channel = EmbeddedChannel()
+        let capture = LinuxUpgradeByteCapture()
+        let upgrader = LinuxRawWebSocketUpgrader(capture: capture)
+        let upgrade: NIOHTTPClientUpgradeSendableConfiguration = (
+            upgraders: [upgrader], completionHandler: { _ in })
+        try cloudNIOAddHTTPClientUpgradeHandlers(to: channel, upgrade: upgrade).wait()
+        try channel.connect(to: SocketAddress(ipAddress: "127.0.0.1", port: 443)).wait()
+        var request = HTTPRequestHead(version: .http1_1, method: .GET, uri: "/")
+        request.headers.add(name: "Host", value: "relay.invalid")
+        _ = try channel.writeOutbound(HTTPClientRequestPart.head(request))
+        _ = try channel.writeOutbound(HTTPClientRequestPart.end(nil))
+        while try channel.readOutbound(as: ByteBuffer.self) != nil {}
+
+        let frame = Data([0x81, 0x09]) + Data("challenge".utf8)
+        var responseAndFrame = channel.allocator.buffer(capacity: 160)
+        responseAndFrame.writeString(
+            "HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\n"
+                + "Upgrade: websocket\r\n\r\n")
+        responseAndFrame.writeBytes(frame)
+        _ = try channel.writeInbound(responseAndFrame)
+        channel.embeddedEventLoop.run()
+
+        XCTAssertEqual(capture.snapshot(), frame,
+                       "the production HTTP upgrade forwards its buffered first frame")
+        XCTAssertNoThrow(try channel.finish())
+    }
+
+    func testTransportKeepaliveAndPhaseSpecificReadyTimeout() async throws {
+        let healthySocket = LinuxTransportSocket(respondsToPing: true)
+        let healthy = CloudTransport(
+            relayBaseURL: URL(string: "ws://keepalive.invalid/v1/connect")!,
+            tokenProvider: LinuxTransportTokenProvider(), keyProvider: LinuxTransportKeys(),
+            connector: LinuxTransportConnector(socket: healthySocket),
+            receiveTimeout: 0.08, keepaliveInterval: 0.02)
+        try await healthy.connect(role: .machine)
+        for _ in 0..<40 where healthySocket.snapshot().pings < 2 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(healthySocket.snapshot().pings, 2)
+        let healthyState = await healthy.currentState()
+        XCTAssertEqual(healthyState, .ready,
+                       "pong keeps a silent authenticated connection ready")
+        await healthy.shutdown()
+
+        let silentSocket = LinuxTransportSocket(respondsToPing: false)
+        let logs = LockedStrings()
+        let silent = CloudTransport(
+            relayBaseURL: URL(string: "ws://silent.invalid/v1/connect")!,
+            tokenProvider: LinuxTransportTokenProvider(), keyProvider: LinuxTransportKeys(),
+            connector: LinuxTransportConnector(socket: silentSocket), initialBackoff: 1,
+            receiveTimeout: 0.06, keepaliveInterval: 0.015,
+            logger: { logs.append($0) })
+        try await silent.connect(role: .machine)
+        for _ in 0..<40 where !logs.snapshot().contains(where: {
+            $0.contains("reason=receive_timeout")
+        }) {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(silentSocket.snapshot().pings, 2)
+        XCTAssertTrue(silentSocket.snapshot().closed,
+                      "missing pong closes the socket for bounded reconnect")
+        XCTAssertTrue(logs.snapshot().contains { $0.contains("reason=receive_timeout") })
+        await silent.shutdown()
+
+        let noReadySocket = LinuxTransportSocket(respondsToPing: false, sendsReady: false)
+        let noReady = CloudTransport(
+            relayBaseURL: URL(string: "ws://ready-timeout.invalid/v1/connect")!,
+            tokenProvider: LinuxTransportTokenProvider(), keyProvider: LinuxTransportKeys(),
+            connector: LinuxTransportConnector(socket: noReadySocket),
+            authenticationTimeout: 0.02)
+        do {
+            try await noReady.connect(role: .machine)
+            XCTFail("a missing ready response must not authenticate")
+        } catch let error as CloudTransportError {
+            XCTAssertEqual(error, .readyTimedOut)
+        }
+        await noReady.shutdown()
+    }
+
     func testNIOOpeningOwnershipInboundBoundsAndCloseControl() async throws {
         let oneShot = CloudNIOPromiseBox()
         let timeoutResult = Task { try await oneShot.value() }

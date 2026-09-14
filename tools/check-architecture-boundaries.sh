@@ -1187,6 +1187,7 @@ LinuxDurableCloudRuntime.swift
 main.swift'
 linux_expected_dependencies='ClawdlineApplication'
 linux_tests_expected_members='LinuxBrowserPairingTests.swift
+LinuxPresenceHeartbeatTests.swift
 LinuxRuntimeContractTests.swift'
 linux_tests_expected_dependencies='ClawdlineApplication
 ClawdlineLinux'

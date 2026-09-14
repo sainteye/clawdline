@@ -301,6 +301,11 @@ final class LinuxRelayRuntimeSupervisor: @unchecked Sendable {
 /// the shared durable outbound drain and the three bounded receive streams; every command effect
 /// still enters `LinuxDaemonIngressOwner`, whose lock and ledger remain the sole Linux authority.
 actor LinuxRelayRuntimeOwner {
+    /// The hosted console expires machine discovery after five minutes. The daemon's existing
+    /// ten-second observation cadence calls `publishInventory`; refreshing at four minutes leaves
+    /// a bounded scheduling margin without turning a descriptor into transport authority.
+    static let descriptorHeartbeatIntervalSeconds: TimeInterval = 240
+
     private let machine: CloudMachineIdentity
     private let identityAuthority: CloudExecutorIdentityAuthority
     private let transport: any CloudTransporting
@@ -312,6 +317,7 @@ actor LinuxRelayRuntimeOwner {
     private let presentation: LinuxRelayMachinePresentation
     private let places: [LinuxRelayPlace]
     private let inventory: @Sendable () -> TerminalInventory
+    private let monotonicNow: @Sendable () -> TimeInterval
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
     private var receiptTask: Task<Void, Never>?
@@ -324,6 +330,7 @@ actor LinuxRelayRuntimeOwner {
     private var lifecycleGeneration: UInt64 = 0
     private var lastInventoryDigest: String?
     private var publishedInventoryRows: [String: Data] = [:]
+    private var lastDescriptorPublishedAt: TimeInterval?
 
     init(
         machine: CloudMachineIdentity,
@@ -337,7 +344,10 @@ actor LinuxRelayRuntimeOwner {
             displayName: "Clawdline Linux", provider: nil),
         places: [LinuxRelayPlace] = [],
         inventory: @escaping @Sendable () -> TerminalInventory = { TerminalInventory() },
-        stateObserver: @escaping @Sendable (LinuxRelayRuntimeState) -> Void = { _ in }
+        stateObserver: @escaping @Sendable (LinuxRelayRuntimeState) -> Void = { _ in },
+        monotonicNow: @escaping @Sendable () -> TimeInterval = {
+            ProcessInfo.processInfo.systemUptime
+        }
     ) {
         self.machine = machine
         self.identityAuthority = identityAuthority
@@ -350,6 +360,7 @@ actor LinuxRelayRuntimeOwner {
         self.places = places
         self.inventory = inventory
         self.stateObserver = stateObserver
+        self.monotonicNow = monotonicNow
     }
 
     func startOrRetry() async throws {
@@ -589,7 +600,9 @@ actor LinuxRelayRuntimeOwner {
     }
 
     func publishInventory(_ snapshot: TerminalInventory, force: Bool = false) async {
-        guard state == .running, !places.isEmpty, snapshot.isComplete else { return }
+        guard state == .running, !places.isEmpty else { return }
+        await publishDescriptorIfDue()
+        guard snapshot.isComplete else { return }
         let allowed = Set(places.map(\.path))
         let rows = snapshot.assistantSessions.sorted { $0.id < $1.id }
         guard rows.count <= 512 else { return }
@@ -703,6 +716,28 @@ actor LinuxRelayRuntimeOwner {
         try await outbound.enqueue(
             try Self.json(payload), channel: "orch/" + channelSegment(machine.machineID),
             logicalID: "linux-machine-descriptor")
+        let publishedAt = monotonicNow()
+        if publishedAt.isFinite { lastDescriptorPublishedAt = publishedAt }
+    }
+
+    /// A heartbeat is only eligible after an authenticated ready generation and while the sole
+    /// Relay owner remains running. Delivery still travels through the signed durable outbound
+    /// path, so a queued frame cannot make an offline machine appear present until Relay actually
+    /// authenticates and forwards it.
+    private func publishDescriptorIfDue() async {
+        guard authenticatedGeneration > 0 else { return }
+        let now = monotonicNow()
+        guard now.isFinite else { return }
+        if let last = lastDescriptorPublishedAt,
+           now >= last,
+           now - last < Self.descriptorHeartbeatIntervalSeconds {
+            return
+        }
+        do {
+            try await publishDescriptor()
+        } catch {
+            diagnostic("linux cloud: machine presence heartbeat publication failed")
+        }
     }
 
     private func placesPayload(requestID: String) throws -> Data {

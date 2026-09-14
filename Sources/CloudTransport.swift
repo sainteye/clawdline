@@ -40,6 +40,8 @@ public enum CloudTransportError: Error, LocalizedError, Equatable, Sendable {
     case unauthorized
     case upgradeRefused(statusCode: Int)
     case connectionTimedOut
+    case challengeTimedOut
+    case readyTimedOut
     case authenticationTimedOut
     case receiveTimedOut
     case connectionFailed(String)
@@ -69,6 +71,10 @@ public enum CloudTransportError: Error, LocalizedError, Equatable, Sendable {
             return "The cloud relay refused the WebSocket upgrade (HTTP \(statusCode))."
         case .connectionTimedOut:
             return "The cloud relay WebSocket did not open before its deadline."
+        case .challengeTimedOut:
+            return "The cloud relay did not send its authentication challenge before the deadline."
+        case .readyTimedOut:
+            return "The cloud relay did not confirm authentication before the deadline."
         case .authenticationTimedOut:
             return "The cloud relay authentication handshake did not finish before its deadline."
         case .receiveTimedOut:
@@ -1084,6 +1090,14 @@ struct CloudURLSessionSocketConnector: CloudTransportSocketConnecting, Sendable 
 }
 
 #if os(Linux)
+func cloudNIOAddHTTPClientUpgradeHandlers(
+    to channel: any Channel,
+    upgrade: NIOHTTPClientUpgradeSendableConfiguration
+) -> EventLoopFuture<Void> {
+    channel.pipeline.addHTTPClientHandlers(
+        leftOverBytesStrategy: .forwardBytes, withClientUpgrade: upgrade)
+}
+
 /// FoundationNetworking's WebSocket implementation on Swift 6.1.3/Noble returns
 /// NSURLErrorUnsupportedURL before issuing an upgrade. Linux therefore uses the pinned NIO stack;
 /// macOS continues to use URLSession and never links this implementation.
@@ -1151,7 +1165,7 @@ struct CloudNIOLinuxSocketConnector: CloudTransportSocketConnecting, Sendable {
                             context.pipeline.syncOperations.removeHandler(http, promise: nil)
                         })
                     return channel.pipeline.addHandler(tlsHandler).flatMap {
-                        channel.pipeline.addHTTPClientHandlers(withClientUpgrade: upgrade)
+                        cloudNIOAddHTTPClientUpgradeHandlers(to: channel, upgrade: upgrade)
                     }.flatMap {
                         channel.pipeline.addHandler(http)
                     }
@@ -1566,6 +1580,7 @@ public actor CloudTransport {
     private let openingTimeout: TimeInterval
     private let authenticationTimeout: TimeInterval
     private let receiveTimeout: TimeInterval
+    private let keepaliveInterval: TimeInterval
     private let commandQueue: CloudInboundCommandQueue
     private let readyContinuation: AsyncStream<UInt64>.Continuation
     private let outboundReceiptContinuation: AsyncStream<CloudOutboundTransportReceipt>.Continuation
@@ -1578,6 +1593,7 @@ public actor CloudTransport {
     private var cachedToken: CloudDeviceToken?
     private var receiveTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
+    private var keepaliveTask: Task<Void, Never>?
     private var generation = 0
     private var droppedReadyGenerations = 0
     private let replayWindow: CloudInboundReplayWindow
@@ -1625,6 +1641,7 @@ public actor CloudTransport {
         openingTimeout: TimeInterval = 15,
         authenticationTimeout: TimeInterval = 15,
         receiveTimeout: TimeInterval = 90,
+        keepaliveInterval: TimeInterval = 30,
         inboundQueueLimits: CloudInboundCommandQueueLimits = CloudInboundCommandQueueLimits(),
         replayWindow: CloudInboundReplayWindow = CloudInboundReplayWindow(),
         logger: @escaping Logger = { _ in }
@@ -1641,6 +1658,8 @@ public actor CloudTransport {
         self.openingTimeout = max(0.01, openingTimeout)
         self.authenticationTimeout = max(0.01, authenticationTimeout)
         self.receiveTimeout = max(0.01, receiveTimeout)
+        self.keepaliveInterval = min(
+            max(0.01, keepaliveInterval), max(0.01, receiveTimeout / 2))
         self.logger = logger
         self.replayWindow = replayWindow
         let commandQueue = CloudInboundCommandQueue(limits: inboundQueueLimits)
@@ -1743,6 +1762,8 @@ public actor CloudTransport {
         state = .shutDown
         refreshTask?.cancel()
         refreshTask = nil
+        keepaliveTask?.cancel()
+        keepaliveTask = nil
         receiveTask?.cancel()
         let task = receiveTask
         receiveTask = nil
@@ -1807,11 +1828,9 @@ public actor CloudTransport {
         defer { connectingSocket = nil }
 
         do {
-            let challengeBudget = min(
-                authenticationTimeout, try await remainingOpeningBudget(deadline))
             let challengeText = try await boundedReceive(
-                from: newSocket, timeout: challengeBudget,
-                timeoutError: .authenticationTimedOut
+                from: newSocket, timeout: authenticationTimeout,
+                timeoutError: .challengeTimedOut
             )
             let challenge = try decodeChallenge(challengeText)
             let binding = try await keyProvider.transportBinding()
@@ -1830,11 +1849,9 @@ public actor CloudTransport {
             let signature = try key.signature(for: Data(signed.utf8)).base64EncodedString()
             try await newSocket.send(text: try encode(HelloFrame(sig: signature)))
 
-            let readyBudget = min(
-                authenticationTimeout, try await remainingOpeningBudget(deadline))
             let readyText = try await boundedReceive(
-                from: newSocket, timeout: readyBudget,
-                timeoutError: .authenticationTimedOut
+                from: newSocket, timeout: authenticationTimeout,
+                timeoutError: .readyTimedOut
             )
             let header = try JSONDecoder().decode(FrameHeader.self, from: Data(readyText.utf8))
             if header.type == "error" {
@@ -1859,6 +1876,7 @@ public actor CloudTransport {
             socket = authenticated
             state = .ready
             scheduleRefresh(token: token, generation: currentGeneration)
+            scheduleKeepalive(generation: currentGeneration)
             connectionObserver?(.ready(
                 generation: UInt64(currentGeneration),
                 tokenExpiresAtMilliseconds: Self.milliseconds(token.expiresAt),
@@ -1965,6 +1983,8 @@ public actor CloudTransport {
                         self.socket = nil
                         refreshTask?.cancel()
                         refreshTask = nil
+                        keepaliveTask?.cancel()
+                        keepaliveTask = nil
                     }
                     state = .idle
                     role = nil
@@ -1984,6 +2004,8 @@ public actor CloudTransport {
                     self.socket = nil
                     refreshTask?.cancel()
                     refreshTask = nil
+                    keepaliveTask?.cancel()
+                    keepaliveTask = nil
                     state = .reconnecting
                 }
                 var retryError = error
@@ -2077,6 +2099,8 @@ public actor CloudTransport {
         case .unauthorized: return "unauthorized"
         case .upgradeRefused(let status): return "upgrade_refused_\(status)"
         case .connectionTimedOut: return "connection_timeout"
+        case .challengeTimedOut: return "challenge_timeout"
+        case .readyTimedOut: return "ready_timeout"
         case .authenticationTimedOut: return "authentication_timeout"
         case .receiveTimedOut: return "receive_timeout"
         case .connectionFailed: return "connection_failed"
@@ -2455,10 +2479,44 @@ public actor CloudTransport {
         }
     }
 
+    private func scheduleKeepalive(generation expectedGeneration: Int) {
+        keepaliveTask?.cancel()
+        let interval = keepaliveInterval
+        keepaliveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(
+                        nanoseconds: UInt64(interval * 1_000_000_000))
+                } catch {
+                    return
+                }
+                guard let self, await self.sendKeepalive(generation: expectedGeneration) else {
+                    return
+                }
+            }
+        }
+    }
+
+    private func sendKeepalive(generation expectedGeneration: Int) async -> Bool {
+        guard state == .ready, generation == expectedGeneration, let socket else {
+            return false
+        }
+        do {
+            try await socket.send(text: "{\"type\":\"ping\"}")
+            return true
+        } catch {
+            logger("CloudTransport keepalive send failed reason=\(failureCode(for: error))")
+            socket.close()
+            return false
+        }
+    }
+
     private func refreshToken(generation expectedGeneration: Int) {
         guard state == .ready, generation == expectedGeneration else { return }
         cachedToken = nil
         rotatingGeneration = expectedGeneration
+        keepaliveTask?.cancel()
+        keepaliveTask = nil
         socket?.close()
     }
 

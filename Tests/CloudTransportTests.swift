@@ -1146,8 +1146,8 @@ private func runCloudTransportTimeoutTests() async throws -> Int {
         try await handshakeTransport.connect(role: .machine)
         throw CloudTransportTestFailure(description: "a suspended authentication must time out")
     } catch let error as CloudTransportError {
-        try require(error == .authenticationTimedOut,
-                    "challenge and ready waits have a typed authentication deadline")
+        try require(error == .challengeTimedOut,
+                    "a missing challenge has its own typed authentication deadline")
     }
     try require(suspended.state().closed,
                 "authentication timeout closes its established socket")
