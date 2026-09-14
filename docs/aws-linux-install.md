@@ -250,6 +250,11 @@ Common failure classifications:
   not open durable Cloud identity, so its truthful readiness is
   `w4_provider_authentication_not_proven`. Use configured health or the running daemon to inspect
   the protected identity. Do not weaken the daemon's separate `w5_executor_identity_*` checks.
+- a macOS release-train run fails creating `.clawdline-linux-contract-*` before the runtime probe:
+  the Darwin fixture deliberately uses the caller's canonical home instead of `/tmp`, whose
+  symlinked spelling would test the wrong path rule. Run the release gate with a writable real
+  home. Do not redirect `HOME` to `/private/tmp` to silence a restricted sandbox; that changes the
+  fixture's trust boundary and can turn the next assertion into a misleading runtime refusal.
 - apt mirror timeout with otherwise healthy HTTPS: the restricted egress policy still references
   `http://` package sources.
 - S3 `AccessDenied`: the EC2 instance profile lacks exact-prefix `s3:GetObject`; do not make the
