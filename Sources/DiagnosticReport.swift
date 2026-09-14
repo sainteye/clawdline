@@ -204,9 +204,11 @@ enum DiagnosticReport {
 /// replaced by the next press. This one is appended by the page on its own, so it is a separate
 /// name and it never touches `report.json` or `previous.json`.
 ///
-/// **It knows no event names.** A row is `{n, at_ms, event, data}` and `data` is one flat object of
-/// scalars and short lists. The shape is checked strictly and the contents are data: the next
-/// defect adds an event name in the page and changes nothing here.
+/// **It knows no event names.** A row is `{n, at_ms, event, tab, data}` and `data` is one flat
+/// object of scalars and short lists. `tab` is the tab that recorded the row, or null: the tabs of
+/// one device share one store and one of them delivers for all, so it need not be the batch's own
+/// `tab`. The shape is checked strictly and the contents are data: the next defect adds an event
+/// name in the page and changes nothing here.
 ///
 /// **Bounded twice.** A batch over `maxBatchBytes` is refused by name before anything is parsed, and
 /// the file rotates to `cloud-viewer-events.1.jsonl` before a line would take it past
@@ -214,10 +216,18 @@ enum DiagnosticReport {
 enum CloudViewerEventLog {
     static let fileName = "cloud-viewer-events.jsonl"
     static let rotatedFileName = "cloud-viewer-events.1.jsonl"
-    /// The page seals at most 100 rows of 1.5 KiB each; this leaves room and no more.
+    /// The batch ids already appended, one `<device>\t<batch_id>` per line — see `append`.
+    static let batchIndexFileName = "cloud-viewer-events.batches"
+    /// The page cuts its own batch at 240 KiB measured in UTF-8 — at most 100 rows of at most 2,048
+    /// UTF-8 bytes each, plus the completeness counts — so this 256 KiB bound leaves that margin
+    /// and no more.
     static let maxBatchBytes = 256 * 1024
     static let maxRows = 200
     static let maxFileBytes = 4 * 1024 * 1024
+    /// How many batch ids stay recognisable as already appended. The index is read whole for every
+    /// batch, so as soon as it holds more than twice this many lines it is rewritten to its last
+    /// this many.
+    static let rememberedBatches = 2048
 
     static func fileURL(root: URL? = nil) -> URL {
         DiagnosticReport.directory(root: root).appendingPathComponent(fileName)
@@ -225,6 +235,10 @@ enum CloudViewerEventLog {
 
     static func rotatedURL(root: URL? = nil) -> URL {
         DiagnosticReport.directory(root: root).appendingPathComponent(rotatedFileName)
+    }
+
+    static func batchIndexURL(root: URL? = nil) -> URL {
+        DiagnosticReport.directory(root: root).appendingPathComponent(batchIndexFileName)
     }
 
     enum Refusal: Error, Equatable {
@@ -264,29 +278,38 @@ enum CloudViewerEventLog {
 
     /// What was appended, read back from the file that was written: the page removes its rows only
     /// when `batchID` and `rows` here match the batch it sent.
+    ///
+    /// `duplicate` says this batch was appended before and nothing was appended now. It still names
+    /// the batch's rows, because the page's question is "may I forget these", and the answer is yes
+    /// either way; `lineBytes` is 0 so nobody reads the reply as a second copy.
     struct Receipt: Equatable {
         let batchID: String
         let rows: Int
         let droppedRateLimited: Int
         let droppedOverflow: Int
+        let droppedRefused: Int
+        let droppedUnflushed: Int
         let storageErrors: Int
         let consistent: Bool
         let path: String
         let lineBytes: Int
         let fileBytes: Int
         let rotated: Bool
+        let duplicate: Bool
 
         var payload: [String: Any] {
             ["ok": true, "batch_id": batchID, "rows": rows, "path": path,
-             "line_bytes": lineBytes, "file_bytes": fileBytes, "rotated": rotated]
+             "line_bytes": lineBytes, "file_bytes": fileBytes, "rotated": rotated,
+             "duplicate": duplicate]
         }
 
         /// The one `Clawdline.log` line: counts, and nothing a row said.
         var logLine: String {
-            "cloud viewer events: appended rows=\(rows) dropped_rate_limited=\(droppedRateLimited) "
-                + "dropped_overflow=\(droppedOverflow) storage_errors=\(storageErrors) "
-                + "consistent=\(consistent ? 1 : 0) line_bytes=\(lineBytes) "
-                + "file_bytes=\(fileBytes) rotated=\(rotated ? 1 : 0)"
+            "cloud viewer events: \(duplicate ? "duplicate" : "appended") rows=\(rows) "
+                + "dropped_rate_limited=\(droppedRateLimited) dropped_overflow=\(droppedOverflow) "
+                + "dropped_refused=\(droppedRefused) dropped_unflushed=\(droppedUnflushed) "
+                + "storage_errors=\(storageErrors) consistent=\(consistent ? 1 : 0) "
+                + "line_bytes=\(lineBytes) file_bytes=\(fileBytes) rotated=\(rotated ? 1 : 0)"
         }
     }
 
@@ -295,9 +318,20 @@ enum CloudViewerEventLog {
         pattern: #"^[a-z][a-z0-9_]*(\.[a-z0-9_]+){1,4}$"#)
     private static let fieldName = try! NSRegularExpression(pattern: #"^[a-z][a-z0-9_]{0,63}$"#)
 
-    /// Refuses before it touches the disk, rotates if the line would not fit, appends, syncs.
+    /// Refuses before it touches the disk, answers a batch it already holds without appending it,
+    /// rotates if the line would not fit, appends, syncs, then remembers the batch id.
+    ///
+    /// **Idempotent on `batch_id` for longer than the command ledger remembers.** The ledger
+    /// forgets a command after 24 hours, and a suspended Home Screen app reopened the next day
+    /// resends the batch it never got a receipt for. That batch is recognised from the last
+    /// `rememberedBatches` ids, which live in `cloud-viewer-events.batches` rather than in memory
+    /// or in the JSONL, so they survive a restart and the rotation that moves the line itself to
+    /// `.1`. An id is remembered only after its line is synced: a crash between the two can still
+    /// append a batch twice, and cannot lose one.
     static func append(_ body: Data, device: String, now: Date = Date(), root: URL? = nil,
-                       maxFileBytes fileLimit: Int = maxFileBytes) -> Result<Receipt, Refusal> {
+                       maxFileBytes fileLimit: Int = maxFileBytes,
+                       rememberedBatches remembered: Int = rememberedBatches)
+        -> Result<Receipt, Refusal> {
         guard !body.isEmpty else { return .failure(.empty) }
         guard body.count <= maxBatchBytes else {
             return .failure(.tooLarge(bytes: body.count, limit: maxBatchBytes))
@@ -310,10 +344,13 @@ enum CloudViewerEventLog {
         let rows = batch["rows"] as? [[String: Any]] ?? []
         let completeness = batch["completeness"] as? [String: Any] ?? [:]
         let count = { (key: String) in integer(completeness[key]) ?? 0 }
-        // Rows and overflowed rows each consumed one `n`; rate-limited rows consumed none. When
-        // that arithmetic holds the batch says exactly what it lost, and the line records whether.
+        // Rows, overflowed rows and rows that never reached the page's storage each consumed one
+        // `n` of this batch's range. Rate-limited rows consumed none, and refused rows belong to
+        // the earlier batch the Mac refused, so neither is in this range. When that arithmetic
+        // holds the batch says exactly what it lost, and the line records whether.
         let consistent = count("rows") == rows.count
-            && rows.count + count("dropped_overflow") == count("n_to") - count("n_from") + 1
+            && rows.count + count("dropped_overflow") + count("dropped_unflushed")
+                == count("n_to") - count("n_from") + 1
         let milliseconds = Int((now.timeIntervalSince1970 * 1_000).rounded(.down))
         let stamp = ISO8601DateFormatter()
         stamp.timeZone = TimeZone(secondsFromGMT: 0)
@@ -345,6 +382,38 @@ enum CloudViewerEventLog {
         let manager = FileManager.default
         let file = fileURL(root: root)
         let rotatedFile = rotatedURL(root: root)
+        let batchID = batch["batch_id"] as? String ?? ""
+        func receipt(lineBytes: Int, fileBytes: Int, rotated: Bool, duplicate: Bool) -> Receipt {
+            Receipt(batchID: batchID, rows: rows.count,
+                    droppedRateLimited: count("dropped_rate_limited"),
+                    droppedOverflow: count("dropped_overflow"),
+                    droppedRefused: count("dropped_refused"),
+                    droppedUnflushed: count("dropped_unflushed"),
+                    storageErrors: count("storage_errors"), consistent: consistent, path: file.path,
+                    lineBytes: lineBytes, fileBytes: fileBytes, rotated: rotated,
+                    duplicate: duplicate)
+        }
+
+        // The device as the key spells it: a tab or a line break inside it would split the index.
+        var spelled = String.UnicodeScalarView()
+        for scalar in device.unicodeScalars {
+            switch scalar {
+            case "\t", "\r", "\n": spelled.append(" ")
+            default: spelled.append(scalar)
+            }
+        }
+        let key = Data((String(spelled) + "\t" + batchID).utf8)
+        let index = batchIndexURL(root: root)
+        // Bytes, not text: one torn or foreign line must not make every other id unreadable.
+        let indexed = (try? Data(contentsOf: index)) ?? Data()
+        let held = indexed.split(separator: 0x0A)
+        if held.contains(where: { $0.elementsEqual(key) }) {
+            let existing = (try? manager.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?
+                .intValue ?? 0
+            return .success(receipt(lineBytes: 0, fileBytes: existing, rotated: false,
+                                    duplicate: true))
+        }
+
         var rotated = false
         let fileBytes: Int
         do {
@@ -379,12 +448,66 @@ enum CloudViewerEventLog {
         } catch {
             return .failure(.writeFailed(error.localizedDescription))
         }
-        return .success(Receipt(
-            batchID: batch["batch_id"] as? String ?? "", rows: rows.count,
-            droppedRateLimited: count("dropped_rate_limited"),
-            droppedOverflow: count("dropped_overflow"), storageErrors: count("storage_errors"),
-            consistent: consistent, path: file.path, lineBytes: encoded.count,
-            fileBytes: fileBytes, rotated: rotated))
+        // Success whatever becomes of the index: the line is on the disk, and a refusal now would
+        // make the page resend it and append it twice — the one outcome this index exists to stop.
+        remember(key, after: held, torn: indexed.last.map { $0 != 0x0A } ?? false, in: index,
+                 keeping: remembered)
+        return .success(receipt(lineBytes: encoded.count, fileBytes: fileBytes, rotated: rotated,
+                                duplicate: false))
+    }
+
+    /// Appends one id to the index and, once it holds more than twice `limit`, rewrites it to its
+    /// last `limit` lines. Best effort by design — see the call site. The rewrite goes through a
+    /// temporary file and a replace, so a crash leaves either the old index or the new one whole.
+    private static func remember(_ key: Data, after held: [Data], torn: Bool, in index: URL,
+                                 keeping limit: Int) {
+        let manager = FileManager.default
+        // A previous write cut off mid-line would otherwise glue this id onto its tail.
+        var line = torn ? Data([0x0A]) : Data()
+        line.append(key)
+        line.append(0x0A)
+        do {
+            if !manager.fileExists(atPath: index.path) {
+                guard manager.createFile(atPath: index.path, contents: nil,
+                                         attributes: [.posixPermissions: 0o600]) else { return }
+            }
+            let handle = try FileHandle(forWritingTo: index)
+            defer { try? handle.close() }
+            _ = try handle.seekToEnd()
+            try handle.write(contentsOf: line)
+            try handle.synchronize()
+        } catch {
+            return
+        }
+        try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: index.path)
+
+        let keep = max(limit, 0)
+        guard held.count + 1 > 2 * keep else { return }
+        var kept = Data()
+        for id in (held + [key]).suffix(keep) {
+            kept.append(id)
+            kept.append(0x0A)
+        }
+        let temporary = index.deletingLastPathComponent()
+            .appendingPathComponent(".\(batchIndexFileName).\(UUID().uuidString)")
+        do {
+            guard manager.createFile(atPath: temporary.path, contents: nil,
+                                     attributes: [.posixPermissions: 0o600]) else { return }
+            let handle = try FileHandle(forWritingTo: temporary)
+            defer { try? handle.close() }
+            try handle.write(contentsOf: kept)
+            try handle.synchronize()
+        } catch {
+            try? manager.removeItem(at: temporary)
+            return
+        }
+        do {
+            _ = try manager.replaceItemAt(index, withItemAt: temporary)
+            try? manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: index.path)
+        } catch {
+            // The long index is still whole and still bounded by the next append's retry.
+            try? manager.removeItem(at: temporary)
+        }
     }
 
     /// The first place the batch is not viewer events v1, or nil. Exact key sets, like every other
@@ -408,12 +531,14 @@ enum CloudViewerEventLog {
     }
 
     private static func rowProblem(_ value: Any) -> String? {
-        guard let row = value as? [String: Any], Set(row.keys) == ["n", "at_ms", "event", "data"]
-        else { return ".keys" }
+        guard let row = value as? [String: Any],
+              Set(row.keys) == ["n", "at_ms", "event", "tab", "data"] else { return ".keys" }
         guard let n = integer(row["n"]), n >= 1 else { return ".n" }
         guard let at = integer(row["at_ms"]), at >= 0 else { return ".at_ms" }
         guard let event = row["event"] as? String, event.utf8.count <= 96,
               matches(eventName, event) else { return ".event" }
+        guard row["tab"] is NSNull || (row["tab"] as? String).map({ $0.count <= 128 }) == true
+        else { return ".tab" }
         guard let data = row["data"] as? [String: Any], data.count <= 48 else { return ".data" }
         for key in data.keys.sorted() {
             guard matches(fieldName, key) else { return ".data.keys" }
@@ -423,11 +548,16 @@ enum CloudViewerEventLog {
     }
 
     private static func completenessProblem(_ value: [String: Any]) -> String? {
+        // `dropped_refused`: rows lost because the Mac finally refused an earlier batch for its
+        // content — that batch is dropped on the page and a row in this one names it.
+        // `dropped_unflushed`: rows of this batch's `n` range that never reached the page's storage
+        // before the page was killed.
         guard Set(value.keys) == ["n_from", "n_to", "rows", "dropped_rate_limited",
-                                  "dropped_overflow", "storage_errors", "counting_since_ms",
-                                  "rate_limited", "limits"] else { return ".keys" }
+                                  "dropped_overflow", "dropped_refused", "dropped_unflushed",
+                                  "storage_errors", "counting_since_ms", "rate_limited", "limits"]
+        else { return ".keys" }
         for key in ["n_from", "n_to", "rows", "dropped_rate_limited", "dropped_overflow",
-                    "storage_errors"] {
+                    "dropped_refused", "dropped_unflushed", "storage_errors"] {
             guard let number = integer(value[key]), number >= 0 else { return "." + key }
         }
         guard value["counting_since_ms"] is NSNull || integer(value["counting_since_ms"]) != nil

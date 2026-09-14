@@ -234,7 +234,7 @@ function noteCloudDoor(client, change, detail) {
             var cause = detail.error && detail.error.viewerEvent;
             var row = log.record("cloud.door.raised", {
                 kind: detail.kind, code: thrown.code, error_name: thrown.name,
-                error_message: thrown.message,
+                error_class: thrown.class, error_message: thrown.message,
                 cause_n: cause ? cause.n : null,
                 cause_rate_limited: cause ? cause.rateLimited === true : null,
                 cause_key: cause ? cause.key : null,

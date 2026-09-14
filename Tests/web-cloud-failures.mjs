@@ -274,8 +274,9 @@ await check("T-B3 a non-closing relay error does not rename a later network clos
 
 /* ---- T-B4 · §5 rule 2: no synchronous throw ------------------------------------------------ */
 
-// Called for their effect, never awaited by a page; they are called here too, and must not throw.
-const LIFECYCLE = new Set(["events", "subscribe", "stop", "retire"]);
+// Called for their effect or read at once, never awaited by a page; called here too, and must not throw.
+const LIFECYCLE = new Set(["events", "subscribe", "stop", "retire", "forgetMachinePairingAnswer",
+    "machineAccess", "machineDescriptor"]);
 // Cannot fail from a cached answer, or succeed by opening a socket; still held to "a thenable".
 const NEED_NOT_REJECT = new Set(["sessions", "tasks", "machines", "start", "refresh", "whenReady"]);
 
@@ -847,10 +848,13 @@ const viewerModule = await optional("../Resources/web/app/js/net/cloud-viewer-ev
 
 /** `localStorage` as a page sees it, with a switch that makes every write throw. */
 class FakeStorage {
-    constructor() { this.map = new Map(); this.failWrites = false; }
-    getItem(key) { return this.map.has(key) ? this.map.get(key) : null; }
+    constructor() { this.map = new Map(); this.failWrites = false; this.reads = []; this.writes = []; }
+    get length() { return this.map.size; }
+    key(index) { return Array.from(this.map.keys())[index] ?? null; }
+    getItem(key) { this.reads.push(key); return this.map.has(key) ? this.map.get(key) : null; }
     setItem(key, value) {
         if (this.failWrites) throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError" });
+        this.writes.push([key, String(value).length]);
         this.map.set(key, String(value));
     }
     removeItem(key) { this.map.delete(key); }
@@ -1019,10 +1023,23 @@ await check("viewer events · an older Mac's unknown_command keeps the rows and 
     const resent = await nextCommand(socket, "diagnostics.events");
     assert.deepEqual([resent.request, JSON.stringify(resent.batch)], [sent.request, JSON.stringify(sent.batch)],
         "a rebuilt Mac is asked again with the same request and the same bytes");
-    await answer(client, socket, "mac-01", { read: "action:" + resent.request, status: 413,
-        error: { code: "viewer_events_too_large", layer: "mac_route", message: "too large" } });
-    assert.deepEqual([(await retried).state, log.snapshot().outbox && log.snapshot().outbox.rows], ["blocked", 1],
-        "a batch the Mac will not take is kept too");
+    log.record("test.later", { kept: 1 });
+    await answer(client, socket, "mac-01", { read: "action:" + resent.request, status: 400, error: { code: "viewer_events_malformed",
+        layer: "mac_route", message: "That batch is not viewer events v1 at rows[0].data.kept." } });
+    assert.deepEqual([(await retried).state, log.snapshot().outbox, log.snapshot().blocked], ["refused", null, null],
+        "a batch the Mac refuses for its content is dropped, not held: no resend of those bytes can succeed");
+    viewerClock += 2 * 60 * 1000;
+    const next = client._deliverViewerEvents();
+    const after = await nextCommand(socket, "diagnostics.events");
+    const refusal = after.batch.rows.find((row) => row.event === "viewer_events.batch.refused");
+    assert.deepEqual([after.request === sent.request, after.batch.completeness.dropped_refused,
+        refusal && refusal.data.code, refusal && refusal.data.batch_id, refusal && refusal.data.refusal_path,
+        after.batch.rows.some((row) => row.event === "test.later")],
+    [false, 1, "viewer_events_malformed", sent.batch.batch_id, "rows[0].data.kept", true],
+    "the next batch counts the lost row, names the refusal and carries the row recorded behind it");
+    await answer(client, socket, "mac-01", { read: "action:" + after.request, status: 200,
+        body: { ok: true, batch_id: after.batch.batch_id, rows: after.batch.rows.length } });
+    assert.equal((await next).state, "delivered");
 });
 
 await check("viewer events · a burst of 50 failures keeps bounded rows and the exact dropped count", async function () {
@@ -1079,6 +1096,7 @@ await check("viewer events · rows survive a reload and leave the phone only on 
     const first = await viewerFleet({ storage });
     await receiveEnvelope(first.client, first.socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
     first.client.stop();
+    first.log.flush(); // what `pagehide` does
     const reloaded = viewerLog(storage);
     assert.equal(reloaded.snapshot().rows.length, 1, "a new page reads the rows the last one kept");
     const second = await viewerFleet({ storage, log: reloaded });
@@ -1165,7 +1183,7 @@ await check("viewer events · pairing · a second machine this browser is not pa
     const { options } = pairedClient(store);
     const { client, socket, log, errors } = await viewerFleet({ client: options });
     await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
-    assert.equal(errors.at(-1).code, "unknown_sender", "the emitted code is unchanged");
+    assert.equal(errors.at(-1).code, "machine_not_paired", "that machine's state, not the account's decrypt door");
     const data = failureRows(log)[0].data;
     assert.deepEqual([data.stage, data.routed_machine, data.pairing_found, data.pairing_source, data.pairing_legacy,
         data.pairing_key_id, data.sender_key_found, data.sender_key_source],

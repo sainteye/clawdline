@@ -23,7 +23,7 @@ import {
     documentAnswer, documentListing, normalizeDocumentIdentity, normalizeDocumentLocator
 } from "./document-links.js";
 import {
-    VIEWER_EVENTS_COMMAND, ViewerEventLog, envelopeMetadata, errorFields, pageContext
+    PAGE_TAB_ID, VIEWER_EVENTS_COMMAND, ViewerEventLog, envelopeMetadata, errorFields, pageContext
 } from "./cloud-viewer-events.js";
 
 const textDecoder = new TextDecoder();
@@ -118,7 +118,7 @@ const STATUS_PROBE_TIMEOUT_MS = 10000;
  * This page's name among other tabs of the same device (§6.3). One per page load, not per
  * client: a token renewal replaces the client inside the same tab, and that is not a second tab.
  */
-const TAB_ID = requestID();
+const TAB_ID = PAGE_TAB_ID;
 
 function requestID() {
     if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
@@ -347,6 +347,18 @@ export class CloudClient {
         this.senderKeyLookups = sameViewer ? new Map(prior.senderKeyLookups) : new Map();
         this.pairingLookups = sameViewer ? new Map(prior.pairingLookups) : new Map();
         this.viewerVerified = sameViewer ? new Map(prior.viewerVerified) : new Map();
+        // What each authenticated `orch/<machine>` snapshot said the machine is — its descriptor
+        // and app build — kept apart from the snapshot, which a renewal starts empty, so the
+        // renewed client still knows a Linux executor from a Mac before any snapshot is realigned.
+        this.machineDescriptors = sameViewer ? new Map(prior.machineDescriptors) : new Map();
+        // Machines whose envelopes this browser cannot attribute to any pairing: no pairing, no
+        // legacy binding, no key for the sender (`_openEnvelopeFrame`). Per machine, never the
+        // account's door; a renewal keeps it, and a pairing found for the machine clears it.
+        this.unpairedMachines = sameViewer ? new Map(prior.unpairedMachines) : new Map();
+        // Machines the pairing store answered "none" for, so the next envelope from one does not
+        // open IndexedDB again. One client's memory only: a renewal asks again, and a pairing
+        // completed in this page clears the machine (`forgetMachinePairingAnswer`).
+        this.pairingAbsent = new Set();
         this.pendingBySequence = new Map();
         this.lastRelayError = null;
         this.closedFailure = null;
@@ -622,13 +634,21 @@ export class CloudClient {
         }
         var value = this.machinePairings.get(machine);
         var source = value === undefined ? null : "memory";
-        if (value === undefined && this.resolveMachinePairing) {
+        if (value === undefined && this.pairingAbsent.has(machine)) {
+            value = null;
+            source = "memory";
+        } else if (value === undefined && this.resolveMachinePairing) {
             source = "store";
             if (probe) probe.pairingSource = source;
             var asked = Date.now();
             try { value = await this.resolveMachinePairing(machine); }
             finally { if (probe) probe.pairingLookupMs = Math.max(0, Date.now() - asked); }
-            if (value) this.machinePairings.set(machine, value);
+            if (value) {
+                this.machinePairings.set(machine, value);
+                this.unpairedMachines.delete(machine);
+            } else if (value === null || value === undefined) {
+                this.pairingAbsent.add(machine);
+            }
         }
         // Observation only: whether this browser holds a pairing for the machine, which kind, and
         // under which key id. The record is written before the checks below, so a pairing they
@@ -649,6 +669,32 @@ export class CloudClient {
             throw cloudError("extractable_key", "the paired machine keys are extractable");
         }
         return value;
+    }
+
+    /**
+     * A pairing for `machine` was just stored in this page: its earlier "none" no longer holds.
+     * The composition root calls this when a Pair a Browser flow completes.
+     */
+    forgetMachinePairingAnswer(machine) {
+        this.pairingAbsent.delete(machine);
+        this.unpairedMachines.delete(machine);
+    }
+
+    /**
+     * What this browser knows about reading `machine`: `not_paired` when its envelopes arrived and
+     * nothing here — no pairing, no legacy binding, no sender key — could be applied to them, with
+     * the sender they named. A surface that offers Pair a Browser for a selected machine reads
+     * this; the account's door does not.
+     */
+    machineAccess(machine) {
+        var seen = this.unpairedMachines.get(machine);
+        return seen ? Object.assign({ state: "not_paired", code: "machine_not_paired" }, seen) : null;
+    }
+
+    /** The descriptor and app build the last authenticated `orch/` snapshot of `machine` named. */
+    machineDescriptor(machine) {
+        var known = this.machineDescriptors.get(machine);
+        return known ? Object.assign({}, known) : null;
     }
 
     /** Which machines this viewer's store answered with a pairing and which with none; ids only. */
@@ -714,6 +760,16 @@ export class CloudClient {
         }
         var key = pairing ? pairing.senderKey
             : await this._senderKey(envelope && envelope.sender, envelope, probe);
+        if (!key && routedMachine && this.machineKeyScoping && probe.pairing === null) {
+            // A machine this browser holds no pairing for, from a sender it holds no key for: a
+            // second machine on the account (an enrolled executor) that the relay also delivers
+            // here. Nothing about this browser's keys is wrong, so this is that machine's state and
+            // never the account's decrypt door. A pairing, a legacy binding or a sender pin keeps
+            // `unknown_sender` and whatever follows it, key drift included.
+            this._noteUnpairedMachine(routedMachine, envelope.sender);
+            throw cloudFailure("machine_not_paired", "this browser holds no pairing for the envelope's machine",
+                { detail: { machine: routedMachine } });
+        }
         if (!key) throw cloudError("unknown_sender", "the envelope sender is not paired");
         var clear;
         try {
@@ -745,10 +801,23 @@ export class CloudClient {
         // never persist a route from the clear sender/header before both checks have passed.
         if (routedMachine && !pairing) {
             probe.stage = "legacy_binding";
-            var migrated = this.bindLegacyMachine
-                ? await this.bindLegacyMachine(routedMachine, envelope.sender, envelope.key_id)
-                : { machineID: routedMachine, senderID: envelope.sender, keyID: this.keyID,
-                    masterKey: await this._masterKey(this.keyID), senderKey: key, legacy: true };
+            var migrated;
+            try {
+                migrated = this.bindLegacyMachine
+                    ? await this.bindLegacyMachine(routedMachine, envelope.sender, envelope.key_id)
+                    : { machineID: routedMachine, senderID: envelope.sender, keyID: this.keyID,
+                        masterKey: await this._masterKey(this.keyID), senderKey: key, legacy: true };
+            } catch (error) {
+                // A typed refusal (`machine_pairing_required`) says the binding is wrong. Anything
+                // else is the key store failing to read or write it — a full quota — after the
+                // signature and the decrypt above already proved this sender and content key for
+                // the machine. Holding that proof in memory applies this envelope and the next ones
+                // instead of dropping each of them on the same write; a later page binds again.
+                if (!error || typeof error !== "object" || isFailureCode(error.code)) throw error;
+                migrated = { machineID: routedMachine, senderID: envelope.sender, keyID: envelope.key_id,
+                    masterKey: master, senderKey: key, legacy: true, unsaved: true };
+                this._recordBindingUnsaved(error, envelope, routedMachine);
+            }
             if (!migrated || migrated.machineID !== routedMachine ||
                 migrated.senderID !== envelope.sender || !migrated.masterKey || !migrated.senderKey) {
                 throw cloudError("machine_key_incomplete",
@@ -756,6 +825,7 @@ export class CloudClient {
             }
             this.machinePairings.set(routedMachine, migrated);
         }
+        if (routedMachine) this.unpairedMachines.delete(routedMachine);
         this._sawAuthenticatedEnvelope(envelope, channel, routedMachine);
         probe.stage = "sequence";
         var previous = this.sequenceBySender.get(envelope.sender);
@@ -795,6 +865,30 @@ export class CloudClient {
             // A Mac to deliver to may only just have become known.
             if (!seen || seen.sender !== sender) this._scheduleViewerEvents();
         } catch (e) { /* observing a success must never become a failure */ }
+    }
+
+    /** One machine's "not paired in this browser" state, bounded to the last eight machines. */
+    _noteUnpairedMachine(machine, sender) {
+        var seen = this.unpairedMachines.get(machine);
+        var now = this.viewerEvents.now();
+        this.unpairedMachines.delete(machine);
+        this.unpairedMachines.set(machine, { sender: typeof sender === "string" ? sender.slice(0, 128) : null,
+            since_ms: seen ? seen.since_ms : now, last_ms: now, envelopes: seen ? seen.envelopes + 1 : 1 });
+        if (this.unpairedMachines.size > 8) {
+            this.unpairedMachines.delete(this.unpairedMachines.keys().next().value);
+        }
+    }
+
+    /** A legacy binding proven but not stored: one row, rate limited like the rest. Never throws. */
+    _recordBindingUnsaved(error, envelope, machine) {
+        try {
+            var thrown = errorFields(error);
+            this.viewerEvents.record("cloud.receive.binding_unsaved", {
+                machine: machine, sender: envelope.sender, key_id: envelope.key_id,
+                error_name: thrown.name, error_class: thrown.class, error_message: thrown.message,
+                web_build: this.webBuild || null
+            }, ["cloud.receive.binding_unsaved", machine, thrown.name].join("|"));
+        } catch (e) { /* observing a failure must never become a second one */ }
     }
 
     /** The Mac rows go to if one can be named without refusing, and the sender that signs for it. */
@@ -843,6 +937,7 @@ export class CloudClient {
                 code: thrown.code,
                 stage: probe.stage,
                 error_name: original.name,
+                error_class: original.class,
                 error_message: original.message,
                 cause_name: cause ? cause.name : null,
                 cause_message: cause ? cause.message : null,
@@ -899,7 +994,7 @@ export class CloudClient {
             this.viewerEvents.record("cloud.frame.failed", Object.assign({
                 frame_type: type, code: thrown.code, layer: error && typeof error.layer === "string"
                     ? error.layer.slice(0, 32) : null,
-                error_name: thrown.name, error_message: thrown.message,
+                error_name: thrown.name, error_class: thrown.class, error_message: thrown.message,
                 socket_ready: this.ready,
                 ms_since_ready: this.readyAt === null ? null : Math.max(0, now - this.readyAt),
                 web_build: this.webBuild || null
@@ -1016,6 +1111,7 @@ export class CloudClient {
             var machine = decodedChannelSegment(channel.machine);
             this._observeMachine(machine, envelope.ts);
             this.orchestratorSnapshots.set(machine, payload || {});
+            this._rememberDescriptor(machine, payload);
             this._consumeCloudStatus(machine, payload && payload.cloud_status);
             // A retained Session envelope may arrive before its machine descriptor. Re-project
             // the same authenticated rows when the descriptor arrives so the visible label does
@@ -1299,8 +1395,10 @@ export class CloudClient {
         var candidates = [];
         var incapable = false;
         this.viewerVerified.forEach(function (seen, machine) {
-            var snapshot = this.orchestratorSnapshots.get(machine) || {};
-            var descriptor = snapshot.machine && typeof snapshot.machine === "object" ? snapshot.machine : {};
+            var snapshot = this.orchestratorSnapshots.get(machine);
+            var known = this.machineDescriptors.get(machine);
+            var descriptor = snapshot && snapshot.machine && typeof snapshot.machine === "object" ? snapshot.machine
+                : !snapshot && known ? known.machine : {};
             var platform = typeof descriptor.platform === "string" ? descriptor.platform.toLowerCase() : "";
             if (platform && platform !== "macos" && platform !== "darwin") return;
             if (!this.macCapabilities.has(machine)) { incapable = true; return; }
@@ -1330,8 +1428,33 @@ export class CloudClient {
     _macBuild(machine) {
         var snapshot = this.orchestratorSnapshots.get(machine);
         var app = snapshot && snapshot.app;
+        if (!snapshot) {
+            var known = this.machineDescriptors.get(machine);
+            return known ? known.build : null;
+        }
         return app && typeof app.build === "string" ? app.build.slice(0, 64)
             : app && Number.isFinite(app.build) ? String(app.build) : null;
+    }
+
+    /** Kept from an authenticated `orch/` snapshot: the scalar descriptor fields and the app build. */
+    _rememberDescriptor(machine, payload) {
+        try {
+            var descriptor = payload && payload.machine && typeof payload.machine === "object" ? payload.machine : {};
+            var kept = {};
+            Object.keys(descriptor).slice(0, 16).forEach(function (field) {
+                var value = descriptor[field];
+                if (typeof value === "string") kept[field] = value.slice(0, 128);
+                else if (typeof value === "number" || typeof value === "boolean") kept[field] = value;
+            });
+            var app = payload && payload.app;
+            var build = app && typeof app.build === "string" ? app.build.slice(0, 64)
+                : app && Number.isFinite(app.build) ? String(app.build) : null;
+            this.machineDescriptors.delete(machine);
+            this.machineDescriptors.set(machine, { machine: kept, build: build, at_ms: this.viewerEvents.now() });
+            if (this.machineDescriptors.size > 16) {
+                this.machineDescriptors.delete(this.machineDescriptors.keys().next().value);
+            }
+        } catch (e) { /* remembering a descriptor must never refuse the snapshot */ }
     }
 
     /**
@@ -1379,9 +1502,11 @@ export class CloudClient {
                 self.viewerEventTimer = null;
                 self._deliverViewerEvents().then(function (outcome) {
                     self.lastViewerDelivery = outcome;
+                    // With Web Locks another tab's log says nothing until this one is its writer, and
+                    // becoming it notifies; without them the lease is polled.
                     var again = outcome.state === "delivered" || outcome.state === "failed" ||
-                        (outcome.state === "deferred" &&
-                            (outcome.why === "spacing" || outcome.why === "other_tab"));
+                        outcome.state === "refused" || (outcome.state === "deferred" &&
+                            (outcome.why === "spacing" || (outcome.why === "other_tab" && !log.locks)));
                     if (again) self._scheduleViewerEvents();
                 });
             }, wait);
@@ -1432,9 +1557,13 @@ export class CloudClient {
                 var failure = asCloudFailure(error);
                 log.noteFailure(failure);
                 if (self._viewerEventsRefusalIsFinal(failure)) {
-                    log.block({ machine: target.machine, code: failure.code, layer: failure.layer,
+                    // A refusal of the batch's own bytes drops it, counted, so the rows behind it go
+                    // next; a refusal of this Mac or device holds it (`refusalDisposition`).
+                    var disposition = log.block({ machine: target.machine, code: failure.code,
+                        layer: failure.layer, status: failure.status, message: failure.message,
                         macBuild: macBuild, webBuild: self.webBuild || null });
-                    return { state: "blocked", code: failure.code, failure: failure, machine: target.machine };
+                    return { state: disposition === "drop" ? "refused" : "blocked", code: failure.code,
+                        failure: failure, machine: target.machine };
                 }
                 return { state: "failed", failure: failure, machine: target.machine };
             });
