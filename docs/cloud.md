@@ -239,6 +239,23 @@ template defaults the write gate closed, and install must name `--cloud-commands
 create or preserve an enabled alpha configuration. Live Relay/GCE and real provider acceptance
 remain external gates.
 
+Linux discovery uses the same retained encrypted channel grammar as the Mac. Each row is a stable
+`s/<machine>/<percent-encoded-session>` payload, and the complete-set marker is
+`s/<machine>/__clawdline_inventory_v1__`. A complete scan publishes changed rows, explicit
+`{"deleted":true}` tombstones for previously published ids that disappeared, then the authoritative
+marker; an incomplete or over-limit scan publishes nothing. Retained channels may replay in any
+order, so the browser realigns each channel independently and uses the marker sequence only as the
+deletion barrier for older rows. Every authenticated ready generation replays the complete current
+set. A ten-second local observation supplies the bounded refresh after host-side create, send or
+close even when the effect did not originate in the browser.
+
+The only browser operations accepted by the Linux machine channel are the closed `places` read and
+`start` action. `start` names a configured place id, never a path; an empty assistant means
+`claude`, otherwise it is `claude` or `codex`, and a nonempty model is exactly `haiku`, `sonnet` or
+`opus`. The versioned durable request carries that model through the existing serialized write
+gate and idempotency ledger. Success echoes place, bounded cwd, assistant and model; malformed,
+unknown, revoked and gate-refused requests answer the same opaque request id with a typed refusal.
+
 A newly installed Linux executor has an explicit enrollment step before its first daemon start:
 run `ClawdlineLinux cloud-login --config /etc/clawdline/daemon.json` as the configured service
 user, approve the printed one-time code at the printed Clawdline URL, and then start the daemon.

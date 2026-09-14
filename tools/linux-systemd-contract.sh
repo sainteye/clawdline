@@ -91,7 +91,16 @@ fi
 
 shared_runtime="$temporary/shared-runtime.service"
 cp Packaging/systemd/clawdline-daemon.service "$shared_runtime"
-sed -i 's/ConfigurationDirectory=clawdline/RuntimeDirectory=clawdline\nConfigurationDirectory=clawdline/' "$shared_runtime"
+python3 - "$shared_runtime" <<'PY'
+import sys
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    value = handle.read()
+value = value.replace("ConfigurationDirectory=clawdline",
+                      "RuntimeDirectory=clawdline\nConfigurationDirectory=clawdline", 1)
+with open(path, "w", encoding="utf-8") as handle:
+    handle.write(value)
+PY
 expect_failure inspect_units "$shared_runtime" Packaging/systemd/clawdline-tmux.service
 oneshot="$temporary/oneshot.service"
 sed 's/Type=simple/Type=oneshot/; s/ -D / /' Packaging/systemd/clawdline-tmux.service > "$oneshot"
@@ -104,18 +113,21 @@ source_commit=0123456789abcdef0123456789abcdef01234567
 
 make_binary() {
   local path=$1 service_ready=$2 durable_write=${3:-2} durable_max=${4:-2}
+  local configuration_schema=${5:-2} health_marker=${6:-}
   {
     echo '#!/usr/bin/env bash'
     echo 'set -euo pipefail'
-    printf 'ready=%q\nwrite=%q\nmaximum=%q\n' "$service_ready" "$durable_write" "$durable_max"
+    printf 'ready=%q\nwrite=%q\nmaximum=%q\nconfiguration=%q\nhealth_marker=%q\n' \
+      "$service_ready" "$durable_write" "$durable_max" "$configuration_schema" "$health_marker"
     cat <<'SH'
 if [ "${1:-}" = release-contract ]; then
-  printf '{"configurationSchemaVersion":2,"configurationReadableMinimum":1,"durableSchemaVersion":%s,"durableReadableMinimum":1,"durableReadableMaximum":%s,"protocolIdentity":"clawdline-linux-local-health-v1"}\n' "$write" "$maximum"
+  printf '{"configurationSchemaVersion":%s,"configurationReadableMinimum":1,"durableSchemaVersion":%s,"durableReadableMinimum":1,"durableReadableMaximum":%s,"protocolIdentity":"clawdline-linux-local-health-v1"}\n' "$configuration" "$write" "$maximum"
   exit 0
 fi
 if [ "${1:-}" != health ]; then exit 64; fi
-printf '{"service":"clawdline-daemon","serviceReady":%s,"ready":false,"readinessCode":"w4_provider_authentication_not_proven","protocolIdentity":"clawdline-linux-local-health-v1","configurationSchemaVersion":3,"configurationReadableMinimum":1,"durableSchemaVersion":%s,"durableReadableMinimum":1,"durableReadableMaximum":%s,"release":{"packageVersion":"%s","buildIdentity":"%s","sourceCommit":"%s","packageDigest":"%s"},"reconciliation":{"authoritative":true,"stateDisposition":"loaded","schemaVersion":%s,"daemonEpoch":1,"status":"complete","terminalPresent":0,"terminalMissing":0,"terminalUnknown":0,"taskTerminal":0,"taskReconciling":0,"taskUnknown":0,"queueRecoverable":0,"queueUnknown":0,"commandSucceeded":0,"commandInterrupted":0,"commandUnknown":0,"preservedOriginal":null,"reason":null},"providers":[]}\n' \
-  "$ready" "$write" "$maximum" "$CLAWDLINE_PACKAGE_VERSION" "$CLAWDLINE_BUILD_IDENTITY" \
+if [ "$ready" = true ] && [ -n "$health_marker" ]; then printf 'reached\n' >> "$health_marker"; fi
+printf '{"service":"clawdline-daemon","serviceReady":%s,"ready":false,"readinessCode":"w4_provider_authentication_not_proven","protocolIdentity":"clawdline-linux-local-health-v1","configurationSchemaVersion":%s,"configurationReadableMinimum":1,"durableSchemaVersion":%s,"durableReadableMinimum":1,"durableReadableMaximum":%s,"release":{"packageVersion":"%s","buildIdentity":"%s","sourceCommit":"%s","packageDigest":"%s"},"reconciliation":{"authoritative":true,"stateDisposition":"loaded","schemaVersion":%s,"daemonEpoch":1,"status":"complete","terminalPresent":0,"terminalMissing":0,"terminalUnknown":0,"taskTerminal":0,"taskReconciling":0,"taskUnknown":0,"queueRecoverable":0,"queueUnknown":0,"commandSucceeded":0,"commandInterrupted":0,"commandUnknown":0,"preservedOriginal":null,"reason":null},"providers":[]}\n' \
+  "$ready" "$configuration" "$write" "$maximum" "$CLAWDLINE_PACKAGE_VERSION" "$CLAWDLINE_BUILD_IDENTITY" \
   "$CLAWDLINE_SOURCE_COMMIT" "$CLAWDLINE_PACKAGE_DIGEST" "$write"
 SH
   } > "$path"
@@ -140,9 +152,10 @@ install_release() {
 
 good_binary="$temporary/good-binary"; bad_binary="$temporary/bad-binary"
 schema_one_binary="$temporary/schema-one-binary"
-make_binary "$good_binary" true 3 3
+good_health_marker="$temporary/good-health-reached"
+make_binary "$good_binary" true 3 3 2 "$good_health_marker"
 make_binary "$bad_binary" false 3 3
-make_binary "$schema_one_binary" true 1 1
+make_binary "$schema_one_binary" true 1 1 2 "$good_health_marker"
 release_one="$temporary/release-one"; release_two="$temporary/release-two"
 old_output="$temporary/old-output"; bad_output="$temporary/bad-output"
 mkdir -p "$release_one" "$release_two" "$old_output" "$bad_output"
@@ -252,6 +265,7 @@ upgrade_root="$temporary/upgrade-root"
 install_release 0.9.0 "$old_output" "$upgrade_root" --systemctl "$fake_systemctl" >/dev/null
 schema_one_target=$(readlink "$upgrade_root/opt/clawdline/current")
 install_release 1.0.0 "$release_one" "$upgrade_root" --systemctl "$fake_systemctl" >/dev/null
+check test -s "$good_health_marker"
 schema_three_target=$(readlink "$upgrade_root/opt/clawdline/current")
 check test "$schema_one_target" != "$schema_three_target"
 mkdir -p "$upgrade_root/var/lib/clawdline/tasks" "$upgrade_root/var/lib/clawdline/records"

@@ -924,6 +924,16 @@ answer would otherwise replace the durable task, schedule and snippet snapshot. 
 `resume` use the same answer channel with `read: "action:<request>"`; the body is the local route's
 own response, including the new session id.
 
+The Linux daemon implements a deliberately smaller machine contract: `places` and `start` only.
+Its `start` body has the exact keys `type`, `session`, `request`, `place`, `assistant`, and `model`;
+`session` is `__clawdline_machine__`, `place` is one published allowlist id rather than a path,
+empty `assistant` defaults to `claude`, and nonempty `model` is one of `haiku`, `sonnet`, or `opus`.
+The answer is `read:"action:<request>"`; success echoes the resulting id plus place/cwd,
+assistant/model and tmux attachment facts, while malformed, unknown, unauthorized and write-gate
+refusals carry the same correlation in a typed error. Linux Session discovery is not a machine
+read: stable rows are retained separately at `s/<machine>/<encoded-session>` and a complete-set
+marker at `s/<machine>/__clawdline_inventory_v1__` authoritatively prunes older absent rows.
+
 **The key set is exact and the answer names itself.** A body with a missing, extra or wrongly typed
 field is `400 malformed_read` and never reaches a route; so is a read that arrives with class
 `dispatch` rather than `ctl`. The answer carries `read`, `status`, and then either `body` — the

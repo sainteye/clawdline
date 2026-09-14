@@ -217,6 +217,109 @@ private final class CloudConnectCompletion: @unchecked Sendable {
     }
 }
 
+private final class CloudOpeningBudgetClock: CloudTransportClock, @unchecked Sendable {
+    private struct Waiter {
+        let deadline: TimeInterval
+        let continuation: CheckedContinuation<Void, Error>
+    }
+    private let lock = NSLock()
+    private var monotonic: TimeInterval
+    private var waiters: [UUID: Waiter] = [:]
+
+    init(monotonic: TimeInterval = 100) { self.monotonic = monotonic }
+
+    func now() async -> Date { Date(timeIntervalSince1970: 1_800_000_000) }
+    func monotonicNow() async -> TimeInterval { currentMonotonic() }
+    func jitterUnit() async -> Double { 0.5 }
+    func sleep(for seconds: TimeInterval) async throws {
+        try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+    }
+    func waitUntilMonotonic(_ deadline: TimeInterval) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.lock()
+                if Task.isCancelled {
+                    lock.unlock(); continuation.resume(throwing: CancellationError()); return
+                }
+                if monotonic >= deadline {
+                    lock.unlock(); continuation.resume(); return
+                }
+                waiters[id] = Waiter(deadline: deadline, continuation: continuation)
+                lock.unlock()
+            }
+        } onCancel: { [weak self] in self?.cancel(id) }
+    }
+    func advance(by seconds: TimeInterval) {
+        lock.lock()
+        monotonic += seconds
+        let due = waiters.filter { $0.value.deadline <= monotonic }
+        for id in due.keys { waiters.removeValue(forKey: id) }
+        lock.unlock()
+        for waiter in due.values { waiter.continuation.resume() }
+    }
+    private func currentMonotonic() -> TimeInterval {
+        lock.lock(); defer { lock.unlock() }; return monotonic
+    }
+    private func cancel(_ id: UUID) {
+        lock.lock(); let waiter = waiters.removeValue(forKey: id); lock.unlock()
+        waiter?.continuation.resume(throwing: CancellationError())
+    }
+}
+
+private actor CloudAdvancingTokenProvider: CloudDeviceTokenProviding {
+    let clock: CloudOpeningBudgetClock
+    let advance: TimeInterval
+    let token: CloudDeviceToken
+    init(clock: CloudOpeningBudgetClock, advance: TimeInterval, token: CloudDeviceToken) {
+        self.clock = clock; self.advance = advance; self.token = token
+    }
+    func fetchDeviceToken() async throws -> CloudDeviceToken {
+        clock.advance(by: advance)
+        return token
+    }
+}
+
+private actor CloudCancellableBudgetTokenProvider: CloudDeviceTokenProviding {
+    let token: CloudDeviceToken
+    private var started = false
+    private var cancelled = false
+    init(token: CloudDeviceToken) { self.token = token }
+    func fetchDeviceToken() async throws -> CloudDeviceToken {
+        started = true
+        do {
+            try await Task.sleep(nanoseconds: 3_600_000_000_000)
+            return token
+        } catch {
+            cancelled = true
+            throw error
+        }
+    }
+    func snapshot() -> (started: Bool, cancelled: Bool) { (started, cancelled) }
+}
+
+private final class CloudOpeningBudgetConnector: CloudTransportSocketConnecting,
+    @unchecked Sendable {
+    private let lock = NSLock()
+    private let base: CloudReconnectProbeConnector
+    private var budgets: [TimeInterval] = []
+    init(probe: CloudReconnectSocketProbe) {
+        base = CloudReconnectProbeConnector(probe: probe, behavior: .stayConnected)
+    }
+    func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        try await connect(url: url, bearerToken: bearerToken, openingTimeout: 15)
+    }
+    func connect(
+        url: URL, bearerToken: String, openingTimeout: TimeInterval
+    ) async throws -> CloudEstablishedTransportSocket {
+        lock.lock(); budgets.append(openingTimeout); lock.unlock()
+        return try await base.connect(url: url, bearerToken: bearerToken)
+    }
+    func observedBudgets() -> [TimeInterval] {
+        lock.lock(); defer { lock.unlock() }; return budgets
+    }
+}
+
 private final class CloudConnectResult: @unchecked Sendable {
     private let lock = NSLock()
     private var result: Result<Void, Error>?
@@ -1005,6 +1108,28 @@ private func runCloudTransportTimeoutTests() async throws -> Int {
         if !condition() { throw CloudTransportTestFailure(description: message) }
     }
 
+    let responseURL = URL(string: "https://api.invalid/v1/cloud/device-token")!
+    for status in [200, 500] {
+        var early = CloudBoundedHTTPAccumulator(maximumBytes: 8)
+        let declaredLarge = HTTPURLResponse(
+            url: responseURL, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Length": "9"])!
+        try require(!early.accept(declaredLarge),
+                    "a declared oversized \(status) token response is refused before streaming")
+
+        var streamed = CloudBoundedHTTPAccumulator(maximumBytes: 8)
+        let unknownLength = HTTPURLResponse(
+            url: responseURL, statusCode: status, httpVersion: "HTTP/1.1",
+            headerFields: nil)!
+        try require(streamed.accept(unknownLength),
+                    "an unknown-length \(status) response enters the bounded accumulator")
+        try require(streamed.append(Data(repeating: 0x61, count: 4))
+                        && streamed.append(Data(repeating: 0x62, count: 4)),
+                    "a trickled \(status) response may fill the exact byte ceiling")
+        try require(!streamed.append(Data([0x63])),
+                    "a trickled \(status) response fails on the first byte over the ceiling")
+    }
+
     let suspended = CloudSuspendedHandshakeSocket()
     let handshakeTransport = CloudTransport(
         relayBaseURL: URL(string: "ws://handshake-timeout.invalid/v1/connect")!,
@@ -1027,6 +1152,101 @@ private func runCloudTransportTimeoutTests() async throws -> Int {
     try require(suspended.state().closed,
                 "authentication timeout closes its established socket")
     await handshakeTransport.shutdown()
+
+    let budgetToken = CloudDeviceToken(
+        value: "opening-budget-token", expiresAt: Date(timeIntervalSince1970: 1_900_000_000))
+    let budgetClock = CloudOpeningBudgetClock()
+    let budgetProbe = CloudReconnectSocketProbe()
+    let budgetConnector = CloudOpeningBudgetConnector(probe: budgetProbe)
+    let budgetTransport = CloudTransport(
+        relayBaseURL: URL(string: "ws://opening-budget.invalid/v1/connect")!,
+        tokenProvider: CloudAdvancingTokenProvider(
+            clock: budgetClock, advance: 6, token: budgetToken),
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: CloudDeviceKeyPair(), masterSecrets: [:], pairedDevices: [:]),
+        clock: budgetClock, connector: budgetConnector, openingTimeout: 15)
+    try await budgetTransport.connect(role: .machine)
+    guard let passedBudget = budgetConnector.observedBudgets().first else {
+        throw CloudTransportTestFailure(description: "connector did not receive its remaining budget")
+    }
+    checks += 1
+    try require(abs(passedBudget - 9) < 0.001,
+                "token acquisition consumes the same absolute 15-second opening budget")
+    await budgetTransport.shutdown()
+
+    let expiredClock = CloudOpeningBudgetClock()
+    let expiredConnector = CloudOpeningBudgetConnector(probe: CloudReconnectSocketProbe())
+    let expiredTransport = CloudTransport(
+        relayBaseURL: URL(string: "ws://expired-budget.invalid/v1/connect")!,
+        tokenProvider: CloudAdvancingTokenProvider(
+            clock: expiredClock, advance: 15, token: budgetToken),
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: CloudDeviceKeyPair(), masterSecrets: [:], pairedDevices: [:]),
+        clock: expiredClock, connector: expiredConnector, openingTimeout: 15)
+    do {
+        try await expiredTransport.connect(role: .machine)
+        throw CloudTransportTestFailure(description: "an exhausted token budget opened a socket")
+    } catch let error as CloudTransportError {
+        try require(error == .connectionTimedOut,
+                    "an exhausted token budget fails before opening the connector")
+    }
+    try require(expiredConnector.observedBudgets().isEmpty,
+                "no connector starts after the absolute opening deadline")
+    await expiredTransport.shutdown()
+
+    let stalledClock = CloudOpeningBudgetClock()
+    let stalledToken = CloudCancellableBudgetTokenProvider(token: budgetToken)
+    let stalledConnector = CloudOpeningBudgetConnector(probe: CloudReconnectSocketProbe())
+    let stalledTransport = CloudTransport(
+        relayBaseURL: URL(string: "ws://stalled-token-budget.invalid/v1/connect")!,
+        tokenProvider: stalledToken,
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: CloudDeviceKeyPair(), masterSecrets: [:], pairedDevices: [:]),
+        clock: stalledClock, connector: stalledConnector, openingTimeout: 15)
+    let stalledConnect = Task { try await stalledTransport.connect(role: .machine) }
+    try await waitUntil("bounded token acquisition starts") {
+        await stalledToken.snapshot().started
+    }
+    stalledClock.advance(by: 15)
+    do {
+        try await stalledConnect.value
+        throw CloudTransportTestFailure(description: "a stalled token fetch exceeded its budget")
+    } catch let error as CloudTransportError {
+        try require(error == .connectionTimedOut,
+                    "a stalled token fetch terminates at the shared opening deadline")
+    }
+    try await waitUntil("deadline cancellation reaches the token request") {
+        await stalledToken.snapshot().cancelled
+    }
+    try require(stalledConnector.observedBudgets().isEmpty,
+                "a token timeout never starts a relay connector")
+    await stalledTransport.shutdown()
+
+    let cancelledClock = CloudOpeningBudgetClock()
+    let cancelledToken = CloudCancellableBudgetTokenProvider(token: budgetToken)
+    let cancelledTransport = CloudTransport(
+        relayBaseURL: URL(string: "ws://cancelled-token-budget.invalid/v1/connect")!,
+        tokenProvider: cancelledToken,
+        keyProvider: CloudStaticTransportKeys(
+            deviceKey: CloudDeviceKeyPair(), masterSecrets: [:], pairedDevices: [:]),
+        clock: cancelledClock,
+        connector: CloudOpeningBudgetConnector(probe: CloudReconnectSocketProbe()),
+        openingTimeout: 15)
+    let cancelledConnect = Task { try await cancelledTransport.connect(role: .machine) }
+    try await waitUntil("cancellable token acquisition starts") {
+        await cancelledToken.snapshot().started
+    }
+    cancelledConnect.cancel()
+    do {
+        try await cancelledConnect.value
+        throw CloudTransportTestFailure(description: "a cancelled opening attempt completed")
+    } catch is CancellationError {
+        checks += 1
+    }
+    try await waitUntil("caller cancellation reaches token acquisition") {
+        await cancelledToken.snapshot().cancelled
+    }
+    await cancelledTransport.shutdown()
 
     let receiveProbe = CloudReconnectSocketProbe()
     let receiveLogs = CloudTestLog()

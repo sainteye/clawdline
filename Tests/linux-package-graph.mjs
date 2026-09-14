@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, chownSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, chownSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -22,9 +22,11 @@ const dependencyLock = JSON.parse(read('Packaging/linux/dependencies.lock.json')
 const resolvedLock = JSON.parse(read('Package.resolved'));
 const tmuxUnit = read('Packaging/systemd/clawdline-tmux.service');
 const cloudTransport = read('Sources/CloudTransport.swift');
+const cloudTransportTests = read('Tests/CloudTransportTests.swift');
 const durableCloud = read('Packages/ClawdlineLinux/LinuxDurableCloudRuntime.swift');
 const packageHelper = read('tools/linux-package-helper.py');
 const packageTool = read('tools/linux-package.sh');
+const systemdContract = read('tools/linux-systemd-contract.sh');
 const entry = read('Packages/ClawdlineLinux/main.swift');
 const build = read('build.sh');
 const testRunner = read('test.sh');
@@ -44,7 +46,7 @@ function inspectPackage(packageText, buildText) {
   return {
     linuxProduct: /\.executable\(name: "ClawdlineLinux", targets: \["ClawdlineLinux"\]\)/.test(packageText),
     linuxEdge: /name: "ClawdlineLinux",\s*dependencies: \["ClawdlineApplication"\],\s*path: "Packages\/ClawdlineLinux"/s.test(packageText),
-    linuxTests: /name: "ClawdlineLinuxTests",\s*dependencies: \["ClawdlineApplication", "ClawdlineLinux"\],\s*path: "Packages\/ClawdlineLinuxTests"/s.test(packageText),
+    linuxTests: /name: "ClawdlineLinuxTests",\s*dependencies: \[[\s\S]*?"ClawdlineApplication", "ClawdlineLinux"[\s\S]*?NIOEmbedded[\s\S]*?\],\s*path: "Packages\/ClawdlineLinuxTests"/s.test(packageText),
     macProductBuild: productBuild >= 0 && productArgument > productBuild
       && productArgument - productBuild < 240,
     noFlatCompiler: !/^swiftc\s/m.test(buildText),
@@ -65,7 +67,12 @@ check(/\.package\(url: "https:\/\/github\.com\/apple\/swift-nio\.git", exact: "2
 const dependencyVerifier = join(root, 'tools/linux-dependency-lock.py');
 const verifyResolution = (resolved, lock) => spawnSync('python3', [dependencyVerifier, 'verify',
   '--resolved', resolved, '--lock', lock], { encoding: 'utf8' });
-const dependencyFixture = mkdtempSync(join(tmpdir(), 'clawdline-linux-dependencies-'));
+const snapshotResolution = (resolved, lock, directory, cwd = root) => spawnSync('python3', [dependencyVerifier,
+  'snapshot', '--resolved', resolved, '--lock', lock, '--directory', directory],
+{ encoding: 'utf8', cwd });
+const matchSnapshot = (actual, expected) => spawnSync('python3', [dependencyVerifier, 'match',
+  '--actual', actual, '--expected', expected], { encoding: 'utf8' });
+const dependencyFixture = realpathSync(mkdtempSync(join(tmpdir(), 'clawdline-linux-dependencies-')));
 try {
   const resolvedPath = join(dependencyFixture, 'Package.resolved');
   const lockPath = join(dependencyFixture, 'dependencies.lock.json');
@@ -95,34 +102,81 @@ try {
 
   check(verifyResolution(join(dependencyFixture, 'absent.resolved'), lockPath).status !== 0,
     'a missing Package.resolved must fail closed');
+
+  writeFileSync(resolvedPath, JSON.stringify(resolvedLock));
+  const snapshotDirectory = join(dependencyFixture, 'snapshot');
+  const snapped = snapshotResolution(resolvedPath, lockPath, snapshotDirectory, tmpdir());
+  check(snapped.status === 0
+    && readFileSync(join(snapshotDirectory, 'Package.resolved'), 'utf8') === JSON.stringify(resolvedLock)
+    && readFileSync(join(snapshotDirectory, 'dependencies.lock.json'), 'utf8') === JSON.stringify(dependencyLock),
+  `dependency snapshot must pin the exact accepted pair from a non-repository cwd: ${snapped.stderr}`);
+
+  writeFileSync(resolvedPath, `${JSON.stringify(resolvedLock)}\n`);
+  check(matchSnapshot(resolvedPath, join(snapshotDirectory, 'Package.resolved')).status !== 0,
+    'a root resolution mutation after snapshot must be detected before acceptance');
+  check(verifyResolution(join(snapshotDirectory, 'Package.resolved'),
+    join(snapshotDirectory, 'dependencies.lock.json')).status === 0,
+  'a later source mutation must not change the descriptor-pinned pair used for staging and signing');
+
+  const hardlinked = join(dependencyFixture, 'hardlinked.lock.json');
+  linkSync(lockPath, hardlinked);
+  check(snapshotResolution(join(snapshotDirectory, 'Package.resolved'), hardlinked,
+    join(dependencyFixture, 'hardlink-snapshot')).status !== 0,
+  'a hardlinked dependency authority must fail closed');
+
+  const fifo = join(dependencyFixture, 'resolved.fifo');
+  const fifoCreated = spawnSync('mkfifo', [fifo], { encoding: 'utf8' });
+  check(fifoCreated.status === 0 && snapshotResolution(fifo, lockPath,
+    join(dependencyFixture, 'fifo-snapshot')).status !== 0,
+  'a FIFO Package.resolved authority must fail closed without blocking');
 } finally {
   rmSync(dependencyFixture, { recursive: true, force: true });
 }
 const compileLockCheck = linuxBuild.indexOf('linux-dependency-lock.py');
 const compileStarts = linuxBuild.indexOf('if swift build --product ClawdlineLinux');
-const packageLockCheck = packageTool.indexOf('python3 "$dependency_lock_helper" verify',
+const packageLockCheck = packageTool.indexOf('python3 "$dependency_lock_helper" snapshot',
   packageTool.indexOf('build_package()'));
 const packageStage = packageTool.indexOf('stage=$(mktemp', packageLockCheck);
 const provenanceDigest = packageTool.indexOf('dependency_lock_digest=', packageLockCheck);
-check(compileLockCheck >= 0 && compileStarts > compileLockCheck
+check(compileLockCheck >= 0 && /linux-dependency-lock\.py snapshot/.test(linuxBuild)
+  && /linux-dependency-lock\.py match/.test(linuxBuild) && compileStarts > compileLockCheck
   && (linuxBuild.match(/--disable-automatic-resolution/g) || []).length >= 3,
-  'Linux compile and test must verify then consume the fixed SwiftPM resolution');
-check(packageLockCheck >= 0 && packageStage > packageLockCheck && provenanceDigest > packageLockCheck,
-  'package signing must verify resolution before archive staging or provenance digest generation');
-const packageGateFixture = mkdtempSync(join(tmpdir(), 'clawdline-linux-package-gate-'));
+  'Linux compile and test must snapshot, consume, and revalidate the fixed SwiftPM resolution');
+check(packageLockCheck >= 0 && /dependency_lock_snapshot/.test(packageTool)
+  && /dependency_resolved_snapshot/.test(packageTool) && packageStage > packageLockCheck
+  && provenanceDigest > packageLockCheck
+  && packageTool.indexOf('dependency_lock_helper" match', packageStage) < provenanceDigest,
+  'package signing must stage/hash only the pinned pair and revalidate it before provenance generation');
+const packageGateFixture = realpathSync(mkdtempSync(join(tmpdir(), 'clawdline-linux-package-gate-')));
 try {
   const fixtureTools = join(packageGateFixture, 'tools');
   const fixtureLockDir = join(packageGateFixture, 'Packaging', 'linux');
+  const fixtureSystemdDir = join(packageGateFixture, 'Packaging', 'systemd');
   mkdirSync(fixtureTools, { recursive: true });
   mkdirSync(fixtureLockDir, { recursive: true });
-  const fixturePackageTool = packageTool
+  mkdirSync(fixtureSystemdDir, { recursive: true });
+  let fixturePackageTool = packageTool
     .replace('package_temporary_paths=()', 'package_temporary_paths=(/nonexistent-test-path)')
     .replace('[ "$(uname -s)" = Linux ] || fail "Linux packaging requires a Linux host or private container"',
       ': # fixture executes only the pre-effect dependency gate');
+  // macOS ships Bash 3 without readarray. This fixture is about the dependency gate, so replace
+  // only the release-contract decoding subprocess with the exact values the dummy reports.
+  const readarrayStart = fixturePackageTool.indexOf('  readarray -t contract_fields < <(');
+  const readarrayEnd = fixturePackageTool.indexOf('\n  )\n  [ "${#contract_fields[@]}"', readarrayStart);
+  assert.ok(readarrayStart >= 0 && readarrayEnd > readarrayStart);
+  fixturePackageTool = fixturePackageTool.slice(0, readarrayStart)
+    + '  contract_fields=(1 1 1 1 1 fixture)\n'
+    + fixturePackageTool.slice(readarrayEnd + 5);
   writeFileSync(join(fixtureTools, 'linux-package.sh'), fixturePackageTool);
   writeFileSync(join(fixtureTools, 'linux-package-helper.py'), packageHelper);
   writeFileSync(join(fixtureTools, 'linux-dependency-lock.py'), read('tools/linux-dependency-lock.py'));
   writeFileSync(join(fixtureLockDir, 'dependencies.lock.json'), JSON.stringify(dependencyLock));
+  for (const path of ['clawdline-daemon-wrapper', 'clawdline.conf', 'daemon.json.in']) {
+    copyFileSync(join(root, 'Packaging/linux', path), join(fixtureLockDir, path));
+  }
+  for (const path of ['clawdline-daemon.service', 'clawdline-tmux.service']) {
+    copyFileSync(join(root, 'Packaging/systemd', path), join(fixtureSystemdDir, path));
+  }
   const dummyBinary = join(packageGateFixture, 'binary');
   const dummyKey = join(packageGateFixture, 'key');
   writeFileSync(dummyBinary, '#!/bin/sh\nexit 1\n');
@@ -135,19 +189,173 @@ try {
   check(refused.status !== 0 && /Package\.resolved.*missing|resolution does not match/.test(refused.stderr)
     && !existsSync(join(packageGateFixture, 'out')),
     `linux-package build must refuse a missing consumed resolution before producing output: ${JSON.stringify({status: refused.status, stderr: refused.stderr})}`);
+
+  const fixtureResolved = join(packageGateFixture, 'Package.resolved');
+  writeFileSync(fixtureResolved, JSON.stringify(resolvedLock));
+  writeFileSync(dummyBinary, `#!/bin/sh
+if [ "\${1:-}" = release-contract ]; then
+  printf '%s\\n' '{"configurationSchemaVersion":1,"configurationReadableMinimum":1,"durableSchemaVersion":1,"durableReadableMinimum":1,"durableReadableMaximum":1,"protocolIdentity":"fixture"}'
+  printf '\\n' >> "$CLAWDLINE_FIXTURE_RESOLVED"
+fi
+`);
+  chmodSync(dummyBinary, 0o755);
+  const raced = spawnSync('bash', [join(fixtureTools, 'linux-package.sh'), 'build',
+    '--binary', dummyBinary, '--version', '1.0.0', '--build-identity', 'fixture',
+    '--source-commit', '0'.repeat(40), '--signing-key', dummyKey,
+    '--output-dir', join(packageGateFixture, 'race-out')], {
+    encoding: 'utf8', env: { ...process.env, CLAWDLINE_FIXTURE_RESOLVED: fixtureResolved }
+  });
+  check(raced.status !== 0 && /resolution changed after package acceptance/.test(raced.stderr)
+    && !existsSync(join(packageGateFixture, 'race-out', '1.0.0-linux-amd64.provenance.json')),
+  `a concurrent root-resolution mutation must stop package signing: ${JSON.stringify({status: raced.status, stderr: raced.stderr})}`);
 } finally {
   rmSync(packageGateFixture, { recursive: true, force: true });
 }
+const provenanceFixture = realpathSync(mkdtempSync(join(tmpdir(), 'clawdline-linux-provenance-schema-')));
+try {
+  const commonProvenance = {
+    packageVersion: '1.0.0', buildIdentity: 'fixture', sourceCommit: '0'.repeat(40),
+    architecture: 'amd64', archiveFile: '1.0.0-linux-amd64.tar.gz',
+    archiveSha256: '1'.repeat(64), publicKeySha256: '2'.repeat(64),
+    signatureAlgorithm: 'openssl-rsa-sha256', configurationSchemaVersion: 1,
+    configurationReadableMinimum: 1,
+    durableSchema: { writeVersion: 1, readMinimum: 1, readMaximum: 1 },
+    protocolIdentity: 'fixture', dependencyLockSha256: '3'.repeat(64)
+  };
+  const v1Path = join(provenanceFixture, 'v1.json');
+  const v2Path = join(provenanceFixture, 'v2.json');
+  writeFileSync(v1Path, JSON.stringify({ schemaVersion: 1, ...commonProvenance }));
+  writeFileSync(v2Path, JSON.stringify({ schemaVersion: 2, ...commonProvenance,
+    dependencyPackages: dependencyLock.packages }));
+  const validate = (path, mode) => spawnSync('python3', [join(root, 'tools/linux-package-helper.py'),
+    'validate-provenance', '--provenance', path, '--mode', mode], { encoding: 'utf8' });
+  check(validate(v1Path, 'installed').status === 0 && validate(v1Path, 'candidate').status !== 0,
+    'a literal signed v1 fixture is readable only as an installed upgrade/rollback image');
+  check(validate(v2Path, 'candidate').status === 0 && validate(v2Path, 'installed').status === 0,
+    'a literal v2 fixture is accepted both as the required new candidate and installed image');
+} finally {
+  rmSync(provenanceFixture, { recursive: true, force: true });
+}
 check(/^ExecStart=\/usr\/bin\/tmux -D -S \/run\/clawdline\/clawdline\.sock$/m.test(tmuxUnit),
   'the tmux service must run one foreground server without an invalid keeper command');
+function inspectSystemdHealthFixture(text) {
+  return /configuration_schema=\$\{5:-2\}/.test(text)
+    && /health_marker=\$\{6:-\}/.test(text)
+    && /configurationSchemaVersion":%s/.test(text)
+    && /if \[ "\$ready" = true \] && \[ -n "\$health_marker" \]/.test(text)
+    && /check test -s "\$good_health_marker"/.test(text);
+}
+check(inspectSystemdHealthFixture(systemdContract),
+  'the systemd fixture must parameterize configuration schema and prove good health was executed');
+check(!inspectSystemdHealthFixture(systemdContract.replace(
+  'check test -s "$good_health_marker"', ': # mutation removes the reached-health proof')),
+  'removing the reached-health assertion must make the systemd fixture guard red');
 check(/#if os\(Linux\)[\s\S]*CloudNIOLinuxSocketConnector/.test(cloudTransport)
   && /maxFrameSize: 32 \* 1024 \* 1024/.test(cloudTransport)
   && /certificateVerification = \.fullVerification/.test(cloudTransport)
   && /CloudURLSessionSocketConnector\(\)/.test(cloudTransport),
   'Linux must use pinned NIO TLS/WebSocket while preserving the Mac URLSession connector');
+function inspectLinuxRelayTransport(text) {
+  return {
+    boundedToken: /CloudBoundedTokenHTTPClient/.test(text)
+      && /maximumBytes: 64 \* 1024/.test(text)
+      && /timeoutIntervalForResource = 15/.test(text)
+      && /wire\.token\.utf8\.count <= 16 \* 1024/.test(text)
+      && /wire\.relayURL\.utf8\.count <= 2_048/.test(text)
+      && /let deadline = await clock\.monotonicNow\(\) \+ openingTimeout/.test(text)
+      && /openingTimeout: connectorBudget/.test(text)
+      && /remainingOpeningBudget\(deadline\)/.test(text),
+    oneShotOpen: /scheduleTask\([\s\S]*connectionTimedOut/.test(text)
+      && /private var closed = false/.test(text)
+      && /the WebSocket upgrade closed/.test(text)
+      && /if !promiseBox\.succeed[\s\S]{0,100}pipe\.close\(\)/.test(text)
+      && /onCancel:[\s\S]{0,160}promiseBox\.fail\(CancellationError\(\)\)/.test(text)
+      && !/withThrowingTaskGroup\(of: CloudEstablishedTransportSocket/.test(text),
+    boundedInbound: /maxAccumulatedFrameSize: 32 \* 1024 \* 1024/.test(text)
+      && /AsyncThrowingStream<String, Error>\(bufferingPolicy: \.bufferingOldest\(1\)\)/.test(text)
+      && /case \.dropped = pipe\.continuation\.yield\(text\)/.test(text)
+      && /inbound text buffer overflowed/.test(text),
+    closeControl: /case \.pong:\s*break/.test(text)
+      && /opcode: \.connectionClose, data: frame\.unmaskedData/.test(text)
+      && /whenComplete \{ _ in[\s\S]{0,80}channel\.close/.test(text)
+      && /scheduleTask\(in: \.seconds\(1\)\)/.test(text)
+  };
+}
+const relayTransport = inspectLinuxRelayTransport(cloudTransport);
+check(Object.values(relayTransport).every(Boolean),
+  `Linux token/open/frame/close bounds are incomplete: ${JSON.stringify(relayTransport)}`);
+for (const [name, mutation] of [
+  ['boundedToken', cloudTransport.replace('maximumBytes: 64 * 1024', 'maximumBytes: Int.max')],
+  ['oneShotOpen', cloudTransport.replace('private var closed = false', 'private var closed = true')],
+  ['boundedInbound', cloudTransport.replace('bufferingPolicy: .bufferingOldest(1)',
+    'bufferingPolicy: .unbounded')],
+  ['closeControl', cloudTransport.replace('case .pong:', 'case .binary:')]
+]) {
+  check(inspectLinuxRelayTransport(mutation)[name] === false,
+    `${name} production mutation must make its focused guard red`);
+}
+check(/advance: 6/.test(cloudTransportTests)
+  && /abs\(passedBudget - 9\)/.test(cloudTransportTests)
+  && /stalledClock\.advance\(by: 15\)/.test(cloudTransportTests)
+  && /cancelledConnect\.cancel\(\)/.test(cloudTransportTests),
+  'the shared opening deadline needs deterministic remaining-budget, stall, and cancellation fixtures');
+check(!/abs\(passedBudget - 9\)/.test(cloudTransportTests.replace(
+  'abs(passedBudget - 9)', 'abs(passedBudget - 15)')),
+  'the remaining-budget fixture must turn red when token time is not deducted');
+check(/testNIOOpeningOwnershipInboundBoundsAndCloseControl/.test(linuxTests)
+  && /a stalled opening promise did not terminate/.test(linuxTests)
+  && /EOF before upgrade completed/.test(linuxTests)
+  && /second unconsumed message fails closed/.test(linuxTests)
+  && /aggregate fragmented text beyond/.test(linuxTests)
+  && /peer Close is echoed/.test(linuxTests),
+  'Linux NIO timeout/EOF/burst/fragment/Pong/Close behavior fixtures must remain registered');
+check(!/second unconsumed message fails closed/.test(linuxTests.replace(
+  'second unconsumed message fails closed', 'overflow assertion removed')),
+  'removing the Linux burst-overflow assertion must make the focused fixture guard red');
 check(/case degraded/.test(durableCloud) && /delay = min\(30, delay \* 2\)/.test(durableCloud)
-  && /case \.unauthorized/.test(durableCloud),
+  && /case \.unauthorized/.test(durableCloud)
+  && /case \.upgradeRefused\(let status\): return status == 401 \|\| status == 403/.test(durableCloud)
+  && /account_revoked/.test(durableCloud),
   'initial transient Relay failure must back off while authorization refusal remains terminal');
+function inspectLinuxBrowserContract(runtimeText, ingressText) {
+  return {
+    canonicalInventory: /snapshot\.isComplete/.test(runtimeText)
+      && /publishedInventoryRows/.test(runtimeText)
+      && /channelSegment\("__clawdline_inventory_v1__"\)/.test(runtimeText)
+      && /"deleted": true/.test(runtimeText)
+      && /channelSegment\(machine\.machineID\) \+ "\/" \+ channelSegment\(id\)/.test(runtimeText),
+    closedLaunch: /assistantName\.isEmpty[\s\S]{0,80}\? \.claude/.test(runtimeText)
+      && /\["haiku", "sonnet", "opus"\]\.contains\(model\)/.test(runtimeText)
+      && /model: model\.isEmpty \? nil : model/.test(runtimeText),
+    durableModel: /let model: String\?/.test(ingressText)
+      && /schemaVersion: 3/.test(ingressText)
+      && /model: request\.model/.test(ingressText),
+    correlatedReply: /"assistant": request\.assistant/.test(runtimeText)
+      && /"model": request\.model/.test(runtimeText)
+      && /refusalPayload/.test(runtimeText)
+  };
+}
+const linuxIngress = read('Packages/ClawdlineLinux/LinuxDaemonIngress.swift');
+const browserContract = inspectLinuxBrowserContract(durableCloud, linuxIngress);
+check(Object.values(browserContract).every(Boolean),
+  `Linux browser/inventory contract is incomplete: ${JSON.stringify(browserContract)}`);
+for (const [name, changedRuntime, changedIngress] of [
+  ['canonicalInventory', durableCloud.replace('snapshot.isComplete', 'true'), linuxIngress],
+  ['closedLaunch', durableCloud.replace('["haiku", "sonnet", "opus"].contains(model)', 'true'), linuxIngress],
+  ['durableModel', durableCloud, linuxIngress.replace('model: request.model', 'model: nil')],
+  ['correlatedReply', durableCloud.replace('"model": request.model ?? ""', '"model": ""'), linuxIngress]
+]) {
+  check(inspectLinuxBrowserContract(changedRuntime, changedIngress)[name] === false,
+    `${name} production mutation must make its focused guard red`);
+}
+check(/unchanged complete scan does not mint/.test(linuxTests)
+  && /incomplete scan cannot tombstone/.test(linuxTests)
+  && /durable drain exposes only its first pending sibling/.test(linuxTests)
+  && /a new authenticated generation republishes/.test(linuxTests),
+  'Linux inventory fixtures must cover dedupe, incomplete preservation, delayed siblings, and replay');
+check(!/incomplete scan cannot tombstone/.test(linuxTests.replace(
+  'incomplete scan cannot tombstone', 'incomplete scan assertion removed')),
+  'removing the incomplete-scan assertion must make the focused fixture guard red');
 
 // Representative red proofs for the two graph/build failure classes. These mutate only in memory:
 // the test must be capable of rejecting an inert Linux edge and a return to flat compilation.

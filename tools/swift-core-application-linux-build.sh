@@ -60,11 +60,6 @@ command -v python3 >/dev/null 2>&1 || fail "python3 is required for the containm
 command -v openssl >/dev/null 2>&1 || fail "openssl is required for signed package provenance"
 command -v systemd-analyze >/dev/null 2>&1 || fail "systemd-analyze is required for exact packaged-unit parsing"
 
-# This root lock is what the disabled-resolution build below consumes. Compare it with the
-# separately signed package lock before any compiler process starts.
-python3 tools/linux-dependency-lock.py verify --resolved Package.resolved \
-  --lock Packaging/linux/dependencies.lock.json
-
 # A read-only bind mount (the safe default for running an unfamiliar script under Docker) cannot
 # hold SwiftPM's .build directory. The caller's own docker invocation should have already copied
 # the tree somewhere writable; this is a clear failure rather than a confusing permission error if
@@ -82,11 +77,18 @@ dpkg-query -W -f='${Package}=${Version}\n' tmux nodejs python3 openssl systemd
 
 build_log=$(mktemp)
 contract_root=""
+dependency_snapshot="${TMPDIR:-/tmp}/clawdline-compile-dependencies.$$.${RANDOM}"
 cleanup() {
   rm -f "$build_log"
+  rm -rf "$dependency_snapshot"
   if [ -n "$contract_root" ]; then rm -rf "$contract_root"; fi
 }
 trap cleanup EXIT
+# This root lock is what the disabled-resolution build below consumes. Pin the root resolution and
+# signed lock through safe descriptors, compare the pinned pair before any compiler process starts,
+# then require the root bytes to remain identical after SwiftPM has consumed them.
+python3 tools/linux-dependency-lock.py snapshot --resolved "$repo_root/Package.resolved" \
+  --lock "$repo_root/Packaging/linux/dependencies.lock.json" --directory "$dependency_snapshot"
 # `-c debug`, not `-c release`, and `-j 1` by default: on a Mac running this image under QEMU
 # (`docker run --platform linux/amd64` on Apple Silicon, which is how a Clawdline dev Mac reaches
 # Ubuntu/amd64 at all — the CI job `swift-core-application-linux` in .github/workflows/ci.yml does
@@ -137,6 +139,12 @@ CLAWDLINE_TEST_LINUX_EXECUTABLE="$linux_binary" swift test \
   -c "$swift_build_configuration" -j "$swift_build_jobs" --static-swift-stdlib \
   --disable-automatic-resolution \
   --filter LinuxRuntimeContractTests
+
+python3 tools/linux-dependency-lock.py match --actual "$repo_root/Package.resolved" \
+  --expected "$dependency_snapshot/Package.resolved" --label "SwiftPM Package.resolved"
+python3 tools/linux-dependency-lock.py match \
+  --actual "$repo_root/Packaging/linux/dependencies.lock.json" \
+  --expected "$dependency_snapshot/dependencies.lock.json" --label "signed dependency lock"
 
 # The signed package installs only this executable, not a Swift runtime tree. A dynamically linked
 # product can pass every container test and still fail immediately on a fresh Ubuntu host. Keep

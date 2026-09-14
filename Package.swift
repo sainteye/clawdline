@@ -106,7 +106,17 @@ var targets: [Target] = [
         ),
         .testTarget(
             name: "ClawdlineLinuxTests",
-            dependencies: ["ClawdlineApplication", "ClawdlineLinux"],
+            dependencies: [
+                "ClawdlineApplication", "ClawdlineLinux",
+                .product(name: "NIOCore", package: "swift-nio",
+                         condition: .when(platforms: [.linux])),
+                .product(name: "NIOEmbedded", package: "swift-nio",
+                         condition: .when(platforms: [.linux])),
+                .product(name: "NIOHTTP1", package: "swift-nio",
+                         condition: .when(platforms: [.linux])),
+                .product(name: "NIOWebSocket", package: "swift-nio",
+                         condition: .when(platforms: [.linux])),
+            ],
             path: "Packages/ClawdlineLinuxTests"
         ),
 ]

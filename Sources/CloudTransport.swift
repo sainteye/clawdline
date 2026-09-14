@@ -133,7 +133,11 @@ public struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
         request.httpMethod = "POST"
         request.setValue(try await authorizationHeader(), forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
+        var configuration = session.configuration
+        configuration.timeoutIntervalForRequest = 15
+        configuration.timeoutIntervalForResource = 15
+        let (data, response) = try await CloudBoundedTokenHTTPClient(
+            configuration: configuration, maximumBytes: 64 * 1024).fetch(request)
         guard let http = response as? HTTPURLResponse else {
             throw CloudTransportError.invalidTokenResponse
         }
@@ -147,7 +151,12 @@ public struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
             throw CloudTransportError.invalidTokenResponse
         }
         let wire = try JSONDecoder().decode(DeviceTokenResponse.self, from: data)
-        guard wire.tokenType == "Bearer", !wire.token.isEmpty else {
+        guard wire.tokenType == "Bearer", !wire.token.isEmpty,
+              wire.token.utf8.count <= 16 * 1024,
+              wire.relayURL.utf8.count <= 2_048,
+              let relayURL = URL(string: wire.relayURL),
+              relayURL.scheme?.lowercased() == "wss", relayURL.host?.isEmpty == false,
+              relayURL.user == nil, relayURL.password == nil, relayURL.fragment == nil else {
             throw CloudTransportError.invalidTokenResponse
         }
         let formatter = ISO8601DateFormatter()
@@ -158,7 +167,7 @@ public struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
         return CloudDeviceToken(
             value: wire.token,
             expiresAt: expiresAt,
-            relayURL: URL(string: wire.relayURL),
+            relayURL: relayURL,
             authenticatedServerDate: Self.parseHTTPDate(
                 http.value(forHTTPHeaderField: "Date"))
         )
@@ -185,6 +194,123 @@ public struct CloudAPIDeviceTokenProvider: CloudDeviceTokenProviding, Sendable {
             case expiresAt = "expires_at"
             case relayURL = "relay_url"
         }
+    }
+}
+
+struct CloudBoundedHTTPAccumulator {
+    let maximumBytes: Int
+    private(set) var response: URLResponse?
+    private(set) var bytes = Data()
+
+    mutating func accept(_ response: URLResponse) -> Bool {
+        let length = response.expectedContentLength
+        guard length < 0 || length <= Int64(maximumBytes) else { return false }
+        self.response = response
+        return true
+    }
+
+    mutating func append(_ data: Data) -> Bool {
+        guard data.count <= maximumBytes, bytes.count <= maximumBytes - data.count else {
+            return false
+        }
+        bytes.append(data)
+        return true
+    }
+}
+
+private final class CloudBoundedTokenHTTPClient: NSObject, URLSessionDataDelegate,
+    @unchecked Sendable {
+    private let configuration: URLSessionConfiguration
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<(Data, URLResponse), Error>?
+    private var accumulator: CloudBoundedHTTPAccumulator
+    private var task: URLSessionDataTask?
+    private var ownedSession: URLSession?
+    private var finished = false
+
+    init(configuration: URLSessionConfiguration, maximumBytes: Int) {
+        self.configuration = configuration
+        accumulator = CloudBoundedHTTPAccumulator(maximumBytes: maximumBytes)
+    }
+
+    func fetch(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.lock()
+                if finished || Task.isCancelled {
+                    lock.unlock()
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                self.continuation = continuation
+                let session = URLSession(configuration: configuration, delegate: self,
+                                         delegateQueue: nil)
+                let task = session.dataTask(with: request)
+                ownedSession = session
+                self.task = task
+                lock.unlock()
+                task.resume()
+            }
+        } onCancel: { [weak self] in self?.cancel() }
+    }
+
+    func urlSession(
+        _ session: URLSession, dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        lock.lock(); let accepted = accumulator.accept(response); lock.unlock()
+        guard accepted else {
+            completionHandler(.cancel)
+            finish(.failure(CloudTransportError.invalidTokenResponse))
+            return
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask,
+                    didReceive data: Data) {
+        lock.lock()
+        guard !finished, accumulator.append(data) else {
+            lock.unlock()
+            dataTask.cancel()
+            finish(.failure(CloudTransportError.invalidTokenResponse))
+            return
+        }
+        lock.unlock()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    didCompleteWithError error: Error?) {
+        if let error { finish(.failure(error)); return }
+        lock.lock()
+        let response = accumulator.response
+        let bytes = accumulator.bytes
+        lock.unlock()
+        guard let response else {
+            finish(.failure(CloudTransportError.invalidTokenResponse)); return
+        }
+        finish(.success((bytes, response)))
+    }
+
+    private func cancel() {
+        lock.lock(); let task = task; lock.unlock()
+        task?.cancel()
+        finish(.failure(CancellationError()))
+    }
+
+    private func finish(_ result: Result<(Data, URLResponse), Error>) {
+        lock.lock()
+        guard !finished else { lock.unlock(); return }
+        finished = true
+        let continuation = continuation
+        let session = ownedSession
+        self.continuation = nil
+        self.task = nil
+        ownedSession = nil
+        lock.unlock()
+        continuation?.resume(with: result)
+        session?.invalidateAndCancel()
     }
 }
 
@@ -448,12 +574,24 @@ struct CloudStaticTransportKeys: CloudTransportKeyProviding, Sendable {
 
 public protocol CloudTransportClock: Sendable {
     func now() async -> Date
+    func monotonicNow() async -> TimeInterval
+    func waitUntilMonotonic(_ deadline: TimeInterval) async throws
     func sleep(for seconds: TimeInterval) async throws
     func jitterUnit() async -> Double
 }
 
+public extension CloudTransportClock {
+    func monotonicNow() async -> TimeInterval { ProcessInfo.processInfo.systemUptime }
+    func waitUntilMonotonic(_ deadline: TimeInterval) async throws {
+        let remaining = deadline - ProcessInfo.processInfo.systemUptime
+        if remaining <= 0 { return }
+        try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+    }
+}
+
 struct CloudSystemTransportClock: CloudTransportClock, Sendable {
     func now() async -> Date { Date() }
+    func monotonicNow() async -> TimeInterval { ProcessInfo.processInfo.systemUptime }
 
     func sleep(for seconds: TimeInterval) async throws {
         if seconds <= 0 { return }
@@ -851,6 +989,17 @@ public protocol CloudTransportSocketConnecting: Sendable {
     /// the calling task is cancelled. `CloudTransport` owns that task and cancels/joins it during
     /// shutdown, before any socket exists that could otherwise be closed.
     func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket
+    func connect(
+        url: URL, bearerToken: String, openingTimeout: TimeInterval
+    ) async throws -> CloudEstablishedTransportSocket
+}
+
+extension CloudTransportSocketConnecting {
+    func connect(
+        url: URL, bearerToken: String, openingTimeout: TimeInterval
+    ) async throws -> CloudEstablishedTransportSocket {
+        try await connect(url: url, bearerToken: bearerToken)
+    }
 }
 
 public protocol CloudStartedTransportSocket: CloudTransportSocket {
@@ -895,6 +1044,14 @@ struct CloudURLSessionSocketConnector: CloudTransportSocketConnecting, Sendable 
     }
 
     func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        try await connect(url: url, bearerToken: bearerToken, openingTimeout: openingTimeout)
+    }
+
+    func connect(
+        url: URL, bearerToken: String, openingTimeout remainingTimeout: TimeInterval
+    ) async throws -> CloudEstablishedTransportSocket {
+        let openingTimeout = min(self.openingTimeout, remainingTimeout)
+        guard openingTimeout > 0 else { throw CloudTransportError.connectionTimedOut }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(bearerToken)", forHTTPHeaderField: "Authorization")
         let observer = CloudWebSocketOpenObserver()
@@ -938,6 +1095,14 @@ struct CloudNIOLinuxSocketConnector: CloudTransportSocketConnecting, Sendable {
     }
 
     func connect(url: URL, bearerToken: String) async throws -> CloudEstablishedTransportSocket {
+        try await connect(url: url, bearerToken: bearerToken, openingTimeout: openingTimeout)
+    }
+
+    func connect(
+        url: URL, bearerToken: String, openingTimeout remainingTimeout: TimeInterval
+    ) async throws -> CloudEstablishedTransportSocket {
+        let openingTimeout = min(self.openingTimeout, remainingTimeout)
+        guard openingTimeout > 0 else { throw CloudTransportError.connectionTimedOut }
         guard url.scheme?.lowercased() == "wss", let host = url.host, !host.isEmpty else {
             throw CloudTransportError.invalidRelayURL
         }
@@ -947,6 +1112,11 @@ struct CloudNIOLinuxSocketConnector: CloudTransportSocketConnecting, Sendable {
         let connection = CloudNIOConnectionBox()
         let promiseBox = CloudNIOPromiseBox()
         let group = MultiThreadedEventLoopGroup.singleton
+        let timeout = group.next().scheduleTask(
+            in: .milliseconds(Int64(openingTimeout * 1_000))) {
+                connection.close()
+                promiseBox.fail(CloudTransportError.connectionTimedOut)
+            }
         let bootstrap = ClientBootstrap(group: group)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .connectTimeout(.milliseconds(Int64(openingTimeout * 1_000)))
@@ -970,7 +1140,9 @@ struct CloudNIOLinuxSocketConnector: CloudTransportSocketConnecting, Sendable {
                                     maxAccumulatedFrameSize: 32 * 1024 * 1024),
                                 CloudNIOFrameHandler(pipe: pipe)
                             ]).map {
-                                promiseBox.succeed(CloudEstablishedTransportSocket(pipe))
+                                if !promiseBox.succeed(CloudEstablishedTransportSocket(pipe)) {
+                                    pipe.close()
+                                }
                             }
                         })
                     let upgrade: NIOHTTPClientUpgradeSendableConfiguration = (
@@ -993,24 +1165,16 @@ struct CloudNIOLinuxSocketConnector: CloudTransportSocketConnecting, Sendable {
         connectFuture.whenFailure { error in promiseBox.fail(error) }
         do {
             return try await withTaskCancellationHandler {
-                try await withThrowingTaskGroup(of: CloudEstablishedTransportSocket.self) { tasks in
-                    tasks.addTask { try await promiseBox.value() }
-                    tasks.addTask {
-                        try await Task.sleep(
-                            nanoseconds: UInt64(self.openingTimeout * 1_000_000_000))
-                        throw CloudTransportError.connectionTimedOut
-                    }
-                    defer { tasks.cancelAll() }
-                    guard let result = try await tasks.next() else {
-                        throw CloudTransportError.connectionTimedOut
-                    }
-                    return result
-                }
+                let result = try await promiseBox.value()
+                timeout.cancel()
+                return result
             } onCancel: {
+                timeout.cancel()
                 connection.close()
                 promiseBox.fail(CancellationError())
             }
         } catch {
+            timeout.cancel()
             connection.close()
             if error is CancellationError { throw error }
             if let error = error as? CloudTransportError { throw error }
@@ -1019,14 +1183,23 @@ struct CloudNIOLinuxSocketConnector: CloudTransportSocketConnecting, Sendable {
     }
 }
 
-private final class CloudNIOConnectionBox: @unchecked Sendable {
+final class CloudNIOConnectionBox: @unchecked Sendable {
     private let lock = NSLock()
     private var channel: Channel?
-    func set(_ channel: Channel) { lock.lock(); self.channel = channel; lock.unlock() }
-    func close() { lock.lock(); let channel = channel; lock.unlock(); channel?.close(promise: nil) }
+    private var closed = false
+    func set(_ channel: Channel) {
+        lock.lock()
+        if closed { lock.unlock(); channel.close(promise: nil); return }
+        self.channel = channel
+        lock.unlock()
+    }
+    func close() {
+        lock.lock(); closed = true; let channel = channel; self.channel = nil; lock.unlock()
+        channel?.close(promise: nil)
+    }
 }
 
-private final class CloudNIOPromiseBox: @unchecked Sendable {
+final class CloudNIOPromiseBox: @unchecked Sendable {
     private let lock = NSLock()
     private var result: Result<CloudEstablishedTransportSocket, Error>?
     private var continuation: CheckedContinuation<CloudEstablishedTransportSocket, Error>?
@@ -1038,20 +1211,23 @@ private final class CloudNIOPromiseBox: @unchecked Sendable {
             else { self.continuation = continuation; lock.unlock() }
         }
     }
-    func succeed(_ socket: CloudEstablishedTransportSocket) { finish(.success(socket)) }
-    func fail(_ error: Error) { finish(.failure(error)) }
-    private func finish(_ result: Result<CloudEstablishedTransportSocket, Error>) {
+    @discardableResult func succeed(_ socket: CloudEstablishedTransportSocket) -> Bool {
+        finish(.success(socket))
+    }
+    @discardableResult func fail(_ error: Error) -> Bool { finish(.failure(error)) }
+    private func finish(_ result: Result<CloudEstablishedTransportSocket, Error>) -> Bool {
         lock.lock()
-        guard self.result == nil else { lock.unlock(); return }
+        guard self.result == nil else { lock.unlock(); return false }
         self.result = result
         let continuation = continuation
         self.continuation = nil
         lock.unlock()
         continuation?.resume(with: result)
+        return true
     }
 }
 
-private final class CloudNIOHTTPUpgradeHandler: ChannelInboundHandler,
+final class CloudNIOHTTPUpgradeHandler: ChannelInboundHandler,
     RemovableChannelHandler, @unchecked Sendable {
     typealias InboundIn = HTTPClientResponsePart
     typealias OutboundOut = HTTPClientRequestPart
@@ -1084,6 +1260,10 @@ private final class CloudNIOHTTPUpgradeHandler: ChannelInboundHandler,
         promise.fail(error)
         context.close(promise: nil)
     }
+    func channelInactive(context: ChannelHandlerContext) {
+        promise.fail(CloudTransportError.connectionFailed("the WebSocket upgrade closed"))
+        context.fireChannelInactive()
+    }
 }
 
 private actor CloudNIOTextInbox {
@@ -1097,14 +1277,16 @@ private actor CloudNIOTextInbox {
     }
 }
 
-private final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable {
+final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable {
     let channel: Channel
     let continuation: AsyncThrowingStream<String, Error>.Continuation
     let inbox: CloudNIOTextInbox
+    private let closeLock = NSLock()
+    private var didBeginClose = false
     init(channel: Channel) {
         self.channel = channel
         var continuation: AsyncThrowingStream<String, Error>.Continuation!
-        let stream = AsyncThrowingStream<String, Error>(bufferingPolicy: .bufferingNewest(256)) {
+        let stream = AsyncThrowingStream<String, Error>(bufferingPolicy: .bufferingOldest(1)) {
             continuation = $0
         }
         self.continuation = continuation
@@ -1118,10 +1300,30 @@ private final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable 
         }.flatMap { $0 }.get()
     }
     func receiveText() async throws -> String { try await inbox.next() }
-    func close() { continuation.finish(); channel.close(promise: nil) }
+    func finishPeerClose() {
+        closeLock.lock(); didBeginClose = true; closeLock.unlock()
+        continuation.finish()
+    }
+    func close() {
+        closeLock.lock()
+        guard !didBeginClose else { closeLock.unlock(); return }
+        didBeginClose = true
+        closeLock.unlock()
+        continuation.finish()
+        channel.eventLoop.execute {
+            let empty = channel.allocator.buffer(capacity: 0)
+            channel.writeAndFlush(WebSocketFrame(
+                fin: true, opcode: .connectionClose, data: empty)).whenComplete { _ in
+                    channel.close(promise: nil)
+                }
+            channel.eventLoop.scheduleTask(in: .seconds(1)) {
+                if channel.isActive { channel.close(promise: nil) }
+            }
+        }
+    }
 }
 
-private final class CloudNIOFrameHandler: ChannelInboundHandler, @unchecked Sendable {
+final class CloudNIOFrameHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = WebSocketFrame
     private let pipe: CloudNIOTextPipe
     init(pipe: CloudNIOTextPipe) { self.pipe = pipe }
@@ -1141,9 +1343,14 @@ private final class CloudNIOFrameHandler: ChannelInboundHandler, @unchecked Send
         case .ping:
             context.writeAndFlush(NIOAny(WebSocketFrame(
                 fin: true, opcode: .pong, data: frame.unmaskedData)), promise: nil)
+        case .pong:
+            break
         case .connectionClose:
-            pipe.continuation.finish()
-            context.close(promise: nil)
+            pipe.finishPeerClose()
+            let flushed = context.eventLoop.makePromise(of: Void.self)
+            flushed.futureResult.whenComplete { _ in context.close(promise: nil) }
+            context.writeAndFlush(NIOAny(WebSocketFrame(
+                fin: true, opcode: .connectionClose, data: frame.unmaskedData)), promise: flushed)
         default:
             pipe.continuation.finish(throwing: CloudTransportError.unexpectedFrame(
                 String(describing: frame.opcode)))
@@ -1170,7 +1377,7 @@ public final class CloudWebSocketOpenObserver: NSObject, URLSessionWebSocketDele
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask { [self] in try await waitForDelegate() }
             group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(max(0.01, timeout) * 1_000_000_000))
+                try await Task.sleep(nanoseconds: UInt64(max(0, timeout) * 1_000_000_000))
                 throw CloudTransportError.connectionTimedOut
             }
             do {
@@ -1350,6 +1557,7 @@ public actor CloudTransport {
     private let initialBackoff: TimeInterval
     private let maximumBackoff: TimeInterval
     private let backoffResetAfter: TimeInterval
+    private let openingTimeout: TimeInterval
     private let authenticationTimeout: TimeInterval
     private let receiveTimeout: TimeInterval
     private let commandQueue: CloudInboundCommandQueue
@@ -1408,6 +1616,7 @@ public actor CloudTransport {
         initialBackoff: TimeInterval = 0.25,
         maximumBackoff: TimeInterval = 30,
         backoffResetAfter: TimeInterval = 30,
+        openingTimeout: TimeInterval = 15,
         authenticationTimeout: TimeInterval = 15,
         receiveTimeout: TimeInterval = 90,
         inboundQueueLimits: CloudInboundCommandQueueLimits = CloudInboundCommandQueueLimits(),
@@ -1423,6 +1632,7 @@ public actor CloudTransport {
         self.initialBackoff = max(0.01, initialBackoff)
         self.maximumBackoff = max(initialBackoff, maximumBackoff)
         self.backoffResetAfter = max(0.01, backoffResetAfter)
+        self.openingTimeout = max(0.01, openingTimeout)
         self.authenticationTimeout = max(0.01, authenticationTimeout)
         self.receiveTimeout = max(0.01, receiveTimeout)
         self.logger = logger
@@ -1552,7 +1762,8 @@ public actor CloudTransport {
     }
 
     private func establish(role: CloudTransportRole) async throws -> (socket: CloudAuthenticatedTransportSocket, generation: Int) {
-        let token = try await validToken()
+        let deadline = await clock.monotonicNow() + openingTimeout
+        let token = try await withinOpeningDeadline(deadline) { try await self.validToken() }
         // `validToken()` may suspend while another actor turn completes shutdown. From this check
         // through `connectorTask` registration there is no suspension, so a terminal transport
         // cannot create a connector after shutdown has already passed its cancel/join boundary.
@@ -1560,8 +1771,10 @@ public actor CloudTransport {
         guard state != .shutDown else { throw CancellationError() }
         let url = try connectURL(role: role)
         let connector = self.connector
+        let connectorBudget = try await remainingOpeningBudget(deadline)
         let attempt = Task {
-            try await connector.connect(url: url, bearerToken: token.value)
+            try await connector.connect(
+                url: url, bearerToken: token.value, openingTimeout: connectorBudget)
         }
         connectorTask = attempt
         let newSocket: CloudEstablishedTransportSocket
@@ -1588,8 +1801,10 @@ public actor CloudTransport {
         defer { connectingSocket = nil }
 
         do {
+            let challengeBudget = min(
+                authenticationTimeout, try await remainingOpeningBudget(deadline))
             let challengeText = try await boundedReceive(
-                from: newSocket, timeout: authenticationTimeout,
+                from: newSocket, timeout: challengeBudget,
                 timeoutError: .authenticationTimedOut
             )
             let challenge = try decodeChallenge(challengeText)
@@ -1609,8 +1824,10 @@ public actor CloudTransport {
             let signature = try key.signature(for: Data(signed.utf8)).base64EncodedString()
             try await newSocket.send(text: try encode(HelloFrame(sig: signature)))
 
+            let readyBudget = min(
+                authenticationTimeout, try await remainingOpeningBudget(deadline))
             let readyText = try await boundedReceive(
-                from: newSocket, timeout: authenticationTimeout,
+                from: newSocket, timeout: readyBudget,
                 timeoutError: .authenticationTimedOut
             )
             let header = try JSONDecoder().decode(FrameHeader.self, from: Data(readyText.utf8))
@@ -1670,6 +1887,36 @@ public actor CloudTransport {
         }
         cachedToken = token
         return token
+    }
+
+    private func remainingOpeningBudget(_ deadline: TimeInterval) async throws -> TimeInterval {
+        let remaining = deadline - (await clock.monotonicNow())
+        guard remaining > 0 else { throw CloudTransportError.connectionTimedOut }
+        return remaining
+    }
+
+    private func withinOpeningDeadline<T: Sendable>(
+        _ deadline: TimeInterval,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        _ = try await remainingOpeningBudget(deadline)
+        return try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask { try await operation() }
+            group.addTask { [clock] in
+                try await clock.waitUntilMonotonic(deadline)
+                throw CloudTransportError.connectionTimedOut
+            }
+            do {
+                guard let value = try await group.next() else {
+                    throw CloudTransportError.connectionTimedOut
+                }
+                group.cancelAll()
+                return value
+            } catch {
+                group.cancelAll()
+                throw error
+            }
+        }
     }
 
     private func connectURL(role: CloudTransportRole) throws -> URL {

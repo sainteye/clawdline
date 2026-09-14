@@ -1,5 +1,11 @@
 import Foundation
 import XCTest
+#if os(Linux)
+import NIOCore
+import NIOEmbedded
+import NIOHTTP1
+import NIOWebSocket
+#endif
 @testable import ClawdlineApplication
 @testable import ClawdlineLinux
 
@@ -26,6 +32,14 @@ private final class LockedBool: @unchecked Sendable {
     init(_ value: Bool) { self.value = value }
     func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
     func set(_ next: Bool) { lock.lock(); value = next; lock.unlock() }
+}
+
+private final class LockedTerminalInventory: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: TerminalInventory
+    init(_ value: TerminalInventory) { self.value = value }
+    func get() -> TerminalInventory { lock.lock(); defer { lock.unlock() }; return value }
+    func set(_ next: TerminalInventory) { lock.lock(); value = next; lock.unlock() }
 }
 
 private enum DeniedSecretStoreFailure: Error { case denied }
@@ -96,7 +110,7 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
                 model: String?, reasoningEffort: ReasoningEffort?, permission: Permission,
                 additionalDirectory: String?, resumeSessionID: String?) throws
         -> LinuxLifecycleReceipt {
-        record("create:\(commandID)")
+        record("create:\(commandID):\(assistant.rawValue):\(model ?? "")")
         return try receipt(commandID: commandID, operation: .create,
                            channel: projectRoot, sessionID: sessionID, observed: true)
     }
@@ -215,6 +229,134 @@ private struct SchemaTwoIngressSeal: Encodable {
 }
 
 final class LinuxRuntimeContractTests: XCTestCase {
+#if os(Linux)
+    func testNIOOpeningOwnershipInboundBoundsAndCloseControl() async throws {
+        let oneShot = CloudNIOPromiseBox()
+        let timeoutResult = Task { try await oneShot.value() }
+        XCTAssertTrue(oneShot.fail(CloudTransportError.connectionTimedOut))
+        do {
+            _ = try await timeoutResult.value
+            XCTFail("a stalled opening promise did not terminate")
+        } catch let error as CloudTransportError {
+            XCTAssertEqual(error, .connectionTimedOut)
+        }
+        let lateSuccessChannel = EmbeddedChannel()
+        let lateSuccessPipe = CloudNIOTextPipe(channel: lateSuccessChannel)
+        XCTAssertFalse(oneShot.succeed(CloudEstablishedTransportSocket(lateSuccessPipe)),
+                       "a timeout owns the one-shot result before a late socket")
+        lateSuccessPipe.close()
+        lateSuccessChannel.embeddedEventLoop.run()
+        XCTAssertFalse(lateSuccessChannel.isActive,
+                       "the caller closes a socket which loses the one-shot opening race")
+
+        let lateChannel = EmbeddedChannel()
+        let connection = CloudNIOConnectionBox()
+        connection.close()
+        connection.set(lateChannel)
+        lateChannel.embeddedEventLoop.run()
+        XCTAssertFalse(lateChannel.isActive,
+                       "a channel completing after cancellation is closed immediately")
+
+        let upgradePromise = CloudNIOPromiseBox()
+        let upgradeChannel = EmbeddedChannel()
+        try upgradeChannel.pipeline.syncOperations.addHandler(CloudNIOHTTPUpgradeHandler(
+            host: "relay.invalid", path: "/v1/connect", bearerToken: "invalid-test-token",
+            promise: upgradePromise))
+        let upgradeResult = Task { try await upgradePromise.value() }
+        try upgradeChannel.close().wait()
+        do {
+            _ = try await upgradeResult.value
+            XCTFail("EOF before upgrade completed the opening promise")
+        } catch let error as CloudTransportError {
+            guard case .connectionFailed = error else {
+                return XCTFail("EOF returned an untyped opening error: \(error)")
+            }
+        }
+
+        func channelWithPipe(maximum: Int = 32 * 1024 * 1024) throws
+            -> (EmbeddedChannel, CloudNIOTextPipe) {
+            let channel = EmbeddedChannel()
+            let pipe = CloudNIOTextPipe(channel: channel)
+            try channel.pipeline.syncOperations.addHandlers([
+                NIOWebSocketFrameAggregator(
+                    minNonFinalFragmentSize: 1, maxAccumulatedFrameCount: 1_024,
+                    maxAccumulatedFrameSize: maximum),
+                CloudNIOFrameHandler(pipe: pipe)
+            ])
+            return (channel, pipe)
+        }
+        func frame(_ opcode: WebSocketOpcode, _ string: String, fin: Bool = true,
+                   channel: EmbeddedChannel) -> WebSocketFrame {
+            var bytes = channel.allocator.buffer(capacity: string.utf8.count)
+            bytes.writeString(string)
+            return WebSocketFrame(fin: fin, opcode: opcode, data: bytes)
+        }
+
+        let (control, controlPipe) = try channelWithPipe()
+        _ = try control.writeInbound(frame(.pong, "peer-pong", channel: control))
+        XCTAssertNil(try control.readOutbound(as: WebSocketFrame.self),
+                     "Pong is accepted without manufacturing another control frame")
+        _ = try control.writeInbound(frame(.ping, "ping", channel: control))
+        let pong = try XCTUnwrap(try control.readOutbound(as: WebSocketFrame.self))
+        XCTAssertEqual(pong.opcode, .pong)
+        _ = try control.writeInbound(frame(.text, "one", channel: control))
+        XCTAssertEqual(try await controlPipe.receiveText(), "one")
+
+        _ = try control.writeInbound(frame(.connectionClose, "bye", channel: control))
+        control.embeddedEventLoop.run()
+        let peerClose = try XCTUnwrap(try control.readOutbound(as: WebSocketFrame.self))
+        XCTAssertEqual(peerClose.opcode, .connectionClose,
+                       "peer Close is echoed before the channel is closed")
+        XCTAssertFalse(control.isActive)
+
+        let (local, localPipe) = try channelWithPipe()
+        localPipe.close()
+        local.embeddedEventLoop.run()
+        let localClose = try XCTUnwrap(try local.readOutbound(as: WebSocketFrame.self))
+        XCTAssertEqual(localClose.opcode, .connectionClose)
+        XCTAssertFalse(local.isActive,
+                       "local graceful Close flushes and joins without awaiting a peer forever")
+
+        let (burst, burstPipe) = try channelWithPipe()
+        _ = try burst.writeInbound(frame(.text, "first", channel: burst))
+        _ = try? burst.writeInbound(frame(.text, "second", channel: burst))
+        burst.embeddedEventLoop.run()
+        XCTAssertEqual(try await burstPipe.receiveText(), "first",
+                       "overflow retains the oldest admitted message and never overtakes it")
+        do {
+            _ = try await burstPipe.receiveText()
+            XCTFail("inbound overflow did not become a terminal receive failure")
+        } catch let error as CloudTransportError {
+            guard case .connectionFailed = error else {
+                return XCTFail("inbound overflow returned an untyped error: \(error)")
+            }
+        }
+        XCTAssertFalse(burst.isActive,
+                       "a second unconsumed message fails closed instead of being dropped")
+
+        let (fragmented, _) = try channelWithPipe(maximum: 4)
+        _ = try fragmented.writeInbound(frame(.text, "123", fin: false, channel: fragmented))
+        _ = try? fragmented.writeInbound(frame(.continuation, "45", channel: fragmented))
+        fragmented.embeddedEventLoop.run()
+        XCTAssertFalse(fragmented.isActive,
+                       "aggregate fragmented text beyond the configured limit closes the socket")
+    }
+#endif
+
+    func testRelayTerminalAuthorizationCodeNormalizationIsClosed() {
+        let terminal: [CloudTransportError] = [
+            .unauthorized, .upgradeRefused(statusCode: 401),
+            .upgradeRefused(statusCode: 403), .relay(code: "forbidden", message: "refused"),
+            .relay(code: "device_revoked", message: "refused"),
+            .relay(code: "account_revoked", message: "refused")
+        ]
+        XCTAssertTrue(terminal.allSatisfy(LinuxRelayRuntimeOwner.isTerminalAuthorization))
+        XCTAssertFalse(LinuxRelayRuntimeOwner.isTerminalAuthorization(
+            CloudTransportError.upgradeRefused(statusCode: 429)))
+        XCTAssertFalse(LinuxRelayRuntimeOwner.isTerminalAuthorization(
+            CloudTransportError.connectionFailed("transient")))
+    }
+
     func testProjectRootPolicyRejectsTraversalAndSymlink() throws {
         let scratch = canonicalTemporaryDirectory()
             .appendingPathComponent("clawdline-root-\(UUID().uuidString)")
@@ -878,6 +1020,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let row = TargetSession(
             backend: .tmux, id: "%7", name: "Linux work", tty: "/dev/pts/7",
             windowIndex: 0, tabIndex: 0, assistant: .codex, cwd: project.path)
+        let inventory = LockedTerminalInventory(TerminalInventory(sessions: [row]))
         let relay = LinuxRelayRuntimeOwner(
             machine: CloudMachineIdentity(accountID: identity.accountID,
                                           machineID: identity.machineID),
@@ -886,7 +1029,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
             presentation: LinuxRelayMachinePresentation(
                 displayName: "AWS worker", provider: "aws"),
             places: [LinuxRelayPlace(id: "reaver", label: "reaver", path: project.path)],
-            inventory: { TerminalInventory(sessions: [row]) })
+            inventory: { inventory.get() })
         try await relay.start()
         var initialFrames: [CloudPublishFrame] = []
         for wanted in 1...3 {
@@ -900,6 +1043,10 @@ final class LinuxRuntimeContractTests: XCTestCase {
                 channel: frame.envelope.ch, sequence: Int64(frame.envelope.seq), kind: .delivered))
         }
         XCTAssertEqual(initialFrames.count, 3)
+        XCTAssertEqual(Set(initialFrames.map(\.envelope.ch)), Set([
+            "orch/machine-linux", "s/machine-linux/%257",
+            "s/machine-linux/__clawdline_inventory_v1__"
+        ]), "discovery must use canonical per-row and sentinel channels")
         func plaintexts(_ frames: [CloudPublishFrame]) throws -> [[String: Any]] {
             try frames.map { frame in
                 let envelope = frame.envelope
@@ -918,6 +1065,74 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertTrue(initial.contains {
             (($0["inventory"] as? [String: Any])?["sessions"] as? [String]) == ["%7"]
         })
+
+        await relay.publishInventory(inventory.get())
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertEqual(transport.writtenFrames().count, 3,
+                       "an unchanged complete scan does not mint another retained publication")
+        inventory.set(TerminalInventory(sessions: [], error: "tmux timed out", isComplete: false))
+        await relay.publishInventory(inventory.get())
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertEqual(transport.writtenFrames().count, 3,
+                       "an incomplete scan cannot tombstone a retained session")
+
+        let replacement = TargetSession(
+            backend: .tmux, id: "%8", name: "Replacement", tty: "/dev/pts/8",
+            windowIndex: 0, tabIndex: 1, assistant: .claude, cwd: project.path)
+        inventory.set(TerminalInventory(sessions: [replacement]))
+        await relay.publishInventory(inventory.get())
+        for _ in 0..<200 where transport.writtenFrames().count < 4 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(transport.writtenFrames().count, 4,
+                       "the durable drain exposes only its first pending sibling before receipt")
+        let replacementFrame = try JSONDecoder().decode(
+            CloudPublishFrame.self, from: transport.writtenFrames()[3])
+        XCTAssertEqual(replacementFrame.envelope.ch, "s/machine-linux/%258")
+        transport.receipt(CloudOutboundTransportReceipt(
+            channel: replacementFrame.envelope.ch, sequence: Int64(replacementFrame.envelope.seq),
+            kind: .delivered))
+        for _ in 0..<200 where transport.writtenFrames().count < 5 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let tombstoneFrame = try JSONDecoder().decode(
+            CloudPublishFrame.self, from: transport.writtenFrames()[4])
+        XCTAssertEqual(tombstoneFrame.envelope.ch, "s/machine-linux/%257")
+        XCTAssertEqual(try plaintexts([tombstoneFrame]).first?["deleted"] as? Bool, true)
+        transport.receipt(CloudOutboundTransportReceipt(
+            channel: tombstoneFrame.envelope.ch, sequence: Int64(tombstoneFrame.envelope.seq),
+            kind: .delivered))
+        for _ in 0..<200 where transport.writtenFrames().count < 6 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let replacementSentinel = try JSONDecoder().decode(
+            CloudPublishFrame.self, from: transport.writtenFrames()[5])
+        XCTAssertEqual(replacementSentinel.envelope.ch,
+                       "s/machine-linux/__clawdline_inventory_v1__")
+        XCTAssertEqual(
+            (try plaintexts([replacementSentinel]).first?["inventory"] as? [String: Any])?["sessions"]
+                as? [String], ["%8"])
+        transport.receipt(CloudOutboundTransportReceipt(
+            channel: replacementSentinel.envelope.ch,
+            sequence: Int64(replacementSentinel.envelope.seq), kind: .delivered))
+
+        transport.ready(2)
+        for wanted in 7...9 {
+            for _ in 0..<200 where transport.writtenFrames().count < wanted {
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            let replay = try JSONDecoder().decode(
+                CloudPublishFrame.self, from: transport.writtenFrames()[wanted - 1])
+            transport.receipt(CloudOutboundTransportReceipt(
+                channel: replay.envelope.ch, sequence: Int64(replay.envelope.seq), kind: .delivered))
+        }
+        let replayFrames = try transport.writtenFrames()[6...8].map {
+            try JSONDecoder().decode(CloudPublishFrame.self, from: $0)
+        }
+        XCTAssertEqual(Set(replayFrames.map(\.envelope.ch)), Set([
+            "orch/machine-linux", "s/machine-linux/%258",
+            "s/machine-linux/__clawdline_inventory_v1__"
+        ]), "a new authenticated generation republishes the complete retained roster")
 
         let now = UInt64(Date().timeIntervalSince1970 * 1_000)
         let places = try JSONSerialization.data(withJSONObject: [
@@ -938,7 +1153,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
             kind: .delivered))
         let start = try JSONSerialization.data(withJSONObject: [
             "type": "start", "session": "__clawdline_machine__", "request": "start-1",
-            "place": "reaver", "assistant": "codex", "model": ""
+            "place": "reaver", "assistant": "", "model": "sonnet"
         ])
         XCTAssertTrue(transport.deliver(CloudInboundCommand(
             channel: "ctl/machine-linux", sequence: 10, timestamp: now,
@@ -947,6 +1162,20 @@ final class LinuxRuntimeContractTests: XCTestCase {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
         XCTAssertEqual(lifecycle.calls.filter { $0.hasPrefix("create:") }.count, 1)
+        XCTAssertTrue(lifecycle.calls.contains { $0.hasSuffix(":claude:sonnet") },
+                      "empty assistant defaults to Claude and the closed model reaches argv policy")
+        for _ in 0..<200 where transport.writtenFrames().count < 5 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let actionFrame = try JSONDecoder().decode(
+            CloudPublishFrame.self, from: transport.writtenFrames()[4])
+        let action = try XCTUnwrap(try plaintexts([actionFrame]).first)
+        let actionBody = try XCTUnwrap(action["body"] as? [String: Any])
+        XCTAssertEqual(action["read"] as? String, "action:start-1")
+        XCTAssertEqual(actionBody["assistant"] as? String, "claude")
+        XCTAssertEqual(actionBody["model"] as? String, "sonnet")
+        XCTAssertEqual(actionBody["place"] as? String, "reaver")
+        XCTAssertEqual(actionBody["cwd"] as? String, project.path)
         let before = lifecycle.calls.count
         let arbitrary = try JSONSerialization.data(withJSONObject: [
             "type": "start", "session": "__clawdline_machine__", "request": "start-2",

@@ -323,6 +323,7 @@ actor LinuxRelayRuntimeOwner {
     private(set) var authenticatedGeneration: UInt64 = 0
     private var lifecycleGeneration: UInt64 = 0
     private var lastInventoryDigest: String?
+    private var publishedInventoryRows: [String: Data] = [:]
 
     init(
         machine: CloudMachineIdentity,
@@ -394,17 +395,30 @@ actor LinuxRelayRuntimeOwner {
             state = .running
         } catch {
             if lifecycleGeneration == owned, state == .starting {
-                if error as? CloudTransportError == .unauthorized {
+                if Self.isTerminalAuthorization(error) {
                     await authorizationRefused()
                 } else {
                     state = .degraded
                 }
             }
+            if Self.isTerminalAuthorization(error) { throw CloudTransportError.unauthorized }
             throw error
         }
     }
 
     func start() async throws { try await startOrRetry() }
+
+    static func isTerminalAuthorization(_ error: Error) -> Bool {
+        guard let error = error as? CloudTransportError else { return false }
+        switch error {
+        case .unauthorized: return true
+        case .upgradeRefused(let status): return status == 401 || status == 403
+        case .relay(let code, _):
+            return ["unauthorized", "forbidden", "revoked", "device_revoked",
+                    "account_revoked"].contains(code.lowercased())
+        default: return false
+        }
+    }
 
     func stop() async {
         guard state != .stopped else { return }
@@ -475,7 +489,16 @@ actor LinuxRelayRuntimeOwner {
         }
         let command: LinuxBrowserCommand
         do { command = try adaptBrowserCommand(inbound) }
-        catch {
+        catch let failure as LinuxDurableStateFailure {
+            diagnostic("linux cloud: authenticated command refused code=\(failure.code)")
+            if let refusal = browserRefusalIdentity(inbound.plaintext) {
+                try? await outbound.enqueue(
+                    try refusalPayload(read: refusal.read, status: Self.status(for: failure.code),
+                                       code: failure.code, message: failure.message),
+                    channel: machineReplyChannel(), logicalID: refusal.read)
+            }
+            return
+        } catch {
             diagnostic("linux cloud: authenticated command refused code=malformed_command")
             return
         }
@@ -488,7 +511,14 @@ actor LinuxRelayRuntimeOwner {
                 try await outbound.enqueue(
                     try placesPayload(requestID: requestID), channel: machineReplyChannel(),
                     logicalID: "read:" + requestID)
-            } catch { diagnostic("linux cloud: authenticated places read refused") }
+            } catch {
+                try? await outbound.enqueue(
+                    try refusalPayload(read: "read:" + requestID, status: 403,
+                                       code: "cloud_read_refused",
+                                       message: "The paired read is not authorized."),
+                    channel: machineReplyChannel(), logicalID: "read:" + requestID)
+                diagnostic("linux cloud: authenticated places read refused")
+            }
             return
         case .start(let requestID, let request):
             do {
@@ -506,12 +536,22 @@ actor LinuxRelayRuntimeOwner {
                         return !write || commandsEnabled()
                     })
                 try await outbound.enqueue(
-                    try actionPayload(response: response, requestID: requestID),
+                    try actionPayload(response: response, requestID: requestID, request: request),
                     channel: machineReplyChannel(), logicalID: "action:" + requestID)
                 await publishInventory(inventory(), force: true)
             } catch let failure as LinuxDurableStateFailure {
+                try? await outbound.enqueue(
+                    try refusalPayload(read: "action:" + requestID,
+                                       status: Self.status(for: failure.code),
+                                       code: failure.code, message: failure.message),
+                    channel: machineReplyChannel(), logicalID: "action:" + requestID)
                 diagnostic("linux cloud: command refused code=\(failure.code)")
             } catch {
+                try? await outbound.enqueue(
+                    try refusalPayload(read: "action:" + requestID, status: 500,
+                                       code: "internal_failure",
+                                       message: "The command could not be completed."),
+                    channel: machineReplyChannel(), logicalID: "action:" + requestID)
                 diagnostic("linux cloud: command failed before durable response")
             }
             return
@@ -535,7 +575,8 @@ actor LinuxRelayRuntimeOwner {
                     response,
                     channel: "t/" + channelSegment(machine.machineID) + "/" + channelSegment(session),
                     logicalID: inbound.idempotencyKey)
-                if request.operation == .create || request.operation == .close {
+                if request.operation == .create || request.operation == .send
+                    || request.operation == .close {
                     await publishInventory(inventory(), force: true)
                 }
             } catch let failure as LinuxDurableStateFailure {
@@ -548,15 +589,12 @@ actor LinuxRelayRuntimeOwner {
     }
 
     func publishInventory(_ snapshot: TerminalInventory, force: Bool = false) async {
-        guard state == .running, !places.isEmpty, snapshot.sessions.count <= 512 else { return }
+        guard state == .running, !places.isEmpty, snapshot.isComplete else { return }
         let allowed = Set(places.map(\.path))
         let rows = snapshot.assistantSessions.sorted { $0.id < $1.id }
-        let digest = rows.map {
-            "\($0.id)|\($0.name)|\($0.assistant?.rawValue ?? "")|\(allowed.contains($0.cwd ?? "") ? $0.cwd ?? "" : "")"
-        }.joined(separator: "\n")
-        guard force || digest != lastInventoryDigest else { return }
+        guard rows.count <= 512 else { return }
+        var encodedRows: [String: Data] = [:]
         do {
-            let now = Int(Date().timeIntervalSince1970)
             for row in rows {
                 var session: [String: Any] = [
                     "id": row.id, "name": row.name,
@@ -564,20 +602,35 @@ actor LinuxRelayRuntimeOwner {
                     "window": row.windowIndex, "tab": row.tabIndex
                 ]
                 if let cwd = row.cwd, allowed.contains(cwd) { session["cwd"] = cwd }
-                try await outbound.enqueue(
-                    try Self.json(["session": session, "at": now,
-                                   "scan": ["complete": snapshot.isComplete]]),
-                    channel: "s/" + channelSegment(machine.machineID),
-                    logicalID: "linux-session:" + row.id)
+                encodedRows[row.id] = try Self.json(["session": session])
             }
-            if snapshot.isComplete {
+        } catch { diagnostic("linux cloud: inventory encoding failed"); return }
+        let digest = encodedRows.keys.sorted().map { id in
+            id + ":" + LinuxSHA256.hex(encodedRows[id] ?? Data())
+        }.joined(separator: "\n")
+        guard force || digest != lastInventoryDigest else { return }
+        do {
+            for id in encodedRows.keys.sorted() {
+                guard force || publishedInventoryRows[id] != encodedRows[id] else { continue }
                 try await outbound.enqueue(
-                    try Self.json(["inventory": ["version": 1,
-                                                  "sessions": rows.map(\.id)]]),
-                    channel: "s/" + channelSegment(machine.machineID),
-                    logicalID: "linux-session-inventory")
-                lastInventoryDigest = digest
+                    encodedRows[id]!,
+                    channel: "s/" + channelSegment(machine.machineID) + "/" + channelSegment(id),
+                    logicalID: "linux-session:" + id)
             }
+            for id in Set(publishedInventoryRows.keys).subtracting(encodedRows.keys).sorted() {
+                try await outbound.enqueue(
+                    try Self.json(["deleted": true]),
+                    channel: "s/" + channelSegment(machine.machineID) + "/" + channelSegment(id),
+                    logicalID: "linux-session:" + id)
+            }
+            try await outbound.enqueue(
+                try Self.json(["inventory": ["version": 1,
+                                              "sessions": encodedRows.keys.sorted()]]),
+                channel: "s/" + channelSegment(machine.machineID) + "/"
+                    + channelSegment("__clawdline_inventory_v1__"),
+                logicalID: "linux-session-inventory")
+            publishedInventoryRows = encodedRows
+            lastInventoryDigest = digest
         } catch { diagnostic("linux cloud: inventory publication failed") }
     }
 
@@ -609,17 +662,26 @@ actor LinuxRelayRuntimeOwner {
               Set(body.keys) == ["type", "session", "request", "place", "assistant", "model"],
               body["session"] as? String == "__clawdline_machine__",
               let placeID = body["place"] as? String,
-              let place = places.first(where: { $0.id == placeID }),
               let assistantName = body["assistant"] as? String,
-              let assistant = Assistant(rawValue: assistantName),
-              let model = body["model"] as? String,
-              model.isEmpty || SessionLaunchPolicy.modelName(model) != nil else {
+              let model = body["model"] as? String else {
             throw LinuxDurableStateFailure(code: "malformed_command", message: "Start command is malformed.")
+        }
+        guard let place = places.first(where: { $0.id == placeID }) else {
+            throw LinuxDurableStateFailure(code: "place_not_found", message: "No configured place has that id.")
+        }
+        let selectedAssistant: Assistant? = assistantName.isEmpty
+            ? .claude : Assistant(rawValue: assistantName)
+        guard let assistant = selectedAssistant else {
+            throw LinuxDurableStateFailure(code: "assistant_not_found", message: "No assistant has that id.")
+        }
+        guard model.isEmpty || ["haiku", "sonnet", "opus"].contains(model) else {
+            throw LinuxDurableStateFailure(code: "model_not_found", message: "No model has that id.")
         }
         let id = LinuxSHA256.hex(Data("browser:\(inbound.sender):\(inbound.sequence)".utf8))
         return .start(request, LinuxIngressRequest(
             operation: .create, commandID: id, taskID: id,
-            projectRoot: place.path, assistant: assistant))
+            projectRoot: place.path, assistant: assistant,
+            model: model.isEmpty ? nil : model))
     }
 
     private func isAuthorized(sender: String, requiresWrite: Bool) throws -> Bool {
@@ -651,15 +713,43 @@ actor LinuxRelayRuntimeOwner {
         ]])
     }
 
-    private func actionPayload(response: Data, requestID: String) throws -> Data {
+    private func actionPayload(
+        response: Data, requestID: String, request: LinuxIngressRequest
+    ) throws -> Data {
         let decoded = try JSONDecoder().decode(LinuxIngressResponse.self, from: response)
         guard let receipt = decoded.receipt, let id = receipt.sessionID else {
             throw LinuxDurableStateFailure(code: "missing_receipt", message: "Start receipt is incomplete.")
         }
         return try Self.json(["read": "action:" + requestID, "status": 200, "body": [
             "ok": true, "id": id, "tty": receipt.tty ?? "",
-            "attach": receipt.attachCommand ?? "", "backend": "tmux"
+            "attach": receipt.attachCommand ?? "", "backend": "tmux",
+            "assistant": request.assistant ?? Assistant.claude.rawValue,
+            "model": request.model ?? "",
+            "place": places.first(where: { $0.path == request.projectRoot })?.id ?? "",
+            "cwd": request.projectRoot ?? ""
         ]])
+    }
+
+    private func browserRefusalIdentity(_ plaintext: Data) -> (read: String, type: String)? {
+        guard let body = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
+              let type = body["type"] as? String, ["places", "start"].contains(type),
+              body["session"] as? String == "__clawdline_machine__",
+              let request = body["request"] as? String,
+              SessionLaunchPolicy.opaqueCommandID(request) == request else { return nil }
+        return ((type == "start" ? "action:" : "read:") + request, type)
+    }
+
+    private func refusalPayload(read: String, status: Int, code: String,
+                                message: String) throws -> Data {
+        try Self.json(["read": read, "status": status,
+                       "error": ["code": code, "message": message]])
+    }
+
+    private static func status(for code: String) -> Int {
+        if code.contains("unauthorized") || code.contains("refused") { return 403 }
+        if code.contains("not_found") { return 404 }
+        if code == "ingress_closed" { return 503 }
+        return 400
     }
 
     private func machineReplyChannel() -> String {

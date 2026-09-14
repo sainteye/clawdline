@@ -124,16 +124,37 @@ On Linux, W5 uses pinned SwiftNIO/NIOWebSocket/NIOSSL because Swift 6.1.3 Founda
 rejects both `wss:` and `https:` URLSession WebSocket tasks with
 `NSURLErrorUnsupportedURL` before an HTTP upgrade. macOS keeps the Foundation URLSession
 connector. The Linux connector requires `wss:`, system trust and SNI, sends the protected device
-Bearer only in the upgrade request, limits opening to 15 seconds and aggregate text messages to
-32 MiB, rejects binary frames, and preserves typed 401/403 versus other HTTP refusals. An initial
+Bearer only in the upgrade request, limits token acquisition, socket/TLS upgrade and Relay
+authentication to one absolute monotonic 15-second opening budget, and limits aggregate text messages to
+32 MiB, permits only one unconsumed text message, rejects binary frames, accepts Pong, echoes a
+peer Close before closing, and bounds a locally initiated graceful Close to one second. The device
+token response is streamed into a 64 KiB cap under that same opening deadline; its token
+and Relay URL fields have separate 16 KiB and 2,048-byte caps. The connector preserves typed
+401/403 versus other HTTP refusals. An initial
 transient connection failure leaves the daemon degraded and retries with a capped 0.25…30 second
 backoff; a positive authorization refusal remains terminal. Exact direct and transitive dependency
 versions/revisions are recorded in `Packaging/linux/dependencies.lock.json`, whose digest is part
-of both the signed package manifest and provenance. The tracked root `Package.resolved` is the
+of both the signed package manifest and provenance. Before Linux compilation or package signing,
+both dependency authorities are opened as owner-controlled, non-hardlinked regular files and
+copied into one private descriptor-bound snapshot; missing, extra, or drifting pins fail closed.
+Packaging stages and hashes only that accepted snapshot, while the compiler gate also verifies
+that the root resolution did not change while SwiftPM consumed it. New signed release manifests
+and provenance use schema 2 and carry the exact normalized package rows as well as the lock digest.
+The installer may read a signed schema-1 installed image only as an upgrade/rollback source; every
+new candidate must be schema 2. The tracked root `Package.resolved` is the
 resolution SwiftPM consumes with automatic resolution disabled. Both the Ubuntu compile gate and
 package-signing entry point first compare its exact identity, source-control kind, location,
 version and revision set with the signed lock; missing, extra or drifting pins stop before compile
 or provenance generation.
+
+After authentication the daemon publishes its explicit, bounded display label and optional
+`provider:"aws"` descriptor on `orch/<machine>`. Platform is derived as `linux`; provider is never
+guessed from hostname. Session rows use `s/<machine>/<encoded-session>` and the reserved inventory
+marker uses `s/<machine>/__clawdline_inventory_v1__`. Only complete scans may advance that marker;
+removed rows receive retained tombstones and every reconnect replays a complete authoritative set.
+The published cwd is present only when it equals a configured project allowlist entry. Browser
+creation likewise selects a place id from that allowlist and reaches the same durable idempotency,
+pairing/revocation and write-gate boundary as local ingress.
 
 The W4-2 package candidate snapshots caller key/provenance/signature/archive paths into a root-owned
 0700 directory through no-follow descriptors and uses only those immutable bytes for verification

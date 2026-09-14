@@ -186,18 +186,58 @@ def load_json(path, maximum=8 * 1024 * 1024):
         os.close(descriptor)
 
 
+def validate_provenance_value(value, require_candidate=False):
+    common = {"schemaVersion", "packageVersion", "buildIdentity", "sourceCommit", "architecture",
+              "archiveFile", "archiveSha256", "publicKeySha256", "signatureAlgorithm",
+              "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
+              "protocolIdentity", "dependencyLockSha256"}
+    schema = value.get("schemaVersion") if isinstance(value, dict) else None
+    keys = common if schema == 1 else common | {"dependencyPackages"}
+    if schema not in (1, 2) or set(value) != keys:
+        fail("provenance has unknown or missing fields")
+    if require_candidate and schema != 2:
+        fail("a new package candidate requires provenance schema 2")
+    if schema == 2:
+        packages = value["dependencyPackages"]
+        required = {"identity", "kind", "location", "revision", "version"}
+        if not isinstance(packages, list) or not packages:
+            fail("dependency package provenance is empty")
+        identities = []
+        for package in packages:
+            if not isinstance(package, dict) or set(package) != required \
+                    or not all(isinstance(package[name], str) and package[name] for name in required) \
+                    or not re.fullmatch(r"[0-9a-f]{40}", package["revision"]):
+                fail("dependency package provenance shape is not exact")
+            identities.append(package["identity"])
+        if identities != sorted(set(identities)):
+            fail("dependency package provenance is not uniquely sorted")
+
+
+def command_validate_provenance(args):
+    validate_provenance_value(load_json(args.provenance), args.mode == "candidate")
+
+
 def validate_manifest(root, provenance, require_owner=True):
     manifest = load_json(os.path.join(root, MANIFEST_PATH))
-    keys = {"schemaVersion", "packageVersion", "buildIdentity", "sourceCommit", "architecture",
+    common = {"schemaVersion", "packageVersion", "buildIdentity", "sourceCommit", "architecture",
             "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
             "protocolIdentity", "dependencyLockSha256", "files"}
-    if set(manifest) != keys or manifest["schemaVersion"] != 1:
+    schema = manifest.get("schemaVersion")
+    keys = common if schema == 1 else common | {"dependencyPackages"}
+    if schema not in (1, 2) or set(manifest) != keys or provenance.get("schemaVersion") != schema:
         fail("internal release manifest has unknown or missing fields")
     for name in ("packageVersion", "buildIdentity", "sourceCommit", "architecture",
                  "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
                  "protocolIdentity", "dependencyLockSha256"):
         if manifest[name] != provenance[name]:
             fail("internal and signed release identities differ: " + name)
+    if schema == 2:
+        if manifest["dependencyPackages"] != provenance.get("dependencyPackages"):
+            fail("internal and signed dependency package identities differ")
+        lock = load_json(os.path.join(root, "share/clawdline/dependencies.lock.json"))
+        if set(lock) != {"schemaVersion", "packages"} or lock.get("schemaVersion") != 1 \
+                or manifest["dependencyPackages"] != lock.get("packages"):
+            fail("dependency package provenance does not match the packaged lock")
     if set(manifest["files"]) != set(EXPECTED_MODES):
         fail("internal payload inventory is not exact")
     actual_files = set()
@@ -719,6 +759,10 @@ def parser():
     verify.add_argument("--release", required=True)
     verify.add_argument("--provenance", required=True)
     verify.set_defaults(function=command_verify_release)
+    provenance = commands.add_parser("validate-provenance")
+    provenance.add_argument("--provenance", required=True)
+    provenance.add_argument("--mode", choices=("candidate", "installed"), required=True)
+    provenance.set_defaults(function=command_validate_provenance)
     compatible = commands.add_parser("state-compatible")
     compatible.add_argument("--state", required=True)
     compatible.add_argument("--legacy-state")

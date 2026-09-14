@@ -11,6 +11,7 @@ struct LinuxIngressRequest: Codable, Equatable {
     let sessionID: String?
     let projectRoot: String?
     let assistant: String?
+    let model: String?
     let text: String?
     let acknowledge: Bool
     let authorizeRecovery: Bool
@@ -24,7 +25,8 @@ struct LinuxIngressRequest: Codable, Equatable {
 
     init(authorization: String? = nil, operation: LinuxIngressOperation,
          commandID: String, taskID: String, sessionID: String? = nil,
-         projectRoot: String? = nil, assistant: Assistant? = nil, text: String? = nil,
+         projectRoot: String? = nil, assistant: Assistant? = nil, model: String? = nil,
+         text: String? = nil,
          acknowledge: Bool = false, authorizeRecovery: Bool = false,
          taskSecret: String? = nil, title: String? = nil, claims: [String]? = nil,
          resultBase64: String? = nil, resultDigest: String? = nil,
@@ -36,6 +38,7 @@ struct LinuxIngressRequest: Codable, Equatable {
         self.sessionID = sessionID
         self.projectRoot = projectRoot
         self.assistant = assistant?.rawValue
+        self.model = model
         self.text = text
         self.acknowledge = acknowledge
         self.authorizeRecovery = authorizeRecovery
@@ -49,7 +52,7 @@ struct LinuxIngressRequest: Codable, Equatable {
     }
 
     func sealedBytes() throws -> Data {
-        if [.create, .send, .observe, .close].contains(operation) {
+        if [.create, .send, .observe, .close].contains(operation), model == nil {
             // Schema 2 encoded the complete legacy request with authorization removed and
             // authorizeRecovery pinned false. Keep those exact bytes stable: a schema-2 queue
             // row may be either a succeeded replay or an interrupted operation awaiting explicit
@@ -65,9 +68,10 @@ struct LinuxIngressRequest: Codable, Equatable {
         // The daemon needs stable replay identity, never the plaintext task secret. Its digest
         // binds create/result/message recovery to the same capability without persisting it.
         let sealed = Sealed(
+            schemaVersion: 3,
             operation: operation, commandID: commandID, taskID: taskID,
             sessionID: sessionID, projectRoot: projectRoot, assistant: assistant,
-            text: text, acknowledge: acknowledge,
+            model: model, text: text, acknowledge: acknowledge,
             taskSecretDigest: taskSecret.map(Self.secretDigest), title: title,
             claims: claims, resultBase64: resultBase64, resultDigest: resultDigest,
             documentScope: documentScope, relativePath: relativePath)
@@ -87,7 +91,7 @@ struct LinuxIngressRequest: Codable, Equatable {
         return LinuxIngressRequest(
             operation: operation, commandID: commandID, taskID: taskID,
             sessionID: sessionID, projectRoot: projectRoot,
-            assistant: assistant.flatMap(Assistant.init(rawValue:)), text: text,
+            assistant: assistant.flatMap(Assistant.init(rawValue:)), model: model, text: text,
             acknowledge: acknowledge, authorizeRecovery: authorizeRecovery,
             taskSecret: taskSecret, title: title, claims: claims,
             resultBase64: resultBase64, resultDigest: resultDigest,
@@ -95,12 +99,14 @@ struct LinuxIngressRequest: Codable, Equatable {
     }
 
     private struct Sealed: Codable {
+        let schemaVersion: Int
         let operation: LinuxIngressOperation
         let commandID: String
         let taskID: String
         let sessionID: String?
         let projectRoot: String?
         let assistant: String?
+        let model: String?
         let text: String?
         let acknowledge: Bool
         let taskSecretDigest: String?
@@ -713,6 +719,9 @@ final class LinuxDaemonIngressOwner {
             guard let value, value.count == 64 else { return false }
             return value.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
         }
+        if request.operation != .create, request.model != nil {
+            try invalid("Only create may carry a model.")
+        }
         switch request.operation {
         case .taskCreate:
             guard validProject(request.projectRoot), request.sessionID == nil,
@@ -798,8 +807,10 @@ final class LinuxDaemonIngressOwner {
                 try invalid("Document read needs exact identity, scope, and a bounded relative path.")
             }
         case .create:
-            guard validProject(request.projectRoot), request.assistant != nil else {
-                try invalid("Create requires projectRoot and assistant.")
+            guard validProject(request.projectRoot),
+                  request.assistant.flatMap(Assistant.init(rawValue:)) != nil,
+                  request.model == nil || ["haiku", "sonnet", "opus"].contains(request.model!) else {
+                try invalid("Create requires a closed project, assistant, and optional model.")
             }
         case .send:
             guard validSession(request.sessionID), request.text != nil else {
@@ -911,7 +922,7 @@ final class LinuxDaemonIngressOwner {
             }
             return try runtime.create(
                 commandID: request.commandID, projectRoot: root, assistant: assistant,
-                model: nil, reasoningEffort: nil, permission: .ask,
+                model: request.model, reasoningEffort: nil, permission: .ask,
                 additionalDirectory: nil, resumeSessionID: nil)
         case .send, .taskMessage:
             guard let session = request.sessionID, let text = request.text else {
