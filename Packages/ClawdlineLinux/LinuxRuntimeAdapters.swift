@@ -596,8 +596,11 @@ enum LinuxProviderSandbox {
                                       message: "Provider no_new_privs could not be enforced.")
         }
         let abi = landlockABIVersion()
-        let read: UInt64 = landlockExecute | landlockReadFile | landlockReadDirectory
-        var handled = read | landlockWriteFile | landlockRemoveDirectory | landlockRemoveFile
+        let readDirectory: UInt64 = landlockExecute | landlockReadFile | landlockReadDirectory
+        let readExecutable: UInt64 = landlockExecute | landlockReadFile
+        let readFile: UInt64 = landlockReadFile
+        let readWriteFile: UInt64 = landlockReadFile | landlockWriteFile
+        var handled = readDirectory | landlockWriteFile | landlockRemoveDirectory | landlockRemoveFile
             | landlockMakeCharacter | landlockMakeDirectory | landlockMakeRegular
             | landlockMakeSocket | landlockMakeFIFO | landlockMakeBlock | landlockMakeSymbolicLink
         if abi >= 2 { handled |= landlockRefer }
@@ -613,20 +616,58 @@ enum LinuxProviderSandbox {
         }
         defer { _ = close(Int32(rulesetFD)) }
 
-        var entries: [(String, UInt64)] = spec.writableRoots.map { ($0, handled) }
-        entries.append((spec.executable, read))
-        for path in ["/usr", "/bin", "/lib", "/lib64", "/etc/ssl", "/etc/ca-certificates",
-                     "/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/gai.conf",
-                     "/etc/ld.so.cache", "/etc/passwd", "/etc/group", "/etc/localtime",
-                     "/etc/ca-certificates.conf",
-                     "/dev/null", "/dev/urandom", "/dev/random", "/dev/tty"] {
-            if FileManager.default.fileExists(atPath: path) { entries.append((path, read)) }
+        enum RuleKind { case directory, regularFile, device }
+        var entries: [(String, UInt64, RuleKind)] = spec.writableRoots.map {
+            ($0, handled, .directory)
         }
-        for (path, access) in entries {
+        entries.append((spec.executable, readExecutable, .regularFile))
+        for path in ["/usr", "/bin", "/lib", "/lib64", "/etc/ssl", "/etc/ca-certificates"] {
+            if FileManager.default.fileExists(atPath: path) {
+                entries.append((path, readDirectory, .directory))
+            }
+        }
+        for path in ["/etc/resolv.conf", "/etc/hosts", "/etc/nsswitch.conf", "/etc/gai.conf",
+                     "/etc/ld.so.cache", "/etc/passwd", "/etc/group", "/etc/localtime",
+                     "/etc/ca-certificates.conf"] {
+            if FileManager.default.fileExists(atPath: path) {
+                entries.append((path, readFile, .regularFile))
+            }
+        }
+        for path in ["/dev/urandom", "/dev/random"] {
+            if FileManager.default.fileExists(atPath: path) {
+                entries.append((path, readFile, .device))
+            }
+        }
+        for path in ["/dev/null", "/dev/tty"] {
+            if FileManager.default.fileExists(atPath: path) {
+                entries.append((path, readWriteFile, .device))
+            }
+        }
+        for (path, access, kind) in entries {
             let parent = open(path, linuxOpenPath | O_CLOEXEC)
             guard parent >= 0 else {
                 throw LinuxRuntimeFailure(code: .capabilityUnavailable,
                                           message: "A provider sandbox root could not be opened.")
+            }
+            var metadata = stat()
+            let fileTypeAccepted: Bool
+            if fstat(parent, &metadata) == 0 {
+                switch kind {
+                case .directory:
+                    fileTypeAccepted = metadata.st_mode & S_IFMT == S_IFDIR
+                case .regularFile:
+                    fileTypeAccepted = metadata.st_mode & S_IFMT == S_IFREG
+                case .device:
+                    let fileType = metadata.st_mode & S_IFMT
+                    fileTypeAccepted = fileType == S_IFCHR || fileType == S_IFREG
+                }
+            } else {
+                fileTypeAccepted = false
+            }
+            guard fileTypeAccepted else {
+                _ = close(parent)
+                throw LinuxRuntimeFailure(code: .capabilityUnavailable,
+                                          message: "A provider sandbox root changed file type.")
             }
             var rule = LinuxLandlockPathBeneathAttribute(
                 allowedAccess: access, parentFD: parent, reserved: 0)

@@ -688,7 +688,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
             state: { .missing },
             begin: { metadata in
                 XCTAssertEqual(metadata.platform, "linux")
-                XCTAssertTrue(metadata.name.hasPrefix("Clawdline Linux "))
+                XCTAssertEqual(metadata.name, "Clawdline Linux")
                 return (invitation, {
                     .complete(accountID: "usr_alpha", machineID: "machine_alpha")
                 })
@@ -915,7 +915,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         try await waitUntilDynamic({
             "serialized cloud ingress did not execute; diagnostics=\(relayDiagnostics.snapshot())"
         }) {
-            lifecycle.calls.filter { $0 == "create:\(cloudCommandID)" }.count == 1
+            lifecycle.calls.filter { $0 == "create:\(cloudCommandID):claude:" }.count == 1
         }
 
         // The gate is read after durable reservation and releases the row before any effect.
@@ -1082,54 +1082,47 @@ final class LinuxRuntimeContractTests: XCTestCase {
             backend: .tmux, id: "%8", name: "Replacement", tty: "/dev/pts/8",
             windowIndex: 0, tabIndex: 1, assistant: .claude, cwd: project.path)
         inventory.set(TerminalInventory(sessions: [replacement]))
+        let replacementBaseline = transport.writtenFrames().count
         await relay.publishInventory(inventory.get())
-        for _ in 0..<200 where transport.writtenFrames().count < 4 {
+        for _ in 0..<200 where transport.writtenFrames().count < replacementBaseline + 3 {
             try await Task.sleep(nanoseconds: 5_000_000)
         }
-        XCTAssertEqual(transport.writtenFrames().count, 4,
-                       "the durable drain exposes only its first pending sibling before receipt")
-        let replacementFrame = try JSONDecoder().decode(
-            CloudPublishFrame.self, from: transport.writtenFrames()[3])
-        XCTAssertEqual(replacementFrame.envelope.ch, "s/machine-linux/%258")
-        transport.receipt(CloudOutboundTransportReceipt(
-            channel: replacementFrame.envelope.ch, sequence: Int64(replacementFrame.envelope.seq),
-            kind: .delivered))
-        for _ in 0..<200 where transport.writtenFrames().count < 5 {
-            try await Task.sleep(nanoseconds: 5_000_000)
+        let replacementFrames = try transport.writtenFrames().dropFirst(replacementBaseline).map {
+            try JSONDecoder().decode(CloudPublishFrame.self, from: $0)
         }
-        let tombstoneFrame = try JSONDecoder().decode(
-            CloudPublishFrame.self, from: transport.writtenFrames()[4])
-        XCTAssertEqual(tombstoneFrame.envelope.ch, "s/machine-linux/%257")
+        XCTAssertEqual(Set(replacementFrames.map(\.envelope.ch)), Set([
+            "s/machine-linux/%258", "s/machine-linux/%257",
+            "s/machine-linux/__clawdline_inventory_v1__"
+        ]), "the bounded window publishes all ordered replacement siblings without waiting for receipts")
+        let replacementFrame = try XCTUnwrap(replacementFrames.first {
+            $0.envelope.ch == "s/machine-linux/%258"
+        })
+        let tombstoneFrame = try XCTUnwrap(replacementFrames.first {
+            $0.envelope.ch == "s/machine-linux/%257"
+        })
         XCTAssertEqual(try plaintexts([tombstoneFrame]).first?["deleted"] as? Bool, true)
-        transport.receipt(CloudOutboundTransportReceipt(
-            channel: tombstoneFrame.envelope.ch, sequence: Int64(tombstoneFrame.envelope.seq),
-            kind: .delivered))
-        for _ in 0..<200 where transport.writtenFrames().count < 6 {
-            try await Task.sleep(nanoseconds: 5_000_000)
-        }
-        let replacementSentinel = try JSONDecoder().decode(
-            CloudPublishFrame.self, from: transport.writtenFrames()[5])
-        XCTAssertEqual(replacementSentinel.envelope.ch,
-                       "s/machine-linux/__clawdline_inventory_v1__")
+        let replacementSentinel = try XCTUnwrap(replacementFrames.first {
+            $0.envelope.ch == "s/machine-linux/__clawdline_inventory_v1__"
+        })
         XCTAssertEqual(
             (try plaintexts([replacementSentinel]).first?["inventory"] as? [String: Any])?["sessions"]
                 as? [String], ["%8"])
-        transport.receipt(CloudOutboundTransportReceipt(
-            channel: replacementSentinel.envelope.ch,
-            sequence: Int64(replacementSentinel.envelope.seq), kind: .delivered))
+        for frame in replacementFrames {
+            transport.receipt(CloudOutboundTransportReceipt(
+                channel: frame.envelope.ch, sequence: Int64(frame.envelope.seq), kind: .delivered))
+        }
 
+        let replayBaseline = transport.writtenFrames().count
         transport.ready(2)
-        for wanted in 7...9 {
-            for _ in 0..<200 where transport.writtenFrames().count < wanted {
-                try await Task.sleep(nanoseconds: 5_000_000)
-            }
-            let replay = try JSONDecoder().decode(
-                CloudPublishFrame.self, from: transport.writtenFrames()[wanted - 1])
+        for _ in 0..<200 where transport.writtenFrames().count < replayBaseline + 3 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let replayFrames = try transport.writtenFrames().dropFirst(replayBaseline).map {
+            try JSONDecoder().decode(CloudPublishFrame.self, from: $0)
+        }
+        for replay in replayFrames {
             transport.receipt(CloudOutboundTransportReceipt(
                 channel: replay.envelope.ch, sequence: Int64(replay.envelope.seq), kind: .delivered))
-        }
-        let replayFrames = try transport.writtenFrames()[6...8].map {
-            try JSONDecoder().decode(CloudPublishFrame.self, from: $0)
         }
         XCTAssertEqual(Set(replayFrames.map(\.envelope.ch)), Set([
             "orch/machine-linux", "s/machine-linux/%258",
@@ -1140,23 +1133,33 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let places = try JSONSerialization.data(withJSONObject: [
             "type": "places", "session": "__clawdline_machine__", "request": "places-1"
         ])
+        let placesBaseline = transport.writtenFrames().count
         XCTAssertTrue(transport.deliver(CloudInboundCommand(
             channel: "ctl/machine-linux", sequence: 9, timestamp: now,
             sender: "viewer-linux", plaintext: places)))
-        for _ in 0..<200 where transport.writtenFrames().count < 4 {
+        var placesFrame: CloudPublishFrame?
+        for _ in 0..<200 where placesFrame == nil {
             try await Task.sleep(nanoseconds: 5_000_000)
+            for bytes in transport.writtenFrames().dropFirst(placesBaseline) {
+                let candidate = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
+                if try plaintexts([candidate]).first?["read"] as? String == "read:places-1" {
+                    placesFrame = candidate
+                    break
+                }
+            }
         }
-        let placesFrame = try JSONDecoder().decode(
-            CloudPublishFrame.self, from: transport.writtenFrames()[3])
-        let placesAnswer = try XCTUnwrap(try plaintexts([placesFrame]).first)
+        let resolvedPlacesFrame = try XCTUnwrap(placesFrame)
+        let placesAnswer = try XCTUnwrap(try plaintexts([resolvedPlacesFrame]).first)
         XCTAssertEqual(placesAnswer["read"] as? String, "read:places-1")
         transport.receipt(CloudOutboundTransportReceipt(
-            channel: placesFrame.envelope.ch, sequence: Int64(placesFrame.envelope.seq),
+            channel: resolvedPlacesFrame.envelope.ch,
+            sequence: Int64(resolvedPlacesFrame.envelope.seq),
             kind: .delivered))
         let start = try JSONSerialization.data(withJSONObject: [
             "type": "start", "session": "__clawdline_machine__", "request": "start-1",
             "place": "reaver", "assistant": "", "model": "sonnet"
         ])
+        let actionBaseline = transport.writtenFrames().count
         XCTAssertTrue(transport.deliver(CloudInboundCommand(
             channel: "ctl/machine-linux", sequence: 10, timestamp: now,
             sender: "viewer-linux", plaintext: start)))
@@ -1166,12 +1169,19 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertEqual(lifecycle.calls.filter { $0.hasPrefix("create:") }.count, 1)
         XCTAssertTrue(lifecycle.calls.contains { $0.hasSuffix(":claude:sonnet") },
                       "empty assistant defaults to Claude and the closed model reaches argv policy")
-        for _ in 0..<200 where transport.writtenFrames().count < 5 {
+        var actionFrame: CloudPublishFrame?
+        for _ in 0..<200 where actionFrame == nil {
             try await Task.sleep(nanoseconds: 5_000_000)
+            for bytes in transport.writtenFrames().dropFirst(actionBaseline) {
+                let candidate = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
+                if try plaintexts([candidate]).first?["read"] as? String == "action:start-1" {
+                    actionFrame = candidate
+                    break
+                }
+            }
         }
-        let actionFrame = try JSONDecoder().decode(
-            CloudPublishFrame.self, from: transport.writtenFrames()[4])
-        let action = try XCTUnwrap(try plaintexts([actionFrame]).first)
+        let resolvedActionFrame = try XCTUnwrap(actionFrame)
+        let action = try XCTUnwrap(try plaintexts([resolvedActionFrame]).first)
         let actionBody = try XCTUnwrap(action["body"] as? [String: Any])
         XCTAssertEqual(action["read"] as? String, "action:start-1")
         XCTAssertEqual(actionBody["assistant"] as? String, "claude")
@@ -1851,7 +1861,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
             operation: .create, commandID: "create", taskID: "task",
             projectRoot: "/srv/project", assistant: .claude)
         _ = try owner.perform(create)
-        XCTAssertEqual(runtime.calls, ["create:create"])
+        XCTAssertEqual(runtime.calls, ["create:create:claude:"])
 
         var injected = false
         owner.faultInjection = { point in
