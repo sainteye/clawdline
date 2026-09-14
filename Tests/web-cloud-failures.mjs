@@ -1062,33 +1062,62 @@ await check("viewer events · a burst of 50 failures keeps bounded rows and the 
         [47, "cloud.receive.failed"]);
 });
 
-await check("viewer events · no row or batch ever holds nonce, ct, sig or plaintext", async function () {
-    const { client, socket, log, storage, timers } = await viewerFleet();
-    const secret = "TOP-SECRET-SESSION-TITLE-" + "x".repeat(8);
+await check("viewer events · no row or batch ever holds nonce, ct, sig, plaintext or an engine's words about it", async function () {
+    // Short and not token-shaped, so only an allowlist can keep it out: V8 writes it into the
+    // TypeError a view handler throws on the real apply path.
+    const secret = "Fix login bug";
+    const { client, socket, log, storage, timers } = await viewerFleet({ client: { handlers: {
+        sessions: (list) => { for (const row of list) if (typeof row.title === "string") row.title.x = 1; } } } });
     const envelopes = [
         await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [], title: secret }),
         await sealedFromMac({}, { session: secret }),
         await sealedFromMac({}, { session: { id: "s1", title: secret } },
-            await importMasterSecret(Buffer.alloc(32, 0x43).toString("base64")))
+            await importMasterSecret(Buffer.alloc(32, 0x43).toString("base64"))),
+        await sealedFromMac({ ch: "s/mac-01/s9" }, { session: { id: "s9", title: secret } })
     ];
     const tampered = Object.assign({}, envelopes[1], { sig: envelopes[0].sig });
     for (const envelope of envelopes.concat([tampered])) await receiveEnvelope(client, socket, envelope);
-    const stages = failureRows(log).map((row) => row.data.stage);
-    assert.deepEqual(stages.sort(), ["apply", "decrypt", "sender_key_lookup", "signature_verify"],
-        "four failures, four stages");
+    const rows = failureRows(log);
+    assert.deepEqual(rows.map((row) => row.data.stage).sort(), ["apply", "apply", "decrypt", "sender_key_lookup", "signature_verify"],
+        "five failures, and the view handler's is one of them");
+    const handler = rows.find((row) => row.data.stage === "apply" && row.data.error_name === "TypeError");
+    assert.deepEqual([handler && handler.data.error_message, handler && handler.data.error_class], [null, "javascript"],
+        "the handler's TypeError keeps its name and class, never its words");
+    // The same words as an engine or a server writes them, V8 and WebKit, through the one function
+    // every receive, frame and door row uses for an exception.
+    for (const thrown of [new TypeError("Cannot create property 'x' on string 'Fix login bug'"),
+        new TypeError("Cannot use 'in' operator to search for 'id' in Fix login bug"),
+        new SyntaxError("Unexpected token 'F', \"Fix login bug\" is not valid JSON"),
+        new TypeError("Attempted to assign to readonly property."), new SyntaxError("JSON Parse error: Unexpected identifier \"Fix\""),
+        Object.assign(new Error("Fix login bug"), { code: "read_failed" }), Object.assign(new Error("x"), { name: "Fix login bug" })]) {
+        const fields = viewerModule.errorFields(thrown);
+        assert.ok(!JSON.stringify(fields).includes("Fix") && !JSON.stringify(fields).includes("readonly"),
+            "withheld: " + JSON.stringify(fields));
+    }
+    assert.deepEqual(viewerModule.errorFields(Object.assign(new Error("the envelope sender is not paired"), { code: "unknown_sender" })),
+        { name: "Error", message: "the envelope sender is not paired", code: "unknown_sender", class: "own" });
     assert.deepEqual(log.record("test.fields", { nonce: "n", ct: "c", sig: "s", plaintext: "p", title: "t", token: "k", kept: 1 }).rateLimited, false);
     timers.fire();
     const sent = await nextCommand(socket, "diagnostics.events");
     const stored = Array.from(storage.map.values()).join("\n");
     const wire = JSON.stringify(sent.batch);
     for (const text of [stored, wire]) {
-        assert.ok(!text.includes(secret), "no plaintext");
+        assert.ok(!text.includes("Fix"), "no plaintext and no engine sentence quoting it");
         for (const envelope of envelopes.concat([tampered])) {
             for (const field of ["nonce", "ct", "sig"]) assert.ok(!text.includes(envelope[field]), "no " + field + " value");
         }
         assert.ok(!/"(nonce|ct|sig|plaintext|title|token)":/.test(text), "no field named for a secret");
     }
     assert.deepEqual(sent.batch.rows.find((row) => row.event === "test.fields").data, { kept: 1 });
+});
+
+await check("viewer events · every sentence a row may keep is one the web source writes", async function () {
+    const sources = await Promise.all(["net/cloud-crypto.js", "net/cloud-client.js", "net/cloud-boot.js"].map((file) =>
+        readFile(new URL("../Resources/web/app/js/" + file, import.meta.url), "utf8")));
+    const joined = sources.join("\n").replace(/"\s*\+\s*"/g, "").replace(/\(field \|\| "value"\) \+ "/g, "\"value");
+    const invented = viewerModule.OWN_ERROR_MESSAGES.filter((text) => !["nonce", "ct", "sig"].some((field) =>
+        text === field + " is not canonical base64") && !joined.includes("\"" + text + "\""));
+    assert.deepEqual(invented, [], "an allowlisted sentence no code writes");
 });
 
 await check("viewer events · rows survive a reload and leave the phone only on a receipt naming their batch", async function () {
@@ -1380,6 +1409,205 @@ await check("viewer events · pairing · a receive failure named with production
     ["paired_sender", macDevice, reenrolled, mac, [mac], [linux], [linuxDevice], 10],
     "every id and every envelope field name survives");
     assert.ok(Object.keys(row.data).length <= 48, "within the Mac's 48-field row: " + Object.keys(row.data).length);
+});
+
+/* ---- viewer events · the batch the Mac can take, the store two tabs share -------------------- */
+
+/** A lock manager as `navigator.locks` behaves: exclusive, queued, `ifAvailable` answers null. */
+function fakeLocks() {
+    const queues = new Map();
+    return { queues, request(name, options, callback) {
+        if (typeof options === "function") { callback = options; options = {}; }
+        const queue = queues.get(name) || [];
+        if (options.ifAvailable && queue.length) return Promise.resolve(callback(null));
+        return new Promise((resolve, reject) => {
+            const grant = () => Promise.resolve(callback({ name })).then(resolve, reject).finally(() => {
+                queue.shift();
+                if (queue.length) queue[0](); else queues.delete(name);
+            });
+            queue.push(grant);
+            queues.set(name, queue);
+            if (queue.length === 1) grant();
+        });
+    } };
+}
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+const neverTimers = { setTimeout: () => 1, clearTimeout: () => { } };
+
+await check("viewer events · a row never exceeds 48 fields or its UTF-8 bound, and never splits a surrogate", async function () {
+    const log = viewerLog();
+    const wide = {};
+    for (let i = 0; i < 48; i += 1) wide["f" + String(i).padStart(2, "0")] = i >= 46 ? "a" + "😀".repeat(300) : "é";
+    log.record("test.wide", wide);
+    const list = Array.from({ length: 16 }, () => "x" + "😀".repeat(64));
+    log.record("test.list", { lone: "\uD800abc", list: list, text: "😀".repeat(400) });
+    for (const row of log.snapshot().rows) {
+        const json = JSON.stringify(row);
+        assert.ok(Object.keys(row.data).length <= 48, "fields: " + Object.keys(row.data).length);
+        assert.ok(viewerModule.utf8Bytes(json) <= viewerModule.VIEWER_EVENT_LIMITS.rowBytes, "bytes: " + viewerModule.utf8Bytes(json));
+        assert.ok(!/\\ud[89ab]/i.test(json), "no lone surrogate escape in " + row.event);
+    }
+    assert.equal(log.snapshot().rows[0].data.row_truncated, true, "the 48-field row was shrunk and kept 48");
+});
+
+const CONTRACT = new URL("./cloud-viewer-events-contract-batches.json", import.meta.url);
+
+/** The worst batches the page seals, from the real log: its fixture is what the Swift suite validates. */
+function contractBatches() {
+    let now = 1_789_400_000_000;
+    const storage = new FakeStorage();
+    const limits = { perKeyInWindow: 1, allInWindow: 100000 };
+    const killed = new viewerModule.ViewerEventLog({ storage, key: "contract", now: () => now, tab: "tab-killed", timers: neverTimers, limits });
+    killed.record("test.flushed", { kept: 1 });
+    killed.flush();
+    killed.record("test.unflushed", { kept: 2 });
+    killed.record("test.unflushed", { kept: 3 });
+    const log = new viewerModule.ViewerEventLog({ storage, key: "contract", now: () => now, tab: "tab-contract", timers: neverTimers, limits });
+    const tall = (seed) => { const data = {}; for (let i = 0; i < 48; i += 1) data["f" + String(i).padStart(2, "0")] = seed + "é".repeat(12); return data; };
+    for (let i = 0; i < 120; i += 1) {
+        now += 7;
+        const data = i % 3 === 0 ? tall("ü" + i) : i % 3 === 1 ? Object.assign(tall("ö"), { f00: "a" + "😀".repeat(300), f01: "😀".repeat(300) })
+            : { list: Array.from({ length: 16 }, () => "x" + "😀".repeat(64)), text: "😀".repeat(400), lone: "\uDC00" + i };
+        log.record("contract.row.kind_" + (i % 3), data, "row-" + i);
+    }
+    for (let i = 0; i < 20; i += 1) { log.record("contract.limited", {}, "k".repeat(i) + "😀".repeat(200)); log.record("contract.limited", {}, "k".repeat(i) + "😀".repeat(200)); }
+    const first = JSON.parse(log.takeBatch({ device: "web_contract", tab: "tab-contract", webBuild: "b-contract-é" }).body);
+    log.block({ machine: "mac-01", code: "viewer_events_malformed", layer: "mac_route", status: 400,
+        message: "That batch is not viewer events v1 at rows[3].data.f00." });
+    now += 1000;
+    log.record("contract.after", { kept: "ä" });
+    const second = JSON.parse(log.takeBatch({ device: "web_contract", tab: "tab-contract", webBuild: "b-contract-é" }).body);
+    // The two random ids are the only bytes a run changes; everything else is the page's.
+    return JSON.parse(JSON.stringify([first, second]).split(first.batch_id).join("contract-batch-1")
+        .split(second.batch_id).join("contract-batch-2"));
+}
+
+await check("viewer events · the page→Mac contract fixture is exactly what the page seals today", async function () {
+    const produced = JSON.stringify({ v: 1, generated_by: "Tests/web-cloud-failures.mjs", batches: contractBatches() }) + "\n";
+    if (process.env.CLAWDLINE_WRITE_VIEWER_CONTRACT === "1") (await import("node:fs")).writeFileSync(CONTRACT, produced);
+    const committed = await readFile(CONTRACT, "utf8").catch(() => "");
+    assert.ok(committed === produced, "Tests/cloud-viewer-events-contract-batches.json no longer matches the page; "
+        + "regenerate it with CLAWDLINE_WRITE_VIEWER_CONTRACT=1 node Tests/web-cloud-failures.mjs and let the Swift suite judge it");
+    const [first, second] = JSON.parse(committed).batches;
+    const c = first.completeness;
+    assert.deepEqual([first.rows.length, c.dropped_overflow, c.dropped_unflushed, c.rows + c.dropped_overflow + c.dropped_unflushed,
+        c.n_to - c.n_from + 1, second.completeness.dropped_refused], [100, 41, 1, 142, 142, 100]);
+    assert.ok(Buffer.byteLength(JSON.stringify(first)) <= viewerModule.VIEWER_EVENT_LIMITS.batchBytes, "within the page's batch bound");
+});
+
+await check("viewer events · a failure writes a few bytes, not the state, and a killed page's rows are counted", async function () {
+    const storage = new FakeStorage();
+    let flushes = 0;
+    const timers = { setTimeout: () => { flushes += 1; return flushes; }, clearTimeout: () => { } };
+    const log = new viewerModule.ViewerEventLog({ storage, key: "cost", now: () => viewerClock, timers, limits: { perKeyInWindow: 2 } });
+    log.record("test.first", { kept: 1 }, "first");
+    log.flush();
+    storage.reads.length = 0;
+    storage.writes.length = 0;
+    for (let i = 0; i < 40; i += 1) { log.record("cloud.receive.failed", { i: i }, "burst"); log.pending(); log.nextSendAt(); }
+    assert.deepEqual([storage.reads.length, storage.writes.filter(([key]) => key === "cost").length, flushes],
+        [0, 0, 2], "no read, no whole-state write per failure; one coalesced flush armed");
+    assert.ok(storage.writes.every(([key, bytes]) => key === "cost:journal" && bytes < 64), "only the journal: " + storage.writes.length);
+    const reloaded = new viewerModule.ViewerEventLog({ storage, key: "cost", now: () => viewerClock });
+    const state = reloaded.snapshot();
+    assert.deepEqual([state.rows.length, state.counts.unflushed, state.counts.rate_limited, state.rate["(unflushed)"].dropped],
+        [1, 2, 38, 38], "the page died before its flush: two kept and 38 rate-limited rows, each counted");
+    const c = JSON.parse(reloaded.takeBatch({}).body).completeness;
+    assert.equal(c.rows + c.dropped_overflow + c.dropped_unflushed, c.n_to - c.n_from + 1, "and the arithmetic still holds");
+});
+
+await check("viewer events · two tabs of one device: one writer, the other's rows kept and renumbered, never overwritten", async function () {
+    const storage = new FakeStorage();
+    const locks = fakeLocks();
+    const a = new viewerModule.ViewerEventLog({ storage, key: "tabs", now: () => viewerClock, locks, tab: "tab-a", timers: neverTimers });
+    const b = new viewerModule.ViewerEventLog({ storage, key: "tabs", now: () => viewerClock, locks, tab: "tab-b", timers: neverTimers });
+    await settle();
+    a.record("test.a", { kept: 1 });
+    const cause = b.record("cloud.receive.failed", { kept: 2 });
+    b.record("cloud.door.raised", { cause_n: cause.n });
+    a.record("test.a", { kept: 3 }, "again");
+    assert.deepEqual([a.writer, b.writer, b.takeBatch({}), b.claimLease("tab-b")], [true, false, null, false],
+        "the second tab neither seals nor delivers");
+    a.close();
+    await settle();
+    const rows = JSON.parse(storage.getItem("tabs")).rows;
+    assert.deepEqual(rows.map((row) => [row.n, row.tab, row.event]),
+        [[1, "tab-a", "test.a"], [2, "tab-a", "test.a"], [3, "tab-b", "cloud.receive.failed"], [4, "tab-b", "cloud.door.raised"]],
+        "all four rows, each naming its tab");
+    assert.equal(rows[3].data.cause_n, 3, "the door row still names the row that caused it");
+});
+
+await check("viewer events · another device's log for the account is removed and counted, unless a tab holds it", async function () {
+    const storage = new FakeStorage();
+    const locks = fakeLocks();
+    const prefix = "clawdline.cloud.viewer-events.v1:acct-prune:";
+    const old = new viewerModule.ViewerEventLog({ storage, key: prefix + "web_old", now: () => viewerClock, timers: neverTimers });
+    old.record("test.old", { kept: 1 });
+    old.record("test.old", { kept: 2 }, "two");
+    old.flush();
+    const held = new viewerModule.ViewerEventLog({ storage, key: prefix + "web_live", now: () => viewerClock, locks, timers: neverTimers });
+    await settle();
+    held.record("test.live", { kept: 1 });
+    held.flush();
+    const log = viewerModule.viewerEventLogFor(storage, "acct-prune", "web_new", { locks, now: () => viewerClock, timers: neverTimers });
+    await settle();
+    await settle();
+    const pruned = log.snapshot().rows.filter((row) => row.event === "viewer_events.log.pruned");
+    assert.deepEqual([storage.getItem(prefix + "web_old"), storage.getItem(prefix + "web_old:journal"), !!storage.getItem(prefix + "web_live")],
+        [null, null, true], "the replaced device's state is gone; the live tab's is not");
+    assert.deepEqual(pruned.map((row) => [row.data.device, row.data.rows, row.data.outbox_rows]), [["web_old", 2, 0]]);
+    assert.ok(pruned[0].data.bytes > 100, "and the bytes it held: " + pruned[0].data.bytes);
+});
+
+/* ---- per-machine scoping: a machine this browser is not paired with is not the account's door ---- */
+
+await check("viewer events · pairing · an unpaired second machine opens no door, the Mac stays live, and the store is asked once", async function () {
+    const store = new Map([["mac-01", pairingFor("mac-01")]]);
+    const { options, hooks } = pairedClient(store);
+    const { client, socket, errors } = await viewerFleet({ client: options });
+    const linux = { ch: "orch/linux-01", sender: "linux-executor" };
+    await receiveEnvelope(client, socket, await sealedFromMac(linux, { tasks: [] }));
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-01/s1" }, { session: { id: "s1" } }));
+    await receiveEnvelope(client, socket, await sealedFromMac(linux, { tasks: [] }));
+    assert.deepEqual(errors.map((error) => error.code), ["machine_not_paired", "machine_not_paired"],
+        "only that machine's code, which the door does not classify");
+    assert.ok(client.sessionSnapshots.size >= 1, "the Mac's Session applied between them");
+    assert.deepEqual([client.machineAccess("linux-01").state, client.machineAccess("linux-01").envelopes, client.machineAccess("mac-01")],
+        ["not_paired", 2, null]);
+    assert.equal(hooks.lookups.filter((machine) => machine === "linux-01").length, 1, "F4: the answer none is kept");
+    client.forgetMachinePairingAnswer("linux-01");
+    store.set("linux-01", pairingFor("linux-01", { senderID: "linux-executor" }));
+    await receiveEnvelope(client, socket, await sealedFromMac(linux, { tasks: [] }));
+    assert.deepEqual([hooks.lookups.filter((machine) => machine === "linux-01").length, client.machineAccess("linux-01"), errors.length],
+        [2, null, 2], "a completed pairing is asked for again and opens");
+    const renewed = cloudClient(Object.assign({ resumeFrom: client }, options));
+    assert.deepEqual([renewed.machineDescriptor("mac-01").machine.platform, renewed._macBuild("mac-01"), renewed.viewerVerified.has("mac-01")],
+        ["macos", "mac-build-1", true], "a viewer token renewal keeps what each authenticated machine described");
+});
+
+await check("viewer events · pairing · a paired Mac under a drifted key, and a legacy browser whose key drifted before binding, still get the door", async function () {
+    const otherMaster = await importMasterSecret(Buffer.alloc(32, 0x45).toString("base64"));
+    const paired = pairedClient(new Map([["mac-01", pairingFor("mac-01", { masterKey: otherMaster })]]));
+    const one = await viewerFleet({ orch: false, client: paired.options });
+    await receiveEnvelope(one.client, one.socket, await sealedFromMac({ ch: "s/mac-01/s1" }));
+    const legacy = pairedClient(new Map(), { masterKey: otherMaster, masterKeys: {} });
+    const two = await viewerFleet({ orch: false, client: legacy.options });
+    await receiveEnvelope(two.client, two.socket, await sealedFromMac({ ch: "s/mac-01/s1" }));
+    assert.deepEqual([one.errors.at(-1).code, two.errors.at(-1).code, two.client.machineAccess("mac-01"), legacy.hooks.bindings.length],
+        ["unreadable_envelope", "unreadable_envelope", null, 0],
+        "a pairing, or a sender pin with no binding yet, keeps the encryption door for real key drift");
+});
+
+await check("viewer events · pairing · a legacy binding the key store cannot write still applies, once, with a row", async function () {
+    const { options, hooks } = pairedClient(new Map());
+    hooks.bind = () => Promise.reject(Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError" }));
+    const { client, socket, log, errors } = await viewerFleet({ orch: false, client: options });
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-01/s1" }, { session: { id: "s1" } }));
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-01/s2" }, { session: { id: "s2" } }));
+    const unsaved = log.snapshot().rows.filter((row) => row.event === "cloud.receive.binding_unsaved");
+    assert.deepEqual([errors.length, client.sessionSnapshots.size, hooks.bindings.length, unsaved.length,
+        unsaved[0] && unsaved[0].data.error_name, client.machinePairings.get("mac-01").unsaved],
+    [0, 2, 1, 1, "QuotaExceededError", true], "proven by its signature and decrypt, held in memory, not re-bound per envelope");
 });
 
 /* ---- ends ---------------------------------------------------------------------------------- */
