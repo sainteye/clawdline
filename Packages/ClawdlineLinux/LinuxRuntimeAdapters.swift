@@ -973,8 +973,7 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         let fields = Self.fields(String(decoding: receipt.stdout, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines))
         guard fields.count == 3, let pane = Self.paneID(String(fields[0])),
-              let pid = pid_t(fields[1]), !fields[2].isEmpty,
-              let identity = LinuxProcfs.row(pid: pid)?.identity else {
+              let pid = pid_t(fields[1]), !fields[2].isEmpty else {
             let removed = (try? tmux(["kill-session", "-t", "=" + sessionName],
                                      operation: .close).status) == 0
             throw LinuxTerminalEffectFailure(
@@ -983,6 +982,30 @@ final class LinuxTmuxTerminalHost: TerminalHost {
                     message: "tmux created no identity-bearing PTY receipt."),
                 certainty: removed ? .compensated : .unknown,
                 checkpoint: .sessionCreated, sessionID: nil, tty: nil)
+        }
+        // tmux may return while the pane process is still entering its final foreground process
+        // group. Pin only a PID/start/group tuple that remains stable and still belongs to this
+        // exact pane and TTY; otherwise compensation could later refuse the very pane we created.
+        usleep(20_000)
+        let confirmed = try tmux(["display-message", "-p", "-t", pane, format],
+                                 operation: .observe)
+        let confirmedFields = Self.fields(String(decoding: confirmed.stdout, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
+        let firstIdentity = LinuxProcfs.row(pid: pid)?.identity
+        usleep(10_000)
+        let secondIdentity = LinuxProcfs.row(pid: pid)?.identity
+        guard confirmed.status == 0, confirmedFields.count == 3,
+              confirmedFields[0] == pane, pid_t(confirmedFields[1]) == pid,
+              confirmedFields[2] == fields[2], let identity = firstIdentity,
+              secondIdentity == identity else {
+            let removed = (try? tmux(["kill-session", "-t", "=" + sessionName],
+                                     operation: .close).status) == 0
+            throw LinuxTerminalEffectFailure(
+                failure: LinuxRuntimeFailure(
+                    code: .malformedReply,
+                    message: "tmux created no stable identity-bearing PTY receipt."),
+                certainty: removed ? .compensated : .unknown,
+                checkpoint: .sessionCreated, sessionID: pane, tty: String(fields[2]))
         }
         return TerminalCreated(
             id: pane, backend: .tmux, tty: String(fields[2]),
@@ -1112,7 +1135,16 @@ final class LinuxTmuxTerminalHost: TerminalHost {
             throw TerminalLifecycleFailure(code: .invalidCommand,
                                            message: "Terminal dimensions are outside 20...500 by 5...300.")
         }
-        let resized = try tmux(["resize-pane", "-t", session.id, "-x", String(columns),
+        let located = try tmux(["display-message", "-p", "-t", session.id, "#{window_id}"],
+                               operation: .resize)
+        let window = String(decoding: located.stdout, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard located.status == 0, Self.windowID(window) != nil else {
+            throw LinuxRuntimeFailure(code: .commandFailed, message: "that tmux pane is gone")
+        }
+        // Each managed provider owns one dedicated tmux session/window. Resizing only the pane is
+        // ignored for a detached single-pane window under tmux 3.4; resize the owned window.
+        let resized = try tmux(["resize-window", "-t", window, "-x", String(columns),
                                 "-y", String(rows)], operation: .resize)
         guard resized.status == 0 else {
             throw LinuxRuntimeFailure(code: .commandFailed, message: "that tmux pane could not be resized")
@@ -1148,6 +1180,12 @@ final class LinuxTmuxTerminalHost: TerminalHost {
 
     static func paneID(_ raw: String) -> String? {
         guard raw.first == "%", raw.count <= 16,
+              raw.dropFirst().allSatisfy({ $0.isNumber }) else { return nil }
+        return raw
+    }
+
+    static func windowID(_ raw: String) -> String? {
+        guard raw.first == "@", raw.count <= 16,
               raw.dropFirst().allSatisfy({ $0.isNumber }) else { return nil }
         return raw
     }

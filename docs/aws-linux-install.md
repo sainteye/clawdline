@@ -269,6 +269,10 @@ Common failure classifications:
   tmux 3.4 renders a control-character field separator as the printable octal escape `\037`.
   Install a release that accepts tmux's pinned rendered format; do not weaken PID, TTY, or procfs
   identity validation and do not treat the existence of a pane alone as a complete receipt.
+- resize reports success but the detached PTY remains at its old dimensions: tmux 3.4 ignores a
+  pane-only resize for a single-pane detached window. Use a release that resolves the pane's exact
+  window identity, resizes that owned window, and reads the pane dimensions back before reporting
+  success.
 - daemon active but no hosted Sessions: inspect typed Relay authorization/readiness and the
   authoritative per-session channels; do not infer readiness from systemd alone.
 - `clawdline-tmux` restart loop: compare the installed unit's `ExecStart` byte-for-byte with the
