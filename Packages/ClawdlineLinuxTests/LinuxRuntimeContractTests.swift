@@ -1497,9 +1497,12 @@ final class LinuxRuntimeContractTests: XCTestCase {
           printf 'OUTSIDE-DENIED\\n'
         fi
         printf 'READY\\n'
-        while IFS= read -r line; do
-          if [ "$line" = /exit ]; then exit 0; fi
-          printf 'ECHO:%s\\n' "$line"
+        trap 'printf "INTERRUPTED\\n"' INT
+        while :; do
+          if IFS= read -r line; then
+            if [ "$line" = /exit ]; then exit 0; fi
+            printf 'ECHO:%s\\n' "$line"
+          fi
         done
         """
         try Data(script.utf8).write(to: provider)
