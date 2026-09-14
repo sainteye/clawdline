@@ -96,9 +96,9 @@ with open(sys.argv[1], "rb") as handle:
 common = {"schemaVersion", "packageVersion", "buildIdentity", "sourceCommit",
         "architecture", "archiveFile", "archiveSha256", "publicKeySha256",
         "signatureAlgorithm", "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
-        "protocolIdentity", "dependencyLockSha256"}
+        "protocolIdentity"}
 schema = value.get("schemaVersion")
-keys = common if schema == 1 else common | {"dependencyPackages"}
+keys = common if schema == 1 else common | {"dependencyLockSha256", "dependencyPackages"}
 if schema not in (1, 2) or set(value) != keys:
     raise SystemExit("provenance has unknown or missing fields")
 if sys.argv[2] == "candidate" and schema != 2:
@@ -128,9 +128,11 @@ for name in ("buildIdentity", "architecture", "protocolIdentity"):
         raise SystemExit("unsafe provenance token: " + name)
 if not re.fullmatch(r"[0-9a-f]{40}", value["sourceCommit"]):
     raise SystemExit("sourceCommit must be an exact lowercase git object id")
-for name in ("archiveSha256", "publicKeySha256", "dependencyLockSha256"):
+for name in ("archiveSha256", "publicKeySha256"):
     if not re.fullmatch(r"[0-9a-f]{64}", value[name]):
         raise SystemExit("invalid digest: " + name)
+if schema == 2 and not re.fullmatch(r"[0-9a-f]{64}", value["dependencyLockSha256"]):
+    raise SystemExit("invalid digest: dependencyLockSha256")
 if value["archiveFile"] != value["packageVersion"] + "-linux-amd64.tar.gz":
     raise SystemExit("archive identity does not match package version")
 if value["architecture"] != "amd64":

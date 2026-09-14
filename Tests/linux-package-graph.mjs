@@ -220,13 +220,13 @@ try {
     signatureAlgorithm: 'openssl-rsa-sha256', configurationSchemaVersion: 1,
     configurationReadableMinimum: 1,
     durableSchema: { writeVersion: 1, readMinimum: 1, readMaximum: 1 },
-    protocolIdentity: 'fixture', dependencyLockSha256: '3'.repeat(64)
+    protocolIdentity: 'fixture'
   };
   const v1Path = join(provenanceFixture, 'v1.json');
   const v2Path = join(provenanceFixture, 'v2.json');
   writeFileSync(v1Path, JSON.stringify({ schemaVersion: 1, ...commonProvenance }));
   writeFileSync(v2Path, JSON.stringify({ schemaVersion: 2, ...commonProvenance,
-    dependencyPackages: dependencyLock.packages }));
+    dependencyLockSha256: '3'.repeat(64), dependencyPackages: dependencyLock.packages }));
   const validate = (path, mode) => spawnSync('python3', [join(root, 'tools/linux-package-helper.py'),
     'validate-provenance', '--provenance', path, '--mode', mode], { encoding: 'utf8' });
   check(validate(v1Path, 'installed').status === 0 && validate(v1Path, 'candidate').status !== 0,

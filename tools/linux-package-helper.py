@@ -18,7 +18,7 @@ import sys
 import tarfile
 import tempfile
 
-EXPECTED_MODES = {
+LEGACY_EXPECTED_MODES = {
     "bin/ClawdlineLinux": 0o755,
     "bin/clawdline-daemon-wrapper": 0o755,
     "lib/systemd/system/clawdline-daemon.service": 0o644,
@@ -26,10 +26,12 @@ EXPECTED_MODES = {
     "lib/sysusers.d/clawdline.conf": 0o644,
     "release.env": 0o644,
     "share/clawdline/daemon.json.in": 0o644,
+}
+EXPECTED_MODES = {
+    **LEGACY_EXPECTED_MODES,
     "share/clawdline/dependencies.lock.json": 0o644,
 }
 MANIFEST_PATH = "share/clawdline/release-manifest.json"
-EXPECTED_FILES = set(EXPECTED_MODES) | {MANIFEST_PATH}
 DERIVED_MODES = {"verified.env": 0o644, "verified-provenance.json": 0o600}
 EXPECTED_DIRECTORIES = {
     "bin", "lib", "lib/systemd", "lib/systemd/system", "lib/sysusers.d",
@@ -190,9 +192,9 @@ def validate_provenance_value(value, require_candidate=False):
     common = {"schemaVersion", "packageVersion", "buildIdentity", "sourceCommit", "architecture",
               "archiveFile", "archiveSha256", "publicKeySha256", "signatureAlgorithm",
               "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
-              "protocolIdentity", "dependencyLockSha256"}
+              "protocolIdentity"}
     schema = value.get("schemaVersion") if isinstance(value, dict) else None
-    keys = common if schema == 1 else common | {"dependencyPackages"}
+    keys = common if schema == 1 else common | {"dependencyLockSha256", "dependencyPackages"}
     if schema not in (1, 2) or set(value) != keys:
         fail("provenance has unknown or missing fields")
     if require_candidate and schema != 2:
@@ -221,24 +223,28 @@ def validate_manifest(root, provenance, require_owner=True):
     manifest = load_json(os.path.join(root, MANIFEST_PATH))
     common = {"schemaVersion", "packageVersion", "buildIdentity", "sourceCommit", "architecture",
             "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
-            "protocolIdentity", "dependencyLockSha256", "files"}
+            "protocolIdentity", "files"}
     schema = manifest.get("schemaVersion")
-    keys = common if schema == 1 else common | {"dependencyPackages"}
+    keys = common if schema == 1 else common | {"dependencyLockSha256", "dependencyPackages"}
     if schema not in (1, 2) or set(manifest) != keys or provenance.get("schemaVersion") != schema:
         fail("internal release manifest has unknown or missing fields")
     for name in ("packageVersion", "buildIdentity", "sourceCommit", "architecture",
                  "configurationSchemaVersion", "configurationReadableMinimum", "durableSchema",
-                 "protocolIdentity", "dependencyLockSha256"):
+                 "protocolIdentity"):
         if manifest[name] != provenance[name]:
             fail("internal and signed release identities differ: " + name)
     if schema == 2:
+        if manifest["dependencyLockSha256"] != provenance.get("dependencyLockSha256"):
+            fail("internal and signed release identities differ: dependencyLockSha256")
         if manifest["dependencyPackages"] != provenance.get("dependencyPackages"):
             fail("internal and signed dependency package identities differ")
         lock = load_json(os.path.join(root, "share/clawdline/dependencies.lock.json"))
         if set(lock) != {"schemaVersion", "packages"} or lock.get("schemaVersion") != 1 \
                 or manifest["dependencyPackages"] != lock.get("packages"):
             fail("dependency package provenance does not match the packaged lock")
-    if set(manifest["files"]) != set(EXPECTED_MODES):
+    expected_modes = LEGACY_EXPECTED_MODES if schema == 1 else EXPECTED_MODES
+    expected_files = set(expected_modes) | {MANIFEST_PATH}
+    if set(manifest["files"]) != set(expected_modes):
         fail("internal payload inventory is not exact")
     actual_files = set()
     actual_directories = set()
@@ -257,14 +263,14 @@ def validate_manifest(root, provenance, require_owner=True):
             rel = os.path.relpath(path, root)
             metadata = os.lstat(path)
             wanted_mode = (0o644 if rel == MANIFEST_PATH else
-                           EXPECTED_MODES.get(rel, DERIVED_MODES.get(rel)))
+                           expected_modes.get(rel, DERIVED_MODES.get(rel)))
             if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or wanted_mode is None \
                     or stat.S_IMODE(metadata.st_mode) != wanted_mode:
                 fail("release contains an unsafe file/type/link/mode: " + rel)
             if require_owner and metadata.st_uid != os.geteuid():
                 fail("release file owner is not the installer identity: " + rel)
             actual_files.add(rel)
-    valid_file_sets = (EXPECTED_FILES, EXPECTED_FILES | set(DERIVED_MODES))
+    valid_file_sets = (expected_files, expected_files | set(DERIVED_MODES))
     if actual_files not in valid_file_sets or actual_directories != EXPECTED_DIRECTORIES:
         fail("release payload topology is not exact")
     for path, wanted in manifest["files"].items():
@@ -280,6 +286,10 @@ def validate_manifest(root, provenance, require_owner=True):
 
 def command_extract(args):
     provenance = load_json(args.provenance)
+    validate_provenance_value(provenance)
+    expected_modes = (LEGACY_EXPECTED_MODES if provenance["schemaVersion"] == 1
+                      else EXPECTED_MODES)
+    expected_files = set(expected_modes) | {MANIFEST_PATH}
     archive_fd, _ = open_pinned(args.archive)
     archive_file = os.fdopen(archive_fd, "rb", closefd=True)
     try:
@@ -288,7 +298,7 @@ def command_extract(args):
             names = [member.name.rstrip("/") for member in members]
             if len(names) != len(set(names)):
                 fail("archive contains duplicate members")
-            if set(names) != EXPECTED_DIRECTORIES | EXPECTED_FILES:
+            if set(names) != EXPECTED_DIRECTORIES | expected_files:
                 fail("archive member inventory is not exact")
             os.mkdir(args.destination, 0o755)
             for name in sorted(EXPECTED_DIRECTORIES, key=lambda value: (value.count("/"), value)):
@@ -298,9 +308,9 @@ def command_extract(args):
                 member = by_name[name]
                 if not member.isdir() or member.uid != 0 or member.gid != 0 or member.mode != 0o755:
                     fail("archive directory metadata is unsafe: " + name)
-            for name in sorted(EXPECTED_FILES):
+            for name in sorted(expected_files):
                 member = by_name[name]
-                wanted_mode = 0o644 if name == MANIFEST_PATH else EXPECTED_MODES[name]
+                wanted_mode = 0o644 if name == MANIFEST_PATH else expected_modes[name]
                 if not member.isreg() or member.uid != 0 or member.gid != 0 \
                         or member.mode != wanted_mode:
                     fail("archive file metadata is unsafe: " + name)
