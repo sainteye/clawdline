@@ -1588,6 +1588,21 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertTrue(runtime.compositionReceipt.identity.providers.allSatisfy {
             $0.executableConfigured && !$0.authenticated && !$0.usable && $0.lifecycle.isEmpty
         })
+        let tmuxServer = Process()
+        tmuxServer.executableURL = URL(fileURLWithPath: tmux)
+        tmuxServer.arguments = ["-D", "-S", controlSocket.path]
+        tmuxServer.standardOutput = FileHandle.nullDevice
+        tmuxServer.standardError = FileHandle.nullDevice
+        try tmuxServer.run()
+        defer {
+            if tmuxServer.isRunning { tmuxServer.terminate() }
+            tmuxServer.waitUntilExit()
+        }
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: controlSocket.path) {
+            usleep(10_000)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: controlSocket.path),
+                      "the production-shaped dedicated tmux server must publish its socket")
         try Data("machine-secret-must-not-cross".utf8).write(to: machineSecret)
         try FileManager.default.setAttributes([.posixPermissions: 0o600],
                                               ofItemAtPath: machineSecret.path)
