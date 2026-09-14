@@ -44,7 +44,12 @@ enum SessionInfo {
     /// record's observed identity, so the full card completes a summary without reading or parsing
     /// the same bytes again; an append changes the key and gets a fresh bounded reading.
     static func recordFacts(at url: URL, assistant: Assistant, maxBytes: Int = recordReadLimit,
-                            claudeCache: Data? = nil) -> RecordFacts? {
+                            claudeCache: Data? = nil,
+                            diagnostic: @Sendable (String) -> Void = { _ in }) -> RecordFacts? {
+        let started = DispatchTime.now().uptimeNanoseconds
+        func elapsed(_ since: UInt64) -> UInt64 {
+            (DispatchTime.now().uptimeNanoseconds &- since) / 1_000_000
+        }
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
               let number = attributes[.size] as? NSNumber else { return nil }
         let modified = ((attributes[.modificationDate] as? Date)?
@@ -57,11 +62,23 @@ enum SessionInfo {
             recordFactsOrder.removeAll { $0 == key }
             recordFactsOrder.append(key)
             recordFactsLock.unlock()
+            diagnostic("cloud: info record_facts outcome=complete cache=hit "
+                + "source_bytes=\(number.uint64Value) read_bytes=0 read_ms=0 parse_ms=0 "
+                + "total_ms=\(elapsed(started)) assistant=\(assistant.rawValue)")
             return cached
         }
         recordFactsLock.unlock()
 
-        guard let read = Transcript.tailData(of: url, bytes: maxBytes) else { return nil }
+        let readStarted = DispatchTime.now().uptimeNanoseconds
+        guard let read = Transcript.tailData(of: url, bytes: maxBytes) else {
+            diagnostic("cloud: info record_facts outcome=read_failed cache=miss "
+                + "source_bytes=\(number.uint64Value) read_bytes=0 "
+                + "read_ms=\(elapsed(readStarted)) parse_ms=0 total_ms=\(elapsed(started)) "
+                + "assistant=\(assistant.rawValue)")
+            return nil
+        }
+        let readMilliseconds = elapsed(readStarted)
+        let parseStarted = DispatchTime.now().uptimeNanoseconds
         let facts: RecordFacts
         switch assistant {
         case .codex:
@@ -76,6 +93,7 @@ enum SessionInfo {
                 context: claudeContext(transcript: read.data, cache: claudeCache, model: model),
                 model: model, fastMode: nil, recordComplete: read.complete)
         }
+        let parseMilliseconds = elapsed(parseStarted)
 
         recordFactsLock.lock()
         recordFactsCache[key] = facts
@@ -85,6 +103,11 @@ enum SessionInfo {
             recordFactsCache.removeValue(forKey: recordFactsOrder.removeFirst())
         }
         recordFactsLock.unlock()
+        diagnostic("cloud: info record_facts outcome=complete cache=miss "
+            + "source_bytes=\(number.uint64Value) read_bytes=\(read.data.count) "
+            + "read_ms=\(readMilliseconds) parse_ms=\(parseMilliseconds) "
+            + "total_ms=\(elapsed(started)) assistant=\(assistant.rawValue) "
+            + "record_complete=\(read.complete)")
         return facts
     }
 

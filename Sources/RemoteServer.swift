@@ -159,7 +159,11 @@ final class RemoteServer: @unchecked Sendable {
     /// Set only through `attachCloudBridge`. It lives on `queue`, beside the SSE streams whose
     /// already-serialized readings it shares.
     private var cloudBridge: CloudAppBridge?
-    private let cloudPublications = CloudSnapshotPublicationQueue()
+    private let cloudPublications = CloudSnapshotPublicationQueue(observer: { observation in Log.write(
+        "cloud: snapshot publication id=\(observation.id) "
+            + "kind=\(observation.kind.rawValue) outcome=\(observation.outcome.rawValue) "
+            + "queue_ms=\(observation.queueMilliseconds) work_ms=\(observation.workMilliseconds) "
+            + "pending_at_enqueue=\(observation.pendingAtEnqueue) replaced_at_enqueue=\(observation.replacedAtEnqueue)") })
     private var cloudLifecycleTask: Task<Void, Never>?
     private var cloudLifecycleGeneration: UInt64 = 0
     /// Main-thread mirror used only to decide whether SessionWatch still needs its observer when
@@ -4507,7 +4511,7 @@ final class RemoteServer: @unchecked Sendable {
                     sessionID: record.url.deletingPathExtension().lastPathComponent)
                 : nil
             let facts = SessionInfo.recordFacts(
-                at: record.url, assistant: record.assistant, claudeCache: cache)
+                at: record.url, assistant: record.assistant, claudeCache: cache, diagnostic: { Log.write($0) })
             usage = facts?.usage
             context = facts?.context
             model = facts?.model
@@ -5573,8 +5577,8 @@ final class RemoteServer: @unchecked Sendable {
 
     private func enqueueCloudSessions(_ payload: Data, force: Bool = false,
                                       bridge: CloudAppBridge) {
-        cloudPublications.enqueueSessions(payload) {
-            try await bridge.publishSessions(payload, force: force)
+        cloudPublications.enqueueSessions(payload) { publicationID in
+            try await bridge.publishSessions(payload, force: force, publicationID: publicationID)
         }
     }
 

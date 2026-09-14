@@ -700,7 +700,18 @@ extension CloudBridgeLifecycle.Services {
                         .appendingPathComponent(component, isDirectory: true),
                     runtime: .mac, metrics: CloudStatusSpoolMetrics(status: status),
                     minimumNextSequence: legacyFence.reservedCeiling,
-                    sequenceFence: legacyFence, strictPersistedFrameValidation: true)
+                    sequenceFence: legacyFence, strictPersistedFrameValidation: true,
+                    spoolCommitObservationThresholdMilliseconds: 250,
+                    spoolCommitObserver: { observation in
+                        // A healthy commit is intentionally silent: this store commits several
+                        // times per frame. Slow and failed rewrites carry enough population data
+                        // to distinguish disk latency from tombstone/file amplification without
+                        // logging identities or payloads.
+                        Log.write("cloud: spool commit outcome=\(observation.outcome.rawValue) "
+                            + "duration_ms=\(observation.durationMilliseconds) "
+                            + "file_bytes=\(observation.fileBytes) rows=\(observation.rows) "
+                            + "terminal_rows=\(observation.terminalRows)")
+                    })
             },
             attach: { RemoteServer.shared.attachCloudBridge($0) },
             // The same gate the local server uses. A Mac that will not accept a message from

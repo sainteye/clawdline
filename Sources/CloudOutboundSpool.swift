@@ -370,6 +370,11 @@ public enum CloudSpoolSendDisposition: Equatable, Sendable {
 /// `implementation_default_pending_w6` until the rollout owner measures and approves them.
 public struct CloudOutboundWindowSnapshot: Equatable, Sendable {
     public let budgetStatus: String
+    /// The complete persisted store, including retained terminal tombstones. These are distinct
+    /// from the live send window below because every durable transition rewrites all stored rows.
+    public let storedRows: Int
+    public let storedChargedBytes: Int
+    public let terminalRows: Int
     public let maximumRows: Int
     public let maximumBytes: Int
     public let currentRows: Int
@@ -1045,6 +1050,9 @@ public actor CloudOutboundSpool {
         }.max() ?? 0
         return CloudOutboundWindowSnapshot(
             budgetStatus: "implementation_default_pending_w6",
+            storedRows: state.rows.count,
+            storedChargedBytes: state.rows.reduce(0) { $0 + $1.chargedBytes },
+            terminalRows: state.rows.lazy.filter { $0.state.isTerminal }.count,
             maximumRows: limits.outboundWindowRowCap,
             maximumBytes: limits.outboundWindowByteCap,
             currentRows: occupancy.rows,

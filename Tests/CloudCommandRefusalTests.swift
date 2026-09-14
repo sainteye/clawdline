@@ -1,4 +1,39 @@
 import Foundation
+
+private final class SnapshotPublicationEvidence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var workIDs: [String] = []
+    private var observations: [CloudSnapshotPublicationQueue.Observation] = []
+    private var spoolCommits: [CloudSpoolCommitObservation] = []
+    private var diagnostics: [String] = []
+
+    func recordWork(_ id: String) {
+        lock.lock(); defer { lock.unlock() }
+        workIDs.append(id)
+    }
+
+    func recordObservation(_ observation: CloudSnapshotPublicationQueue.Observation) {
+        lock.lock(); defer { lock.unlock() }
+        observations.append(observation)
+    }
+
+    func recordSpoolCommit(_ observation: CloudSpoolCommitObservation) {
+        lock.lock(); defer { lock.unlock() }
+        spoolCommits.append(observation)
+    }
+
+    func recordDiagnostic(_ diagnostic: String) {
+        lock.lock(); defer { lock.unlock() }
+        diagnostics.append(diagnostic)
+    }
+
+    func snapshot() -> (workIDs: [String], observations: [CloudSnapshotPublicationQueue.Observation],
+                        spoolCommits: [CloudSpoolCommitObservation], diagnostics: [String]) {
+        lock.lock(); defer { lock.unlock() }
+        return (workIDs, observations, spoolCommits, diagnostics)
+    }
+}
+
 func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
     var checks = 0
     func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
@@ -6,6 +41,68 @@ func runCloudAppBridgePublicationLifecycleTests() async throws -> Int {
         if !condition() { throw CloudAppBridgeTestFailure(description: message) }
     }
     func sessions(_ ids: [String], _ generation: Int, _ complete: Bool) throws -> Data { try JSONSerialization.data(withJSONObject: ["sessions": ids.map { ["id": $0] }, "at": generation, "scan": ["generation": generation, "complete": complete, "emptyAuthoritative": complete && ids.isEmpty]]) }
+
+    let queueEvidence = SnapshotPublicationEvidence()
+    let observedQueue = CloudSnapshotPublicationQueue(
+        observer: { queueEvidence.recordObservation($0) })
+    observedQueue.enqueueSessions(try sessions(["observed"], 1, true)) { id in
+        queueEvidence.recordWork(id)
+    }
+    try await waitForCloudAppBridge("snapshot publication observation completes") {
+        queueEvidence.snapshot().observations.count == 1
+    }
+    let observed = queueEvidence.snapshot()
+    try require(observed.workIDs.count == 1
+                    && observed.workIDs[0].count == 12
+                    && observed.observations[0].id == observed.workIDs[0]
+                    && observed.observations[0].kind == .sessionsAuthoritative
+                    && observed.observations[0].outcome == .complete,
+                "snapshot queue reports one opaque batch id across scheduling and work completion")
+    if let worker = observedQueue.cancelAndReset() { await worker.value }
+
+    let observationRoot = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "clawdline-spool-observation-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: observationRoot) }
+    try FileManager.default.createDirectory(
+        at: observationRoot, withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700])
+    let observedStore = try CloudFileSpoolStore(
+        url: observationRoot.appendingPathComponent("spool.json"),
+        commitObserver: { queueEvidence.recordSpoolCommit($0) })
+    try observedStore.commit(CloudSpoolPersistedState(nextSeq: 1))
+    observedStore.faultInjection = { point in
+        if point == .rename { throw CloudDurableStoreFailure.rename }
+    }
+    do { try observedStore.commit(CloudSpoolPersistedState(nextSeq: 2)) }
+    catch CloudDurableStoreFailure.rename {}
+    let commits = queueEvidence.snapshot().spoolCommits
+    try require(commits.count == 2 && commits[0].outcome == .committed
+                    && commits[0].fileBytes > 0 && commits[0].rows == 0
+                    && commits[1].outcome == .failed && commits[1].fileBytes > 0,
+                "every spool rewrite reports bounded population, bytes, duration and outcome")
+
+    let observedRecord = observationRoot.appendingPathComponent("observed-record.jsonl")
+    let observedLine = """
+    {"timestamp":"2026-09-14T00:00:00.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":17},"last_token_usage":{"total_tokens":5},"model_context_window":100}}}
+    """
+    try Data((observedLine + "\n").utf8).write(to: observedRecord)
+    let recordDiagnostic: @Sendable (String) -> Void = { queueEvidence.recordDiagnostic($0) }
+    _ = SessionInfo.recordFacts(
+        at: observedRecord, assistant: .codex, diagnostic: recordDiagnostic)
+    _ = SessionInfo.recordFacts(
+        at: observedRecord, assistant: .codex, diagnostic: recordDiagnostic)
+    let diagnostics = queueEvidence.snapshot().diagnostics
+    try require(diagnostics.count == 2
+                    && diagnostics[0].contains("cache=miss")
+                    && diagnostics[0].contains("source_bytes=")
+                    && diagnostics[0].contains("read_bytes=")
+                    && diagnostics[0].contains("read_ms=")
+                    && diagnostics[0].contains("parse_ms=")
+                    && diagnostics[0].contains("record_complete=true")
+                    && diagnostics[1].contains("cache=hit")
+                    && diagnostics[1].contains("total_ms="),
+                "status record diagnostics distinguish source read/parse work from a cache hit")
+
     let signingKey = CloudDeviceKeyPair()
     let masterSecret = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x57, count: 32))
     RemoteServer.cloudSnapshotDataForTesting = try cloudAppBridgeTestSnapshots(

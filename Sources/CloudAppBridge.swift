@@ -456,33 +456,75 @@ private struct CloudAppBridgeCompatibilityPublishFrame: Encodable {
 /// before a later incomplete observation. The pending suffix is therefore bounded to one such
 /// barrier plus the newest incomplete reading instead of growing a Task chain.
 final class CloudSnapshotPublicationQueue: @unchecked Sendable {
-    typealias Work = @Sendable () async throws -> Void
+    enum Kind: String, Sendable { case sessionsAuthoritative = "sessions_authoritative"
+        case sessionsIncremental = "sessions_incremental", orchestrator }
+    enum Outcome: String, Sendable { case complete, failed, cancelled }
+    struct Observation: Sendable {
+        let id: String
+        let kind: Kind
+        let outcome: Outcome
+        let queueMilliseconds: UInt64
+        let workMilliseconds: UInt64
+        let pendingAtEnqueue: Int
+        let replacedAtEnqueue: Int
+    }
+    typealias Work = @Sendable (_ publicationID: String) async throws -> Void
+    typealias Observer = @Sendable (Observation) -> Void
+    typealias Clock = @Sendable () -> UInt64
     static let maximumPending = 3
-    private struct Item { let authoritative: Bool?; let work: Work }
+    private struct Item {
+        let id: String
+        let authoritative: Bool?
+        let kind: Kind
+        let enqueuedAt: UInt64
+        let pendingAtEnqueue: Int
+        let replacedAtEnqueue: Int
+        let work: Work
+    }
     private let lock = NSLock()
+    private let clock: Clock
+    private let observer: Observer
     private var pending: [Item] = []
     private var worker: Task<Void, Never>?
     private var generation: UInt64 = 0
 
+    init(clock: @escaping Clock = {
+        DispatchTime.now().uptimeNanoseconds / 1_000_000
+    }, observer: @escaping Observer = { _ in }) {
+        self.clock = clock
+        self.observer = observer
+    }
+
     func enqueueSessions(_ payload: Data, work: @escaping Work) {
         let authoritative = Self.authoritative(payload)
         lock.lock()
-        let item = Item(authoritative: authoritative, work: work)
+        let before = pending.count
         if authoritative {
             pending.removeAll { $0.authoritative != nil }
         } else {
             pending.removeAll { $0.authoritative == false }
         }
+        let replaced = before - pending.count
+        let item = Item(
+            id: Self.publicationID(), authoritative: authoritative,
+            kind: authoritative ? .sessionsAuthoritative : .sessionsIncremental,
+            enqueuedAt: clock(), pendingAtEnqueue: pending.count + 1,
+            replacedAtEnqueue: replaced, work: work)
         pending.append(item)
         precondition(pending.count <= Self.maximumPending)
         startWorkerLocked()
         lock.unlock()
     }
 
-    func enqueue(_ work: @escaping Work) {
+    func enqueue(_ work: @escaping @Sendable () async throws -> Void) {
         lock.lock()
+        let before = pending.count
         pending.removeAll { $0.authoritative == nil }
-        pending.append(Item(authoritative: nil, work: work))
+        let replaced = before - pending.count
+        pending.append(Item(
+            id: Self.publicationID(), authoritative: nil, kind: .orchestrator,
+            enqueuedAt: clock(), pendingAtEnqueue: pending.count + 1,
+            replacedAtEnqueue: replaced, work: { _ in try await work() }))
         precondition(pending.count <= Self.maximumPending)
         startWorkerLocked()
         lock.unlock()
@@ -508,7 +550,22 @@ final class CloudSnapshotPublicationQueue: @unchecked Sendable {
 
     private func drain(generation ownedGeneration: UInt64) async {
         while !Task.isCancelled, let item = take(generation: ownedGeneration) {
-            try? await item.work()
+            let started = clock()
+            let outcome: Outcome
+            do {
+                try await item.work(item.id)
+                outcome = .complete
+            } catch is CancellationError {
+                outcome = .cancelled
+            } catch {
+                outcome = .failed
+            }
+            observer(Observation(
+                id: item.id, kind: item.kind, outcome: outcome,
+                queueMilliseconds: Self.elapsed(item.enqueuedAt, started),
+                workMilliseconds: Self.elapsed(started, clock()),
+                pendingAtEnqueue: item.pendingAtEnqueue,
+                replacedAtEnqueue: item.replacedAtEnqueue))
         }
     }
 
@@ -525,6 +582,14 @@ final class CloudSnapshotPublicationQueue: @unchecked Sendable {
               let scan = root["scan"] as? [String: Any] else { return false }
         return scan["complete"] as? Bool == true
             || scan["emptyAuthoritative"] as? Bool == true
+    }
+
+    private static func publicationID() -> String {
+        String(UUID().uuidString.lowercased().replacingOccurrences(of: "-", with: "").prefix(12))
+    }
+
+    private static func elapsed(_ start: UInt64, _ end: UInt64) -> UInt64 {
+        end >= start ? end - start : 0
     }
 }
 
@@ -1059,7 +1124,10 @@ public actor CloudDurableOutboundComposition {
             diagnostic("cloud: durable outbound stage=\(preparationStage) "
                 + "duration_ms=\(Self.elapsed(persistenceStarted, start)) outcome=complete "
                 + "frame_bytes=\(bytes.count) ready_rows=\(before.readyWaitingRows) "
-                + "window_rows=\(before.currentRows) window_bytes=\(before.currentBytes)")
+                + "window_rows=\(before.currentRows) window_bytes=\(before.currentBytes) "
+                + "stored_rows=\(before.storedRows) "
+                + "stored_charged_bytes=\(before.storedChargedBytes) "
+                + "terminal_rows=\(before.terminalRows)")
             // The deadline owner must wake before a socket is allowed to stall indefinitely.
             // `sendNext` has already committed this exact frame as sent when it invokes us.
             await self.scheduleAttemptDeadline()
@@ -1082,6 +1150,9 @@ public actor CloudDurableOutboundComposition {
                 + "receipt_wait_ms=\(after.oldestReceiptWaitMilliseconds) "
                 + "ready_rows=\(after.readyWaitingRows) ready_bytes=\(after.readyWaitingBytes) "
                 + "window_rows=\(after.currentRows) window_bytes=\(after.currentBytes) "
+                + "stored_rows=\(after.storedRows) "
+                + "stored_charged_bytes=\(after.storedChargedBytes) "
+                + "terminal_rows=\(after.terminalRows) "
                 + "process_window_peak_rows=\(after.processPeakRows) "
                 + "process_window_peak_bytes=\(after.processPeakBytes) "
                 + "window_refusal_attempts=\(after.windowAdmissionRefusalAttempts) "
@@ -1573,18 +1644,21 @@ actor CloudAppBridge {
 
     /// Accepts the exact JSON bytes produced for local SSE, then fans its complete session rows
     /// out by channel. A complete authoritative scan also sends tombstones for rows that vanished.
-    func publishSessions(_ payload: Data, force: Bool = false) async throws {
+    func publishSessions(_ payload: Data, force: Bool = false,
+                         publicationID: String? = nil) async throws {
         let ownedGeneration = lifecycleGeneration
         try await runPublication { [weak self] in
             guard let self else { throw CancellationError() }
             try await self.publishSessionsOwned(
-                payload, force: force, lifecycleGeneration: ownedGeneration
+                payload, force: force, publicationID: publicationID,
+                lifecycleGeneration: ownedGeneration
             )
         }
     }
 
     private func publishSessionsOwned(
-        _ payload: Data, force: Bool, lifecycleGeneration ownedGeneration: UInt64
+        _ payload: Data, force: Bool, publicationID: String?,
+        lifecycleGeneration ownedGeneration: UInt64
     ) async throws {
         try requireActivePublication(lifecycleGeneration: ownedGeneration)
         guard let root = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
@@ -1658,7 +1732,8 @@ actor CloudAppBridge {
                 inventoryPublished = true
             }
         }
-        diagnostic("cloud: sessions published rows=\(sessions.count) changed=\(changed) "
+        diagnostic("cloud: sessions published id=\(publicationID ?? "direct") "
+            + "rows=\(sessions.count) changed=\(changed) "
             + "skipped=\(skipped) tombstones=\(removed.count) inventory=\(inventoryPublished) "
             + "force=\(force) total_ms=\(Self.elapsedMilliseconds(from: startedAt, to: nowMilliseconds()))")
     }
@@ -1852,6 +1927,17 @@ actor CloudAppBridge {
                     plaintext, channel: channel,
                     logicalID: readTraceID ?? UUID().uuidString.lowercased(),
                     observe: stageObserver)
+                if let publicationID = readTraceID {
+                    let snapshot = await durableOutbound.metricsSnapshot()
+                    diagnostic("cloud: publication id=\(publicationID) "
+                        + "publication_stage=durable_state duration_ms=0 outcome=observed "
+                        + "stored_rows=\(snapshot.storedRows) "
+                        + "stored_charged_bytes=\(snapshot.storedChargedBytes) "
+                        + "terminal_rows=\(snapshot.terminalRows) "
+                        + "ready_rows=\(snapshot.readyWaitingRows) "
+                        + "window_rows=\(snapshot.currentRows) socket_send=not_observed "
+                        + "ack=not_observed")
+                }
                 if let reference {
                     status.recordReplySealed(sender: reference.sender, sequence: reference.sequence,
                                              spoolSequence: spoolSequence)

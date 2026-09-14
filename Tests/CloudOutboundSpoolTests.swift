@@ -769,9 +769,9 @@ private func testSendThrowLeavesRowSent(_ h: SpoolTestHarness) async throws {
                 "first send durably fixed attempt_not_after = first_sent + 30s")
     let failedMetrics = await spool.outboundWindowSnapshot()
     try h.check(failedMetrics.currentRows == 1 && failedMetrics.socketWritesStarted == 1
-                    && failedMetrics.socketWritesCompleted == 0
-                    && failedMetrics.socketWritesFailed == 1,
-                "a failed socket write remains inside the hard window and is counted once")
+                    && failedMetrics.socketWritesCompleted == 0 && failedMetrics.socketWritesFailed == 1
+                    && failedMetrics.storedRows == 1 && failedMetrics.terminalRows == 0 && failedMetrics.storedChargedBytes > 0,
+                "a failed socket write exposes both its live window and full stored population")
     let log = SpoolTransportLog()
     let resent = try await spool.resendPersisted(seq: seq) { log.record($0) }
     try h.check(resent == .resent(seq: seq) && log.payloads == [sealedEnvelopeStub],

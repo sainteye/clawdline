@@ -999,17 +999,43 @@ private struct CloudSpoolFileEnvelope: Codable {
     }
 }
 
+public struct CloudSpoolCommitObservation: Equatable, Sendable {
+    public enum Outcome: String, Equatable, Sendable { case committed, failed }
+
+    public let outcome: Outcome
+    public let durationMilliseconds: UInt64
+    public let fileBytes: Int
+    public let rows: Int
+    public let terminalRows: Int
+
+    public init(outcome: Outcome, durationMilliseconds: UInt64, fileBytes: Int,
+                rows: Int, terminalRows: Int) {
+        self.outcome = outcome
+        self.durationMilliseconds = durationMilliseconds
+        self.fileBytes = fileBytes
+        self.rows = rows
+        self.terminalRows = terminalRows
+    }
+}
+
 public final class CloudFileSpoolStore: CloudSpoolStore, @unchecked Sendable {
+    public typealias CommitObserver = @Sendable (CloudSpoolCommitObservation) -> Void
     public static let maximumBytes = 32 * 1024 * 1024
     public var faultInjection: (@Sendable (CloudDurableStoreFaultPoint) throws -> Void)?
     private let file: CloudDurableFile
+    private let commitObserver: CommitObserver?
+    private let commitObservationThresholdMilliseconds: UInt64
     private let lock = NSLock()
     private var state: CloudSpoolPersistedState?
     private var generation: UInt64 = 0
 
-    public init(url: URL, expectedUID: UInt32 = geteuid()) throws {
+    public init(url: URL, expectedUID: UInt32 = geteuid(),
+                commitObservationThresholdMilliseconds: UInt64 = 0,
+                commitObserver: CommitObserver? = nil) throws {
         file = try CloudDurableFile(
             url: url, maximumBytes: Self.maximumBytes, expectedUID: expectedUID)
+        self.commitObservationThresholdMilliseconds = commitObservationThresholdMilliseconds
+        self.commitObserver = commitObserver
     }
 
     public func load() throws -> CloudSpoolPersistedState {
@@ -1084,6 +1110,20 @@ public final class CloudFileSpoolStore: CloudSpoolStore, @unchecked Sendable {
     }
 
     private func persist(_ state: CloudSpoolPersistedState) throws {
+        let started = DispatchTime.now().uptimeNanoseconds
+        var fileBytes = 0
+        var outcome: CloudSpoolCommitObservation.Outcome = .failed
+        defer {
+            let elapsed = DispatchTime.now().uptimeNanoseconds &- started
+            let durationMilliseconds = elapsed / 1_000_000
+            if let commitObserver, outcome == .failed
+                    || durationMilliseconds >= commitObservationThresholdMilliseconds {
+                commitObserver(CloudSpoolCommitObservation(
+                    outcome: outcome, durationMilliseconds: durationMilliseconds,
+                    fileBytes: fileBytes, rows: state.rows.count,
+                    terminalRows: state.rows.lazy.filter { $0.state.isTerminal }.count))
+            }
+        }
         guard generation < UInt64.max, state.nextSeq >= 0,
               state.nextSeq <= CloudCanonicalJSON.maximumSafeInteger else {
             throw CloudDurableStoreFailure.corrupt
@@ -1093,8 +1133,10 @@ public final class CloudFileSpoolStore: CloudSpoolStore, @unchecked Sendable {
         let bytes: Data
         do { bytes = try encoder.encode(CloudSpoolFileEnvelope(generation: next, state: state)) }
         catch { throw CloudDurableStoreFailure.persist }
+        fileBytes = bytes.count
         try file.commit(bytes, fault: faultInjection)
         generation = next
+        outcome = .committed
     }
 
     private static func validRow(_ row: CloudSpoolFileRow) -> Bool {
@@ -1211,7 +1253,9 @@ public struct CloudDurableRuntime: Sendable {
         metrics: CloudSpoolMetrics = CloudNoopSpoolMetrics(), minimumNextSequence: Int64 = 0,
         sequenceFence: any CloudSpoolSequenceFence = CloudNoopSpoolSequenceFence(),
         limits: CloudSpoolLimits = CloudSpoolLimits(),
-        strictPersistedFrameValidation: Bool = false
+        strictPersistedFrameValidation: Bool = false,
+        spoolCommitObservationThresholdMilliseconds: UInt64 = 0,
+        spoolCommitObserver: CloudFileSpoolStore.CommitObserver? = nil
     ) throws -> CloudDurableRuntime {
         guard minimumNextSequence >= 0,
               minimumNextSequence <= CloudCanonicalJSON.maximumSafeInteger else {
@@ -1220,7 +1264,9 @@ public struct CloudDurableRuntime: Sendable {
         let ledgerStore = try CloudFileCommandLedgerStore(
             url: directory.appendingPathComponent("command-ledger.json"), expectedUID: expectedUID)
         let spoolStore = try CloudFileSpoolStore(
-            url: directory.appendingPathComponent("outbound-spool.json"), expectedUID: expectedUID)
+            url: directory.appendingPathComponent("outbound-spool.json"), expectedUID: expectedUID,
+            commitObservationThresholdMilliseconds: spoolCommitObservationThresholdMilliseconds,
+            commitObserver: spoolCommitObserver)
         var spoolState = try spoolStore.load()
         if spoolState.nextSeq < minimumNextSequence {
             spoolState.nextSeq = minimumNextSequence
