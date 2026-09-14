@@ -88,6 +88,15 @@ prefix, verify the bundle SHA-256 before `git fetch`, and keep the bucket privat
 An SSM command does not inherit access merely because an administrator can download the object.
 Do not use a public object or presigned URL as a credential workaround.
 
+Inspect the archive layout before choosing extraction flags. `git archive HEAD` normally places
+`Package.swift`, `Packages/`, and `Packaging/` at the archive root; in that case extract without
+`--strip-components`. An archive created with an explicit prefix has one enclosing directory and
+may use `--strip-components=1`. Applying that flag to an unprefixed archive silently flattens the
+first path component—for example `Packages/ClawdlineLinux` becomes `ClawdlineLinux`—and the first
+obvious error may only be a missing `Package.resolved`. Fail before the compiler by checking the
+tar listing and asserting that `Package.swift`, `Package.resolved`, and
+`Packaging/linux/dependencies.lock.json` exist at the extracted root.
+
 Keep the run prefix and the instance-role policy in the same immutable acceptance manifest. A role
 restricted to `runs/20260913a/source/*` correctly returns `403` when the next operator uploads to
 `runs/20260914/source/*`, even though both keys are in the same bucket. For a new run, either update
