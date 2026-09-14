@@ -1583,6 +1583,11 @@ await check("viewer events · pairing · an unpaired second machine opens no doo
     const renewed = cloudClient(Object.assign({ resumeFrom: client }, options));
     assert.deepEqual([renewed.machineDescriptor("mac-01").machine.platform, renewed._macBuild("mac-01"), renewed.viewerVerified.has("mac-01")],
         ["macos", "mac-build-1", true], "a viewer token renewal keeps what each authenticated machine described");
+    store.delete("mac-01");
+    const renewedSocket = await ready(renewed);
+    const asked = hooks.lookups.length;
+    for (let i = 0; i < 3; i += 1) await receiveEnvelope(renewed, renewedSocket, await sealedFromMac({ ch: "s/mac-01/s1", sender: "no-pin" }));
+    assert.equal(hooks.lookups.length - asked, 3, "a machine this viewer found paired is asked again every time, never remembered as absent");
 });
 
 await check("viewer events · pairing · a paired Mac under a drifted key, and a legacy browser whose key drifted before binding, still get the door", async function () {

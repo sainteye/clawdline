@@ -355,10 +355,11 @@ export class CloudClient {
         // legacy binding, no key for the sender (`_openEnvelopeFrame`). Per machine, never the
         // account's door; a renewal keeps it, and a pairing found for the machine clears it.
         this.unpairedMachines = sameViewer ? new Map(prior.unpairedMachines) : new Map();
-        // Machines the pairing store answered "none" for, so the next envelope from one does not
-        // open IndexedDB again. One client's memory only: a renewal asks again, and a pairing
-        // completed in this page clears the machine (`forgetMachinePairingAnswer`).
+        // Machines the pairing store answered "none" for, and never anything else, so the next
+        // envelope from one does not open IndexedDB again. One client's memory only: a renewal asks
+        // again, and a pairing completed in this page clears the machine (`forgetMachinePairingAnswer`).
         this.pairingAbsent = new Set();
+        this.pairingSeen = sameViewer ? new Set(prior.pairingSeen) : new Set();
         this.pendingBySequence = new Map();
         this.lastRelayError = null;
         this.closedFailure = null;
@@ -645,8 +646,11 @@ export class CloudClient {
             finally { if (probe) probe.pairingLookupMs = Math.max(0, Date.now() - asked); }
             if (value) {
                 this.machinePairings.set(machine, value);
+                this.pairingSeen.add(machine);
                 this.unpairedMachines.delete(machine);
-            } else if (value === null || value === undefined) {
+            } else if ((value === null || value === undefined) && !this.pairingSeen.has(machine)) {
+                // Kept only for a machine this viewer never found a pairing for: a store that said
+                // yes once and now says nothing (a resume) is asked again at every envelope.
                 this.pairingAbsent.add(machine);
             }
         }
@@ -824,6 +828,7 @@ export class CloudClient {
                     "the legacy machine pairing could not be persisted");
             }
             this.machinePairings.set(routedMachine, migrated);
+            this.pairingSeen.add(routedMachine);
         }
         if (routedMachine) this.unpairedMachines.delete(routedMachine);
         this._sawAuthenticatedEnvelope(envelope, channel, routedMachine);
