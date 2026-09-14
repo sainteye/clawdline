@@ -892,18 +892,25 @@ final class LinuxTmuxTerminalHost: TerminalHost {
                       "#{window_index}", "#{pane_index}", "#{pane_current_path}"]
             .joined(separator: Self.formatSeparator)
         let receipt = try tmux(["list-panes", "-a", "-F", format], operation: .enumerate)
+        return try Self.inventory(from: receipt, maximumInventory: limits.maximumInventory)
+    }
+
+    static func inventory(from receipt: LinuxCommandReceipt, maximumInventory: Int) throws
+        -> TerminalInventory {
         if receipt.status != 0 {
-            let error = String(decoding: receipt.stderr, as: UTF8.self)
-            if error.contains("no server running") || error.contains("error connecting") {
+            let exactEmpty = receipt.status == 1 && receipt.stdout.isEmpty
+                && (receipt.stderr == Data("no current target".utf8)
+                    || receipt.stderr == Data("no current target\n".utf8))
+            if exactEmpty {
                 return TerminalInventory()
             }
             return TerminalInventory(error: "tmux inventory was unavailable", isComplete: false)
         }
         let lines = String(decoding: receipt.stdout, as: UTF8.self)
             .split(separator: "\n", omittingEmptySubsequences: true)
-        guard lines.count <= limits.maximumInventory else {
+        guard lines.count <= maximumInventory else {
             throw LinuxRuntimeFailure(code: .inventoryLimit,
-                                      message: "The tmux inventory exceeded \(limits.maximumInventory) panes.")
+                                      message: "The tmux inventory exceeded \(maximumInventory) panes.")
         }
         var sessions: [TargetSession] = []
         for line in lines {

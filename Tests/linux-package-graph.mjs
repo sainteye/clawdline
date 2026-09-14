@@ -70,6 +70,10 @@ check(/public extension CloudTransportSocketConnecting\s*\{[\s\S]*?func connect\
   'the public connector protocol must export its opening-timeout compatibility witness to Mac product conformers');
 check((cloudTransportFakes.match(/:\s*CloudTransportSocketConnecting/g) ?? []).length === 4,
   'the product graph fixture must continue exercising all four Mac connector conformers');
+check(/return try Self\.inventory\(from: receipt, maximumInventory: limits\.maximumInventory\)/.test(adapters)
+  && /static func inventory\(from receipt: LinuxCommandReceipt[\s\S]*?no current target/.test(adapters)
+  && /testDedicatedTmuxWithNoSessionsIsACompleteEmptyInventory[\s\S]*?no current target/.test(linuxTests),
+  'an empty persistent tmux server must be a complete empty inventory, not a startup deadlock');
 const pinnedSwiftImage = linuxBuild.match(/swift:6\.1\.3-noble@sha256:[0-9a-f]{64}/)?.[0];
 const noRestartInstall = awsLinuxInstall.indexOf('--cloud-commands-enabled true \\\n  --no-restart');
 const serviceAuthentication = awsLinuxInstall.indexOf(

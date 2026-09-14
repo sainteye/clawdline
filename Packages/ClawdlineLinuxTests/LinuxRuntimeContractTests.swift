@@ -1457,6 +1457,68 @@ final class LinuxRuntimeContractTests: XCTestCase {
             .contains(replacementMaster.rawRepresentation.base64EncodedString()))
     }
 
+    func testDedicatedTmuxWithNoSessionsIsACompleteEmptyInventory() throws {
+        func classify(status: Int32, stdout: String = "", stderr: String)
+            throws -> TerminalInventory {
+            try LinuxTmuxTerminalHost.inventory(
+                from: LinuxCommandReceipt(
+                    status: status, stdout: Data(stdout.utf8), stderr: Data(stderr.utf8)),
+                maximumInventory: 8)
+        }
+        for stderr in ["no current target", "no current target\n"] {
+            let inventory = try classify(status: 1, stderr: stderr)
+            XCTAssertTrue(inventory.isComplete)
+            XCTAssertTrue(inventory.sessions.isEmpty)
+            XCTAssertNil(inventory.error)
+        }
+        for inventory in [
+            try classify(status: 2, stderr: "no current target\n"),
+            try classify(status: 1, stdout: "%7\n", stderr: "no current target\n"),
+            try classify(status: 1, stderr: "no current target\nextra diagnostic\n"),
+            try classify(status: 1,
+                         stderr: "error connecting to /run/clawdline/clawdline.sock (Permission denied)\n"),
+            try classify(status: 1,
+                         stderr: "error connecting to /run/clawdline/clawdline.sock (No such file or directory)\n"),
+        ] {
+            XCTAssertFalse(inventory.isComplete)
+            XCTAssertEqual(inventory.error, "tmux inventory was unavailable")
+        }
+
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-empty-tmux-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(
+            at: scratch, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let completeStore = try LinuxDurableStateStore(
+            stateDirectory: scratch.appendingPathComponent("complete").path)
+        let completeInventory = try classify(status: 1, stderr: "no current target\n")
+        let complete = try LinuxStartupReconciler.reconcile(
+            store: completeStore,
+            inventory: completeInventory.isComplete
+                ? .complete(Set(completeInventory.sessions.map(\.id)))
+                : .incomplete(completeInventory.error ?? "unavailable"))
+        XCTAssertEqual(complete.status, "complete")
+        XCTAssertTrue(complete.authoritative)
+
+        let incompleteStore = try LinuxDurableStateStore(
+            stateDirectory: scratch.appendingPathComponent("incomplete").path)
+        try incompleteStore.save(LinuxDurableState(terminals: [
+            .init(id: "%1", taskID: nil, state: .present,
+                  lastObservedAt: nil, evidenceDigest: nil),
+        ]))
+        let refusedInventory = try classify(status: 1,
+                                             stderr: "no current target\nextra diagnostic\n")
+        let incomplete = try LinuxStartupReconciler.reconcile(
+            store: incompleteStore,
+            inventory: refusedInventory.isComplete
+                ? .complete(Set(refusedInventory.sessions.map(\.id)))
+                : .incomplete(refusedInventory.error ?? "unavailable"))
+        XCTAssertEqual(incomplete.status, "inventory_incomplete")
+        XCTAssertEqual(incomplete.terminalUnknown, 1)
+        XCTAssertEqual(incomplete.terminalMissing, 0)
+    }
+
     #if os(Linux)
     func testRealTmuxProviderLifecycleOnLinux() throws {
         let tmux = try XCTUnwrap(ProcessInfo.processInfo.environment["CLAWDLINE_TEST_TMUX"],
