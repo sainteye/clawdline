@@ -998,16 +998,12 @@ private func runCloudAppBridgeSnapshotTests() async throws -> Int {
         try? FileManager.default.removeItem(at: directory)
     }
     Orchestrator.scheduleDirectoryOverrideForTesting = directory
-
     let bare = await MainActor.run { RemoteServer.orchestratorSnapshot() }
     let machine = bare["machine"] as? [String: Any]
-    require(machine?["platform"] as? String == "macos"
-                && !((machine?["name"] as? String) ?? "").isEmpty,
-            "the encrypted orchestrator snapshot carries display-only machine metadata")
+    require(machine?["platform"] as? String == "macos" && !((machine?["name"] as? String) ?? "").isEmpty, "the encrypted orchestrator snapshot carries display-only machine metadata")
     require((bare["schedules"] as? [[String: Any]])?.isEmpty == true,
             "a Mac with no schedule files publishes the field holding an empty list — which is "
                 + "what lets a viewer tell it apart from a Mac that publishes no field at all")
-
     let id = "cccccccc-dddd-4eee-8fff-aaaaaaaaaaaa"
     let source: [String: Any] = [
         "clawdline_schedule": 1, "schedule_id": id, "title": "nightly cloud read",

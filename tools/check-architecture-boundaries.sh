@@ -1284,6 +1284,7 @@ targets = {t["name"]: t for t in d.get("targets") or []}
 try:
     pins = {x["sourceControl"][0]["identity"]: x["sourceControl"][0]["requirement"]["exact"][0] for x in deps}
     products = [x["product"] for x in targets["ClawdlineApplication"]["dependencies"] if "product" in x]
+    test_products = [x["product"] for x in targets["ClawdlineLinuxTests"]["dependencies"] if "product" in x]
 except (IndexError, KeyError, TypeError, ValueError):
     raise SystemExit(1)
 expected_pins = {"swift-crypto":"4.5.2", "swift-nio":"2.102.0", "swift-nio-ssl":"2.37.4"}
@@ -1291,17 +1292,25 @@ expected_products = [
  ["Crypto", "swift-crypto"], ["NIOCore", "swift-nio"], ["NIOPosix", "swift-nio"],
  ["NIOHTTP1", "swift-nio"], ["NIOWebSocket", "swift-nio"], ["NIOSSL", "swift-nio-ssl"]]
 actual_products = sorted([[x[0], x[1]] for x in products])
-if pins != expected_pins or actual_products != sorted(expected_products):
+expected_test_products = [
+ ["NIOCore", "swift-nio"], ["NIOEmbedded", "swift-nio"],
+ ["NIOHTTP1", "swift-nio"], ["NIOWebSocket", "swift-nio"]]
+actual_test_products = sorted([[x[0], x[1]] for x in test_products])
+if (pins != expected_pins or actual_products != sorted(expected_products)
+        or actual_test_products != sorted(expected_test_products)):
     raise SystemExit(1)
-' || architecture_guard_fail "the Linux external dependency graph is not the exact reviewed Crypto/NIO/TLS pin set"
+' || architecture_guard_fail "the Linux external dependency graph is not the exact reviewed production and test Crypto/NIO/TLS pin set"
 python3 tools/linux-dependency-lock.py verify --resolved Package.resolved \
   --lock Packaging/linux/dependencies.lock.json >/dev/null \
   || architecture_guard_fail "the SwiftPM resolution is not the exact signed Linux dependency lock"
-for graph_target in ClawdlineCore Clawdline ClawdlineLinux ClawdlineLinuxTests; do
+for graph_target in ClawdlineCore Clawdline ClawdlineLinux; do
   actual_external_products=$(graph_field "$graph_target\.external-products")
   [ "$actual_external_products" = 0 ] \
     || architecture_guard_fail "$graph_target has $actual_external_products external product dependency/dependencies; the production graph is closed and requires an explicit reviewed allowlist before adding one"
 done
+actual_linux_test_external_products=$(graph_field 'ClawdlineLinuxTests\.external-products')
+[ "$actual_linux_test_external_products" = 4 ] \
+  || architecture_guard_fail "ClawdlineLinuxTests has $actual_linux_test_external_products external products, expected exactly the reviewed NIOCore/NIOEmbedded/NIOHTTP1/NIOWebSocket test harness"
 actual_application_external_products=$(graph_field 'ClawdlineApplication\.external-products')
 [ "$actual_application_external_products" = 6 ] \
   || architecture_guard_fail "ClawdlineApplication has $actual_application_external_products external products, expected exactly Linux Crypto plus NIOCore/NIOPosix/NIOHTTP1/NIOWebSocket/NIOSSL"

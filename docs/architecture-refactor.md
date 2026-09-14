@@ -1288,6 +1288,12 @@ The exact SwiftPM source roster and import allowlist remain pinned by the archit
 Runtime effects and release effects remain separate owners. Swift persists a sealed command before
 effect, persists returned stages before response, runs restart classification once per daemon epoch,
 and makes corrupt/future/semantically contradictory state leave a durable recovery obligation.
+The Linux test target has one closed four-product SwiftNIO harness allowlist — `NIOCore`,
+`NIOEmbedded`, `NIOHTTP1` and `NIOWebSocket` — so transport timeout, burst, fragmentation and Close
+failure injection can exercise the actual pipeline without granting those test-only products to the
+Linux executable target. `tools/check-architecture-boundaries.sh` compares that exact resolved
+product set as well as the production dependency set.
+
 `tools/linux-package.sh` delegates descriptor-bound snapshot/extraction/root-state and journaled,
 fsynced link-pair changes to `linux-package-helper.py`; signed metadata is checked against the target
 binary's own release contract before daemon effect. The foreground tmux unit alone owns the socket
