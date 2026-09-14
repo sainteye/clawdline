@@ -574,7 +574,7 @@ struct English: Copy {
     let webStartPick = "Where should it start?"
     let webStartMachine = "Machine"
     let webStartMachinePick = "Choose the machine that should open this Session."
-    let webStartMachineStale = "offline or out of date"
+    let webStartMachineStale = "offline or status out of date"
     let webStartMachineNone = "No current machine is available."
     let webMachineThisMac = "This Mac"
     let webMachineMac = "Mac"

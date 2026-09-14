@@ -276,6 +276,11 @@ export class CloudClient {
         }, this);
         this.transcriptSnapshots = new Map();
         this.orchestratorSnapshots = new Map();
+        // This is evidence of the last authenticated envelope seen from a machine, not a
+        // presence lease.  Carry it across a viewer-token renewal just like the retained
+        // Session rows: it decides whether the picker may take the one-machine fast path, while
+        // an older route remains available for an explicit bounded probe.
+        this.machineObservedAt = sameViewer ? new Map(prior.machineObservedAt) : new Map();
         // The rows a page was handed by `places()` outlive the socket that read them: the start
         // sheet keeps its list on screen across a renewal, and a press on one of those rows used
         // to find this Map empty and die before reaching any Mac.
@@ -581,6 +586,7 @@ export class CloudClient {
         if (channel.kind === "session") {
             var identity = sessionIdentity({ machine: decodedChannelSegment(channel.machine),
                 session: decodedChannelSegment(channel.session) });
+            this._observeMachine(identity.machine, envelope.ts);
             var key = sessionIdentityKey(identity);
             if (identity.session === SESSION_INVENTORY_ID) {
                 var inventory = payload && payload.inventory;
@@ -683,6 +689,7 @@ export class CloudClient {
         }
         if (channel.kind === "orch") {
             var machine = decodedChannelSegment(channel.machine);
+            this._observeMachine(machine, envelope.ts);
             this.orchestratorSnapshots.set(machine, payload || {});
             this._consumeCloudStatus(machine, payload && payload.cloud_status);
             // A retained Session envelope may arrive before its machine descriptor. Re-project
@@ -760,10 +767,21 @@ export class CloudClient {
 
     _knownMachines() {
         var found = new Set(this.orchestratorSnapshots.keys());
+        this.machineObservedAt.forEach(function (_, machine) { found.add(machine); });
         this.sessionSnapshots.forEach(function (row) {
             if (row && typeof row.machine === "string" && row.machine) found.add(row.machine);
         });
         return Array.from(found).sort();
+    }
+
+    _observeMachine(machine, timestamp) {
+        if (typeof machine !== "string" || !machine || !Number.isFinite(timestamp) || timestamp <= 0) {
+            return;
+        }
+        var previous = this.machineObservedAt.get(machine);
+        if (!Number.isFinite(previous) || timestamp > previous) {
+            this.machineObservedAt.set(machine, timestamp);
+        }
     }
 
     /** Display-only descriptors from authenticated encrypted snapshots. Command authority stays
@@ -776,13 +794,19 @@ export class CloudClient {
                 ? snapshot.machine : {};
             var presentation = machinePresentation({ id: id, machineName: descriptor.name,
                 machinePlatform: descriptor.platform, cloudProvider: descriptor.provider }, T);
-            var observedAt = Number.isFinite(snapshot.at) && snapshot.at > 0
+            var snapshotAt = Number.isFinite(snapshot.at) && snapshot.at > 0
                 ? snapshot.at * 1000 : null;
-            var selectable = observedAt !== null && now - observedAt >= 0 &&
-                now - observedAt <= MACHINE_INVENTORY_FRESH_MS;
+            var envelopeAt = this.machineObservedAt.get(id);
+            var observedAt = [snapshotAt, envelopeAt].filter(Number.isFinite).reduce(function (latest, at) {
+                return latest === null || at > latest ? at : latest;
+            }, null);
+            var autoSelectable = observedAt !== null &&
+                Math.abs(now - observedAt) <= MACHINE_INVENTORY_FRESH_MS;
             return Object.freeze(Object.assign({}, presentation, { observedAt: observedAt,
-                freshness: selectable ? "current" : observedAt ? "stale" : "unknown",
-                selectable: selectable }));
+                freshness: autoSelectable ? "current" : observedAt ? "stale" : "unknown",
+                // Being named by an authenticated channel is enough to issue a manual bounded
+                // places probe.  It is not enough to silently choose this route for the user.
+                selectable: true, autoSelectable: autoSelectable }));
         }, this);
         rows = rows.map(function (row) {
             var fleet = machinePresentationForFleet(row, rows, T);

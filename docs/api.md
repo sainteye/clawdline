@@ -6430,11 +6430,16 @@ channel id without inferring a platform from its spelling. `This Mac`, `Mac`, `L
 `Linux / AWS` are served Copy keys; the identity/presentation helper accepts those words from its
 caller rather than importing the localization owner or embedding English.
 
-The snapshot's existing `at` timestamp is also the New Session machine inventory watermark. A
-hosted viewer treats it as selectable only for five minutes, shows older/unknown rows as unavailable,
-and never auto-selects them. Multiple current machines require an explicit choice. The selected
-opaque machine id stays attached through Project read, start reply and Session arrival; a duplicate
-bare terminal id published by another machine cannot satisfy that wait.
+The New Session machine watermark is the newest authenticated envelope timestamp observed for that
+machine across its orchestrator and Session row/inventory channels (with the snapshot's `at` as the
+backward-compatible initial observation). This is evidence that bytes arrived, not a presence lease:
+the Mac does not publish orchestrator heartbeats while idle. A hosted viewer auto-selects a sole
+machine only while that watermark is within five minutes. Older/unknown rows say "offline or status
+out of date" and require an explicit press; the press is allowed because the authenticated opaque
+route is known, and issues the same bounded `places` probe whose typed `machine_offline` failure is
+authoritative. Multiple machines always require an explicit choice. The selected opaque machine id
+stays attached through Project read, start reply and Session arrival; a duplicate bare terminal id
+published by another machine cannot satisfy that wait.
 
 **It sends the whole list on every change rather than a diff, and that is the design.** A client
 that has just reconnected — a phone coming out of a tunnel, a laptop waking up — is level with the

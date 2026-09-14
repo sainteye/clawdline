@@ -277,7 +277,7 @@ await check("T-B3 a non-closing relay error does not rename a later network clos
 // Called for their effect, never awaited by a page; they are called here too, and must not throw.
 const LIFECYCLE = new Set(["events", "subscribe", "stop", "retire"]);
 // Cannot fail from a cached answer, or succeed by opening a socket; still held to "a thenable".
-const NEED_NOT_REJECT = new Set(["sessions", "tasks", "start", "refresh", "whenReady"]);
+const NEED_NOT_REJECT = new Set(["sessions", "tasks", "machines", "start", "refresh", "whenReady"]);
 
 const STATES = {
     "no machine": async function () {

@@ -67,6 +67,7 @@ export var Start = (function () {
     var places = null;   // as the Mac sent them; null until an answer has arrived
     var machines = null; // authenticated machine routes; null until this opening reads them
     var machine = null;  // exact route selected before its Projects are read
+    var machineExplicit = false; // a stale route may be probed only after the person presses it
     var machineLoading = false;
     var machineGeneration = 0;
     var placesGeneration = 0;
@@ -286,7 +287,7 @@ export var Start = (function () {
     function drawMachines() {
         var row = els["start-machine"];
         row.hidden = !machines || !!at ||
-            (machines.length === 1 && machines[0].selectable === true);
+            (machines.length === 1 && machine && machines[0].autoSelectable === true);
         if (row.hidden) { row.innerHTML = ""; return; }
         row.innerHTML = "";
         row.setAttribute("role", "group");
@@ -301,7 +302,7 @@ export var Start = (function () {
             chip.type = "button";
             chip.className = "chip" + (machine && candidate.id === machine.id ? " on" : "");
             chip.textContent = (candidate.label || candidate.name || candidate.id) +
-                (candidate.selectable ? "" : " · " + T.webStartMachineStale);
+                (candidate.autoSelectable ? "" : " · " + T.webStartMachineStale);
             chip.title = candidate.id;
             chip.disabled = !candidate.selectable || !!pressing || !!wait || loading;
             chip.setAttribute("aria-pressed", machine && candidate.id === machine.id ? "true" : "false");
@@ -314,6 +315,7 @@ export var Start = (function () {
         if (!candidate || !candidate.id || candidate.selectable !== true ||
             loading || pressing || wait) return;
         machine = candidate;
+        machineExplicit = true;
         places = null;
         assistants = [];
         with_ = null;
@@ -474,7 +476,7 @@ export var Start = (function () {
         box.setAttribute("aria-label", T.webStartFilter);
 
         var currentMachines = (machines || []).filter(function (candidate) {
-            return candidate.selectable === true;
+            return candidate.autoSelectable === true;
         });
         say(wait ? T.webStartWaiting
             : (machineLoading && !machines) ? T.webLoading
@@ -494,7 +496,7 @@ export var Start = (function () {
         if (box.hidden && box.value) { box.value = ""; find = ""; }
 
         list.innerHTML = "";
-        if (machines && machines.length > 1 && !machine) { edge(); return; }
+        if (machines && !machine) { edge(); return; }
         matching().forEach(function (p) {
             var li = document.createElement("li");
             var row = document.createElement("button");
@@ -644,27 +646,32 @@ export var Start = (function () {
         }
         var generation = ++machineGeneration;
         var previousMachine = machine;
-        if (!refresh) { machines = null; machine = null; }
+        var previousExplicit = refresh && machineExplicit;
+        if (!refresh) { machines = null; machine = null; machineExplicit = false; }
         machineLoading = true;
         draw();
         asked(function () { return api.machines(); }).then(function (answer) {
             if (generation !== machineGeneration) return;
             machines = (answer && Array.isArray(answer.machines)) ? answer.machines : [];
             var retained = previousMachine && machines.find(function (candidate) {
-                return candidate.id === previousMachine.id && candidate.selectable === true;
+                return candidate.id === previousMachine.id && candidate.selectable === true &&
+                    (candidate.autoSelectable === true || previousExplicit);
             });
             machine = retained || null;
-            var selectable = machines.filter(function (candidate) {
-                return candidate.selectable === true;
+            machineExplicit = !!retained && previousExplicit;
+            var current = machines.filter(function (candidate) {
+                return candidate.autoSelectable === true;
             });
-            if (!machine && selectable.length === 1 && machines.length === 1) {
-                machine = selectable[0];
+            if (!machine && current.length === 1 && machines.length === 1) {
+                machine = current[0];
+                machineExplicit = false;
                 if (previousMachine && previousMachine.id !== machine.id) {
                     places = null; assistants = []; with_ = null;
                 }
                 machineLoading = false;
                 if (!refresh || !places) load();
             } else if (!machine) {
+                machineExplicit = false;
                 placesGeneration += 1;
                 loading = false;
                 places = null; assistants = []; with_ = null;

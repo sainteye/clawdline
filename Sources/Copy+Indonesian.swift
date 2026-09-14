@@ -572,7 +572,7 @@ struct Indonesian: Copy {
     let webStartPick = "Mulai di mana?"
     let webStartMachine = "Mesin"
     let webStartMachinePick = "Pilih mesin yang akan membuka sesi ini."
-    let webStartMachineStale = "offline atau kedaluwarsa"
+    let webStartMachineStale = "offline atau status kedaluwarsa"
     let webStartMachineNone = "Tidak ada mesin terkini yang tersedia."
     let webMachineThisMac = "Mac ini"
     let webMachineMac = "Mac"

@@ -336,9 +336,11 @@ explicit macOS host as Mac or an explicit Linux/AWS host as Linux / AWS; an olde
 that evidence shows its opaque machine id and does not guess from an id prefix. When an account has
 more than one machine, the New Session sheet requires one exact machine before it reads that
 machine's Projects and assistants. A one-machine account keeps the original direct fast path only
-while that machine's authenticated snapshot `at` watermark is no more than five minutes old.
-Retained older keys remain visible as offline/out of date but are not selectable, and a later fresh
-snapshot refreshes the open picker. The start reply is watched as the exact `(machine, session)`
+while that machine's newest authenticated orchestrator or Session envelope watermark is no more
+than five minutes old. Retained older/unknown routes remain visible as offline or status out of
+date: they are never auto-selected, but an explicit press may issue a bounded Project probe because
+the opaque authenticated route remains known. A fresh Session row/inventory envelope refreshes the
+open picker even when an idle machine has no task change. The start reply is watched as the exact `(machine, session)`
 pair, so equal terminal ids from two machines cannot open or wedge the wrong row.
 
 **`diagnostics.report` is the Cloud door to the report files.** The command (§11.5) is read-level,

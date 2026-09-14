@@ -570,7 +570,7 @@ struct Korean: Copy {
     let webStartPick = "어디서 시작할까요?"
     let webStartMachine = "머신"
     let webStartMachinePick = "이 세션을 열 머신을 선택하세요."
-    let webStartMachineStale = "오프라인 또는 오래된 정보"
+    let webStartMachineStale = "오프라인 또는 상태 정보가 오래됨"
     let webStartMachineNone = "현재 사용할 수 있는 머신이 없습니다."
     let webMachineThisMac = "이 Mac"
     let webMachineMac = "Mac"

@@ -572,7 +572,7 @@ struct Turkish: Copy {
     let webStartPick = "Nerede başlasın?"
     let webStartMachine = "Makine"
     let webStartMachinePick = "Bu oturumun açılacağı makineyi seçin."
-    let webStartMachineStale = "çevrimdışı veya eski"
+    let webStartMachineStale = "çevrimdışı veya durum eski"
     let webStartMachineNone = "Güncel bir makine kullanılamıyor."
     let webMachineThisMac = "Bu Mac"
     let webMachineMac = "Mac"

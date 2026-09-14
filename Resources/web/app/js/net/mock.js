@@ -1525,7 +1525,7 @@ export var Mock = (function () {
             name: T.webMachineThisMac, platform: "macos", provider: null, kind: "mac",
             label: T.webMachineMac + " · " + T.webMachineThisMac,
             observedAt: Date.now(), freshness: "current",
-            selectable: true }] }); },
+            selectable: true, autoSelectable: true }] }); },
         places: function (machine) {
             if (machine !== undefined && machine !== "this-mac") {
                 return Promise.reject(Object.assign(new Error("This machine is not available."),

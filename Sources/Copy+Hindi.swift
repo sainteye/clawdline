@@ -576,7 +576,7 @@ struct Hindi: Copy {
     let webStartPick = "कहाँ शुरू करें?"
     let webStartMachine = "मशीन"
     let webStartMachinePick = "वह मशीन चुनें जिस पर यह सेशन खुलेगा।"
-    let webStartMachineStale = "ऑफ़लाइन या पुरानी जानकारी"
+    let webStartMachineStale = "ऑफ़लाइन या स्थिति की जानकारी पुरानी"
     let webStartMachineNone = "अभी कोई उपलब्ध मशीन ताज़ा नहीं है।"
     let webMachineThisMac = "यह Mac"
     let webMachineMac = "Mac"

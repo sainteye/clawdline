@@ -570,7 +570,7 @@ struct Japanese: Copy {
     let webStartPick = "どこで始めますか"
     let webStartMachine = "マシン"
     let webStartMachinePick = "このセッションを開くマシンを選んでください。"
-    let webStartMachineStale = "オフラインまたは古い情報"
+    let webStartMachineStale = "オフラインまたは状態情報が古い"
     let webStartMachineNone = "現在利用できるマシンはありません。"
     let webMachineThisMac = "このMac"
     let webMachineMac = "Mac"

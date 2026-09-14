@@ -572,7 +572,7 @@ struct Russian: Copy {
     let webStartPick = "Где её начать?"
     let webStartMachine = "Машина"
     let webStartMachinePick = "Выберите машину, на которой нужно открыть эту сессию."
-    let webStartMachineStale = "не в сети или устарела"
+    let webStartMachineStale = "не в сети или статус устарел"
     let webStartMachineNone = "Нет доступной машины с актуальными данными."
     let webMachineThisMac = "Этот Mac"
     let webMachineMac = "Mac"

@@ -120,6 +120,17 @@ async function answer(client, socket, machine, payload) {
     await client.messageChain;
 }
 
+/** A real authenticated Session publication, used to prove that an otherwise idle machine's
+ * liveness evidence is refreshed without requiring an orchestrator/task mutation. */
+async function publishSession(client, socket, machine, session) {
+    const envelope = await sealEnvelope({
+        ch: "s/" + machine + "/" + session, seq: ++answerSequence, ts: Date.now(),
+        class: "stream", key_id: "ms-1", sender: DEVICE
+    }, JSON.stringify({ id: session, title: "Fresh activity" }), masterKey, signingKey);
+    socket.receive({ type: "envelope", envelope: envelope });
+    await client.messageChain;
+}
+
 function placesBody(places) {
     return { places: places, assistants: [{ id: "claude", label: "Claude" }] };
 }
@@ -577,19 +588,33 @@ async function sheetScenario(scenario) {
             return elementWithID("start-machine").children.length === 2;
         }, "the retained stale machine to be drawn");
         const stale = elementWithID("start-machine").children[1];
-        assert.equal(stale.disabled, true, "a stale retained key is visible but not selectable");
+        assert.equal(stale.disabled, false,
+            "an authenticated stale route remains available for an explicit bounded probe");
         assert.ok(stale.textContent.includes(T.webStartMachineStale),
             "the stale state is said with localized product copy");
         assert.equal(say(), T.webStartMachineNone,
             "the live region says why no Project read was started");
         assert.equal(published(socket).length, 0, "stale evidence never auto-starts a read");
-        client.orchestratorSnapshots.set("mac-01", { tasks: [], at: Date.now() / 1000,
-            machine: { name: "Desk", platform: "macos" } });
-        Start.sync();
+        stale.onclick();
+        const manualRead = await nextCommand(socket, "places");
+        assert.equal(manualRead.ch, "ctl/mac-01",
+            "the person can probe the exact stale machine without guessing presence");
+        await answer(client, socket, "mac-01", { read: "read:" + manualRead.request, status: 200,
+            body: placesBody([PORTFOLIO]) });
+        await until(function () { return rows().length === 1; }, "the manually probed Project row");
+
+        Start.close();
+        await publishSession(client, socket, "mac-01", "fresh-session");
+        const observed = await client.machines();
+        assert.equal(observed.machines[0].autoSelectable, true,
+            "an authenticated Session envelope refreshes the machine observation watermark");
+        Start.open();
         const freshRead = await nextCommand(socket, "places");
+        assert.equal(freshRead.ch, "ctl/mac-01",
+            "a fresh Session arrival restores the one-machine fast path");
         await answer(client, socket, "mac-01", { read: "read:" + freshRead.request, status: 200,
             body: placesBody([PORTFOLIO]) });
-        await until(function () { return rows().length === 1; }, "the late machine's Project row");
+        await until(function () { return rows().length === 1; }, "the fresh machine's Project row");
         console.log("start sheet scenario " + scenario + " passed");
         return;
     }
