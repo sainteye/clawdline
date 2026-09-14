@@ -1,5 +1,8 @@
 import CryptoKit
 import Foundation
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication // SwiftPM owns CloudMachineMetadata; flat tests compile it alongside us.
+#endif
 
 /// Filesystem policy for the broker's durable registry and installation secrets.
 ///

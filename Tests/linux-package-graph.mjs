@@ -22,7 +22,9 @@ const dependencyLock = JSON.parse(read('Packaging/linux/dependencies.lock.json')
 const resolvedLock = JSON.parse(read('Package.resolved'));
 const tmuxUnit = read('Packaging/systemd/clawdline-tmux.service');
 const cloudTransport = read('Sources/CloudTransport.swift');
+const cloudTransportFakes = read('Sources/CloudTransportFakes.swift');
 const cloudTransportTests = read('Tests/CloudTransportTests.swift');
+const orchestratorPersistence = read('Sources/OrchestratorPersistence.swift');
 const durableCloud = read('Packages/ClawdlineLinux/LinuxDurableCloudRuntime.swift');
 const packageHelper = read('tools/linux-package-helper.py');
 const packageTool = read('tools/linux-package.sh');
@@ -62,6 +64,12 @@ if (!runtimeOnly) {
 const packageShape = inspectPackage(manifest, build);
 check(Object.values(packageShape).every(Boolean),
   `SwiftPM product graph or Mac wrapper is incomplete: ${JSON.stringify(packageShape)}`);
+check(/#if canImport\(ClawdlineApplication\)\s*\nimport ClawdlineApplication[\s\S]*?#endif/.test(orchestratorPersistence),
+  'the Mac product persistence projection must import CloudMachineMetadata from ClawdlineApplication');
+check(/public extension CloudTransportSocketConnecting\s*\{[\s\S]*?func connect\([\s\S]*?openingTimeout: TimeInterval/.test(cloudTransport),
+  'the public connector protocol must export its opening-timeout compatibility witness to Mac product conformers');
+check((cloudTransportFakes.match(/:\s*CloudTransportSocketConnecting/g) ?? []).length === 4,
+  'the product graph fixture must continue exercising all four Mac connector conformers');
 const pinnedSwiftImage = linuxBuild.match(/swift:6\.1\.3-noble@sha256:[0-9a-f]{64}/)?.[0];
 const noRestartInstall = awsLinuxInstall.indexOf('--cloud-commands-enabled true \\\n  --no-restart');
 const serviceAuthentication = awsLinuxInstall.indexOf(

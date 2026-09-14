@@ -994,7 +994,7 @@ public protocol CloudTransportSocketConnecting: Sendable {
     ) async throws -> CloudEstablishedTransportSocket
 }
 
-extension CloudTransportSocketConnecting {
+public extension CloudTransportSocketConnecting {
     func connect(
         url: URL, bearerToken: String, openingTimeout: TimeInterval
     ) async throws -> CloudEstablishedTransportSocket {
