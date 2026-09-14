@@ -102,6 +102,8 @@ check(selfContainedPackage,
 check(!/--static-swift-stdlib/.test(
   linuxBuild.replaceAll('--static-swift-stdlib', '--dynamic-swift-stdlib')),
   'removing static Swift linkage must make the package guard red');
+check(/systemd-sysusers "\$script_dir\/\.\.\/Packaging\/linux\/clawdline\.conf"/.test(packageTool),
+  'host installation must resolve sysusers config from the package tool, not caller cwd');
 check(/swift test/.test(linuxBuild) && /CLAWDLINE_TEST_TMUX/.test(linuxBuild),
   'Ubuntu compiler check must execute the real Linux SwiftPM runtime contracts with tmux');
 const macFocusedRuntime = /--filter LinuxRuntimeContractTests/.test(testRunner)

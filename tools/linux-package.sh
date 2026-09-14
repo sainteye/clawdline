@@ -543,7 +543,7 @@ install_package() {
   signature=$verified_signature; public_key=$verified_public_key
   if [ "$install_root" = / ]; then
     [ "$(id -u)" -eq 0 ] || fail "host installation requires root"
-    systemd-sysusers Packaging/linux/clawdline.conf
+    systemd-sysusers "$script_dir/../Packaging/linux/clawdline.conf"
     service_uid=${service_uid:-$(id -u clawdline)}
     service_gid=${service_gid:-$(id -g clawdline)}
   else
