@@ -823,9 +823,12 @@ export class CloudClient {
             var withPairing = [];
             var withoutPairing = [];
             this.machinePairings.forEach(function (_, machine) { withPairing.push(machine); });
+            // A pairing this client holds — resolved, handed in, or bound from a legacy pin after
+            // its lookup answered none — outranks that lookup's answer.
             this.pairingLookups.forEach(function (had, machine) {
-                if (had && withPairing.indexOf(machine) < 0) withPairing.push(machine);
-                if (!had && withoutPairing.indexOf(machine) < 0) withoutPairing.push(machine);
+                if (withPairing.indexOf(machine) >= 0) return;
+                if (had) withPairing.push(machine);
+                else if (withoutPairing.indexOf(machine) < 0) withoutPairing.push(machine);
             });
             var found = [];
             var missing = [];
@@ -1318,7 +1321,7 @@ export class CloudClient {
         }
         if (incapable) {
             throw cloudError("cloud_feature_unavailable",
-                "the paired Mac has not published cloud_status, so it does not take viewer events");
+                "no paired machine that may be a Mac has published cloud_status, so none takes viewer events");
         }
         throw cloudError("cloud_machine_unavailable",
             "no paired Mac has published an authenticated snapshot to this browser yet");
