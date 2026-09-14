@@ -864,6 +864,12 @@ final class LinuxTmuxTerminalHost: TerminalHost {
     let limits: TerminalWorkLimits
     var failSubmitAfterPasteForTesting = false
 
+    // tmux 3.4 renders the US control character in `-F` output as the four printable bytes
+    // `\037`. Accept the raw form as well so the parser stays compatible with implementations
+    // that preserve it, but never guess a partial row.
+    private static let formatSeparator = "\u{1f}"
+    private static let renderedFormatSeparator = "\\037"
+
     var capabilities: Set<HostCapability> { [.terminalTmux] }
 
     init(tmuxExecutable: LinuxExecutableDescriptor, socketPath: String,
@@ -884,7 +890,7 @@ final class LinuxTmuxTerminalHost: TerminalHost {
     func inventory() throws -> TerminalInventory {
         let format = ["#{pane_id}", "#{session_name}", "#{pane_title}", "#{pane_tty}",
                       "#{window_index}", "#{pane_index}", "#{pane_current_path}"]
-            .joined(separator: "\u{1f}")
+            .joined(separator: Self.formatSeparator)
         let receipt = try tmux(["list-panes", "-a", "-F", format], operation: .enumerate)
         if receipt.status != 0 {
             let error = String(decoding: receipt.stderr, as: UTF8.self)
@@ -901,7 +907,7 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         }
         var sessions: [TargetSession] = []
         for line in lines {
-            let fields = line.split(separator: "\u{1f}", omittingEmptySubsequences: false)
+            let fields = Self.fields(String(line))
             guard fields.count == 7, Self.paneID(String(fields[0])) != nil,
                   let window = Int(fields[4]), let pane = Int(fields[5]) else {
                 return TerminalInventory(sessions: sessions, error: "tmux returned a malformed pane row",
@@ -946,7 +952,8 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         let commandWords = ["/usr/bin/env", "-i"] + envArguments
             + [sandboxExecutable.path, LinuxProviderSandbox.command, encodedSandbox]
         let command = "exec " + commandWords.map(SessionLaunchPolicy.shellQuoted).joined(separator: " ")
-        let format = ["#{pane_id}", "#{pane_pid}", "#{pane_tty}"].joined(separator: "\u{1f}")
+        let format = ["#{pane_id}", "#{pane_pid}", "#{pane_tty}"]
+            .joined(separator: Self.formatSeparator)
         let receipt: LinuxCommandReceipt
         do {
             receipt = try tmux(["new-session", "-d", "-s", sessionName, "-c", plan.projectRoot,
@@ -963,9 +970,8 @@ final class LinuxTmuxTerminalHost: TerminalHost {
                     message: "tmux refused the admitted provider launch."),
                 certainty: .noEffect, checkpoint: .none, sessionID: nil, tty: nil)
         }
-        let fields = String(decoding: receipt.stdout, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: "\u{1f}", omittingEmptySubsequences: false)
+        let fields = Self.fields(String(decoding: receipt.stdout, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
         guard fields.count == 3, let pane = Self.paneID(String(fields[0])),
               let pid = pid_t(fields[1]), !fields[2].isEmpty,
               let identity = LinuxProcfs.row(pid: pid)?.identity else {
@@ -1046,12 +1052,11 @@ final class LinuxTmuxTerminalHost: TerminalHost {
     /// group must all still match before the kill, and absence is read back afterward.
     func compensateCreated(_ created: TerminalCreated) throws -> Bool {
         guard let expected = created.processIdentity else { return false }
-        let format = ["#{pane_pid}", "#{pane_tty}"].joined(separator: "\u{1f}")
+        let format = ["#{pane_pid}", "#{pane_tty}"].joined(separator: Self.formatSeparator)
         let observed = try tmux(["display-message", "-p", "-t", created.id, format],
                                 operation: .close)
-        let fields = String(decoding: observed.stdout, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: "\u{1f}", omittingEmptySubsequences: false)
+        let fields = Self.fields(String(decoding: observed.stdout, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
         guard observed.status == 0, fields.count == 2,
               pid_t(fields[0]) == expected.pid, String(fields[1]) == created.tty,
               LinuxProcfs.row(pid: expected.pid)?.identity == expected else { return false }
@@ -1145,5 +1150,10 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         guard raw.first == "%", raw.count <= 16,
               raw.dropFirst().allSatisfy({ $0.isNumber }) else { return nil }
         return raw
+    }
+
+    private static func fields(_ raw: String) -> [String] {
+        raw.replacingOccurrences(of: formatSeparator, with: renderedFormatSeparator)
+            .components(separatedBy: renderedFormatSeparator)
     }
 }

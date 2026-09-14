@@ -265,6 +265,10 @@ Common failure classifications:
   mislabeled a successful create as a timeout. Use a release with daemon-safe descriptor closure,
   reconcile the exact tmux inventory before retrying, and never widen the deadline, delete the
   socket, or disable Landlock to hide the ambiguity.
+- a create returns `malformed_terminal_reply` even though `tmux list-panes` shows the new PTY:
+  tmux 3.4 renders a control-character field separator as the printable octal escape `\037`.
+  Install a release that accepts tmux's pinned rendered format; do not weaken PID, TTY, or procfs
+  identity validation and do not treat the existence of a pane alone as a complete receipt.
 - daemon active but no hosted Sessions: inspect typed Relay authorization/readiness and the
   authoritative per-session channels; do not infer readiness from systemd alone.
 - `clawdline-tmux` restart loop: compare the installed unit's `ExecStart` byte-for-byte with the
