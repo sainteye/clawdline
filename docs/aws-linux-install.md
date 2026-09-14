@@ -247,6 +247,12 @@ Common failure classifications:
   build user: run subsequent Git commands as that checkout owner. For a root-only orchestration
   step, scope `git -c safe.directory=/the/exact/checkout ...` to that one canonical path; never set
   global `safe.directory=*`.
+- a real tmux create exits immediately with `tmux created no identity-bearing PTY receipt` and the
+  sandbox helper exits 126: use a release whose Landlock rules distinguish directories, ordinary
+  files, executables, and writable character devices. Applying the directory-only `READ_DIR`
+  right to `/etc/*`, the provider executable, or `/dev/*` is rejected by Linux before the provider
+  can start; granting `/dev/null` read-only also makes the containment probe fail for the wrong
+  reason. Do not disable Landlock as a workaround.
 - daemon active but no hosted Sessions: inspect typed Relay authorization/readiness and the
   authoritative per-session channels; do not infer readiness from systemd alone.
 - `clawdline-tmux` restart loop: compare the installed unit's `ExecStart` byte-for-byte with the

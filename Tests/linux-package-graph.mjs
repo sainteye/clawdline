@@ -80,6 +80,9 @@ const awsRunbookShape = pinnedSwiftImage != null && awsLinuxInstall.includes(pin
   && awsLinuxInstall.includes('detected dubious ownership')
   && awsLinuxInstall.includes('git -c safe.directory=/the/exact/checkout')
   && !awsLinuxInstall.includes('git config --global --add safe.directory *')
+  && awsLinuxInstall.includes('tmux created no identity-bearing PTY receipt')
+  && /entries\.append\(\(spec\.executable, readExecutable, \.regularFile\)\)/.test(adapters)
+  && /entries\.append\(\(path, readWriteFile, \.device\)\)/.test(adapters)
   && awsLinuxInstall.includes('/usr/bin/tmux -D -S /run/clawdline/clawdline.sock')
   && !awsLinuxInstall.includes('--cloud-commands-enabled false')
   && awsLinuxInstall.includes('immutable explicit installation choice')
@@ -387,9 +390,9 @@ for (const [name, changedRuntime, changedIngress] of [
 }
 check(/unchanged complete scan does not mint/.test(linuxTests)
   && /incomplete scan cannot tombstone/.test(linuxTests)
-  && /durable drain exposes only its first pending sibling/.test(linuxTests)
+  && /bounded window publishes all ordered replacement siblings/.test(linuxTests)
   && /a new authenticated generation republishes/.test(linuxTests),
-  'Linux inventory fixtures must cover dedupe, incomplete preservation, delayed siblings, and replay');
+  'Linux inventory fixtures must cover dedupe, incomplete preservation, bounded siblings, and replay');
 check(!/incomplete scan cannot tombstone/.test(linuxTests.replace(
   'incomplete scan cannot tombstone', 'incomplete scan assertion removed')),
   'removing the incomplete-scan assertion must make the focused fixture guard red');
