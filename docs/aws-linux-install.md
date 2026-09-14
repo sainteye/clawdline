@@ -245,6 +245,11 @@ Common failure classifications:
   `_DispatchStubs`, or `CoreFoundation` after the static product succeeds: do not reuse the
   product's `.build` objects for the dynamically linked test runner. The repository source gate
   deliberately uses `.build-linux-tests` for XCTest and `.build` for the packaged static binary.
+- the source gate finishes all Linux tests and then says the configuration-only runtime did not
+  prove a protected executor identity: the `run --config` probe composes local adapters but does
+  not open durable Cloud identity, so its truthful readiness is
+  `w4_provider_authentication_not_proven`. Use configured health or the running daemon to inspect
+  the protected identity. Do not weaken the daemon's separate `w5_executor_identity_*` checks.
 - apt mirror timeout with otherwise healthy HTTPS: the restricted egress policy still references
   `http://` package sources.
 - S3 `AccessDenied`: the EC2 instance profile lacks exact-prefix `s3:GetObject`; do not make the
