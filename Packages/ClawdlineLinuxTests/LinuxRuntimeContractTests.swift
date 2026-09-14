@@ -566,6 +566,23 @@ final class LinuxRuntimeContractTests: XCTestCase {
                input: Data(repeating: 0x61, count: 65_536), timeout: 0.1)
         XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 1,
                           "a child that refuses stdin must remain deadline bounded")
+
+        #if os(Linux)
+        let linuxExecutable = try XCTUnwrap(
+            ProcessInfo.processInfo.environment["CLAWDLINE_TEST_LINUX_EXECUTABLE"])
+        let directExit = LinuxDaemonSafeExecSpec(
+            executable: "/bin/sh",
+            arguments: ["-c", "sleep 5 </dev/null >&- 2>&- & printf direct-exit"])
+        let directExitBytes = try JSONEncoder().encode(directExit).base64EncodedString()
+        let directExitStarted = ProcessInfo.processInfo.systemUptime
+        let directExitReceipt = try runner.run(
+            executable: linuxExecutable,
+            arguments: [LinuxDaemonSafeExec.command, directExitBytes], timeout: 1)
+        XCTAssertEqual(directExitReceipt.status, 0)
+        XCTAssertEqual(String(decoding: directExitReceipt.stdout, as: UTF8.self), "direct-exit")
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - directExitStarted, 1,
+                          "a daemon descendant must not extend the direct child's lifetime")
+        #endif
     }
 
     func testSecretCoordinatorSerializesMixedOperationsAcrossInstances() throws {

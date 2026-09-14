@@ -4,6 +4,9 @@ let linuxArguments = Array(CommandLine.arguments.dropFirst())
 if linuxArguments.count == 2, linuxArguments[0] == LinuxProviderSandbox.command {
     LinuxProviderSandbox.launch(encodedSpec: linuxArguments[1])
 }
+if linuxArguments.count == 2, linuxArguments[0] == LinuxDaemonSafeExec.command {
+    LinuxDaemonSafeExec.launch(encodedSpec: linuxArguments[1])
+}
 
 do {
     let output = try await LinuxComposition.executeAsync(

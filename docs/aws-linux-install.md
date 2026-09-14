@@ -73,6 +73,12 @@ docker run --rm --platform linux/amd64 \
       bash /workspace/tools/swift-core-application-linux-build.sh'
 ```
 
+Keep the test `TMPDIR` short. The documented `/workspace/.native-tmp` produces a 106-byte tmux
+socket path once the runtime UUID and `/state/runtime/clawdline.sock` are appended, only one byte
+below Linux's 107-byte usable `sun_path` limit. A longer checkout or temp root can make tmux socket
+creation fail. Prefer a short, owned `0700` root such as `/tmp/clawdline-native` when adapting the
+command, and check the final socket path's UTF-8 byte count rather than its character count.
+
 Before using UID 1000, inspect it with `getent passwd 1000`; if it differs, use the owner of the
 writable checkout and set a real writable `HOME`. Do not run the product gate as root merely to
 avoid a host/container ownership mismatch.
@@ -253,6 +259,12 @@ Common failure classifications:
   right to `/etc/*`, the provider executable, or `/dev/*` is rejected by Linux before the provider
   can start; granting `/dev/null` read-only also makes the containment probe fail for the wrong
   reason. Do not disable Landlock as a workaround.
+- a real tmux create reaches the provider but ends as `terminal_timeout`: older Linux builds used
+  Foundation's inherited process-liveness descriptor. The persistent tmux server kept that hidden
+  descriptor open after the direct tmux client exited, so Clawdline waited for the server and then
+  mislabeled a successful create as a timeout. Use a release with daemon-safe descriptor closure,
+  reconcile the exact tmux inventory before retrying, and never widen the deadline, delete the
+  socket, or disable Landlock to hide the ambiguity.
 - daemon active but no hosted Sessions: inspect typed Relay authorization/readiness and the
   authoritative per-session channels; do not infer readiness from systemd alone.
 - `clawdline-tmux` restart loop: compare the installed unit's `ExecStart` byte-for-byte with the

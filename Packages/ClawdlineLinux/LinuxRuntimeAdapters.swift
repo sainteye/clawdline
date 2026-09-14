@@ -510,6 +510,73 @@ struct LinuxProviderSandboxSpec: Codable, Equatable {
     let arguments: [String]
 }
 
+struct LinuxDaemonSafeExecSpec: Codable, Equatable {
+    let executable: String
+    let arguments: [String]
+}
+
+/// Foundation.Process on Linux carries an internal descriptor into the executable and does not
+/// report the direct child as exited until every descendant closes it. A daemonizing program such
+/// as the first `tmux new-session` therefore looks alive for as long as the tmux server lives. This
+/// tiny trusted shim drops every descriptor other than stdio before exec so Process observes only
+/// the direct tmux client, while stdout/stderr and the existing bounded runner remain authoritative.
+enum LinuxDaemonSafeExec {
+    static let command = "__clawdline_daemon_safe_exec_v1"
+
+    static func launch(encodedSpec: String) -> Never {
+        #if os(Linux) && arch(x86_64)
+        do {
+            guard let bytes = Data(base64Encoded: encodedSpec) else {
+                throw LinuxRuntimeFailure(code: .commandUnavailable,
+                                          message: "The daemon-safe command receipt was malformed.")
+            }
+            let spec = try JSONDecoder().decode(LinuxDaemonSafeExecSpec.self, from: bytes)
+            guard ProjectRootPolicy.isLexicallySafeAbsolute(spec.executable),
+                  spec.arguments.count <= 128,
+                  spec.arguments.allSatisfy({ $0.utf8.count <= 16_384 && !$0.contains("\0") }) else {
+                throw LinuxRuntimeFailure(code: .commandUnavailable,
+                                          message: "The daemon-safe command was outside its bounds.")
+            }
+            // close_range(2) is present on the supported Ubuntu 24.04 kernel. Failing closed is
+            // safer than falling back to a partial descriptor scan that could miss Foundation's
+            // private liveness descriptor.
+            guard linuxCloseRange(3, UInt32.max, 0) == 0 else {
+                throw LinuxRuntimeFailure(code: .capabilityUnavailable,
+                                          message: "Daemon-safe descriptor closure is unavailable.")
+            }
+            let argumentStrings = [spec.executable] + spec.arguments
+            let environmentStrings = ProcessInfo.processInfo.environment.keys.sorted().map {
+                $0 + "=" + ProcessInfo.processInfo.environment[$0]!
+            }
+            let argumentPointers = argumentStrings.map { value in
+                value.withCString { strdup($0) }
+            }
+            let environmentPointers = environmentStrings.map { value in
+                value.withCString { strdup($0) }
+            }
+            var argv = argumentPointers + [nil]
+            var environment = environmentPointers + [nil]
+            _ = spec.executable.withCString { path in execve(path, &argv, &environment) }
+            throw LinuxRuntimeFailure(code: .commandUnavailable,
+                                      message: "The daemon-safe command could not be executed.")
+        } catch let failure as LinuxRuntimeFailure {
+            FileHandle.standardError.write(Data((failure.code.rawValue + "\n").utf8))
+        } catch {
+            FileHandle.standardError.write(Data("internal_failure\n".utf8))
+        }
+        #else
+        FileHandle.standardError.write(Data("capability_unavailable\n".utf8))
+        #endif
+        exit(126)
+    }
+
+    #if os(Linux) && arch(x86_64)
+    @_silgen_name("close_range")
+    private static func linuxCloseRange(_ first: UInt32, _ last: UInt32,
+                                        _ flags: UInt32) -> Int32
+    #endif
+}
+
 /// The provider enters a Landlock filesystem allowlist before `execve`, then a seccomp filter
 /// denies AF_UNIX socket creation and process-inspection syscalls. Thus the same-uid provider can
 /// use its project/HOME/tmp and Internet sockets but cannot open daemon secrets, write outside the
@@ -1065,8 +1132,12 @@ final class LinuxTmuxTerminalHost: TerminalHost {
     private func tmux(_ arguments: [String], input: Data? = nil,
                       operation: TerminalEffectOperation) throws -> LinuxCommandReceipt {
         try tmuxExecutable.revalidate()
-        return try runner.run(executable: tmuxExecutable.path,
-                       arguments: ["-S", socketPath] + arguments,
+        try sandboxExecutable.revalidate()
+        let spec = LinuxDaemonSafeExecSpec(
+            executable: tmuxExecutable.path, arguments: ["-S", socketPath] + arguments)
+        let encoded = try JSONEncoder().encode(spec).base64EncodedString()
+        return try runner.run(executable: sandboxExecutable.path,
+                       arguments: [LinuxDaemonSafeExec.command, encoded],
                        input: input, timeout: ProviderLifecyclePolicy.timeout(for: operation))
     }
 
