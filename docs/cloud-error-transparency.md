@@ -270,7 +270,7 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
 | T-B7 | 請求還在飛時觸發 token 輪替 | reject `cloud_reconnecting`，文字已在地化 |
 | T-B8 | Cloud 模式下按 Send to Mac | 送出的是 `diagnostics.report` 指令，不是 fetch 到頁面自己的網域 |
 | T-B9 | 收到 key_id `ms-2` 的 session 快照，而自己用 `ms-1` 送 | 狀態出現 `key_id_drift`，兩個 id 都在 |
-| T-V1 | 未知 sender、同 key_id 不同 master、`validateEnvelope` 失敗、IndexedDB 拒絕、storage 寫入丟錯、Mac 回 `unknown_command`／`viewer_events_too_large`、50 筆連發、重新載入 | 每筆一列，`stage` 與原始例外正確；列裡沒有 nonce／ct／sig／明文；連發只留有界列數且丟棄數精確；拒絕時列留在手機且不重試；收據對上 batch 才刪（§11.9，`web-cloud-failures.mjs` 的 `viewer events ·`） |
+| T-V1 | 未知 sender、同 key_id 不同 master、`validateEnvelope` 失敗、IndexedDB 拒絕、storage 寫入丟錯、Mac 回 `unknown_command`／`viewer_events_too_large`、50 筆連發、重新載入；per-machine pairing：未配對的第二台、配對 key_id 不符、paired sender 不符、`machine_key_incomplete`、pairing store 拒絕、legacy 綁定成功、已配對的 Linux executor、換對象後的 `unknown_command` | 每筆一列，`stage` 與原始例外正確，配對欄位（`pairing_found`、`pairing_key_id`、`pairing_sender`、`machines_with_pairing`…）正確；legacy 綁定成功不留列；列裡沒有 nonce／ct／sig／明文／金鑰；連發只留有界列數且丟棄數精確；拒絕時列留在手機且不重試；一台的封鎖不擋下一台；Linux executor 永遠不是送達對象；批次用 Mac 的 pairing 封裝；收據對上 batch 才刪（§11.9，`web-cloud-failures.mjs` 的 `viewer events ·`） |
 | T-R1 | workerd 測試送一個簽章錯誤的 publish | log 出現 `publish_refused code=forbidden field=sig` |
 | T-R2 | 用過期 token 連線 | 瀏覽器收到 error frame 與 4401，不是沒有代碼的 1006 |
 | T-R3 | 撤銷另一台裝置，讓 epoch 前進 | 既有 socket 關閉時帶 `token_superseded` |
@@ -463,12 +463,16 @@ Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status
 
 ### 11.9 Cloud 指令 `diagnostics.events`
 
-瀏覽器收件失敗與解密門的自動紀錄，不需要任何按鍵。怎麼讀、欄位、H1–H4 對照：[`diagnostics.md`](diagnostics.md#the-viewer-events-file)。
+瀏覽器收件失敗與解密門的自動紀錄，不需要任何按鍵。怎麼讀、欄位、每個 `stage` 與它會不會開門、H1a／H1b／H2–H4 對照：[`diagnostics.md`](diagnostics.md#the-viewer-events-file)。
+H1 在 per-machine pairing 之後分成兩種：H1a 是本瀏覽器**沒有配對**的第二台機器（legacy 路徑的 `unknown_sender`），
+H1b 是**有配對**但配對不完整（`machine_key_incomplete`，開的是配對門不是解密門）或 key_id 不同（`pairing_key_id` 的 `unknown_key`）的機器。
 
 - 請求：`{"type":"diagnostics.events","session":"__clawdline_machine__","request":<uuid>,"batch":<object>}`，`ctl` 類別，
   read-level（和 `diagnostics.report` 一樣不需要遠端寫入開關）。
-- 對象：瀏覽器用自己配對金鑰驗證過其 `orch/<machine>` 快照、descriptor 沒有標成非 Mac 平台、並送出過 `cloud_status.v >= 1` 的那一台。
-  **不用 `_onlyMachine`**；兩台 Mac → 本機 `cloud_machine_ambiguous`，列留在手機。
+- 對象：本瀏覽器**有配對**的機器（它的 `orch/<machine>` 快照是經由本瀏覽器對那台機器的 pairing 打開的——精確 pairing，或驗章與解密成功後綁定的 legacy pin）、
+  descriptor 沒有標成非 Mac 平台、並送出過 `cloud_status.v >= 1`（只有 Mac 會送）。Linux executor 不實作這個指令（收到會直接丟掉、不回覆），
+  以平台與能力兩個獨立事實排除。封裝和其他指令一樣走 `_outboundMachinePairing`，配對已不在時在本機以 `machine_pairing_required` 拒絕、照退避重試。
+  **不用 `_onlyMachine`**；兩台有能力的 Mac → 本機 `cloud_machine_ambiguous`，列留在手機。
 - `batch`：`{v:1, batch_id, created_at_ms, device, tab, web_build, rows:[{n, at_ms, event, data}], completeness:{n_from, n_to, rows,
   dropped_rate_limited, dropped_overflow, storage_errors, counting_since_ms, rate_limited:[{key, event, dropped, first_at_ms, last_at_ms, sample_n}], limits}}`，
   鍵集合精確比對；`data` 是一層的 scalar 或短陣列，不認得任何事件名稱。

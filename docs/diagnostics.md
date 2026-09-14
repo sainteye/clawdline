@@ -224,9 +224,12 @@ the "This browser cannot decrypt Sessions" door rises or falls. The rows wait in
 the Cloud command `diagnostics.events` about five seconds after a burst and again after the next
 `ready`. The Mac appends **one line per batch** here, mode `0600`, and writes one counts-only line to
 `Clawdline.log` (`cloud viewer events: appended rows=… dropped_rate_limited=… …`). A row leaves the
-phone only when this Mac's receipt names its batch. The paired Mac is the one whose `orch/<machine>`
-snapshot the page authenticated with a key from its own pairing store — never "the only machine", so
-a second machine on the account does not stop delivery. Wire format:
+phone only when this Mac's receipt names its batch. The target is a machine this browser is **paired
+with** — its `orch/<machine>` snapshot opened through the browser's pairing for that machine, exact or
+bound from a legacy pin — that is **a Mac** (its descriptor names no other platform) and **takes the
+command** (it published `cloud_status.v >= 1`). It is never "the only machine": a Linux executor on the
+same account, paired or not, is excluded by platform and by capability, and does not stop delivery.
+The batch is sealed with that Mac's pairing, like every other command. Wire format:
 [`cloud-error-transparency.md` §11.9](cloud-error-transparency.md#119-cloud-指令-diagnosticsevents).
 
 **Each line states its own completeness.** `device` is the envelope's authenticated sender; then
@@ -242,30 +245,54 @@ route nor this file's writer. The events so far:
 
 | event | `data` |
 |---|---|
-| `cloud.receive.failed` | `code` the transport threw (`null` for a raw error); `stage` — `sender_key_lookup`, `master_key_lookup`, `validate`, `signature_verify`, `decrypt`, `payload` or `other`, set before each step, so it is where the exception came from; `error_name`/`error_message`, the original exception rather than `unreadable_envelope`'s sentence; `cause_name`/`cause_message`, what signature verification swallowed; envelope metadata `channel_kind`, `channel_prefix`, `machine`, `session`, `sender`, `key_id`, `seq`, `ts`, `class`, `realign`, `ct_bytes`, `field_names`; `browser_key_id`; `socket_ready`, `ms_since_ready`, `opens_since_ready_sender`, `opens_since_ready_total`; `sender_key_found`, `sender_key_source`, `sender_key_lookup_ms`, `senders_with_keys`, `senders_without_keys`; `paired_machine`, `paired_sender`, `sender_is_paired_machine`; `visibility`, `ms_since_visibility_change`, `ms_since_page_load`, `online`, `web_build` |
+| `cloud.receive.failed` | `code` the transport threw (`null` for a raw error); `stage`, set before each step, so it is where the exception came from (the steps are listed below); `error_name`/`error_message`, the original exception rather than `unreadable_envelope`'s sentence; `cause_name`/`cause_message`, what signature verification swallowed; envelope metadata `channel_kind`, `channel_prefix`, `machine`, `session`, `sender`, `key_id`, `seq`, `ts`, `class`, `realign`, `ct_bytes`, `field_names`; `browser_key_id`; `socket_ready`, `ms_since_ready`, `opens_since_ready_sender`, `opens_since_ready_total`; the pairing — `routed_machine`, `pairing_found` (`null` when no lookup ran), `pairing_found_before` (what this viewer's previous lookup for that machine answered), `pairing_legacy`, `pairing_key_id`, `pairing_sender`, `pairing_source` (`memory` or `store`), `pairing_lookup_ms`, `machines_with_pairing`, `machines_without_pairing` (ids only, as this viewer has looked them up); `sender_key_found`, `sender_key_source` (`pairing`, `memory` or `store`), `sender_key_lookup_ms`, `senders_with_keys`, `senders_without_keys`; `target_machine`, `target_sender`, `sender_is_target` (where delivery would go now); `visibility`, `ms_since_visibility_change`, `ms_since_page_load`, `online`, `web_build`. Never a nonce, ciphertext, signature, plaintext or key: of a pairing only its kind, key id and sender id |
 | `cloud.frame.failed` | a relay frame that failed outside an envelope: `frame_type`, `code`, `layer`, `error_name`, `error_message`, `socket_ready`, `ms_since_ready` |
 | `cloud.door.raised` | `kind`, `code`, `cause_n` (the `cloud.receive.failed` row behind it; `cause_rate_limited`/`cause_key` when that row was not kept), `invitation` |
 | `cloud.door.hidden` | `by` (`sessions` or `connected`), `raised_n`, `ms_raised`, `failures_while_raised`, and the lowering envelope's `channel_kind`, `machine`, `sender`, `seq`, `realign`, `authoritative`, `self_healed` |
+
+**The steps, in the order an envelope takes them.** Each row's `stage` is the step that threw, and
+the door column is what `cloudSessionAccessProblem` makes of that step's code: *encryption* is "This
+browser cannot decrypt Sessions", *pairing* is "Pair this browser with the selected machine".
+
+| `stage` | what runs | codes it can throw | door |
+|---|---|---|---|
+| `channel_parse` | `ch` is parsed and its machine decoded | a raw `TypeError` | none |
+| `machine_pairing_lookup` | this browser's pairing for that machine, from memory or the store | `machine_key_incomplete`; `extractable_key`; a raw store error | pairing; encryption; none |
+| `pairing_key_id` | a pairing's key id against the envelope's | `unknown_key` | encryption |
+| `sender_key_lookup` | the pairing's sender key, or with no pairing the legacy sender pin | `unknown_sender` (no pin); a raw store error | encryption; none |
+| `master_key_lookup` | the pairing's content key, or with no pairing the account key for `key_id` | `unknown_key`, `extractable_key` | encryption |
+| `validate`, `signature_verify`, `decrypt` | the envelope's shape, its signature, AES-GCM | `unreadable_envelope` | encryption |
+| `paired_sender` | the decrypted channel's clear `sender` against the pairing's | `unknown_sender` | encryption |
+| `legacy_binding` | a machine with no pairing is bound to the pin that just opened it | `machine_key_incomplete`, `machine_pairing_required`; a raw store error | pairing; none |
+| `sequence` | replay protection | `replay` | none |
+| `payload`, `apply` | the plaintext as JSON, then the snapshot | `bad_payload`; whatever a handler throws | none |
+
+A binding that succeeds leaves no row; the next envelope from that machine opens through it from
+memory. A store that **rejects** throws a raw error with `code: null`: the envelope is lost, but no
+door rises. A store that answers **nothing** has different effects at each step.
 
 **Reading an intermittent decrypt door.** These are what each open hypothesis would look like; none
 of them is established:
 
 | hypothesis | the rows that would say so |
 |---|---|
-| H1 — a second machine publishes with a key this browser never received | `code: unknown_sender`, `sender_is_paired_machine: false`, `sender` absent from `senders_with_keys`, a `machine` other than `paired_machine`; with the same `key_id` and another master secret, `stage: decrypt`, `error_name: OperationError` from a sender that is not the paired one |
-| H2 — a realign replays envelopes sealed under an older key or sender | `realign: true` with a small `ms_since_ready`, `stage: decrypt` or `signature_verify` (or `code: replay`), old `ts`, a `key_id` unlike `browser_key_id`, then `cloud.door.hidden` `by: sessions` soon after |
-| H3 — the key store fails on resume | `stage: sender_key_lookup` for `sender_is_paired_machine: true` with `sender_key_source: store`, and either `sender_key_found: false` or an `error_name` such as `UnknownError`, after `opens_since_ready_sender > 0`, with a small `ms_since_visibility_change` |
-| H4 — an envelope that was never valid | `stage: validate`, `error_name: TypeError` with the validator's sentence, `field_names` or `channel_kind: unparsed` |
-
-A key store that **rejects** throws a raw error with `code: null`, which does not raise the door; one
-that answers **nothing** is `unknown_sender` and does. Both leave a row.
+| H1a — a second machine on the account that this browser is **not paired with** (the relay sends every viewer each machine's `s/` and `orch/`) | `stage: sender_key_lookup`, `code: unknown_sender`, `pairing_found: false`, `sender_key_found: false`, `routed_machine` in `machines_without_pairing` and not `target_machine`, `sender_is_target: false`; then `cloud.door.hidden` `by: sessions` when the next Session snapshot from the Mac arrives |
+| H1b — a machine this browser **is** paired with, whose pairing is incomplete or under another key id | incomplete: `stage: machine_pairing_lookup`, `code: machine_key_incomplete`, `pairing_found: true` (the *pairing* door, not the decrypt door); another key id: `stage: pairing_key_id`, `code: unknown_key`, `pairing_key_id` unlike `key_id`; the paired sender changed: `stage: paired_sender`, `code: unknown_sender`, `pairing_sender` unlike `sender`; the same key id with another content key: `stage: decrypt`, `error_name: OperationError`, `pairing_found: true` |
+| H2 — a realign replays envelopes sealed under an older key or sender | `realign: true` with a small `ms_since_ready`, `stage: pairing_key_id` (a pairing) or `master_key_lookup` (a legacy pin) with a `key_id` unlike `pairing_key_id`/`browser_key_id`, or `stage: decrypt`/`signature_verify`, or `code: replay`; old `ts`; then `cloud.door.hidden` `by: sessions` soon after |
+| H3 — the key store fails on resume | a rejection: `stage: machine_pairing_lookup`, `pairing_source: store`, `code: null`, `error_name` such as `UnknownError` (no door). An empty answer for a paired machine with no legacy pin standing in: `stage: sender_key_lookup`, `code: unknown_sender` (the decrypt door) with `pairing_found: false` — and `pairing_found_before: true` when the same page's previous client had found it. A legacy browser's pin store is asked only until the machine is bound (`stage: sender_key_lookup`, `sender_key_source: store`), and the binding's own write can fail at `stage: legacy_binding`. Each with a small `ms_since_visibility_change`. A pairing the store returned is kept for the client's life, so for a paired machine this follows a reload or a token renewal |
+| H4 — an envelope that was never valid | `stage: validate`, `error_name: TypeError` with the validator's sentence, `field_names`; or `stage: channel_parse` with `channel_kind: unparsed` (a raw `TypeError`, no door) |
 
 **What it cannot tell you.** A page whose account key is wrong cannot seal a command this Mac can
 open, so its rows wait on the phone until the keys are repaired. A device without `send_prompt`
-cannot publish at all (`cloud_read_needs_send_prompt`). A browser that has authenticated two Macs
-refuses to guess (`cloud_machine_ambiguous`). A Mac that has never published `cloud_status` is not
-asked; one that answers `unknown_command` or refuses the batch is not asked again until its build,
-the page's build or the day changes. In every one of those the rows stay on the phone. Sends are at
+cannot publish at all (`cloud_read_needs_send_prompt`). A browser that has authenticated two capable
+Macs refuses to guess (`cloud_machine_ambiguous`). A machine that has never published `cloud_status` is
+not asked (`cloud_feature_unavailable` when it might be a Mac); one that answers `unknown_command` or
+refuses the batch is not asked again until its build, the page's build or the day changes — and a
+block recorded against one machine does not hold the rows from another that later qualifies. A
+target whose pairing is gone by the time of the send is refused locally by `_outboundMachinePairing`
+(`machine_pairing_required`) and tried again under the backoff. In every one of those the rows stay
+on the phone. `machines_with_pairing` lists what this viewer has looked up, not every key in the
+browser's store. Sends are at
 least a minute apart, doubling per failed attempt to thirty minutes, at most 48 a day, from one tab
 of a device at a time.
 

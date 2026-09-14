@@ -1312,6 +1312,21 @@ await check("viewer events · pairing · an unknown_command from one target does
     assert.deepEqual([(await next).state, log.snapshot().outbox], ["delivered", null]);
 });
 
+await check("viewer events · pairing · a target whose pairing is gone is refused before the wire and tried again later", async function () {
+    const store = new Map();
+    const { options } = pairedClient(store);
+    const log = viewerLog(new FakeStorage());
+    log.rememberTarget({ machine: "mac-gone", sender: DEVICE, capable: true });
+    const { client, socket } = await viewerFleet({ orch: false, log, client: options });
+    log.record("test.event", { kept: 1 });
+    const attempt = await client._deliverViewerEvents();
+    assert.deepEqual([attempt.state, attempt.failure && attempt.failure.code, attempt.failure && attempt.failure.layer,
+        published(socket).length], ["failed", "machine_pairing_required", "browser", 0],
+    "_outboundMachinePairing refuses a machine this browser holds no pairing for, and nothing is written");
+    assert.deepEqual([log.snapshot().blocked, log.snapshot().outbox.last_failure.code], [null, "machine_pairing_required"],
+        "not a final refusal: the batch stays and the backoff decides the next attempt");
+});
+
 /* ---- ends ---------------------------------------------------------------------------------- */
 
 if (failures.length) {
