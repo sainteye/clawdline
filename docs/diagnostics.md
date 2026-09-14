@@ -258,7 +258,7 @@ rate-limited total). A page killed before a write loses the rows since the last 
 counts them from the journal as `dropped_unflushed`. Tabs of one device share the stored state, and
 with Web Locks only the tab holding its lock writes it or delivers; another tab keeps its rows in
 memory and adds them, renumbered, when the lock reaches it — so a second tab closed first loses its
-rows, uncounted. A browser without Web Locks (Safari before 15.4) writes from every tab, and two tabs
+rows, uncounted. A browser without Web Locks writes from every tab, and two tabs
 writing within the same second can overwrite each other's rows, uncounted. When a tab takes the lock
 it also removes this account's logs for any other device id no tab holds — a replaced device's rows
 and unsent batch — and records `viewer_events.log.pruned` with what they held.
