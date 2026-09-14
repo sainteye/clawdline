@@ -1091,9 +1091,17 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         guard try tmux(["kill-pane", "-t", created.id], operation: .close).status == 0 else {
             return false
         }
-        let readBack = try tmux(["display-message", "-p", "-t", created.id, "#{pane_id}"],
-                                operation: .close)
-        return readBack.status != 0
+        // tmux acknowledges the kill before both its pane table and procfs necessarily reflect
+        // the effect. A single immediate read can therefore turn a completed compensation into
+        // `unknown`. Require both identities to disappear, but only within this bounded window.
+        for _ in 0..<25 {
+            let readBack = try tmux(["display-message", "-p", "-t", created.id, "#{pane_id}"],
+                                    operation: .close)
+            let processGone = LinuxProcfs.row(pid: expected.pid)?.identity != expected
+            if readBack.status != 0, processGone { return true }
+            usleep(20_000)
+        }
+        return false
     }
 
     func close(_ session: TargetSession) throws -> String? {
