@@ -138,7 +138,12 @@ async function verificationKey(envelope, keyOrResolver) {
         ? importSenderPublicKey(key) : key;
 }
 
-export async function verifyEnvelope(envelope, keyOrResolver) {
+/**
+ * `probe`, when given, is written and never read: `cause` keeps the exception a `false` answer
+ * stands for, so a receive-failure row can name it (`cloud-viewer-events.js`). The answer is the
+ * same with or without it.
+ */
+export async function verifyEnvelope(envelope, keyOrResolver, probe) {
     try {
         validateEnvelope(envelope);
         var key = await verificationKey(envelope, keyOrResolver);
@@ -146,15 +151,26 @@ export async function verifyEnvelope(envelope, keyOrResolver) {
         return subtle().verify({ name: "Ed25519" }, key, base64Bytes(envelope.sig, "sig"),
             envelopeSigningBytes(envelope));
     } catch (e) {
+        if (probe) probe.cause = e;
         return false;
     }
 }
 
-export async function openEnvelope(envelope, masterKey, keyOrResolver) {
+/**
+ * `probe`, when given, has `stage` set immediately before each step, so whatever this throws is
+ * attributed to the step that threw it rather than guessed from its message. Observation only:
+ * the steps, their order and what is thrown are unchanged.
+ */
+export async function openEnvelope(envelope, masterKey, keyOrResolver, probe) {
+    var mark = function (stage) { if (probe) probe.stage = stage; };
+    mark("validate");
     validateEnvelope(envelope);
-    if (!await verifyEnvelope(envelope, keyOrResolver)) throw new Error("bad envelope signature");
+    mark("signature_verify");
+    if (!await verifyEnvelope(envelope, keyOrResolver, probe)) throw new Error("bad envelope signature");
+    mark("master_key_lookup");
     var key = typeof masterKey === "string" || masterKey instanceof ArrayBuffer ||
         ArrayBuffer.isView(masterKey) ? await importMasterSecret(masterKey) : masterKey;
+    mark("decrypt");
     var clear = await subtle().decrypt({ name: "AES-GCM", iv: base64Bytes(envelope.nonce, "nonce"),
         tagLength: 128 }, key, base64Bytes(envelope.ct, "ct"));
     return new Uint8Array(clear);

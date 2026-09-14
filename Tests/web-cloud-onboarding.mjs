@@ -70,15 +70,25 @@ const main = readFileSync("Resources/web/app/js/main.js", "utf8");
 const connectedStart = main.indexOf('if (update.state === "connected")');
 const connectedEnd = main.indexOf('} else if (update.state === "sign_in")', connectedStart);
 const connectedBody = main.slice(main.indexOf("{", connectedStart) + 1, connectedEnd);
+// The door's rows for the paired Mac (`net/cloud-viewer-events.js`), lifted out of main.js the
+// same way, so the body below runs against the real recorder rather than a stub of it.
+const doorStart = main.indexOf("var cloudDoorRaised = null;");
+const doorEnd = main.indexOf("\nvar cloudConfig = null;", doorStart);
+assert.ok(doorStart >= 0 && doorEnd > doorStart, "main.js still declares the door recorder");
+const doorSource = main.slice(doorStart, doorEnd);
+const viewerEvents = await import("../Resources/web/app/js/net/cloud-viewer-events.js");
 for (const hasInvitation of [true, false]) {
     let cleared = 0, noticed = 0, hidden = 0, used = 0, bound = 0, repaired = 0;
     let stopped = 0, resumed = 0, repairOptions = null, resumeAfterRepair = null;
     let clientEvent = null, accessProblem = null;
     const connectionStates = [];
     const invitation = hasInvitation ? { invitation_id: "one-time" } : null;
+    let clock = 1_000;
+    const doorLog = new viewerEvents.ViewerEventLog({ now: () => clock });
     const context = { cloudInvitation: hasInvitation ? { invitation_id: "one-time" } : null,
         cloudGateUp: true, window: { sessionStorage: {} }, S: { arrived: false },
-        update: { client: { events(callback) { clientEvent = callback; } } },
+        errorFields: viewerEvents.errorFields, envelopeMetadata: viewerEvents.envelopeMetadata,
+        update: { client: { viewerEvents: doorLog, events(callback) { clientEvent = callback; } } },
         cloudConnection: { stop() { stopped++; } }, cloudSession: {},
         handlers: { conn(state) { connectionStates.push(state); } },
         clearCloudPairingInvitation() { cleared++; },
@@ -93,7 +103,7 @@ for (const hasInvitation of [true, false]) {
         },
         startCloudViewer() { resumed++; },
         hideCloudGate() { hidden++; }, useApi() { used++; }, bindTranscriptEvents() { bound++; } };
-    vm.runInNewContext(connectedBody, context);
+    vm.runInNewContext(doorSource + "\n" + connectedBody, context);
     assert.equal(cleared, 0, "the one-time invitation remains available until repair succeeds");
     assert.equal(noticed, hasInvitation ? 1 : 0,
         "an already-paired browser offers an explicit encrypted-key repair");
@@ -117,14 +127,35 @@ for (const hasInvitation of [true, false]) {
     } else {
         assert.equal(context.cloudGateUp, false);
         assert.equal(hidden, 1);
-        clientEvent({ type: "error", error: { code: "unreadable_envelope" } });
+        assert.deepEqual(doorLog.snapshot().rows, [],
+            "a connection that never raised the door records no door row");
+        const cause = Object.assign(new Error("this browser cannot decrypt"), { code: "unreadable_envelope" });
+        Object.defineProperty(cause, "viewerEvent", { value: { n: 41, rateLimited: false, key: "k" } });
+        clientEvent({ type: "error", error: cause });
         assert.equal(accessProblem, "encryption");
         assert.equal(context.cloudGateUp, true);
         assert.equal(connectionStates.at(-1), "locked",
             "an unreadable encrypted stream cannot leave the connection chip live");
-        clientEvent({ type: "sessions", data: { sessions: [] } });
+        clock += 250;
+        clientEvent({ type: "error", error: { code: "unreadable_envelope" } });
+        clock += 750;
+        clientEvent({ type: "sessions", data: { sessions: [] }, realign: true, envelope: {
+            v: 1, ch: "s/mac-01/s1", seq: 9, ts: 5, class: "stream", key_id: "master-v1",
+            nonce: "AAAAAAAAAAAAAAAA", ct: "QUJDREVGR0hJSktMTU5PUA==", sender: "mac-device", sig: "c2ln" } });
         assert.equal(connectionStates.at(-1), "live",
             "an actual Session inventory, including an empty one, establishes readable live state");
+        const doorRows = doorLog.snapshot().rows;
+        assert.deepEqual(doorRows.map((row) => row.event), ["cloud.door.raised", "cloud.door.hidden"],
+            "the door leaves one row when it rises and one when it falls; a second raise is counted");
+        assert.deepEqual([doorRows[0].data.kind, doorRows[0].data.code, doorRows[0].data.cause_n],
+            ["encryption", "unreadable_envelope", 41], "the raise names the receive failure behind it");
+        assert.deepEqual([doorRows[1].data.by, doorRows[1].data.raised_n, doorRows[1].data.ms_raised,
+            doorRows[1].data.failures_while_raised, doorRows[1].data.channel_kind,
+            doorRows[1].data.sender, doorRows[1].data.seq, doorRows[1].data.realign],
+        ["sessions", doorRows[0].n, 1000, 1, "session", "mac-device", 9, true],
+        "the fall names what lowered it, how long it stood and the envelope that did it");
+        assert.ok(!JSON.stringify(doorRows).includes("QUJDREVGR0hJSktMTU5PUA=="),
+            "the door row carries no ciphertext");
     }
 }
 const pairingUI = readFileSync("Resources/web/app/js/input/cloud-pairing.js", "utf8");
@@ -203,6 +234,8 @@ assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "machine_pairing_requir
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "machine_key_incomplete" }),
     "machine_pairing",
     "a partial machine-scoped key record is an actionable pairing state, not an outage");
+assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "machine_not_paired" }), null,
+    "an envelope from a machine this browser holds no pairing or sender key for is that machine's state, not a door");
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "replay" }), null,
     "a harmless duplicate envelope does not become a permission prompt");
 cloudDoor.showCloudSessionAccessProblem("permission");

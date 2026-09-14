@@ -792,6 +792,29 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
                         && reportCommands.contains { $0.hasPrefix("diagnosticsReport(") },
                      "commands=\(reportCommands)")
 
+        // diagnostics.events, still with remote writes switched off: the page sends it without a
+        // press, so it must not need the switch for typing into a session.
+        transport.yield(#"{"type":"diagnostics.events","session":"__clawdline_machine__","request":"ve-1","batch":{"v":1}}"#,
+                        sequence: 82)
+        transport.yield(#"{"type":"diagnostics.events","session":"__clawdline_machine__","request":"ve-2","batch":[1]}"#,
+                        sequence: 83)
+        _ = await cloudTransparencyEventually {
+            let names = keys.answers(transport.envelopes())
+            return names["action:ve-1"] != nil && names["action:ve-2"] != nil
+        }
+        let eventAnswers = keys.answers(transport.envelopes())
+        let eventCommands = await router.recorded()
+        checks.check("diagnostics.events is read-level and routed as its own command",
+                     eventAnswers["action:ve-1"]?["status"] as? Int == 200
+                        && eventCommands.contains { $0.hasPrefix("diagnosticsEvents(") },
+                     "commands=\(eventCommands) answer=\(String(describing: eventAnswers["action:ve-1"]))")
+        let notABatch = transparencyError(eventAnswers["action:ve-2"])
+        checks.check("diagnostics.events whose batch is not an object is answered malformed_command",
+                     eventAnswers["action:ve-2"]?["status"] as? Int == 400
+                        && notABatch["code"] as? String == "malformed_command"
+                        && notABatch["layer"] as? String == "mac_preflight",
+                     "\(String(describing: eventAnswers["action:ve-2"]))")
+
         // §11.3 cloud.status.
         transport.yield(#"{"type":"cloud.status","session":"__clawdline_machine__","request":"cs-1"}"#,
                         sequence: 91)
@@ -1208,6 +1231,251 @@ func runCloudBridgeTransparencyTests() async throws -> Int {
         checks.check("§11.5 the write is audited like the HTTP route",
                      audits.all() == ["diagnostics.report:1"], "\(audits.all())")
         try? FileManager.default.removeItem(at: root)
+    }
+
+    // diagnostics.events at its store: one fixed JSONL file beside report.json, one line per
+    // batch stating its own completeness, bounded input, rotation, one counts-only log line, a
+    // resent batch recognised from its id, and the batches the page really seals.
+    do {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(
+            "clawdline-viewer-events-\(UUID().uuidString)", isDirectory: true)
+        // `rowTab: nil` leaves the key out of every row.
+        func viewerBatch(_ id: String, rows: Int, data: [String: Any]? = nil, n: Any? = nil,
+                         rowTab: Any? = "tab-1", nTo: Int? = nil, refused: Int = 0,
+                         unflushed: Int = 0) -> Data {
+            let kept = (0..<rows).map { index -> [String: Any] in
+                var row: [String: Any] = [
+                    "n": n ?? (index + 1), "at_ms": 1_789_400_000_000 + index,
+                    "event": "cloud.receive.failed",
+                    "data": data ?? ["code": "unknown_sender", "stage": "sender_key_lookup",
+                                     "seq": 9, "realign": true, "senders_with_keys": ["mac-device"]]]
+                row["tab"] = rowTab
+                return row
+            }
+            let batch: [String: Any] = [
+                "v": 1, "batch_id": id, "created_at_ms": 1_789_400_000_500,
+                "device": "viewer-device", "tab": "tab-1", "web_build": "b0123",
+                "rows": kept,
+                "completeness": [
+                    "n_from": 1, "n_to": nTo ?? rows, "rows": rows, "dropped_rate_limited": 47,
+                    "dropped_overflow": 0, "dropped_refused": refused,
+                    "dropped_unflushed": unflushed, "storage_errors": 0,
+                    "counting_since_ms": 1_789_400_000_000,
+                    "rate_limited": [["key": "cloud.receive.failed|unknown_sender",
+                                      "event": "cloud.receive.failed", "dropped": 47,
+                                      "first_at_ms": 1, "last_at_ms": 2, "sample_n": 3]
+                                     as [String: Any]],
+                    "limits": ["rows": 100, "per_key_per_window": 3],
+                ] as [String: Any],
+            ]
+            return (try? JSONSerialization.data(withJSONObject: batch)) ?? Data()
+        }
+        let audits = CloudTransparencyRecorder<String>()
+        let logs = CloudTransparencyRecorder<String>()
+        func send(_ body: Data) -> CloudCommandResult {
+            CloudViewerEventsRoute.route(
+                body: body, sender: "viewer-device", root: root,
+                audit: { event, fields in audits.append(event + ":" + (fields["ok"] ?? "")) },
+                log: { logs.append($0) })
+        }
+        let url = CloudViewerEventLog.fileURL(root: root)
+        func lines() -> [[String: Any]] {
+            ((try? String(contentsOf: url, encoding: .utf8)) ?? "").split(separator: "\n").compactMap {
+                (try? JSONSerialization.jsonObject(with: Data($0.utf8))) as? [String: Any]
+            }
+        }
+        let firstBody = viewerBatch("b-1", rows: 3)
+        let first = send(firstBody)
+        let receipt = (try? JSONSerialization.jsonObject(with: first.body)) as? [String: Any]
+        let line = lines().first
+        checks.check("viewer events land in cloud-viewer-events.jsonl beside report.json",
+                     url == DiagnosticReport.directory(root: root)
+                        .appendingPathComponent("cloud-viewer-events.jsonl"), url.path)
+        checks.check("an accepted batch answers a receipt naming its batch and its rows",
+                     first.status == 200 && receipt?["batch_id"] as? String == "b-1"
+                        && receipt?["rows"] as? Int == 3 && receipt?["path"] as? String == url.path
+                        && receipt?["duplicate"] as? Bool == false,
+                     "\(first) \(String(describing: receipt))")
+        checks.check("the line names the envelope sender and states its own completeness",
+                     lines().count == 1 && line?["device"] as? String == "viewer-device"
+                        && line?["row_count"] as? Int == 3
+                        && line?["completeness_consistent"] as? Bool == true
+                        && (line?["completeness"] as? [String: Any])?["dropped_rate_limited"] as? Int == 47
+                        && ((line?["rows"] as? [[String: Any]])?.first?["data"] as? [String: Any])?["stage"]
+                            as? String == "sender_key_lookup",
+                     "\(String(describing: line))")
+        let mode = (try? manager.attributesOfItem(atPath: url.path))?[.posixPermissions] as? NSNumber
+        checks.check("the viewer events file is 0600", mode?.intValue == 0o600, "\(String(describing: mode))")
+        checks.check("an accepted batch writes one counts-only Clawdline.log line",
+                     logs.all().count == 1
+                        && logs.all()[0].hasPrefix("cloud viewer events: appended rows=3 dropped_rate_limited=47 dropped_overflow=0 dropped_refused=0 dropped_unflushed=0 storage_errors=0 consistent=1 ")
+                        && !logs.all()[0].contains("unknown_sender"),
+                     "\(logs.all())")
+        _ = send(viewerBatch("b-2", rows: 1))
+        checks.check("a second batch appends a second line", lines().count == 2, "\(lines().count)")
+
+        let huge = send(Data(repeating: 0x20, count: CloudViewerEventLog.maxBatchBytes + 1))
+        let nested = send(viewerBatch("b-3", rows: 1, data: ["kept": ["secret_value": "TOPSECRET"]]))
+        let boolean = send(viewerBatch("b-4", rows: 1, n: true))
+        checks.check("an oversized batch is refused by name before it is parsed",
+                     huge.status == 413 && huge.code == "viewer_events_too_large", "\(huge)")
+        let nestedMessage = String(data: nested.body, encoding: .utf8) ?? ""
+        checks.check("a nested value is malformed at its path, and the refusal repeats no value",
+                     nested.status == 400 && nested.code == "viewer_events_malformed"
+                        && nestedMessage.contains("rows[0].data.kept")
+                        && !nestedMessage.contains("TOPSECRET"),
+                     nestedMessage)
+        checks.check("a boolean is not a row number",
+                     boolean.status == 400 && boolean.code == "viewer_events_malformed"
+                        && (String(data: boolean.body, encoding: .utf8) ?? "").contains("rows[0].n"),
+                     "\(boolean)")
+        checks.check("refused batches write nothing and log only their code",
+                     lines().count == 2
+                        && logs.all().contains("cloud viewer events: refused code=viewer_events_too_large received_bytes=\(CloudViewerEventLog.maxBatchBytes + 1)")
+                        && audits.all() == ["diagnostics.events:1", "diagnostics.events:1",
+                                            "diagnostics.events:0", "diagnostics.events:0",
+                                            "diagnostics.events:0"],
+                     "\(audits.all()) \(logs.all())")
+        checks.check("viewer events never touch report.json or previous.json",
+                     !manager.fileExists(atPath: DiagnosticReport.reportURL(root: root).path)
+                        && !manager.fileExists(atPath: DiagnosticReport.previousURL(root: root).path))
+
+        // After the audit and log counts above, which a resend would change.
+        let size = ((try? manager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
+        let resent = send(firstBody)
+        let resentReceipt = (try? JSONSerialization.jsonObject(with: resent.body)) as? [String: Any]
+        let resentSize = ((try? manager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?.intValue ?? 0
+        checks.check("a batch resent after its receipt was lost answers a duplicate receipt naming its rows and appends nothing",
+                     resent.status == 200 && resentReceipt?["duplicate"] as? Bool == true
+                        && resentReceipt?["batch_id"] as? String == "b-1"
+                        && resentReceipt?["rows"] as? Int == 3 && resentReceipt?["line_bytes"] as? Int == 0
+                        && lines().count == 2 && resentSize == size
+                        && logs.all().last?.hasPrefix("cloud viewer events: duplicate rows=3 ") == true,
+                     "\(resent) \(String(describing: resentReceipt)) lines=\(lines().count) \(logs.all())")
+
+        let rolled = CloudViewerEventLog.append(viewerBatch("b-5", rows: 1), device: "viewer-device",
+                                                root: root, maxFileBytes: size + 16)
+        let rotatedURL = CloudViewerEventLog.rotatedURL(root: root)
+        let rotatedLines = ((try? String(contentsOf: rotatedURL, encoding: .utf8)) ?? "").split(separator: "\n")
+        checks.check("a line that would pass the bound rotates the file to .1 first",
+                     (try? rolled.get())?.rotated == true && lines().count == 1
+                        && lines().first?["batch_id"] as? String == "b-5" && rotatedLines.count == 2,
+                     "\(rolled) rotated=\(rotatedLines.count) current=\(lines().count)")
+        let rotatedResend = CloudViewerEventLog.append(viewerBatch("b-2", rows: 1), device: "viewer-device",
+                                                       root: root)
+        let rotatedAfter = ((try? String(contentsOf: rotatedURL, encoding: .utf8)) ?? "").split(separator: "\n")
+        let onlyRotated = rotatedLines.contains { $0.contains(#""batch_id":"b-2""#) }
+        checks.check("a batch whose line has rotated to .1 is still a duplicate: the id index survives rotation",
+                     (try? rotatedResend.get())?.duplicate == true && onlyRotated
+                        && lines().count == 1 && rotatedAfter.count == 2,
+                     "\(rotatedResend) rotated=\(rotatedAfter.count) current=\(lines().count)")
+
+        let tabless = send(viewerBatch("b-6", rows: 1, rowTab: nil))
+        let longTab = send(viewerBatch("b-7", rows: 1, rowTab: String(repeating: "t", count: 129)))
+        checks.check("a row without its tab, or with a tab over 128 characters, is malformed at its path",
+                     tabless.status == 400 && tabless.code == "viewer_events_malformed"
+                        && (String(data: tabless.body, encoding: .utf8) ?? "").contains("rows[0].keys")
+                        && longTab.code == "viewer_events_malformed"
+                        && (String(data: longTab.body, encoding: .utf8) ?? "").contains("rows[0].tab")
+                        && lines().count == 1,
+                     "\(tabless) \(longTab)")
+        let unflushed = send(viewerBatch("b-8", rows: 2, nTo: 3, refused: 4, unflushed: 1))
+        let unflushedLine = lines().last
+        checks.check("unflushed rows consume their n and refused rows do not: n 1…3, 2 rows, 1 unflushed, 4 refused is consistent",
+                     unflushed.status == 200 && lines().count == 2
+                        && unflushedLine?["batch_id"] as? String == "b-8"
+                        && unflushedLine?["completeness_consistent"] as? Bool == true
+                        && logs.all().last?.contains("dropped_refused=4 dropped_unflushed=1 storage_errors=0 consistent=1 ") == true,
+                     "\(unflushed) \(String(describing: unflushedLine)) \(logs.all().last ?? "")")
+        try? manager.removeItem(at: root)
+
+        let boundedRoot = manager.temporaryDirectory.appendingPathComponent(
+            "clawdline-viewer-events-bounded-\(UUID().uuidString)", isDirectory: true)
+        func appendBounded(_ id: String) -> CloudViewerEventLog.Receipt? {
+            try? CloudViewerEventLog.append(viewerBatch(id, rows: 1), device: "viewer-device",
+                                            root: boundedRoot, rememberedBatches: 2).get()
+        }
+        let firstFive = ["c-1", "c-2", "c-3", "c-4", "c-5"].map { appendBounded($0) }
+        let indexURL = CloudViewerEventLog.batchIndexURL(root: boundedRoot)
+        let indexLines = ((try? String(contentsOf: indexURL, encoding: .utf8)) ?? "").split(separator: "\n")
+        let indexMode = (try? manager.attributesOfItem(atPath: indexURL.path))?[.posixPermissions] as? NSNumber
+        let newestAgain = appendBounded("c-5")
+        let oldestAgain = appendBounded("c-1")
+        let fiveAppended = firstFive.allSatisfy { $0?.duplicate == false }
+        checks.check("the remembered batch ids are bounded: 5 ids with 2 remembered leave at most 4 lines, the newest is still a duplicate, the oldest appends again",
+                     fiveAppended && !indexLines.isEmpty
+                        && indexLines.count <= 4 && indexMode?.intValue == 0o600
+                        && newestAgain?.duplicate == true
+                        && oldestAgain?.duplicate == false && (oldestAgain?.lineBytes ?? 0) > 0,
+                     "index=\(indexLines) mode=\(String(describing: indexMode)) c-5=\(String(describing: newestAgain)) c-1=\(String(describing: oldestAgain))")
+        try? manager.removeItem(at: boundedRoot)
+
+        // The page→Mac contract: batches the page's real `ViewerEventLog.takeBatch` sealed, written
+        // by `Tests/web-cloud-failures.mjs`, re-encoded exactly as `CloudAppBridge` hands them to
+        // this store. A missing fixture fails: a contract check that skips says nothing either way.
+        let contractPath = "Tests/cloud-viewer-events-contract-batches.json"
+        let contract = (try? Data(contentsOf: URL(fileURLWithPath: contractPath)))
+            .flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+        let contractBatches = contract?["batches"] as? [[String: Any]] ?? []
+        checks.check("page→Mac contract: \(contractPath) is v1 from Tests/web-cloud-failures.mjs and holds batches",
+                     contract?["v"] as? Int == 1
+                        && contract?["generated_by"] as? String == "Tests/web-cloud-failures.mjs"
+                        && !contractBatches.isEmpty,
+                     "cwd=\(manager.currentDirectoryPath) keys=\(contract.map { Array($0.keys).sorted() } ?? []) batches=\(contractBatches.count)")
+        var shapeFailures: [String] = []
+        var appendFailures: [String] = []
+        for (index, batch) in contractBatches.enumerated() {
+            let rowCount = (batch["rows"] as? [Any])?.count ?? -1
+            guard JSONSerialization.isValidJSONObject(batch),
+                  let encoded = try? JSONSerialization.data(
+                    withJSONObject: batch, options: [.withoutEscapingSlashes]) else {
+                shapeFailures.append("batch \(index) cannot be encoded as CloudAppBridge does")
+                continue
+            }
+            if let problem = CloudViewerEventLog.problem(in: batch) {
+                shapeFailures.append("batch \(index) is malformed at \(problem)")
+            }
+            if encoded.count > CloudViewerEventLog.maxBatchBytes {
+                shapeFailures.append("batch \(index) is \(encoded.count) bytes")
+            }
+            let contractRoot = manager.temporaryDirectory.appendingPathComponent(
+                "clawdline-viewer-events-contract-\(UUID().uuidString)", isDirectory: true)
+            switch CloudViewerEventLog.append(encoded, device: "contract-device", root: contractRoot) {
+            case .success(let stored):
+                if !stored.consistent || stored.duplicate || stored.rows != rowCount {
+                    appendFailures.append("batch \(index) consistent=\(stored.consistent) duplicate=\(stored.duplicate) rows=\(stored.rows) of \(rowCount)")
+                }
+            case .failure(let refusal):
+                appendFailures.append("batch \(index) refused \(refusal.code): \(refusal.message)")
+            }
+            try? manager.removeItem(at: contractRoot)
+        }
+        checks.check("page→Mac contract: every batch the page sealed is viewer events v1 within maxBatchBytes",
+                     !contractBatches.isEmpty && shapeFailures.isEmpty, "\(shapeFailures)")
+        checks.check("page→Mac contract: every batch the page sealed appends once, consistent, with its row count",
+                     !contractBatches.isEmpty && appendFailures.isEmpty, "\(appendFailures)")
+        let contractRows = contractBatches.flatMap { $0["rows"] as? [[String: Any]] ?? [] }
+        func holdsNonASCII(_ value: Any) -> Bool {
+            if let text = value as? String { return text.unicodeScalars.contains { $0.value > 0x7F } }
+            if let list = value as? [Any] { return list.contains { holdsNonASCII($0) } }
+            if let object = value as? [String: Any] {
+                return object.contains { holdsNonASCII($0.key) || holdsNonASCII($0.value) }
+            }
+            return false
+        }
+        let fullBatch = contractBatches.contains { ($0["rows"] as? [Any])?.count == 100 }
+        let widestData = contractRows.contains { ($0["data"] as? [String: Any])?.count == 48 }
+        let truncatedRow = contractRows.contains { row in
+            guard let flag = (row["data"] as? [String: Any])?["row_truncated"] as? NSNumber else {
+                return false
+            }
+            return CFGetTypeID(flag) == CFBooleanGetTypeID() && flag.boolValue
+        }
+        let nonASCII = holdsNonASCII(contractBatches)
+        checks.check("page→Mac contract: the fixture is worst-case, not trivially small",
+                     fullBatch && widestData && truncatedRow && nonASCII,
+                     "100_rows=\(fullBatch) 48_keys=\(widestData) row_truncated=\(truncatedRow) non_ascii=\(nonASCII)")
     }
 
     // L2 at its source: the real guard's reason and countdown.

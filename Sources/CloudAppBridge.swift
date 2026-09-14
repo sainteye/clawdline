@@ -226,6 +226,8 @@ enum CloudHeadlessCommand: Equatable, Sendable {
     case voice(audio: String, rate: Int)
     /// A browser's diagnostic report, as `POST /v1/diagnostics/report` takes it (design §11.5).
     case diagnosticsReport(body: Data)
+    /// A batch of a paired browser's own receive-failure rows, appended to a fixed JSONL file.
+    case diagnosticsEvents(body: Data)
 }
 
 /// The reads a paired viewer may ask this Mac for over the relay.
@@ -409,6 +411,9 @@ struct RemoteServerCloudCommandRouter: CloudCommandRouting, @unchecked Sendable 
         }
         if case .diagnosticsReport(let body) = command {
             return CloudDiagnosticsReportRoute.route(body: body, sender: sender)
+        }
+        if case .diagnosticsEvents(let body) = command {
+            return CloudViewerEventsRoute.route(body: body, sender: sender)
         }
         let response = await server.routeVerifiedCloudCommand(
             command, sender: sender, idempotencyKey: idempotencyKey
@@ -2459,6 +2464,24 @@ actor CloudAppBridge {
             }
             command = .diagnosticsReport(body: data)
             commandReply = (session, "action:" + request)
+        case "diagnostics.events":
+            // A paired browser's receive-failure rows, sent without a press. Only the envelope of
+            // the command is checked here; `CloudViewerEventLog` owns the batch's shape and bounds.
+            guard inbound.commandClass == .ctl,
+                  Set(body.keys) == ["type", "session", "request", "batch"],
+                  let session = body["session"] as? String,
+                  session == Self.machineReplySession,
+                  let request = Self.requestName(body["request"]),
+                  let batch = body["batch"] as? [String: Any],
+                  JSONSerialization.isValidJSONObject(batch),
+                  let data = try? JSONSerialization.data(
+                    withJSONObject: batch, options: [.withoutEscapingSlashes])
+            else {
+                await malformed()
+                return
+            }
+            command = .diagnosticsEvents(body: data)
+            commandReply = (session, "action:" + request)
         case "dispatch":
             // cloud-client.js sends only `{task}`. The local broker protocol requires a materialized
             // task.json plus task_id and secret, and no pinned wire shape says how those are carried
@@ -2685,6 +2708,7 @@ actor CloudAppBridge {
     /// Commands a paired device may send with remote writes switched off.
     static let readLevelCommandTypes: Set<String> = [
         "push-subscribe", "push-unsubscribe", "push-test", "diagnostics.report",
+        "diagnostics.events",
     ]
 
     fileprivate static func requestName(_ value: Any?) -> String? {

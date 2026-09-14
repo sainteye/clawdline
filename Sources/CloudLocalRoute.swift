@@ -97,6 +97,12 @@ struct CloudLocalRoute: Sendable {
             // envelope sender; the mapping keeps the vocabulary total and names the same route.
             route = "/v1/diagnostics/report"
             encodedBody = data
+        case .diagnosticsEvents(let data):
+            // Answered by `RemoteServerCloudCommandRouter` through `CloudViewerEventsRoute`. There
+            // is no local route: the tunnel page has no decrypt path to report on. The name keeps
+            // this mapping total and would answer `not_found` if anything ever dispatched it.
+            route = "/v1/diagnostics/events"
+            encodedBody = data
         }
         method = routeMethod
         path = route
@@ -206,6 +212,42 @@ enum CloudDiagnosticsReportRoute {
             audit("diagnostics.report", [
                 "device": sender, "ok": "0", "why": refusal.code, "via": "cloud",
             ])
+            let bytes = (try? JSONSerialization.data(
+                withJSONObject: ["error": ["code": refusal.code, "message": refusal.message]],
+                options: [.withoutEscapingSlashes])) ?? Data()
+            return CloudCommandResult(status: refusal.status, code: refusal.code, body: bytes)
+        }
+    }
+}
+
+/// `diagnostics.events` over Cloud: a paired browser's receive-failure and door rows, appended to
+/// `~/Library/Logs/Clawdline/diagnostics/cloud-viewer-events.jsonl` (`docs/diagnostics.md`).
+///
+/// Read-level like `diagnostics.report`, and for the same reason: it writes nothing into a session.
+/// The envelope's sender is the device the line names. Every accepted batch writes one counts-only
+/// line to `Clawdline.log`; a refusal writes one with its code, and neither says what a row said.
+enum CloudViewerEventsRoute {
+    typealias LogLine = @Sendable (_ line: String) -> Void
+
+    static func route(
+        body: Data, sender: String, root: URL? = nil,
+        audit: CloudDiagnosticsReportRoute.Audit = { RemoteAuth.audit($0, $1) },
+        log: LogLine = { Log.write($0) }
+    ) -> CloudCommandResult {
+        switch CloudViewerEventLog.append(body, device: sender, root: root) {
+        case .success(let receipt):
+            audit("diagnostics.events", [
+                "device": sender, "ok": "1", "rows": String(receipt.rows), "via": "cloud",
+            ])
+            log(receipt.logLine)
+            let bytes = (try? JSONSerialization.data(
+                withJSONObject: receipt.payload, options: [.withoutEscapingSlashes])) ?? Data()
+            return CloudCommandResult(status: 200, code: nil, body: bytes)
+        case .failure(let refusal):
+            audit("diagnostics.events", [
+                "device": sender, "ok": "0", "why": refusal.code, "via": "cloud",
+            ])
+            log("cloud viewer events: refused code=\(refusal.code) received_bytes=\(body.count)")
             let bytes = (try? JSONSerialization.data(
                 withJSONObject: ["error": ["code": refusal.code, "message": refusal.message]],
                 options: [.withoutEscapingSlashes])) ?? Data()

@@ -18,6 +18,7 @@
    -------------------------------------------------------------------------- */
 
 import { CloudClient } from "./cloud-client.js";
+import { viewerEventLogFor } from "./cloud-viewer-events.js";
 import {
     importSenderPublicKey, loadCryptoKey, loadCryptoKeyID, loadPairingBinding,
     storeCryptoKey, storePairingBinding, storePairingCryptoKeys
@@ -609,6 +610,10 @@ export class CloudViewerSession {
                 masterKeyIDName: this.masterKeyIDName(),
                 senderName: this.senderKeyName(opened.machineDeviceID) }
         }, this.indexedDB);
+        // A client still running may have been told "no pairing" for this machine a moment ago.
+        if (this.client && typeof this.client.forgetMachinePairingAnswer === "function") {
+            this.client.forgetMachinePairingAnswer(opened.machineID);
+        }
         return opened;
     }
 
@@ -644,6 +649,12 @@ export class CloudViewerSession {
             // out here rather than at the first refused envelope.
             allowWrites: this.caps.indexOf("send_prompt") >= 0,
             nextSequence: durableSequence(this.storage, SEQUENCE_KEY + ":" + this.deviceID),
+            // Receive failures and the door, kept on this device and delivered to the paired Mac
+            // with nobody pressing anything (`cloud-viewer-events.js`, `docs/diagnostics.md`).
+            // With Web Locks only one tab of this device writes the stored rows.
+            viewerEvents: viewerEventLogFor(this.storage, this.account, this.deviceID, {
+                locks: globalThis.navigator && globalThis.navigator.locks || null }),
+            webBuild: this.config && typeof this.config.build === "string" ? this.config.build : "",
             WebSocket: this.WebSocket,
             handlers: this.handlers,
             // Reconnect realignment is channel-by-channel, not one atomic account inventory.

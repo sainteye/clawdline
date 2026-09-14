@@ -274,8 +274,9 @@ await check("T-B3 a non-closing relay error does not rename a later network clos
 
 /* ---- T-B4 · §5 rule 2: no synchronous throw ------------------------------------------------ */
 
-// Called for their effect, never awaited by a page; they are called here too, and must not throw.
-const LIFECYCLE = new Set(["events", "subscribe", "stop", "retire"]);
+// Called for their effect or read at once, never awaited by a page; called here too, and must not throw.
+const LIFECYCLE = new Set(["events", "subscribe", "stop", "retire", "forgetMachinePairingAnswer",
+    "machineAccess", "machineDescriptor"]);
 // Cannot fail from a cached answer, or succeed by opening a socket; still held to "a thenable".
 const NEED_NOT_REJECT = new Set(["sessions", "tasks", "machines", "start", "refresh", "whenReady"]);
 
@@ -836,6 +837,782 @@ await check("§4.3 the Cloud client answers cloud.status for every published Mac
     assert.deepEqual([rows["mac-02"].error.layer, rows["mac-02"].error.code], ["mac", "unknown_command"]);
     assert.deepEqual([rows["mac-03"].status, rows["mac-03"].error, rows["mac-03"].capable], [null, null, false],
         "a Mac that never published cloud_status is not asked");
+});
+
+/* ---- viewer events · receive failures reach the paired Mac's fixed file --------------------- */
+
+// `net/cloud-viewer-events.js` and the delivery half of `CloudClient`: every receive failure leaves
+// a row naming its stage and original error, rows survive a reload, and they go to the paired Mac
+// as `diagnostics.events` on their own — removed only when that Mac's receipt names the batch.
+const viewerModule = await optional("../Resources/web/app/js/net/cloud-viewer-events.js");
+
+/** `localStorage` as a page sees it, with a switch that makes every write throw. */
+class FakeStorage {
+    constructor() { this.map = new Map(); this.failWrites = false; this.reads = []; this.writes = []; }
+    get length() { return this.map.size; }
+    key(index) { return Array.from(this.map.keys())[index] ?? null; }
+    getItem(key) { this.reads.push(key); return this.map.has(key) ? this.map.get(key) : null; }
+    setItem(key, value) {
+        if (this.failWrites) throw Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError" });
+        this.writes.push([key, String(value).length]);
+        this.map.set(key, String(value));
+    }
+    removeItem(key) { this.map.delete(key); }
+}
+
+function viewerTimers() {
+    const pending = [];
+    return { pending,
+        setTimeout(fn, ms) { pending.push({ fn, ms }); return pending.length; },
+        clearTimeout() { },
+        fire() { const due = pending.splice(0); due.forEach((timer) => timer.fn()); return due.length; } };
+}
+
+let viewerClock = 1_789_400_000_000;
+function viewerLog(storage) {
+    need(viewerModule, "net/cloud-viewer-events.js");
+    return new viewerModule.ViewerEventLog({ storage: storage || null, key: "test.viewer-events",
+        now: () => viewerClock });
+}
+
+const MAC_STATUS = { v: 1, generated_at_ms: 1789290000000, counting_since_ms: 1789280000000,
+    clock_guard: { state: "ready", reason: null, clears_at_ms: null }, token_expires_at_ms: 1789290240000,
+    key_id: "ms-1", roster_readable: true, dropped: {}, recent_drops: [], recent_notices: [] };
+
+/** A connected client with a log and manual delivery timers, and mac-01 authenticated on orch/. */
+async function viewerFleet(options) {
+    options = options || {};
+    const storage = options.storage || new FakeStorage();
+    const log = options.log || viewerLog(storage);
+    const timers = viewerTimers();
+    const errors = [];
+    const client = cloudClient(Object.assign({ viewerEvents: log, viewerEventTimers: timers,
+        webBuild: "web-build-1" }, options.client || {}));
+    client.events((event) => { if (event.type === "error") errors.push(event.error); });
+    const socket = await ready(client);
+    if (options.orch !== false) {
+        await fromMac(client, socket, "orch/mac-01", Object.assign({ tasks: [],
+            machine: { name: "Mac", platform: "macos" }, app: { build: options.macBuild || "mac-build-1" },
+            cloud_status: MAC_STATUS }, options.orch || {}));
+    }
+    return { client, socket, log, storage, timers, errors };
+}
+
+async function sealedFromMac(fields, payload, master) {
+    return sealEnvelope(Object.assign({ ch: "s/mac-01/s1", seq: ++macSequence, ts: 1787817600000,
+        class: "stream", key_id: "ms-1", sender: DEVICE }, fields || {}),
+    JSON.stringify(payload === undefined ? { session: { id: "s1" } } : payload), master || masterKey, signingKey);
+}
+
+async function receiveEnvelope(client, socket, envelope, realign) {
+    socket.receive({ type: "envelope", envelope: envelope, realign: realign === true });
+    await client.messageChain;
+}
+
+function failureRows(log) {
+    return log.snapshot().rows.filter((row) => row.event === "cloud.receive.failed");
+}
+
+await check("viewer events · an unknown sender (a second machine) is a row with the sender, the keys held and the target Mac", async function () {
+    const { client, socket, log, errors } = await viewerFleet();
+    const stranger = await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] });
+    await receiveEnvelope(client, socket, stranger);
+    assert.equal(errors.at(-1) && errors.at(-1).code, "unknown_sender", "the emitted code is unchanged");
+    const rows = failureRows(log);
+    assert.equal(rows.length, 1, "one row for one failure");
+    const data = rows[0].data;
+    assert.deepEqual([data.code, data.stage, data.channel_kind, data.machine, data.sender, data.key_id, data.browser_key_id],
+        ["unknown_sender", "sender_key_lookup", "orch", "linux-01", "linux-executor", "ms-1", "ms-1"]);
+    assert.deepEqual([data.sender_key_found, data.target_machine, data.target_sender, data.sender_is_target],
+        [false, "mac-01", DEVICE, false], "H1: not the target Mac's sender, and no key for it");
+    assert.deepEqual([data.routed_machine, data.pairing_found, data.machines_with_pairing, data.machines_without_pairing],
+        ["linux-01", false, ["mac-01"], ["linux-01"]], "no pairing for the machine, and the one it has");
+    assert.ok(data.senders_with_keys.includes(DEVICE) && !data.senders_with_keys.includes("linux-executor"));
+    assert.ok(data.opens_since_ready_total >= 1 && data.opens_since_ready_sender === 0 && Number.isInteger(data.ms_since_ready));
+    assert.equal(data.web_build, "web-build-1");
+    assert.equal(errors.at(-1).viewerEvent.n, rows[0].n, "the thrown failure names its row, for the door's row");
+});
+
+await check("viewer events · the same key id under a different master secret fails at decrypt with OperationError", async function () {
+    const { client, socket, log, errors } = await viewerFleet();
+    const otherMaster = await importMasterSecret(Buffer.alloc(32, 0x42).toString("base64"));
+    await receiveEnvelope(client, socket, await sealedFromMac({ seq: 7001 }, { session: { id: "s1" } }, otherMaster), true);
+    assert.equal(errors.at(-1).code, "unreadable_envelope");
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.code, data.stage, data.error_name, data.sender_key_found, data.sender_is_target,
+        data.key_id, data.seq, data.realign, data.class],
+    ["unreadable_envelope", "decrypt", "OperationError", true, true, "ms-1", 7001, true, "stream"],
+    "signature verified with the paired key; AES-GCM refused the ciphertext");
+    assert.ok(Number.isInteger(data.ct_bytes) && data.ct_bytes >= 16, "the ciphertext's length, not the ciphertext");
+});
+
+await check("viewer events · an envelope failing validateEnvelope is stage validate with the TypeError's words", async function () {
+    const { client, socket, log, errors } = await viewerFleet();
+    const valid = await sealedFromMac({}, { session: { id: "s1" } });
+    await receiveEnvelope(client, socket, Object.assign({}, valid, { extra: 1 }));
+    assert.equal(errors.at(-1).code, "unreadable_envelope");
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.stage, data.error_name, data.error_message],
+        ["validate", "TypeError", "envelope fields do not match protocol v1"],
+        "H4: the original exception rather than unreadable_envelope's sentence");
+    assert.ok(data.field_names.includes("extra") && data.field_names.includes("nonce"), "field names only: " + data.field_names);
+});
+
+await check("viewer events · a legacy pin store that rejects before the machine is bound is stage sender_key_lookup with its DOMException name", async function () {
+    let storeDown = false;
+    const { client, socket, log, errors } = await viewerFleet({ orch: false, client: { senderKeys: {},
+        resolveSenderKey: (sender) => storeDown
+            ? Promise.reject(Object.assign(new Error("The operation failed for reasons unrelated to the database itself"), { name: "UnknownError" }))
+            : Promise.resolve(sender === DEVICE ? senderKey : null) } });
+    await fromMac(client, socket, "s/mac-02/s1", { session: { id: "s1" } });
+    storeDown = true;
+    await receiveEnvelope(client, socket, await sealedFromMac());
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.code, data.stage, data.error_name, data.sender_key_source, data.routed_machine, data.pairing_found],
+        [null, "sender_key_lookup", "UnknownError", "store", "mac-01", false],
+        "H3 on the legacy path: the pin store failed for a machine this client has not bound yet");
+    assert.ok(data.opens_since_ready_sender >= 1, "earlier opens from the same sender: " + data.opens_since_ready_sender);
+    assert.equal(errors.at(-1).code, undefined, "the transport emits the raw error exactly as before");
+});
+
+await check("viewer events · a storage write that throws is counted, never thrown, and the rows still leave", async function () {
+    const { client, socket, log, storage, timers } = await viewerFleet();
+    storage.failWrites = true;
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    await fromMac(client, socket, "s/mac-01/s2", { session: { id: "s2" } });
+    assert.ok(client.sessionSnapshots.size >= 1, "the transport kept working through a failing store");
+    assert.equal(failureRows(log).length, 1, "the row is held in memory");
+    storage.failWrites = false;
+    timers.fire();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    assert.ok(sent.batch.completeness.storage_errors >= 1, "the batch states the failed writes: " + sent.batch.completeness.storage_errors);
+    assert.equal(sent.batch.rows.length, 1);
+    await answer(client, socket, "mac-01", { read: "action:" + sent.request, status: 200,
+        body: { ok: true, batch_id: sent.batch.batch_id, rows: 1 } });
+    await until(() => client.lastViewerDelivery && client.lastViewerDelivery.state === "delivered", "the receipt");
+    storage.failWrites = true;
+    log.rememberTarget({ machine: "mac-02", sender: "other", capable: true });
+    viewerClock += 5 * 60 * 1000;
+    const before = published(socket).length;
+    const attempt = await outcome(client._deliverViewerEvents(), 200);
+    assert.deepEqual([log.pending(), attempt.state, attempt.value && attempt.value.state, published(socket).length],
+        [false, "resolved", "empty", before], "a store that keeps refusing does not send batches of nothing");
+});
+
+await check("viewer events · an older Mac's unknown_command keeps the rows and does not retry until a build changes", async function () {
+    const { client, socket, log, timers } = await viewerFleet();
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    assert.ok(timers.pending.length === 1 && timers.pending[0].ms >= 5000, "a row schedules one debounced delivery");
+    timers.fire();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    assert.deepEqual([sent.ch, sent.session], ["ctl/mac-01", MACHINE_REPLY], "addressed to the paired Mac, not the only machine");
+    await answer(client, socket, "mac-01", { read: "action:" + sent.request, status: 400,
+        error: { code: "unknown_command", layer: "mac_preflight", message: "This Mac does not know that Cloud command." } });
+    await until(() => client.lastViewerDelivery, "the delivery outcome");
+    assert.deepEqual([client.lastViewerDelivery.state, client.lastViewerDelivery.code], ["blocked", "unknown_command"]);
+    assert.equal(log.snapshot().outbox.batch_id, sent.batch.batch_id, "the batch is still on the phone");
+    viewerClock += 10 * 60 * 1000;
+    const before = published(socket).length;
+    const again = await outcome(client._deliverViewerEvents(), 200);
+    assert.deepEqual([again.value && again.value.state, published(socket).length], ["blocked", before],
+        "no second publish to the same build");
+    assert.equal(timers.pending.length, 0, "and nothing scheduled to try");
+    await fromMac(client, socket, "orch/mac-01", { tasks: [], machine: { platform: "macos" },
+        app: { build: "mac-build-2" }, cloud_status: MAC_STATUS });
+    const retried = client._deliverViewerEvents();
+    const resent = await nextCommand(socket, "diagnostics.events");
+    assert.deepEqual([resent.request, JSON.stringify(resent.batch)], [sent.request, JSON.stringify(sent.batch)],
+        "a rebuilt Mac is asked again with the same request and the same bytes");
+    log.record("test.later", { kept: 1 });
+    await answer(client, socket, "mac-01", { read: "action:" + resent.request, status: 400, error: { code: "viewer_events_malformed",
+        layer: "mac_route", message: "That batch is not viewer events v1 at rows[0].data.kept." } });
+    assert.deepEqual([(await retried).state, log.snapshot().outbox, log.snapshot().blocked], ["refused", null, null],
+        "a batch the Mac refuses for its content is dropped, not held: no resend of those bytes can succeed");
+    viewerClock += 2 * 60 * 1000;
+    const next = client._deliverViewerEvents();
+    const after = await nextCommand(socket, "diagnostics.events");
+    const refusal = after.batch.rows.find((row) => row.event === "viewer_events.batch.refused");
+    assert.deepEqual([after.request === sent.request, after.batch.completeness.dropped_refused,
+        refusal && refusal.data.code, refusal && refusal.data.batch_id, refusal && refusal.data.refusal_path,
+        after.batch.rows.some((row) => row.event === "test.later")],
+    [false, 1, "viewer_events_malformed", sent.batch.batch_id, "rows[0].data.kept", true],
+    "the next batch counts the lost row, names the refusal and carries the row recorded behind it");
+    await answer(client, socket, "mac-01", { read: "action:" + after.request, status: 200,
+        body: { ok: true, batch_id: after.batch.batch_id, rows: after.batch.rows.length } });
+    assert.equal((await next).state, "delivered");
+});
+
+await check("viewer events · a burst of 50 failures keeps bounded rows and the exact dropped count", async function () {
+    const { client, socket, log, timers } = await viewerFleet();
+    for (let i = 0; i < 50; i += 1) {
+        await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/linux-01/t" + i, sender: "linux-executor" }), true);
+    }
+    const state = log.snapshot();
+    assert.equal(failureRows(log).length, 3, "three rows for one key in one window");
+    assert.equal(state.counts.rate_limited, 47);
+    timers.fire();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    const completeness = sent.batch.completeness;
+    assert.deepEqual([completeness.rows, completeness.dropped_rate_limited, completeness.dropped_overflow],
+        [3, 47, 0]);
+    assert.equal(completeness.rows + completeness.dropped_overflow, completeness.n_to - completeness.n_from + 1,
+        "every kept or overflowed row consumed one n");
+    assert.equal(completeness.rate_limited.length, 1);
+    assert.deepEqual([completeness.rate_limited[0].dropped, completeness.rate_limited[0].event],
+        [47, "cloud.receive.failed"]);
+});
+
+await check("viewer events · no row or batch ever holds nonce, ct, sig, plaintext or an engine's words about it", async function () {
+    // Short and not token-shaped, so only an allowlist can keep it out: V8 writes it into the
+    // TypeError a view handler throws on the real apply path.
+    const secret = "Fix login bug";
+    const { client, socket, log, storage, timers } = await viewerFleet({ client: { handlers: {
+        sessions: (list) => { for (const row of list) if (typeof row.title === "string") row.title.x = 1; } } } });
+    const envelopes = [
+        await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [], title: secret }),
+        await sealedFromMac({}, { session: secret }),
+        await sealedFromMac({}, { session: { id: "s1", title: secret } },
+            await importMasterSecret(Buffer.alloc(32, 0x43).toString("base64"))),
+        await sealedFromMac({ ch: "s/mac-01/s9" }, { session: { id: "s9", title: secret } })
+    ];
+    const tampered = Object.assign({}, envelopes[1], { sig: envelopes[0].sig });
+    for (const envelope of envelopes.concat([tampered])) await receiveEnvelope(client, socket, envelope);
+    const rows = failureRows(log);
+    assert.deepEqual(rows.map((row) => row.data.stage).sort(), ["apply", "apply", "decrypt", "sender_key_lookup", "signature_verify"],
+        "five failures, and the view handler's is one of them");
+    const handler = rows.find((row) => row.data.stage === "apply" && row.data.error_name === "TypeError");
+    assert.deepEqual([handler && handler.data.error_message, handler && handler.data.error_class], [null, "javascript"],
+        "the handler's TypeError keeps its name and class, never its words");
+    // The same words as an engine or a server writes them, V8 and WebKit, through the one function
+    // every receive, frame and door row uses for an exception.
+    for (const thrown of [new TypeError("Cannot create property 'x' on string 'Fix login bug'"),
+        new TypeError("Cannot use 'in' operator to search for 'id' in Fix login bug"),
+        new SyntaxError("Unexpected token 'F', \"Fix login bug\" is not valid JSON"),
+        new TypeError("Attempted to assign to readonly property."), new SyntaxError("JSON Parse error: Unexpected identifier \"Fix\""),
+        Object.assign(new Error("Fix login bug"), { code: "read_failed" }), Object.assign(new Error("x"), { name: "Fix login bug" })]) {
+        const fields = viewerModule.errorFields(thrown);
+        assert.ok(!JSON.stringify(fields).includes("Fix") && !JSON.stringify(fields).includes("readonly"),
+            "withheld: " + JSON.stringify(fields));
+    }
+    assert.deepEqual(viewerModule.errorFields(Object.assign(new Error("the envelope sender is not paired"), { code: "unknown_sender" })),
+        { name: "Error", message: "the envelope sender is not paired", code: "unknown_sender", class: "own" });
+    assert.deepEqual(log.record("test.fields", { nonce: "n", ct: "c", sig: "s", plaintext: "p", title: "t", token: "k", kept: 1 }).rateLimited, false);
+    timers.fire();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    const stored = Array.from(storage.map.values()).join("\n");
+    const wire = JSON.stringify(sent.batch);
+    for (const text of [stored, wire]) {
+        assert.ok(!text.includes("Fix"), "no plaintext and no engine sentence quoting it");
+        for (const envelope of envelopes.concat([tampered])) {
+            for (const field of ["nonce", "ct", "sig"]) assert.ok(!text.includes(envelope[field]), "no " + field + " value");
+        }
+        assert.ok(!/"(nonce|ct|sig|plaintext|title|token)":/.test(text), "no field named for a secret");
+    }
+    assert.deepEqual(sent.batch.rows.find((row) => row.event === "test.fields").data, { kept: 1 });
+});
+
+await check("viewer events · every sentence a row may keep is one the web source writes", async function () {
+    const sources = await Promise.all(["net/cloud-crypto.js", "net/cloud-client.js", "net/cloud-boot.js"].map((file) =>
+        readFile(new URL("../Resources/web/app/js/" + file, import.meta.url), "utf8")));
+    const joined = sources.join("\n").replace(/"\s*\+\s*"/g, "").replace(/\(field \|\| "value"\) \+ "/g, "\"value");
+    const invented = viewerModule.OWN_ERROR_MESSAGES.filter((text) => !["nonce", "ct", "sig"].some((field) =>
+        text === field + " is not canonical base64") && !joined.includes("\"" + text + "\""));
+    assert.deepEqual(invented, [], "an allowlisted sentence no code writes");
+});
+
+await check("viewer events · rows survive a reload and leave the phone only on a receipt naming their batch", async function () {
+    const storage = new FakeStorage();
+    const first = await viewerFleet({ storage });
+    await receiveEnvelope(first.client, first.socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    first.client.stop();
+    first.log.flush(); // what `pagehide` does
+    const reloaded = viewerLog(storage);
+    assert.equal(reloaded.snapshot().rows.length, 1, "a new page reads the rows the last one kept");
+    const second = await viewerFleet({ storage, log: reloaded });
+    viewerClock += 1000;
+    second.timers.fire();
+    const sent = await nextCommand(second.socket, "diagnostics.events");
+    assert.equal(sent.batch.rows[0].data.sender, "linux-executor");
+    assert.equal(reloaded.snapshot().outbox.batch_id, sent.batch.batch_id, "sent is not removed");
+    await answer(second.client, second.socket, "mac-01", { read: "action:" + sent.request, status: 200,
+        body: { ok: true, batch_id: "some-other-batch", rows: 1 } });
+    await until(() => second.client.lastViewerDelivery, "the first outcome");
+    assert.equal(second.client.lastViewerDelivery.state, "failed", "a receipt for another batch is not an acknowledgement");
+    assert.ok(viewerModule.ViewerEventLog && new viewerModule.ViewerEventLog({ storage, key: "test.viewer-events" }).snapshot().outbox,
+        "and a reload still finds the batch");
+    viewerClock += 61_000;
+    const delivering = second.client._deliverViewerEvents();
+    const resent = await nextCommand(second.socket, "diagnostics.events");
+    assert.equal(resent.request, sent.request, "the resend is the same request, so the Mac's ledger does not append twice");
+    await answer(second.client, second.socket, "mac-01", { read: "action:" + resent.request, status: 200,
+        body: { ok: true, batch_id: sent.batch.batch_id, rows: 1, path: "/Users/x/Library/Logs/Clawdline/diagnostics/cloud-viewer-events.jsonl" } });
+    const ended = await delivering;
+    assert.equal(ended.state, "delivered");
+    const after = new viewerModule.ViewerEventLog({ storage, key: "test.viewer-events" }).snapshot();
+    assert.deepEqual([after.outbox, after.rows.length, after.acknowledged.batch_id], [null, 0, sent.batch.batch_id]);
+});
+
+await check("viewer events · a second machine does not stop delivery, and a Mac without cloud_status is never asked", async function () {
+    const withLinux = await viewerFleet();
+    await fromMac(withLinux.client, withLinux.socket, "orch/linux-01", { tasks: [], machine: { platform: "linux" } });
+    assert.throws(() => withLinux.client._onlyMachine("diagnostics"), (error) => error.code === "cloud_machine_ambiguous",
+        "the fleet that breaks _onlyMachine");
+    await receiveEnvelope(withLinux.client, withLinux.socket, await sealedFromMac({ ch: "s/mac-01/s1", sender: "nobody" }));
+    withLinux.timers.fire();
+    assert.equal((await nextCommand(withLinux.socket, "diagnostics.events")).ch, "ctl/mac-01");
+
+    const old = await viewerFleet({ orch: { cloud_status: undefined } });
+    await receiveEnvelope(old.client, old.socket, await sealedFromMac({ sender: "nobody" }));
+    const before = published(old.socket).length;
+    // Bounded: were the Mac asked, its answer would wait on a read timer this suite never fires.
+    const outcomeOld = await outcome(old.client._deliverViewerEvents(), 200);
+    assert.deepEqual([outcomeOld.state, outcomeOld.value && outcomeOld.value.state, outcomeOld.value && outcomeOld.value.why,
+        published(old.socket).length], ["resolved", "deferred", "cloud_feature_unavailable", before],
+    "typed, local, nothing published, rows kept");
+    assert.equal(failureRows(old.log).length, 1);
+});
+
+/* ---- viewer events · the per-machine pairing receive path ----------------------------------- */
+
+// The hosted console hands `CloudClient` both pairing hooks, so every routed envelope asks the
+// store for this browser's pairing with its machine first, and a pre-scoping browser's route is
+// bound only after its pin verified and its content decrypted. These checks drive that
+// composition and read the row each failure leaves; one that should leave none says so.
+
+/** A pairing as `CloudViewerSession.machinePairing` answers one: exact unless `legacy`. */
+function pairingFor(machine, fields) {
+    return Object.assign({ machineID: machine, senderID: DEVICE, keyID: "ms-1", masterKey: masterKey,
+        senderKey: senderKey, legacy: false }, fields || {});
+}
+
+/** Both hooks over a Map of pairings; `hooks.down` rejects every lookup, `hooks.bind` replaces the binder. */
+function pairedClient(store, client) {
+    const hooks = { lookups: [], bindings: [], down: null, bind: null };
+    const options = Object.assign({ senderKeys: {},
+        resolveSenderKey: (sender) => Promise.resolve(sender === DEVICE ? senderKey : null),
+        resolveMachinePairing: (machine) => {
+            hooks.lookups.push(machine);
+            return hooks.down ? Promise.reject(hooks.down) : Promise.resolve(store.get(machine) || null);
+        },
+        bindLegacyMachine: (machine, sender, keyID) => {
+            hooks.bindings.push([machine, sender, keyID]);
+            if (hooks.bind) return hooks.bind(machine, sender, keyID);
+            const bound = pairingFor(machine, { senderID: sender, keyID: keyID, legacy: true });
+            store.set(machine, bound);
+            return Promise.resolve(bound);
+        } }, client || {});
+    return { options, hooks };
+}
+
+const storeRejection = () => Object.assign(new Error("The operation failed for reasons unrelated to the database itself"),
+    { name: "UnknownError" });
+
+await check("viewer events · pairing · a second machine this browser is not paired with is H1a: no pairing, no pin", async function () {
+    const store = new Map([["mac-01", pairingFor("mac-01")]]);
+    const { options } = pairedClient(store);
+    const { client, socket, log, errors } = await viewerFleet({ client: options });
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    assert.equal(errors.at(-1).code, "machine_not_paired", "that machine's state, not the account's decrypt door");
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.stage, data.routed_machine, data.pairing_found, data.pairing_source, data.pairing_legacy,
+        data.pairing_key_id, data.sender_key_found, data.sender_key_source],
+    ["sender_key_lookup", "linux-01", false, "store", null, null, false, "store"],
+    "the store has no pairing for linux-01, so the legacy pin was asked and had none");
+    assert.ok(Number.isInteger(data.pairing_lookup_ms), "the pairing lookup was timed");
+    assert.deepEqual([data.machines_with_pairing, data.machines_without_pairing, data.target_machine, data.sender_is_target],
+        [["mac-01"], ["linux-01"], "mac-01", false]);
+});
+
+await check("viewer events · pairing · a paired machine under another key id is H1b: stage pairing_key_id, both key ids", async function () {
+    const store = new Map([["mac-01", pairingFor("mac-01")], ["mac-02", pairingFor("mac-02", { keyID: "ms-9" })]]);
+    const { options } = pairedClient(store);
+    const { client, socket, log, errors } = await viewerFleet({ client: options });
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-02/s1" }));
+    assert.equal(errors.at(-1).code, "unknown_key");
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.stage, data.pairing_found, data.pairing_legacy, data.pairing_key_id, data.key_id,
+        data.error_message, data.sender_key_found],
+    ["pairing_key_id", true, false, "ms-9", "ms-1", "the envelope does not match the selected machine's pairing", null],
+    "refused before any key was chosen, naming the pairing's key id beside the envelope's");
+});
+
+await check("viewer events · pairing · a decrypted channel from a sender other than the paired one is stage paired_sender", async function () {
+    const store = new Map([["mac-01", pairingFor("mac-01")], ["mac-02", pairingFor("mac-02", { senderID: "mac-02-device" })]]);
+    const { options } = pairedClient(store);
+    const { client, socket, log, errors } = await viewerFleet({ client: options });
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/mac-02" }, { tasks: [] }));
+    assert.equal(errors.at(-1).code, "unknown_sender");
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.stage, data.sender, data.pairing_sender, data.sender_key_source, data.sender_key_found,
+        data.error_message],
+    ["paired_sender", DEVICE, "mac-02-device", "pairing", true,
+        "the authenticated machine channel does not match its paired sender"],
+    "the signature and decrypt passed with the pairing's keys; only the clear sender differs");
+    assert.equal(client.viewerVerified.has("mac-02"), false, "a channel refused here is never a delivery target");
+});
+
+await check("viewer events · pairing · machine_key_incomplete is attributed to the lookup or to the legacy binding that refused", async function () {
+    const store = new Map([["mac-01", pairingFor("mac-01")],
+        ["mac-02", pairingFor("mac-02", { senderKey: null })]]);
+    const { options, hooks } = pairedClient(store);
+    const { client, socket, log, errors } = await viewerFleet({ client: options });
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-02/s1" }));
+    assert.equal(errors.at(-1).code, "machine_key_incomplete");
+    hooks.bind = (machine, sender, keyID) => Promise.resolve({ machineID: machine, senderID: sender, keyID: keyID,
+        masterKey: null, senderKey: senderKey, legacy: true });
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-03/s1" }));
+    assert.equal(errors.at(-1).code, "machine_key_incomplete");
+    const rows = failureRows(log).map((row) => row.data);
+    assert.deepEqual(rows.map((data) => [data.stage, data.routed_machine, data.pairing_found, data.pairing_key_id]),
+        [["machine_pairing_lookup", "mac-02", true, "ms-1"], ["legacy_binding", "mac-03", false, null]],
+        "a stored pairing missing its sender key, then a pin whose binding came back without a content key");
+    assert.deepEqual(hooks.bindings, [["mac-03", DEVICE, "ms-1"]], "the binder ran once, after the decrypt");
+});
+
+await check("viewer events · pairing · a pairing store that rejects after answering is stage machine_pairing_lookup with pairing_found_before", async function () {
+    const store = new Map([["mac-01", pairingFor("mac-01")]]);
+    const { options, hooks } = pairedClient(store);
+    const first = await viewerFleet({ client: options });
+    assert.deepEqual([failureRows(first.log).length, hooks.lookups], [0, ["mac-01"]], "the Mac opened through its pairing");
+    hooks.down = storeRejection();
+    const renewed = cloudClient(Object.assign({ viewerEvents: first.log, viewerEventTimers: first.timers, resumeFrom: first.client },
+        options));
+    const errors = [];
+    renewed.events((event) => { if (event.type === "error") errors.push(event.error); });
+    const socket = await ready(renewed);
+    await receiveEnvelope(renewed, socket, await sealedFromMac({ ch: "s/mac-01/s1" }));
+    assert.equal(errors.at(-1) && errors.at(-1).code, undefined, "the raw error escapes exactly as before, so no door");
+    const data = failureRows(first.log)[0].data;
+    assert.deepEqual([data.code, data.stage, data.error_name, data.pairing_found, data.pairing_found_before,
+        data.pairing_source, data.sender_key_found],
+    [null, "machine_pairing_lookup", "UnknownError", null, true, "store", null],
+    "H3: the store that answered this machine's pairing a moment ago refused on the replacement client");
+    assert.ok(Number.isInteger(data.pairing_lookup_ms), "and the refusal was timed");
+});
+
+await check("viewer events · pairing · a legacy pin bound after its decrypt leaves no row, and later rows name the bound pairing", async function () {
+    const store = new Map();
+    const { options, hooks } = pairedClient(store);
+    const { client, socket, log, errors } = await viewerFleet({ client: options });
+    const envelope = await sealedFromMac({ ch: "s/mac-01/s1" });
+    await receiveEnvelope(client, socket, envelope);
+    assert.deepEqual([failureRows(log).length, errors.length, hooks.bindings.length, hooks.lookups],
+        [0, 0, 1, ["mac-01"]], "binding the route is a success: no row, no error, one binding, one store lookup");
+    assert.ok(client.sessionSnapshots.size >= 1 && client.viewerVerified.has("mac-01"), "the snapshots were applied");
+    await receiveEnvelope(client, socket, envelope);
+    assert.equal(errors.at(-1).code, "replay");
+    const data = failureRows(log)[0].data;
+    assert.deepEqual([data.stage, data.pairing_found, data.pairing_legacy, data.pairing_source, data.pairing_found_before],
+        ["sequence", true, true, "memory", true],
+        "the replay is refused by sequence, through the pairing bound a moment ago and used by the envelope before it");
+    assert.equal(hooks.bindings.length, 1, "and nothing was bound twice");
+});
+
+await check("viewer events · pairing · a paired Linux executor is never the target, and the batch is sealed with the Mac's pairing", async function () {
+    const macMaster = await importMasterSecret(Buffer.alloc(32, 0x44).toString("base64"));
+    const store = new Map([["mac-01", pairingFor("mac-01", { keyID: "mac-v2", masterKey: macMaster })],
+        ["linux-01", pairingFor("linux-01", { senderID: "linux-executor" })],
+        ["linux-02", pairingFor("linux-02", { senderID: "linux-executor-2" })]]);
+    const { options } = pairedClient(store);
+    const { client, socket, log, timers } = await viewerFleet({ orch: false, client: options });
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" },
+        { v: 1, machine: { name: "AWS", platform: "linux" } }));
+    // A descriptor that never arrived says nothing about the platform; the missing capability still does.
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/linux-02", sender: "linux-executor-2" }, { v: 1 }));
+    assert.deepEqual([client.viewerVerified.has("linux-01"), client.viewerVerified.has("linux-02"), failureRows(log).length],
+        [true, true, 0], "both executors authenticated through their pairings");
+    log.record("test.event", { kept: 1 });
+    // Bounded: an executor that were asked would never answer, and the read timer here never fires.
+    const linuxOnly = await outcome(client._deliverViewerEvents(), 200);
+    assert.deepEqual([linuxOnly.state, linuxOnly.value && linuxOnly.value.state, linuxOnly.value && linuxOnly.value.why,
+        published(socket).length], ["resolved", "deferred", "cloud_feature_unavailable", 0],
+    "paired only with executors — one of them not even saying what it is — nothing is sent anywhere");
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/mac-01", key_id: "mac-v2" },
+        { tasks: [], machine: { platform: "macos" }, app: { build: "mac-build-1" }, cloud_status: MAC_STATUS }, macMaster));
+    timers.fire();
+    await until(() => published(socket).length === 1, "the batch on the wire");
+    const sealed = published(socket)[0].envelope;
+    assert.deepEqual([sealed.ch, sealed.key_id], ["ctl/mac-01", "mac-v2"], "to the Mac, under its pairing's key id");
+    const command = JSON.parse(new TextDecoder().decode(await openEnvelope(sealed, macMaster, senderKey)));
+    assert.equal(command.type, "diagnostics.events");
+    await assert.rejects(openEnvelope(sealed, masterKey, senderKey), "not readable with the account key");
+});
+
+await check("viewer events · pairing · an unknown_command from one target does not hold the rows from the next", async function () {
+    const store = new Map([["mac-old", pairingFor("mac-old")], ["mac-01", pairingFor("mac-01")]]);
+    const { options } = pairedClient(store);
+    const storage = new FakeStorage();
+    const log = viewerLog(storage);
+    log.rememberTarget({ machine: "mac-old", sender: DEVICE, capable: true });
+    const { client, socket } = await viewerFleet({ orch: false, storage, log, client: options });
+    log.record("test.event", { kept: 1 });
+    const first = client._deliverViewerEvents();
+    const sent = await nextCommand(socket, "diagnostics.events");
+    assert.equal(sent.ch, "ctl/mac-old", "a page that has opened nothing uses the Mac chosen before");
+    await answer(client, socket, "mac-old", { read: "action:" + sent.request, status: 400,
+        error: { code: "unknown_command", layer: "mac_preflight", message: "This Mac does not know that Cloud command." } });
+    assert.deepEqual([(await first).state, log.snapshot().blocked.machine, log.snapshot().blocked.mac_build],
+        ["blocked", "mac-old", null]);
+    // No app stamp, so this Mac's build reads as the same null the block recorded: only the machine differs.
+    await fromMac(client, socket, "orch/mac-01", { tasks: [], machine: { platform: "macos" }, cloud_status: MAC_STATUS });
+    viewerClock += 61_000;
+    const next = client._deliverViewerEvents();
+    const resent = await nextCommand(socket, "diagnostics.events");
+    assert.deepEqual([resent.ch, resent.request, JSON.stringify(resent.batch)], ["ctl/mac-01", sent.request, JSON.stringify(sent.batch)],
+        "the Mac this page authenticated gets the same batch, not a block recorded against another machine");
+    await answer(client, socket, "mac-01", { read: "action:" + resent.request, status: 200,
+        body: { ok: true, batch_id: sent.batch.batch_id, rows: sent.batch.rows.length } });
+    assert.deepEqual([(await next).state, log.snapshot().outbox], ["delivered", null]);
+});
+
+await check("viewer events · pairing · a target whose pairing is gone is refused before the wire and tried again later", async function () {
+    const store = new Map();
+    const { options } = pairedClient(store);
+    const log = viewerLog(new FakeStorage());
+    log.rememberTarget({ machine: "mac-gone", sender: DEVICE, capable: true });
+    const { client, socket } = await viewerFleet({ orch: false, log, client: options });
+    log.record("test.event", { kept: 1 });
+    const ended = await outcome(client._deliverViewerEvents(), 200);
+    const attempt = ended.value || {};
+    assert.deepEqual([ended.state, attempt.state, attempt.failure && attempt.failure.code, attempt.failure && attempt.failure.layer,
+        published(socket).length], ["resolved", "failed", "machine_pairing_required", "browser", 0],
+    "_outboundMachinePairing refuses a machine this browser holds no pairing for, and nothing is written");
+    assert.deepEqual([log.snapshot().blocked, log.snapshot().outbox.last_failure.code], [null, "machine_pairing_required"],
+        "not a final refusal: the batch stays and the backoff decides the next attempt");
+});
+
+await check("viewer events · pairing · a receive failure named with production-length ids is kept whole", async function () {
+    const mac = "3f6a1c2e-8b4d-4e7f-9a10-2c3d4e5f6a7b";
+    const linux = "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a";
+    const macDevice = "dev_" + "0123456789abcdef0123456789abcdef";
+    const linuxDevice = "dev_" + "fedcba9876543210fedcba9876543210";
+    const reenrolled = "dev_" + "00112233445566778899aabbccddeeff";
+    const store = new Map([[mac, pairingFor(mac, { senderID: macDevice, keyID: "master-v1" })]]);
+    const { options } = pairedClient(store, { keyID: "master-v1", masterKeys: { "master-v1": masterKey },
+        senderKeys: { [macDevice]: senderKey }, webBuild: "b0123456789abcdef01234567" });
+    const { client, socket, log } = await viewerFleet({ orch: false, client: options });
+    // The page a phone actually holds: its Mac authenticated, an unpaired executor publishing beside
+    // it, then an envelope from the Mac's channel under a sender its pairing does not name.
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/" + mac, sender: macDevice, key_id: "master-v1" },
+        { tasks: [], machine: { platform: "macos" }, cloud_status: MAC_STATUS }));
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/" + linux, sender: linuxDevice, key_id: "master-v1" },
+        { tasks: [] }));
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/" + mac, sender: reenrolled, key_id: "master-v1" },
+        { tasks: [] }));
+    const row = failureRows(log)[1];
+    const bytes = JSON.stringify(row).length;
+    assert.equal(row.data.row_truncated, undefined, "not shrunk: " + bytes + " bytes");
+    assert.ok(bytes > 1536, "a row the previous 1,536-byte bound would have cut: " + bytes);
+    assert.deepEqual([row.data.stage, row.data.pairing_sender, row.data.sender, row.data.target_machine,
+        row.data.machines_with_pairing, row.data.machines_without_pairing, row.data.senders_without_keys,
+        row.data.field_names.length],
+    ["paired_sender", macDevice, reenrolled, mac, [mac], [linux], [linuxDevice], 10],
+    "every id and every envelope field name survives");
+    assert.ok(Object.keys(row.data).length <= 48, "within the Mac's 48-field row: " + Object.keys(row.data).length);
+});
+
+/* ---- viewer events · the batch the Mac can take, the store two tabs share -------------------- */
+
+/** A lock manager as `navigator.locks` behaves: exclusive, queued, `ifAvailable` answers null. */
+function fakeLocks() {
+    const queues = new Map();
+    return { queues, request(name, options, callback) {
+        if (typeof options === "function") { callback = options; options = {}; }
+        const queue = queues.get(name) || [];
+        if (options.ifAvailable && queue.length) return Promise.resolve(callback(null));
+        return new Promise((resolve, reject) => {
+            const grant = () => Promise.resolve(callback({ name })).then(resolve, reject).finally(() => {
+                queue.shift();
+                if (queue.length) queue[0](); else queues.delete(name);
+            });
+            queue.push(grant);
+            queues.set(name, queue);
+            if (queue.length === 1) grant();
+        });
+    } };
+}
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+const neverTimers = { setTimeout: () => 1, clearTimeout: () => { } };
+
+await check("viewer events · a row never exceeds 48 fields or its UTF-8 bound, and never splits a surrogate", async function () {
+    const log = viewerLog();
+    const wide = {};
+    for (let i = 0; i < 48; i += 1) wide["f" + String(i).padStart(2, "0")] = i >= 46 ? "a" + "😀".repeat(300) : "é";
+    log.record("test.wide", wide);
+    const list = Array.from({ length: 16 }, () => "x" + "😀".repeat(64));
+    log.record("test.list", { lone: "\uD800abc", list: list, text: "😀".repeat(400) });
+    for (const row of log.snapshot().rows) {
+        const json = JSON.stringify(row);
+        assert.ok(Object.keys(row.data).length <= 48, "fields: " + Object.keys(row.data).length);
+        assert.ok(viewerModule.utf8Bytes(json) <= viewerModule.VIEWER_EVENT_LIMITS.rowBytes, "bytes: " + viewerModule.utf8Bytes(json));
+        assert.ok(!/\\ud[89ab]/i.test(json), "no lone surrogate escape in " + row.event);
+    }
+    assert.equal(log.snapshot().rows[0].data.row_truncated, true, "the 48-field row was shrunk and kept 48");
+});
+
+const CONTRACT = new URL("./cloud-viewer-events-contract-batches.json", import.meta.url);
+
+/** The worst batches the page seals, from the real log: its fixture is what the Swift suite validates. */
+function contractBatches() {
+    let now = 1_789_400_000_000;
+    const storage = new FakeStorage();
+    const limits = { perKeyInWindow: 1, allInWindow: 100000 };
+    const killed = new viewerModule.ViewerEventLog({ storage, key: "contract", now: () => now, tab: "tab-killed", timers: neverTimers, limits });
+    killed.record("test.flushed", { kept: 1 });
+    killed.flush();
+    killed.record("test.unflushed", { kept: 2 });
+    killed.record("test.unflushed", { kept: 3 });
+    const log = new viewerModule.ViewerEventLog({ storage, key: "contract", now: () => now, tab: "tab-contract", timers: neverTimers, limits });
+    const tall = (seed) => { const data = {}; for (let i = 0; i < 48; i += 1) data["f" + String(i).padStart(2, "0")] = seed + "é".repeat(12); return data; };
+    for (let i = 0; i < 120; i += 1) {
+        now += 7;
+        const data = i % 3 === 0 ? tall("ü" + i) : i % 3 === 1 ? Object.assign(tall("ö"), { f00: "a" + "😀".repeat(300), f01: "😀".repeat(300) })
+            : { list: Array.from({ length: 16 }, () => "x" + "😀".repeat(64)), text: "😀".repeat(400), lone: "\uDC00" + i };
+        log.record("contract.row.kind_" + (i % 3), data, "row-" + i);
+    }
+    for (let i = 0; i < 20; i += 1) { log.record("contract.limited", {}, "k".repeat(i) + "😀".repeat(200)); log.record("contract.limited", {}, "k".repeat(i) + "😀".repeat(200)); }
+    const first = JSON.parse(log.takeBatch({ device: "web_contract", tab: "tab-contract", webBuild: "b-contract-é" }).body);
+    log.block({ machine: "mac-01", code: "viewer_events_malformed", layer: "mac_route", status: 400,
+        message: "That batch is not viewer events v1 at rows[3].data.f00." });
+    now += 1000;
+    log.record("contract.after", { kept: "ä" });
+    const second = JSON.parse(log.takeBatch({ device: "web_contract", tab: "tab-contract", webBuild: "b-contract-é" }).body);
+    // The two random ids are the only bytes a run changes; everything else is the page's.
+    return JSON.parse(JSON.stringify([first, second]).split(first.batch_id).join("contract-batch-1")
+        .split(second.batch_id).join("contract-batch-2"));
+}
+
+await check("viewer events · the page→Mac contract fixture is exactly what the page seals today", async function () {
+    const produced = JSON.stringify({ v: 1, generated_by: "Tests/web-cloud-failures.mjs", batches: contractBatches() }) + "\n";
+    if (process.env.CLAWDLINE_WRITE_VIEWER_CONTRACT === "1") (await import("node:fs")).writeFileSync(CONTRACT, produced);
+    const committed = await readFile(CONTRACT, "utf8").catch(() => "");
+    assert.ok(committed === produced, "Tests/cloud-viewer-events-contract-batches.json no longer matches the page; "
+        + "regenerate it with CLAWDLINE_WRITE_VIEWER_CONTRACT=1 node Tests/web-cloud-failures.mjs and let the Swift suite judge it");
+    const [first, second] = JSON.parse(committed).batches;
+    const c = first.completeness;
+    assert.deepEqual([first.rows.length, c.dropped_overflow, c.dropped_unflushed, c.rows + c.dropped_overflow + c.dropped_unflushed,
+        c.n_to - c.n_from + 1, second.completeness.dropped_refused], [100, 41, 1, 142, 142, 100]);
+    assert.ok(Buffer.byteLength(JSON.stringify(first)) <= viewerModule.VIEWER_EVENT_LIMITS.batchBytes, "within the page's batch bound");
+});
+
+await check("viewer events · a failure writes a few bytes, not the state, and a killed page's rows are counted", async function () {
+    const storage = new FakeStorage();
+    let flushes = 0;
+    const timers = { setTimeout: () => { flushes += 1; return flushes; }, clearTimeout: () => { } };
+    const log = new viewerModule.ViewerEventLog({ storage, key: "cost", now: () => viewerClock, timers, limits: { perKeyInWindow: 2 } });
+    log.record("test.first", { kept: 1 }, "first");
+    log.flush();
+    storage.reads.length = 0;
+    storage.writes.length = 0;
+    for (let i = 0; i < 40; i += 1) { log.record("cloud.receive.failed", { i: i }, "burst"); log.pending(); log.nextSendAt(); }
+    assert.deepEqual([storage.reads.length, storage.writes.filter(([key]) => key === "cost").length, flushes],
+        [0, 0, 2], "no read, no whole-state write per failure; one coalesced flush armed");
+    assert.ok(storage.writes.every(([key, bytes]) => key === "cost:journal" && bytes < 64), "only the journal: " + storage.writes.length);
+    const reloaded = new viewerModule.ViewerEventLog({ storage, key: "cost", now: () => viewerClock });
+    const state = reloaded.snapshot();
+    assert.deepEqual([state.rows.length, state.counts.unflushed, state.counts.rate_limited, state.rate["(unflushed)"].dropped],
+        [1, 2, 38, 38], "the page died before its flush: two kept and 38 rate-limited rows, each counted");
+    const c = JSON.parse(reloaded.takeBatch({}).body).completeness;
+    assert.equal(c.rows + c.dropped_overflow + c.dropped_unflushed, c.n_to - c.n_from + 1, "and the arithmetic still holds");
+});
+
+await check("viewer events · two tabs of one device: one writer, the other's rows kept and renumbered, never overwritten", async function () {
+    const storage = new FakeStorage();
+    const locks = fakeLocks();
+    const a = new viewerModule.ViewerEventLog({ storage, key: "tabs", now: () => viewerClock, locks, tab: "tab-a", timers: neverTimers });
+    const b = new viewerModule.ViewerEventLog({ storage, key: "tabs", now: () => viewerClock, locks, tab: "tab-b", timers: neverTimers });
+    await settle();
+    a.record("test.a", { kept: 1 });
+    const cause = b.record("cloud.receive.failed", { kept: 2 });
+    b.record("cloud.door.raised", { cause_n: cause.n });
+    a.record("test.a", { kept: 3 }, "again");
+    assert.deepEqual([a.writer, b.writer, b.takeBatch({}), b.claimLease("tab-b")], [true, false, null, false],
+        "the second tab neither seals nor delivers");
+    a.close();
+    await settle();
+    const rows = JSON.parse(storage.getItem("tabs")).rows;
+    assert.deepEqual(rows.map((row) => [row.n, row.tab, row.event]),
+        [[1, "tab-a", "test.a"], [2, "tab-a", "test.a"], [3, "tab-b", "cloud.receive.failed"], [4, "tab-b", "cloud.door.raised"]],
+        "all four rows, each naming its tab");
+    assert.equal(rows[3].data.cause_n, 3, "the door row still names the row that caused it");
+});
+
+await check("viewer events · another device's log for the account is removed and counted, unless a tab holds it", async function () {
+    const storage = new FakeStorage();
+    const locks = fakeLocks();
+    const prefix = "clawdline.cloud.viewer-events.v1:acct-prune:";
+    const old = new viewerModule.ViewerEventLog({ storage, key: prefix + "web_old", now: () => viewerClock, timers: neverTimers });
+    old.record("test.old", { kept: 1 });
+    old.record("test.old", { kept: 2 }, "two");
+    old.flush();
+    const held = new viewerModule.ViewerEventLog({ storage, key: prefix + "web_live", now: () => viewerClock, locks, timers: neverTimers });
+    await settle();
+    held.record("test.live", { kept: 1 });
+    held.flush();
+    const log = viewerModule.viewerEventLogFor(storage, "acct-prune", "web_new", { locks, now: () => viewerClock, timers: neverTimers });
+    await settle();
+    await settle();
+    const pruned = log.snapshot().rows.filter((row) => row.event === "viewer_events.log.pruned");
+    assert.deepEqual([storage.getItem(prefix + "web_old"), storage.getItem(prefix + "web_old:journal"), !!storage.getItem(prefix + "web_live")],
+        [null, null, true], "the replaced device's state is gone; the live tab's is not");
+    assert.deepEqual(pruned.map((row) => [row.data.device, row.data.rows, row.data.outbox_rows]), [["web_old", 2, 0]]);
+    assert.ok(pruned[0].data.bytes > 100, "and the bytes it held: " + pruned[0].data.bytes);
+});
+
+/* ---- per-machine scoping: a machine this browser is not paired with is not the account's door ---- */
+
+await check("viewer events · pairing · an unpaired second machine opens no door, the Mac stays live, and the store is asked once", async function () {
+    const store = new Map([["mac-01", pairingFor("mac-01")]]);
+    const { options, hooks } = pairedClient(store);
+    const { client, socket, errors } = await viewerFleet({ client: options });
+    const linux = { ch: "orch/linux-01", sender: "linux-executor" };
+    await receiveEnvelope(client, socket, await sealedFromMac(linux, { tasks: [] }));
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-01/s1" }, { session: { id: "s1" } }));
+    await receiveEnvelope(client, socket, await sealedFromMac(linux, { tasks: [] }));
+    assert.deepEqual(errors.map((error) => error.code), ["machine_not_paired", "machine_not_paired"],
+        "only that machine's code, which the door does not classify");
+    assert.ok(client.sessionSnapshots.size >= 1, "the Mac's Session applied between them");
+    assert.deepEqual([client.machineAccess("linux-01").state, client.machineAccess("linux-01").envelopes, client.machineAccess("mac-01")],
+        ["not_paired", 2, null]);
+    assert.equal(hooks.lookups.filter((machine) => machine === "linux-01").length, 1, "F4: the answer none is kept");
+    client.forgetMachinePairingAnswer("linux-01");
+    store.set("linux-01", pairingFor("linux-01", { senderID: "linux-executor" }));
+    await receiveEnvelope(client, socket, await sealedFromMac(linux, { tasks: [] }));
+    assert.deepEqual([hooks.lookups.filter((machine) => machine === "linux-01").length, client.machineAccess("linux-01"), errors.length],
+        [2, null, 2], "a completed pairing is asked for again and opens");
+    const renewed = cloudClient(Object.assign({ resumeFrom: client }, options));
+    assert.deepEqual([renewed.machineDescriptor("mac-01").machine.platform, renewed._macBuild("mac-01"), renewed.viewerVerified.has("mac-01")],
+        ["macos", "mac-build-1", true], "a viewer token renewal keeps what each authenticated machine described");
+    store.delete("mac-01");
+    const renewedSocket = await ready(renewed);
+    const asked = hooks.lookups.length;
+    for (let i = 0; i < 3; i += 1) await receiveEnvelope(renewed, renewedSocket, await sealedFromMac({ ch: "s/mac-01/s1", sender: "no-pin" }));
+    assert.equal(hooks.lookups.length - asked, 3, "a machine this viewer found paired is asked again every time, never remembered as absent");
+});
+
+await check("viewer events · pairing · a paired Mac under a drifted key, and a legacy browser whose key drifted before binding, still get the door", async function () {
+    const otherMaster = await importMasterSecret(Buffer.alloc(32, 0x45).toString("base64"));
+    const paired = pairedClient(new Map([["mac-01", pairingFor("mac-01", { masterKey: otherMaster })]]));
+    const one = await viewerFleet({ orch: false, client: paired.options });
+    await receiveEnvelope(one.client, one.socket, await sealedFromMac({ ch: "s/mac-01/s1" }));
+    const legacy = pairedClient(new Map(), { masterKey: otherMaster, masterKeys: {} });
+    const two = await viewerFleet({ orch: false, client: legacy.options });
+    await receiveEnvelope(two.client, two.socket, await sealedFromMac({ ch: "s/mac-01/s1" }));
+    assert.deepEqual([one.errors.at(-1).code, two.errors.at(-1).code, two.client.machineAccess("mac-01"), legacy.hooks.bindings.length],
+        ["unreadable_envelope", "unreadable_envelope", null, 0],
+        "a pairing, or a sender pin with no binding yet, keeps the encryption door for real key drift");
+});
+
+await check("viewer events · pairing · a legacy binding the key store cannot write still applies, once, with a row", async function () {
+    const { options, hooks } = pairedClient(new Map());
+    hooks.bind = () => Promise.reject(Object.assign(new Error("The quota has been exceeded."), { name: "QuotaExceededError" }));
+    const { client, socket, log, errors } = await viewerFleet({ orch: false, client: options });
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-01/s1" }, { session: { id: "s1" } }));
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-01/s2" }, { session: { id: "s2" } }));
+    const unsaved = log.snapshot().rows.filter((row) => row.event === "cloud.receive.binding_unsaved");
+    assert.deepEqual([errors.length, client.sessionSnapshots.size, hooks.bindings.length, unsaved.length,
+        unsaved[0] && unsaved[0].data.error_name, client.machinePairings.get("mac-01").unsaved],
+    [0, 2, 1, 1, "QuotaExceededError", true], "proven by its signature and decrypt, held in memory, not re-bound per envelope");
 });
 
 /* ---- ends ---------------------------------------------------------------------------------- */
