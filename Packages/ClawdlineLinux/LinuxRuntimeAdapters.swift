@@ -1085,9 +1085,12 @@ final class LinuxTmuxTerminalHost: TerminalHost {
                                 operation: .close)
         let fields = Self.fields(String(decoding: observed.stdout, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines))
+        let currentIdentity = LinuxProcfs.row(pid: expected.pid)?.identity
         guard observed.status == 0, fields.count == 2,
               pid_t(fields[0]) == expected.pid, String(fields[1]) == created.tty,
-              LinuxProcfs.row(pid: expected.pid)?.identity == expected else { return false }
+              let currentIdentity, currentIdentity.pid == expected.pid,
+              currentIdentity.startToken == expected.startToken,
+              currentIdentity.processGroupID == expected.pid else { return false }
         guard try tmux(["kill-pane", "-t", created.id], operation: .close).status == 0 else {
             return false
         }
@@ -1097,7 +1100,8 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         for _ in 0..<25 {
             let readBack = try tmux(["display-message", "-p", "-t", created.id, "#{pane_id}"],
                                     operation: .close)
-            let processGone = LinuxProcfs.row(pid: expected.pid)?.identity != expected
+            let remaining = LinuxProcfs.row(pid: expected.pid)?.identity
+            let processGone = remaining == nil || remaining?.startToken != expected.startToken
             if readBack.status != 0, processGone { return true }
             usleep(20_000)
         }
