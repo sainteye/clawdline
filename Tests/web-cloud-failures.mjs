@@ -1009,8 +1009,9 @@ await check("viewer events · an older Mac's unknown_command keeps the rows and 
     assert.equal(log.snapshot().outbox.batch_id, sent.batch.batch_id, "the batch is still on the phone");
     viewerClock += 10 * 60 * 1000;
     const before = published(socket).length;
-    const again = await client._deliverViewerEvents();
-    assert.deepEqual([again.state, published(socket).length], ["blocked", before], "no second publish to the same build");
+    const again = await outcome(client._deliverViewerEvents(), 200);
+    assert.deepEqual([again.value && again.value.state, published(socket).length], ["blocked", before],
+        "no second publish to the same build");
     assert.equal(timers.pending.length, 0, "and nothing scheduled to try");
     await fromMac(client, socket, "orch/mac-01", { tasks: [], machine: { platform: "macos" },
         app: { build: "mac-build-2" }, cloud_status: MAC_STATUS });
@@ -1274,9 +1275,11 @@ await check("viewer events · pairing · a paired Linux executor is never the ta
     assert.deepEqual([client.viewerVerified.has("linux-01"), client.viewerVerified.has("linux-02"), failureRows(log).length],
         [true, true, 0], "both executors authenticated through their pairings");
     log.record("test.event", { kept: 1 });
-    const linuxOnly = await client._deliverViewerEvents();
-    assert.deepEqual([linuxOnly.state, linuxOnly.why, published(socket).length], ["deferred", "cloud_feature_unavailable", 0],
-        "paired only with executors — one of them not even saying what it is — nothing is sent anywhere");
+    // Bounded: an executor that were asked would never answer, and the read timer here never fires.
+    const linuxOnly = await outcome(client._deliverViewerEvents(), 200);
+    assert.deepEqual([linuxOnly.state, linuxOnly.value && linuxOnly.value.state, linuxOnly.value && linuxOnly.value.why,
+        published(socket).length], ["resolved", "deferred", "cloud_feature_unavailable", 0],
+    "paired only with executors — one of them not even saying what it is — nothing is sent anywhere");
     await receiveEnvelope(client, socket, await sealedFromMac({ ch: "orch/mac-01", key_id: "mac-v2" },
         { tasks: [], machine: { platform: "macos" }, app: { build: "mac-build-1" }, cloud_status: MAC_STATUS }, macMaster));
     timers.fire();
@@ -1322,9 +1325,10 @@ await check("viewer events · pairing · a target whose pairing is gone is refus
     log.rememberTarget({ machine: "mac-gone", sender: DEVICE, capable: true });
     const { client, socket } = await viewerFleet({ orch: false, log, client: options });
     log.record("test.event", { kept: 1 });
-    const attempt = await client._deliverViewerEvents();
-    assert.deepEqual([attempt.state, attempt.failure && attempt.failure.code, attempt.failure && attempt.failure.layer,
-        published(socket).length], ["failed", "machine_pairing_required", "browser", 0],
+    const ended = await outcome(client._deliverViewerEvents(), 200);
+    const attempt = ended.value || {};
+    assert.deepEqual([ended.state, attempt.state, attempt.failure && attempt.failure.code, attempt.failure && attempt.failure.layer,
+        published(socket).length], ["resolved", "failed", "machine_pairing_required", "browser", 0],
     "_outboundMachinePairing refuses a machine this browser holds no pairing for, and nothing is written");
     assert.deepEqual([log.snapshot().blocked, log.snapshot().outbox.last_failure.code], [null, "machine_pairing_required"],
         "not a final refusal: the batch stays and the backoff decides the next attempt");
