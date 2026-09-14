@@ -48,6 +48,21 @@ Board revision and returns `historicalTaskBindingReceipt`; the inferred source r
 provenance remain readable. Request replay is idempotent. Paired devices are refused, and stale,
 missing or conflicting identity returns a typed 409 without a partial transfer. The command never
 creates verification, landing, lifecycle or task-registry authority.
+After a complete Board audit, the local machine credential may send `reconcile_catalog` to the
+same endpoint. Its closed body contains `projectId`, `auditId`, and 1–500 entries, each pinning
+`itemId`, `expectedScopeRevision`, `audience`, `role`, nullable `parentId`, `outcome`, and `reason`.
+This is atomic presentation-only reconciliation: it keeps every UUID and all provenance while
+moving technical or obsolete records off the ordinary human board. It cannot assert completion,
+verification, landing, ownership, or task binding. Search can still reveal archived and Agent
+records. Paired/Cloud callers are refused and one stale entry refuses the whole batch.
+The public Board envelope stays at `schemaVersion:1`; only the local durable file is schema 2.
+If an ordinary Project reply says `truncated:true`, read
+`GET /v1/board?project=<id>&item=catalog:<revision>:<offset>:<text>`. The closed selector requires a
+nonempty query of at most 120 UTF-8 bytes and returns at most 64 complete-catalog matches in
+`board.items`, plus `board.catalogSearch:{query,revision,offset,totalCount,nextOffset}`. Repeating
+with the original revision and returned offset makes archived and Agent records discoverable even
+beyond the default 500 rows. A changed Board revision returns
+`409 catalog_search_revision_conflict` instead of mixing two catalog generations.
 Later broker ingestion consults the durable repair before the legacy graph fallback. Existing
 destination facts are deduplicated only when their complete stored representation is identical;
 an identity match with different content returns `409 historical_binding_fact_conflict` and leaves

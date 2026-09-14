@@ -43,7 +43,10 @@ final class ProjectBoardStore {
 
     static let shared = ProjectBoardStore(url: ProjectBoardStore.defaultURL())
 
-    private static let schemaVersion = 1
+    /// The durable file and public Board wire evolve independently. Older shipped browsers
+    /// still consume wire v1, while catalog dispositions require durable store v2.
+    private static let storageSchemaVersion = 2
+    private static let wireSchemaVersion = 1
     private static let maximumProjects = 200
     private static let maximumItems = 2_000
     private static let maximumReceipts = 4_096
@@ -294,6 +297,19 @@ final class ProjectBoardStore {
         var basis: String
     }
 
+    /// A machine-curated catalog placement. This is presentation metadata only: it cannot
+    /// supply lifecycle, verification, landing, ownership, or execution authority.
+    private struct StoredCatalogDisposition: Codable {
+        var audience: String
+        var role: String
+        var parentId: String?
+        var outcome: String
+        var reason: String
+        var auditId: String
+        var actor: String
+        var at: Double
+    }
+
     private struct StoredSessionDelivery: Codable, Equatable {
         var eventId: String
         var runId: String
@@ -361,6 +377,9 @@ final class ProjectBoardStore {
         /// Optional keeps stores written before atomic Program planning loadable.
         var programPlan: ProjectBoardProgramPlan.Record? = nil
         var sessionDeliveries: [StoredSessionDelivery]? = nil
+        /// Optional keeps schema-v1 stores loadable. Schema v2 makes an older binary refuse the
+        /// store instead of silently rewriting and dropping this curation ledger.
+        var catalogDisposition: StoredCatalogDisposition? = nil
         /// A machine-authorized repair receipt. It moves only retained broker facts and leaves
         /// the inferred source item in place as provenance.
         var historicalTaskBindingReconciliations: [StoredHistoricalTaskBindingReceipt]? = nil
@@ -458,7 +477,7 @@ final class ProjectBoardStore {
         var narrativeConsent: String? = nil
 
         static func empty(now: Double) -> StoredState {
-            StoredState(schemaVersion: ProjectBoardStore.schemaVersion, revision: 0,
+            StoredState(schemaVersion: ProjectBoardStore.storageSchemaVersion, revision: 0,
                         enabled: true, updatedAt: now, projects: [], items: [], receipts: [],
                         graphItems: [:], receiptEvictions: 0)
         }
@@ -488,7 +507,7 @@ final class ProjectBoardStore {
 
         func envelope(project: String? = nil, item: String? = nil) -> [String: Any] {
             var board: [String: Any] = [
-                "schemaVersion": ProjectBoardStore.schemaVersion,
+                "schemaVersion": ProjectBoardStore.wireSchemaVersion,
                 "revision": header.revision,
                 "enabled": header.enabled,
                 "narrativeConsent": header.narrativeConsent as Any? ?? NSNull(),
@@ -944,7 +963,7 @@ final class ProjectBoardStore {
         let end = min(rows.count, offset + 64)
         let page = Array(rows[offset..<end])
         let board: [String: Any] = [
-            "schemaVersion": Self.schemaVersion, "revision": state.revision,
+            "schemaVersion": Self.wireSchemaVersion, "revision": state.revision,
             "enabled": state.enabled, "mode": state.enabled ? "board" : "standard",
             "narrativeConsent": state.narrativeConsent as Any? ?? NSNull(),
             "entitlement": Self.entitlement, "projects": [] as [[String: Any]],
@@ -957,6 +976,70 @@ final class ProjectBoardStore {
                 "nextOffset": end < rows.count ? end as Any : NSNull(),
             ] as [String: Any],
         ]
+        return Reply(status: 200, body: ["board": board])
+    }
+
+    /// Search the complete durable Project catalog rather than only the bounded ordinary
+    /// projection. Hidden Agent and archived records therefore remain discoverable without
+    /// increasing the default Board payload. Results are bounded and explicitly continued.
+    func catalogSearchSnapshot(project projectID: String, query: String, offset: Int,
+                               expectedRevision: Int) -> Reply {
+        lock.lock(); defer { lock.unlock() }
+        if let unavailable { return Self.errorReply(unavailable) }
+        guard let projectID = Self.boundedText(projectID, maximum: 200),
+              state.projects.contains(where: { $0.id == projectID }),
+              let query = Self.boundedText(query, maximum: 120),
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              offset >= 0, offset <= Self.maximumItems, expectedRevision >= 0 else {
+            return Self.errorReply(BoardError(
+                status: 400, code: "invalid_catalog_search",
+                message: "catalog search needs one Project, bounded text, and a valid offset"))
+        }
+        guard expectedRevision == state.revision else {
+            return Self.errorReply(BoardError(
+                status: 409, code: "catalog_search_revision_conflict",
+                message: "the Board changed after this catalog search began"))
+        }
+        let needle = query.folding(options: [.caseInsensitive, .diacriticInsensitive],
+                                   locale: .current)
+        let matches = state.items.filter { item in
+            guard item.projectId == projectID else { return false }
+            let presentations = (item.presentations ?? []).flatMap {
+                [$0.title, $0.summary, $0.outcome, $0.nextStep]
+            }
+            return ([item.id, item.key, item.title, item.summary, item.owner] + presentations)
+                .joined(separator: "\n")
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                .contains(needle)
+        }.sorted {
+            $0.updatedAt == $1.updatedAt ? $0.id < $1.id : $0.updatedAt > $1.updatedAt
+        }
+        guard offset <= matches.count else {
+            return Self.errorReply(BoardError(
+                status: 416, code: "catalog_search_offset_out_of_range",
+                message: "the catalog search offset is beyond the retained matches"))
+        }
+        let end = min(matches.count, offset + 64)
+        let rows = matches[offset..<end].map { itemObject($0, detail: false) }
+        let board: [String: Any] = [
+            "schemaVersion": Self.wireSchemaVersion, "revision": state.revision,
+            "enabled": state.enabled, "mode": state.enabled ? "board" : "standard",
+            "narrativeConsent": state.narrativeConsent as Any? ?? NSNull(),
+            "entitlement": Self.entitlement, "projects": [] as [[String: Any]],
+            "items": Array(rows), "item": NSNull(), "truncated": end < matches.count,
+            "updatedAt": state.updatedAt, "available": true,
+            "snapshotBudgetBytes": Self.maximumSnapshotBytes,
+            "catalogSearch": [
+                "query": query, "revision": expectedRevision,
+                "offset": offset, "totalCount": matches.count,
+                "nextOffset": end < matches.count ? end as Any : NSNull(),
+            ] as [String: Any],
+        ]
+        guard Self.serializedSize(["board": board]) <= Self.maximumSnapshotBytes else {
+            return Self.errorReply(BoardError(
+                status: 503, code: "catalog_search_response_too_large",
+                message: "the bounded catalog search page exceeds its response budget"))
+        }
         return Reply(status: 200, body: ["board": board])
     }
 
@@ -1122,9 +1205,10 @@ final class ProjectBoardStore {
             return Self.errorReply(BoardError(status: 403, code: "workflow_origin_required",
                 message: "Delivery references are recorded only by the workflow producer"))
         }
-        if operation == "reconcile_historical_task_binding" && !trusted {
+        if ["reconcile_historical_task_binding", "reconcile_catalog"].contains(operation)
+            && !trusted {
             return Self.errorReply(BoardError(status: 403, code: "trusted_reconciliation_required",
-                message: "Historical broker facts may be reconciled only by the local machine authority"))
+                message: "Board reconciliation requires the local machine authority"))
         }
         if body["supplementRelationId"] != nil {
             guard workflowOrigin else {
@@ -1174,7 +1258,7 @@ final class ProjectBoardStore {
                operation != "transition", operation != "create", operation != "record_report",
                operation != "end_span", operation != "record_output", operation != "record_session_delivery",
                !["document_reference", "plan_structure", "approve_program_gate",
-                 "program_binding", "reconcile_historical_task_binding"].contains(operation),
+                 "program_binding", "reconcile_historical_task_binding", "reconcile_catalog"].contains(operation),
                !["assign_session", "decide_session_assignment", "cancel_session_assignment"].contains(operation) {
                 reconcileLifecycle(around: itemID, actor: "board", timestamp: timestamp,
                                    draft: &draft)
@@ -2575,6 +2659,109 @@ final class ProjectBoardStore {
             draft.items[targetIndex].updatedAt = timestamp
             return Applied(itemId: targetID, historicalTaskBindingReceipt: receipt)
 
+        case "reconcile_catalog":
+            guard trusted else { throw Self.trustedEvidenceError() }
+            let projectID = try requiredText(body, "projectId", maximum: 200)
+            let auditID = try requiredText(body, "auditId", maximum: 200)
+            guard let entries = body["items"] as? [[String: Any]],
+                  !entries.isEmpty, entries.count <= Self.maximumSnapshotItems else {
+                throw BoardError(status: 400, code: "invalid_catalog_reconciliation",
+                                 message: "items must contain 1–500 exact catalog dispositions")
+            }
+            let allowedEntryKeys = Set(["itemId", "expectedScopeRevision", "audience", "role",
+                                        "parentId", "outcome", "reason"])
+            var seen: Set<String> = []
+            var prepared: [(Int, StoredCatalogDisposition)] = []
+            for entry in entries {
+                guard Set(entry.keys).isSubset(of: allowedEntryKeys) else {
+                    throw BoardError(status: 400, code: "invalid_catalog_reconciliation",
+                                     message: "a catalog disposition contains an unknown field")
+                }
+                let itemID = try requiredText(entry, "itemId", maximum: 200)
+                guard seen.insert(itemID).inserted,
+                      let index = draft.items.firstIndex(where: { $0.id == itemID }),
+                      draft.items[index].projectId == projectID else {
+                    throw BoardError(status: 409, code: "catalog_item_conflict",
+                                     message: "every item must be unique and belong to the exact project")
+                }
+                guard let expectedScope = Self.exactInt(entry["expectedScopeRevision"]),
+                      expectedScope == (draft.items[index].scopeRevision ?? 0) else {
+                    throw BoardError(status: 409, code: "catalog_scope_conflict",
+                                     message: "an item scope changed after the audit")
+                }
+                let audience = try requiredChoice(entry, "audience",
+                                                  choices: Set(["human", "agent", "archive"]))
+                let role = try requiredChoice(entry, "role", choices: Set([
+                    "primary_work", "subtask", "execution_record", "provenance_record",
+                ]))
+                guard (audience == "human" && ["primary_work", "subtask"].contains(role))
+                        || (audience == "agent" && ["execution_record", "provenance_record"].contains(role))
+                        || audience == "archive" else {
+                    throw BoardError(status: 400, code: "catalog_role_conflict",
+                                     message: "audience and role do not describe a valid catalog placement")
+                }
+                let parentID = try optionalText(entry, "parentId", maximum: 200)
+                if role == "subtask" {
+                    guard let parentID, parentID != itemID,
+                          let parent = draft.items.first(where: { $0.id == parentID }),
+                          parent.projectId == projectID else {
+                        throw BoardError(status: 409, code: "catalog_parent_conflict",
+                                         message: "a subtask requires an exact parent in the same project")
+                    }
+                } else if parentID != nil {
+                    throw BoardError(status: 400, code: "catalog_parent_conflict",
+                                     message: "only a subtask may name a catalog parent")
+                }
+                let outcome = try requiredChoice(entry, "outcome", choices: Set([
+                    "actionable", "planned", "result", "technical_detail", "historical_gap",
+                ]))
+                let reason = try requiredText(entry, "reason", maximum: 1_000)
+                prepared.append((index, StoredCatalogDisposition(
+                    audience: audience, role: role, parentId: parentID, outcome: outcome,
+                    reason: reason, auditId: auditID, actor: actor, at: timestamp)))
+            }
+            // Validate the complete effective display hierarchy before mutating any row. Existing
+            // durable parents remain authoritative unless a catalog disposition explicitly
+            // replaces their presentation role. This keeps a malformed audit from creating a
+            // recursive UI tree while leaving lifecycle and execution relationships untouched.
+            var effectiveParents: [String: String] = [:]
+            for item in draft.items where item.projectId == projectID {
+                if let disposition = item.catalogDisposition {
+                    if disposition.role == "subtask", let parentID = disposition.parentId {
+                        effectiveParents[item.id] = parentID
+                    }
+                } else if let parentID = item.parentId {
+                    effectiveParents[item.id] = parentID
+                }
+            }
+            for (index, disposition) in prepared {
+                let itemID = draft.items[index].id
+                if disposition.role == "subtask", let parentID = disposition.parentId {
+                    effectiveParents[itemID] = parentID
+                } else {
+                    effectiveParents.removeValue(forKey: itemID)
+                }
+            }
+            for itemID in effectiveParents.keys {
+                var cursor: String? = itemID
+                var visited: Set<String> = []
+                while let current = cursor {
+                    guard visited.insert(current).inserted else {
+                        throw BoardError(status: 409, code: "catalog_parent_cycle",
+                                         message: "catalog subtask parents must remain acyclic")
+                    }
+                    cursor = effectiveParents[current]
+                }
+            }
+            for (index, disposition) in prepared {
+                draft.items[index].catalogDisposition = disposition
+                touch(&draft.items[index], actor: actor, kind: "catalog_reconciled",
+                      summary: "Catalog placement was reconciled without changing lifecycle authority.",
+                      at: timestamp)
+            }
+            draft.presentationEpoch = (draft.presentationEpoch ?? 0) + 1
+            return Applied(itemId: nil)
+
         case "document_reference":
             let index = try itemIndex(body, draft: draft)
             var references = draft.items[index].documentReferences ?? []
@@ -3873,6 +4060,17 @@ final class ProjectBoardStore {
     /// Read-model partition, not a lifecycle transition. Compute from full retained facts before
     /// truncating detail collections; compact cards and Project totals consume the same result.
     private func audienceView(_ item: StoredItem) -> [String: Any] {
+        if let curated = item.catalogDisposition {
+            return [
+                "audience": curated.audience,
+                "role": curated.role,
+                "defaultVisible": curated.audience == "human",
+                "parentId": curated.parentId ?? NSNull(),
+                "outcome": curated.outcome,
+                "reasonCodes": ["catalog_reconciled"],
+                "auditId": curated.auditId,
+            ]
+        }
         // The inferred source identity is the authority here. Titles such as "Review" and
         // lifecycle states are deliberately not classification inputs: either can also describe
         // a concrete work item that a person explicitly created.
@@ -3958,6 +4156,7 @@ final class ProjectBoardStore {
             var humanListGroups = listGroups
             var agentListGroups = listGroups
             var humanItemCount = 0, humanLandedItemCount = 0, agentRecordCount = 0
+            var catalogArchivedCount = 0
             for item in items {
                 var isHuman = true
                 if let list = index.listSummaryByItemID[item.id],
@@ -3968,6 +4167,9 @@ final class ProjectBoardStore {
                         isHuman = false
                         agentRecordCount += 1
                         agentListGroups[group, default: 0] += 1
+                    } else if view?["audience"] as? String == "archive" {
+                        isHuman = false
+                        catalogArchivedCount += 1
                     } else {
                         humanItemCount += 1
                         humanListGroups[group, default: 0] += 1
@@ -4003,7 +4205,7 @@ final class ProjectBoardStore {
             }
             let archivedRecordCount = (humanListGroups["history"] ?? 0)
                 + (humanListGroups["completed"] ?? 0)
-                + (humanListGroups["canceled"] ?? 0) + agentRecordCount
+                + (humanListGroups["canceled"] ?? 0) + agentRecordCount + catalogArchivedCount
             catalog.append([
                 "id": project.id, "name": project.name, "itemCount": items.count,
                 "humanItemCount": humanItemCount,
@@ -4066,7 +4268,7 @@ final class ProjectBoardStore {
     private func snapshotLocked(project: String?, item selectedID: String?) -> [String: Any] {
         if let unavailable {
             return ["board": [
-                "schemaVersion": Self.schemaVersion, "revision": 0, "enabled": false,
+                "schemaVersion": Self.wireSchemaVersion, "revision": 0, "enabled": false,
                 "mode": "standard", "entitlement": Self.entitlement,
                 "projects": [], "items": [], "item": NSNull(), "truncated": false,
                 "updatedAt": 0.0, "available": false,
@@ -4093,7 +4295,7 @@ final class ProjectBoardStore {
             }
         let selectedObject = selected.map { itemObject($0, detail: true) }
         var board: [String: Any] = [
-            "schemaVersion": Self.schemaVersion, "revision": state.revision,
+            "schemaVersion": Self.wireSchemaVersion, "revision": state.revision,
             "enabled": state.enabled, "mode": state.enabled ? "board" : "standard",
             "narrativeConsent": state.narrativeConsent as Any? ?? NSNull(),
             "entitlement": Self.entitlement, "projects": projects, "items": [],
@@ -4630,7 +4832,7 @@ final class ProjectBoardStore {
 
     private func snapshotTooLargeLocked(reason: String) -> [String: Any] {
         ["board": [
-            "schemaVersion": Self.schemaVersion, "revision": state.revision,
+            "schemaVersion": Self.wireSchemaVersion, "revision": state.revision,
             "enabled": false, "mode": "standard", "entitlement": Self.entitlement,
             "projects": [], "items": [], "item": NSNull(), "truncated": true,
             "updatedAt": state.updatedAt, "available": false,
@@ -4871,6 +5073,7 @@ final class ProjectBoardStore {
             "reconcile_historical_task_binding": ["projectId", "programItemId", "programKey",
                                 "planId", "planVersion", "programGraphId", "nodeId",
                                 "targetItemId", "bindings"],
+            "reconcile_catalog": ["projectId", "auditId", "items"],
             "link": ["itemId", "kind", "targetId", "label"],
             "obligation": ["itemId", "title", "owner", "blocking", "actorKind",
                            "requiredAction", "blockingScope", "supplementRelationId"],
@@ -5852,11 +6055,12 @@ final class ProjectBoardStore {
                 throw BoardError(status: 503, code: "board_store_corrupt",
                                  message: "the Project Board store is not valid JSON state")
             }
-            guard version == Self.schemaVersion else {
+            guard version == 1 || version == Self.storageSchemaVersion else {
                 throw BoardError(status: 503, code: "board_store_version_unsupported",
                                  message: "the Project Board store uses an unsupported version")
             }
             var decoded = try JSONDecoder().decode(StoredState.self, from: data)
+            decoded.schemaVersion = Self.storageSchemaVersion
             var migratedGraphItems: [String: String] = [:]
             for (key, itemID) in decoded.graphItems {
                 if key.hasPrefix("project-graph-v1:") {
@@ -5893,13 +6097,61 @@ final class ProjectBoardStore {
         }
     }
 
+    private static func validCatalogDisposition(_ disposition: StoredCatalogDisposition,
+                                                for item: StoredItem,
+                                                in state: StoredState) -> Bool {
+        let pairing = (disposition.audience == "human"
+                && ["primary_work", "subtask"].contains(disposition.role))
+            || (disposition.audience == "agent"
+                && ["execution_record", "provenance_record"].contains(disposition.role))
+            || disposition.audience == "archive"
+        guard pairing,
+              ["actionable", "planned", "result", "technical_detail", "historical_gap"]
+                .contains(disposition.outcome),
+              boundedText(disposition.reason, maximum: 1_000) != nil,
+              boundedText(disposition.auditId, maximum: 200) != nil,
+              boundedText(disposition.actor, maximum: 300) != nil,
+              disposition.at.isFinite, disposition.at >= 0 else { return false }
+        if disposition.role == "subtask" {
+            guard let parentID = disposition.parentId, parentID != item.id,
+                  let parent = state.items.first(where: { $0.id == parentID }),
+                  parent.projectId == item.projectId else { return false }
+        } else if disposition.parentId != nil { return false }
+        return true
+    }
+
+    private static func validCatalogHierarchy(_ state: StoredState) -> Bool {
+        var parents: [String: String] = [:]
+        for item in state.items {
+            if let disposition = item.catalogDisposition {
+                guard validCatalogDisposition(disposition, for: item, in: state) else {
+                    return false
+                }
+                if disposition.role == "subtask", let parentID = disposition.parentId {
+                    parents[item.id] = parentID
+                }
+            } else if let parentID = item.parentId {
+                parents[item.id] = parentID
+            }
+        }
+        for itemID in parents.keys {
+            var cursor: String? = itemID
+            var visited: Set<String> = []
+            while let current = cursor {
+                guard visited.insert(current).inserted else { return false }
+                cursor = parents[current]
+            }
+        }
+        return true
+    }
+
     private static func validateStoredState(_ state: StoredState) throws {
         let historicalTaskKeys = state.items.flatMap { item in
             (item.historicalTaskBindingReconciliations ?? []).flatMap { receipt in
                 receipt.bindings.map { "\(item.projectId)\u{0}\($0.taskId)" }
             }
         }
-        guard state.schemaVersion == schemaVersion, state.revision >= 0,
+        guard state.schemaVersion == storageSchemaVersion, state.revision >= 0,
               state.projects.allSatisfy({ ($0.itemKeyHighWater ?? 0) >= 0 }),
               state.projects.count <= maximumProjects, state.items.count <= maximumItems,
               state.receipts.count <= maximumReceipts,
@@ -5914,6 +6166,7 @@ final class ProjectBoardStore {
               Set(historicalTaskKeys).count == historicalTaskKeys.count,
               Set(state.projects.map(\.id)).count == state.projects.count,
               Set(state.items.map(\.id)).count == state.items.count,
+              validCatalogHierarchy(state),
               state.receipts.allSatisfy({ receipt in
                   if let historical = receipt.historicalTaskBindingReceipt {
                       guard receipt.status == 200, receipt.itemId == historical.targetItemId,
@@ -6000,6 +6253,9 @@ final class ProjectBoardStore {
                   item.history.count <= maximumHistory,
                   Self.validTypeDetails(item.typeDetails, for: item.type),
                   Self.validCompletionReports(item.completionReports),
+                  (item.catalogDisposition.map {
+                      validCatalogDisposition($0, for: item, in: state)
+                  } ?? true),
                   (item.presentations ?? []).count <= 3,
                   (item.presentations ?? []).allSatisfy({
                       validPresentationLocale($0.locale) && $0.sourceFingerprint.count == 64

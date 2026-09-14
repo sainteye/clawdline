@@ -12,11 +12,17 @@ enum ProjectBoardHTTP {
         let item: String?
         let report: String?
         let collection: (kind: String, offset: Int)?
+        let catalogSearch: (query: String, offset: Int, revision: Int)?
         let store: ProjectBoardStore
 
         func execute() -> RemoteServer.Response {
             let result: (status: Int, envelope: [String: Any])
-            if let collection, let item {
+            if let catalogSearch, let project {
+                let reply = store.catalogSearchSnapshot(
+                    project: project, query: catalogSearch.query, offset: catalogSearch.offset,
+                    expectedRevision: catalogSearch.revision)
+                result = (reply.status, reply.body)
+            } else if let collection, let item {
                 let reply = store.collectionSnapshot(project: project, item: item,
                                                      kind: collection.kind,
                                                      offset: collection.offset)
@@ -123,6 +129,7 @@ enum ProjectBoardHTTP {
             var item = request.query["item"]
             var report = request.query["report"]
             var collection: (kind: String, offset: Int)?
+            var catalogSearch: (query: String, offset: Int, revision: Int)?
             // Reuse the existing authenticated Cloud selector slots for a bounded reverse read.
             // This is a provider conversation UUID, never a terminal address or guessed title.
             if let selector = item, selector.hasPrefix("session:") {
@@ -147,6 +154,18 @@ enum ProjectBoardHTTP {
                 item = String(parts[1])
                 collection = (String(parts[2]), offset)
             }
+            if let encoded = item, encoded.hasPrefix("catalog:") {
+                let parts = encoded.split(separator: ":", maxSplits: 3,
+                                          omittingEmptySubsequences: false)
+                guard report == nil, collection == nil, request.query["project"] != nil,
+                      parts.count == 4, let revision = Int(parts[1]), revision >= 0,
+                      let offset = Int(parts[2]), offset >= 0, !parts[3].isEmpty else {
+                    return .response(.error(400, "invalid_catalog_search",
+                                            "A catalog search needs one Project, offset, and search text."))
+                }
+                item = nil
+                catalogSearch = (String(parts[3]), offset, revision)
+            }
             // Cloud's existing closed Board read carries two selector slots. Until that protocol
             // vocabulary is versioned, the view encodes this narrow third selector inside the
             // item slot; direct HTTP callers use the explicit `report` query field.
@@ -170,6 +189,7 @@ enum ProjectBoardHTTP {
             }
             return .read(.init(viewer: viewer, project: request.query["project"],
                                item: item, report: report, collection: collection,
+                               catalogSearch: catalogSearch,
                                store: storeForTesting ?? ProjectBoardStore.shared))
         }
         guard request.method == "POST" else { return .response(.status(405)) }
@@ -210,9 +230,10 @@ enum ProjectBoardHTTP {
         }
         let reconcilesHistoricalBinding = body["operation"] as? String
             == "reconcile_historical_task_binding"
-        if reconcilesHistoricalBinding && !machine {
+        let reconcilesCatalog = body["operation"] as? String == "reconcile_catalog"
+        if (reconcilesHistoricalBinding || reconcilesCatalog) && !machine {
             return .response(.error(403, "forbidden",
-                "Only the local machine may reconcile retained historical broker facts."))
+                "Only the local machine may reconcile retained Board records."))
         }
         let commandActor = recordsEvidence ? "root_attestation"
             : (recordsReport ? "root_report" : actor)
@@ -226,7 +247,8 @@ enum ProjectBoardHTTP {
             viewer: viewer, body: body,
             actor: commandActor,
             trusted: (acceptsArtifact && canAdmin) || (recordsEvidence && machine)
-                || (recordsReport && machine) || (reconcilesHistoricalBinding && machine),
+                || (recordsReport && machine) || (reconcilesHistoricalBinding && machine)
+                || (reconcilesCatalog && machine),
             requestID: requestID, fingerprint: fingerprint,
             store: storeForTesting ?? ProjectBoardStore.shared))
     }

@@ -309,15 +309,27 @@ function listGroup(item) {
 }
 function audienceView(item) {
     const view = item?.listSummary?.view;
+    if (view?.audience === "archive") return {
+        audience: "archive", role: view.role || "provenance_record",
+        parentId: null, defaultVisible: false
+    };
     if (view?.audience === "agent") return {
         audience: "agent",
         role: ["execution_record", "provenance_record", "coordination_record"].includes(view.role)
             ? view.role : "execution_record",
+        parentId: null,
         defaultVisible: false
+    };
+    if (view?.audience === "human") return {
+        audience: "human",
+        role: view.role === "subtask" ? "subtask" : "primary_work",
+        parentId: view.parentId || item?.parentId || null,
+        defaultVisible: true
     };
     // Older servers did not project an audience. Keep their rows visible and use only an exact
     // parent UUID for the harmless visual hierarchy fallback.
-    return { audience: "human", role: item?.parentId ? "subtask" : "primary_work", defaultVisible: true };
+    return { audience: "human", role: item?.parentId ? "subtask" : "primary_work",
+        parentId: item?.parentId || null, defaultVisible: true };
 }
 function say(ctx, item) {
     if (item.type === "coordination")
@@ -540,7 +552,9 @@ function card(ctx, item) {
     const narrative = reading(ctx, item);
     el(ctx, node, "strong", shortTitle(narrative.title || item.key || item.id), "board-card-title");
     if (view.role === "subtask") {
-        const parent = ctx.itemById?.get(item.parentId);
+        const parentId = view.parentId || item.parentId;
+        const parent = parentId && (ctx.itemById?.get(parentId)
+            || ctx.state.items.find(row => row.id === parentId));
         const relation = el(ctx, node, "span", null, "board-card-parent");
         el(ctx, relation, "span", words(ctx, "Subtask", "子項目"), "board-subtask-label");
         el(ctx, relation, "span", parent
@@ -586,8 +600,9 @@ function section(ctx, parent, title, collapsed = false, key = title) {
 function humanCards(ctx, part, rows, searching = false) {
     const primary = [], children = new Map();
     rows.forEach(row => {
-        if (audienceView(row).role !== "subtask" || !row.parentId) primary.push(row);
-        else children.set(row.parentId, [...(children.get(row.parentId) || []), row]);
+        const view = audienceView(row), parentId = view.parentId;
+        if (view.role !== "subtask" || !parentId) primary.push(row);
+        else children.set(parentId, [...(children.get(parentId) || []), row]);
     });
     if (primary.length) {
         const list = el(ctx, part, "div", null, "board-card-grid");
@@ -1051,8 +1066,9 @@ function detail(ctx) {
     badge(ctx, identity, item);
     const narrative = reading(ctx, item);
     el(ctx, head, "h2", narrative.title || item.title, "board-detail-title");
-    const parent = item.parentId && (ctx.itemById?.get(item.parentId)
-        || ctx.state.items.find(row => row.id === item.parentId));
+    const parentId = audienceView(item).parentId || item.parentId;
+    const parent = parentId && (ctx.itemById?.get(parentId)
+        || ctx.state.items.find(row => row.id === parentId));
     if (parent) button(ctx, head,
         words(ctx, "View parent ", "查看上層任務 ") + shortTitle(parent.key || parent.title),
         "parent-item", () => ctx.openItem(parent.id), "board-button board-parent-link");
@@ -1383,6 +1399,13 @@ export function bindBoardPage(elements, environment = {}) {
         active: false,
         readTicket: 0,
         reportTicket: 0,
+        catalogTicket: 0,
+        catalogQuery: "",
+        catalogItems: [],
+        catalogNextOffset: null,
+        catalogTotal: null,
+        catalogRevision: null,
+        truncated: false,
         collectionTickets: {},
         reportSelection: null
     });
@@ -1503,8 +1526,10 @@ export function bindBoardPage(elements, environment = {}) {
         const share = el(ctx, target, "div", null, "board-share-row");
         button(ctx, share, words(ctx, "Copy project link", "複製專案連結"),
             "copy-project-link", () => ctx.copyLink(null));
-        const all = state.items.filter((row) => row.projectId === state.projectId),
-            query = elements["board-search"].value.trim().toLocaleLowerCase();
+        const query = elements["board-search"].value.trim().toLocaleLowerCase(),
+            serverRows = query && state.catalogQuery === query ? state.catalogItems : [],
+            combined = new Map([...state.items, ...serverRows].map(row => [row.id, row])),
+            all = [...combined.values()].filter((row) => row.projectId === state.projectId);
         ctx.itemById = new Map(all.map(row => [row.id, row]));
         const matches = all.filter(
             (row) =>
@@ -1514,6 +1539,7 @@ export function bindBoardPage(elements, environment = {}) {
         const humanAll = all.filter(row => audienceView(row).audience === "human"),
             rows = matches.filter(row => audienceView(row).audience === "human"),
             agentRows = matches.filter(row => audienceView(row).audience === "agent"),
+            archivedRows = matches.filter(row => audienceView(row).audience === "archive"),
             delivery = humanAll.filter((row) => row.type !== "coordination"),
             coordinated = rows.filter((row) => row.type === "coordination");
         const active = rows.filter(row => listGroup(row) === "active"),
@@ -1563,8 +1589,15 @@ export function bindBoardPage(elements, environment = {}) {
             + (project?.agentRecordCount > 0 ? words(ctx,
                 ` · ${project.agentRecordCount} agent records kept separately`,
                 ` · ${project.agentRecordCount} 筆 Agent 紀錄分開保留`) : "")
-            + (query ? words(ctx, ` · ${matches.length} search matches (loaded items only)`,
-                ` · 搜尋符合 ${matches.length} 項（僅搜尋已載入）`) : ""), "board-section-help");
+            + (query ? state.catalogQuery === query ? words(ctx,
+                ` · ${matches.length} of ${state.catalogTotal ?? matches.length} catalog matches`,
+                ` · 已顯示 ${matches.length} / ${state.catalogTotal ?? matches.length} 個完整目錄搜尋結果`)
+                : words(ctx, ` · ${matches.length} loaded matches`,
+                    ` · 已載入資料中有 ${matches.length} 項符合`) : ""), "board-section-help");
+        if (query && state.catalogQuery === query && Number.isSafeInteger(state.catalogNextOffset))
+            button(ctx, target, words(ctx, "Load more catalog matches", "載入更多完整目錄結果"),
+                "catalog-search-more", () => searchCatalog(query, state.catalogNextOffset),
+                "board-button board-load-more");
         const sectionCount = (group, loaded) => words(ctx, ` · ${loaded} ${query ? "matches" : "loaded"}`,
             ` · ${loaded} ${query ? "項符合搜尋" : "項已載入"}`)
             + (completeCounts ? words(ctx, ` / ${counts[group]} total`, ` / 共 ${counts[group]} 項`) : "");
@@ -1652,7 +1685,9 @@ export function bindBoardPage(elements, environment = {}) {
             );
             historicalCards(ctx, part, coordinated, !!query);
         }
-        if (agentRows.length || (!query && project?.agentRecordCount > 0)) {
+        // Agent review/test/correction records remain searchable, but do not occupy the human
+        // board merely to advertise their retained count.
+        if (query && agentRows.length) {
             const agentTotal = Number.isSafeInteger(project?.agentRecordCount)
                 ? project.agentRecordCount : agentRows.length;
             const part = section(ctx, target,
@@ -1668,6 +1703,12 @@ export function bindBoardPage(elements, environment = {}) {
             if (!agentRows.length) el(ctx, part, "p", words(ctx,
                 "Agent records exist but are not loaded in this view.",
                 "尚有 Agent 紀錄未載入此畫面。"), "board-section-help");
+        }
+        if (query && archivedRows.length) {
+            const part = section(ctx, target,
+                words(ctx, "Archived catalog records", "已封存的目錄紀錄") + " · " + archivedRows.length,
+                false, "archived-catalog-records");
+            historicalCards(ctx, part, archivedRows, true);
         }
     }
     function render() {
@@ -1740,8 +1781,15 @@ export function bindBoardPage(elements, environment = {}) {
                     throw Object.assign(new Error("Board response is incomplete."),
                         { code: "board_response_incomplete" });
                 if (typeof board.revision !== "number" || board.revision < state.revision) return;
+                if (board.revision > state.revision && state.catalogQuery) {
+                    ++state.catalogTicket;
+                    state.catalogQuery = ""; state.catalogItems = [];
+                    state.catalogNextOffset = null; state.catalogTotal = null;
+                    state.catalogRevision = null;
+                }
                 state.revision = board.revision;
                 state.projects = board.projects;
+                state.truncated = board.truncated === true;
                 state.readStatus = board.readState && board.readState.status || "ready";
                 if (project && !["loading", "error"].includes(state.readStatus)
                     && !board.projects.some((row) => row.id === project)) {
@@ -1815,6 +1863,66 @@ export function bindBoardPage(elements, environment = {}) {
             });
         inflight = promise;
         return promise;
+    }
+    function boundedCatalogQuery(value) {
+        let answer = "";
+        for (const scalar of String(value || "")) {
+            if (new TextEncoder().encode(answer + scalar).length > 120) break;
+            answer += scalar;
+        }
+        return answer.trim();
+    }
+    function searchCatalog(rawQuery, offset = 0) {
+        const query = boundedCatalogQuery(rawQuery).toLocaleLowerCase(),
+            project = state.projectId,
+            revision = offset === 0 ? state.revision : state.catalogRevision,
+            ticket = ++state.catalogTicket;
+        if (!query || !project || !state.truncated || !Number.isSafeInteger(revision)) {
+            if (!query) {
+                state.catalogQuery = ""; state.catalogItems = [];
+                state.catalogNextOffset = null; state.catalogTotal = null;
+                state.catalogRevision = null;
+            }
+            render();
+            return Promise.resolve();
+        }
+        if (offset === 0) {
+            state.catalogQuery = query; state.catalogItems = [];
+            state.catalogNextOffset = null; state.catalogTotal = null;
+            state.catalogRevision = revision;
+        }
+        return Promise.resolve(environment.read(
+            project, `catalog:${revision}:${offset}:${query}`, state.machine || undefined))
+            .then(answer => {
+                if (!state.active || ticket !== state.catalogTicket
+                    || project !== state.projectId || query !== state.catalogQuery) return;
+                const board = answer && answer.board, search = board && board.catalogSearch;
+                if (!board || board.schemaVersion !== 1 || !Array.isArray(board.items)
+                    || !search || search.query.toLocaleLowerCase() !== query
+                    || board.revision !== revision || search.revision !== revision
+                    || search.offset !== offset || !Number.isSafeInteger(search.totalCount))
+                    throw Object.assign(new Error("Catalog search response is incomplete."),
+                        { code: "catalog_search_incomplete" });
+                const rows = new Map(state.catalogItems.map(row => [row.id, row]));
+                board.items.forEach(row => rows.set(row.id, row));
+                state.catalogItems = [...rows.values()];
+                state.catalogNextOffset = Number.isSafeInteger(search.nextOffset)
+                    ? search.nextOffset : null;
+                state.catalogTotal = search.totalCount;
+                render();
+            })
+            .catch(error => {
+                if (ticket !== state.catalogTicket) return;
+                if (error && error.code === "catalog_search_revision_conflict") {
+                    state.catalogQuery = ""; state.catalogItems = [];
+                    state.catalogNextOffset = null; state.catalogTotal = null;
+                    state.catalogRevision = null;
+                    render();
+                }
+                ctx.status(failureSentence(error, words(ctx,
+                    "The complete catalog could not be searched.",
+                    "目前無法搜尋完整目錄。")), true);
+            });
     }
     function refresh() {
         return inflight || load();
@@ -1918,6 +2026,12 @@ export function bindBoardPage(elements, environment = {}) {
         state.routeError = routeError || null;
         state.itemId = item || null;
         state.item = null;
+        state.catalogQuery = "";
+        state.catalogItems = [];
+        state.catalogNextOffset = null;
+        state.catalogTotal = null;
+        state.catalogRevision = null;
+        state.truncated = false;
         state.view = item ? "detail" : project ? "items" : "projects";
         elements["board-search"].value = "";
         render();
@@ -1960,13 +2074,18 @@ export function bindBoardPage(elements, environment = {}) {
             else return open();
         } else if (environment.navigate) environment.navigate("sessions");
     }
-    elements["board-search"].addEventListener("input", render);
+    elements["board-search"].addEventListener("input", () => {
+        render();
+        const query = elements["board-search"].value.trim();
+        if (!query || state.truncated) searchCatalog(query, 0);
+    });
     elements["board-back"].addEventListener("click", escape);
     elements["board-refresh"].addEventListener("click", refresh);
     function leave() {
         state.active = false;
         ++state.readTicket;
         ++state.reportTicket;
+        ++state.catalogTicket;
         state.collectionTickets = {};
         stopTimer();
         inflight = null;

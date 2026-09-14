@@ -301,9 +301,9 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     } };
     const child = item("Human acceptance", "execution");
     child.key = "CLA-2";
-    child.parentId = parent.id;
     child.listSummary = { coverage: "complete", group: "active", view: {
-        audience: "human", role: "subtask", defaultVisible: true, reasonCodes: ["explicit_parent"]
+        audience: "human", role: "subtask", parentId: parent.id, defaultVisible: true,
+        reasonCodes: ["catalog_reconciled"]
     } };
     const review = item("Agent review attempt", "review_testing");
     review.listSummary = { coverage: "complete", group: "history", view: {
@@ -315,7 +315,12 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
         audience: "agent", role: "provenance_record", defaultVisible: false,
         reasonCodes: ["inferred_provenance"]
     } };
-    const project = { id: "a", name: "Clawdline", itemCount: 4, humanItemCount: 2,
+    const archived = item("Obsolete planning residue", "planning");
+    archived.listSummary = { coverage: "complete", group: "planning", view: {
+        audience: "archive", role: "provenance_record", defaultVisible: false,
+        reasonCodes: ["catalog_reconciled"]
+    } };
+    const project = { id: "a", name: "Clawdline", itemCount: 5, humanItemCount: 2,
         currentHumanItemCount: 2, agentRecordCount: 2,
         summaryCoverage: { status: "complete" }, summary: {
             active: 1, waiting: 0, landed: 1,
@@ -325,7 +330,7 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
                 completed: 1, canceled: 0, coordination: 0 }
         } };
     const p = page({ read: async () => envelope({
-        projects: [project], items: [parent, child, review, provenance]
+        projects: [project], items: [parent, child, review, provenance, archived]
     }) });
     await p.view.open("a");
     const visible = p.elements["board-items"].all(".board-card-title").map(node => node.textContent);
@@ -333,7 +338,8 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
         visible.some(title => title.startsWith("Human release"))
             && !visible.some(title => title.startsWith("Human acceptance"))
             && !visible.some(title => title.startsWith("Agent review attempt"))
-            && !visible.some(title => title.startsWith("Transferred correction provenance")));
+            && !visible.some(title => title.startsWith("Transferred correction provenance"))
+            && !visible.some(title => title.startsWith("Obsolete planning residue")));
     check("human overview counts exclude retained agent records",
         p.elements["board-items"].all(".board-overview-stat")[0]?.textContent === "2正在進行");
     const childGroup = p.elements["board-items"].all(node =>
@@ -349,27 +355,56 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
         childCard?.className.includes("board-subtask-card")
             && childCard.textContent.includes("子項目")
             && childCard.textContent.includes("CLA-1"));
-    const agentSection = p.elements["board-items"].all(node =>
-        node.dataset.boardSection === "agent-execution-details")[0];
-    check("agent execution is retained in one collapsed technical section",
-        agentSection?.tagName === "DETAILS" && !agentSection.open
-            && agentSection.textContent.includes("2") && !agentSection.all(".board-item-card").length);
-    agentSection.open = true; agentSection.dispatch("toggle");
-    check("expanding technical detail reveals retained records without promoting them",
-        agentSection.textContent.includes("Agent review attempt")
-            && agentSection.textContent.includes("Transferred correction provenance"));
+    check("agent execution does not occupy the ordinary human board",
+        !p.elements["board-items"].all(node =>
+            node.dataset.boardSection === "agent-execution-details").length);
     p.elements["board-search"].value = "Agent review";
     p.elements["board-search"].dispatch("input");
     const searched = p.elements["board-items"].all(node =>
         node.dataset.boardSection === "agent-execution-details")[0];
     check("search can still find agent detail explicitly", searched?.open
         && searched.textContent.includes("Agent review attempt"));
+    p.elements["board-search"].value = "Obsolete planning";
+    p.elements["board-search"].dispatch("input");
+    const searchedArchive = p.elements["board-items"].all(node =>
+        node.dataset.boardSection === "archived-catalog-records")[0];
+    check("exact search can recover an archived catalog record for audit",
+        searchedArchive?.textContent.includes("Obsolete planning residue"));
     p.elements["board-search"].value = "Human acceptance";
     p.elements["board-search"].dispatch("input");
     const searchedSubtasks = p.elements["board-items"].all(node =>
         node.dataset.boardSubtasksFor === parent.id)[0];
     check("search opens the matching parent's subtask group",
         searchedSubtasks?.open && searchedSubtasks.textContent.includes("Human acceptance"));
+    p.view.leave();
+}
+{
+    const first = item("buried-agent", "landed"); first.title = "Buried review receipt";
+    first.listSummary = { view: { audience: "agent", role: "execution_record" } };
+    const second = item("buried-archive", "landed"); second.title = "Buried archived result";
+    second.listSummary = { view: { audience: "archive", role: "provenance_record" } };
+    const selectors = [];
+    const p = page({ read: async (_project, selector) => {
+        selectors.push(selector || "ordinary");
+        if (!selector) return envelope({ items: [item("visible", "execution")], truncated: true });
+        const offset = Number(selector.split(":")[2]);
+        return envelope({ projects: [], items: [offset ? second : first], truncated: !offset,
+            catalogSearch: { query: "buried", revision: 1, offset, totalCount: 2,
+                nextOffset: offset ? null : 1 } });
+    } });
+    await p.view.open("a");
+    p.elements["board-search"].value = "Buried";
+    p.elements["board-search"].dispatch("input"); await flush();
+    check("truncated Board search asks the server for the complete durable catalog",
+        selectors.includes("catalog:1:0:buried")
+            && p.elements["board-items"].textContent.includes("Buried review receipt"));
+    const more = p.elements["board-items"].all(node =>
+        node.dataset.boardAction === "catalog-search-more")[0];
+    more.click(); await flush();
+    check("catalog search continuation retains earlier matches and loads archived rows",
+        selectors.includes("catalog:1:1:buried")
+            && p.elements["board-items"].textContent.includes("Buried review receipt")
+            && p.elements["board-items"].textContent.includes("Buried archived result"));
     p.view.leave();
 }
 {
@@ -432,7 +467,7 @@ check("task success is not landing", boardProgress({ state: "backlog", success: 
     check("materialized planning total is separate from actual waiting", stats.includes("17規劃・尚未開始") && stats.includes("3等待推進／需要處理"));
     check("bounded list states loaded coverage rather than presenting it as the total", p.elements["board-items"].textContent.includes("已載入 4 / 20"));
     p.elements["board-search"].value = "Future compact"; p.elements["board-search"].dispatch("input");
-    check("search states its loaded-only scope without changing model totals", p.elements["board-items"].textContent.includes("搜尋符合 1") && p.elements["board-items"].textContent.includes("僅搜尋已載入") && p.elements["board-items"].textContent.includes("17規劃・尚未開始"));
+    check("search states its loaded scope while complete-catalog search is pending", p.elements["board-items"].textContent.includes("已載入資料中有 1 項符合") && p.elements["board-items"].textContent.includes("17規劃・尚未開始"));
     p.view.leave();
 }
 {

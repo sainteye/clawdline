@@ -118,6 +118,21 @@ so catch-up cannot move repaired facts back. A destination identity collision is
 when the complete stored fact is byte-equivalent; different link, span, evidence or history content
 refuses the whole batch before any source fact is removed.
 
+`reconcile_catalog` is the separate machine-only repair for a completed item-by-item audit. One
+atomic command pins the Project revision, every exact item UUID and its current `scopeRevision`,
+plus an audit identity. It may classify a retained row as human primary work, an exact-parent
+subtask, Agent execution/provenance detail, or archived catalog history. It never changes the
+item's lifecycle, owner, evidence, landing, verification, task binding, or original parent
+relation. Archived and Agent rows remain searchable by exact text/identity; they simply do not
+occupy the ordinary human board. When the ordinary bounded projection is truncated, the same
+authenticated Board read accepts `item=catalog:<revision>:<offset>:<text>` with an exact Project
+and returns 64 matches plus a stable `nextOffset`. Every continuation pins the first page revision
+and refuses if the catalog changed, so search covers the complete retained catalog rather than a
+moving subset of the first 500 rows. Missing items, cross-Project parents, stale scopes, duplicate
+UUIDs, unknown fields, and invalid audience/role pairs refuse the entire batch without mutation.
+The durable store is schema v2, while the compatible public Board wire remains schema v1. An older
+binary refuses durable v2 instead of silently dropping the catalog ledger on a later write.
+
 Intentional standard mode and an unavailable Board store are different states. On a typed Board
 unavailability refusal, a transport carrying both baseline Project readers may fall back to them
 with a visible warning; it must not change the persisted setting. A transport without those readers

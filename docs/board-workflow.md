@@ -217,6 +217,12 @@ decision operation retain their prior behavior.
 
 ### Program-bound runs and versioned documents
 
+Review, test, confirmation and correction are execution details of an existing human objective;
+they use an exact existing item or broker child identity rather than `new_work`. Historical
+mistakes are corrected only by the machine-only, UUID-pinned `reconcile_catalog` audit operation.
+That operation changes catalog placement, not lifecycle or evidence authority, and is never a
+title-based merge or a substitute for a managed run's missing follow-up.
+
 An `existing_item` begin may carry `program_binding` with exactly
 `program_item_id`, `program_key`, `plan_id`, `plan_version`, `graph_id`, and `node_id`.
 The selected `item_id` must be the same canonical Program. The durable outbox first sends an
