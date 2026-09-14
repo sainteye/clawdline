@@ -360,6 +360,11 @@ The installation is accepted only when all of these are observed on the exact si
 
 Common failure classifications:
 
+- an archive-layout preflight written as `tar -tzf archive | grep -q Package.swift` fails under
+  `set -o pipefail` with `tar: stdout: write error`: `grep -q` closed the pipe as soon as it found
+  the first match, so the producer's SIGPIPE is not evidence of a damaged archive. Write the
+  bounded listing once, then check all three required paths in that file before extraction. Keep
+  the archive digest check authoritative; do not turn off `pipefail` for the build.
 - `useradd: UID 1000 is not unique`: reuse the image's existing UID instead of creating it.
 - `swift test` reports `Unknown option '--static-swift-stdlib'`: static linkage belongs on the
   product `swift build` command, not the XCTest invocation; use the repository script containing
@@ -423,6 +428,14 @@ Common failure classifications:
   mislabeled a successful create as a timeout. Use a release with daemon-safe descriptor closure,
   reconcile the exact tmux inventory before retrying, and never widen the deadline, delete the
   socket, or disable Landlock to hide the ambiguity.
+- the hosted sheet returns `internal_failure`, no tmux Session remains, and Codex exits 101 with
+  Tokio reporting `failed to create UnixStream ... Operation not permitted`: the provider seccomp
+  policy denied anonymous `socketpair(AF_UNIX)` as though it were an addressable Unix socket.
+  Install a release that continues to deny `socket(AF_UNIX)` (and therefore daemon/tmux pathname
+  connections) while allowing anonymous socketpairs required by provider runtime IPC. Validate
+  both halves in the real sandbox: `socket.socketpair()` succeeds, while connecting a newly
+  created Unix socket to the control path is still refused. Do not disable seccomp or expose the
+  control socket as a workaround.
 - a create returns `malformed_terminal_reply` even though `tmux list-panes` shows the new PTY:
   tmux 3.4 renders a control-character field separator as the printable octal escape `\037`.
   Install a release that accepts tmux's pinned rendered format; do not weaken PID, TTY, or procfs
