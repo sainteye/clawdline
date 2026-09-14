@@ -67,17 +67,23 @@ try {
   const appMain = readFileSync(mainPath, "utf8");
 
   // ---- no updater package dependency was taken on for this ---------------------------------------
-  // The shipped Mac app still embeds no third-party updater. The Linux Application target does need
-  // the one reviewed, exact swift-crypto package because Linux has no system CryptoKit module, so
-  // hold that manifest exception still instead of weakening this into "some package is fine".
+  // The shipped Mac app still embeds no third-party updater. The Linux Application target needs
+  // the reviewed, exact crypto and NIO transport packages, so hold that complete allowlist still
+  // instead of weakening this into "some package is fine".
   const manifest = readFileSync(packagePath, "utf8");
   const packageDependencies = manifest.match(/\.package\s*\([^\n]+/g) || [];
   const compactManifest = manifest.replace(/\s+/g, " ");
-  check("Package.swift permits only exact swift-crypto on the Linux Application edge, never an updater package",
-        packageDependencies.length === 1
+  check("Package.swift permits only the exact Linux crypto/transport dependencies, never an updater package",
+        packageDependencies.length === 3
           && packageDependencies[0].includes('url: "https://github.com/apple/swift-crypto.git"')
           && packageDependencies[0].includes('exact: "4.5.2"')
+          && packageDependencies[1].includes('url: "https://github.com/apple/swift-nio.git"')
+          && packageDependencies[1].includes('exact: "2.102.0"')
+          && packageDependencies[2].includes('url: "https://github.com/apple/swift-nio-ssl.git"')
+          && packageDependencies[2].includes('exact: "2.37.4"')
           && compactManifest.includes('.product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux]))')
+          && compactManifest.includes('.product(name: "NIOCore", package: "swift-nio", condition: .when(platforms: [.linux]))')
+          && compactManifest.includes('.product(name: "NIOSSL", package: "swift-nio-ssl", condition: .when(platforms: [.linux]))')
           && !/Sparkle|SUUpdater|appcast/i.test(manifest));
   check("and the update check imports Foundation and nothing else",
         source.split("\n").filter((line) => /^import /.test(line)).join(",") === "import Foundation");
