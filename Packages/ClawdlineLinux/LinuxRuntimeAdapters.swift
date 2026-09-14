@@ -986,18 +986,23 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         // tmux may return while the pane process is still entering its final foreground process
         // group. Pin only a PID/start/group tuple that remains stable and still belongs to this
         // exact pane and TTY; otherwise compensation could later refuse the very pane we created.
-        usleep(20_000)
+        var priorIdentity: HostProcessIdentity?
+        var identity: HostProcessIdentity?
+        for _ in 0..<25 where identity == nil {
+            usleep(20_000)
+            let current = LinuxProcfs.row(pid: pid)?.identity
+            if let current, current.processGroupID == pid, current == priorIdentity {
+                identity = current
+            }
+            priorIdentity = current
+        }
         let confirmed = try tmux(["display-message", "-p", "-t", pane, format],
                                  operation: .observe)
         let confirmedFields = Self.fields(String(decoding: confirmed.stdout, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines))
-        let firstIdentity = LinuxProcfs.row(pid: pid)?.identity
-        usleep(10_000)
-        let secondIdentity = LinuxProcfs.row(pid: pid)?.identity
         guard confirmed.status == 0, confirmedFields.count == 3,
               confirmedFields[0] == pane, pid_t(confirmedFields[1]) == pid,
-              confirmedFields[2] == fields[2], let identity = firstIdentity,
-              secondIdentity == identity else {
+              confirmedFields[2] == fields[2], let identity else {
             let removed = (try? tmux(["kill-session", "-t", "=" + sessionName],
                                      operation: .close).status) == 0
             throw LinuxTerminalEffectFailure(
@@ -1135,11 +1140,14 @@ final class LinuxTmuxTerminalHost: TerminalHost {
             throw TerminalLifecycleFailure(code: .invalidCommand,
                                            message: "Terminal dimensions are outside 20...500 by 5...300.")
         }
-        let located = try tmux(["display-message", "-p", "-t", session.id, "#{window_id}"],
+        let windowFormat = ["#{window_id}", "#{window_panes}"]
+            .joined(separator: Self.formatSeparator)
+        let located = try tmux(["display-message", "-p", "-t", session.id, windowFormat],
                                operation: .resize)
-        let window = String(decoding: located.stdout, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard located.status == 0, Self.windowID(window) != nil else {
+        let windowFields = Self.fields(String(decoding: located.stdout, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
+        guard located.status == 0, windowFields.count == 2,
+              let window = Self.windowID(windowFields[0]), windowFields[1] == "1" else {
             throw LinuxRuntimeFailure(code: .commandFailed, message: "that tmux pane is gone")
         }
         // Each managed provider owns one dedicated tmux session/window. Resizing only the pane is
@@ -1149,11 +1157,14 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         guard resized.status == 0 else {
             throw LinuxRuntimeFailure(code: .commandFailed, message: "that tmux pane could not be resized")
         }
-        let observed = try tmux(["display-message", "-p", "-t", session.id,
-                                 "#{pane_width}x#{pane_height}"], operation: .resize)
-        let value = String(decoding: observed.stdout, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard observed.status == 0, value == "\(columns)x\(rows)" else {
+        let sizeFormat = ["#{window_width}x#{window_height}",
+                          "#{pane_width}x#{pane_height}"].joined(separator: Self.formatSeparator)
+        let observed = try tmux(["display-message", "-p", "-t", session.id, sizeFormat],
+                                operation: .resize)
+        let sizes = Self.fields(String(decoding: observed.stdout, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
+        guard observed.status == 0, sizes.count == 2,
+              sizes.allSatisfy({ $0 == "\(columns)x\(rows)" }) else {
             throw LinuxRuntimeFailure(code: .commandFailed,
                                       message: "tmux did not report the requested PTY dimensions.")
         }
