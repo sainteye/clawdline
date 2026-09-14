@@ -170,3 +170,8 @@ target closes that: those four files are no longer part of `Clawdline`'s own com
 `swift build` there is exactly one SwiftPM identity for each type they declare, and `Clawdline`'s
 remaining consumers reach it through the guarded `import ClawdlineApplication` described above.
 `artifacts/W3_1_CORRECTION.md` carries the full before/after and what verified it.
+
+The operator-facing Ubuntu/AWS build, signed-package, enrollment and acceptance procedure lives in
+[`docs/aws-linux-install.md`](../docs/aws-linux-install.md). In particular, the official Ubuntu
+Swift image may already own UID 1000; reuse its existing non-root identity rather than blindly
+creating another user before compilation.

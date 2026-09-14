@@ -136,7 +136,7 @@ linux_binary="$linux_bin_dir/ClawdlineLinux"
 # command cannot quietly turn into a lexical or mock-only proof on Ubuntu.
 CLAWDLINE_TEST_TMUX=$(command -v tmux) \
 CLAWDLINE_TEST_LINUX_EXECUTABLE="$linux_binary" swift test \
-  -c "$swift_build_configuration" -j "$swift_build_jobs" --static-swift-stdlib \
+  -c "$swift_build_configuration" -j "$swift_build_jobs" \
   --disable-automatic-resolution \
   --filter LinuxRuntimeContractTests
 

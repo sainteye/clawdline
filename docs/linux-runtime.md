@@ -184,3 +184,9 @@ The pidfd-less gap between final procfs revalidation and `kill(-pgid, …)` rema
 residual race. Landlock/seccomp support is currently limited to the pinned Ubuntu amd64 target, and
 no real Claude/Codex authentication receipt exists yet; those limits stay non-capabilities rather
 than being inferred from fixture success.
+
+For a reproducible open-source EC2 installation, including the HTTPS-only apt, occupied container
+UID, instance-role S3 access, signed-package, enrollment, systemd/tmux, rollback and hosted
+end-to-end acceptance pitfalls found during the disposable AWS gate, follow
+[`aws-linux-install.md`](aws-linux-install.md). That runbook keeps credentials and Session content
+out of logs and does not treat a healthy process as proof of Relay or hosted-console readiness.

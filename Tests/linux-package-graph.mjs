@@ -28,9 +28,12 @@ const packageHelper = read('tools/linux-package-helper.py');
 const packageTool = read('tools/linux-package.sh');
 const systemdContract = read('tools/linux-systemd-contract.sh');
 const entry = read('Packages/ClawdlineLinux/main.swift');
+const packagesReadme = read('Packages/README.md');
+const linuxRuntimeDocs = read('docs/linux-runtime.md');
 const build = read('build.sh');
 const testRunner = read('test.sh');
 const linuxBuild = read('tools/swift-core-application-linux-build.sh');
+const awsLinuxInstall = read('docs/aws-linux-install.md');
 const workflow = read('.github/workflows/ci.yml');
 const runtimeOnly = process.env.CLAWDLINE_LINUX_RUNTIME_ONLY === '1';
 
@@ -59,6 +62,37 @@ if (!runtimeOnly) {
 const packageShape = inspectPackage(manifest, build);
 check(Object.values(packageShape).every(Boolean),
   `SwiftPM product graph or Mac wrapper is incomplete: ${JSON.stringify(packageShape)}`);
+const pinnedSwiftImage = linuxBuild.match(/swift:6\.1\.3-noble@sha256:[0-9a-f]{64}/)?.[0];
+const noRestartInstall = awsLinuxInstall.indexOf('--cloud-commands-enabled true \\\n  --no-restart');
+const serviceAuthentication = awsLinuxInstall.indexOf(
+  'sudo -u clawdline env HOME=/var/lib/clawdline/home /usr/bin/codex login');
+const projectClone = awsLinuxInstall.indexOf(
+  'git clone https://github.com/sainteye/reaver.git /var/lib/clawdline-projects/reaver');
+const exactAllowlist = awsLinuxInstall.indexOf(
+  '.runtime.projectRoots=["/var/lib/clawdline-projects/reaver"]');
+const firstServiceStart = awsLinuxInstall.indexOf(
+  'systemctl enable --now clawdline-tmux.service clawdline-daemon.service');
+const awsRunbookShape = pinnedSwiftImage != null && awsLinuxInstall.includes(pinnedSwiftImage)
+  && !awsLinuxInstall.includes('<PINNED_SWIFT_IMAGE')
+  && awsLinuxInstall.includes('useradd: UID 1000 is not unique')
+  && awsLinuxInstall.includes('runuser -u ubuntu -- env HOME=/home/ubuntu')
+  && awsLinuxInstall.includes('s3:GetObject')
+  && awsLinuxInstall.includes('/usr/bin/tmux -D -S /run/clawdline/clawdline.sock')
+  && !awsLinuxInstall.includes('--cloud-commands-enabled false')
+  && awsLinuxInstall.includes('immutable explicit installation choice')
+  && noRestartInstall >= 0 && noRestartInstall < serviceAuthentication
+  && serviceAuthentication < projectClone && projectClone < exactAllowlist
+  && exactAllowlist < firstServiceStart
+  && packageHelper.includes('existing daemon configuration has a different explicit cloud write gate')
+  && awsLinuxInstall.includes(
+    'install -d -o clawdline -g clawdline -m 0700 /var/lib/clawdline/home')
+  && awsLinuxInstall.includes('/opt/clawdline/current/bin/clawdline-daemon-wrapper \\\n     health --config /etc/clawdline/daemon.json')
+  && awsLinuxInstall.includes('ingress_unauthorized')
+  && awsLinuxInstall.includes('app.clawdline.com')
+  && linuxRuntimeDocs.includes('[`aws-linux-install.md`](aws-linux-install.md)')
+  && packagesReadme.includes('[`docs/aws-linux-install.md`](../docs/aws-linux-install.md)');
+check(awsRunbookShape,
+  'AWS Linux install runbook must retain the observed build, access, service and hosted acceptance pitfalls');
 check(/\.package\(url: "https:\/\/github\.com\/apple\/swift-nio\.git", exact: "2\.102\.0"\)/.test(manifest)
   && /\.package\(url: "https:\/\/github\.com\/apple\/swift-nio-ssl\.git", exact: "2\.37\.4"\)/.test(manifest)
   && dependencyLock.packages.some((row) => row.identity === 'swift-nio' && row.version === '2.102.0')
@@ -398,13 +432,16 @@ check(!/case "cloud-login": return \.cloudLogin/.test(
   'removing the Linux enrollment command must make the package guard red');
 check(/--product ClawdlineLinux/.test(linuxBuild),
   'Ubuntu compiler check must build the Linux executable product');
-const selfContainedPackage = /--static-swift-stdlib/.test(linuxBuild)
+const staticLinkageFlags = linuxBuild.match(/--static-swift-stdlib/g) ?? [];
+const selfContainedPackage = staticLinkageFlags.length === 1
+  && /swift build --product ClawdlineLinux[\s\S]{0,240}--static-swift-stdlib/.test(linuxBuild)
+  && !/swift test[\s\S]{0,240}--static-swift-stdlib/.test(linuxBuild)
   && /grep -Eq 'libswift\|libFoundation\|=> not found'/.test(linuxBuild)
   && /package binary depends on an unavailable Swift\/Foundation runtime/.test(packageTool);
 check(selfContainedPackage,
   'the signed Linux package must carry a fresh-host self-contained Swift product');
 check(!/--static-swift-stdlib/.test(
-  linuxBuild.replaceAll('--static-swift-stdlib', '--dynamic-swift-stdlib')),
+  linuxBuild.replace('--static-swift-stdlib', '--dynamic-swift-stdlib')),
   'removing static Swift linkage must make the package guard red');
 check(/systemd-sysusers "\$script_dir\/\.\.\/Packaging\/linux\/clawdline\.conf"/.test(packageTool),
   'host installation must resolve sysusers config from the package tool, not caller cwd');
