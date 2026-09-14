@@ -958,13 +958,12 @@ final class LinuxTmuxTerminalHost: TerminalHost {
         let encodedSandbox = try JSONEncoder().encode(sandbox).base64EncodedString()
         let commandWords = ["/usr/bin/env", "-i"] + envArguments
             + [sandboxExecutable.path, LinuxProviderSandbox.command, encodedSandbox]
-        let command = "exec " + commandWords.map(SessionLaunchPolicy.shellQuoted).joined(separator: " ")
         let format = ["#{pane_id}", "#{pane_pid}", "#{pane_tty}"]
             .joined(separator: Self.formatSeparator)
         let receipt: LinuxCommandReceipt
         do {
             receipt = try tmux(["new-session", "-d", "-s", sessionName, "-c", plan.projectRoot,
-                                "-P", "-F", format, command], operation: .create)
+                                "-P", "-F", format] + commandWords, operation: .create)
         } catch let failure as LinuxRuntimeFailure {
             throw LinuxTerminalEffectFailure(
                 failure: failure, certainty: .unknown, checkpoint: .none,

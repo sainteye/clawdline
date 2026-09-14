@@ -1817,6 +1817,20 @@ final class LinuxRuntimeContractTests: XCTestCase {
         }
         XCTAssertTrue(FileManager.default.fileExists(atPath: controlSocket.path),
                       "the production-shaped dedicated tmux server must publish its socket")
+        // The installed service identity intentionally has /usr/sbin/nologin. A provider launch
+        // must therefore be passed to tmux as direct argv; a single shell-command string would be
+        // routed through this default shell and exit before the sandbox or provider starts.
+        let noLogin = "/usr/sbin/nologin"
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: noLogin))
+        let configureShell = Process()
+        configureShell.executableURL = URL(fileURLWithPath: tmux)
+        configureShell.arguments = ["-S", controlSocket.path, "set-option", "-g",
+                                    "default-shell", noLogin]
+        configureShell.standardOutput = FileHandle.nullDevice
+        configureShell.standardError = FileHandle.nullDevice
+        try configureShell.run()
+        configureShell.waitUntilExit()
+        XCTAssertEqual(configureShell.terminationStatus, 0)
         try Data("machine-secret-must-not-cross".utf8).write(to: machineSecret)
         try FileManager.default.setAttributes([.posixPermissions: 0o600],
                                               ofItemAtPath: machineSecret.path)

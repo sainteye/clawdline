@@ -436,6 +436,13 @@ Common failure classifications:
   both halves in the real sandbox: `socket.socketpair()` succeeds, while connecting a newly
   created Unix socket to the control path is still refused. Do not disable seccomp or expose the
   control socket as a workaround.
+- the hosted sheet still returns `internal_failure`, no tmux Session remains, and a direct tmux
+  probe prints `This account is currently not available.`: the installed `clawdline` identity
+  correctly uses `/usr/sbin/nologin`, but a provider command was passed to tmux as one shell-command
+  string. tmux therefore invoked that login shell before the sandbox or provider could start. Use
+  a release that passes `/usr/bin/env -i`, the sandbox launcher, and its encoded spec as direct tmux
+  argv. Do not give the service account an interactive login shell; verify the same tmux server can
+  launch the contained provider while its global `default-shell` remains `nologin`.
 - a create returns `malformed_terminal_reply` even though `tmux list-panes` shows the new PTY:
   tmux 3.4 renders a control-character field separator as the printable octal escape `\037`.
   Install a release that accepts tmux's pinned rendered format; do not weaken PID, TTY, or procfs

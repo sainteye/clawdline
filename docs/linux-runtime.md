@@ -175,6 +175,10 @@ crash restart and reboot enablement remain a typed Ubuntu VM gate.
 The tmux unit runs `/usr/bin/tmux -D -S /run/clawdline/clawdline.sock` exactly. `-D` keeps the
 server in the foreground and disables exit-empty; appending a `new-session` keeper command is not
 a valid tmux 3.4 invocation and causes systemd to restart the unit continuously.
+The service identity retains `/usr/sbin/nologin`. Provider launches therefore pass the closed
+`/usr/bin/env -i` + sandbox invocation to tmux as direct argv; a single shell-command string would
+route through tmux's `default-shell`, exit before containment starts, and misreport the launch as a
+generic ingress failure.
 
 The pinned Ubuntu 24.04 amd64 job runs as a non-root service user, builds the real SwiftPM graph,
 executes the Linux XCTest target with real tmux and containment probes, and records installed tool
