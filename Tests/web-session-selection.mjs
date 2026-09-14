@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
     createSessionSelectionLifecycle,
+    machinePresentation,
+    machinePresentationForFleet,
     SessionSelection,
     sameSessionSelection,
     sessionSelectionIdentity,
@@ -20,6 +22,43 @@ function row(id, machine, conversation, extra = {}) {
     return { id, machine, sessionId: conversation,
         identity: { machine, session: id }, title: extra.title || "Display title", ...extra };
 }
+
+const EN_MACHINE_COPY = { webMachineThisMac: "This Mac", webMachineMac: "Mac",
+    webMachineLinux: "Linux", webMachineLinuxAWS: "Linux / AWS" };
+const ZH_HANT_MACHINE_COPY = { webMachineThisMac: "這台 Mac", webMachineMac: "Mac",
+    webMachineLinux: "Linux", webMachineLinuxAWS: "Linux / AWS" };
+
+assert.deepEqual(machinePresentation({ machine: "this-mac" }, EN_MACHINE_COPY), {
+    id: "this-mac", name: "This Mac", platform: "macos", provider: null,
+    kind: "mac", label: "Mac · This Mac"
+}); checks += 1;
+assert.deepEqual(machinePresentation({ machine: "aws-node-1", machineName: "Builder East",
+    machinePlatform: "linux", cloudProvider: "aws" }, EN_MACHINE_COPY), {
+    id: "aws-node-1", name: "Builder East", platform: "linux", provider: "aws",
+    kind: "linux-aws", label: "Linux / AWS · Builder East"
+}); checks += 1;
+equal(machinePresentation({ machine: "mac_opaque", label: "Session title" }).label, "mac_opaque",
+    "an opaque machine id is shown authoritatively without guessing from its prefix or session title");
+equal(machinePresentation({ machine: "machine-1", machineName: "Build\nHost" }).label, "Build Host",
+    "display metadata cannot inject a second line into a Session row");
+equal(machinePresentation({ machine: "this-mac" }, ZH_HANT_MACHINE_COPY).label, "Mac · 這台 Mac",
+    "a zh-Hant local Session row receives its machine words from served Copy");
+const spoofedMachineID = "worker\u202e/evil\u2069\u200b-id";
+const spoofed = machinePresentation({ machine: spoofedMachineID,
+    machineName: "Build\u202e Mac\u2069\u200b" });
+equal(spoofed.id, spoofedMachineID,
+    "display sanitizing never changes the opaque routing authority");
+equal(spoofed.label, "Build Mac",
+    "bidi controls, isolates and zero-width spoof characters cannot enter a badge");
+const duplicateFleet = [
+    { machine: "machine-one-shared88", machineName: "Builder" },
+    { machine: "machine-two-shared88", machineName: "Builder" }
+];
+const firstDuplicate = machinePresentationForFleet(duplicateFleet[0], duplicateFleet, EN_MACHINE_COPY);
+const secondDuplicate = machinePresentationForFleet(duplicateFleet[1], duplicateFleet, EN_MACHINE_COPY);
+check(firstDuplicate.label !== secondDuplicate.label && firstDuplicate.label.includes("shared88-1") &&
+    secondDuplicate.label.includes("shared88-2"),
+"duplicate display names carry visible short-id disambiguators without relying on hover");
 
 const a = row("terminal-1", "mac-a", "conversation-a");
 const b = row("terminal-1", "mac-b", "conversation-b");
@@ -232,6 +271,18 @@ if (process.argv.includes("--mutate-minted-identity")) {
     assert.equal(mutated.sessionSelectionKey(open), open.key,
         "an identity handed back to the keying function must still name its own row");
 }
+if (process.argv.includes("--mutate-machine-evidence")) {
+    const mutatedSource = selectionSource.replace(
+        'platform === "linux" && provider === "aws" ? "linux-aws"',
+        'platform === "linux" && provider === "aws" ? "linux"');
+    assert.notEqual(mutatedSource, selectionSource, "machine evidence mutation target remains present");
+    const mutated = await import("data:text/javascript;base64," +
+        Buffer.from(mutatedSource).toString("base64"));
+    assert.equal(mutated.machinePresentation({ machine: "worker", machineName: "Builder",
+        machinePlatform: "linux", cloudProvider: "aws" }, EN_MACHINE_COPY).label,
+        "Linux / AWS · Builder",
+        "explicit AWS evidence must remain visible");
+}
 for (const forbidden of ["../view/", "../input/", "../net/api", "../core/state"]) {
     check(!selectionSource.includes(forbidden), "selection owner stays independent from " + forbidden);
 }
@@ -242,6 +293,13 @@ check(openSource.includes("api.transcript(entry.identity.route"),
     "transcript requests carry the frozen machine/session route");
 check(openSource.includes('SessionSelection.beginEffect("transcript"'),
     "transcript reads use the shared effect lifetime");
+
+const listSource = await readFile(
+    new URL("../Resources/web/app/js/view/list.js", import.meta.url), "utf8");
+check(listSource.includes('<span class="machine"></span>'),
+    "every Session row reserves a visible machine identity slot");
+check(listSource.includes("machineNode.textContent = machine.label"),
+    "the row fills that slot from the evidence-aware machine presentation");
 
 const composerSource = await readFile(
     new URL("../Resources/web/app/js/input/composer.js", import.meta.url), "utf8");

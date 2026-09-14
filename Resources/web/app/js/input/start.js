@@ -18,7 +18,8 @@ import {
     createClawdfatherCoordinatorLoader
 } from "./clawdfather.js";
 import { coordinatorOfflineAdvice, coordinatorPresenceText } from "./coordinator-actions.js";
-import { SessionSelection } from "../session/selection.js";
+import { LOCAL_SESSION_MACHINE, SessionSelection, sessionSelectionIdentity,
+    sessionSelectionKey } from "../session/selection.js";
 
 /* ---- starting a session -------------------------------------------------- */
 
@@ -64,6 +65,11 @@ export var Start = (function () {
     var MANY = 8;        // places, past which a box to filter them earns its row
 
     var places = null;   // as the Mac sent them; null until an answer has arrived
+    var machines = null; // authenticated machine routes; null until this opening reads them
+    var machine = null;  // exact route selected before its Projects are read
+    var machineLoading = false;
+    var machineGeneration = 0;
+    var placesGeneration = 0;
     var assistants = [];  // what the Mac will start — [{ id, label }], its list and not this one
     var with_ = null;     // which of them the next press opens; null until the list arrives
     var loading = false;
@@ -77,6 +83,7 @@ export var Start = (function () {
     var coordinatorPayload = null; // durable device Bearings; null while its read is in flight
     var coordinatorFailed = false;
     var wait = null;     // { id, from, late, place } — started, and not in the list yet
+    var assignmentIdentity = null; // exact machine/session route for the optional new coordinator
     // The command that reaches the session just started, or null when there is nowhere to send
     // anybody. Only the detached-tmux start fills it — see `attach` on the start reply — and it
     // is the one thing on this band that outlives the wait: everything else here is about a
@@ -92,12 +99,14 @@ export var Start = (function () {
     var assignmentState = createClawdfatherAssignmentState({
         timeoutMs: HOLD,
         onTimeout: function () {
+            assignmentIdentity = null;
             toast(T.webClawdfatherRegisterLate, true);
         },
         // `result.state` is what this browser did; `result.choice.state` is what the Mac said.
         // Both can read "blocked" and they are not the same word: the outer one means nothing
         // was typed, the inner one means the coordinator record must not be written over.
         onSettled: function (result) {
+            assignmentIdentity = null;
             if (result && result.state === "sent") {
                 toast(T.webClawdfatherRegisterSent);
                 return;
@@ -244,7 +253,8 @@ export var Start = (function () {
         // Gone once a project's conversations are on screen. Not merely irrelevant there — a
         // press on the other chip would have to leave the list to mean anything, and a control
         // that silently throws away the screen you are on is worse than one that is not offered.
-        row.hidden = assistants.length < 2 || !!at;
+        row.hidden = (typeof api.machines === "function" && !machine) ||
+            assistants.length < 2 || !!at;
         if (row.hidden) { row.innerHTML = ""; return; }
         row.innerHTML = "";
         var label = document.createElement("span");
@@ -273,6 +283,46 @@ export var Start = (function () {
         });
     }
 
+    function drawMachines() {
+        var row = els["start-machine"];
+        row.hidden = !machines || !!at ||
+            (machines.length === 1 && machines[0].selectable === true);
+        if (row.hidden) { row.innerHTML = ""; return; }
+        row.innerHTML = "";
+        row.setAttribute("role", "group");
+        row.setAttribute("aria-label", T.webStartMachine);
+        row.setAttribute("aria-describedby", "start-say");
+        var label = document.createElement("span");
+        label.className = "with-label";
+        label.textContent = T.webStartMachine;
+        row.appendChild(label);
+        machines.forEach(function (candidate) {
+            var chip = document.createElement("button");
+            chip.type = "button";
+            chip.className = "chip" + (machine && candidate.id === machine.id ? " on" : "");
+            chip.textContent = (candidate.label || candidate.name || candidate.id) +
+                (candidate.selectable ? "" : " · " + T.webStartMachineStale);
+            chip.title = candidate.id;
+            chip.disabled = !candidate.selectable || !!pressing || !!wait || loading;
+            chip.setAttribute("aria-pressed", machine && candidate.id === machine.id ? "true" : "false");
+            chip.onclick = function () { selectMachine(candidate); };
+            row.appendChild(chip);
+        });
+    }
+
+    function selectMachine(candidate) {
+        if (!candidate || !candidate.id || candidate.selectable !== true ||
+            loading || pressing || wait) return;
+        machine = candidate;
+        places = null;
+        assistants = [];
+        with_ = null;
+        leave();
+        said("");
+        load();
+        draw();
+    }
+
     /**
      * The switch, and the way back out.
      *
@@ -285,7 +335,8 @@ export var Start = (function () {
     function drawResume() {
         var row = els["start-resume"];
         row.innerHTML = "";
-        row.hidden = !S.write || typeof api.pastSessions !== "function";
+        row.hidden = (typeof api.machines === "function" && !machine) ||
+            !S.write || typeof api.pastSessions !== "function";
         if (row.hidden) return;
 
         if (at) {
@@ -405,12 +456,14 @@ export var Start = (function () {
             say(T.webStartOff);
             box.hidden = true;
             els["start-with"].hidden = true;
+            els["start-machine"].hidden = true;
             els["start-resume"].hidden = true;
             els["start-clawdfather-row"].hidden = true;
             list.innerHTML = "";
             return;
         }
 
+        drawMachines();
         drawWith();
         drawResume();
         drawClawdfather();
@@ -420,7 +473,13 @@ export var Start = (function () {
         box.placeholder = T.webStartFilter;
         box.setAttribute("aria-label", T.webStartFilter);
 
+        var currentMachines = (machines || []).filter(function (candidate) {
+            return candidate.selectable === true;
+        });
         say(wait ? T.webStartWaiting
+            : (machineLoading && !machines) ? T.webLoading
+            : (machines && !currentMachines.length) ? T.webStartMachineNone
+            : (machines && machines.length > 1 && !machine) ? T.webStartMachinePick
             : (loading && !places) ? T.webLoading
             : (places && !places.length) ? T.webStartEmpty
             : T.webStartPick);
@@ -435,6 +494,7 @@ export var Start = (function () {
         if (box.hidden && box.value) { box.value = ""; find = ""; }
 
         list.innerHTML = "";
+        if (machines && machines.length > 1 && !machine) { edge(); return; }
         matching().forEach(function (p) {
             var li = document.createElement("li");
             var row = document.createElement("button");
@@ -549,10 +609,15 @@ export var Start = (function () {
      *  the list is sorted by when each was last worked in. The old one stays on screen while
      *  the new one is on its way — a list that blanks itself to refetch is a flicker. */
     function load() {
-        if (loading || typeof api.places !== "function") return;
+        if (loading || typeof api.places !== "function" ||
+            (typeof api.machines === "function" && !machine)) return;
+        var selected = machine;
+        var generation = ++placesGeneration;
+        var selectedID = selected && selected.id;
         loading = true;
         draw();
-        asked(function () { return api.places(); }).then(function (d) {
+        asked(function () { return api.places(selected ? selected.id : undefined); }).then(function (d) {
+            if (generation !== placesGeneration || selectedID !== (machine && machine.id)) return;
             places = (d && d.places) || [];
             // The Mac's list, not this page's. Whether Codex is installed is a question only
             // that end can answer, and a chip for something that is not there opens a tab
@@ -562,10 +627,58 @@ export var Start = (function () {
                 with_ = assistants.length ? assistants[0].id : null;
             }
         }).catch(function (e) {
+            if (generation !== placesGeneration || selectedID !== (machine && machine.id)) return;
             places = places || [];
             said(why(e), e);
         }).then(function () {
+            if (generation !== placesGeneration || selectedID !== (machine && machine.id)) return;
             loading = false;
+            draw();
+        });
+    }
+
+    function loadMachines(refresh) {
+        if (machineLoading || typeof api.machines !== "function") {
+            if (!refresh && typeof api.machines !== "function") load();
+            return;
+        }
+        var generation = ++machineGeneration;
+        var previousMachine = machine;
+        if (!refresh) { machines = null; machine = null; }
+        machineLoading = true;
+        draw();
+        asked(function () { return api.machines(); }).then(function (answer) {
+            if (generation !== machineGeneration) return;
+            machines = (answer && Array.isArray(answer.machines)) ? answer.machines : [];
+            var retained = previousMachine && machines.find(function (candidate) {
+                return candidate.id === previousMachine.id && candidate.selectable === true;
+            });
+            machine = retained || null;
+            var selectable = machines.filter(function (candidate) {
+                return candidate.selectable === true;
+            });
+            if (!machine && selectable.length === 1 && machines.length === 1) {
+                machine = selectable[0];
+                if (previousMachine && previousMachine.id !== machine.id) {
+                    places = null; assistants = []; with_ = null;
+                }
+                machineLoading = false;
+                if (!refresh || !places) load();
+            } else if (!machine) {
+                placesGeneration += 1;
+                loading = false;
+                places = null; assistants = []; with_ = null;
+            } else if (!refresh) {
+                machineLoading = false;
+                load();
+            }
+        }).catch(function (error) {
+            if (generation !== machineGeneration) return;
+            machines = [];
+            said(why(error), error);
+        }).then(function () {
+            if (generation !== machineGeneration) return;
+            machineLoading = false;
             draw();
         });
     }
@@ -735,16 +848,25 @@ export var Start = (function () {
      * to say about a session that is never going to appear on that Mac's screen at all.
      */
     function began(id, place, makeClawdfather, attach) {
-        assignmentState.begin(id, makeClawdfather === true);
         detached = attach || null;
         close();
         if (!id) {
+            assignmentIdentity = null;
+            assignmentState.begin(id, makeClawdfather === true);
             // A reply with no id is nothing to watch the list for. The tab was still opened —
             // that is what `ok` meant — so this says now what the fifteen seconds would have.
             band(detached ? detachedWords() : T.webStartSlow, true);
             return;
         }
-        wait = { id: id, from: S.openId, late: false, place: place || {} };
+        var routeMachine = (machine && machine.id) || (place && place.machine) ||
+            LOCAL_SESSION_MACHINE;
+        var identity = sessionSelectionIdentity({ id: id, machine: routeMachine,
+            identity: { machine: routeMachine, session: id } });
+        assignmentIdentity = makeClawdfather === true ? identity : null;
+        assignmentState.begin(id, makeClawdfather === true);
+        wait = { id: id, identity: identity,
+            from: SessionSelection.snapshot().open && SessionSelection.snapshot().open.key,
+            late: false, place: place || {} };
         band(detached ? detachedWords() : T.webStartWaiting, false);
         renderList();
         clearTimeout(timer);
@@ -790,7 +912,7 @@ export var Start = (function () {
         // screen depends on something nobody remembers doing.
         leave();
         if (S.write) {
-            if (!wait) load();
+            if (!wait) loadMachines();
             loadCoordinator();
         }
         draw();
@@ -799,15 +921,19 @@ export var Start = (function () {
 
     function close() {
         if (pressing) return;
+        machineGeneration += 1;
+        placesGeneration += 1;
+        loading = false;
+        machineLoading = false;
         els.start.hidden = true;
         setStartSpin(null);
     }
 
     function arrange(list) {
-        var id = wait ? wait.id : landed;
-        if (!id) return list;
+        var identity = wait ? wait.identity : landed;
+        if (!identity) return list;
         for (var i = 0; i < list.length; i++) {
-            if (list[i].id !== id) continue;
+            if (sessionSelectionKey(list[i]) !== identity.key) continue;
             return [list[i]].concat(list.slice(0, i), list.slice(i + 1));
         }
         return list;
@@ -818,7 +944,7 @@ export var Start = (function () {
      *  counts cannot mistake it for a session while still letting it occupy the exact geometry
      *  the arriving row will use. */
     function placeholder() {
-        if (!wait || wait.late || byId(wait.id)) {
+        if (!wait || wait.late || byId(wait.identity)) {
             if (placeholderNode && placeholderNode.parentNode) {
                 placeholderNode.parentNode.removeChild(placeholderNode);
             }
@@ -869,11 +995,17 @@ export var Start = (function () {
         scrolled: edge,
         placeholder: placeholder,
         arrange: arrange,
-        arriving: function (id) { return !!(wait && wait.id === id); },
+        arriving: function (row) {
+            return !!(wait && wait.identity && sessionSelectionKey(row) === wait.identity.key);
+        },
 
         /** The write switch can flip under an open sheet — `hello` carries it on every
          *  reconnect — and the sheet is a different screen on either side of that. */
-        sync: draw,
+        sync: function () {
+            draw();
+            if (!els.start.hidden && typeof api.machines === "function" &&
+                !machineLoading) loadMachines(true);
+        },
 
         /** Let go of the wait: the reader has read the line and closed it. A session that
          *  turns up afterwards is a row in the list like any other. */
@@ -900,9 +1032,10 @@ export var Start = (function () {
                 renderList();
                 return false;
             }
-            if (!wait || !byId(wait.id)) return false;
-            var id = wait.id, from = wait.from, late = wait.late;
-            landed = late ? null : id;
+            if (!wait || !byId(wait.identity)) return false;
+            var id = wait.id, identity = wait.identity, from = wait.from, late = wait.late;
+            var arrived = byId(identity);
+            landed = late ? null : identity;
             wait = null;
             clearTimeout(timer);
             timer = null;
@@ -917,12 +1050,13 @@ export var Start = (function () {
             // something else meanwhile, and not after the fifteen seconds have gone by: by then
             // they have been told to look at the Mac, and a transcript arriving over whatever
             // they moved on to is the page having an opinion it has not earned.
-            if (late || S.openId !== from) {
-                SessionSelection.select(id, S.sessions);
+            var currentOpen = SessionSelection.snapshot().open;
+            if (late || (currentOpen && currentOpen.key) !== from) {
+                SessionSelection.select(identity, S.sessions);
                 renderList();
                 return false;
             }
-            openSession(id);
+            openSession(arrived);
             return true;
         }
     };
@@ -939,7 +1073,9 @@ export var Start = (function () {
     function attemptAssignment() {
         var id = assignmentState.pendingID();
         if (!id) return;
-        assignmentState.attempt(byId(id), api, { timeoutMs: 8000 });
+        var exact = assignmentIdentity && assignmentIdentity.rowId === id
+            ? byId(assignmentIdentity) : null;
+        assignmentState.attempt(exact, api, { timeoutMs: 8000 });
     }
 })();
 

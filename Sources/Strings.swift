@@ -1009,6 +1009,19 @@ protocol Copy {
     var webStart: String { get }
     var webStartLabel: String { get }
     var webStartPick: String { get }
+    /// Display-only heading for the exact authenticated machine route selected before Projects.
+    var webStartMachine: String { get }
+    var webStartMachinePick: String { get }
+    /// A retained inventory is still visible but cannot receive a new start after its bounded
+    /// freshness window. It is not silently treated as online.
+    var webStartMachineStale: String { get }
+    var webStartMachineNone: String { get }
+    /// Display vocabulary for authenticated machine descriptors. Kept in Copy rather than in
+    /// the identity owner so a local row never becomes an English island in a translated page.
+    var webMachineThisMac: String { get }
+    var webMachineMac: String { get }
+    var webMachineLinux: String { get }
+    var webMachineLinuxAWS: String { get }
     /// Which assistant a press should open. Only ever on screen when the Mac has more than
     /// one of them installed, which is what makes it a question worth asking.
     var webStartWith: String { get }

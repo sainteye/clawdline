@@ -6399,7 +6399,7 @@ An `orchestrator` frame follows every change to any task record:
 ```console
 event: orchestrator
 id: 10
-data: {"tasks":[…],"schedules":[…],"at":1787049612,"app":{"version":"0.5.0","build":1787096354,"protocol":1}}
+data: {"tasks":[…],"schedules":[…],"at":1787049612,"app":{"version":"0.5.0","build":1787096354,"protocol":1},"machine":{"name":"Studio Mac","platform":"macos"}}
 ```
 
 `tasks` is the body of `GET /v1/orchestrator/tasks` and `schedules` is the body of
@@ -6420,6 +6420,21 @@ builds this body once and both publishers send it — this stream, and the `orch
 the Mac republishes on every cloud transport-ready. On that path there is no `/v1/health` to ask
 and the relay's own `ready` frame knows nothing about a Mac, so `app` is the only reading the
 stale-build banner has.
+
+`machine` is display-only metadata (`name` and `platform`). A producer model may additionally
+publish `provider`, but only when that runtime has explicit bounded provider/config evidence; the
+current Mac producer does not publish or infer it. The authenticated
+`orch/<machine>` channel remains the machine identity; clients must route by that opaque id, never
+by the display name. An old producer may omit the descriptor, in which case clients show the
+channel id without inferring a platform from its spelling. `This Mac`, `Mac`, `Linux`, and
+`Linux / AWS` are served Copy keys; the identity/presentation helper accepts those words from its
+caller rather than importing the localization owner or embedding English.
+
+The snapshot's existing `at` timestamp is also the New Session machine inventory watermark. A
+hosted viewer treats it as selectable only for five minutes, shows older/unknown rows as unavailable,
+and never auto-selects them. Multiple current machines require an explicit choice. The selected
+opaque machine id stays attached through Project read, start reply and Session arrival; a duplicate
+bare terminal id published by another machine cannot satisfy that wait.
 
 **It sends the whole list on every change rather than a diff, and that is the design.** A client
 that has just reconnected — a phone coming out of a tunnel, a laptop waking up — is level with the

@@ -1010,7 +1010,9 @@ document.documentElement.className = "booting";
         <h2 id="start-title">Start a session</h2>
 
         <div class="block">
-            <p class="say" id="start-say"></p>
+            <p class="say" id="start-say" role="status" aria-live="polite"></p>
+            <!-- Fleet views choose the authenticated route before reading its projects. -->
+            <div class="row" id="start-machine" hidden></div>
             <!-- Same defence as the two boxes above: a field that filters a list of project
                  names has no business being offered somebody's saved logins. -->
             <!-- Which assistant the press opens. Hidden on a Mac that has only one of them,

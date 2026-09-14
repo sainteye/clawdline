@@ -14,6 +14,7 @@ import {
     sealEnvelope
 } from "./cloud-crypto.js";
 import { T } from "../core/i18n.js";
+import { machinePresentation, machinePresentationForFleet } from "../session/selection.js";
 import {
     CloudTrail, DIAGNOSTIC_REPORT_MAX_BYTES, RELAY_CTL_MAX_BYTES, asCloudFailure, cloudFailure,
     failureFromMac, failureFromRelay, closeCodeName, isFailureCode
@@ -41,6 +42,7 @@ function readKey(identity, read) {
 /** How long a read may go unanswered before it is an answer of its own. */
 const READ_TIMEOUT_MS = 60000;
 const VOICE_TIMEOUT_MS = 6 * 60 * 1000;
+const MACHINE_INVENTORY_FRESH_MS = 5 * 60 * 1000;
 
 /** The agent or shell a read is about, as the string the Mac will echo back inside `read`. */
 function readSubject(value) {
@@ -683,6 +685,13 @@ export class CloudClient {
             var machine = decodedChannelSegment(channel.machine);
             this.orchestratorSnapshots.set(machine, payload || {});
             this._consumeCloudStatus(machine, payload && payload.cloud_status);
+            // A retained Session envelope may arrive before its machine descriptor. Re-project
+            // the same authenticated rows when the descriptor arrives so the visible label does
+            // not wait for unrelated terminal activity.
+            if (this.sessionSnapshots.size && this.handlers && this.handlers.sessions) {
+                var sessions = this._sessionResponse(envelope.ts);
+                this.handlers.sessions(sessions.sessions, sessions.at, sessions.scan);
+            }
             var tasks = this._allOrchestratorRows("tasks");
             if (this.handlers && this.handlers.tasks) this.handlers.tasks(tasks);
             this._sawAppStamp(payload);
@@ -694,7 +703,13 @@ export class CloudClient {
     }
 
     _sessionResponse(timestamp) {
-        return { sessions: Array.from(this.sessionSnapshots.values()),
+        var sessions = Array.from(this.sessionSnapshots.values()).map(function (row) {
+            var snapshot = this.orchestratorSnapshots.get(row.machine) || {};
+            var descriptor = snapshot.machine && typeof snapshot.machine === "object"
+                ? snapshot.machine : null;
+            return descriptor ? Object.assign({}, row, { machineInfo: descriptor }) : row;
+        }, this);
+        return { sessions: sessions,
             at: timestamp ? Math.floor(timestamp / 1000) : 0,
             scan: { emptyAuthoritative: true, cloud: true } };
     }
@@ -749,6 +764,33 @@ export class CloudClient {
             if (row && typeof row.machine === "string" && row.machine) found.add(row.machine);
         });
         return Array.from(found).sort();
+    }
+
+    /** Display-only descriptors from authenticated encrypted snapshots. Command authority stays
+     * the opaque id encoded in the envelope channel. */
+    machines() {
+        var now = Date.now();
+        var rows = this._knownMachines().map(function (id) {
+            var snapshot = this.orchestratorSnapshots.get(id) || {};
+            var descriptor = snapshot.machine && typeof snapshot.machine === "object"
+                ? snapshot.machine : {};
+            var presentation = machinePresentation({ id: id, machineName: descriptor.name,
+                machinePlatform: descriptor.platform, cloudProvider: descriptor.provider }, T);
+            var observedAt = Number.isFinite(snapshot.at) && snapshot.at > 0
+                ? snapshot.at * 1000 : null;
+            var selectable = observedAt !== null && now - observedAt >= 0 &&
+                now - observedAt <= MACHINE_INVENTORY_FRESH_MS;
+            return Object.freeze(Object.assign({}, presentation, { observedAt: observedAt,
+                freshness: selectable ? "current" : observedAt ? "stale" : "unknown",
+                selectable: selectable }));
+        }, this);
+        rows = rows.map(function (row) {
+            var fleet = machinePresentationForFleet(row, rows, T);
+            return Object.freeze(Object.assign({}, row, { label: fleet.label }));
+        });
+        if (!rows.length) return Promise.reject(cloudError("cloud_read_unavailable",
+            "no machine has published an inventory to this account yet"));
+        return Promise.resolve({ machines: rows });
     }
 
     /** A machine-scoped control cannot guess in a fleet. Push subscriptions and dictation belong
@@ -890,8 +932,15 @@ export class CloudClient {
      * list again. What the table no longer does is refuse, on the Mac's behalf, a project
      * nobody has said is gone.
      */
-    places() {
-        var machines = this._knownMachines();
+    places(selectedMachine) {
+        var known = this._knownMachines();
+        var machines = selectedMachine === undefined || selectedMachine === null
+            ? known : [String(selectedMachine)];
+        if (selectedMachine !== undefined && selectedMachine !== null &&
+            (!selectedMachine || !known.includes(String(selectedMachine)))) {
+            return Promise.reject(cloudError("cloud_machine_unavailable",
+                "this machine has not published a current Cloud inventory"));
+        }
         if (!machines.length) {
             return Promise.reject(cloudError("cloud_read_unavailable",
                 "no Mac has published an inventory to this account yet"));
@@ -923,7 +972,13 @@ export class CloudClient {
                     assistants.push(assistant);
                 });
             });
-            self.placeRoutes = routes;
+            if (selectedMachine === undefined || selectedMachine === null) self.placeRoutes = routes;
+            else {
+                self.placeRoutes.forEach(function (route, id) {
+                    if (route.machine === String(selectedMachine)) self.placeRoutes.delete(id);
+                });
+                routes.forEach(function (route, id) { self.placeRoutes.set(id, route); });
+            }
             return { places: places, assistants: assistants };
         });
     }

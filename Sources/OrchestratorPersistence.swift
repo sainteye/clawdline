@@ -460,7 +460,8 @@ extension RemoteServer {
         now: Date = Date(), liveTerminals: Set<String>? = nil
     ) -> [String: Any] {
         var out: [String: Any] = ["snippets": Snippets.records(),
-                                  "at": Int(now.timeIntervalSince1970), "app": appStamp()]
+                                  "at": Int(now.timeIntervalSince1970), "app": appStamp(),
+                                  "machine": machineDescriptor()]
         if Orchestrator.storeIsAuthoritative() {
             let terminals = liveTerminals
                 ?? Set(SessionWatch.shared.publishedInventory().targets.map(\.id))
@@ -472,6 +473,16 @@ extension RemoteServer {
             out["store"] = Orchestrator.storeHealthRecord()
         }
         return out
+    }
+
+    /// Display metadata only. The authenticated envelope channel remains the machine authority;
+    /// neither the browser nor a command may route by this mutable human-facing name.
+    static func machineDescriptor() -> [String: Any] {
+        let metadata = CloudMachineMetadata.currentMac()
+        let clean = metadata.name.components(separatedBy: .controlCharacters).joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return ["name": clean.isEmpty ? "Mac" : String(clean.prefix(80)),
+                "platform": metadata.platform]
     }
 
     static func appStamp() -> [String: Any] {

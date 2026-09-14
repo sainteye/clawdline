@@ -73,6 +73,12 @@
     font-family: var(--mono); font-size: 11px;
 }
 .row .meta .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta .machine {
+    flex: 0 1 auto; min-width: 0; max-width: 42%; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px;
+}
+.row .meta .machine[data-kind="linux-aws"] { color: var(--accent); }
 .row .meta .tty { flex: 0 0 auto; color: #4f4d47; }
 .assistant-logo {
     display: inline-block; flex: 0 0 auto;

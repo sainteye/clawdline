@@ -316,9 +316,30 @@ Serialized it is at most 8 KiB, enforced by trimming the two recent lists. Befor
 payload has arrived it publishes an object holding only `cloud_status`. **`orch/<machine>` is
 published whether or not the orchestrator is enabled**: `RemoteServer.cloudTransportBecameReady`
 publishes `orchestratorSnapshot()` on every ready generation — every connect and every token
-rotation — and that snapshot always carries `snippets`, `at` and `app`, with `tasks` and
+rotation — and that snapshot always carries `snippets`, `at`, `app` and a display-only `machine`
+descriptor (`name`, `platform`, and an optional infrastructure `provider`), with `tasks` and
 `schedules` only when the store is authoritative. Bridges composed without a status owner (the test
 fixtures) record into a private one and publish no notice.
+
+The current Mac producer publishes only `name` and `platform`. The viewer accepts `provider` as a
+forward-compatible display field only after a runtime's production metadata model supplies an
+explicit bounded value; it never derives AWS from a hostname, machine id, or Linux alone. The
+separate Linux runtime correction owns that producer/config contract.
+
+The platform prefix and local-machine fallback are served locale copy, not protocol values. The
+opaque id and metadata remain unchanged when the viewer translates `This Mac`, `Mac`, `Linux`, or
+`Linux / AWS`; localized presentation can therefore never change command routing.
+
+The descriptor is not routing authority. Its enclosing authenticated `orch/<machine>` channel is
+the exact machine identity used by every read and start command. Hosted Session rows may label an
+explicit macOS host as Mac or an explicit Linux/AWS host as Linux / AWS; an older snapshot without
+that evidence shows its opaque machine id and does not guess from an id prefix. When an account has
+more than one machine, the New Session sheet requires one exact machine before it reads that
+machine's Projects and assistants. A one-machine account keeps the original direct fast path only
+while that machine's authenticated snapshot `at` watermark is no more than five minutes old.
+Retained older keys remain visible as offline/out of date but are not selectable, and a later fresh
+snapshot refreshes the open picker. The start reply is watched as the exact `(machine, session)`
+pair, so equal terminal ids from two machines cannot open or wedge the wrong row.
 
 **`diagnostics.report` is the Cloud door to the report files.** The command (§11.5) is read-level,
 like the HTTP route: it is not behind `remote_write`. `RemoteServerCloudCommandRouter` answers it
@@ -336,8 +357,11 @@ new sender beyond 4,096 tracked is refused rather than tracked by evicting anoth
 envelope deadline and the ledger's request idempotency are separate owners and are not what makes
 this safe.
 
-**The `orch/` snapshot carries three things, and two of them were added because their absence
-was invisible.** `RemoteServer.orchestratorSnapshot()` is the one body both publishers send — the
+**The `orch/` snapshot carries machine-scoped state plus display metadata.**
+`machine` is the bounded human-facing name and platform described above. It is encrypted with the
+rest of the snapshot and never replaces the channel id in an authorization or routing decision.
+The other fields include three things, two of which were added because their absence
+was invisible. `RemoteServer.orchestratorSnapshot()` is the one body both publishers send — the
 local `orchestrator` event and the cloud envelope — and it holds `tasks`, `schedules` and `app`.
 `schedules` is there rather than behind a request because the viewer reads that list on a
 one-minute lane and a request is a person waiting; measured on one Mac it is 453 bytes beside

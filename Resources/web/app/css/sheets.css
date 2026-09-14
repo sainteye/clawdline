@@ -145,8 +145,8 @@
 .sheet .place:hover:not(:disabled) { background: var(--card-hi); }
 .sheet .place:active:not(:disabled) { background: var(--line); }
 .sheet .place:disabled { opacity: 0.45; cursor: default; }
-.sheet #start-with { align-items: center; gap: 6px; margin: 2px 0 8px 0; flex-wrap: wrap; }
-.sheet #start-with .with-label { font-size: 11.5px; color: var(--dim); margin-right: 2px; }
+.sheet #start-machine, .sheet #start-with { align-items: center; gap: 6px; margin: 2px 0 8px 0; flex-wrap: wrap; }
+.sheet #start-machine .with-label, .sheet #start-with .with-label { font-size: 11.5px; color: var(--dim); margin-right: 2px; }
 /* Tight under the chips above it, because the two of them are one question about what the next
    press does and a gap between them would make it look like two. */
 .sheet #start-resume { align-items: center; gap: 6px; margin: 0 0 12px 0; flex-wrap: wrap; }

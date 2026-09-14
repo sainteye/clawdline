@@ -1,4 +1,5 @@
 import { MOCK_DOOR, MOCK_FLAKY, MOCK_WRITE, params } from "../core/env.js";
+import { T } from "../core/i18n.js";
 import { ASK_MARK, uuid } from "../core/util.js";
 import { handlers } from "./handlers.js";
 import { Door } from "../door/door.js";
@@ -1520,7 +1521,16 @@ export var Mock = (function () {
 
         board: boardPreview.board,
         boardCommand: boardPreview.boardCommand,
-        places: function () {
+        machines: function () { return Promise.resolve({ machines: [{ id: "this-mac",
+            name: T.webMachineThisMac, platform: "macos", provider: null, kind: "mac",
+            label: T.webMachineMac + " · " + T.webMachineThisMac,
+            observedAt: Date.now(), freshness: "current",
+            selectable: true }] }); },
+        places: function (machine) {
+            if (machine !== undefined && machine !== "this-mac") {
+                return Promise.reject(Object.assign(new Error("This machine is not available."),
+                    { code: "machine_unavailable" }));
+            }
             return new Promise(function (done) {
                 setTimeout(function () {
                     var now = Math.floor(Date.now() / 1000);

@@ -21,7 +21,7 @@ export var els = {};
  "settings-order-label", "settings-assistant-icons", "settings-assistant-icons-title",
  "settings-assistant-icons-say", "settings-assistant-icons-marks", "settings-assistant-icons-label",
  "info", "info-sheet", "info-title", "info-say", "info-body", "info-said", "info-refresh", "info-close",
- "start-go", "start", "start-sheet", "start-title", "start-say", "start-with", "start-filter",
+ "start-go", "start", "start-sheet", "start-title", "start-say", "start-machine", "start-with", "start-filter",
  "start-resume", "start-clawdfather-row", "start-clawdfather", "start-clawdfather-label",
  "start-clawdfather-state", "start-list",
  "start-said", "start-close", "starting", "starting-spin", "starting-say", "starting-close",

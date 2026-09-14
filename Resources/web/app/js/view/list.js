@@ -14,7 +14,7 @@ import {
     coordinatorRoute,
     coordinatorRowModel
 } from "../input/coordinator-actions.js";
-import { SessionSelection, sessionSelectionKey } from "../session/selection.js";
+import { SessionSelection, machinePresentationForFleet, sessionSelectionKey } from "../session/selection.js";
 import { callSessionUI } from "../session/ui.js";
 
 function renderDetailHead() { return callSessionUI("renderDetailHead"); }
@@ -313,7 +313,7 @@ export function renderList() {
             discardLeaving(key);
             node = buildRow(s);
             rowNodes[key] = node;
-            if (!reduced && !Start.arriving(s.id)) {
+            if (!reduced && !Start.arriving(s)) {
                 node.classList.add("entering");
                 setTimeout(function (n) { return function () { n.classList.remove("entering"); }; }(node), 300);
             }
@@ -402,7 +402,7 @@ function buildRow(s) {
         '<span class="kid" hidden aria-hidden="true">└</span>' +
         '<canvas class="mark"></canvas>' +
         '<div class="title"><span class="label"></span><span class="who" hidden></span></div>' +
-        '<div class="meta"><span class="path"></span><span class="tty"></span>' +
+        '<div class="meta"><span class="machine"></span><span class="path"></span><span class="tty"></span>' +
         '<span class="agents-chip" hidden><span class="dot"></span><span class="n"></span></span>' +
         '<span class="task-chip" hidden></span></div>' +
         '<div class="state"></div>' +
@@ -543,6 +543,11 @@ function fillRow(node, s) {
 
     node.querySelector(".path").textContent = shortPath(s.cwd);
     node.querySelector(".tty").textContent = s.tty || s.backend || "";
+    var machine = machinePresentationForFleet(s, S.sessions, T);
+    var machineNode = node.querySelector(".machine");
+    machineNode.textContent = machine.label;
+    machineNode.title = machine.id;
+    machineNode.dataset.kind = machine.kind;
 
     // Always name the assistant, exactly as the Mac list does. The project mark on the left says
     // which project; this product mark answers the independent question, Claude or Codex.

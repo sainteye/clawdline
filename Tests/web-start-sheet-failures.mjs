@@ -154,7 +154,7 @@ await check("every promise-shaped CloudClient method rejects instead of throwing
     const fleet = cloudClient({ WebSocket: RefusedSocket });
     // Two Macs publishing the same terminal id, and a fleet with no single Mac to guess.
     for (const machine of ["mac-01", "mac-02"]) {
-        fleet.orchestratorSnapshots.set(machine, { tasks: [] });
+        fleet.orchestratorSnapshots.set(machine, { tasks: [], at: Date.now() / 1000 });
         fleet.sessionSnapshots.set(machine + "\u0000twin", { id: "twin", machine: machine,
             session: "twin", identity: { machine: machine, session: "twin" } });
     }
@@ -215,7 +215,9 @@ await check("every promise-shaped CloudClient method rejects instead of throwing
 async function listedClient(machines) {
     const client = cloudClient();
     const socket = await ready(client);
-    machines.forEach(function (machine) { client.orchestratorSnapshots.set(machine, { tasks: [] }); });
+    machines.forEach(function (machine) {
+        client.orchestratorSnapshots.set(machine, { tasks: [], at: Date.now() / 1000 });
+    });
     const reading = client.places();
     for (let asked = 0; asked < machines.length; asked += 1) {
         const read = await nextCommand(socket, "places");
@@ -238,6 +240,33 @@ async function startsOn(client, socket, id, machine, what) {
         { ch: "ctl/" + machine, place: "portfolio" },
         what + ": the press reaches the Mac that listed the project, under its own id");
 }
+
+await check("transport: machine choice scopes the Project read and the eventual start", async function () {
+    const client = cloudClient();
+    const socket = await ready(client);
+    client.orchestratorSnapshots.set("mac-01", { tasks: [], at: Date.now() / 1000, machine: {
+        name: "Studio", platform: "macos" } });
+    client.orchestratorSnapshots.set("linux-aws-02", { tasks: [], at: Date.now() / 1000, machine: {
+        name: "Builder", platform: "linux", provider: "aws" } });
+    const machines = await client.machines();
+    assert.deepEqual(machines.machines.map(function (row) { return row.label; }),
+        ["Linux / AWS · Builder", "Mac · Studio"],
+        "authenticated display metadata distinguishes hosts without becoming route authority");
+    client.sessionSnapshots.set("linux-aws-02\u0000session-1", {
+        id: "session-1", session: "session-1", machine: "linux-aws-02",
+        identity: { machine: "linux-aws-02", session: "session-1" }
+    });
+    assert.equal(client._sessionResponse(0).sessions[0].machineInfo.name, "Builder",
+        "Session rows acquire the descriptor by their authenticated machine id");
+    const reading = client.places("linux-aws-02");
+    const read = await nextCommand(socket, "places");
+    assert.equal(read.ch, "ctl/linux-aws-02", "only the chosen machine receives the Project read");
+    await answer(client, socket, "linux-aws-02", { read: "read:" + read.request,
+        status: 200, body: placesBody([PORTFOLIO]) });
+    const listed = await reading;
+    assert.equal(listed.places.length, 1);
+    await startsOn(client, socket, listed.places[0].id, "linux-aws-02", "after machine selection");
+});
 
 await check("(a) transport: a re-read in flight keeps the routes", async function () {
     const { client, socket, ids } = await listedClient(["mac-01"]);
@@ -307,6 +336,20 @@ await check("transport: a complete answer replaces the routes, so a dropped proj
     assert.equal(command.place, "other", "and the project it lists now is routed");
 });
 
+await check("an orchestrator snapshot refreshes an open machine picker without a Session row",
+            async function () {
+    const source = await readFile(
+        new URL("../Resources/web/app/js/net/handlers.js", import.meta.url), "utf8");
+    assert.match(source, /tasks: function \(list\) \{[\s\S]*?Start\.sync\(\);[\s\S]*?\n\s*\},/,
+        "machine inventory arrives on the task/orchestrator event and refreshes the picker");
+});
+
+await check("the asynchronous machine question has a polite live announcement", async function () {
+    const source = await readFile(new URL("../Resources/web/index.html", import.meta.url), "utf8");
+    assert.match(source, /id="start-say" role="status" aria-live="polite"/,
+        "late machine availability is announced without moving focus");
+});
+
 /* ---- 3. the sheet settles, whatever happened below it ----------------------------------- */
 
 const SCENARIOS = {
@@ -314,6 +357,10 @@ const SCENARIOS = {
     "renewal": "(b) sheet: press an old row after a token renewal replaced the client",
     "failed-read": "(c) sheet: press an old row after the places read timed out",
     "refused": "(d) sheet: the Mac refuses with 503 — the error shows, the row presses again, Close closes",
+    "machine-picker": "fleet sheet: machine is chosen before Projects and assistants are read",
+    "duplicate-arrival": "fleet sheet: arrival is matched by machine and id, not a duplicate bare id",
+    "late-machine": "fleet sheet: stale machines fail closed and a late fresh snapshot refreshes",
+    "close-reopen-read": "sheet: closing during a Project read cannot wedge the next opening",
     "sync-throw": "sheet: a transport that throws synchronously still settles load, press, enter and pick"
 };
 for (const [scenario, name] of Object.entries(SCENARIOS)) {
@@ -442,8 +489,48 @@ async function sheetScenario(scenario) {
     const { T } = await import("../Resources/web/app/js/core/i18n.js");
     const { bindSessionUI } = await import("../Resources/web/app/js/session/ui.js");
     const { Start } = await import("../Resources/web/app/js/input/start.js");
+    const { SessionSelection } = await import("../Resources/web/app/js/session/selection.js");
     // The spinner's show timer redraws the sheet through this seam, as `main.js` binds it.
-    bindSessionUI({ syncStart: function () { Start.sync(); } });
+    bindSessionUI({
+        syncStart: function () { Start.sync(); },
+        resetSwipeRows: noop,
+        arrangeStartRows: function (rows) { return Start.arrange(rows); },
+        startArriving: function (row) { return Start.arriving(row); },
+        startPlaceholder: function () { return Start.placeholder(); },
+        checkStart: function () { return Start.check(); },
+        wantedSession: function () { return null; },
+        setWantedSession: noop,
+        openWanted: noop,
+        closingSelectionKey: function () { return null; },
+        closeSessionActions: noop,
+        closeActionConfirm: noop,
+        closeAgent: noop,
+        clearShots: noop,
+        deferStatusLine: noop,
+        followSessionBoard: noop,
+        followInfo: noop,
+        followSnippets: noop,
+        followGitPanel: noop,
+        followShellPanel: noop,
+        followTerminal: noop,
+        agentsRev: function () { return ""; },
+        renderDetailHead: noop,
+        render: noop,
+        renderTranscript: noop,
+        renderAgentHead: noop,
+        renderComposer: noop,
+        renderWaiting: noop,
+        renderAgents: noop,
+        skillPickerChanged: noop,
+        skillPickerClose: noop,
+        rowNode: function () { return null; },
+        observeTranscriptRevision: noop,
+        rearmTranscriptRevision: noop,
+        followStatusLine: noop,
+        syncSessionBoard: noop,
+        observeBoardSession: noop,
+        sessionGone: noop
+    });
     S.write = true;
 
     const said = function () { return elementWithID("start-said").textContent; };
@@ -473,9 +560,100 @@ async function sheetScenario(scenario) {
     // Every Cloud scenario begins where the person was: the sheet open over a list the Mac sent.
     let client = cloudClient();
     let socket = await ready(client);
-    client.orchestratorSnapshots.set("mac-01", { tasks: [] });
+    client.orchestratorSnapshots.set("mac-01", { tasks: [],
+        at: scenario === "late-machine" ? (Date.now() - 600_000) / 1000 : Date.now() / 1000,
+        machine: {
+        name: "Desk", platform: "macos" } });
+    if (scenario === "machine-picker" || scenario === "duplicate-arrival") {
+        client.orchestratorSnapshots.set("linux-02", {
+        tasks: [], at: Date.now() / 1000,
+        machine: { name: "AWS Builder", platform: "linux", provider: "aws" }
+        });
+    }
     useApi(client);
     Start.open();
+    if (scenario === "late-machine") {
+        await until(function () {
+            return elementWithID("start-machine").children.length === 2;
+        }, "the retained stale machine to be drawn");
+        const stale = elementWithID("start-machine").children[1];
+        assert.equal(stale.disabled, true, "a stale retained key is visible but not selectable");
+        assert.ok(stale.textContent.includes(T.webStartMachineStale),
+            "the stale state is said with localized product copy");
+        assert.equal(say(), T.webStartMachineNone,
+            "the live region says why no Project read was started");
+        assert.equal(published(socket).length, 0, "stale evidence never auto-starts a read");
+        client.orchestratorSnapshots.set("mac-01", { tasks: [], at: Date.now() / 1000,
+            machine: { name: "Desk", platform: "macos" } });
+        Start.sync();
+        const freshRead = await nextCommand(socket, "places");
+        await answer(client, socket, "mac-01", { read: "read:" + freshRead.request, status: 200,
+            body: placesBody([PORTFOLIO]) });
+        await until(function () { return rows().length === 1; }, "the late machine's Project row");
+        console.log("start sheet scenario " + scenario + " passed");
+        return;
+    }
+    if (scenario === "close-reopen-read") {
+        const abandoned = await nextCommand(socket, "places");
+        Start.close();
+        Start.open();
+        const current = await nextCommand(socket, "places");
+        await answer(client, socket, "mac-01", { read: "read:" + current.request, status: 200,
+            body: placesBody([PORTFOLIO]) });
+        await until(function () { return rows().length === 1; }, "the reopened sheet's Project row");
+        await answer(client, socket, "mac-01", { read: "read:" + abandoned.request, status: 200,
+            body: placesBody([]) });
+        assert.equal(rows().length, 1,
+            "the abandoned read cannot overwrite the reopened sheet or retain its loading flag");
+        console.log("start sheet scenario " + scenario + " passed");
+        return;
+    }
+    if (scenario === "machine-picker" || scenario === "duplicate-arrival") {
+        await until(function () {
+            return elementWithID("start-machine").children.length === 3;
+        }, "the machine choices to be drawn");
+        assert.equal(published(socket).length, 0,
+            "no Project read is sent before an exact machine is chosen");
+        assert.equal(rows().length, 0, "no mixed-machine Project rows are shown");
+        assert.equal(elementWithID("start-with").hidden, true,
+            "assistant selection follows machine selection");
+        assert.equal(elementWithID("start-machine").getAttribute("role"), "group",
+            "the asynchronous choices expose one accessible group");
+        assert.equal(elementWithID("start-machine").getAttribute("aria-describedby"), "start-say",
+            "the group is tied to its live instruction");
+        assert.equal(say(), T.webStartMachinePick,
+            "the live region announces that an exact machine is required");
+        const machineButtons = elementWithID("start-machine").children.slice(1);
+        const linux = machineButtons.find(function (button) {
+            return button.textContent.includes("Linux / AWS");
+        });
+        assert.ok(linux, "the Linux/AWS machine is named from authenticated metadata");
+        linux.onclick();
+        const scoped = await nextCommand(socket, "places");
+        assert.equal(scoped.ch, "ctl/linux-02", "the chosen machine alone receives the Project read");
+        await answer(client, socket, "linux-02", { read: "read:" + scoped.request, status: 200,
+            body: placesBody([PORTFOLIO]) });
+        await until(function () { return rows().length === 1; }, "the chosen machine's Project row");
+        if (scenario === "duplicate-arrival") {
+            Start.began("same-terminal", PORTFOLIO, false, null);
+            const wrong = { id: "same-terminal", session: "same-terminal", machine: "mac-01",
+                identity: { machine: "mac-01", session: "same-terminal" } };
+            S.sessions = [wrong];
+            assert.equal(Start.arriving(wrong), false,
+                "a duplicate bare id from the wrong machine is not the arriving Session");
+            assert.equal(Start.check(), false,
+                "the wrong machine cannot satisfy or clear the pending arrival");
+            const right = { id: "same-terminal", session: "same-terminal", machine: "linux-02",
+                identity: { machine: "linux-02", session: "same-terminal" } };
+            S.sessions = [wrong, right];
+            assert.equal(Start.arriving(right), true, "the exact machine/id pair is recognized");
+            assert.equal(Start.check(), true, "the exact arrival opens normally");
+            assert.equal(SessionSelection.snapshot().open.machine, "linux-02",
+                "the selected machine survives start, wait and arrival");
+        }
+        console.log("start sheet scenario " + scenario + " passed");
+        return;
+    }
     const firstRead = await nextCommand(socket, "places");
     await answer(client, socket, "mac-01", { read: "read:" + firstRead.request, status: 200,
         body: placesBody([PORTFOLIO]) });

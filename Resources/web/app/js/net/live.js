@@ -663,7 +663,18 @@ export var LocalClient = {
                          "/info?parts=summary");
     },
 
-    places: function () { return jsonFetch("/v1/places"); },
+    machines: function () { return Promise.resolve({ machines: [{ id: "this-mac",
+        name: T.webMachineThisMac, platform: "macos", provider: null, kind: "mac",
+        label: T.webMachineMac + " · " + T.webMachineThisMac,
+        observedAt: Date.now(), freshness: "current",
+        selectable: true }] }); },
+    places: function (machine) {
+        if (machine !== undefined && machine !== "this-mac") {
+            return Promise.reject(Object.assign(new Error("This machine is not available."),
+                { code: "machine_unavailable" }));
+        }
+        return jsonFetch("/v1/places");
+    },
     board: function (project, item) {
         var query = new URLSearchParams();
         if (project) query.set("project", project);

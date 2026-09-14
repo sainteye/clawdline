@@ -80,6 +80,10 @@ export var handlers = {
     tasks: function (list) {
         S.tasks = list || [];
         if (els.rows) render();
+        // Cloud machine descriptors arrive on the same authenticated orchestrator snapshot as
+        // this list. Refresh an open New Session picker even when that machine has not yet
+        // published a Session row (the sessions handler therefore had nothing to redraw).
+        Start.sync();
     },
     /// A terminal this Mac is watching moved to a new revision. Nothing is stored here: the
     /// panel either has that revision already, in which case this costs one comparison, or it
