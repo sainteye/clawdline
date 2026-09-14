@@ -270,7 +270,7 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
 | T-B7 | 請求還在飛時觸發 token 輪替 | reject `cloud_reconnecting`，文字已在地化 |
 | T-B8 | Cloud 模式下按 Send to Mac | 送出的是 `diagnostics.report` 指令，不是 fetch 到頁面自己的網域 |
 | T-B9 | 收到 key_id `ms-2` 的 session 快照，而自己用 `ms-1` 送 | 狀態出現 `key_id_drift`，兩個 id 都在 |
-| T-V1 | 未知 sender、同 key_id 不同 master、`validateEnvelope` 失敗、IndexedDB 拒絕、storage 寫入丟錯、Mac 回 `unknown_command`／`viewer_events_too_large`、50 筆連發、重新載入；per-machine pairing：未配對的第二台、配對 key_id 不符、paired sender 不符、`machine_key_incomplete`、pairing store 拒絕、legacy 綁定成功、已配對的 Linux executor、換對象後的 `unknown_command` | 每筆一列，`stage` 與原始例外正確，配對欄位（`pairing_found`、`pairing_key_id`、`pairing_sender`、`machines_with_pairing`…）正確；legacy 綁定成功不留列；列裡沒有 nonce／ct／sig／明文／金鑰；連發只留有界列數且丟棄數精確；拒絕時列留在手機且不重試；一台的封鎖不擋下一台；Linux executor 永遠不是送達對象；批次用 Mac 的 pairing 封裝；收據對上 batch 才刪（§11.9，`web-cloud-failures.mjs` 的 `viewer events ·`） |
+| T-V1 | 未知 sender、同 key_id 不同 master、`validateEnvelope` 失敗、IndexedDB 拒絕、storage 寫入丟錯、Mac 回 `unknown_command`／`viewer_events_malformed`、50 筆連發、重新載入、UI handler 丟出帶標題的 V8 例外與 WebKit 句型、48 欄與非 ASCII 列、頁面被殺前未寫入、兩個分頁、被取代的裝置 log；per-machine pairing：未配對的第二台、配對 key_id 不符、paired sender 不符、`machine_key_incomplete`、pairing store 拒絕、legacy 綁定成功、legacy 綁定寫入失敗、已配對的 Linux executor、換對象後的 `unknown_command`、已配對 Mac 金鑰漂移、legacy 瀏覽器綁定前金鑰漂移、renewal；Mac：重送同一 batch、輪替後重送、id 紀錄上限、頁面封出的最壞批次 | 每筆一列，`stage` 與原始例外正確，引擎訊息不進列（只留名稱與 `error_class`）；配對欄位正確；legacy 綁定成功不留列、寫入失敗仍套用且留一列；列裡沒有 nonce／ct／sig／明文／金鑰；列 ≤ 48 欄且 ≤ 2,048 UTF-8 位元組、無孤立 surrogate；連發只留有界列數且丟棄數精確；未寫入的列以 `dropped_unflushed` 計入；兩個分頁不互蓋；`unknown_command` 時列留在手機且不重試，內容被拒時丟棄並計數、後面的列照送；一台的封鎖不擋下一台；未配對的第二台不開門、Mac 照常、store 只問一次；真正的金鑰漂移仍開門；Linux executor 永遠不是送達對象；批次用 Mac 的 pairing 封裝；收據對上 batch 才刪；Mac 對同一 batch 只寫一次（§11.9，`web-cloud-failures.mjs` 的 `viewer events ·`、`CloudTransparencyTests.swift` 的 `diagnostics.events` 與 `page→Mac contract`） |
 | T-R1 | workerd 測試送一個簽章錯誤的 publish | log 出現 `publish_refused code=forbidden field=sig` |
 | T-R2 | 用過期 token 連線 | 瀏覽器收到 error frame 與 4401，不是沒有代碼的 1006 |
 | T-R3 | 撤銷另一台裝置，讓 epoch 前進 | 既有 socket 關閉時帶 `token_superseded` |
@@ -464,8 +464,11 @@ Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status
 ### 11.9 Cloud 指令 `diagnostics.events`
 
 瀏覽器收件失敗與解密門的自動紀錄，不需要任何按鍵。怎麼讀、欄位、每個 `stage` 與它會不會開門、H1a／H1b／H2–H4 對照：[`diagnostics.md`](diagnostics.md#the-viewer-events-file)。
-H1 在 per-machine pairing 之後分成兩種：H1a 是本瀏覽器**沒有配對**的第二台機器（legacy 路徑的 `unknown_sender`），
+H1 在 per-machine pairing 之後分成兩種：H1a 是本瀏覽器**沒有配對**的第二台機器，
 H1b 是**有配對**但配對不完整（`machine_key_incomplete`，開的是配對門不是解密門）或 key_id 不同（`pairing_key_id` 的 `unknown_key`）的機器。
+H1a 現在是那台機器自己的狀態：envelope 路由到一台本瀏覽器沒有 pairing、也沒有該 sender pin 的機器時，丟 `machine_not_paired`（`detail.machine`），
+`cloudSessionAccessProblem` 不分類它，所以不開整個帳號的解密門；`CloudClient.machineAccess(machine)` 保留 `not_paired` 狀態（renewal 後仍在），
+給「為選定機器配對」的介面使用。有 pairing、有 legacy 綁定、或有 sender pin 的情況照舊，真正的金鑰漂移（含尚未綁定前帳號金鑰就漂移的 legacy 瀏覽器）仍開解密門。
 
 - 請求：`{"type":"diagnostics.events","session":"__clawdline_machine__","request":<uuid>,"batch":<object>}`，`ctl` 類別，
   read-level（和 `diagnostics.report` 一樣不需要遠端寫入開關）。
@@ -473,13 +476,24 @@ H1b 是**有配對**但配對不完整（`machine_key_incomplete`，開的是配
   descriptor 沒有標成非 Mac 平台、並送出過 `cloud_status.v >= 1`（只有 Mac 會送）。Linux executor 不實作這個指令（收到會直接丟掉、不回覆），
   以平台與能力兩個獨立事實排除。封裝和其他指令一樣走 `_outboundMachinePairing`，配對已不在時在本機以 `machine_pairing_required` 拒絕、照退避重試。
   **不用 `_onlyMachine`**；兩台有能力的 Mac → 本機 `cloud_machine_ambiguous`，列留在手機。
-- `batch`：`{v:1, batch_id, created_at_ms, device, tab, web_build, rows:[{n, at_ms, event, data}], completeness:{n_from, n_to, rows,
-  dropped_rate_limited, dropped_overflow, storage_errors, counting_since_ms, rate_limited:[{key, event, dropped, first_at_ms, last_at_ms, sample_n}], limits}}`，
-  鍵集合精確比對；`data` 是一層的 scalar 或短陣列，不認得任何事件名稱。
+- `batch`：`{v:1, batch_id, created_at_ms, device, tab, web_build, rows:[{n, at_ms, event, tab, data}], completeness:{n_from, n_to, rows,
+  dropped_rate_limited, dropped_overflow, dropped_refused, dropped_unflushed, storage_errors, counting_since_ms, rate_limited:[{key, event, dropped, first_at_ms, last_at_ms, sample_n}], limits}}`，
+  鍵集合精確比對；`data` 是一層的 scalar 或短陣列，最多 48 欄，不認得任何事件名稱。列的 `tab` 是記下那一列的分頁。
+  算式：`rows + dropped_overflow + dropped_unflushed = n_to - n_from + 1`；`dropped_refused` 是先前被 Mac 以內容拒絕而丟掉的那一批的列數，不在本批範圍內。
+  頁面端以 UTF-8 位元組量：每列 ≤ 2,048、每批 ≤ 240 KiB，字串不在 surrogate pair 中間截斷。頁面實際封出的最壞情況批次存在
+  `Tests/cloud-viewer-events-contract-batches.json`，node 逐位元組比對、Swift 以真正的 `CloudViewerEventLog.problem(in:)` 與 `append` 驗證。
+  例外訊息只保留本程式碼自己寫死的句子（`OWN_ERROR_MESSAGES` 精確比對），其餘只留 `error_name` 與 `error_class`。
 - Mac：`CloudViewerEventLog.append` 在 `~/Library/Logs/Clawdline/diagnostics/cloud-viewer-events.jsonl` 追加一行（0600，超過 4 MiB 先輪替成 `.1`），
-  `device` 是信封的 sender；`Clawdline.log` 寫一行只有計數的紀錄。成功回 `action:<request>`，body `{ok, batch_id, rows, path, line_bytes, file_bytes, rotated}`。
+  `device` 是信封的 sender；`Clawdline.log` 寫一行只有計數的紀錄。成功回 `action:<request>`，body `{ok, batch_id, rows, path, line_bytes, file_bytes, rotated, duplicate}`。
+  Mac 在 `cloud-viewer-events.batches` 記最近 2,048 個 `<device>\t<batch_id>`（獨立檔案，重啟與 `.1` 輪替後都還在）；
+  認得的 batch 回 `duplicate: true` 與該批列數、不再追加。id 在那一行 fsync 之後才記，所以兩者之間當機仍可能寫兩次，但不會少寫。
   拒絕碼：`viewer_events_empty`（400）、`viewer_events_malformed`（400，訊息只寫欄位路徑、不寫值）、`viewer_events_too_large`（413，上限 256 KiB）、
   `viewer_events_write_failed`（500），`layer` 為 `mac_route`。
-- 瀏覽器：同一批用同一個 `request`、同樣的位元組重送，Mac 帳本回既有結果，不會寫兩次。收據的 `batch_id` 與 `rows` 相符才刪。
-  Mac 以 4xx（408、429 除外）拒絕、或本裝置沒有 `send_prompt` → 封鎖到 Mac build 或頁面 build 改變（最多一天），期間不重試；
-  其他失敗照退避重試（至少 60 秒、每次加倍到 30 分鐘、每日最多 48 次，同一台裝置一次只有一個分頁送）。
+- 瀏覽器：同一批用同一個 `request`、同樣的位元組重送；24 小時內 Mac 帳本回既有結果，之後由上面的 batch id 紀錄認出，都不會寫兩次。收據的 `batch_id` 與 `rows` 相符才刪。
+  最終拒絕分兩種：**拒絕這批內容**（`viewer_events_malformed`、`viewer_events_too_large`、`viewer_events_empty`、`malformed_command`，或 `mac_route` 層的任何最終拒絕）
+  → 丟掉這一批，下一批以 `dropped_refused` 計入並附一列 `viewer_events.batch.refused` 寫明拒絕碼、batch 與 Mac 指出的欄位路徑，後面的列不會被它卡住；
+  **拒絕這台 Mac 或本裝置**（其他 4xx，408、429 除外，如 `unknown_command`；或本裝置沒有 `send_prompt`）→ 保留這一批，封鎖到 Mac build 或頁面 build 改變（最多一天），期間不重試。
+  其他失敗照退避重試（至少 60 秒、每次加倍到 30 分鐘、連續被丟的批次同樣加倍、每日最多 48 次）。
+  有 Web Locks 時同一台裝置只有持有鎖的分頁寫 `localStorage` 與送出，其他分頁的列留在記憶體、拿到鎖時重新編號併入；
+  寫入是合併的（最多每秒一次、頁面隱藏時、送達相關動作立即），每筆失敗只寫幾個位元組的 `:journal`，被殺掉前沒寫入的列由下一頁以 `dropped_unflushed` 計入。
+  拿到鎖時也移除同帳號下沒有分頁持有的其他裝置 log，並記一列 `viewer_events.log.pruned`。
