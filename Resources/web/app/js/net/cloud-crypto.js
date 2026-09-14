@@ -221,6 +221,24 @@ export async function storePairingCryptoKeys(value, indexedDBValue) {
             throw new TypeError("pairing key storage name is missing");
         }
     });
+    if (value.binding !== undefined) {
+        validatePairingBinding(value.binding);
+        if (value.binding.keyID !== value.keyID) {
+            throw new TypeError("pairing binding key id does not match the stored key");
+        }
+    }
+    if (value.binding !== undefined &&
+        (typeof value.bindingName !== "string" || !value.bindingName)) {
+        throw new TypeError("pairing binding storage name is missing");
+    }
+    var preserve = value.preserve || null;
+    if (preserve) {
+        ["masterName", "masterKeyIDName", "senderName"].forEach(function (field) {
+            if (typeof preserve[field] !== "string" || !preserve[field]) {
+                throw new TypeError("preserved pairing storage name is missing");
+            }
+        });
+    }
     var db = await keyDatabase(indexedDBValue);
     return new Promise(function (resolve, reject) {
         var tx = db.transaction("keys", "readwrite");
@@ -228,9 +246,61 @@ export async function storePairingCryptoKeys(value, indexedDBValue) {
         keys.put(value.masterKey, value.masterName);
         keys.put(value.keyID, value.masterKeyIDName);
         keys.put(value.senderKey, value.senderName);
+        if (value.binding !== undefined) keys.put(value.binding, value.bindingName);
+        // The first machine paired by a browser also seeds the old account-level names so an
+        // already-shipped client remains usable. A later independently paired machine must never
+        // replace those names: that would make the first Mac unreadable at the instant AWS pairs.
+        if (preserve) {
+            var existing = keys.get(preserve.masterName);
+            existing.onsuccess = function () {
+                if (existing.result !== undefined && existing.result !== null) return;
+                keys.put(value.masterKey, preserve.masterName);
+                keys.put(value.keyID, preserve.masterKeyIDName);
+                keys.put(value.senderKey, preserve.senderName);
+            };
+            existing.onerror = function () { try { tx.abort(); } catch (e) { /* already failed */ } };
+        }
         tx.oncomplete = function () { db.close(); resolve(value); };
         tx.onerror = function () { db.close(); reject(tx.error); };
         tx.onabort = tx.onerror;
+    });
+}
+
+function validatePairingBinding(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value) || value.v !== 1 ||
+        typeof value.legacy !== "boolean" || !validToken(value.machineID, 128) ||
+        !validToken(value.senderID, 128) || !validToken(value.keyID, 64)) {
+        throw new TypeError("bad pairing machine binding");
+    }
+    return value;
+}
+
+/** Persist the non-secret result of an authenticated legacy-key migration. */
+export async function storePairingBinding(name, binding, indexedDBValue) {
+    if (typeof name !== "string" || !name) throw new TypeError("pairing binding storage name is missing");
+    validatePairingBinding(binding);
+    var db = await keyDatabase(indexedDBValue);
+    return new Promise(function (resolve, reject) {
+        var tx = db.transaction("keys", "readwrite");
+        tx.objectStore("keys").put(binding, name);
+        tx.oncomplete = function () { db.close(); resolve(binding); };
+        tx.onerror = function () { db.close(); reject(tx.error); };
+        tx.onabort = tx.onerror;
+    });
+}
+
+export async function loadPairingBinding(name, indexedDBValue) {
+    var db = await keyDatabase(indexedDBValue);
+    return new Promise(function (resolve, reject) {
+        var tx = db.transaction("keys", "readonly");
+        var request = tx.objectStore("keys").get(name);
+        request.onsuccess = function () {
+            db.close();
+            if (request.result === undefined || request.result === null) return resolve(null);
+            try { resolve(validatePairingBinding(request.result)); }
+            catch (error) { reject(error); }
+        };
+        request.onerror = function () { db.close(); reject(request.error); };
     });
 }
 

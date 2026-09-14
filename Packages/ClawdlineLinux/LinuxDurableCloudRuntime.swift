@@ -695,10 +695,11 @@ actor LinuxRelayRuntimeOwner {
     }
 
     private func publishDescriptor() async throws {
-        var payload: [String: Any] = ["v": 1, "label": presentation.displayName,
-                                      "platform": "linux",
+        var descriptor: [String: Any] = ["name": presentation.displayName,
+                                         "platform": "linux"]
+        if let provider = presentation.provider { descriptor["provider"] = provider }
+        let payload: [String: Any] = ["v": 1, "machine": descriptor,
                                       "at": Int(Date().timeIntervalSince1970)]
-        if let provider = presentation.provider { payload["provider"] = provider }
         try await outbound.enqueue(
             try Self.json(payload), channel: "orch/" + channelSegment(machine.machineID),
             logicalID: "linux-machine-descriptor")

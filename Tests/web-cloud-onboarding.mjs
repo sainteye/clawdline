@@ -198,6 +198,11 @@ const cloudDoor = await import("../Resources/web/app/js/input/cloud-pairing.js")
 
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "forbidden" }), "permission");
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "unreadable_envelope" }), "encryption");
+assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "machine_pairing_required" }),
+    "machine_pairing");
+assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "machine_key_incomplete" }),
+    "machine_pairing",
+    "a partial machine-scoped key record is an actionable pairing state, not an outage");
 assert.equal(cloudDoor.cloudSessionAccessProblem({ code: "replay" }), null,
     "a harmless duplicate envelope does not become a permission prompt");
 cloudDoor.showCloudSessionAccessProblem("permission");
@@ -206,6 +211,14 @@ assert.match(elements["cloud-door-guide"].textContent, /permission/i);
 cloudDoor.showCloudSessionAccessProblem("encryption");
 assert.match(elements["cloud-door-lede"].textContent, /cannot decrypt Sessions/i);
 assert.match(elements["cloud-door-guide"].textContent, /Pair a Browser/i);
+cloudDoor.showCloudSessionAccessProblem("machine_pairing");
+assert.match(elements["cloud-door-lede"].textContent, /selected machine/i);
+assert.match(elements["cloud-door-guide"].textContent, /missing or incomplete/i);
+assert.match(elements["cloud-door-guide"].textContent, /that machine/i);
+assert.match(elements["cloud-door-guide"].textContent,
+    /Start the Pair a Browser flow on that machine/i);
+assert.doesNotMatch(elements["cloud-door-guide"].textContent, /offline|connection failed/i,
+    "a machine-specific pairing problem is not rendered as a connectivity outage");
 
 let navigated = null;
 cloudDoor.showCloudSignIn("https://api.clawdline.com/v1/auth/oauth/start", {

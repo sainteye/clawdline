@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 
 const boot = await import("../Resources/web/app/js/net/cloud-boot.js");
 const cloudCrypto = await import("../Resources/web/app/js/net/cloud-crypto.js");
+const { CloudClient } = await import("../Resources/web/app/js/net/cloud-client.js");
 
 /* ---- fakes ---------------------------------------------------------------- */
 
@@ -201,6 +202,149 @@ assert.throws(function () {
         "the handover key id is durable beside the non-extractable keys");
     assert.equal(indexedDB.store.get("master"), master);
     assert.equal(indexedDB.store.get("sender"), sender);
+}
+
+{
+    const indexedDB = fakeIndexedDB();
+    const macMaster = { extractable: false, kind: "mac-master" };
+    const macSender = { extractable: false, kind: "mac-sender" };
+    const awsMaster = { extractable: false, kind: "aws-master" };
+    const awsSender = { extractable: false, kind: "aws-sender" };
+    indexedDB.store.set("account-master", macMaster);
+    indexedDB.store.set("account-id", "mac-v1");
+    indexedDB.store.set("account-sender", macSender);
+    await cloudCrypto.storePairingCryptoKeys({
+        masterName: "aws-master", masterKeyIDName: "aws-id", masterKey: awsMaster,
+        keyID: "aws-v1", senderName: "aws-sender", senderKey: awsSender,
+        bindingName: "aws-binding", binding: { v: 1, machineID: "aws-1",
+            senderID: "aws-device", keyID: "aws-v1", legacy: false },
+        preserve: { masterName: "account-master", masterKeyIDName: "account-id",
+            senderName: "account-sender" }
+    }, indexedDB);
+    assert.equal(indexedDB.store.get("account-master"), macMaster,
+        "pairing a second machine does not overwrite the existing Mac account key");
+    assert.equal(indexedDB.store.get("account-id"), "mac-v1",
+        "nor does it overwrite the Mac's legacy key id");
+    assert.equal(indexedDB.store.get("account-sender"), macSender,
+        "nor does it replace the Mac's legacy sender pin");
+    assert.equal(indexedDB.store.get("aws-master"), awsMaster,
+        "the independently paired AWS key is stored under its machine scope");
+    assert.equal(indexedDB.store.get("aws-binding").machineID, "aws-1",
+        "the scoped key is accompanied by an exact machine/sender binding");
+}
+
+{
+    const indexedDB = fakeIndexedDB();
+    const legacy = { extractable: false, kind: "legacy-master" };
+    const sender = { extractable: false, kind: "legacy-sender" };
+    indexedDB.store.set("clawdline.master:acct-legacy", legacy);
+    indexedDB.store.set("clawdline.sender:acct-legacy:mac-sender", sender);
+    const session = makeSession({}, { indexedDB: indexedDB });
+    session.account = "acct-legacy";
+    const oldAlias = await session.bindLegacyMachine("mac-old", "mac-sender", "ms-1");
+    assert.equal(oldAlias.keyID, "ms-1",
+        "lazy migration retains the exact legacy key id that authenticated the envelope");
+    assert.equal((await session.machinePairing("mac-old")).masterKey, legacy,
+        "the persisted ms-1 machine binding resolves through the bounded account-key aliases");
+    const currentAlias = await session.bindLegacyMachine("mac-current", "mac-sender", "master-v1");
+    assert.equal(currentAlias.keyID, "master-v1",
+        "the other shipped pre-metadata key id can be migrated independently");
+    await assert.rejects(session.bindLegacyMachine("mac-bad", "mac-sender", "future-v9"),
+        function (error) { return error && error.code === "machine_pairing_required"; },
+        "lazy migration cannot bless an unobserved key id outside the shipped aliases");
+    assert.equal(indexedDB.store.has("clawdline.machine-binding:acct-legacy:mac-bad"), false,
+        "a refused migration writes no machine binding");
+}
+
+/* A second independently enrolled machine owns a different content key. The existing account
+ * key remains the bounded compatibility fallback for the already-paired Mac; the AWS key is
+ * selected only for its authenticated machine route. */
+{
+    const legacySecret = new Uint8Array(32).fill(1);
+    const awsSecret = new Uint8Array(32).fill(2);
+    const legacyKey = await cloudCrypto.importMasterSecret(legacySecret);
+    const awsKey = await cloudCrypto.importMasterSecret(awsSecret);
+    const machineSigner = await crypto.subtle.generateKey({ name: "Ed25519" }, false,
+        ["sign", "verify"]);
+    const viewerSigner = await crypto.subtle.generateKey({ name: "Ed25519" }, false,
+        ["sign", "verify"]);
+    const machinePublic = await cloudCrypto.importSenderPublicKey(
+        await crypto.subtle.exportKey("raw", machineSigner.publicKey));
+    const viewerPublic = await cloudCrypto.importSenderPublicKey(
+        await crypto.subtle.exportKey("raw", viewerSigner.publicKey));
+    const sent = [];
+    let sequence = 0;
+    let legacyBindings = 0;
+    const client = new CloudClient({
+        relayURL: "wss://relay.clawdline.com/v1/connect",
+        deviceToken: "token",
+        deviceID: "viewer-1",
+        devicePrivateKey: viewerSigner.privateKey,
+        account: "acct-1",
+        keyID: "legacy-v1",
+        masterKeys: { "legacy-v1": legacyKey },
+        senderKeys: { "mac-sender": machinePublic },
+        resolveMachinePairing: async function (machine) {
+            return machine === "aws-1" ? { machineID: "aws-1", senderID: "aws-sender",
+                keyID: "aws-v1", masterKey: awsKey, senderKey: machinePublic,
+                legacy: false } : null;
+        },
+        bindLegacyMachine: async function (machine, sender, observedKeyID) {
+            legacyBindings += 1;
+            return { machineID: machine, senderID: sender, keyID: observedKeyID,
+                masterKey: legacyKey, senderKey: machinePublic, legacy: true };
+        },
+        allowWrites: true,
+        nextSequence: async function () { return sequence++; },
+        WebSocket: null,
+        BroadcastChannel: null
+    });
+    client.ready = true;
+    client.socket = { readyState: 1, send: function (value) { sent.push(JSON.parse(value)); } };
+
+    async function incoming(machine, sender, keyID, key, title, seq) {
+        const envelope = await cloudCrypto.sealEnvelope({
+            ch: "orch/" + machine, seq: seq, ts: 1000 + seq, class: "stream",
+            key_id: keyID, sender: sender
+        }, JSON.stringify({ machine: { name: title } }), key, machineSigner.privateKey);
+        await client._receiveEnvelope(envelope, false);
+    }
+
+    await incoming("mac-1", "mac-sender", "legacy-v1", legacyKey, "Local Mac", 1);
+    assert.equal(legacyBindings, 1,
+        "a legacy route is bound only after its pinned sender signature and decrypt succeed");
+    await incoming("aws-1", "aws-sender", "aws-v1", awsKey, "AWS Linux", 2);
+    assert.deepEqual((await client.machines()).machines.map(function (row) { return row.id; }).sort(),
+        ["aws-1", "mac-1"], "legacy Mac and independently paired AWS decrypt together");
+
+    await client.dispatch("mac-1", { id: "mac-task" });
+    await client.dispatch("aws-1", { id: "aws-task" });
+    assert.equal(sent[0].envelope.key_id, "legacy-v1",
+        "a command for the existing Mac keeps the legacy account key id");
+    assert.equal(sent[1].envelope.key_id, "aws-v1",
+        "a command for AWS carries that machine's scoped key id");
+    await cloudCrypto.openEnvelope(sent[0].envelope, legacyKey, viewerPublic);
+    await cloudCrypto.openEnvelope(sent[1].envelope, awsKey, viewerPublic);
+    await assert.rejects(cloudCrypto.openEnvelope(sent[1].envelope, legacyKey,
+        viewerPublic), "the AWS command is not decryptable with the Mac fallback key");
+
+    await assert.rejects(incoming("aws-1", "aws-sender", "legacy-v1", legacyKey,
+        "wrong fallback", 3), function (error) {
+        return error && error.code === "unknown_key";
+    }, "a scoped machine key-id mismatch fails closed instead of falling back to the Mac key");
+    await assert.rejects(client.dispatch("unknown-machine", { id: "no-pair" }), function (error) {
+        return error && error.code === "machine_pairing_required";
+    }, "an outbound command never guesses the legacy key for an unknown target machine");
+    await assert.rejects(incoming("aws-1", "forged-sender", "aws-v1", awsKey,
+        "wrong sender", 4), function (error) {
+        return error && error.code === "unknown_sender";
+    }, "the signed machine channel is checked against its persisted sender binding after decrypt");
+    await assert.rejects(incoming("forged-machine", "mac-sender", "legacy-v1", awsKey,
+        "not authenticated", 5), function (error) {
+        return error && error.code === "unreadable_envelope";
+    }, "a clear machine route is not persisted when decrypt fails");
+    assert.equal(legacyBindings, 1,
+        "failed authentication/decryption cannot create a legacy machine binding");
 }
 
 {

@@ -19,8 +19,8 @@
 
 import { CloudClient } from "./cloud-client.js";
 import {
-    importSenderPublicKey, loadCryptoKey, loadCryptoKeyID, storeCryptoKey,
-    storePairingCryptoKeys
+    importSenderPublicKey, loadCryptoKey, loadCryptoKeyID, loadPairingBinding,
+    storeCryptoKey, storePairingBinding, storePairingCryptoKeys
 } from "./cloud-crypto.js";
 import {
     createPairingOffer, ed25519Fingerprint, encryptPairingOfferForInvitation,
@@ -406,6 +406,19 @@ export class CloudViewerSession {
     masterKeyName() { return "clawdline.master:" + this.account; }
     masterKeyIDName() { return "clawdline.master-key-id:" + this.account; }
     senderKeyName(sender) { return "clawdline.sender:" + this.account + ":" + sender; }
+    machineMasterKeyName(machine) {
+        return "clawdline.machine-master:" + this.account + ":" + encodeURIComponent(machine);
+    }
+    machineMasterKeyIDName(machine) {
+        return "clawdline.machine-master-key-id:" + this.account + ":" + encodeURIComponent(machine);
+    }
+    machineSenderKeyName(machine, sender) {
+        return "clawdline.machine-sender:" + this.account + ":" + encodeURIComponent(machine)
+            + ":" + encodeURIComponent(sender);
+    }
+    machineBindingName(machine) {
+        return "clawdline.machine-binding:" + this.account + ":" + encodeURIComponent(machine);
+    }
 
     async accountKey() {
         return (await loadCryptoKey(this.masterKeyName(), this.indexedDB)) || null;
@@ -413,6 +426,52 @@ export class CloudViewerSession {
 
     async accountKeyID() {
         return await loadCryptoKeyID(this.masterKeyIDName(), this.indexedDB);
+    }
+
+    /** One exact machine/content/sender tuple, or null for a pre-scoping browser. */
+    async machinePairing(machine) {
+        var binding = await loadPairingBinding(this.machineBindingName(machine), this.indexedDB);
+        if (!binding) return null;
+        var senderName = binding.legacy
+            ? this.senderKeyName(binding.senderID)
+            : this.machineSenderKeyName(machine, binding.senderID);
+        var senderKey = await loadCryptoKey(senderName, this.indexedDB);
+        var masterKey;
+        if (binding.legacy) {
+            var legacy = masterKeyConnection(await this.accountKey(), await this.accountKeyID());
+            masterKey = legacy.masterKeys[binding.keyID];
+        } else {
+            var values = await Promise.all([
+                loadCryptoKey(this.machineMasterKeyName(machine), this.indexedDB),
+                loadCryptoKeyID(this.machineMasterKeyIDName(machine), this.indexedDB)
+            ]);
+            if (values[1] === binding.keyID) masterKey = values[0];
+        }
+        if (!masterKey || !senderKey) {
+            throw bootError("machine_key_incomplete",
+                "This browser's pairing for the selected machine is incomplete. "
+                + "Start the Pair a Browser flow on that machine, then try again.");
+        }
+        return { machineID: binding.machineID, senderID: binding.senderID,
+            keyID: binding.keyID, masterKey: masterKey, senderKey: senderKey,
+            legacy: binding.legacy };
+    }
+
+    /**
+     * A browser paired before machine scoping has only an account key and a sender pin. Bind it
+     * after (and only after) CloudClient verified that sender and decrypted a signed channel.
+     */
+    async bindLegacyMachine(machine, sender, observedKeyID) {
+        var connection = masterKeyConnection(await this.accountKey(), await this.accountKeyID());
+        var senderKey = await loadCryptoKey(this.senderKeyName(sender), this.indexedDB);
+        if (!connection.masterKeys[observedKeyID] || !senderKey) {
+            throw bootError("machine_pairing_required", "this machine has no complete pairing");
+        }
+        var binding = { v: 1, machineID: machine, senderID: sender,
+            keyID: observedKeyID, legacy: true };
+        await storePairingBinding(this.machineBindingName(machine), binding, this.indexedDB);
+        return { machineID: machine, senderID: sender, keyID: observedKeyID,
+            masterKey: connection.masterKeys[observedKeyID], senderKey: senderKey, legacy: true };
     }
 
     /**
@@ -535,12 +594,20 @@ export class CloudViewerSession {
         }
         var senderKey = await importSenderPublicKey(opened.machineSigningKey);
         await storePairingCryptoKeys({
-            masterName: this.masterKeyName(),
-            masterKeyIDName: this.masterKeyIDName(),
+            masterName: this.machineMasterKeyName(opened.machineID),
+            masterKeyIDName: this.machineMasterKeyIDName(opened.machineID),
             masterKey: opened.masterKey,
             keyID: opened.keyID,
-            senderName: this.senderKeyName(opened.machineDeviceID),
-            senderKey: senderKey
+            senderName: this.machineSenderKeyName(opened.machineID, opened.machineDeviceID),
+            senderKey: senderKey,
+            bindingName: this.machineBindingName(opened.machineID),
+            binding: { v: 1, machineID: opened.machineID, senderID: opened.machineDeviceID,
+                keyID: opened.keyID, legacy: false },
+            // Compatibility aliases are written only if no old account key exists. `put` is
+            // deliberately forbidden for an existing alias: pairing AWS must not evict the Mac.
+            preserve: { masterName: this.masterKeyName(),
+                masterKeyIDName: this.masterKeyIDName(),
+                senderName: this.senderKeyName(opened.machineDeviceID) }
         }, this.indexedDB);
         return opened;
     }
@@ -563,8 +630,14 @@ export class CloudViewerSession {
             account: this.account,
             keyID: keyConnection.keyID,
             masterKeys: keyConnection.masterKeys,
+            resolveMachinePairing: function (machine) {
+                return self.machinePairing(machine);
+            },
             resolveSenderKey: function (sender) {
                 return loadCryptoKey(self.senderKeyName(sender), self.indexedDB);
+            },
+            bindLegacyMachine: function (machine, sender, observedKeyID) {
+                return self.bindLegacyMachine(machine, sender, observedKeyID);
             },
             // Writes need the capability the control plane actually granted, and they need it
             // read back rather than assumed: a device downgraded to read-only must find that

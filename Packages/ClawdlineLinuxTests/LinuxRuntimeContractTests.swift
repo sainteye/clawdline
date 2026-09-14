@@ -1076,8 +1076,12 @@ final class LinuxRuntimeContractTests: XCTestCase {
             }
         }
         let initial = try plaintexts(initialFrames)
-        XCTAssertTrue(initial.contains { $0["platform"] as? String == "linux"
-            && $0["provider"] as? String == "aws" && $0["label"] as? String == "AWS worker" })
+        XCTAssertTrue(initial.contains {
+            guard let descriptor = $0["machine"] as? [String: Any] else { return false }
+            return descriptor["platform"] as? String == "linux"
+                && descriptor["provider"] as? String == "aws"
+                && descriptor["name"] as? String == "AWS worker"
+        }, "the Linux descriptor uses the same nested display-only contract as the hosted console")
         XCTAssertTrue(initial.contains {
             ($0["session"] as? [String: Any])?["cwd"] as? String == project.path
         })
@@ -1111,9 +1115,6 @@ final class LinuxRuntimeContractTests: XCTestCase {
             "s/machine-linux/%258", "s/machine-linux/%257",
             "s/machine-linux/__clawdline_inventory_v1__"
         ]), "the bounded window publishes all ordered replacement siblings without waiting for receipts")
-        let replacementFrame = try XCTUnwrap(replacementFrames.first {
-            $0.envelope.ch == "s/machine-linux/%258"
-        })
         let tombstoneFrame = try XCTUnwrap(replacementFrames.first {
             $0.envelope.ch == "s/machine-linux/%257"
         })
@@ -1141,10 +1142,22 @@ final class LinuxRuntimeContractTests: XCTestCase {
             transport.receipt(CloudOutboundTransportReceipt(
                 channel: replay.envelope.ch, sequence: Int64(replay.envelope.seq), kind: .delivered))
         }
-        XCTAssertEqual(Set(replayFrames.map(\.envelope.ch)), Set([
+        let currentRosterChannels = Set([
             "orch/machine-linux", "s/machine-linux/%258",
             "s/machine-linux/__clawdline_inventory_v1__"
-        ]), "a new authenticated generation republishes the complete retained roster")
+        ])
+        let replayChannels = Set(replayFrames.map(\.envelope.ch))
+        XCTAssertTrue(currentRosterChannels.isSubset(of: replayChannels),
+                      "a new authenticated generation republishes the complete current roster")
+        XCTAssertTrue(replayChannels.subtracting(currentRosterChannels).isSubset(of: [
+            "s/machine-linux/%257"
+        ]), "only an asynchronously unsettled prior tombstone may replay on reconnect")
+        if let replayedTombstone = replayFrames.first(where: {
+            $0.envelope.ch == "s/machine-linux/%257"
+        }) {
+            XCTAssertEqual(try plaintexts([replayedTombstone]).first?["deleted"] as? Bool, true,
+                           "an uncertain prior removal replays only as its tombstone")
+        }
 
         let now = UInt64(Date().timeIntervalSince1970 * 1_000)
         let places = try JSONSerialization.data(withJSONObject: [

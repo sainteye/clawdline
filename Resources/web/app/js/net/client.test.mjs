@@ -854,9 +854,9 @@ assert.equal(helloReadings.length, 1, "the relay ready frame is still one hello"
 assert.equal(Build.stamp(helloReadings[0]), "",
     "the relay ready frame carries no build — it is the relay's frame, not the Mac's");
 
-async function receiveOrchestrator(body, seq) {
+async function receiveOrchestrator(body, seq, machine = "mac-01") {
     const sealed = await sealEnvelope({
-        ch: "orch/mac-01", seq: seq, ts: 1787817600000 + seq, class: "stream",
+        ch: "orch/" + machine, seq: seq, ts: 1787817600000 + seq, class: "stream",
         key_id: "ms-1", sender: "device-vector-01"
     }, JSON.stringify(body), masterKey, signingKey);
     stampSocket.receive({ type: "envelope", envelope: sealed });
@@ -917,6 +917,15 @@ assert.equal(els.stale.hidden, false,
     "a Cloud viewer older than the Mac's build is told so, on the direct path's own banner");
 assert.equal(T.webStale, "Clawdline has been rebuilt on the Mac. This page is the older one.",
     "and in the direct path's own words");
+await receiveOrchestrator({
+    v: 1, at: 1787817600,
+    machine: { name: "AWS worker", platform: "linux", provider: "aws" }
+}, 5, "machine-linux");
+const linuxMachine = (await stampCloud.machines()).machines.find(function (machine) {
+    return machine.id === "machine-linux";
+});
+assert.equal(linuxMachine.label, "Linux / AWS · AWS worker",
+    "the hosted console renders the Linux runtime's nested encrypted descriptor contract");
 Build.hush();
 stampCloud.stop();
 

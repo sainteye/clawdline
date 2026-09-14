@@ -20,7 +20,7 @@ do {
         exit(64)
     case .configuration, .secret:
         exit(78)
-    case .runtime, .cloudEnrollment:
+    case .runtime, .cloudEnrollment, .cloudPairing:
         exit(69)
     case .internalFailure:
         exit(70)

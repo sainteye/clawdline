@@ -65,105 +65,6 @@ struct CloudPairedDevice: Equatable, Sendable {
     let pairedAtMilliseconds: Int64
 }
 
-enum CloudHandoverError: Error, LocalizedError, Equatable {
-    case malformedOffer
-    case malformedHandover
-    case offerExpired
-    case offerLifetimeTooLong
-    case wrongAccount
-    case wrongSender
-    case malformedInvitation
-    case invitationExpired
-    case storeUnreadable
-    case storeUnwritable
-
-    var errorDescription: String? {
-        switch self {
-        case .malformedOffer: return "The pairing offer is malformed."
-        case .malformedHandover: return "The sealed pairing handover is malformed."
-        case .offerExpired: return "That pairing offer has expired; show a fresh one."
-        case .offerLifetimeTooLong: return "That pairing offer claims an unusable lifetime."
-        case .wrongAccount: return "That pairing offer belongs to another account."
-        case .wrongSender: return "The handover was sealed by a different device."
-        case .malformedInvitation: return "The QR pairing invitation is malformed."
-        case .invitationExpired: return "That QR has expired; show a fresh one."
-        case .storeUnreadable: return "The paired-device store could not be read."
-        case .storeUnwritable: return "The paired-device store could not be written."
-        }
-    }
-}
-
-/// A one-time Mac-displayed QR that transports the viewer's existing pairing offer back to
-/// this Mac without making the offer readable to Cloud.
-///
-/// GitHub establishes account ownership. Possession of `secret` establishes that the browser
-/// scanned the QR on this physical Mac. The browser encrypts its ordinary offer with that
-/// secret, Cloud relays only the opaque AES-GCM bytes, and the original X25519 handover still
-/// moves the account master secret directly from Mac to viewer.
-struct CloudPairingInvitation: Equatable, Sendable {
-    static let secretBytes = 32
-    static let fragmentName = "pair"
-
-    let invitationID: String
-    let secret: Data
-    let expiresAtMilliseconds: Int64
-
-    init(invitationID: String, secret: Data, expiresAtMilliseconds: Int64) throws {
-        guard !invitationID.isEmpty, invitationID.utf8.count <= 128,
-              secret.count == Self.secretBytes, expiresAtMilliseconds >= 0 else {
-            throw CloudHandoverError.malformedInvitation
-        }
-        self.invitationID = invitationID
-        self.secret = secret
-        self.expiresAtMilliseconds = expiresAtMilliseconds
-    }
-
-    var secretHash: Data { Data(SHA256.hash(data: secret)) }
-
-    func qrURL(appOrigin: URL = URL(string: "https://app.clawdline.com/")!) -> URL? {
-        let value = CloudJSONValue.object([
-            "v": .int(1),
-            "type": .string("pairing_invitation"),
-            "invitation_id": .string(invitationID),
-            "secret": .string(secret.base64EncodedString()),
-            "expires_at": .int(expiresAtMilliseconds),
-        ])
-        let fragment = CloudPairing.encodeCanonicalBase64URL(
-            CloudCanonicalJSON.canonicalData(value))
-        var components = URLComponents(url: appOrigin, resolvingAgainstBaseURL: false)
-        components?.fragment = Self.fragmentName + "=" + fragment
-        return components?.url
-    }
-
-    func openEncryptedOffer(
-        _ blob: CloudOpaquePairingBlob, nowMilliseconds: Int64
-    ) throws -> String {
-        guard nowMilliseconds >= 0, expiresAtMilliseconds >= nowMilliseconds else {
-            throw CloudHandoverError.invitationExpired
-        }
-        guard let combined = Data(base64Encoded: blob.wireBase64) else {
-            throw CloudHandoverError.malformedInvitation
-        }
-        do {
-            let box = try AES.GCM.SealedBox(combined: combined)
-            let clear = try AES.GCM.open(
-                box, using: SymmetricKey(data: secret), authenticating: authenticatedData)
-            guard let offer = String(data: clear, encoding: .utf8), !offer.isEmpty else {
-                throw CloudHandoverError.malformedInvitation
-            }
-            return offer
-        } catch let error as CloudHandoverError {
-            throw error
-        } catch {
-            throw CloudHandoverError.malformedInvitation
-        }
-    }
-
-    private var authenticatedData: Data {
-        Data(("clawdline-pairing-invitation-v1\0" + invitationID).utf8)
-    }
-}
-
 /// The pinned viewer devices, on disk beside the rest of this Mac's remote state.
 ///
 /// Account-scoped on purpose: signing this Mac into a different Cloud account must not inherit
@@ -332,36 +233,6 @@ final class CloudPairedDeviceStore: @unchecked Sendable {
     }
 }
 
-/// What a viewer hands the Mac out of band. Eleven members, exactly, in canonical JSON —
-/// the same closed shape discipline `CloudPairingQR` uses, for the same reason.
-struct CloudPairingOffer: Equatable, Sendable {
-    var pairingID: String
-    var claimNonce: String
-    var pairingNonce: String
-    var accountID: String
-    var viewerDeviceID: String
-    var viewerSigningKey: String
-    var viewerEphemeralKey: String
-    var viewerFingerprint: String
-    var expiresAt: Int64
-
-    var cloudJSONValue: CloudJSONValue {
-        .object([
-            "v": .int(1),
-            "type": .string("pairing_offer"),
-            "pairing_id": .string(pairingID),
-            "claim_nonce": .string(claimNonce),
-            "pairing_nonce": .string(pairingNonce),
-            "account_id": .string(accountID),
-            "viewer_device_id": .string(viewerDeviceID),
-            "viewer_signing_key": .string(viewerSigningKey),
-            "viewer_ephemeral_key": .string(viewerEphemeralKey),
-            "viewer_fingerprint": .string(viewerFingerprint),
-            "expires_at": .int(expiresAt),
-        ])
-    }
-}
-
 /// What the Mac seals for exactly one offer. The viewer needs the account's content key and
 /// the sender key it will verify every snapshot against, and nothing else.
 struct CloudPairingHandover: Equatable, Sendable {
@@ -389,62 +260,28 @@ struct CloudPairingHandover: Equatable, Sendable {
 enum CloudHandover {
     /// The same window `CloudPairing` gives its QR. An offer is carried across a room, not
     /// kept, and a long-lived one is a claim nonce sitting on a screen.
-    static let offerLifetimeMilliseconds: Int64 = 600_000
-
-    private static let offerMembers: Set<String> = [
-        "v", "type", "pairing_id", "claim_nonce", "pairing_nonce", "account_id",
-        "viewer_device_id", "viewer_signing_key", "viewer_ephemeral_key",
-        "viewer_fingerprint", "expires_at",
-    ]
+    static let offerLifetimeMilliseconds = CloudCompatibilityPairing.offerLifetimeMilliseconds
     private static let handoverMembers: Set<String> = [
         "v", "type", "account_id", "machine_id", "machine_signing_key",
         "machine_fingerprint", "key_id", "master_secret",
     ]
 
     static func encodeOfferFragment(_ offer: CloudPairingOffer, nowMilliseconds: Int64) throws -> String {
-        try validate(offer, nowMilliseconds: nowMilliseconds)
-        return CloudPairing.encodeCanonicalBase64URL(
-            CloudCanonicalJSON.canonicalData(offer.cloudJSONValue))
+        try CloudCompatibilityPairing.encodeOfferFragment(
+            offer, nowMilliseconds: nowMilliseconds)
     }
 
     /// Serialization without validation, so a rejection test can build a fragment the decoder
     /// must refuse. Receivers always use `decodeOfferFragment`.
     static func encodeOfferFragmentUnchecked(_ offer: CloudPairingOffer) -> String {
-        CloudPairing.encodeCanonicalBase64URL(
-            CloudCanonicalJSON.canonicalData(offer.cloudJSONValue))
+        CloudCompatibilityPairing.encodeOfferFragmentUnchecked(offer)
     }
 
     static func decodeOfferFragment(
         _ fragment: String, nowMilliseconds: Int64
     ) throws -> CloudPairingOffer {
-        let bytes = try CloudPairing.decodeCanonicalBase64URL(fragment)
-        guard let value = try? CloudCanonicalJSON.parseStrict(bytes),
-              case .object(let object) = value,
-              Set(object.keys) == offerMembers,
-              case .int(let version)? = object["v"], version == 1,
-              case .string(let type)? = object["type"], type == "pairing_offer",
-              case .int(let expiresAt)? = object["expires_at"]
-        else {
-            throw CloudHandoverError.malformedOffer
-        }
-        func text(_ key: String) throws -> String {
-            guard case .string(let value)? = object[key] else {
-                throw CloudHandoverError.malformedOffer
-            }
-            return value
-        }
-        let offer = CloudPairingOffer(
-            pairingID: try text("pairing_id"),
-            claimNonce: try text("claim_nonce"),
-            pairingNonce: try text("pairing_nonce"),
-            accountID: try text("account_id"),
-            viewerDeviceID: try text("viewer_device_id"),
-            viewerSigningKey: try text("viewer_signing_key"),
-            viewerEphemeralKey: try text("viewer_ephemeral_key"),
-            viewerFingerprint: try text("viewer_fingerprint"),
-            expiresAt: expiresAt)
-        try validate(offer, nowMilliseconds: nowMilliseconds)
-        return offer
+        try CloudCompatibilityPairing.decodeOfferFragment(
+            fragment, nowMilliseconds: nowMilliseconds)
     }
 
     /// The machine half. Derives the phase key from the offer, then seals the account key
@@ -462,7 +299,7 @@ enum CloudHandover {
         nonce: Data,
         nowMilliseconds: Int64
     ) throws -> CloudPairingWrapper {
-        try validate(offer, nowMilliseconds: nowMilliseconds)
+        try CloudCompatibilityPairing.validate(offer, nowMilliseconds: nowMilliseconds)
         guard handover.accountID == offer.accountID else {
             throw CloudHandoverError.wrongAccount
         }
@@ -497,7 +334,7 @@ enum CloudHandover {
         senderDeviceID: String?,
         nowMilliseconds: Int64
     ) throws -> CloudPairingHandover {
-        try validate(offer, nowMilliseconds: nowMilliseconds)
+        try CloudCompatibilityPairing.validate(offer, nowMilliseconds: nowMilliseconds)
         if let senderDeviceID, senderDeviceID != wrapper.senderDeviceID {
             throw CloudHandoverError.wrongSender
         }
@@ -566,31 +403,6 @@ enum CloudHandover {
                 offer.claimNonce, field: "claim_nonce", expectedLength: 32),
             phase: .grant)
         return material.phaseKey
-    }
-
-    private static func validate(_ offer: CloudPairingOffer, nowMilliseconds: Int64) throws {
-        try requireID(offer.pairingID)
-        try requireID(offer.accountID)
-        try requireID(offer.viewerDeviceID)
-        let claimNonce = try CloudPairing.decodeCanonicalBase64(
-            offer.claimNonce, field: "claim_nonce", expectedLength: 32)
-        let pairingNonce = try CloudPairing.decodeCanonicalBase64(
-            offer.pairingNonce, field: "pairing_nonce", expectedLength: 32)
-        guard claimNonce != pairingNonce else { throw CloudPairingError.reusedNonce }
-        let signingKey = try CloudPairing.decodeCanonicalBase64(
-            offer.viewerSigningKey, field: "viewer_signing_key", expectedLength: 32)
-        _ = try CloudPairing.decodeCanonicalBase64(
-            offer.viewerEphemeralKey, field: "viewer_ephemeral_key", expectedLength: 32)
-        guard offer.viewerFingerprint == (try CloudPairing.ed25519Fingerprint(publicKeyRaw: signingKey)) else {
-            throw CloudPairingError.fingerprintMismatch
-        }
-        guard offer.expiresAt >= 0, nowMilliseconds >= 0 else {
-            throw CloudPairingError.unsafeEpochMilliseconds
-        }
-        guard offer.expiresAt >= nowMilliseconds else { throw CloudHandoverError.offerExpired }
-        guard offer.expiresAt - nowMilliseconds <= offerLifetimeMilliseconds else {
-            throw CloudHandoverError.offerLifetimeTooLong
-        }
     }
 
     private static func validate(_ handover: CloudPairingHandover) throws {

@@ -10,6 +10,298 @@ import Crypto
 import ClawdlineApplication // W3-1 correction: real cross-module import, see Sources/HostPorts.swift
 #endif
 
+/// Errors shared by the deployed single-blob pairing compatibility path.
+///
+/// This path remains only while the hosted console still speaks pairing invitations rather than
+/// the normative four-phase identity protocol. Keeping its URL/decryption primitive in the
+/// Application target lets headless Linux and the Mac use the same audited bytes.
+public enum CloudHandoverError: Error, LocalizedError, Equatable {
+    case malformedOffer
+    case malformedHandover
+    case offerExpired
+    case offerLifetimeTooLong
+    case wrongAccount
+    case wrongSender
+    case malformedInvitation
+    case invitationExpired
+    case storeUnreadable
+    case storeUnwritable
+
+    public var errorDescription: String? {
+        switch self {
+        case .malformedOffer: return "The pairing offer is malformed."
+        case .malformedHandover: return "The sealed pairing handover is malformed."
+        case .offerExpired: return "That pairing offer has expired; show a fresh one."
+        case .offerLifetimeTooLong: return "That pairing offer claims an unusable lifetime."
+        case .wrongAccount: return "That pairing offer belongs to another account."
+        case .wrongSender: return "The handover was sealed by a different device."
+        case .malformedInvitation: return "The QR pairing invitation is malformed."
+        case .invitationExpired: return "That QR has expired; show a fresh one."
+        case .storeUnreadable: return "The paired-device store could not be read."
+        case .storeUnwritable: return "The paired-device store could not be written."
+        }
+    }
+}
+
+/// A one-time machine-displayed QR that transports a viewer's encrypted offer without making the
+/// offer readable to Cloud. The secret exists only in the URL fragment and this value deliberately
+/// redacts its description and mirror so diagnostics cannot print it by accident.
+public struct CloudPairingInvitation: Equatable, Sendable,
+                                      CustomStringConvertible,
+                                      CustomDebugStringConvertible,
+                                      CustomReflectable {
+    public static let secretBytes = 32
+    public static let fragmentName = "pair"
+
+    public let invitationID: String
+    private let secret: Data
+    public let expiresAtMilliseconds: Int64
+
+    public init(invitationID: String, secret: Data, expiresAtMilliseconds: Int64) throws {
+        guard !invitationID.isEmpty, invitationID.utf8.count <= 128,
+              secret.count == Self.secretBytes, expiresAtMilliseconds >= 0 else {
+            throw CloudHandoverError.malformedInvitation
+        }
+        self.invitationID = invitationID
+        self.secret = secret
+        self.expiresAtMilliseconds = expiresAtMilliseconds
+    }
+
+    public var secretHash: Data { Data(SHA256.hash(data: secret)) }
+
+    public func qrURL(appOrigin: URL = URL(string: "https://app.clawdline.com/")!) -> URL? {
+        let value = CloudJSONValue.object([
+            "v": .int(1),
+            "type": .string("pairing_invitation"),
+            "invitation_id": .string(invitationID),
+            "secret": .string(secret.base64EncodedString()),
+            "expires_at": .int(expiresAtMilliseconds),
+        ])
+        let fragment = CloudPairing.encodeCanonicalBase64URL(
+            CloudCanonicalJSON.canonicalData(value))
+        var components = URLComponents(url: appOrigin, resolvingAgainstBaseURL: false)
+        components?.fragment = Self.fragmentName + "=" + fragment
+        return components?.url
+    }
+
+    public func openEncryptedOffer(
+        _ blob: CloudOpaquePairingBlob, nowMilliseconds: Int64
+    ) throws -> String {
+        guard nowMilliseconds >= 0, expiresAtMilliseconds >= nowMilliseconds else {
+            throw CloudHandoverError.invitationExpired
+        }
+        guard let combined = Data(base64Encoded: blob.wireBase64) else {
+            throw CloudHandoverError.malformedInvitation
+        }
+        do {
+            let box = try AES.GCM.SealedBox(combined: combined)
+            let clear = try AES.GCM.open(
+                box, using: SymmetricKey(data: secret), authenticating: authenticatedData)
+            guard let offer = String(data: clear, encoding: .utf8), !offer.isEmpty else {
+                throw CloudHandoverError.malformedInvitation
+            }
+            return offer
+        } catch let error as CloudHandoverError {
+            throw error
+        } catch {
+            throw CloudHandoverError.malformedInvitation
+        }
+    }
+
+    public var description: String {
+        "CloudPairingInvitation(invitationID: \(invitationID), secret: <redacted>, "
+            + "expiresAtMilliseconds: \(expiresAtMilliseconds))"
+    }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror {
+        Mirror(self, children: [
+            (label: Optional("invitationID"), value: invitationID as Any),
+            (label: Optional("secret"), value: "<redacted>" as Any),
+            (label: Optional("expiresAtMilliseconds"), value: expiresAtMilliseconds as Any),
+        ], displayStyle: .struct)
+    }
+
+    private var authenticatedData: Data {
+        Data(("clawdline-pairing-invitation-v1\0" + invitationID).utf8)
+    }
+}
+
+/// The exact deployed-console offer transported by a pairing invitation.
+public struct CloudPairingOffer: Equatable, Sendable {
+    public var pairingID: String
+    public var claimNonce: String
+    public var pairingNonce: String
+    public var accountID: String
+    public var viewerDeviceID: String
+    public var viewerSigningKey: String
+    public var viewerEphemeralKey: String
+    public var viewerFingerprint: String
+    public var expiresAt: Int64
+
+    public init(
+        pairingID: String, claimNonce: String, pairingNonce: String, accountID: String,
+        viewerDeviceID: String, viewerSigningKey: String, viewerEphemeralKey: String,
+        viewerFingerprint: String, expiresAt: Int64
+    ) {
+        self.pairingID = pairingID
+        self.claimNonce = claimNonce
+        self.pairingNonce = pairingNonce
+        self.accountID = accountID
+        self.viewerDeviceID = viewerDeviceID
+        self.viewerSigningKey = viewerSigningKey
+        self.viewerEphemeralKey = viewerEphemeralKey
+        self.viewerFingerprint = viewerFingerprint
+        self.expiresAt = expiresAt
+    }
+
+    public var cloudJSONValue: CloudJSONValue {
+        .object([
+            "v": .int(1), "type": .string("pairing_offer"),
+            "pairing_id": .string(pairingID), "claim_nonce": .string(claimNonce),
+            "pairing_nonce": .string(pairingNonce), "account_id": .string(accountID),
+            "viewer_device_id": .string(viewerDeviceID),
+            "viewer_signing_key": .string(viewerSigningKey),
+            "viewer_ephemeral_key": .string(viewerEphemeralKey),
+            "viewer_fingerprint": .string(viewerFingerprint),
+            "expires_at": .int(expiresAt),
+        ])
+    }
+}
+
+/// Canonical codec and validation shared by the Mac compatibility flow and the Linux headless
+/// entry point. A Linux caller never turns decrypted fragment text directly into protected state.
+public enum CloudCompatibilityPairing {
+    public static let offerLifetimeMilliseconds: Int64 = 600_000
+    private static let offerMembers: Set<String> = [
+        "v", "type", "pairing_id", "claim_nonce", "pairing_nonce", "account_id",
+        "viewer_device_id", "viewer_signing_key", "viewer_ephemeral_key",
+        "viewer_fingerprint", "expires_at",
+    ]
+
+    public static func encodeOfferFragment(
+        _ offer: CloudPairingOffer, nowMilliseconds: Int64
+    ) throws -> String {
+        try validate(offer, nowMilliseconds: nowMilliseconds)
+        return encodeOfferFragmentUnchecked(offer)
+    }
+
+    public static func encodeOfferFragmentUnchecked(_ offer: CloudPairingOffer) -> String {
+        CloudPairing.encodeCanonicalBase64URL(
+            CloudCanonicalJSON.canonicalData(offer.cloudJSONValue))
+    }
+
+    public static func decodeOfferFragment(
+        _ fragment: String, nowMilliseconds: Int64
+    ) throws -> CloudPairingOffer {
+        let bytes = try CloudPairing.decodeCanonicalBase64URL(fragment)
+        guard let value = try? CloudCanonicalJSON.parseStrict(bytes),
+              case .object(let object) = value,
+              Set(object.keys) == offerMembers,
+              case .int(let version)? = object["v"], version == 1,
+              case .string(let type)? = object["type"], type == "pairing_offer",
+              case .int(let expiresAt)? = object["expires_at"] else {
+            throw CloudHandoverError.malformedOffer
+        }
+        func text(_ key: String) throws -> String {
+            guard case .string(let value)? = object[key] else {
+                throw CloudHandoverError.malformedOffer
+            }
+            return value
+        }
+        let offer = CloudPairingOffer(
+            pairingID: try text("pairing_id"), claimNonce: try text("claim_nonce"),
+            pairingNonce: try text("pairing_nonce"), accountID: try text("account_id"),
+            viewerDeviceID: try text("viewer_device_id"),
+            viewerSigningKey: try text("viewer_signing_key"),
+            viewerEphemeralKey: try text("viewer_ephemeral_key"),
+            viewerFingerprint: try text("viewer_fingerprint"), expiresAt: expiresAt)
+        try validate(offer, nowMilliseconds: nowMilliseconds)
+        return offer
+    }
+
+    public static func validatedOfferBytes(
+        _ fragment: String, nowMilliseconds: Int64
+    ) throws -> (offer: CloudPairingOffer, bytes: Data) {
+        let offer = try decodeOfferFragment(fragment, nowMilliseconds: nowMilliseconds)
+        return (offer, CloudCanonicalJSON.canonicalData(offer.cloudJSONValue))
+    }
+
+    public static func validate(
+        _ offer: CloudPairingOffer, nowMilliseconds: Int64
+    ) throws {
+        try requireID(offer.pairingID)
+        try requireID(offer.accountID)
+        try requireID(offer.viewerDeviceID)
+        let claimNonce = try CloudPairing.decodeCanonicalBase64(
+            offer.claimNonce, field: "claim_nonce", expectedLength: 32)
+        let pairingNonce = try CloudPairing.decodeCanonicalBase64(
+            offer.pairingNonce, field: "pairing_nonce", expectedLength: 32)
+        guard claimNonce != pairingNonce else { throw CloudPairingError.reusedNonce }
+        let signingKey = try CloudPairing.decodeCanonicalBase64(
+            offer.viewerSigningKey, field: "viewer_signing_key", expectedLength: 32)
+        _ = try CloudPairing.decodeCanonicalBase64(
+            offer.viewerEphemeralKey, field: "viewer_ephemeral_key", expectedLength: 32)
+        guard offer.viewerFingerprint
+                == (try CloudPairing.ed25519Fingerprint(publicKeyRaw: signingKey)) else {
+            throw CloudPairingError.fingerprintMismatch
+        }
+        guard offer.expiresAt >= 0, nowMilliseconds >= 0 else {
+            throw CloudPairingError.unsafeEpochMilliseconds
+        }
+        guard offer.expiresAt >= nowMilliseconds else { throw CloudHandoverError.offerExpired }
+        guard offer.expiresAt - nowMilliseconds <= offerLifetimeMilliseconds else {
+            throw CloudHandoverError.offerLifetimeTooLong
+        }
+    }
+
+    private static func requireID(_ text: String) throws {
+        let bytes = Array(text.utf8)
+        guard (1...128).contains(bytes.count),
+              text.unicodeScalars.allSatisfy({ $0.value >= 0x20 && $0.value <= 0x7E }) else {
+            throw CloudHandoverError.malformedOffer
+        }
+    }
+}
+
+/// The deployed console's invitation API, injected so the compatibility lifecycle is testable
+/// without a credential, network connection, or persisted secret.
+public protocol CloudCompatibilityPairingClient: Sendable {
+    func startPairingInvitation(secretHash: Data) async throws -> CloudPairingInvitationStart
+    func pollPairingInvitation(invitationID: String) async throws -> CloudPairingInvitationPoll
+    func completePairing(
+        pairingID: String, blob: CloudOpaquePairingBlob
+    ) async throws -> CloudPairingDelivery
+}
+
+extension CloudAccountClient: CloudCompatibilityPairingClient {}
+
+public struct CloudCompatibilityPairingStart: Equatable, Sendable {
+    public let verificationURL: URL
+    public let accountID: String
+    public let machineID: String
+    public let machineFingerprint: String
+    public let expiresAtMilliseconds: Int64
+}
+
+public struct CloudCompatibilityPairingReceipt: Equatable, Sendable {
+    public let accountID: String
+    public let machineID: String
+    public let viewerDeviceID: String
+    public let viewerFingerprint: String
+    public let machineFingerprint: String
+}
+
+public enum CloudCompatibilityPairingProgress: Equatable, Sendable {
+    case waiting
+    case retrying(CloudCompatibilityPairingRetryReason)
+    case complete(CloudCompatibilityPairingReceipt)
+}
+
+public enum CloudCompatibilityPairingRetryReason: String, Equatable, Sendable {
+    case deliveryUncertain = "delivery_uncertain"
+    case localCommitPending = "local_commit_pending"
+}
+
 /// Maximum UTF-8 byte count of the complete phase-write body (design §5.2): the exact
 /// two-member `{claim_nonce, blob}` object — claim nonce, wrapper, base64 ct and every field
 /// included. This is intentionally not a decoded-ciphertext limit, and it is measured on the

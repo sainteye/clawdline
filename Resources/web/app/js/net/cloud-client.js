@@ -238,6 +238,18 @@ export class CloudClient {
             Object.keys(options.masterKeys).forEach((key) => this.masterKeys.set(key, options.masterKeys[key]));
         }
         if (options.masterKey) this.masterKeys.set(this.keyID, options.masterKey);
+        this.machinePairings = new Map();
+        if (options.machinePairings) {
+            Object.keys(options.machinePairings).forEach((machine) =>
+                this.machinePairings.set(machine, options.machinePairings[machine]));
+        }
+        this.resolveMachinePairing = options.resolveMachinePairing || null;
+        this.bindLegacyMachine = options.bindLegacyMachine || null;
+        // A composition root that supplies either hook has opted into strict machine scoping.
+        // The fallback keeps old isolated CloudClient callers source-compatible; hosted boot
+        // always supplies both hooks and therefore never guesses an unknown outbound target.
+        this.machineKeyScoping = !!(this.resolveMachinePairing || this.bindLegacyMachine ||
+            options.machinePairings);
         this.senderKeys = new Map();
         if (options.senderKeys) {
             Object.keys(options.senderKeys).forEach((sender) => this.senderKeys.set(sender, options.senderKeys[sender]));
@@ -544,13 +556,55 @@ export class CloudClient {
         return value;
     }
 
+    async _machinePairing(machine) {
+        var value = this.machinePairings.get(machine);
+        if (value === undefined && this.resolveMachinePairing) {
+            value = await this.resolveMachinePairing(machine);
+            if (value) this.machinePairings.set(machine, value);
+        }
+        if (!value) return null;
+        if (value.machineID !== machine || typeof value.senderID !== "string" || !value.senderID ||
+            typeof value.keyID !== "string" || !value.keyID || !value.masterKey || !value.senderKey) {
+            throw cloudError("machine_key_incomplete",
+                "This browser's pairing for the selected machine is incomplete. "
+                + "Start the Pair a Browser flow on that machine, then try again.");
+        }
+        if (value.masterKey.extractable !== false || value.senderKey.extractable !== false) {
+            throw cloudError("extractable_key", "the paired machine keys are extractable");
+        }
+        return value;
+    }
+
+    async _outboundMachinePairing(machine) {
+        var pairing = await this._machinePairing(machine);
+        if (pairing) return pairing;
+        if (!this.machineKeyScoping) {
+            return { machineID: machine, senderID: "", keyID: this.keyID,
+                masterKey: await this._masterKey(this.keyID), senderKey: {} };
+        }
+        throw cloudError("machine_pairing_required",
+            "This browser is not paired with the selected machine. "
+            + "Start the Pair a Browser flow on that machine, then try again.");
+    }
+
     async _receiveEnvelope(envelope, realign) {
-        this._compareKeyID(envelope);
-        var key = await this._senderKey(envelope && envelope.sender, envelope);
+        var channel = parseEnvelopeChannel(envelope && envelope.ch);
+        var routedMachine = channel.kind === "session" || channel.kind === "transcript" ||
+            channel.kind === "orch" || channel.kind === "ctl"
+            ? decodedChannelSegment(channel.machine) : null;
+        var pairing = routedMachine ? await this._machinePairing(routedMachine) : null;
+        this._compareKeyID(envelope, routedMachine, pairing && pairing.keyID);
+        if (pairing && pairing.keyID !== envelope.key_id) {
+            throw cloudError("unknown_key",
+                "the envelope does not match the selected machine's pairing");
+        }
+        var key = pairing ? pairing.senderKey
+            : await this._senderKey(envelope && envelope.sender, envelope);
         if (!key) throw cloudError("unknown_sender", "the envelope sender is not paired");
         var clear;
         try {
-            clear = await openEnvelope(envelope, await this._masterKey(envelope.key_id), key);
+            clear = await openEnvelope(envelope, pairing ? pairing.masterKey
+                : await this._masterKey(envelope.key_id), key);
         } catch (error) {
             // Relay readiness proves the viewer's signing identity, not that the account content
             // key in this browser still matches the Mac. WebCrypto otherwise reports a bare
@@ -561,7 +615,28 @@ export class CloudClient {
             throw cloudError("unreadable_envelope",
                 "this browser cannot decrypt the paired Mac's Session data");
         }
-        var channel = parseEnvelopeChannel(envelope.ch);
+        // `sender` is the one clear envelope field excluded from the signature. Select the key
+        // from the persisted machine binding, verify/decrypt the channel, and only then accept
+        // that clear sender spelling as the owner of the authenticated route.
+        if (pairing && pairing.senderID !== envelope.sender) {
+            throw cloudError("unknown_sender",
+                "the authenticated machine channel does not match its paired sender");
+        }
+        // Pre-scoping browsers know the sender pin and account key but not which machine owns
+        // them. The signed channel and successful decrypt are the only safe migration witness:
+        // never persist a route from the clear sender/header before both checks have passed.
+        if (routedMachine && !pairing) {
+            var migrated = this.bindLegacyMachine
+                ? await this.bindLegacyMachine(routedMachine, envelope.sender, envelope.key_id)
+                : { machineID: routedMachine, senderID: envelope.sender, keyID: this.keyID,
+                    masterKey: await this._masterKey(this.keyID), senderKey: key, legacy: true };
+            if (!migrated || migrated.machineID !== routedMachine ||
+                migrated.senderID !== envelope.sender || !migrated.masterKey || !migrated.senderKey) {
+                throw cloudError("machine_key_incomplete",
+                    "the legacy machine pairing could not be persisted");
+            }
+            this.machinePairings.set(routedMachine, migrated);
+        }
         var previous = this.sequenceBySender.get(envelope.sender);
         if (realign) {
             var realignKey = envelope.sender + "\n" + envelope.ch;
@@ -1603,13 +1678,15 @@ export class CloudClient {
      * Checked before anything tries to open the envelope, because a mismatch is exactly the case
      * where opening it fails and nothing else gets to say why.
      */
-    _compareKeyID(envelope) {
+    _compareKeyID(envelope, routedMachine, expectedKeyID) {
         if (!envelope || typeof envelope.key_id !== "string" || !envelope.key_id) return;
-        var machine;
-        try { machine = decodedChannelSegment(parseEnvelopeChannel(envelope.ch).machine); }
-        catch (e) { return; }
+        var machine = routedMachine;
+        if (!machine) {
+            try { machine = decodedChannelSegment(parseEnvelopeChannel(envelope.ch).machine); }
+            catch (e) { return; }
+        }
         if (!machine) return;
-        this.trail.sawKeyID(machine, this.keyID, envelope.key_id);
+        this.trail.sawKeyID(machine, expectedKeyID || this.keyID, envelope.key_id);
     }
 
     /**
@@ -2081,6 +2158,7 @@ export class CloudClient {
         if (!this.allowWrites) throw cloudError("cloud_read_only", "cloud writes are disabled");
         if (!this.ready) throw this.closedFailure || cloudError("offline", "the cloud connection is not ready");
         if (!this.devicePrivateKey || !this.deviceID) throw cloudError("missing_device_key", "the viewer device key is unavailable");
+        var machinePairing = await this._outboundMachinePairing(machine);
         var sequence = await this.nextSequence(this.deviceID);
         if (!Number.isSafeInteger(sequence) || sequence < 0) {
             throw cloudError("bad_sequence", "nextSequence() did not return a non-negative safe integer");
@@ -2090,10 +2168,10 @@ export class CloudClient {
             seq: sequence,
             ts: Date.now(),
             class: envelopeClass,
-            key_id: this.keyID,
+            key_id: machinePairing.keyID,
             sender: this.deviceID
         }, JSON.stringify(Object.assign({ type: type }, body)),
-        await this._masterKey(this.keyID), this.devicePrivateKey);
+        machinePairing.masterKey, this.devicePrivateKey);
         var ref = { sender: this.deviceID, seq: sequence,
             request: body && typeof body.request === "string" ? body.request : null };
         if (pending) {

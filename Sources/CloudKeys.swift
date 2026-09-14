@@ -698,6 +698,161 @@ public struct CloudKeys: Sendable {
 
 // MARK: - Cross-platform executor identity authority (W5-2)
 
+/// Headless machine owner for the deployed console's invitation protocol.
+///
+/// It prepares the exact encrypted grant through `CloudExecutorIdentityAuthority`, writes it to
+/// Cloud, and pins the viewer only after Cloud echoes the expected fingerprint. The invitation
+/// secret is held only in this actor and the one URL explicitly returned to the operator.
+public actor CloudCompatibilityPairingMachineHandover {
+    private struct Session: Sendable {
+        let invitation: CloudPairingInvitation
+        let accountID: String
+        let machineID: String
+        let machineFingerprint: String
+    }
+
+    private struct PreparedDelivery: Sendable {
+        let pairingID: String
+        let claimNonce: String
+        let viewerDeviceID: String
+        let viewerFingerprint: String
+        let blob: CloudOpaquePairingBlob
+    }
+
+    private let client: any CloudCompatibilityPairingClient
+    private let authority: CloudExecutorIdentityAuthority
+    private let nowMilliseconds: @Sendable () -> Int64
+    private let randomBytes: @Sendable (Int) -> Data
+    private var session: Session?
+    private var preparedDelivery: PreparedDelivery?
+
+    public init(
+        client: any CloudCompatibilityPairingClient,
+        authority: CloudExecutorIdentityAuthority,
+        nowMilliseconds: @escaping @Sendable () -> Int64,
+        randomBytes: @escaping @Sendable (Int) -> Data = { count in
+            var generator = SystemRandomNumberGenerator()
+            return Data((0..<count).map {
+                _ in UInt8.random(in: .min ... .max, using: &generator)
+            })
+        }
+    ) {
+        self.client = client
+        self.authority = authority
+        self.nowMilliseconds = nowMilliseconds
+        self.randomBytes = randomBytes
+    }
+
+    public func begin() async throws -> CloudCompatibilityPairingStart {
+        guard session == nil else { throw CloudExecutorIdentityError.pairingClaimed }
+        let snapshot = try authority.snapshot()
+        let secret = randomBytes(CloudPairingInvitation.secretBytes)
+        guard secret.count == CloudPairingInvitation.secretBytes else {
+            throw CloudExecutorIdentityError.protectedStateCorrupt
+        }
+        let started = try await client.startPairingInvitation(
+            secretHash: Data(SHA256.hash(data: secret)))
+        let expiresAt = Int64(started.expiresAt.timeIntervalSince1970 * 1_000)
+        let invitation = try CloudPairingInvitation(
+            invitationID: started.invitationID, secret: secret,
+            expiresAtMilliseconds: expiresAt)
+        guard expiresAt > nowMilliseconds(),
+              expiresAt - nowMilliseconds() <= 600_000,
+              let url = invitation.qrURL() else {
+            throw CloudHandoverError.malformedInvitation
+        }
+        session = Session(
+            invitation: invitation, accountID: snapshot.accountID,
+            machineID: snapshot.machineID, machineFingerprint: snapshot.machineFingerprint)
+        return CloudCompatibilityPairingStart(
+            verificationURL: url, accountID: snapshot.accountID,
+            machineID: snapshot.machineID, machineFingerprint: snapshot.machineFingerprint,
+            expiresAtMilliseconds: expiresAt)
+    }
+
+    public func advance() async throws -> CloudCompatibilityPairingProgress {
+        guard let session else { throw CloudExecutorIdentityError.pairingNotPrepared }
+        guard session.invitation.expiresAtMilliseconds >= nowMilliseconds() else {
+            self.session = nil
+            preparedDelivery = nil
+            throw CloudHandoverError.invitationExpired
+        }
+        if let preparedDelivery {
+            return try await deliver(preparedDelivery, for: session)
+        }
+        switch try await client.pollPairingInvitation(
+            invitationID: session.invitation.invitationID) {
+        case .pending:
+            return .waiting
+        case .ready(let accountID, let viewerDeviceID, let machineID, let encryptedOffer):
+            guard accountID == session.accountID, machineID == session.machineID else {
+                throw CloudExecutorIdentityError.identityMismatch
+            }
+            let offerFragment = try session.invitation.openEncryptedOffer(
+                encryptedOffer, nowMilliseconds: nowMilliseconds())
+            let decoded = try CloudCompatibilityPairing.validatedOfferBytes(
+                offerFragment, nowMilliseconds: nowMilliseconds())
+            // The API route is authenticated, but its clear viewer id is still untrusted input.
+            // Reject it before `prepareHandover` durably reserves a claimant: otherwise a
+            // mismatched response can poison the protected pending slot until expiry.
+            guard decoded.offer.accountID == accountID,
+                  decoded.offer.viewerDeviceID == viewerDeviceID else {
+                throw CloudExecutorIdentityError.identityMismatch
+            }
+            let prepared = try authority.prepareHandover(
+                offerBytes: decoded.bytes, nowMilliseconds: nowMilliseconds())
+            guard prepared.viewerDeviceID == viewerDeviceID,
+                  prepared.viewerFingerprint == decoded.offer.viewerFingerprint else {
+                throw CloudExecutorIdentityError.identityMismatch
+            }
+            let resumable = PreparedDelivery(
+                pairingID: prepared.pairingID, claimNonce: decoded.offer.claimNonce,
+                viewerDeviceID: prepared.viewerDeviceID,
+                viewerFingerprint: prepared.viewerFingerprint,
+                blob: try CloudOpaquePairingBlob(
+                    base64: prepared.wrapperBytes.base64EncodedString()))
+            preparedDelivery = resumable
+            return try await deliver(resumable, for: session)
+        }
+    }
+
+    private func deliver(
+        _ prepared: PreparedDelivery, for session: Session
+    ) async throws -> CloudCompatibilityPairingProgress {
+        let delivery: CloudPairingDelivery
+        do {
+            delivery = try await client.completePairing(
+                pairingID: prepared.pairingID, blob: prepared.blob)
+        } catch {
+            // The POST may have reached Cloud even when its response did not reach this process.
+            // Keep the exact persisted wrapper and retry that identity; never poll a new offer or
+            // create a second invitation while delivery is ambiguous.
+            return .retrying(.deliveryUncertain)
+        }
+        guard delivery.fingerprint == prepared.viewerFingerprint else {
+            throw CloudExecutorIdentityError.identityMismatch
+        }
+        let snapshot: CloudExecutorIdentitySnapshot
+        do {
+            snapshot = try authority.commitPreparedHandover(
+                pairingID: prepared.pairingID, claimNonce: prepared.claimNonce,
+                deliveredFingerprint: delivery.fingerprint,
+                nowMilliseconds: nowMilliseconds())
+        } catch CloudExecutorIdentityError.protectedStateUnavailable {
+            // Cloud has the wrapper but the local atomic rotation did not commit. Retaining the
+            // same prepared bytes lets the next bounded attempt reconcile both sides.
+            return .retrying(.localCommitPending)
+        }
+        self.session = nil
+        preparedDelivery = nil
+        return .complete(CloudCompatibilityPairingReceipt(
+            accountID: snapshot.accountID, machineID: snapshot.machineID,
+            viewerDeviceID: prepared.viewerDeviceID,
+            viewerFingerprint: prepared.viewerFingerprint,
+            machineFingerprint: session.machineFingerprint))
+    }
+}
+
 public enum CloudExecutorIdentityError: Error, LocalizedError, Equatable {
     case protectedStateMissing
     case protectedStateUnavailable

@@ -259,6 +259,43 @@ sudo -u clawdline /opt/clawdline/current/bin/clawdline-daemon-wrapper \
 After the invitation is approved, start the two installed services. Do not reinstall to change the
 gate, and do not edit the durable identity store, writer locks, spool, or Session rows by hand.
 
+### Headless browser pairing compatibility command
+
+The packaged Linux binary also exposes the deployed console's current invitation protocol without
+requiring a desktop UI:
+
+```sh
+sudo systemctl stop clawdline-daemon.service
+sudo -u clawdline /opt/clawdline/current/bin/clawdline-daemon-wrapper \
+  pair-browser --config /etc/clawdline/daemon.json
+sudo systemctl start clawdline-daemon.service
+```
+
+The command refuses to run while the daemon owns the durable writer locks. It prints one structured
+`browser_pairing_required` record containing an `https://app.clawdline.com/#pair=...` URL, polls
+only until that invitation's bounded expiry, then prints a secret-free
+`browser_pairing_complete` receipt with exact account, machine, viewer, and fingerprints. Open the
+URL directly on the phone or browser being paired. Never redirect the first record to a log or
+artifact: its URL fragment is the one-time invitation secret. Receipts may retain the final record,
+but must not retain the invitation URL, browser storage, credentials, or Session content.
+
+Each Cloud attempt requests cooperative URLSession cancellation after 15 seconds. That is not a
+hard wall for an injected or substituted transport that ignores cancellation: in the worst case the
+command can finish as late as the invitation expiry plus one final request timeout. The command
+still refuses to start another invitation and permits at most three same-prepared-delivery recovery
+attempts after an uncertain Cloud response or local identity-store commit.
+
+This is explicitly a compatibility path for the deployed single-blob console. It is not evidence
+that the normative four-phase viewer has shipped. Multi-machine use is safe only when the same
+release also contains the per-machine browser-key migration: persisted keys must be scoped by the
+exact account, machine, and key id, and a legacy account-only key must not be copied to a second
+machine. The hosted console must initialize its Cloud client with both the machine-pairing resolver
+and the post-authentication legacy binder; a missing or incomplete exact machine binding must return
+`machine_pairing_required` or `machine_key_incomplete` before any read or send. If it cannot prove
+that contract, it must fail closed before this command is offered. The command is a bounded
+installation primitive, and the accompanying per-machine-key console release is its rollout
+prerequisite.
+
 ```sh
 sudo systemctl daemon-reload
 sudo systemctl enable --now clawdline-tmux.service clawdline-daemon.service

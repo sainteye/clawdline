@@ -113,6 +113,9 @@ export function cloudSessionAccessProblem(error) {
         "capability_denied"].indexOf(code) >= 0) return "permission";
     if (["unknown_key", "unknown_sender", "extractable_key",
         "unreadable_envelope"].indexOf(code) >= 0) return "encryption";
+    if (["machine_pairing_required", "machine_key_incomplete"].indexOf(code) >= 0) {
+        return "machine_pairing";
+    }
     return null;
 }
 
@@ -121,10 +124,15 @@ export function showCloudSessionAccessProblem(kind) {
     if (!cloudDoor()) return;
     hideCloudControls();
     var permission = kind === "permission";
-    byId("cloud-door-lede").textContent = permission
-        ? "This browser cannot read Sessions"
-        : "This browser cannot decrypt Sessions";
-    byId("cloud-door-guide").textContent = permission
+    var machinePairing = kind === "machine_pairing";
+    byId("cloud-door-lede").textContent = machinePairing
+        ? "Pair this browser with the selected machine"
+        : permission ? "This browser cannot read Sessions"
+            : "This browser cannot decrypt Sessions";
+    byId("cloud-door-guide").textContent = machinePairing
+        ? "Cloud is connected, but this browser's pairing for the selected machine is missing or incomplete. "
+            + "Start the Pair a Browser flow on that machine, then open its invitation here."
+        : permission
         ? "Cloud accepted the connection, but this browser does not have Session read permission. "
             + "On the Mac, choose Pair a Browser to review and grant access."
         : "Cloud accepted the connection, but this browser's encryption keys no longer match the Mac. "

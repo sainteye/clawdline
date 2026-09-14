@@ -7,6 +7,7 @@ enum LinuxCompositionError: Error, Equatable {
     case secret(String)
     case runtime(LinuxRuntimeFailure)
     case cloudEnrollment(String)
+    case cloudPairing(String)
     case internalFailure
 
     var code: String {
@@ -16,13 +17,15 @@ enum LinuxCompositionError: Error, Equatable {
         case .secret: return "invalid_secret_file"
         case .runtime(let failure): return failure.code.rawValue
         case .cloudEnrollment: return "cloud_enrollment_failed"
+        case .cloudPairing: return "cloud_pairing_failed"
         case .internalFailure: return "internal_failure"
         }
     }
 
     var message: String {
         switch self {
-        case .badArguments(let message), .configuration(let message), .secret(let message):
+        case .badArguments(let message), .configuration(let message), .secret(let message),
+             .cloudPairing(let message):
             return message
         case .runtime(let failure): return failure.message
         case .cloudEnrollment(let message): return message
@@ -469,6 +472,208 @@ struct LinuxCloudLoginReceipt: Codable, Equatable {
     let protectedIdentity: Bool
 }
 
+struct LinuxBrowserPairingInvitation: Codable, Equatable {
+    let event: String
+    let verificationURL: String
+    let accountID: String
+    let machineID: String
+    let machineFingerprint: String
+    let expiresAtMilliseconds: Int64
+}
+
+struct LinuxBrowserPairingReceipt: Codable, Equatable {
+    let event: String
+    let status: String
+    let accountID: String
+    let machineID: String
+    let viewerDeviceID: String
+    let viewerFingerprint: String
+    let machineFingerprint: String
+    let protectedIdentity: Bool
+}
+
+/// Runs the deployed-console compatibility pairing flow without a GUI. The invitation URL is
+/// emitted once to the invoking terminal and is never written to the daemon log or a receipt.
+/// Polling is bounded by the invitation expiry, a fixed maximum number of attempts and three
+/// same-prepared-delivery recovery attempts. Request cancellation is cooperative, as URLSession's
+/// async transport is; a noncooperative injected dependency can finish after its nominal timeout.
+enum LinuxBrowserPairing {
+    static let pollIntervalNanoseconds: UInt64 = 1_500_000_000
+    static let requestTimeoutNanoseconds: UInt64 = 15_000_000_000
+    static let maximumLifetimeMilliseconds: Int64 = 600_000
+    static let maximumPollAttempts = 401
+    static let maximumRecoveryAttempts = 3
+
+    typealias Begin = @Sendable () async throws -> CloudCompatibilityPairingStart
+    typealias Advance = @Sendable () async throws -> CloudCompatibilityPairingProgress
+    typealias Sleep = @Sendable (UInt64) async throws -> Void
+
+    static func execute(
+        configuration: LinuxDaemonConfiguration,
+        emit: @escaping @Sendable (Data) -> Void
+    ) async throws -> Data {
+        do {
+            let runtimeConfiguration = configuration.runtime
+            let layout = try LinuxRuntimeLayout.prepare(
+                stateDirectory: configuration.stateDirectory,
+                runtimeDirectory: configuration.runtimeDirectory,
+                expectedUID: runtimeConfiguration?.uid,
+                expectedGID: runtimeConfiguration?.gid)
+            let secretRoot = CanonicalProjectRoot(
+                path: layout.secrets, ownerUID: layout.uid, ownerGID: layout.gid)
+            // Opening the durable runtime takes its writer locks. A running daemon therefore
+            // refuses this command before either process can mutate the protected identity.
+            let runtime = try LinuxDurableCloudRuntime(
+                stateDirectory: layout.state, expectedUID: layout.uid,
+                secrets: LinuxProtectedFileSecretStore(root: secretRoot))
+            guard case .enrolled = try runtime.enrollmentState() else {
+                throw LinuxCompositionError.cloudPairing(
+                    "This machine must finish cloud-login before pairing a browser.")
+            }
+            let handover = CloudCompatibilityPairingMachineHandover(
+                client: runtime.accountClient, authority: runtime.identityAuthority,
+                nowMilliseconds: { Int64(Date().timeIntervalSince1970 * 1_000) })
+            return try await execute(
+                emit: emit,
+                nowMilliseconds: { Int64(Date().timeIntervalSince1970 * 1_000) },
+                sleep: { try await Task.sleep(nanoseconds: $0) },
+                requestTimeoutNanoseconds: requestTimeoutNanoseconds,
+                begin: { try await handover.begin() },
+                advance: { try await handover.advance() })
+        } catch let error as LinuxCompositionError {
+            throw error
+        } catch let error as LinuxRuntimeFailure {
+            throw LinuxCompositionError.runtime(error)
+        } catch let error as CloudDurableStoreFailure {
+            throw pairingError(for: error)
+        } catch let error as LocalizedError {
+            throw LinuxCompositionError.cloudPairing(
+                error.errorDescription ?? "Browser pairing failed.")
+        } catch {
+            throw LinuxCompositionError.cloudPairing("Browser pairing failed.")
+        }
+    }
+
+    static func pairingError(for failure: CloudDurableStoreFailure) -> LinuxCompositionError {
+        switch failure {
+        case .writerLockHeld:
+            return .cloudPairing(
+                "Browser pairing needs exclusive durable state. Stop clawdline-daemon, retry "
+                    + "pair-browser, then start the daemon again.")
+        default:
+            return .cloudPairing("Cloud durable pairing state was refused: \(failure).")
+        }
+    }
+
+    static func execute(
+        emit: @escaping @Sendable (Data) -> Void,
+        nowMilliseconds: @escaping @Sendable () -> Int64,
+        sleep: @escaping Sleep,
+        requestTimeoutNanoseconds: UInt64 = requestTimeoutNanoseconds,
+        begin: @escaping Begin,
+        advance: @escaping Advance
+    ) async throws -> Data {
+        let started: CloudCompatibilityPairingStart
+        do {
+            started = try await request(
+                timeoutNanoseconds: requestTimeoutNanoseconds, operation: begin)
+        } catch is RequestTimeout {
+            throw LinuxCompositionError.cloudPairing(
+                "Cloud pairing start did not cooperatively finish within its request timeout.")
+        }
+        let now = nowMilliseconds()
+        guard started.expiresAtMilliseconds > now,
+              started.expiresAtMilliseconds - now <= maximumLifetimeMilliseconds,
+              started.verificationURL.scheme == "https",
+              started.verificationURL.host == "app.clawdline.com",
+              started.verificationURL.query == nil,
+              started.verificationURL.fragment?.hasPrefix("pair=") == true else {
+            throw LinuxCompositionError.cloudPairing(
+                "Cloud returned an unsafe browser-pairing invitation.")
+        }
+        emit(try LinuxComposition.encode(LinuxBrowserPairingInvitation(
+            event: "browser_pairing_required",
+            verificationURL: started.verificationURL.absoluteString,
+            accountID: started.accountID, machineID: started.machineID,
+            machineFingerprint: started.machineFingerprint,
+            expiresAtMilliseconds: started.expiresAtMilliseconds)))
+
+        var recoveryAttempts = 0
+        for attempt in 0..<maximumPollAttempts {
+            guard nowMilliseconds() < started.expiresAtMilliseconds else {
+                throw LinuxCompositionError.cloudPairing(
+                    "Browser pairing expired before the viewer completed it.")
+            }
+            let progress: CloudCompatibilityPairingProgress
+            do {
+                progress = try await request(
+                    timeoutNanoseconds: requestTimeoutNanoseconds, operation: advance)
+            } catch is RequestTimeout {
+                recoveryAttempts += 1
+                guard recoveryAttempts <= maximumRecoveryAttempts else {
+                    throw LinuxCompositionError.cloudPairing(
+                        "Cloud pairing could not reconcile an uncertain request after three attempts.")
+                }
+                try await sleep(pollIntervalNanoseconds)
+                continue
+            }
+            switch progress {
+            case .waiting:
+                recoveryAttempts = 0
+                guard attempt + 1 < maximumPollAttempts,
+                      nowMilliseconds() < started.expiresAtMilliseconds else {
+                    throw LinuxCompositionError.cloudPairing(
+                        "Browser pairing expired before the viewer completed it.")
+                }
+                try await sleep(pollIntervalNanoseconds)
+            case .retrying:
+                recoveryAttempts += 1
+                guard recoveryAttempts <= maximumRecoveryAttempts else {
+                    throw LinuxCompositionError.cloudPairing(
+                        "Cloud pairing could not reconcile its prepared handover after three attempts.")
+                }
+                try await sleep(pollIntervalNanoseconds)
+            case .complete(let receipt):
+                guard receipt.accountID == started.accountID,
+                      receipt.machineID == started.machineID,
+                      receipt.machineFingerprint == started.machineFingerprint else {
+                    throw LinuxCompositionError.cloudPairing(
+                        "Browser pairing completed for a different protected machine identity.")
+                }
+                return try LinuxComposition.encode(LinuxBrowserPairingReceipt(
+                    event: "browser_pairing_complete", status: "paired",
+                    accountID: receipt.accountID, machineID: receipt.machineID,
+                    viewerDeviceID: receipt.viewerDeviceID,
+                    viewerFingerprint: receipt.viewerFingerprint,
+                    machineFingerprint: receipt.machineFingerprint,
+                    protectedIdentity: true))
+            }
+        }
+        throw LinuxCompositionError.cloudPairing(
+            "Browser pairing exceeded its bounded polling window.")
+    }
+
+    private enum RequestTimeout: Error { case elapsed }
+
+    private static func request<Value: Sendable>(
+        timeoutNanoseconds: UInt64,
+        operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        try await withThrowingTaskGroup(of: Value.self) { group in
+            defer { group.cancelAll() }
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(nanoseconds: timeoutNanoseconds)
+                throw RequestTimeout.elapsed
+            }
+            guard let first = try await group.next() else {
+                throw RequestTimeout.elapsed
+            }
+            return first
+        }
+    }
+}
+
 enum LinuxCloudEnrollmentOutcome: Equatable {
     case accessDenied
     case expired
@@ -603,12 +808,13 @@ enum LinuxCompositionCommand: Equatable {
     case run(String)
     case daemon(String)
     case cloudLogin(String)
+    case pairBrowser(String)
 
     static func parse(_ arguments: [String]) throws -> LinuxCompositionCommand {
         if arguments == ["health"] { return .health }
         if arguments == ["release-contract"] { return .releaseContract }
         guard arguments.count == 3, arguments[1] == "--config" else {
-            throw LinuxCompositionError.badArguments("usage: ClawdlineLinux release-contract | health [--config /absolute/path] | check-config --config /absolute/path | cloud-login --config /absolute/path | run --config /absolute/path | daemon --config /absolute/path")
+            throw LinuxCompositionError.badArguments("usage: ClawdlineLinux release-contract | health [--config /absolute/path] | check-config --config /absolute/path | cloud-login --config /absolute/path | pair-browser --config /absolute/path | run --config /absolute/path | daemon --config /absolute/path")
         }
         switch arguments[0] {
         case "health": return .configuredHealth(arguments[2])
@@ -616,6 +822,7 @@ enum LinuxCompositionCommand: Equatable {
         case "run": return .run(arguments[2])
         case "daemon": return .daemon(arguments[2])
         case "cloud-login": return .cloudLogin(arguments[2])
+        case "pair-browser": return .pairBrowser(arguments[2])
         default: throw LinuxCompositionError.badArguments("unknown command \(arguments[0])")
         }
     }
@@ -629,6 +836,10 @@ enum LinuxComposition {
         if case .cloudLogin(let path) = command {
             let config = try LinuxDaemonConfiguration.load(from: path)
             return try await LinuxCloudEnrollment.execute(configuration: config, emit: emit)
+        }
+        if case .pairBrowser(let path) = command {
+            let config = try LinuxDaemonConfiguration.load(from: path)
+            return try await LinuxBrowserPairing.execute(configuration: config, emit: emit)
         }
         return try execute(command: command)
     }
@@ -674,7 +885,7 @@ enum LinuxComposition {
             } catch let failure as LinuxDurableStateFailure {
                 throw LinuxCompositionError.configuration("\(failure.code): \(failure.message)")
             }
-        case .cloudLogin:
+        case .cloudLogin, .pairBrowser:
             throw LinuxCompositionError.internalFailure
         }
     }
