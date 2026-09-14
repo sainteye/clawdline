@@ -41,6 +41,14 @@ def fail(message):
     raise SystemExit("linux-package-helper: " + message)
 
 
+def canonical_boolean(value):
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    raise argparse.ArgumentTypeError("must be exactly 'true' or 'false'")
+
+
 def crash_at(point):
     if os.environ.get("CLAWDLINE_TRANSITION_CRASH_AT") == point:
         os._exit(99)
@@ -722,8 +730,7 @@ def parser():
     state.add_argument("--template", required=True)
     state.add_argument("--uid", required=True, type=int)
     state.add_argument("--gid", required=True, type=int)
-    state.add_argument("--cloud-commands-enabled", choices=("true", "false"), default="false",
-                       type=lambda value: value == "true")
+    state.add_argument("--cloud-commands-enabled", default=False, type=canonical_boolean)
     state.set_defaults(function=command_prepare_state)
     sync = commands.add_parser("fsync-tree")
     sync.add_argument("--path", required=True)

@@ -136,11 +136,41 @@ check(/testRealTmuxProviderLifecycleOnLinux/.test(linuxTests)
   'the Linux SwiftPM target must keep real lifecycle and containment mutation contracts');
 const explicitCloudGate = /"cloudCommandsEnabled":@CLOUD_COMMANDS_ENABLED@/.test(daemonTemplate)
   && /--cloud-commands-enabled/.test(packageHelper)
-  && /default="false"/.test(packageHelper)
+  && /default=False/.test(packageHelper)
+  && /type=canonical_boolean/.test(packageHelper)
   && /configured is not args\.cloud_commands_enabled/.test(packageHelper)
   && /--cloud-commands-enabled "\$cloud_commands_enabled"/.test(packageTool);
 check(explicitCloudGate,
   'the signed daemon template must carry an explicit closed cloud write gate');
+const gateRoot = mkdtempSync(join(tmpdir(), 'clawdline-package-gate-'));
+try {
+  const prepared = spawnSync('python3', [
+    join(root, 'tools/linux-package-helper.py'), 'prepare-state',
+    '--install-root', gateRoot,
+    '--template', join(root, 'Packaging/linux/daemon.json.in'),
+    '--uid', String(process.getuid()),
+    '--gid', String(process.getgid()),
+    '--cloud-commands-enabled', 'false'
+  ], { encoding: 'utf8' });
+  check(prepared.status === 0,
+    `the package helper must accept the explicit false write gate: ${prepared.stderr}`);
+  const preparedConfig = JSON.parse(readFileSync(join(gateRoot, 'etc/clawdline/daemon.json'), 'utf8'));
+  check(preparedConfig.runtime.cloudCommandsEnabled === false,
+    'the package helper must preserve the explicit false write gate as a JSON boolean');
+  const invalid = spawnSync('python3', [
+    join(root, 'tools/linux-package-helper.py'), 'prepare-state',
+    '--install-root', `${gateRoot}-invalid`,
+    '--template', join(root, 'Packaging/linux/daemon.json.in'),
+    '--uid', String(process.getuid()),
+    '--gid', String(process.getgid()),
+    '--cloud-commands-enabled', 'False'
+  ], { encoding: 'utf8' });
+  check(invalid.status !== 0,
+    'the package helper must reject noncanonical write-gate spellings');
+} finally {
+  rmSync(gateRoot, { recursive: true, force: true });
+  rmSync(`${gateRoot}-invalid`, { recursive: true, force: true });
+}
 check(!/"cloudCommandsEnabled":true/.test(daemonTemplate),
   'the package template must never default hosted writes open');
 check(!/"cloudCommandsEnabled":@CLOUD_COMMANDS_ENABLED@/.test(
