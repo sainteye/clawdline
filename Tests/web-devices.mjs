@@ -94,4 +94,38 @@ await (async function () {
     });
 })();
 
+await (async function () {
+    const doc = new FakeDocument();
+    const ids = ["devices-title", "devices-lede", "devices-close", "devices-status",
+        "devices-empty", "devices-rows"];
+    const elements = Object.fromEntries(ids.map((id) => [id, new FakeNode(doc)]));
+    let listener = null;
+    let answer = { machines: [{
+        id: "mac_80857bb3-d7fc-4345-8165-58d7e38e32bf",
+        label: "mac_80857bb3-d7fc-4345-8165-58d7e38e32bf",
+        freshness: "current", pairing: "paired", sessions: 11, selectable: true
+    }] };
+    const page = bindDevicesPage(elements, {
+        machines: () => Promise.resolve(answer),
+        events: (fn) => { listener = fn; return () => { listener = null; }; }
+    });
+    page.enter();
+    await new Promise((done) => setImmediate(done));
+    await new Promise((done) => setImmediate(done));
+    assert.equal(elements["devices-rows"].textContent.includes("Mac · Sean MacBook Pro"), false);
+    answer = { machines: [{
+        id: "mac_80857bb3-d7fc-4345-8165-58d7e38e32bf",
+        label: "Mac · Sean MacBook Pro", freshness: "current",
+        pairing: "paired", sessions: 11, selectable: true
+    }] };
+    listener({ type: "orchestrator" });
+    await new Promise((done) => setImmediate(done));
+    await new Promise((done) => setImmediate(done));
+    check("a descriptor arriving after Session rows redraws the open Devices page", function () {
+        assert.equal(elements["devices-rows"].textContent.includes("Mac · Sean MacBook Pro"), true);
+    });
+    page.leave();
+    assert.equal(listener, null);
+})();
+
 console.log(`\n${checks} web device checks passed`);

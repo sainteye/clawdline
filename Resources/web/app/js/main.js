@@ -485,6 +485,9 @@ var devices = bindDevicesPage({
     "devices-rows": byId("devices-rows")
 }, {
     machines: function () { return api.machines(); },
+    events: function (listener) {
+        return api && typeof api.events === "function" ? api.events(listener) : function () {};
+    },
     start: function (machine) { Pages.go("sessions"); Start.open(machine); }
 });
 var documents = bindDocumentsPage({

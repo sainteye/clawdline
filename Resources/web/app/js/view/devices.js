@@ -39,6 +39,7 @@ export function deviceViewModel(machine, copy) {
 export function bindDevicesPage(elements, environment) {
     environment = environment || {};
     var generation = 0;
+    var stopEvents = null;
 
     function node(id) { return elements[id] || null; }
     function text(id, value) { var el = node(id); if (el) el.textContent = value || ""; }
@@ -107,8 +108,20 @@ export function bindDevicesPage(elements, environment) {
     }
 
     return {
-        enter: function () { labels(); load(); },
-        leave: function () { generation += 1; },
+        enter: function () {
+            labels();
+            if (!stopEvents && typeof environment.events === "function") {
+                stopEvents = environment.events(function (event) {
+                    if (event && (event.type === "orchestrator" || event.type === "sessions")) load();
+                });
+            }
+            load();
+        },
+        leave: function () {
+            generation += 1;
+            if (typeof stopEvents === "function") stopEvents();
+            stopEvents = null;
+        },
         load: load
     };
 }
