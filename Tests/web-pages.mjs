@@ -253,7 +253,7 @@ const registered = [...(registryBlock ? registryBlock[1] : "").matchAll(/name:\s
 check(registered.length >= 3,
       `the registry names at least the three pages of this slice: ${JSON.stringify(registered)}`);
 equal(registered[0], "sessions", "home is first, because that is how Pages decides which one it is");
-for (const name of ["usage", "settings"]) {
+for (const name of ["devices", "usage", "settings"]) {
     check(registered.includes(name), `${name} is a registered page`);
 }
 
@@ -284,10 +284,14 @@ check(/id="usage-open"[^>]*data-page-to="usage"/.test(drawer),
       "Usage is reached from the drawer now, not from a button at the bottom of the settings sheet");
 check(/id="nav-settings"[^>]*data-page-to="settings"/.test(drawer), "and so is Settings");
 check(/id="nav-sessions"[^>]*data-page-to="sessions"/.test(drawer), "and the way back to the list");
+check(/id="nav-devices"[^>]*data-page-to="devices"/.test(drawer),
+      "the fleet has a first-class Devices destination instead of exposing ids only in the start sheet");
 check(/id="brand"[\s\S]{0,400}?aria-controls="sidebar"/.test(page),
       "the wordmark says in the markup what it opens");
 check(/id="brand"[\s\S]{0,400}?aria-expanded="false"/.test(page),
       "and that it is closed to begin with");
+check(/id="devices"[^>]*data-page-view="devices"/.test(page),
+      "the Devices destination has a registered page surface");
 
 /* Found in a browser and nowhere else, which is why it is written down here.
    The sheets in this app close on a tap outside by putting `stopPropagation` on the sheet, and

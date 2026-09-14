@@ -85,6 +85,7 @@ export function paintStatic() {
     attr(els.brand, "title", T.webMenu);
     attr(els.sidebar, "aria-label", T.webPages);
     text(els["nav-sessions"], T.webSessions);
+    text(els["nav-devices"], T.webDevices);
     text(els["usage-open"], T.webUsage);
     text(els["nav-settings"], T.webSettings);
     // The Plan page's row. The page's own furniture is painted by `view/plan.js` on arrival

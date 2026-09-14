@@ -38,9 +38,11 @@ export function machinePresentation(value, copy) {
     var info = value.machineInfo || value.machine_info || value.machineDescriptor || {};
     var id = nonempty(value.machine) || nonempty(value.id) ||
         nonempty(value.identity && value.identity.machine) || "unknown-machine";
-    var name = displayName(value.machineName) || displayName(value.machine_name) || displayName(value.name) ||
-        displayName(info.name) || (id === LOCAL_SESSION_MACHINE
-            ? displayName(copy && copy.webMachineThisMac) : displayName(id)) ||
+    var named = displayName(value.machineName) || displayName(value.machine_name) ||
+        displayName(value.name) || displayName(info.name);
+    var name = named || (id === LOCAL_SESSION_MACHINE
+        ? displayName(copy && copy.webMachineThisMac)
+        : (displayName(copy && copy.webStartMachine) || "Machine") + " · " + machineShortID(id)) ||
         "unknown-machine";
     var platform = normalized(value.machinePlatform) || normalized(value.machine_platform) ||
         normalized(value.platform) || normalized(info.platform) ||

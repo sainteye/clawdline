@@ -1216,8 +1216,9 @@ export class CloudClient {
         var now = Date.now();
         var rows = this._knownMachines().map(function (id) {
             var snapshot = this.orchestratorSnapshots.get(id) || {};
+            var remembered = this.machineDescriptors.get(id);
             var descriptor = snapshot.machine && typeof snapshot.machine === "object"
-                ? snapshot.machine : {};
+                ? snapshot.machine : remembered && remembered.machine || {};
             var presentation = machinePresentation({ id: id, machineName: descriptor.name,
                 machinePlatform: descriptor.platform, cloudProvider: descriptor.provider }, T);
             var snapshotAt = Number.isFinite(snapshot.at) && snapshot.at > 0
@@ -1228,8 +1229,16 @@ export class CloudClient {
             }, null);
             var autoSelectable = observedAt !== null &&
                 Math.abs(now - observedAt) <= MACHINE_INVENTORY_FRESH_MS;
+            var pairing = this.viewerVerified.has(id) || this.pairingSeen.has(id) ? "paired"
+                : this.unpairedMachines.has(id) || this.pairingLookups.get(id) === false
+                    ? "not_paired" : "unknown";
+            var sessions = 0;
+            this.sessionSnapshots.forEach(function (session) {
+                if (session && session.machine === id) sessions += 1;
+            });
             return Object.freeze(Object.assign({}, presentation, { observedAt: observedAt,
                 freshness: autoSelectable ? "current" : observedAt ? "stale" : "unknown",
+                pairing: pairing, sessions: sessions,
                 // Being named by an authenticated channel is enough to issue a manual bounded
                 // places probe.  It is not enough to silently choose this route for the user.
                 selectable: true, autoSelectable: autoSelectable }));
@@ -1454,6 +1463,10 @@ export class CloudClient {
             var app = payload && payload.app;
             var build = app && typeof app.build === "string" ? app.build.slice(0, 64)
                 : app && Number.isFinite(app.build) ? String(app.build) : null;
+            var previous = this.machineDescriptors.get(machine);
+            if (!Object.keys(kept).length && previous && previous.machine) kept = previous.machine;
+            if (!build && previous) build = previous.build;
+            if (!Object.keys(kept).length && !build) return;
             this.machineDescriptors.delete(machine);
             this.machineDescriptors.set(machine, { machine: kept, build: build, at_ms: this.viewerEvents.now() });
             if (this.machineDescriptors.size > 16) {

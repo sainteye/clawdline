@@ -152,6 +152,7 @@ document.documentElement.className = "booting";
      say some of the same things; the Usage sheet is the older and more particular of the two, so
      it goes last and wins where they overlap. -->
 <link rel="stylesheet" href="/app/css/pages.css">
+<link rel="stylesheet" href="/app/css/devices.css">
 <link rel="stylesheet" href="/app/css/projects.css">
 <link rel="stylesheet" href="/app/css/worktrees.css">
 <link rel="stylesheet" href="/app/css/usage.css">
@@ -198,6 +199,7 @@ document.documentElement.className = "booting";
 <nav class="sidebar" id="sidebar" hidden aria-label="Pages">
     <div class="sidebar-panel" id="sidebar-panel">
         <button class="sidebar-item" id="nav-sessions" type="button" data-page-to="sessions">Sessions</button>
+        <button class="sidebar-item" id="nav-devices" type="button" data-page-to="devices">Devices</button>
         <!-- Between Sessions and Usage, because it is a way *into* the sessions rather than a
              reading about them. Three things and no new mechanism, exactly as `docs/web-pages.md`
              says: the section below, the line in `main.js`'s registry, and this row. -->
@@ -889,6 +891,22 @@ document.documentElement.className = "booting";
         </div>
         <div class="foot"><span id="settings-version"></span></div>
         <button class="chip wide" id="settings-close" type="button" data-page-to="sessions">Close</button>
+    </div>
+</section>
+
+<section class="page devices" id="devices" data-page-view="devices"
+         aria-labelledby="devices-title" hidden>
+    <div class="devices-shell">
+        <div class="devices-heading">
+            <div>
+                <h1 id="devices-title" tabindex="-1">Devices</h1>
+                <p class="devices-lede" id="devices-lede">The machines this account can open Sessions on.</p>
+            </div>
+            <button class="devices-close" id="devices-close" type="button" data-page-to="sessions">Sessions</button>
+        </div>
+        <p class="devices-status" id="devices-status" role="status" aria-live="polite"></p>
+        <p class="devices-empty" id="devices-empty" hidden></p>
+        <div class="devices-rows" id="devices-rows"></div>
     </div>
 </section>
 

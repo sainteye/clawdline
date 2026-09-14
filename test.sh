@@ -453,6 +453,7 @@ browser_contract_suites=(
   Tests/web-detached-attach.mjs
   Tests/web-terminal.mjs
   Tests/web-pages.mjs
+  Tests/web-devices.mjs
   Tests/web-projects.mjs
   Tests/web-documents.mjs
 )

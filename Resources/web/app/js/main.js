@@ -55,6 +55,7 @@ import { BoardControls } from "./input/board-settings.js";
 import { bindUsagePortfolio } from "./view/usage.js";
 import { bindPlanPage } from "./view/plan.js";
 import { bindDocumentsPage } from "./view/documents.js";
+import { bindDevicesPage } from "./view/devices.js";
 import {
     CANONICAL_DOCUMENT_ORIGIN, documentIdentityForSession, documentLocatorFromHash
 } from "./net/document-links.js";
@@ -477,6 +478,15 @@ Diagnostics.bind({ state: S, elements: els, transport: function () { return api;
 // makes the preload URL and the runtime request one identity, while these literal lookups keep the
 // DOM contract visible to the permanent repository guard.
 var byId = function (id) { return document.getElementById(id); };
+var devices = bindDevicesPage({
+    "devices": byId("devices"), "devices-title": byId("devices-title"),
+    "devices-lede": byId("devices-lede"), "devices-close": byId("devices-close"),
+    "devices-status": byId("devices-status"), "devices-empty": byId("devices-empty"),
+    "devices-rows": byId("devices-rows")
+}, {
+    machines: function () { return api.machines(); },
+    start: function (machine) { Pages.go("sessions"); Start.open(machine); }
+});
 var documents = bindDocumentsPage({
     page: byId("documents-page"), title: byId("documents-title"),
     back: byId("documents-back"), listBack: byId("document-list-back"),
@@ -821,6 +831,8 @@ Pages.bind({
     focusFallback: "brand",
     pages: [
         { name: "sessions", element: byId("app") },
+        { name: "devices", element: byId("devices"), focus: "devices-title",
+          enter: function () { devices.enter(); }, leave: function () { devices.leave(); } },
         { name: "documents", element: byId("documents-page"), focus: "documents-title",
           enter: function () { documents.enter(); }, leave: function () { documents.leave(); } },
         { name: "board", element: byId("board"), focus: "board-title",

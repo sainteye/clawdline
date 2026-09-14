@@ -1022,6 +1022,14 @@ protocol Copy {
     var webMachineMac: String { get }
     var webMachineLinux: String { get }
     var webMachineLinuxAWS: String { get }
+    var webDevices: String { get }
+    var webDevicesLede: String { get }
+    var webDeviceOnline: String { get }
+    var webDevicePaired: String { get }
+    var webDeviceNotPaired: String { get }
+    var webDevicePairingUnknown: String { get }
+    var webDevicePairHelp: String { get }
+    var webDeviceNewSession: String { get }
     /// Which assistant a press should open. Only ever on screen when the Mac has more than
     /// one of them installed, which is what makes it a question worth asking.
     var webStartWith: String { get }
@@ -1925,6 +1933,17 @@ extension Copy {
     /// Languages that do not inflect this sentence may keep their established form twice.
     var closeabilityBlockedOne: String { closeabilityBlocked }
     var closeabilityBlockedMany: String { closeabilityBlocked }
+
+    // Device management is fully useful in every locale through explicit, readable English
+    // until each translation lands. Traditional and Simplified Chinese override it below.
+    var webDevices: String { "Devices" }
+    var webDevicesLede: String { "Machines connected to this account, their status, and whether this browser can read them." }
+    var webDeviceOnline: String { "Online" }
+    var webDevicePaired: String { "Paired in this browser" }
+    var webDeviceNotPaired: String { "Not paired in this browser" }
+    var webDevicePairingUnknown: String { "Pairing status unknown" }
+    var webDevicePairHelp: String { "Start Pair a Browser on this machine to let this browser read its Sessions." }
+    var webDeviceNewSession: String { "New Session" }
 
     // The 45 keys between these markers are the explicit temporarily-English Cloud batch.
     // Traditional Chinese overrides all 45; the other locales intentionally inherit these

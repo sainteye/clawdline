@@ -280,6 +280,24 @@ await check("transport: machine choice scopes the Project read and the eventual 
     await startsOn(client, socket, listed.places[0].id, "linux-aws-02", "after machine selection");
 });
 
+await check("transport: retained machine descriptors survive a later sparse snapshot", async function () {
+    const client = cloudClient();
+    await ready(client);
+    const machine = "mac_261c5bd4-2dde-47b4-a580-face51463f04";
+    client._rememberDescriptor(machine, { machine: {
+        name: "Clawdline Linux on AWS", platform: "linux", provider: "aws"
+    } });
+    client._rememberDescriptor(machine, { tasks: [] });
+    client.orchestratorSnapshots.set(machine, { tasks: [], at: Date.now() / 1000 });
+    client.viewerVerified.set(machine, { sender: "linux-sender", at_ms: Date.now() });
+    const machines = await client.machines();
+    assert.equal(machines.machines[0].label,
+        "Linux / AWS · Clawdline Linux on AWS",
+        "a task-only refresh cannot turn the chooser back into an opaque UUID");
+    assert.equal(machines.machines[0].pairing, "paired",
+        "the fleet row distinguishes this browser's pairing from machine liveness");
+});
+
 await check("(a) transport: a re-read in flight keeps the routes", async function () {
     const { client, socket, ids } = await listedClient(["mac-01"]);
     client.places().catch(function () { });

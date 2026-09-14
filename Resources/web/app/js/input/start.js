@@ -68,6 +68,7 @@ export var Start = (function () {
     var machines = null; // authenticated machine routes; null until this opening reads them
     var machine = null;  // exact route selected before its Projects are read
     var machineExplicit = false; // a stale route may be probed only after the person presses it
+    var preferredMachineID = null; // a Devices card may name the route before this sheet reads it
     var machineLoading = false;
     var machineGeneration = 0;
     var placesGeneration = 0;
@@ -653,12 +654,16 @@ export var Start = (function () {
         asked(function () { return api.machines(); }).then(function (answer) {
             if (generation !== machineGeneration) return;
             machines = (answer && Array.isArray(answer.machines)) ? answer.machines : [];
+            var preferred = preferredMachineID && machines.find(function (candidate) {
+                return candidate.id === preferredMachineID && candidate.selectable === true;
+            });
+            preferredMachineID = null;
             var retained = previousMachine && machines.find(function (candidate) {
                 return candidate.id === previousMachine.id && candidate.selectable === true &&
                     (candidate.autoSelectable === true || previousExplicit);
             });
-            machine = retained || null;
-            machineExplicit = !!retained && previousExplicit;
+            machine = preferred || retained || null;
+            machineExplicit = !!preferred || (!!retained && previousExplicit);
             var current = machines.filter(function (candidate) {
                 return candidate.autoSelectable === true;
             });
@@ -910,7 +915,8 @@ export var Start = (function () {
         setBandSpin(null);
     }
 
-    function open() {
+    function open(machineID) {
+        preferredMachineID = typeof machineID === "string" && machineID ? machineID : null;
         assignmentState.open();
         els.start.hidden = false;
         said("");
