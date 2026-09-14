@@ -84,6 +84,7 @@ check("the push harness replaced every import", !/^import /m.test(pushStandalone
 
 {
   let registerCalls = 0;
+  const registerRequests = [];
   let subscriptions = 0;
   let settingsOpened = 0;
   const stages = [];
@@ -107,12 +108,14 @@ check("the push harness replaced every import", !/^import /m.test(pushStandalone
       isSecureContext: true,
       PushManager: function () {},
       matchMedia: () => ({ matches: true }),
+      __clawdlineCloud: { build: "b0123456789abcdef01234567" },
     },
     navigator: {
       platform: "iPhone", maxTouchPoints: 5,
       serviceWorker: {
-        register: () => {
+        register: (url, options) => {
           registerCalls += 1;
+          registerRequests.push({ url, options });
           return registerCalls === 1
             ? Promise.reject(new Error("boot reconnect"))
             : Promise.resolve(registrationAfterPress);
@@ -149,11 +152,24 @@ check("the push harness replaced every import", !/^import /m.test(pushStandalone
     Buffer.from(pushStandalone).toString("base64"));
   pushModule.Push.start();
   await new Promise((done) => setTimeout(done, 0));
+  check("opening the installed PWA initiates its build-pinned worker update without a press",
+        registerRequests.length === 1
+        && registerRequests[0].url === "/sw.js?build=b0123456789abcdef01234567"
+        && registerRequests[0].options.updateViaCache === "none");
   pushModule.Push.toggle();
   await new Promise((done) => setTimeout(done, 0));
   await new Promise((done) => setTimeout(done, 0));
   check("after a boot registration failure, one press retries registration and subscribes",
         registerCalls === 2 && subscriptions === 1 && settingsOpened === 1);
+  check("the hosted PWA pins every registration to its immutable build and bypasses HTTP cache",
+        registerRequests.length === 2
+        && registerRequests.every((request) =>
+          request.url === "/sw.js?build=b0123456789abcdef01234567"
+          && request.options && request.options.updateViaCache === "none"));
+  check("a local page keeps the unversioned worker route",
+        pushModule.serviceWorkerScriptURL({}) === "/sw.js");
+  check("an invalid hosted build cannot become part of a worker URL",
+        pushModule.serviceWorkerScriptURL({ __clawdlineCloud: { build: "../../old" } }) === "/sw.js");
   check("the repaired press settles instead of leaving the button on Asking…",
         elements["notify-go"].disabled === false
         && elements["notify-go-label"].textContent !== "Asking…");
@@ -174,8 +190,8 @@ check("the router answers GET /sw.js exactly once",
 check("and it answers it with RemotePage.serviceWorker(), which is called nowhere else",
       occurrences(server, "RemotePage.serviceWorker()") === 1
       && /case \("GET", "\/sw\.js"\):\s*\n\s*return RemotePage\.serviceWorker\(\)/.test(server));
-check("the page registers that exact path once",
-      occurrences(registration, 'navigator.serviceWorker.register("/sw.js")') === 1);
+check("the page registers one worker URL through the build-aware helper",
+      occurrences(registration, "navigator.serviceWorker.register(serviceWorkerScriptURL(window)") === 1);
 check("RemotePage declares that handler exactly once", occurrences(page, SIGNATURE) === 1);
 if (occurrences(page, SIGNATURE) !== 1) stop("cannot find the handler this suite is about");
 

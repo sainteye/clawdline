@@ -9,6 +9,18 @@ import { Diagnostics } from "../core/layout-diagnostics.js";
 /* ---- notifications ------------------------------------------------------- */
 
 /**
+ * Cloudflare may apply a browser-cache rule to the custom domain after the Pages `_headers`
+ * file has said `no-cache`. Name the hosted worker with the immutable app build as well as asking
+ * the browser to bypass its HTTP cache, so opening the installed PWA can update through either
+ * policy. The Mac-served page has no hosted build declaration and keeps the stable local route.
+ */
+export function serviceWorkerScriptURL(scope) {
+    var build = scope && scope.__clawdlineCloud && scope.__clawdlineCloud.build;
+    return typeof build === "string" && /^b[0-9a-f]{24}$/.test(build)
+        ? "/sw.js?build=" + encodeURIComponent(build) : "/sw.js";
+}
+
+/**
  * Web Push: the phone buzzes when a session is waiting for an answer.
  *
  * Four things can be true here and only one of them is "on", so the footer says which. A button
@@ -141,7 +153,9 @@ export var Push = (function () {
     function ensureRegistration() {
         if (registration && registration.active) return Promise.resolve(registration);
         return timed("worker.register", WORKER_READY_TIMEOUT_MS, function () {
-            return navigator.serviceWorker.register("/sw.js");
+            return navigator.serviceWorker.register(serviceWorkerScriptURL(window), {
+                updateViaCache: "none"
+            });
         }).then(function (r) {
             registration = r;
             if (r.active) return r;
