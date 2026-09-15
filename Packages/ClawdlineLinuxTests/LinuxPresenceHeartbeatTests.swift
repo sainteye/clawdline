@@ -73,6 +73,13 @@ private final class HeartbeatLifecycle: LinuxLifecyclePerforming {
     func close(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt {
         throw LinuxDurableStateFailure(code: "unused", message: "unused")
     }
+
+
+    func cloudSessionIdentity(sessionID _: String) throws -> LinuxCloudSessionIdentity {
+        throw LinuxDurableStateFailure(
+            code: "session_identity_incomplete",
+            message: "Presence heartbeat tests expose no Session process identity.")
+    }
 }
 
 private final class HeartbeatTransport: CloudTransporting, @unchecked Sendable {

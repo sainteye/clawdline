@@ -86,15 +86,25 @@ private final class TestMemorySecretStore: SecretStore, @unchecked Sendable {
 private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
     private let callsLock = NSLock()
     private var storedCalls: [String] = []
+    private var storedInfoSession: TargetSession?
+    private var storedIncarnation = "incarnation-a"
     var calls: [String] { callsLock.lock(); defer { callsLock.unlock() }; return storedCalls }
     var sessionID = "%durable"
+
+    func setInfoSession(_ session: TargetSession?, incarnation: String = "incarnation-a") {
+        callsLock.lock()
+        storedInfoSession = session
+        storedIncarnation = incarnation
+        callsLock.unlock()
+    }
 
     private func record(_ call: String) {
         callsLock.lock(); storedCalls.append(call); callsLock.unlock()
     }
 
     private func receipt(commandID: String, operation: TerminalEffectOperation,
-                         channel: String, sessionID: String?, observed: Bool) throws
+                         channel: String, sessionID: String?, observed: Bool,
+                         terminalIncarnation: String? = nil) throws
         -> LinuxLifecycleReceipt {
         var progress = TerminalEffectProgress(commandID: commandID,
                                               operation: operation, channel: channel)
@@ -103,7 +113,8 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
         if observed { try progress.advance(to: .observed) }
         return LinuxLifecycleReceipt(progress: progress, sessionID: sessionID,
                                      tty: "/dev/pts/42", attachCommand: nil,
-                                     output: operation == .observe ? "screen" : nil)
+                                     output: operation == .observe ? "screen" : nil,
+                                     terminalIncarnation: terminalIncarnation)
     }
 
     func create(commandID: String, projectRoot: String, assistant: Assistant,
@@ -112,7 +123,8 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
         -> LinuxLifecycleReceipt {
         record("create:\(commandID):\(assistant.rawValue):\(model ?? "")")
         return try receipt(commandID: commandID, operation: .create,
-                           channel: projectRoot, sessionID: sessionID, observed: true)
+                           channel: projectRoot, sessionID: sessionID, observed: true,
+                           terminalIncarnation: "incarnation-a")
     }
 
     func send(commandID: String, sessionID: String, text: String) throws
@@ -126,6 +138,17 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
         record("observe:\(commandID)")
         return try receipt(commandID: commandID, operation: .observe,
                            channel: sessionID, sessionID: sessionID, observed: true)
+    }
+
+    func cloudSessionIdentity(sessionID: String) throws -> LinuxCloudSessionIdentity {
+        callsLock.lock()
+        defer { callsLock.unlock() }
+        guard let session = storedInfoSession, session.id == sessionID else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The test Session process identity is incomplete.")
+        }
+        return LinuxCloudSessionIdentity(session: session, incarnation: storedIncarnation)
     }
 
     func close(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt {
@@ -1512,16 +1535,28 @@ final class LinuxRuntimeContractTests: XCTestCase {
         ingress.completeStartup(try LinuxStartupReconciler.reconcile(
             store: ingressStore, inventory: .complete([])))
         _ = try ingress.perform(LinuxIngressRequest(
-            operation: .create, commandID: "seed-session", taskID: "browser-session-task",
-            projectRoot: project.path, assistant: .codex))
+            operation: .taskCreate, commandID: "seed-session", taskID: "browser-session-task",
+            projectRoot: project.path, assistant: .codex, taskSecret: "task-secret",
+            title: "AWS Codex acceptance", claims: []))
         let gate = LockedBool(true)
+        let ownedRow = TargetSession(
+            backend: .tmux, id: lifecycle.sessionID, name: "AWS Codex acceptance",
+            tty: "/dev/pts/42", windowIndex: 0, tabIndex: 0,
+            assistant: .codex, cwd: project.path)
+        let unownedRow = TargetSession(
+            backend: .tmux, id: "%unowned", name: "Unowned terminal",
+            tty: "/dev/pts/43", windowIndex: 0, tabIndex: 1,
+            assistant: .codex, cwd: project.path)
+        let terminalInventory = LockedTerminalInventory(
+            TerminalInventory(sessions: [ownedRow, unownedRow]))
+        lifecycle.setInfoSession(ownedRow)
         let relay = LinuxRelayRuntimeOwner(
             machine: CloudMachineIdentity(accountID: identity.accountID,
                                           machineID: identity.machineID),
             identityAuthority: authority, transport: transport, outbound: outbound,
             ingress: ingress, commandsEnabled: { gate.get() },
             places: [LinuxRelayPlace(id: "reaver", label: "reaver", path: project.path)],
-            inventory: { TerminalInventory(sessions: []) })
+            inventory: { terminalInventory.get() })
         try await relay.start()
 
         var acknowledged = 0
@@ -1541,20 +1576,24 @@ final class LinuxRuntimeContractTests: XCTestCase {
             acknowledged = decoded.count
             return decoded.map { (frame: $0.0, clear: $0.1) }
         }
-        func reply(named read: String) async throws -> (frame: CloudPublishFrame, clear: [String: Any])? {
+        func reply(named read: String, after baseline: Int = 0) async throws
+            -> (frame: CloudPublishFrame, clear: [String: Any])? {
             for _ in 0..<200 {
-                if let found = try frames().first(where: { $0.clear["read"] as? String == read }) { return found }
+                if let found = try frames().dropFirst(baseline).first(where: {
+                    $0.clear["read"] as? String == read
+                }) { return found }
                 try await Task.sleep(nanoseconds: 5_000_000)
             }
             return nil
         }
         var sequence: UInt64 = 20
-        func send(_ body: [String: Any], channel: String = "ctl/machine-linux") throws {
+        func send(_ body: [String: Any], channel: String = "ctl/machine-linux",
+                  sender: String = "viewer-linux") throws {
             sequence += 1
             XCTAssertTrue(transport.deliver(CloudInboundCommand(
                 channel: channel, sequence: sequence,
                 timestamp: UInt64(Date().timeIntervalSince1970 * 1_000),
-                sender: "viewer-linux", plaintext: try JSONSerialization.data(withJSONObject: body))))
+                sender: sender, plaintext: try JSONSerialization.data(withJSONObject: body))))
         }
 
         var descriptor: [String: Any]?
@@ -1565,7 +1604,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         }
         XCTAssertEqual(descriptor?["platform"] as? String, "linux")
         XCTAssertEqual(descriptor?["commands"] as? [String],
-                       ["places", "screen", "send", "start", "transcript"],
+                       ["info", "places", "screen", "send", "start", "transcript"],
                        "the descriptor advertises exactly the words the adapter implements")
 
         let durableBeforeReads = try XCTUnwrap(ingressStore.load().state)
@@ -1586,8 +1625,122 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let screen = try XCTUnwrap(screenReply)
         XCTAssertEqual((((screen.clear["body"] as? [String: Any])?["screen"]
             as? [String: Any])?["text"] as? String), "screen")
+
+        try send(["type": "info", "session": lifecycle.sessionID, "parts": "full"])
+        let infoFullReply = try await reply(named: "info.full")
+        let infoFull = try XCTUnwrap(infoFullReply)
+        XCTAssertEqual(infoFull.frame.envelope.ch, "t/machine-linux/%25durable")
+        let infoEnvelope = try XCTUnwrap(infoFull.clear["body"] as? [String: Any])
+        let info = try XCTUnwrap(infoEnvelope["info"] as? [String: Any])
+        let infoSession = try XCTUnwrap(info["session"] as? [String: Any])
+        XCTAssertEqual(infoSession["id"] as? String, lifecycle.sessionID)
+        XCTAssertEqual(infoSession["title"] as? String, "AWS Codex acceptance")
+        XCTAssertEqual(infoSession["assistant"] as? String, "codex")
+        XCTAssertEqual(infoSession["cwd"] as? String, project.path)
+        XCTAssertEqual(((info["limits"] as? [String: Any])?["windows"] as? [Any])?.count, 0)
+        XCTAssertEqual((info["models"] as? [Any])?.count, 0)
+        XCTAssertEqual((info["deploy"] as? [Any])?.count, 0)
+        XCTAssertEqual((info["links"] as? [Any])?.count, 0)
+        XCTAssertNil(info["taskID"], "read-only Info never exposes durable task authority")
+        XCTAssertNil(infoSession["tty"], "read-only Info never exposes a terminal device path")
+
+        let beforeOutsideCWD = try frames().count
+        lifecycle.setInfoSession(TargetSession(
+            backend: .tmux, id: lifecycle.sessionID, name: "AWS Codex acceptance",
+            tty: "/dev/pts/42", windowIndex: 0, tabIndex: 0,
+            assistant: .codex, cwd: scratch.appendingPathComponent("outside").path))
+        try send(["type": "info", "session": lifecycle.sessionID, "parts": "full"])
+        let outsideCWDReply = try await reply(named: "info.full", after: beforeOutsideCWD)
+        let outsideCWDEnvelope = try XCTUnwrap(outsideCWDReply?.clear["body"] as? [String: Any])
+        let outsideCWDInfo = try XCTUnwrap(outsideCWDEnvelope["info"] as? [String: Any])
+        XCTAssertNil((outsideCWDInfo["session"] as? [String: Any])?["cwd"],
+                     "a current cwd outside the published allowlist never crosses Cloud")
+        lifecycle.setInfoSession(ownedRow)
+
+        try send(["type": "info", "session": lifecycle.sessionID, "parts": "summary"])
+        let infoSummaryReply = try await reply(named: "info.summary")
+        let infoSummary = try XCTUnwrap(infoSummaryReply)
+        let summaryEnvelope = try XCTUnwrap(infoSummary.clear["body"] as? [String: Any])
+        let summary = try XCTUnwrap(summaryEnvelope["info"] as? [String: Any])
+        XCTAssertEqual((summary["session"] as? [String: Any])?["id"] as? String,
+                       lifecycle.sessionID)
+        XCTAssertNil(summary["links"], "summary omits deferred Linux facts")
+        XCTAssertNil(summary["deploy"], "summary omits deferred Linux facts")
+
+        lifecycle.setInfoSession(ownedRow, incarnation: "incarnation-reused-pane")
+        let beforeReusedInfo = try frames().count
+        try send(["type": "info", "session": lifecycle.sessionID, "parts": "summary"])
+        let reusedInfoReply = try await reply(named: "info.summary", after: beforeReusedInfo)
+        let reusedInfo = try XCTUnwrap(reusedInfoReply)
+        XCTAssertEqual(reusedInfo.clear["status"] as? Int, 503)
+        XCTAssertEqual((reusedInfo.clear["error"] as? [String: Any])?["code"] as? String,
+                       "session_identity_incomplete",
+                       "a reused tmux pane id cannot inherit the prior task's read authority")
+        XCTAssertNil(reusedInfo.clear["body"])
+        lifecycle.setInfoSession(ownedRow)
+
+        var missingIncarnationState = durableBeforeReads
+        let createCommandIndex = try XCTUnwrap(missingIncarnationState.commands.firstIndex {
+            $0.id == "seed-session"
+        })
+        let createResponseData = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(
+            missingIncarnationState.commands[createCommandIndex].responseBase64)))
+        var createResponse = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: createResponseData) as? [String: Any])
+        var createReceipt = try XCTUnwrap(createResponse["receipt"] as? [String: Any])
+        createReceipt.removeValue(forKey: "terminalIncarnation")
+        createResponse["receipt"] = createReceipt
+        let missingIncarnationResponse = try JSONSerialization.data(
+            withJSONObject: createResponse, options: [.sortedKeys])
+        missingIncarnationState.commands[createCommandIndex].responseBase64 =
+            missingIncarnationResponse.base64EncodedString()
+        missingIncarnationState.commands[createCommandIndex].evidenceDigest =
+            LinuxSHA256.hex(missingIncarnationResponse)
+        try ingressStore.save(missingIncarnationState)
+        let beforeMissingIncarnationInfo = try frames().count
+        try send(["type": "info", "session": lifecycle.sessionID, "parts": "summary"])
+        let missingIncarnationReply = try await reply(
+            named: "info.summary", after: beforeMissingIncarnationInfo)
+        let missingIncarnation = try XCTUnwrap(missingIncarnationReply)
+        XCTAssertEqual(missingIncarnation.clear["status"] as? Int, 503)
+        XCTAssertEqual((missingIncarnation.clear["error"] as? [String: Any])?["code"] as? String,
+                       "session_identity_incomplete",
+                       "a true legacy receipt without incarnation evidence remains unreadable")
+        XCTAssertNil(missingIncarnation.clear["body"])
+        try ingressStore.save(durableBeforeReads)
+
+        let beforeUnownedInfo = try frames().count
+        try send(["type": "info", "session": "%unowned", "parts": "full"])
+        let unownedInfoReply = try await reply(named: "info.full", after: beforeUnownedInfo)
+        let unownedInfo = try XCTUnwrap(unownedInfoReply)
+        XCTAssertEqual(unownedInfo.clear["status"] as? Int, 404)
+        XCTAssertEqual((unownedInfo.clear["error"] as? [String: Any])?["code"] as? String,
+                       "session_not_found",
+                       "an inventory row without exact durable task ownership is not readable")
+        XCTAssertNil(unownedInfo.clear["body"])
+
+        let beforeMalformedInfo = try frames().count
+        try send(["type": "info", "session": lifecycle.sessionID,
+                  "parts": "full", "unexpected": true])
+        let malformedInfoReply = try await reply(named: "info.full", after: beforeMalformedInfo)
+        let malformedInfo = try XCTUnwrap(malformedInfoReply)
+        XCTAssertEqual(malformedInfo.clear["status"] as? Int, 400)
+        XCTAssertEqual((malformedInfo.clear["error"] as? [String: Any])?["code"] as? String,
+                       "malformed_read")
+        XCTAssertNil(malformedInfo.clear["body"])
+
+        let beforeUnpairedInfo = try frames().count
+        try send(["type": "info", "session": lifecycle.sessionID, "parts": "full"],
+                 sender: "viewer-unpaired")
+        let unpairedInfoReply = try await reply(named: "info.full", after: beforeUnpairedInfo)
+        let unpairedInfo = try XCTUnwrap(unpairedInfoReply)
+        XCTAssertEqual(unpairedInfo.clear["status"] as? Int, 403)
+        XCTAssertEqual((unpairedInfo.clear["error"] as? [String: Any])?["code"] as? String,
+                       "cloud_read_refused")
+        XCTAssertNil(unpairedInfo.clear["body"])
+
         XCTAssertEqual(try XCTUnwrap(ingressStore.load().state), durableBeforeReads,
-                       "screen and transcript are read-level and append no durable command rows")
+                       "screen, transcript and Info are read-level and append no durable command rows")
 
         try send([
             "type": "send", "session": lifecycle.sessionID, "request": "send-disabled",
@@ -1619,6 +1772,9 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let sentReply = try await reply(named: "action:send-1")
         let sent = try XCTUnwrap(sentReply)
         XCTAssertEqual((sent.clear["body"] as? [String: Any])?["ok"] as? Bool, true)
+        XCTAssertEqual((sent.clear["body"] as? [String: Any])?["optimistic_settlement"] as? String,
+                       "action_receipt",
+                       "Linux terminal projection settles pending UI on the exact action receipt")
         XCTAssertTrue(lifecycle.calls.contains(where: { $0.hasSuffix(":hello from phone") }),
                       "the authenticated browser prompt reaches the exact Linux Session")
         let sentCallCount = lifecycle.calls.filter { $0.hasSuffix(":hello from phone") }.count
@@ -1660,6 +1816,18 @@ final class LinuxRuntimeContractTests: XCTestCase {
                        "a body that names no well-formed machine request is answered by nobody")
         XCTAssertEqual(lifecycle.calls, lifecycleCallsAfterSupportedCommands,
                        "no refusal reached a lifecycle effect")
+
+        let snapshotBeforeRevocation = try authority.snapshot()
+        _ = try authority.revokeDevice(
+            "viewer-linux", expectedGeneration: snapshotBeforeRevocation.identityGeneration)
+        let beforeRevokedInfo = try frames().count
+        try send(["type": "info", "session": lifecycle.sessionID, "parts": "summary"])
+        let revokedInfoReply = try await reply(named: "info.summary", after: beforeRevokedInfo)
+        let revokedInfo = try XCTUnwrap(revokedInfoReply)
+        XCTAssertEqual(revokedInfo.clear["status"] as? Int, 403)
+        XCTAssertEqual((revokedInfo.clear["error"] as? [String: Any])?["code"] as? String,
+                       "cloud_read_refused")
+        XCTAssertNil(revokedInfo.clear["body"])
         await relay.stop()
     }
 

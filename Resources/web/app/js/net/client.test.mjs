@@ -22,6 +22,7 @@ const {
     sealEnvelope,
     verifyEnvelope
 } = await import("./cloud-crypto.js");
+const { acceptOptimisticReceipt } = await import("../view/optimistic-data.js");
 
 const vectors = JSON.parse(await readFile(
     new URL("../../../../../Tests/protocol-vectors.json", import.meta.url), "utf8"));
@@ -1646,6 +1647,53 @@ assert.deepEqual(sentPromptAnswer.optimisticIdentity,
     "the accepted receipt keeps the exact Mac and Session used for optimistic reconciliation");
 assert.equal(sentPromptAnswer.optimisticRequest, controlRequest.request,
     "the accepted receipt keeps the request identity that makes a replay one pending turn");
+
+const beforeLinuxPrompt = publishedReads(controlSocket).length;
+const linuxPrompt = controlCloud.send(
+    { machine: "mac-01", session: "session-01" }, "AWS-BROWSER-OK", []);
+await until(function () {
+    return publishedReads(controlSocket).length === beforeLinuxPrompt + 1;
+}, "the Linux terminal-screen prompt to leave");
+const linuxRequest = await requestBody(publishedReads(controlSocket)[beforeLinuxPrompt]);
+await answerRead(controlCloud, controlSocket, {
+    read: "action:" + linuxRequest.request, status: 200, body: {
+        ok: true, accepted_at: 1789444896123, at: 1789444896123,
+        optimistic_settlement: "action_receipt"
+    }
+});
+const linuxPromptAnswer = await linuxPrompt;
+assert.deepEqual({
+    identity: linuxPromptAnswer.optimisticIdentity,
+    request: linuxPromptAnswer.optimisticRequest,
+    settlement: linuxPromptAnswer.optimistic_settlement
+}, {
+    identity: { machine: "mac-01", session: "session-01" },
+    request: linuxRequest.request, settlement: "action_receipt"
+}, "the Linux settlement stays attached to its exact action reply identity");
+const linuxTranscript = controlCloud.transcript(
+    { machine: "mac-01", session: "session-01" });
+await until(function () {
+    return publishedReads(controlSocket).length === beforeLinuxPrompt + 2;
+}, "the Linux terminal-screen transcript read to leave");
+await answerRead(controlCloud, controlSocket, {
+    read: "transcript", status: 200, body: {
+        entries: [{ role: "assistant", text: "AWS-BROWSER-OK" }],
+        signature: "linux-terminal-screen-signature"
+    }
+});
+const linuxTranscriptAnswer = await linuxTranscript;
+assert.deepEqual(linuxTranscriptAnswer.entries,
+    [{ role: "assistant", text: "AWS-BROWSER-OK" }],
+    "the real Linux transcript contract is one assistant terminal-screen row");
+const linuxReceiptKey = linuxPromptAnswer.optimisticIdentity.machine + "\u0000" +
+    linuxPromptAnswer.optimisticIdentity.session + "\u0000" + linuxPromptAnswer.optimisticRequest;
+const linuxAdmission = acceptOptimisticReceipt([], {
+    role: "user", text: "AWS-BROWSER-OK", receiptKey: linuxReceiptKey
+}, linuxPromptAnswer.optimistic_settlement);
+assert.equal(linuxAdmission.settled, true,
+    "the end-to-end correlated action receipt does not wait for an impossible user row");
+assert.deepEqual(linuxAdmission.entries, [],
+    "the assistant-only Linux transcript receives no duplicate optimistic bubble");
 
 const beforeReordered = publishedReads(controlSocket).length;
 const reorderedFirst = controlCloud.send("session-01", "first accepted prompt", []);

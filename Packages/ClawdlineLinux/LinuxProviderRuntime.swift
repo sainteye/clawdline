@@ -7,6 +7,20 @@ struct LinuxLifecycleReceipt: Codable, Equatable {
     let tty: String?
     let attachCommand: String?
     let output: String?
+    /// A non-reusable identity for the exact provider process behind a tmux pane. It is present
+    /// only on create receipts; later read-only metadata checks compare a fresh process identity
+    /// with this durably retained value before trusting a reusable `%N` pane id.
+    let terminalIncarnation: String?
+
+    init(progress: TerminalEffectProgress, sessionID: String?, tty: String?,
+         attachCommand: String?, output: String?, terminalIncarnation: String? = nil) {
+        self.progress = progress
+        self.sessionID = sessionID
+        self.tty = tty
+        self.attachCommand = attachCommand
+        self.output = output
+        self.terminalIncarnation = terminalIncarnation
+    }
 }
 
 /// Typed failure receipt for a lifecycle that may have crossed a terminal effect boundary.
@@ -232,7 +246,10 @@ final class LinuxProviderRuntime {
             try progress.advance(to: .observed)
             return LinuxLifecycleReceipt(progress: progress, sessionID: created.id,
                                          tty: created.tty, attachCommand: created.attachCommand,
-                                         output: nil)
+                                         output: nil,
+                                         terminalIncarnation: Self.terminalIncarnation(
+                                            sessionID: created.id, tty: created.tty,
+                                            identity: created.processIdentity))
         }
     }
 
@@ -434,6 +451,35 @@ final class LinuxProviderRuntime {
                                       message: inventory.error ?? "The terminal inventory is incomplete.")
         }
         return inventory.sessions.first { $0.id == id }
+    }
+
+    func cloudSessionIdentity(sessionID: String) throws -> LinuxCloudSessionIdentity {
+        let session = try requiredSession(sessionID)
+        let observation = try process.observeAssistant(onTTY: session.tty)
+        guard observation.isComplete, observation.isPresent,
+              observation.assistant == session.assistant,
+              let incarnation = Self.terminalIncarnation(
+                sessionID: session.id, tty: session.tty,
+                identity: observation.processIdentity) else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The Linux Session process identity is temporarily incomplete.")
+        }
+        return LinuxCloudSessionIdentity(session: session, incarnation: incarnation)
+    }
+
+    private static func terminalIncarnation(
+        sessionID: String, tty: String?, identity: HostProcessIdentity?
+    ) -> String? {
+        guard let tty, let identity, let startToken = identity.startToken,
+              let processGroupID = identity.processGroupID,
+              let bootID = try? String(
+                contentsOfFile: "/proc/sys/kernel/random/boot_id", encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              UUID(uuidString: bootID) != nil else { return nil }
+        return LinuxSHA256.hex(Data(
+            [bootID, sessionID, tty, String(identity.pid), startToken,
+             String(processGroupID)].joined(separator: "\u{0}").utf8))
     }
 
     private func withReservation<T>(commandID: String, channel: String,

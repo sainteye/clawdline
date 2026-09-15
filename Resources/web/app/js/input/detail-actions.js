@@ -150,7 +150,8 @@ export var SessionActions = {
             Optimistic.add(key, action, 0, snapshot.known,
                 authoritativeSendTime(answer, snapshot.startedAt),
                 answer && answer.optimisticIdentity,
-                answer && answer.optimisticRequest);
+                answer && answer.optimisticRequest,
+                answer && answer.optimistic_settlement);
             followPendingTranscript(key);
             if ((SessionSelection.snapshot().open || {}).key === key && !S.agent) {
                 renderTranscript();

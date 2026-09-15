@@ -309,7 +309,7 @@ actor LinuxRelayRuntimeOwner {
     /// The machine-session words a browser may send this executor, and the only ones it answers
     /// with an effect. Published in the descriptor as `commands` so the hosted console can route
     /// by them; every other word is refused as `unknown_command` (`adaptBrowserCommand`).
-    static let browserCommandTypes = ["places", "screen", "send", "start", "transcript"]
+    static let browserCommandTypes = ["info", "places", "screen", "send", "start", "transcript"]
 
     private let machine: CloudMachineIdentity
     private let identityAuthority: CloudExecutorIdentityAuthority
@@ -598,6 +598,9 @@ actor LinuxRelayRuntimeOwner {
                 ]]
             }
             return
+        case .info(let sessionID, let parts):
+            await performBrowserInfo(sessionID: sessionID, parts: parts, sender: inbound.sender)
+            return
         case .send(let requestID, let sessionID, let text):
             await performBrowserSession(
                 requestID: requestID, sessionID: sessionID, operation: .send,
@@ -605,7 +608,8 @@ actor LinuxRelayRuntimeOwner {
                 readName: "action:" + requestID
             ) { _ in
                 let now = Int(Date().timeIntervalSince1970 * 1_000)
-                return ["ok": true, "accepted_at": now, "at": now]
+                return ["ok": true, "accepted_at": now, "at": now,
+                        "optimistic_settlement": "action_receipt"]
             }
             await publishInventory(inventory(), force: true)
             return
@@ -704,6 +708,56 @@ actor LinuxRelayRuntimeOwner {
         }
     }
 
+    /// Answer the hosted console's Info card without pretending the Linux daemon owns the Mac's
+    /// transcript-derived usage, provider quota, Git or deploy readers. Viewer membership is
+    /// checked first, then the durable task-terminal edge proves that an unrelated tmux pane in
+    /// the current inventory cannot be read by naming its id. The terminal inventory contributes
+    /// only display metadata already published in the Session row; cwd crosses only when it is an
+    /// exact configured place.
+    private func performBrowserInfo(sessionID: String, parts: String, sender: String) async {
+        let readName = "info." + parts
+        let channel = "t/" + channelSegment(machine.machineID) + "/" + channelSegment(sessionID)
+        do {
+            guard try isAuthorized(sender: sender, requiresWrite: false) else {
+                throw LinuxDurableStateFailure(
+                    code: "cloud_read_refused",
+                    message: "The paired viewer is not authorized to read this Session.")
+            }
+            let row = try ingress.infoForCloudSession(sessionID) {
+                try isAuthorized(sender: sender, requiresWrite: false)
+            }
+            var session: [String: Any] = ["id": row.id, "title": row.name]
+            if let assistant = row.assistant { session["assistant"] = assistant.rawValue }
+            if let cwd = row.cwd, places.contains(where: { $0.path == cwd }) {
+                session["cwd"] = cwd
+            }
+            var info: [String: Any] = [
+                "session": session,
+                "limits": ["windows": []],
+                "models": [],
+            ]
+            if parts == "full" {
+                info["deploy"] = []
+                info["links"] = []
+            }
+            try await outbound.enqueue(
+                try Self.json(["read": readName, "status": 200, "body": ["info": info]]),
+                channel: channel, logicalID: readName)
+        } catch let failure as LinuxDurableStateFailure {
+            try? await outbound.enqueue(
+                try refusalPayload(read: readName, status: Self.status(for: failure.code),
+                                   code: failure.code, message: failure.message),
+                channel: channel, logicalID: readName)
+            diagnostic("linux cloud: Session Info refused code=\(failure.code)")
+        } catch {
+            try? await outbound.enqueue(
+                try refusalPayload(read: readName, status: 500, code: "internal_failure",
+                                   message: "The Session Info could not be read."),
+                channel: channel, logicalID: readName)
+            diagnostic("linux cloud: Session Info failed before durable response")
+        }
+    }
+
     private func browserReadCommandID(_ inbound: CloudInboundCommand) -> String {
         LinuxSHA256.hex(Data(
             "browser-read:\(inbound.sender):\(inbound.channel):\(inbound.sequence)".utf8))
@@ -762,6 +816,7 @@ actor LinuxRelayRuntimeOwner {
         case start(String, LinuxIngressRequest)
         case transcript(String)
         case screen(String)
+        case info(String, String)
         case send(String, String, String)
         case native(LinuxIngressRequest)
     }
@@ -787,7 +842,7 @@ actor LinuxRelayRuntimeOwner {
                   let limit = body["limit"] as? Int, (1...200).contains(limit),
                   let priority = body["priority"] as? String,
                   ["foreground", "background"].contains(priority) else {
-                throw LinuxDurableStateFailure(code: "malformed_command",
+                throw LinuxDurableStateFailure(code: "malformed_read",
                                                message: "Transcript command is malformed.")
             }
             return .transcript(session)
@@ -799,6 +854,16 @@ actor LinuxRelayRuntimeOwner {
                                                message: "Screen command is malformed.")
             }
             return .screen(session)
+        }
+        if type == "info" {
+            guard Set(body.keys) == ["type", "session", "parts"],
+                  let session = body["session"] as? String, !session.isEmpty,
+                  let parts = body["parts"] as? String,
+                  parts == "full" || parts == "summary" else {
+                throw LinuxDurableStateFailure(code: "malformed_read",
+                                               message: "Info command is malformed.")
+            }
+            return .info(session, parts)
         }
         guard let request = body["request"] as? String,
               request.utf8.count > 0, request.utf8.count <= 128,
@@ -935,6 +1000,10 @@ actor LinuxRelayRuntimeOwner {
         if type == "transcript" || type == "screen" {
             return (type, type, channel)
         }
+        if type == "info", let parts = body["parts"] as? String,
+           parts == "full" || parts == "summary" {
+            return ("info." + parts, type, channel)
+        }
         guard let request = body["request"] as? String,
               SessionLaunchPolicy.opaqueCommandID(request) == request else { return nil }
         if session == "__clawdline_machine__" {
@@ -953,7 +1022,8 @@ actor LinuxRelayRuntimeOwner {
     private static func status(for code: String) -> Int {
         if code.contains("unauthorized") || code.contains("refused") { return 403 }
         if code.contains("not_found") { return 404 }
-        if code == "ingress_closed" { return 503 }
+        if code == "ingress_closed" || code == "inventory_incomplete"
+            || code == "session_identity_incomplete" { return 503 }
         return 400
     }
 

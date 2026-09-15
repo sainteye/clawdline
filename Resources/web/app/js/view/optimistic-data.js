@@ -24,11 +24,26 @@ export function optimisticExpired(entry, now) {
         observed > deadline;
 }
 
-/** Idempotently admit one successful transport receipt into a browser-local pending ledger. */
-export function acceptOptimisticReceipt(entries, candidate) {
+/**
+ * Idempotently admit one successful transport receipt into a browser-local pending ledger.
+ *
+ * A terminal-screen executor has no user-role transcript row to reconcile later. Its exact
+ * action reply may therefore close the pending state explicitly. The caller still has to prove
+ * machine, Session and request identity before it constructs `candidate`; missing and future
+ * modes deliberately keep the ordinary transcript-reconciliation path.
+ */
+export function acceptOptimisticReceipt(entries, candidate, settlement) {
     var held = Array.isArray(entries) ? entries : [];
     var key = candidate && candidate.receiptKey;
     if (!key) return { entries: held, entry: null, inserted: false };
+    if (settlement === "action_receipt") {
+        var kept = [], retired = [];
+        held.forEach(function (entry) {
+            if (entry && entry.receiptKey === key) retired.push(entry);
+            else kept.push(entry);
+        });
+        return { entries: kept, entry: null, inserted: false, settled: true, retired: retired };
+    }
     for (var i = 0; i < held.length; i++) {
         if (held[i] && held[i].receiptKey === key) {
             return { entries: held, entry: held[i], inserted: false };
@@ -97,10 +112,24 @@ export function reconcileOptimisticBeforeSignature(reconcile, id, received) {
     return reconcile(id, received);
 }
 
-/** Prefer the Mac's pre-handoff clock. Older servers fall back through their completion stamp. */
+/**
+ * Put action-receipt wall clocks in the transcript's epoch-seconds domain.
+ *
+ * The native Mac route publishes seconds while the Linux executor publishes milliseconds. The
+ * value only bounds an exact text/image reconciliation; leaving Linux milliseconds untouched
+ * puts the pending row tens of thousands of years after its authoritative transcript entry.
+ */
+function authoritativeEpochSeconds(value) {
+    var observed = Number(value);
+    if (!Number.isFinite(observed) || observed <= 0) return null;
+    if (observed >= 100_000_000_000) observed /= 1000;
+    return Math.floor(observed);
+}
+
+/** Prefer the machine's pre-handoff clock. Older servers fall back through their completion stamp. */
 export function authoritativeSendTime(answer, fallback) {
-    var accepted = Number(answer && answer.accepted_at);
-    if (Number.isFinite(accepted) && accepted > 0) return Math.floor(accepted);
-    var server = Number(answer && answer.at);
-    return Number.isFinite(server) && server > 0 ? Math.floor(server) : Math.floor(fallback);
+    var accepted = authoritativeEpochSeconds(answer && answer.accepted_at);
+    if (accepted !== null) return accepted;
+    var server = authoritativeEpochSeconds(answer && answer.at);
+    return server !== null ? server : Math.floor(fallback);
 }
