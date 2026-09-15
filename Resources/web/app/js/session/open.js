@@ -6,13 +6,16 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
 import { api } from "../net/api.js";
-import { byId, revisionOf } from "../view/derive.js";
+import { byId } from "../view/derive.js";
+import { whenVisible } from "../core/visibility.js";
 import { Optimistic, Waits } from "../view/waits.js";
 import {
     beginTranscriptLoad,
     createPendingTranscriptFollower,
+    createTranscriptRefetchPolicy,
     createTranscriptRequests,
-    createTranscriptRevisionObserver
+    createTranscriptRevisionObserver,
+    transcriptSignatureOf
 } from "./transcript-requests.js";
 import { reconcileOptimisticBeforeSignature } from "../view/optimistic-data.js";
 import { SessionSelection } from "./selection.js";
@@ -66,11 +69,50 @@ document.addEventListener("clawdline:meaningful-transcript-paint", function () {
 });
 
 var transcriptRevisions = createTranscriptRevisionObserver(function (id, revision, quiet, demand) {
+    // Demand is not yet a read. A row whose signature already names the transcript on screen —
+    // because the pending follower or a file event read it first — has nothing to fetch, and the
+    // revision is settled as observed without asking the Mac for the same bytes again.
+    if (quiet && transcriptOnScreenIsCurrent(id)) {
+        Diagnostics.note("transcript.demand.satisfied", {});
+        transcriptRevisions.settle(id, revision, true);
+        return;
+    }
     loadTranscript(id, quiet, revision, demand);
 });
 
-export function observeTranscriptRevision(id, revision, quiet) {
-    transcriptRevisions.observe(id, revision, quiet);
+/**
+ * What a session row is allowed to cost in transcript reads — see `createTranscriptRefetchPolicy`.
+ * Only the open session is ever fed in, so its one held-line timer belongs to that session.
+ */
+var transcriptRefetch = createTranscriptRefetchPolicy({
+    due: function (key) {
+        // A held line change comes due. A hidden page reads nothing: the change is looked at
+        // again when it is visible, against whatever row is current by then.
+        whenVisible(function () {
+            var current = SessionSelection.snapshot().open;
+            var entry = current && current.key === key ? SessionSelection.resolve(key, S.sessions) : null;
+            if (entry && entry.row) observeTranscriptRow(key, entry.row, true);
+        });
+    }
+});
+
+/**
+ * Whether the transcript on screen is already the one this row names: same session, a readable
+ * answer, the row's own signature, and read while the row was in the state it is in now. Any
+ * doubt answers no, and no means an ordinary read.
+ */
+function transcriptOnScreenIsCurrent(key) {
+    var current = SessionSelection.snapshot().open;
+    if (!current || current.key !== key) return false;
+    var entry = SessionSelection.resolve(key, S.sessions);
+    var signature = entry && transcriptSignatureOf(entry.row);
+    return !!signature && S.tx.id === entry.identity.rowId && !S.tx.loading && !S.tx.error &&
+        S.tx.signature === signature && S.tx.rowState === (entry.row.state || "");
+}
+
+/** A session row for the open session arrived. It becomes transcript demand only by policy. */
+export function observeTranscriptRow(id, row, quiet) {
+    transcriptRevisions.observe(id, transcriptRefetch.revision(id, row), quiet);
 }
 
 var transcriptFileSignatures = {};
@@ -85,8 +127,8 @@ export function observeTranscriptFileRevision(id, signature) {
     loadTranscript(id, true);
 }
 
-export function rearmTranscriptRevision(id, revision, quiet) {
-    transcriptRevisions.rearm(id, revision, quiet);
+export function rearmTranscriptRow(id, row, quiet) {
+    transcriptRevisions.rearm(id, transcriptRefetch.revision(id, row), quiet);
 }
 
 export function loadTranscript(id, quiet, revision, demand) {
@@ -97,14 +139,16 @@ export function loadTranscript(id, quiet, revision, demand) {
     var session = entry.row;
     var key = entry.identity.key;
     var rowID = entry.identity.rowId;
-    if (revision == null && session) revision = revisionOf(session);
+    if (revision == null && session) revision = transcriptRefetch.peek(key, session);
     var effect = SessionSelection.beginEffect("transcript", { identity: entry.identity });
     if (!effect) return Promise.resolve({ accepted: false, stale: true });
     var ticket = effect.serial;
-    var context = { revision: revision, effect: effect };
+    // The row's state when this read was asked for. An answer is "the transcript for this row"
+    // only in that state — see `transcriptOnScreenIsCurrent`.
+    var context = { revision: revision, effect: effect, rowState: session ? (session.state || "") : null };
     if (!quiet) {
         S.tx = {
-            id: rowID, entries: [], signature: null, revision: null,
+            id: rowID, entries: [], signature: null, revision: null, rowState: null,
             loading: true, error: null
         };
         // Only the loud kind waits visibly. A refetch behind a transcript that is already on
@@ -148,17 +192,30 @@ function settleTranscript(key, ticket, outcome, context) {
         }, entry.identity.key, received);
         // The signature is the server's own answer to "is this the same transcript". Trusting it
         // is what keeps a refetch from throwing the reader's scroll position away every few seconds.
+        //
+        // **And an unchanged answer is not redrawn.** `renderTranscript` rebuilds every entry's
+        // markdown and replaces every node, which restarts the live sweep and was the second half
+        // of the cost the phone paid for each byte-identical read. Redraw only when something
+        // the pane draws did change: an echo retired, an error line to take down, a skeleton or
+        // wait to replace, or the session's working state that decides the live sweep.
         if (d.signature && d.signature === S.tx.signature) {
             if (revision != null) S.tx.revision = revision;
+            var redraw = reconciled || !!S.tx.error || !!S.tx.loading ||
+                Waits.tx.visible || !!Waits.tx.timer ||
+                callSessionUI("transcriptWorkingChanged") !== false;
             S.tx.loading = false;
+            S.tx.error = null;
+            if (context && context.rowState != null) S.tx.rowState = context.rowState;
             if (reconciled) S.tx.entries = received;
-            Waits.tx.settle(function () { callSessionUI("renderTranscript"); });
+            Diagnostics.note("transcript.unchanged", { redraw: redraw });
+            Waits.tx.settle(redraw ? function () { callSessionUI("renderTranscript"); } : null);
             return;
         }
         var stick = atBottom();
         S.tx = {
             id: rowID, entries: received, signature: d.signature || null,
             revision: revision != null ? revision : S.tx.revision,
+            rowState: context && context.rowState != null ? context.rowState : null,
             loading: false, error: null
         };
         Waits.tx.settle(function () {
@@ -187,6 +244,7 @@ function settleTranscript(key, ticket, outcome, context) {
         // would turn the recovery into a full replace and take the reader's scroll with it.
         signature: held.length ? S.tx.signature : null,
         revision: S.tx.id === rowID ? S.tx.revision : null,
+        rowState: S.tx.id === rowID ? S.tx.rowState : null,
         loading: false,
         error: whyTranscript(e)
     };
@@ -237,6 +295,7 @@ export function openSession(id, keepFocus, forceRefresh) {
         if (before) {
             pendingTranscriptFollower.stop(before.key);
             transcriptRevisions.stop(before.key);
+            transcriptRefetch.forget(before.key);
             delete transcriptFileSignatures[before.key];
         }
         callSessionUI("closeSessionActions");
@@ -256,7 +315,7 @@ export function openSession(id, keepFocus, forceRefresh) {
         callSessionUI("deferStatusLine", identity.key);
         callSessionUI("followSessionBoard", s);
         transcriptRequests.activate(identity.key);
-        observeTranscriptRevision(identity.key, revisionOf(s), false);
+        observeTranscriptRow(identity.key, s, false);
         // These surfaces may draw immediately, so they follow the synchronous transcript issue.
         callSessionUI("followInfo");
         callSessionUI("followSnippets");
@@ -299,6 +358,7 @@ export function closeDetail(silent) {
     if (current) {
         pendingTranscriptFollower.stop(current.key);
         transcriptRevisions.stop(current.key);
+        transcriptRefetch.forget(current.key);
         delete transcriptFileSignatures[current.key];
     }
     SessionSelection.close();
@@ -306,7 +366,7 @@ export function closeDetail(silent) {
     transcriptRequests.activate(null);
     S.agent = null;
     S.tx = {
-        id: null, entries: [], signature: null, revision: null,
+        id: null, entries: [], signature: null, revision: null, rowState: null,
         loading: false, error: null
     };
     S.expanded = {};

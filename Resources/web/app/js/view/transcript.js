@@ -170,9 +170,29 @@ export function renderDetailHead() {
     }
 }
 
+/**
+ * What the last full transcript draw assumed about the session's working state, which is the one
+ * input of `renderTranscript` that is not in `S.tx`: it decides whether the last run of tool calls
+ * carries the live sweep. Null whenever the last draw was not a transcript of a session.
+ */
+var renderedWorking = null;
+
+/**
+ * Whether redrawing the open transcript could change what it shows even though its entries did
+ * not. `session/open.js` asks this before redrawing an answer whose signature is unchanged; any
+ * doubt — no record, an agent on screen, another session — answers true.
+ */
+export function transcriptWorkingChanged() {
+    var selection = SessionSelection.snapshot();
+    if (!renderedWorking || S.agent || !selection.open ||
+        renderedWorking.key !== selection.open.key) return true;
+    return renderedWorking.working !== transcriptWorking();
+}
+
 export function renderTranscript() {
     var box = els.tx;
     var selection = SessionSelection.snapshot();
+    renderedWorking = null;
     // Every invocation, including a skeleton or empty state, cancels incremental work belonging
     // to the previously open session before that work can append another chunk.
     var renderTicket = ++transcriptRenderTicket;
@@ -283,7 +303,9 @@ export function renderTranscript() {
     // second time with the sweep on it, so the part of the page that is moving is the part of
     // the work that is moving. It has to be the *last* block — a run with an answer written
     // under it is finished, whatever the session is doing now.
-    if (liveRun && liveAt === blocks.length - 1 && transcriptWorking()) {
+    var working = transcriptWorking();
+    if (!S.agent) renderedWorking = { key: selection.open.key, working: working };
+    if (liveRun && liveAt === blocks.length - 1 && working) {
         blocks[liveAt].live = true;
     }
     if (S.newestFirst) blocks.reverse();

@@ -23,11 +23,11 @@ function renderComposer() { return callSessionUI("renderComposer"); }
 function renderWaiting() { return callSessionUI("renderWaiting"); }
 function renderAgents() { return callSessionUI("renderAgents"); }
 function closeDetail(silent) { return callSessionUI("closeDetail", silent); }
-function observeTranscriptRevision() {
-    return callSessionUI.apply(null, ["observeTranscriptRevision"].concat(Array.from(arguments)));
+function observeTranscriptRow() {
+    return callSessionUI.apply(null, ["observeTranscriptRow"].concat(Array.from(arguments)));
 }
-function rearmTranscriptRevision() {
-    return callSessionUI.apply(null, ["rearmTranscriptRevision"].concat(Array.from(arguments)));
+function rearmTranscriptRow() {
+    return callSessionUI.apply(null, ["rearmTranscriptRow"].concat(Array.from(arguments)));
 }
 function openSession() {
     return callSessionUI.apply(null, ["openSession"].concat(Array.from(arguments)));
@@ -95,9 +95,10 @@ export function onSessions() {
             // `handlers.sessions` runs before the first accepted frame marks the connection live.
             // That one frame is a real reconnect boundary and may open a new bounded failure
             // burst. Ordinary live frames only observe, so replaying one snapshot cannot loop.
-            var revision = revisionOf(s);
-            if (S.conn === "live") observeTranscriptRevision(sessionKey, revision, true);
-            else rearmTranscriptRevision(sessionKey, revision, true);
+            // The row, not a revision: which of its changes may cost a transcript read is the
+            // refetch policy's decision (`createTranscriptRefetchPolicy`), and `line` is not one.
+            if (S.conn === "live") observeTranscriptRow(sessionKey, s, true);
+            else rearmTranscriptRow(sessionKey, s, true);
         }
         // An agent being read has its own reason to refetch, and the session's revision cannot
         // give it: a session sitting between turns with three agents out looks unchanged the

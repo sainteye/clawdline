@@ -11,6 +11,7 @@ import { Terminal } from "../view/terminal.js";
 import { SessionSelection } from "../session/selection.js";
 import { closeDetail } from "../session/open.js";
 import { SessionActions } from "../input/detail-actions.js";
+import { createFrameCoalescer } from "../core/visibility.js";
 
 /**
  * Whether accepting this frame would close the chat on the strength of one empty observation.
@@ -22,6 +23,37 @@ export function sessionListNeedsConfirmation(list, openId, previous, scan) {
         list.length === 0 && !!openId &&
         (previous || []).some(function (session) { return session && session.id === openId; });
 }
+
+/**
+ * One draw for a burst of frames.
+ *
+ * A Mac publishes one Cloud envelope per changed row, and every envelope used to arrive here as
+ * a whole list and leave as a whole render — the FLIP reads, every row refilled, the counts, the
+ * detail head, the status line, the board — so a scan that changed eight rows was eight complete
+ * renders inside a few milliseconds. The frames still land in `S` the moment they arrive; what
+ * waits is the drawing, until the next animation frame, and a page nobody can see draws nothing
+ * until it is visible again. Everything that decides against state (the empty-inventory guard,
+ * selection reconciliation, closing a vanished session) stays synchronous above the draw.
+ */
+var pendingDraw = { sessions: false, tasks: false, first: false };
+var viewFrame = createFrameCoalescer(function () {
+    var drew = pendingDraw;
+    pendingDraw = { sessions: false, tasks: false, first: false };
+    if (drew.sessions) {
+        // When a skeleton is actually on screen, keep drawing it until its minimum lifetime is
+        // over and let the settle callback replace it; otherwise this render is the replacement.
+        var listWasWaiting = Waits.list.visible;
+        onSessions();
+        // Four things were held blank while nobody had said — the list, the pane beside it, that
+        // pane's header and the status line under it. `onSessions` redraws all of them by opening
+        // a session, but a first list with nothing to open opens none, and then nothing does.
+        if (drew.first && !S.openId) { render(); renderTranscript(); }
+        Waits.list.settle(listWasWaiting ? renderList : null);
+    } else if (drew.tasks && els.rows) render();
+});
+
+/** For the tests: whether a draw is still owed to frames that have already been accepted. */
+export function viewDrawPending() { return viewFrame.pending(); }
 
 export var handlers = {
     sessions: function (list, at, scan) {
@@ -60,18 +92,12 @@ export var handlers = {
         // Anything arriving at all is proof this browser is allowed to ask, whatever an earlier
         // request was told — a pairing finished in another tab counts.
         S.locked = false;
-        // Draw the new state once. `settle(renderList)` used to run before `onSessions`, so every
-        // ordinary stream frame drew the list here and then drew it again inside `onSessions`.
-        // That second draw cancelled the FLIP which the first one had only just started. When a
-        // skeleton is actually on screen, keep drawing it until its minimum lifetime is over and
-        // let the settle callback replace it; otherwise this render is the replacement.
-        var listWasWaiting = Waits.list.visible;
-        onSessions();
-        // Four things were held blank while nobody had said — the list, the pane beside it, that
-        // pane's header and the status line under it. `onSessions` redraws all of them by opening
-        // a session, but a first list with nothing to open opens none, and then nothing does.
-        if (first && !S.openId) { render(); renderTranscript(); }
-        Waits.list.settle(listWasWaiting ? renderList : null);
+        // Draw the new state once per frame — see `viewFrame`. `settle(renderList)` used to run
+        // before `onSessions`, so every ordinary stream frame drew the list twice, and the second
+        // draw cancelled the FLIP which the first one had only just started.
+        pendingDraw.sessions = true;
+        if (first) pendingDraw.first = true;
+        viewFrame.request();
         return true;
     },
     /// The whole task list, every time one of them moves. Nothing here merges, for the same
@@ -79,7 +105,8 @@ export var handlers = {
     /// A render only if the page has been built — the first list can arrive before `boot`.
     tasks: function (list) {
         S.tasks = list || [];
-        if (els.rows) render();
+        pendingDraw.tasks = true;
+        viewFrame.request();
         // Cloud machine descriptors arrive on the same authenticated orchestrator snapshot as
         // this list. Refresh an open New Session picker even when that machine has not yet
         // published a Session row (the sessions handler therefore had nothing to redraw).

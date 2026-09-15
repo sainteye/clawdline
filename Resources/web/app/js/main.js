@@ -41,7 +41,7 @@ import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onbo
 import "./door/door.js";
 import "./view/derive.js";
 import { closingKey, render, renderConn, renderList, rowNodes } from "./view/list.js";
-import { renderDetailHead, renderTranscript } from "./view/transcript.js";
+import { renderDetailHead, renderTranscript, transcriptWorkingChanged } from "./view/transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./view/composer.js";
 import { Terminal } from "./view/terminal.js";
 import { bindProjectsPage, localProjectPlaces, readProjectPlaces } from "./view/projects.js";
@@ -63,8 +63,8 @@ import "./view/markdown.js";
 import { paintStatic } from "./view/static.js";
 import { Waits } from "./view/waits.js";
 import {
-    closeDetail, loadTranscript, observeTranscriptFileRevision, observeTranscriptRevision,
-    openSession, rearmTranscriptRevision
+    closeDetail, loadTranscript, observeTranscriptFileRevision, observeTranscriptRow,
+    openSession, rearmTranscriptRow
 } from "./session/open.js";
 import { agentRow, agentsRev, closeAgent, loadAgent, renderAgentHead, agentTokens } from "./session/agent.js";
 import { SessionSelection } from "./session/selection.js";
@@ -116,8 +116,9 @@ bindSessionUI({
     closeDetail: closeDetail,
     closeAgent: closeAgent,
     openSession: openSession,
-    observeTranscriptRevision: observeTranscriptRevision,
-    rearmTranscriptRevision: rearmTranscriptRevision,
+    observeTranscriptRow: observeTranscriptRow,
+    rearmTranscriptRow: rearmTranscriptRow,
+    transcriptWorkingChanged: transcriptWorkingChanged,
     agentRow: agentRow,
     agentsRev: agentsRev,
     loadAgent: loadAgent,
