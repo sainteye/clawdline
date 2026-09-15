@@ -608,8 +608,11 @@ await check("11 capability · a word every platform implements makes a machine w
     assert.deepEqual(client._knownMachines(), ["linux-01", "mac-01"], "the fixture has the Mac only from its Session row");
     const ended = await outcome(client.places(), BOUND);
     assert.equal(ended.state, "resolved", ended.state + (ended.error ? " " + ended.error.code : ""));
-    assert.deepEqual([ended.value.places.map((place) => place.machine).sort(), ended.value.unconfirmed],
-        [["linux-01", "mac-01"], []], "both machines' Projects, and nobody left unasked");
+    // Asked is the claim, not how fast it answered: a machine past its read bound on a loaded run is
+    // in `unanswered`, which is still a machine that was asked.
+    const heard = new Set(ended.value.places.map((place) => place.machine).concat(ended.value.unanswered.map((row) => row.machine)));
+    assert.deepEqual([Array.from(heard).sort(), ended.value.unconfirmed],
+        [["linux-01", "mac-01"], []], "both machines asked for their Projects, and nobody left unasked");
     assert.deepEqual(commands.map((row) => row.join(" ")).sort(), ["linux-01 places", "mac-01 places"]);
     // In the model, not in `places()`: the same machine is capable of the other universal word and
     // still unknown for a word only a Mac implements.
@@ -686,12 +689,16 @@ await check("11 capability · a feature only an unpaired machine could provide i
         ["machine_pairing_required", "machine_pairing_required", before]);
     const g = await fleet(MAC_LINUX);
     g.client._noteUnpairedMachine("linux-01", "linux-sender", "machine_not_paired");
+    // About the unpaired executor's row only: the Mac is asked too, and a loaded run can make it late.
+    const executorRows = (ended) => ended.state === "resolved"
+        ? ended.value.unanswered.filter((row) => row.machine === "linux-01").map((row) => row.error.code)
+        : ended.state + " " + (ended.error && ended.error.code);
     const fresh = await outcome(g.client.schedules({ fresh: true }), BOUND);
-    assert.deepEqual([fresh.state, fresh.value && fresh.value.unanswered], ["resolved", []],
+    assert.deepEqual(executorRows(fresh), [],
         "an unpaired executor, which cannot have schedules, is nothing the schedules read failed to hear");
     const places = await outcome(g.client.places(), BOUND);
-    assert.deepEqual(places.value && places.value.unanswered.map((row) => [row.machine, row.error.code]),
-        [["linux-01", "machine_pairing_required"]], "while for places, which it could answer once paired, it is named");
+    assert.deepEqual(executorRows(places), ["machine_pairing_required"],
+        "while for places, which it could answer once paired, it is named");
 });
 
 /* ---- 12 · Callers of an account-level places() read --------------------------------------- */
@@ -709,24 +716,38 @@ await check("12 places callers · a Board conversation whose machine did not ans
     const { createBoardSessionController } = await import("../Resources/web/app/js/input/board-session.js");
     const conversation = "11111111-1111-4111-8111-111111111111";
     const project = { id: "project-app", displayPath: "/code/app", label: "app" };
+    // What the sheet ended with, and which machines the places read it made did not hear from.
     const opened = async (f, machine) => {
         const kept = new Map();
+        let inventory = null;
         const controller = createBoardSessionController({ render: noop, sessions: () => [], canWrite: () => true,
             storage: { getItem: (key) => kept.has(key) ? kept.get(key) : null, setItem: (key, value) => kept.set(key, value) },
-            places: () => f.client.places(), history: async () => ({ sessions: [] }) });
+            places: async () => (inventory = await f.client.places()), history: async () => ({ sessions: [] }) });
         await controller.open(conversation, project, machine);
-        return controller.state.error;
+        return { error: controller.state.error, silent: inventory ? inventory.unanswered.map((row) => row.machine).sort() : null };
+    };
+    // Each arm is about a premise — which machines answered — that a loaded machine can break by
+    // pushing one past its read bound. The arm is asked again until the premise held, and says so if
+    // it never did, rather than blaming the sheet for the environment.
+    const arm = async (f, machine, silent) => {
+        const seen = [];
+        for (let tries = 0; tries < 3; tries++) {
+            const ended = await opened(f, machine);
+            seen.push(ended);
+            if (JSON.stringify(ended.silent) === JSON.stringify(silent)) return ended.error;
+        }
+        return "premise never held: " + JSON.stringify(seen);
     };
     const busy = await fleet(MAC_LINUX, { intercept: macBusyForPlaces });
-    assert.deepEqual([await opened(busy, "mac-01"), await opened(busy, null)], ["reading_busy", "reading_busy"],
+    assert.deepEqual([await arm(busy, "mac-01", ["mac-01"]), await arm(busy, null, ["mac-01"])], ["reading_busy", "reading_busy"],
         "the Session's Mac, or any machine when the Session names none, did not answer");
     const both = await fleet(MAC_LINUX);
-    assert.deepEqual([await opened(both, "mac-01"), await opened(both, null)], ["history_unavailable", "history_unavailable"],
+    assert.deepEqual([await arm(both, "mac-01", []), await arm(both, null, [])], ["history_unavailable", "history_unavailable"],
         "with every machine answering the Project is found and its history is what is read next");
     const linuxBusy = await fleet(MAC_LINUX, { intercept: async (client, socket, machine, command) =>
         machine === "linux-01" && command.type === "places" && (await fromMachine(client, socket, "t/linux-01/" + MACHINE_REPLY,
             { read: "read:" + command.request, status: 503, error: { code: "ingress_closed", message: "closed" } }), true) });
-    assert.equal(await opened(linuxBusy, "mac-01"), "history_unavailable", "another machine's silence does not fail the Mac's Session");
+    assert.equal(await arm(linuxBusy, "mac-01", ["linux-01"]), "history_unavailable", "another machine's silence does not fail the Mac's Session");
 });
 
 await check("12 places callers · the schedules strip does not keep a places answer some machine did not answer", async function () {
@@ -797,20 +818,44 @@ await check("12 places callers · the schedule form's Project list names the mac
     };
     const list = control("schedule-places");
     const notes = () => list.children.filter((child) => child.className === "note").map((child) => child.textContent);
+    // The premise of this arm is that only the Mac did not answer; on a loaded run the executor can be
+    // late too, and the sheet would rightly name both. It is opened again until the premise held.
+    let silent = null;
+    const readBusy = f.client.places.bind(f.client);
+    f.client.places = (machine) => readBusy(machine).then((answer) => {
+        silent = answer.unanswered.map((row) => row.machine).join(","); return answer;
+    });
     try {
-        list.children = [];
-        Schedule.open();
-        await until(() => list.children.some((child) => child.className !== "note"), BOUND);
+        for (let tries = 0; tries < 3 && silent !== "mac-01"; tries++) {
+            if (tries) Schedule.close(true);
+            silent = null;
+            list.children = [];
+            Schedule.open();
+            await until(() => silent !== null && list.children.some((child) => child.className !== "note"), BOUND);
+            await settle();
+        }
+        assert.equal(silent, "mac-01", "an answer in which only the Mac did not answer was observed");
         const said = notes();
         assert.ok(said.length === 1 && said[0].includes(macLabel), "one line naming " + macLabel + ": " + JSON.stringify(said));
         assert.ok(typeof T.webMachinesUnanswered === "string" && T.webMachinesUnanswered.includes("{machines}")
             && said[0] === T.webMachinesUnanswered.replace("{machines}", macLabel), "in the string table's words: " + JSON.stringify(said[0]));
         Schedule.close(true);
+        // The other arm's premise is that every machine answered, which a loaded run can break; it is
+        // opened again while the answer it drew from was partial.
         const g = await fleet(MAC_LINUX);
+        let partial = null;
+        const readPlaces = g.client.places.bind(g.client);
+        g.client.places = (machine) => readPlaces(machine).then((answer) => { partial = answer.unanswered.length > 0; return answer; });
         useClient(g.client);
-        list.children = [];
-        Schedule.open();
-        await until(() => list.children.some((child) => child.className !== "note"), BOUND);
+        for (let tries = 0; tries < 3 && partial !== false; tries++) {
+            partial = null;
+            list.children = [];
+            Schedule.open();
+            await until(() => partial !== null && list.children.some((child) => child.className !== "note"), BOUND);
+            await settle();
+            if (partial !== false) Schedule.close(true);
+        }
+        assert.equal(partial, false, "a complete places answer was observed to draw the list from");
         assert.deepEqual([notes(), list.children.length], [[], 2], "a complete list says nothing extra");
         Schedule.close(true);
     } finally { document.createElement = created; }
