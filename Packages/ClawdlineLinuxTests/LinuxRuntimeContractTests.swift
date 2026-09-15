@@ -528,7 +528,8 @@ final class LinuxRuntimeContractTests: XCTestCase {
         }
         burst.embeddedEventLoop.run()
         for expected in legitimateBurst {
-            XCTAssertEqual(try await burstPipe.receiveText(), expected,
+            let received = try await burstPipe.receiveText()
+            XCTAssertEqual(received, expected,
                            "a bounded Relay ACK burst stays ordered and connected")
         }
         XCTAssertTrue(burst.isActive,
@@ -542,7 +543,8 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertFalse(countOverflow.isActive,
                        "more than the bounded text count closes the socket")
         for index in 0..<8 {
-            XCTAssertEqual(try await countOverflowPipe.receiveText(), "ack-\(index)",
+            let received = try await countOverflowPipe.receiveText()
+            XCTAssertEqual(received, "ack-\(index)",
                            "count overflow drains every admitted text in order")
         }
         do {
@@ -558,7 +560,8 @@ final class LinuxRuntimeContractTests: XCTestCase {
         byteOverflow.embeddedEventLoop.run()
         XCTAssertFalse(byteOverflow.isActive,
                        "more than the bounded aggregate bytes closes the socket")
-        XCTAssertEqual(try await byteOverflowPipe.receiveText(), "12345",
+        let byteOverflowText = try await byteOverflowPipe.receiveText()
+        XCTAssertEqual(byteOverflowText, "12345",
                        "byte overflow preserves the admitted text")
         do {
             _ = try await byteOverflowPipe.receiveText()
