@@ -669,7 +669,7 @@ function fillRow(node, s) {
     var out = 0, list = s.agents || [];
     for (var a = 0; a < list.length; a++) if (list[a].state === "running") out++;
     chip.hidden = !out;
-    if (out) chip.querySelector(".n").textContent = String(out);
+    if (out) setText(chip.querySelector(".n"), String(out));
 
     // Where this row sits in somebody's work: a session that was started for another one, or
     // one that did the starting. Both are drawn where the agent count is and in the same
@@ -700,7 +700,7 @@ function fillRow(node, s) {
         // A child that handed work on in turn stays drawn as a child: the rows indented under it
         // are the visible half, and a chip saying both would say neither in the width it has.
         // What it sent away goes in the same tooltip as its own task.
-        mine.textContent = T.webTaskChild + " · " + taskWord(kid);
+        setText(mine, T.webTaskChild + " · " + taskWord(kid));
         mine.title = [kid.title || "", roots.length ? titles() : ""]
             .filter(Boolean).join("\n");
     } else {
@@ -709,16 +709,16 @@ function fillRow(node, s) {
         if (featureRoot) {
             mine.hidden = false;
             mine.dataset.live = featureRoot.live ? "1" : "0";
-            mine.textContent = featureRoot.text;
+            setText(mine, featureRoot.text);
             mine.title = featureRoot.title;
         } else if (roots.length) {
             mine.hidden = false;
             mine.dataset.live = roots.some(taskLive) ? "1" : "0";
-            mine.textContent = T.webTaskRoot + " · " + roots.length;
+            setText(mine, T.webTaskRoot + " · " + roots.length);
             mine.title = titles();
         } else {
             mine.hidden = true;
-            mine.textContent = "";
+            setText(mine, "");
             mine.title = "";
         }
     }

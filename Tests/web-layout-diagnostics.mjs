@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { layoutAnomaly } from "../Resources/web/app/js/core/layout-diagnostics.js";
+
+let checks = 0;
+function equal(actual, expected, message) { assert.deepEqual(actual, expected, message); checks += 1; }
+function ok(value, message) { assert.ok(value, message); checks += 1; }
+import { Diagnostics, LAYOUT_PROBE_INTERVAL_MS, layoutAnomaly } from "../Resources/web/app/js/core/layout-diagnostics.js";
 
 function sample(changes = {}) {
     return Object.assign({
@@ -75,5 +79,92 @@ assert.match(responsive, /\.pane-detail\s*\{[^}]*visibility:\s*hidden[^}]*transi
     "the phone detail pane does not depend on a transformed compositor layer while offstage");
 assert.match(responsive, /\.app\[data-view="detail"\] \.pane-detail\s*\{[^}]*visibility:\s*visible/s,
     "entering a phone chat makes its fixed layer visible atomically");
+
+/* ---- how often the page measures itself ----------------------------------------------------
+ *
+ * `note` is called for every stream frame, transcript phase and attribute mutation. Each probe
+ * reads about nine rects and every row and hit-tests the screen three times; on 2026-09-15 every
+ * note scheduled one in the next frame and re-armed a 380 ms settle probe as well. A burst is one
+ * probe now, the state after its last note is still measured, and nothing is measured on a desk
+ * browser with the panel shut, where no incident can be recorded.
+ * -------------------------------------------------------------------------- */
+
+const noop = function () {};
+let now = 10_000;
+let phone = true;
+let probes = 0;
+const frames = [];
+const timers = [];
+function stubElement() {
+    return {
+        dataset: {}, style: { getPropertyValue: function () { return ""; } },
+        getBoundingClientRect: function () {
+            return { left: 0, top: 0, right: 390, bottom: 800, width: 390, height: 800 };
+        },
+        closest: function () { return null; }
+    };
+}
+const install = function (name, value) {
+    Object.defineProperty(globalThis, name, { value: value, configurable: true, writable: true });
+};
+install("document", {
+    hidden: false, documentElement: Object.assign(stubElement(), { appendChild: noop }),
+    body: stubElement(), activeElement: null,
+    querySelector: function () { return stubElement(); },
+    querySelectorAll: function () { return []; },
+    addEventListener: noop,
+    elementFromPoint: function () { probes += 1; return null; },
+    elementsFromPoint: function () { return []; }
+});
+install("window", {
+    innerWidth: 390, innerHeight: 800, visualViewport: null, addEventListener: noop,
+    matchMedia: function (query) { return { matches: query.indexOf("max-width") >= 0 ? phone : false }; }
+});
+install("location", { search: "" });
+install("navigator", { userAgent: "node" });
+install("localStorage", { getItem: function () { return null; }, setItem: noop, removeItem: noop });
+install("getComputedStyle", function () { return { getPropertyValue: function () { return ""; } }; });
+install("performance", { now: function () { return now; } });
+install("requestAnimationFrame", function (fn) { frames.push(fn); });
+const realSetTimeout = globalThis.setTimeout;
+const realClearTimeout = globalThis.clearTimeout;
+install("setTimeout", function (fn, ms) { const t = { fn: fn, at: now + ms, live: true }; timers.push(t); return t; });
+install("clearTimeout", function (t) { if (t) t.live = false; });
+function advance(ms) {
+    now += ms;
+    frames.splice(0).forEach(function (fn) { fn(); });
+    timers.filter(function (t) { return t.live && t.at <= now; }).forEach(function (t) { t.live = false; t.fn(); });
+}
+const state = { sessions: [], tx: { entries: [] }, openId: null };
+const elements = { app: stubElement(), tx: stubElement(), "tx-scroll": stubElement(),
+    "detail-head": stubElement(), composer: stubElement(), conn: stubElement() };
+Diagnostics.bind({ state: state, elements: elements });
+Diagnostics.ready();
+advance(0);
+const afterReady = probes;
+equal(afterReady, 1, "ready measures once");
+for (let i = 0; i < 40; i += 1) Diagnostics.note("sessions.accepted", { rows: i });
+advance(16);
+equal(probes, afterReady, "forty notes inside the interval measure nothing yet");
+advance(LAYOUT_PROBE_INTERVAL_MS);
+equal(probes, afterReady + 1, "and are covered by one trailing probe, after the last of them");
+advance(5 * LAYOUT_PROBE_INTERVAL_MS);
+equal(probes, afterReady + 1, "a quiet page is not measured again");
+Diagnostics.note("session.open.begin", {});
+advance(16);
+equal(probes, afterReady + 2, "the first note after a quiet interval is measured in the next frame");
+for (let second = 0; second < 10; second += 1) {
+    for (let i = 0; i < 20; i += 1) { Diagnostics.note("sessions.accepted", {}); advance(50); }
+}
+ok(probes - (afterReady + 2) <= 10 && probes - (afterReady + 2) >= 9,
+    "ten seconds of a note every 50 ms are about one probe a second, not two hundred (got " +
+    (probes - (afterReady + 2)) + ")");
+phone = false;
+advance(5 * LAYOUT_PROBE_INTERVAL_MS);
+const desk = probes;
+for (let i = 0; i < 20; i += 1) { Diagnostics.note("sessions.accepted", {}); advance(LAYOUT_PROBE_INTERVAL_MS); }
+equal(probes, desk, "a desk browser with the panel shut is never measured, because nothing can be recorded there");
+install("setTimeout", realSetTimeout);
+install("clearTimeout", realClearTimeout);
 
 console.log("web layout diagnostics tests passed");

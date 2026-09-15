@@ -291,4 +291,70 @@ await (async function () {
     localPage.leave();
 })();
 
+/* ---- a page that is only reloaded when there is something to say ----------------------------
+ *
+ * Devices listens to every Session and orchestrator frame, and a Mac publishing eight rows is
+ * eight events. On 2026-09-15 each of them re-read the machines and rebuilt every card, and did so
+ * for a page nobody could see. Now a burst is one read, an answer identical to the one drawn
+ * rebuilds nothing, and a hidden page reads nothing until it is visible.
+ * -------------------------------------------------------------------------- */
+
+await (async function () {
+    const doc = new FakeDocument();
+    const ids = ["devices-title", "devices-lede", "devices-close", "devices-status",
+        "devices-empty", "devices-rows"];
+    const elements = Object.fromEntries(ids.map((id) => [id, new FakeNode(doc)]));
+    const listeners = [];
+    globalThis.document = {
+        hidden: false,
+        addEventListener: (type, fn) => { if (type === "visibilitychange") listeners.push(fn); },
+        removeEventListener: (type, fn) => {
+            const at = listeners.indexOf(fn);
+            if (at >= 0) listeners.splice(at, 1);
+        }
+    };
+    const setHidden = (hidden) => { document.hidden = hidden; listeners.slice().forEach((fn) => fn()); };
+    let reads = 0;
+    let listener = null;
+    let answer = { machines: [{ id: "mac-01", label: "Mac · Studio", freshness: "current",
+        pairing: "paired", sessions: 2, selectable: true }] };
+    const page = bindDevicesPage(elements, {
+        machines: () => { reads += 1; return Promise.resolve(answer); },
+        events: (fn) => { listener = fn; return () => { listener = null; }; }
+    });
+    page.enter();
+    await settle();
+    const firstCard = elements["devices-rows"].children[0];
+    check("entering reads the machines once and draws them", function () {
+        assert.deepEqual([reads, elements["devices-rows"].children.length], [1, 1]);
+    });
+    for (let i = 0; i < 8; i += 1) listener({ type: i % 2 ? "orchestrator" : "sessions" });
+    await settle();
+    check("eight frames in one tick are one reload", function () {
+        assert.equal(reads, 2);
+    });
+    check("and an answer identical to the one drawn rebuilds no card", function () {
+        assert.equal(elements["devices-rows"].children[0], firstCard);
+        assert.equal(elements["devices-status"].textContent, "");
+    });
+    setHidden(true);
+    answer = { machines: answer.machines.concat([{ id: "aws-01", label: "Linux / AWS · Builder",
+        freshness: "current", pairing: "paired", sessions: 0, selectable: true }]) };
+    listener({ type: "orchestrator" });
+    listener({ type: "sessions" });
+    await settle();
+    check("a hidden page reads nothing for the frames it receives", function () {
+        assert.equal(reads, 2);
+        assert.equal(elements["devices-rows"].children.length, 1);
+    });
+    setHidden(false);
+    await settle();
+    check("and reads once when it is visible again, drawing what changed", function () {
+        assert.equal(reads, 3);
+        assert.equal(elements["devices-rows"].children.length, 2);
+    });
+    page.leave();
+    delete globalThis.document;
+})();
+
 console.log(`\n${checks} web device checks passed`);
