@@ -1295,10 +1295,10 @@ function sessionReader(open) {
 
 /** One socket of a viewer to an idle Mac; `mac.rows` is what that Mac holds now. */
 async function idleMacSocket(mac, reader, options) {
-    const client = fleetClient(Object.assign({ handlers: reader.handlers }, options));
+    const client = fleetClient(Object.assign({ handlers: reader.handlers, sessionSnapshotSettleMs: 20 }, options));
     reader.client = client;
     const socket = await ready(client);
-    const sent = { snapshots: 0, transcripts: 0 };
+    const sent = { snapshots: 0, transcripts: 0, orchestrator: [] };
     socket.onPublish = async function (envelope) {
         const command = JSON.parse(new TextDecoder().decode(await openEnvelope(envelope, masterKey, senderKey)));
         if (command.type === "transcript") {
@@ -1307,6 +1307,7 @@ async function idleMacSocket(mac, reader, options) {
                 { read: "transcript", status: 200, body: { entries: [], signature: mac.rows.get(command.session).transcript_signature } });
         } else if (command.type === "sessions.snapshot") {
             sent.snapshots += 1;
+            sent.orchestrator.push(command.orchestrator === true);
             if (mac.silent) return;
             for (const row of mac.rows.values()) {
                 await fromMachine(client, socket, "s/mac-01/" + encodeURIComponent(row.id), { session: row, at: 100, scan: {} });
@@ -1365,6 +1366,36 @@ await check("B1 · a viewer that has never seen the Mac asks once its snapshot s
         "and its lists read exactly as they always have");
 });
 
+await check("B1 · a relay that still replays the inventory, every row and the orch snapshot is not asked; one that kept rows only is asked for less", async function () {
+    const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }]]) };
+    const replay = async (viewer, channel, payload) => {
+        const envelope = await sealEnvelope({ ch: channel, seq: ++machineSequence, ts: 1787817600000, class: "stream",
+            key_id: "ms-1", sender: DEVICE }, JSON.stringify(payload), masterKey, signingKey);
+        viewer.socket.receive({ type: "envelope", realign: true, envelope });
+        await viewer.client.messageChain.catch(noop);
+    };
+    const whole = sessionReader(null);
+    const intact = await idleMacSocket(mac, whole, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC), sessionSnapshotSettleMs: 200 });
+    await replay(intact, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
+        cloud_status: Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }) });
+    await replay(intact, "s/mac-01/s1", { session: mac.rows.get("s1"), at: 100, scan: {} });
+    await replay(intact, "s/mac-01/__clawdline_inventory_v1__", { inventory: { version: 1, sessions: ["s1"] }, features: ["sessions.snapshot"] });
+    await until(() => intact.socket.sent.some((frame) => frame.type === "publish"), 500);
+    assert.equal(intact.socket.sent.filter((frame) => frame.type === "publish").length, 0,
+        "everything the Mac would re-send arrived in the replay, so nothing is asked");
+    const last = whole.lists[whole.lists.length - 1];
+    assert.deepEqual([last && last.rows, last && last.scan.emptyAuthoritative], [["s1"], true]);
+
+    const partial = await idleMacSocket(mac, sessionReader(null), { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC), sessionSnapshotSettleMs: 200 });
+    await replay(partial, "s/mac-01/s1", { session: mac.rows.get("s1"), at: 100, scan: {} });
+    await replay(partial, "s/mac-01/__clawdline_inventory_v1__", { inventory: { version: 1, sessions: ["s1"] }, features: ["sessions.snapshot"] });
+    await until(() => partial.sent.snapshots === 1, FAST);
+    assert.deepEqual(partial.sent.orchestrator, [true],
+        "rows alone came back, and an orch snapshot too large for the relay to keep does not: that is asked for");
+    intact.client.stop();
+    partial.client.stop();
+});
+
 await check("B1 · a page back from quiesce after a row changed while it was away converges and reads that transcript exactly once", async function () {
     const mac = { rows: new Map([["s1", { id: "s1", state: "working", transcript_signature: "10-1" }],
         ["s2", { id: "s2", state: "idle", transcript_signature: "20-1" }]]) };
@@ -1375,8 +1406,9 @@ await check("B1 · a page back from quiesce after a row changed while it was awa
     for (const row of mac.rows.values()) {
         await fromMachine(first.client, first.socket, "s/mac-01/" + row.id, { session: row, at: 100, scan: {} });
     }
-    await until(() => first.sent.transcripts === 1, FAST);
+    await until(() => first.sent.transcripts === 1 && first.client.readWaiters.size === 0, FAST);
     assert.equal(first.sent.transcripts, 1, "the open Session was read once while connected");
+    assert.equal(first.client.readWaiters.size, 0, "and that read was answered before the page went away");
     first.client.retire();
     // Hidden past the grace: the turn ends, and the relay object that saw it is evicted.
     mac.rows.set("s1", { id: "s1", state: "idle", transcript_signature: "11-4" });

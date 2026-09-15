@@ -1510,10 +1510,12 @@ actor CloudAppBridge {
     private var lastTranscriptRepublicationAt: UInt64?
     private var transcriptReports: AsyncStream<(String, String?)>.Continuation?
     private var transcriptReportTask: Task<Void, Never>?
-    /// `sessions.snapshot` requests the next pass answers, the pass scheduled for them, and when
-    /// the last one started (the window is counted from there).
+    /// `sessions.snapshot` requests the next pass answers (and whether each also lacks the
+    /// orchestrator snapshot), the pass scheduled for them, and when the last one started (the
+    /// window is counted from there).
     private let sessionSnapshotIntervalMilliseconds: UInt64
-    private var sessionSnapshotWaiters: [(reference: CommandReference, request: String)] = []
+    private var sessionSnapshotWaiters: [(reference: CommandReference, request: String,
+                                          orchestrator: Bool)] = []
     private var sessionSnapshotTask: Task<Void, Never>?
     private var lastSessionSnapshotAt: UInt64?
 
@@ -2085,8 +2087,11 @@ actor CloudAppBridge {
         lifecycleGeneration ownedGeneration: UInt64
     ) async {
         let reply = Self.readRefusalReply(type: Self.sessionSnapshotType, body: body)
+        let keys = Set(body.keys)
         guard inbound.commandClass == .ctl,
-              Set(body.keys) == ["type", "session", "request"],
+              keys == ["type", "session", "request"]
+                || (keys == ["type", "session", "request", "orchestrator"]
+                    && body["orchestrator"] is Bool),
               body["session"] as? String == Self.machineReplySession,
               let request = Self.requestName(body["request"])
         else {
@@ -2105,7 +2110,9 @@ actor CloudAppBridge {
                 replyTo: reply, viaLane: true, lifecycleGeneration: ownedGeneration)
             return
         }
-        sessionSnapshotWaiters.append((reference, request))
+        // `orchestrator`: the page has not been replayed this Mac's `orch/` snapshot either, which
+        // the relay never keeps when it is larger than its cache entry. Only then is it re-sent.
+        sessionSnapshotWaiters.append((reference, request, body["orchestrator"] as? Bool == true))
         scheduleSessionSnapshot(lifecycleGeneration: ownedGeneration)
     }
 
@@ -2133,11 +2140,13 @@ actor CloudAppBridge {
         let waiters = sessionSnapshotWaiters
         sessionSnapshotWaiters.removeAll()
         lastSessionSnapshotAt = nowMilliseconds()
+        let orchestrator = waiters.contains { $0.orchestrator }
         var failed = false
         do {
             try await runSessionPublication { [weak self] in
                 guard let self else { throw CancellationError() }
-                try await self.republishSessionSnapshotOwned(lifecycleGeneration: ownedGeneration)
+                try await self.republishSessionSnapshotOwned(
+                    orchestrator: orchestrator, lifecycleGeneration: ownedGeneration)
             }
         } catch {
             failed = true
@@ -2147,7 +2156,7 @@ actor CloudAppBridge {
         let complete = publishedSessionInventory != nil
         diagnostic("cloud: session snapshot answered requests=\(waiters.count) rows=\(ids.count) "
             + "complete=\(complete) failed=\(failed)")
-        for (waiter, request) in waiters {
+        for (waiter, request, _) in waiters {
             if failed {
                 await refuse(
                     waiter, layer: .macReply, status: 503, code: "internal",
@@ -2170,13 +2179,14 @@ actor CloudAppBridge {
 
     /// Runs as a Session-channel publication, so no scan row or transcript republication can
     /// interleave with it. What goes out is what a transport-ready force sends: the last
-    /// orchestrator snapshot (descriptor, tasks, schedules, `cloud_status`), whose replay the relay
-    /// loses with the same object, then every row the Mac last handed over for a published
-    /// Session, with its signature, and the inventory.
+    /// orchestrator snapshot (descriptor, tasks, schedules, `cloud_status`) when a request said it
+    /// lacks one — that snapshot can be hundreds of kilobytes and usually rides the relay's replay —
+    /// then every row the Mac last handed over for a published Session, with its signature, and the
+    /// inventory.
     private func republishSessionSnapshotOwned(
-        lifecycleGeneration ownedGeneration: UInt64
+        orchestrator: Bool, lifecycleGeneration ownedGeneration: UInt64
     ) async throws {
-        if noticesEnabled, lastOrchestratorPayload != nil {
+        if orchestrator, noticesEnabled, lastOrchestratorPayload != nil {
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
             try await publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
         }

@@ -114,6 +114,13 @@ const SESSION_INVENTORY_LIMIT = 512;
  * once per client, and shows that machine as waiting rather than empty until the rows are in.
  */
 const SESSION_SNAPSHOT_COMMAND = "sessions.snapshot";
+/**
+ * The relay replays what it still holds right after `ready`. A client lets that replay land before
+ * deciding: a machine whose inventory, every listed row and `orch/` snapshot all arrived on this
+ * socket is current and is not asked; one missing only rows is asked without `orchestrator`, which
+ * can be hundreds of kilobytes and is re-sent only to a page that lacks it.
+ */
+const SESSION_SNAPSHOT_SETTLE_MS = 750;
 const SESSION_SNAPSHOT_TIMEOUT_MS = 20000;
 /** A retryable failure is asked once more after this long; after that the page says what failed. */
 const SESSION_SNAPSHOT_RETRY_MS = 5000;
@@ -493,6 +500,12 @@ export class CloudClient {
         this.sessionSnapshotTimeoutMs = options.sessionSnapshotTimeoutMs || SESSION_SNAPSHOT_TIMEOUT_MS;
         this.sessionSnapshotRetryMs = options.sessionSnapshotRetryMs || SESSION_SNAPSHOT_RETRY_MS;
         this.sessionRowsGraceMs = options.sessionRowsGraceMs || SESSION_SNAPSHOT_ROWS_GRACE_MS;
+        this.sessionSnapshotSettleMs = options.sessionSnapshotSettleMs || SESSION_SNAPSHOT_SETTLE_MS;
+        // What this socket itself has been sent — replayed or live — as opposed to what was carried
+        // over from the client it resumed from: Session keys (rows and tombstones) and the machines
+        // whose inventory arrived. Never inherited.
+        this.sessionKeysHeard = new Set();
+        this.inventoriesHeard = new Set();
         this.sessionsAtMs = sameViewer && Number.isFinite(prior.sessionsAtMs) ? prior.sessionsAtMs : 0;
         // Whether this viewer has opened any machine envelope. Until it has, a recovery state is not
         // announced: a list handed to the page is taken as proof this browser can read (`handlers`,
@@ -1425,6 +1438,7 @@ export class CloudClient {
                 }, this);
                 this.sessionInventoryByMachine.set(identity.machine,
                     { sequence: envelope.seq, ids: kept });
+                this.inventoriesHeard.add(identity.machine);
                 this._learnFeatures(identity.machine, payload.features, envelope.seq);
                 this._settleSessionRecovery(identity.machine);
                 var inventorySessions = this._sessionResponse(envelope.ts);
@@ -1455,6 +1469,7 @@ export class CloudClient {
                 }));
                 this.sessionSequenceByKey.set(key, envelope.seq);
             } else throw cloudError("bad_payload", "a session snapshot must be an object");
+            this.sessionKeysHeard.add(key);
             this._settleSessionRecovery(identity.machine);
             var sessions = this._sessionResponse(envelope.ts);
             if (this.handlers && this.handlers.sessions) this.handlers.sessions(sessions.sessions, sessions.at, sessions.scan);
@@ -1636,7 +1651,26 @@ export class CloudClient {
             return;
         }
         this.sessionRecoveryAsked.add(machine);
-        this._askSessionSnapshot(machine, 1);
+        var self = this;
+        var entry = { state: "pending", code: null, attempt: 0, expected: null, timer: null };
+        this._setSessionRecovery(machine, entry);
+        entry.timer = this.setTimeout(function () {
+            entry.timer = null;
+            if (self.sessionRecovery.get(machine) !== entry || !self.ready || self.retired) return;
+            var orchestrator = !self.orchestratorSnapshots.has(machine);
+            if (!orchestrator && self._sessionsHeardWhole(machine)) {
+                self._setSessionRecovery(machine, null);
+                return;
+            }
+            self._askSessionSnapshot(machine, 1);
+        }, this.sessionSnapshotSettleMs);
+    }
+
+    /** This socket was sent the machine's inventory and a row or tombstone for every id in it. */
+    _sessionsHeardWhole(machine) {
+        var inventory = this.sessionInventoryByMachine.get(machine);
+        if (!inventory || !this.inventoriesHeard.has(machine)) return false;
+        return Array.from(inventory.ids).every(function (key) { return this.sessionKeysHeard.has(key); }, this);
     }
 
     /**
@@ -1648,7 +1682,8 @@ export class CloudClient {
         var self = this;
         var entry = { state: "pending", code: null, attempt: attempt, expected: null, timer: null };
         this._setSessionRecovery(machine, entry);
-        this._machineRequest(machine, SESSION_SNAPSHOT_COMMAND, {}, "read", this.sessionSnapshotTimeoutMs,
+        var extra = this.orchestratorSnapshots.has(machine) ? {} : { orchestrator: true };
+        this._machineRequest(machine, SESSION_SNAPSHOT_COMMAND, extra, "read", this.sessionSnapshotTimeoutMs,
             { probe: false }).then(function (body) {
             if (self.sessionRecovery.get(machine) !== entry) return;
             var ids = body && Array.isArray(body.sessions) ? body.sessions : [];

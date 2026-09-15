@@ -621,7 +621,7 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
            fixture.transport.envelopes().count, 4)
 
     // (a) A viewer connecting after the relay lost its replay asks; remote writes are off here.
-    fixture.askForRows("snap-1", sequence: 1)
+    fixture.askForRows("snap-1", sequence: 1, extra: #","orchestrator":true"#)
     check("asked for its rows, an idle Mac re-sends each row and the inventory at once",
           eventually { fixture.frames("alpha").count == 2 && fixture.frames("beta").count == 2
             && fixture.frames("__clawdline_inventory_v1__").count == 2 })
@@ -632,7 +632,7 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
                 && (answer?["body"] as? [String: Any])?["sessions"] as? [String] == ["alpha", "beta"]
                 && (answer?["body"] as? [String: Any])?["complete"] as? Bool == true
           }, "\(fixture.replies())")
-    expect("the orchestrator snapshot, lost with the same replay, goes out again first",
+    expect("the orchestrator snapshot the request said it lacks goes out again too",
            orchestratorFrames().count, 2)
     check("the re-sent row is the whole current row",
           fixture.lastRow("alpha")?["label"] as? String == "Row alpha"
@@ -651,6 +651,7 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
     check("one pass answers both",
           eventually { fixture.replies()["read:snap-2"] != nil && fixture.replies()["read:snap-3"] != nil })
     expect("with one more copy of each row, however many asked", fixture.frames("alpha").count, 3)
+    expect("and no orchestrator snapshot, which neither said it lacks", orchestratorFrames().count, 2)
     expect("and of its neighbour", fixture.frames("beta").count, 3)
 
     fixture.askForRows("bad", sequence: 4, extra: #","limit":1"#)
