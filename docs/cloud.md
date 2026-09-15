@@ -252,8 +252,9 @@ the notice's refill.
 Audited against the same assumption — *the relay's replay brings a (re)connecting page up to date*:
 `s/` rows and the inventory (fixed above); the `orch/` snapshot, which carries the descriptor, task
 list, schedules, snippets and `cloud_status`, is published only when what a Cloud view reads changes,
-and is re-sent by the same pass, on every ready generation, and a minute after a notice took its
-place in the replay (*The `orch/` snapshot a Cloud viewer is sent*, below); `t/` read answers, including pictures and transcripts (not dependent:
+and is re-sent by the same pass, on every ready generation, a minute after a notice took its place
+in the replay, and by the three-minute refresh pass when none has gone out for three minutes (*The
+`orch/` snapshot a Cloud viewer is sent*, below); `t/` read answers, including pictures and transcripts (not dependent:
 a replayed answer settles only the request it names, and every read is asked fresh); the Schedules
 strip and places (not dependent: the strip reads on return and places are asked).
 
@@ -606,11 +607,17 @@ spliced in was about 1.9 KB that evening (8 KiB at most); sealed, a snapshot wen
   interval the notice and the `sessions.snapshot` pass already use, and nothing a person waits on
   reads this channel: a snippet or schedule written from a phone is read back with `fresh`.
 - **Not paced.** A transport-ready generation, a `sessions.snapshot` request that lacks the snapshot
-  (and the owed re-send), and the re-send a minute after a notice go out whatever was published
-  before. A ready generation also forgets what was published, so a newer snapshot that replaced the
-  forced one on the Mac's lane still goes out.
+  (and the owed re-send), the re-send a minute after a notice, and the Session refresh pass go out
+  whatever was published before. A ready generation also forgets what was published, so a newer
+  snapshot that replaced the forced one on the Mac's lane still goes out.
+- **Bounded for a device that cannot ask.** The relay keeps its replay in memory only, and an
+  unchanged snapshot is never published on its own. So the scan that re-sends every Session row once
+  three minutes have passed (`CloudAppBridge.sessionPresenceIntervalMilliseconds`) also re-sends the
+  snapshot when none has gone out in those three minutes — a few kilobytes every three minutes on an
+  idle Mac, nothing on one whose tasks are moving. A device that cannot ask therefore has the
+  snapshot by the same pass that brings it the rows, rather than by the token rotation's reconnect.
 
-The bridge logs `cloud: orchestrator snapshot published reason=<change|coalesced|ready|asked|owed|refill|listed> tasks=<n> bytes=<plaintext>`,
+The bridge logs `cloud: orchestrator snapshot published reason=<change|coalesced|ready|asked|owed|refill|listed|presence> tasks=<n> bytes=<plaintext>`,
 `cloud: orchestrator snapshot unchanged`, `cloud: orchestrator snapshot coalescing wait_ms=<n>` and
 `cloud: orchestrator status notice published bytes=<n>`, so a Mac log reading counts what actually
 went out rather than the `kind=orchestrator` lines of the Mac's lane, which include the skipped ones.
