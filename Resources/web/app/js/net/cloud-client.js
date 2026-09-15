@@ -376,7 +376,15 @@ export class CloudClient {
         this.subscriptionLimit = options.subscriptionLimit || RELAY_SUBSCRIPTION_LIMIT;
         this.subscriptionIdleMs = options.subscriptionIdleMs || SUBSCRIPTION_IDLE_MS;
         // Set by `keepConnected`: where `revalidate` goes, because the socket's lifecycle lives there.
+        // It answers whether a connection is on its way, which a retired client needs to know.
         this.lifecycle = null;
+        // A retired client is still what the page holds until `main.js` installs its replacement, and
+        // after a hidden page's socket was retired that gap is the whole reconnect. What the page asks
+        // of it then — a notification tap opening its Session — runs on the client that resumed from
+        // it (`_viaSuccessor`) rather than failing as `cloud_reconnecting`.
+        this.retired = false;
+        this.successor = null;
+        this.successorWaiters = [];
         // The relay's own `token_expires_at - connected_at`, and when this client opened the socket
         // that number is counted from (`_tokenRemainingMs`). Durations only: no clock is compared.
         this.tokenLifetimeMs = null;
@@ -391,6 +399,8 @@ export class CloudClient {
         var prior = options.resumeFrom;
         var sameViewer = prior instanceof CloudClient && !!this.account && !!this.deviceID
             && prior.account === this.account && prior.deviceID === this.deviceID;
+        // Held only until this client is ready, when the prior one is handed this one (`_handOff`).
+        this.resumedFrom = sameViewer ? prior : null;
         this.sessionSnapshots = sameViewer
             ? new Map(prior.sessionSnapshots) : new Map();
         this.sessionSequenceByKey = sameViewer
@@ -599,6 +609,7 @@ export class CloudClient {
      *  credential maintenance, the person can press again at once, and "the cloud connection
      *  dropped" said the opposite of both. */
     retire() {
+        this.retired = true;
         this.connectionAnnounced = false;
         this.handlers = null;
         this._shutdown(cloudError("cloud_reconnecting", "the cloud connection is being renewed"),
@@ -724,6 +735,11 @@ export class CloudClient {
         this._armViewerEvents();
         this._openTabChannel();
         this._settleReady(null);
+        if (this.resumedFrom) {
+            var prior = this.resumedFrom;
+            this.resumedFrom = null;
+            prior._handOff(this);
+        }
         if (this.handlers && this.handlers.hello) this.handlers.hello({ write: this.allowWrites });
         if (this.handlers && this.handlers.conn) this.handlers.conn("live");
         this._emit({ type: "connection", state: "live", account: this.account, device: this.deviceID });
@@ -757,6 +773,47 @@ export class CloudClient {
     revalidate(reason) {
         if (typeof this.lifecycle !== "function") return;
         try { this.lifecycle(reason); } catch (e) { /* the page's hook must never throw into it */ }
+    }
+
+    /** The client that resumed from this one is ready: it runs what was waiting here, and what comes later. */
+    _handOff(next) {
+        this.successor = next;
+        this.successorWaiters.splice(0).forEach(function (waiter) { waiter(next); });
+    }
+
+    /**
+     * `run(client)` on the ready client that replaced this retired one: at once if there is one;
+     * otherwise once it is ready, if `keepConnected` says a connection is on its way, and within this
+     * client's read bound. With nothing on its way — the page is hidden, the loop has ended — the
+     * refusal is the one a retired client has always given.
+     */
+    _viaSuccessor(run) {
+        var next = this.successor;
+        while (next && next.retired && next.successor) next = next.successor;
+        if (next && next.ready) return Promise.resolve().then(function () { return run(next); });
+        var coming = false;
+        if (typeof this.lifecycle === "function") {
+            try { coming = this.lifecycle("demand") === true; } catch (e) { coming = false; }
+        }
+        var refusal = this.closedFailure || cloudError("cloud_reconnecting", "the cloud connection is being renewed");
+        if (!coming) return Promise.reject(refusal);
+        var self = this;
+        return new Promise(function (resolve, reject) {
+            var timer = null;
+            var waiter = function (client) {
+                if (timer === null) return;
+                self.clearTimeout(timer);
+                timer = null;
+                Promise.resolve().then(function () { return run(client); }).then(resolve, reject);
+            };
+            timer = self.setTimeout(function () {
+                timer = null;
+                var index = self.successorWaiters.indexOf(waiter);
+                if (index >= 0) self.successorWaiters.splice(index, 1);
+                reject(refusal);
+            }, self.readTimeoutMs);
+            self.successorWaiters.push(waiter);
+        });
     }
 
     /**
@@ -2207,6 +2264,8 @@ export class CloudClient {
      * nobody has said is gone.
      */
     places(selectedMachine) {
+        // Whole, on the replacement: the route table this read rewrites is that client's.
+        if (this.retired) return this._viaSuccessor(function (next) { return next.places(selectedMachine); });
         var known = this._knownMachines();
         var self = this;
         if (selectedMachine !== undefined && selectedMachine !== null) {
@@ -2719,6 +2778,11 @@ export class CloudClient {
      * transcript coalescing does for the same reason.
      */
     _read(value, type, extra, answer, timeoutMs, readOptions) {
+        if (this.retired) {
+            return this._viaSuccessor(function (next) {
+                return next._read(value, type, extra, answer, timeoutMs, readOptions);
+            });
+        }
         var identity;
         try { identity = this._sessionIdentity(value); }
         catch (error) { return Promise.reject(error); }
@@ -3181,6 +3245,9 @@ export class CloudClient {
      * schedules at all.
      */
     schedules(options) {
+        if (this.retired && options && options.fresh === true) {
+            return this._viaSuccessor(function (next) { return next.schedules(options); });
+        }
         if (options && options.fresh === true) return this._freshSchedules();
         return this._publishedAnswer("schedules", "schedules", this._orchestratorRows("schedules", "schedules"));
     }
@@ -3261,6 +3328,7 @@ export class CloudClient {
      * snapshot is not authority to choose which Mac's settings should change.
      */
     snippets(value, options) {
+        if (this.retired) return this._viaSuccessor(function (next) { return next.snippets(value, options); });
         var fresh = !!(options && options.fresh === true);
         var self = this;
         var retained = function (machine) {
@@ -3386,6 +3454,11 @@ export class CloudClient {
     }
 
     _publishAcknowledged(machine, type, body, envelopeClass) {
+        if (this.retired) {
+            return this._viaSuccessor(function (next) {
+                return next._publishAcknowledged(machine, type, body, envelopeClass);
+            });
+        }
         var self = this;
         return new Promise(function (resolve, reject) {
             var pending = { ack: null };
@@ -3539,6 +3612,7 @@ export class CloudClient {
         if (typeof machine !== "string" || !machine) {
             return Promise.reject(cloudError("malformed_command", "dispatch needs a machine"));
         }
+        if (this.retired) return this._viaSuccessor(function (next) { return next.dispatch(machine, task); });
         return this._publishCommand(machine, "dispatch", { task: task }, "dispatch");
     }
 

@@ -535,7 +535,11 @@ does. Outbound sequences use the same reserve-ahead discipline as the Mac, in `l
   from `main.js` connects at once, and the relay's realignment of every retained channel brings the
   page up to date; the Session rows the page already had are carried into the new client. A page shown
   after a hide longer than the grace whose socket still says `ready` — a phone that froze the page
-  before its timer ran — gets a replacement socket the same way a token renewal does. While
+  before its timer ran — gets a replacement socket the same way a token renewal does. Until
+  `main.js` installs that replacement, the page still holds the retired client: a read or command
+  asked of it then — a notification tap opening its Session — waits, within the read bound, and runs
+  on the client that resumed from it. With no connection on its way (the page is hidden, the loop
+  has ended) it is refused at once, as before. While
   `navigator.onLine` is `false` nothing connects until `online`. The schedules strip stops its minute
   lane while hidden and reads once on return if it missed a tick.
 - **Closing the socket rather than only pausing the lanes** is deliberate: an open socket keeps

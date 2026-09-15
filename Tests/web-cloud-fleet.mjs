@@ -1124,6 +1124,43 @@ await check("transport · a picture read once is drawn from memory; a refusal is
     renewed.stop();
 });
 
+await check("transport · a read on a client retired while the page was away runs on the client that resumed from it", async function () {
+    const f = await quietMac();
+    const answerOn = (fixture) => async (envelope, command) => {
+        if (command.type !== "transcript") return;
+        await fromMachine(fixture.client, fixture.socket, "t/mac-01/" + encodeURIComponent(command.session),
+            { read: "transcript", status: 200, body: { entries: [], signature: "on-" + fixture.name } });
+    };
+    // A notification tap lands in the gap between the page coming back and the new client installed.
+    let resuming = true;
+    f.client.lifecycle = () => resuming;
+    f.client.retire();
+    const tapped = f.client.transcript({ machine: "mac-01", session: "s1" });
+    assert.equal((await outcome(tapped, 60)).state, "pending", "held, not refused as cloud_reconnecting");
+    const renewed = fleetClient({ resumeFrom: f.client });
+    const renewedSocket = await ready(renewed);
+    const second = { client: renewed, socket: renewedSocket, name: "renewed" };
+    renewedSocket.onPublish = async function (envelope) {
+        const command = JSON.parse(new TextDecoder().decode(await openEnvelope(envelope, masterKey, senderKey)));
+        await answerOn(second)(envelope, command);
+    };
+    const read = await outcome(tapped, FAST);
+    assert.deepEqual([read.state, read.value && read.value.signature], ["resolved", "on-renewed"],
+        "the held read went out on the replacement socket and settled there");
+    assert.equal(f.published.length, 0, "nothing was published on the retired socket");
+    const later = await outcome(f.client.transcript({ machine: "mac-01", session: "s2" }), FAST);
+    assert.deepEqual([later.state, later.value && later.value.signature], ["resolved", "on-renewed"],
+        "a call after the replacement is ready runs there at once");
+
+    const hidden = await quietMac();
+    hidden.client.lifecycle = () => false;
+    hidden.client.retire();
+    const refused = await outcome(hidden.client.transcript({ machine: "mac-01", session: "s1" }), FAST);
+    assert.deepEqual([refused.state, refused.error && refused.error.code], ["rejected", "cloud_reconnecting"],
+        "with nothing on its way — the page is hidden — it is refused at once, as before");
+    resuming = false;
+});
+
 /* ---- ends ---------------------------------------------------------------------------------- */
 
 if (failures.length) {

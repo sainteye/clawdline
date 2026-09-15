@@ -771,6 +771,7 @@ export function keepConnected(session, options) {
     var page = pageLifecycle(options);
     var onState = options.onState || function () {};
     var stopped = false;
+    var ended = false;
     var backoff = initial;
     var active = null;
     // When the chain of usable clients began. A renewal continues the chain; only an outage ends it.
@@ -948,13 +949,17 @@ export function keepConnected(session, options) {
         armGrace(hiddenGraceMs);
     }
 
-    /** Visible, restored from the back-forward cache, back online, or asked by the page. */
+    /**
+     * Visible, restored from the back-forward cache, back online, or asked by the page. Answers
+     * whether a connection is live or on its way, which is what a retired client asks before it
+     * holds a read for its replacement (`CloudClient._viaSuccessor`).
+     */
     function resume(reason) {
-        if (stopped) return;
+        if (stopped || ended) return false;
         if (page.hidden()) {
             // `online` while hidden: a loop that is not quiesced may re-read the network flag.
             if (!quiesced) wake(reason);
-            return;
+            return false;
         }
         disarmGrace();
         var hiddenFor = hiddenSince === null ? 0 : now() - hiddenSince;
@@ -962,10 +967,11 @@ export function keepConnected(session, options) {
         if (quiesced) {
             quiesced = false;
             wake(reason);
-            return;
+            return true;
         }
         if (hiddenFor >= hiddenGraceMs && active) staleResume = true;
         wake(reason);
+        return true;
     }
 
     var detach = page.listen({
@@ -979,7 +985,7 @@ export function keepConnected(session, options) {
     function attach(client) {
         if (!client || (typeof client !== "object" && typeof client !== "function")) return;
         // `main.js` calls `api.revalidate("visible")`; the client hands it here, where the socket lives.
-        try { client.lifecycle = function (reason) { resume(reason === "visible" || !reason ? "visible" : String(reason)); }; }
+        try { client.lifecycle = function (reason) { return resume(reason === "visible" || !reason ? "visible" : String(reason)); }; }
         catch (e) { /* a frozen stand-in has no hook, and needs none */ }
     }
 
@@ -1094,7 +1100,7 @@ export function keepConnected(session, options) {
     })();
     // A loop that ends on its own — pairing required, a terminal refusal — leaves no page listener or
     // grace timer behind; the next `keepConnected` a retry starts brings its own.
-    function release() { disarmGrace(); detach(); }
+    function release() { ended = true; disarmGrace(); detach(); }
     loop.then(release, release);
 
     return {

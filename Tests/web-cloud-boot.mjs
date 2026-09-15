@@ -1143,7 +1143,10 @@ await lifecycleCheck("hidden · a page frozen past the grace gets a fresh socket
     page.document.hidden = false;
     page.document.visibilityState = "visible";
     assert.equal(typeof live.lifecycle, "function", "the loop hands each client its revalidate hook");
-    live.lifecycle("visible");
+    page.document.hidden = true;
+    assert.equal(live.lifecycle("demand"), false, "hidden: no connection is on its way, and it says so");
+    page.document.hidden = false;
+    assert.equal(live.lifecycle("visible"), true, "visible: a connection is on its way");
     await timers.advance(0);
     assert.equal(session.connects.length, 3, "revalidate resumes a quiesced loop");
     run.keeper.stop();
