@@ -5,6 +5,7 @@ import { api } from "../net/api.js";
 import { SessionActions } from "../input/detail-actions.js";
 import { SessionSelection } from "../session/selection.js";
 import { callSessionUI } from "../session/ui.js";
+import { createVisibleInterval } from "../core/visibility.js";
 
 function closeTerminalPeers() {
     callSessionUI("closeGitPanel", false);
@@ -595,21 +596,32 @@ export var Terminal = (function () {
      * change signal — iTerm2 — and it runs no faster than the interval the server itself named,
      * because that number is the Mac's, not this page's.
      */
+    /*
+     * **Neither runs while the page is hidden.** A phone with the console put away was asking the
+     * Mac for this screen every second. Coming back asks once at once (the catch-up) and then
+     * resumes the clock; the Mac's lease lapsing meanwhile costs one `pipe-pane` on that ask,
+     * which is what a lease is for.
+     */
     function arrange() {
         if (keepalive === null && forSelection) {
-            keepalive = setInterval(function () { load(); }, 15000);
+            keepalive = createVisibleInterval(function () {
+                // The poll already asks more often than the lease needs renewing.
+                if (poll === null) load();
+            }, 15000);
+            keepalive.start();
         }
         var wants = screen && screen.channel === "on-demand";
         if (wants && poll === null) {
             var after = Math.max(1000, Number(screen.askAgainAfterMs) || 1000);
-            poll = setInterval(function () { load(); }, after);
+            poll = createVisibleInterval(function () { load(); }, after);
+            poll.start();
         }
-        if (!wants && poll !== null) { clearInterval(poll); poll = null; }
+        if (!wants && poll !== null) { poll.stop(); poll = null; }
     }
 
     function stopClocks() {
-        if (keepalive !== null) { clearInterval(keepalive); keepalive = null; }
-        if (poll !== null) { clearInterval(poll); poll = null; }
+        if (keepalive !== null) { keepalive.stop(); keepalive = null; }
+        if (poll !== null) { poll.stop(); poll = null; }
     }
 
     return {

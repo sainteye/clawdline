@@ -6,6 +6,7 @@ import { els } from "../core/dom.js";
 import { shortPath, toast } from "../core/util.js";
 import { bindFailureLine, failureSentence } from "../core/failure-text.js";
 import { assistantLogo } from "../core/pixels.js";
+import { createVisibleInterval } from "../core/visibility.js";
 import { api } from "../net/api.js";
 import { byId, closeabilityLines, closeabilityPlainReasons, owedBadgeHTML,
          projectSessionCloseability, projectSessionWorkState, sessionCloseabilityHTML,
@@ -879,4 +880,7 @@ els["status-line-files"].addEventListener("click", function () { GitPanel.open()
 // A long-running turn can sit in the working state for hours, so no state transition would ask
 // for a newer reading. Once a minute is intentionally slower than the terminal status line: this
 // path reads a transcript and runs `git`, and the browser only needs a current glance.
-setInterval(function () { StatusLine.refresh(false); }, 60000);
+//
+// Not while the page is hidden: the read is for somebody glancing at the row, and a phone in a
+// pocket has nobody glancing. The minute that passed while it was away is caught up once, on return.
+createVisibleInterval(function () { StatusLine.refresh(false); }, 60000).start();

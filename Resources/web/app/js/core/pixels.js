@@ -1,4 +1,5 @@
 import { reduced } from "./env.js";
+import { createVisibleInterval } from "./visibility.js";
 
 /* ==========================================================================
    3. Pixels
@@ -47,6 +48,24 @@ export function drawIcon(canvas, icon, cellPx) {
         }
     }
     return true;
+}
+
+/**
+ * `drawIcon`, skipped when this canvas already shows exactly this icon at this size and scale.
+ *
+ * Writing `canvas.width` clears the backing store even when the number is the same, so every list
+ * render used to wipe and repaint every row's mark and the header's. The answer `drawIcon` gave
+ * is kept with the key, so a caller that toggles a class on it gets the same answer back.
+ */
+export function drawIconOnce(canvas, icon, cellPx) {
+    var key;
+    try { key = JSON.stringify([icon && icon.cells || null, cellPx, dpr()]); }
+    catch (e) { key = null; }
+    if (key !== null && canvas._iconKey === key) return canvas._iconDrawn;
+    var drew = drawIcon(canvas, icon, cellPx);
+    canvas._iconKey = key;
+    canvas._iconDrawn = drew;
+    return drew;
 }
 
 /* The same two product marks as AssistantLogo.swift. Kept inline so the list and transcript
@@ -134,25 +153,53 @@ var voiceSpin = null;
 /// the same reason as the one above it: this arc turns for about five seconds beside a line of
 /// text, and it is the only thing on that sheet saying the wait is a wait rather than a stop.
 export var commandSpin = null;
-setInterval(function () {
-    if (reduced || (!spinners.length && !optimisticSpinners.length &&
-                    !bandSpin && !startSpin && !confirmSpin && !liveSpin && !voiceSpin &&
-                    !commandSpin)) return;
+/// Whether the list's own spinners can be seen at all. The list owns that answer (a phone reading
+/// a transcript has the list behind it, `visibility: hidden`), so it hands it over with the list.
+var spinnersShown = null;
+
+/**
+ * A canvas that has left the document is a registration nobody will clear: its owner redrew and
+ * forgot it, or the node went with its row. Such canvases are dropped rather than drawn.
+ */
+function attached(canvas) { return !!canvas && canvas.isConnected !== false; }
+
+/** One turn of the clock. Exported only so a test can turn it by hand. */
+export function turnSpinners() {
+    if (reduced) return 0;
+    spinners = spinners.filter(attached);
+    optimisticSpinners = optimisticSpinners.filter(attached);
+    if (!attached(bandSpin)) bandSpin = null;
+    if (!attached(startSpin)) startSpin = null;
+    if (!attached(confirmSpin)) confirmSpin = null;
+    if (!attached(liveSpin)) liveSpin = null;
+    if (!attached(voiceSpin)) voiceSpin = null;
+    if (!attached(commandSpin)) commandSpin = null;
+    var list = spinnersShown && !spinnersShown() ? [] : spinners;
+    if (!list.length && !optimisticSpinners.length && !bandSpin && !startSpin && !confirmSpin &&
+        !liveSpin && !voiceSpin && !commandSpin) return 0;
     spinPhase = (spinPhase + 1) % 8;
-    for (var i = 0; i < spinners.length; i++) drawSpinner(spinners[i], spinPhase);
-    for (var j = 0; j < optimisticSpinners.length; j++) drawSpinner(optimisticSpinners[j], spinPhase);
-    if (bandSpin) drawSpinner(bandSpin, spinPhase);
-    if (startSpin) drawSpinner(startSpin, spinPhase);
-    if (confirmSpin) drawSpinner(confirmSpin, spinPhase);
-    if (liveSpin) drawSpinner(liveSpin, spinPhase);
-    if (voiceSpin) drawSpinner(voiceSpin, spinPhase);
-    if (commandSpin) drawSpinner(commandSpin, spinPhase);
-}, SPIN.step);
+    var drawn = 0;
+    function draw(canvas) { drawSpinner(canvas, spinPhase); drawn += 1; }
+    list.forEach(draw);
+    optimisticSpinners.forEach(draw);
+    [bandSpin, startSpin, confirmSpin, liveSpin, voiceSpin, commandSpin].forEach(function (canvas) {
+        if (canvas) draw(canvas);
+    });
+    return drawn;
+}
+
+/// The clock itself, which stops while the page is hidden — nothing turns on a screen nobody can
+/// see — and does not replay missed turns when it comes back: a spinner has nothing to catch up.
+export var spinnerClock = createVisibleInterval(turnSpinners, SPIN.step, { catchUp: false });
+spinnerClock.start();
 
 // Eight of the handles above are set from somewhere else — the render or the sheet that owns the
 // canvas — and a module cannot assign to a name it imported. So the variable stays here where the
 // clock can see it, and the write becomes a call.
-export function setSpinners(list) { spinners = list; }
+export function setSpinners(list, shown) {
+    spinners = list;
+    if (typeof shown === "function") spinnersShown = shown;
+}
 export function setOptimisticSpinners(list) { optimisticSpinners = list; }
 export function setBandSpin(canvas) { bandSpin = canvas; }
 export function setStartSpin(canvas) { startSpin = canvas; }

@@ -471,6 +471,127 @@ export function createTranscriptEventRouter(currentSessionID, observe, reconnect
 }
 
 /**
+ * How long a row without `transcript_signature` may keep changing only its status line before
+ * that is allowed to cost one more transcript read.
+ *
+ * The line is the assistant's own status bar — `Working (22m 05s • esc to interrupt)`,
+ * `Computing… (1m 39s · ↓ 6.0k tokens)` — and its timer moves on every scan the Mac makes whether
+ * or not a single entry was written. Measured on 2026-09-15 on the phone this was about: 472
+ * transcript reads in fourteen hours, 38.9 MB, 223 of them byte-identical to the read before, 134
+ * of them less than five seconds after the last. Fifteen seconds caps a working session on an old
+ * Mac or a Linux machine at four full reads a minute; a state change (working → idle, → waiting)
+ * is not a line change and still reads at once, so the final answer and a question are never held.
+ */
+export var TRANSCRIPT_LINE_REREAD_MS = 15000;
+
+/** The Mac's own name for the transcript behind a Cloud row, or null where the row has none. */
+export function transcriptSignatureOf(row) {
+    var value = row && row.transcript_signature;
+    return typeof value === "string" && value ? value : null;
+}
+
+/**
+ * Which session-row changes are allowed to become transcript demand.
+ *
+ * The answer is a revision string for `createTranscriptRevisionObserver`, which reads once per
+ * distinct revision; this decides what makes two rows *distinct*.
+ *
+ * - **With `transcript_signature`** (a current Mac, over Cloud) the revision is the signature and
+ *   the state. The signature is equal to the `signature` of the transcript read answer, so it
+ *   changes exactly when a read would bring something new; `line` and `label` are not part of it
+ *   at all. The state is, deliberately: the Mac debounces its signature, and a turn that has just
+ *   ended is the one moment a reader is waiting for, so the edge itself buys one read rather than
+ *   waiting out the debounce.
+ * - **Without it** (an older Mac, a Linux machine, the local page) the revision is state, label
+ *   and a line generation that advances at most once per `lineIntervalMs`. A line change inside
+ *   the interval is held, and one timer (`due`) says when it may be read, so a line that changed
+ *   once and then stopped is still read — once.
+ *
+ * The local page has its own, exact lane for content (`transcript-revision` events from the
+ * file), so holding its line changes to the same bound loses nothing there either.
+ */
+export function createTranscriptRefetchPolicy(options) {
+    options = options || {};
+    var now = options.now || function () { return Date.now(); };
+    var configured = Number(options.lineIntervalMs);
+    var interval = Number.isFinite(configured) ? Math.max(0, configured) : TRANSCRIPT_LINE_REREAD_MS;
+    var schedule = options.schedule || function (work, delay) { return setTimeout(work, delay); };
+    var cancel = options.cancel || function (timer) { clearTimeout(timer); };
+    var due = options.due || function () {};
+    var states = {};
+
+    function clearTimer(state) {
+        if (!state || state.timer === null) return;
+        cancel(state.timer);
+        state.timer = null;
+    }
+    function signed(row, signature) {
+        return "signature|" + (row.state || "") + "|" + signature;
+    }
+    function legacyBase(row) {
+        return (row.state || "") + "|" + (row.label || "");
+    }
+
+    function revision(key, row) {
+        if (!key || !row) return null;
+        var state = states[key];
+        var signature = transcriptSignatureOf(row);
+        if (signature) {
+            clearTimer(state);
+            delete states[key];
+            return signed(row, signature);
+        }
+        var base = legacyBase(row);
+        var line = row.line || "";
+        if (!state || state.base !== base) {
+            // A new state or label is prompt demand, and the line it arrived with is part of it.
+            clearTimer(state);
+            state = states[key] = {
+                base: base, line: line, generation: 0, acceptedAt: now(), timer: null
+            };
+        } else if (line !== state.line) {
+            var waited = now() - state.acceptedAt;
+            if (waited >= interval) {
+                clearTimer(state);
+                state.line = line;
+                state.generation += 1;
+                state.acceptedAt = now();
+            } else if (state.timer === null) {
+                var held = state;
+                held.timer = schedule(function () {
+                    held.timer = null;
+                    if (states[key] === held) due(key);
+                }, interval - waited);
+            }
+        }
+        return "line|" + base + "|" + state.generation;
+    }
+
+    /** The revision this row stands for now, without accepting anything held. */
+    function peek(key, row) {
+        if (!key || !row) return null;
+        var signature = transcriptSignatureOf(row);
+        if (signature) return signed(row, signature);
+        var base = legacyBase(row);
+        var state = states[key];
+        return "line|" + base + "|" + (state && state.base === base ? state.generation : 0);
+    }
+
+    function forget(key) {
+        clearTimer(states[key]);
+        delete states[key];
+    }
+
+    return {
+        revision: revision,
+        peek: peek,
+        forget: forget,
+        /** Whether a held line change is waiting for its interval. For the tests. */
+        holding: function (key) { return !!(states[key] && states[key].timer !== null); }
+    };
+}
+
+/**
  * Keep the newest session snapshot revision separate from the revision whose transcript GET
  * actually succeeded. A transient final GET failure gets a small recovery budget; repeated SSE
  * snapshots for the same revision neither consume that budget nor create parallel reads.

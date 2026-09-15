@@ -16,6 +16,7 @@ import { Pages } from "./core/pages.js";
 import { Diagnostics } from "./core/layout-diagnostics.js";
 import { clockOf, tint, toastFailure } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
+import { createVisibleInterval } from "./core/visibility.js";
 import { api, useApi } from "./net/api.js";
 import { Build } from "./net/build.js";
 import "./net/fetch.js";
@@ -41,7 +42,7 @@ import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onbo
 import "./door/door.js";
 import "./view/derive.js";
 import { closingKey, render, renderConn, renderList, rowNodes } from "./view/list.js";
-import { renderDetailHead, renderTranscript } from "./view/transcript.js";
+import { renderDetailHead, renderTranscript, transcriptWorkingChanged } from "./view/transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./view/composer.js";
 import { Terminal } from "./view/terminal.js";
 import { bindProjectsPage, localProjectPlaces, readProjectPlaces } from "./view/projects.js";
@@ -63,8 +64,8 @@ import "./view/markdown.js";
 import { paintStatic } from "./view/static.js";
 import { Waits } from "./view/waits.js";
 import {
-    closeDetail, loadTranscript, observeTranscriptFileRevision, observeTranscriptRevision,
-    openSession, rearmTranscriptRevision
+    closeDetail, loadTranscript, observeTranscriptFileRevision, observeTranscriptRow,
+    openSession, rearmTranscriptRow
 } from "./session/open.js";
 import { agentRow, agentsRev, closeAgent, loadAgent, renderAgentHead, agentTokens } from "./session/agent.js";
 import { SessionSelection } from "./session/selection.js";
@@ -116,8 +117,9 @@ bindSessionUI({
     closeDetail: closeDetail,
     closeAgent: closeAgent,
     openSession: openSession,
-    observeTranscriptRevision: observeTranscriptRevision,
-    rearmTranscriptRevision: rearmTranscriptRevision,
+    observeTranscriptRow: observeTranscriptRow,
+    rearmTranscriptRow: rearmTranscriptRow,
+    transcriptWorkingChanged: transcriptWorkingChanged,
     agentRow: agentRow,
     agentsRev: agentsRev,
     loadAgent: loadAgent,
@@ -977,6 +979,8 @@ function watchForStaleness() {
     document.addEventListener("visibilitychange", function () {
         if (document.hidden) return;
         if (api && typeof api.revalidate === "function") api.revalidate("visible");
+        // The page's own reading of the open session, held while it was hidden.
+        StatusLine.catchUp();
     });
 }
 
@@ -1009,9 +1013,11 @@ if (window.__strings) {
 // A page left open all day: "2m ago" is only true for a minute. The timestamps are rewritten in
 // place rather than by rendering the transcript again — a re-render replaces the whole pane, and
 // the reader would find themselves back at the top of it every minute for no reason they could see.
-setInterval(function () {
+// Not while hidden, and once on return: nobody reads a relabel on a screen that is put away.
+createVisibleInterval(function () {
     var stamps = els.tx.querySelectorAll("time[data-at]");
     for (var i = 0; i < stamps.length; i++) {
-        stamps[i].textContent = clockOf(parseInt(stamps[i].getAttribute("data-at"), 10));
+        var said = clockOf(parseInt(stamps[i].getAttribute("data-at"), 10));
+        if (stamps[i].textContent !== said) stamps[i].textContent = said;
     }
-}, 60000);
+}, 60000).start();

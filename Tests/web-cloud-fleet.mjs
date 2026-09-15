@@ -757,7 +757,7 @@ await check("12 places callers · a Board conversation whose machine did not ans
     assert.equal(await arm(linuxBusy, "mac-01", ["linux-01"]), "history_unavailable", "another machine's silence does not fail the Mac's Session");
 });
 
-await check("12 places callers · the schedules strip does not keep a places answer some machine did not answer", async function () {
+await check("12 places callers · the schedules strip keeps a places answer some machine did not answer, and does not re-ask it every refresh", async function () {
     let busy = true;
     const f = await fleet(MAC_LINUX, { intercept: async function (client, socket, machine, command) {
         if (await schedulesWithProjects(client, socket, machine, command)) return true;
@@ -798,10 +798,16 @@ await check("12 places callers · the schedules strip does not keep a places ans
         driven.forget();
         await refreshed();
         await refreshed();
-        assert.deepEqual([answers.length, answers[0] && answers[0].state !== "complete"], [2, true],
-            "a partial answer is asked for again at the next refresh: " + JSON.stringify(answers));
+        // What answered is kept; the machine that did not is asked on its own after the retry window
+        // (`createPlacesCache`, held with a clock in `Tests/web-schedules.mjs`), not with every refresh.
+        assert.deepEqual([answers.length, answers[0] && answers[0].state !== "complete"], [1, true],
+            "a partial answer is kept for the next refresh: " + JSON.stringify(answers));
         busy = false;
-        for (let tries = 0; tries < 4 && answers[answers.length - 1].state !== "complete"; tries++) await refreshed();
+        driven.forget();
+        for (let tries = 0; tries < 4 && answers[answers.length - 1].state !== "complete"; tries++) {
+            driven.forget();
+            await refreshed();
+        }
         assert.equal(answers[answers.length - 1].state, "complete",
             "a complete places answer was observed to test the cache with: " + JSON.stringify(answers));
         const asked = answers.length;
@@ -940,6 +946,219 @@ await check("fleet · every public CloudClient method is bounded and only suppor
         "the enumeration aimed real requests at Linux rather than scanning nothing");
     const started = await outcome(f.client.startPlace(linuxPlace, "claude", ""), FAST);
     assert.equal(started.state, "resolved", "a Linux Project still starts");
+});
+
+/* ---- the transport's repeated work: subscriptions, retained answers, offline, pictures ------- */
+
+// One Mac with a clock this suite moves and a relay answer the check writes. Measured origin: a
+// phone reading the same transcript and the same `image.<id>` over and over (2026-09-15).
+async function quietMac() {
+    let clock = 1_789_500_000_000;
+    const client = fleetClient({ now: () => clock });
+    const socket = await ready(client);
+    const fixture = { client, socket, published: [], answer: null,
+        advance: (ms) => { clock += ms; },
+        frames: (type) => socket.sent.filter((frame) => frame.type === type) };
+    socket.onPublish = async function (envelope) {
+        const command = JSON.parse(new TextDecoder().decode(await openEnvelope(envelope, masterKey, senderKey)));
+        fixture.published.push({ envelope, command });
+        if (fixture.answer) await fixture.answer(envelope, command);
+    };
+    await fromMachine(client, socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
+        cloud_status: CLOUD_STATUS, schedules: [] });
+    return fixture;
+}
+
+let retainedSequence = 100;
+async function retained(fixture, channel, payload) {
+    const envelope = await sealEnvelope({ ch: channel, seq: ++retainedSequence, ts: 1787817600000, class: "stream",
+        key_id: "ms-1", sender: DEVICE }, JSON.stringify(payload), masterKey, signingKey);
+    fixture.socket.receive({ type: "envelope", realign: true, envelope });
+    await fixture.client.messageChain.catch(noop);
+}
+
+const PICTURE = { media_type: "image/png", data: "iVBORw==", byte_count: 4 };
+
+await check("transport · a held channel is not subscribed again, and the relay's eight are never exceeded", async function () {
+    const f = await quietMac();
+    f.answer = async (envelope, command) => {
+        if (command.type !== "transcript") return;
+        await fromMachine(f.client, f.socket, "t/mac-01/" + encodeURIComponent(command.session),
+            { read: "transcript", status: 200, body: { entries: [], signature: "sig-" + command.session } });
+    };
+    for (let i = 0; i < 3; i += 1) {
+        const read = await outcome(f.client.transcript({ machine: "mac-01", session: "s1" }), FAST);
+        assert.equal(read.state, "resolved", "read " + i + " " + read.state);
+    }
+    assert.deepEqual(f.frames("subscribe").flatMap((frame) => frame.channels), ["t/mac-01/s1"],
+        "three reads of one Session subscribe once");
+    for (let i = 0; i < 10; i += 1) {
+        const read = await outcome(f.client.transcript({ machine: "mac-01", session: "n" + i }), FAST);
+        assert.equal(read.state, "resolved", "session n" + i + " " + read.state);
+    }
+    const held = new Set();
+    let most = 0;
+    f.socket.sent.forEach((frame) => {
+        if (frame.type !== "subscribe" && frame.type !== "unsubscribe") return;
+        assert.ok(frame.channels.length >= 1 && frame.channels.length <= 8, "a frame the relay accepts");
+        frame.channels.forEach((channel) => frame.type === "subscribe" ? held.add(channel) : held.delete(channel));
+        most = Math.max(most, held.size);
+    });
+    assert.ok(most <= 8, "never more than the relay's eight on one socket: " + most);
+    assert.ok(held.has("t/mac-01/n9"), "the channel being read is held");
+    // Two quiet minutes: the next read lets go of every channel nobody is reading.
+    f.advance(2 * 60 * 1000);
+    assert.equal((await outcome(f.client.transcript({ machine: "mac-01", session: "later" }), FAST)).state, "resolved");
+    const released = f.frames("unsubscribe").at(-1).channels;
+    assert.equal(released.length, 8, "all eight idle channels are released: " + JSON.stringify(released));
+
+    const early = fleetClient();
+    early.subscribe(Array.from({ length: 10 }, (_, i) => "t/mac-01/early-" + i));
+    const earlySocket = await ready(early);
+    const sent = earlySocket.sent.filter((frame) => frame.type === "subscribe");
+    assert.deepEqual(sent.map((frame) => frame.channels.length), [8],
+        "subscriptions made before ready go out as one frame the relay accepts, newest eight");
+    assert.equal(sent[0].channels[7], "t/mac-01/early-9");
+    early.stop();
+});
+
+await check("transport · a retained t/ answer settles only a request it names, or a picture by its id", async function () {
+    const f = await quietMac();
+    const reading = f.client.transcript({ machine: "mac-01", session: "s1" });
+    await until(() => f.published.length === 1, FAST);
+    await retained(f, "t/mac-01/s1", { read: "transcript", status: 200, body: { entries: [], signature: "retained" } });
+    assert.equal((await outcome(reading, 60)).state, "pending",
+        "the channel's last answer — minutes old, maybe another device's — is not this read's answer");
+    await fromMachine(f.client, f.socket, "t/mac-01/s1", { read: "transcript", status: 200,
+        body: { entries: [], signature: "live" } });
+    const read = await outcome(reading, FAST);
+    assert.deepEqual([read.state, read.value && read.value.signature], ["resolved", "live"],
+        "the Mac's answer to this read settles it");
+
+    const picture = f.client.image({ machine: "mac-01", session: "s1" }, "a-picture");
+    await until(() => f.published.length === 2, FAST);
+    await retained(f, "t/mac-01/s1", Object.assign({ read: "image.a-picture", status: 200 },
+        { body: Object.assign({ id: "a-picture" }, PICTURE) }));
+    assert.equal((await outcome(picture, FAST)).state, "resolved", "an image id names bytes that never change");
+
+    const status = f.client.cloudStatus("mac-01");
+    await until(() => f.published.length === 3, FAST);
+    const request = f.published[2].command.request;
+    await retained(f, "t/mac-01/" + MACHINE_REPLY, { read: "read:" + request, status: 200,
+        body: Object.assign({}, CLOUD_STATUS, { commands: [] }) });
+    assert.equal((await outcome(status, FAST)).state, "resolved", "an answer carrying this page's request id is this request's");
+});
+
+await check("transport · machine_offline is remembered briefly: a re-ask fails here, and a live envelope ends it", async function () {
+    const f = await quietMac();
+    let offline = true;
+    f.answer = async (envelope, command) => {
+        if (offline) {
+            f.socket.receive({ type: "ack", ch: envelope.ch, seq: envelope.seq, status: "machine_offline" });
+            await f.client.messageChain.catch(noop);
+            return;
+        }
+        f.socket.receive({ type: "ack", ch: envelope.ch, seq: envelope.seq, status: "delivered" });
+        await fromMachine(f.client, f.socket, "t/mac-01/" + MACHINE_REPLY, { read: "read:" + command.request,
+            status: 200, body: Object.assign({}, CLOUD_STATUS, { commands: [] }) });
+    };
+    const code = async () => {
+        const ended = await outcome(f.client.cloudStatus("mac-01"), FAST);
+        return ended.state === "rejected" ? ended.error.code : ended.state;
+    };
+    assert.equal(await code(), "machine_offline");
+    assert.equal(f.published.length, 1);
+    const again = await outcome(f.client.cloudStatus("mac-01"), FAST);
+    assert.deepEqual([again.state, again.error && again.error.code, again.error && again.error.layer, again.error && again.error.retryable],
+        ["rejected", "machine_offline", "relay", true], "said again in the relay's own word");
+    assert.equal(f.published.length, 1, "without a second envelope");
+    const fresh = await outcome(f.client.schedules({ fresh: true }), FAST);
+    assert.equal(f.published.length, 1, "the schedules refresh does not ask it either");
+    assert.deepEqual([fresh.state, fresh.error && fresh.error.code], ["rejected", "machine_offline"],
+        "and, as the only machine asked, refuses with its word");
+    f.advance(5_000);
+    assert.equal(await code(), "machine_offline");
+    assert.equal(f.published.length, 2, "asked again once the first window passes");
+    f.advance(5_000);
+    assert.equal(await code(), "machine_offline");
+    assert.equal(f.published.length, 2, "the window doubles while it stays offline");
+    f.advance(5_000);
+    assert.equal(await code(), "machine_offline");
+    assert.equal(f.published.length, 3);
+    await retained(f, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" } });
+    assert.equal(await code(), "machine_offline", "a retained snapshot is not the machine talking now");
+    assert.equal(f.published.length, 3);
+    offline = false;
+    await fromMachine(f.client, f.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
+        cloud_status: CLOUD_STATUS });
+    assert.equal(await code(), "resolved", "a live envelope from the machine ends the wait at once");
+    assert.equal(f.published.length, 4);
+});
+
+await check("transport · a picture read once is drawn from memory; a refusal is not kept", async function () {
+    const f = await quietMac();
+    f.answer = async (envelope, command) => {
+        if (command.type !== "image") return;
+        const payload = command.id === "too-big"
+            ? { read: "image." + command.id, status: 413, error: { code: "image_too_large_for_cloud", message: "big" } }
+            : { read: "image." + command.id, status: 200, body: Object.assign({ id: command.id }, PICTURE) };
+        await fromMachine(f.client, f.socket, "t/mac-01/s1", payload);
+    };
+    const identity = { machine: "mac-01", session: "s1" };
+    const first = await outcome(f.client.image(identity, "p-1"), FAST);
+    const second = await outcome(f.client.image(identity, "p-1"), FAST);
+    assert.deepEqual([first.state, second.state], ["resolved", "resolved"]);
+    assert.deepEqual(Array.from(second.value.bytes), [137, 80, 78, 71]);
+    assert.equal(f.published.length, 1, "the second draw of the same picture sends nothing");
+    const other = await outcome(f.client.image({ machine: "mac-01", session: "s2" }, "p-1"), FAST);
+    assert.equal(other.state, "resolved");
+    assert.equal(f.published.length, 1, "the id names the bytes on its machine, whichever Session shows them");
+    assert.equal((await outcome(f.client.image(identity, "too-big"), FAST)).error.code, "image_too_large_for_cloud");
+    assert.equal((await outcome(f.client.image(identity, "too-big"), FAST)).error.code, "image_too_large_for_cloud");
+    assert.equal(f.published.length, 3, "a refusal is asked again");
+    const renewed = fleetClient({ resumeFrom: f.client });
+    await ready(renewed);
+    assert.equal((await outcome(renewed.image(identity, "p-1"), FAST)).state, "resolved");
+    assert.equal(RelaySocket.latest.sent.filter((frame) => frame.type === "publish").length, 0,
+        "a token renewal keeps the pictures");
+    renewed.stop();
+});
+
+await check("transport · a read on a client retired while the page was away runs on the client that resumed from it", async function () {
+    const f = await quietMac();
+    const answerOn = (fixture) => async (envelope, command) => {
+        if (command.type !== "transcript") return;
+        await fromMachine(fixture.client, fixture.socket, "t/mac-01/" + encodeURIComponent(command.session),
+            { read: "transcript", status: 200, body: { entries: [], signature: "on-" + fixture.name } });
+    };
+    // A notification tap lands in the gap between the page coming back and the new client installed.
+    let resuming = true;
+    f.client.lifecycle = () => resuming;
+    f.client.retire();
+    const tapped = f.client.transcript({ machine: "mac-01", session: "s1" });
+    assert.equal((await outcome(tapped, 60)).state, "pending", "held, not refused as cloud_reconnecting");
+    const renewed = fleetClient({ resumeFrom: f.client });
+    const renewedSocket = await ready(renewed);
+    const second = { client: renewed, socket: renewedSocket, name: "renewed" };
+    renewedSocket.onPublish = async function (envelope) {
+        const command = JSON.parse(new TextDecoder().decode(await openEnvelope(envelope, masterKey, senderKey)));
+        await answerOn(second)(envelope, command);
+    };
+    const read = await outcome(tapped, FAST);
+    assert.deepEqual([read.state, read.value && read.value.signature], ["resolved", "on-renewed"],
+        "the held read went out on the replacement socket and settled there");
+    assert.equal(f.published.length, 0, "nothing was published on the retired socket");
+    const later = await outcome(f.client.transcript({ machine: "mac-01", session: "s2" }), FAST);
+    assert.deepEqual([later.state, later.value && later.value.signature], ["resolved", "on-renewed"],
+        "a call after the replacement is ready runs there at once");
+
+    const hidden = await quietMac();
+    hidden.client.lifecycle = () => false;
+    hidden.client.retire();
+    const refused = await outcome(hidden.client.transcript({ machine: "mac-01", session: "s1" }), FAST);
+    assert.deepEqual([refused.state, refused.error && refused.error.code], ["rejected", "cloud_reconnecting"],
+        "with nothing on its way — the page is hidden — it is refused at once, as before");
+    resuming = false;
 });
 
 /* ---- ends ---------------------------------------------------------------------------------- */

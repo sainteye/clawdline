@@ -680,7 +680,11 @@ export class CloudViewerSession {
         this.client = client;
         return {
             state: "connected", client: client, previous: previous,
-            expiresAt: token.expiresAt
+            expiresAt: token.expiresAt,
+            // The relay's own statement of how long this token has left, measured on the relay's
+            // clock and carried across as a duration. `expiresAt` is the API's clock read against
+            // this device's, and a phone whose clock runs minutes ahead renews at once, every time.
+            renewInMs: typeof client._tokenRemainingMs === "function" ? client._tokenRemainingMs() : null
         };
     }
 }
@@ -748,94 +752,419 @@ export async function pairViewerFromInvitation(session, invitation, options) {
  */
 export function keepConnected(session, options) {
     options = options || {};
-    var sleep = options.sleep || function (ms) {
-        return new Promise(function (resolve) { setTimeout(resolve, ms); });
-    };
+    var setTimer = options.setTimeout || function (fn, ms) { return setTimeout(fn, ms); };
+    var clearTimer = options.clearTimeout || function (timer) { clearTimeout(timer); };
+    // An injected `sleep` cannot be cancelled, so it is raced against the wake signal below; the
+    // default is a timer that is cleared the moment its wait ends for any other reason.
+    var injectedSleep = options.sleep || null;
     var jitter = options.jitter || Math.random;
     var initial = options.initialBackoffMs || 250;
     var maximum = options.maximumBackoffMs || 30000;
     var now = options.now || function () { return Date.now(); };
     var renewalLeadMs = Math.max(0, Number(options.renewalLeadMs) || 30000);
+    var renewalFloorMs = positive(options.renewalFloorMs, RENEWAL_FLOOR_MS);
+    var stableMs = positive(options.stableMs, STABLE_CONNECTION_MS);
+    var hiddenGraceMs = positive(options.hiddenGraceMs, HIDDEN_GRACE_MS);
+    var quiesceDeferMs = positive(options.quiesceDeferMs, QUIESCE_DEFER_MS);
+    var wakeSpacingMs = positive(options.wakeSpacingMs, WAKE_SPACING_MS);
+    var maximumFailures = positive(options.maximumConnectFailures, MAXIMUM_CONNECT_FAILURES);
+    var page = pageLifecycle(options);
     var onState = options.onState || function () {};
     var stopped = false;
+    var ended = false;
     var backoff = initial;
     var active = null;
+    // When the chain of usable clients began. A renewal continues the chain; only an outage ends it.
+    var healthySince = null;
+    var failures = 0;
+    var lastAttemptAt = null;
+    // Hidden past the grace period: the socket is retired and nothing connects until the page is back.
+    var quiesced = false;
+    var hiddenSince = page.hidden() ? now() : null;
+    var graceTimer = null;
+    // Set when the page returns from a hide long enough that its socket cannot be trusted — a phone
+    // that froze this page never ran the grace timer, and its socket may be dead without saying so.
+    var staleResume = false;
+    var wakeListeners = new Set();
 
-    function nextBoundary(client, expiresAt) {
+    function wake(reason) {
+        Array.from(wakeListeners).forEach(function (listener) { listener(reason); });
+    }
+
+    function onWake(listener) {
+        wakeListeners.add(listener);
+        return function () { wakeListeners.delete(listener); };
+    }
+
+    /** Wait `ms`, or less when something wakes the loop; answers `"elapsed"` or the wake reason. */
+    function waitFor(ms, wakes) {
+        return new Promise(function (resolve) {
+            var timer = null;
+            var done = false;
+            function finish(reason) {
+                if (done) return;
+                done = true;
+                off();
+                if (timer !== null) clearTimer(timer);
+                resolve(reason);
+            }
+            var off = onWake(function (reason) {
+                if (stopped || quiesced || !wakes || wakes(reason)) finish(reason);
+            });
+            if (stopped || quiesced) { finish("stopped"); return; }
+            if (injectedSleep) {
+                Promise.resolve(injectedSleep(ms)).then(function () { finish("elapsed"); },
+                    function () { finish("elapsed"); });
+            } else {
+                timer = setTimer(function () { timer = null; finish("elapsed"); }, Math.max(0, ms));
+            }
+        });
+    }
+
+    /**
+     * The retry sleep. A page coming back into view, the network coming back, or a bfcache restore
+     * may cut it short — that is "resume promptly" — but never to less than `wakeSpacingMs` after the
+     * attempt it follows, so a storm of such events cannot become a storm of connects.
+     */
+    async function backoffWait(delay) {
+        var reason = await waitFor(delay, function () { return true; });
+        if (reason === "elapsed" || stopped || quiesced) return;
+        var since = lastAttemptAt === null ? wakeSpacingMs : now() - lastAttemptAt;
+        if (since < wakeSpacingMs) await waitFor(wakeSpacingMs - since, function () { return false; });
+    }
+
+    /** Nothing connects while quiesced, or while the browser says it has no network. */
+    async function gate() {
+        while (!stopped) {
+            if (quiesced) {
+                await new Promise(function (resolve) {
+                    var off = onWake(function () {
+                        if (stopped || !quiesced) { off(); resolve(); }
+                    });
+                    if (stopped || !quiesced) { off(); resolve(); }
+                });
+                continue;
+            }
+            if (page.offline()) {
+                // `online` wakes this; the timer only reads the flag again, it connects nothing.
+                await waitFor(OFFLINE_RECHECK_MS, function (reason) { return reason === "online"; });
+                continue;
+            }
+            return;
+        }
+    }
+
+    function renewalDelay(outcome) {
+        var relayRemaining = Number(outcome.renewInMs);
+        var remaining = outcome.renewInMs !== null && outcome.renewInMs !== undefined &&
+            Number.isFinite(relayRemaining) ? relayRemaining
+            : Number.isFinite(outcome.expiresAt) ? outcome.expiresAt - now() : null;
+        if (remaining === null) return null;
+        // The floor: however wrong either clock is, a renewal never follows its own connect at once.
+        return Math.max(renewalFloorMs, remaining - renewalLeadMs);
+    }
+
+    function nextBoundary(client, outcome) {
         return new Promise(function (resolve) {
             var settled = false;
+            var timer = null;
             var off = client.events(function (event) {
-                if (event.type === "connection" && event.state === "offline") finish("offline");
+                if (event.type === "connection" && event.state === "offline") {
+                    finish({ reason: "offline", failure: typeof event.failure === "string" ? event.failure : null });
+                }
             });
-            function finish(reason) {
+            var offWake = onWake(function () {
+                if (stopped) finish({ reason: "stopped" });
+                else if (quiesced) finish({ reason: "quiesce" });
+                else if (staleResume) finish({ reason: "resume" });
+            });
+            function finish(result) {
                 if (settled) return;
                 settled = true;
                 off();
-                resolve(reason);
+                offWake();
+                // The renewal timer belongs to this boundary: it must not keep a dead client alive.
+                if (timer !== null) { timer.cancel(); timer = null; }
+                resolve(result);
             }
-            if (Number.isFinite(expiresAt)) {
-                var delay = Math.max(0, expiresAt - now() - renewalLeadMs);
-                Promise.resolve(sleep(delay)).then(function () { finish("renew"); }, function () {
-                    finish("renew");
-                });
+            var delay = renewalDelay(outcome);
+            if (delay !== null) {
+                if (injectedSleep) {
+                    Promise.resolve(injectedSleep(delay)).then(function () { finish({ reason: "renew" }); },
+                        function () { finish({ reason: "renew" }); });
+                } else {
+                    var id = setTimer(function () { finish({ reason: "renew" }); }, delay);
+                    timer = { cancel: function () { clearTimer(id); } };
+                }
             }
-            if (stopped) finish("stopped");
+            if (stopped) finish({ reason: "stopped" });
+            else if (quiesced) finish({ reason: "quiesce" });
         });
+    }
+
+    function retireClient(client) {
+        if (!client) return;
+        if (typeof client.retire === "function") client.retire();
+        else if (typeof client.stop === "function") client.stop();
+    }
+
+    /* ---- the page's lifecycle ------------------------------------------------------------- */
+
+    function armGrace(delay) {
+        if (graceTimer !== null || quiesced || stopped) return;
+        graceTimer = setTimer(function () {
+            graceTimer = null;
+            tryQuiesce();
+        }, delay);
+    }
+
+    function disarmGrace() {
+        if (graceTimer === null) return;
+        clearTimer(graceTimer);
+        graceTimer = null;
+    }
+
+    /**
+     * Hidden for the whole grace period: retire the socket. A person's own work still in the air —
+     * a send, a keypress, anything answered as `action:` — is waited for, up to `quiesceDeferMs`, so
+     * putting the phone away right after pressing Send does not turn the send into an unknown.
+     */
+    function tryQuiesce() {
+        if (stopped || quiesced || !page.hidden()) return;
+        var hiddenFor = hiddenSince === null ? hiddenGraceMs : now() - hiddenSince;
+        if (hiddenFor < hiddenGraceMs) { armGrace(hiddenGraceMs - hiddenFor); return; }
+        var client = active;
+        var unsettled = client && typeof client._unsettledWork === "function" ? client._unsettledWork() : 0;
+        if (unsettled > 0 && hiddenFor < hiddenGraceMs + quiesceDeferMs) {
+            armGrace(Math.min(QUIESCE_RECHECK_MS, hiddenGraceMs + quiesceDeferMs - hiddenFor));
+            return;
+        }
+        quiesced = true;
+        wake("quiesce");
+    }
+
+    function onHidden() {
+        if (stopped) return;
+        if (hiddenSince === null) hiddenSince = now();
+        armGrace(hiddenGraceMs);
+    }
+
+    /**
+     * Visible, restored from the back-forward cache, back online, or asked by the page. Answers
+     * whether a connection is live or on its way, which is what a retired client asks before it
+     * holds a read for its replacement (`CloudClient._viaSuccessor`).
+     */
+    function resume(reason) {
+        if (stopped || ended) return false;
+        if (page.hidden()) {
+            // `online` while hidden: a loop that is not quiesced may re-read the network flag.
+            if (!quiesced) wake(reason);
+            return false;
+        }
+        disarmGrace();
+        var hiddenFor = hiddenSince === null ? 0 : now() - hiddenSince;
+        hiddenSince = null;
+        if (quiesced) {
+            quiesced = false;
+            wake(reason);
+            return true;
+        }
+        if (hiddenFor >= hiddenGraceMs && active) staleResume = true;
+        wake(reason);
+        return true;
+    }
+
+    var detach = page.listen({
+        hidden: onHidden,
+        visible: function () { resume("visible"); },
+        pageshow: function () { resume("pageshow"); },
+        online: function () { resume("online"); }
+    });
+    if (hiddenSince !== null) armGrace(hiddenGraceMs);
+
+    function attach(client) {
+        if (!client || (typeof client !== "object" && typeof client !== "function")) return;
+        // `main.js` calls `api.revalidate("visible")`; the client hands it here, where the socket lives.
+        try { client.lifecycle = function (reason) { return resume(reason === "visible" || !reason ? "visible" : String(reason)); }; }
+        catch (e) { /* a frozen stand-in has no hook, and needs none */ }
     }
 
     var loop = (async function () {
         while (!stopped) {
+            await gate();
+            if (stopped) return;
             var outcome = null;
+            lastAttemptAt = now();
             try {
                 outcome = await session.connect();
             } catch (error) {
+                if (stopped) return;
                 if (error && error.code === "revoked") {
                     onState({ state: "revoked", error: error });
                     return;
                 }
-                if (error && error.terminal === true) {
+                if (error && (error.terminal === true || PERMANENT_RELAY_REFUSALS.has(error.code))) {
+                    // A relay that closed the handshake with 4403, 4400 or 4413 will close the next
+                    // one the same way: this device is revoked, or this page speaks the protocol wrong.
                     onState({ state: "terminal_error", error: error });
                     return;
                 }
+                var serving = !!(active && active.ready);
+                if (!serving) failures += 1;
+                if (failures >= maximumFailures) {
+                    // Stops rather than knocking every thirty seconds for ever; the door says so and
+                    // offers the press that starts again.
+                    onState({ state: "terminal_error", error: error, reason: "retries_exhausted",
+                        attempts: failures });
+                    return;
+                }
+                if (error && RATE_REFUSALS.has(error.code)) backoff = maximum;
+                var delay = Math.min(maximum, backoff) * (0.75 + jitter() * 0.5);
                 // A proactive replacement is allowed to fail while the old credential is still
                 // serving. Retrying that warm-up is not an outage and must not cover the usable
                 // page with the reconnect error screen.
-                if (!active || !active.ready) {
-                    onState({ state: "retrying", error: error, afterMs: backoff });
+                if (!serving) {
+                    onState({ state: "retrying", error: error, afterMs: Math.round(delay) });
                 }
-                await sleep(Math.min(maximum, backoff) * (0.75 + jitter() * 0.5));
+                await backoffWait(delay);
                 backoff = Math.min(maximum, backoff * 2);
                 continue;
+            }
+            if (stopped) {
+                if (outcome && outcome.client && outcome.client !== active) retireClient(outcome.client);
+                return;
             }
             if (outcome.state !== "connected") {
                 onState(outcome);
                 return;
             }
-            backoff = initial;
+            if (quiesced) {
+                // Hidden past the grace while this connect was in flight: keep nothing open.
+                retireClient(outcome.client);
+                if (outcome.previous && outcome.previous !== outcome.client) retireClient(outcome.previous);
+                active = null;
+                healthySince = null;
+                continue;
+            }
+            if (!active || !active.ready || healthySince === null) healthySince = now();
             active = outcome.client;
+            staleResume = false;
+            attach(outcome.client);
             onState({ state: "connected", client: outcome.client });
             // A five-minute device token is a credential rotation boundary, not a user-visible
             // outage. The replacement has completed its signed handshake before `connect()`
             // returns, so only now retire the socket it superseded.
-            if (outcome.previous && outcome.previous !== outcome.client) {
-                if (typeof outcome.previous.retire === "function") outcome.previous.retire();
-                else outcome.previous.stop();
-            }
-            var boundary = await nextBoundary(outcome.client, outcome.expiresAt);
+            if (outcome.previous && outcome.previous !== outcome.client) retireClient(outcome.previous);
+            var boundary = await nextBoundary(outcome.client, outcome);
             if (stopped) return;
-            if (boundary === "offline") {
-                active = null;
-                onState({ state: "reconnecting" });
+            // A connection that stayed up for `stableMs` clears the failure history, whatever ended
+            // it. One that did not is counted as a failure, so accept-then-close cannot loop for ever.
+            var stable = healthySince !== null && now() - healthySince >= stableMs;
+            if (stable) {
+                failures = 0;
+                backoff = initial;
             }
+            if (boundary.reason === "quiesce") {
+                // The socket goes, the rows stay: `resumeFrom` seeds the next client with them and
+                // the relay realigns every retained channel when the page is back.
+                retireClient(outcome.client);
+                active = null;
+                healthySince = null;
+                onState({ state: "paused" });
+                continue;
+            }
+            if (boundary.reason === "offline") {
+                active = null;
+                healthySince = null;
+                if (PERMANENT_RELAY_REFUSALS.has(boundary.failure)) {
+                    onState({ state: "terminal_error",
+                        error: bootError(boundary.failure, "the relay refused this viewer", { terminal: true }) });
+                    return;
+                }
+                // Backoff forgets its history only for a connection that stayed up (above): a relay
+                // that accepts and then closes at once is met with a growing wait, never a tight loop.
+                if (!stable) failures += 1;
+                if (failures >= maximumFailures) {
+                    onState({ state: "terminal_error", reason: "retries_exhausted", attempts: failures,
+                        error: bootError(boundary.failure || "offline", "the cloud connection kept dropping") });
+                    return;
+                }
+                if (RATE_REFUSALS.has(boundary.failure)) backoff = maximum;
+                onState({ state: "reconnecting" });
+                var wait = Math.min(maximum, backoff) * (0.75 + jitter() * 0.5);
+                await backoffWait(wait);
+                backoff = Math.min(maximum, backoff * 2);
+            }
+            // `renew` and `resume` connect again at once, with the current client still serving.
         }
     })();
+    // A loop that ends on its own — pairing required, a terminal refusal — leaves no page listener or
+    // grace timer behind; the next `keepConnected` a retry starts brings its own.
+    function release() { ended = true; disarmGrace(); detach(); }
+    loop.then(release, release);
 
     return {
         stop: function () {
             stopped = true;
+            disarmGrace();
+            detach();
+            wake("stopped");
             if (session.client) session.client.stop();
         },
         done: loop
+    };
+}
+
+const HIDDEN_GRACE_MS = 60 * 1000;
+const STABLE_CONNECTION_MS = 60 * 1000;
+const RENEWAL_FLOOR_MS = 60 * 1000;
+const WAKE_SPACING_MS = 2000;
+const QUIESCE_DEFER_MS = 60 * 1000;
+const QUIESCE_RECHECK_MS = 5000;
+const OFFLINE_RECHECK_MS = 60 * 1000;
+const MAXIMUM_CONNECT_FAILURES = 16;
+/** Relay closes that no retry changes: 4403 is a revoked device; 4400 and 4413 are this page's protocol. */
+const PERMANENT_RELAY_REFUSALS = new Set(["forbidden", "bad_request", "too_large"]);
+/** 4429: the relay asked for less; the next attempt waits the longest. */
+const RATE_REFUSALS = new Set(["rate_limited", "over_capacity"]);
+
+function positive(value, fallback) {
+    var number = Number(value);
+    return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+/**
+ * The document, window and navigator a reconnect loop watches, each injectable. A missing one —
+ * node, a worker — is a page that is always visible and never says it is offline.
+ */
+function pageLifecycle(options) {
+    var doc = options.document !== undefined ? options.document : globalThis.document;
+    var win = options.window !== undefined ? options.window
+        : (typeof globalThis.addEventListener === "function" ? globalThis : null);
+    var nav = options.navigator !== undefined ? options.navigator : globalThis.navigator;
+    function hidden() {
+        return !!doc && (doc.hidden === true || doc.visibilityState === "hidden");
+    }
+    return {
+        hidden: hidden,
+        offline: function () { return !!nav && nav.onLine === false; },
+        listen: function (on) {
+            var removals = [];
+            function add(target, name, handler) {
+                if (!target || typeof target.addEventListener !== "function") return;
+                try {
+                    target.addEventListener(name, handler);
+                    removals.push(function () {
+                        try { target.removeEventListener(name, handler); } catch (e) { }
+                    });
+                } catch (e) { /* a target that refuses listeners is a page with no lifecycle */ }
+            }
+            add(doc, "visibilitychange", function () { if (hidden()) on.hidden(); else on.visible(); });
+            add(win, "pagehide", function () { on.hidden(); });
+            add(win, "pageshow", function () { if (!hidden()) on.pageshow(); });
+            add(win, "online", function () { on.online(); });
+            return function () { removals.forEach(function (remove) { remove(); }); };
+        }
     };
 }
 

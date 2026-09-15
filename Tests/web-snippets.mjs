@@ -734,7 +734,7 @@ assert.match(headSource, /var canSnippet = snippetControls\(api\)\.read;/,
     "asked of the same guard the sheet asks, so the header and the ⋯ row cannot disagree");
 assert.match(headSource, /els\["detail-snippets"\]\.hidden = !s;/,
     "no session open is no project: the button goes away rather than leaving an empty box");
-assert.match(headSource, /drawIcon\(els\["detail-mark"\], mark, 5\)/,
+assert.match(headSource, /drawIconOnce\(els\["detail-mark"\], mark, 5\)/,
     "and the mark it draws is markForSession's, so an unregistered project is not a hole");
 assert.match(headSource, /var resolved = s \? snippetProjectFor\(s\.id\) : null;/,
     "the header asks the Mac's own answer which project this session belongs to");

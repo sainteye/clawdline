@@ -452,6 +452,11 @@ Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status
 - 升級前的拒絕改成：接受升級 → 送 `{"type":"error","code":<code>,"message":<english>}` → 以 `errors.ts` 的 `WS_CLOSE` 對應碼關閉。
   瀏覽器記下最後一個 error frame 的 `code` 與 close event 的 `code`。
 - 新增的 log 只寫 `code`、`field`、channel 種類、`seq`、device id；不寫信封內容。
+- 瀏覽器怎麼對待關閉碼（`net/cloud-boot.js` 的 `keepConnected`）：4403 `forbidden` 與 4400、4413 不再重連，
+  顯示 `terminal_error`；4429 `rate_limited`／`over_capacity` 用最長的退避再試；其他照退避重連。
+- 瀏覽器記住 `ack status=machine_offline`：同一台機器 5 秒內（持續離線就加倍，最長 5 分鐘）再送的讀取或指令，
+  在本機就以同樣的 `relay · machine_offline` 拒絕，不花 sequence，所以沒有 `ref`。收到那台機器的即時信封，
+  或對它的 `delivered` ack，就立刻解除；realign 重播的舊信封不算。
 
 ### 11.8 Mac 的 replay 窗口
 

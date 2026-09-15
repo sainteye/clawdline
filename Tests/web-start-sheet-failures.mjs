@@ -155,7 +155,7 @@ async function check(name, run) {
 // Called for their synchronous effect and never as a promise. Everything else on the prototype is
 // found by enumeration, so a method added tomorrow is held to the rule without anyone listing it.
 const SYNCHRONOUS = new Set(["constructor", "events", "subscribe", "stop", "retire",
-    "forgetMachinePairingAnswer", "machineAccess", "machineDescriptor"]);
+    "forgetMachinePairingAnswer", "machineAccess", "machineDescriptor", "revalidate"]);
 // Snapshot reads with no failure to reach; every other method must be seen to reject at least
 // once below, or the inputs never walked the path this guard exists for.
 const CANNOT_FAIL = new Set(["sessions", "tasks"]);
@@ -559,8 +559,8 @@ async function sheetScenario(scenario) {
         skillPickerChanged: noop,
         skillPickerClose: noop,
         rowNode: function () { return null; },
-        observeTranscriptRevision: noop,
-        rearmTranscriptRevision: noop,
+        observeTranscriptRow: noop,
+        rearmTranscriptRow: noop,
         followStatusLine: noop,
         syncSessionBoard: noop,
         observeBoardSession: noop,
