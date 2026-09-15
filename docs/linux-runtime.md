@@ -156,7 +156,11 @@ marker uses `s/<machine>/__clawdline_inventory_v1__`. Only complete scans may ad
 removed rows receive retained tombstones and every reconnect replays a complete authoritative set.
 The published cwd is present only when it equals a configured project allowlist entry. Browser
 creation likewise selects a place id from that allowlist and reaches the same durable idempotency,
-pairing/revocation and write-gate boundary as local ingress.
+pairing/revocation and write-gate boundary as local ingress. `places` and `start` are the only
+browser words the executor implements, and its descriptor says so as `commands`; any other word
+that names the machine reply session and a well-formed request id is refused as `unknown_command`
+on `action:<request>` through the same authenticated gates, instead of being dropped while the
+browser waits out its read timeout ([`cloud.md`](cloud.md), *Which machine a request goes to*).
 
 The W4-2 package candidate snapshots caller key/provenance/signature/archive paths into a root-owned
 0700 directory through no-follow descriptors and uses only those immutable bytes for verification

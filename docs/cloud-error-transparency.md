@@ -475,7 +475,7 @@ H1a 現在是那台機器自己的狀態：envelope 路由到一台本瀏覽器�
 - 對象：本瀏覽器**有配對**的機器（它的 `orch/<machine>` 快照是經由本瀏覽器對那台機器的 pairing 打開的——精確 pairing，或驗章與解密成功後綁定的 legacy pin）、
   descriptor 沒有標成非 Mac 平台、並送出過 `cloud_status.v >= 1`（只有 Mac 會送）。Linux executor 不實作這個指令（收到會直接丟掉、不回覆），
   以平台與能力兩個獨立事實排除。封裝和其他指令一樣走 `_outboundMachinePairing`，配對已不在時在本機以 `machine_pairing_required` 拒絕、照退避重試。
-  **不用 `_onlyMachine`**；兩台有能力的 Mac → 本機 `cloud_machine_ambiguous`，列留在手機。
+  不經帳號層級的挑選器，但同樣以 `_machineImplements` 判斷能力；兩台有能力的 Mac → 本機 `cloud_machine_ambiguous`，列留在手機。
 - `batch`：`{v:1, batch_id, created_at_ms, device, tab, web_build, rows:[{n, at_ms, event, tab, data}], completeness:{n_from, n_to, rows,
   dropped_rate_limited, dropped_overflow, dropped_refused, dropped_unflushed, storage_errors, counting_since_ms, rate_limited:[{key, event, dropped, first_at_ms, last_at_ms, sample_n}], limits}}`，
   鍵集合精確比對；`data` 是一層的 scalar 或短陣列，最多 48 欄，不認得任何事件名稱。列的 `tab` 是記下那一列的分頁。

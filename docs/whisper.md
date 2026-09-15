@@ -264,7 +264,9 @@ another Mac's card moves it there. With no choice made, the one Mac whose invent
 used; if that still leaves two, nothing is sent and the page asks you to choose under Devices
 (`cloud_voice_host_ambiguous`), and an account with no Mac this browser is paired with says so
 (`cloud_voice_host_unavailable`) instead of waiting on a machine that cannot answer. The choice is
-kept in this browser only, so a phone and a laptop can dictate to different Macs.
+kept in this browser only, so a phone and a laptop can dictate to different Macs. The same resolver
+chooses the machine for every other hosted-console feature that names none
+([`cloud.md`](cloud.md), *Which machine a request goes to*); dictation adds only the choice.
 
 The measurements are the ones [above](#models) plus a network: **1.6 s** to read back three seconds
 of speech once the model is warm, **about 12 s** for the first one after a reboot. The page counts

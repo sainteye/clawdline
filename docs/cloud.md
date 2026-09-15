@@ -255,6 +255,10 @@ The only browser operations accepted by the Linux machine channel are the closed
 `opus`. The versioned durable request carries that model through the existing serialized write
 gate and idempotency ledger. Success echoes place, bounded cwd, assistant and model; malformed,
 unknown, revoked and gate-refused requests answer the same opaque request id with a typed refusal.
+Any other word on the machine reply session is refused as `unknown_command` (400) through the same
+gates, answered on `action:<request>` as the Mac's own refusal of an unknown word is; before that
+refusal it was dropped without a reply. The descriptor advertises the two words as
+`commands: ["places", "start"]`.
 
 A newly installed Linux executor has an explicit enrollment step before its first daemon start:
 run `ClawdlineLinux cloud-login --config /etc/clawdline/daemon.json` as the configured service
@@ -400,7 +404,8 @@ inventory and refuses an unknown one — `cloud_read_unavailable` before any sna
 `cloud_schedules_unpublished` for a Mac whose build predates the field — because
 `net/schedules.js` draws whatever it is handed, so resolving `[]` would be the page asserting on
 the Mac's behalf that there is nothing scheduled. A refusal draws nothing and keeps the last
-truthful list; a real empty answer still draws.
+truthful list; a real empty answer still draws. An account whose every machine cannot have
+schedules — only Linux executors — resolves an empty list, because that is a fact.
 
 **Who may drive this Mac is a local fact.** `CloudPairedDeviceStore` holds the pinned viewer keys
 in `~/.config/clawdline/cloud-devices.json`, owner-readable only, scoped to one account.
@@ -456,6 +461,36 @@ session list's connecting skeleton as the only visible state.
 **Capabilities are read back, not assumed.** `GET /v1/devices` is consulted every boot, which is
 also where a revoked device finds out. Writes are enabled only if the row still carries
 `send_prompt`.
+
+**Which machine a request goes to.** An account can hold a Mac and an enrolled Linux executor, and
+the executor answers only `places` and `start`. `CloudClient._machineImplements(machine, word)` is
+the one answer to "can this machine answer this word" — from, strongest first, the machine's own
+`unknown_command` to that word, a descriptor `commands` list, a `linux` or other non-Mac platform,
+and evidence of a Mac (a `macos`/`darwin` descriptor, or `cloud_status`) — and every route uses it:
+
+- A request that names its machine — a Session, a Project route, a schedule, a Board link, an
+  explicit machine — goes to that machine and nowhere else, and is refused before the wire as
+  `cloud_machine_unsupported` (`cloud_feature_unavailable` for a Mac that refused the word) when that
+  machine is known not to implement the word.
+- A request with no machine picks with the rules dictation's `voiceHost` was written with: the one
+  capable machine; else the one with a current inventory; else a typed refusal —
+  `cloud_machine_ambiguous`, or `cloud_machine_unsupported` when no machine on the account has the
+  feature. A machine whose descriptor has not arrived counts only when no machine is evidently a Mac
+  and none is known to answer. Push is strict: one Mac or `cloud_machine_ambiguous`, never the
+  fresher of two, because the key, the subscription and its removal must reach the same Mac.
+- A read that spans machines (`places`, `schedules({ fresh })`, `snippets()` with no Session) asks
+  only capable machines, each on its own under its read timeout. One that refuses, fails or stays
+  silent is named in `unanswered` beside the others' rows instead of discarding them; one that
+  cannot have the feature contributes nothing; one not asked because its descriptor has not
+  arrived is named in `unconfirmed`. The call rejects only when every machine asked failed.
+- A machine that refuses a word it does not implement cannot know whether the page waits on
+  `read:<request>` or `action:<request>`; both the Mac and the Linux executor answer `action:`, and
+  a refusal — never a body — on the machine reply channel settles either spelling of the same
+  request id.
+
+`Tests/web-cloud-fleet.mjs` drives a Mac + Linux account with the executor silent on every other
+word: every feature answers with the Mac's data within a bound, and nothing but `places` and `start`
+is published toward Linux.
 
 **And `send_prompt` gates one read as well, which is the relay's rule rather than this app's.**
 PROTOCOL §12 says publishing to `ctl/` needs that capability *in either class*, and a read has to
@@ -718,9 +753,11 @@ SecurityTool invocation.
   Other non-English catalogs still fall back to the English document until they are exported and
   named in the build declaration.
 - **Push is machine-scoped.** The hosted worker and subscription now use the one connected Mac's
-  VAPID key through an encrypted request/reply. An account showing more than one Mac is refused
-  with `cloud_machine_ambiguous` instead of registering a browser subscription against whichever
-  machine happened to publish first.
+  VAPID key through an encrypted request/reply. A Linux executor on the same account does not count;
+  an account showing more than one Mac is refused with `cloud_machine_ambiguous` instead of
+  registering a browser subscription against whichever machine happened to publish first. Turning
+  notifications off removes this browser's subscription either way and says so when the Mac could
+  not be told.
 - **The reads that cross.** A session's messages, both tiers of its Info, one
   background agent's conversation, one background command's output, its skills menu, its Git
   panel, its live screen and the pictures inside its transcript now cross. The viewer asks on
