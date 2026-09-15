@@ -311,9 +311,10 @@ function descriptorCommandsKey(descriptor) {
 
 /**
  * Whether an `orch/` payload is a `cloud_status` notice rather than a snapshot: an object holding
- * that key and nothing else. A Mac publishes one when a command could not get in (docs/cloud.md),
- * and it never carries the task list, the schedules or the descriptor, so it is no evidence that
- * any of them is gone. Every snapshot carries at least `at` beside it.
+ * that key and nothing else. A Mac sends one only before it has handed over any snapshot
+ * (docs/cloud.md); once it has one, every notice is that snapshot with the digest in it. A
+ * status-only payload never carries the task list, the schedules or the descriptor, so it is no
+ * evidence that any of them is gone. Every snapshot carries at least `at` beside it.
  */
 function statusOnlyOrchestrator(payload) {
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
@@ -1595,10 +1596,10 @@ export class CloudClient {
             var machine = decodedChannelSegment(channel.machine);
             this._observeMachine(machine, envelope.ts);
             if (statusOnlyOrchestrator(payload)) {
-                // A notice is read beside the snapshot this page holds, never instead of it: the Mac
-                // does not re-send every task record to say that one command was dropped. Nothing
+                // A status-only notice is read beside the snapshot this page holds, never instead of
+                // it: it carries no task record, so it is no word that the tasks are gone. Nothing
                 // reads `cloud_status` back out of the stored snapshot, so the snapshot is left as
-                // it is. Nor is a notice a snapshot: a page holding none still asks for one
+                // it is. Nor is such a notice a snapshot: a page holding none still asks for one
                 // (`_holdsOrchestrator`), and the task list, which it cannot change, is not redrawn.
                 this._consumeCloudStatus(machine, payload.cloud_status, envelope);
                 this._emit({ type: "orchestrator", data: payload, machine: machine,

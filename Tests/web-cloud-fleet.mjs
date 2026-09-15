@@ -1614,11 +1614,12 @@ await check("F4 · a page back from the background that holds the Mac's orch sna
     back.client.stop();
 });
 
-/* ---- F5 · a cloud_status notice carries no task ------------------------------------------------ */
+/* ---- F5 · a status-only cloud_status notice carries no task ------------------------------------ */
 
-// The Mac publishes a notice as `{"cloud_status": …}` alone instead of re-sending every task record
-// beside it (`CloudAppBridge.publishOrchestratorNotice`). The page must read it beside the snapshot it
-// holds, and a page the relay replays only that notice to must still ask for the snapshot.
+// A Mac that holds a snapshot sends every notice as that snapshot with the digest in it
+// (`CloudAppBridge.publishOrchestratorNotice`); `{"cloud_status": …}` alone comes only from one that has
+// none yet. Nothing may depend on that: a page must read such a notice beside the snapshot it holds, and
+// a page the relay replays only that notice to must still ask for the snapshot.
 await check("F5 · a cloud_status notice leaves the Mac's tasks on the page, and a page replayed only a notice still asks for the snapshot", async function () {
     const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }]]) };
     const withStatus = (extra) => Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }, extra || {});

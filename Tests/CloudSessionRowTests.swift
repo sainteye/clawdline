@@ -778,31 +778,41 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
           eventually { fixture.replies()["read:owed-2"] != nil && waits.requests.count == 4 }, "waits=\(waits.requests)")
     fixture.clock.advance(1_000)
     // The Mac handing over the snapshot it already sent publishes nothing, and so answers nobody:
-    // the page that asked still has it coming at the floor.
+    // the page that asked still gets it at the floor.
     let beforeIdentical = orchestratorFrames().count
     cloudRowAwait("the Mac hands over the same orchestrator snapshot again") { try await bridge.publishOrchestrator(orchestrator) }
-    check("an unchanged snapshot neither goes out nor answers what is owed",
-          orchestratorFrames().count == beforeIdentical
-            && cloudRowAwait("reading the owed state", recording: false) { await bridge.orchestratorResendStateForTesting() }
-                .map { $0.owedSince != nil && $0.scheduled } == true, "orch=\(orchestratorFrames().count)")
-    // A changed snapshot does answer it.
+    expect("an unchanged snapshot does not go out", orchestratorFrames().count, beforeIdentical)
+    waits.release()
+    check("and answers nobody: at the floor the owed snapshot still goes out",
+          eventually { orchestratorFrames().count == orchBeforeOwed + 2 }
+            && eventually {
+                cloudRowAwait("reading the owed state", recording: false) { await bridge.orchestratorResendStateForTesting() }
+                  .map { $0.owedSince == nil && !$0.scheduled } == true
+            }, "orch=\(orchestratorFrames().count)")
+
+    fixture.clock.advance(CloudAppBridge.sessionSnapshotIntervalMilliseconds)
+    fixture.askForRows("owed-3", sequence: 302, extra: #","orchestrator":true"#)
+    check("a third request inside the new floor is owed too",
+          eventually { fixture.replies()["read:owed-3"] != nil && waits.requests.count == 5 }, "waits=\(waits.requests)")
+    fixture.clock.advance(1_000)
     let changedOrchestrator = try! JSONSerialization.data(withJSONObject: [
         "tasks": [] as [Any], "machine": ["name": "Mac", "platform": "macos"] as [String: Any],
         "schedules": [] as [Any],
     ])
     cloudRowAwait("the Mac's own next orchestrator publication") { try await bridge.publishOrchestrator(changedOrchestrator) }
     waits.release()
-    check("a publication after the request answers it, and the floor adds nothing",
+    check("a changed publication after the request answers it, and the floor adds nothing",
           eventually {
               cloudRowAwait("reading the owed state", recording: false) { await bridge.orchestratorResendStateForTesting() }
                 .map { $0.owedSince == nil && !$0.scheduled } == true
-          } && orchestratorFrames().count == orchBeforeOwed + 2, "orch=\(orchestratorFrames().count)")
+          } && !eventually(timeout: 0.3) { orchestratorFrames().count != orchBeforeOwed + 3 },
+          "orch=\(orchestratorFrames().count)")
 
     // F6: a pass waiting out its window while a scan tombstones a row sends what is published when it
     // runs — never the row that closed — and its answer does not name it.
     fixture.clock.advance(1_000)
-    fixture.askForRows("across-tombstone", sequence: 302)
-    check("a request inside the window waits for it", eventually { waits.requests.count == 5 }, "waits=\(waits.requests)")
+    fixture.askForRows("across-tombstone", sequence: 303)
+    check("a request inside the window waits for it", eventually { waits.requests.count == 6 }, "waits=\(waits.requests)")
     let betaBeforeTombstone = fixture.frames("beta").count
     let alphaBeforeTombstone = fixture.frames("alpha").count
     fixture.publish([cloudRow("alpha", observedAt: 390, generation: 8, sourceObservedAt: 389)],
