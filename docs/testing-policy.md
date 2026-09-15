@@ -53,6 +53,10 @@ it cheaply.** Otherwise do not write one.
 6. **Visual layout and wording.** Look at the running app or a screenshot instead.
 7. **Glue the compiler already checks,** or a change a single manual run shows working.
 
+**Machine protection is not a test and stays.** The compile lock and the per-function
+suspension-point limit in `test.sh` exist because a compile took 46 GiB and rebooted this 24 GB Mac
+twice on 2026-09-03. Keep checks of that kind; do not add product assertions to them.
+
 ## Bugs between programs: observe first
 
 For a defect that crosses processes (Mac ↔ web ↔ Cloud, a writer and a reader of one file, several

@@ -244,6 +244,22 @@ if [ -n "$offenders" ]; then
   exit 1
 fi
 
+# Protects this machine, like the compile lock: one async function with 143 suspension points took
+# 46 GiB in swiftc on 2026-09-03 and Jetsam rebooted the Mac twice; 131 compiled in 954 MiB. The
+# cliff is per function, so the limit is too. The declaration count is compared with a plain grep
+# because a scanner that stops recognising a declaration reports a smaller maximum, not an error.
+scanner_funcs=$(python3 tools/suspension-scan.py --count Sources/*.swift Tests/*.swift)
+grep_funcs=$(cat Sources/*.swift Tests/*.swift \
+  | grep -cE '^[[:space:]]*(private |fileprivate |public |internal |static |final )*func [A-Za-z0-9_]+')
+suspension_max=$(python3 tools/suspension-scan.py Sources/*.swift Tests/*.swift | head -1 | awk '{print $1}')
+if [ "$scanner_funcs" != "$grep_funcs" ] || [ -z "$suspension_max" ] || [ "$suspension_max" -gt 100 ]; then
+  echo "suspension-point limit: worst function has ${suspension_max:-?} (limit 100); scanner saw $scanner_funcs declarations, grep saw $grep_funcs" >&2
+  python3 tools/suspension-scan.py Sources/*.swift Tests/*.swift | head -3 >&2
+  echo "Split the function into smaller async ones rather than raising the limit." >&2
+  exit 1
+fi
+unset scanner_funcs grep_funcs suspension_max
+
 # The page's names against what it reads at load time: a `T.name` nothing defines prints
 # `undefined`, an id `index.html` does not have is `null`, and an import that does not resolve
 # stops the module graph from loading.
