@@ -1214,12 +1214,17 @@ final class LinuxTmuxTerminalHost: TerminalHost {
             + ["-J", "-S", "-\(scrollback)", "-t", paneID]
     }
 
-    static func batchedCaptureScript(_ paneIDs: [String], scrollback: Int = 0) -> String {
-        TmuxBatchedCapture.script(paneIDs, scrollback: scrollback)
+    static func batchedCaptureScript(
+        _ paneIDs: [String], scrollback: Int = 0,
+        marker: String = batchedCaptureMarker
+    ) -> String {
+        TmuxBatchedCapture.script(paneIDs, scrollback: scrollback, marker: marker)
     }
 
-    static func parseBatchedCapture(_ output: String) -> [String: String] {
-        TmuxBatchedCapture.parse(output)
+    static func parseBatchedCapture(
+        _ output: String, marker: String = batchedCaptureMarker
+    ) -> [String: String] {
+        TmuxBatchedCapture.parse(output, marker: marker)
     }
 
     /// Read every listed pane through one three-second, one-MiB-bounded tmux process. A missing
@@ -1233,12 +1238,13 @@ final class LinuxTmuxTerminalHost: TerminalHost {
             throw LinuxRuntimeFailure(code: .inventoryLimit,
                                       message: "The tmux observation exceeded the pane limit.")
         }
-        let script = Self.batchedCaptureScript(paneIDs)
+        let marker = TmuxBatchedCapture.marker(for: UUID())
+        let script = Self.batchedCaptureScript(paneIDs, marker: marker)
         guard !script.isEmpty else { return [:] }
         let receipt = try tmux(["source-file", "-"], input: Data(script.utf8), operation: .observe)
         let output = String(decoding: receipt.stdout, as: UTF8.self)
-        guard output.contains(Self.batchedCaptureMarker) else { return [:] }
-        return Self.parseBatchedCapture(output)
+        guard output.contains(marker) else { return [:] }
+        return Self.parseBatchedCapture(output, marker: marker)
     }
 
     func reveal(_ session: TargetSession, activate: Bool) throws {

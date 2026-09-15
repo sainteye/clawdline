@@ -274,10 +274,17 @@ public enum TerminalSessionPresentation {
     }
 }
 
-/// Shared tmux batch framing. The marker is a C0 byte sequence that terminal-grid content cannot
-/// manufacture; pane ids are closed ASCII words because they are interpolated into a tmux script.
+/// Shared tmux batch framing. tmux renders a C0 byte in a sourced `display-message` format as its
+/// printable octal spelling, so each live capture adds an unguessable UUID to that spelling.
+/// Terminal-grid content can therefore contain the visible prefix without manufacturing the
+/// exact marker for this request. Pane ids are closed ASCII words because they are interpolated
+/// into a tmux script.
 public enum TmuxBatchedCapture {
-    public static let marker = "\u{1}clawdline-pane\u{1}"
+    public static let marker = "\\001clawdline-pane\\001"
+
+    public static func marker(for nonce: UUID) -> String {
+        "\\001clawdline-pane-\(nonce.uuidString.lowercased())\\001"
+    }
 
     public static func paneID(_ raw: String) -> String? {
         guard raw.first == "%", raw.count <= 16 else { return nil }
@@ -286,7 +293,9 @@ public enum TmuxBatchedCapture {
         return raw
     }
 
-    public static func script(_ paneIDs: [String], scrollback: Int = 0) -> String {
+    public static func script(
+        _ paneIDs: [String], scrollback: Int = 0, marker: String = marker
+    ) -> String {
         var seen: Set<String> = []
         let lines = paneIDs.compactMap(paneID).filter { seen.insert($0).inserted }.flatMap { id in
             ["display-message -p -t \(id) \"\(marker)#{pane_id}\(marker)\"",
@@ -295,7 +304,7 @@ public enum TmuxBatchedCapture {
         return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
     }
 
-    public static func parse(_ output: String) -> [String: String] {
+    public static func parse(_ output: String, marker: String = marker) -> [String: String] {
         var screens: [String: String] = [:]
         var current: String?
         var lines: [String] = []

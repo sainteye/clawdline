@@ -739,10 +739,11 @@ enum Tmux {
     /// prints an **empty** id rather than the current pane's, so a dead pane cannot quietly take
     /// a live one's screen.
     ///
-    /// U+0001 delimits it for the same reason ``parsePanes(_:running:)`` separates fields with it:
-    /// a captured screen is made of cells, and a control byte is not one, so nothing a program
-    /// can draw collides with the marker. It wraps the id on **both** sides, so a marker line is
-    /// recognised by what it opens and closes with rather than by a single leading needle.
+    /// tmux renders U+0001 in a sourced display format as the printable spelling `\\001`.
+    /// Production therefore adds a UUID nonce to every batch; a captured screen may draw the
+    /// printable prefix, but cannot predict the exact marker for the current request. It wraps the
+    /// id on **both** sides, so a marker line is recognised by what it opens and closes with rather
+    /// than by a single leading needle.
     static let batchedCaptureMarker = TmuxBatchedCapture.marker
 
     /// Whether this is a pane id tmux handed out, and therefore a word that may be written into a
@@ -758,8 +759,10 @@ enum Tmux {
     ///
     /// Split out from ``capture(panes:scrollback:)`` for the reason every other parser here is:
     /// it can be read, and proved, with no tmux server running.
-    static func batchedCaptureScript(_ paneIDs: [String], scrollback: Int) -> String {
-        TmuxBatchedCapture.script(paneIDs, scrollback: scrollback)
+    static func batchedCaptureScript(
+        _ paneIDs: [String], scrollback: Int, marker: String = batchedCaptureMarker
+    ) -> String {
+        TmuxBatchedCapture.script(paneIDs, scrollback: scrollback, marker: marker)
     }
 
     /// One batched reading's output, split back into a screen per pane.
@@ -772,8 +775,10 @@ enum Tmux {
     ///
     /// The first section wins when an id appears twice, so a marker that somehow resolved onto a
     /// pane already read cannot overwrite that pane's real screen with an empty one.
-    static func parseBatchedCapture(_ output: String) -> [String: String] {
-        TmuxBatchedCapture.parse(output)
+    static func parseBatchedCapture(
+        _ output: String, marker: String = batchedCaptureMarker
+    ) -> [String: String] {
+        TmuxBatchedCapture.parse(output, marker: marker)
     }
 
     /// What several panes show, keyed by pane id, in **one** tmux invocation rather than one per
@@ -798,15 +803,16 @@ enum Tmux {
     /// not.
     static func capture(panes paneIDs: [String], scrollback: Int = 0) -> [String: String] {
         guard binary != nil else { return [:] }
-        let script = batchedCaptureScript(paneIDs, scrollback: scrollback)
+        let marker = TmuxBatchedCapture.marker(for: UUID())
+        let script = batchedCaptureScript(paneIDs, scrollback: scrollback, marker: marker)
         guard !script.isEmpty else { return [:] }
         let receipt = run(["source-file", "-"], stdin: script)
-        let screens = parseBatchedCapture(receipt.out)
+        let screens = parseBatchedCapture(receipt.out, marker: marker)
         // A marker anywhere is proof this tmux understood the script, so an empty result is then
         // a real answer about the panes. No marker at all is a tmux that could not be asked this
         // way — `source-file -` wants 3.3 or newer — and going blind on the whole backend is a
         // far worse trade than the round trips this exists to save.
-        if !screens.isEmpty || receipt.out.contains(batchedCaptureMarker) { return screens }
+        if !screens.isEmpty || receipt.out.contains(marker) { return screens }
         // **Only a tmux that was actually reached can be too old.** The version floor is read off
         // the *absence* of the marker, and three different things are absent in the same way: an
         // old tmux, a server that was never reached, and a run that timed out with nothing to

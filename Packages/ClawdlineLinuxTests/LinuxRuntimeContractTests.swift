@@ -2180,6 +2180,14 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertTrue(script.contains("capture-pane -p -e -J -S -0 -t %7"),
                       "the Linux screen route retains terminal presentation escapes")
         let marker = LinuxTmuxTerminalHost.batchedCaptureMarker
+        XCTAssertEqual(marker, "\\001clawdline-pane\\001",
+                       "tmux prints sourced C0 format bytes in their octal spelling")
+        let requestMarker = TmuxBatchedCapture.marker(
+            for: UUID(uuidString: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")!)
+        XCTAssertEqual(requestMarker,
+                       "\\001clawdline-pane-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee\\001")
+        XCTAssertFalse(requestMarker.contains("%"),
+                       "strftime cannot consume any byte of the per-request marker")
         let batch = "\(marker)%7\(marker)\n\(codex)\(marker)\(marker)\n"
             + "\(marker)%8\(marker)\n\(claude)"
         let parsed = LinuxTmuxTerminalHost.parseBatchedCapture(batch)
