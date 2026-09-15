@@ -984,10 +984,43 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
               !eventually(timeout: 0.3) { fixture.orchestratorFrames().count != 6 }
                 && state().map { !$0.coalescing } == true)
 
+        // Sixty visible changes a second apart, the clock turning with them: one at once, then one
+        // per interval, and the newest state once the burst stops.
+        fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
+        let beforeBurst = fixture.orchestratorFrames().count
+        var due: UInt64?
+        func releaseIfDue() {
+            guard let deadline = due, fixture.clock.now() >= deadline else { return }
+            let frames = fixture.orchestratorFrames().count
+            waits.release()
+            due = nil
+            _ = eventually { fixture.orchestratorFrames().count > frames }
+        }
+        for step in 1...60 {
+            if step > 1 { fixture.clock.advance(1_000) }
+            releaseIfDue()
+            let asked = waits.requests.count
+            let changed = cloudTask("running", state: "briefed", child: "kid-running", title: "Step \(step)")
+            publish("burst change \(step)", snapshot([changed, rootOnly, unknown, late], at: 100 + step))
+            if waits.requests.count > asked, let wait = waits.requests.last {
+                due = fixture.clock.now() + wait
+            }
+        }
+        fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
+        releaseIfDue()
+        let burst = Array(fixture.orchestratorFrames().dropFirst(beforeBurst))
+        check("sixty changes in sixty seconds go out as thirteen snapshots, not sixty",
+              burst.count == 13, "snapshots=\(burst.count)")
+        check("and the last carries the sixtieth change",
+              (burst.last?["tasks"] as? [[String: Any]])?.first?["title"] as? String == "Step 60",
+              "\(burst.last ?? [:])")
+
         // A transport-ready generation: the relay may have lost its replay, so it goes out whatever.
+        let beforeReady = fixture.orchestratorFrames().count
         publish("the same snapshot for a new ready generation",
-                snapshot([recounted, listed, rootOnly, unknown, late], at: 6), force: true)
-        expect("goes out at once", fixture.orchestratorFrames().count, 7)
+                snapshot([cloudTask("running", state: "briefed", child: "kid-running", title: "Step 60"),
+                          rootOnly, unknown, late], at: 200), force: true)
+        expect("goes out at once", fixture.orchestratorFrames().count, beforeReady + 1)
         cloudRowAwait("the orchestrator bridge stops") { await bridge.stop() }
         check("a stopped bridge holds no pacing", state().map { !$0.coalescing && !$0.refilling } == true)
     }
