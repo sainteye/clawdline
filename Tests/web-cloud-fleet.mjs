@@ -353,6 +353,29 @@ async function strip(client) {
     return { Schedules: schedules.Schedules, forget: schedules.forgetCachedPlaces, restore: () => Object.assign(S, before) };
 }
 
+await check("2 schedules · the strip's own refresh draws the Mac's schedules within a bound on a Mac + Linux account", async function () {
+    // Reported on 2026-09-15 ("the scheduled tasks at the bottom are not showing either"): on
+    // a0be4680 `net/schedules.js` asked `schedules({ fresh: true })`, which waited on the Linux
+    // executor until the read timeout and then refused, and the strip draws nothing on a refusal.
+    const f = await fleet(MAC_LINUX, { intercept: schedulesWithProjects });
+    const driven = await strip(f.client);
+    try {
+        control("schedules-count").textContent = "";
+        control("schedule-rows").innerHTML = "";
+        // Inside one silent machine's read timeout, so a strip that waits on the executor cannot pass.
+        const bound = READ_TIMEOUT_MS - 500;
+        const started = Date.now();
+        driven.Schedules.refresh();
+        await until(() => control("schedules-count").textContent === "1", bound);
+        const waited = Date.now() - started;
+        assert.equal(control("schedules-count").textContent, "1",
+            "the strip drew the Mac's one schedule within " + bound + " ms (after " + waited + " ms it showed "
+            + JSON.stringify(control("schedules-count").textContent) + ")");
+        assert.ok(String(control("schedule-rows").innerHTML).includes("mac-01-morning"), "and the row is the Mac's");
+        onlyPlacesAndStartTo(f, "linux-01");
+    } finally { driven.restore(); }
+});
+
 /* ---- 3 · Push ------------------------------------------------------------------------------- */
 
 await check("3 push · key, subscribe, unsubscribe and a test with no Session all reach the one Mac", async function () {
