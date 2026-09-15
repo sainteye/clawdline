@@ -2700,7 +2700,11 @@ final class ProjectBoardStore {
                     throw BoardError(status: 400, code: "catalog_role_conflict",
                                      message: "audience and role do not describe a valid catalog placement")
                 }
-                let parentID = try optionalText(entry, "parentId", maximum: 200)
+                // JSONSerialization represents an explicit `null` as NSNull. Catalog rows require
+                // the field so a root presentation row is unambiguous, while the first v2 writers
+                // omitted it; accept both spellings as the documented nil parent.
+                let parentID = entry["parentId"] is NSNull
+                    ? nil : try optionalText(entry, "parentId", maximum: 200)
                 if role == "subtask" {
                     guard let parentID, parentID != itemID,
                           let parent = draft.items.first(where: { $0.id == parentID }),
