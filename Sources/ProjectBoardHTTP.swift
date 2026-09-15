@@ -4,7 +4,115 @@ import Foundation
 /// Both the local browser and the encrypted Cloud adapter use this exact door.
 enum ProjectBoardHTTP {
     static let maximumResponseBytes = 2 * 1024 * 1024
+    private static let maximumCommandRequestBytes = 64 * 1024
+    /// A complete machine-only catalog audit can legitimately carry 500 exact UUID/scope rows.
+    /// Keep the broader parse allowance private to that operation; paired callers and every
+    /// ordinary command retain the original 64 KiB admission boundary.
+    private static let maximumCatalogReconciliationRequestBytes = 768 * 1024
     private static var storeForTesting: ProjectBoardStore?
+
+    /// Identify the one large command without constructing a JSON object first. This scanner
+    /// recognizes one unescaped top-level `operation` string, ignores nested lookalikes, and
+    /// allocates at most two 64-byte tokens. Full JSON and closed-schema validation still follow.
+    private static func isLargeCatalogReconciliationEnvelope(_ body: Data) -> Bool {
+        enum StringRole { case other, topLevelKey, operationValue }
+        var depth = 0
+        var sawRoot = false
+        var closedRoot = false
+        var inString = false
+        var escaped = false
+        var role = StringRole.other
+        var token: [UInt8] = []
+        var tokenIsPlain = true
+        var expectsTopLevelKey = false
+        var expectsOperationColon = false
+        var expectsOperationValue = false
+        var operationCount = 0
+
+        func whitespace(_ byte: UInt8) -> Bool {
+            byte == 0x20 || byte == 0x09 || byte == 0x0a || byte == 0x0d
+        }
+
+        for byte in body {
+            if inString {
+                if escaped {
+                    escaped = false
+                    tokenIsPlain = false
+                } else if byte == 0x5c {
+                    escaped = true
+                    tokenIsPlain = false
+                } else if byte == 0x22 {
+                    inString = false
+                    if role == .topLevelKey,
+                       tokenIsPlain, String(bytes: token, encoding: .utf8) == "operation" {
+                        expectsOperationColon = true
+                    } else if role == .operationValue {
+                        guard tokenIsPlain,
+                              String(bytes: token, encoding: .utf8) == "reconcile_catalog" else {
+                            return false
+                        }
+                        operationCount += 1
+                    }
+                    role = .other
+                    token.removeAll(keepingCapacity: true)
+                    tokenIsPlain = true
+                } else if role != .other {
+                    guard token.count < 64 else {
+                        tokenIsPlain = false
+                        continue
+                    }
+                    token.append(byte)
+                }
+                continue
+            }
+
+            if closedRoot {
+                guard whitespace(byte) else { return false }
+                continue
+            }
+            if !sawRoot {
+                if whitespace(byte) { continue }
+                guard byte == 0x7b else { return false }
+                sawRoot = true
+                depth = 1
+                expectsTopLevelKey = true
+                continue
+            }
+            if depth == 1, whitespace(byte) { continue }
+            if depth == 1, expectsOperationColon {
+                guard byte == 0x3a else { return false }
+                expectsOperationColon = false
+                expectsOperationValue = true
+                continue
+            }
+            if depth == 1, expectsOperationValue {
+                guard byte == 0x22 else { return false }
+                expectsOperationValue = false
+                inString = true
+                role = .operationValue
+                token.removeAll(keepingCapacity: true)
+                tokenIsPlain = true
+                continue
+            }
+            if byte == 0x22 {
+                inString = true
+                role = depth == 1 && expectsTopLevelKey ? .topLevelKey : .other
+                expectsTopLevelKey = false
+                token.removeAll(keepingCapacity: true)
+                tokenIsPlain = true
+            } else if byte == 0x7b || byte == 0x5b {
+                depth += 1
+            } else if byte == 0x7d || byte == 0x5d {
+                depth -= 1
+                guard depth >= 0 else { return false }
+                if depth == 0 { closedRoot = true }
+            } else if depth == 1, byte == 0x2c {
+                expectsTopLevelKey = true
+            }
+        }
+        return sawRoot && closedRoot && !inString && !expectsOperationColon
+            && !expectsOperationValue && operationCount == 1
+    }
 
     struct PreparedRead {
         let viewer: [String: Any]
@@ -201,12 +309,27 @@ enum ProjectBoardHTTP {
         guard canSend else {
             return .response(.error(403, "forbidden", "This device may only read the board."))
         }
-        guard request.body.count <= 64 * 1024,
-              let body = (try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any]
-        else {
+        guard request.body.count <= maximumCatalogReconciliationRequestBytes else {
+            return .response(.error(400, "bad_request",
+                "The Board command exceeds the bounded request limit."))
+        }
+        if request.body.count > maximumCommandRequestBytes {
+            guard machine, isLargeCatalogReconciliationEnvelope(request.body) else {
+                return .response(.error(400, "bad_request",
+                    "Only a bounded machine catalog reconciliation may exceed 64 KiB."))
+            }
+        }
+        guard let body = (try? JSONSerialization.jsonObject(with: request.body))
+                as? [String: Any] else {
             return .response(.error(400, "bad_request", "A bounded board command is required."))
         }
-        if ["set_enabled", "set_ai_consent"].contains(body["operation"] as? String ?? ""), !canAdmin {
+        let operation = body["operation"] as? String ?? ""
+        guard request.body.count <= maximumCommandRequestBytes
+                || operation == "reconcile_catalog" else {
+            return .response(.error(400, "bad_request",
+                "Only a bounded machine catalog reconciliation may exceed 64 KiB."))
+        }
+        if ["set_enabled", "set_ai_consent"].contains(operation), !canAdmin {
             return .response(.error(403, "forbidden", "Changing board mode requires an administrative device."))
         }
         // Only a local root may attest a verification/finding. This is an attributed
