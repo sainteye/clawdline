@@ -1092,6 +1092,10 @@ export function keepConnected(session, options) {
             // `renew` and `resume` connect again at once, with the current client still serving.
         }
     })();
+    // A loop that ends on its own — pairing required, a terminal refusal — leaves no page listener or
+    // grace timer behind; the next `keepConnected` a retry starts brings its own.
+    function release() { disarmGrace(); detach(); }
+    loop.then(release, release);
 
     return {
         stop: function () {

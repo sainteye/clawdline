@@ -1014,10 +1014,14 @@ await lifecycleCheck("renewal · timed on the relay's clock, never sooner than t
 await lifecycleCheck("refusals · 4403 stops; 4429 waits the longest; a run of failures ends and says so", async function () {
     const timers = lifecycleTimers();
     const forbidden = lifecycleSession(timers, function () { return refusal("forbidden"); });
-    const stopped = lifecycleKeeper(forbidden, timers, lifecyclePage());
+    const forbiddenPage = lifecyclePage();
+    const stopped = lifecycleKeeper(forbidden, timers, forbiddenPage);
     await timers.advance(120_000);
     assert.equal(forbidden.connects.length, 1, "a revoked device's handshake is not retried");
     assert.deepEqual(stopped.names(), ["terminal_error"]);
+    await stopped.keeper.done;
+    await drain();
+    assert.equal(forbiddenPage.listeners(), 0, "a loop that ends on its own leaves no page listener behind");
 
     const afterReady = lifecycleSession(timers);
     const closed = lifecycleKeeper(afterReady, timers, lifecyclePage());
