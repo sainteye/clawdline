@@ -680,6 +680,7 @@ let expectedOrderedTestGroupTitles: [String] = [
     "Cloud Session rows skip freshness-only changes and republish the whole row when a read field moves",
     "Cloud Session rows carry a debounced transcript signature, and local rows never do",
     "the Cloud transcript signature watch reports current, changed and ended signatures",
+    "a reconnecting viewer's Session snapshot request re-sends every row once per window, and an incomplete scan keeps the Mac present",
 ]
 
 func validateExecutedTestGroupManifest() {

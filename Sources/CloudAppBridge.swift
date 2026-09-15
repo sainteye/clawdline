@@ -1379,6 +1379,21 @@ actor CloudAppBridge {
         ["closeability", "session_generation"],
         ["closeability", "source", "observed_at"],
     ]
+    /// A viewer's request for this Mac's current Session rows (docs/cloud.md, *A page that
+    /// reconnects asks for the rows*). The relay keeps the last envelope of each channel in memory
+    /// only and loses it with its object, and an unchanged row is never published again, so a page
+    /// that connects after an eviction would otherwise wait for rows that may never change.
+    /// Read-level: it re-sends what every paired viewer already receives, so the remote-write
+    /// switch does not gate it.
+    static let sessionSnapshotType = "sessions.snapshot"
+    /// The words this bridge answers that an older Mac does not, advertised in `cloud_status` and
+    /// beside the Session inventory. A page sends such a word only to a Mac that listed it.
+    static let cloudFeatures: [String] = [sessionSnapshotType]
+    /// However many viewers ask, the rows go out at most once per this many milliseconds; a
+    /// request that arrives inside the window is answered by the next pass.
+    static let sessionSnapshotIntervalMilliseconds: UInt64 = 5_000
+    /// Requests one pass may owe answers to. Past it a request is refused as busy, not queued.
+    static let sessionSnapshotWaiterLimit = 64
     typealias CommandGate = @Sendable () -> Bool
     typealias CommandEffectAuthority = @Sendable (_ sender: String, _ requiresWriteGate: Bool) async
         -> CloudCommandEffectAuthorization
@@ -1495,6 +1510,12 @@ actor CloudAppBridge {
     private var lastTranscriptRepublicationAt: UInt64?
     private var transcriptReports: AsyncStream<(String, String?)>.Continuation?
     private var transcriptReportTask: Task<Void, Never>?
+    /// `sessions.snapshot` requests the next pass answers, the pass scheduled for them, and when
+    /// the last one started (the window is counted from there).
+    private let sessionSnapshotIntervalMilliseconds: UInt64
+    private var sessionSnapshotWaiters: [(reference: CommandReference, request: String)] = []
+    private var sessionSnapshotTask: Task<Void, Never>?
+    private var lastSessionSnapshotAt: UInt64?
 
     init(
         transport: any CloudTransporting,
@@ -1517,8 +1538,11 @@ actor CloudAppBridge {
             CloudAppBridge.transcriptRepublicationIntervalMilliseconds,
         waitMilliseconds: @escaping @Sendable (UInt64) async throws -> Void = {
             try await Task.sleep(nanoseconds: $0 * 1_000_000)
-        }
+        },
+        sessionSnapshotIntervalMilliseconds: UInt64 =
+            CloudAppBridge.sessionSnapshotIntervalMilliseconds
     ) {
+        self.sessionSnapshotIntervalMilliseconds = sessionSnapshotIntervalMilliseconds
         self.transcriptSignatures = transcriptSignatures
         self.transcriptRepublicationIntervalMilliseconds = transcriptRepublicationIntervalMilliseconds
         self.waitMilliseconds = waitMilliseconds
@@ -1585,6 +1609,7 @@ actor CloudAppBridge {
         await transport.setInboundDropHandler { [status] drop in status.recordDrop(drop) }
         await transport.setConnectionObserver { [status] event in status.record(event) }
         status.setKeyID(identity.keyID)
+        status.setFeatures(Self.cloudFeatures)
         if noticesEnabled {
             status.enableFileWriting()
             status.setNoticeObserver { [weak self] in
@@ -1657,6 +1682,7 @@ actor CloudAppBridge {
                 || foregroundReadTask != nil || backgroundReadTask != nil
                 || !lifecycleRefreshTasks.isEmpty || !publicationTasks.isEmpty
                 || transcriptReportTask != nil || transcriptRepublicationTask != nil
+                || sessionSnapshotTask != nil
         else { return }
         await transport.setInboundRefusalHandler(nil)
         await transport.setInboundDropHandler(nil)
@@ -1665,6 +1691,7 @@ actor CloudAppBridge {
         noticeTask?.cancel()
         noticeTask = nil
         let transcriptWork = stopTranscriptSignatures()
+        let sessionSnapshot = stopSessionSnapshots()
         lifecycleGeneration &+= 1
         starting = false
         running = false
@@ -1711,6 +1738,7 @@ actor CloudAppBridge {
         await refusalPublication?.value
         for task in readTasks { await task.value }
         for task in transcriptWork { await task.value }
+        await sessionSnapshot?.value
         publishedSessionIDs.removeAll()
         publishedSessionRows.removeAll()
         publishedSessionInventory = nil
@@ -1763,6 +1791,15 @@ actor CloudAppBridge {
         let stripped = freshnessOnlySessionRowFields.reduce(row) { removing($1[...], from: $0) }
         return try JSONSerialization.data(
             withJSONObject: stripped, options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+
+    /// The inventory marker: every published id, and beside it (never inside it, where an older
+    /// page refuses an unknown key) the words this Mac answers that an older one does not.
+    static func sessionInventory(_ ids: [String]) -> [String: Any] {
+        [
+            "inventory": ["version": 1, "sessions": ids] as [String: Any],
+            "features": cloudFeatures,
+        ]
     }
 
     /// The facts in a row that select its transcript file (`Transcript.record(of:)`).
@@ -1874,17 +1911,15 @@ actor CloudAppBridge {
             publishedSessionIDs.formUnion(current)
         }
         var inventoryPublished = false
+        let now = nowMilliseconds()
+        let presenceDue = lastSessionFrameAt.map {
+            now < $0 || now - $0 >= Self.sessionPresenceIntervalMilliseconds
+        } ?? true
         if authoritative {
-            let inventory: [String: Any] = [
-                "inventory": ["version": 1, "sessions": current.sorted()] as [String: Any],
-            ]
+            let inventory = Self.sessionInventory(current.sorted())
             let stable = try JSONSerialization.data(
                 withJSONObject: inventory, options: [.sortedKeys, .withoutEscapingSlashes]
             )
-            let now = nowMilliseconds()
-            let presenceDue = lastSessionFrameAt.map {
-                now < $0 || now - $0 >= Self.sessionPresenceIntervalMilliseconds
-            } ?? true
             if force || stable != publishedSessionInventory || presenceDue {
                 try await publishJSON(
                     inventory, channel: sessionChannel(Self.sessionInventoryID),
@@ -1894,6 +1929,18 @@ actor CloudAppBridge {
                 lastSessionFrameAt = nowMilliseconds()
                 inventoryPublished = true
             }
+        } else if presenceDue, publishedSessionInventory != nil,
+                  publishedSessionIDs.count <= Self.sessionInventoryLimit {
+            // A Mac whose scans stay incomplete must not look stale. Every id this names has had
+            // its row published, and nothing that vanished since the last complete scan has been
+            // tombstoned yet, so this list can only keep a row a viewer holds, never drop one.
+            try await publishJSON(
+                Self.sessionInventory(publishedSessionIDs.sorted()),
+                channel: sessionChannel(Self.sessionInventoryID),
+                lifecycleGeneration: ownedGeneration
+            )
+            lastSessionFrameAt = nowMilliseconds()
+            inventoryPublished = true
         }
         trackTranscriptSignatures(lifecycleGeneration: ownedGeneration)
         diagnostic("cloud: sessions published id=\(publicationID ?? "direct") "
@@ -2026,6 +2073,150 @@ actor CloudAppBridge {
         pendingTranscriptSessions.removeAll()
         lastTranscriptRepublicationAt = nil
         return tasks
+    }
+
+    // MARK: - Session snapshots for a reconnecting page
+
+    /// `sessions.snapshot` (docs/cloud.md): every current Session row and the inventory again, on
+    /// their own `s/` channels, then `read:<request>` on the machine reply channel naming the ids
+    /// that went out. Every request that arrives inside one window is answered by one pass.
+    private func serveSessionSnapshot(
+        _ body: [String: Any], inbound: CloudInboundCommand, reference: CommandReference,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        let reply = Self.readRefusalReply(type: Self.sessionSnapshotType, body: body)
+        guard inbound.commandClass == .ctl,
+              Set(body.keys) == ["type", "session", "request"],
+              body["session"] as? String == Self.machineReplySession,
+              let request = Self.requestName(body["request"])
+        else {
+            await refuse(
+                reference, layer: .macPreflight, status: 400, code: "malformed_read",
+                message: "This Cloud read is malformed.", replyTo: reply,
+                viaLane: true, lifecycleGeneration: ownedGeneration)
+            return
+        }
+        guard sessionSnapshotWaiters.count < Self.sessionSnapshotWaiterLimit else {
+            await refuse(
+                reference, layer: .macPreflight, status: 429, code: "cloud_read_busy",
+                message: "That Cloud read lane is full; retry shortly.",
+                extra: ["lane": Self.sessionSnapshotType, "limit": Self.sessionSnapshotWaiterLimit,
+                        "retry_after": max(1, Int(sessionSnapshotIntervalMilliseconds / 1_000))],
+                replyTo: reply, viaLane: true, lifecycleGeneration: ownedGeneration)
+            return
+        }
+        sessionSnapshotWaiters.append((reference, request))
+        scheduleSessionSnapshot(lifecycleGeneration: ownedGeneration)
+    }
+
+    /// At once when the last pass started longer ago than the window, otherwise when it has passed.
+    private func scheduleSessionSnapshot(lifecycleGeneration ownedGeneration: UInt64) {
+        guard running, lifecycleGeneration == ownedGeneration, sessionSnapshotTask == nil,
+              !sessionSnapshotWaiters.isEmpty else { return }
+        let interval = sessionSnapshotIntervalMilliseconds
+        let now = nowMilliseconds()
+        let elapsed = lastSessionSnapshotAt.map { now >= $0 ? now - $0 : 0 }
+        let wait = elapsed.map { $0 >= interval ? 0 : interval - $0 } ?? 0
+        let waitMilliseconds = self.waitMilliseconds
+        sessionSnapshotTask = Task { [weak self] in
+            if wait > 0 {
+                do { try await waitMilliseconds(wait) } catch { return }
+            }
+            await self?.runSessionSnapshot(lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func runSessionSnapshot(lifecycleGeneration ownedGeneration: UInt64) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        // Taken before the pass: a request that arrives while it runs may have missed a row the
+        // pass already sent, so it waits for the next one.
+        let waiters = sessionSnapshotWaiters
+        sessionSnapshotWaiters.removeAll()
+        lastSessionSnapshotAt = nowMilliseconds()
+        var failed = false
+        do {
+            try await runSessionPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.republishSessionSnapshotOwned(lifecycleGeneration: ownedGeneration)
+            }
+        } catch {
+            failed = true
+        }
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        let ids = publishedSessionIDs.sorted()
+        let complete = publishedSessionInventory != nil
+        diagnostic("cloud: session snapshot answered requests=\(waiters.count) rows=\(ids.count) "
+            + "complete=\(complete) failed=\(failed)")
+        for (waiter, request) in waiters {
+            if failed {
+                await refuse(
+                    waiter, layer: .macReply, status: 503, code: "internal",
+                    message: "This Mac could not send its Sessions; retry shortly.",
+                    replyTo: (Self.machineReplySession, "read:" + request), viaLane: false,
+                    lifecycleGeneration: ownedGeneration)
+                continue
+            }
+            commandResult(CloudCommandResult(status: 200, code: nil))
+            let payload: [String: Any] = [
+                "read": "read:" + request, "status": 200,
+                "body": ["sessions": ids, "complete": complete] as [String: Any],
+            ]
+            _ = await publishPayload(payload, session: Self.machineReplySession,
+                                     reference: waiter, lifecycleGeneration: ownedGeneration)
+        }
+        sessionSnapshotTask = nil
+        scheduleSessionSnapshot(lifecycleGeneration: ownedGeneration)
+    }
+
+    /// Runs as a Session-channel publication, so no scan row or transcript republication can
+    /// interleave with it. What goes out is what a transport-ready force sends: the last
+    /// orchestrator snapshot (descriptor, tasks, schedules, `cloud_status`), whose replay the relay
+    /// loses with the same object, then every row the Mac last handed over for a published
+    /// Session, with its signature, and the inventory.
+    private func republishSessionSnapshotOwned(
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async throws {
+        if noticesEnabled, lastOrchestratorPayload != nil {
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            try await publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+        }
+        var rows = 0
+        for id in publishedSessionIDs.sorted() {
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            guard let session = latestSessionRows[id] else { continue }
+            if try await publishSessionRow(
+                session, id: id, force: true, lifecycleGeneration: ownedGeneration
+            ) {
+                rows += 1
+            }
+        }
+        if publishedSessionInventory != nil,
+           publishedSessionIDs.count <= Self.sessionInventoryLimit {
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            try await publishJSON(
+                Self.sessionInventory(publishedSessionIDs.sorted()),
+                channel: sessionChannel(Self.sessionInventoryID),
+                lifecycleGeneration: ownedGeneration
+            )
+            lastSessionFrameAt = nowMilliseconds()
+        }
+        diagnostic("cloud: session snapshot published rows=\(rows) "
+            + "inventory=\(publishedSessionInventory != nil)")
+    }
+
+    /// Tests read the pass's state rather than sleeping past it.
+    func sessionSnapshotStateForTesting() -> (waiting: Int, scheduled: Bool, lastAt: UInt64?) {
+        (sessionSnapshotWaiters.count, sessionSnapshotTask != nil, lastSessionSnapshotAt)
+    }
+
+    /// End the requests with the lifecycle. Returns the pass `stop()` joins.
+    private func stopSessionSnapshots() -> Task<Void, Never>? {
+        let task = sessionSnapshotTask
+        task?.cancel()
+        sessionSnapshotTask = nil
+        sessionSnapshotWaiters.removeAll()
+        lastSessionSnapshotAt = nil
+        return task
     }
 
     /// The local SSE serializer has already made these bytes. Seal them unchanged so local and
@@ -2301,6 +2492,7 @@ actor CloudAppBridge {
         readyTask?.cancel()
         readyTask = nil
         _ = stopTranscriptSignatures()
+        _ = stopSessionSnapshots()
     }
 
     private func transportBecameReady(
@@ -2362,6 +2554,11 @@ actor CloudAppBridge {
         if requestedType == "cloud.status" {
             await serveCloudStatus(parsed ?? [:], inbound: inbound, reference: reference,
                                    lifecycleGeneration: ownedGeneration)
+            return
+        }
+        if requestedType == Self.sessionSnapshotType {
+            await serveSessionSnapshot(parsed ?? [:], inbound: inbound, reference: reference,
+                                       lifecycleGeneration: ownedGeneration)
             return
         }
         if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
@@ -3049,7 +3246,7 @@ actor CloudAppBridge {
         let requestReads: Set<String> = [
             "document", "board", "timeline", "places", "project-worktrees",
             "project-worktree-lifecycle", "project-worktree-lifecycle-refresh", "past-sessions",
-            "schedules", "snippets", "schedule", "push-key", "cloud.status",
+            "schedules", "snippets", "schedule", "push-key", "cloud.status", sessionSnapshotType,
         ]
         guard requestReads.contains(type),
               let request = requestName(body["request"]),
@@ -3820,8 +4017,9 @@ actor CloudAppBridge {
             ? "This command is larger than this Mac accepts over Cloud."
             : "This request was not accepted because Cloud ingress is full; try again shortly."
         if let parsed, let requestedType,
-           Self.readTypes.contains(requestedType) || requestedType == "cloud.status" {
-            if requestedType == "cloud.status" {
+           Self.readTypes.contains(requestedType) || requestedType == "cloud.status"
+            || requestedType == Self.sessionSnapshotType {
+            if requestedType == "cloud.status" || requestedType == Self.sessionSnapshotType {
                 await refuse(
                     reference, layer: .macTransport, status: refusal.reason.refusalStatus,
                     code: code, message: message, detail: busyDetail,
