@@ -360,6 +360,7 @@ check(!/abs\(passedBudget - 9\)/.test(cloudTransportTests.replace(
   'abs(passedBudget - 9)', 'abs(passedBudget - 15)')),
   'the remaining-budget fixture must turn red when token time is not deducted');
 check(/testNIOOpeningOwnershipInboundBoundsAndCloseControl/.test(linuxTests)
+  && /the embedded WebSocket fixture must begin active/.test(linuxTests)
   && /a stalled opening promise did not terminate/.test(linuxTests)
   && /EOF before upgrade completed/.test(linuxTests)
   && /a bounded Relay ACK burst stays ordered and connected/.test(linuxTests)
@@ -369,6 +370,9 @@ check(/testNIOOpeningOwnershipInboundBoundsAndCloseControl/.test(linuxTests)
   && /aggregate fragmented text beyond/.test(linuxTests)
   && /peer Close is echoed/.test(linuxTests),
   'Linux NIO timeout/EOF/burst/fragment/Pong/Close behavior fixtures must remain registered');
+check(!/the embedded WebSocket fixture must begin active/.test(linuxTests.replace(
+  'the embedded WebSocket fixture must begin active', 'inactive fixture accepted')),
+  'removing the Linux EmbeddedChannel activation assertion must make the fixture guard red');
 check(!/a bounded Relay ACK burst stays ordered and connected/.test(linuxTests.replace(
   'a bounded Relay ACK burst stays ordered and connected', 'burst assertion removed')),
   'removing the Linux ACK-burst assertion must make the focused fixture guard red');

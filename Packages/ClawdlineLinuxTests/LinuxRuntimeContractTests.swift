@@ -486,6 +486,10 @@ final class LinuxRuntimeContractTests: XCTestCase {
                     maxAccumulatedFrameSize: maximum),
                 CloudNIOFrameHandler(pipe: pipe)
             ])
+            try channel.connect(to: SocketAddress(
+                ipAddress: "127.0.0.1", port: 443)).wait()
+            XCTAssertTrue(channel.isActive,
+                          "the embedded WebSocket fixture must begin active")
             return (channel, pipe)
         }
         func frame(_ opcode: WebSocketOpcode, _ string: String, fin: Bool = true,
