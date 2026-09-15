@@ -4,6 +4,13 @@ Status: target design, derived from first principles. This document deliberately
 with the current relay, spool, or request handlers. The current system appears only in the
 diagnosis and migration sections, as evidence about failure modes and compatibility work.
 
+The executable product sequence is [`cloud-mvp-plan.md`](cloud-mvp-plan.md). The MVP deliberately
+does **not** implement the general replication design below. It uses one Cloud coordination store,
+one exact-target durable inbox, and machine-owned execution state. This document remains a
+first-principles analysis of failure semantics and a possible post-MVP direction; it is not an
+implementation dependency or permission to add durable transcript, blob replication, automatic
+routing, or general offline commands to the MVP.
+
 ## 1. The question this design answers
 
 The product needs to let a person open Clawdline Cloud, see useful Session state, read a
@@ -291,6 +298,10 @@ store-and-forward; whether other commands persist while offline remains behind t
 product decision gate.
 
 ### 4.4 Live-query plane and the closed read catalog
+
+The rows below classify the **current machine bridge**. The MVP's canonical Cloud Board and
+Schedule APIs are separate product resources, not a reinterpretation of these legacy reads.
+Machine observations remain machine-authored facts after those resources exist.
 
 A live query has read capability, an effect-free implementation, a bounded independent queue and
 deadline, and no command-ledger entry. It is available only while its target executor is online;
