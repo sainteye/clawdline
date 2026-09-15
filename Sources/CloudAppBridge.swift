@@ -1515,6 +1515,8 @@ actor CloudAppBridge {
     /// relay's replay of `orch/` became that notice; the snapshot goes out again at the floor.
     private var orchestratorDisplacedAt: UInt64?
     private var orchestratorRefillTask: Task<Void, Never>?
+    /// The re-send the Session refresh pass asks for (`orchestratorPresenceDue`).
+    private var orchestratorPresenceTask: Task<Void, Never>?
     /// `orch/` publications run one at a time, whoever started them, so an older snapshot can never
     /// be sealed after a newer one.
     private var orchestratorPublicationTail: Task<Void, Never>?
@@ -1741,6 +1743,7 @@ actor CloudAppBridge {
                 || transcriptReportTask != nil || transcriptRepublicationTask != nil
                 || sessionSnapshotTask != nil || orchestratorResendTask != nil
                 || orchestratorCoalesceTask != nil || orchestratorRefillTask != nil
+                || orchestratorPresenceTask != nil
         else { return }
         await transport.setInboundRefusalHandler(nil)
         await transport.setInboundDropHandler(nil)
@@ -2026,7 +2029,10 @@ actor CloudAppBridge {
             )
             inventoryPublished = true
         }
-        if refresh { lastSessionRefreshAt = nowMilliseconds() }
+        if refresh {
+            lastSessionRefreshAt = nowMilliseconds()
+            orchestratorPresenceDue(lifecycleGeneration: ownedGeneration)
+        }
         if publishedSessionIDs != listedBefore {
             orchestratorListedSessionsChanged(lifecycleGeneration: ownedGeneration)
         }
@@ -2395,10 +2401,12 @@ actor CloudAppBridge {
 
     /// End the orchestrator's own timers with the lifecycle. Returns the work `stop()` joins.
     private func stopOrchestratorPublications() -> [Task<Void, Never>] {
-        let tasks = [orchestratorCoalesceTask, orchestratorRefillTask].compactMap { $0 }
+        let tasks = [orchestratorCoalesceTask, orchestratorRefillTask, orchestratorPresenceTask]
+            .compactMap { $0 }
         tasks.forEach { $0.cancel() }
         orchestratorCoalesceTask = nil
         orchestratorRefillTask = nil
+        orchestratorPresenceTask = nil
         return tasks
     }
 
@@ -2419,6 +2427,8 @@ actor CloudAppBridge {
         /// A Session this Mac published made a finished task readable that the last snapshot left
         /// out.
         case listed
+        /// The refresh pass found no snapshot sent for `sessionPresenceIntervalMilliseconds`.
+        case presence
     }
 
     /// The Cloud snapshot as it would go out now, how it is compared, and each record in it.
@@ -2684,10 +2694,52 @@ actor CloudAppBridge {
         try await publishOrchestratorSnapshot(reason: .refill, lifecycleGeneration: ownedGeneration)
     }
 
+    /// The refresh pass that re-sends every Session row (`sessionPresenceIntervalMilliseconds`) is
+    /// also what bounds a device that cannot ask for the `orch/` snapshot: the relay keeps its replay
+    /// only in memory, and a snapshot that has not changed is never published again on its own.
+    /// So a pass that finds none sent for that long sends it too — a few kilobytes every three
+    /// minutes on an idle Mac, nothing on one whose tasks are moving. It runs beside the rows rather
+    /// than inside their pass, and not while a refill is already on its way.
+    private func orchestratorPresenceDue(lifecycleGeneration ownedGeneration: UInt64) {
+        guard noticesEnabled, running, lifecycleGeneration == ownedGeneration,
+              lastOrchestratorSnapshot != nil, orchestratorPresenceTask == nil,
+              orchestratorRefillTask == nil else { return }
+        let now = nowMilliseconds()
+        if let last = lastOrchestratorSnapshotAt, now >= last,
+           now - last < Self.sessionPresenceIntervalMilliseconds { return }
+        orchestratorPresenceTask = Task { [weak self] in
+            await self?.publishOrchestratorPresence(lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func publishOrchestratorPresence(lifecycleGeneration ownedGeneration: UInt64) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        orchestratorPresenceTask = nil
+        do {
+            try await runOrchestratorPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publishOrchestratorPresenceOwned(lifecycleGeneration: ownedGeneration)
+            }
+        } catch {
+            if running, lifecycleGeneration == ownedGeneration {
+                diagnostic("cloud: orchestrator snapshot presence failed")
+            }
+        }
+    }
+
+    /// A snapshot that went out while this waited for its turn already did the pass's job.
+    private func publishOrchestratorPresenceOwned(lifecycleGeneration ownedGeneration: UInt64) async throws {
+        let now = nowMilliseconds()
+        if let last = lastOrchestratorSnapshotAt, now >= last,
+           now - last < Self.sessionPresenceIntervalMilliseconds { return }
+        try await publishOrchestratorSnapshot(reason: .presence, lifecycleGeneration: ownedGeneration)
+    }
+
     /// Tests read the pacing rather than sleeping past it.
     func orchestratorPublicationStateForTesting()
         -> (coalescing: Bool, refilling: Bool, displaced: Bool, lastSnapshotAt: UInt64?) {
-        (orchestratorCoalesceTask != nil, orchestratorRefillTask != nil,
+        (orchestratorCoalesceTask != nil,
+         orchestratorRefillTask != nil || orchestratorPresenceTask != nil,
          orchestratorDisplacedAt != nil, lastOrchestratorSnapshotAt)
     }
 

@@ -33,6 +33,15 @@ offline. A device allowed only to read cannot ask, so the Mac also sends every S
 three minutes, about 0.6 MB an hour for ten idle Sessions: such a device says it is waiting until
 they arrive instead of showing none.
 
+The largest thing still reaching every viewer was the list of dispatched tasks. Each change to any
+task sent the whole list again — about 230 KB, almost all of it finished tasks the console would
+never draw, because a Session that had dispatched many children kept every one of them in it — and
+a dropped command sent it again to say so. The console now receives only the tasks it can show,
+running ones and finished ones whose Session is still on screen, with only the fields it draws:
+about 5 KB for the same list. It is sent only when something the console shows changed, at most
+once every five seconds while tasks move quickly, and a note about a dropped command no longer
+carries the list at all. The console looks the same; the Mac's own page is unchanged.
+
 ### Fixed: an open Session closed itself a second after it was opened
 
 Opening a Session — on a phone, or in the console at a desk — drew its conversation and then, a

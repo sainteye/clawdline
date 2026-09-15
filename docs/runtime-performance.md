@@ -231,6 +231,13 @@ pass on one fast machine.
   the current rows instead of relying on the relay's replay; one Mac answers every request inside five
   seconds with one pass, and re-sends its `orch/` snapshot for such a request at most once a minute
   (`docs/cloud.md`, *A page that reconnects asks for the rows*).
+- The Cloud `orch/` snapshot is the local orchestrator event projected to what a hosted view reads:
+  a finished task only while its child is a Session the Mac published, and of a record nine fields.
+  Measured 2026-09-15: 229,797 bytes for 101 tasks locally, 4,839 bytes and 4 tasks for Cloud. It goes
+  out only when that projection changed outside `at`, at most once per five seconds with the newest
+  state after a burst (sixty changes in a minute: thirteen snapshots, where the busiest real minute
+  that day carried 31 frames and 8.74 MB), and a `cloud_status` notice carries the digest alone
+  (`docs/cloud.md`, *The `orch/` snapshot a Cloud viewer is sent*). The local SSE event is unchanged.
 - Durable Cloud publication returns each producer after reserve, encryption and durable spool seal;
   one lifecycle-owned worker performs globally ordered socket writes independently. Already-sent
   rows may await correlated receipts while later ready rows fill a hard row/byte window (currently

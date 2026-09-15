@@ -1015,6 +1015,25 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
               (burst.last?["tasks"] as? [[String: Any]])?.first?["title"] as? String == "Step 60",
               "\(burst.last ?? [:])")
 
+        // A device that cannot ask has only the relay's replay, which an eviction empties: the
+        // refresh pass sends a snapshot none has gone out for in its interval, and only then.
+        let beforePresence = fixture.orchestratorFrames().count
+        fixture.clock.advance(CloudAppBridge.sessionPresenceIntervalMilliseconds)
+        fixture.publish([cloudRow("root-row", observedAt: 400, generation: 4, sourceObservedAt: 399),
+                         cloudRow("kid-late", observedAt: 400, generation: 4, sourceObservedAt: 399)],
+                        at: 400, generation: 4, label: "the refresh pass of a Mac whose tasks stopped moving")
+        check("the refresh pass sends the snapshot again",
+              eventually { fixture.orchestratorFrames().count == beforePresence + 1 }
+                && (fixture.orchestratorFrames().last?["tasks"] as? [[String: Any]])?.first?["title"]
+                    as? String == "Step 60",
+              "frames=\(fixture.orchestratorFrames().count - beforePresence)")
+        fixture.clock.advance(20_000)
+        fixture.publish([cloudRow("root-row", observedAt: 420, generation: 5, sourceObservedAt: 419),
+                         cloudRow("kid-late", observedAt: 420, generation: 5, sourceObservedAt: 419)],
+                        at: 420, generation: 5, label: "the next scan")
+        check("and the next scan inside the interval does not",
+              !eventually(timeout: 0.3) { fixture.orchestratorFrames().count != beforePresence + 1 })
+
         // A transport-ready generation: the relay may have lost its replay, so it goes out whatever.
         let beforeReady = fixture.orchestratorFrames().count
         publish("the same snapshot for a new ready generation",

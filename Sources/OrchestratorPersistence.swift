@@ -394,7 +394,8 @@ extension Orchestrator {
 }
 
 extension RemoteServer {
-    /// The one `orch/<machine>` body used by SSE and Cloud publication. An unhealthy registry is
+    /// The one body SSE publishes and Cloud projects (``cloudOrchestratorProjection(_:listedSessions:)``)
+    /// for `orch/<machine>`. An unhealthy registry is
     /// described but never represented by an empty `tasks` array, so existing clients retain the
     /// last authoritative snapshot they observed.
     /// What a finished task wrote about itself, which is the largest thing a record holds and the

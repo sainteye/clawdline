@@ -6512,10 +6512,11 @@ of it: `write`, `auth`, `password` and `authed` are answers about *this* connect
 is talking to has been rebuilt under it.
 
 **The same three fields are what a cloud viewer has.** `RemoteServer.orchestratorSnapshot()`
-builds this body once and both publishers send it — this stream, and the `orch/<machine>` envelope
-the Mac republishes on every cloud transport-ready. On that path there is no `/v1/health` to ask
-and the relay's own `ready` frame knows nothing about a Mac, so `app` is the only reading the
-stale-build banner has.
+builds this body once. This stream sends it as built; the `orch/<machine>` envelope the Mac
+publishes carries its Cloud projection, where `tasks` holds only the records a hosted view can reach
+and only the fields it reads, and every other key is unchanged (`docs/cloud.md`, *The `orch/`
+snapshot a Cloud viewer is sent*). On that path there is no `/v1/health` to ask and the relay's own
+`ready` frame knows nothing about a Mac, so `app` is the only reading the stale-build banner has.
 
 `machine` is display-only metadata (`name` and `platform`). A producer model may additionally
 publish `provider`, but only when that runtime has explicit bounded provider/config evidence; the
