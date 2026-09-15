@@ -110,6 +110,10 @@ ask each line for both lists; never bury the user's decision in a status paragra
 
 ## Verifying your work
 
+**What deserves a test, and how much of the suite to run, is decided by
+[`docs/testing-policy.md`](docs/testing-policy.md).** Where anything below or in the documents it
+links asks for more verification than that page, that page wins.
+
 Verification follows the question, not the role:
 
 - A child proves its complete working overlay with the narrowest meaningful static/focused check;
