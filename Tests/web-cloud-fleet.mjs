@@ -104,6 +104,10 @@ const MACHINE_REPLY = "__clawdline_machine__";
 const READ_TIMEOUT_MS = 2000;
 const FAST = 600;
 const BOUND = READ_TIMEOUT_MS + 1500;
+// A ceiling, not a slice: `until` and `outcome` return the moment their condition holds, so a green run
+// is no slower, and a loaded machine (load average 15–27 on 2026-09-15) cannot end the wait before an
+// answer that needs no timeout has arrived. The checks added with the phone-heat work wait with this.
+const WAIT = 20000;
 const LINUX_ANSWERS = new Set(["places", "screen", "send", "start", "transcript"]);
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
@@ -111,10 +115,13 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 class RelaySocket {
     static latest = null;
-    constructor() { this.readyState = 1; this.sent = []; this.onPublish = null; RelaySocket.latest = this; }
+    constructor() { this.readyState = 1; this.sent = []; this.onPublish = null; this.halfOpen = false; RelaySocket.latest = this; }
     send(text) {
         const frame = JSON.parse(text);
         this.sent.push(frame);
+        // The relay answers a ping itself, even from a hibernating object. A socket left half-open by
+        // a network change still takes frames and hears nothing back.
+        if (frame.type === "ping" && !this.halfOpen) Promise.resolve().then(() => this.receive({ type: "pong" }));
         if (frame.type === "publish" && this.onPublish) {
             const envelope = frame.envelope;
             Promise.resolve().then(() => this.onPublish(envelope));
@@ -987,13 +994,13 @@ await check("transport · a held channel is not subscribed again, and the relay'
             { read: "transcript", status: 200, body: { entries: [], signature: "sig-" + command.session } });
     };
     for (let i = 0; i < 3; i += 1) {
-        const read = await outcome(f.client.transcript({ machine: "mac-01", session: "s1" }), FAST);
+        const read = await outcome(f.client.transcript({ machine: "mac-01", session: "s1" }), WAIT);
         assert.equal(read.state, "resolved", "read " + i + " " + read.state);
     }
     assert.deepEqual(f.frames("subscribe").flatMap((frame) => frame.channels), ["t/mac-01/s1"],
         "three reads of one Session subscribe once");
     for (let i = 0; i < 10; i += 1) {
-        const read = await outcome(f.client.transcript({ machine: "mac-01", session: "n" + i }), FAST);
+        const read = await outcome(f.client.transcript({ machine: "mac-01", session: "n" + i }), WAIT);
         assert.equal(read.state, "resolved", "session n" + i + " " + read.state);
     }
     const held = new Set();
@@ -1008,7 +1015,7 @@ await check("transport · a held channel is not subscribed again, and the relay'
     assert.ok(held.has("t/mac-01/n9"), "the channel being read is held");
     // Two quiet minutes: the next read lets go of every channel nobody is reading.
     f.advance(2 * 60 * 1000);
-    assert.equal((await outcome(f.client.transcript({ machine: "mac-01", session: "later" }), FAST)).state, "resolved");
+    assert.equal((await outcome(f.client.transcript({ machine: "mac-01", session: "later" }), WAIT)).state, "resolved");
     const released = f.frames("unsubscribe").at(-1).channels;
     assert.equal(released.length, 8, "all eight idle channels are released: " + JSON.stringify(released));
 
@@ -1028,11 +1035,11 @@ await check("transport · with eight channels each waited on, a read on a ninth 
         { read: "transcript", status: 200, body: { entries: [], signature: "sig-" + session } });
     const waiting = Array.from({ length: 8 }, (_, i) => f.client.transcript({ machine: "mac-01", session: "w" + i }));
     waiting.forEach((read) => read.catch(noop));
-    await until(() => f.published.length === 8, FAST);
+    await until(() => f.published.length === 8, WAIT);
     assert.equal(f.published.length, 8, "eight reads on eight channels went out");
     // The relay refuses a ninth subscription with an error frame naming no request (account-do.ts);
     // sent anyway, this read would wait out its whole read timeout.
-    const ninth = await outcome(f.client.transcript({ machine: "mac-01", session: "ninth" }), FAST);
+    const ninth = await outcome(f.client.transcript({ machine: "mac-01", session: "ninth" }), WAIT);
     assert.deepEqual([ninth.state, ninth.error && ninth.error.code, ninth.error && ninth.error.layer, ninth.error && ninth.error.retryable],
         ["rejected", "cloud_read_busy", "browser", true], "refused now, and retryable");
     assert.equal(describeFailure(ninth.error).text, T.webFailMacBusy);
@@ -1040,15 +1047,15 @@ await check("transport · with eight channels each waited on, a read on a ninth 
     assert.ok(!f.frames("subscribe").some((frame) => frame.channels.includes("t/mac-01/ninth")), "nor subscribed");
     const joining = f.client.infoSummary({ machine: "mac-01", session: "w3" });
     joining.catch(noop);
-    await until(() => f.published.length === 9, FAST);
+    await until(() => f.published.length === 9, WAIT);
     assert.equal(f.published.length, 9, "a read on a channel already held still goes out");
     await answer("w0");
-    assert.equal((await outcome(waiting[0], FAST)).state, "resolved");
+    assert.equal((await outcome(waiting[0], WAIT)).state, "resolved");
     const again = f.client.transcript({ machine: "mac-01", session: "ninth" });
-    await until(() => f.published.length === 10, FAST);
+    await until(() => f.published.length === 10, WAIT);
     assert.equal(f.published.length, 10, "once one settles, asking again fits");
     await answer("ninth");
-    assert.equal((await outcome(again, FAST)).state, "resolved");
+    assert.equal((await outcome(again, WAIT)).state, "resolved");
     const held = new Set();
     let most = 0;
     f.socket.sent.forEach((frame) => {
@@ -1060,11 +1067,13 @@ await check("transport · with eight channels each waited on, a read on a ninth 
 
     const early = fleetClient();
     await early.start();
-    const reads = Array.from({ length: 9 }, (_, i) => outcome(early.transcript({ machine: "mac-01", session: "e" + i }), FAST));
+    const reads = Array.from({ length: 9 }, (_, i) => early.transcript({ machine: "mac-01", session: "e" + i }));
+    reads.forEach((read) => read.catch(noop));
     assert.ok(early.pendingSubscriptions.size <= 8, "before ready, what waits to be subscribed stays under the ceiling: "
         + early.pendingSubscriptions.size);
-    const codes = (await Promise.all(reads)).map((read) => read.error && read.error.code);
-    assert.equal(codes[8], "cloud_read_busy", "and a ninth channel waited on is refused as busy there too: " + codes.join(","));
+    const ninthEarly = await outcome(reads[8], WAIT);
+    assert.equal(ninthEarly.error && ninthEarly.error.code, "cloud_read_busy",
+        "and a ninth channel waited on is refused as busy there too: " + ninthEarly.state);
     early.subscribe(Array.from({ length: 10 }, (_, i) => "t/mac-01/later-" + i));
     assert.deepEqual([early.pendingSubscriptions.size, Array.from(early.pendingSubscriptions).at(-1)], [8, "t/mac-01/later-9"],
         "a subscription made before ready forgets the oldest rather than growing past the ceiling");
@@ -1093,7 +1102,7 @@ await check("transport · a read asked of a retired client while the page is hid
     assert.equal((await outcome(tapped, 60)).state, "pending", "held while the page is still hidden, not refused");
     assert.deepEqual(pending(), [5_000], "for a few seconds, not for the read bound");
     fire();
-    const refused = await outcome(tapped, FAST);
+    const refused = await outcome(tapped, WAIT);
     assert.deepEqual([refused.state, refused.error && refused.error.code], ["rejected", "cloud_reconnecting"],
         "still hidden then: refused as before");
     assert.deepEqual([pending(), away.successorWaiters.length], [[], 0], "and nothing it set is left");
@@ -1112,7 +1121,7 @@ await check("transport · a read asked of a retired client while the page is hid
         await fromMachine(renewed, socket, "t/mac-01/" + encodeURIComponent(command.session),
             { read: "transcript", status: 200, body: { entries: [], signature: "on-renewed" } });
     };
-    const read = await outcome(opened, FAST);
+    const read = await outcome(opened, WAIT);
     assert.deepEqual([read.state, read.value && read.value.signature], ["resolved", "on-renewed"],
         "the tapped Session's read runs on the client the page came back with");
     assert.deepEqual(pending(), [], "and its wait is cleared");
@@ -1122,28 +1131,28 @@ await check("transport · a read asked of a retired client while the page is hid
 await check("transport · a retained t/ answer settles only a request it names, or a picture by its id", async function () {
     const f = await quietMac();
     const reading = f.client.transcript({ machine: "mac-01", session: "s1" });
-    await until(() => f.published.length === 1, FAST);
+    await until(() => f.published.length === 1, WAIT);
     await retained(f, "t/mac-01/s1", { read: "transcript", status: 200, body: { entries: [], signature: "retained" } });
     assert.equal((await outcome(reading, 60)).state, "pending",
         "the channel's last answer — minutes old, maybe another device's — is not this read's answer");
     await fromMachine(f.client, f.socket, "t/mac-01/s1", { read: "transcript", status: 200,
         body: { entries: [], signature: "live" } });
-    const read = await outcome(reading, FAST);
+    const read = await outcome(reading, WAIT);
     assert.deepEqual([read.state, read.value && read.value.signature], ["resolved", "live"],
         "the Mac's answer to this read settles it");
 
     const picture = f.client.image({ machine: "mac-01", session: "s1" }, "a-picture");
-    await until(() => f.published.length === 2, FAST);
+    await until(() => f.published.length === 2, WAIT);
     await retained(f, "t/mac-01/s1", Object.assign({ read: "image.a-picture", status: 200 },
         { body: Object.assign({ id: "a-picture" }, PICTURE) }));
-    assert.equal((await outcome(picture, FAST)).state, "resolved", "an image id names bytes that never change");
+    assert.equal((await outcome(picture, WAIT)).state, "resolved", "an image id names bytes that never change");
 
     const status = f.client.cloudStatus("mac-01");
-    await until(() => f.published.length === 3, FAST);
+    await until(() => f.published.length === 3, WAIT);
     const request = f.published[2].command.request;
     await retained(f, "t/mac-01/" + MACHINE_REPLY, { read: "read:" + request, status: 200,
         body: Object.assign({}, CLOUD_STATUS, { commands: [] }) });
-    assert.equal((await outcome(status, FAST)).state, "resolved", "an answer carrying this page's request id is this request's");
+    assert.equal((await outcome(status, WAIT)).state, "resolved", "an answer carrying this page's request id is this request's");
 });
 
 await check("transport · machine_offline is remembered briefly: a re-ask fails here, and a live envelope ends it", async function () {
@@ -1160,16 +1169,16 @@ await check("transport · machine_offline is remembered briefly: a re-ask fails 
             status: 200, body: Object.assign({}, CLOUD_STATUS, { commands: [] }) });
     };
     const code = async () => {
-        const ended = await outcome(f.client.cloudStatus("mac-01"), FAST);
+        const ended = await outcome(f.client.cloudStatus("mac-01"), WAIT);
         return ended.state === "rejected" ? ended.error.code : ended.state;
     };
     assert.equal(await code(), "machine_offline");
     assert.equal(f.published.length, 1);
-    const again = await outcome(f.client.cloudStatus("mac-01"), FAST);
+    const again = await outcome(f.client.cloudStatus("mac-01"), WAIT);
     assert.deepEqual([again.state, again.error && again.error.code, again.error && again.error.layer, again.error && again.error.retryable],
         ["rejected", "machine_offline", "relay", true], "said again in the relay's own word");
     assert.equal(f.published.length, 1, "without a second envelope");
-    const fresh = await outcome(f.client.schedules({ fresh: true }), FAST);
+    const fresh = await outcome(f.client.schedules({ fresh: true }), WAIT);
     assert.equal(f.published.length, 1, "the schedules refresh does not ask it either");
     assert.deepEqual([fresh.state, fresh.error && fresh.error.code], ["rejected", "machine_offline"],
         "and, as the only machine asked, refuses with its word");
@@ -1202,20 +1211,20 @@ await check("transport · a picture read once is drawn from memory; a refusal is
         await fromMachine(f.client, f.socket, "t/mac-01/s1", payload);
     };
     const identity = { machine: "mac-01", session: "s1" };
-    const first = await outcome(f.client.image(identity, "p-1"), FAST);
-    const second = await outcome(f.client.image(identity, "p-1"), FAST);
+    const first = await outcome(f.client.image(identity, "p-1"), WAIT);
+    const second = await outcome(f.client.image(identity, "p-1"), WAIT);
     assert.deepEqual([first.state, second.state], ["resolved", "resolved"]);
     assert.deepEqual(Array.from(second.value.bytes), [137, 80, 78, 71]);
     assert.equal(f.published.length, 1, "the second draw of the same picture sends nothing");
-    const other = await outcome(f.client.image({ machine: "mac-01", session: "s2" }, "p-1"), FAST);
+    const other = await outcome(f.client.image({ machine: "mac-01", session: "s2" }, "p-1"), WAIT);
     assert.equal(other.state, "resolved");
     assert.equal(f.published.length, 1, "the id names the bytes on its machine, whichever Session shows them");
-    assert.equal((await outcome(f.client.image(identity, "too-big"), FAST)).error.code, "image_too_large_for_cloud");
-    assert.equal((await outcome(f.client.image(identity, "too-big"), FAST)).error.code, "image_too_large_for_cloud");
+    assert.equal((await outcome(f.client.image(identity, "too-big"), WAIT)).error.code, "image_too_large_for_cloud");
+    assert.equal((await outcome(f.client.image(identity, "too-big"), WAIT)).error.code, "image_too_large_for_cloud");
     assert.equal(f.published.length, 3, "a refusal is asked again");
     const renewed = fleetClient({ resumeFrom: f.client });
     await ready(renewed);
-    assert.equal((await outcome(renewed.image(identity, "p-1"), FAST)).state, "resolved");
+    assert.equal((await outcome(renewed.image(identity, "p-1"), WAIT)).state, "resolved");
     assert.equal(RelaySocket.latest.sent.filter((frame) => frame.type === "publish").length, 0,
         "a token renewal keeps the pictures");
     renewed.stop();
@@ -1241,18 +1250,18 @@ await check("transport · a read on a client retired while the page was away run
         const command = JSON.parse(new TextDecoder().decode(await openEnvelope(envelope, masterKey, senderKey)));
         await answerOn(second)(envelope, command);
     };
-    const read = await outcome(tapped, FAST);
+    const read = await outcome(tapped, WAIT);
     assert.deepEqual([read.state, read.value && read.value.signature], ["resolved", "on-renewed"],
         "the held read went out on the replacement socket and settled there");
     assert.equal(f.published.length, 0, "nothing was published on the retired socket");
-    const later = await outcome(f.client.transcript({ machine: "mac-01", session: "s2" }), FAST);
+    const later = await outcome(f.client.transcript({ machine: "mac-01", session: "s2" }), WAIT);
     assert.deepEqual([later.state, later.value && later.value.signature], ["resolved", "on-renewed"],
         "a call after the replacement is ready runs there at once");
 
     const hidden = await quietMac();
     hidden.client.lifecycle = () => false;
     hidden.client.retire();
-    const refused = await outcome(hidden.client.transcript({ machine: "mac-01", session: "s1" }), FAST);
+    const refused = await outcome(hidden.client.transcript({ machine: "mac-01", session: "s1" }), WAIT);
     assert.deepEqual([refused.state, refused.error && refused.error.code], ["rejected", "cloud_reconnecting"],
         "with nothing on its way — the page is hidden — it is refused at once, as before");
     resuming = false;
@@ -1325,17 +1334,17 @@ await check("B1 · a cold viewer of an idle Mac with nothing replayed asks for t
     const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }],
         ["s2", { id: "s2", state: "idle", transcript_signature: "20-1" }]]) };
     const reader = sessionReader("s1");
-    const started = Date.now();
     const viewer = await idleMacSocket(mac, reader, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC) });
-    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.rows.length === 2 && last.scan.emptyAuthoritative; }, FAST);
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.rows.length === 2 && last.scan.emptyAuthoritative; }, WAIT);
     const last = reader.lists[reader.lists.length - 1];
     assert.deepEqual([last && last.rows, last && last.scan.emptyAuthoritative, last && last.scan.recovering],
         [["s1", "s2"], true, []], "the list converged to the Mac's rows: " + JSON.stringify(reader.lists));
-    assert.ok(Date.now() - started < FAST, "within the bound");
+    // Within the bound: by the first answer — no timeout, retry or failure on the way — not by a clock.
+    assert.deepEqual(reader.lists.flatMap((list) => list.scan.failures), [], "no attempt failed on the way");
     assert.equal(viewer.sent.snapshots, 1, "one request, from the machine this browser remembered answering it");
     assert.deepEqual(reader.claimedEmpty(), [], "no list said the account is empty while the Mac's rows were on their way");
     assert.equal(reader.lists[0].scan.recovering[0], "mac-01", "the first list says that Mac is still sending");
-    await until(() => viewer.sent.transcripts === 1, FAST);
+    await until(() => viewer.sent.transcripts === 1, WAIT);
     assert.equal(viewer.sent.transcripts, 1, "the open Session is read once");
 });
 
@@ -1346,7 +1355,7 @@ await check("B1 · a viewer that has never seen the Mac asks once its snapshot s
     assert.equal(viewer.sent.snapshots, 0, "nothing is known to answer yet, so nothing is asked");
     await fromMachine(viewer.client, viewer.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
         cloud_status: Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }) });
-    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.rows.length === 1 && last.scan.emptyAuthoritative; }, FAST);
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.rows.length === 1 && last.scan.emptyAuthoritative; }, WAIT);
     assert.equal(viewer.sent.snapshots, 1, "the Mac's own digest named the word, and it was asked once");
     assert.deepEqual(reader.claimedEmpty(), [], JSON.stringify(reader.lists));
     await fromMachine(viewer.client, viewer.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
@@ -1389,7 +1398,7 @@ await check("B1 · a relay that still replays the inventory, every row and the o
     const partial = await idleMacSocket(mac, sessionReader(null), { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC), sessionSnapshotSettleMs: 200 });
     await replay(partial, "s/mac-01/s1", { session: mac.rows.get("s1"), at: 100, scan: {} });
     await replay(partial, "s/mac-01/__clawdline_inventory_v1__", { inventory: { version: 1, sessions: ["s1"] }, features: ["sessions.snapshot"] });
-    await until(() => partial.sent.snapshots === 1, FAST);
+    await until(() => partial.sent.snapshots === 1, WAIT);
     assert.deepEqual(partial.sent.orchestrator, [true],
         "rows alone came back, and an orch snapshot too large for the relay to keep does not: that is asked for");
     intact.client.stop();
@@ -1406,7 +1415,7 @@ await check("B1 · a page back from quiesce after a row changed while it was awa
     for (const row of mac.rows.values()) {
         await fromMachine(first.client, first.socket, "s/mac-01/" + row.id, { session: row, at: 100, scan: {} });
     }
-    await until(() => first.sent.transcripts === 1 && first.client.readWaiters.size === 0, FAST);
+    await until(() => first.sent.transcripts === 1 && first.client.readWaiters.size === 0, WAIT);
     assert.equal(first.sent.transcripts, 1, "the open Session was read once while connected");
     assert.equal(first.client.readWaiters.size, 0, "and that read was answered before the page went away");
     first.client.retire();
@@ -1414,7 +1423,15 @@ await check("B1 · a page back from quiesce after a row changed while it was awa
     mac.rows.set("s1", { id: "s1", state: "idle", transcript_signature: "11-4" });
     const listsBefore = reader.lists.length;
     const second = await idleMacSocket(mac, reader, { descriptorStorage: storage, resumeFrom: first.client });
-    await until(() => second.sent.transcripts === 1, FAST);
+    // Done means converged, not merely read: the transcript read starts when row s1 lands, before the
+    // inventory and the answer settle the recovery — asserting at that moment raced it (2026-09-15).
+    const converged = () => {
+        const tail = reader.lists.slice(listsBefore);
+        const newest = tail[tail.length - 1];
+        return second.sent.transcripts === 1 && newest && newest.scan.emptyAuthoritative
+            && JSON.stringify(newest.rows) === JSON.stringify(["s1", "s2"]);
+    };
+    await until(converged, WAIT);
     await settle();
     const after = reader.lists.slice(listsBefore);
     const last = after[after.length - 1];
@@ -1434,7 +1451,7 @@ await check("B1 · a page back from quiesce after a row changed while it was awa
     // A page frozen past the grace whose socket still says ready: replaced like a renewal, but asks.
     third.client.continuityUnproven = true;
     const fourth = await idleMacSocket(mac, reader, { descriptorStorage: storage, resumeFrom: third.client });
-    await until(() => fourth.sent.snapshots === 1, FAST);
+    await until(() => fourth.sent.snapshots === 1, WAIT);
     assert.equal(fourth.sent.snapshots, 1, "a replacement for a socket nothing proves heard everything asks");
     third.client.retire();
 });
@@ -1447,7 +1464,7 @@ await check("B1 · a Mac that does not answer ends the bounded attempt in a type
     assert.deepEqual(reader.lists, [], "a state this page made up is not handed over before any envelope is opened");
     await fromMachine(viewer.client, viewer.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
         cloud_status: Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }) });
-    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.scan.failures.length; }, BOUND);
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.scan.failures.length; }, WAIT);
     const last = reader.lists[reader.lists.length - 1];
     assert.equal(viewer.sent.snapshots, 2, "asked once and once more");
     assert.deepEqual(last && last.scan.failures, [{ machine: "mac-01", code: "cloud_read_timeout" }], JSON.stringify(reader.lists));
@@ -1455,6 +1472,112 @@ await check("B1 · a Mac that does not answer ends the bounded attempt in a type
     assert.ok(describeFailure({ code: "cloud_sessions_incomplete" }).known, "rows named and never received have words of their own");
     viewer.client.stop();
     assert.equal(viewer.client.sessionRecovery.size, 0, "a stopped client holds no recovery and no timer");
+});
+
+/* ---- F1 · a device that may not ask, F3 · a renewal that hears nothing, F4 · orch/ on return -- */
+
+// The confirmation review's probe (task b336e402): a read-only device of an idle Mac after an
+// eviction, whose replay held only the inventory, published nothing and said "no Sessions".
+await check("F1 · a read-only device after an eviction shows the Mac as sending, never empty, and has the rows once the Mac's refresh pass arrives", async function () {
+    const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }]]) };
+    const reader = sessionReader(null);
+    const viewer = await idleMacSocket(mac, reader, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC),
+        allowWrites: false, nextSequence: undefined });
+    await fromMachine(viewer.client, viewer.socket, "s/mac-01/__clawdline_inventory_v1__",
+        { inventory: { version: 1, sessions: ["s1"] }, features: ["sessions.snapshot"] });
+    const waiting = reader.lists[reader.lists.length - 1];
+    assert.deepEqual([waiting && waiting.rows, waiting && waiting.scan.emptyAuthoritative, waiting && waiting.scan.recovering],
+        [[], false, ["mac-01"]], "the inventory names a row that has not come: waiting, not empty — " + JSON.stringify(reader.lists));
+    assert.equal(viewer.socket.sent.filter((frame) => frame.type === "publish").length, 0, "a device that may not publish asks nothing");
+    // The Mac's refresh pass (`CloudAppBridge`, every three minutes): each row, then the inventory.
+    await fromMachine(viewer.client, viewer.socket, "s/mac-01/s1", { session: mac.rows.get("s1"), at: 100, scan: {} });
+    await fromMachine(viewer.client, viewer.socket, "s/mac-01/__clawdline_inventory_v1__",
+        { inventory: { version: 1, sessions: ["s1"] }, features: ["sessions.snapshot"] });
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.rows.length === 1 && last.scan.emptyAuthoritative; }, WAIT);
+    const last = reader.lists[reader.lists.length - 1];
+    assert.deepEqual([last && last.rows, last && last.scan.emptyAuthoritative, last && last.scan.recovering], [["s1"], true, []]);
+    assert.deepEqual(reader.claimedEmpty(), [], "no list said the account is empty: " + JSON.stringify(reader.lists));
+    assert.equal(viewer.client.sessionRecovery.size, 0, "and the wait is over, its timer with it");
+    viewer.client.stop();
+
+    // A pass that never comes — the Mac went away — ends in words, not in "no Sessions".
+    const lost = sessionReader(null);
+    const gone = await idleMacSocket(mac, lost, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC),
+        allowWrites: false, nextSequence: undefined, sessionRefreshWaitMs: 150 });
+    await fromMachine(gone.client, gone.socket, "s/mac-01/__clawdline_inventory_v1__",
+        { inventory: { version: 1, sessions: ["s1"] }, features: ["sessions.snapshot"] });
+    await until(() => { const newest = lost.lists[lost.lists.length - 1]; return newest && newest.scan.failures.length; }, WAIT);
+    const failed = lost.lists[lost.lists.length - 1];
+    assert.deepEqual([failed && failed.scan.failures, failed && failed.scan.recovering],
+        [[{ machine: "mac-01", code: "cloud_sessions_incomplete" }], []], JSON.stringify(lost.lists));
+    // The list says a failure in its own words (`view/list.js`); only an empty list with neither a
+    // wait nor a failure beside it reads as "no Sessions".
+    assert.deepEqual(lost.lists.filter((list) => !list.rows.length && list.scan.emptyAuthoritative && !list.scan.failures.length), [],
+        "a failure is said, and no list claimed the account empty: " + JSON.stringify(lost.lists));
+    gone.client.stop();
+    assert.equal(gone.client.sessionRecovery.size, 0, "a stopped client holds no wait");
+
+    // A renewal during the wait keeps waiting with the same deadline, and the pass on the new socket ends it.
+    const renewing = sessionReader(null);
+    const before = await idleMacSocket(mac, renewing, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC),
+        allowWrites: false, nextSequence: undefined });
+    await fromMachine(before.client, before.socket, "s/mac-01/__clawdline_inventory_v1__",
+        { inventory: { version: 1, sessions: ["s1"] }, features: ["sessions.snapshot"] });
+    const deadline = before.client.sessionRecovery.get("mac-01").deadline;
+    const after = await idleMacSocket(mac, renewing, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC),
+        allowWrites: false, nextSequence: undefined, resumeFrom: before.client });
+    before.client.retire();
+    const carried = after.client.sessionRecovery.get("mac-01");
+    assert.deepEqual([carried && carried.passive, carried && carried.deadline], [true, deadline], "the wait goes on, not starts over");
+    await fromMachine(after.client, after.socket, "s/mac-01/s1", { session: mac.rows.get("s1"), at: 100, scan: {} });
+    await until(() => after.client.sessionRecovery.size === 0, WAIT);
+    assert.equal(after.client.sessionRecovery.size, 0,
+        "the inventory the old socket heard and the row this one heard are the whole machine");
+    after.client.stop();
+});
+
+await check("F3 · a renewal whose socket no longer hears is not taken as continuous, and asks for the rows", async function () {
+    const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }]]) };
+    const reader = sessionReader(null);
+    const storage = storageBox(REMEMBERED_SNAPSHOT_MAC);
+    const first = await idleMacSocket(mac, reader, { descriptorStorage: storage });
+    await until(() => first.sent.snapshots === 1 && first.client.sessionRecovery.size === 0, WAIT);
+    const heard = await idleMacSocket(mac, reader, { descriptorStorage: storage, resumeFrom: first.client });
+    assert.ok(first.socket.sent.some((frame) => frame.type === "ping"), "the socket being replaced was pinged");
+    await until(() => heard.socket.sent.some((frame) => frame.type === "publish"), 400);
+    assert.equal(heard.socket.sent.filter((frame) => frame.type === "publish").length, 0,
+        "it answered, so the renewal is continuous and asks nothing");
+    first.client.retire();
+    // A network change left the socket half-open: it still reads ready, and the relay's pong never comes.
+    heard.socket.halfOpen = true;
+    mac.rows.set("s1", { id: "s1", state: "working", transcript_signature: "11-2" });
+    const renewed = await idleMacSocket(mac, reader, { descriptorStorage: storage, resumeFrom: heard.client });
+    assert.equal(heard.client.ready, true, "the premise: the replaced client still says ready");
+    await until(() => renewed.sent.snapshots === 1, WAIT);
+    assert.equal(renewed.sent.snapshots, 1, "a replacement for a socket that did not answer asks for the rows");
+    await until(() => renewed.client.sessionRecovery.size === 0, WAIT);
+    const key = Array.from(renewed.client.sessionSnapshots.keys()).find((candidate) => candidate.endsWith("s1"));
+    assert.equal(renewed.client.sessionSnapshots.get(key).state, "working", "and holds the Mac's current row");
+    heard.client.retire();
+    renewed.client.stop();
+});
+
+await check("F4 · a page back from the background that holds the Mac's orch snapshot asks for rows without it", async function () {
+    const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }]]) };
+    const reader = sessionReader(null);
+    const storage = storageBox(REMEMBERED_SNAPSHOT_MAC);
+    const first = await idleMacSocket(mac, reader, { descriptorStorage: storage });
+    await until(() => first.sent.snapshots === 1, WAIT);
+    assert.deepEqual(first.sent.orchestrator, [true], "a page that never had the orch snapshot asks for it");
+    await fromMachine(first.client, first.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
+        cloud_status: Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }) });
+    first.client.retire();
+    // Hidden past the grace and back: not a renewal, so the rows are asked for — and only the rows.
+    const back = await idleMacSocket(mac, reader, { descriptorStorage: storage, resumeFrom: first.client });
+    await until(() => back.sent.snapshots === 1, WAIT);
+    assert.deepEqual(back.sent.orchestrator, [false],
+        "the page holds that Mac's orch snapshot, so no few hundred kilobytes go out to every viewer for it");
+    back.client.stop();
 });
 
 /* ---- ends ---------------------------------------------------------------------------------- */

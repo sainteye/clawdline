@@ -116,9 +116,11 @@ const SESSION_INVENTORY_LIMIT = 512;
 const SESSION_SNAPSHOT_COMMAND = "sessions.snapshot";
 /**
  * The relay replays what it still holds right after `ready`. A client lets that replay land before
- * deciding: a machine whose inventory, every listed row and `orch/` snapshot all arrived on this
- * socket is current and is not asked; one missing only rows is asked without `orchestrator`, which
- * can be hundreds of kilobytes and is re-sent only to a page that lacks it.
+ * deciding: a machine whose inventory and every listed row arrived on this socket, and whose `orch/`
+ * snapshot this page holds, is current and is not asked. `orchestrator` is added only when the page
+ * holds no `orch/` snapshot of that machine at all — a page back from the background keeps the one it
+ * had — because the relay fans that snapshot, often hundreds of kilobytes, out to every viewer on the
+ * account, and the Mac re-sends it at most once a minute (`orchestratorResendFloorMilliseconds`).
  */
 const SESSION_SNAPSHOT_SETTLE_MS = 750;
 const SESSION_SNAPSHOT_TIMEOUT_MS = 20000;
@@ -129,6 +131,14 @@ const SESSION_SNAPSHOT_ATTEMPTS = 2;
 const SESSION_SNAPSHOT_ROWS_GRACE_MS = 3000;
 /** Rows an answer named that have not arrived by the grace: the attempt failed, and says so. */
 const SESSION_ROWS_MISSING = "cloud_sessions_incomplete";
+/**
+ * A device that may not publish on `ctl/` cannot ask. A Mac that lists `sessions.snapshot` also sends
+ * every row and its inventory again once per three minutes (`CloudAppBridge`'s refresh pass), so such
+ * a device waits for that pass instead: the machine is shown as sending until this socket has heard
+ * its inventory and every row it lists, and past this bound — the interval, a scan, and slack — the
+ * wait has failed as `cloud_sessions_incomplete`.
+ */
+const SESSION_REFRESH_WAIT_MS = 4 * 60 * 1000;
 
 /** An agent's window: the same number for the same reason — `live.js` asks for `?limit=200`. */
 const AGENT_LIMIT = 200;
@@ -446,6 +456,10 @@ export class CloudClient {
         }, this);
         this.transcriptSnapshots = new Map();
         this.orchestratorSnapshots = new Map();
+        // Machines whose `orch/` snapshot this page holds, whichever client of the same viewer heard
+        // it: what `sessions.snapshot` needs to know before it adds `orchestrator` (`_holdsOrchestrator`).
+        this.orchestratorHeld = new Set(sameViewer ? prior.orchestratorHeld : []);
+        if (sameViewer) prior.orchestratorSnapshots.forEach(function (_, machine) { this.orchestratorHeld.add(machine); }, this);
         // This is evidence of the last authenticated envelope seen from a machine, not a
         // presence lease.  Carry it across a viewer-token renewal just like the retained
         // Session rows: it decides whether the picker may take the one-machine fast path, while
@@ -501,6 +515,12 @@ export class CloudClient {
         this.sessionSnapshotRetryMs = options.sessionSnapshotRetryMs || SESSION_SNAPSHOT_RETRY_MS;
         this.sessionRowsGraceMs = options.sessionRowsGraceMs || SESSION_SNAPSHOT_ROWS_GRACE_MS;
         this.sessionSnapshotSettleMs = options.sessionSnapshotSettleMs || SESSION_SNAPSHOT_SETTLE_MS;
+        this.sessionRefreshWaitMs = options.sessionRefreshWaitMs || SESSION_REFRESH_WAIT_MS;
+        // Frames this socket has received, of any kind. A renewal's successor pings the socket it is
+        // replacing and notes this count (`renewalProbe`): only a frame after it — the relay's `pong`,
+        // or anything else — proves that socket still hears, where a `ready` flag proves nothing.
+        this.framesHeard = 0;
+        this.renewalProbe = null;
         // What this socket itself has been sent — replayed or live — as opposed to what was carried
         // over from the client it resumed from: Session keys (rows and tombstones) and the machines
         // whose inventory arrived. Never inherited.
@@ -603,6 +623,7 @@ export class CloudClient {
         var ws = new this.WebSocket(this.url,
             ["clawdline.v1", "clawdline.token." + this.deviceToken]);
         this.socket = ws;
+        if (this.resumedFrom) this.renewalProbe = this.resumedFrom._probeLiveness();
         this.socketOpenedAt = this.now();
         this.socketSubscriptions = new Map();
         var self = this;
@@ -726,6 +747,7 @@ export class CloudClient {
         if (!frame || typeof frame !== "object" || Array.isArray(frame)) {
             throw cloudError("bad_frame", "the relay frame is not an object");
         }
+        this.framesHeard += 1;
         if (frame.type === "challenge") return this._answerChallenge(frame);
         if (frame.type === "ready") return this._becameReady(frame);
         if (frame.type === "envelope") return this._receiveEnvelope(frame.envelope, frame.realign === true);
@@ -800,9 +822,16 @@ export class CloudClient {
         if (this.resumedFrom) {
             var prior = this.resumedFrom;
             this.resumedFrom = null;
-            // A renewal: the socket this one replaces is still up, so nothing published since this
-            // client was built was lost — it went to that socket. Take what it heard meanwhile.
-            if (prior.ready && !prior.retired && prior.continuityUnproven !== true) this._continueFrom(prior);
+            prior.orchestratorSnapshots.forEach(function (_, machine) { this.orchestratorHeld.add(machine); }, this);
+            // A renewal: the socket this one replaces is still up — it heard a frame after the ping
+            // sent when this client began connecting — so nothing published since then was lost; it
+            // went to that socket. Take what it heard meanwhile. A socket left half-open by a network
+            // change still reads `ready` and hears nothing, so its successor is not a renewal and
+            // recovers the rows like any reconnection.
+            if (prior.ready && !prior.retired && prior.continuityUnproven !== true
+                && this.renewalProbe !== null && prior.framesHeard > this.renewalProbe) {
+                this._continueFrom(prior);
+            }
             prior._handOff(this);
         }
         if (this.handlers && this.handlers.hello) this.handlers.hello({ write: this.allowWrites });
@@ -843,6 +872,18 @@ export class CloudClient {
     revalidate(reason) {
         if (typeof this.lifecycle !== "function") return;
         try { this.lifecycle(reason); } catch (e) { /* the page's hook must never throw into it */ }
+    }
+
+    /**
+     * Ask the relay to answer this socket (`{"type":"ping"}`, which the relay's hibernating object
+     * answers without waking) and return how many frames it had heard before asking, or null when it
+     * cannot be asked. A renewal's successor calls this as it starts connecting (`_becameReady`).
+     */
+    _probeLiveness() {
+        if (!this.ready || this.retired || !this.socket) return null;
+        var mark = this.framesHeard;
+        try { this._send({ type: "ping" }); } catch (e) { return null; }
+        return mark;
     }
 
     /** The client that resumed from this one is ready: it runs what was waiting here, and what comes later. */
@@ -1646,24 +1687,55 @@ export class CloudClient {
      * may not publish on `ctl/` at all, or a machine this browser is not paired with.
      */
     _recoverSessions(machine) {
-        if (!this.ready || this.retired || !this.allowWrites || this.sessionRecoveryAsked.has(machine)
+        if (!this.ready || this.retired || this.sessionRecoveryAsked.has(machine)
             || this.unpairedMachines.has(machine) || !this._machineHasFeature(machine, SESSION_SNAPSHOT_COMMAND)) {
             return;
         }
         this.sessionRecoveryAsked.add(machine);
+        if (!this.allowWrites) {
+            this._awaitSessionRefresh(machine, this.now() + this.sessionRefreshWaitMs);
+            return;
+        }
         var self = this;
         var entry = { state: "pending", code: null, attempt: 0, expected: null, timer: null };
         this._setSessionRecovery(machine, entry);
         entry.timer = this.setTimeout(function () {
             entry.timer = null;
             if (self.sessionRecovery.get(machine) !== entry || !self.ready || self.retired) return;
-            var orchestrator = !self.orchestratorSnapshots.has(machine);
+            var orchestrator = !self._holdsOrchestrator(machine);
             if (!orchestrator && self._sessionsHeardWhole(machine)) {
                 self._setSessionRecovery(machine, null);
                 return;
             }
             self._askSessionSnapshot(machine, 1);
         }, this.sessionSnapshotSettleMs);
+    }
+
+    /**
+     * Wait, without asking, for `machine`'s refresh pass (`SESSION_REFRESH_WAIT_MS`): pending until
+     * this socket has heard the machine's inventory and every row it lists, then over; at `deadline`
+     * still pending, failed as `cloud_sessions_incomplete`. A renewal carries the deadline over.
+     */
+    _awaitSessionRefresh(machine, deadline) {
+        var self = this;
+        var entry = { state: "pending", code: null, attempt: 0, expected: null, timer: null,
+            passive: true, deadline: deadline };
+        this._setSessionRecovery(machine, entry);
+        if (this._sessionsHeardWhole(machine)) {
+            this._setSessionRecovery(machine, null);
+            return;
+        }
+        entry.timer = this.setTimeout(function () {
+            entry.timer = null;
+            if (self.sessionRecovery.get(machine) !== entry) return;
+            self._setSessionRecovery(machine, { state: "failed", code: SESSION_ROWS_MISSING, attempt: 0,
+                expected: null, timer: null });
+        }, Math.max(0, deadline - this.now()));
+    }
+
+    /** Whether this page holds `machine`'s `orch/` snapshot, from this client or one it resumed from. */
+    _holdsOrchestrator(machine) {
+        return this.orchestratorSnapshots.has(machine) || this.orchestratorHeld.has(machine);
     }
 
     /** This socket was sent the machine's inventory and a row or tombstone for every id in it. */
@@ -1682,7 +1754,7 @@ export class CloudClient {
         var self = this;
         var entry = { state: "pending", code: null, attempt: attempt, expected: null, timer: null };
         this._setSessionRecovery(machine, entry);
-        var extra = this.orchestratorSnapshots.has(machine) ? {} : { orchestrator: true };
+        var extra = this._holdsOrchestrator(machine) ? {} : { orchestrator: true };
         this._machineRequest(machine, SESSION_SNAPSHOT_COMMAND, extra, "read", this.sessionSnapshotTimeoutMs,
             { probe: false }).then(function (body) {
             if (self.sessionRecovery.get(machine) !== entry) return;
@@ -1748,6 +1820,12 @@ export class CloudClient {
     _settleSessionRecovery(machine) {
         var entry = this.sessionRecovery.get(machine);
         if (!entry) return;
+        if (entry.passive && entry.state === "pending") {
+            if (!this._sessionsHeardWhole(machine)) return;
+            if (entry.timer !== null) this.clearTimeout(entry.timer);
+            this.sessionRecovery.delete(machine);
+            return;
+        }
         var keys = entry.expected;
         if (entry.state === "failed") {
             var inventory = this.sessionInventoryByMachine.get(machine);
@@ -1779,12 +1857,20 @@ export class CloudClient {
             this.machineFeatureSequence.set(machine, sequence);
             this.machineFeatures.set(machine, (prior.machineFeatures.get(machine) || []).slice());
         }, this);
+        // Continuity is proven, so what that socket heard counts as heard here too.
+        prior.sessionKeysHeard.forEach(function (key) { this.sessionKeysHeard.add(key); }, this);
+        prior.inventoriesHeard.forEach(function (machine) { this.inventoriesHeard.add(machine); }, this);
         // What it asked stays asked. An answer still in flight dies with that socket, so that one
-        // machine is asked again here; a failure stays said until that machine's rows are whole.
+        // machine is asked again here; a failure stays said until that machine's rows are whole. A
+        // wait for the refresh pass goes on here, with the deadline it had.
         prior.sessionRecoveryAsked.forEach(function (machine) {
             var entry = prior.sessionRecovery.get(machine);
-            if (entry && entry.state === "pending") return;
+            if (entry && entry.state === "pending" && !entry.passive) return;
             this.sessionRecoveryAsked.add(machine);
+            if (entry && entry.passive && entry.state === "pending") {
+                this._awaitSessionRefresh(machine, entry.deadline);
+                return;
+            }
             if (entry) this.sessionRecovery.set(machine, { state: entry.state, code: entry.code,
                 attempt: entry.attempt, expected: null, timer: null });
         }, this);
