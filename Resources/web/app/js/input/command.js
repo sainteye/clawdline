@@ -3,7 +3,7 @@ import { commandSpin, drawSpinner, setCommandSpin, spinPhase } from "../core/pix
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint } from "../core/util.js";
-import { failureSentence } from "../core/failure-text.js";
+import { failureSentence, unansweredSentence } from "../core/failure-text.js";
 import { drawIcon } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { byId } from "../view/derive.js";
@@ -48,6 +48,7 @@ export var Command = (function () {
 
     var phase = "idle";          // idle | thinking | draft | opening
     var places = null;           // GET /v1/places, fetched once and reused for this sheet's life
+    var placesNote = "";         // who did not answer that read, when the list may be incomplete
     var assistants = [];
     var chosenPlace = null;      // a place id, once the planner or a person has picked one
     var chosenAssistant = null;
@@ -201,6 +202,14 @@ export var Command = (function () {
         whereLabel();
         var list = els["command-list"];
         list.innerHTML = "";
+        // A list with a machine missing looks exactly like a complete one, so it says which.
+        if (placesNote) {
+            var note = document.createElement("li");
+            note.className = "note";
+            note.setAttribute("role", "status");
+            note.textContent = placesNote;
+            list.appendChild(note);
+        }
         places.forEach(function (p) {
             var li = document.createElement("li");
             var row = document.createElement("button");
@@ -231,13 +240,15 @@ export var Command = (function () {
 
     /** Fetched once per sheet visit and kept — a directory can go away between two looks, same as
      *  Start's own copy, but this sheet is open for a few seconds at most and a mid-air change is
-     *  not worth a second round trip for. */
+     *  not worth a second round trip for. A list some machine did not answer is not kept: the
+     *  next draft asks again rather than reusing what may be missing that machine's Projects. */
     function ensurePlaces() {
-        if (places) return Promise.resolve();
+        if (places && !placesNote) return Promise.resolve();
         if (typeof api.places !== "function") { places = []; assistants = []; return Promise.resolve(); }
         return api.places().then(function (d) {
             places = (d && d.places) || [];
             assistants = (d && d.assistants) || [];
+            placesNote = unansweredSentence(d);
         });
     }
 
@@ -479,7 +490,7 @@ export var Command = (function () {
 
     function reset() {
         phase = "idle";
-        places = null; assistants = []; chosenPlace = null; chosenAssistant = null;
+        places = null; placesNote = ""; assistants = []; chosenPlace = null; chosenAssistant = null;
         chosenModel = "";
         openedId = null;
         els["command-text"].value = "";

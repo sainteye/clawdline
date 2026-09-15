@@ -139,6 +139,29 @@ export function failureSentence(error, options) {
     return fill(T.webFailWithTag, { text: said.text, tag: said.tag });
 }
 
+/**
+ * The one line a list read over several machines says when some machine could have answered and
+ * did not (`CloudClient.places()`'s `unanswered`), naming those machines; "" for a complete answer.
+ *
+ * A partial list looks exactly like a complete one, so without this line a Mac that was busy or
+ * silent is indistinguishable from a Mac that has no Projects.
+ */
+export function unansweredSentence(answer) {
+    var rows = answer && Array.isArray(answer.unanswered) ? answer.unanswered : [];
+    var names = rows.map(function (row) {
+        return row && (row.label || row.machine);
+    }).filter(function (name, index, all) {
+        return typeof name === "string" && name && all.indexOf(name) === index;
+    });
+    if (!names.length) return "";
+    var lang = typeof document !== "undefined" && document && document.documentElement
+        && document.documentElement.lang || undefined;
+    var joined;
+    try { joined = new Intl.ListFormat(lang, { style: "long", type: "conjunction" }).format(names); }
+    catch (e) { joined = names.join(", "); }
+    return fill(T.webMachinesUnanswered, { machines: joined });
+}
+
 /* ---- the one press ------------------------------------------------------------------------ */
 
 var opener = null;

@@ -81,9 +81,15 @@ export function loadScheduleProjects(schedules, readSchedule, readPlaces) {
  *
  * The cache lives here rather than inside `loadScheduleProjects` so that function stays a pure
  * one, and its tests keep passing their own reader without one run's answer reaching the next.
- * A refused read is not cached: the next refresh asks again. */
+ * A refused read is not cached, and neither is a partial one — an answer naming a machine that
+ * could have answered and did not (`unanswered`, `unconfirmed`): the next refresh asks again. */
 var placesCacheTTL = 5 * 60 * 1000;
 var placesCache = null;
+
+function completePlaces(data) {
+    return !(data && ((Array.isArray(data.unanswered) && data.unanswered.length)
+        || (Array.isArray(data.unconfirmed) && data.unconfirmed.length)));
+}
 
 function cachedPlacesReader() {
     if (typeof api.places !== "function") return null;
@@ -93,7 +99,7 @@ function cachedPlacesReader() {
         }
         return Promise.resolve().then(function () { return api.places(); })
             .then(function (data) {
-                placesCache = { at: Date.now(), value: data };
+                if (completePlaces(data)) placesCache = { at: Date.now(), value: data };
                 return data;
             });
     };

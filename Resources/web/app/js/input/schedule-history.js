@@ -1,4 +1,5 @@
 import { T, fill } from "../core/i18n.js";
+import { unansweredSentence } from "../core/failure-text.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { api } from "../net/api.js";
@@ -30,6 +31,8 @@ export var ScheduleHistory = (function () {
     var scheduleId = null;
     var record = null;
     var places = [];
+    // Who did not answer the Projects read a resume is routed by, when some machine did not.
+    var placesNote = "";
     var loading = false;
     var pressing = null;
     var ticket = 0;
@@ -332,6 +335,7 @@ export var ScheduleHistory = (function () {
         scheduleId = id;
         record = null;
         places = [];
+        placesNote = "";
         pressing = null;
         runningNow = false;
         webhookOpen = false;
@@ -350,6 +354,15 @@ export var ScheduleHistory = (function () {
             if (mine !== ticket || scheduleId !== id) return;
             record = answers[0] && answers[0].schedule;
             places = (answers[1] && answers[1].places) || [];
+            placesNote = unansweredSentence(answers[1]);
+            // A run is resumed in the Project of that name on this list, so a partial list is said
+            // where it matters: beside runs that can be resumed. With none there is nothing it
+            // could be missing, and the empty-state sentence stays.
+            if (placesNote && ((record && record.runs) || []).some(function (candidate) {
+                return candidate && candidate.session_id;
+            })) {
+                els["schedule-history-said"].textContent = placesNote;
+            }
             loading = false;
             draw();
             loadWebhook();
@@ -367,6 +380,7 @@ export var ScheduleHistory = (function () {
         scheduleId = null;
         record = null;
         places = [];
+        placesNote = "";
         loading = false;
         pressing = null;
         runningNow = false;
@@ -446,7 +460,7 @@ export var ScheduleHistory = (function () {
         }
         var place = projectPlace(selected);
         if (!place || typeof api.resumePlace !== "function") {
-            els["schedule-history-said"].textContent = T.webRequestFailed;
+            els["schedule-history-said"].textContent = !place && placesNote ? placesNote : T.webRequestFailed;
             return;
         }
         pressing = taskId;

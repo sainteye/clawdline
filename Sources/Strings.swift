@@ -1040,6 +1040,9 @@ protocol Copy {
     /// could not be told.
     var webFailMachineUnsupported: String { get }
     var webNotifyOffUntold: String { get }
+    /// A Projects list read over several machines when one of them did not answer: the list on
+    /// screen may be missing that machine's Projects.
+    var webMachinesUnanswered: String { get }
     /// Which assistant a press should open. Only ever on screen when the Mac has more than
     /// one of them installed, which is what makes it a question worth asking.
     var webStartWith: String { get }
@@ -1960,6 +1963,7 @@ extension Copy {
     var webFailVoiceHostUnavailable: String { "No Mac paired with this browser can transcribe voice input." }
     var webFailMachineUnsupported: String { "This machine does not support that, so nothing was sent." }
     var webNotifyOffUntold: String { "Notifications are off on this device, but the Mac was not told: {why}" }
+    var webMachinesUnanswered: String { "{machines} did not answer, so this list of Projects may be incomplete." }
 
     // The 45 keys between these markers are the explicit temporarily-English Cloud batch.
     // Traditional Chinese overrides all 45; the other locales intentionally inherit these

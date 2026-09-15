@@ -319,6 +319,7 @@ enum RemotePage {
             "webFailVoiceHostUnavailable": t.webFailVoiceHostUnavailable,
             "webFailMachineUnsupported": t.webFailMachineUnsupported,
             "webNotifyOffUntold": t.webNotifyOffUntold,
+            "webMachinesUnanswered": t.webMachinesUnanswered,
             "webStartWith": t.webStartWith,
             "webStartEmpty": t.webStartEmpty,
             "webStartFilter": t.webStartFilter,

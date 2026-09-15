@@ -503,6 +503,7 @@ export var T = {
     webNotifyOnFailed: "Could not turn notifications on",
     webNotifyOffFailed: "Could not turn notifications off",
     webNotifyOffUntold: "Notifications are off on this device, but the Mac was not told: {why}",
+    webMachinesUnanswered: "{machines} did not answer, so this list of Projects may be incomplete.",
     webSettings: "Settings",
     webSettingsNotify: "Notifications",
     webSettingsAssistantIcons: "Assistant icons",

@@ -67,6 +67,16 @@ const LINUX_BROWSER_COMMANDS = Object.freeze(["places", "start"]);
 /** Commands a Mac takes only once it has shown `cloud_status.v >= 1` (§11.4). */
 const STATUS_GATED_COMMANDS = Object.freeze(["cloud.status", "diagnostics.report", VIEWER_EVENTS_COMMAND]);
 
+/**
+ * Commands every platform this page knows implements: a Mac answers every browser command, and a
+ * Linux executor answers `LINUX_BROWSER_COMMANDS`. A machine whose descriptor has not arrived is
+ * one of the two, so for these words it is not unknown — it answers. Today that is `places` and
+ * `start`.
+ */
+const UNIVERSAL_COMMANDS = Object.freeze(LINUX_BROWSER_COMMANDS.filter(function (type) {
+    return STATUS_GATED_COMMANDS.indexOf(type) < 0;
+}));
+
 /** Refusals that mean "this machine cannot have the feature", which a fan-out read drops. */
 const UNSUPPORTED_CODES = Object.freeze(["unknown_command", "cloud_machine_unsupported"]);
 
@@ -1364,9 +1374,11 @@ export class CloudClient {
      *   `LINUX_BROWSER_COMMANDS`, anything else nothing;
      * - it is evidently a Mac — a `macos`/`darwin` descriptor, or `cloud_status`, which only the Mac
      *   publishes: yes, except a status-gated command before that Mac has shown `cloud_status`;
-     * - no descriptor yet: unknown. What unknown may do is the caller's rule. A request that names
-     *   this machine still goes to it; a choice among machines takes it only when no machine is
-     *   evidently a Mac and none is known to answer (`_machinesFor`).
+     * - no descriptor yet: yes for a word every known platform implements (`UNIVERSAL_COMMANDS`),
+     *   because whichever platform the machine turns out to be answers it; otherwise unknown.
+     *   What unknown may do is the caller's rule. A request that names this machine still goes to
+     *   it; a choice among machines takes it only when no machine is evidently a Mac and none is
+     *   known to answer (`_machinesFor`).
      *
      * The descriptor stays display metadata, never routing authority: here it is evidence about
      * what a route can answer, and the route is still the authenticated channel.
@@ -1384,7 +1396,7 @@ export class CloudClient {
             var gated = !(options && options.statusGate === false) && STATUS_GATED_COMMANDS.indexOf(type) >= 0;
             return gated && !this.macCapabilities.has(machine) ? "no" : "yes";
         }
-        return "unknown";
+        return UNIVERSAL_COMMANDS.indexOf(type) >= 0 ? "yes" : "unknown";
     }
 
     /** A `macos`/`darwin` descriptor, or `cloud_status` from a machine whose descriptor names no other platform. */
@@ -1523,15 +1535,16 @@ export class CloudClient {
      * feature — known in advance, or answering `unknown_command` — contributes nothing at all.
      */
     _fanOutReport(settled, found) {
+        var labels = new Map(found.rows.map(function (row) { return [row.id, row.label]; }));
         var report = { answered: [], unanswered: [], unconfirmed: found.unconfirmed.map(function (row) { return row.id; }) };
         settled.forEach(function (row) {
             if (!row.error) report.answered.push(row);
             else if (UNSUPPORTED_CODES.indexOf(row.error.code) < 0) {
-                report.unanswered.push({ machine: row.machine, error: row.error });
+                report.unanswered.push({ machine: row.machine, label: labels.get(row.machine) || row.machine, error: row.error });
             }
         });
         found.unpaired.forEach(function (row) {
-            report.unanswered.push({ machine: row.id, error: cloudError("machine_pairing_required",
+            report.unanswered.push({ machine: row.id, label: row.label || row.id, error: cloudError("machine_pairing_required",
                 "this browser is not paired with this machine") });
         });
         return report;
@@ -1973,8 +1986,12 @@ export class CloudClient {
      * `places` is asked on its own (`_askEach`), so one that refuses, fails or stays silent until its
      * read timeout becomes a row of `unanswered` beside the other machines' Projects instead of the
      * whole answer. It rejects only when every machine asked failed, with the first failure. A
-     * machine whose descriptor has not arrived is not asked while a machine that implements
-     * `places` is known, and is named in `unconfirmed`.
+     * machine whose descriptor has not arrived is asked too: every platform implements `places`
+     * (`UNIVERSAL_COMMANDS`), so a Mac known so far only from its Session rows is not left out.
+     *
+     * **An answer can be partial, and says so.** `unanswered` names each machine that could have
+     * answered and did not; a caller that shows or keeps the list must not treat it as complete —
+     * say so, do not cache it, and do not read a project's absence from it.
      *
      * **The route table is replaced only by answers.** It used to be cleared before the first Mac
      * was asked, and it stayed empty until every Mac had answered — for ever, if one of them failed

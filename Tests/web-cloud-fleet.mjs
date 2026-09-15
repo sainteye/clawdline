@@ -26,7 +26,8 @@ const element = new Proxy(function () { }, {
         if (key === Symbol.iterator) return function* () { };
         if (key === "classList") return { add: noop, remove: noop, toggle: noop, contains: function () { return false; } };
         if (key === "style" || key === "dataset") return { setProperty: noop, removeProperty: noop };
-        if (key === "children" || key === "querySelectorAll") return [];
+        if (key === "children") return [];
+        if (key === "querySelectorAll") return function () { return []; };
         if (key === "content") return { cloneNode: function () { return element; } };
         return element;
     },
@@ -53,7 +54,7 @@ function control(id) {
         querySelectorAll: function () { return []; } });
     return controls.get(id);
 }
-const RECORDED = /^(toast|settings-board-|projects-lede|nav-|usage-open)/;
+const RECORDED = /^(toast|settings-board-|projects-lede|nav-|usage-open|schedule-places|schedule-rows|schedules)/;
 const memory = new Map();
 globalThis.localStorage = { getItem: (key) => memory.has(key) ? memory.get(key) : null,
     setItem: (key, value) => memory.set(key, String(value)), removeItem: (key) => memory.delete(key) };
@@ -249,6 +250,11 @@ function onlyPlacesAndStartTo(fixture, machine) {
     assert.deepEqual(others, [], "nothing but places/start was published toward " + machine);
 }
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((resolve) => setImmediate(resolve)); };
+/** Resolves when `condition()` holds or `ms` has passed, whichever is first; the caller asserts. */
+async function until(condition, ms) {
+    const ends = Date.now() + ms;
+    while (!condition() && Date.now() < ends) await new Promise((resolve) => setTimeout(resolve, 10));
+}
 const macSession = { machine: "mac-01", session: "s-mac-01" };
 const linuxSession = { machine: "linux-01", session: "s-linux-01" };
 
@@ -327,6 +333,25 @@ await check("2 schedules · a Linux-only account has no schedules to show rather
         ["resolved", [], "resolved", []]);
     onlyPlacesAndStartTo(f, "linux-01");
 });
+
+/** The Mac answering its schedules with `project_dir`, so the strip needs no per-row detail read. */
+async function schedulesWithProjects(client, socket, machine, command) {
+    if (machine !== "mac-01" || command.type !== "schedules") return false;
+    await fromMachine(client, socket, "t/mac-01/" + MACHINE_REPLY, { read: "read:" + command.request, status: 200,
+        body: { schedules: [{ id: "mac-01-morning", title: "Morning", project_dir: "/code/app" }], at: nowSeconds() } });
+    return true;
+}
+
+/** The strip module driven as the page drives it: the selected transport, an arrived inventory. */
+async function strip(client) {
+    const { useClient } = await import("../Resources/web/app/js/net/api.js");
+    const { S } = await import("../Resources/web/app/js/core/state.js");
+    const schedules = await import("../Resources/web/app/js/net/schedules.js");
+    useClient(client);
+    const before = { arrived: S.arrived, locked: S.locked, conn: S.conn };
+    Object.assign(S, { arrived: true, locked: false, conn: "live" });
+    return { Schedules: schedules.Schedules, forget: schedules.forgetCachedPlaces, restore: () => Object.assign(S, before) };
+}
 
 /* ---- 3 · Push ------------------------------------------------------------------------------- */
 
@@ -532,6 +557,162 @@ await check("10 linux refusal · a Linux descriptor that advertises its commands
     const ended = await outcome(f.client.snippets(linuxSession), 60);
     assert.notEqual(ended.error && ended.error.code, "cloud_machine_unsupported", "an advertised word is sent");
     assert.deepEqual(f.typesTo("linux-01"), ["snippets"]);
+});
+
+/* ---- 11 · The capability model, as corrected after review 2e03ef42 ------------------------- */
+
+await check("11 capability · a word every platform implements makes a machine with no descriptor capable: a Mac known only from its Session rows is asked for places", async function () {
+    // Review F1: the Linux executor's descriptor arrived, the Mac's larger `orch/` snapshot had not,
+    // and `places()` asked only Linux — the Mac's Projects vanished from every account-level list.
+    const client = fleetClient();
+    const socket = await ready(client);
+    const commands = [];
+    socket.onPublish = async function (envelope) {
+        const command = JSON.parse(new TextDecoder().decode(await openEnvelope(envelope, masterKey, senderKey)));
+        const machine = decodeURIComponent(envelope.ch.replace(/^ctl\//, ""));
+        commands.push([machine, command.type]);
+        if (command.type !== "places") return;
+        const body = machine === "linux-01"
+            ? { places: [{ id: "reaver", label: "reaver", path: "/srv/reaver" }], assistants: [] }
+            : { places: [{ id: "app", label: "app", path: "/code/app" }], assistants: [{ id: "claude" }] };
+        await fromMachine(client, socket, "t/" + machine + "/" + MACHINE_REPLY, { read: "read:" + command.request, status: 200, body });
+    };
+    await fromMachine(client, socket, "orch/linux-01", { tasks: [], at: nowSeconds(),
+        machine: { name: "linux-01", platform: "linux", commands: ["places", "start"] } });
+    await fromMachine(client, socket, "s/mac-01/s-mac-01", { session: { id: "s-mac-01", cwd: "/code/app" } });
+    assert.deepEqual(client._knownMachines(), ["linux-01", "mac-01"], "the fixture has the Mac only from its Session row");
+    const ended = await outcome(client.places(), FAST);
+    assert.equal(ended.state, "resolved", ended.state + (ended.error ? " " + ended.error.code : ""));
+    assert.deepEqual([ended.value.places.map((place) => place.machine).sort(), ended.value.unconfirmed],
+        [["linux-01", "mac-01"], []], "both machines' Projects, and nobody left unasked");
+    assert.deepEqual(commands.map((row) => row.join(" ")).sort(), ["linux-01 places", "mac-01 places"]);
+    // In the model, not in `places()`: the same machine is capable of the other universal word and
+    // still unknown for a word only a Mac implements.
+    assert.deepEqual(["places", "start", "snippets"].map((type) => client._machineImplements("mac-01", type)),
+        ["yes", "yes", "unknown"]);
+});
+
+/* ---- 12 · Callers of an account-level places() read --------------------------------------- */
+
+/** The Mac refusing `places` as busy while the Linux executor answers it. */
+async function macBusyForPlaces(client, socket, machine, command) {
+    if (machine !== "mac-01" || command.type !== "places") return false;
+    await fromMachine(client, socket, "t/mac-01/" + MACHINE_REPLY, { read: "read:" + command.request, status: 503,
+        error: { code: "reading_busy", message: "busy" } });
+    return true;
+}
+
+await check("12 places callers · a Board conversation whose machine did not answer places fails with that machine's failure, never project_unavailable", async function () {
+    // Review F2: the Mac was busy, Linux answered, and the sheet said the Mac's Project was not there.
+    const { createBoardSessionController } = await import("../Resources/web/app/js/input/board-session.js");
+    const conversation = "11111111-1111-4111-8111-111111111111";
+    const project = { id: "project-app", displayPath: "/code/app", label: "app" };
+    const opened = async (f, machine) => {
+        const kept = new Map();
+        const controller = createBoardSessionController({ render: noop, sessions: () => [], canWrite: () => true,
+            storage: { getItem: (key) => kept.has(key) ? kept.get(key) : null, setItem: (key, value) => kept.set(key, value) },
+            places: () => f.client.places(), history: async () => ({ sessions: [] }) });
+        await controller.open(conversation, project, machine);
+        return controller.state.error;
+    };
+    const busy = await fleet(MAC_LINUX, { intercept: macBusyForPlaces });
+    assert.deepEqual([await opened(busy, "mac-01"), await opened(busy, null)], ["reading_busy", "reading_busy"],
+        "the Session's Mac, or any machine when the Session names none, did not answer");
+    const both = await fleet(MAC_LINUX);
+    assert.deepEqual([await opened(both, "mac-01"), await opened(both, null)], ["history_unavailable", "history_unavailable"],
+        "with every machine answering the Project is found and its history is what is read next");
+    const linuxBusy = await fleet(MAC_LINUX, { intercept: async (client, socket, machine, command) =>
+        machine === "linux-01" && command.type === "places" && (await fromMachine(client, socket, "t/linux-01/" + MACHINE_REPLY,
+            { read: "read:" + command.request, status: 503, error: { code: "ingress_closed", message: "closed" } }), true) });
+    assert.equal(await opened(linuxBusy, "mac-01"), "history_unavailable", "another machine's silence does not fail the Mac's Session");
+});
+
+await check("12 places callers · the schedules strip does not keep a places answer some machine did not answer", async function () {
+    let busy = true;
+    const f = await fleet(MAC_LINUX, { intercept: async function (client, socket, machine, command) {
+        if (await schedulesWithProjects(client, socket, machine, command)) return true;
+        return busy && macBusyForPlaces(client, socket, machine, command);
+    } });
+    const driven = await strip(f.client);
+    const count = (type) => f.typesTo("mac-01").filter((sent) => sent === type).length;
+    // Each refresh is over once its schedules read went out and the strip had time to ask for places;
+    // a waited-for count returns as soon as it is reached.
+    const refreshed = async (n, places) => {
+        driven.Schedules.refresh();
+        await until(() => count("schedules") >= n, BOUND);
+        await until(() => count("places") >= places, BOUND);
+        await new Promise((resolve) => setTimeout(resolve, FAST));
+    };
+    try {
+        driven.forget();
+        await refreshed(1, 1);
+        await refreshed(2, 2);
+        assert.equal(count("places"), 2, "a partial answer is asked for again at the next refresh");
+        busy = false;
+        await refreshed(3, 3);
+        await refreshed(4, 4);
+        assert.deepEqual([count("schedules"), count("places")], [4, 3], "and a complete one is kept");
+    } finally { driven.forget(); driven.restore(); }
+});
+
+await check("12 places callers · the schedule form's Project list names the machine that did not answer", async function () {
+    const f = await fleet(MAC_LINUX, { intercept: macBusyForPlaces });
+    const { useClient } = await import("../Resources/web/app/js/net/api.js");
+    const { Schedule } = await import("../Resources/web/app/js/input/schedule.js");
+    const macLabel = f.client._machineRows().find((row) => row.id === "mac-01").label;
+    useClient(f.client);
+    const created = document.createElement;
+    document.createElement = function (tag) {
+        const made = control(Symbol(tag));
+        made.querySelector = function () { return control(Symbol("part")); };
+        return made;
+    };
+    const list = control("schedule-places");
+    const notes = () => list.children.filter((child) => child.className === "note").map((child) => child.textContent);
+    try {
+        list.children = [];
+        Schedule.open();
+        await until(() => list.children.some((child) => child.className !== "note"), FAST);
+        const said = notes();
+        assert.ok(said.length === 1 && said[0].includes(macLabel), "one line naming " + macLabel + ": " + JSON.stringify(said));
+        assert.ok(typeof T.webMachinesUnanswered === "string" && T.webMachinesUnanswered.includes("{machines}")
+            && said[0] === T.webMachinesUnanswered.replace("{machines}", macLabel), "in the string table's words: " + JSON.stringify(said[0]));
+        Schedule.close(true);
+        const g = await fleet(MAC_LINUX);
+        useClient(g.client);
+        list.children = [];
+        Schedule.open();
+        await until(() => list.children.some((child) => child.className !== "note"), FAST);
+        assert.deepEqual([notes(), list.children.length], [[], 2], "a complete list says nothing extra");
+        Schedule.close(true);
+    } finally { document.createElement = created; }
+});
+
+await check("12 places callers · every page module that reads places() without naming a machine handles a partial answer", async function () {
+    const { readdir } = await import("node:fs/promises");
+    const root = new URL("../Resources/web/app/js/", import.meta.url);
+    const files = (await readdir(root, { recursive: true })).filter((name) => name.endsWith(".js") && !name.includes(".test."));
+    // Each exemption says why the file cannot be handed a partial list.
+    const EXEMPT = {
+        "net/cloud-client.js": "defines places()",
+        "net/live.js": "the local route answers for one machine",
+        "net/mock.js": "fixtures",
+        "main.js": "hands the answer to input/board-session.js whole",
+        "input/start.js": "names its machine on Cloud (places(selected.id)); a local page has one"
+    };
+    const callers = [];
+    for (const name of files) {
+        const source = await readFile(new URL(name, root), "utf8");
+        if (!/\b(?:api|env|transport)\.places\(/.test(source)) continue;
+        callers.push(name);
+        if (Object.prototype.hasOwnProperty.call(EXEMPT, name)) continue;
+        assert.ok(/\bunanswered(?:Sentence)?\b/.test(source), name + " reads places() and never looks at what did not answer");
+    }
+    // Calibrated against the callers known on 2026-09-15, so a pattern that finds nothing is red.
+    for (const known of ["input/board-session.js", "input/command.js", "input/schedule.js", "input/schedule-history.js",
+        "view/projects.js", "net/schedules.js", "input/start.js", "main.js"]) {
+        assert.ok(callers.includes(known), "the scan finds the known caller " + known + " (" + callers.join(", ") + ")");
+    }
 });
 
 /* ---- the whole transport against the fault -------------------------------------------------- */

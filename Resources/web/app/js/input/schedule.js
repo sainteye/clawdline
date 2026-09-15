@@ -2,7 +2,7 @@ import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { shortPath, tint, toast } from "../core/util.js";
-import { failureSentence } from "../core/failure-text.js";
+import { failureSentence, unansweredSentence } from "../core/failure-text.js";
 import { drawIcon } from "../core/pixels.js";
 import { api } from "../net/api.js";
 import { Schedules } from "../net/schedules.js";
@@ -53,6 +53,7 @@ export var Schedule = (function () {
     var MODELS = ["haiku", "sonnet", "opus"];
 
     var places = null;          // GET /v1/places, fetched once and reused for this sheet's life
+    var placesNote = "";        // who did not answer that read, when the list may be incomplete
     var assistants = [];
     var chosenPlace = null;     // a place id, once the planner or a person has picked one
     // What the schedule's own file says its project is, kept only for when `chosenPlace` above
@@ -290,6 +291,14 @@ export var Schedule = (function () {
             none.textContent = why;
             list.appendChild(none);
         }
+        // A list with a machine missing looks exactly like a complete one, so it says which.
+        if (placesNote && !placesFailed) {
+            var partial = document.createElement("li");
+            partial.className = "note";
+            partial.setAttribute("role", "status");
+            partial.textContent = placesNote;
+            list.appendChild(partial);
+        }
         (places || []).forEach(function (p) {
             var li = document.createElement("li");
             var row = document.createElement("button");
@@ -387,13 +396,16 @@ export var Schedule = (function () {
     var placesFailed = false;
 
     function ensurePlaces() {
-        if (places && places.length) return Promise.resolve();
+        // A list some machine did not answer is not remembered either: it is shown with its note
+        // and asked again.
+        if (places && places.length && !placesNote) return Promise.resolve();
         placesFailed = false;
         if (typeof api.places !== "function") { places = []; assistants = []; return Promise.resolve(); }
         return api.places().then(function (d) {
             places = (d && d.places) || [];
             assistants = (d && d.assistants) || [];
-        }).catch(function () { places = null; assistants = []; placesFailed = true; });
+            placesNote = unansweredSentence(d);
+        }).catch(function () { places = null; placesNote = ""; assistants = []; placesFailed = true; });
     }
 
     /** `preferred` is trusted outright now rather than only when this Mac has it installed — a
@@ -415,7 +427,7 @@ export var Schedule = (function () {
         creating = false;
         editingId = null;
         loadingEdit = false;
-        places = null; assistants = [];
+        places = null; placesNote = ""; assistants = [];
         chosenPlace = null; chosenPlacePath = null; chosenAssistant = null; chosenModel = "";
         days = "daily"; daysGuessed = false; closeTab = "on_success"; enabled = true; notify = true;
         els["schedule-title"].value = "";

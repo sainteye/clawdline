@@ -143,6 +143,15 @@ export function createBoardSessionController(env) {
             try {
                 const inventory = await env.places();
                 if (ticket !== generation) return;
+                // A list read over several machines can be partial. A machine that could hold this
+                // Project and did not answer — the Session's own machine, or any machine when the
+                // Session names none — makes an absence or a single match unproven, so its failure
+                // is the answer, never "the Project is not there".
+                const couldHold = id => !machine || id === machine;
+                const silent = (inventory.unanswered || []).find(row => row && couldHold(row.machine));
+                if (silent || (inventory.unconfirmed || []).some(couldHold)) {
+                    fail(silent?.error?.code || "read_failed"); return;
+                }
                 const places = (inventory.places || []).filter(p => p.path === project.displayPath
                     && (!machine || p.machine === machine));
                 // A path on two Macs is not a unique destination. Never fall back to a label.

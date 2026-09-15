@@ -1,5 +1,5 @@
 import { T, fill } from "../core/i18n.js";
-import { failureSentence } from "../core/failure-text.js";
+import { failureSentence, unansweredSentence } from "../core/failure-text.js";
 import { bindWorktreeLifecycle } from "./worktrees.js";
 
 /** The local places route has an authenticated implicit machine. Attach it at the UI adapter
@@ -662,6 +662,13 @@ export function bindProjectsPage(elements, environment) {
                     ? "看板暫時無法讀取，目前顯示一般專案。設定未變更。"
                     : "Board unavailable; showing standard Projects. Your setting has not changed.")
                     + " (" + data.boardUnavailable.code + ")";
+            }
+            // Every machine's Projects, read on its own: one that did not answer is named rather
+            // than leaving a list that looks complete.
+            var partial = unansweredSentence(data);
+            if (partial) {
+                var said = elements["projects-status"].textContent;
+                elements["projects-status"].textContent = said ? said + " " + partial : partial;
             }
         }).catch(function (error) {
             if (ticket !== state.loading) return;
