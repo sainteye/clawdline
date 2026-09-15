@@ -30,11 +30,18 @@ final class TranscriptRevisionWatch: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "com.tsunamiworks.clawdline.transcript-revisions")
     private let changed: @Sendable (String, String) -> Void
+    /// Nil for the local event stream, which announces changes only: a page that has just
+    /// connected reads its transcript anyway, and one event per session on connect would make
+    /// every open page read again. The Cloud demand has no such read, so it is told the
+    /// signature each watch starts with and when a watch ends.
+    private let forgotten: (@Sendable (String) -> Void)?
     private var entries: [String: Entry] = [:]
     private var debounceGeneration: [String: UInt64] = [:]
 
-    init(changed: @escaping @Sendable (String, String) -> Void) {
+    init(changed: @escaping @Sendable (String, String) -> Void,
+         forgotten: (@Sendable (String) -> Void)? = nil) {
         self.changed = changed
+        self.forgotten = forgotten
     }
 
     func replace(with candidates: [Candidate]) {
@@ -49,7 +56,8 @@ final class TranscriptRevisionWatch: @unchecked Sendable {
         let wanted = Dictionary(candidates.map { ($0.id, $0.url) },
                                 uniquingKeysWith: { first, _ in first })
         for id in Array(entries.keys) where wanted[id] == nil || wanted[id] != entries[id]?.url {
-            remove(id)
+            // A moved file is announced by the add below, so it is not forgotten in between.
+            remove(id, announce: wanted[id] == nil)
         }
         for (id, url) in wanted where entries[id] == nil {
             add(id, url: url)
@@ -58,7 +66,7 @@ final class TranscriptRevisionWatch: @unchecked Sendable {
 
     private func add(_ id: String, url: URL) {
         let descriptor = open(url.path, O_EVTONLY)
-        guard descriptor >= 0 else { return }
+        guard descriptor >= 0 else { forgotten?(id); return }
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor,
             eventMask: [.write, .extend, .rename, .delete, .revoke],
@@ -66,6 +74,7 @@ final class TranscriptRevisionWatch: @unchecked Sendable {
         )
         let entry = Entry(url: url, source: source, signature: Transcript.signature(of: url))
         entries[id] = entry
+        if forgotten != nil, !entry.signature.isEmpty { changed(id, entry.signature) }
         source.setEventHandler { [weak self, weak entry] in
             guard let self, let entry, self.entries[id] === entry else { return }
             let flags = source.data
@@ -92,9 +101,11 @@ final class TranscriptRevisionWatch: @unchecked Sendable {
         }
     }
 
-    private func remove(_ id: String) {
+    private func remove(_ id: String, announce: Bool = true) {
         debounceGeneration.removeValue(forKey: id)
-        entries.removeValue(forKey: id)?.source.cancel()
+        guard let entry = entries.removeValue(forKey: id) else { return }
+        entry.source.cancel()
+        if announce { forgotten?(id) }
     }
 
     private func removeAll() {
@@ -113,9 +124,13 @@ final class TranscriptRevisionStream: @unchecked Sendable {
     private var generation: UInt64 = 0
     private var resolving = false
     private var pending: (targets: [TargetSession], generation: UInt64)?
+    private let resolve: @Sendable (TargetSession) -> URL?
 
-    init(changed: @escaping @Sendable (String, String) -> Void) {
-        watch = TranscriptRevisionWatch(changed: changed)
+    init(changed: @escaping @Sendable (String, String) -> Void,
+         forgotten: (@Sendable (String) -> Void)? = nil,
+         resolve: @escaping @Sendable (TargetSession) -> URL? = { Transcript.record(of: $0)?.url }) {
+        watch = TranscriptRevisionWatch(changed: changed, forgotten: forgotten)
+        self.resolve = resolve
     }
 
     func sync(targets: [TargetSession], active: Bool) {
@@ -133,10 +148,11 @@ final class TranscriptRevisionStream: @unchecked Sendable {
         guard !resolving, let demand = pending else { return }
         pending = nil
         resolving = true
+        let resolve = self.resolve
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let candidates = demand.targets.compactMap { session in
-                Transcript.record(of: session).map { record in
-                    TranscriptRevisionWatch.Candidate(id: session.id, url: record.url)
+                resolve(session).map { url in
+                    TranscriptRevisionWatch.Candidate(id: session.id, url: url)
                 }
             }
             self?.queue.async { [weak self] in
@@ -155,6 +171,105 @@ final class TranscriptRevisionStream: @unchecked Sendable {
             self.pending = nil
             self.watch.stop()
         }
+    }
+}
+
+/// The Cloud bridge's transcript demand, on its own watch so the local event stream keeps its
+/// own lifetime (it runs only while a local page is connected) and its change-only events.
+///
+/// Resolving a Session to its file costs process and registry reads, so a `track` naming the
+/// same Sessions with the same selecting facts does not resolve again until
+/// `rebindIntervalSeconds` has passed or a watch has ended — which is when a file can have moved
+/// without any of those facts changing. Signatures themselves come from fd events, never from
+/// the publication path.
+final class CloudTranscriptSignatureWatch: CloudTranscriptSignatureSource, @unchecked Sendable {
+    static let rebindIntervalSeconds: TimeInterval = 60
+
+    /// The watch's callbacks outlive any one `track`, so they reach the current report and the
+    /// binding cache through this box rather than through closures made at construction.
+    private final class Relay: @unchecked Sendable {
+        private let lock = NSLock()
+        private var report: CloudTranscriptSignatureReport?
+        private var ended: (() -> Void)?
+
+        func set(report value: CloudTranscriptSignatureReport?) {
+            lock.lock(); report = value; lock.unlock()
+        }
+
+        func set(ended value: (() -> Void)?) {
+            lock.lock(); ended = value; lock.unlock()
+        }
+
+        func deliver(_ id: String, _ signature: String?) {
+            lock.lock()
+            let current = report
+            let end = signature == nil ? ended : nil
+            lock.unlock()
+            end?()
+            current?(id, signature)
+        }
+    }
+
+    private let lock = NSLock()
+    private let relay: Relay
+    private let stream: TranscriptRevisionStream
+    private let targets: () -> [TargetSession]
+    private let uptime: () -> TimeInterval
+    private var generation: UInt64 = 0
+    private var bound: (subjects: [CloudTranscriptSubject], at: TimeInterval)?
+
+    /// `targets` is read on the main queue, where SessionWatch keeps them.
+    init(targets: @escaping () -> [TargetSession] = { SessionWatch.shared.targets },
+         resolve: @escaping @Sendable (TargetSession) -> URL? = { Transcript.record(of: $0)?.url },
+         uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        let relay = Relay()
+        self.relay = relay
+        self.targets = targets
+        self.uptime = uptime
+        stream = TranscriptRevisionStream(
+            changed: { relay.deliver($0, $1) },
+            forgotten: { relay.deliver($0, nil) },
+            resolve: resolve)
+        relay.set(ended: { [weak self] in self?.forgetBinding() })
+    }
+
+    func track(_ subjects: [CloudTranscriptSubject],
+               report: @escaping CloudTranscriptSignatureReport) {
+        relay.set(report: report)
+        lock.lock()
+        let now = uptime()
+        if let bound, bound.subjects == subjects, now - bound.at < Self.rebindIntervalSeconds {
+            lock.unlock()
+            return
+        }
+        bound = (subjects, now)
+        generation &+= 1
+        let owned = generation
+        lock.unlock()
+        let wanted = Set(subjects.map(\.sessionID))
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let found = self.targets().filter { wanted.contains($0.id) }
+            self.lock.lock()
+            defer { self.lock.unlock() }
+            guard self.generation == owned else { return }
+            // A Session SessionWatch has not listed yet is asked for again on the next track.
+            if found.count != wanted.count { self.bound = nil }
+            self.stream.sync(targets: found, active: true)
+        }
+    }
+
+    func stop() {
+        relay.set(report: nil)
+        lock.lock()
+        defer { lock.unlock() }
+        generation &+= 1
+        bound = nil
+        stream.stop()
+    }
+
+    private func forgetBinding() {
+        lock.lock(); bound = nil; lock.unlock()
     }
 }
 

@@ -386,6 +386,9 @@ final class CloudBridgeLifecycle {
         /// The process-lifetime status owner every bridge this lifecycle builds records into.
         /// Tests omit it; production passes `CloudStatus.shared`, which also writes the file.
         var status: CloudStatus? = nil
+        /// One transcript-signature source per bridge. Tests omit it; production watches the
+        /// published Sessions' transcript files for as long as that bridge runs.
+        var transcriptSignatures: @MainActor () -> (any CloudTranscriptSignatureSource)? = { nil }
     }
 
     /// `nonisolated` because `Services.production()` is not on the main actor and these are
@@ -517,7 +520,8 @@ final class CloudBridgeLifecycle {
                 commandResult: services.commandResult,
                 diagnostic: services.diagnostic,
                 durableRuntime: durableRuntime,
-                status: services.status)
+                status: services.status,
+                transcriptSignatures: services.transcriptSignatures())
             attachedBridge = bridge
             services.attach(bridge)
             services.scheduleWebhooks(identity) { [weak self] in
@@ -748,6 +752,7 @@ extension CloudBridgeLifecycle.Services {
                     }
                 }
             },
-            status: status)
+            status: status,
+            transcriptSignatures: { CloudTranscriptSignatureWatch() })
     }
 }
