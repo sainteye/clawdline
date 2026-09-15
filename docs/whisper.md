@@ -255,6 +255,17 @@ A tunnel gives you https without doing anything else; a phone pointed at `http:/
 same wifi does not, and no setting on this side can change that. The page says which of the two it
 is in rather than leaving a dead button.
 
+**On the hosted console, one Mac transcribes, and Devices says which.** A recording made on
+`app.clawdline.com` goes to one machine on the account, and only a Mac can read it — an enrolled
+Linux executor has no Whisper and no `voice` handler. So an account with a Mac and Linux executors
+dictates to the Mac. With more than one Mac it is the one this browser chose under **Devices** in the
+sidebar: the card marked *Voice input* is where the recording goes, and *Use for voice input* on
+another Mac's card moves it there. With no choice made, the one Mac whose inventory is current is
+used; if that still leaves two, nothing is sent and the page asks you to choose under Devices
+(`cloud_voice_host_ambiguous`), and an account with no Mac this browser is paired with says so
+(`cloud_voice_host_unavailable`) instead of waiting on a machine that cannot answer. The choice is
+kept in this browser only, so a phone and a laptop can dictate to different Macs.
+
 The measurements are the ones [above](#models) plus a network: **1.6 s** to read back three seconds
 of speech once the model is warm, **about 12 s** for the first one after a reboot. The page counts
 those seconds out loud for exactly the reason the bar does — twelve seconds of turning arc and no
