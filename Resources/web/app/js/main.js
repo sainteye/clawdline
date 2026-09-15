@@ -485,6 +485,13 @@ var devices = bindDevicesPage({
     "devices-rows": byId("devices-rows")
 }, {
     machines: function () { return api.machines(); },
+    // Cloud only: the local page and the fixtures dictate to the one Mac they talk to.
+    voiceHost: function () {
+        return api && typeof api.voiceHost === "function" ? api.voiceHost() : null;
+    },
+    setVoiceHost: function (machine) {
+        return api && typeof api.setVoiceHost === "function" ? api.setVoiceHost(machine) : null;
+    },
     events: function (listener) {
         return api && typeof api.events === "function" ? api.events(listener) : function () {};
     },

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { T } from "../Resources/web/app/js/core/i18n.js";
 import {
-    bindDevicesPage, deviceViewModel
+    bindDevicesPage, deviceViewModel, deviceVoiceRole
 } from "../Resources/web/app/js/view/devices.js";
+import { CloudClient } from "../Resources/web/app/js/net/cloud-client.js";
 
 let checks = 0;
 function check(name, fn) {
@@ -177,6 +178,117 @@ await (async function () {
         assert.equal(elements["devices-rows"].children.length, 2);
     });
     page.leave();
+})();
+
+check("a card's voice role comes from the transport's answer, not from its own platform", function () {
+    const host = { machine: "mac-01", chosen: false, candidates: ["mac-01", "mac-02"] };
+    assert.deepEqual(["mac-01", "mac-02", "linux-01"].map((id) => deviceVoiceRole(id, host)),
+        ["host", "candidate", ""]);
+    assert.equal(deviceVoiceRole("mac-01", null), "", "a transport without a voice host marks nothing");
+    const row = deviceViewModel({ id: "mac-01", label: "Mac · Studio", platform: "macos" }, T, host);
+    assert.deepEqual([row.voice, row.voiceFact], ["host", T.webDeviceVoiceHost]);
+    assert.deepEqual([deviceViewModel({ id: "linux-01", platform: "linux" }, T, host).voiceFact,
+        deviceViewModel({ id: "mac-01" }, T).voice], ["", ""]);
+});
+
+function descendants(node) {
+    return node.children.flatMap((child) => [child].concat(descendants(child)));
+}
+function cardFor(elements, label) {
+    const card = elements["devices-rows"].children.find((child) => child.textContent.includes(label));
+    assert.ok(card, "a card for " + label);
+    return card;
+}
+const voiceChip = (card) => descendants(card).find((child) => child.className === "device-voice-host") || null;
+const voiceButton = (card) => card.children.find((child) => child.className === "device-voice") || null;
+const settle = async () => { for (let i = 0; i < 4; i += 1) await new Promise((done) => setImmediate(done)); };
+
+/** A Cloud client with no socket and the given `orch/` snapshots, which is all voiceHost reads. */
+function fleetClient(storage) {
+    const client = new CloudClient({ relayURL: "https://relay.example", deviceToken: "jwt",
+        account: "account-01", voiceHostStorage: storage, BroadcastChannel: null });
+    const at = Math.floor(Date.now() / 1000);
+    client.orchestratorSnapshots.set("mac-01", { tasks: [], at, machine: { name: "Studio", platform: "macos" } });
+    client.orchestratorSnapshots.set("mac-02", { tasks: [], at, machine: { name: "Air", platform: "macos" } });
+    client.orchestratorSnapshots.set("linux-01", { tasks: [], at,
+        machine: { name: "Builder", platform: "linux", provider: "aws" } });
+    return client;
+}
+
+await (async function () {
+    const doc = new FakeDocument();
+    const ids = ["devices-title", "devices-lede", "devices-close", "devices-status",
+        "devices-empty", "devices-rows"];
+    const elements = Object.fromEntries(ids.map((id) => [id, new FakeNode(doc)]));
+    const stored = new Map();
+    const storage = { getItem: (key) => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, String(value)) };
+    const client = fleetClient(storage);
+    // The same three functions `main.js` hands the page.
+    const page = bindDevicesPage(elements, {
+        machines: () => client.machines(),
+        voiceHost: () => client.voiceHost(),
+        setVoiceHost: (machine) => client.setVoiceHost(machine)
+    });
+    page.enter();
+    await settle();
+    check("two current Macs and no choice: both Macs offer the choice, Linux says nothing about voice", function () {
+        const [studio, air, builder] = ["Mac · Studio", "Mac · Air", "Linux / AWS · Builder"].map((label) => cardFor(elements, label));
+        assert.deepEqual([voiceChip(studio), voiceChip(air)], [null, null], "nobody is marked while it is ambiguous");
+        assert.ok(voiceButton(studio) && voiceButton(air));
+        assert.equal(voiceButton(air).textContent, T.webDeviceUseForVoice);
+        assert.deepEqual([voiceChip(builder), voiceButton(builder), builder.dataset.voice], [null, null, ""]);
+        assert.equal(builder.textContent.includes(T.webDeviceVoiceHost) || builder.textContent.includes(T.webDeviceUseForVoice), false);
+    });
+    await voiceButton(cardFor(elements, "Mac · Air")).onclick();
+    await settle();
+    check("pressing Use for voice input stores the opaque id and redraws: chip on the host, button on the other Mac", function () {
+        assert.equal(stored.get("clawdline.voice-host.v1:account-01"), "mac-02");
+        const [studio, air, builder] = ["Mac · Studio", "Mac · Air", "Linux / AWS · Builder"].map((label) => cardFor(elements, label));
+        assert.equal(voiceChip(air) && voiceChip(air).textContent, T.webDeviceVoiceHost);
+        assert.deepEqual([voiceButton(air), air.dataset.voice, studio.dataset.voice], [null, "host", "candidate"]);
+        assert.ok(voiceButton(studio) && !voiceChip(studio));
+        assert.deepEqual([voiceChip(builder), voiceButton(builder)], [null, null]);
+    });
+    page.leave();
+    const reloaded = fleetClient(storage);
+    assert.equal((await reloaded.voiceHost()).machine, "mac-02", "what the page stored is where dictation goes next time");
+})();
+
+await (async function () {
+    const doc = new FakeDocument();
+    const ids = ["devices-title", "devices-lede", "devices-close", "devices-status",
+        "devices-empty", "devices-rows"];
+    const elements = Object.fromEntries(ids.map((id) => [id, new FakeNode(doc)]));
+    const client = fleetClient(null);
+    client.orchestratorSnapshots.delete("mac-02");
+    const page = bindDevicesPage(elements, {
+        machines: () => client.machines(),
+        voiceHost: () => client.voiceHost(),
+        setVoiceHost: (machine) => client.setVoiceHost(machine)
+    });
+    page.enter();
+    await settle();
+    check("a Mac + Linux account marks the Mac as the voice host with nothing to press", function () {
+        const studio = cardFor(elements, "Mac · Studio");
+        assert.equal(voiceChip(studio) && voiceChip(studio).textContent, T.webDeviceVoiceHost);
+        assert.equal(voiceButton(studio), null);
+        assert.equal(voiceChip(cardFor(elements, "Linux / AWS · Builder")), null);
+    });
+    page.leave();
+
+    const local = Object.fromEntries(ids.map((id) => [id, new FakeNode(doc)]));
+    const localPage = bindDevicesPage(local, {
+        machines: () => Promise.resolve({ machines: [{ id: "this-mac", label: "Mac · This Mac",
+            freshness: "current", pairing: "local", sessions: 1, selectable: true }] }),
+        voiceHost: () => null, setVoiceHost: () => null
+    });
+    localPage.enter();
+    await settle();
+    check("the local page and the fixtures, which have no voice host, draw no voice control", function () {
+        const card = cardFor(local, "Mac · This Mac");
+        assert.deepEqual([voiceChip(card), voiceButton(card), card.dataset.voice], [null, null, ""]);
+    });
+    localPage.leave();
 })();
 
 console.log(`\n${checks} web device checks passed`);
