@@ -83,6 +83,21 @@ private final class CloudRowSignatureSource: CloudTranscriptSignatureSource, @un
     }
 }
 
+/// The bridge's diagnostic lines, in order.
+private final class CloudRowLines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lines: [String] = []
+
+    func append(_ line: String) {
+        lock.lock(); lines.append(line); lock.unlock()
+    }
+
+    var all: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return lines
+    }
+}
+
 private final class CloudRowOutcome<Value>: @unchecked Sendable {
     private let lock = NSLock()
     private var value: Result<Value, Error>?
@@ -128,7 +143,8 @@ private struct CloudRowFixture {
     let bridge: CloudAppBridge
 
     init(source: CloudRowSignatureSource? = nil, waits: CloudRowWaits? = nil,
-         status: CloudStatus? = nil, suspendPublication: Bool = false) {
+         status: CloudStatus? = nil, suspendPublication: Bool = false,
+         durableRuntime: CloudDurableRuntime? = nil, diagnostic: CloudRowLines? = nil) {
         let transport = CloudAppBridgeTestTransport(suspendPublication: suspendPublication)
         let clock = CloudRowClock(1_800_000_000_000)
         let secret = try! CloudMasterSecret(rawRepresentation: Data(repeating: 0x5c, count: 32))
@@ -143,6 +159,8 @@ private struct CloudRowFixture {
                                        keyID: "ms-1", masterSecret: secret, signingKey: signer),
             sequencing: CloudAppBridgeTestSequence(),
             nowMilliseconds: { clock.now() },
+            diagnostic: { diagnostic?.append($0) },
+            durableRuntime: durableRuntime,
             status: status,
             transcriptSignatures: source,
             waitMilliseconds: { milliseconds in
@@ -759,7 +777,15 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
     check("a second request inside the new floor is owed too",
           eventually { fixture.replies()["read:owed-2"] != nil && waits.requests.count == 4 }, "waits=\(waits.requests)")
     fixture.clock.advance(1_000)
-    // A changed snapshot: an identical one is not published at all, and would answer nobody.
+    // The Mac handing over the snapshot it already sent publishes nothing, and so answers nobody:
+    // the page that asked still has it coming at the floor.
+    let beforeIdentical = orchestratorFrames().count
+    cloudRowAwait("the Mac hands over the same orchestrator snapshot again") { try await bridge.publishOrchestrator(orchestrator) }
+    check("an unchanged snapshot neither goes out nor answers what is owed",
+          orchestratorFrames().count == beforeIdentical
+            && cloudRowAwait("reading the owed state", recording: false) { await bridge.orchestratorResendStateForTesting() }
+                .map { $0.owedSince != nil && $0.scheduled } == true, "orch=\(orchestratorFrames().count)")
+    // A changed snapshot does answer it.
     let changedOrchestrator = try! JSONSerialization.data(withJSONObject: [
         "tasks": [] as [Any], "machine": ["name": "Mac", "platform": "macos"] as [String: Any],
         "schedules": [] as [Any],
@@ -852,8 +878,8 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
             .map { $0.waiting == 0 && !$0.scheduled } == true)
 
     // The `orch/` snapshot a reconnecting viewer converges to: it carries what a Cloud view reads,
-    // goes out when that changes, paces a burst, and a notice carries no task. Its own bridge and
-    // clock, in this group because it is the same convergence question as the re-sends above.
+    // goes out when that changes, paces a burst, and a notice is that snapshot too. Its own bridge
+    // and clock, in this group because it is the same convergence question as the re-sends above.
     do {
         let waits = CloudRowWaits()
         let status = CloudStatus()
@@ -875,7 +901,7 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
         func publish(_ label: String, _ payload: Data, force: Bool = false) {
             cloudRowAwait(label) { try await bridge.publishOrchestrator(payload, force: force) }
         }
-        func state() -> (coalescing: Bool, refilling: Bool, displaced: Bool, lastSnapshotAt: UInt64?)? {
+        func state() -> (coalescing: Bool, presence: Bool, lastSnapshotAt: UInt64?)? {
             cloudRowAwait("reading the pacing", recording: false) {
                 await bridge.orchestratorPublicationStateForTesting()
             }
@@ -945,26 +971,25 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
               "frames=\(fixture.orchestratorFrames().count)")
         check("and nothing is left waiting", eventually { state().map { !$0.coalescing } == true })
 
-        // A notice: `cloud_status` and nothing else, and the snapshot goes out again at the floor so the
-        // relay's replay is a snapshot again.
+        // A notice: the whole snapshot again with the digest that changed, because a page that predates
+        // the status-only tolerance takes whatever arrives on orch/ for the whole snapshot.
         fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
         status.recordDrop(CloudInboundDrop(code: .replay, sender: "web_orch", sequence: 9, highestSequence: 10))
         check("a dropped command is announced on orch/",
               eventually { fixture.orchestratorFrames().count == 4 }, "frames=\(fixture.orchestratorFrames().count)")
         let notice = fixture.orchestratorFrames().last ?? [:]
-        check("as a notice holding cloud_status and no task record",
-              Set(notice.keys) == ["cloud_status"]
+        check("as the current snapshot — tasks, schedules, snippets, descriptor — with the drop in its cloud_status",
+              ids(notice) == ["running", "listed", "unknown"]
+                && ((notice["tasks"] as? [[String: Any]])?.first?["usage"] as? [String: Any])?["total"] as? Int == 41
+                && (notice["schedules"] as? [[String: Any]])?.first?["id"] as? String == "morning"
+                && (notice["snippets"] as? [[String: Any]])?.first?["id"] as? String == "snip"
+                && (notice["machine"] as? [String: Any])?["platform"] as? String == "macos"
+                && (notice["app"] as? [String: Any])?["build"] as? Int == 7
                 && ((notice["cloud_status"] as? [String: Any])?["recent_drops"] as? [[String: Any]])?
                     .first?["seq"] as? Int == 9, "\(notice)")
-        check("which leaves the snapshot owed to the relay's replay at the floor",
-              eventually { waits.requests.last == CloudAppBridge.orchestratorResendFloorMilliseconds }
-                && state().map { $0.displaced && $0.refilling } == true, "waits=\(waits.requests)")
-        fixture.clock.advance(CloudAppBridge.orchestratorResendFloorMilliseconds)
-        waits.release()
-        check("at the floor the snapshot goes out again, unchanged as it is",
-              eventually { fixture.orchestratorFrames().count == 5 }
-                && ids(fixture.orchestratorFrames().last) == ["running", "listed", "unknown"])
-        check("and nothing stands displaced", eventually { state().map { !$0.displaced && !$0.refilling } == true })
+        check("and nothing is scheduled behind it", !eventually(timeout: 0.3) { fixture.orchestratorFrames().count != 4 }
+                && waits.requests.count == 1 && state().map { !$0.coalescing && !$0.presence } == true,
+              "waits=\(waits.requests)")
 
         // A Session published after its task finished makes that task readable, and it goes out.
         fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
@@ -973,7 +998,7 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
                          cloudRow("kid-late", observedAt: 200, generation: 2, sourceObservedAt: 199)],
                         at: 200, generation: 2, label: "a scan that lists the child of a task that already failed")
         check("the snapshot goes out with that task",
-              eventually { fixture.orchestratorFrames().count == 6 }
+              eventually { fixture.orchestratorFrames().count == 5 }
                 && ids(fixture.orchestratorFrames().last) == ["running", "listed", "unknown", "late"],
               "frames=\(fixture.orchestratorFrames().count) ids=\(ids(fixture.orchestratorFrames().last))")
         fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
@@ -981,7 +1006,7 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
                          cloudRow("kid-late", observedAt: 300, generation: 3, sourceObservedAt: 299)],
                         at: 300, generation: 3, label: "a scan where a finished child's Session closed")
         check("a Session closing only makes a record unreadable, so nothing goes out for it",
-              !eventually(timeout: 0.3) { fixture.orchestratorFrames().count != 6 }
+              !eventually(timeout: 0.3) { fixture.orchestratorFrames().count != 5 }
                 && state().map { !$0.coalescing } == true)
 
         // Sixty visible changes a second apart, the clock turning with them: one at once, then one
@@ -1015,18 +1040,27 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
               (burst.last?["tasks"] as? [[String: Any]])?.first?["title"] as? String == "Step 60",
               "\(burst.last ?? [:])")
 
-        // A device that cannot ask has only the relay's replay, which an eviction empties: the
-        // refresh pass sends a snapshot none has gone out for in its interval, and only then.
+        // A device that cannot ask has only the relay's replay, which an eviction empties of rows and
+        // snapshot alike: the refresh pass that brings it the rows brings the snapshot too, however
+        // recently one went out, and a page asking for the rows alone does not put that pass off.
+        fixture.clock.advance(30_000)
+        let rootRowsBeforeAsk = fixture.frames("root-row").count
+        fixture.askForRows("rows-only", sequence: 1)
+        check("a page holding the snapshot asks for the rows alone and gets them",
+              eventually { fixture.replies()["read:rows-only"] != nil
+                && fixture.frames("root-row").count == rootRowsBeforeAsk + 1 }, "\(fixture.replies())")
         let beforePresence = fixture.orchestratorFrames().count
-        fixture.clock.advance(CloudAppBridge.sessionPresenceIntervalMilliseconds)
+        let rootRowsBeforePresence = fixture.frames("root-row").count
+        fixture.clock.advance(CloudAppBridge.sessionPresenceIntervalMilliseconds - 60_000)
         fixture.publish([cloudRow("root-row", observedAt: 400, generation: 4, sourceObservedAt: 399),
                          cloudRow("kid-late", observedAt: 400, generation: 4, sourceObservedAt: 399)],
-                        at: 400, generation: 4, label: "the refresh pass of a Mac whose tasks stopped moving")
-        check("the refresh pass sends the snapshot again",
+                        at: 400, generation: 4, label: "the scan three minutes after the last refresh pass")
+        check("is the refresh pass: every row, and the snapshot that went out two and a half minutes ago",
               eventually { fixture.orchestratorFrames().count == beforePresence + 1 }
+                && fixture.frames("root-row").count == rootRowsBeforePresence + 1
                 && (fixture.orchestratorFrames().last?["tasks"] as? [[String: Any]])?.first?["title"]
                     as? String == "Step 60",
-              "frames=\(fixture.orchestratorFrames().count - beforePresence)")
+              "frames=\(fixture.orchestratorFrames().count - beforePresence) rows=\(fixture.frames("root-row").count - rootRowsBeforePresence)")
         fixture.clock.advance(20_000)
         fixture.publish([cloudRow("root-row", observedAt: 420, generation: 5, sourceObservedAt: 419),
                          cloudRow("kid-late", observedAt: 420, generation: 5, sourceObservedAt: 419)],
@@ -1041,7 +1075,80 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
                           rootOnly, unknown, late], at: 200), force: true)
         expect("goes out at once", fixture.orchestratorFrames().count, beforeReady + 1)
         cloudRowAwait("the orchestrator bridge stops") { await bridge.stop() }
-        check("a stopped bridge holds no pacing", state().map { !$0.coalescing && !$0.refilling } == true)
+        check("a stopped bridge holds no pacing", state().map { !$0.coalescing && !$0.presence } == true)
+    }
+
+    // The same snapshot through the durable spool a Mac really publishes with. It keeps only the
+    // newest unsent orch/ row (`CloudSpoolChannel.isLatestValue`), so whatever it keeps must be the
+    // whole current snapshot; and a transport-ready generation forgets what was recorded as sent.
+    do {
+        let status = CloudStatus()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "clawdline-orch-spool-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let runtime = try? CloudDurableRuntime.open(
+            directory: directory, runtime: .mac, metrics: CloudStatusSpoolMetrics(status: status))
+        check("the durable spool opens", runtime != nil)
+        if let runtime {
+            let waits = CloudRowWaits()
+            let lines = CloudRowLines()
+            let readies = CloudRowLines()
+            let fixture = CloudRowFixture(waits: waits, status: status, suspendPublication: true,
+                                          durableRuntime: runtime, diagnostic: lines)
+            let bridge = fixture.bridge
+            cloudRowAwait("the spool bridge observes its ready generations") {
+                await bridge.setTransportReadyObserver { readies.append("\($0)") }
+            }
+            cloudRowAwait("the spool bridge starts") { try await bridge.start() }
+            check("its first generation is ready", eventually { readies.all == ["1"] }, "\(readies.all)")
+            func snapshot(_ title: String) -> Data {
+                try! JSONSerialization.data(withJSONObject: [
+                    "tasks": [cloudTask("moving", state: "briefed", child: "kid-moving", title: title)], "at": 1,
+                    "machine": ["name": "Mac", "platform": "macos"],
+                    "schedules": [["id": "morning", "title": "Morning", "enabled": true] as [String: Any]],
+                ] as [String: Any])
+            }
+            func sequences() -> [UInt64] {
+                fixture.transport.envelopes().filter { $0.ch == "orch/mac-rows" }.map { $0.seq }
+            }
+
+            cloudRowAwait("the Mac's snapshot") { try await bridge.publishOrchestrator(snapshot("One")) }
+            check("goes to the socket, which holds it", eventually { fixture.transport.state().publicationStarts == 1 })
+            fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
+            cloudRowAwait("a change while the socket holds the first") { try await bridge.publishOrchestrator(snapshot("Two")) }
+            fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
+            status.recordDrop(CloudInboundDrop(code: .replay, sender: "web_spool", sequence: 5, highestSequence: 6))
+            check("a notice follows it into the spool while the change is still unsent",
+                  eventually { lines.all.contains { $0.hasPrefix("cloud: orchestrator") && $0.contains("notice") } },
+                  "\(lines.all)")
+            fixture.transport.releasePublications(16)
+            check("once the socket moves, the spool's newest orch/ row goes out after the held one",
+                  eventually { sequences().count == 2 } && !eventually(timeout: 0.3) { sequences().count != 2 },
+                  "sequences=\(sequences())")
+            let kept = fixture.orchestratorFrames().last
+            check("and it is the whole current snapshot: the unsent change, the schedules and the drop",
+                  (kept?["tasks"] as? [[String: Any]])?.first?["title"] as? String == "Two"
+                    && (kept?["schedules"] as? [[String: Any]])?.first?["id"] as? String == "morning"
+                    && ((kept?["cloud_status"] as? [String: Any])?["recent_drops"] as? [[String: Any]])?
+                        .first?["seq"] as? Int == 5, "\(kept ?? [:])")
+
+            for envelope in fixture.transport.envelopes() where envelope.ch == "orch/mac-rows" {
+                fixture.transport.acknowledge(envelope)
+            }
+            let sentBeforeReady = sequences().max() ?? 0
+            fixture.transport.signalReady()
+            check("a new ready generation arrives", eventually { readies.all == ["1", "2"] }, "\(readies.all)")
+            fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
+            // Unforced: a newer snapshot can replace the forced ready one in the Mac's own lane.
+            cloudRowAwait("the Mac hands over the snapshot it last sent") { try await bridge.publishOrchestrator(snapshot("Two")) }
+            check("after a ready generation the same snapshot is a new publication, not one already out",
+                  eventually { sequences().contains { $0 > sentBeforeReady } }
+                    && (fixture.orchestratorFrames().last?["tasks"] as? [[String: Any]])?.first?["title"] as? String == "Two",
+                  "sequences=\(sequences())")
+            cloudRowAwait("the spool bridge stops") { await bridge.stop() }
+        }
+        try? FileManager.default.removeItem(at: directory)
     }
 }
 }
