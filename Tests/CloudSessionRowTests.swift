@@ -26,12 +26,19 @@ private final class CloudRowWaits: @unchecked Sendable {
     private var released = 0
 
     func wait(_ milliseconds: UInt64) async throws {
-        lock.lock(); asked.append(milliseconds); let turn = asked.count; lock.unlock()
-        while true {
-            lock.lock(); let open = released >= turn; lock.unlock()
-            if open { return }
-            try await Task.sleep(nanoseconds: 2_000_000)
-        }
+        let turn = ask(milliseconds)
+        while !isReleased(turn) { try await Task.sleep(nanoseconds: 2_000_000) }
+    }
+
+    private func ask(_ milliseconds: UInt64) -> Int {
+        lock.lock(); defer { lock.unlock() }
+        asked.append(milliseconds)
+        return asked.count
+    }
+
+    private func isReleased(_ turn: Int) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return released >= turn
     }
 
     func release() {

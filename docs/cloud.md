@@ -121,6 +121,39 @@ skip a block but cannot reuse a sequence already returned by the new image. Miss
 means no prior floor, while invalid legacy state fails startup and is preserved/quarantined rather
 than being read as zero.
 
+**A Session row goes out when something a viewer reads has changed.** Each
+`s/<machine>/<session>` payload is `{"session": <row>, "at": <scan seconds>, "scan": {…}}`, where
+the row is the one `/v1/sessions` serializes. `CloudAppBridge` compares each row with the one it
+last published for that Session with three freshness-only paths removed —
+`closeability.observed_at`, `closeability.session_generation` and
+`closeability.source.observed_at` — and skips it when nothing else differs. Those three move on
+every SessionWatch reading; no reader in `Resources/web/app/js` uses them (its closeability gate
+reads `state`, `reasons`, `mover`, `attestation_id`, `version` and `source.freshness`, which still
+count). Measured in this Mac's log on 2026-09-15 from 04:00 to 06:00, with nobody working and before
+this rule: 195 Session publications an hour, every one of them republishing every row, because
+`closeability.observed_at` is the projection's own clock. A row that does differ is still published whole, freshness values
+included. `work_since`, `agents[].at`, `shells[].at` and the coordination `createdAt` clocks are
+evidence instants that move only with what they describe, so they count like any other field.
+Because an idle Mac may now publish nothing, an authoritative scan re-sends the inventory marker
+once no Session-channel frame has gone out for three minutes; the hosted console calls a machine
+current for five minutes after its newest `s/` or `orch/` envelope.
+
+**`transcript_signature` is a Cloud-only row field.** When present it is a non-empty opaque string
+equal to the `signature` the Mac's `transcript` read answer returns for that Session's transcript
+file at that moment; a viewer re-reads the transcript when it changes and not otherwise. It is
+absent, never empty, when the signature is unknown (no transcript file, or the watch has not
+reported yet), and absence is also what a Mac older than this field, or a Linux executor, sends.
+Local `/v1/sessions` and SSE rows never carry it: transcript bytes must not repaint local
+session-list consumers (`Sources/TranscriptRevisionWatch.swift`). The signature comes from
+`CloudTranscriptSignatureWatch`, a second instance of the fd-event transcript watch whose only
+demand is a running bridge: every Session publication names the published Sessions to it, and
+stopping the bridge ends every watch, so nothing is watched while Cloud is disabled. Resolving a
+Session to its file happens off the publication path and only again when the row's assistant, tty,
+conversation id or working directory changes, a watch ends, or a minute has passed. A signature
+change republishes that row even when nothing else changed, in at most one pass per second: the
+first change publishes at once, and everything that changes during the following second rides one
+later pass. An unchanged signature never republishes anything.
+
 **Commands go through the door they already went through.** `RemoteServerCloudCommandRouter`
 converts a verified cloud command back into an in-process request, so authentication,
 idempotency, menu safety, image validation and audit stay the local HTTP route's single

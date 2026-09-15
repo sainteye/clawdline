@@ -1365,8 +1365,9 @@ actor CloudAppBridge {
     /// The hosted console calls a machine current for five minutes after its newest `s/` or
     /// `orch/` envelope (`MACHINE_INVENTORY_FRESH_MS`). With unchanged rows skipped, an idle Mac
     /// may publish neither, so an authoritative scan re-sends the small inventory marker once no
-    /// Session-channel frame has gone out for three minutes. The scan cadence (20 s) and the
-    /// measured 12–20 s outbound latency still land it inside the five.
+    /// Session-channel frame has gone out for three minutes. The background scan cadence (20 s)
+    /// and the 12–20 s Session-write latency of the 2026-09-13 calibration (docs/cloud.md) still
+    /// land it inside the five.
     static let sessionPresenceIntervalMilliseconds: UInt64 = 180_000
     /// Row fields that move with every SessionWatch reading whether or not anything a viewer reads
     /// did, so they never make a row different. A row that differs elsewhere is still published

@@ -136,8 +136,9 @@ an older inventory cannot prune a newer row, and a row older than an inventory t
 cannot resurrect a closed Session. The inventory scopes membership only to the verified machine;
 it never trusts a title or tty and never prunes another Mac.
 
-This inventory version says which Session ids exist, not whether transcript bytes changed.
-Content-deduplicating identical Session rows therefore creates no transcript revision signal.
+This inventory version says which Session ids exist, not whether transcript bytes changed. That
+signal is the Cloud-only row field `transcript_signature` (docs/cloud.md): a row is republished when
+its transcript signature changes, at most one pass per second, and never for an unchanged one.
 Opening a conversation always makes a fresh foreground Cloud transcript read with no conditional
 revision, while automatic refresh remains background and follows the existing transcript demand
 signals. A typed transcript `not_found` removes only that exact `(machine, Session)` row.
@@ -171,10 +172,13 @@ pass on one fast machine.
   classes before local routing too, with a four-read foreground bound and a sixteen-read background
   bound. The limit+1 request bypasses the saturated worker and receives an encrypted typed
   `cloud_read_busy` 429 on its own Session channel; capacity returns as soon as that lane drains.
-- Cloud Session snapshots are content-deduplicated, so a watcher tick publishes only changed rows.
-  An authoritative inventory of at most 512 exact Session ids is encrypted on a reserved
-  machine-scoped Session channel after each changed scan and on reconnect. It repairs retained
-  relay rows across a Mac restart without trusting labels or terminal names.
+- Cloud Session snapshots are deduplicated on what a viewer reads, so a watcher tick publishes only
+  rows that changed outside the three freshness-only closeability paths (`observed_at`,
+  `session_generation`, `source.observed_at`). An authoritative inventory of at most 512 exact
+  Session ids is encrypted on a reserved machine-scoped Session channel after each changed scan, on
+  reconnect, and after three minutes without any Session-channel frame, which keeps an idle Mac
+  inside the hosted console's five-minute machine window. It repairs retained relay rows across a
+  Mac restart without trusting labels or terminal names.
 - Durable Cloud publication returns each producer after reserve, encryption and durable spool seal;
   one lifecycle-owned worker performs globally ordered socket writes independently. Already-sent
   rows may await correlated receipts while later ready rows fill a hard row/byte window (currently
