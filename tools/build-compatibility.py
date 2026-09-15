@@ -2,9 +2,8 @@
 """Write docs/compatibility.md from the table in Sources/Compat.swift.
 
 The page and the app must not be able to disagree, and the only way to guarantee that is for one
-of them to be built from the other. `./test.sh` regenerates and compares, so a release added to
-the Swift table and not to the page is a failing test rather than a page that is quietly a
-version behind.
+of them to be built from the other. Run it after changing the release table; `--check` compares
+without writing.
 
 Usage: tools/build-compatibility.py [--check]
 """

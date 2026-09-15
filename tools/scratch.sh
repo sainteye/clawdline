@@ -375,15 +375,14 @@ materialise() {  # $1 subject, $2 repository top level
       git archive "$tree_id" | tar -x -C "$ENTRY/tree" || return 1
       ;;
   esac
-  # `tools/check-version-strings.py` asks git for the files it scans, so a snapshot that is not a
-  # repository fails closed with `version_scan_no_files` before a single check runs. Staging is
-  # enough; nothing reads a commit.
+  # A command that asks git for the files it scans fails closed in a snapshot that is not a
+  # repository. Staging is enough; nothing reads a commit.
   in_tree git init -q && in_tree git add -A || return 1
   # `git add -A` obeys the copy's own `.gitignore`, and a repository may track a file that matches
   # it. Measured on 2026-09-11 while landing a82f062d: the snapshot's index held 724 files where the
   # commit has 725, and the missing one was `tools/ubuntu-core-probe/Package.resolved`, tracked and
   # matching `.gitignore:17`. It was on disk the whole time — everything that asks git for the file
-  # list, `git ls-files` and `tools/check-version-strings.py` among them, simply ran on a tree one
+  # list, `git ls-files` among them, simply ran on a tree one
   # file short and went green. So the paths the subject is known to hold are added by name, and the
   # snapshot then has to prove it is the tree it was taken from before the command runs in it.
   case $subject in

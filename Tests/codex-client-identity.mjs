@@ -7,13 +7,12 @@
 // the suite compared it with anything. A `grep -c` over `Tests/` for that line answered zero on
 // 2026-09-04, which is the whole story: the drift was not hard to find, there was simply nobody to
 // find it. The numbers are in that commit's message and not here, because a version typed into
-// this file is the same defect one file along — `tools/check-version-strings.py` refuses one.
+// this file is the same defect one file along.
 //
 // **Why it does not live in the Swift suite.** `Sources/CodexNaming.swift` names `Assistant`,
 // `TargetSession`, `SessionState`, `Config` and more, so compiling it means compiling the module,
 // which is the 288-second run this repository serialises behind a machine-wide lock. The identity
-// block is bounded by two marker comments instead — the same arrangement `Tests/test-sh-lock.mjs`
-// uses on `test.sh` — and this file lifts it out and compiles it against the real
+// block is bounded by two marker comments instead, and this file lifts it out and compiles it against the real
 // `Sources/Compat.swift` and a handful of stand-ins in about a second. Nothing here is a stand-in
 // for the thing under test: the enum and the release table are the shipped bytes.
 //
