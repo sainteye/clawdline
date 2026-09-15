@@ -4,6 +4,10 @@
 The translation remains authored in Sources/Copy+*.swift. This small exporter is the mechanical
 bridge for the static Pages host, which cannot execute RemotePage.strings at request time.
 Run it against the exact Clawdline build whose source is being prepared for deployment.
+
+The catalog is written one key per line, sorted, so two branches that each add a sentence touch
+different lines and a hand edit on a branch — which cannot run a build of its own source — is one
+added line. ``tools/check-web-strings.py`` compares parsed JSON, so the layout never changes a verdict.
 """
 import argparse
 import json
@@ -11,6 +15,11 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def catalog_text(value):
+    """The catalog's bytes: one sorted key per line, stable for the same content."""
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2, separators=(",", ": ")) + "\n"
 
 
 def main():
@@ -29,8 +38,7 @@ def main():
         raise SystemExit("the source catalog is incomplete")
     target = Path(args.out).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True,
-                                 separators=(",", ":")) + "\n")
+    target.write_text(catalog_text(value))
     print(f"export-hosted-strings: {len(value)} keys -> {target}")
 
 

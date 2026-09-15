@@ -616,7 +616,10 @@ Pages also carries a generated Traditional Chinese string catalog under the same
 `tools/export-hosted-strings.py` exports it from the Mac's existing `RemotePage.strings` response,
 so the words remain authored in `Copy+Chinese.swift`; `navigator.languages` selects it for
 `zh-Hant`, Taiwan, Hong Kong and Macau, while the English already in the document remains the
-fallback. A string change participates in the build stamp exactly like a JavaScript change.
+fallback. A string change participates in the build stamp exactly like a JavaScript change. The
+catalog is one key per line, sorted, and `tools/check-web-strings.py` holds it to what a Mac sends;
+a branch, which cannot export from a build of its own source, adds the key by hand with the
+`TraditionalChinese` literal the guard prints.
 
 Upload `dist/app-console` as the Pages deployment for `app.clawdline.com` and follow §4 of the
 cloud repository's `RUNBOOK-DEPLOY.md` for the DNS cutover. Deploy is owned by the operator, not

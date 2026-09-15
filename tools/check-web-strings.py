@@ -105,7 +105,9 @@ def catalog_problems(payload, sent):
             different.append(f"{key} (catalog {catalog[key]!r}, TraditionalChinese.{member} {literals[member]!r})")
     if not checked:
         fail("no key of the hosted catalog could be held to a TraditionalChinese literal; the reader found nothing")
-    return missing, different, checked, len(sent) - checked
+    # The line a person adds by hand, for every missing key whose value this reader can hold.
+    additions = {key: literals[plain[key]] for key in missing if plain.get(key) in literals}
+    return missing, different, checked, len(sent) - checked, additions
 
 
 def main():
@@ -171,15 +173,26 @@ def main():
             print(f"  {label}: {', '.join(sorted(keys))}")
         return 1
 
-    absent, different, checked, skipped = catalog_problems(payload, sent)
+    absent, different, checked, skipped, additions = catalog_problems(payload, sent)
     if absent or different:
-        print(f"hosted catalog {CATALOG.relative_to(WEB.parent) if WEB.parent in CATALOG.parents else CATALOG} "
-              "does not match what a Mac sends:")
+        shown = (CATALOG.relative_to(ROOT) if ROOT in CATALOG.parents
+                 else CATALOG.relative_to(WEB.parent) if WEB.parent in CATALOG.parents else CATALOG)
+        print(f"hosted catalog {shown} does not match what a Mac sends:")
         if absent:
             print(f"  sent by /v1/strings but missing from the hosted catalog: {', '.join(absent)}")
         for line in different:
             print(f"  a different value in the hosted catalog than TraditionalChinese: {line}")
-        print("  re-export it from a build of this source: python3 tools/export-hosted-strings.py")
+        # A branch cannot re-export: the Mac answering 127.0.0.1:7717 is the installed build, whose
+        # source is not this branch, and exporting from it writes its words over the branch's own.
+        print(f"  on a branch, edit {shown} by hand — one key per line, in sorted position:")
+        for key in absent:
+            if key in additions:
+                print(f"    add {json.dumps(key)}: {json.dumps(additions[key], ensure_ascii=False)},  (TraditionalChinese's literal)")
+            else:
+                print(f"    add {json.dumps(key)} with the value /v1/strings sends for it (not a plain literal here)")
+        if different:
+            print("    and change each different value to TraditionalChinese's literal named above")
+        print("  or, from a running build of exactly this source, re-export it: python3 tools/export-hosted-strings.py")
         return 1
 
     print(
