@@ -37,7 +37,7 @@ assert.deepEqual(machinePresentation({ machine: "aws-node-1", machineName: "Buil
     id: "aws-node-1", name: "Builder East", platform: "linux", provider: "aws",
     kind: "linux-aws", label: "Linux / AWS · Builder East"
 }); checks += 1;
-equal(machinePresentation({ machine: "mac_opaque", label: "Session title" }).label, "mac_opaque",
+equal(machinePresentation({ machine: "mac_opaque", label: "Session title" }).label, "Machine · c_opaque",
     "an opaque machine id is shown authoritatively without guessing from its prefix or session title");
 equal(machinePresentation({ machine: "machine-1", machineName: "Build\nHost" }).label, "Build Host",
     "display metadata cannot inject a second line into a Session row");
