@@ -236,7 +236,11 @@ pass on one fast machine.
   Measured 2026-09-15: 229,797 bytes for 101 tasks locally, 4,839 bytes and 4 tasks for Cloud. It goes
   out only when that projection changed outside `at`, at most once per five seconds with the newest
   state after a burst (sixty changes in a minute: thirteen snapshots, where the busiest real minute
-  that day carried 31 frames and 8.74 MB), and a `cloud_status` notice carries the digest alone
+  that day carried 31 frames and 8.74 MB). A `cloud_status` notice is that projection again with the
+  digest spliced in, so no page built before the status-only tolerance loses its task list: about
+  9.5 KB sealed, and the busiest notice hour of 2026-09-15 (106 notices) about 1.0 MB, 1.9 MB with the
+  digest at its 8 KiB cap. Every non-forced three-minute Session refresh pass also sends the snapshot,
+  about 0.19 MB an hour, so a device that cannot ask has rows and tasks from the same pass
   (`docs/cloud.md`, *The `orch/` snapshot a Cloud viewer is sent*). The local SSE event is unchanged.
 - Durable Cloud publication returns each producer after reserve, encryption and durable spool seal;
   one lifecycle-owned worker performs globally ordered socket writes independently. Already-sent

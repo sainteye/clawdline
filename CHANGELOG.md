@@ -38,9 +38,11 @@ task sent the whole list again — about 230 KB, almost all of it finished tasks
 never draw, because a Session that had dispatched many children kept every one of them in it — and
 a dropped command sent it again to say so. The console now receives only the tasks it can show,
 running ones and finished ones whose Session is still on screen, with only the fields it draws:
-about 5 KB for the same list. It is sent only when something the console shows changed, at most
-once every five seconds while tasks move quickly, and a note about a dropped command no longer
-carries the list at all. The console looks the same; the Mac's own page is unchanged.
+about 5 KB for the same list. It is sent when something the console shows changed, at most once
+every five seconds while tasks move quickly, with each note about a dropped command, and with the
+rows every three minutes. The note still carries the list, now that the list is small: a console
+page opened before this change reads that note as the whole list, and without it dropped the tasks,
+schedules and snippets it was showing. The console looks the same; the Mac's own page is unchanged.
 
 ### Fixed: an open Session closed itself a second after it was opened
 

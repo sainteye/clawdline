@@ -1366,8 +1366,10 @@ actor CloudAppBridge {
     /// keeps each channel's last envelope in memory only, loses it whenever its object is evicted
     /// — an idle account's is, between frames — and an unchanged row is never published again. A
     /// viewer that may not publish on `ctl/` cannot ask for the rows (`sessions.snapshot`), so once
-    /// this long has passed since the last pass that sent every row and the inventory, a scan sends
-    /// every row it would have skipped and the inventory again. That bounds how long any viewer —
+    /// this long has passed since the last pass that sent every row and the inventory (a
+    /// `sessions.snapshot` pass counts only when it sent the `orch/` snapshot too), a scan sends
+    /// every row it would have skipped, the inventory and the `orch/` snapshot again
+    /// (`orchestratorPresenceDue`). That bounds how long any viewer —
     /// read-only, holding a half-open socket, or one whose request failed — waits for the Mac's
     /// current rows, and keeps the machine inside the console's five-minute window
     /// (`MACHINE_INVENTORY_FRESH_MS`). Measured 2026-09-15: about 31 KB of sealed frames per pass

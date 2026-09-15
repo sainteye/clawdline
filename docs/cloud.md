@@ -137,9 +137,12 @@ evidence instants that move only with what they describe, so they count like any
 **Every three minutes the rows go out again.** Because an idle Mac may now publish nothing, and the
 relay forgets every row whenever its object is evicted, a scan that finds three minutes gone since
 the last pass that sent every row and the inventory — a forced scan at transport-ready, an earlier
-refresh, or a `sessions.snapshot` pass — sends every published row it would have skipped and then
-the inventory marker (`CloudAppBridge.sessionPresenceIntervalMilliseconds`). Rows that changed in
-between do not restart that clock. This is what brings the rows back to a viewer that cannot ask for
+refresh, or a `sessions.snapshot` pass that also sent the `orch/` snapshot — sends every published
+row it would have skipped and then the inventory marker
+(`CloudAppBridge.sessionPresenceIntervalMilliseconds`), and the `orch/` snapshot beside them (*The
+`orch/` snapshot a Cloud viewer is sent*). Rows that changed in between do not restart that clock,
+and neither does a `sessions.snapshot` pass that sent the rows alone: a page asking for rows every
+two minutes would otherwise put off the one pass that brings a device that cannot ask the tasks. This is what brings the rows back to a viewer that cannot ask for
 them (a device without `send_prompt`), to one whose request failed, and to one whose renewal took
 over a socket that had stopped hearing; it also keeps the machine current, since the hosted console
 calls a machine current for five minutes after its newest `s/` or `orch/` envelope. The check runs
@@ -192,13 +195,14 @@ Correctness does not depend on how often that happens:
   viewer socket on the account, phones included, and it used to be hundreds of kilobytes (this Mac's
   log on 2026-09-15 shows outbound frames of about 300 and 740 KB repeated; since the Cloud projection
   below it is a few kilobytes). So a request that arrived before the Mac's last full `orch/` snapshot
-  was already sent that one and needs nothing — a status-only notice answers nobody, it carries no
-  task; the others get it at once only when that snapshot is more than a minute old
+  — a notice is one — was already sent that one and needs nothing, while a snapshot the Mac handed
+  over unchanged is not published and answers nobody; the others get it at once only when that
+  snapshot is more than a minute old
   (`CloudAppBridge.orchestratorResendFloorMilliseconds`). Inside the minute the rows and the answer go
   out at once and the `orch/` snapshot is owed: it is re-sent when the minute has passed, unless a
   snapshot in between already reached every page that asked. A page counts as holding a machine's
-  `orch/` snapshot only when it received one: a replayed notice does not count, so a page the relay
-  replays only a notice to still asks. Everything goes through the ordinary publication lanes, so the rows land under the
+  `orch/` snapshot only when it received one: a status-only notice (which only a Mac holding no
+  snapshot yet sends) does not count, so a page the relay replays only such a notice to still asks. Everything goes through the ordinary publication lanes, so the rows land under the
   sequence guards every row already has. It is read-level: the remote-write switch does not gate it.
 - **Bound.** However many viewers ask, one Mac sends its rows at most once per five seconds
   (`CloudAppBridge.sessionSnapshotIntervalMilliseconds`); a request that arrives inside the window, or
@@ -222,7 +226,7 @@ Correctness does not depend on how often that happens:
   publish on `ctl/` at all (`relay/src/account-do.ts`). For each machine that lists the word it
   shows the machine as sending (`scan.recovering`, never an empty account) until this socket has
   heard that machine's inventory and a row or tombstone for every id it lists — what the Mac's pass
-  every three minutes sends — and after four minutes (`SESSION_REFRESH_WAIT_MS`: the interval, a
+  every three minutes sends, with the `orch/` snapshot — and after four minutes (`SESSION_REFRESH_WAIT_MS`: the interval, a
   scan and slack) it has failed as `cloud_sessions_incomplete`. A renewal carries the wait over with
   its deadline, and what the old socket heard counts.
 - **Older machines.** A Mac that lists no `features`, and a Linux executor, are never sent the word;
@@ -243,18 +247,19 @@ Correctness does not depend on how often that happens:
 relay with nothing to replay — a cold viewer, one that never saw the Mac, a page back from quiesce
 after a row changed, a renewal, a renewal over a half-open socket, a Mac that does not answer, an
 answer whose rows never arrive, a read-only device before and after the refresh pass, a page back
-from the background that holds the `orch/` snapshot, a notice beside the snapshot a page holds, and a
-page replayed only a notice — and `Tests/CloudSessionRowTests.swift` holds the Mac's refresh pass,
-snapshot pass, window, waiter bound, the owed `orch/` re-send, a pass that waits out its window while
-a scan tombstones a row, `stop()` in the middle of a pass, and the `orch/` projection, its pacing and
-the notice's refill.
+from the background that holds the `orch/` snapshot, a status-only notice beside the snapshot a page
+holds, and a page replayed only such a notice — and `Tests/CloudSessionRowTests.swift` holds the Mac's
+refresh pass, snapshot pass, window, waiter bound, the owed `orch/` re-send and an unchanged snapshot
+that does not answer it, a pass that waits out its window while a scan tombstones a row, `stop()` in
+the middle of a pass, the `orch/` projection, its pacing, a notice that is the snapshot, a refresh
+pass a rows-only request does not put off, and — through the durable spool — a notice that replaces
+an unsent snapshot and a ready generation that forgets what went out.
 
 Audited against the same assumption — *the relay's replay brings a (re)connecting page up to date*:
 `s/` rows and the inventory (fixed above); the `orch/` snapshot, which carries the descriptor, task
-list, schedules, snippets and `cloud_status`, is published only when what a Cloud view reads changes,
-and is re-sent by the same pass, on every ready generation, a minute after a notice took its place
-in the replay, and by the three-minute refresh pass when none has gone out for three minutes (*The
-`orch/` snapshot a Cloud viewer is sent*, below); `t/` read answers, including pictures and transcripts (not dependent:
+list, schedules, snippets and `cloud_status`, is published when what a Cloud view reads changes and
+with every notice, and is re-sent by the same pass, on every ready generation, and by every
+three-minute refresh pass (*The `orch/` snapshot a Cloud viewer is sent*, below); `t/` read answers, including pictures and transcripts (not dependent:
 a replayed answer settles only the request it names, and every read is asked fresh); the Schedules
 strip and places (not dependent: the strip reads on return and places are asked).
 
@@ -487,20 +492,29 @@ the `cloud.status` read on `__clawdline_machine__`, and the notice.
 **The notice is how a phone hears about a command it could not get in.** When a drop or an
 unanswerable refusal happens, the bridge publishes a `cloud_status` digest (§11.2: counts, clock
 guard, token expiry, key id, roster readability, the ten newest drops and notices) on
-`orch/<machine>` as `{"cloud_status": …}` and nothing else, at most once every five seconds.
-Serialized it is at most 8 KiB, enforced by trimming the two recent lists. Every full snapshot
-carries the current digest too, spliced in as one more top-level key before its closing brace. Until
-2026-09-15 the notice was the newest snapshot again with the digest spliced in, so every dropped
-command re-sent every task record to every viewer; now the viewer reads a payload whose only key is
-`cloud_status` beside the snapshot it holds (`statusOnlyOrchestrator` in `net/cloud-client.js`): it
-consumes the digest, keeps the tasks, schedules, snippets and descriptor it had, does not redraw the
-task list, and does not count the notice as holding the snapshot. The relay replays only the last
-envelope of a channel, so a notice takes the snapshot's place in that replay; the Mac publishes the
-snapshot again once a notice has stood there for a minute
-(`CloudAppBridge.orchestratorResendFloorMilliseconds`), unless a snapshot went out first. That is what
-bounds a device that cannot ask, and a page that returns holding an older snapshot, to a minute after
-a notice. A page opened before this change reads a notice the old way — as a snapshot with no tasks —
-and draws no task headers until that re-send, at most a minute. **`orch/<machine>` is published
+`orch/<machine>`, at most once every five seconds. Serialized the digest is at most 8 KiB, enforced
+by trimming the two recent lists. It is spliced into the newest Cloud projection of the orchestrator
+snapshot as one more top-level key before its closing brace, so **a notice is that snapshot again**,
+exactly as every other `orch/` envelope is (`CloudAppBridge.publishOrchestratorNotice`). Three things
+depend on that. A page built before the status-only tolerance below — the console deployed on
+2026-09-15 (Pages stamp `bfcba785`) and any PWA not reloaded since — takes whatever arrives on `orch/`
+for the machine's whole snapshot, so a payload holding only `cloud_status` emptied its task list,
+schedules and snippets until the next snapshot, and schedule edits then answered `not_found`. The relay replays only the last envelope of a
+channel, so what a (re)connecting page is replayed is a whole snapshot. And the durable spool keeps
+only the newest unsent `orch/` row (*The `orch/` snapshot a Cloud viewer is sent*, below). The
+projection is a few kilobytes, which is why this is affordable where the 230 KB snapshot was not; a
+notice whose request a snapshot has already carried publishes nothing. Measured 2026-09-15 on this
+Mac: 398 `reply=notice` refusal lines, which the five-second interval makes 362 notices, 106 of them
+in the busiest hour (23:00); at about 9.5 KB sealed each (the 4.8 KB projection above and the
+2,037-byte digest this Mac's `cloud-status.json` gave at 00:42 the next morning) that hour is about 1.0 MB, 1.9 MB with the digest at its 8 KiB cap, where the same notices
+as status-only frames were about 0.33 MB and as the old 230 KB snapshot about 32 MB. The five-second
+interval bounds it at 720 an hour, about 12.8 MB at the cap. Only a Mac that has handed the bridge no
+snapshot yet — the moment between connecting and its transport-ready snapshot — publishes
+`{"cloud_status": …}` alone, since there is nothing to carry beside it (§11.2). The page keeps
+tolerating that shape: it reads a payload whose only key is `cloud_status` beside the snapshot it
+holds (`statusOnlyOrchestrator` in `net/cloud-client.js`), keeps the tasks, schedules, snippets and
+descriptor it had, does not redraw the task list, and does not count it as holding the snapshot.
+Nothing depends on that tolerance. **`orch/<machine>` is published
 whether or not the orchestrator is enabled**: `RemoteServer.cloudTransportBecameReady` publishes
 `orchestratorSnapshot()` on every ready generation — every connect and every token rotation — and
 that snapshot always carries `snippets`, `at`, `app` and a display-only `machine` descriptor (`name`,
@@ -572,8 +586,9 @@ and the bridge publishes `RemoteServer.cloudOrchestratorProjection` of them
 projected. Measured on this Mac on 2026-09-15 at 23:29: the local event was 229,797 bytes for 101
 tasks, all but one finished, and 216 KB of it was 97 records kept only because their root's terminal
 was still open. The same registry projected for Cloud is 4,839 bytes and 4 tasks, and the `cloud_status` digest
-spliced in was about 1.9 KB that evening (8 KiB at most); sealed, a snapshot went out as frames of
-290–308 KB, which the base64 envelope puts at about 9 KB now. The rule, checked against every reader in `Resources/web/app/js` rather than assumed:
+spliced in is about 2 KB (8 KiB at most); sealed, a snapshot went out as frames of
+290–308 KB. Sealed with the protocol vectors, a 4,839-byte projection with a 2 KB digest is a
+9,544-byte publish frame, and 17,752 bytes with the digest at its cap. The rule, checked against every reader in `Resources/web/app/js` rather than assumed:
 
 - **Records.** `S.tasks` is read only through `view/derive.js` (`taskLive`, `taskShaping`,
   `taskOfChild`, `rowDepth`, `tasksOfRoot`, `grouped`, `featureRootChip`, `lostIfClosed`,
@@ -606,21 +621,38 @@ spliced in was about 1.9 KB that evening (8 KiB at most); sealed, a snapshot wen
   snapshots (`Tests/CloudSessionRowTests.swift`), about 0.12 MB at that evening's size. Five seconds is the
   interval the notice and the `sessions.snapshot` pass already use, and nothing a person waits on
   reads this channel: a snippet or schedule written from a phone is read back with `fresh`.
-- **Not paced.** A transport-ready generation, a `sessions.snapshot` request that lacks the snapshot
-  (and the owed re-send), the re-send a minute after a notice, and the Session refresh pass go out
-  whatever was published before. A ready generation also forgets what was published, so a newer
-  snapshot that replaced the forced one on the Mac's lane still goes out.
-- **Bounded for a device that cannot ask.** The relay keeps its replay in memory only, and an
-  unchanged snapshot is never published on its own. So the scan that re-sends every Session row once
-  three minutes have passed (`CloudAppBridge.sessionPresenceIntervalMilliseconds`) also re-sends the
-  snapshot when none has gone out in those three minutes — a few kilobytes every three minutes on an
-  idle Mac, nothing on one whose tasks are moving. A device that cannot ask therefore has the
-  snapshot by the same pass that brings it the rows, rather than by the token rotation's reconnect.
+- **Not paced by change.** A notice (paced by its own five-second interval, which every snapshot
+  also restarts), a transport-ready generation, a `sessions.snapshot` request that lacks the snapshot
+  (and the owed re-send), and the Session refresh pass go out whatever was published before. A ready
+  generation also forgets what was published, so a newer snapshot that replaced the forced one on the
+  Mac's lane still goes out, and a Session a scan lists meanwhile is compared with nothing and
+  scheduled.
+- **Every envelope is the whole snapshot.** The durable spool treats `orch/` as latest-value
+  (`CloudSpoolChannel.isLatestValue`): admitting a row drops every unsent `orch/` row before it in
+  the same commit. That is safe only because every `orch/` row is the complete current projection,
+  computed from the newest state when its turn in the one-at-a-time publication order comes, and the
+  bridge records what went out only after the row is sealed — so a row that replaces an unsent one
+  carries at least what it carried, and what is recorded is the newest row. A publication that fails
+  after its admission may have dropped the last snapshot on its way out, so a failure records nothing
+  as out: the next publication goes out whatever it carries. A row that expires unsent on a live
+  socket is not noticed; the next refresh pass sends the snapshot again.
+- **Bounded for a device that cannot ask.** The relay keeps its replay in memory only and loses rows
+  and snapshot together with its object, and an unchanged snapshot is never published on its own.
+  So every refresh pass — the scan that re-sends every Session row once three minutes have passed
+  since the last full pass (`CloudAppBridge.sessionPresenceIntervalMilliseconds`) — sends the snapshot
+  too, however recently one went out, unless one went out after the pass began; a forced pass does
+  not, because its transport-ready generation sends its own. A device that cannot ask therefore has
+  the rows and the snapshot from the same pass: at most three minutes plus one scan (20 s in the
+  background) after the last full pass, and so after it connects. A `sessions.snapshot` pass that did
+  not also send the snapshot does not count as that full pass. It costs one snapshot every three
+  minutes whether or not tasks moved — about 9.5 KB each, about 0.19 MB an hour.
 
-The bridge logs `cloud: orchestrator snapshot published reason=<change|coalesced|ready|asked|owed|refill|listed|presence> tasks=<n> bytes=<plaintext>`,
-`cloud: orchestrator snapshot unchanged`, `cloud: orchestrator snapshot coalescing wait_ms=<n>` and
-`cloud: orchestrator status notice published bytes=<n>`, so a Mac log reading counts what actually
-went out rather than the `kind=orchestrator` lines of the Mac's lane, which include the skipped ones.
+The bridge logs `cloud: orchestrator snapshot published reason=<change|coalesced|ready|asked|owed|notice|listed|presence> tasks=<n> bytes=<plaintext>`,
+`cloud: orchestrator snapshot unchanged`, `cloud: orchestrator snapshot coalescing wait_ms=<n>`,
+`cloud: orchestrator notice already carried` and, before any snapshot,
+`cloud: orchestrator status notice published before any snapshot bytes=<n>`, so a Mac log reading
+counts what actually went out rather than the `kind=orchestrator` lines of the Mac's lane, which
+include the skipped ones.
 
 **An empty list and no list are different answers.** `CloudClient.schedules()` resolves an empty
 inventory and refuses an unknown one — `cloud_read_unavailable` before any snapshot has arrived,

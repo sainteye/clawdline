@@ -6512,8 +6512,9 @@ of it: `write`, `auth`, `password` and `authed` are answers about *this* connect
 is talking to has been rebuilt under it.
 
 **The same three fields are what a cloud viewer has.** `RemoteServer.orchestratorSnapshot()`
-builds this body once. This stream sends it as built; the `orch/<machine>` envelope the Mac
-publishes carries its Cloud projection, where `tasks` holds only the records a hosted view can reach
+builds this body once. This stream sends it as built; every `orch/<machine>` envelope the Mac
+publishes once it holds one, a `cloud_status` notice included, carries its Cloud projection, where
+`tasks` holds only the records a hosted view can reach
 and only the fields it reads, and every other key is unchanged (`docs/cloud.md`, *The `orch/`
 snapshot a Cloud viewer is sent*). On that path there is no `/v1/health` to ask and the relay's own
 `ready` frame knows nothing about a Mac, so `app` is the only reading the stale-build banner has.
