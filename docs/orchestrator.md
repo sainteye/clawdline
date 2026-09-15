@@ -1118,6 +1118,41 @@ and does not advance the frontier.
 }
 ```
 
+#### Durable report promotion is explicit and does not change task truth
+
+Ordinary `artifacts/` remain task-owned temporary output and are still eligible for the existing
+task cleanup. A root that needs to cite an audit or design report after that cleanup explicitly
+calls `POST /v1/orchestrator/durable-reports/promotions` while the authenticated task/result record
+and its Root Session are still available. Nothing in `result.json`, a Board reference, an artifact
+filename, or task success opts in implicitly.
+
+The promotion adapter accepts only a path that the authenticated result's `artifacts` array named,
+re-resolves it under the exact `/tmp/.clawdline/<task-id>/artifacts` root, and descriptor-checks the
+held bytes. It records SHA-256, byte count, creation time, inert media type, immutable request/report
+id, Project/Session/task identity, `authenticated_task_result_artifact` provenance, result-verification
+time and one stable promotion receipt. The object is fsynced before an atomic/fsynced index makes it
+readable. A crash orphan has a deterministic name, remains quota-charged, is not listed, and can be
+completed only by an exact replay, including when it already occupies the last count-quota slot.
+Same identity plus different content or provenance is a conflict. After the whole task directory is
+collected, the same request replays from stored provenance and the verified immutable object;
+corrupt object bytes still fail closed rather than returning a receipt.
+
+The index and objects live in one private managed store under Application Support/Clawdline. They
+are pinned: no task cleanup or retention pass reads that store, and quota exhaustion refuses a new
+promotion rather than evicting an old one. Unknown versions, unindexed unsafe files, damaged bytes,
+checksum/count mismatches, unexpected root entries and unsafe ownership/permissions make the
+authority unavailable; a later write never repairs around unknown state. Restart removes only an
+exactly named, private unpublished index temporary from an interrupted atomic write.
+
+Reading does not create a second document system. The receipt reserves
+`project/clawdline-durable-reports/<immutable-id>.<ext>` inside `ProjectDocuments`, and the existing
+local/paired/Cloud authenticated route serves it as inert text. The receipt-bound Session id is
+checked even after the live terminal or source task directory has gone. A canonical Cloud URL has
+only machine, Session, `scope=project` and this relative path in its fragment—never a credential or
+filesystem root. A Session's document listing shows only its own durable rows, so an older receipt
+is never turned into an unopenable link under a newer Session identity. Board stores the promotion receipt as a narrative-only `document_reference`; that
+reference cannot manufacture verification, acceptance or landing.
+
 `symbols` names every identifier the child's change introduced: new functions and types, new
 fields, new string keys, the names of test groups it added. Names, not descriptions — the portrait
 above introduced none, and `[]` says that positively where an absent field only says the child did

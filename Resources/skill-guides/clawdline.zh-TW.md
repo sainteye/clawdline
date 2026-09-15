@@ -1274,9 +1274,16 @@ Clawdline 本來就會用你給的 `title` 標記它開出來的那個分頁，�
 名字，才是它能隨工作變形一直維持正確的那一個。接收端真的打了那通之後，它的名字是**蓋過**
 app 那個標籤而不是疊加；標籤是留給「從來不打那通」的接手方的備援，而那是多數。
 
-**2. 引用到易失的東西，先固化再引。** 活在 session scratchpad 裡的設計文件、只有 URL 的
-artifact、`/tmp` 底下的檔案：先複製進 repo——留紀錄用 `artifacts/`、要當常設答案用 `docs/`——
-然後引用那份固化的副本。引用不重複，但易失來源是例外。這步是最多人跳過的，也是一週後鏈會斷在
+**2. 引用到易失的東西，先固化再引。** 一般 task artifact 就算被 `result.json` 列出，仍是暫存。
+若 Markdown／純文字報告已由 authenticated result 列在 `artifacts/` 下，請在 task 紀錄與 Root
+Session 還可用時，明確呼叫 `POST /v1/orchestrator/durable-reports/promotions`。以新的小寫 UUID 同時
+作為 `request_id` 與 `Idempotency-Key`，送出 `task_id`、Root 的 terminal-neutral `session_id`、相對於
+`artifacts/` 的 path 與 title。之後引用回傳的 promotion receipt 與 canonical Cloud document URL，
+不要引用 `/tmp` 路徑。完全相同的 replay 安全；整個 task 目錄經普通 cleanup 消失後，只要 durable
+object 驗證仍正確，同一 request 仍會回傳同一 receipt。Bytes 或 provenance 改變則 conflict。Receipt
+只有 narrative authority，不得稱為 verification、acceptance 或 landing。不是 authenticated task artifact
+的易失來源，必須先成為常設 `docs/` 答案或 authenticated task deliverable；promotion API 不接受任意
+filesystem path 或 URL。引用不重複，但易失來源是例外。這步是最多人跳過的，也是一週後鏈會斷在
 那裡的那一步。
 
 **3. 建手交包。**

@@ -184,6 +184,7 @@ token-adoption `303`: an abortive reset can make Chrome reject the completed red
 | `POST` | `/v1/orchestrator/tasks` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/detached-tasks` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/root-assignments` | orchestrator token + key | — |
+| `POST` | `/v1/orchestrator/durable-reports/promotions` | orchestrator token + key | — |
 | `GET` | `/v1/orchestrator/root-assignments` | orchestrator token | — |
 | `GET` | `/v1/orchestrator/root-assignments/:id` | orchestrator token | — |
 | `POST` | `/v1/orchestrator/notify` | orchestrator token | — |
@@ -708,7 +709,8 @@ it is not an inventory of the two directories.
 One document's bytes, as `text/markdown` or `text/plain`, `private, no-store`, `nosniff`,
 `noindex`, and under a CSP that permits nothing.
 
-**Two roots, both computed by the server; the caller's string only chooses inside one.** The
+**Two volatile roots, plus one receipt-addressed managed namespace; all are computed by the
+server and the caller's string only chooses inside one.** The
 artifact route above is safe because `kind` is a slot rather than a path — there is no string that
 names a third file. A route whose purpose is to serve a document the caller names cannot keep that
 property, so what replaces it is a boundary:
@@ -717,6 +719,7 @@ property, so what replaces it is a boundary:
 |---|---|---|
 | `project` | `<session cwd>/artifacts`, with that one symlink followed | in this repository the path is a symlink into a private sibling checkout. It is followed *first*, before any caller string exists, and what it resolves to **becomes** the root. It is the only root a symlink may move |
 | `task/:taskId` | `<task directory>/artifacts`, for a task the registry says belongs to this project | the child's deliverables, and **only** those: `task.json` and `result.json` sit one level above and are therefore outside the root. **A symlink that leaves the task directory is not followed here** — that root is absent instead, because the child writing there is the party the boundary bounds, not a person saying where documents are kept |
+| `project/clawdline-durable-reports/:reportId.:ext` | the immutable object named by a durable-promotion receipt under Application Support/Clawdline | an explicitly pinned task report; this reserved virtual prefix never falls through to the project's writable `artifacts/` directory, so two files cannot claim one address |
 
 **The task secret is not filtered out — it is out of reach.** A child's `task.json` holds the
 secret that authenticates its completion, and by protocol its `result.json` repeats that secret
@@ -760,6 +763,74 @@ The hosted Session action resolves its row to one complete machine/session pair 
 this listing. Two Macs publishing the same bare session id are `cloud_session_ambiguous`; the
 browser does not select the first row. Direct/local and Mock reads retain the explicit
 `machine=this-mac` identity, but that alias is never promoted into a hosted share address.
+
+A durable report's direct URL is resolved from its stored promotion receipt before the server asks
+whether the original terminal is still live. The receipt must bind the exact Session id in the URL;
+therefore task cleanup and terminal closure do not break the link, while another Session cannot
+borrow it. A Project document listing includes only durable rows promoted by the requested Session;
+older receipts remain directly readable but are never relabelled with a new Session identity.
+Authentication is unchanged: local and paired reads still enter this route, and Cloud
+still carries the same closed `scope:"project"` document request through its encrypted boundary.
+
+### `POST /v1/orchestrator/durable-reports/promotions`
+
+Explicitly pin one inert task report before citing it. This machine-only route requires
+`X-Clawdline-Orchestrator` and an `Idempotency-Key` equal to `request_id`. It accepts a closed body:
+
+```json
+{
+  "request_id": "1b38adf7-f415-4bc7-8e24-123e905ed43c",
+  "task_id": "3f9a21bc-8d4e-4c1a-9f2b-6a7e5d0c1234",
+  "session_id": "%770",
+  "path": "audit.md",
+  "title": "Durable-state audit"
+}
+```
+
+`path` is relative to that task's exact `artifacts/` root. The broker must retain an authenticated
+`result.json` receipt for the same task, the result must explicitly list `artifacts/<path>`, its
+Root terminal must be `session_id`, and the live Session must still resolve to the task's canonical
+Project at promotion time. A task directory, path, Project, filesystem root, checksum, byte count,
+media type or provenance supplied by the caller is never authoritative.
+
+The source resolver refuses absolute/empty/dot segments, hidden files, traversal, symlink escapes,
+multiple-link files, unsafe extensions, non-UTF-8 data, secret markers and files over 2 MiB. It
+opens the checked inode with `O_NOFOLLOW`, verifies owner/link/mode/size and pathname identity before
+and after the read, then computes SHA-256 over those held bytes.
+
+A first success is `201`; an exact replay is `200` with `replayed:true`. If ordinary cleanup already
+removed the whole task directory, replay verifies the stored provenance and immutable object and
+returns the same receipt without requiring the vanished source. If the source remains, changed bytes
+or provenance conflict; a damaged durable object never replays as success. The response carries the
+immutable report and promotion receipt ids, checksum, byte count, creation time, Project/Session/task
+provenance, inert media type, `pinned:true`, and the existing Project-document locator. When this Mac
+has a proved Cloud machine identity it also carries a credential-free canonical
+`https://app.clawdline.com/#document=1&…` URL and a ready-to-send Board `document_reference` body.
+That body uses the promotion receipt as `documentId` and has `authority:"narrative_only"`; it grants
+no verification, acceptance or landing authority.
+
+The store is one private `0700` directory containing a `0600` atomic index and `0600` immutable
+objects. Object and index writes are fsynced with their parent directory. A deterministic object
+left before an index commit is charged to quota and can be healed only by replaying the exact
+request and bytes. The index is authoritative: unknown versions, malformed metadata, missing or
+changed objects, unexpected managed-root entries, unsafe permissions and uncertain writes fail
+closed without removing the unknown entry. A recognized private unpublished index temporary left
+by a crash is the sole root-level cleanup exception. Limits are 500 reports and
+256 MiB globally, 100 reports and 64 MiB per Project, with 2 MiB per report and 4 MiB for the index.
+There is no retention eviction: every indexed report is pinned; reaching a bound refuses the new
+promotion without deleting an old one.
+
+| status | code | meaning |
+|---:|---|---|
+| 400 | `bad_durable_report_request` | body, idempotency key, Session/task/Project identity or authenticated result provenance does not match |
+| 403 | `forbidden` | no machine orchestrator credential |
+| 404 | `durable_report_source_not_found` | path is absent, escaped, hidden, unsafe-extension, undeclared, or outside the exact task artifact root |
+| 409 | `durable_report_promotion_conflict` | the request identity already names different content or provenance |
+| 409 | `durable_report_quota_reached` | a count or byte bound would be exceeded; no pinned report was removed |
+| 413 | `durable_report_source_too_large` | the source exceeds the report limit |
+| 415 | `durable_report_source_unsafe` | source inode, link, permissions, UTF-8 or inert-text checks failed |
+| 422 | `durable_report_source_secret` | the content contains a closed secret marker |
+| 503 | `durable_report_store_unavailable` | store/index/object state is unreadable, corrupt, unsafe or uncertain; no write repairs around it |
 
 ### `GET /v1/sessions/:id/info`
 

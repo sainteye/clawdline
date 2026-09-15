@@ -100,16 +100,19 @@ extension RemoteServer {
 
 // MARK: - Documents
 
-/// The documents this Mac produces, and the only two places they may be read from.
+/// The documents this Mac produces, and the two writable roots they may be read from.
 ///
-/// **This is a closed pair of roots, not a file server.** The artifact route above is safe
+/// **This is a closed pair of writable roots, not a file server.** Explicitly promoted reports
+/// add one receipt-addressed virtual namespace under the existing `project` scope; its bytes are
+/// immutable, live in ``DurableReportStore``, and still enter through this document route. The
+/// artifact route above is safe
 /// because `kind` is a *slot* rather than a path: there is no string a caller can send that
 /// names a third file. That property cannot survive a route whose whole purpose is to serve a
 /// document the caller names, so what replaces it is a boundary — every byte that leaves here is
 /// under one of two directories the server computed for itself, and a caller's string can only
 /// choose within one.
 ///
-/// **The two roots.**
+/// **The two writable roots.**
 ///
 /// - `<session cwd>/artifacts` — where the long working documents live. In this repository that
 ///   path is a symlink into a private sibling checkout, and it is the one symlink this code
@@ -360,16 +363,43 @@ extension RemoteServer {
     func documentsRoute(_ path: String) -> Response {
         var parts = path.dropFirst("/v1/sessions/".count)
             .split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        let sessionID = parts.removeFirst()
+        let rawSessionID = parts.removeFirst()
+        let sessionID = rawSessionID.removingPercentEncoding ?? rawSessionID
         parts.removeFirst() // "documents"
-        guard let session = self.session(withID: sessionID.removingPercentEncoding ?? sessionID),
+        let decoded = parts.map { $0.removingPercentEncoding ?? $0 }
+        // The managed namespace is receipt-addressed rather than live-terminal-addressed.  Check
+        // it before resolving the Session so the exact canonical link survives terminal and task
+        // cleanup.  The stored receipt still binds the supplied Session id and the ordinary route
+        // authentication has already run in RemoteServer.
+        if decoded.first == "project" {
+            let documentPath = decoded.dropFirst().joined(separator: "/")
+            if DurableReportStore.isReservedPath(documentPath) {
+                switch DurableReportStore.shared.read(sessionID: sessionID,
+                                                      publicPath: documentPath) {
+                case .report(let report, let data):
+                    return Self.documentResponse(data: data, mediaType: report.mediaType)
+                case .notFound:
+                    return .error(404, "document_not_found", "No document named that.")
+                case .unavailable:
+                    return .error(503, "durable_report_store_unavailable",
+                                  "The durable report authority is unreadable, unsafe, corrupt, or uncertain.")
+                }
+            }
+        }
+        guard let session = self.session(withID: sessionID),
               let cwd = Targets.workingDirectory(of: session) else {
             return .error(404, "document_not_found", "No document named that.")
         }
         if parts.isEmpty {
-            return .json(["documents": documentsPayload(cwd: cwd, sessionID: sessionID)])
+            switch DurableReportStore.shared.reports(projectDir: cwd) {
+            case .success(let durable):
+                return .json(["documents": documentsPayload(
+                    cwd: cwd, sessionID: sessionID, durable: durable)])
+            case .failure:
+                return .error(503, "durable_report_store_unavailable",
+                              "The durable report authority is unreadable, unsafe, corrupt, or uncertain.")
+            }
         }
-        let decoded = parts.map { $0.removingPercentEncoding ?? $0 }
         switch decoded[0] {
         case "project":
             guard let root = ProjectDocuments.projectRoot(under: cwd) else {
@@ -400,8 +430,14 @@ extension RemoteServer {
                 return .error(404, "document_not_found", "No document named that.")
             }
             let text = located.url.pathExtension.lowercased() == "txt" ? "plain" : "markdown"
-            return Response(status: 200, headers: [
-                "Content-Type": "text/\(text); charset=utf-8",
+            return documentResponse(data: data,
+                                    mediaType: "text/\(text); charset=utf-8")
+        }
+    }
+
+    static func documentResponse(data: Data, mediaType: String) -> Response {
+        Response(status: 200, headers: [
+                "Content-Type": mediaType,
                 "Cache-Control": "private, no-store",
                 // Without this a browser is free to decide a document full of angle brackets is
                 // HTML, and the whole reason only three extensions are served is that none of
@@ -410,7 +446,6 @@ extension RemoteServer {
                 "Content-Security-Policy": "default-src 'none'; script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
                 "X-Robots-Tag": "noindex, nofollow",
             ], body: data)
-        }
     }
 
     /// Everything this project has written down, in the order somebody would want it.
@@ -420,7 +455,8 @@ extension RemoteServer {
     /// draw. Until the page has a document view, a row pointing here would be a control whose
     /// read the client cannot render — so the row belongs to the slice that draws the page, and
     /// this is the address it will point at.
-    func documentsPayload(cwd: String, sessionID: String) -> [[String: Any]] {
+    func documentsPayload(cwd: String, sessionID: String,
+                          durable: [DurableReportStore.Report] = []) -> [[String: Any]] {
         var out: [[String: Any]] = []
         func rows(_ documents: [ProjectDocuments.Document], under address: String,
                   source: String, task: [String: Any]?) {
@@ -438,8 +474,25 @@ extension RemoteServer {
                 out.append(row)
             }
         }
+        // Cloud list rows inherit the requested machine/Session identity.  A report promoted by
+        // an older Session stays readable through its receipt URL, but must not be relabelled as
+        // this Session in a list or the row would construct an address the read boundary refuses.
+        for report in durable where report.sessionID == sessionID {
+            let escaped = ProjectDocuments.escaped(report.publicPath)
+            out.append([
+                "source": "project", "path": report.publicPath,
+                "label": report.publicPath, "bytes": report.byteCount,
+                "modified": Double(report.createdAt),
+                "url": "/v1/sessions/\(ProjectDocuments.escaped(sessionID))/documents/project/\(escaped)",
+            ])
+        }
         if let root = ProjectDocuments.projectRoot(under: cwd) {
-            rows(ProjectDocuments.documents(in: root), under: "project",
+            // This virtual prefix belongs exclusively to the managed store.  A same-spelled file
+            // in a project's writable artifacts directory is neither listed nor allowed to
+            // shadow a receipt-bound report.
+            rows(ProjectDocuments.documents(in: root).filter {
+                !DurableReportStore.isReservedPath($0.path)
+            }, under: "project",
                  source: "project", task: nil)
         }
         for record in Self.documentTaskRecords(cwd: cwd) {

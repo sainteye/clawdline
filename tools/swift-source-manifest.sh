@@ -56,6 +56,7 @@ clawdline_production_sources=(
   Sources/DeployWatch.swift
   Sources/DiagnosticReport.swift
   Sources/DevStack.swift
+  Sources/DurableReportStore.swift
   Sources/Drop.swift
   Sources/GitChanges.swift
   Sources/HookBridge.swift
@@ -190,6 +191,7 @@ clawdline_test_sources=(
   Tests/ConversationTests.swift
   Tests/CoordinatorTests.swift
   Tests/DevStackTests.swift
+  Tests/DurableReportTests.swift
   Tests/HookTests.swift
   Tests/HostPortsTests.swift
   Tests/LandingCurrencyTests.swift

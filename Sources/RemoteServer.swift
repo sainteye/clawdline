@@ -976,7 +976,7 @@ final class RemoteServer: @unchecked Sendable {
                           "The durable orchestrator store is not authoritative; its original bytes were preserved.",
                           extra: ["store": Orchestrator.storeHealthRecord()])
         }
-        if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) ?? VerificationRunLedgerHTTP.route(request, machine: orchestratorAuthed) { return response }
+        if let response = writeOriginRefusal(request) ?? CoordinatorSuccessionHTTP.route(request, orchestratorAuthed: orchestratorAuthed, server: self) ?? VerificationRunLedgerHTTP.route(request, machine: orchestratorAuthed) ?? durableReportPromotionRoute(request, orchestratorAuthed: orchestratorAuthed) { return response }
         if let response = ProjectBoardHTTP.route(request, machine: orchestratorAuthed,
                                                  permission: permission(for: request)) { return response }
         if let response = ProjectTimelineHTTP.route(request, machine: orchestratorAuthed,

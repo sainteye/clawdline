@@ -1455,11 +1455,19 @@ not have its session id, and a name it typed itself is one it can keep true as t
 When the receiver does make that call, its name **covers** the app's label rather than adding to it;
 the label is the fallback for the receivers who never call, which is most of them.
 
-**2. Durably archive anything volatile you cite, before citing it.** A design document living in a
-session scratchpad, an artifact that exists only as a URL, a file under `/tmp`: copy it into the
-repository — `artifacts/` for a record, `docs/` for a standing answer — and cite the copy. References
-are not duplicated; a volatile source is the exception. This is the step people skip and the one that
-breaks the chain a week later.
+**2. Durably archive anything volatile you cite, before citing it.** An ordinary task artifact is
+temporary even when `result.json` names it. For a Markdown or text report the authenticated result
+already lists under `artifacts/`, explicitly promote it with
+`POST /v1/orchestrator/durable-reports/promotions` while the task record and Root Session are still
+available. Use a fresh lowercase UUID as both `request_id` and `Idempotency-Key`; send `task_id`, the
+Root's terminal-neutral `session_id`, the path relative to `artifacts/`, and a title. Cite the returned
+promotion receipt and canonical Cloud document URL, not the `/tmp` path. An exact replay is safe;
+it returns the same receipt after ordinary whole-task cleanup while the durable object still
+verifies. Changed bytes or provenance conflict. The receipt is narrative-only and must not be described as
+verification, acceptance or landing. A volatile source that is not an authenticated task artifact
+must first become a standing `docs/` answer or an authenticated task deliverable; the promotion API
+does not accept arbitrary filesystem paths or URLs. References are not duplicated; a volatile source
+is the exception. This is the step people skip and the one that breaks the chain a week later.
 
 **3. Build the package.**
 
