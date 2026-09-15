@@ -139,6 +139,31 @@ const IMAGE_READS_IN_FLIGHT = 3;
 const MACHINE_REPLY_SESSION = "__clawdline_machine__";
 
 /**
+ * How many pictures stay in memory once read, and how big they may be together. A transcript is
+ * drawn again for many reasons — a new message, a reopened session — and each draw used to read
+ * every picture in it again: 137 KB, five and six times a day for the same id, on a phone.
+ */
+const IMAGE_CACHE_MAX_ENTRIES = 64;
+const IMAGE_CACHE_MAX_BYTES = 32 * 1024 * 1024;
+const IMAGE_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
+
+/**
+ * The relay's per-connection subscription ceiling (`MAX_SUBSCRIPTIONS` in the relay's
+ * `lib/routing.ts`). A subscribe that would pass it is refused whole, so the channels a page no
+ * longer reads have to be let go before it is reached; and a `t/` channel held with nobody reading
+ * it still receives every other device's answers on it.
+ */
+const RELAY_SUBSCRIPTION_LIMIT = 8;
+const SUBSCRIPTION_IDLE_MS = 2 * 60 * 1000;
+
+/**
+ * How long a machine the relay called `machine_offline` is not asked again: five seconds, doubling
+ * while it stays offline, never more than five minutes. A live envelope from it ends the wait.
+ */
+const MACHINE_OFFLINE_FIRST_MS = 5 * 1000;
+const MACHINE_OFFLINE_MAX_MS = 5 * 60 * 1000;
+
+/**
  * How long a command that waits only for the relay's word waits for it. The relay answers every
  * publish with `ack` or `publish_error` in the same turn (`account-do.ts`), so this is a bound on
  * a socket that has stopped talking, not a guess at latency; at the bound the command resolves as
@@ -337,11 +362,25 @@ export class CloudClient {
         }
         this.WebSocket = options.WebSocket || globalThis.WebSocket;
         this.handlers = options.handlers || null;
+        this.now = typeof options.now === "function" ? options.now : function () { return Date.now(); };
         this.socket = null;
         this.ready = false;
         this.connectionAnnounced = false;
         this.listeners = new Set();
         this.pendingSubscriptions = new Set();
+        // The channels the relay holds for this socket, oldest use first, and how many reads wait on
+        // each. The relay keeps at most `RELAY_SUBSCRIPTION_LIMIT` per connection and refuses the
+        // whole frame past it, so an unheld channel is let go once it idles or when room is needed.
+        this.socketSubscriptions = new Map();
+        this.subscriptionHolds = new Map();
+        this.subscriptionLimit = options.subscriptionLimit || RELAY_SUBSCRIPTION_LIMIT;
+        this.subscriptionIdleMs = options.subscriptionIdleMs || SUBSCRIPTION_IDLE_MS;
+        // Set by `keepConnected`: where `revalidate` goes, because the socket's lifecycle lives there.
+        this.lifecycle = null;
+        // The relay's own `token_expires_at - connected_at`, and when this client opened the socket
+        // that number is counted from (`_tokenRemainingMs`). Durations only: no clock is compared.
+        this.tokenLifetimeMs = null;
+        this.socketOpenedAt = null;
         // A short-lived viewer token creates a new socket and a new CloudClient. The relay then
         // realigns one retained `s/<machine>/<session>` channel at a time, in no inventory order.
         // Starting that reconstruction from an empty Map made the first envelope look like the
@@ -377,6 +416,16 @@ export class CloudClient {
         this.voiceHostChoice = sameViewer && typeof prior.voiceHostChoice === "string"
             ? prior.voiceHostChoice : null;
         this.readWaiters = new Map();
+        // Pictures already read, by machine and artifact id. An id names one set of bytes for as long
+        // as it exists (`SessionImageArtifactStore` mints a fresh UUID per import and never writes
+        // another picture under it), so a transcript drawn again draws from here. Shared, not copied,
+        // across a renewal: the same viewer's pictures do not change with its credential.
+        this.imageCache = sameViewer && prior.imageCache && prior.imageCache.entries instanceof Map
+            ? prior.imageCache : { entries: new Map(), bytes: 0 };
+        // Machines the relay just said are not connected (`machine_offline`), with a window that
+        // doubles while they stay so. Any live envelope from the machine ends it.
+        this.machineOffline = sameViewer && prior.machineOffline instanceof Map
+            ? new Map(prior.machineOffline) : new Map();
         this.imageReadsInFlight = options.imageReadsInFlight || IMAGE_READS_IN_FLIGHT;
         this.imageReadQueue = [];
         this.imageReadsRunning = 0;
@@ -440,6 +489,14 @@ export class CloudClient {
         // envelope from one does not open IndexedDB again. One client's memory only: a renewal asks
         // again, and a pairing completed in this page clears the machine (`forgetMachinePairingAnswer`).
         this.pairingAbsent = new Set();
+        // The same memory for the two other answers the key store gives the receive path: a pairing
+        // it holds only part of (`machine_key_incomplete`), and a sender key it has or has not. Each
+        // envelope used to open IndexedDB for them again — four opens for an incomplete pairing.
+        // One client's memory, like `pairingAbsent`: a renewal asks again; a pairing completed in
+        // this page, or a verification that fails under a remembered key, forgets.
+        this.pairingIncomplete = new Map();
+        this.storeSenderKeys = new Map();
+        this.senderKeyAbsent = new Set();
         this.pairingSeen = sameViewer ? new Set(prior.pairingSeen) : new Set();
         this.pendingBySequence = new Map();
         this.lastRelayError = null;
@@ -476,6 +533,8 @@ export class CloudClient {
         var ws = new this.WebSocket(this.url,
             ["clawdline.v1", "clawdline.token." + this.deviceToken]);
         this.socket = ws;
+        this.socketOpenedAt = this.now();
+        this.socketSubscriptions = new Map();
         var self = this;
         ws.onmessage = function (event) {
             self.messageChain = self.messageChain.then(function () {
@@ -492,7 +551,10 @@ export class CloudClient {
             // A socket this client closed itself (`stop`, `retire`) has already failed what it
             // held, and its trail may belong to the replacement by now: nothing below is its to say.
             var ours = self.socket === ws;
-            if (ours) self.socket = null;
+            if (ours) {
+                self.socket = null;
+                self.socketSubscriptions = new Map();
+            }
             self.ready = false;
             // B3: the relay's own word for why, which used to be thrown away with the event. The
             // last `error` frame names it best; the close code is the fallback (§11.7).
@@ -547,6 +609,7 @@ export class CloudClient {
     _shutdown(failure, acknowledgementFailure) {
         var ws = this.socket;
         this.socket = null;
+        this.socketSubscriptions = new Map();
         this.ready = false;
         this.closedFailure = failure;
         this._disarmViewerEvents();
@@ -655,6 +718,8 @@ export class CloudClient {
         this.connectionAnnounced = true;
         this.lastRelayError = null;
         this.closedFailure = null;
+        this.tokenLifetimeMs = Number.isFinite(frame.token_expires_at) && Number.isFinite(frame.connected_at) &&
+            frame.token_expires_at > frame.connected_at ? frame.token_expires_at - frame.connected_at : null;
         this.trail.connectionState("live");
         this._armViewerEvents();
         this._openTabChannel();
@@ -663,22 +728,77 @@ export class CloudClient {
         if (this.handlers && this.handlers.conn) this.handlers.conn("live");
         this._emit({ type: "connection", state: "live", account: this.account, device: this.deviceID });
         if (this.pendingSubscriptions.size) {
-            this._send({ type: "subscribe", channels: Array.from(this.pendingSubscriptions) });
+            // Newest last; past the relay's ceiling the oldest are forgotten rather than sent in a
+            // frame the relay would refuse whole, which would leave every read on this socket deaf.
+            var channels = Array.from(this.pendingSubscriptions).slice(-this.subscriptionLimit);
+            this.pendingSubscriptions = new Set(channels);
+            var at = this.now();
+            this.socketSubscriptions = new Map(channels.map(function (channel) { return [channel, at]; }));
+            this._send({ type: "subscribe", channels: channels });
         }
+    }
+
+    /**
+     * How long this socket's device token has left by the relay's own count, or null when the relay
+     * did not say. `keepConnected` renews from this rather than from the API's `expires_at` read
+     * against this device's clock.
+     */
+    _tokenRemainingMs() {
+        if (this.tokenLifetimeMs === null || this.socketOpenedAt === null) return null;
+        return this.tokenLifetimeMs - Math.max(0, this.now() - this.socketOpenedAt);
+    }
+
+    /**
+     * The page asking whether what it shows is still true (`main.js`, on `visibilitychange`). For
+     * this transport that is a question about the socket, and the socket's lifecycle belongs to
+     * `keepConnected`, which set `lifecycle`: a page back from a long hide gets a fresh socket and
+     * the relay's realignment. Called for its effect; a client with no lifecycle does nothing.
+     */
+    revalidate(reason) {
+        if (typeof this.lifecycle !== "function") return;
+        try { this.lifecycle(reason); } catch (e) { /* the page's hook must never throw into it */ }
+    }
+
+    /**
+     * Work somebody pressed for and is still waiting on: an `action:` answer, or a keypress waiting
+     * for the relay's word. `keepConnected` does not retire a hidden page's socket under it.
+     */
+    _unsettledWork() {
+        var count = 0;
+        this.readWaiters.forEach(function (waiters) { if (waiters.action) count += 1; });
+        this.pendingBySequence.forEach(function (pending) { if (pending.ack) count += 1; });
+        return count;
     }
 
     async _senderKey(sender, envelope, probe) {
         var value = this.senderKeys.get(sender);
         var source = value === undefined ? null : "memory";
-        if (value === undefined && this.resolveSenderKey) {
+        if (value === undefined && this.storeSenderKeys.has(sender)) {
+            value = this.storeSenderKeys.get(sender);
+            source = "memory";
+        } else if (value === undefined && this.senderKeyAbsent.has(sender)) {
+            value = null;
+            source = "memory";
+        } else if (value === undefined && this.resolveSenderKey) {
             source = "store";
             if (probe) probe.senderKeySource = source;
             var asked = Date.now();
             try { value = await this.resolveSenderKey(sender, envelope); }
             finally { if (probe) probe.senderKeyLookupMs = Math.max(0, Date.now() - asked); }
+            // The store's answer, kept for the next envelope from this sender: a key until a
+            // verification under it fails (`_openEnvelopeFrame`), none until a pairing completes here.
+            if (typeof sender === "string" && sender) {
+                if (value && typeof value === "object" && !(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value)) {
+                    boundedSet(this.storeSenderKeys, sender, value, 16);
+                } else if (!value) {
+                    this.senderKeyAbsent.add(sender);
+                    if (this.senderKeyAbsent.size > 16) {
+                        this.senderKeyAbsent.delete(this.senderKeyAbsent.values().next().value);
+                    }
+                }
+            }
         }
-        // Observation only: whether a key was found, and where. The key itself is not kept here
-        // — a store answer is still read again for the next envelope, exactly as before.
+        // Observation only: whether a key was found, and where.
         if (probe) {
             probe.senderKeySource = source;
             probe.senderKeyFound = !!value;
@@ -719,11 +839,28 @@ export class CloudClient {
         if (value === undefined && this.pairingAbsent.has(machine)) {
             value = null;
             source = "memory";
+        } else if (value === undefined && this.pairingIncomplete.has(machine)) {
+            // The store's typed answer for this machine a moment ago, said again without asking it.
+            if (probe) {
+                probe.pairingSource = "memory";
+                probe.pairingLookupMs = 0;
+            }
+            var known = this.pairingIncomplete.get(machine);
+            throw Object.assign(new Error(known.message), { code: known.code });
         } else if (value === undefined && this.resolveMachinePairing) {
             source = "store";
             if (probe) probe.pairingSource = source;
             var asked = Date.now();
             try { value = await this.resolveMachinePairing(machine); }
+            catch (error) {
+                // Only the typed half-pairing is remembered. A store that failed to answer at all —
+                // an iOS app resumed before IndexedDB is back — is asked again at the next envelope.
+                if (error && error.code === "machine_key_incomplete") {
+                    boundedSet(this.pairingIncomplete, machine,
+                        { code: error.code, message: String(error.message || error.code) }, 16);
+                }
+                throw error;
+            }
             finally { if (probe) probe.pairingLookupMs = Math.max(0, Date.now() - asked); }
             if (value) {
                 this.machinePairings.set(machine, value);
@@ -773,7 +910,10 @@ export class CloudClient {
      */
     forgetMachinePairingAnswer(machine) {
         this.pairingAbsent.delete(machine);
+        this.pairingIncomplete.delete(machine);
         this.unpairedMachines.delete(machine);
+        // The pairing just stored named a sender this client may have been told has no key.
+        this.senderKeyAbsent.clear();
     }
 
     /**
@@ -872,6 +1012,11 @@ export class CloudClient {
             var master = pairing ? pairing.masterKey : await this._masterKey(envelope.key_id);
             clear = await openEnvelope(envelope, master, key, probe);
         } catch (error) {
+            // A remembered store key that no longer verifies is forgotten, so the next envelope
+            // reads the store again: another tab of this browser may have paired since.
+            if (!pairing && this.storeSenderKeys.get(envelope.sender) === key) {
+                this.storeSenderKeys.delete(envelope.sender);
+            }
             // Relay readiness proves the viewer's signing identity, not that the account content
             // key in this browser still matches the Mac. WebCrypto otherwise reports a bare
             // OperationError, which left the page claiming "live" over an empty Session list.
@@ -922,6 +1067,8 @@ export class CloudClient {
             this.pairingSeen.add(routedMachine);
         }
         if (routedMachine) this.unpairedMachines.delete(routedMachine);
+        // A live envelope is the machine talking now; a realigned one is only what it said last.
+        if (routedMachine && !realign) this.machineOffline.delete(routedMachine);
         this._sawAuthenticatedEnvelope(envelope, channel, routedMachine);
         probe.stage = "sequence";
         var previous = this.sequenceBySender.get(envelope.sender);
@@ -1210,7 +1357,17 @@ export class CloudClient {
                         envelope: envelope, realign: realign, selfHealed: true });
                 }
             }
-            this._settleRead(settles, answer.body, answer.error);
+            // **A retained answer answers only a request it names.** Subscribing to `t/` makes the
+            // relay send that channel's last envelope at once (`#changeSubscriptions`), and the
+            // subscribe goes out just before the read it is for. So a `transcript`, `info.full` or
+            // `git` waiter was settled by whatever that channel last carried — minutes old, and
+            // possibly another device's — and the command it had registered was then withdrawn as
+            // `cloud_read_settled` before the Mac was asked. The page drew the old answer and asked
+            // again. A name carrying this page's request id (`read:`/`action:`) cannot be someone
+            // else's answer, and `image.<id>` names bytes that never change, so those still settle.
+            if (!realign || /^(read|action):/.test(answer.read) || /^image\./.test(answer.read)) {
+                this._settleRead(settles, answer.body, answer.error);
+            }
             this._emit({ type: "read", read: answer.read, data: answer.body,
                 error: answer.error, identity: transcriptIdentity, envelope: envelope,
                 realign: realign });
@@ -1850,8 +2007,13 @@ export class CloudClient {
             if (!Object.keys(kept).length && previous && previous.machine) kept = previous.machine;
             if (!build && previous) build = previous.build;
             if (!Object.keys(kept).length && !build) return;
+            // Every `orch/` envelope carries the descriptor, and it almost never changes. Writing the
+            // whole table to `localStorage` for each one was synchronous storage work per envelope.
+            var unchanged = !!previous && previous.build === build &&
+                JSON.stringify(previous.machine) === JSON.stringify(kept);
             this.machineDescriptors.delete(machine);
             this.machineDescriptors.set(machine, { machine: kept, build: build, at_ms: this.viewerEvents.now() });
+            if (unchanged) return;
             if (this.machineDescriptors.size > 16) {
                 this.machineDescriptors.delete(this.machineDescriptors.keys().next().value);
             }
@@ -2475,11 +2637,44 @@ export class CloudClient {
         catch (error) { return Promise.reject(error); }
         var artifact = String(id == null ? "" : id);
         if (!artifact) return Promise.reject(cloudError("malformed_read", "image() needs an artifact id"));
+        var cacheKey = identity.machine + " " + artifact;
+        var cached = this._cachedImage(cacheKey);
+        if (cached) return Promise.resolve(cached);
         var self = this;
         return this._whenImageSlotFree(function () {
+            // A twin of this read queued behind the same slot may have filled the cache meanwhile.
+            var filled = self._cachedImage(cacheKey);
+            if (filled) return filled;
             return self._read(identity, "image", { id: artifact }, "image." + artifact)
-                .then(function (body) { return imageAnswerBytes(artifact, body); });
+                .then(function (body) {
+                    var answer = imageAnswerBytes(artifact, body);
+                    self._rememberImage(cacheKey, answer);
+                    return answer;
+                });
         });
+    }
+
+    /** A picture already read, moved to the newest end; or null. Only answers are kept, never refusals. */
+    _cachedImage(key) {
+        var entries = this.imageCache.entries;
+        var answer = entries.get(key);
+        if (!answer) return null;
+        entries.delete(key);
+        entries.set(key, answer);
+        return answer;
+    }
+
+    _rememberImage(key, answer) {
+        var cache = this.imageCache;
+        var size = answer && answer.bytes ? answer.bytes.length : 0;
+        if (!size || size > IMAGE_CACHE_MAX_ENTRY_BYTES || cache.entries.has(key)) return;
+        cache.entries.set(key, answer);
+        cache.bytes += size;
+        while (cache.entries.size > IMAGE_CACHE_MAX_ENTRIES || cache.bytes > IMAGE_CACHE_MAX_BYTES) {
+            var oldest = cache.entries.keys().next().value;
+            cache.bytes -= cache.entries.get(oldest).bytes.length;
+            cache.entries.delete(oldest);
+        }
     }
 
     /**
@@ -2550,9 +2745,14 @@ export class CloudClient {
                 waiters.waiting.push({ resolve: resolve, reject: reject });
                 return;
             }
+            // Before a waiter, a subscription or a sequence: the relay said a moment ago that this
+            // machine is not connected, and asking again now would only hear that again.
+            var offline = self._offlineRefusal(identity.machine);
+            if (offline) { reject(offline); return; }
             waiters = { waiting: [{ resolve: resolve, reject: reject }], timer: null, ref: null,
                 machine: identity.machine, type: type, request: extra && typeof extra.request === "string"
                     ? extra.request : null,
+                action: /^action:/.test(answer), channel: null,
                 retireUncertain: !!(readOptions && readOptions.retireUncertain) };
             self.readWaiters.set(key, waiters);
             waiters.timer = self.setTimeout(function () {
@@ -2561,8 +2761,10 @@ export class CloudClient {
                 self._readTimedOut(key, waiters, probe);
             }, timeoutMs || self.readTimeoutMs);
             try {
-                self.subscribe(["t/" + channelSegment(identity.machine) + "/"
-                    + channelSegment(identity.session)]);
+                var channel = "t/" + channelSegment(identity.machine) + "/" + channelSegment(identity.session);
+                self.subscribe([channel]);
+                waiters.channel = channel;
+                self.subscriptionHolds.set(channel, (self.subscriptionHolds.get(channel) || 0) + 1);
             } catch (error) {
                 self._settleRead(key, null, cloudError("malformed_read", error.message));
                 return;
@@ -2625,6 +2827,7 @@ export class CloudClient {
         if (!waiters) return;
         this.readWaiters.delete(key);
         if (waiters.timer !== null) this.clearTimeout(waiters.timer);
+        if (waiters.channel) this._releaseSubscription(waiters.channel);
         // The machine's own word that it does not know this command: later requests for the word
         // are refused here (`_unsupportedRefusal`) and the fan-out reads leave the machine out.
         if (error && error.code === "unknown_command" && waiters.machine && waiters.type) {
@@ -2690,8 +2893,12 @@ export class CloudClient {
         if (pending && typeof frame.ch === "string" && frame.ch !== "ctl/" + channelSegment(pending.machine)) {
             return;
         }
+        var target = pending ? pending.machine : ctlMachine(frame.ch);
         if (!refusal && frame.status === "machine_offline") {
             refusal = failureFromRelay("machine_offline", { message: "the Mac is not connected to the relay" });
+            if (target) this._rememberMachineOffline(target);
+        } else if (!refusal && frame.status === "delivered" && target) {
+            this.machineOffline.delete(target);
         }
         if (!refusal) {
             this.trail.step(ref, "relayed");
@@ -2705,6 +2912,26 @@ export class CloudClient {
         refusal.ref = ref;
         if (pending) this._failPending(seq, refusal);
         else this.trail.refused(ref, refusal);
+    }
+
+    /** One more `machine_offline` from the relay for `machine`: the next window is twice the last. */
+    _rememberMachineOffline(machine) {
+        var at = this.now();
+        var seen = this.machineOffline.get(machine);
+        var strikes = seen ? Math.min(seen.strikes + 1, 16) : 1;
+        var window = Math.min(MACHINE_OFFLINE_MAX_MS, MACHINE_OFFLINE_FIRST_MS * Math.pow(2, strikes - 1));
+        boundedSet(this.machineOffline, machine, { strikes: strikes, until: at + window }, 16);
+    }
+
+    /**
+     * The relay's `machine_offline`, said again here while its window lasts: the same code, layer
+     * and retryability a page already branches on, with no sequence spent and nothing sent.
+     */
+    _offlineRefusal(machine) {
+        var seen = typeof machine === "string" ? this.machineOffline.get(machine) : null;
+        if (!seen || this.now() >= seen.until) return null;
+        return failureFromRelay("machine_offline", {
+            message: "the Mac was not connected to the relay a moment ago" });
     }
 
     _failPending(seq, failure) {
@@ -2808,14 +3035,71 @@ export class CloudClient {
         this.tabChannel = null;
     }
 
+    /**
+     * Hold `channels` on this socket. A channel already held is only marked as used: every read
+     * used to send its `subscribe` again, and the relay answers each one with a `subscriptions`
+     * frame. Room is made first by letting go of channels nobody is reading (`_trimSubscriptions`).
+     */
     subscribe(channels) {
         if (!Array.isArray(channels) || !channels.length) throw new TypeError("subscribe needs channels");
+        channels.forEach(function (channel) { parseEnvelopeChannel(channel); });
+        var at = this.now();
+        var fresh = [];
         channels.forEach((channel) => {
-            parseEnvelopeChannel(channel);
+            this.pendingSubscriptions.delete(channel);
             this.pendingSubscriptions.add(channel);
+            if (this.socketSubscriptions.has(channel)) {
+                this.socketSubscriptions.delete(channel);
+                this.socketSubscriptions.set(channel, at);
+            } else if (fresh.indexOf(channel) < 0) {
+                fresh.push(channel);
+            }
         });
-        if (this.ready) this._send({ type: "subscribe", channels: channels });
+        if (!this.ready) return this;
+        this._trimSubscriptions(fresh.length, channels);
+        if (!fresh.length) return this;
+        this._send({ type: "subscribe", channels: fresh });
+        fresh.forEach((channel) => this.socketSubscriptions.set(channel, at));
         return this;
+    }
+
+    /** A read on `channel` settled: one fewer holder, and its idle time counts from now. */
+    _releaseSubscription(channel) {
+        var holds = (this.subscriptionHolds.get(channel) || 0) - 1;
+        if (holds > 0) this.subscriptionHolds.set(channel, holds);
+        else this.subscriptionHolds.delete(channel);
+        if (this.socketSubscriptions.has(channel)) {
+            this.socketSubscriptions.delete(channel);
+            this.socketSubscriptions.set(channel, this.now());
+        }
+    }
+
+    /**
+     * Let go of held channels no read is waiting on: every one idle for `subscriptionIdleMs`, and
+     * then the least recently used until `incoming` more fit under the relay's ceiling. Lazy — done
+     * when the next subscription is made — so it adds no timer; a token renewal starts a socket with
+     * none at all. Never a channel in `keep`, and never one a read still waits on.
+     */
+    _trimSubscriptions(incoming, keep) {
+        var at = this.now();
+        var holds = this.subscriptionHolds;
+        var drop = [];
+        var free = [];
+        this.socketSubscriptions.forEach((usedAt, channel) => {
+            if (keep.indexOf(channel) >= 0 || holds.get(channel)) return;
+            if (at - usedAt >= this.subscriptionIdleMs) drop.push(channel);
+            else free.push(channel);
+        });
+        var over = this.socketSubscriptions.size - drop.length + incoming - this.subscriptionLimit;
+        for (var i = 0; i < free.length && over > 0; i += 1, over -= 1) drop.push(free[i]);
+        if (!drop.length) return;
+        drop.forEach((channel) => {
+            this.socketSubscriptions.delete(channel);
+            this.pendingSubscriptions.delete(channel);
+        });
+        for (var start = 0; start < drop.length; start += this.subscriptionLimit) {
+            this._send({ type: "unsubscribe", channels: drop.slice(start, start + this.subscriptionLimit) });
+        }
     }
 
     /**
@@ -3267,6 +3551,8 @@ export class CloudClient {
         if (!this.allowWrites) throw cloudError("cloud_read_only", "cloud writes are disabled");
         var unsupported = this._unsupportedRefusal(machine, type);
         if (unsupported) throw unsupported;
+        var offline = this._offlineRefusal(machine);
+        if (offline) throw offline;
         if (!this.ready) throw this.closedFailure || cloudError("offline", "the cloud connection is not ready");
         if (!this.devicePrivateKey || !this.deviceID) throw cloudError("missing_device_key", "the viewer device key is unavailable");
         var machinePairing = await this._outboundMachinePairing(machine);
@@ -3334,6 +3620,20 @@ function noticeRow(entry) {
         expected_key_id: typeof entry.expected_key_id === "string" ? entry.expected_key_id.slice(0, 64) : null,
         highest_seq: Number.isSafeInteger(entry.highest_seq) ? entry.highest_seq : null
     };
+}
+
+/** `map[key] = value` as the newest entry, dropping the oldest past `limit`. */
+function boundedSet(map, key, value, limit) {
+    map.delete(key);
+    map.set(key, value);
+    while (map.size > limit) map.delete(map.keys().next().value);
+}
+
+/** The machine a `ctl/<machine>` channel names, decoded; null for anything else. */
+function ctlMachine(ch) {
+    if (typeof ch !== "string" || ch.indexOf("ctl/") !== 0) return null;
+    try { return decodedChannelSegment(ch.slice("ctl/".length)) || null; }
+    catch (e) { return null; }
 }
 
 function countTable(value) {

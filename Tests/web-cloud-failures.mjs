@@ -276,7 +276,7 @@ await check("T-B3 a non-closing relay error does not rename a later network clos
 
 // Called for their effect or read at once, never awaited by a page; called here too, and must not throw.
 const LIFECYCLE = new Set(["events", "subscribe", "stop", "retire", "forgetMachinePairingAnswer",
-    "machineAccess", "machineDescriptor"]);
+    "machineAccess", "machineDescriptor", "revalidate"]);
 // Cannot fail from a cached answer, or succeed by opening a socket; still held to "a thenable".
 const NEED_NOT_REJECT = new Set(["sessions", "tasks", "machines", "voiceHost", "start", "refresh", "whenReady"]);
 
@@ -960,7 +960,11 @@ await check("viewer events · an envelope failing validateEnvelope is stage vali
 
 await check("viewer events · a legacy pin store that rejects before the machine is bound is stage sender_key_lookup with its DOMException name", async function () {
     let storeDown = false;
+    // The earlier open is under mac-02's exact pairing. A sender key the store already answered is
+    // remembered for this client, so the pin store is asked — and can fail — only for a sender whose
+    // key this client has not yet been given.
     const { client, socket, log, errors } = await viewerFleet({ orch: false, client: { senderKeys: {},
+        machinePairings: { "mac-02": pairingFor("mac-02") },
         resolveSenderKey: (sender) => storeDown
             ? Promise.reject(Object.assign(new Error("The operation failed for reasons unrelated to the database itself"), { name: "UnknownError" }))
             : Promise.resolve(sender === DEVICE ? senderKey : null) } });

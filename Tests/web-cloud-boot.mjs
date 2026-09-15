@@ -723,6 +723,8 @@ function fakeClient() {
     const keeper = boot.keepConnected(session, {
         now: function () { return 1_000; },
         renewalLeadMs: 2_000,
+        // Below this ten-second token's lead time, so the lead is what this check reads.
+        renewalFloorMs: 1_000,
         sleep: function (ms) { sleeps.push(ms); return Promise.resolve(); },
         onState: function (update) { states.push(update.state); }
     });
