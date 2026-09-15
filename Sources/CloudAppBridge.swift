@@ -1375,11 +1375,25 @@ actor CloudAppBridge {
     /// (20 s) and the 12–20 s Session-write latency of the 2026-09-13 calibration still land it
     /// inside the five minutes.
     static let sessionPresenceIntervalMilliseconds: UInt64 = 180_000
-    /// A viewer's `orchestrator` request re-sends the orchestrator snapshot — hundreds of kilobytes,
-    /// fanned out by the relay to every viewer on the account — at most once per this long after
-    /// the Mac's last `orch/` publication of any kind. A request inside it is owed: answered by the
-    /// next publication, or by a re-send once the floor has passed (`scheduleOrchestratorResend`).
+    /// A viewer's `orchestrator` request re-sends the orchestrator snapshot — fanned out by the
+    /// relay to every viewer on the account — at most once per this long after the Mac's last full
+    /// `orch/` snapshot. A request inside it is owed: answered by the next snapshot, or by a re-send
+    /// once the floor has passed (`scheduleOrchestratorResend`). The same floor bounds how long a
+    /// status-only notice stands in the relay's replay before the snapshot goes out again
+    /// (`scheduleOrchestratorRefill`).
     static let orchestratorResendFloorMilliseconds: UInt64 = 60_000
+    /// Full `orch/` snapshots go out at least this far apart (docs/cloud.md, *The `orch/` snapshot
+    /// a Cloud viewer is sent*). The first change after a quiet interval goes out at once; the
+    /// changes behind it inside the interval become one publication of the newest state when it
+    /// has passed. Measured 2026-09-15 on this Mac: 118–1,067 orchestrator publications an hour
+    /// while children ran, every one a whole snapshot to every viewer. Five seconds holds a
+    /// sustained burst to twelve a minute, is the interval the notice and the `sessions.snapshot`
+    /// pass already use, and no reader waits on it: a snippet or schedule written from a phone is
+    /// read back with `fresh`, not from this channel.
+    static let orchestratorPublicationIntervalMilliseconds: UInt64 = 5_000
+    /// Snapshot keys that move without anything a viewer reads moving: `at` is when the Mac built
+    /// the document, and `cloud_status` is spliced in at publication and has its own notice.
+    static let freshnessOnlyOrchestratorFields: Set<String> = ["at", "cloud_status"]
     /// Row fields that move with every SessionWatch reading whether or not anything a viewer reads
     /// did, so they never make a row different. A row that differs elsewhere is still published
     /// whole, these values included. Each one was checked against every reader in
@@ -1480,9 +1494,30 @@ actor CloudAppBridge {
     private let noticesEnabled: Bool
     private let noticeIntervalMilliseconds: UInt64
     private var noticeTask: Task<Void, Never>?
+    /// When the last `cloud_status` digest went out, in a snapshot or a status-only notice.
     private var lastNoticeAt: UInt64?
-    /// The newest orchestrator snapshot, so a notice can be republished inside it (§11.2).
+    /// The newest orchestrator snapshot the Mac handed over, parsed, whether or not it has been
+    /// published, and its bytes. What goes out is its Cloud projection
+    /// (`RemoteServer.cloudOrchestratorProjection`).
+    private var lastOrchestratorSnapshot: [String: Any]?
     private var lastOrchestratorPayload: Data?
+    private let orchestratorPublicationIntervalMilliseconds: UInt64
+    /// What the last full `orch/` snapshot was compared as, and each task record in it.
+    private var publishedOrchestratorIdentity: Data?
+    private var publishedOrchestratorRecords: Set<Data> = []
+    /// When the last full `orch/` snapshot started going out. Notices are not counted: they carry
+    /// no task record, so they neither answer a viewer that lacks the snapshot nor count against
+    /// the publication interval.
+    private var lastOrchestratorSnapshotAt: UInt64?
+    /// The one publication a burst inside the interval is coalesced into.
+    private var orchestratorCoalesceTask: Task<Void, Never>?
+    /// Set when a status-only notice went out after the last full snapshot, which is when the
+    /// relay's replay of `orch/` became that notice; the snapshot goes out again at the floor.
+    private var orchestratorDisplacedAt: UInt64?
+    private var orchestratorRefillTask: Task<Void, Never>?
+    /// `orch/` publications run one at a time, whoever started them, so an older snapshot can never
+    /// be sealed after a newer one.
+    private var orchestratorPublicationTail: Task<Void, Never>?
 
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
@@ -1559,9 +1594,12 @@ actor CloudAppBridge {
             try await Task.sleep(nanoseconds: $0 * 1_000_000)
         },
         sessionSnapshotIntervalMilliseconds: UInt64 =
-            CloudAppBridge.sessionSnapshotIntervalMilliseconds
+            CloudAppBridge.sessionSnapshotIntervalMilliseconds,
+        orchestratorPublicationIntervalMilliseconds: UInt64 =
+            CloudAppBridge.orchestratorPublicationIntervalMilliseconds
     ) {
         self.sessionSnapshotIntervalMilliseconds = sessionSnapshotIntervalMilliseconds
+        self.orchestratorPublicationIntervalMilliseconds = orchestratorPublicationIntervalMilliseconds
         self.transcriptSignatures = transcriptSignatures
         self.transcriptRepublicationIntervalMilliseconds = transcriptRepublicationIntervalMilliseconds
         self.waitMilliseconds = waitMilliseconds
@@ -1702,6 +1740,7 @@ actor CloudAppBridge {
                 || !lifecycleRefreshTasks.isEmpty || !publicationTasks.isEmpty
                 || transcriptReportTask != nil || transcriptRepublicationTask != nil
                 || sessionSnapshotTask != nil || orchestratorResendTask != nil
+                || orchestratorCoalesceTask != nil || orchestratorRefillTask != nil
         else { return }
         await transport.setInboundRefusalHandler(nil)
         await transport.setInboundDropHandler(nil)
@@ -1710,7 +1749,7 @@ actor CloudAppBridge {
         noticeTask?.cancel()
         noticeTask = nil
         let transcriptWork = stopTranscriptSignatures()
-        let sessionSnapshot = stopSessionSnapshots()
+        let sessionSnapshot = stopSessionSnapshots() + stopOrchestratorPublications()
         lifecycleGeneration &+= 1
         starting = false
         running = false
@@ -1765,6 +1804,13 @@ actor CloudAppBridge {
         latestSessionEnvelope = nil
         lastSessionRefreshAt = nil
         sessionPublicationTail = nil
+        // After the joins, so a publication that finished while stopping cannot leave a record of
+        // itself behind: the next start publishes whole on its first ready generation.
+        publishedOrchestratorIdentity = nil
+        publishedOrchestratorRecords = []
+        lastOrchestratorSnapshotAt = nil
+        orchestratorDisplacedAt = nil
+        orchestratorPublicationTail = nil
     }
 
     func isRunning() -> Bool { running }
@@ -1895,6 +1941,7 @@ actor CloudAppBridge {
 
         let startedAt = nowMilliseconds()
         let current = Set(ids)
+        let listedBefore = publishedSessionIDs
         var changed = 0
         var skipped = 0
         var resent = 0
@@ -1980,6 +2027,9 @@ actor CloudAppBridge {
             inventoryPublished = true
         }
         if refresh { lastSessionRefreshAt = nowMilliseconds() }
+        if publishedSessionIDs != listedBefore {
+            orchestratorListedSessionsChanged(lifecycleGeneration: ownedGeneration)
+        }
         trackTranscriptSignatures(lifecycleGeneration: ownedGeneration)
         diagnostic("cloud: sessions published id=\(publicationID ?? "direct") "
             + "rows=\(sessions.count) changed=\(changed) "
@@ -2220,15 +2270,18 @@ actor CloudAppBridge {
     /// Runs as a Session-channel publication, so no scan row or transcript republication can
     /// interleave with it. What goes out is what a transport-ready force sends: the last
     /// orchestrator snapshot (descriptor, tasks, schedules, `cloud_status`) when a request said it
-    /// lacks one — that snapshot can be hundreds of kilobytes and usually rides the relay's replay —
-    /// then every row the Mac last handed over for a published Session, with its signature, and the
-    /// inventory.
+    /// lacks one, then every row the Mac last handed over for a published Session, with its
+    /// signature, and the inventory.
     private func republishSessionSnapshotOwned(
         orchestrator: Bool, lifecycleGeneration ownedGeneration: UInt64
     ) async throws {
-        if orchestrator, noticesEnabled, lastOrchestratorPayload != nil {
+        if orchestrator, noticesEnabled, lastOrchestratorSnapshot != nil {
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
-            try await publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+            try await runOrchestratorPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publishOrchestratorSnapshot(
+                    reason: .asked, lifecycleGeneration: ownedGeneration)
+            }
         }
         var rows = 0
         for id in publishedSessionIDs.sorted() {
@@ -2261,15 +2314,16 @@ actor CloudAppBridge {
     }
 
     /// Whether this pass re-sends the orchestrator snapshot for the `orchestrator` requests that
-    /// arrived at `asked`. A request that arrived before the Mac's last `orch/` publication was sent
-    /// that one live — the page asked from a ready socket — and needs nothing more. The others get it
-    /// now when that publication is older than the floor; inside the floor they are owed, and the
-    /// re-send waits for the floor unless a publication answers them first.
+    /// arrived at `asked`. A request that arrived before the Mac's last full `orch/` snapshot was
+    /// sent that one live — the page asked from a ready socket — and needs nothing more. A
+    /// status-only notice answers nobody: it carries no task. The others get it now when that
+    /// snapshot is older than the floor; inside the floor they are owed, and the re-send waits for
+    /// the floor unless a snapshot answers them first.
     private func orchestratorResendNow(
         asked: [UInt64], at now: UInt64, lifecycleGeneration ownedGeneration: UInt64
     ) -> Bool {
-        guard noticesEnabled, lastOrchestratorPayload != nil else { return false }
-        let last = lastNoticeAt
+        guard noticesEnabled, lastOrchestratorSnapshot != nil else { return false }
+        let last = lastOrchestratorSnapshotAt
         let unanswered = asked.filter { arrived in last.map { $0 < arrived } ?? true }
         guard let earliest = unanswered.min() else { return false }
         if let last, now >= last, now - last < Self.orchestratorResendFloorMilliseconds {
@@ -2286,7 +2340,9 @@ actor CloudAppBridge {
               orchestratorOwedSince != nil else { return }
         let floor = Self.orchestratorResendFloorMilliseconds
         let now = nowMilliseconds()
-        let wait = lastNoticeAt.map { now >= $0 && now - $0 < floor ? floor - (now - $0) : 0 } ?? 0
+        let wait = lastOrchestratorSnapshotAt.map {
+            now >= $0 && now - $0 < floor ? floor - (now - $0) : 0
+        } ?? 0
         let waitMilliseconds = self.waitMilliseconds
         orchestratorResendTask = Task { [weak self] in
             if wait > 0 {
@@ -2301,15 +2357,16 @@ actor CloudAppBridge {
         orchestratorResendTask = nil
         guard let owed = orchestratorOwedSince else { return }
         orchestratorOwedSince = nil
-        // A publication since the earliest owed request reached every page that was asking.
-        if let last = lastNoticeAt, last >= owed {
+        // A snapshot since the earliest owed request reached every page that was asking.
+        if let last = lastOrchestratorSnapshotAt, last >= owed {
             diagnostic("cloud: owed orchestrator snapshot answered by a publication")
             return
         }
         do {
-            try await runPublication { [weak self] in
+            try await runOrchestratorPublication { [weak self] in
                 guard let self else { throw CancellationError() }
-                try await self.publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+                try await self.publishOrchestratorSnapshot(
+                    reason: .owed, lifecycleGeneration: ownedGeneration)
             }
             diagnostic("cloud: owed orchestrator snapshot re-sent")
         } catch {
@@ -2336,20 +2393,119 @@ actor CloudAppBridge {
         return tasks
     }
 
-    /// The local SSE serializer has already made these bytes. Seal them unchanged so local and
-    /// cloud viewers receive one `Orchestrator.records()` payload shape.
-    func publishOrchestrator(_ payload: Data) async throws {
+    /// End the orchestrator's own timers with the lifecycle. Returns the work `stop()` joins.
+    private func stopOrchestratorPublications() -> [Task<Void, Never>] {
+        let tasks = [orchestratorCoalesceTask, orchestratorRefillTask].compactMap { $0 }
+        tasks.forEach { $0.cancel() }
+        orchestratorCoalesceTask = nil
+        orchestratorRefillTask = nil
+        return tasks
+    }
+
+    /// Why a full `orch/` snapshot went out, in the line the Mac's log measurements read.
+    private enum OrchestratorSnapshotReason: String {
+        /// A record changed and the interval had passed.
+        case change
+        /// The newest state after a burst, once the interval had passed.
+        case coalesced
+        /// A transport-ready generation: the relay may have lost its replay.
+        case ready
+        /// A `sessions.snapshot` request said the page lacks it.
+        case asked
+        /// Such a request arrived inside the floor and was owed.
+        case owed
+        /// A status-only notice had stood in the relay's replay for the floor.
+        case refill
+        /// A Session this Mac published made a finished task readable that the last snapshot left
+        /// out.
+        case listed
+    }
+
+    /// The Cloud snapshot as it would go out now, how it is compared, and each record in it.
+    private struct OrchestratorProjection {
+        let bytes: Data
+        let identity: Data
+        let records: Set<Data>
+        let taskCount: Int
+    }
+
+    private var orchestratorChannel: String {
+        "orch/" + Self.channelSegment(identity.machineID)
+    }
+
+    /// The bytes a Cloud snapshot is compared as: sorted keys, without the freshness-only keys.
+    static func cloudOrchestratorIdentity(_ snapshot: [String: Any]) throws -> Data {
+        try JSONSerialization.data(
+            withJSONObject: snapshot.filter { !freshnessOnlyOrchestratorFields.contains($0.key) },
+            options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+
+    private func currentOrchestratorProjection() throws -> OrchestratorProjection? {
+        guard let snapshot = lastOrchestratorSnapshot else { return nil }
+        let projected = RemoteServer.cloudOrchestratorProjection(
+            snapshot, listedSessions: publishedSessionIDs)
+        let tasks = projected["tasks"] as? [[String: Any]] ?? []
+        // A projection that cut nothing is sent as the Mac's own bytes, as before there was one.
+        let bytes: Data
+        if let original = lastOrchestratorPayload, (projected as NSDictionary).isEqual(to: snapshot) {
+            bytes = original
+        } else {
+            bytes = try JSONSerialization.data(
+                withJSONObject: projected, options: [.withoutEscapingSlashes])
+        }
+        return OrchestratorProjection(
+            bytes: bytes,
+            identity: try Self.cloudOrchestratorIdentity(projected),
+            records: Set(try tasks.map {
+                try JSONSerialization.data(
+                    withJSONObject: $0, options: [.sortedKeys, .withoutEscapingSlashes])
+            }),
+            taskCount: tasks.count)
+    }
+
+    /// `orch/` publications run one at a time, whoever started them: the Mac's own snapshots, the
+    /// coalesced one, notices, refills and every re-send. Each reads the newest snapshot when its
+    /// turn comes, so the last one sealed is never older than one sealed before it.
+    private func runOrchestratorPublication(
+        _ work: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        guard running else { throw CloudAppBridgeError.notRunning }
+        let previous = orchestratorPublicationTail
+        let turn = Task<Void, Error> {
+            await previous?.value
+            try await work()
+        }
+        orchestratorPublicationTail = Task { _ = await turn.result }
+        try await runPublication {
+            try await withTaskCancellationHandler {
+                try await turn.value
+            } onCancel: {
+                turn.cancel()
+            }
+        }
+    }
+
+    /// The newest orchestrator snapshot the Mac hands over: the bytes the local SSE serializer
+    /// made, which stay the local page's. Cloud is sent their projection
+    /// (`RemoteServer.cloudOrchestratorProjection`), and only when it differs from the last one
+    /// that went out outside `freshnessOnlyOrchestratorFields`, at most once per
+    /// `orchestratorPublicationIntervalMilliseconds`. `force` is a transport-ready generation: the
+    /// relay may have lost its replay, so the snapshot goes out whole at once.
+    ///
+    /// A bridge composed without a status owner (the test fixtures) seals every payload exactly as
+    /// given; the projection and the pacing belong to the production composition.
+    func publishOrchestrator(_ payload: Data, force: Bool = false) async throws {
         let ownedGeneration = lifecycleGeneration
-        try await runPublication { [weak self] in
+        try await runOrchestratorPublication { [weak self] in
             guard let self else { throw CancellationError() }
             try await self.publishOrchestratorOwned(
-                payload, lifecycleGeneration: ownedGeneration
+                payload, force: force, lifecycleGeneration: ownedGeneration
             )
         }
     }
 
     private func publishOrchestratorOwned(
-        _ payload: Data, lifecycleGeneration ownedGeneration: UInt64
+        _ payload: Data, force: Bool, lifecycleGeneration ownedGeneration: UInt64
     ) async throws {
         try requireActivePublication(lifecycleGeneration: ownedGeneration)
         guard let object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any],
@@ -2357,31 +2513,182 @@ actor CloudAppBridge {
         else { throw CloudAppBridgeError.malformedOrchestrator }
         guard noticesEnabled else {
             try await publish(
-                payload, channel: "orch/" + Self.channelSegment(identity.machineID),
-                lifecycleGeneration: ownedGeneration
+                payload, channel: orchestratorChannel, lifecycleGeneration: ownedGeneration
             )
             return
         }
+        lastOrchestratorSnapshot = object
         lastOrchestratorPayload = payload
-        try await publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+        if force {
+            try await publishOrchestratorSnapshot(reason: .ready, lifecycleGeneration: ownedGeneration)
+        } else {
+            try await publishOrchestratorIfChanged(
+                reason: .change, lifecycleGeneration: ownedGeneration)
+        }
     }
 
-    /// The last orchestrator snapshot with the current `cloud_status` digest spliced in as one
-    /// more top-level key, or a status-only object when no snapshot has arrived yet (§11.2). The
-    /// snapshot's own bytes are kept: the digest is inserted before its closing brace rather than
-    /// re-serializing a document that can be a megabyte.
-    private func publishOrchestratorWithNotice(
+    /// Nothing when what a viewer reads is what went out last; inside the interval, one
+    /// publication of the newest state once it has passed; otherwise now.
+    private func publishOrchestratorIfChanged(
+        reason: OrchestratorSnapshotReason, lifecycleGeneration ownedGeneration: UInt64
+    ) async throws {
+        guard let projection = try currentOrchestratorProjection() else { return }
+        guard projection.identity != publishedOrchestratorIdentity else {
+            diagnostic("cloud: orchestrator snapshot unchanged reason=\(reason.rawValue)")
+            return
+        }
+        let now = nowMilliseconds()
+        if let last = lastOrchestratorSnapshotAt, now >= last,
+           now - last < orchestratorPublicationIntervalMilliseconds {
+            scheduleOrchestratorCoalesce(reason: reason, lifecycleGeneration: ownedGeneration)
+            return
+        }
+        try await publishOrchestratorSnapshot(
+            projection, reason: reason, lifecycleGeneration: ownedGeneration)
+    }
+
+    private func scheduleOrchestratorCoalesce(
+        reason: OrchestratorSnapshotReason, lifecycleGeneration ownedGeneration: UInt64
+    ) {
+        guard running, lifecycleGeneration == ownedGeneration,
+              orchestratorCoalesceTask == nil else { return }
+        let interval = orchestratorPublicationIntervalMilliseconds
+        let now = nowMilliseconds()
+        let wait = lastOrchestratorSnapshotAt.map {
+            now >= $0 && now - $0 < interval ? interval - (now - $0) : 0
+        } ?? 0
+        diagnostic("cloud: orchestrator snapshot coalescing reason=\(reason.rawValue) wait_ms=\(wait)")
+        let waitMilliseconds = self.waitMilliseconds
+        let coalesced: OrchestratorSnapshotReason = reason == .listed ? .listed : .coalesced
+        orchestratorCoalesceTask = Task { [weak self] in
+            if wait > 0 {
+                do { try await waitMilliseconds(wait) } catch { return }
+            }
+            await self?.publishCoalescedOrchestrator(
+                reason: coalesced, lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func publishCoalescedOrchestrator(
+        reason: OrchestratorSnapshotReason, lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        orchestratorCoalesceTask = nil
+        do {
+            try await runOrchestratorPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publishOrchestratorIfChanged(
+                    reason: reason, lifecycleGeneration: ownedGeneration)
+            }
+        } catch {
+            if running, lifecycleGeneration == ownedGeneration {
+                diagnostic("cloud: coalesced orchestrator snapshot failed")
+            }
+        }
+    }
+
+    /// A Session this Mac published may be the child of a finished task the last snapshot left
+    /// out, because nothing on Cloud could read it then — a child that finished before its first
+    /// scan saw it. A snapshot that would now carry a record the last one did not goes out, paced
+    /// like any change. One that would only lose records does not: nothing reads those.
+    private func orchestratorListedSessionsChanged(lifecycleGeneration ownedGeneration: UInt64) {
+        guard noticesEnabled, publishedOrchestratorIdentity != nil,
+              let projection = try? currentOrchestratorProjection(),
+              !projection.records.isSubset(of: publishedOrchestratorRecords)
+        else { return }
+        scheduleOrchestratorCoalesce(reason: .listed, lifecycleGeneration: ownedGeneration)
+    }
+
+    /// The newest snapshot's Cloud projection with the current `cloud_status` digest spliced in as
+    /// one more top-level key (§11.2), whatever went out before: every path that calls this has
+    /// already decided a viewer needs it.
+    private func publishOrchestratorSnapshot(
+        _ supplied: OrchestratorProjection? = nil, reason: OrchestratorSnapshotReason,
         lifecycleGeneration ownedGeneration: UInt64
     ) async throws {
+        guard let projection = try supplied ?? currentOrchestratorProjection() else { return }
+        try requireActivePublication(lifecycleGeneration: ownedGeneration)
         status.clearNoticeRequest()
-        lastNoticeAt = nowMilliseconds()
+        let now = nowMilliseconds()
+        lastNoticeAt = now
+        lastOrchestratorSnapshotAt = now
         let digest = try JSONSerialization.data(
             withJSONObject: status.noticeDigest(), options: [.withoutEscapingSlashes])
-        let merged = Self.splice(cloudStatus: digest, into: lastOrchestratorPayload)
-        try await publish(
-            merged, channel: "orch/" + Self.channelSegment(identity.machineID),
-            lifecycleGeneration: ownedGeneration
-        )
+        let merged = Self.splice(cloudStatus: digest, into: projection.bytes)
+        try await publish(merged, channel: orchestratorChannel, lifecycleGeneration: ownedGeneration)
+        publishedOrchestratorIdentity = projection.identity
+        publishedOrchestratorRecords = projection.records
+        // The relay's replay of `orch/` is this snapshot again.
+        orchestratorDisplacedAt = nil
+        orchestratorRefillTask?.cancel()
+        orchestratorRefillTask = nil
+        diagnostic("cloud: orchestrator snapshot published reason=\(reason.rawValue) "
+            + "tasks=\(projection.taskCount) bytes=\(merged.count)")
+    }
+
+    /// A `cloud_status` notice (§11.2) is `{"cloud_status": …}` and nothing else, however many task
+    /// records the last snapshot held: a notice says what happened to a command, and the viewer
+    /// keeps the snapshot it has beside it (`net/cloud-client.js`). The relay replays only the last
+    /// envelope of `orch/`, so from here a (re)connecting viewer would be replayed the notice
+    /// rather than the snapshot. The snapshot goes out again once the notice has stood there for
+    /// `orchestratorResendFloorMilliseconds`, unless a snapshot goes out first.
+    private func publishOrchestratorNotice(lifecycleGeneration ownedGeneration: UInt64) async throws {
+        try requireActivePublication(lifecycleGeneration: ownedGeneration)
+        status.clearNoticeRequest()
+        let now = nowMilliseconds()
+        lastNoticeAt = now
+        let digest = try JSONSerialization.data(
+            withJSONObject: status.noticeDigest(), options: [.withoutEscapingSlashes])
+        let notice = Self.splice(cloudStatus: digest, into: nil)
+        try await publish(notice, channel: orchestratorChannel, lifecycleGeneration: ownedGeneration)
+        diagnostic("cloud: orchestrator status notice published bytes=\(notice.count)")
+        guard lastOrchestratorSnapshot != nil else { return }
+        if orchestratorDisplacedAt == nil { orchestratorDisplacedAt = now }
+        scheduleOrchestratorRefill(lifecycleGeneration: ownedGeneration)
+    }
+
+    private func scheduleOrchestratorRefill(lifecycleGeneration ownedGeneration: UInt64) {
+        guard running, lifecycleGeneration == ownedGeneration, orchestratorRefillTask == nil,
+              let displaced = orchestratorDisplacedAt else { return }
+        let floor = Self.orchestratorResendFloorMilliseconds
+        let now = nowMilliseconds()
+        let wait = now >= displaced && now - displaced < floor ? floor - (now - displaced) : 0
+        let waitMilliseconds = self.waitMilliseconds
+        orchestratorRefillTask = Task { [weak self] in
+            if wait > 0 {
+                do { try await waitMilliseconds(wait) } catch { return }
+            }
+            await self?.refillOrchestrator(lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func refillOrchestrator(lifecycleGeneration ownedGeneration: UInt64) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        orchestratorRefillTask = nil
+        guard orchestratorDisplacedAt != nil else { return }
+        do {
+            try await runOrchestratorPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publishOrchestratorRefill(lifecycleGeneration: ownedGeneration)
+            }
+        } catch {
+            if running, lifecycleGeneration == ownedGeneration {
+                diagnostic("cloud: orchestrator snapshot refill failed")
+            }
+        }
+    }
+
+    /// A snapshot that went out while the refill waited for its turn already restored the replay.
+    private func publishOrchestratorRefill(lifecycleGeneration ownedGeneration: UInt64) async throws {
+        guard orchestratorDisplacedAt != nil else { return }
+        try await publishOrchestratorSnapshot(reason: .refill, lifecycleGeneration: ownedGeneration)
+    }
+
+    /// Tests read the pacing rather than sleeping past it.
+    func orchestratorPublicationStateForTesting()
+        -> (coalescing: Bool, refilling: Bool, displaced: Bool, lastSnapshotAt: UInt64?) {
+        (orchestratorCoalesceTask != nil, orchestratorRefillTask != nil,
+         orchestratorDisplacedAt != nil, lastOrchestratorSnapshotAt)
     }
 
     static func splice(cloudStatus digest: Data, into payload: Data?) -> Data {
@@ -2435,9 +2742,9 @@ actor CloudAppBridge {
         noticeTask = nil
         guard running, lifecycleGeneration == ownedGeneration else { return }
         do {
-            try await runPublication { [weak self] in
+            try await runOrchestratorPublication { [weak self] in
                 guard let self else { throw CancellationError() }
-                try await self.publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+                try await self.publishOrchestratorNotice(lifecycleGeneration: ownedGeneration)
             }
         } catch {
             diagnostic("cloud: notice publication failed")
@@ -2610,6 +2917,7 @@ actor CloudAppBridge {
         readyTask = nil
         _ = stopTranscriptSignatures()
         _ = stopSessionSnapshots()
+        _ = stopOrchestratorPublications()
     }
 
     private func transportBecameReady(
@@ -2619,6 +2927,11 @@ actor CloudAppBridge {
         if let durableOutbound {
             await durableOutbound.requestDrain(reconnect: true)
         }
+        // The relay may have lost its replay, so nothing published before counts as delivered. The
+        // forced snapshot this generation enqueues on the Mac's lane can be replaced there by a
+        // newer, unforced one; forgetting what went out makes that one go out too.
+        publishedOrchestratorIdentity = nil
+        publishedOrchestratorRecords = []
         transportReady(generation)
     }
 

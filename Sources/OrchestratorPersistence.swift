@@ -455,6 +455,75 @@ extension RemoteServer {
         return false
     }
 
+    /// The task-record fields a Cloud view reads, each a path. Checked against every reader in
+    /// `Resources/web/app/js` on 2026-09-15 rather than assumed: `S.tasks` is read only by
+    /// `view/derive.js` (`taskLive` and `taskWord` read `state`; `taskShaping` reads `finishedAt`
+    /// and `child.terminalId`; `taskOfChild` reads `child.terminalId` and `created`; `rowDepth`,
+    /// `tasksOfRoot` and `grouped` read `root.terminalId`; `featureRootChip` and `lostIfClosed`
+    /// read `title` and `id`), by the Session row in `view/list.js` (`id`, `title`) and by the open
+    /// Session's header in `view/transcript.js` (`title`, `usage.total`, `usage.costUsd`). Board,
+    /// Usage, Projects, Devices, Settings, schedules and snippets read no task record.
+    static let cloudTaskFields: [[String]] = [
+        ["id"], ["state"], ["title"], ["created"], ["finishedAt"],
+        ["child", "terminalId"], ["root", "terminalId"],
+        ["usage", "total"], ["usage", "costUsd"],
+    ]
+
+    /// The `orch/` snapshot a Cloud viewer is sent (docs/cloud.md): every top-level key as
+    /// ``orchestratorSnapshot(now:liveTerminals:)`` built it, with `tasks` cut to what a Cloud view
+    /// can read. The local page, whose SSE event is that snapshot, and `GET /v1/orchestrator/tasks`
+    /// are not projected.
+    ///
+    /// **A record goes when no Cloud view can reach it.** The local filter above keeps a finished
+    /// task while its child *or its root* is on screen, and on 2026-09-15 that was 97 of the 101
+    /// records in the snapshot — a root with a long history kept every child it ever had — and
+    /// 216 of its 230 KB. But every Cloud reader of a finished task reaches it through its child:
+    /// the header and the row through `taskOfChild` of a listed Session, and the chips, indents and
+    /// grouping through `taskShaping`, which answers false for a finished task whose child is not a
+    /// listed Session. `listedSessions` is the set of Sessions this Mac has published to Cloud and
+    /// not tombstoned, which is exactly what those readers compare against. A root's own chip counts
+    /// its children through `taskShaping` too, so the root side keeps nothing a Cloud view draws.
+    ///
+    /// It fails open the same way the local filter does: a record with no state, or a state this
+    /// build does not know, is kept, and a `tasks` value that is not a list of objects is left as
+    /// it came. Of a kept record only ``cloudTaskFields`` go out.
+    static func cloudOrchestratorProjection(
+        _ snapshot: [String: Any], listedSessions: Set<String>
+    ) -> [String: Any] {
+        guard let tasks = snapshot["tasks"] as? [[String: Any]] else { return snapshot }
+        var out = snapshot
+        out["tasks"] = tasks
+            .filter { cloudTaskRelevant($0, listedSessions: listedSessions) }
+            .map(cloudTaskProjection)
+        return out
+    }
+
+    static func cloudTaskRelevant(_ record: [String: Any], listedSessions: Set<String>) -> Bool {
+        guard let raw = record["state"] as? String,
+              let state = Orchestrator.State(rawValue: raw), state.isTerminal
+        else { return true }
+        guard let child = record["child"] as? [String: Any],
+              let terminal = child["terminalId"] as? String, !terminal.isEmpty
+        else { return false }
+        return listedSessions.contains(terminal)
+    }
+
+    /// Only ``cloudTaskFields``; a path the record does not have stays absent, and a value is copied
+    /// as it is (`usage.costUsd` is left out by the Mac rather than zero for plan-billed work).
+    static func cloudTaskProjection(_ record: [String: Any]) -> [String: Any] {
+        var out: [String: Any] = [:]
+        for path in cloudTaskFields {
+            if path.count == 1 {
+                if let value = record[path[0]] { out[path[0]] = value }
+            } else if let parent = record[path[0]] as? [String: Any], let value = parent[path[1]] {
+                var nested = out[path[0]] as? [String: Any] ?? [:]
+                nested[path[1]] = value
+                out[path[0]] = nested
+            }
+        }
+        return out
+    }
+
     /// `liveTerminals` is injectable so the contract above can be tested without a screen. The
     /// production answer comes from the same published inventory the session snapshot is built
     /// from, which is lock-guarded and safe to read from whichever thread a record change

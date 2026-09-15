@@ -1614,6 +1614,45 @@ await check("F4 · a page back from the background that holds the Mac's orch sna
     back.client.stop();
 });
 
+/* ---- F5 · a cloud_status notice carries no task ------------------------------------------------ */
+
+// The Mac publishes a notice as `{"cloud_status": …}` alone instead of re-sending every task record
+// beside it (`CloudAppBridge.publishOrchestratorNotice`). The page must read it beside the snapshot it
+// holds, and a page the relay replays only that notice to must still ask for the snapshot.
+await check("F5 · a cloud_status notice leaves the Mac's tasks on the page, and a page replayed only a notice still asks for the snapshot", async function () {
+    const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }]]) };
+    const withStatus = (extra) => Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }, extra || {});
+    const snapshot = { tasks: [{ id: "t1", state: "briefed", title: "Trim", child: { terminalId: "s1" }, root: { terminalId: "r1" } }],
+        at: 1789290000, machine: { name: "Mac", platform: "macos" }, app: { build: "7" }, cloud_status: withStatus() };
+
+    const reader = sessionReader(null);
+    const lists = [];
+    reader.handlers.tasks = function (list) { lists.push(list.map((task) => task.id)); };
+    const holder = await idleMacSocket(mac, reader, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC) });
+    await until(() => holder.sent.snapshots === 1, WAIT);
+    await fromMachine(holder.client, holder.socket, "orch/mac-01", snapshot);
+    assert.deepEqual(lists[lists.length - 1], ["t1"], "the snapshot's task reached the page");
+    const drawnBefore = lists.length;
+    const drop = { sender: "web_other", seq: 9, code: "replay", layer: "mac_transport", at_ms: 1789290001000, highest_seq: 10 };
+    await fromMachine(holder.client, holder.socket, "orch/mac-01", { cloud_status: withStatus({ recent_drops: [drop] }) });
+    assert.equal(lists.length, drawnBefore, "a notice does not hand the task list over again");
+    assert.deepEqual((await holder.client.tasks()).tasks.map((task) => task.id), ["t1"], "and the page still holds the task");
+    assert.equal(holder.client._macBuild("mac-01"), "7", "and the snapshot's build stamp");
+    assert.ok(holder.client.macCapabilities.has("mac-01"), "while the notice itself was read");
+    holder.client.stop();
+
+    const cold = sessionReader(null);
+    const replayed = await idleMacSocket(mac, cold, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC), sessionSnapshotSettleMs: 200 });
+    const envelope = await sealEnvelope({ ch: "orch/mac-01", seq: ++machineSequence, ts: 1787817600000, class: "stream",
+        key_id: "ms-1", sender: DEVICE }, JSON.stringify({ cloud_status: withStatus() }), masterKey, signingKey);
+    replayed.socket.receive({ type: "envelope", realign: true, envelope });
+    await replayed.client.messageChain.catch(noop);
+    await until(() => replayed.sent.snapshots === 1, WAIT);
+    assert.deepEqual(replayed.sent.orchestrator, [true],
+        "the relay's replay was a notice, which is not the snapshot, so the page asks for it");
+    replayed.client.stop();
+});
+
 /* ---- ends ---------------------------------------------------------------------------------- */
 
 if (failures.length) {

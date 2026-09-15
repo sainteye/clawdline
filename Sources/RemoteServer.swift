@@ -451,7 +451,7 @@ final class RemoteServer: @unchecked Sendable {
             _ = transportGeneration
             self.enqueueCloudSessions(sessions, force: true, bridge: bridge)
             self.enqueueCloudPublication {
-                try await bridge.publishOrchestrator(orchestrator)
+                try await bridge.publishOrchestrator(orchestrator, force: true)
             }
         }
     }

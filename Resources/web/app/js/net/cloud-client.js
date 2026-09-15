@@ -309,6 +309,18 @@ function descriptorCommandsKey(descriptor) {
     return JSON.stringify(Array.from(new Set(commands)).sort());
 }
 
+/**
+ * Whether an `orch/` payload is a `cloud_status` notice rather than a snapshot: an object holding
+ * that key and nothing else. A Mac publishes one when a command could not get in (docs/cloud.md),
+ * and it never carries the task list, the schedules or the descriptor, so it is no evidence that
+ * any of them is gone. Every snapshot carries at least `at` beside it.
+ */
+function statusOnlyOrchestrator(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+    var keys = Object.keys(payload);
+    return keys.length === 1 && keys[0] === "cloud_status";
+}
+
 /** Whether an `orch/` snapshot carries a machine descriptor of its own (not a remembered one). */
 function liveDescriptor(snapshot) {
     return !!(snapshot && snapshot.machine && typeof snapshot.machine === "object" && !Array.isArray(snapshot.machine));
@@ -1582,6 +1594,17 @@ export class CloudClient {
         if (channel.kind === "orch") {
             var machine = decodedChannelSegment(channel.machine);
             this._observeMachine(machine, envelope.ts);
+            if (statusOnlyOrchestrator(payload)) {
+                // A notice is read beside the snapshot this page holds, never instead of it: the Mac
+                // does not re-send every task record to say that one command was dropped. Nothing
+                // reads `cloud_status` back out of the stored snapshot, so the snapshot is left as
+                // it is. Nor is a notice a snapshot: a page holding none still asks for one
+                // (`_holdsOrchestrator`), and the task list, which it cannot change, is not redrawn.
+                this._consumeCloudStatus(machine, payload.cloud_status, envelope);
+                this._emit({ type: "orchestrator", data: payload, machine: machine,
+                    envelope: envelope, realign: realign, statusOnly: true });
+                return;
+            }
             var buildBefore = this._macBuild(machine);
             var previousSnapshot = this.orchestratorSnapshots.get(machine);
             var commandsBefore = descriptorCommandsKey(this._descriptorFor(machine));

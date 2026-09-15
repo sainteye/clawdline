@@ -164,6 +164,16 @@ private struct CloudRowFixture {
         frames(session).last?["session"] as? [String: Any]
     }
 
+    /// Every opened payload published on `orch/mac-rows`, oldest first.
+    func orchestratorFrames() -> [[String: Any]] {
+        let signer = self.signer
+        return transport.envelopes().filter { $0.ch == "orch/mac-rows" }.compactMap {
+            (try? $0.open(masterSecret: secret, publicKeyForSender: {
+                $0 == "mac-rows-device" ? signer.publicKeyRaw : nil
+            })).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+        }
+    }
+
     /// Every answer published on the machine reply channel, by its `read` name (the last one wins).
     func replies() -> [String: [String: Any]] {
         let signer = self.signer
@@ -213,6 +223,28 @@ private func cloudRow(_ id: String, state: String = "idle", observedAt: Int, gen
                        "observed_at": sourceObservedAt, "max_age_seconds": 120] as [String: Any],
         ] as [String: Any],
     ]
+}
+
+/// A task record with the fields the Mac's snapshot carries, most of which no Cloud view reads.
+private func cloudTask(_ id: String, state: String, child: String?, finishedAt: Int? = nil,
+                       title: String? = nil, total: Int = 18) -> [String: Any] {
+    var record: [String: Any] = [
+        "id": id, "state": state, "title": title ?? "Task \(id)", "created": 1_789_000_000,
+        "kind": "custom", "assistant": "claude", "projectDir": "/work", "isolation": "worktree",
+        "claims": ["Sources/A.swift"], "landing_paths": ["Sources/A.swift"],
+        "executor": ["observed_at": 1_789_000_100, "inventory_generation": 7,
+                     "status": "observed"] as [String: Any],
+        "worktree": ["branch": "clawdline/task/\(id)", "path": "/tmp/\(id)"],
+        "usage": ["input": 3, "output": 4, "cacheRead": 5, "cacheWrite": 6, "total": total,
+                  "model": "claude-opus-5", "costUsd": 0.25] as [String: Any],
+        "root": ["terminalId": "root-row", "sessionId": "root-session", "label": "Root",
+                 "assistant": "claude"],
+    ]
+    if let child {
+        record["child"] = ["terminalId": child, "sessionId": "session-\(id)", "backend": "tmux"]
+    }
+    if let finishedAt { record["finishedAt"] = finishedAt }
+    return record
 }
 
 private func closeabilityValue(_ row: [String: Any]?, _ path: String...) -> Int? {
@@ -727,7 +759,12 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
     check("a second request inside the new floor is owed too",
           eventually { fixture.replies()["read:owed-2"] != nil && waits.requests.count == 4 }, "waits=\(waits.requests)")
     fixture.clock.advance(1_000)
-    cloudRowAwait("the Mac's own next orchestrator publication") { try await bridge.publishOrchestrator(orchestrator) }
+    // A changed snapshot: an identical one is not published at all, and would answer nobody.
+    let changedOrchestrator = try! JSONSerialization.data(withJSONObject: [
+        "tasks": [] as [Any], "machine": ["name": "Mac", "platform": "macos"] as [String: Any],
+        "schedules": [] as [Any],
+    ])
+    cloudRowAwait("the Mac's own next orchestrator publication") { try await bridge.publishOrchestrator(changedOrchestrator) }
     waits.release()
     check("a publication after the request answers it, and the floor adds nothing",
           eventually {
@@ -813,5 +850,143 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
     check("a bridge stopped in the middle of a pass holds nothing",
           cloudRowAwait("reading the stopped pass", recording: false) { await heldBridge.sessionSnapshotStateForTesting() }
             .map { $0.waiting == 0 && !$0.scheduled } == true)
+}
+
+group("the Cloud orchestrator snapshot carries what a Cloud view reads, goes out when that changes, paces a burst, and a notice carries no task") {
+    let waits = CloudRowWaits()
+    let status = CloudStatus()
+    let fixture = CloudRowFixture(waits: waits, status: status)
+    let bridge = fixture.bridge
+    cloudRowAwait("the orchestrator bridge starts") { try await bridge.start() }
+    fixture.publish([cloudRow("kid-listed", observedAt: 100, generation: 1, sourceObservedAt: 99),
+                     cloudRow("root-row", observedAt: 100, generation: 1, sourceObservedAt: 99)],
+                    at: 100, generation: 1, label: "the Mac's Sessions")
+    func snapshot(_ tasks: [[String: Any]], at: Int) -> Data {
+        try! JSONSerialization.data(withJSONObject: [
+            "tasks": tasks, "at": at,
+            "app": ["version": "1", "build": 7, "protocol": 3] as [String: Any],
+            "machine": ["name": "Mac", "platform": "macos"],
+            "schedules": [["id": "morning", "title": "Morning", "enabled": true] as [String: Any]],
+            "snippets": [["id": "snip", "title": "Ship", "body": "commit", "scope": "global"]],
+        ] as [String: Any])
+    }
+    func publish(_ label: String, _ payload: Data, force: Bool = false) {
+        cloudRowAwait(label) { try await bridge.publishOrchestrator(payload, force: force) }
+    }
+    func state() -> (coalescing: Bool, refilling: Bool, displaced: Bool, lastSnapshotAt: UInt64?)? {
+        cloudRowAwait("reading the pacing", recording: false) {
+            await bridge.orchestratorPublicationStateForTesting()
+        }
+    }
+    func ids(_ frame: [String: Any]?) -> [String] {
+        (frame?["tasks"] as? [[String: Any]] ?? []).compactMap { $0["id"] as? String }
+    }
+    let running = cloudTask("running", state: "briefed", child: "kid-running")
+    let listed = cloudTask("listed", state: "success", child: "kid-listed", finishedAt: 1_789_000_500)
+    let rootOnly = cloudTask("root-only", state: "success", child: "kid-gone", finishedAt: 1_789_000_400)
+    let unknown = cloudTask("unknown", state: "held_by_a_newer_build", child: "kid-gone")
+    let late = cloudTask("late", state: "spawn_failed", child: "kid-late", finishedAt: 1_789_000_600)
+
+    // What goes out: the records a Cloud view can reach, and of those only what it reads.
+    publish("the Mac's orchestrator snapshot", snapshot([running, listed, rootOnly, unknown, late], at: 1))
+    let first = fixture.orchestratorFrames().last
+    expect("one snapshot goes out", fixture.orchestratorFrames().count, 1)
+    expect("with the running task, the finished one whose child is a listed Session and the one this build cannot read — not one only its root or a closed child keeps",
+           ids(first), ["running", "listed", "unknown"])
+    let kept = (first?["tasks"] as? [[String: Any]])?.first { $0["id"] as? String == "listed" } ?? [:]
+    check("of a record only the fields a Cloud view reads go out",
+          Set(kept.keys) == ["id", "state", "title", "created", "finishedAt", "child", "root", "usage"]
+            && (kept["child"] as? [String: Any])?.keys.sorted() == ["terminalId"]
+            && (kept["root"] as? [String: Any])?.keys.sorted() == ["terminalId"]
+            && (kept["usage"] as? [String: Any])?.keys.sorted() == ["costUsd", "total"]
+            && (kept["child"] as? [String: Any])?["terminalId"] as? String == "kid-listed"
+            && (kept["usage"] as? [String: Any])?["total"] as? Int == 18, "\(kept)")
+    check("and the rest of the snapshot goes out as the Mac built it, with the digest",
+          (first?["schedules"] as? [[String: Any]])?.first?["title"] as? String == "Morning"
+            && (first?["snippets"] as? [[String: Any]])?.first?["body"] as? String == "commit"
+            && (first?["machine"] as? [String: Any])?["platform"] as? String == "macos"
+            && (first?["app"] as? [String: Any])?["build"] as? Int == 7 && first?["at"] as? Int == 1
+            && (first?["cloud_status"] as? [String: Any])?["v"] as? Int == 1, "\(first ?? [:])")
+
+    // Nothing a viewer reads changed: `at`, and the executor's observation clock, which moves with
+    // every SessionWatch reading of a running child.
+    fixture.clock.advance(10_000)
+    var observedAgain = running
+    observedAgain["executor"] = ["observed_at": 1_789_000_999, "inventory_generation": 8]
+    publish("a snapshot differing only in `at` and a field no Cloud view reads",
+            snapshot([observedAgain, listed, rootOnly, unknown, late], at: 2))
+    expect("publishes nothing", fixture.orchestratorFrames().count, 1)
+
+    // A burst: the first change goes out at once, the ones behind it inside the interval become
+    // one publication of the newest state when it has passed.
+    let renamed = cloudTask("running", state: "briefed", child: "kid-running", title: "Renamed")
+    publish("a change after a quiet interval", snapshot([renamed, listed, rootOnly, unknown, late], at: 3))
+    expect("goes out at once", fixture.orchestratorFrames().count, 2)
+    fixture.clock.advance(1_000)
+    let counted = cloudTask("running", state: "briefed", child: "kid-running", title: "Renamed", total: 40)
+    publish("a change one second later", snapshot([counted, listed, rootOnly, unknown, late], at: 4))
+    check("waits out the rest of the interval",
+          eventually { waits.requests.last == CloudAppBridge.orchestratorPublicationIntervalMilliseconds - 1_000 },
+          "waits=\(waits.requests)")
+    fixture.clock.advance(500)
+    let recounted = cloudTask("running", state: "briefed", child: "kid-running", title: "Renamed", total: 41)
+    publish("and another behind it", snapshot([recounted, listed, rootOnly, unknown, late], at: 5))
+    check("which joins the same wait rather than adding one",
+          waits.requests.count == 1 && fixture.orchestratorFrames().count == 2
+            && state().map { $0.coalescing } == true, "waits=\(waits.requests)")
+    fixture.clock.advance(3_500)
+    waits.release()
+    check("once it has passed, one publication carries the newest state",
+          eventually { fixture.orchestratorFrames().count == 3 }
+            && ((fixture.orchestratorFrames().last?["tasks"] as? [[String: Any]])?.first?["usage"]
+                as? [String: Any])?["total"] as? Int == 41,
+          "frames=\(fixture.orchestratorFrames().count)")
+    check("and nothing is left waiting", eventually { state().map { !$0.coalescing } == true })
+
+    // A notice: `cloud_status` and nothing else, and the snapshot goes out again at the floor so the
+    // relay's replay is a snapshot again.
+    fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
+    status.recordDrop(CloudInboundDrop(code: .replay, sender: "web_orch", sequence: 9, highestSequence: 10))
+    check("a dropped command is announced on orch/",
+          eventually { fixture.orchestratorFrames().count == 4 }, "frames=\(fixture.orchestratorFrames().count)")
+    let notice = fixture.orchestratorFrames().last ?? [:]
+    check("as a notice holding cloud_status and no task record",
+          Set(notice.keys) == ["cloud_status"]
+            && ((notice["cloud_status"] as? [String: Any])?["recent_drops"] as? [[String: Any]])?
+                .first?["seq"] as? Int == 9, "\(notice)")
+    check("which leaves the snapshot owed to the relay's replay at the floor",
+          eventually { waits.requests.last == CloudAppBridge.orchestratorResendFloorMilliseconds }
+            && state().map { $0.displaced && $0.refilling } == true, "waits=\(waits.requests)")
+    fixture.clock.advance(CloudAppBridge.orchestratorResendFloorMilliseconds)
+    waits.release()
+    check("at the floor the snapshot goes out again, unchanged as it is",
+          eventually { fixture.orchestratorFrames().count == 5 }
+            && ids(fixture.orchestratorFrames().last) == ["running", "listed", "unknown"])
+    check("and nothing stands displaced", eventually { state().map { !$0.displaced && !$0.refilling } == true })
+
+    // A Session published after its task finished makes that task readable, and it goes out.
+    fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
+    fixture.publish([cloudRow("kid-listed", observedAt: 200, generation: 2, sourceObservedAt: 199),
+                     cloudRow("root-row", observedAt: 200, generation: 2, sourceObservedAt: 199),
+                     cloudRow("kid-late", observedAt: 200, generation: 2, sourceObservedAt: 199)],
+                    at: 200, generation: 2, label: "a scan that lists the child of a task that already failed")
+    check("the snapshot goes out with that task",
+          eventually { fixture.orchestratorFrames().count == 6 }
+            && ids(fixture.orchestratorFrames().last) == ["running", "listed", "unknown", "late"],
+          "frames=\(fixture.orchestratorFrames().count) ids=\(ids(fixture.orchestratorFrames().last))")
+    fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
+    fixture.publish([cloudRow("root-row", observedAt: 300, generation: 3, sourceObservedAt: 299),
+                     cloudRow("kid-late", observedAt: 300, generation: 3, sourceObservedAt: 299)],
+                    at: 300, generation: 3, label: "a scan where a finished child's Session closed")
+    check("a Session closing only makes a record unreadable, so nothing goes out for it",
+          !eventually(timeout: 0.3) { fixture.orchestratorFrames().count != 6 }
+            && state().map { !$0.coalescing } == true)
+
+    // A transport-ready generation: the relay may have lost its replay, so it goes out whatever.
+    publish("the same snapshot for a new ready generation",
+            snapshot([recounted, listed, rootOnly, unknown, late], at: 6), force: true)
+    expect("goes out at once", fixture.orchestratorFrames().count, 7)
+    cloudRowAwait("the orchestrator bridge stops") { await bridge.stop() }
+    check("a stopped bridge holds no pacing", state().map { !$0.coalescing && !$0.refilling } == true)
 }
 }
