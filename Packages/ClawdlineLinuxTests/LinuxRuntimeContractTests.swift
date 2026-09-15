@@ -1427,6 +1427,131 @@ final class LinuxRuntimeContractTests: XCTestCase {
         await relay.stop()
     }
 
+    /// A word the executor does not implement is refused at once, not dropped. The hosted console
+    /// used to wait out its whole read timeout on this executor for snippets, schedules, push and
+    /// the Board; the Snippets sheet stayed blank for that minute on 2026-09-15. The refusal goes
+    /// through the same authenticated gates as the existing malformed places/start refusal, answers
+    /// `action:<request>` on the machine reply channel as the Mac's `commandRefusalReply` does, and
+    /// a body that names no well-formed machine request is still answered by nobody.
+    func testLinuxRelayRefusesUnimplementedMachineCommandsWithATypedReply() async throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-linux-unknown-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        let project = scratch.appendingPathComponent("reaver", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: project, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        let authority = CloudExecutorIdentityAuthority(store: TestMemorySecretStore())
+        let machineKey = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x71, count: 32))
+        let viewerKey = try CloudDeviceKeyPair(privateKeyRaw: Data(repeating: 0x72, count: 32))
+        let master = try CloudMasterSecret(rawRepresentation: Data(repeating: 0x73, count: 32))
+        let identity = try authority.provision(
+            accountID: "account-unknown", machineID: "machine-linux",
+            deviceKey: machineKey, masterSecret: master,
+            importedPairedDevices: [CloudExecutorPairedDevice(
+                deviceID: "viewer-linux", signingKey: viewerKey.publicKeyRaw,
+                fingerprint: viewerKey.pairingFingerprint, pairedAtMilliseconds: 1,
+                identityGeneration: 1,
+                capabilities: CloudExecutorIdentityAuthority.defaultCapabilities)])
+        let durable = try CloudDurableRuntime.open(
+            directory: scratch.appendingPathComponent("cloud"), runtime: nil,
+            strictPersistedFrameValidation: true)
+        let transport = LinuxRelayTestTransport()
+        let outbound = CloudDurableOutboundComposition(
+            spool: durable.spool, transport: transport,
+            identity: CloudAppIdentity(
+                machineID: identity.machineID, deviceID: identity.deviceID,
+                keyID: identity.keyID, masterSecret: master, signingKey: machineKey),
+            nowMilliseconds: { UInt64(Date().timeIntervalSince1970 * 1_000) })
+        let ingressStore = try LinuxDurableStateStore(
+            stateDirectory: scratch.appendingPathComponent("daemon").path)
+        let lifecycle = FakeLinuxLifecycleRuntime()
+        let ingress = LinuxDaemonIngressOwner(store: ingressStore, runtime: lifecycle)
+        ingress.completeStartup(try LinuxStartupReconciler.reconcile(
+            store: ingressStore, inventory: .complete([])))
+        let relay = LinuxRelayRuntimeOwner(
+            machine: CloudMachineIdentity(accountID: identity.accountID,
+                                          machineID: identity.machineID),
+            identityAuthority: authority, transport: transport, outbound: outbound,
+            ingress: ingress, commandsEnabled: { true },
+            places: [LinuxRelayPlace(id: "reaver", label: "reaver", path: project.path)],
+            inventory: { TerminalInventory(sessions: []) })
+        try await relay.start()
+
+        var acknowledged = 0
+        func frames() throws -> [(frame: CloudPublishFrame, clear: [String: Any])] {
+            let written = transport.writtenFrames()
+            let decoded = try written.map { bytes -> (CloudPublishFrame, [String: Any]) in
+                let frame = try JSONDecoder().decode(CloudPublishFrame.self, from: bytes)
+                let clear = try frame.envelope.open(
+                    masterSecret: master,
+                    publicKeyForSender: { $0 == identity.machineID ? machineKey.publicKeyRaw : nil })
+                return (frame, try XCTUnwrap(JSONSerialization.jsonObject(with: clear) as? [String: Any]))
+            }
+            for (frame, _) in decoded.dropFirst(acknowledged) {
+                transport.receipt(CloudOutboundTransportReceipt(
+                    channel: frame.envelope.ch, sequence: Int64(frame.envelope.seq), kind: .delivered))
+            }
+            acknowledged = decoded.count
+            return decoded.map { (frame: $0.0, clear: $0.1) }
+        }
+        func reply(named read: String) async throws -> (frame: CloudPublishFrame, clear: [String: Any])? {
+            for _ in 0..<200 {
+                if let found = try frames().first(where: { $0.clear["read"] as? String == read }) { return found }
+                try await Task.sleep(nanoseconds: 5_000_000)
+            }
+            return nil
+        }
+        var sequence: UInt64 = 20
+        func send(_ body: [String: Any], channel: String = "ctl/machine-linux") throws {
+            sequence += 1
+            XCTAssertTrue(transport.deliver(CloudInboundCommand(
+                channel: channel, sequence: sequence,
+                timestamp: UInt64(Date().timeIntervalSince1970 * 1_000),
+                sender: "viewer-linux", plaintext: try JSONSerialization.data(withJSONObject: body))))
+        }
+
+        var descriptor: [String: Any]?
+        for _ in 0..<200 where descriptor == nil {
+            descriptor = try frames().first(where: { $0.frame.envelope.ch == "orch/machine-linux" })?
+                .clear["machine"] as? [String: Any]
+            if descriptor == nil { try await Task.sleep(nanoseconds: 5_000_000) }
+        }
+        XCTAssertEqual(descriptor?["platform"] as? String, "linux")
+        XCTAssertEqual(descriptor?["commands"] as? [String], ["places", "start"],
+                       "the descriptor advertises exactly the words the adapter implements")
+
+        for word in ["snippets", "schedules", "push-key", "board", "voice"] {
+            try send(["type": word, "session": "__clawdline_machine__", "request": word + "-1"])
+            let refused = try await reply(named: "action:" + word + "-1")
+            let answer = try XCTUnwrap(refused, "\(word) is answered rather than dropped")
+            XCTAssertEqual(answer.frame.envelope.ch, "t/machine-linux/__clawdline_machine__")
+            XCTAssertEqual(answer.clear["status"] as? Int, 400)
+            XCTAssertEqual((answer.clear["error"] as? [String: Any])?["code"] as? String, "unknown_command",
+                           "\(word) is refused in the word the hosted console's failure table knows")
+            XCTAssertNil(answer.clear["body"], "a refusal carries no body")
+        }
+
+        // Answered by nobody, as before: no request, a malformed request id, a Session channel
+        // instead of the machine reply channel, and the wrong machine's command channel.
+        let quietBaseline = try frames().count
+        try send(["type": "snippets", "session": "__clawdline_machine__"])
+        try send(["type": "snippets", "session": "__clawdline_machine__", "request": "not an id/../x"])
+        try send(["type": "snippets", "session": "%7", "request": "session-scoped-1"])
+        try send(["type": "snippets", "session": "__clawdline_machine__", "request": "elsewhere-1"],
+                 channel: "ctl/another-machine")
+        try send(["type": "places", "session": "__clawdline_machine__", "request": "places-after"])
+        let places = try await reply(named: "read:places-after")
+        XCTAssertNotNil(places, "places still answers on read: after the refusals")
+        let quiet = try frames().dropFirst(quietBaseline).filter {
+            ($0.clear["read"] as? String).map { !$0.hasPrefix("read:places") } ?? false
+        }
+        XCTAssertEqual(quiet.map { $0.clear["read"] as? String ?? "" }, [],
+                       "a body that names no well-formed machine request is answered by nobody")
+        XCTAssertTrue(lifecycle.calls.isEmpty, "no refusal reached a lifecycle effect")
+        await relay.stop()
+    }
+
     func testW52ProtectedExecutorIdentityPairingRotationAndReconnect() throws {
         let scratch = canonicalTemporaryDirectory()
             .appendingPathComponent("clawdline-w52-identity-\(UUID().uuidString)")

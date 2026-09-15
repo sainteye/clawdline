@@ -306,6 +306,11 @@ actor LinuxRelayRuntimeOwner {
     /// a bounded scheduling margin without turning a descriptor into transport authority.
     static let descriptorHeartbeatIntervalSeconds: TimeInterval = 240
 
+    /// The machine-session words a browser may send this executor, and the only ones it answers
+    /// with an effect. Published in the descriptor as `commands` so the hosted console can route
+    /// by them; every other word is refused as `unknown_command` (`adaptBrowserCommand`).
+    static let browserCommandTypes = ["places", "start"]
+
     private let machine: CloudMachineIdentity
     private let identityAuthority: CloudExecutorIdentityAuthority
     private let transport: any CloudTransporting
@@ -664,6 +669,13 @@ actor LinuxRelayRuntimeOwner {
               SessionLaunchPolicy.opaqueCommandID(request) == request else {
             throw LinuxDurableStateFailure(code: "malformed_command", message: "Browser command is malformed.")
         }
+        // A word this executor does not implement. It used to fall through to the `start` shape check
+        // and be dropped as malformed with no reply, so a browser asking for snippets, schedules,
+        // push or the Board waited out its whole read timeout. `browserRefusalIdentity` answers it.
+        guard Self.browserCommandTypes.contains(type) else {
+            throw LinuxDurableStateFailure(code: "unknown_command",
+                                           message: "This machine does not know that Cloud command.")
+        }
         if type == "places" {
             guard Set(body.keys) == ["type", "session", "request"],
                   body["session"] as? String == "__clawdline_machine__" else {
@@ -709,7 +721,8 @@ actor LinuxRelayRuntimeOwner {
 
     private func publishDescriptor() async throws {
         var descriptor: [String: Any] = ["name": presentation.displayName,
-                                         "platform": "linux"]
+                                         "platform": "linux",
+                                         "commands": Self.browserCommandTypes]
         if let provider = presentation.provider { descriptor["provider"] = provider }
         let payload: [String: Any] = ["v": 1, "machine": descriptor,
                                       "at": Int(Date().timeIntervalSince1970)]
@@ -766,13 +779,19 @@ actor LinuxRelayRuntimeOwner {
         ]])
     }
 
+    /// Where a refused machine-session command is answered: only one that names the machine reply
+    /// session and a well-formed request id, whatever its word. `places` is a read. Every other word
+    /// is answered `action:` — `start` because it is one, and a word this executor does not implement
+    /// because it cannot know whether the browser waits on `read:` or `action:`; that is the Mac's
+    /// `commandRefusalReply` rule, and the hosted console lets a refusal settle either spelling of
+    /// the same request id.
     private func browserRefusalIdentity(_ plaintext: Data) -> (read: String, type: String)? {
         guard let body = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
-              let type = body["type"] as? String, ["places", "start"].contains(type),
+              let type = body["type"] as? String,
               body["session"] as? String == "__clawdline_machine__",
               let request = body["request"] as? String,
               SessionLaunchPolicy.opaqueCommandID(request) == request else { return nil }
-        return ((type == "start" ? "action:" : "read:") + request, type)
+        return ((type == "places" ? "read:" : "action:") + request, type)
     }
 
     private func refusalPayload(read: String, status: Int, code: String,
