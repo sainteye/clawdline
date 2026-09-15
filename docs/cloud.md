@@ -171,10 +171,14 @@ viewer that connects is replayed nothing, and an unchanged row is never publishe
 Correctness does not depend on how often that happens:
 
 - **Wire.** The viewer sends `{"type":"sessions.snapshot","session":"__clawdline_machine__","request":"<id>"}`
-  on `ctl/<machine>`. The Mac re-sends what a transport-ready force sends — its last `orch/` snapshot
-  with `cloud_status`, every current row (signature included) on its own `s/` channel, and the
-  inventory — then answers `read:<id>` on `t/<machine>/__clawdline_machine__` with
-  `{"sessions":[ids],"complete":bool}`. Everything goes through the ordinary Session-channel lane, so
+  on `ctl/<machine>`, with `"orchestrator": true` added when it has not been sent that machine's
+  `orch/` snapshot either. The Mac re-sends what a transport-ready force sends — every current row
+  (signature included) on its own `s/` channel and the inventory, preceded by its last `orch/`
+  snapshot with `cloud_status` when any request in the pass asked for it — then answers `read:<id>`
+  on `t/<machine>/__clawdline_machine__` with `{"sessions":[ids],"complete":bool}`. The `orch/`
+  snapshot is opt-in because it can be hundreds of kilobytes (this Mac's log on 2026-09-15 shows
+  outbound frames of about 300 and 740 KB repeated) and the relay never keeps an entry larger than
+  256 KB for replay. Everything goes through the ordinary Session-channel lane, so
   the rows land under the sequence guards every row already has. It is read-level: the remote-write
   switch does not gate it.
 - **Bound.** However many viewers ask, one Mac sends its rows at most once per five seconds
@@ -183,10 +187,12 @@ Correctness does not depend on how often that happens:
   is refused `cloud_read_busy`.
 - **Who asks, and when.** A Mac lists the word in `features` — in its `cloud_status` digest and beside
   its inventory — and the page remembers that list with the machine's descriptor in `localStorage`,
-  so a relaunched page can ask before any frame arrives. A client asks each such machine once: when
-  its socket becomes ready without having taken over from a still-live socket (a first connection, a
-  return from a quiesced page, a reconnect after a drop), or when a machine it has not asked first
-  lists the word. A token renewal is make-before-break: the new client takes over what the old socket
+  so a relaunched page can ask before any frame arrives. A client decides for each such machine once:
+  when its socket becomes ready without having taken over from a still-live socket (a first
+  connection, a return from a quiesced page, a reconnect after a drop), or when a machine it has not
+  decided for first lists the word. It lets the relay's replay land first (750 ms): a machine whose
+  inventory, every listed row and `orch/` snapshot all arrived on this socket is current and is not
+  asked at all. A token renewal is make-before-break: the new client takes over what the old socket
   heard during the handshake and asks nothing. A device without `send_prompt` cannot publish on
   `ctl/` and does not ask.
 - **Older machines.** A Mac that lists no `features`, and a Linux executor, are never sent the word;
