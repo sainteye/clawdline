@@ -278,7 +278,7 @@ await check("T-B3 a non-closing relay error does not rename a later network clos
 const LIFECYCLE = new Set(["events", "subscribe", "stop", "retire", "forgetMachinePairingAnswer",
     "machineAccess", "machineDescriptor"]);
 // Cannot fail from a cached answer, or succeed by opening a socket; still held to "a thenable".
-const NEED_NOT_REJECT = new Set(["sessions", "tasks", "machines", "start", "refresh", "whenReady"]);
+const NEED_NOT_REJECT = new Set(["sessions", "tasks", "machines", "voiceHost", "start", "refresh", "whenReady"]);
 
 const STATES = {
     "no machine": async function () {
@@ -1651,6 +1651,129 @@ await check("viewer events · pairing · a legacy binding the key store cannot w
     assert.deepEqual([errors.length, client.sessionSnapshots.size, hooks.bindings.length, unsaved.length,
         unsaved[0] && unsaved[0].data.error_name, client.machinePairings.get("mac-01").unsaved],
     [0, 2, 1, 1, "QuotaExceededError", true], "proven by its signature and decrypt, held in memory, not re-bound per envelope");
+});
+
+/* ---- voice host · which Mac transcribes in a fleet ------------------------------------------ */
+
+// Dictation used to route through `_onlyMachine`, so an account with a Mac and a Linux executor
+// could never dictate at all. These drive the real resolver through envelopes: which `ctl/`
+// channel the recording leaves on, and that every refusal publishes nothing.
+
+const VOICE_CHOICE_KEY = "clawdline.voice-host.v1:" + ACCOUNT;
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+/** A connected client with the named machines published on `orch/`; `current` ones carry a fresh `at`. */
+async function voiceFleet(machines, options) {
+    const client = cloudClient(options || {});
+    const socket = await ready(client);
+    for (const [id, platform, current] of machines) {
+        await fromMac(client, socket, "orch/" + id, Object.assign({ tasks: [] },
+            platform ? { machine: { name: id, platform: platform } } : {},
+            current ? { at: nowSeconds() } : {}));
+    }
+    return { client, socket };
+}
+
+await check("voice host · a Mac + Linux account sends the recording to the Mac's ctl/ channel", async function () {
+    const { client, socket } = await voiceFleet([["mac-01", "macos", true], ["linux-01", "linux", true]]);
+    assert.throws(() => client._onlyMachine("voice input"), (error) => error.code === "cloud_machine_ambiguous",
+        "the fleet that used to stop dictation");
+    assert.deepEqual(await client.voiceHost(), { machine: "mac-01", chosen: false, candidates: ["mac-01"] });
+    const dictation = client.voice("AAAA", 16000);
+    const sent = await nextCommand(socket, "voice");
+    assert.equal(sent.ch, "ctl/mac-01", "never the Linux executor, which has no voice handler");
+    await answer(client, socket, "mac-01", { read: "action:" + sent.request, status: 200, body: { text: "聽到了" } });
+    assert.equal((await dictation).text, "聽到了");
+});
+
+await check("voice host · a stored choice wins, even stale, and a choice made here is stored per browser", async function () {
+    const storage = new FakeStorage();
+    storage.setItem(VOICE_CHOICE_KEY, "mac-02");
+    const { client, socket } = await voiceFleet([["mac-01", "macos", true], ["mac-02", "macos", false],
+        ["linux-01", "linux", true]], { voiceHostStorage: storage });
+    assert.equal((await client.machines()).machines.find((row) => row.id === "mac-02").freshness, "stale");
+    assert.deepEqual(await client.voiceHost(), { machine: "mac-02", chosen: true, candidates: ["mac-01", "mac-02"] });
+    client.voice("AAAA", 16000);
+    assert.equal((await nextCommand(socket, "voice")).ch, "ctl/mac-02");
+
+    assert.deepEqual(await client.setVoiceHost("mac-01"), { machine: "mac-01", chosen: true, candidates: ["mac-01", "mac-02"] });
+    assert.equal(storage.map.get(VOICE_CHOICE_KEY), "mac-01");
+    client.voice("AAAA", 16000);
+    assert.equal((await nextCommand(socket, "voice")).ch, "ctl/mac-01");
+    const reloaded = await voiceFleet([["mac-01", "macos", true], ["mac-02", "macos", true]], { voiceHostStorage: storage });
+    assert.equal((await reloaded.client.voiceHost()).machine, "mac-01", "a new page reads the stored choice");
+
+    const refused = await outcome(client.setVoiceHost("linux-01"));
+    assert.deepEqual([refused.state, refused.error && refused.error.code, storage.map.get(VOICE_CHOICE_KEY)],
+        ["rejected", "cloud_voice_host_unavailable", "mac-01"], "a Linux executor cannot be chosen, and nothing is stored");
+    storage.failWrites = true;
+    assert.deepEqual([(await client.setVoiceHost("mac-02")).machine, storage.map.get(VOICE_CHOICE_KEY)], ["mac-02", "mac-01"],
+        "a press storage refused to keep still counts on this page");
+    const privateMode = await voiceFleet([["mac-01", "macos", true], ["mac-02", "macos", true]],
+        { voiceHostStorage: { getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); } } });
+    assert.deepEqual(await privateMode.client.setVoiceHost("mac-02"), { machine: "mac-02", chosen: true, candidates: ["mac-01", "mac-02"] },
+        "storage that refuses every access still keeps the choice for this page");
+});
+
+await check("voice host · a stored id that is gone or not a Mac falls back to the automatic choice", async function () {
+    for (const stale of ["mac-gone", "linux-01"]) {
+        const storage = new FakeStorage();
+        storage.setItem(VOICE_CHOICE_KEY, stale);
+        const { client, socket } = await voiceFleet([["mac-01", "macos", false], ["linux-01", "linux", true]],
+            { voiceHostStorage: storage });
+        assert.deepEqual(await client.voiceHost(), { machine: "mac-01", chosen: false, candidates: ["mac-01"] }, stale);
+        client.voice("AAAA", 16000);
+        assert.equal((await nextCommand(socket, "voice")).ch, "ctl/mac-01", stale);
+        assert.equal(storage.map.get(VOICE_CHOICE_KEY), stale, "an ignored choice is not erased: the machine may come back");
+    }
+});
+
+await check("voice host · two current Macs and no choice is a typed refusal that publishes nothing", async function () {
+    const { client, socket } = await voiceFleet([["mac-01", "macos", true], ["mac-02", "darwin", true], ["linux-01", "linux", true]]);
+    const before = published(socket).length;
+    const ended = await outcome(client.voice("AAAA", 16000));
+    assert.deepEqual([ended.state, ended.error && ended.error.code, ended.error && ended.error.layer, published(socket).length],
+        ["rejected", "cloud_voice_host_ambiguous", "browser", before]);
+    const asked = await outcome(client.voiceHost());
+    assert.deepEqual([asked.error.code, asked.error.candidates], ["cloud_voice_host_ambiguous", ["mac-01", "mac-02"]],
+        "the refusal still names the Macs Devices can offer");
+    need(textModule, "core/failure-text.js");
+    assert.equal(textModule.describeFailure(ended.error).text, T.webFailVoiceHostAmbiguous);
+
+    client.orchestratorSnapshots.get("mac-02").at = 1;
+    client.machineObservedAt.set("mac-02", 1);
+    assert.deepEqual(await client.voiceHost(), { machine: "mac-01", chosen: false, candidates: ["mac-01", "mac-02"] },
+        "with one Mac current, that one");
+    client.orchestratorSnapshots.get("mac-02").at = nowSeconds();
+    client.machineObservedAt.set("mac-02", Date.now());
+    client.unpairedMachines.set("mac-01", { sender: null, code: "machine_not_paired" });
+    assert.deepEqual(await client.voiceHost(), { machine: "mac-02", chosen: false, candidates: ["mac-02"] },
+        "a Mac this browser is not paired with is not a candidate");
+});
+
+await check("voice host · a Linux-only account refuses as unavailable and publishes nothing", async function () {
+    const { client, socket } = await voiceFleet([["linux-01", "linux", true]]);
+    const before = published(socket).length;
+    const ended = await outcome(client.voice("AAAA", 16000), 200);
+    assert.deepEqual([ended.state, ended.error && ended.error.code, published(socket).length],
+        ["rejected", "cloud_voice_host_unavailable", before], "not six minutes waiting on a machine that cannot answer");
+    need(textModule, "core/failure-text.js");
+    assert.equal(textModule.describeFailure(ended.error).text, T.webFailVoiceHostUnavailable);
+    const empty = cloudClient();
+    await ready(empty);
+    assert.equal((await outcome(empty.voice("AAAA", 16000))).error.code, "cloud_read_unavailable",
+        "an account with no machine yet says so, as it always did");
+});
+
+await check("voice host · a single-machine account is unchanged, before its descriptor and when stale", async function () {
+    const { client, socket } = await fleetOfOne();
+    assert.equal(client.machineDescriptor("mac-01"), null, "no descriptor has arrived");
+    assert.deepEqual(await client.voiceHost(), { machine: "mac-01", chosen: false, candidates: ["mac-01"] });
+    client.voice("AAAA", 16000);
+    assert.equal((await nextCommand(socket, "voice")).ch, "ctl/mac-01");
+    const unknownBeside = await voiceFleet([["mac-01", "macos", false], ["mac-new", null, true]]);
+    assert.equal((await unknownBeside.client.voiceHost()).machine, "mac-01",
+        "an evident Mac is preferred over a machine whose descriptor has not arrived");
 });
 
 /* ---- ends ---------------------------------------------------------------------------------- */

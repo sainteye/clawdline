@@ -1030,6 +1030,11 @@ protocol Copy {
     var webDevicePairingUnknown: String { get }
     var webDevicePairHelp: String { get }
     var webDeviceNewSession: String { get }
+    /// Dictation on Cloud goes to one Mac; Devices marks it and lets the person pick another.
+    var webDeviceVoiceHost: String { get }
+    var webDeviceUseForVoice: String { get }
+    var webFailVoiceHostAmbiguous: String { get }
+    var webFailVoiceHostUnavailable: String { get }
     /// Which assistant a press should open. Only ever on screen when the Mac has more than
     /// one of them installed, which is what makes it a question worth asking.
     var webStartWith: String { get }
@@ -1944,6 +1949,10 @@ extension Copy {
     var webDevicePairingUnknown: String { "Pairing status unknown" }
     var webDevicePairHelp: String { "Start Pair a Browser on this machine to let this browser read its Sessions." }
     var webDeviceNewSession: String { "New Session" }
+    var webDeviceVoiceHost: String { "Voice input" }
+    var webDeviceUseForVoice: String { "Use for voice input" }
+    var webFailVoiceHostAmbiguous: String { "More than one Mac can transcribe, so nothing was sent. Choose one in Devices." }
+    var webFailVoiceHostUnavailable: String { "No Mac paired with this browser can transcribe voice input." }
 
     // The 45 keys between these markers are the explicit temporarily-English Cloud batch.
     // Traditional Chinese overrides all 45; the other locales intentionally inherit these

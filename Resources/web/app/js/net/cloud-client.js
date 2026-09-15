@@ -51,6 +51,9 @@ const MACHINE_INVENTORY_FRESH_MS = 5 * 60 * 1000;
 // still says that other machines may be arriving.
 const MACHINE_INVENTORY_SYNC_MS = 60 * 1000;
 const MACHINE_DESCRIPTOR_CACHE = "clawdline.machine-descriptors.v1:";
+// Which Mac this browser chose to transcribe its dictation (`voiceHost`). A preference kept per
+// browser and per account, never a routing authority of its own.
+const VOICE_HOST_CHOICE = "clawdline.voice-host.v1:";
 
 /** The agent or shell a read is about, as the string the Mac will echo back inside `read`. */
 function readSubject(value) {
@@ -240,6 +243,7 @@ export class CloudClient {
         // PWA process restart used to forget names until the next `orch/` envelope happened to
         // realign, even though Session rows (and therefore opaque ids) had already arrived.
         this.descriptorStorage = options.descriptorStorage || null;
+        this.voiceHostStorage = options.voiceHostStorage || null;
         // Deliberately excludes the short-lived viewer token. `useClient` uses this value to
         // distinguish credential rotation from a real relay/account/device replacement.
         this.selectionTransportIdentity = ["cloud", this.url, this.account || "",
@@ -309,6 +313,10 @@ export class CloudClient {
         // sheet keeps its list on screen across a renewal, and a press on one of those rows used
         // to find this Map empty and die before reaching any Mac.
         this.placeRoutes = sameViewer ? new Map(prior.placeRoutes) : new Map();
+        // The voice host chosen on this page. It wins over `voiceHostStorage`, so a press still
+        // counts in a browser whose storage refuses to keep it.
+        this.voiceHostChoice = sameViewer && typeof prior.voiceHostChoice === "string"
+            ? prior.voiceHostChoice : null;
         this.readWaiters = new Map();
         this.imageReadsInFlight = options.imageReadsInFlight || IMAGE_READS_IN_FLIGHT;
         this.imageReadQueue = [];
@@ -1241,9 +1249,18 @@ export class CloudClient {
     /** Display-only descriptors from authenticated encrypted snapshots. Command authority stays
      * the opaque id encoded in the envelope channel. */
     machines() {
-        var now = Date.now();
         var retryAfterMs = this.descriptorStorage && Number.isFinite(this.readyAt)
             ? Math.max(0, this.readyAt + MACHINE_INVENTORY_SYNC_MS - this.viewerEvents.now()) : 0;
+        var rows = this._machineRows();
+        if (!rows.length && retryAfterMs <= 0) return Promise.reject(cloudError("cloud_read_unavailable",
+            "no machine has published an inventory to this account yet"));
+        return Promise.resolve({ machines: rows, syncing: retryAfterMs > 0,
+            retryAfterMs: retryAfterMs });
+    }
+
+    /** The rows `machines()` answers, synchronously, so `voiceHost` reads the same facts Devices draws. */
+    _machineRows() {
+        var now = Date.now();
         var rows = this._knownMachines().map(function (id) {
             var snapshot = this.orchestratorSnapshots.get(id) || {};
             var remembered = this.machineDescriptors.get(id);
@@ -1273,18 +1290,112 @@ export class CloudClient {
                 // places probe.  It is not enough to silently choose this route for the user.
                 selectable: pairing !== "not_paired", autoSelectable: autoSelectable }));
         }, this);
-        rows = rows.map(function (row) {
+        return rows.map(function (row) {
             var fleet = machinePresentationForFleet(row, rows, T);
             return Object.freeze(Object.assign({}, row, { label: fleet.label }));
         });
-        if (!rows.length && retryAfterMs <= 0) return Promise.reject(cloudError("cloud_read_unavailable",
-            "no machine has published an inventory to this account yet"));
-        return Promise.resolve({ machines: rows, syncing: retryAfterMs > 0,
-            retryAfterMs: retryAfterMs });
     }
 
-    /** A machine-scoped control cannot guess in a fleet. Push subscriptions and dictation belong
-     * to one Mac's keys and model, so they are available when this account currently names one. */
+    /**
+     * Which machine transcribes this browser's dictation. `voice()` sends to it and the Devices
+     * page marks it, from this one decision, so the card that says "Voice input" is the machine
+     * the recording goes to.
+     *
+     * Only a Mac runs Whisper. A Linux executor has no `voice` handler and drops the command, so a
+     * recording sent there would wait out `VOICE_TIMEOUT_MS` for nothing. A **candidate** is a
+     * machine this browser is not known to be unpaired with and whose descriptor does not name
+     * another platform. Machines that are evidently Macs — a macOS descriptor, or `cloud_status`,
+     * which only the Mac publishes — are the candidates when there are any; machines whose
+     * descriptor has not arrived yet are the candidates only when none is evidently a Mac, which
+     * is how a one-Mac account still dictates before its first `orch/` snapshot.
+     *
+     * The machine this browser chose wins while it is still a candidate, however stale — the
+     * person picked it. Otherwise one candidate is the answer, then the one candidate with a
+     * current inventory. It answers `{ machine, chosen, candidates }`. Two left, or none, is a
+     * typed refusal that still carries `candidates`, because an ambiguous fleet is exactly when
+     * Devices has to offer the choice.
+     */
+    voiceHost() {
+        try {
+            var host = this._voiceHost();
+            if (!host.machine) throw host.error;
+            return Promise.resolve({ machine: host.machine, chosen: host.chosen,
+                candidates: host.candidates });
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    _voiceHost() {
+        var rows = this._machineRows();
+        var capabilities = this.macCapabilities;
+        var possible = rows.filter(function (row) {
+            return row.pairing !== "not_paired" && (!row.platform || row.kind === "mac");
+        });
+        var evident = possible.filter(function (row) {
+            return row.kind === "mac" || capabilities.has(row.id);
+        });
+        var pool = evident.length ? evident : possible;
+        var candidates = Object.freeze(pool.map(function (row) { return row.id; }));
+        var answer = function (machine, chosen) {
+            return { machine: machine, chosen: chosen, candidates: candidates, error: null };
+        };
+        var refusal = function (code, message) {
+            var error = cloudError(code, message);
+            error.candidates = candidates;
+            return { machine: null, chosen: false, candidates: candidates, error: error };
+        };
+        var choice = this._voiceHostChoice();
+        if (choice && candidates.indexOf(choice) >= 0) return answer(choice, true);
+        if (candidates.length === 1) return answer(candidates[0], false);
+        if (!rows.length) {
+            return refusal("cloud_read_unavailable",
+                "no Mac has published an inventory to this account yet");
+        }
+        if (!candidates.length) {
+            return refusal("cloud_voice_host_unavailable",
+                "no machine on this account that this browser is paired with can transcribe voice input");
+        }
+        var current = pool.filter(function (row) { return row.freshness === "current"; });
+        if (current.length === 1) return answer(current[0].id, false);
+        return refusal("cloud_voice_host_ambiguous",
+            "more than one Mac can transcribe voice input, and none is chosen under Devices");
+    }
+
+    /** Stores the voice host for this browser. Only a current candidate can be chosen. */
+    setVoiceHost(machine) {
+        try {
+            var id = typeof machine === "string" ? machine : "";
+            if (!id || this._voiceHost().candidates.indexOf(id) < 0) {
+                throw cloudError("cloud_voice_host_unavailable",
+                    "this machine cannot transcribe voice input for this browser");
+            }
+            this.voiceHostChoice = id;
+            var key = this._voiceHostStorageKey();
+            if (key && this.voiceHostStorage && typeof this.voiceHostStorage.setItem === "function") {
+                try { this.voiceHostStorage.setItem(key, id); }
+                catch (e) { /* private mode or quota: the choice holds for this page */ }
+            }
+            return this.voiceHost();
+        } catch (error) { return Promise.reject(error); }
+    }
+
+    _voiceHostStorageKey() {
+        return this.account ? VOICE_HOST_CHOICE + encodeURIComponent(this.account) : null;
+    }
+
+    /** A press on this page first, even one storage refused to keep; then what this browser stored. */
+    _voiceHostChoice() {
+        if (this.voiceHostChoice) return this.voiceHostChoice;
+        var key = this._voiceHostStorageKey();
+        if (!key || !this.voiceHostStorage || typeof this.voiceHostStorage.getItem !== "function") return null;
+        try {
+            var stored = this.voiceHostStorage.getItem(key);
+            return typeof stored === "string" && stored ? stored.slice(0, 256) : null;
+        } catch (e) { return null; /* unreadable storage: the automatic choice */ }
+    }
+
+    /** A machine-scoped control cannot guess in a fleet. Push subscriptions belong to one Mac's
+     * keys, so they are available when this account currently names one. Dictation picks its Mac
+     * through `voiceHost` instead. */
     _onlyMachine(feature) {
         var machines = this._knownMachines();
         if (!machines.length) {
@@ -2720,9 +2831,12 @@ export class CloudClient {
         } catch (error) { return Promise.reject(error); }
     }
 
+    /** Dictation goes to the one Mac `voiceHost` names, never to a Linux executor. */
     voice(audio, rate) {
         try {
-            return this._machineRequest(this._onlyMachine("voice input"), "voice",
+            var host = this._voiceHost();
+            if (!host.machine) throw host.error;
+            return this._machineRequest(host.machine, "voice",
                 { audio: audio, rate: rate }, "action", VOICE_TIMEOUT_MS);
         } catch (error) { return Promise.reject(error); }
     }

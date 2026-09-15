@@ -653,6 +653,8 @@ export class CloudViewerSession {
             // only after an authenticated `orch/` envelope, then restores them here across a
             // full PWA process restart while the relay realigns each machine independently.
             descriptorStorage: this.storage,
+            // The Mac chosen under Devices to transcribe dictation, remembered per browser.
+            voiceHostStorage: this.storage,
             // Receive failures and the door, kept on this device and delivered to the paired Mac
             // with nobody pressing anything (`cloud-viewer-events.js`, `docs/diagnostics.md`).
             // With Web Locks only one tab of this device writes the stored rows.
