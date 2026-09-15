@@ -1123,10 +1123,11 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
                 fixture.transport.envelopes().filter { $0.ch == "orch/mac-rows" }.map { $0.seq }
             }
 
-            cloudRowAwait("the Mac's snapshot") { try await bridge.publishOrchestrator(snapshot("One")) }
+            let one = snapshot("One"), two = snapshot("Two")
+            cloudRowAwait("the Mac's snapshot") { try await bridge.publishOrchestrator(one) }
             check("goes to the socket, which holds it", eventually { fixture.transport.state().publicationStarts == 1 })
             fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
-            cloudRowAwait("a change while the socket holds the first") { try await bridge.publishOrchestrator(snapshot("Two")) }
+            cloudRowAwait("a change while the socket holds the first") { try await bridge.publishOrchestrator(two) }
             fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
             status.recordDrop(CloudInboundDrop(code: .replay, sender: "web_spool", sequence: 5, highestSequence: 6))
             check("a notice follows it into the spool while the change is still unsent",
@@ -1151,7 +1152,7 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
             check("a new ready generation arrives", eventually { readies.all == ["1", "2"] }, "\(readies.all)")
             fixture.clock.advance(CloudAppBridge.orchestratorPublicationIntervalMilliseconds)
             // Unforced: a newer snapshot can replace the forced ready one in the Mac's own lane.
-            cloudRowAwait("the Mac hands over the snapshot it last sent") { try await bridge.publishOrchestrator(snapshot("Two")) }
+            cloudRowAwait("the Mac hands over the snapshot it last sent") { try await bridge.publishOrchestrator(two) }
             check("after a ready generation the same snapshot is a new publication, not one already out",
                   eventually { sequences().contains { $0 > sentBeforeReady } }
                     && (fixture.orchestratorFrames().last?["tasks"] as? [[String: Any]])?.first?["title"] as? String == "Two",
