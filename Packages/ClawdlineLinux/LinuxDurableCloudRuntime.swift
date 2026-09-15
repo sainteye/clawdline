@@ -144,6 +144,8 @@ final class LinuxDurableCloudRuntime {
         presentation: LinuxRelayMachinePresentation,
         places: [LinuxRelayPlace],
         inventory: @escaping @Sendable () -> TerminalInventory,
+        observations: @escaping @Sendable (TerminalInventory)
+            -> [String: TerminalSessionPresentation.Observation] = { _ in [:] },
         relayBaseURL: URL = URL(string: "wss://relay.clawdline.com/v1/connect")!,
         diagnostic: @escaping @Sendable (String) -> Void = { _ in },
         stateObserver: @escaping @Sendable (LinuxRelayRuntimeState) -> Void = { _ in }
@@ -170,6 +172,7 @@ final class LinuxDurableCloudRuntime {
                 }, diagnostic: diagnostic),
             ingress: ingress, commandsEnabled: commandsEnabled, diagnostic: diagnostic,
             presentation: presentation, places: places, inventory: inventory,
+            observations: observations,
             stateObserver: stateObserver)
         return relay
     }
@@ -322,6 +325,8 @@ actor LinuxRelayRuntimeOwner {
     private let presentation: LinuxRelayMachinePresentation
     private let places: [LinuxRelayPlace]
     private let inventory: @Sendable () -> TerminalInventory
+    private let observations: @Sendable (TerminalInventory)
+        -> [String: TerminalSessionPresentation.Observation]
     private let monotonicNow: @Sendable () -> TimeInterval
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
@@ -349,6 +354,8 @@ actor LinuxRelayRuntimeOwner {
             displayName: "Clawdline Linux", provider: nil),
         places: [LinuxRelayPlace] = [],
         inventory: @escaping @Sendable () -> TerminalInventory = { TerminalInventory() },
+        observations: @escaping @Sendable (TerminalInventory)
+            -> [String: TerminalSessionPresentation.Observation] = { _ in [:] },
         stateObserver: @escaping @Sendable (LinuxRelayRuntimeState) -> Void = { _ in },
         monotonicNow: @escaping @Sendable () -> TimeInterval = {
             ProcessInfo.processInfo.systemUptime
@@ -364,6 +371,7 @@ actor LinuxRelayRuntimeOwner {
         self.presentation = presentation
         self.places = places
         self.inventory = inventory
+        self.observations = observations
         self.stateObserver = stateObserver
         self.monotonicNow = monotonicNow
     }
@@ -577,7 +585,7 @@ actor LinuxRelayRuntimeOwner {
                 text: nil, sender: inbound.sender, sequence: inbound.sequence,
                 readName: "transcript"
             ) { receipt in
-                let text = receipt.output ?? ""
+                let text = TerminalSessionPresentation.plain(receipt.output ?? "")
                 return ["entries": text.isEmpty ? [] : [["role": "assistant", "text": text]],
                         "signature": LinuxSHA256.hex(Data(text.utf8))]
             }
@@ -593,7 +601,7 @@ actor LinuxRelayRuntimeOwner {
                     "id": sessionID, "backend": "tmux", "channel": "on-demand",
                     "revision": LinuxSHA256.hex(Data(text.utf8)), "readable": true,
                     "pending": false, "text": text,
-                    "lines": text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count,
+                    "lines": TerminalSessionPresentation.lineCount(text),
                     "askAgainAfterMs": 1_000
                 ]]
             }
@@ -770,14 +778,20 @@ actor LinuxRelayRuntimeOwner {
         let allowed = Set(places.map(\.path))
         let rows = snapshot.assistantSessions.sorted { $0.id < $1.id }
         guard rows.count <= 512 else { return }
+        let observed = observations(snapshot)
         var encodedRows: [String: Data] = [:]
         do {
             for row in rows {
+                let presentation = observed[row.id] ?? .unknown
                 var session: [String: Any] = [
-                    "id": row.id, "name": row.name,
+                    "id": row.id, "name": row.name, "label": row.name,
                     "assistant": row.assistant?.rawValue ?? "", "backend": "tmux",
-                    "window": row.windowIndex, "tab": row.tabIndex
+                    "window": row.windowIndex, "tab": row.tabIndex,
+                    "tty": row.tty.replacingOccurrences(of: "/dev/", with: ""),
+                    "isClaude": row.isClaude,
+                    "state": presentation.state, "work_state": presentation.workState
                 ]
+                if let line = presentation.line { session["line"] = line }
                 if let cwd = row.cwd, allowed.contains(cwd) { session["cwd"] = cwd }
                 encodedRows[row.id] = try Self.json(["session": session])
             }

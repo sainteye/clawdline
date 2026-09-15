@@ -402,6 +402,16 @@ deletion barrier for older rows. Every authenticated ready generation replays th
 set. A ten-second local observation supplies the bounded refresh after host-side create, send or
 close even when the effect did not originate in the browser.
 
+Every complete Linux inventory observation captures all assistant panes through one bounded tmux
+`source-file -` call. `capture-pane -e` preserves SGR/OSC bytes for the existing safe Web terminal
+renderer, while the shared shape reader strips terminal controls before recognizing Codex or
+Claude activity. Rows publish the same `state`, optional `line`, `work_state`, `label`, `tty`, and
+`isClaude` presentation fields the hosted list/detail already consume. A missing pane answer,
+timeout, output-limit failure, or incomplete inventory is `unknown`, never idle; Linux does not
+publish `waiting` without the provider registry/menu evidence which currently exists only on the
+Mac. The Linux `transcript` reply remains a plain bounded **screen projection**, not a native
+provider transcript; `screen` is the only reply which preserves terminal styling.
+
 The browser operations accepted by the Linux machine channel are the closed `info`, `places`,
 `screen`, `send`, `start`, and `transcript` set. `start` names a configured place id, never a path; an empty assistant means
 `claude`, otherwise it is `claude` or `codex`, and a nonempty model is exactly `haiku`, `sonnet` or

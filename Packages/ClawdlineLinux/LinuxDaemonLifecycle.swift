@@ -1295,6 +1295,17 @@ enum LinuxDaemonService {
                 (try? runtime.terminal.inventory()) ?? TerminalInventory(
                     error: "tmux inventory was unavailable", isComplete: false)
             },
+            observations: { snapshot in
+                let sessions = snapshot.assistantSessions
+                guard snapshot.isComplete,
+                      let screens = try? runtime.terminal.captureVisible(sessions) else {
+                    return Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, .unknown) })
+                }
+                return Dictionary(uniqueKeysWithValues: sessions.map { session in
+                    (session.id, TerminalSessionPresentation.observe(
+                        screens[session.id], assistant: session.assistant ?? .claude))
+                })
+            },
             diagnostic: relayDiagnostic,
             stateObserver: { relayStatus.record($0) })
         let relaySupervisor = relayOwner.map {

@@ -136,6 +136,7 @@ targets.insert(
                 "ProviderLifecyclePolicy.swift",
                 "SessionLaunchPolicy.swift",
                 "TerminalCommandScheduler.swift",
+                "TerminalSessionPresentation.swift",
                 "Assistant.swift",
                 "CloudCanonicalJSON.swift",
                 "CloudV2Protocol.swift",

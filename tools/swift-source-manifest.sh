@@ -153,6 +153,7 @@ clawdline_production_sources=(
   Sources/Subprocess.swift
   Sources/Targets.swift
   Sources/TerminalCommandScheduler.swift
+  Sources/TerminalSessionPresentation.swift
   Sources/Tmux.swift
   Sources/Transcript.swift
   Sources/TranscriptReadCoordinator.swift

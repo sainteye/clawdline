@@ -88,6 +88,7 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
     private var storedCalls: [String] = []
     private var storedInfoSession: TargetSession?
     private var storedIncarnation = "incarnation-a"
+    private var storedObservedOutput = "screen"
     var calls: [String] { callsLock.lock(); defer { callsLock.unlock() }; return storedCalls }
     var sessionID = "%durable"
 
@@ -96,6 +97,10 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
         storedInfoSession = session
         storedIncarnation = incarnation
         callsLock.unlock()
+    }
+
+    func setObservedOutput(_ output: String) {
+        callsLock.lock(); storedObservedOutput = output; callsLock.unlock()
     }
 
     private func record(_ call: String) {
@@ -111,9 +116,12 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
         try progress.advance(to: .executed)
         try progress.advance(to: .delivered)
         if observed { try progress.advance(to: .observed) }
+        callsLock.lock()
+        let observedOutput = storedObservedOutput
+        callsLock.unlock()
         return LinuxLifecycleReceipt(progress: progress, sessionID: sessionID,
                                      tty: "/dev/pts/42", attachCommand: nil,
-                                     output: operation == .observe ? "screen" : nil,
+                                     output: operation == .observe ? observedOutput : nil,
                                      terminalIncarnation: terminalIncarnation)
     }
 
@@ -1309,7 +1317,13 @@ final class LinuxRuntimeContractTests: XCTestCase {
             presentation: LinuxRelayMachinePresentation(
                 displayName: "AWS worker", provider: "aws"),
             places: [LinuxRelayPlace(id: "reaver", label: "reaver", path: project.path)],
-            inventory: { inventory.get() })
+            inventory: { inventory.get() },
+            observations: { snapshot in
+                Dictionary(uniqueKeysWithValues: snapshot.assistantSessions.map { session in
+                    (session.id, session.id == "%7"
+                        ? .working("Working (12s • esc to interrupt)") : .idle)
+                })
+            })
         try await relay.start()
         var initialFrames: [CloudPublishFrame] = []
         for wanted in 1...3 {
@@ -1346,6 +1360,16 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertTrue(initial.contains {
             ($0["session"] as? [String: Any])?["cwd"] as? String == project.path
         })
+        let initialSession = try XCTUnwrap(initial.compactMap {
+            $0["session"] as? [String: Any]
+        }.first)
+        XCTAssertEqual(initialSession["label"] as? String, "Linux work")
+        XCTAssertEqual(initialSession["tty"] as? String, "pts/7")
+        XCTAssertEqual(initialSession["isClaude"] as? Bool, false)
+        XCTAssertEqual(initialSession["state"] as? String, "working")
+        XCTAssertEqual(initialSession["work_state"] as? String, "working")
+        XCTAssertEqual(initialSession["line"] as? String,
+                       "Working (12s • esc to interrupt)")
         XCTAssertTrue(initial.contains {
             (($0["inventory"] as? [String: Any])?["sessions"] as? [String]) == ["%7"]
         })
@@ -1383,6 +1407,16 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let replacementSentinel = try XCTUnwrap(replacementFrames.first {
             $0.envelope.ch == "s/machine-linux/__clawdline_inventory_v1__"
         })
+        let replacementRow = try XCTUnwrap(replacementFrames.first {
+            $0.envelope.ch == "s/machine-linux/%258"
+        })
+        let replacementSession = try XCTUnwrap(
+            try plaintexts([replacementRow]).first?["session"] as? [String: Any])
+        XCTAssertEqual(replacementSession["label"] as? String, "Replacement")
+        XCTAssertEqual(replacementSession["isClaude"] as? Bool, true)
+        XCTAssertEqual(replacementSession["state"] as? String, "idle")
+        XCTAssertEqual(replacementSession["work_state"] as? String, "ready")
+        XCTAssertNil(replacementSession["line"], "idle rows never retain a stale working line")
         XCTAssertEqual(
             (try plaintexts([replacementSentinel]).first?["inventory"] as? [String: Any])?["sessions"]
                 as? [String], ["%8"])
@@ -1608,6 +1642,9 @@ final class LinuxRuntimeContractTests: XCTestCase {
                        "the descriptor advertises exactly the words the adapter implements")
 
         let durableBeforeReads = try XCTUnwrap(ingressStore.load().state)
+        let styledScreen = "\u{1b}[31mscreen\u{1b}[0m\n"
+            + "\u{1b}]8;;https://example.invalid\u{07}link\u{1b}]8;;\u{07}\n"
+        lifecycle.setObservedOutput(styledScreen)
         gate.set(false)
         try send([
             "type": "transcript", "session": lifecycle.sessionID,
@@ -1618,13 +1655,18 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertEqual(transcript.frame.envelope.ch, "t/machine-linux/%25durable")
         let transcriptBody = try XCTUnwrap(transcript.clear["body"] as? [String: Any])
         let transcriptEntries = try XCTUnwrap(transcriptBody["entries"] as? [[String: Any]])
-        XCTAssertEqual(transcriptEntries.first?["text"] as? String, "screen")
+        XCTAssertEqual(transcriptEntries.first?["text"] as? String, "screen\nlink\n",
+                       "the temporary transcript projection is explicit plain terminal text")
 
         try send(["type": "screen", "session": lifecycle.sessionID])
         let screenReply = try await reply(named: "screen")
         let screen = try XCTUnwrap(screenReply)
-        XCTAssertEqual((((screen.clear["body"] as? [String: Any])?["screen"]
-            as? [String: Any])?["text"] as? String), "screen")
+        let screenBody = try XCTUnwrap(
+            (screen.clear["body"] as? [String: Any])?["screen"] as? [String: Any])
+        XCTAssertEqual(screenBody["text"] as? String, styledScreen,
+                       "screen keeps SGR and OSC for the existing safe terminal renderer")
+        XCTAssertEqual(screenBody["lines"] as? Int, 2,
+                       "the terminal's final newline does not invent a third display row")
 
         try send(["type": "info", "session": lifecycle.sessionID, "parts": "full"])
         let infoFullReply = try await reply(named: "info.full")
@@ -2068,6 +2110,39 @@ final class LinuxRuntimeContractTests: XCTestCase {
                        "non-regular protected leaf is refused without replacing saved bytes")
         XCTAssertFalse(String(describing: try authority.transportMaterial())
             .contains(replacementMaster.rawRepresentation.base64EncodedString()))
+    }
+
+    func testLinuxTerminalPresentationKeepsScreenANSIAndDerivesHonestProviderStates() throws {
+        let escape = "\u{1b}"
+        let codex = "\(escape)[36m• Working (12s • esc to interrupt)\(escape)[0m\n"
+        let claude = "\(escape)]8;;https://example.invalid\u{07}\(escape)[35m✻ Thinking… (1m 2s)\(escape)[0m\(escape)]8;;\u{07}\n"
+
+        XCTAssertEqual(
+            TerminalSessionPresentation.observe(codex, assistant: .codex),
+            .working("Working (12s • esc to interrupt)"))
+        XCTAssertEqual(
+            TerminalSessionPresentation.observe(claude, assistant: .claude),
+            .working("Thinking… (1m 2s)"))
+        XCTAssertEqual(
+            TerminalSessionPresentation.observe("❯ ready\n", assistant: .claude), .idle)
+        XCTAssertEqual(TerminalSessionPresentation.observe(nil, assistant: .codex), .unknown,
+                       "an incomplete capture is unknown rather than confidently idle")
+        XCTAssertEqual(TerminalSessionPresentation.plain(claude), "✻ Thinking… (1m 2s)\n",
+                       "plain consumers receive neither SGR nor an OSC hyperlink target")
+        XCTAssertEqual(TerminalSessionPresentation.plain("safe\(escape)]0;unterminated"), "safe",
+                       "an unterminated OSC cannot leak its payload as prose")
+
+        let script = LinuxTmuxTerminalHost.batchedCaptureScript(["%7", "not-a-pane", "%8"])
+        XCTAssertEqual(script.components(separatedBy: "capture-pane").count - 1, 2)
+        XCTAssertTrue(script.contains("capture-pane -p -e -J -S -0 -t %7"),
+                      "the Linux screen route retains terminal presentation escapes")
+        let marker = LinuxTmuxTerminalHost.batchedCaptureMarker
+        let batch = "\(marker)%7\(marker)\n\(codex)\(marker)\(marker)\n"
+            + "\(marker)%8\(marker)\n\(claude)"
+        let parsed = LinuxTmuxTerminalHost.parseBatchedCapture(batch)
+        XCTAssertEqual(parsed["%7"], codex)
+        XCTAssertEqual(parsed["%8"], claude)
+        XCTAssertNil(parsed[""], "a failed pane marker is not a blank-screen observation")
     }
 
     func testDedicatedTmuxWithNoSessionsIsACompleteEmptyInventory() throws {

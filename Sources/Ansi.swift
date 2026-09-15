@@ -1,4 +1,7 @@
 import AppKit
+#if canImport(ClawdlineApplication)
+import ClawdlineApplication
+#endif
 
 /// Turning terminal escape sequences into attributed text.
 ///
@@ -65,31 +68,7 @@ enum Ansi {
     /// So anything reading a capture for its **shape** goes through here first. The output pane
     /// does not, because there the colours are the point.
     static func plain(_ text: String) -> String {
-        guard hasEscapes(text) else { return text }
-        var out = ""
-        out.reserveCapacity(text.count)
-        let chars = Array(text)
-        var i = 0
-        while i < chars.count {
-            guard chars[i] == "\u{1b}", i + 1 < chars.count else {
-                out.append(chars[i]); i += 1; continue
-            }
-            if chars[i + 1] == "[" {
-                var j = i + 2
-                while j < chars.count, !("@"..."~").contains(chars[j]) { j += 1 }
-                i = j + 1
-            } else if chars[i + 1] == "]" {
-                var j = i + 2
-                while j < chars.count, chars[j] != "\u{07}" {
-                    if chars[j] == "\u{1b}", j + 1 < chars.count, chars[j + 1] == "\\" { j += 1; break }
-                    j += 1
-                }
-                i = j + 1
-            } else {
-                i += 2
-            }
-        }
-        return out
+        TerminalSessionPresentation.plain(text)
     }
 
     static func attributed(_ text: String, font: NSFont, defaultColor: NSColor) -> NSAttributedString {

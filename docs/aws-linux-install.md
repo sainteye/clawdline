@@ -240,6 +240,15 @@ sudo -u clawdline env HOME=/var/lib/clawdline/home \
 sudo chown -R clawdline:clawdline /var/lib/clawdline-projects/reaver
 ```
 
+The hosted Session list and detail view use a bounded tmux capture for both Codex and Claude.
+Terminal colours and safe OSC links remain available on the screen route; the row reports
+`working` plus the provider's live line, `idle`, or `unknown` when capture evidence is incomplete.
+It does not infer work from CPU usage or `pane_current_command`, and it does not infer a waiting
+question where Linux has no proved provider registry/menu signal. The current Linux transcript
+reply is control-free terminal text, not the native JSONL record under this service HOME; the
+remaining provider-specific identity and bounded-file-reader seams are recorded in the task's
+`linux-native-transcript-gap.md` artifact.
+
 Before the first daemon start, replace the broad template root with the exact allowlisted project
 and add the bounded AWS presentation. The temporary file is separate, 0640, root/service-group
 owned, atomically renamed, and the containing directory is synced:
