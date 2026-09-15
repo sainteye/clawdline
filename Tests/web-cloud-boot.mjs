@@ -794,6 +794,399 @@ function fakeClient() {
         "a revoked device stops rather than knocking on the relay every thirty seconds");
 }
 
+/* ---- a page put away, a relay that closes, a clock that is wrong ---------- */
+
+// `keepConnected` against a fake clock, a fake document/window/navigator and clients that only
+// say `ready` and `offline`. Every check reports on its own, so this file run against a tree
+// without the behaviour names each missing one instead of stopping at the first.
+// Measured origin: a phone overheating with the hosted console open (2026-09-15).
+
+const lifecycleFailures = [];
+let lifecyclePassed = 0;
+async function lifecycleCheck(name, run) {
+    try { await run(); lifecyclePassed += 1; }
+    catch (error) {
+        lifecycleFailures.push(name + "\n    " + String(error && error.message).split("\n").slice(0, 8).join("\n    "));
+    }
+}
+
+async function drain() {
+    for (let i = 0; i < 12; i += 1) await new Promise(function (resolve) { setImmediate(resolve); });
+}
+
+function lifecycleTimers(start) {
+    let now = start || 1_000_000;
+    let sequence = 0;
+    const timers = new Map();
+    return {
+        now: function () { return now; },
+        setTimeout: function (fn, ms) {
+            sequence += 1;
+            timers.set(sequence, { at: now + Math.max(0, ms), ms: ms, fn: fn });
+            return sequence;
+        },
+        clearTimeout: function (id) { timers.delete(id); },
+        pending: function () { return Array.from(timers.values()); },
+        /** Move the clock without firing anything: a page whose JavaScript was frozen. */
+        jump: function (ms) { now += ms; },
+        advance: async function (ms) {
+            const target = now + ms;
+            await drain();
+            for (;;) {
+                const due = Array.from(timers.entries()).filter(function (entry) { return entry[1].at <= target; })
+                    .sort(function (a, b) { return a[1].at - b[1].at; })[0];
+                if (!due) break;
+                now = due[1].at;
+                timers.delete(due[0]);
+                due[1].fn();
+                await drain();
+            }
+            now = target;
+            await drain();
+        }
+    };
+}
+
+function lifecyclePage(options) {
+    options = options || {};
+    function target() {
+        const listeners = new Map();
+        return {
+            listeners: listeners,
+            addEventListener: function (name, fn) {
+                listeners.set(name, (listeners.get(name) || []).concat([fn]));
+            },
+            removeEventListener: function (name, fn) {
+                listeners.set(name, (listeners.get(name) || []).filter(function (other) { return other !== fn; }));
+            },
+            fire: function (name) { (listeners.get(name) || []).slice().forEach(function (fn) { fn({}); }); }
+        };
+    }
+    const doc = Object.assign(target(), { hidden: !!options.hidden,
+        visibilityState: options.hidden ? "hidden" : "visible" });
+    const win = target();
+    const nav = { onLine: options.offline ? false : true };
+    return {
+        document: doc, window: win, navigator: nav,
+        hide: function () { doc.hidden = true; doc.visibilityState = "hidden"; doc.fire("visibilitychange"); },
+        show: function () { doc.hidden = false; doc.visibilityState = "visible"; doc.fire("visibilitychange"); },
+        online: function () { nav.onLine = true; win.fire("online"); },
+        listeners: function () {
+            let count = 0;
+            [doc, win].forEach(function (t) { t.listeners.forEach(function (list) { count += list.length; }); });
+            return count;
+        }
+    };
+}
+
+function lifecycleClient() {
+    const listeners = new Set();
+    return {
+        ready: true, retired: 0, stopped: 0, unsettled: 0,
+        events: function (listener) {
+            listeners.add(listener);
+            return function () { listeners.delete(listener); };
+        },
+        drop: function (failure) {
+            this.ready = false;
+            listeners.forEach(function (listener) {
+                listener({ type: "connection", state: "offline", failure: failure || null });
+            });
+        },
+        retire: function () { this.retired += 1; this.ready = false; },
+        stop: function () { this.stopped += 1; this.ready = false; },
+        _unsettledWork: function () { return this.unsettled; }
+    };
+}
+
+/** `plan(n)` for the n-th connect: an Error to reject with, or fields to put on the outcome. */
+function lifecycleSession(timers, plan) {
+    const session = {
+        client: null, clients: [], connects: [],
+        connect: function () {
+            session.connects.push(timers.now());
+            const planned = plan ? plan(session.connects.length) : null;
+            if (planned instanceof Error) return Promise.reject(planned);
+            const client = lifecycleClient();
+            const previous = session.client;
+            session.client = client;
+            session.clients.push(client);
+            return Promise.resolve(Object.assign({ state: "connected", client: client, previous: previous,
+                expiresAt: null }, planned || {}));
+        }
+    };
+    return session;
+}
+
+function lifecycleKeeper(session, timers, page, options) {
+    const states = [];
+    const keeper = boot.keepConnected(session, Object.assign({
+        setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, now: timers.now,
+        jitter: function () { return 0.5; },
+        document: page.document, window: page.window, navigator: page.navigator,
+        onState: function (update) { states.push(update); }
+    }, options || {}));
+    return { keeper: keeper, states: states,
+        names: function () { return states.map(function (update) { return update.state; }); } };
+}
+
+const refusal = function (code) {
+    return Object.assign(new Error("the relay closed the connection"), { code: code, layer: "relay" });
+};
+
+await lifecycleCheck("reconnect · a close right after ready waits, and the wait grows until a connection stays up", async function () {
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    const session = lifecycleSession(timers);
+    const run = lifecycleKeeper(session, timers, page, { initialBackoffMs: 250, maximumBackoffMs: 30_000,
+        stableMs: 60_000 });
+    await timers.advance(0);
+    assert.equal(session.connects.length, 1);
+    const start = timers.now();
+    session.client.drop();
+    await timers.advance(0);
+    assert.equal(session.connects.length, 1, "no zero-delay reconnect after a post-ready close");
+    await timers.advance(249);
+    assert.equal(session.connects.length, 1, "not before the first backoff");
+    await timers.advance(1);
+    assert.equal(session.connects.length, 2, "the first backoff is the initial one");
+    session.client.drop();
+    await timers.advance(499);
+    assert.equal(session.connects.length, 2, "an unstable connection does not reset the backoff");
+    await timers.advance(1);
+    session.client.drop();
+    await timers.advance(999);
+    assert.equal(session.connects.length, 3);
+    await timers.advance(1);
+    assert.deepEqual(session.connects.map(function (at) { return at - start; }), [0, 250, 750, 1750]);
+    await timers.advance(60_000);
+    session.client.drop();
+    await timers.advance(249);
+    assert.equal(session.connects.length, 4, "still waiting after a stable connection drops");
+    await timers.advance(1);
+    assert.equal(session.connects.length, 5, "a connection that stayed up resets the backoff to the initial wait");
+    run.keeper.stop();
+});
+
+await lifecycleCheck("renewal · timed on the relay's clock, never sooner than the floor, and cancelled with its boundary", async function () {
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    // A phone ten minutes ahead of the API: `expiresAt` is already in the past on this clock.
+    const skewed = lifecycleSession(timers, function () {
+        return { expiresAt: timers.now() - 600_000, renewInMs: 300_000 };
+    });
+    const run = lifecycleKeeper(skewed, timers, page, { renewalLeadMs: 30_000 });
+    await timers.advance(0);
+    assert.ok(run.states.length && run.names()[0] === "connected");
+    assert.ok(timers.pending().some(function (timer) { return timer.ms === 270_000; }),
+        "the relay's remaining lifetime less the lead: " + JSON.stringify(timers.pending().map(function (t) { return t.ms; })));
+    await timers.advance(269_999);
+    assert.equal(skewed.connects.length, 1, "not renewed at once under a skewed device clock");
+    await timers.advance(1);
+    assert.equal(skewed.connects.length, 2);
+    run.keeper.stop();
+
+    const floorTimers = lifecycleTimers();
+    const noRelayClock = lifecycleSession(floorTimers, function () {
+        return { expiresAt: floorTimers.now() - 600_000, renewInMs: null };
+    });
+    const floored = lifecycleKeeper(noRelayClock, floorTimers, lifecyclePage(), { renewalFloorMs: 60_000 });
+    await floorTimers.advance(59_999);
+    assert.equal(noRelayClock.connects.length, 1, "the floor holds when only the device clock is known");
+    await floorTimers.advance(1);
+    assert.equal(noRelayClock.connects.length, 2, "and the renewal happens at the floor");
+    floored.keeper.stop();
+
+    const dropTimers = lifecycleTimers();
+    const dropping = lifecycleSession(dropTimers, function (n) {
+        return n === 1 ? { expiresAt: dropTimers.now() + 300_000 } : null;
+    });
+    const dropped = lifecycleKeeper(dropping, dropTimers, lifecyclePage(), { renewalLeadMs: 30_000 });
+    await dropTimers.advance(0);
+    assert.ok(dropTimers.pending().some(function (timer) { return timer.ms === 270_000; }));
+    dropping.client.drop();
+    await dropTimers.advance(0);
+    assert.ok(!dropTimers.pending().some(function (timer) { return timer.ms === 270_000; }),
+        "the renewal timer of a boundary that ended offline is cleared, not left holding its client");
+    dropped.keeper.stop();
+});
+
+await lifecycleCheck("refusals · 4403 stops; 4429 waits the longest; a run of failures ends and says so", async function () {
+    const timers = lifecycleTimers();
+    const forbidden = lifecycleSession(timers, function () { return refusal("forbidden"); });
+    const stopped = lifecycleKeeper(forbidden, timers, lifecyclePage());
+    await timers.advance(120_000);
+    assert.equal(forbidden.connects.length, 1, "a revoked device's handshake is not retried");
+    assert.deepEqual(stopped.names(), ["terminal_error"]);
+
+    const afterReady = lifecycleSession(timers);
+    const closed = lifecycleKeeper(afterReady, timers, lifecyclePage());
+    await timers.advance(0);
+    afterReady.client.drop("forbidden");
+    await timers.advance(120_000);
+    assert.equal(afterReady.connects.length, 1, "nor is a live socket the relay closed with 4403");
+    assert.equal(closed.names().at(-1), "terminal_error");
+
+    const rateTimers = lifecycleTimers();
+    const limited = lifecycleSession(rateTimers, function (n) { return n === 1 ? refusal("rate_limited") : null; });
+    const waited = lifecycleKeeper(limited, rateTimers, lifecyclePage(), { maximumBackoffMs: 30_000 });
+    await rateTimers.advance(29_999);
+    assert.equal(limited.connects.length, 1, "4429 is met with the maximum wait, not the initial one");
+    await rateTimers.advance(1);
+    assert.equal(limited.connects.length, 2);
+    assert.equal(waited.states[0].state, "retrying");
+    assert.equal(waited.states[0].afterMs, 30_000);
+    waited.keeper.stop();
+
+    const endTimers = lifecycleTimers();
+    const failing = lifecycleSession(endTimers, function () {
+        return Object.assign(new Error("offline"), { code: "offline" });
+    });
+    const ended = lifecycleKeeper(failing, endTimers, lifecyclePage(), { maximumConnectFailures: 4,
+        maximumBackoffMs: 30_000 });
+    await endTimers.advance(10 * 60_000);
+    assert.equal(failing.connects.length, 4, "retries stop after the bound instead of every thirty seconds for ever");
+    const last = ended.states.at(-1);
+    assert.deepEqual([last.state, last.reason, last.error.code], ["terminal_error", "retries_exhausted", "offline"]);
+    await ended.keeper.done;
+});
+
+await lifecycleCheck("hidden · past the grace the socket is retired and nothing runs; visible connects at once", async function () {
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    const session = lifecycleSession(timers, function () { return { expiresAt: timers.now() + 300_000 }; });
+    const run = lifecycleKeeper(session, timers, page, { hiddenGraceMs: 60_000 });
+    await timers.advance(0);
+    const first = session.client;
+    page.hide();
+    await timers.advance(30_000);
+    page.show();
+    await timers.advance(60_000);
+    assert.equal(first.retired, 0, "a page hidden for half the grace keeps its socket");
+    assert.equal(session.connects.length, 1, "and is not reconnected for it");
+    page.hide();
+    await timers.advance(59_999);
+    assert.equal(first.retired, 0, "not before the grace ends");
+    await timers.advance(1);
+    assert.equal(first.retired, 1, "retired once the grace ends");
+    assert.equal(run.names().at(-1), "paused");
+    await timers.advance(30 * 60_000);
+    assert.equal(session.connects.length, 1, "no renewal, reconnect or retry while quiesced");
+    assert.deepEqual(timers.pending(), [], "and no timer is left waiting");
+    page.show();
+    await timers.advance(0);
+    assert.equal(session.connects.length, 2, "visible again: connected without waiting for a timer");
+    assert.equal(run.names().at(-1), "connected");
+    // Back-forward cache: the same resume, from `pageshow`.
+    page.hide();
+    await timers.advance(60_000);
+    assert.equal(session.clients[1].retired, 1);
+    page.document.hidden = false;
+    page.document.visibilityState = "visible";
+    page.window.fire("pageshow");
+    await timers.advance(0);
+    assert.equal(session.connects.length, 3, "a page restored from the back-forward cache resumes too");
+    run.keeper.stop();
+    assert.equal(page.listeners(), 0, "stopping removes every page listener");
+});
+
+await lifecycleCheck("hidden · a press still in the air holds the socket past the grace, for a bounded time", async function () {
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    const session = lifecycleSession(timers);
+    const run = lifecycleKeeper(session, timers, page, { hiddenGraceMs: 60_000, quiesceDeferMs: 60_000 });
+    await timers.advance(0);
+    const client = session.client;
+    client.unsettled = 1;
+    page.hide();
+    await timers.advance(90_000);
+    assert.equal(client.retired, 0, "a send waiting for its answer is not cut off by the grace");
+    client.unsettled = 0;
+    await timers.advance(5_000);
+    assert.equal(client.retired, 1, "and the socket goes once it has settled");
+    page.show();
+    await timers.advance(0);
+    const second = session.client;
+    second.unsettled = 1;
+    page.hide();
+    await timers.advance(119_999);
+    assert.equal(second.retired, 0);
+    await timers.advance(1);
+    assert.equal(second.retired, 1, "an answer that never comes holds the socket for the grace plus the bound, no longer");
+    run.keeper.stop();
+});
+
+await lifecycleCheck("hidden · a page frozen past the grace gets a fresh socket when shown; revalidate reaches the loop", async function () {
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    const session = lifecycleSession(timers);
+    const run = lifecycleKeeper(session, timers, page, { hiddenGraceMs: 60_000 });
+    await timers.advance(0);
+    const frozen = session.client;
+    page.hide();
+    timers.jump(10 * 60_000);
+    page.show();
+    await timers.advance(0);
+    assert.equal(session.connects.length, 2, "a socket that sat frozen is replaced, and the relay realigns");
+    assert.equal(frozen.retired, 1, "the frozen one is retired only after its replacement is connected");
+    // `main.js` calls `api.revalidate("visible")` on the client it holds; the loop is where it lands.
+    const live = session.client;
+    page.document.hidden = true;
+    page.document.visibilityState = "hidden";
+    page.document.fire("visibilitychange");
+    await timers.advance(60_000);
+    assert.equal(live.retired, 1);
+    page.document.hidden = false;
+    page.document.visibilityState = "visible";
+    assert.equal(typeof live.lifecycle, "function", "the loop hands each client its revalidate hook");
+    live.lifecycle("visible");
+    await timers.advance(0);
+    assert.equal(session.connects.length, 3, "revalidate resumes a quiesced loop");
+    run.keeper.stop();
+
+    const client = new CloudClient({ relayURL: "https://relay.example", deviceToken: "jwt" });
+    assert.doesNotThrow(function () { client.revalidate("visible"); }, "no lifecycle: nothing to do, nothing thrown");
+    const reasons = [];
+    client.lifecycle = function (reason) { reasons.push(reason); };
+    client.revalidate("visible");
+    assert.deepEqual(reasons, ["visible"]);
+});
+
+await lifecycleCheck("offline · nothing connects while the browser says there is no network; online connects", async function () {
+    const timers = lifecycleTimers();
+    const page = lifecyclePage({ offline: true });
+    const session = lifecycleSession(timers);
+    const run = lifecycleKeeper(session, timers, page);
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 0, "no attempt while navigator.onLine is false");
+    page.online();
+    await timers.advance(0);
+    assert.equal(session.connects.length, 1, "the online event connects at once");
+    run.keeper.stop();
+});
+
+await lifecycleCheck("token · the relay's ready frame gives the remaining lifetime as a duration", async function () {
+    let clock = 5_000;
+    class ReadySocket { constructor() { this.readyState = 1; } send() { } close() { } }
+    const client = new CloudClient({ relayURL: "https://relay.example", deviceToken: "jwt",
+        devicePrivateKey: { extractable: false }, account: "account-01", deviceID: "device-01",
+        WebSocket: ReadySocket, BroadcastChannel: null, now: function () { return clock; } });
+    await client.start();
+    assert.equal(client._tokenRemainingMs(), null, "unknown before ready");
+    client._becameReady({ v: 1, role: "viewer", account: "account-01", device: "device-01",
+        connected_at: 1_789_000_000_000, token_expires_at: 1_789_000_300_000 });
+    clock += 60_000;
+    assert.equal(client._tokenRemainingMs(), 240_000, "five minutes by the relay's clock, one of them spent");
+    client.stop();
+});
+
+if (lifecycleFailures.length) {
+    console.log("web cloud boot lifecycle: " + lifecycleFailures.length + " red, " + lifecyclePassed + " green");
+    console.log("  " + lifecycleFailures.join("\n  "));
+    process.exit(1);
+}
+console.log("web cloud boot lifecycle: " + lifecyclePassed + " checks passed");
+
 /* ---- the placeholder transport -------------------------------------------- */
 
 const { assertClawdlineClient } = await import("../Resources/web/app/js/net/client.js");

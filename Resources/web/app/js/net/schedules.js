@@ -51,12 +51,19 @@ export function loadScheduleProjects(schedules, readSchedule, readPlaces) {
                 ? Object.assign({}, schedule, { project_dir: project }) : schedule;
         }).catch(function () { return schedule; });
     }));
-    var places = typeof readPlaces === "function"
-        ? Promise.resolve().then(readPlaces).then(function (data) {
-            return (data && data.places) || [];
-        }).catch(function () { return []; })
-        : Promise.resolve([]);
-    return Promise.all([details, places]).then(function (answer) {
+    return details.then(function (withDetails) {
+        // The Projects list only names paths these rows hold. A list with none — no schedules, or
+        // none that names a Project — has nothing to label, and is not a reason to ask.
+        var named = withDetails.some(function (schedule) {
+            return schedule && typeof schedule.project_dir === "string" && schedule.project_dir;
+        });
+        var places = named && typeof readPlaces === "function"
+            ? Promise.resolve().then(readPlaces).then(function (data) {
+                return (data && data.places) || [];
+            }).catch(function () { return []; })
+            : Promise.resolve([]);
+        return places.then(function (list) { return [withDetails, list]; });
+    }).then(function (answer) {
         return answer[0].map(function (schedule) {
             var path = schedule && schedule.project_dir;
             if (!path) return schedule;
@@ -81,37 +88,133 @@ export function loadScheduleProjects(schedules, readSchedule, readPlaces) {
  *
  * The cache lives here rather than inside `loadScheduleProjects` so that function stays a pure
  * one, and its tests keep passing their own reader without one run's answer reaching the next.
- * A refused read is not cached, and neither is a partial one — an answer naming a machine that
- * could have answered and did not (`unanswered`, `unconfirmed`): the next refresh asks again. */
-var placesCacheTTL = 5 * 60 * 1000;
-var placesCache = null;
+ * A refused read is not cached.
+ *
+ * **A partial answer is kept, and only its gap is asked again.** An answer naming a machine that
+ * could have answered and did not (`unanswered`) used to be thrown away whole, so an account with
+ * one Mac offline — or one machine this browser is not paired with, which `places()` always names —
+ * asked every machine again every minute. Now what answered is kept for the TTL; each machine that
+ * did not is asked on its own, at most once per `PLACES_RETRY_MS`, and its answer is merged in. A
+ * `machine_pairing_required` row is this browser's own fact, which asking cannot change, so it is
+ * never re-asked here. An answer with `unconfirmed` machines — never asked at all — is not kept. */
+var PLACES_CACHE_TTL_MS = 5 * 60 * 1000;
+var PLACES_RETRY_MS = 2 * 60 * 1000;
 
-function completePlaces(data) {
-    return !(data && ((Array.isArray(data.unanswered) && data.unanswered.length)
-        || (Array.isArray(data.unconfirmed) && data.unconfirmed.length)));
+/** The `unanswered` rows asking again could change. */
+export function retryablePlacesGap(data) {
+    var rows = data && Array.isArray(data.unanswered) ? data.unanswered : [];
+    return rows.filter(function (row) {
+        return !!row && typeof row.machine === "string" && row.machine
+            && !(row.error && row.error.code === "machine_pairing_required");
+    });
 }
 
-function cachedPlacesReader() {
-    if (typeof api.places !== "function") return null;
-    return function () {
-        if (placesCache && Date.now() - placesCache.at < placesCacheTTL) {
-            return Promise.resolve(placesCache.value);
-        }
-        return Promise.resolve().then(function () { return api.places(); })
-            .then(function (data) {
-                if (completePlaces(data)) placesCache = { at: Date.now(), value: data };
+/**
+ * `value` with each machine that answered on its own merged in: its Projects replace any it had,
+ * its assistants join the list, and it leaves `unanswered`. A machine that failed again keeps its
+ * row with the newer failure.
+ */
+export function mergePlacesGap(value, results) {
+    var answered = new Map();
+    var failed = new Map();
+    (results || []).forEach(function (result) {
+        if (!result || typeof result.machine !== "string") return;
+        if (result.error) failed.set(result.machine, result.error);
+        else answered.set(result.machine, result.answer || {});
+    });
+    var places = ((value && value.places) || []).filter(function (place) {
+        return !(place && answered.has(place.machine));
+    });
+    var assistants = ((value && value.assistants) || []).slice();
+    var assistantIDs = new Set(assistants.map(function (assistant) { return assistant && assistant.id; }));
+    answered.forEach(function (answer) {
+        (answer.places || []).forEach(function (place) { places.push(place); });
+        (answer.assistants || []).forEach(function (assistant) {
+            if (!assistant || assistantIDs.has(assistant.id)) return;
+            assistantIDs.add(assistant.id);
+            assistants.push(assistant);
+        });
+    });
+    var unanswered = ((value && value.unanswered) || []).filter(function (row) {
+        return !(row && answered.has(row.machine));
+    }).map(function (row) {
+        return row && failed.has(row.machine) ? Object.assign({}, row, { error: failed.get(row.machine) }) : row;
+    });
+    return Object.assign({}, value, { places: places, assistants: assistants, unanswered: unanswered });
+}
+
+/**
+ * One Projects cache: `read()` answers from it while it is fresh, and asks `places(machine)` for
+ * each machine in its gap once per `retryMs`. `places()` with no machine is the whole list.
+ */
+export function createPlacesCache(options) {
+    options = options || {};
+    var places = options.places;
+    var now = typeof options.now === "function" ? options.now : function () { return Date.now(); };
+    var ttlMs = options.ttlMs || PLACES_CACHE_TTL_MS;
+    var retryMs = options.retryMs || PLACES_RETRY_MS;
+    var entry = null;
+
+    function askGap(held) {
+        var gap = retryablePlacesGap(held.value);
+        held.retryAt = now() + retryMs;
+        return Promise.all(gap.map(function (row) {
+            return Promise.resolve().then(function () { return places(row.machine); })
+                .then(function (answer) { return { machine: row.machine, answer: answer }; },
+                    function (error) { return { machine: row.machine, error: error }; });
+        })).then(function (results) {
+            if (entry !== held) return held.value;
+            held.value = mergePlacesGap(held.value, results);
+            if (!retryablePlacesGap(held.value).length) held.retryAt = null;
+            return held.value;
+        });
+    }
+
+    return {
+        read: function () {
+            var held = entry;
+            if (held && now() - held.at < ttlMs) {
+                if (held.retryAt !== null && now() >= held.retryAt) return askGap(held);
+                return Promise.resolve(held.value);
+            }
+            return Promise.resolve().then(function () { return places(); }).then(function (data) {
+                // Machines never asked (`unconfirmed`) are a gap this cache cannot fill one by one.
+                if (!(data && Array.isArray(data.unconfirmed) && data.unconfirmed.length)) {
+                    entry = { at: now(), value: data,
+                        retryAt: retryablePlacesGap(data).length ? now() + retryMs : null };
+                }
                 return data;
             });
+        },
+        forget: function () { entry = null; }
     };
 }
 
+var placesCache = createPlacesCache({
+    places: function (machine) { return machine === undefined ? api.places() : api.places(machine); }
+});
+
+function cachedPlacesReader() {
+    if (typeof api.places !== "function") return null;
+    return placesCache.read;
+}
+
 /** A Project added or renamed while this list is on screen must not wait out the TTL. */
-export function forgetCachedPlaces() { placesCache = null; }
+export function forgetCachedPlaces() { placesCache.forget(); }
+
+var lastRefreshAt = null;
+var lane = null;
+var LANE_MS = 60000;
+
+function pageHidden() {
+    return typeof document !== "undefined" && !!document && document.hidden === true;
+}
 
 function refresh() {
     if (inFlight || !S.arrived || S.locked || S.conn === "locked"
         || !api || typeof api.schedules !== "function") return;
     inFlight = true;
+    lastRefreshAt = Date.now();
     // Cloud treats its retained orchestrator envelope as first paint only; `fresh` asks the Mac
     // for a named reply. Local and fixture clients ignore the optional argument.
     api.schedules({ fresh: true }).then(function (data) {
@@ -180,6 +283,26 @@ export var Schedules = {
         beginWhenAuthed(0);
         // Also owns recovery after a later pairing: the bounded fast wait above stops making
         // noise at the door, while this slow lane notices the first authenticated session frame.
-        setInterval(refresh, 60000);
+        if (!pageHidden()) lane = setInterval(refresh, LANE_MS);
+        watchVisibility();
     }
 };
+
+/**
+ * **Nobody reads a list on a page that is put away.** The lane stops while the document is hidden —
+ * on the Cloud path each tick is a machine-scoped read per machine, and a phone in a pocket was
+ * asking every minute — and on return the list is read at once if a tick was missed, then the lane
+ * starts again. A page that was away for less than a tick waits for its next one.
+ */
+function watchVisibility() {
+    if (typeof document === "undefined" || !document || typeof document.addEventListener !== "function") return;
+    document.addEventListener("visibilitychange", function () {
+        if (pageHidden()) {
+            if (lane !== null) { clearInterval(lane); lane = null; }
+            return;
+        }
+        if (lane !== null) return;
+        lane = setInterval(refresh, LANE_MS);
+        if (lastRefreshAt === null || Date.now() - lastRefreshAt >= LANE_MS) refresh();
+    });
+}
