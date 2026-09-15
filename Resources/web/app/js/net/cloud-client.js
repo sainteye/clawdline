@@ -77,6 +77,10 @@ const UNIVERSAL_COMMANDS = Object.freeze(LINUX_BROWSER_COMMANDS.filter(function 
     return STATUS_GATED_COMMANDS.indexOf(type) < 0;
 }));
 
+/** The refusal for a machine this browser is not paired with, said the same wherever it is raised. */
+const MACHINE_PAIRING_REQUIRED_MESSAGE = "This browser is not paired with the selected machine. "
+    + "Start the Pair a Browser flow on that machine, then try again.";
+
 /** Refusals that mean "this machine cannot have the feature", which a fan-out read drops. */
 const UNSUPPORTED_CODES = Object.freeze(["unknown_command", "cloud_machine_unsupported"]);
 
@@ -234,6 +238,18 @@ function descriptorCommands(value) {
     });
 }
 
+/** A descriptor's advertised command set as one comparable value — sorted, without repeats — or null. */
+function descriptorCommandsKey(descriptor) {
+    var commands = descriptor && descriptorCommands(descriptor.commands);
+    if (!commands) return null;
+    return JSON.stringify(Array.from(new Set(commands)).sort());
+}
+
+/** Whether an `orch/` snapshot carries a machine descriptor of its own (not a remembered one). */
+function liveDescriptor(snapshot) {
+    return !!(snapshot && snapshot.machine && typeof snapshot.machine === "object" && !Array.isArray(snapshot.machine));
+}
+
 /** A descriptor's platform as the fleet presentation spells it: trimmed, lowercase, or "". */
 function descriptorPlatform(descriptor) {
     return descriptor && typeof descriptor.platform === "string" ? descriptor.platform.trim().toLowerCase() : "";
@@ -380,7 +396,8 @@ export class CloudClient {
             || (sameViewer && prior.trail instanceof CloudTrail ? prior.trail : new CloudTrail());
         this.macCapabilities = sameViewer ? new Set(prior.macCapabilities) : new Set();
         // Words a machine answered `unknown_command` to, per machine. One client's memory: a renewal
-        // asks again, and a machine publishing a different app build is asked again.
+        // asks again, and so does a machine publishing a different app build, a descriptor for the
+        // first time, or a different descriptor `commands` list (the `orch/` branch of `_applySnapshot`).
         this.machineLacks = new Map();
         // What this browser saw fail, kept until the paired Mac's receipt names it
         // (`cloud-viewer-events.js`). The log outlives a renewal like the trail. Delivery runs only
@@ -796,9 +813,7 @@ export class CloudClient {
             return { machineID: machine, senderID: "", keyID: this.keyID,
                 masterKey: await this._masterKey(this.keyID), senderKey: {} };
         }
-        throw cloudError("machine_pairing_required",
-            "This browser is not paired with the selected machine. "
-            + "Start the Pair a Browser flow on that machine, then try again.");
+        throw cloudError("machine_pairing_required", MACHINE_PAIRING_REQUIRED_MESSAGE);
     }
 
     /**
@@ -1207,10 +1222,19 @@ export class CloudClient {
             var machine = decodedChannelSegment(channel.machine);
             this._observeMachine(machine, envelope.ts);
             var buildBefore = this._macBuild(machine);
+            var previousSnapshot = this.orchestratorSnapshots.get(machine);
+            var commandsBefore = descriptorCommandsKey(this._descriptorFor(machine));
             this.orchestratorSnapshots.set(machine, payload || {});
             this._rememberDescriptor(machine, payload);
             // A new build may know a word the old one refused, so what it refused is asked again.
-            if (this._macBuild(machine) !== buildBefore) this.machineLacks.delete(machine);
+            // So may a machine whose descriptor has just arrived, or now advertises a different
+            // command list: a Linux executor publishes no app build, and an upgraded one says
+            // what changed only through `commands`.
+            var arrived = !liveDescriptor(previousSnapshot) && liveDescriptor(payload);
+            if (this._macBuild(machine) !== buildBefore || arrived
+                || descriptorCommandsKey(this._descriptorFor(machine)) !== commandsBefore) {
+                this.machineLacks.delete(machine);
+            }
             this._consumeCloudStatus(machine, payload && payload.cloud_status);
             // A retained Session envelope may arrive before its machine descriptor. Re-project
             // the same authenticated rows when the descriptor arrives so the visible label does
@@ -1440,21 +1464,35 @@ export class CloudClient {
      * descriptor has not arrived, which is how a one-Mac account works before its first snapshot.
      * `unconfirmed` is the unknown ones left out because such a machine exists — unknown never
      * authorises sending to a machine that may not answer while one that can does. `unpaired`
-     * cannot be sent to from this browser at all.
+     * cannot be sent to from this browser at all; `pairable` is those of them that could provide
+     * `type` once paired, by the same rule — so a feature only an unpaired machine could provide is
+     * a pairing to make, and an unpaired machine that cannot have it is nothing to report.
      */
     _machinesFor(type) {
         var rows = this._machineRows();
-        var found = { rows: rows, capable: [], unconfirmed: [], unpaired: [], evidentMac: false };
+        var found = { rows: rows, capable: [], unconfirmed: [], unpaired: [], pairable: [], evidentMac: false };
         var unknown = [];
+        var unpairedUnknown = [];
+        var evidentUnpaired = false;
         rows.forEach(function (row) {
-            if (row.pairing === "not_paired") { found.unpaired.push(row); return; }
-            if (this._evidentMac(row.id)) found.evidentMac = true;
             var answer = this._machineImplements(row.id, type);
+            var evident = this._evidentMac(row.id);
+            if (row.pairing === "not_paired") {
+                found.unpaired.push(row);
+                evidentUnpaired = evidentUnpaired || evident;
+                if (answer === "yes") found.pairable.push(row);
+                else if (answer === "unknown") unpairedUnknown.push(row);
+                return;
+            }
+            if (evident) found.evidentMac = true;
             if (answer === "yes") found.capable.push(row);
             else if (answer === "unknown") unknown.push(row);
         }, this);
         if (!found.capable.length && !found.evidentMac) found.capable = unknown;
         else found.unconfirmed = unknown;
+        if (!found.capable.length && !found.pairable.length && !found.evidentMac && !evidentUnpaired) {
+            found.pairable = unpairedUnknown;
+        }
         return found;
     }
 
@@ -1466,7 +1504,8 @@ export class CloudClient {
      * (`options.choice`) wins while it is still a candidate, however stale — the person picked it;
      * otherwise one candidate is the answer, then — unless `options.strict` — the one candidate with
      * a current inventory. None is `cloud_read_unavailable` before any machine is known,
-     * `machine_pairing_required` when this browser is paired with none of them,
+     * `machine_pairing_required` when this browser is paired with none of them or when the only
+     * machines that could provide the feature are ones it is not paired with (`pairable`),
      * `cloud_feature_unavailable` when a Mac is there and has not got the feature, and
      * `cloud_machine_unsupported` when no machine on the account implements it. Two left is
      * `cloud_machine_ambiguous`. `options.unavailable` and `options.ambiguous` rename the last three
@@ -1493,8 +1532,10 @@ export class CloudClient {
         }
         if (!candidates.length) {
             var paired = found.rows.length > found.unpaired.length;
-            return refusal(options.unavailable || (!paired ? "machine_pairing_required"
-                : found.evidentMac ? "cloud_feature_unavailable" : "cloud_machine_unsupported"),
+            if (!options.unavailable && (!paired || found.pairable.length)) {
+                return refusal("machine_pairing_required", MACHINE_PAIRING_REQUIRED_MESSAGE);
+            }
+            return refusal(options.unavailable || (found.evidentMac ? "cloud_feature_unavailable" : "cloud_machine_unsupported"),
             "no machine on this account that this browser is paired with can answer " + feature);
         }
         if (!options.strict) {
@@ -1543,7 +1584,7 @@ export class CloudClient {
                 report.unanswered.push({ machine: row.machine, label: labels.get(row.machine) || row.machine, error: row.error });
             }
         });
-        found.unpaired.forEach(function (row) {
+        found.pairable.forEach(function (row) {
             report.unanswered.push({ machine: row.id, label: row.label || row.id, error: cloudError("machine_pairing_required",
                 "this browser is not paired with this machine") });
         });
@@ -2814,6 +2855,11 @@ export class CloudClient {
      * Given the command `type` that reads the field, a machine that cannot have it is left out, and
      * `incapableOnly` says every machine this account has is such a machine — a Linux-only account
      * has no schedules, which is a fact and not a silence.
+     *
+     * "Cannot have it" is platform and descriptor evidence only (`learned: false`). A Mac that
+     * answered `unknown_command` to the read is a Mac older than this page, not a machine without
+     * schedules: the rows it published stay, and a snapshot without the field is still
+     * `cloud_*_unpublished` rather than an empty list.
      */
     _orchestratorRows(name, type) {
         var rows = [];
@@ -2821,7 +2867,7 @@ export class CloudClient {
         var at = 0;
         this.orchestratorSnapshots.forEach(function (snapshot, machine) {
             if (!snapshot || !Array.isArray(snapshot[name])) return;
-            if (type && this._machineImplements(machine, type) === "no") return;
+            if (type && this._machineImplements(machine, type, { learned: false }) === "no") return;
             published = true;
             if (typeof snapshot.at === "number" && snapshot.at > at) at = snapshot.at;
             snapshot[name].forEach(function (row) {
@@ -2830,7 +2876,7 @@ export class CloudClient {
         }, this);
         var known = type ? this._knownMachines() : [];
         var incapableOnly = !!type && known.length > 0 && known.every(function (machine) {
-            return this._machineImplements(machine, type) === "no";
+            return this._machineImplements(machine, type, { learned: false }) === "no";
         }, this);
         return { published: published, rows: rows, at: at, incapableOnly: incapableOnly };
     }

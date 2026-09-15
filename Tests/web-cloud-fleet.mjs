@@ -592,6 +592,83 @@ await check("11 capability · a word every platform implements makes a machine w
         ["yes", "yes", "unknown"]);
 });
 
+await check("11 capability · a Mac that answers unknown_command to the schedules read keeps its published rows, and without the field it is still unpublished", async function () {
+    // Review F3: a learned lack on an evident Mac is "older than this page", not "has no schedules".
+    const refusing = async function (client, socket, machine, command) {
+        if (command.type !== "schedules") return false;
+        await fromMachine(client, socket, "t/" + machine + "/" + MACHINE_REPLY, { read: "action:" + command.request,
+            status: 400, error: { code: "unknown_command", message: "This Mac does not know that Cloud command." } });
+        return true;
+    };
+    const f = await fleet([["mac-01", "macos", true, { schedules: [{ id: "morning", title: "Morning" }] }]], { intercept: refusing });
+    const before = await outcome(f.client.schedules(), FAST);
+    const fresh = await outcome(f.client.schedules({ fresh: true }), FAST);
+    const after = await outcome(f.client.schedules(), FAST);
+    const rows = (ended) => ended.state === "resolved" ? ended.value.schedules.map((row) => row.id) : ended.state + " " + (ended.error && ended.error.code);
+    assert.deepEqual([rows(before), rows(fresh), rows(after)], [["morning"], ["morning"], ["morning"]],
+        "the published rows survive the refusal");
+    assert.deepEqual(f.typesTo("mac-01"), ["schedules"], "and the refused word is not asked again");
+    const g = await fleet([["mac-01", "macos", true]], { intercept: refusing });
+    await outcome(g.client.schedules({ fresh: true }), FAST);
+    const unpublished = await outcome(g.client.schedules(), FAST);
+    assert.deepEqual([unpublished.state, unpublished.error && unpublished.error.code], ["rejected", "cloud_schedules_unpublished"],
+        "a Mac whose snapshot has no schedules field is an old Mac, not an empty list");
+});
+
+await check("11 capability · a descriptor that arrives, or changes its commands, clears what that machine was learned to lack; the same descriptor again does not", async function () {
+    // Review F4: a Linux executor publishes no app build, so a learned lack outlived its upgrade.
+    const refusals = new Map();
+    const f = await fleet([["mac-01", "macos", true], ["linux-01", null, true]], { intercept: async function (client, socket, machine, command) {
+        if (machine !== "linux-01" || command.type !== "snippets") return false;
+        const refuse = refusals.get("linux-01") > 0;
+        if (refuse) refusals.set("linux-01", refusals.get("linux-01") - 1);
+        await fromMachine(client, socket, "t/linux-01/" + MACHINE_REPLY, refuse
+            ? { read: "action:" + command.request, status: 400, error: { code: "unknown_command", message: "no" } }
+            : { read: "read:" + command.request, status: 200, body: { snippets: [{ id: "linux-deploy", title: "Deploy" }], at: nowSeconds() } });
+        return true;
+    } });
+    const snippets = async () => {
+        const ended = await outcome(f.client.snippets(linuxSession, { fresh: true }), FAST);
+        return ended.state === "resolved" ? "resolved" : ended.state + " " + (ended.error && ended.error.code);
+    };
+    const descriptor = (commands) => fromMachine(f.client, f.socket, "orch/linux-01", { tasks: [], at: nowSeconds(),
+        machine: { name: "linux-01", platform: "linux", commands } });
+    refusals.set("linux-01", 1);
+    const learned = await snippets();
+    await descriptor(["places", "start", "snippets"]);
+    const arrived = await snippets();
+    refusals.set("linux-01", 1);
+    const learnedAgain = await snippets();
+    await descriptor(["places", "start", "snippets"]);
+    const sameDescriptor = await snippets();
+    await descriptor(["places", "start", "snippets", "schedules"]);
+    const changed = await snippets();
+    assert.deepEqual([learned, arrived, learnedAgain, sameDescriptor, changed],
+        ["rejected unknown_command", "resolved", "rejected unknown_command", "rejected cloud_machine_unsupported", "resolved"]);
+    assert.deepEqual(f.typesTo("linux-01"), ["snippets", "snippets", "snippets", "snippets"],
+        "asked again after the descriptor arrived and after it changed, and not in between");
+});
+
+await check("11 capability · a feature only an unpaired machine could provide is a pairing to make, and an unpaired machine that cannot have it is not reported", async function () {
+    // Review F5: an unpaired Mac and a paired Linux executor answered "this machine does not support that".
+    const f = await fleet(MAC_LINUX);
+    f.client._noteUnpairedMachine("mac-01", "mac-sender", "machine_not_paired");
+    assert.deepEqual(f.client._machineRows().map((row) => [row.id, row.pairing]), [["linux-01", "paired"], ["mac-01", "not_paired"]]);
+    const before = f.publishedCount();
+    const key = await outcome(f.client.pushKey(), FAST);
+    const diagnostics = await outcome(f.client.diagnosticsReport({ layout: "phone" }), FAST);
+    assert.deepEqual([key.error && key.error.code, diagnostics.error && diagnostics.error.code, f.publishedCount()],
+        ["machine_pairing_required", "machine_pairing_required", before]);
+    const g = await fleet(MAC_LINUX);
+    g.client._noteUnpairedMachine("linux-01", "linux-sender", "machine_not_paired");
+    const fresh = await outcome(g.client.schedules({ fresh: true }), FAST);
+    assert.deepEqual([fresh.state, fresh.value && fresh.value.unanswered], ["resolved", []],
+        "an unpaired executor, which cannot have schedules, is nothing the schedules read failed to hear");
+    const places = await outcome(g.client.places(), FAST);
+    assert.deepEqual(places.value && places.value.unanswered.map((row) => [row.machine, row.error.code]),
+        [["linux-01", "machine_pairing_required"]], "while for places, which it could answer once paired, it is named");
+});
+
 /* ---- 12 · Callers of an account-level places() read --------------------------------------- */
 
 /** The Mac refusing `places` as busy while the Linux executor answers it. */

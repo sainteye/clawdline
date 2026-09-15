@@ -466,7 +466,10 @@ also where a revoked device finds out. Writes are enabled only if the row still 
 the executor answers only `places` and `start`. `CloudClient._machineImplements(machine, word)` is
 the one answer to "can this machine answer this word" — from, strongest first, the machine's own
 `unknown_command` to that word, a descriptor `commands` list, a `linux` or other non-Mac platform,
-and evidence of a Mac (a `macos`/`darwin` descriptor, or `cloud_status`) — and every route uses it:
+and evidence of a Mac (a `macos`/`darwin` descriptor, or `cloud_status`) — and every route uses it.
+A machine whose descriptor has not arrived answers `places` and `start`, which every platform
+implements. A word a machine refused is not sent to it again until it publishes a different app
+build, its first descriptor, or a different `commands` list:
 
 - A request that names its machine — a Session, a Project route, a schedule, a Board link, an
   explicit machine — goes to that machine and nowhere else, and is refused before the wire as
@@ -474,15 +477,21 @@ and evidence of a Mac (a `macos`/`darwin` descriptor, or `cloud_status`) — and
   machine is known not to implement the word.
 - A request with no machine picks with the rules dictation's `voiceHost` was written with: the one
   capable machine; else the one with a current inventory; else a typed refusal —
-  `cloud_machine_ambiguous`, or `cloud_machine_unsupported` when no machine on the account has the
-  feature. A machine whose descriptor has not arrived counts only when no machine is evidently a Mac
-  and none is known to answer. Push is strict: one Mac or `cloud_machine_ambiguous`, never the
+  `cloud_machine_ambiguous`; `machine_pairing_required` when the only machines that could provide
+  the feature are ones this browser is not paired with; or `cloud_machine_unsupported` when no
+  machine on the account has the feature. For any other word, a machine whose descriptor has not
+  arrived counts only when no machine is evidently a Mac and none is known to answer. Push is strict: one Mac or `cloud_machine_ambiguous`, never the
   fresher of two, because the key, the subscription and its removal must reach the same Mac.
 - A read that spans machines (`places`, `schedules({ fresh })`, `snippets()` with no Session) asks
   only capable machines, each on its own under its read timeout. One that refuses, fails or stays
   silent is named in `unanswered` beside the others' rows instead of discarding them; one that
   cannot have the feature contributes nothing; one not asked because its descriptor has not
-  arrived is named in `unconfirmed`. The call rejects only when every machine asked failed.
+  arrived is named in `unconfirmed`. The call rejects only when every machine asked failed. A caller
+  never reads such a list as complete: the Projects lists (Projects, "say what to start", the
+  schedule form and its history) say in one line which machine did not answer, the schedules strip
+  does not cache it, and a Board conversation whose machine did not answer fails with that
+  machine's failure rather than "the Project is not there". Rows a Mac already published stay after
+  it refuses the read that refreshes them.
 - A machine that refuses a word it does not implement cannot know whether the page waits on
   `read:<request>` or `action:<request>`; both the Mac and the Linux executor answer `action:`, and
   a refusal — never a body — on the machine reply channel settles either spelling of the same
