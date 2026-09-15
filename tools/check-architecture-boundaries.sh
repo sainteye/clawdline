@@ -523,7 +523,9 @@ runner_count=$(grep -Ec '^run[A-Za-z0-9]+Tests\(\)$' Tests/main.swift || true)
 # (the lifecycle owner and its codec), two independent boundaries run after W2-1's owner suite.
 # 53 with W2-3's `runHostPortsTests`: the safe-close lifecycle on fake host ports and the Mac
 # composition held to the same decisions, a boundary independent of W2-2's two runners.
-runner_count_expected=53
+# 54 with `runCloudSessionRowTests`: which Cloud Session rows are published and the transcript
+# signature they carry, kept out of Tests/CloudAppBridgeTests.swift, which is at the limit below.
+runner_count_expected=54
 [ "$runner_count" -eq "$runner_count_expected" ] \
   || architecture_guard_fail "ordered domain runner count is $runner_count; expected $runner_count_expected"
 manifest_group_count=$(awk '
@@ -732,7 +734,9 @@ done
 # 69 with Tests/CloudTransparencyTests.swift, the Cloud error-transparency failure-injection suite;
 # it has its own file because Tests/CloudAppBridgeTests.swift is nine lines from the limit above.
 # 70 with Tests/CloudV2ProtocolTests.swift, the verified storage and closed read-catalog contract.
-suite_count_expected=70
+# 71 with Tests/CloudSessionRowTests.swift, the Cloud Session row skip and transcript-signature
+# suite; Tests/CloudAppBridgeTests.swift is at the 2,000-line limit above.
+suite_count_expected=71
 [ "$suite_count" -eq "$suite_count_expected" ] \
   || architecture_guard_fail "suite file count is $suite_count; expected $suite_count_expected"
 # The registry's held-lock doors are closed. `withTransactionOnHeldLock` and its two adapters,

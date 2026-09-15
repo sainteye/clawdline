@@ -2005,6 +2005,13 @@ actor CloudAppBridge {
             + "changed=\(changed)")
     }
 
+    /// Tests read the demand's state rather than sleeping past it.
+    func transcriptSignatureStateForTesting()
+        -> (known: [String: String], pending: [String], scheduled: Bool) {
+        (knownTranscriptSignatures, pendingTranscriptSessions.sorted(),
+         transcriptRepublicationTask != nil)
+    }
+
     /// End the demand: no watch outlives a stopped bridge. Returns the tasks `stop()` joins.
     private func stopTranscriptSignatures() -> [Task<Void, Never>] {
         transcriptSignatures?.stop()
