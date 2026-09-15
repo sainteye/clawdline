@@ -222,9 +222,12 @@ pass on one fast machine.
   rows that changed outside the three freshness-only closeability paths (`observed_at`,
   `session_generation`, `source.observed_at`). An authoritative inventory of at most 512 exact
   Session ids is encrypted on a reserved machine-scoped Session channel after each changed scan, on
-  reconnect, and after three minutes without any Session-channel frame, which keeps an idle Mac
-  inside the hosted console's five-minute machine window. It repairs retained relay rows across a
-  Mac restart without trusting labels or terminal names.
+  reconnect, and by the first scan — complete or not — that finds three minutes gone without any
+  Session-channel frame (checked per scan, not by a timer), which keeps an idle Mac inside the hosted
+  console's five-minute machine window. It repairs retained relay rows across a Mac restart without
+  trusting labels or terminal names. A page that (re)connects asks for the current rows instead of
+  relying on the relay's replay; one Mac answers every request inside five seconds with one pass
+  (`docs/cloud.md`, *A page that reconnects asks for the rows*).
 - Durable Cloud publication returns each producer after reserve, encryption and durable spool seal;
   one lifecycle-owned worker performs globally ordered socket writes independently. Already-sent
   rows may await correlated receipts while later ready rows fill a hard row/byte window (currently

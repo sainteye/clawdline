@@ -9,7 +9,7 @@ import { Waits } from "../view/waits.js";
 import { Start } from "../input/start.js";
 import { Terminal } from "../view/terminal.js";
 import { SessionSelection } from "../session/selection.js";
-import { closeDetail } from "../session/open.js";
+import { closeDetail, rearmOpenTranscript } from "../session/open.js";
 import { SessionActions } from "../input/detail-actions.js";
 import { createFrameCoalescer } from "../core/visibility.js";
 
@@ -58,6 +58,12 @@ export function viewDrawPending() { return viewFrame.pending(); }
 export var handlers = {
     sessions: function (list, at, scan) {
         list = list || [];
+        // Which machines are still sending their rows, or failed to: the Cloud transport's word,
+        // absent on the local page. Kept even from a frame refused below, so the next draw says it.
+        S.sessionSync = {
+            recovering: scan && Array.isArray(scan.recovering) ? scan.recovering.slice() : [],
+            failures: scan && Array.isArray(scan.failures) ? scan.failures.slice() : []
+        };
         // The caller responds to `false` by asking for a newer scan. A same-generation REST echo
         // is the same observation, not confirmation; keeping the evidence gate here gives every
         // future transport the same last-known-good protection.
@@ -130,6 +136,11 @@ export var handlers = {
         Start.sync();
     },
     conn: function (state, seconds) {
+        // Live after anything else is a reconnect boundary, the one moment a transcript read that
+        // failed while the connection was down may be tried again (`rearmOpenTranscript`). It is
+        // taken here, where the transition happens: `sessions` only marks a draw, and the frame
+        // that later draws it cannot tell whether a `live` came in between.
+        var reconnected = state === "live" && S.conn !== "live";
         S.conn = state;
         S.retryIn = seconds || 0;
         // A connection that has stopped trying is no longer a wait; it is an answer, and one of
@@ -142,5 +153,6 @@ export var handlers = {
             else renderList();
         });
         renderConn();
+        if (reconnected) rearmOpenTranscript();
     }
 };

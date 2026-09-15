@@ -611,7 +611,7 @@ ok(/setProperty\("--live-sweep-delay"/.test(readFileSync(
 
 /* ---- the page itself: transcript demand, one draw per burst, hidden clocks ------------------- */
 
-for (const mode of ["signature", "legacy", "burst", "clocks"]) {
+for (const mode of ["signature", "legacy", "burst", "clocks", "reconnect"]) {
     const run = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], {
         cwd: process.cwd(), encoding: "utf8", timeout: 60_000,
         env: { ...process.env, CLAWDLINE_VIEW_QUIET_BEHAVIOR: mode }
@@ -815,9 +815,12 @@ async function viewQuietBehavior(mode) {
     const reads = [];
     const infoReads = [];
     let answerSignature = "sig-1";
+    // While set, every transcript read is refused with this error — still counted as a read.
+    let refusal = null;
     useApi({
         transcript: function (route, hooks, demand) {
             reads.push({ route: route, demand: demand, at: clock });
+            if (refusal) return Promise.reject(refusal);
             return Promise.resolve({ entries: [{ role: "assistant", text: "hello", at: 1 }], signature: answerSignature });
         },
         infoSummary: function (route) { infoReads.push({ tier: "summary", route: route }); return Promise.resolve({ info: { session: {} } }); },
@@ -1041,6 +1044,111 @@ async function viewQuietBehavior(mode) {
         StatusLine.catchUp();
         await settle();
         equal(infoReads.length, 2, "and only once");
+    }
+
+    /* The reconnect boundary. A burst of failed transcript reads stops itself after three
+     * attempts, and only a connection becoming live again may open the next one. `onSessions`
+     * used to look for that boundary in `S.conn`, but it draws in a later frame than the one that
+     * said `live`, so it never saw one; `handlers.conn` takes it now. Cloud says `live` three
+     * times for one boundary (`_becameReady`, the boot's `connected`, the first sessions event). */
+    if (mode === "reconnect") {
+        // The observer's retry delays are driven by hand, so a burst can be seen to end.
+        const timers = [];
+        let timerNow = 0;
+        const realClearTimeout = globalThis.clearTimeout;
+        install("setTimeout", function (fn, ms) {
+            const timer = { fn: fn, due: timerNow + (Number(ms) || 0), live: true, fake: true };
+            timers.push(timer);
+            return timer;
+        });
+        install("clearTimeout", function (timer) {
+            if (timer && timer.fake) timer.live = false; else realClearTimeout(timer);
+        });
+        const advance = async function (ms) {
+            const until = timerNow + ms;
+            for (let ran = 0; ran < 200; ran += 1) {
+                const next = timers.filter(function (t) { return t.live && t.due <= until; })
+                    .sort(function (a, b) { return a.due - b.due; })[0];
+                if (!next) break;
+                next.live = false;
+                timerNow = next.due;
+                next.fn();
+                await settle();
+            }
+            timerNow = until;
+            await settle();
+        };
+        const refused = function (code) { return Object.assign(new Error(code), { code: code }); };
+        const rows = function (secondSignature) {
+            return [row({ transcript_signature: "sig-1" }), row({
+                id: "s2", session: "s2", identity: { machine: "mac-1", session: "s2" },
+                label: "Two", cwd: "/repo/two", state: "idle", line: "", transcript_signature: secondSignature
+            })];
+        };
+
+        await frame(rows("sig-2"));
+        equal(reads.length, 1, "reconnect: the first list opens a session and reads it once");
+
+        // M6: the hosted console retired its socket while hidden and kept saying `live`; a
+        // notification tap opens another session before the page is visible.
+        setHidden(true);
+        refusal = refused("cloud_reconnecting");
+        open.openSession(SessionSelection.resolve("s2", S.sessions).identity.key);
+        await settle();
+        await advance(5_000);
+        equal(reads.length, 4, "(M6) the tapped session's read and both retries are refused, and the burst ends");
+        ok(S.tx.error, "and the pane says the read failed");
+        setHidden(false);
+        await flushFrames();
+        handlers.sessions(rows("sig-2"), clock / 1000, scan);
+        await flushFrames();
+        await advance(5_000);
+        equal(reads.length, 4, "an ordinary frame repeating the same row does not reopen the exhausted burst");
+
+        refusal = null;
+        answerSignature = "sig-2";
+        handlers.conn("connecting");
+        await settle();
+        equal(reads.length, 4, "a connection on its way is not a boundary yet");
+        handlers.conn("live");
+        await settle();
+        equal(reads.length, 5, "(M6) coming back live retries the refused read exactly once");
+        equal([S.tx.error, S.tx.signature], [null, "sig-2"], "and its answer replaces the failure");
+        handlers.conn("live");
+        handlers.conn("live");
+        handlers.sessions(rows("sig-2"), clock / 1000, scan);
+        await flushFrames();
+        await advance(5_000);
+        equal(reads.length, 5, "`live` again inside the same boundary, and the frames after it, read nothing more");
+        handlers.conn("offline");
+        handlers.conn("live");
+        await settle();
+        await advance(5_000);
+        equal(reads.length, 5, "a boundary with nothing left unread costs nothing: rearming is not reading");
+
+        // M3: the local stream drops; a changed row arrives through the REST read while it is
+        // down, and its reads fail. The stream then comes back while the page is hidden.
+        handlers.conn("retrying", 3);
+        refusal = refused("offline");
+        answerSignature = "sig-3";
+        await frame(rows("sig-3"));
+        await advance(5_000);
+        equal(reads.length, 8, "(M3) a changed row read while the stream is down fails its burst and stops");
+        setHidden(true);
+        refusal = null;
+        handlers.sessions(rows("sig-3"), clock / 1000, scan);
+        handlers.conn("live");
+        handlers.conn("connecting");
+        handlers.conn("live");
+        await settle();
+        await advance(5_000);
+        equal(reads.length, 8, "a hidden page that crosses two reconnect boundaries reads nothing");
+        setHidden(false);
+        await settle();
+        await flushFrames();
+        await advance(5_000);
+        equal(reads.length, 9, "(M3) visible again, the failed revision is read exactly once for both boundaries");
+        equal([S.tx.error, S.tx.signature], [null, "sig-3"], "and it is the row's current transcript");
     }
 
     Date.now = realNow;

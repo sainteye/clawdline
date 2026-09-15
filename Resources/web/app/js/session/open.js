@@ -131,6 +131,38 @@ export function rearmTranscriptRow(id, row, quiet) {
     transcriptRevisions.rearm(id, transcriptRefetch.revision(id, row), quiet);
 }
 
+/**
+ * The connection has just become live again: the open Session's transcript may open one new
+ * bounded burst of reads.
+ *
+ * A burst of failed reads stops itself after `maxAttempts` (`createTranscriptRevisionObserver`),
+ * and an ordinary frame repeating the same row must not start another, or a read that keeps
+ * failing would loop. A reconnect is the one boundary that may. It is what brings back a read
+ * refused while the connection was down — `offline`, or `cloud_reconnecting` from a Cloud client
+ * retired while the page was hidden past its grace, which a notification tap can hit.
+ *
+ * **Rearming is not reading.** A revision already read, or a transcript already on screen under
+ * the row's own signature and state (`transcriptOnScreenIsCurrent`), costs nothing; a burst still
+ * under way keeps its own retries, and one in flight is followed by a new burst only if it fails.
+ * What it adds is a new burst for a revision whose reads all failed: one read when that succeeds,
+ * and the same bounded burst any revision gets when it does not.
+ *
+ * `handlers.conn` calls this on a transition into `live` from any other state. A hidden page does
+ * it when it is next visible, once for however many boundaries it crossed, against the row
+ * current by then.
+ */
+var reconnectRearmOwed = false;
+export function rearmOpenTranscript() {
+    if (reconnectRearmOwed) return;
+    reconnectRearmOwed = true;
+    whenVisible(function () {
+        reconnectRearmOwed = false;
+        var current = SessionSelection.snapshot().open;
+        var entry = current ? SessionSelection.resolve(current.key, S.sessions) : null;
+        if (entry && entry.row) rearmTranscriptRow(current.key, entry.row, true);
+    });
+}
+
 export function loadTranscript(id, quiet, revision, demand) {
     // Composer/refresh callers predate revision tracking. Fold them into the same observed
     // contract so a direct refresh cannot overwrite the coalesced cycle's revision context.

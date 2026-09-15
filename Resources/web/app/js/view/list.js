@@ -1,6 +1,7 @@
 import { phone, reduced } from "../core/env.js";
 import { esc } from "../core/esc.js";
 import { T, fill } from "../core/i18n.js";
+import { describeFailure } from "../core/failure-text.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
@@ -25,9 +26,6 @@ function renderAgents() { return callSessionUI("renderAgents"); }
 function closeDetail(silent) { return callSessionUI("closeDetail", silent); }
 function observeTranscriptRow() {
     return callSessionUI.apply(null, ["observeTranscriptRow"].concat(Array.from(arguments)));
-}
-function rearmTranscriptRow() {
-    return callSessionUI.apply(null, ["rearmTranscriptRow"].concat(Array.from(arguments)));
 }
 function openSession() {
     return callSessionUI.apply(null, ["openSession"].concat(Array.from(arguments)));
@@ -76,7 +74,8 @@ var firstList = true;
 export function onSessions() {
     var selected = SessionSelection.snapshot();
     var open = selected.open ? byId(selected.open) : null;
-    // Anything that has just stopped gets a pulse, and whatever is open gets refetched.
+    // Anything that has just stopped gets a pulse, and the open session's row is handed to the
+    // transcript refetch policy, which decides whether it costs a read.
     S.sessions.forEach(function (s) {
         var sessionKey = sessionSelectionKey(s);
         var was = S.seen[sessionKey];
@@ -92,13 +91,14 @@ export function onSessions() {
             }
         }
         if (open && selected.open && sessionKey === selected.open.key) {
-            // `handlers.sessions` runs before the first accepted frame marks the connection live.
-            // That one frame is a real reconnect boundary and may open a new bounded failure
-            // burst. Ordinary live frames only observe, so replaying one snapshot cannot loop.
             // The row, not a revision: which of its changes may cost a transcript read is the
             // refetch policy's decision (`createTranscriptRefetchPolicy`), and `line` is not one.
-            if (S.conn === "live") observeTranscriptRow(sessionKey, s, true);
-            else rearmTranscriptRow(sessionKey, s, true);
+            // Only ever observed, so replaying one snapshot cannot loop. Whether the connection has
+            // just come back cannot be read from `S.conn` here: this draws in a later animation
+            // frame, by when the stream has usually said `live` already, and a frame drawn before
+            // that comes ahead of the boundary rather than marking it. `handlers.conn` takes the
+            // boundary where it happens (`rearmOpenTranscript`).
+            observeTranscriptRow(sessionKey, s, true);
         }
         // An agent being read has its own reason to refetch, and the session's revision cannot
         // give it: a session sitting between turns with three agents out looks unchanged the
@@ -209,6 +209,14 @@ function renderCounts() {
     if (shells) bits.push('<span class="part quiet">' +
         esc(shells === 1 ? T.sessionShellOne : fill(T.sessionShellMany, { n: shells })) + "</span>");
     if (unknown) bits.push('<span class="part quiet">' + esc(fill(T.webCountUnreadable, { n: unknown })) + "</span>");
+    // A machine still sending its rows, or one that could not: the count beside it is not the whole
+    // fleet, so "all quiet" and "none" are not said over it.
+    var sync = S.sessionSync || {};
+    if (sync.recovering && sync.recovering.length) {
+        bits.push('<span class="part quiet">' + esc(T.webEmptyWaitTitle) + "</span>");
+    } else if (sync.failures && sync.failures.length) {
+        bits.push('<span class="part waiting">' + esc(syncFailureSays(sync.failures[0])[0]) + "</span>");
+    }
     if (!bits.length) {
         var quiet = S.sessions.length
             ? fill(S.sessions.length === 1 ? T.webCountQuietOne : T.webCountQuietMany, { n: S.sessions.length })
@@ -418,15 +426,30 @@ export function renderList() {
         // Four of them, and telling them apart is the whole job: nothing matches what was typed,
         // this browser was refused, there are genuinely no sessions, or nothing has arrived yet.
         // One of those is somebody's own doing and three are not.
+        // On Cloud a fifth: a machine is still sending its rows, or could not — then nothing has
+        // said there are none, and the list waits or says why (`S.sessionSync`).
+        var sync = S.sessionSync || {};
+        var failed = sync.failures && sync.failures[0];
+        var syncing = !!(sync.recovering && sync.recovering.length);
         var says = S.sessions.length
             ? [fill(T.webEmptyFilterTitle, { q: S.filter }), T.webEmptyFilterHint]
             : (S.locked
                 ? [T.webEmptyLockedTitle, T.webEmptyLockedHint]
-                : S.conn === "live"
-                    ? [T.noSession, T.webEmptyNoneHint]
-                    : [T.webEmptyWaitTitle, T.webEmptyWaitHint]);
+                : S.conn === "live" && syncing
+                    ? [T.webEmptyWaitTitle, T.webEmptyWaitHint]
+                    : S.conn === "live" && failed
+                        ? syncFailureSays(failed)
+                        : S.conn === "live"
+                            ? [T.noSession, T.webEmptyNoneHint]
+                            : [T.webEmptyWaitTitle, T.webEmptyWaitHint]);
         els["list-empty"].innerHTML = "<b>" + esc(says[0]) + "</b>" + esc(says[1]);
     }
+}
+
+/** A machine's failed row recovery, in the words its code decides (`core/failure-text.js`). */
+function syncFailureSays(failure) {
+    var said = describeFailure({ code: failure.code });
+    return [said.text, " " + said.tag];
 }
 
 /** A phone reading a transcript has the list behind it, hidden, and its spinners with it. */

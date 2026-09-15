@@ -1022,6 +1022,103 @@ await check("transport · a held channel is not subscribed again, and the relay'
     early.stop();
 });
 
+await check("transport · with eight channels each waited on, a read on a ninth is refused at once as busy and sends nothing", async function () {
+    const f = await quietMac();
+    const answer = (session) => fromMachine(f.client, f.socket, "t/mac-01/" + session,
+        { read: "transcript", status: 200, body: { entries: [], signature: "sig-" + session } });
+    const waiting = Array.from({ length: 8 }, (_, i) => f.client.transcript({ machine: "mac-01", session: "w" + i }));
+    waiting.forEach((read) => read.catch(noop));
+    await until(() => f.published.length === 8, FAST);
+    assert.equal(f.published.length, 8, "eight reads on eight channels went out");
+    // The relay refuses a ninth subscription with an error frame naming no request (account-do.ts);
+    // sent anyway, this read would wait out its whole read timeout.
+    const ninth = await outcome(f.client.transcript({ machine: "mac-01", session: "ninth" }), FAST);
+    assert.deepEqual([ninth.state, ninth.error && ninth.error.code, ninth.error && ninth.error.layer, ninth.error && ninth.error.retryable],
+        ["rejected", "cloud_read_busy", "browser", true], "refused now, and retryable");
+    assert.equal(describeFailure(ninth.error).text, T.webFailMacBusy);
+    assert.equal(f.published.length, 8, "nothing was published for it");
+    assert.ok(!f.frames("subscribe").some((frame) => frame.channels.includes("t/mac-01/ninth")), "nor subscribed");
+    const joining = f.client.infoSummary({ machine: "mac-01", session: "w3" });
+    joining.catch(noop);
+    await until(() => f.published.length === 9, FAST);
+    assert.equal(f.published.length, 9, "a read on a channel already held still goes out");
+    await answer("w0");
+    assert.equal((await outcome(waiting[0], FAST)).state, "resolved");
+    const again = f.client.transcript({ machine: "mac-01", session: "ninth" });
+    await until(() => f.published.length === 10, FAST);
+    assert.equal(f.published.length, 10, "once one settles, asking again fits");
+    await answer("ninth");
+    assert.equal((await outcome(again, FAST)).state, "resolved");
+    const held = new Set();
+    let most = 0;
+    f.socket.sent.forEach((frame) => {
+        if (frame.type !== "subscribe" && frame.type !== "unsubscribe") return;
+        frame.channels.forEach((channel) => frame.type === "subscribe" ? held.add(channel) : held.delete(channel));
+        most = Math.max(most, held.size);
+    });
+    assert.ok(most <= 8, "never more than the relay's eight on one socket: " + most);
+
+    const early = fleetClient();
+    await early.start();
+    const reads = Array.from({ length: 9 }, (_, i) => outcome(early.transcript({ machine: "mac-01", session: "e" + i }), FAST));
+    assert.ok(early.pendingSubscriptions.size <= 8, "before ready, what waits to be subscribed stays under the ceiling: "
+        + early.pendingSubscriptions.size);
+    const codes = (await Promise.all(reads)).map((read) => read.error && read.error.code);
+    assert.equal(codes[8], "cloud_read_busy", "and a ninth channel waited on is refused as busy there too: " + codes.join(","));
+    early.subscribe(Array.from({ length: 10 }, (_, i) => "t/mac-01/later-" + i));
+    assert.deepEqual([early.pendingSubscriptions.size, Array.from(early.pendingSubscriptions).at(-1)], [8, "t/mac-01/later-9"],
+        "a subscription made before ready forgets the oldest rather than growing past the ceiling");
+    early.stop();
+});
+
+await check("transport · a read asked of a retired client while the page is hidden waits a few seconds for it, then refuses as before", async function () {
+    // A notification tap: the service worker posts `navigate` before `focus()` shows the page.
+    const timers = new Map();
+    let timerID = 0;
+    const manual = { setTimeout: (fn, ms) => { timers.set(++timerID, { fn, ms }); return timerID; },
+        clearTimeout: (id) => { timers.delete(id); } };
+    const fire = () => { const [id, timer] = timers.entries().next().value; timers.delete(id); timer.fn(); };
+    const pending = () => Array.from(timers.values()).map((timer) => timer.ms);
+    const retiredWhile = async (page) => {
+        const client = fleetClient(Object.assign({ readTimeoutMs: 60_000 }, manual));
+        await ready(client);
+        client.lifecycle = () => page.shown ? true : "hidden";
+        client.retire();
+        return client;
+    };
+
+    const stays = { shown: false };
+    const away = await retiredWhile(stays);
+    const tapped = away.transcript({ machine: "mac-01", session: "s1" });
+    assert.equal((await outcome(tapped, 60)).state, "pending", "held while the page is still hidden, not refused");
+    assert.deepEqual(pending(), [5_000], "for a few seconds, not for the read bound");
+    fire();
+    const refused = await outcome(tapped, FAST);
+    assert.deepEqual([refused.state, refused.error && refused.error.code], ["rejected", "cloud_reconnecting"],
+        "still hidden then: refused as before");
+    assert.deepEqual([pending(), away.successorWaiters.length], [[], 0], "and nothing it set is left");
+
+    const comes = { shown: false };
+    const shown = await retiredWhile(comes);
+    const opened = shown.transcript({ machine: "mac-01", session: "s2" });
+    await settle();
+    comes.shown = true;
+    fire();
+    assert.deepEqual(pending(), [55_000], "shown by then: the rest of the read bound, for the connection that brings");
+    const renewed = fleetClient({ resumeFrom: shown });
+    const socket = await ready(renewed);
+    socket.onPublish = async function (envelope) {
+        const command = JSON.parse(new TextDecoder().decode(await openEnvelope(envelope, masterKey, senderKey)));
+        await fromMachine(renewed, socket, "t/mac-01/" + encodeURIComponent(command.session),
+            { read: "transcript", status: 200, body: { entries: [], signature: "on-renewed" } });
+    };
+    const read = await outcome(opened, FAST);
+    assert.deepEqual([read.state, read.value && read.value.signature], ["resolved", "on-renewed"],
+        "the tapped Session's read runs on the client the page came back with");
+    assert.deepEqual(pending(), [], "and its wait is cleared");
+    renewed.stop();
+});
+
 await check("transport · a retained t/ answer settles only a request it names, or a picture by its id", async function () {
     const f = await quietMac();
     const reading = f.client.transcript({ machine: "mac-01", session: "s1" });
@@ -1159,6 +1256,173 @@ await check("transport · a read on a client retired while the page was away run
     assert.deepEqual([refused.state, refused.error && refused.error.code], ["rejected", "cloud_reconnecting"],
         "with nothing on its way — the page is hidden — it is refused at once, as before");
     resuming = false;
+});
+
+/* ---- B1 · an idle Mac's rows after a (re)connection ------------------------------------------ */
+
+// The failure modelled: a Mac whose rows no longer change publishes nothing, and the relay replays a
+// channel only from the memory it loses with its object — so each socket below is ready with no
+// replay at all. The Mac answers `sessions.snapshot` the way `CloudAppBridge` does: every row on its
+// own `s/` channel, the inventory with `features`, then `read:<request>` naming the ids.
+const { createTranscriptRefetchPolicy, createTranscriptRevisionObserver } =
+    await import("../Resources/web/app/js/session/transcript-requests.js");
+
+function storageBox(seed) {
+    const box = new Map(Object.entries(seed || {}));
+    return { getItem: (key) => box.has(key) ? box.get(key) : null, setItem: (key, value) => box.set(key, String(value)) };
+}
+const REMEMBERED_SNAPSHOT_MAC = { ["clawdline.machine-descriptors.v1:" + encodeURIComponent(ACCOUNT)]: JSON.stringify({ v: 1,
+    machines: [{ id: "mac-01", machine: { name: "Mac", platform: "macos" }, build: "1", at_ms: 1, features: ["sessions.snapshot"] }] }) };
+
+/** The page's reader: every list lands here, and the open Session is read by the real refetch policy. */
+function sessionReader(open) {
+    const policy = createTranscriptRefetchPolicy({ lineIntervalMs: 15000 });
+    const reader = { client: null, reads: 0, lists: [] };
+    const observer = createTranscriptRevisionObserver(function (id, revision) {
+        reader.reads += 1;
+        reader.client.transcript({ machine: "mac-01", session: id }).then(
+            () => observer.settle(id, revision, true), (error) => observer.settle(id, revision, false, error));
+    }, { retryDelay: 20 });
+    reader.handlers = { conn: noop, hello: noop, tasks: noop, sessions: function (list, _at, scan) {
+        reader.lists.push({ rows: list.map((row) => row.id).sort(), scan: scan });
+        const row = list.find((candidate) => candidate.id === open);
+        if (row) observer.observe(open, policy.revision(open, row), true);
+        return true;
+    } };
+    reader.claimedEmpty = () => reader.lists.filter((list) => !list.rows.length && list.scan.emptyAuthoritative === true);
+    return reader;
+}
+
+/** One socket of a viewer to an idle Mac; `mac.rows` is what that Mac holds now. */
+async function idleMacSocket(mac, reader, options) {
+    const client = fleetClient(Object.assign({ handlers: reader.handlers }, options));
+    reader.client = client;
+    const socket = await ready(client);
+    const sent = { snapshots: 0, transcripts: 0 };
+    socket.onPublish = async function (envelope) {
+        const command = JSON.parse(new TextDecoder().decode(await openEnvelope(envelope, masterKey, senderKey)));
+        if (command.type === "transcript") {
+            sent.transcripts += 1;
+            await fromMachine(client, socket, "t/mac-01/" + encodeURIComponent(command.session),
+                { read: "transcript", status: 200, body: { entries: [], signature: mac.rows.get(command.session).transcript_signature } });
+        } else if (command.type === "sessions.snapshot") {
+            sent.snapshots += 1;
+            if (mac.silent) return;
+            for (const row of mac.rows.values()) {
+                await fromMachine(client, socket, "s/mac-01/" + encodeURIComponent(row.id), { session: row, at: 100, scan: {} });
+            }
+            await fromMachine(client, socket, "s/mac-01/__clawdline_inventory_v1__",
+                { inventory: { version: 1, sessions: Array.from(mac.rows.keys()).sort() }, features: ["sessions.snapshot"] });
+            await fromMachine(client, socket, "t/mac-01/" + MACHINE_REPLY, { read: "read:" + command.request, status: 200,
+                body: { sessions: Array.from(mac.rows.keys()).sort(), complete: true } });
+        }
+    };
+    return { client, socket, sent };
+}
+
+await check("B1 · a cold viewer of an idle Mac with nothing replayed asks for the rows and has them all within the bound", async function () {
+    const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }],
+        ["s2", { id: "s2", state: "idle", transcript_signature: "20-1" }]]) };
+    const reader = sessionReader("s1");
+    const started = Date.now();
+    const viewer = await idleMacSocket(mac, reader, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC) });
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.rows.length === 2 && last.scan.emptyAuthoritative; }, FAST);
+    const last = reader.lists[reader.lists.length - 1];
+    assert.deepEqual([last && last.rows, last && last.scan.emptyAuthoritative, last && last.scan.recovering],
+        [["s1", "s2"], true, []], "the list converged to the Mac's rows: " + JSON.stringify(reader.lists));
+    assert.ok(Date.now() - started < FAST, "within the bound");
+    assert.equal(viewer.sent.snapshots, 1, "one request, from the machine this browser remembered answering it");
+    assert.deepEqual(reader.claimedEmpty(), [], "no list said the account is empty while the Mac's rows were on their way");
+    assert.equal(reader.lists[0].scan.recovering[0], "mac-01", "the first list says that Mac is still sending");
+    await until(() => viewer.sent.transcripts === 1, FAST);
+    assert.equal(viewer.sent.transcripts, 1, "the open Session is read once");
+});
+
+await check("B1 · a viewer that has never seen the Mac asks once its snapshot says it can, and an older Mac is never asked", async function () {
+    const mac = { rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }]]) };
+    const reader = sessionReader(null);
+    const viewer = await idleMacSocket(mac, reader, { descriptorStorage: storageBox() });
+    assert.equal(viewer.sent.snapshots, 0, "nothing is known to answer yet, so nothing is asked");
+    await fromMachine(viewer.client, viewer.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
+        cloud_status: Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }) });
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.rows.length === 1 && last.scan.emptyAuthoritative; }, FAST);
+    assert.equal(viewer.sent.snapshots, 1, "the Mac's own digest named the word, and it was asked once");
+    assert.deepEqual(reader.claimedEmpty(), [], JSON.stringify(reader.lists));
+    await fromMachine(viewer.client, viewer.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
+        cloud_status: Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }) });
+    await until(() => viewer.socket.sent.filter((frame) => frame.type === "publish").length > 1, 400);
+    assert.equal(viewer.socket.sent.filter((frame) => frame.type === "publish").length, 1,
+        "and not again for the next snapshot on the same socket");
+
+    const older = sessionReader(null);
+    const legacy = await idleMacSocket(mac, older, { descriptorStorage: storageBox() });
+    await fromMachine(legacy.client, legacy.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" }, cloud_status: CLOUD_STATUS });
+    await fromMachine(legacy.client, legacy.socket, "s/mac-01/__clawdline_inventory_v1__", { inventory: { version: 1, sessions: ["s1"] } });
+    await until(() => legacy.socket.sent.some((frame) => frame.type === "publish"), 400);
+    assert.equal(legacy.socket.sent.filter((frame) => frame.type === "publish").length, 0,
+        "a Mac that lists no features is never sent the word");
+    assert.deepEqual(older.lists.map((list) => list.scan.emptyAuthoritative), older.lists.map(() => true),
+        "and its lists read exactly as they always have");
+});
+
+await check("B1 · a page back from quiesce after a row changed while it was away converges and reads that transcript exactly once", async function () {
+    const mac = { rows: new Map([["s1", { id: "s1", state: "working", transcript_signature: "10-1" }],
+        ["s2", { id: "s2", state: "idle", transcript_signature: "20-1" }]]) };
+    const reader = sessionReader("s1");
+    const storage = storageBox(REMEMBERED_SNAPSHOT_MAC);
+    const first = await idleMacSocket(mac, reader, { descriptorStorage: storage });
+    // While this page was connected the Mac published its rows live, as any scan does.
+    for (const row of mac.rows.values()) {
+        await fromMachine(first.client, first.socket, "s/mac-01/" + row.id, { session: row, at: 100, scan: {} });
+    }
+    await until(() => first.sent.transcripts === 1, FAST);
+    assert.equal(first.sent.transcripts, 1, "the open Session was read once while connected");
+    first.client.retire();
+    // Hidden past the grace: the turn ends, and the relay object that saw it is evicted.
+    mac.rows.set("s1", { id: "s1", state: "idle", transcript_signature: "11-4" });
+    const listsBefore = reader.lists.length;
+    const second = await idleMacSocket(mac, reader, { descriptorStorage: storage, resumeFrom: first.client });
+    await until(() => second.sent.transcripts === 1, FAST);
+    await settle();
+    const after = reader.lists.slice(listsBefore);
+    const last = after[after.length - 1];
+    assert.equal(second.sent.snapshots, 1, "the resumed page asked for the rows");
+    assert.deepEqual([last && last.rows, last && last.scan.emptyAuthoritative], [["s1", "s2"], true]);
+    const heldKey = Array.from(second.client.sessionSnapshots.keys()).find((key) => key.endsWith("s1"));
+    assert.equal(second.client.sessionSnapshots.get(heldKey).transcript_signature, "11-4",
+        "the row it holds is the Mac's current one");
+    assert.equal(second.sent.transcripts, 1, "the changed signature produced exactly one transcript read");
+    assert.deepEqual(reader.claimedEmpty(), [], JSON.stringify(after));
+
+    // A renewal takes over from a socket that is still up: nothing was lost, so nothing is asked.
+    const third = await idleMacSocket(mac, reader, { descriptorStorage: storage, resumeFrom: second.client });
+    await until(() => third.socket.sent.some((frame) => frame.type === "publish"), 400);
+    assert.equal(third.socket.sent.filter((frame) => frame.type === "publish").length, 0, "a renewal does not ask again");
+    second.client.retire();
+    // A page frozen past the grace whose socket still says ready: replaced like a renewal, but asks.
+    third.client.continuityUnproven = true;
+    const fourth = await idleMacSocket(mac, reader, { descriptorStorage: storage, resumeFrom: third.client });
+    await until(() => fourth.sent.snapshots === 1, FAST);
+    assert.equal(fourth.sent.snapshots, 1, "a replacement for a socket nothing proves heard everything asks");
+    third.client.retire();
+});
+
+await check("B1 · a Mac that does not answer ends the bounded attempt in a typed failure, and a closed client keeps no timer", async function () {
+    const mac = { silent: true, rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }]]) };
+    const reader = sessionReader(null);
+    const viewer = await idleMacSocket(mac, reader, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC),
+        sessionSnapshotTimeoutMs: 150, sessionSnapshotRetryMs: 50 });
+    assert.deepEqual(reader.lists, [], "a state this page made up is not handed over before any envelope is opened");
+    await fromMachine(viewer.client, viewer.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" },
+        cloud_status: Object.assign({}, CLOUD_STATUS, { features: ["sessions.snapshot"] }) });
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.scan.failures.length; }, BOUND);
+    const last = reader.lists[reader.lists.length - 1];
+    assert.equal(viewer.sent.snapshots, 2, "asked once and once more");
+    assert.deepEqual(last && last.scan.failures, [{ machine: "mac-01", code: "cloud_read_timeout" }], JSON.stringify(reader.lists));
+    assert.equal(last.scan.recovering.length, 0, "and it is no longer waiting");
+    assert.ok(describeFailure({ code: "cloud_sessions_incomplete" }).known, "rows named and never received have words of their own");
+    viewer.client.stop();
+    assert.equal(viewer.client.sessionRecovery.size, 0, "a stopped client holds no recovery and no timer");
 });
 
 /* ---- ends ---------------------------------------------------------------------------------- */

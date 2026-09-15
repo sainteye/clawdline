@@ -670,7 +670,7 @@ export class CloudViewerSession {
         });
         // During token renewal the previous authenticated socket remains usable. Do not replace
         // the header's live state with "connecting" merely because its successor is warming up.
-        await client.start({ quiet: !!(previous && previous.ready) });
+        await client.start({ quiet: !!(previous && previous.ready && previous.continuityUnproven !== true) });
         try {
             await client.whenReady();
         } catch (error) {
@@ -777,6 +777,11 @@ export function keepConnected(session, options) {
     // When the chain of usable clients began. A renewal continues the chain; only an outage ends it.
     var healthySince = null;
     var failures = 0;
+    // The relay's two temporary refusals are counted apart from `failures` (`countFailure`).
+    var rateRefusals = 0;
+    var forbiddenRefusals = 0;
+    // Out of attempts: nothing is open and nothing is timed until the page is back (`parkUntilReturn`).
+    var parked = false;
     var lastAttemptAt = null;
     // Hidden past the grace period: the socket is retired and nothing connects until the page is back.
     var quiesced = false;
@@ -852,6 +857,51 @@ export function keepConnected(session, options) {
             }
             return;
         }
+    }
+
+    /**
+     * Count one failed attempt where it belongs; answers the count that ends the attempts, or 0.
+     *
+     * 4429 (`rate_limited`, `over_capacity`) is the relay asking for less — a viewer-device seat
+     * another device holds is freed when that device's page is put away or closed — so it keeps the
+     * longest wait and its own, larger bound instead of spending the one a dead network gets. 4403
+     * `forbidden` is a revoked device, and also every device of an account whose revocation set the
+     * relay has saturated, which clears later and closes with the same code and words; a device that
+     * really is revoked is refused by the API's device list on the next attempt (`revoked`), so only
+     * the other kind keeps reaching the relay, and after a few tries it waits for the page instead.
+     */
+    function countFailure(code) {
+        if (RATE_REFUSALS.has(code)) return (rateRefusals += 1) >= MAXIMUM_RATE_REFUSALS ? rateRefusals : 0;
+        if (code === "forbidden") {
+            return (forbiddenRefusals += 1) >= MAXIMUM_FORBIDDEN_REFUSALS ? forbiddenRefusals : 0;
+        }
+        return (failures += 1) >= maximumFailures ? failures : 0;
+    }
+
+    /**
+     * Out of attempts. The caller has said so (`terminal_error`, `retries_exhausted`); the loop then
+     * holds no socket and no timer until the page is shown, restored from the back-forward cache or
+     * back online, and starts over with every count cleared — never sooner than `wakeSpacingMs`
+     * after its last attempt. The door's own press starts a new loop and stops this one. Answers
+     * false when stopped.
+     */
+    async function parkUntilReturn() {
+        parked = true;
+        await new Promise(function (resolve) {
+            var off = onWake(function (reason) {
+                if (stopped || RESTART_WAKES.has(reason)) { off(); resolve(); }
+            });
+            if (stopped) { off(); resolve(); }
+        });
+        parked = false;
+        if (stopped) return false;
+        failures = 0;
+        rateRefusals = 0;
+        forbiddenRefusals = 0;
+        backoff = initial;
+        var since = lastAttemptAt === null ? wakeSpacingMs : now() - lastAttemptAt;
+        if (since < wakeSpacingMs) await waitFor(wakeSpacingMs - since, function () { return false; });
+        return !stopped;
     }
 
     function renewalDelay(outcome) {
@@ -952,14 +1002,18 @@ export function keepConnected(session, options) {
     /**
      * Visible, restored from the back-forward cache, back online, or asked by the page. Answers
      * whether a connection is live or on its way, which is what a retired client asks before it
-     * holds a read for its replacement (`CloudClient._viaSuccessor`).
+     * holds a read for its replacement (`CloudClient._viaSuccessor`): `true`; `false` when none will
+     * come — stopped, ended, or out of attempts; or `"hidden"` when one comes as soon as the page is
+     * shown. A notification tap posts its `navigate` before `focus()` makes the page visible, so a
+     * read asked in that moment is worth holding for a few seconds, not refusing.
      */
     function resume(reason) {
         if (stopped || ended) return false;
+        if (parked && !RESTART_WAKES.has(reason)) return false;
         if (page.hidden()) {
             // `online` while hidden: a loop that is not quiesced may re-read the network flag.
             if (!quiesced) wake(reason);
-            return false;
+            return "hidden";
         }
         disarmGrace();
         var hiddenFor = hiddenSince === null ? 0 : now() - hiddenSince;
@@ -969,7 +1023,13 @@ export function keepConnected(session, options) {
             wake(reason);
             return true;
         }
-        if (hiddenFor >= hiddenGraceMs && active) staleResume = true;
+        if (hiddenFor >= hiddenGraceMs && active) {
+            staleResume = true;
+            // Hidden past the grace with a socket that still says `ready`: the page was frozen
+            // before its timer ran, and nothing proves that socket heard what was published
+            // meanwhile. Its successor is not a renewal, and asks for the rows (`_becameReady`).
+            try { active.continuityUnproven = true; } catch (e) { /* a frozen stand-in */ }
+        }
         wake(reason);
         return true;
     }
@@ -1004,21 +1064,22 @@ export function keepConnected(session, options) {
                     return;
                 }
                 if (error && (error.terminal === true || PERMANENT_RELAY_REFUSALS.has(error.code))) {
-                    // A relay that closed the handshake with 4403, 4400 or 4413 will close the next
-                    // one the same way: this device is revoked, or this page speaks the protocol wrong.
+                    // A relay that closed the handshake with 4400 or 4413 will close the next one the
+                    // same way: this page speaks the protocol wrong.
                     onState({ state: "terminal_error", error: error });
                     return;
                 }
                 var serving = !!(active && active.ready);
-                if (!serving) failures += 1;
-                if (failures >= maximumFailures) {
+                var exhausted = serving ? 0 : countFailure(error && error.code);
+                if (exhausted) {
                     // Stops rather than knocking every thirty seconds for ever; the door says so and
-                    // offers the press that starts again.
+                    // offers the press that starts again, and the page coming back starts it too.
                     onState({ state: "terminal_error", error: error, reason: "retries_exhausted",
-                        attempts: failures });
+                        attempts: exhausted });
+                    if (await parkUntilReturn()) continue;
                     return;
                 }
-                if (error && RATE_REFUSALS.has(error.code)) backoff = maximum;
+                if (error && (RATE_REFUSALS.has(error.code) || error.code === "forbidden")) backoff = maximum;
                 var delay = Math.min(maximum, backoff) * (0.75 + jitter() * 0.5);
                 // A proactive replacement is allowed to fail while the old credential is still
                 // serving. Retrying that warm-up is not an outage and must not cover the usable
@@ -1062,6 +1123,8 @@ export function keepConnected(session, options) {
             var stable = healthySince !== null && now() - healthySince >= stableMs;
             if (stable) {
                 failures = 0;
+                rateRefusals = 0;
+                forbiddenRefusals = 0;
                 backoff = initial;
             }
             if (boundary.reason === "quiesce") {
@@ -1083,13 +1146,14 @@ export function keepConnected(session, options) {
                 }
                 // Backoff forgets its history only for a connection that stayed up (above): a relay
                 // that accepts and then closes at once is met with a growing wait, never a tight loop.
-                if (!stable) failures += 1;
-                if (failures >= maximumFailures) {
-                    onState({ state: "terminal_error", reason: "retries_exhausted", attempts: failures,
+                var exhaustedAfter = stable ? 0 : countFailure(boundary.failure);
+                if (exhaustedAfter) {
+                    onState({ state: "terminal_error", reason: "retries_exhausted", attempts: exhaustedAfter,
                         error: bootError(boundary.failure || "offline", "the cloud connection kept dropping") });
+                    if (await parkUntilReturn()) continue;
                     return;
                 }
-                if (RATE_REFUSALS.has(boundary.failure)) backoff = maximum;
+                if (RATE_REFUSALS.has(boundary.failure) || boundary.failure === "forbidden") backoff = maximum;
                 onState({ state: "reconnecting" });
                 var wait = Math.min(maximum, backoff) * (0.75 + jitter() * 0.5);
                 await backoffWait(wait);
@@ -1099,7 +1163,8 @@ export function keepConnected(session, options) {
         }
     })();
     // A loop that ends on its own — pairing required, a terminal refusal — leaves no page listener or
-    // grace timer behind; the next `keepConnected` a retry starts brings its own.
+    // grace timer behind; the next `keepConnected` a retry starts brings its own. One that ran out of
+    // attempts has not ended: it keeps its page listeners, and only those, to start again.
     function release() { ended = true; disarmGrace(); detach(); }
     loop.then(release, release);
 
@@ -1109,7 +1174,10 @@ export function keepConnected(session, options) {
             disarmGrace();
             detach();
             wake("stopped");
-            if (session.client) session.client.stop();
+            // A loop that already ended on its own no longer owns the session's client: the next
+            // loop's connect retires it once its replacement is ready (`main.js` stops the old loop
+            // before starting one).
+            if (session.client && !ended) session.client.stop();
         },
         done: loop
     };
@@ -1123,10 +1191,19 @@ const QUIESCE_DEFER_MS = 60 * 1000;
 const QUIESCE_RECHECK_MS = 5000;
 const OFFLINE_RECHECK_MS = 60 * 1000;
 const MAXIMUM_CONNECT_FAILURES = 16;
-/** Relay closes that no retry changes: 4403 is a revoked device; 4400 and 4413 are this page's protocol. */
-const PERMANENT_RELAY_REFUSALS = new Set(["forbidden", "bad_request", "too_large"]);
+/**
+ * Relay closes that no retry changes: 4400 and 4413 are this page's protocol. 4403 is not among
+ * them — the relay also sends it while its revocation set is saturated (`countFailure`).
+ */
+const PERMANENT_RELAY_REFUSALS = new Set(["bad_request", "too_large"]);
 /** 4429: the relay asked for less; the next attempt waits the longest. */
 const RATE_REFUSALS = new Set(["rate_limited", "over_capacity"]);
+/** 4403s in a row before the loop waits for the page: a revoked device ends at the API before this. */
+const MAXIMUM_FORBIDDEN_REFUSALS = 3;
+/** 4429s in a row before the loop waits for the page: about twenty minutes at the longest wait. */
+const MAXIMUM_RATE_REFUSALS = 40;
+/** What starts a loop that ran out of attempts: the page back in view, restored, or back online. */
+const RESTART_WAKES = new Set(["visible", "pageshow", "online"]);
 
 function positive(value, fallback) {
     var number = Number(value);

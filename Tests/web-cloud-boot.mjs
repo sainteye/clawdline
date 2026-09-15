@@ -1011,24 +1011,24 @@ await lifecycleCheck("renewal · timed on the relay's clock, never sooner than t
     dropped.keeper.stop();
 });
 
-await lifecycleCheck("refusals · 4403 stops; 4429 waits the longest; a run of failures ends and says so", async function () {
+await lifecycleCheck("refusals · 4400 stops; 4429 waits the longest; a run of failures ends and says so", async function () {
     const timers = lifecycleTimers();
-    const forbidden = lifecycleSession(timers, function () { return refusal("forbidden"); });
-    const forbiddenPage = lifecyclePage();
-    const stopped = lifecycleKeeper(forbidden, timers, forbiddenPage);
+    const refused = lifecycleSession(timers, function () { return refusal("bad_request"); });
+    const refusedPage = lifecyclePage();
+    const stopped = lifecycleKeeper(refused, timers, refusedPage);
     await timers.advance(120_000);
-    assert.equal(forbidden.connects.length, 1, "a revoked device's handshake is not retried");
+    assert.equal(refused.connects.length, 1, "a handshake refused for this page's protocol is not retried");
     assert.deepEqual(stopped.names(), ["terminal_error"]);
     await stopped.keeper.done;
     await drain();
-    assert.equal(forbiddenPage.listeners(), 0, "a loop that ends on its own leaves no page listener behind");
+    assert.equal(refusedPage.listeners(), 0, "a loop that ends on its own leaves no page listener behind");
 
     const afterReady = lifecycleSession(timers);
     const closed = lifecycleKeeper(afterReady, timers, lifecyclePage());
     await timers.advance(0);
-    afterReady.client.drop("forbidden");
+    afterReady.client.drop("bad_request");
     await timers.advance(120_000);
-    assert.equal(afterReady.connects.length, 1, "nor is a live socket the relay closed with 4403");
+    assert.equal(afterReady.connects.length, 1, "nor is a live socket the relay closed with 4400");
     assert.equal(closed.names().at(-1), "terminal_error");
 
     const rateTimers = lifecycleTimers();
@@ -1052,7 +1052,115 @@ await lifecycleCheck("refusals · 4403 stops; 4429 waits the longest; a run of f
     assert.equal(failing.connects.length, 4, "retries stop after the bound instead of every thirty seconds for ever");
     const last = ended.states.at(-1);
     assert.deepEqual([last.state, last.reason, last.error.code], ["terminal_error", "retries_exhausted", "offline"]);
+    // It waits for the page rather than ending (the next check); stopping it ends it.
+    ended.keeper.stop();
     await ended.keeper.done;
+});
+
+await lifecycleCheck("refusals · 4403 is tried again a few times at the longest wait, and a device the API calls revoked ends there", async function () {
+    // The relay closes with 4403 both for a revoked device and, while its revocation set is
+    // saturated, for every device of the account; the two carry the same code and words.
+    const timers = lifecycleTimers();
+    const saturated = lifecycleSession(timers, function () { return refusal("forbidden"); });
+    const run = lifecycleKeeper(saturated, timers, lifecyclePage(), { maximumBackoffMs: 30_000 });
+    await timers.advance(0);
+    assert.equal(saturated.connects.length, 1);
+    assert.deepEqual([run.states[0].state, run.states[0].afterMs], ["retrying", 30_000], "a 4403 waits the longest");
+    await timers.advance(30_000);
+    assert.equal(saturated.connects.length, 2, "and is tried again");
+    await timers.advance(30_000);
+    assert.equal(saturated.connects.length, 3);
+    const last = run.states.at(-1);
+    assert.deepEqual([last.state, last.reason, last.attempts, last.error.code],
+        ["terminal_error", "retries_exhausted", 3, "forbidden"], "three in a row, and the door says so");
+    await timers.advance(30 * 60_000);
+    assert.equal(saturated.connects.length, 3, "then nothing knocks");
+    assert.deepEqual(timers.pending(), [], "and nothing is timed");
+    run.keeper.stop();
+
+    const revokedTimers = lifecycleTimers();
+    const revoked = lifecycleSession(revokedTimers, function (n) {
+        return n === 1 ? refusal("forbidden") : Object.assign(new Error("revoked"), { code: "revoked" });
+    });
+    const ended = lifecycleKeeper(revoked, revokedTimers, lifecyclePage(), { maximumBackoffMs: 30_000 });
+    await revokedTimers.advance(10 * 60_000);
+    assert.deepEqual(ended.names(), ["retrying", "revoked"], "a revoked device is told so by the API on the next attempt");
+    assert.equal(revoked.connects.length, 2);
+    await ended.keeper.done;
+
+    const liveTimers = lifecycleTimers();
+    const live = lifecycleSession(liveTimers);
+    const closed = lifecycleKeeper(live, liveTimers, lifecyclePage(), { initialBackoffMs: 250, maximumBackoffMs: 30_000 });
+    await liveTimers.advance(0);
+    live.client.drop("forbidden");
+    await liveTimers.advance(29_999);
+    assert.equal(live.connects.length, 1, "a live socket closed with 4403 waits the longest too");
+    await liveTimers.advance(1);
+    assert.equal(live.connects.length, 2, "and connects again");
+    closed.keeper.stop();
+});
+
+await lifecycleCheck("refusals · 4429 keeps the longest wait without spending the failure bound, and has a larger one of its own", async function () {
+    const timers = lifecycleTimers();
+    const limited = lifecycleSession(timers, function () { return refusal("over_capacity"); });
+    const run = lifecycleKeeper(limited, timers, lifecyclePage(), { maximumConnectFailures: 4, maximumBackoffMs: 30_000 });
+    await timers.advance(10 * 30_000);
+    assert.equal(limited.connects.length, 11, "a device seat another device holds is waited for past the failure bound");
+    assert.ok(run.states.every(function (update) { return update.state === "retrying" && update.afterMs === 30_000; }),
+        "every wait is the longest: " + JSON.stringify(run.states.map(function (update) { return [update.state, update.afterMs]; })));
+    await timers.advance(40 * 30_000);
+    assert.equal(limited.connects.length, 40, "and it still stops, at its own bound");
+    const last = run.states.at(-1);
+    assert.deepEqual([last.state, last.reason, last.attempts, last.error.code],
+        ["terminal_error", "retries_exhausted", 40, "over_capacity"]);
+    run.keeper.stop();
+});
+
+await lifecycleCheck("refusals · a loop out of attempts holds nothing open, and starts again when the page is shown or back online", async function () {
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    let failing = true;
+    const session = lifecycleSession(timers, function (n) {
+        return n > 1 && failing ? Object.assign(new Error("offline"), { code: "offline" }) : null;
+    });
+    const run = lifecycleKeeper(session, timers, page, { maximumConnectFailures: 2, initialBackoffMs: 250 });
+    await timers.advance(0);
+    const first = session.client;
+    first.drop();
+    await timers.advance(60_000);
+    assert.equal(session.connects.length, 2);
+    assert.deepEqual([run.states.at(-1).state, run.states.at(-1).reason], ["terminal_error", "retries_exhausted"]);
+    await timers.advance(30 * 60_000);
+    assert.equal(session.connects.length, 2, "nothing knocks while it waits");
+    assert.deepEqual(timers.pending(), [], "and nothing is timed");
+    assert.ok(page.listeners() > 0, "but it still hears the page");
+    assert.equal(first.lifecycle("demand"), false, "a read asked meanwhile hears that nothing is on its way");
+    failing = false;
+    page.hide();
+    page.show();
+    await timers.advance(0);
+    assert.equal(session.connects.length, 3, "shown again: it starts over at once");
+    assert.equal(run.names().at(-1), "connected");
+    run.keeper.stop();
+    assert.equal(page.listeners(), 0);
+
+    const onlineTimers = lifecycleTimers();
+    const onlinePage = lifecyclePage();
+    const down = lifecycleSession(onlineTimers, function () { return Object.assign(new Error("offline"), { code: "offline" }); });
+    const again = lifecycleKeeper(down, onlineTimers, onlinePage, { maximumConnectFailures: 2, initialBackoffMs: 250 });
+    await onlineTimers.advance(60_000);
+    assert.equal(down.connects.length, 2);
+    onlinePage.online();
+    await onlineTimers.advance(0);
+    assert.equal(down.connects.length, 3, "the network back: it starts over");
+    assert.equal(again.names().at(-1), "retrying", "with its count cleared");
+    await onlineTimers.advance(250);
+    assert.equal(down.connects.length, 4);
+    assert.equal(again.names().at(-1), "terminal_error", "and a new run of failures ends it again");
+    // The door's press starts a new loop; `main.js` stops this one first.
+    again.keeper.stop();
+    await again.keeper.done;
+    assert.equal(onlinePage.listeners(), 0);
 });
 
 await lifecycleCheck("hidden · past the grace the socket is retired and nothing runs; visible connects at once", async function () {
@@ -1133,6 +1241,8 @@ await lifecycleCheck("hidden · a page frozen past the grace gets a fresh socket
     await timers.advance(0);
     assert.equal(session.connects.length, 2, "a socket that sat frozen is replaced, and the relay realigns");
     assert.equal(frozen.retired, 1, "the frozen one is retired only after its replacement is connected");
+    assert.equal(frozen.continuityUnproven, true,
+        "and is marked, so its replacement asks each machine for its rows instead of taking over as a renewal");
     // `main.js` calls `api.revalidate("visible")` on the client it holds; the loop is where it lands.
     const live = session.client;
     page.document.hidden = true;
@@ -1144,7 +1254,7 @@ await lifecycleCheck("hidden · a page frozen past the grace gets a fresh socket
     page.document.visibilityState = "visible";
     assert.equal(typeof live.lifecycle, "function", "the loop hands each client its revalidate hook");
     page.document.hidden = true;
-    assert.equal(live.lifecycle("demand"), false, "hidden: no connection is on its way, and it says so");
+    assert.equal(live.lifecycle("demand"), "hidden", "hidden: a connection comes only once the page is shown, and it says so");
     page.document.hidden = false;
     assert.equal(live.lifecycle("visible"), true, "visible: a connection is on its way");
     await timers.advance(0);
@@ -1157,6 +1267,29 @@ await lifecycleCheck("hidden · a page frozen past the grace gets a fresh socket
     client.lifecycle = function (reason) { reasons.push(reason); };
     client.revalidate("visible");
     assert.deepEqual(reasons, ["visible"]);
+});
+
+await lifecycleCheck("hidden · a read asked while the page is put away hears a connection comes once it is shown, and nothing opens for it", async function () {
+    // A notification tap: the service worker posts `navigate` before `focus()` shows the page.
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    const session = lifecycleSession(timers);
+    const run = lifecycleKeeper(session, timers, page, { hiddenGraceMs: 60_000 });
+    await timers.advance(0);
+    const quiet = session.client;
+    page.hide();
+    await timers.advance(60_000);
+    assert.equal(quiet.retired, 1, "hidden past the grace");
+    assert.equal(quiet.lifecycle("demand"), "hidden", "not false: the loop is alive and waits only for the page");
+    await timers.advance(10_000);
+    assert.equal(session.connects.length, 1, "asking opens no socket while the page is hidden");
+    assert.deepEqual(timers.pending(), [], "and times nothing");
+    page.show();
+    await timers.advance(0);
+    assert.equal(session.connects.length, 2, "shown: connected at once");
+    assert.equal(quiet.lifecycle("demand"), true);
+    run.keeper.stop();
+    assert.equal(quiet.lifecycle("demand"), false, "stopped: nothing will come");
 });
 
 await lifecycleCheck("offline · nothing connects while the browser says there is no network; online connects", async function () {

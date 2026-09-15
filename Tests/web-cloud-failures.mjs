@@ -1852,6 +1852,34 @@ await check("receive · a sender with no key, and a half-written pairing, are ea
     assert.equal(flaky.length, 2, "a store that failed to answer is not remembered as an answer");
 });
 
+await check("receive · a pairing completed in another tab of this browser ends this tab's remembered \"no key\" at once", async function () {
+    FakeBroadcastChannel.rooms.clear();
+    const senderAsks = [];
+    const pairingAsks = [];
+    const errors = [];
+    const reading = cloudClient({ senderKeys: {}, BroadcastChannel: FakeBroadcastChannel, tabID: "tab-reading",
+        resolveSenderKey: (sender) => { senderAsks.push(sender); return Promise.resolve(null); },
+        resolveMachinePairing: (machine) => { pairingAsks.push(machine); return Promise.resolve(null); } });
+    reading.events((event) => { if (event.type === "error") errors.push(event.error.code); });
+    const socket = await ready(reading);
+    const fromLinux = async () => receiveEnvelope(reading, socket,
+        await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    await fromLinux();
+    await fromLinux();
+    assert.deepEqual([senderAsks.length, pairingAsks.length, errors], [1, 1, ["machine_not_paired", "machine_not_paired"]],
+        "each store asked once, as before");
+    // The pairing tab's own socket is down while it pairs, so it has no open channel of its own.
+    const pairing = cloudClient({ BroadcastChannel: FakeBroadcastChannel, tabID: "tab-pairing" });
+    pairing.forgetMachinePairingAnswer("linux-01");
+    assert.equal(pairing.tabChannel, null, "and it keeps none open for saying so");
+    await fromLinux();
+    assert.deepEqual([senderAsks.length, pairingAsks.length], [2, 2],
+        "the next envelope asks both stores again, not after this tab's next renewal");
+    await fromLinux();
+    assert.deepEqual([senderAsks.length, pairingAsks.length], [2, 2], "and then remembers again");
+    reading.stop();
+});
+
 await check("receive · an unchanged machine descriptor is not written to storage again", async function () {
     const storage = new FakeStorage();
     const key = "clawdline.machine-descriptors.v1:" + encodeURIComponent(ACCOUNT);
