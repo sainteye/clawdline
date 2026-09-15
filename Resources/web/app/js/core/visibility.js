@@ -70,7 +70,9 @@ export function visibilityEnvironment(overrides) {
         requestFrame: overrides.requestFrame || function (work) {
             if (typeof requestAnimationFrame === "function") return requestAnimationFrame(work);
             return setTimeout(work, 16);
-        }
+        },
+        setTimeout: overrides.setTimeout || function (work, ms) { return setTimeout(work, ms); },
+        clearTimeout: overrides.clearTimeout || function (timer) { clearTimeout(timer); }
     };
     return env;
 }
@@ -139,6 +141,14 @@ export function createVisibleInterval(work, intervalMs, options) {
 }
 
 /**
+ * How long a visible page may go without an animation frame before a pending draw runs anyway.
+ * A page that says it is visible and still gets no frames exists — a backgrounded automation tab,
+ * a web view whose window is covered — and a list that never draws there is worse than one
+ * drawn a second late. The timer exists only while a draw is owed.
+ */
+export var FRAME_FALLBACK_MS = 1000;
+
+/**
  * Any number of `request()` calls, one `work()` in the next animation frame.
  *
  * While the page is hidden nothing is scheduled at all; the requests collapse into one run that
@@ -150,9 +160,13 @@ export function createFrameCoalescer(work, options) {
     var env = visibilityEnvironment(options.environment);
     var scheduled = false;
     var waitingForVisible = false;
+    var generation = 0;
+    var fallback = null;
 
-    function run() {
+    function run(mine) {
+        if (!scheduled || mine !== generation) return;
         scheduled = false;
+        if (fallback !== null) { env.clearTimeout(fallback); fallback = null; }
         if (env.hidden()) { holdUntilVisible(); return; }
         work();
     }
@@ -170,7 +184,9 @@ export function createFrameCoalescer(work, options) {
         if (scheduled || waitingForVisible) return;
         if (env.hidden()) { holdUntilVisible(); return; }
         scheduled = true;
-        env.requestFrame(run);
+        var mine = ++generation;
+        env.requestFrame(function () { run(mine); });
+        fallback = env.setTimeout(function () { fallback = null; run(mine); }, FRAME_FALLBACK_MS);
     }
 
     return {

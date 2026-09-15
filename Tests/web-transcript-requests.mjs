@@ -18,6 +18,7 @@ import {
 import {
     createFrameCoalescer,
     createVisibleInterval,
+    FRAME_FALLBACK_MS,
     whenVisible
 } from "../Resources/web/app/js/core/visibility.js";
 
@@ -426,7 +427,7 @@ equal([transcriptSignatureOf({ transcript_signature: "a" }), transcriptSignature
 /* ---- the page's clocks, hidden and visible -------------------------------------------------- */
 
 function fakeVisibility() {
-    const env = { hiddenNow: false, listeners: [], intervals: [], frames: [], now: 0 };
+    const env = { hiddenNow: false, listeners: [], intervals: [], frames: [], timeouts: [], now: 0 };
     env.api = {
         hidden: function () { return env.hiddenNow; },
         subscribe: function (fn) {
@@ -436,7 +437,9 @@ function fakeVisibility() {
         now: function () { return env.now; },
         setInterval: function (fn, ms) { const t = { fn, ms, live: true }; env.intervals.push(t); return t; },
         clearInterval: function (t) { t.live = false; },
-        requestFrame: function (fn) { env.frames.push(fn); return env.frames.length; }
+        requestFrame: function (fn) { env.frames.push(fn); return env.frames.length; },
+        setTimeout: function (fn, ms) { const t = { fn, ms, live: true }; env.timeouts.push(t); return t; },
+        clearTimeout: function (t) { if (t) t.live = false; }
     };
     env.set = function (hidden) { env.hiddenNow = hidden; env.listeners.slice().forEach(function (fn) { fn(); }); };
     env.live = function () { return env.intervals.filter(function (t) { return t.live; }); };
@@ -504,6 +507,23 @@ function fakeVisibility() {
     env.set(false);
     env.frames.shift()();
     equal(draws, 3, "and draws when the page is back");
+
+    const frozen = fakeVisibility();
+    let frozenDraws = 0;
+    const stuck = createFrameCoalescer(function () { frozenDraws += 1; }, { environment: frozen.api });
+    stuck.request(); stuck.request();
+    const owedTimer = frozen.timeouts.filter(function (t) { return t.live; });
+    equal(owedTimer.map(function (t) { return t.ms; }), [FRAME_FALLBACK_MS],
+        "a pending draw keeps one fallback timer, for a visible page that gets no frames");
+    owedTimer[0].live = false;
+    owedTimer[0].fn();
+    equal([frozenDraws, stuck.pending()], [1, false], "which draws once when the frame never comes");
+    frozen.frames.shift()();
+    equal(frozenDraws, 1, "and the late frame after it draws nothing more");
+    stuck.request();
+    frozen.frames.shift()();
+    equal([frozenDraws, frozen.timeouts.filter(function (t) { return t.live; }).length], [2, 0],
+        "a frame that does come takes its fallback timer down");
 
     const later = fakeVisibility();
     later.hiddenNow = true;
