@@ -184,9 +184,9 @@ is in `.gitignore`, so every path in this page that starts with `artifacts/` res
 has that checkout and does not exist on GitHub at all. Until 2026-09-04 four of them were written as
 Markdown links, which is worse than a name: a link is a promise that clicking it will work, and for
 every reader outside this Mac it 404s. They are plain names now — enough to `open` if you have the
-private repo, and honest about being unreachable if you do not. `Tests/docs-ui-labels.mjs` fails if
-one of them becomes a link again, because the symlink means the mistake is invisible to the person
-making it: it resolves perfectly on the machine where the page is written.
+private repo, and honest about being unreachable if you do not. Keep them that way: the symlink
+means the mistake is invisible to the person making it, because it resolves perfectly on the
+machine where the page is written.
 
 ---
 

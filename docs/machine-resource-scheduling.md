@@ -5,7 +5,6 @@ nobody, and removed on 2026-09-03.** What is on this machine today:
 
 - **`test.sh` takes the machine-wide lock itself** (`10130e45`), about two hundred lines between
   two marker comments, covering the `swiftc` invocation *and* the test-binary run after it.
-  `Tests/test-sh-lock.mjs` lifts that block out and runs it against stand-ins — 150 checks.
 - **`build.sh` takes the same directory** the same way, with the same eighteen-field record, the
   same heartbeat and the same fail-closed wait.
 - **`CLAWDLINE_SUITE_JOBS`** (`54891280`), a compile-job ceiling both scripts read and both print
@@ -725,8 +724,7 @@ the other two wrote, that compare was `"" = ""` and always true, so the re-read 
 carrying the whole swap alone. In the other direction `test.sh` wrote `working=` while the Swift
 reader read `work=`, so each side showed an empty working list for the other's holder and the field
 the design specifies as *the record names the process actually working* crossed in neither
-direction. The contract is written out once above `clawdline_suite_lock_write_record` in `test.sh`,
-and `Tests/test-sh-lock.mjs` reads every writer and fails when one of them drifts from it.
+direction. The contract is written out once above `clawdline_suite_lock_write_record` in `test.sh`.
 
 **`pid` and `owner_pid` are two different questions and only the second is an identity.** A hold is
 a sequence — the compiler driver, then the test binary — so `pid` changes *during* one hold. Every

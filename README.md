@@ -889,8 +889,7 @@ swift build   # compiles the real Mac and Linux product graph; it also powers ed
 
 The executed check count is recorded by each run rather than copied into source. How long the suite
 takes was measured — on a named machine, split into the phases where the time goes — in
-[docs/suite-runtime.md](docs/suite-runtime.md). `Tests/docs-suite-facts.mjs` keeps this quick-start
-wording and link honest without forcing a second full run after the count changes.
+[docs/suite-runtime.md](docs/suite-runtime.md).
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rest: where things are, how to add a language or a
 mascot, and what a third way of sending text would look like. Corrections to any of the fourteen

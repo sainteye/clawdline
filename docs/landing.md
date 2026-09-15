@@ -257,9 +257,11 @@ roots landing the same batch, neither aware of the other. Five of the hand-writt
 a different repository, which is the part that matters most — **the gap belongs to the machine, not
 to this checkout.**
 
-`tools/check-landing-records.py` is the answer, and `./test.sh` runs it in the guards phase. It
-reads the machine's task registry rather than this tree, groups every terminal task by the
-repository it belongs to, and asks git the same question the broker would have asked — without
+`tools/check-landing-records.py` was the answer until 2026-09-15, when it left `./test.sh` under
+[testing-policy.md](testing-policy.md) and was deleted; the landing sweep below asks the same
+question from inside the broker. What follows is the design it had. It
+read the machine's task registry rather than this tree, grouped every terminal task by the
+repository it belonged to, and asked git the same question the broker would have asked — without
 waiting to be asked.
 
 **Three answers, kept apart, because collapsing them is how a number stops meaning anything.**
@@ -330,11 +332,6 @@ sweep runs every 300 s and this guard excuses anything younger than six hours, s
 reaches the fatal set has already been offered to about seventy passes and is there because the
 sweep declined it or could not see it. Making redness depend on a timer would also make it depend
 on whether the app is running, which is a property of neither the tree nor the registry.
-
-**And it has been watched going red.** `Tests/guard-red-proofs/landing-records.sh` builds a
-repository with one delivery merged into `main` and a registry with one task, and the only
-difference between its two arms is the `landing` key. The mutation is the missing record, in the
-guard's own terms — not a deleted file, which is a thing that does not happen.
 
 **And it refuses to be green for having nothing to look at.** A registry it cannot parse, one with
 no `tasks` list, one with an empty one, a `--repository` no task in the registry belongs to, and a
@@ -471,7 +468,5 @@ Nobody cut a corner. The door simply admits one record at a time and only when s
 walk through it, and three of the twelve needed their `target` changed on the way — which is exactly
 the half a machine must not do. What the sweep removes is the remembering, not the judgement.
 
-`tools/check-landing-records.py` and this sweep have to keep asking the same question. The guard
-still runs in `./test.sh` and still prints the `curl` for every row a person must settle; what it
-should now find, in the ordinary case, is that `unrecorded landing` is empty because the sweep got
-there first.
+`tools/check-landing-records.py` and this sweep asked the same question. The guard is gone from
+`./test.sh` since 2026-09-15; the sweep is now the only thing asking it.

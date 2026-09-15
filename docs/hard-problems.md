@@ -14,9 +14,6 @@ knowledge gap — somebody did not know how a browser API behaved — it usually
 belongs next to the code, where the next reader is. What belongs here is **a way of being wrong that
 will happen again**, to somebody who knows everything the last person knew.
 
-Related, and narrower: [`guard-red-proofs.md`](guard-red-proofs.md) is about one member of the
-family below — a check that cannot go red. This file is the family.
-
 ---
 
 ## 2026-09-06/07 — Tapping a notification did not open the session

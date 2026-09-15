@@ -109,13 +109,13 @@ Standard input reaches the command.
   writes a tree object into the shared `.git`, and "will HEAD still build after this commit?" is a
   question only the session that is staging may ask.
 - Both subjects then run `git init -q && git add -A` inside the copy, with every inherited `GIT_*`
-  repository variable unset, so that `tools/check-version-strings.py` finds files to scan instead of
-  failing closed with `version_scan_no_files`. **`git add -A` obeys the copy's own `.gitignore`, and
+  repository variable unset, so that a command asking git for its file list finds files instead of
+  failing closed. **`git add -A` obeys the copy's own `.gitignore`, and
   a repository is allowed to track a file that matches it.** Measured on 2026-09-11 while landing
   `a82f062d`: the snapshot's index held 724 files where the commit has 725, and the one it dropped
   was `tools/ubuntu-core-probe/Package.resolved`, tracked and matching `.gitignore:17`. The file was
-  in the copy the whole time; everything that asks git for the file list — `git ls-files`,
-  `tools/check-version-strings.py` — simply ran on a tree one file short, and the suite went green.
+  in the copy the whole time; everything that asks git for the file list — `git ls-files` among
+  them — simply ran on a tree one file short, and the suite went green.
   So the subject's own paths are added by name as well: `git ls-tree -r "$tree_id"` for the index,
   and for the worktree the paths the source repository tracks that the copy still has, read from the
   private index copy.
@@ -232,6 +232,4 @@ stands a `kill` answering in the exact words `/bin/kill` prints. The tool reache
 looks `kill` up on `PATH`, so requiring that it was asked is what keeps a shell builtin out. Each
 stand-in logs what it was asked, and the suite requires that it was asked. This machine's own table
 is used too when it can be read, and this machine's own `kill` beside a refused table when it answers
-in those words; the run says so when either cannot be used. Its red proof is
-[`Tests/guard-red-proofs/scratch-tool.sh`](../Tests/guard-red-proofs/scratch-tool.sh): with the
-cleanup trap deleted, the suite goes red (see [guard red proofs](guard-red-proofs.md)).
+in those words; the run says so when either cannot be used.

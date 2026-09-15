@@ -25,9 +25,9 @@ careless. There was nothing on the screen to be careful about.
 - or `-w '%{http_code}'` (`%{response_code}` also counts) with `-o` for the body, and a comparison
   on the code.
 
-`tools/check-curl-status.py` enforces it. `test.sh` runs it in the guards phase, and
-`tools/check-curl-status.py --list` prints every call it can see with its verdict and which of the
-two scopes below it came from, which is the fastest way to check a change.
+`tools/check-curl-status.py` enforced it until 2026-09-15, when source-text scanners left
+`./test.sh` under [testing-policy.md](testing-policy.md) and the scanner was deleted. The rule
+stands; what follows describes how the scanner read it.
 
 The same rule reaches the text this repository hands to *agents* — child briefings and the shipped
 skill guides — for the same reason and with one difference: there the remedy is `--fail-with-body`,
@@ -70,7 +70,7 @@ runs.
 
 So the guard walks the shell with its quoting rules — `'`, `"`, `\`, `#`, heredocs, `$( )` — splits
 it into commands, and asks each command that *is* `curl` what flags it was given. The enumeration
-that shaped it is kept as `tools/check-curl-status.py --self-test`, twenty-nine shapes with the
+that shaped it was kept as `tools/check-curl-status.py --self-test`, twenty-nine shapes with the
 negatives named: `command -v curl`, `pgrep -x curl`, the word in a comment, in a quoted string, in
 an assignment's value, as a `grep` pattern, and inside all three kinds of heredoc — beside the
 positives, including a `-f` inside a quoted header value that must **not** count as the flag.

@@ -1063,6 +1063,11 @@ the second.
 
 ### Governance correction, landed with Cut 1
 
+**Since 2026-09-15 nothing keeps this table current.** The architecture guard and
+`tools/generate-governance-table.sh` were removed from `./test.sh` and deleted under
+[testing-policy.md](testing-policy.md); the block below is their last rendering, and the history
+that follows is a record rather than an instruction.
+
 This document had drifted from the executable guard. The correction landed with Cut 1; on 2026-09-03
 the repair went further than restating the numbers, and the heading is left naming the first half so
 that the two are not read as one event: **the table below is not written by hand at all.**
@@ -1100,8 +1105,7 @@ Executed Swift and Cloud check totals are intentionally absent from this table. 
 about one run, so the canonical run receipt records them together with the exact tree, command,
 environment and log digest. Copying the previous tree's totals into `test.sh` and contributor docs
 created a self-invalidating loop: the first successful full run changed source metadata and forced
-a second identical full. Structural completeness remains enforced by the ordered group, runner,
-suite-file and Cloud-suite rosters; observed assertion totals remain receipt telemetry.
+a second identical full. Observed assertion totals remain receipt telemetry.
 
 ### What stage 1 proved, and what it declined to do
 
@@ -1180,13 +1184,12 @@ observed again after the rebase.
 
 Every one of those was a true reading of a tree that had stopped existing. **The defect is not
 carelessness about arithmetic; it is that a count in prose has no owner and nothing makes it go
-red.** `tools/check-architecture-boundaries.sh` holds the same numbers and fails the build when they
-drift, which is why the guard was right three times while this table was wrong three times. The
+red.** `tools/check-architecture-boundaries.sh` held the same numbers and failed the build when they
+drifted, which is why the guard was right three times while this table was wrong three times. The
 reviewer found the third instance by re-running `git merge-tree` and noticing that this file merges
 *cleanly* — the counts in `test.sh` and the guard conflict loudly and get fixed, and the table beside
-them updates silently and does not. So: when a landing moves a count, the guard is the record and
-this table is a copy; re-read it from the guard on the exact tree being landed, or do not write it
-down at all.
+them updates silently and does not. The guard is gone since 2026-09-15, so a count written here has
+no record behind it; do not write one down.
 
 The 8,025 is an observation. The implementer computed 7,918 as 7,519 plus a focused run of 399 and
 never ran a full suite after its own change; that number was already stale when it was written,

@@ -3458,7 +3458,7 @@ built from what the registry holds rather than merged onto what was on disk.
 [`docs/machine-resource-scheduling.md`](machine-resource-scheduling.md) is where the night's
 measurements live, and it records what the lease was and why it went. The record every writer of
 `holder.txt` shares — eighteen fields, in order — is written out above `clawdline_suite_lock_write_record`
-in `test.sh`, and `Tests/test-sh-lock.mjs` fails when a writer drifts from it.
+in `test.sh`.
 
 ### Coordination waits
 
