@@ -773,7 +773,6 @@ swift build   # 只是為了讓編輯器讀得懂程式碼
 
 實際執行的檢查數由每次 run 的收據保存，不再抄進 source。整套跑多久是在一台有寫出型號
 的機器上量測，並拆成各階段記在 [docs/suite-runtime.md](docs/suite-runtime.md)。
-`Tests/docs-suite-facts.mjs` 只維持這段快速指引與量測連結正確，不會因數字變動要求再跑一次 full。
 
 [CONTRIBUTING.md](CONTRIBUTING.md) 是其餘的部分：東西放在哪、怎麼加一個語言或一隻吉祥物、
 以及「第三種把字送出去的方式」會長什麼樣。十四種翻譯的修正都歡迎——其中沒有人以母語在用的那幾種

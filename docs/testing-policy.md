@@ -2,7 +2,7 @@
 
 This page decides what deserves a test in this repository and how often the suite runs. Where
 `AGENTS.md`, `docs/verification-workflow.md`, `docs/landing.md`, `docs/suite-runtime.md`,
-`docs/guard-red-proofs.md`, a dispatch policy or a task brief asks for more verification than this
+a dispatch policy or a task brief asks for more verification than this
 page, **this page wins**.
 
 ## Why it exists

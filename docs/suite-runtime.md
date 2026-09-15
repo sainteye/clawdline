@@ -1,5 +1,11 @@
 # Where `./test.sh` spends its time
 
+Current workflow note (2026-09-15): the guard gates this page measures — the manifest and
+architecture guards, the Python source scanners, the guard red proofs, the documentation suites and
+the test-runner self-tests — were removed from `./test.sh` under
+[testing-policy.md](testing-policy.md). The phase names below still match the script; the numbers
+are the 2026-09-03 run and include that removed work.
+
 Current workflow note (2026-09-11): ordinary release candidates use
 `CLAWDLINE_TEST_PROFILE=release`. Test-runner, lock, cache or measurement changes use
 `CLAWDLINE_TEST_PROFILE=infrastructure`. The older measurements below predate that split and include
@@ -29,10 +35,8 @@ One full `./test.sh`, green, receipt `8353 checks passed`, run in a detached wor
 A second full run in the shared tree, at a commit two changes older, read 289.55 s with the same
 four boundaries — so the number is the script's, not one tree's accident.
 
-The fourth Python guard in (d) is `tools/check-landing-records.py`, which arrived after this
-reading and was measured **standalone at 1.2 s** over 298 terminal tasks in 8 repositories. The (d)
-row above is therefore a floor until somebody takes a fresh whole-run measurement; adding 1.2 to 3
-would be arithmetic, and this file only carries numbers that came off a run.
+A fourth Python guard, `tools/check-landing-records.py`, arrived after this reading (measured
+standalone at 1.2 s) and was removed on 2026-09-15 with the others.
 
 **The first surprise is line (c).** 129 of the 288 seconds are spent before the compile the whole
 machine lock is built around has started. And the fifteen browser-contract suites, the obvious

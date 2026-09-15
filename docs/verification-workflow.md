@@ -16,36 +16,20 @@ reinterpret a task's verification summary as exact-tree proof. Board mode defaul
 disabled without removing the safeguards below. Root attestations, artifact acceptance and
 broker-verified landing remain separate evidence kinds. See [Project Board](project-board.md).
 
-The refactor foundation implements three local guards. **This section deliberately names no
-counts.** Structural values that move with the tree are rendered in the generated table in
-[`architecture-refactor.md`](architecture-refactor.md), written by
-`tools/generate-governance-table.sh` from the tree itself; the guard refuses a tree whose table is
-not that run's own rendering. Executed check totals are different: they belong only to the run
-receipt and are never copied back into source or docs.
+Since 2026-09-15 `test.sh` carries no source-text, count, seal-comparison, document-agreement or
+guard-proof gates; [`testing-policy.md`](testing-policy.md) decides what gets a test. What remains
+of this layer is the Swift pass determination and the receipt the verification ledger reads.
+Executed check totals belong only to the run receipt and are never copied back into source or docs.
 
-- `tools/swift-source-manifest.sh` is sourced by both `build.sh` and `test.sh`; production mode
-  compares the production partition only with recursive `Sources/` inventory, while full mode
-  separately compares both the production and test partitions. Partition swaps fail closed, and
-  Tests-only drift does not block the application build.
-- `tools/check-architecture-boundaries.sh` verifies the entry point stays within its line limit,
-  the ordered runner count, the current sealed group identities, production stop-growth receipts
-  and the 2,000-line suite ceiling.
+- `tools/swift-source-manifest.sh` is the Swift source inventory `test.sh` compiles.
 - `Tests/TestGroupManifest.swift` records group titles at runtime and adds a failure on any identity
   or order difference without incrementing `checks`. `test.sh` requires exactly one Swift success
   receipt and one structurally valid Cloud completion receipt; their observed counts are telemetry.
 
-The missing-nested-source mutation returned 1 before the fixture was restored; the entry-point
-growth mutation returned 1 at 534 lines before the 34-line entry was restored. These are guard
-proofs, not extra full-suite runs. Focused `CLAWDLINE_TEST_GROUPS` execution is implemented and
-fails closed for missing groups or a zero-check selection; compile caching in “Runner direction”
-remains planned.
-
-Structural receipts retain their existing owners. A group identity change updates
-`expectedOrderedTestGroupTitles`; a runner-boundary change updates `Tests/main.swift` and the
-runner-count expectation; a suite-file change updates the manifest and suite-file expectation.
-The entry point's size is an observation, not another exact guard; only its limit is enforced.
-Executed checks may freely increase or decrease with behavior: the release-candidate run records
-the observed total and does not rewrite this repository afterwards.
+Focused `CLAWDLINE_TEST_GROUPS` execution is implemented and fails closed for missing groups or a
+zero-check selection; compile caching in “Runner direction” remains planned. Executed checks may
+freely increase or decrease with behavior: the release-candidate run records the observed total and
+does not rewrite this repository afterwards.
 
 `test.sh` emits one `CLAWDLINE_TEST_SEAL` JSON tuple only after an unfiltered successful run has
 produced exactly one Swift receipt and one Cloud receipt whose declared suite count, unique names
@@ -55,37 +39,16 @@ stdout before that internal log is removed**, so the verification ledger can ret
 writes those numbers back into `test.sh`, README files or generated governance. A focused run never
 emits the full tuple and therefore cannot mint full-suite evidence.
 
-The default `CLAWDLINE_TEST_PROFILE=release` runs product, contract and structural roster checks.
+The default `CLAWDLINE_TEST_PROFILE=release` runs product and contract checks.
 It also compiles the shipped `ClawdlineLinux` SwiftPM graph and drives its protected-input/runtime
 contract under the machine lock. `./test.sh --linux-package-focused` is the narrower implementer
 proof for that same graph and contract; it does not mint a full-suite receipt.
-The expensive self-tests for the lock, artifact cache, progress helper, guard mutations and W0
-characterization run under `CLAWDLINE_TEST_PROFILE=infrastructure`, when those inputs change or in
-scheduled infrastructure verification. Both profiles use the same machine-wide compile lock and
-neither can weaken the Swift/Cloud completion receipt.
+`CLAWDLINE_TEST_PROFILE=infrastructure` skips that Linux graph and adds the progress helper's own
+suite, for changes to `Resources/clawdline-progress.sh`. Both profiles use the same machine-wide
+compile lock.
 
-### Agent-instruction topology guard
-
-[`agent-instruction-coverage.json`](agent-instruction-coverage.json) is the machine-readable index
-from every root `AGENTS.md` heading to controlled operative-clause ids. Each clause has exactly one
-disposition: a current owner plus exact Markdown heading, an executable guard, a named scenario, or
-a separate rationale owner plus heading. `Tests/agent-instruction-topology.mjs` derives the current
-heading inventory directly from `AGENTS.md` and separately seals the clause-id inventory. Adding,
-removing, or renaming a root agreement, or silently dropping a controlled clause, is red.
-
-Owner and evidence anchors are parsed as unique Markdown headings and terms must remain in that
-heading's direct body—not elsewhere in the file, in a child section, link text, a TOC, or a repeated
-heading. A narrowed owner must be linked from the corresponding root agreement. Archive records
-have a mutually exclusive schema and a scenario cannot cite an archived section as current policy;
-incident rationale therefore cannot satisfy an operative contract by substring coincidence.
-
-The same test runs the eleven policy scenarios whose prose has historically drifted across
-surfaces: instruction precedence, shared-index safety, task-secret scope, exact-tree acceptance,
-restart admission, landing ownership, Cloud document identity, user-decision notification,
-event-driven watchdog thresholds, stable `result.json.tmp` finalization, and no-repeat
-verification. These evaluations are documentation contracts, not replacement runtime tests. The
-coverage map records only documentation ownership; package/import manifests and task claims remain
-the generated authorities for code architecture and live write ownership.
+[`agent-instruction-coverage.json`](agent-instruction-coverage.json) remains as an index from root
+`AGENTS.md` headings to clause owners; no test checks it.
 
 ## One risk-sized delivery graph
 

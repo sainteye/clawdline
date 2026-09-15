@@ -386,8 +386,7 @@ try {
 
     // ---------------------------------------------------------------------------------------
     // 3. The sourced form, which is what a script that wants its own phases uses. `test.sh` and
-    //    `build.sh` are the two in this repository; `Tests/run-file-producer.mjs` is where their
-    //    own use of it is checked.
+    //    `build.sh` are the two in this repository.
     {
         const w = workdir("sourced-phases");
         const script = sourced(w, [

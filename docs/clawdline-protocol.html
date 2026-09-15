@@ -870,7 +870,7 @@ curl -s -X POST http://127.0.0.1:7717/v1/orchestrator/tasks \
     <li><strong>The ceiling is a ceiling, not a throttle.</strong> <code>CLAWDLINE_SUITE_JOBS</code> is a positive whole number both scripts pass to <code>swiftc</code> as <code>-j</code>, and both print where the number came from. Unset adds no flag: the driver's own default here was measured at one job, so the knob only ever lowers the number of concurrent frontends.</li>
   </ul>
 
-  <p>The record every writer of <code>holder.txt</code> shares is written out in full above <code>clawdline_suite_lock_write_record</code> in <code>test.sh</code>, and <code>Tests/test-sh-lock.mjs</code> runs that block against stand-ins and fails when a writer drifts from it.</p>
+  <p>The record every writer of <code>holder.txt</code> shares is written out in full above <code>clawdline_suite_lock_write_record</code> in <code>test.sh</code>.</p>
 
   <!-- 11 -->
   <h2 id="worktree"><span class="n">11</span>Isolation: a branch, not a diff</h2>

@@ -4,9 +4,7 @@
 # not a lexical scan, and not a staged/materialized copy like tools/ubuntu-core-probe.sh's probe.
 # Package.swift, Packages/ClawdlineCore/ and Packages/ClawdlineApplication/ are the same checked-in
 # files this compiles on macOS; nothing here copies or regenerates them. See Packages/README.md
-# for why those directories hold symlinks rather than files, and
-# tools/check-architecture-boundaries.sh's "real SwiftPM Core/Application/Mac target graph" block
-# for the lexical/graph checks that run before this ever needs to compile anything.
+# for why those directories hold symlinks rather than files.
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "$0")" && pwd)

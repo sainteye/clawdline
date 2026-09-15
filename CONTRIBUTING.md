@@ -13,8 +13,7 @@ back the way it found it, so you can rebuild while using it.
 
 The executed check count belongs to each run receipt; it is deliberately not copied into source or
 documentation. [docs/suite-runtime.md](docs/suite-runtime.md) records dated measurements on a named
-machine and breaks down where the minutes go. `Tests/docs-suite-facts.mjs` keeps these quick-start
-comments honest without turning a changing runtime total into a source-maintenance gate.
+machine and breaks down where the minutes go.
 
 ## Getting an editor to understand the code
 

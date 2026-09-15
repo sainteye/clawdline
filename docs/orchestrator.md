@@ -2881,8 +2881,8 @@ afterwards where it would have seen it: the file it reads every single time.
 **Later the same day the same paragraph cost a second thing.** A session that had just taken four
 screenshots *for the person* finished its turn by pasting `/var/folders/…` paths at someone reading
 on a phone. It had read this description once, concluded that none of it was about a picture —
-which was true when it read it — and never reopened it. Both clauses are in the trigger list now
-and a guard in `Tests/dispatch-role-contract.mjs` holds them there, but a trigger list is the last
+which was true when it read it — and never reopened it. Both clauses are in the trigger list now,
+but a trigger list is the last
 of the three places to reach a reader, not the first.
 
 That file is yours and this project does not write it. If you want the delivery receipt and the

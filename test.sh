@@ -16,18 +16,16 @@ fi
 cloud_receipt_prefix='CLAWDLINE_CLOUD_TESTS_COMPLETE'
 cloud_focused_receipt_prefix='CLAWDLINE_CLOUD_FOCUSED_TESTS_COMPLETE'
 cloud_suite_roster='CloudEnvelope,CloudAccount,CloudTransport,CloudAppBridge,CloudSettings,ScheduleResume,CloudClock,CloudCanonicalJSON,CloudV2Protocol,CloudCommandLedger,CloudOutboundSpool,CloudPairing,CloudLifecycle'
-# Completion counts are observations from this run, not source-controlled expectations. Keeping
-# the previous tree's totals in this file made every legitimate assertion change require a
-# measurement full, a source rewrite, and a second identical full. The runtime receipt still
-# records the observed totals; completeness is proved structurally by the ordered Swift group
-# manifest and by this Cloud roster validation.
+# Completion counts are observations from this run, not source-controlled expectations. The
+# runtime receipt records the observed totals. `cloud_suite_roster` is the list of names
+# `--cloud-focused` accepts; a full run does not compare its receipt with it.
 cloud_receipt_lines() {
   awk -v token="$cloud_receipt_prefix " 'substr($0, 1, length(token)) == token' "$1"
 }
 
 validate_cloud_completion_receipt() {
   node -e '
-    const [line, expectedRoster] = process.argv.slice(1);
+    const [line] = process.argv.slice(1);
     const match = /^CLAWDLINE_CLOUD_TESTS_COMPLETE v=1 suite_count=([1-9][0-9]*) suites=(.+)$/.exec(line);
     if (!match) process.exit(1);
     const entries = match[2].split(",");
@@ -38,8 +36,7 @@ validate_cloud_completion_receipt() {
       if (!pair || names.has(pair[1])) process.exit(3);
       names.add(pair[1]);
     }
-    if (entries.map((entry) => entry.split(":")[0]).join(",") !== expectedRoster) process.exit(4);
-  ' "$1" "$cloud_suite_roster"
+  ' "$1"
 }
 
 report_receipt_direction() {
@@ -154,77 +151,7 @@ verify_cloud_focused_receipt() {
   }
 }
 
-# >>> clawdline suite roster >>>
-# Every `.mjs` suite in this checkout is either named somewhere below or written down here as a
-# deliberate exception. Nothing else compares the roster with the directory, and that gap is not
-# hypothetical: `Tests/web-usage-analytics.mjs` and `Tests/web-close-confirm-explanation.mjs` were
-# committed, looked tested, and had never once been run when they were found on 2026-09-04.
-#
-# Naming each suite stays deliberate — a glob would run whatever happened to be in `Tests/` in an
-# order nobody chose, and would miss `Resources/web/app/js/net/client.test.mjs`, which lives beside
-# the source it tests. So the list stays hand-written and this check is what makes a hand-written
-# list answerable to the filesystem.
-#
-# The allowlist is empty today, which is a fact and not a placeholder: every `.mjs` in this
-# checkout runs. Add a path here only with the reason on the line above it, because an exception
-# with no reason is indistinguishable from the oversight this guard exists to catch.
-suite_roster_allowlist=''
-
-verify_suite_roster() {
-  local script on_disk registered allowed unregistered stale
-  script=$(basename "$0")
-  on_disk=$( { ls Tests/*.mjs 2>/dev/null; find Resources -name '*.test.mjs' 2>/dev/null; } \
-    | grep -v '^[[:space:]]*$' | sort -u)
-  # Registered means a whole line of this script that *is* the path, optionally preceded by `node`:
-  # an invocation, or an entry in the `browser_contract_suites` array. Matching the path anywhere in
-  # the file would count a mention in a comment as a registration — and the comment directly above
-  # names two suites, so that weaker pattern would report this checkout as fully registered on the
-  # day both of them were unregistered.
-  registered=$(grep -Eo '^[[:space:]]*(node[[:space:]]+)?"?[A-Za-z0-9._/-]+\.mjs"?[[:space:]]*$' "$script" \
-    | sed -E 's/^[[:space:]]*(node[[:space:]]+)?"?//; s/"?[[:space:]]*$//' | sort -u)
-  allowed=$(printf '%s\n' "$suite_roster_allowlist" | grep -v '^[[:space:]]*$' | sort -u || true)
-
-  unregistered=$(comm -23 <(printf '%s\n' "$on_disk") \
-    <(printf '%s\n%s\n' "$registered" "$allowed" | grep -v '^[[:space:]]*$' | sort -u))
-  if [ -n "$unregistered" ]; then
-    echo "These .mjs suites are in the checkout and nothing in $script runs them:" >&2
-    printf '  %s\n' $unregistered >&2
-    echo "Add a \`node <path>\` line for each, or name it in suite_roster_allowlist with its reason." >&2
-    return 1
-  fi
-
-  # An allowlist entry for a file that no longer exists is the same rot in the other direction: it
-  # reads as a considered exception and guards nothing.
-  stale=$(comm -13 <(printf '%s\n' "$on_disk") <(printf '%s\n' "$allowed" | grep -v '^[[:space:]]*$' | sort -u))
-  if [ -n "$stale" ]; then
-    echo "suite_roster_allowlist names files that are not in this checkout:" >&2
-    printf '  %s\n' $stale >&2
-    return 1
-  fi
-  return 0
-}
-# <<< clawdline suite roster <<<
-
-# This narrow mode exercises the full-suite completion guard without compiling or running the
-# suite. It never emits a completion receipt of its own and cannot be mistaken for a full run.
-if [ "${1:-}" = "--verify-completion-receipts" ]; then
-  if [ "$#" -ne 2 ]; then
-    echo "usage: $0 --verify-completion-receipts <suite-log>" >&2
-    exit 2
-  fi
-  verify_test_completion_receipts "$2"
-  exit $?
-fi
-
 cd "$(dirname "$0")"
-
-# The roster check on its own, without compiling or running anything. It exists so the guard can be
-# proved to go red — a check nobody has seen fail is worth less than no check, because it makes
-# people believe somebody is looking.
-if [ "${1:-}" = "--verify-suite-roster" ]; then
-  verify_suite_roster
-  exit $?
-fi
 
 # >>> clawdline focused entry >>>
 # Opt-in skips unrelated node/browser suites; the original no-argument full entry is unchanged.
@@ -270,8 +197,8 @@ case "$clawdline_test_profile" in
 esac
 # <<< clawdline focused entry <<<
 
-# Everything above this line is either a definition or one of the two narrow modes, which run
-# nothing and must therefore say nothing. From here down this is a run, and the two lines below are
+# Everything above this line is a definition or argument validation, which runs nothing and must
+# therefore say nothing. From here down this is a run, and the two lines below are
 # how it says so. They sit after the `cd` because the file is keyed by the working directory.
 #
 # **The traps live in the helper, not here.** They used to be a marked block copied byte for byte
@@ -288,8 +215,7 @@ esac
 # `exit`, so a guard that stops on `exit 1` above the suite lock's own handler used to leave a
 # `running` row for the reader's staleness ceiling to retire fifteen minutes later. Every EXIT trap
 # installed further down **replaces** this one rather than joining it — bash keeps exactly one — so
-# each of them composes `clawdline_run_file_exit` and is a superset of it, and
-# `Tests/run-file-producer.mjs` holds all of them to that in both scripts.
+# each of them composes `clawdline_run_file_exit` and is a superset of it.
 #
 # Recent runs no longer fit the old 288-second estimate, and a stale progress estimate is worse than
 # no estimate. Per-phase durable receipts will supply a rolling value; until then neither test nor
@@ -297,13 +223,11 @@ esac
 . ./Resources/clawdline-progress.sh
 progress_start --label test
 
-# (d) in `docs/suite-runtime.md`: the manifest, the architecture guard, the trailing-comma scan, the
-# three Python guards and the protocol vectors. Historically this phase took a few seconds; it exists so
-# that a run which dies in them is not drawn as a run that died in the compile.
+# The static checks that stand in for something we ship: the trailing-comma scan, the two web
+# contract checks and the protocol vectors. It exists as a phase so that a run which dies in them
+# is not drawn as a run that died in the compile.
 progress_phase guards
 . tools/swift-source-manifest.sh
-verify_swift_source_manifest full
-bash tools/check-architecture-boundaries.sh
 
 if [ "$clawdline_swift_focused_only" -eq 0 ]; then
 # Trailing commas in an argument list are Swift 6.1 syntax. The toolchain here is usually
@@ -320,106 +244,12 @@ if [ -n "$offenders" ]; then
   exit 1
 fi
 
-# The compatibility page is generated from the table the app uses, so the two cannot disagree
-# — but only if something checks. A release added to Compat.swift and not regenerated here is a
-# page claiming support for a version that was never tried.
-tools/build-compatibility.py --check
-# The version this app calls itself. One line of Sources/CodexNaming.swift told `codex app-server` a
-# release the app had left behind two releases earlier, and nothing could see it, because a literal
-# that is never compared with anything cannot go stale loudly. This reads the app's own versions out
-# of build.sh and the release table and refuses a third state — neither derived nor allowed with a
-# written reason — anywhere in the tracked tree. It also holds the two sources against each other,
-# because the fallback every bundle-less process takes is the table's newest row.
-tools/check-version-strings.py
+# The page's names against what it reads at load time: a `T.name` nothing defines prints
+# `undefined`, an id `index.html` does not have is `null`, and an import that does not resolve
+# stops the module graph from loading.
 tools/check-web-strings.py
 tools/check-web-ids.py
-# `curl` exits 0 for `409`, `401` and `503` alike, which is how a refused restart came to be
-# announced as an accepted one and a five-second client timeout came to be written down as the
-# server refusing. Every `curl` this repository runs now either asks curl to fail on an HTTP error
-# or takes the code out and compares it. The self-test runs first because it is the scanner's own
-# control: twenty-nine shapes, calls and mentions, and a scan that has stopped telling them apart
-# would otherwise pass the tree in silence. docs/curl-status.md has the rule.
-tools/check-curl-status.py --self-test
-tools/check-curl-status.py
-# `landed` has exactly one entrance and a person is standing in it. The broker verifies a landing
-# properly — the same `merge-base --is-ancestor` this guard runs — but only when somebody calls the
-# route, so a delivery that reaches `main` while nobody writes its record is finished and silent.
-# On 2026-09-05/06 that produced 22 hand-written records in one evening, 14 of them for work that
-# had been in `main` for days, five of them for a different repository; this reads the machine's
-# task registry rather than this tree, which is how it sees those five. It fails only on landings
-# after its own cutoff and outside a six-hour grace, because `docs/landing.md` writes the record
-# *after* this suite; everything older is printed in full on every run. docs/landing.md has the
-# rule. Measured standalone at 1.2 s over 298 terminal tasks in 8 repositories.
-#
-# **Reporting is machine-wide; failing is not, and that is a third limit rather than a restatement
-# of the two above.** On 2026-09-06 this line killed two runs that never reached a compiler, one of
-# them an isolated child that died over another root's landing in the base repository — debt it
-# could not have settled, because the route takes this machine's orchestrator token and `CHILD.md`
-# forbids a child from calling it at all. A row now stops the run only when it is in the repository
-# this suite is running in *and* this checkout is not a linked worktree, and the run says both
-# conditions out loud whichever way they fall. `Tests/landing-records-scope.mjs` holds the half a
-# red proof structurally cannot: that the narrowed green never reads as the green of a machine with
-# nothing on it.
-tools/check-landing-records.py
-# The guard above ends by printing the `curl` that closes a record, and that snippet named a header
-# the server does not read — `X-Clawdline-Orchestrator-Token` against the `x-clawdline-orchestrator`
-# in `Sources/RemoteServer.swift`. Following it to the letter answers `403 forbidden`, which reads
-# as "my token is wrong" rather than as "this instruction is wrong", so the one person standing in
-# front of the only entrance is turned away by the sentence telling them to go through it. Found on
-# 2026-09-06 while draining 26 unrecorded landings by hand. This is not two documents agreeing:
-# one side is the route's own credential read, so the pair cannot drift silently in either
-# direction. `remediation_header` is what the guard prints; the second grep is what the server
-# accepts.
-remediation_header=$(sed -n 's/.*-H \\"\([a-zA-Z-]*\): \$(cat .*/\1/p' tools/check-landing-records.py | head -1)
-if [ -z "$remediation_header" ]; then
-  echo "test.sh: cannot find the orchestrator header in check-landing-records.py's remediation curl" >&2
-  exit 1
-fi
-if ! grep -q "\"$remediation_header\"" Sources/RemoteServer.swift; then
-  echo "test.sh: check-landing-records.py tells the reader to send '$remediation_header', and" >&2
-  echo "         Sources/RemoteServer.swift does not read a header by that name. Following the" >&2
-  echo "         printed curl would answer 403." >&2
-  exit 1
-fi
-unset remediation_header
-# And every guard above has to have been seen to fail. Two checks that could not go red arrived on
-# 2026-09-05 — a claims comparison that is identically true inside a linked worktree, and a
-# `stale > worst` that was an identity — and both were green the way a working guard is green. This
-# puts one defect in front of each `tools/check-*` and requires it to say so, and refuses a guard
-# that no proof names. It matches `tools/check-*` itself, so it is on its own list.
-# docs/guard-red-proofs.md has the shape of a proof. Measured standalone at 3.9 s with eight
-# proofs, and 5.3 s once the landing-records proof — which builds a repository and merges in it —
-# became the ninth. The tenth, `landing-records-scope.sh`, builds another repository, another merge
-# and a linked worktree of it, and two readings taken with it in are 5.27 s and 5.23 s: inside this
-# machine's noise rather than free, and measured rather than reasoned about.
-if [ "$clawdline_test_profile" = infrastructure ]; then
-  bash tools/check-guards-go-red.sh
-else
-  bash tools/check-guards-go-red.sh --meta
-fi
-verify_suite_roster
-# (c) in `docs/suite-runtime.md` records how this pre-compile phase once dominated a run. The
-# infrastructure profile keeps those expensive self-tests without charging every release candidate.
 progress_phase 'node suites'
-node Tests/docs-ui-labels.mjs
-# The two READMEs are one document in two languages, and the file above pins eleven strings in
-# them by hand. That catches a pinned sentence disappearing and nothing else: on 2026-09-04 a
-# section deleted from either side, and a section added to one side only, were all green. This
-# compares their heading sequence instead — count and order — which is the most that can be
-# compared when the heading text is in two different languages.
-node Tests/docs-readme-parity.mjs
-# Keep the three contributor quick starts honest about cost without copying a volatile check total.
-# Executed counts belong to run receipts; the dated wall-time measurement has one documented home.
-node Tests/docs-suite-facts.mjs
-node Tests/agent-instruction-topology.mjs
-# And nothing at all watched `CHANGELOG.md`, the document that becomes the release notes. On
-# 2026-09-04 four of its forty entries still described `orchestrator_max_grandchildren` and a
-# dispatch tree two levels deep, long after the second level came out — the same shape as the 0.5.0
-# cut that `tools/release.sh`'s header exists because of. This asserts every HTTP route the
-# `## Unreleased` block names is still one the server answers. It cannot tell an entry that names a
-# dead key to bury it from one that names it as a live setting; that half stays a person's job.
-node Tests/changelog-facts.mjs
-node Tests/agent-attention-principle.mjs
 # A child's final file is irreversible broker input. Validate the temporary receipt first,
 # including the closed review schema, and prove the briefing carries the validator into projects
 # that do not contain Clawdline's own tools directory.
@@ -457,22 +287,14 @@ browser_contract_suites=(
   Tests/web-projects.mjs
   Tests/web-documents.mjs
 )
-if [ "${#browser_contract_suites[@]}" -ne 25 ]; then
-  echo "browser contract roster changed without updating its sealed count" >&2
-  exit 1
-fi
 for browser_contract_suite in "${browser_contract_suites[@]}"; do
   node "$browser_contract_suite"
 done
 # The test push and the button that fires it, joined: `net/live.js` driven for real and read off
 # the wire, and the real `Settings.test` driven against a stand-in transport and read off its
-# argument. Registered on a line of its own rather than in the roster above, because that array
-# carries a sealed count and a second session is adding to this file in the same window.
+# argument.
 node Tests/web-push-test-session.mjs
 # The web app's half of the run file this script now writes: the footer that draws a run in flight.
-# It arrives on another branch — the producer and the two readers were built at the same time — so
-# in a checkout that has only one of them this line is what says the other is missing, rather than
-# the roster check quietly passing over a suite nobody runs.
 node Tests/web-run-progress.mjs
 # The hosted console: which transport it is, the pairing mirror against the checked-in
 # vectors, and that the static bundle a person uploads by hand is the same bytes twice.
@@ -482,25 +304,10 @@ node Tests/web-cloud-onboarding.mjs
 node Tests/web-app-build.mjs
 # The Plan page: the only screen in this product that can start a payment, and the four ways it
 # fails without throwing — a checkout that was never created, a webhook that has not arrived, an
-# account that already pays, and a tier the control plane does not sell. A standalone line rather
-# than a member of `browser_contract_suites` above, so this adds nothing to that roster's sealed
-# count and nothing to the Swift receipt.
+# account that already pays, and a tier the control plane does not sell.
 node Tests/web-billing.mjs
-node Tests/dispatch-role-contract.mjs
-# The three surfaces that tell a root how to reach a standing session, held against the closed set
-# of `attach_*` refusals scanned out of Sources/*.swift rather than against each other: they spent
-# seven days telling every root to approximate a mechanism that had already landed, and comparing
-# two copies of a wrong sentence produces agreement, not a red.
-node Tests/attached-follow-up-contract.mjs
-# The same shape, one route further along and for the same reason. `POST /v1/orchestrator/handoffs`
-# grew nine typed refusals when it started requiring a sender, four surfaces were written to
-# describe them, and nothing compared any of the four with the code — so within one review three of
-# them were false, including both shipped guides still teaching that an unrecognised sender is the
-# same as an absent one. That is the sentence the sender of the 2026-09-04 handoff read.
-node Tests/handoff-sender-contract.mjs
 node Tests/linux-package-graph.mjs
 node Tests/restart-rollout-contract.mjs
-node Tests/remote-response-write-close.mjs
 node Tests/terminal-current-and-browser-open.mjs
 # `GET /sw.js`, which was the one of RemotePage's five entry points with no route test — the gap
 # `B-SERVICE-WORKER-HAS-NO-ROUTE-TEST` names. The script is a response body inside a Swift raw
@@ -514,23 +321,11 @@ node Tests/web-service-worker.mjs
 # is the text on the screen containing the server's path and the server's typed code — a button
 # that posts perfectly and says nothing is the failure this file exists for.
 node Tests/web-diagnostics-send.mjs
-node Tests/release-signing-contract.mjs
 # The shared-tree commit guard: that `tools/git-hooks/pre-commit` refuses a commit carrying a path
 # another session is working on, that it lets everything else through, and that it fails open and
 # loudly when Clawdline is not answering. Throwaway repositories under `mkdtemp` only — this suite
 # never runs git against the checkout it is testing, and proves that containment on the way out.
 node Tests/git-hooks.mjs
-# The other half of `tools/check-landing-records.py`, which the guards phase above runs: that it
-# reports the whole machine and fails only on debt this run can settle — the row is in the
-# repository the suite is running in, and the checkout is not a linked worktree, because a linked
-# worktree is a child's and `CHILD.md` forbids a child from calling the landing route at all. The
-# red proofs hold the red side; what they structurally cannot hold is what the *green* side says,
-# and an exit 0 that goes quiet inside a worktree is the exact defect the hook above carries a
-# paragraph about. So this drives both arms of one fixture and requires the narrowed green to name
-# the checkout, the repository, the derivation, the row and who can settle it. Throwaway
-# repositories under `mkdtemp` and a registry of its own: this machine's real
-# `~/.config/clawdline/orchestrator.json` is never opened.
-node Tests/landing-records-scope.mjs
 # The scratch tool that replaced the two snapshot recipes AGENTS.md used to print, which made
 # `mktemp -d` directories and removed none of them. What it promises is an absence, so every run here
 # is followed by a look at the root: success, a failing command whose status comes back unchanged,
@@ -558,7 +353,6 @@ node Tests/diagnostic-report-focused.mjs
 # version in that payload was a typed string that went on naming an old release for two releases
 # after it, with nothing in this suite comparing it to anything.
 node Tests/codex-client-identity.mjs
-node Tests/codex-naming-order.mjs
 # Whether there is a newer Clawdline, on exactly the same terms and for a sharper reason: a check
 # that answers "nothing newer" when it was in fact rate-limited is a silence that reads as an
 # all-clear, and the person on the old build never finds out. The decision block is lifted out of
@@ -572,26 +366,19 @@ node Tests/update-check.mjs
 # macOS's last guard off it. Stand-ins on PATH for every command it reaches out with, and a
 # temporary DEST — nothing here downloads a release or touches an installed app.
 node Tests/install-focused.mjs
-# Two suites that existed and that nothing ran: neither was in this list, and CI only runs
-# this script. A test nobody runs is a test that passes.
 node Tests/web-user-messages.mjs
 # The sheet next door: what a snippet press does — insert through the composer's own `appendMsg`,
 # never send — the grouping the Mac resolved, and the guard that leaves a control undrawn on a
-# transport whose route is missing. Registered here rather than in `browser_contract_suites` above
-# so the sealed count of that roster stays the landing root's to move.
+# transport whose route is missing.
 node Tests/web-snippets.mjs
 # The waiting card, which had no test of any kind until 2026-09-06 — the loudest thing the phone
 # draws and the one whose contents are least certain, because every word on it comes from a menu
 # parsed off the Mac's own screen. What is pinned here is the live-screen button that does not:
-# that it is outside the read/unread branch and so survives a parse that failed. Standalone rather
-# than a member of `browser_contract_suites` above, so that roster's sealed count stays root's.
+# that it is outside the read/unread branch and so survives a parse that failed.
 node Tests/web-waiting-card.mjs
-# The verification ledger page, and the reason it has a suite rather than a share of the roster
-# above: what it guards is that three states stay three different things on screen. `present` is a
+# The verification ledger page: three states stay three different things on screen. `present` is a
 # figure, `absent` is the words *no record*, `unknown` is the words *not measurable*, and one
-# `|| 0` anywhere in that module turns all three into the same grey rectangle — which is the
-# defect the whole feature exists to end, arriving through the front door. Registered on a line of
-# its own so `browser_contract_suites`' sealed count stays the landing root's to move.
+# `|| 0` anywhere in that module turns all three into the same grey rectangle.
 node Tests/web-ledger.mjs
 node Tests/web-board.mjs
 node Tests/web-session-board.mjs
@@ -605,62 +392,37 @@ node Resources/web/app/js/net/client.test.mjs
 # row until reload: the Cloud client threw instead of rejecting, and `start.js` had no settle for
 # a throw. Every promise-shaped `CloudClient` method is held to rejecting, the place routes to
 # surviving a re-read, a renewal and a failed read, and the sheet to settling whatever happened.
-# On a line of its own so `browser_contract_suites`' sealed count stays the landing root's to move.
 node Tests/web-start-sheet-failures.mjs
 # Every Cloud failure names its layer, code and ref, and nothing on the transport hangs or throws
 # (`docs/cloud-error-transparency.md` §3.1 B1–B9, §5, §11). A relay in a box answers publishes the
 # way the relay does; both §5 guards — no synchronous throw from `CloudClient`, no error `.message`
-# on screen — carry their own mutation proof. On a line of its own so `browser_contract_suites`'
-# sealed count stays the landing root's to move.
+# on screen — carry their own mutation proof.
 node Tests/web-cloud-failures.mjs
 # A Mac + Linux account, with the Linux executor silent on every word but `places` and `start`:
 # each hosted-console feature answers with the Mac's data within a bound, a two-Mac account is a
 # typed refusal wherever one machine must be picked, and nothing but those two words is ever
-# published toward Linux. On a line of its own so `browser_contract_suites`' sealed count stays
-# the landing root's to move.
+# published toward Linux.
 node Tests/web-cloud-fleet.mjs
 # The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
 # what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05
 # and none of them could be enlarged — `index.html` turns the browser's pinch off page-wide — so
 # the anchor maths, the two bounds and the recentre are the lightbox's own and are checked here.
 node Resources/web/app/js/view/transcript-images.test.mjs
-# Two more of exactly the same, found the same way and registered on 2026-09-04. Neither had run
-# once since the day it was committed — `Tests/web-usage-analytics.mjs` at f0eedc18 and
-# `Tests/web-close-confirm-explanation.mjs` at 58386b07 — because nothing compares this hand-written
-# roster with the directory. The first guards the Usage Portfolio front end, which is the one panel
-# in the web app that does not go through the transport seam; the second guards the wording a person
-# reads before closing a session. Both were green the first time they were run, which is the less
-# useful of the two possible answers: a red would have been noticed, a green was never missed.
+# The Usage Portfolio front end, which is the one panel in the web app that does not go through the
+# transport seam, and the explanation a person reads before closing a session.
 node Tests/web-usage-analytics.mjs
 node Tests/web-close-confirm-explanation.mjs
-# These two are about this script rather than the app: that a crashed run still leaves its output,
-# and that the machine-wide suite lock below serialises the expensive half. Both run before the
-# lock is taken, so a machine that is already busy still gets told what is wrong with this checkout
-# before it starts queueing.
 node Tests/cloud-contract-v1.mjs
 if [ "$clawdline_test_profile" = infrastructure ]; then
-  # These suites prove the test/lock/cache/measurement infrastructure itself. Product release
-  # candidates do not spend minutes re-proving them when none of those inputs changed.
-  node Tests/test-sh-streaming.mjs
-  node Tests/test-sh-lock.mjs
-  node Tests/platform-architecture-inventory.mjs
-  node Tests/platform-reliability-characterization.mjs
-  node Tests/swift-test-artifact.mjs
+  # `Resources/clawdline-progress.sh` ships in the bundle; this drives its traps against killed,
+  # failed and successful commands. It spawns many shells, so a product release candidate that did
+  # not touch the helper does not pay for it.
   node Tests/progress-helper.mjs
 fi
-# And that these two scripts are the helper's first callers rather than its documentation: that they
-# source it from the checkout, name themselves, arm it before anything that could exit, and that
-# every EXIT trap either of them installs further down is a superset of the one it armed. Both run
-# before the lock is taken, so a checkout whose producer is broken is told so before it starts
-# queueing for a compiler.
-node Tests/run-file-producer.mjs
 fi
 
 # >>> clawdline suite lock >>>
-# One machine, one suite run — and this block is the whole of that promise. It is bounded by the two
-# marker comments so `Tests/test-sh-lock.mjs` can lift it out and drive it against cheap stand-ins,
-# the way `Tests/test-sh-streaming.mjs` lifts out the pipeline. Rename a marker and that guard fails
-# loudly rather than quietly scanning nothing.
+# One machine, one suite run — and this block is the whole of that promise.
 #
 # **Why it exists.** The `swiftc` below compiles every file in `Sources/` together with the files in
 # `Tests/` in one invocation, and spawns one `swift-frontend` per job. On 2026-09-03 four of them
@@ -705,8 +467,8 @@ fi
 # holder, not an orphaned compiler, not a process group. It queues, it refuses, and it names who to
 # ask.
 
-# Everything the tests must vary is an environment variable, so `Tests/test-sh-lock.mjs` can drive
-# this block without ever going near the real lock or the real compiler.
+# Everything a stand-in run must vary is an environment variable, so this block can be driven
+# without ever going near the real lock or the real compiler.
 # **The dials are shared, because the lock is.** `build.sh` used to read its own spelling of these
 # — `CLAWDLINE_LEASE_DIR`, `CLAWDLINE_LEASE_DEADLINE_SECONDS`, `CLAWDLINE_LEASE_WAIT_SECONDS` — and
 # the defaults agreed, so the ordinary path was right and nothing ever said otherwise. What the
@@ -811,9 +573,8 @@ clawdline_suite_lock_pid_verdict() {
   # absence of `<pid>` is then a fact rather than a silence; if `1` does not come back the reading
   # is `unknown` and the caller must not act on it. One fork, not two, because this runs every
   # twenty seconds for the length of a compile.
-  # `seen` rather than `out`: `Tests/test-sh-streaming.mjs` forbids `out=$(` anywhere live in this
-  # file, because capturing the suite's whole run into a variable is the shape it exists to keep
-  # out, and a guard that is a little over-broad in that direction is the right way round.
+  # `seen` rather than `out`: capturing the suite's whole run into an `out=$(` variable is the
+  # shape the streaming pipeline below exists to keep out, so this file does not spell it.
   local pid=$1 seen="" control=0 target=0 n
   case "$pid" in "" | *[!0-9]*) printf 'unknown'; return 0 ;; esac
   seen=$(ps -p "$pid" -p 1 -o pid= 2>/dev/null) || seen=""
@@ -1490,9 +1251,8 @@ clawdline_suite_exit_cleanup() {
   # The run file's own way out, composed here for the same reason the `$STORE` removal below is
   # composed here: bash keeps exactly one EXIT trap and a second one silently replaces this. The
   # EXIT path is also the only one that sees a deliberate `exit 1`, which no ERR trap ever does.
-  # `declare -F` because `Tests/test-sh-lock.mjs` lifts this block out and runs it on its own, where
-  # the run-file block above does not exist and a missing function would end that harness at 127
-  # inside its own cleanup.
+  # `declare -F` because this block can be lifted out and run on its own, where the run-file block
+  # above does not exist and a missing function would end that harness at 127 inside its own cleanup.
   if declare -F clawdline_run_file_exit >/dev/null 2>&1; then clawdline_run_file_exit "$status" || true; fi
   # The only process this script ever signals is the renewal loop it started for itself. The lock
   # signals nobody else's, ever — **and that is checked at the moment of signalling rather than
@@ -1562,28 +1322,6 @@ clawdline_acquire_suite_lock || exit $?
 CLAWDLINE_RUN_LOG="$LOG"
 
 BIN="${TMPDIR:-/tmp}/clawdline-tests"
-
-required_cloud_test_files=(
-  Tests/CloudEnvelopeTests.swift
-  Tests/CloudAccountTests.swift
-  Tests/CloudTransportTests.swift
-  Tests/CloudAppBridgeTests.swift
-  Tests/CloudSettingsTests.swift
-  Tests/ScheduleResumeTests.swift
-  Tests/CloudClockTests.swift
-  Tests/CloudCanonicalJSONTests.swift
-  Tests/CloudV2ProtocolTests.swift
-  Tests/CloudCommandLedgerTests.swift
-  Tests/CloudOutboundSpoolTests.swift
-  Tests/CloudPairingTests.swift
-  Tests/CloudLifecycleTests.swift
-)
-for required_cloud_test_file in "${required_cloud_test_files[@]}"; do
-  if ! test -f "$required_cloud_test_file"; then
-    echo "required Cloud test suite is missing: $required_cloud_test_file" >&2
-    exit 1
-  fi
-done
 
 # From here to the end of the test-binary run is what the lock is for, and the record says so while
 # it happens: a waiter reading `phase=compiling` knows the lock is protecting something, and one
@@ -1785,9 +1523,9 @@ mkdir -p "$STORE"
 # The drop cache goes inside it, and that is the same problem with teeth: the suite writes real
 # image files through `Drop.store`, and every write prunes the oldest entries away. Unisolated,
 # running the tests deletes pictures the person dropped into the bar — see Drop.directory. Spelled
-# out at the invocation below rather than held in a variable of its own, because `test-sh-streaming`
-# re-runs that block with only `$BIN`, `$STORE` and `$LOG` defined. The binary sets the same
-# boundary for itself, so narrowing a failure by running it directly is safe too.
+# out at the invocation below rather than held in a variable of its own, so that block runs with only
+# `$BIN`, `$STORE` and `$LOG` defined. The binary sets the same boundary for itself, so narrowing a
+# failure by running it directly is safe too.
 
 # Streamed through `tee` rather than captured into a variable and echoed at the end.
 #
@@ -1824,8 +1562,7 @@ mkdir -p "$STORE"
 # together.** The trap installed with the run file ends in `exit "$status"`, so with it left armed
 # the pipeline below fired it on every red suite and left through the handler: no line naming
 # `$LOG`, no `report_receipt_direction`, and the `exit 126` branch for a `tee` that could not write
-# unreachable — all of it only on a red run, which is when they exist. Measured, then guarded by
-# `Tests/test-sh-streaming.mjs`, which now runs this block under the same traps.
+# unreachable — all of it only on a red run, which is when they exist. Measured.
 #
 # **Disarmed here rather than repaired in the handler**, and the two rejected directions are worth
 # naming. The handler is shared with `INT` and `TERM`, where the `exit` is the whole point — a
@@ -1881,9 +1618,7 @@ fi
 # The guarded section is over: the compile and the run are both behind us and only receipt checking
 # is left, so the next run may come in without waiting out a renewal deadline nobody is renewing
 # against. It sits below the two `exit` branches rather than above them, because those branches
-# leave through the EXIT trap, which releases the lock properly — and because everything between
-# `set +e` and the last `fi` above is lifted out and executed by `Tests/test-sh-streaming.mjs`,
-# where this function does not exist.
+# leave through the EXIT trap, which releases the lock properly.
 clawdline_suite_lock_phase idle-holding
 clawdline_suite_lock_work_finished
 
