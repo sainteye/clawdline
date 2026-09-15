@@ -583,6 +583,8 @@ await check("10 linux refusal · a Linux descriptor that advertises its commands
 });
 
 /* ---- 11 · The capability model, as corrected after review 2e03ef42 ------------------------- */
+// None of the checks in 11 and 12 is about latency — no machine in them is silent — so each waits a
+// whole BOUND: a loaded machine must not turn "who was asked" into "how fast it answered".
 
 await check("11 capability · a word every platform implements makes a machine with no descriptor capable: a Mac known only from its Session rows is asked for places", async function () {
     // Review F1: the Linux executor's descriptor arrived, the Mac's larger `orch/` snapshot had not,
@@ -604,7 +606,7 @@ await check("11 capability · a word every platform implements makes a machine w
         machine: { name: "linux-01", platform: "linux", commands: ["places", "start"] } });
     await fromMachine(client, socket, "s/mac-01/s-mac-01", { session: { id: "s-mac-01", cwd: "/code/app" } });
     assert.deepEqual(client._knownMachines(), ["linux-01", "mac-01"], "the fixture has the Mac only from its Session row");
-    const ended = await outcome(client.places(), FAST);
+    const ended = await outcome(client.places(), BOUND);
     assert.equal(ended.state, "resolved", ended.state + (ended.error ? " " + ended.error.code : ""));
     assert.deepEqual([ended.value.places.map((place) => place.machine).sort(), ended.value.unconfirmed],
         [["linux-01", "mac-01"], []], "both machines' Projects, and nobody left unasked");
@@ -624,16 +626,16 @@ await check("11 capability · a Mac that answers unknown_command to the schedule
         return true;
     };
     const f = await fleet([["mac-01", "macos", true, { schedules: [{ id: "morning", title: "Morning" }] }]], { intercept: refusing });
-    const before = await outcome(f.client.schedules(), FAST);
-    const fresh = await outcome(f.client.schedules({ fresh: true }), FAST);
-    const after = await outcome(f.client.schedules(), FAST);
+    const before = await outcome(f.client.schedules(), BOUND);
+    const fresh = await outcome(f.client.schedules({ fresh: true }), BOUND);
+    const after = await outcome(f.client.schedules(), BOUND);
     const rows = (ended) => ended.state === "resolved" ? ended.value.schedules.map((row) => row.id) : ended.state + " " + (ended.error && ended.error.code);
     assert.deepEqual([rows(before), rows(fresh), rows(after)], [["morning"], ["morning"], ["morning"]],
         "the published rows survive the refusal");
     assert.deepEqual(f.typesTo("mac-01"), ["schedules"], "and the refused word is not asked again");
     const g = await fleet([["mac-01", "macos", true]], { intercept: refusing });
-    await outcome(g.client.schedules({ fresh: true }), FAST);
-    const unpublished = await outcome(g.client.schedules(), FAST);
+    await outcome(g.client.schedules({ fresh: true }), BOUND);
+    const unpublished = await outcome(g.client.schedules(), BOUND);
     assert.deepEqual([unpublished.state, unpublished.error && unpublished.error.code], ["rejected", "cloud_schedules_unpublished"],
         "a Mac whose snapshot has no schedules field is an old Mac, not an empty list");
 });
@@ -651,7 +653,7 @@ await check("11 capability · a descriptor that arrives, or changes its commands
         return true;
     } });
     const snippets = async () => {
-        const ended = await outcome(f.client.snippets(linuxSession, { fresh: true }), FAST);
+        const ended = await outcome(f.client.snippets(linuxSession, { fresh: true }), BOUND);
         return ended.state === "resolved" ? "resolved" : ended.state + " " + (ended.error && ended.error.code);
     };
     const descriptor = (commands) => fromMachine(f.client, f.socket, "orch/linux-01", { tasks: [], at: nowSeconds(),
@@ -678,16 +680,16 @@ await check("11 capability · a feature only an unpaired machine could provide i
     f.client._noteUnpairedMachine("mac-01", "mac-sender", "machine_not_paired");
     assert.deepEqual(f.client._machineRows().map((row) => [row.id, row.pairing]), [["linux-01", "paired"], ["mac-01", "not_paired"]]);
     const before = f.publishedCount();
-    const key = await outcome(f.client.pushKey(), FAST);
-    const diagnostics = await outcome(f.client.diagnosticsReport({ layout: "phone" }), FAST);
+    const key = await outcome(f.client.pushKey(), BOUND);
+    const diagnostics = await outcome(f.client.diagnosticsReport({ layout: "phone" }), BOUND);
     assert.deepEqual([key.error && key.error.code, diagnostics.error && diagnostics.error.code, f.publishedCount()],
         ["machine_pairing_required", "machine_pairing_required", before]);
     const g = await fleet(MAC_LINUX);
     g.client._noteUnpairedMachine("linux-01", "linux-sender", "machine_not_paired");
-    const fresh = await outcome(g.client.schedules({ fresh: true }), FAST);
+    const fresh = await outcome(g.client.schedules({ fresh: true }), BOUND);
     assert.deepEqual([fresh.state, fresh.value && fresh.value.unanswered], ["resolved", []],
         "an unpaired executor, which cannot have schedules, is nothing the schedules read failed to hear");
-    const places = await outcome(g.client.places(), FAST);
+    const places = await outcome(g.client.places(), BOUND);
     assert.deepEqual(places.value && places.value.unanswered.map((row) => [row.machine, row.error.code]),
         [["linux-01", "machine_pairing_required"]], "while for places, which it could answer once paired, it is named");
 });
@@ -733,25 +735,51 @@ await check("12 places callers · the schedules strip does not keep a places ans
         if (await schedulesWithProjects(client, socket, machine, command)) return true;
         return busy && macBusyForPlaces(client, socket, machine, command);
     } });
+    // What the strip asked and what came back, observed rather than arranged: on a loaded machine an
+    // answer meant to be complete can come back partial (a machine past its read bound), and a check
+    // that assumed otherwise would blame the cache for it.
+    let schedulesSettled = 0;
+    const answers = [];
+    const readSchedules = f.client.schedules.bind(f.client);
+    f.client.schedules = function (options) {
+        const read = readSchedules(options);
+        read.then(() => { schedulesSettled += 1; }, () => { schedulesSettled += 1; });
+        return read;
+    };
+    const readPlaces = f.client.places.bind(f.client);
+    f.client.places = function (machine) {
+        const read = readPlaces(machine);
+        const row = { state: "pending" };
+        answers.push(row);
+        read.then((answer) => { row.state = answer.unanswered.length || answer.unconfirmed.length ? "partial" : "complete"; },
+            () => { row.state = "failed"; });
+        return read;
+    };
     const driven = await strip(f.client);
-    const count = (type) => f.typesTo("mac-01").filter((sent) => sent === type).length;
-    // Each refresh is over once its schedules read went out and the strip had time to ask for places;
-    // a waited-for count returns as soon as it is reached.
-    const refreshed = async (n, places) => {
+    // One refresh, to the end: its schedules read settled, the strip then asked for places or used
+    // its cache (a synchronous choice), and any places read it made has settled.
+    const refreshed = async () => {
+        const settledBefore = schedulesSettled;
         driven.Schedules.refresh();
-        await until(() => count("schedules") >= n, BOUND);
-        await until(() => count("places") >= places, BOUND);
-        await new Promise((resolve) => setTimeout(resolve, FAST));
+        await until(() => schedulesSettled > settledBefore, BOUND * 2);
+        await settle();
+        await until(() => answers.every((row) => row.state !== "pending"), BOUND * 2);
+        await settle();
     };
     try {
         driven.forget();
-        await refreshed(1, 1);
-        await refreshed(2, 2);
-        assert.equal(count("places"), 2, "a partial answer is asked for again at the next refresh");
+        await refreshed();
+        await refreshed();
+        assert.deepEqual([answers.length, answers[0] && answers[0].state !== "complete"], [2, true],
+            "a partial answer is asked for again at the next refresh: " + JSON.stringify(answers));
         busy = false;
-        await refreshed(3, 3);
-        await refreshed(4, 4);
-        assert.deepEqual([count("schedules"), count("places")], [4, 3], "and a complete one is kept");
+        for (let tries = 0; tries < 4 && answers[answers.length - 1].state !== "complete"; tries++) await refreshed();
+        assert.equal(answers[answers.length - 1].state, "complete",
+            "a complete places answer was observed to test the cache with: " + JSON.stringify(answers));
+        const asked = answers.length;
+        await refreshed();
+        await refreshed();
+        assert.equal(answers.length, asked, "and a complete one is kept: " + JSON.stringify(answers));
     } finally { driven.forget(); driven.restore(); }
 });
 
@@ -772,7 +800,7 @@ await check("12 places callers · the schedule form's Project list names the mac
     try {
         list.children = [];
         Schedule.open();
-        await until(() => list.children.some((child) => child.className !== "note"), FAST);
+        await until(() => list.children.some((child) => child.className !== "note"), BOUND);
         const said = notes();
         assert.ok(said.length === 1 && said[0].includes(macLabel), "one line naming " + macLabel + ": " + JSON.stringify(said));
         assert.ok(typeof T.webMachinesUnanswered === "string" && T.webMachinesUnanswered.includes("{machines}")
@@ -782,7 +810,7 @@ await check("12 places callers · the schedule form's Project list names the mac
         useClient(g.client);
         list.children = [];
         Schedule.open();
-        await until(() => list.children.some((child) => child.className !== "note"), FAST);
+        await until(() => list.children.some((child) => child.className !== "note"), BOUND);
         assert.deepEqual([notes(), list.children.length], [[], 2], "a complete list says nothing extra");
         Schedule.close(true);
     } finally { document.createElement = created; }
