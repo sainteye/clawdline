@@ -128,8 +128,8 @@ private struct CloudRowFixture {
     let bridge: CloudAppBridge
 
     init(source: CloudRowSignatureSource? = nil, waits: CloudRowWaits? = nil,
-         status: CloudStatus? = nil) {
-        let transport = CloudAppBridgeTestTransport()
+         status: CloudStatus? = nil, suspendPublication: Bool = false) {
+        let transport = CloudAppBridgeTestTransport(suspendPublication: suspendPublication)
         let clock = CloudRowClock(1_800_000_000_000)
         let secret = try! CloudMasterSecret(rawRepresentation: Data(repeating: 0x5c, count: 32))
         let signer = CloudDeviceKeyPair()
@@ -270,25 +270,38 @@ group("Cloud Session rows skip freshness-only changes and republish the whole ro
     expect("source.freshness is read by the viewer's closeability gate, so it still publishes",
            fixture.frames("beta").count, 2)
 
-    // Presence: nothing else keeps an idle Mac inside the console's five-minute machine window.
+    // The refresh pass: the relay forgets every row with its object and a viewer that may not
+    // publish on ctl/ cannot ask for them, so three minutes after the last pass that sent every row
+    // and the inventory — the first scan here, 60 s ago — a scan sends them all again. Rows that
+    // changed meanwhile do not restart that clock.
     let beforeQuiet = fixture.transport.envelopes().count
-    fixture.clock.advance(CloudAppBridge.sessionPresenceIntervalMilliseconds - 1)
+    fixture.clock.advance(CloudAppBridge.sessionPresenceIntervalMilliseconds - 60_000 - 1)
     fixture.publish([working,
                      cloudRow("beta", observedAt: 170, generation: 5, sourceObservedAt: 169,
                               freshness: "stale")],
-                    at: 170, generation: 5, label: "an idle scan inside the presence interval")
-    expect("an idle scan inside the presence interval publishes nothing",
+                    at: 170, generation: 5, label: "an idle scan inside the refresh interval")
+    expect("an idle scan inside the refresh interval publishes nothing",
            fixture.transport.envelopes().count, beforeQuiet)
     fixture.clock.advance(1)
     fixture.publish([working,
                      cloudRow("beta", observedAt: 180, generation: 6, sourceObservedAt: 179,
                               freshness: "stale")],
-                    at: 180, generation: 6, label: "an idle scan at the presence interval")
-    expect("three quiet minutes re-send one frame", fixture.transport.envelopes().count,
-           beforeQuiet + 1)
-    check("and that frame is the inventory marker, not a row",
-          fixture.transport.envelopes().last?.ch == "s/mac-rows/__clawdline_inventory_v1__"
-            && fixture.frames("alpha").count == 2 && fixture.frames("beta").count == 2)
+                    at: 180, generation: 6, label: "an idle scan at the refresh interval")
+    expect("three minutes after the last whole pass, an idle scan re-sends every row and the inventory",
+           fixture.transport.envelopes().count, beforeQuiet + 3)
+    check("each row once, whole and current, and the inventory last",
+          fixture.frames("alpha").count == 3 && fixture.frames("beta").count == 3
+            && fixture.lastRow("alpha")?["line"] as? String == "Working (1s • esc to interrupt)"
+            && closeabilityValue(fixture.lastRow("beta"), "observed_at") == 180
+            && fixture.transport.envelopes().last?.ch == "s/mac-rows/__clawdline_inventory_v1__",
+          "alpha=\(fixture.frames("alpha").count) beta=\(fixture.frames("beta").count)")
+    fixture.clock.advance(20_000)
+    fixture.publish([working,
+                     cloudRow("beta", observedAt: 200, generation: 7, sourceObservedAt: 199,
+                              freshness: "stale")],
+                    at: 200, generation: 7, label: "the idle scan after a refresh")
+    expect("and the next idle scan is quiet again: the interval counts from that pass",
+           fixture.transport.envelopes().count, beforeQuiet + 3)
     check("the freshness-only list names exactly the three audited paths",
           CloudAppBridge.freshnessOnlySessionRowFields
             == [["closeability", "observed_at"], ["closeability", "session_generation"],
@@ -620,7 +633,9 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
     expect("an idle Mac publishes nothing more on its own — the relay's replay is all a new viewer would get",
            fixture.transport.envelopes().count, 4)
 
-    // (a) A viewer connecting after the relay lost its replay asks; remote writes are off here.
+    // (a) A viewer connecting after the relay lost its replay asks; remote writes are off here. The
+    // orchestrator snapshot went out longer ago than the re-send floor, so it goes again at once.
+    fixture.clock.advance(CloudAppBridge.orchestratorResendFloorMilliseconds)
     fixture.askForRows("snap-1", sequence: 1, extra: #","orchestrator":true"#)
     check("asked for its rows, an idle Mac re-sends each row and the inventory at once",
           eventually { fixture.frames("alpha").count == 2 && fixture.frames("beta").count == 2
@@ -683,9 +698,77 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
           })
     expect("that pass sent each row once more", fixture.frames("alpha").count, 4)
 
-    // M2: scans that stay incomplete still keep the Mac inside the console's machine window.
+    // F4: an orchestrator request inside the floor after the Mac's last orch/ publication is owed,
+    // not answered with another few hundred kilobytes to every viewer at once.
+    fixture.clock.advance(CloudAppBridge.sessionSnapshotIntervalMilliseconds)
+    let orchBeforeOwed = orchestratorFrames().count
+    let rowsBeforeOwed = fixture.frames("alpha").count
+    fixture.askForRows("owed-1", sequence: 300, extra: #","orchestrator":true"#)
+    check("a request for the orchestrator snapshot inside the floor gets its rows and answer at once",
+          eventually { fixture.replies()["read:owed-1"] != nil && fixture.frames("alpha").count == rowsBeforeOwed + 1 })
+    let owedWait = CloudAppBridge.orchestratorResendFloorMilliseconds
+        - CloudAppBridge.sessionSnapshotIntervalMilliseconds - 2_000
+    check("while the orchestrator snapshot waits out the rest of the floor",
+          eventually { waits.requests.last == owedWait }, "waits=\(waits.requests)")
+    expect("and is not re-sent meanwhile", orchestratorFrames().count, orchBeforeOwed)
+    check("what is owed is visible",
+          cloudRowAwait("reading the owed state", recording: false) { await bridge.orchestratorResendStateForTesting() }
+            .map { $0.owedSince != nil && $0.scheduled } == true)
+    waits.release()
+    check("at the floor it goes out once", eventually { orchestratorFrames().count == orchBeforeOwed + 1 })
+    check("and nothing is owed after it",
+          eventually {
+              cloudRowAwait("reading the owed state", recording: false) { await bridge.orchestratorResendStateForTesting() }
+                .map { $0.owedSince == nil && !$0.scheduled } == true
+          })
+
+    fixture.clock.advance(CloudAppBridge.sessionSnapshotIntervalMilliseconds)
+    fixture.askForRows("owed-2", sequence: 301, extra: #","orchestrator":true"#)
+    check("a second request inside the new floor is owed too",
+          eventually { fixture.replies()["read:owed-2"] != nil && waits.requests.count == 4 }, "waits=\(waits.requests)")
+    fixture.clock.advance(1_000)
+    cloudRowAwait("the Mac's own next orchestrator publication") { try await bridge.publishOrchestrator(orchestrator) }
+    waits.release()
+    check("a publication after the request answers it, and the floor adds nothing",
+          eventually {
+              cloudRowAwait("reading the owed state", recording: false) { await bridge.orchestratorResendStateForTesting() }
+                .map { $0.owedSince == nil && !$0.scheduled } == true
+          } && orchestratorFrames().count == orchBeforeOwed + 2, "orch=\(orchestratorFrames().count)")
+
+    // F6: a pass waiting out its window while a scan tombstones a row sends what is published when it
+    // runs — never the row that closed — and its answer does not name it.
+    fixture.clock.advance(1_000)
+    fixture.askForRows("across-tombstone", sequence: 302)
+    check("a request inside the window waits for it", eventually { waits.requests.count == 5 }, "waits=\(waits.requests)")
+    let betaBeforeTombstone = fixture.frames("beta").count
+    let alphaBeforeTombstone = fixture.frames("alpha").count
+    fixture.publish([cloudRow("alpha", observedAt: 390, generation: 8, sourceObservedAt: 389)],
+                    at: 390, generation: 8, label: "a scan that closes beta while the pass waits")
+    check("the scan tombstones beta",
+          fixture.frames("beta").count == betaBeforeTombstone + 1
+            && fixture.frames("beta").last?["deleted"] as? Bool == true)
+    waits.release()
+    check("the pass that ran after it answers with alpha alone",
+          eventually {
+              (fixture.replies()["read:across-tombstone"]?["body"] as? [String: Any])?["sessions"] as? [String] == ["alpha"]
+          }, "\(fixture.replies()["read:across-tombstone"] ?? [:])")
+    check("re-sent alpha and never beta, whose last word is still its tombstone",
+          fixture.frames("alpha").count == alphaBeforeTombstone + 1
+            && fixture.frames("beta").count == betaBeforeTombstone + 1
+            && fixture.frames("beta").last?["deleted"] as? Bool == true)
+    check("and its inventory names alpha alone",
+          ((fixture.frames("__clawdline_inventory_v1__").last?["inventory"] as? [String: Any])?["sessions"]
+            as? [String]) == ["alpha"])
+    fixture.publish([cloudRow("alpha", observedAt: 395, generation: 9, sourceObservedAt: 394),
+                     cloudRow("beta", observedAt: 395, generation: 9, sourceObservedAt: 394)],
+                    at: 395, generation: 9, label: "a scan where beta is back")
+
+    // M2 and the refresh pass: scans that stay incomplete still keep the Mac inside the console's
+    // machine window, and still send every published row again.
     fixture.clock.advance(CloudAppBridge.sessionPresenceIntervalMilliseconds)
     let beforeIncomplete = fixture.frames("__clawdline_inventory_v1__").count
+    let alphaBeforeIncomplete = fixture.frames("alpha").count
+    let betaBeforeIncomplete = fixture.frames("beta").count
     let incomplete = try! JSONSerialization.data(withJSONObject: [
         "sessions": [cloudRow("alpha", observedAt: 400, generation: 9, sourceObservedAt: 399)],
         "at": 400, "scan": ["generation": 9, "complete": false, "emptyAuthoritative": false] as [String: Any],
@@ -693,6 +776,12 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
     cloudRowAwait("an incomplete scan after three quiet minutes") { try await bridge.publishSessions(incomplete) }
     expect("sends the presence marker even though the scan was incomplete",
            fixture.frames("__clawdline_inventory_v1__").count, beforeIncomplete + 1)
+    check("and every published row, the one the scan named and the one it did not",
+          fixture.frames("alpha").count == alphaBeforeIncomplete + 1
+            && fixture.frames("beta").count == betaBeforeIncomplete + 1
+            && closeabilityValue(fixture.lastRow("alpha"), "observed_at") == 400
+            && closeabilityValue(fixture.lastRow("beta"), "observed_at") == 395,
+          "alpha=\(fixture.frames("alpha").count) beta=\(fixture.frames("beta").count)")
     check("naming every row still published, so no viewer drops one",
           ((fixture.frames("__clawdline_inventory_v1__").last?["inventory"] as? [String: Any])?["sessions"]
             as? [String]) == ["alpha", "beta"])
@@ -702,5 +791,27 @@ group("a reconnecting viewer's Session snapshot request re-sends every row once 
             .map { $0.waiting == 0 && !$0.scheduled } == true)
 
     check("a status no bridge has named features for lists none", CloudStatus().noticeDigest()["features"] == nil)
+
+    // F6: `stop()` while a pass is publishing joins it, and nothing of the pass goes out after.
+    let held = CloudRowFixture(suspendPublication: true)
+    let heldBridge = held.bridge
+    cloudRowAwait("the held bridge starts") { try await heldBridge.start() }
+    held.transport.releasePublications(3)
+    held.publish([cloudRow("alpha", observedAt: 100, generation: 1, sourceObservedAt: 99),
+                  cloudRow("beta", observedAt: 100, generation: 1, sourceObservedAt: 99)],
+                 at: 100, generation: 1, label: "the held Mac's first scan")
+    held.askForRows("stopped", sequence: 1)
+    check("the pass starts publishing its first row and is held there",
+          eventually { held.transport.state().publicationStarts == 4 }, "starts=\(held.transport.state().publicationStarts)")
+    cloudRowAwait("stopping the bridge in the middle of a pass") { await heldBridge.stop() }
+    let afterStop = held.transport.envelopes().count
+    check("stop returned with nothing of the pass after its held row: no neighbour, inventory or answer",
+          held.frames("beta").count == 1 && held.frames("__clawdline_inventory_v1__").count == 1
+            && held.replies()["read:stopped"] == nil && afterStop <= 4, "envelopes=\(afterStop)")
+    check("and nothing arrives later either",
+          !eventually(timeout: 0.3) { held.transport.envelopes().count != afterStop })
+    check("a bridge stopped in the middle of a pass holds nothing",
+          cloudRowAwait("reading the stopped pass", recording: false) { await heldBridge.sessionSnapshotStateForTesting() }
+            .map { $0.waiting == 0 && !$0.scheduled } == true)
 }
 }

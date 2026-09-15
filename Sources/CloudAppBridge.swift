@@ -1362,13 +1362,24 @@ actor CloudAppBridge {
     /// Session at most once per second however fast its transcript is written. Scan publications
     /// are not held to it: they already follow the SessionWatch cadence.
     static let transcriptRepublicationIntervalMilliseconds: UInt64 = 1_000
-    /// The hosted console calls a machine current for five minutes after its newest `s/` or
-    /// `orch/` envelope (`MACHINE_INVENTORY_FRESH_MS`). With unchanged rows skipped, an idle Mac
-    /// may publish neither, so an authoritative scan re-sends the small inventory marker once no
-    /// Session-channel frame has gone out for three minutes. The background scan cadence (20 s)
-    /// and the 12–20 s Session-write latency of the 2026-09-13 calibration (docs/cloud.md) still
-    /// land it inside the five.
+    /// The refresh pass (docs/cloud.md, *Every three minutes the rows go out again*). The relay
+    /// keeps each channel's last envelope in memory only, loses it whenever its object is evicted
+    /// — an idle account's is, between frames — and an unchanged row is never published again. A
+    /// viewer that may not publish on `ctl/` cannot ask for the rows (`sessions.snapshot`), so once
+    /// this long has passed since the last pass that sent every row and the inventory, a scan sends
+    /// every row it would have skipped and the inventory again. That bounds how long any viewer —
+    /// read-only, holding a half-open socket, or one whose request failed — waits for the Mac's
+    /// current rows, and keeps the machine inside the console's five-minute window
+    /// (`MACHINE_INVENTORY_FRESH_MS`). Measured 2026-09-15: about 31 KB of sealed frames per pass
+    /// for ten Sessions, so about 0.63 MB an hour for an idle Mac. The background scan cadence
+    /// (20 s) and the 12–20 s Session-write latency of the 2026-09-13 calibration still land it
+    /// inside the five minutes.
     static let sessionPresenceIntervalMilliseconds: UInt64 = 180_000
+    /// A viewer's `orchestrator` request re-sends the orchestrator snapshot — hundreds of kilobytes,
+    /// fanned out by the relay to every viewer on the account — at most once per this long after
+    /// the Mac's last `orch/` publication of any kind. A request inside it is owed: answered by the
+    /// next publication, or by a re-send once the floor has passed (`scheduleOrchestratorResend`).
+    static let orchestratorResendFloorMilliseconds: UInt64 = 60_000
     /// Row fields that move with every SessionWatch reading whether or not anything a viewer reads
     /// did, so they never make a row different. A row that differs elsewhere is still published
     /// whole, these values included. Each one was checked against every reader in
@@ -1497,7 +1508,9 @@ actor CloudAppBridge {
     /// was published, and that scan's `at`/`scan`. A transcript republication sends these.
     private var latestSessionRows: [String: [String: Any]] = [:]
     private var latestSessionEnvelope: (at: Any, scan: [String: Any])?
-    private var lastSessionFrameAt: UInt64?
+    /// When a pass last sent every published row and the inventory: a forced or refresh scan, or a
+    /// `sessions.snapshot` pass. The refresh interval is counted from here.
+    private var lastSessionRefreshAt: UInt64?
     /// Session-channel publications run one at a time, whoever started them, so a transcript
     /// republication can never interleave with a scan's rows or land after its tombstone.
     private var sessionPublicationTail: Task<Void, Never>?
@@ -1515,9 +1528,13 @@ actor CloudAppBridge {
     /// window is counted from there).
     private let sessionSnapshotIntervalMilliseconds: UInt64
     private var sessionSnapshotWaiters: [(reference: CommandReference, request: String,
-                                          orchestrator: Bool)] = []
+                                          orchestrator: Bool, at: UInt64)] = []
     private var sessionSnapshotTask: Task<Void, Never>?
     private var lastSessionSnapshotAt: UInt64?
+    /// The earliest arrival of an `orchestrator` request no `orch/` publication has answered yet,
+    /// and the re-send scheduled for it at the floor.
+    private var orchestratorOwedSince: UInt64?
+    private var orchestratorResendTask: Task<Void, Never>?
 
     init(
         transport: any CloudTransporting,
@@ -1684,7 +1701,7 @@ actor CloudAppBridge {
                 || foregroundReadTask != nil || backgroundReadTask != nil
                 || !lifecycleRefreshTasks.isEmpty || !publicationTasks.isEmpty
                 || transcriptReportTask != nil || transcriptRepublicationTask != nil
-                || sessionSnapshotTask != nil
+                || sessionSnapshotTask != nil || orchestratorResendTask != nil
         else { return }
         await transport.setInboundRefusalHandler(nil)
         await transport.setInboundDropHandler(nil)
@@ -1740,13 +1757,13 @@ actor CloudAppBridge {
         await refusalPublication?.value
         for task in readTasks { await task.value }
         for task in transcriptWork { await task.value }
-        await sessionSnapshot?.value
+        for task in sessionSnapshot { await task.value }
         publishedSessionIDs.removeAll()
         publishedSessionRows.removeAll()
         publishedSessionInventory = nil
         latestSessionRows.removeAll()
         latestSessionEnvelope = nil
-        lastSessionFrameAt = nil
+        lastSessionRefreshAt = nil
         sessionPublicationTail = nil
     }
 
@@ -1830,12 +1847,16 @@ actor CloudAppBridge {
         }
     }
 
+    /// What `publishSessionRow` did: nothing, a row a viewer reads differently, or the same row
+    /// again because it was forced (a refresh or snapshot pass).
+    private enum SessionRowPublication { case skipped, changed, resent }
+
     /// Publish one Session row unless everything a viewer reads is what was last published.
     private func publishSessionRow(
         _ session: [String: Any], id: String, force: Bool,
         lifecycleGeneration ownedGeneration: UInt64
-    ) async throws -> Bool {
-        guard let envelope = latestSessionEnvelope else { return false }
+    ) async throws -> SessionRowPublication {
+        guard let envelope = latestSessionEnvelope else { return .skipped }
         var row = session
         if let signature = knownTranscriptSignatures[id] {
             row[Self.transcriptSignatureField] = signature
@@ -1843,14 +1864,14 @@ actor CloudAppBridge {
             row.removeValue(forKey: Self.transcriptSignatureField)
         }
         let identity = try Self.cloudSessionRowIdentity(row)
-        if !force, publishedSessionRows[id] == identity { return false }
+        let unchanged = publishedSessionRows[id] == identity
+        if !force, unchanged { return .skipped }
         let full: [String: Any] = ["session": row, "at": envelope.at, "scan": envelope.scan]
         try await publishJSON(
             full, channel: sessionChannel(id), lifecycleGeneration: ownedGeneration
         )
         publishedSessionRows[id] = identity
-        lastSessionFrameAt = nowMilliseconds()
-        return true
+        return unchanged ? .resent : .changed
     }
 
     private func publishSessionsOwned(
@@ -1876,16 +1897,37 @@ actor CloudAppBridge {
         let current = Set(ids)
         var changed = 0
         var skipped = 0
+        var resent = 0
+        // Every row and the inventory go out again on a forced scan and once per refresh interval
+        // (`sessionPresenceIntervalMilliseconds`): nothing else brings a viewer that cannot ask the
+        // rows the relay lost with its object.
+        let refresh = force || lastSessionRefreshAt.map {
+            startedAt < $0 || startedAt - $0 >= Self.sessionPresenceIntervalMilliseconds
+        } ?? true
         latestSessionEnvelope = (at, scan)
+        func count(_ outcome: SessionRowPublication) {
+            switch outcome {
+            case .skipped: skipped += 1
+            case .changed: changed += 1
+            case .resent: resent += 1
+            }
+        }
         for (session, id) in zip(sessions, ids) {
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
             latestSessionRows[id] = session
-            if try await publishSessionRow(
-                session, id: id, force: force, lifecycleGeneration: ownedGeneration
-            ) {
-                changed += 1
-            } else {
-                skipped += 1
+            count(try await publishSessionRow(
+                session, id: id, force: refresh, lifecycleGeneration: ownedGeneration
+            ))
+        }
+        if refresh, !authoritative {
+            // An incomplete scan names only some rows; the others still published go out from the
+            // newest copy the Mac holds, so the pass is whole.
+            for id in publishedSessionIDs.subtracting(current).sorted() {
+                try requireActivePublication(lifecycleGeneration: ownedGeneration)
+                guard let session = latestSessionRows[id] else { continue }
+                count(try await publishSessionRow(
+                    session, id: id, force: true, lifecycleGeneration: ownedGeneration
+                ))
             }
         }
 
@@ -1904,7 +1946,6 @@ actor CloudAppBridge {
                     lifecycleGeneration: ownedGeneration
                 )
                 publishedSessionRows[id] = nil
-                lastSessionFrameAt = nowMilliseconds()
             }
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
             publishedSessionIDs = current
@@ -1913,25 +1954,20 @@ actor CloudAppBridge {
             publishedSessionIDs.formUnion(current)
         }
         var inventoryPublished = false
-        let now = nowMilliseconds()
-        let presenceDue = lastSessionFrameAt.map {
-            now < $0 || now - $0 >= Self.sessionPresenceIntervalMilliseconds
-        } ?? true
         if authoritative {
             let inventory = Self.sessionInventory(current.sorted())
             let stable = try JSONSerialization.data(
                 withJSONObject: inventory, options: [.sortedKeys, .withoutEscapingSlashes]
             )
-            if force || stable != publishedSessionInventory || presenceDue {
+            if refresh || stable != publishedSessionInventory {
                 try await publishJSON(
                     inventory, channel: sessionChannel(Self.sessionInventoryID),
                     lifecycleGeneration: ownedGeneration
                 )
                 publishedSessionInventory = stable
-                lastSessionFrameAt = nowMilliseconds()
                 inventoryPublished = true
             }
-        } else if presenceDue, publishedSessionInventory != nil,
+        } else if refresh, publishedSessionInventory != nil,
                   publishedSessionIDs.count <= Self.sessionInventoryLimit {
             // A Mac whose scans stay incomplete must not look stale. Every id this names has had
             // its row published, and nothing that vanished since the last complete scan has been
@@ -1941,14 +1977,14 @@ actor CloudAppBridge {
                 channel: sessionChannel(Self.sessionInventoryID),
                 lifecycleGeneration: ownedGeneration
             )
-            lastSessionFrameAt = nowMilliseconds()
             inventoryPublished = true
         }
+        if refresh { lastSessionRefreshAt = nowMilliseconds() }
         trackTranscriptSignatures(lifecycleGeneration: ownedGeneration)
         diagnostic("cloud: sessions published id=\(publicationID ?? "direct") "
             + "rows=\(sessions.count) changed=\(changed) "
-            + "skipped=\(skipped) tombstones=\(removed.count) inventory=\(inventoryPublished) "
-            + "force=\(force) total_ms=\(Self.elapsedMilliseconds(from: startedAt, to: nowMilliseconds()))")
+            + "skipped=\(skipped) resent=\(resent) tombstones=\(removed.count) "
+            + "inventory=\(inventoryPublished) force=\(force) refresh=\(refresh) total_ms=\(Self.elapsedMilliseconds(from: startedAt, to: nowMilliseconds()))")
     }
 
     // MARK: - Transcript signatures
@@ -2047,7 +2083,7 @@ actor CloudAppBridge {
             }
             if try await publishSessionRow(
                 session, id: id, force: false, lifecycleGeneration: ownedGeneration
-            ) {
+            ) != .skipped {
                 changed += 1
             }
         }
@@ -2112,7 +2148,8 @@ actor CloudAppBridge {
         }
         // `orchestrator`: the page has not been replayed this Mac's `orch/` snapshot either, which
         // the relay never keeps when it is larger than its cache entry. Only then is it re-sent.
-        sessionSnapshotWaiters.append((reference, request, body["orchestrator"] as? Bool == true))
+        sessionSnapshotWaiters.append((reference, request, body["orchestrator"] as? Bool == true,
+                                       nowMilliseconds()))
         scheduleSessionSnapshot(lifecycleGeneration: ownedGeneration)
     }
 
@@ -2139,8 +2176,11 @@ actor CloudAppBridge {
         // pass already sent, so it waits for the next one.
         let waiters = sessionSnapshotWaiters
         sessionSnapshotWaiters.removeAll()
-        lastSessionSnapshotAt = nowMilliseconds()
-        let orchestrator = waiters.contains { $0.orchestrator }
+        let startedAt = nowMilliseconds()
+        lastSessionSnapshotAt = startedAt
+        let orchestrator = orchestratorResendNow(
+            asked: waiters.filter { $0.orchestrator }.map { $0.at }, at: startedAt,
+            lifecycleGeneration: ownedGeneration)
         var failed = false
         do {
             try await runSessionPublication { [weak self] in
@@ -2156,7 +2196,7 @@ actor CloudAppBridge {
         let complete = publishedSessionInventory != nil
         diagnostic("cloud: session snapshot answered requests=\(waiters.count) rows=\(ids.count) "
             + "complete=\(complete) failed=\(failed)")
-        for (waiter, request, _) in waiters {
+        for (waiter, request, _, _) in waiters {
             if failed {
                 await refuse(
                     waiter, layer: .macReply, status: 503, code: "internal",
@@ -2196,7 +2236,7 @@ actor CloudAppBridge {
             guard let session = latestSessionRows[id] else { continue }
             if try await publishSessionRow(
                 session, id: id, force: true, lifecycleGeneration: ownedGeneration
-            ) {
+            ) != .skipped {
                 rows += 1
             }
         }
@@ -2208,8 +2248,9 @@ actor CloudAppBridge {
                 channel: sessionChannel(Self.sessionInventoryID),
                 lifecycleGeneration: ownedGeneration
             )
-            lastSessionFrameAt = nowMilliseconds()
         }
+        // The pass sent every row and the inventory: the refresh interval starts again from here.
+        lastSessionRefreshAt = nowMilliseconds()
         diagnostic("cloud: session snapshot published rows=\(rows) "
             + "inventory=\(publishedSessionInventory != nil)")
     }
@@ -2219,14 +2260,80 @@ actor CloudAppBridge {
         (sessionSnapshotWaiters.count, sessionSnapshotTask != nil, lastSessionSnapshotAt)
     }
 
-    /// End the requests with the lifecycle. Returns the pass `stop()` joins.
-    private func stopSessionSnapshots() -> Task<Void, Never>? {
-        let task = sessionSnapshotTask
-        task?.cancel()
+    /// Whether this pass re-sends the orchestrator snapshot for the `orchestrator` requests that
+    /// arrived at `asked`. A request that arrived before the Mac's last `orch/` publication was sent
+    /// that one live — the page asked from a ready socket — and needs nothing more. The others get it
+    /// now when that publication is older than the floor; inside the floor they are owed, and the
+    /// re-send waits for the floor unless a publication answers them first.
+    private func orchestratorResendNow(
+        asked: [UInt64], at now: UInt64, lifecycleGeneration ownedGeneration: UInt64
+    ) -> Bool {
+        guard noticesEnabled, lastOrchestratorPayload != nil else { return false }
+        let last = lastNoticeAt
+        let unanswered = asked.filter { arrived in last.map { $0 < arrived } ?? true }
+        guard let earliest = unanswered.min() else { return false }
+        if let last, now >= last, now - last < Self.orchestratorResendFloorMilliseconds {
+            orchestratorOwedSince = min(orchestratorOwedSince ?? earliest, earliest)
+            scheduleOrchestratorResend(lifecycleGeneration: ownedGeneration)
+            return false
+        }
+        orchestratorOwedSince = nil
+        return true
+    }
+
+    private func scheduleOrchestratorResend(lifecycleGeneration ownedGeneration: UInt64) {
+        guard running, lifecycleGeneration == ownedGeneration, orchestratorResendTask == nil,
+              orchestratorOwedSince != nil else { return }
+        let floor = Self.orchestratorResendFloorMilliseconds
+        let now = nowMilliseconds()
+        let wait = lastNoticeAt.map { now >= $0 && now - $0 < floor ? floor - (now - $0) : 0 } ?? 0
+        let waitMilliseconds = self.waitMilliseconds
+        orchestratorResendTask = Task { [weak self] in
+            if wait > 0 {
+                do { try await waitMilliseconds(wait) } catch { return }
+            }
+            await self?.resendOwedOrchestrator(lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func resendOwedOrchestrator(lifecycleGeneration ownedGeneration: UInt64) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        orchestratorResendTask = nil
+        guard let owed = orchestratorOwedSince else { return }
+        orchestratorOwedSince = nil
+        // A publication since the earliest owed request reached every page that was asking.
+        if let last = lastNoticeAt, last >= owed {
+            diagnostic("cloud: owed orchestrator snapshot answered by a publication")
+            return
+        }
+        do {
+            try await runPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+            }
+            diagnostic("cloud: owed orchestrator snapshot re-sent")
+        } catch {
+            if running, lifecycleGeneration == ownedGeneration {
+                diagnostic("cloud: owed orchestrator snapshot failed")
+            }
+        }
+    }
+
+    /// Tests read what is owed rather than sleeping past the floor.
+    func orchestratorResendStateForTesting() -> (owedSince: UInt64?, scheduled: Bool) {
+        (orchestratorOwedSince, orchestratorResendTask != nil)
+    }
+
+    /// End the requests with the lifecycle. Returns the work `stop()` joins.
+    private func stopSessionSnapshots() -> [Task<Void, Never>] {
+        let tasks = [sessionSnapshotTask, orchestratorResendTask].compactMap { $0 }
+        tasks.forEach { $0.cancel() }
         sessionSnapshotTask = nil
+        orchestratorResendTask = nil
         sessionSnapshotWaiters.removeAll()
+        orchestratorOwedSince = nil
         lastSessionSnapshotAt = nil
-        return task
+        return tasks
     }
 
     /// The local SSE serializer has already made these bytes. Seal them unchanged so local and
