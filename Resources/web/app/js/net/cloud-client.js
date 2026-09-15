@@ -55,6 +55,21 @@ const MACHINE_DESCRIPTOR_CACHE = "clawdline.machine-descriptors.v1:";
 // browser and per account, never a routing authority of its own.
 const VOICE_HOST_CHOICE = "clawdline.voice-host.v1:";
 
+/**
+ * The browser commands an enrolled Linux executor answers, and it answers nothing else:
+ * `LinuxDurableCloudRuntime.swift` adapts exactly these two. A newer executor refuses any other
+ * word as `unknown_command`; one already deployed drops it without a reply, which is why this list
+ * decides before anything is sent rather than after a timeout. A descriptor that advertises its
+ * own `commands` is taken at its word instead.
+ */
+const LINUX_BROWSER_COMMANDS = Object.freeze(["places", "start"]);
+
+/** Commands a Mac takes only once it has shown `cloud_status.v >= 1` (§11.4). */
+const STATUS_GATED_COMMANDS = Object.freeze(["cloud.status", "diagnostics.report", VIEWER_EVENTS_COMMAND]);
+
+/** Refusals that mean "this machine cannot have the feature", which a fan-out read drops. */
+const UNSUPPORTED_CODES = Object.freeze(["unknown_command", "cloud_machine_unsupported"]);
+
 /** The agent or shell a read is about, as the string the Mac will echo back inside `read`. */
 function readSubject(value) {
     return value === undefined || value === null ? "" : String(value);
@@ -201,6 +216,26 @@ function readAnswer(payload) {
         error: null };
 }
 
+/** The command words a descriptor advertises, bounded, or null when it advertises none. */
+function descriptorCommands(value) {
+    if (!Array.isArray(value)) return null;
+    return value.slice(0, 64).filter(function (word) {
+        return typeof word === "string" && word.length > 0 && word.length <= 64;
+    });
+}
+
+/** A descriptor's platform as the fleet presentation spells it: trimmed, lowercase, or "". */
+function descriptorPlatform(descriptor) {
+    return descriptor && typeof descriptor.platform === "string" ? descriptor.platform.trim().toLowerCase() : "";
+}
+
+/** `read:<id>` for `action:<id>` and the reverse, on the machine reply channel only; else null. */
+function siblingRequestName(session, read) {
+    if (session !== MACHINE_REPLY_SESSION) return null;
+    var match = /^(read|action):(.+)$/.exec(read);
+    return match ? (match[1] === "read" ? "action:" : "read:") + match[2] : null;
+}
+
 function socketURL(input) {
     var base = typeof location !== "undefined" ? location.href : undefined;
     var url = new URL(input, base);
@@ -334,6 +369,9 @@ export class CloudClient {
         this.trail = options.trail
             || (sameViewer && prior.trail instanceof CloudTrail ? prior.trail : new CloudTrail());
         this.macCapabilities = sameViewer ? new Set(prior.macCapabilities) : new Set();
+        // Words a machine answered `unknown_command` to, per machine. One client's memory: a renewal
+        // asks again, and a machine publishing a different app build is asked again.
+        this.machineLacks = new Map();
         // What this browser saw fail, kept until the paired Mac's receipt names it
         // (`cloud-viewer-events.js`). The log outlives a renewal like the trail. Delivery runs only
         // for a log the composition root handed in, so a client a test builds never sends on its
@@ -1115,6 +1153,18 @@ export class CloudClient {
             // not checked against a list — a viewer only ever waits on names it asked for, and an
             // answer to a read nobody asked for settles nothing.
             if (!answer) throw cloudError("bad_payload", "the read answer names no read");
+            var settles = readKey(transcriptIdentity, answer.read);
+            // A machine refusing a word it does not implement cannot know whether this page waits
+            // on `read:<request>` or `action:<request>`, so the Mac (`commandRefusalReply`) and the
+            // Linux executor both answer `action:`. The request id is this page's random UUID and
+            // the channel is that machine's own, so a refusal — never a body — may settle the
+            // other spelling of the same request.
+            if (answer.error && !this.readWaiters.has(settles)) {
+                var sibling = siblingRequestName(transcriptIdentity.session, answer.read);
+                if (sibling && this.readWaiters.has(readKey(transcriptIdentity, sibling))) {
+                    settles = readKey(transcriptIdentity, sibling);
+                }
+            }
             if (answer.read === "transcript" && !answer.error) {
                 this.transcriptSnapshots.set(transcriptKey, answer.body);
             }
@@ -1137,7 +1187,7 @@ export class CloudClient {
                         envelope: envelope, realign: realign, selfHealed: true });
                 }
             }
-            this._settleRead(readKey(transcriptIdentity, answer.read), answer.body, answer.error);
+            this._settleRead(settles, answer.body, answer.error);
             this._emit({ type: "read", read: answer.read, data: answer.body,
                 error: answer.error, identity: transcriptIdentity, envelope: envelope,
                 realign: realign });
@@ -1146,8 +1196,11 @@ export class CloudClient {
         if (channel.kind === "orch") {
             var machine = decodedChannelSegment(channel.machine);
             this._observeMachine(machine, envelope.ts);
+            var buildBefore = this._macBuild(machine);
             this.orchestratorSnapshots.set(machine, payload || {});
             this._rememberDescriptor(machine, payload);
+            // A new build may know a word the old one refused, so what it refused is asked again.
+            if (this._macBuild(machine) !== buildBefore) this.machineLacks.delete(machine);
             this._consumeCloudStatus(machine, payload && payload.cloud_status);
             // A retained Session envelope may arrive before its machine descriptor. Re-project
             // the same authenticated rows when the descriptor arrives so the visible label does
@@ -1297,23 +1350,203 @@ export class CloudClient {
     }
 
     /**
+     * Whether `machine` implements the browser command `type`: `"yes"`, `"no"` or `"unknown"`.
+     *
+     * **The one capability predicate.** Every route in this file that sends a command asks it —
+     * the gate in `_read` and `_publishCommand`, the account pickers, the fan-out reads — so
+     * "which machine can answer this" has a single answer (`docs/cloud.md`, *Which machine a
+     * request goes to*). The evidence, strongest first:
+     *
+     * - the machine answered `unknown_command` to this word (`machineLacks`): no;
+     * - its descriptor advertises `commands`: exactly those, and never required, because the
+     *   executors already deployed do not send the list;
+     * - its descriptor names a platform that is not a Mac: `linux` implements
+     *   `LINUX_BROWSER_COMMANDS`, anything else nothing;
+     * - it is evidently a Mac — a `macos`/`darwin` descriptor, or `cloud_status`, which only the Mac
+     *   publishes: yes, except a status-gated command before that Mac has shown `cloud_status`;
+     * - no descriptor yet: unknown. What unknown may do is the caller's rule. A request that names
+     *   this machine still goes to it; a choice among machines takes it only when no machine is
+     *   evidently a Mac and none is known to answer (`_machinesFor`).
+     *
+     * The descriptor stays display metadata, never routing authority: here it is evidence about
+     * what a route can answer, and the route is still the authenticated channel.
+     */
+    _machineImplements(machine, type, options) {
+        var lacks = !(options && options.learned === false) && this.machineLacks.get(machine);
+        if (lacks && lacks.has(type)) return "no";
+        var descriptor = this._descriptorFor(machine);
+        if (Array.isArray(descriptor.commands)) return descriptor.commands.indexOf(type) >= 0 ? "yes" : "no";
+        var platform = descriptorPlatform(descriptor);
+        if (platform && platform !== "macos" && platform !== "darwin") {
+            return platform === "linux" && LINUX_BROWSER_COMMANDS.indexOf(type) >= 0 ? "yes" : "no";
+        }
+        if (platform || this.macCapabilities.has(machine)) {
+            var gated = !(options && options.statusGate === false) && STATUS_GATED_COMMANDS.indexOf(type) >= 0;
+            return gated && !this.macCapabilities.has(machine) ? "no" : "yes";
+        }
+        return "unknown";
+    }
+
+    /** A `macos`/`darwin` descriptor, or `cloud_status` from a machine whose descriptor names no other platform. */
+    _evidentMac(machine) {
+        var platform = descriptorPlatform(this._descriptorFor(machine));
+        return platform === "macos" || platform === "darwin" || (!platform && this.macCapabilities.has(machine));
+    }
+
+    /** The descriptor the live `orch/` snapshot of `machine` carries, else the one remembered. */
+    _descriptorFor(machine) {
+        var snapshot = this.orchestratorSnapshots.get(machine);
+        if (snapshot && snapshot.machine && typeof snapshot.machine === "object" && !Array.isArray(snapshot.machine)) {
+            return snapshot.machine;
+        }
+        var remembered = this.machineDescriptors.get(machine);
+        return remembered && remembered.machine || {};
+    }
+
+    /**
+     * The refusal for sending `type` to a machine known not to implement it, or null.
+     *
+     * Asked before a request that names its machine leaves, so a machine that cannot answer is told
+     * nothing and the page is told now rather than after the read timeout. Unknown is not refused
+     * here: the request named that machine and no other can serve it. Status gating stays with the
+     * callers that already require `cloud_status` (`diagnosticsReport`, `_viewerEventTarget`),
+     * because a remembered descriptor can arrive before this page has seen the Mac's digest.
+     */
+    _unsupportedRefusal(machine, type) {
+        if (typeof machine !== "string" || !machine) return null;
+        if (this._machineImplements(machine, type, { statusGate: false }) !== "no") return null;
+        return this._evidentMac(machine)
+            ? cloudError("cloud_feature_unavailable", "this Mac answered that it does not know " + type)
+            : cloudError("cloud_machine_unsupported", "this machine does not implement " + type);
+    }
+
+    /**
+     * Who a request with no machine may go to for `type`, as `_machineRows` rows.
+     *
+     * `capable` is every machine this browser is not known to be unpaired with that implements
+     * `type`; when there is none and no machine is evidently a Mac, it is the machines whose
+     * descriptor has not arrived, which is how a one-Mac account works before its first snapshot.
+     * `unconfirmed` is the unknown ones left out because such a machine exists — unknown never
+     * authorises sending to a machine that may not answer while one that can does. `unpaired`
+     * cannot be sent to from this browser at all.
+     */
+    _machinesFor(type) {
+        var rows = this._machineRows();
+        var found = { rows: rows, capable: [], unconfirmed: [], unpaired: [], evidentMac: false };
+        var unknown = [];
+        rows.forEach(function (row) {
+            if (row.pairing === "not_paired") { found.unpaired.push(row); return; }
+            if (this._evidentMac(row.id)) found.evidentMac = true;
+            var answer = this._machineImplements(row.id, type);
+            if (answer === "yes") found.capable.push(row);
+            else if (answer === "unknown") unknown.push(row);
+        }, this);
+        if (!found.capable.length && !found.evidentMac) found.capable = unknown;
+        else found.unconfirmed = unknown;
+        return found;
+    }
+
+    /**
+     * The one machine an account-level request for `type` goes to: `{ machine, chosen, candidates,
+     * error }`, where a refusal still carries `candidates`.
+     *
+     * The rules `voiceHost` was written with, for every feature: a choice this browser made
+     * (`options.choice`) wins while it is still a candidate, however stale — the person picked it;
+     * otherwise one candidate is the answer, then — unless `options.strict` — the one candidate with
+     * a current inventory. None is `cloud_read_unavailable` before any machine is known,
+     * `machine_pairing_required` when this browser is paired with none of them,
+     * `cloud_feature_unavailable` when a Mac is there and has not got the feature, and
+     * `cloud_machine_unsupported` when no machine on the account implements it. Two left is
+     * `cloud_machine_ambiguous`. `options.unavailable` and `options.ambiguous` rename the last three
+     * for a feature with words of its own.
+     */
+    _resolveMachine(type, options) {
+        options = options || {};
+        var found = this._machinesFor(type);
+        var feature = options.feature || type;
+        var candidates = Object.freeze(found.capable.map(function (row) { return row.id; }));
+        var answer = function (machine, chosen) {
+            return { machine: machine, chosen: chosen, candidates: candidates, error: null };
+        };
+        var refusal = function (code, message) {
+            var error = cloudError(code, message);
+            error.candidates = candidates;
+            return { machine: null, chosen: false, candidates: candidates, error: error };
+        };
+        var choice = options.choice || null;
+        if (choice && candidates.indexOf(choice) >= 0) return answer(choice, true);
+        if (candidates.length === 1) return answer(candidates[0], false);
+        if (!found.rows.length) {
+            return refusal("cloud_read_unavailable", "no Mac has published an inventory to this account yet");
+        }
+        if (!candidates.length) {
+            var paired = found.rows.length > found.unpaired.length;
+            return refusal(options.unavailable || (!paired ? "machine_pairing_required"
+                : found.evidentMac ? "cloud_feature_unavailable" : "cloud_machine_unsupported"),
+            "no machine on this account that this browser is paired with can answer " + feature);
+        }
+        if (!options.strict) {
+            var current = found.capable.filter(function (row) { return row.freshness === "current"; });
+            if (current.length === 1) return answer(current[0].id, false);
+        }
+        return refusal(options.ambiguous || "cloud_machine_ambiguous",
+            feature + " needs one machine, and more than one on this account can answer it");
+    }
+
+    /** `_resolveMachine`'s machine, or its refusal thrown; every public caller turns that into a rejection. */
+    _accountMachine(type, options) {
+        var resolved = this._resolveMachine(type, options);
+        if (!resolved.machine) throw resolved.error;
+        return resolved.machine;
+    }
+
+    /**
+     * Ask each of `machines` on its own and settle with every outcome, never rejecting. One
+     * machine's silence, refusal or failure is its own row: it never discards another machine's
+     * answer, and because each ask is bounded by its own read timeout it never delays the others
+     * past that bound.
+     */
+    _askEach(machines, ask) {
+        return Promise.all(machines.map(function (machine) {
+            return Promise.resolve().then(function () { return ask(machine); }).then(function (value) {
+                return { machine: machine, value: value, error: null };
+            }, function (error) {
+                return { machine: machine, value: null, error: asCloudFailure(error) };
+            });
+        }));
+    }
+
+    /**
+     * A fan-out read's outcomes, as a page can say them: the answers; `unanswered`, each machine
+     * that could have answered and did not, with its typed failure; and `unconfirmed`, the
+     * machines not asked because their descriptor has not arrived. A machine that cannot have the
+     * feature — known in advance, or answering `unknown_command` — contributes nothing at all.
+     */
+    _fanOutReport(settled, found) {
+        var report = { answered: [], unanswered: [], unconfirmed: found.unconfirmed.map(function (row) { return row.id; }) };
+        settled.forEach(function (row) {
+            if (!row.error) report.answered.push(row);
+            else if (UNSUPPORTED_CODES.indexOf(row.error.code) < 0) {
+                report.unanswered.push({ machine: row.machine, error: row.error });
+            }
+        });
+        found.unpaired.forEach(function (row) {
+            report.unanswered.push({ machine: row.id, error: cloudError("machine_pairing_required",
+                "this browser is not paired with this machine") });
+        });
+        return report;
+    }
+
+    /**
      * Which machine transcribes this browser's dictation. `voice()` sends to it and the Devices
      * page marks it, from this one decision, so the card that says "Voice input" is the machine
      * the recording goes to.
      *
-     * Only a Mac runs Whisper. A Linux executor has no `voice` handler and drops the command, so a
-     * recording sent there would wait out `VOICE_TIMEOUT_MS` for nothing. A **candidate** is a
-     * machine this browser is not known to be unpaired with and whose descriptor does not name
-     * another platform. Machines that are evidently Macs — a macOS descriptor, or `cloud_status`,
-     * which only the Mac publishes — are the candidates when there are any; machines whose
-     * descriptor has not arrived yet are the candidates only when none is evidently a Mac, which
-     * is how a one-Mac account still dictates before its first `orch/` snapshot.
-     *
-     * The machine this browser chose wins while it is still a candidate, however stale — the
-     * person picked it. Otherwise one candidate is the answer, then the one candidate with a
-     * current inventory. It answers `{ machine, chosen, candidates }`. Two left, or none, is a
-     * typed refusal that still carries `candidates`, because an ambiguous fleet is exactly when
-     * Devices has to offer the choice.
+     * Only a Mac runs Whisper: a Linux executor has no `voice` handler, so a recording sent there
+     * would wait out `VOICE_TIMEOUT_MS` for nothing. This is `_resolveMachine` for `voice` with the
+     * browser's own choice and the two refusals Devices has sentences for. It answers
+     * `{ machine, chosen, candidates }`; two left, or none, is a typed refusal that still carries
+     * `candidates`, because an ambiguous fleet is exactly when Devices has to offer the choice.
      */
     voiceHost() {
         try {
@@ -1325,39 +1558,8 @@ export class CloudClient {
     }
 
     _voiceHost() {
-        var rows = this._machineRows();
-        var capabilities = this.macCapabilities;
-        var possible = rows.filter(function (row) {
-            return row.pairing !== "not_paired" && (!row.platform || row.kind === "mac");
-        });
-        var evident = possible.filter(function (row) {
-            return row.kind === "mac" || capabilities.has(row.id);
-        });
-        var pool = evident.length ? evident : possible;
-        var candidates = Object.freeze(pool.map(function (row) { return row.id; }));
-        var answer = function (machine, chosen) {
-            return { machine: machine, chosen: chosen, candidates: candidates, error: null };
-        };
-        var refusal = function (code, message) {
-            var error = cloudError(code, message);
-            error.candidates = candidates;
-            return { machine: null, chosen: false, candidates: candidates, error: error };
-        };
-        var choice = this._voiceHostChoice();
-        if (choice && candidates.indexOf(choice) >= 0) return answer(choice, true);
-        if (candidates.length === 1) return answer(candidates[0], false);
-        if (!rows.length) {
-            return refusal("cloud_read_unavailable",
-                "no Mac has published an inventory to this account yet");
-        }
-        if (!candidates.length) {
-            return refusal("cloud_voice_host_unavailable",
-                "no machine on this account that this browser is paired with can transcribe voice input");
-        }
-        var current = pool.filter(function (row) { return row.freshness === "current"; });
-        if (current.length === 1) return answer(current[0].id, false);
-        return refusal("cloud_voice_host_ambiguous",
-            "more than one Mac can transcribe voice input, and none is chosen under Devices");
+        return this._resolveMachine("voice", { choice: this._voiceHostChoice(), feature: "voice input",
+            unavailable: "cloud_voice_host_unavailable", ambiguous: "cloud_voice_host_ambiguous" });
     }
 
     /** Stores the voice host for this browser. Only a current candidate can be chosen. */
@@ -1391,22 +1593,6 @@ export class CloudClient {
             var stored = this.voiceHostStorage.getItem(key);
             return typeof stored === "string" && stored ? stored.slice(0, 256) : null;
         } catch (e) { return null; /* unreadable storage: the automatic choice */ }
-    }
-
-    /** A machine-scoped control cannot guess in a fleet. Push subscriptions belong to one Mac's
-     * keys, so they are available when this account currently names one. Dictation picks its Mac
-     * through `voiceHost` instead. */
-    _onlyMachine(feature) {
-        var machines = this._knownMachines();
-        if (!machines.length) {
-            throw cloudError("cloud_read_unavailable",
-                "no Mac has published an inventory to this account yet");
-        }
-        if (machines.length !== 1) {
-            throw cloudError("cloud_machine_ambiguous",
-                feature + " needs one Mac, and this account currently has more than one");
-        }
-        return machines[0];
     }
 
     _scheduleMachine(value) {
@@ -1462,8 +1648,9 @@ export class CloudClient {
         return Promise.all(machines.map(function (name) {
             // A Mac that has never published `cloud_status` does not know the read either, and an
             // older one answers an unknown command with silence: asking it would hold the sheet on
-            // "reading" for a minute to learn what the missing digest already said.
-            if (!self.macCapabilities.has(name)) {
+            // "reading" for a minute to learn what the missing digest already said. A Linux
+            // executor publishes no digest and has no status read at all.
+            if (self._machineImplements(name, "cloud.status", { learned: false }) !== "yes") {
                 return { machine: name, status: null, error: null, capable: false };
             }
             return self._readCloudStatus(name, undefined).then(function (status) {
@@ -1512,7 +1699,7 @@ export class CloudClient {
                 throw cloudError("cloud_machine_unavailable",
                     "this Mac has not published a current Cloud inventory");
             }
-            var target = machine || this._onlyMachine("diagnostics");
+            var target = machine || this._accountMachine("diagnostics.report", { feature: "diagnostics" });
             if (!this.macCapabilities.has(target)) {
                 throw cloudError("cloud_feature_unavailable",
                     "this Mac build does not support Cloud diagnostics reports");
@@ -1525,7 +1712,7 @@ export class CloudClient {
     /* ---- viewer events: automatic delivery to the paired Mac ------------------------------- */
 
     /**
-     * The Mac these rows belong to, named explicitly rather than by `_onlyMachine`: an account
+     * The Mac these rows belong to, named explicitly rather than by an account picker: an account
      * with a second machine — an enrolled Linux executor — is exactly the case being diagnosed,
      * and "more than one machine" must not become "nowhere to report it".
      *
@@ -1551,14 +1738,14 @@ export class CloudClient {
         var candidates = [];
         var incapable = false;
         this.viewerVerified.forEach(function (seen, machine) {
-            var snapshot = this.orchestratorSnapshots.get(machine);
-            var known = this.machineDescriptors.get(machine);
-            var descriptor = snapshot && snapshot.machine && typeof snapshot.machine === "object" ? snapshot.machine
-                : !snapshot && known ? known.machine : {};
-            var platform = typeof descriptor.platform === "string" ? descriptor.platform.toLowerCase() : "";
-            if (platform && platform !== "macos" && platform !== "darwin") return;
-            if (!this.macCapabilities.has(machine)) { incapable = true; return; }
-            candidates.push({ machine: machine, sender: seen.sender, capable: true });
+            // The one capability predicate (`_machineImplements`): a machine whose descriptor names
+            // another platform is out, and a machine that may be a Mac but has not shown
+            // `cloud_status` cannot take the command yet. Not what it refused before: a refused batch
+            // is held by the log's own durable block for that Mac and build (`blockedFor` below),
+            // which outlives this client and is what the delivery outcome reports.
+            var answer = this._machineImplements(machine, VIEWER_EVENTS_COMMAND, { learned: false });
+            if (answer === "yes") candidates.push({ machine: machine, sender: seen.sender, capable: true });
+            else if (answer === "unknown" || this._evidentMac(machine)) incapable = true;
         }, this);
         if (candidates.length > 1) {
             throw cloudError("cloud_machine_ambiguous",
@@ -1602,6 +1789,8 @@ export class CloudClient {
                 if (typeof value === "string") kept[field] = value.slice(0, 128);
                 else if (typeof value === "number" || typeof value === "boolean") kept[field] = value;
             });
+            var commands = descriptorCommands(descriptor.commands);
+            if (commands) kept.commands = commands;
             var app = payload && payload.app;
             var build = app && typeof app.build === "string" ? app.build.slice(0, 64)
                 : app && Number.isFinite(app.build) ? String(app.build) : null;
@@ -1638,6 +1827,8 @@ export class CloudClient {
                     if (typeof value === "string") kept[field] = value.slice(0, 128);
                     else if (typeof value === "number" || typeof value === "boolean") kept[field] = value;
                 });
+                var commands = descriptorCommands(row.machine.commands);
+                if (commands) kept.commands = commands;
                 if (!Object.keys(kept).length) return;
                 var build = typeof row.build === "string" ? row.build.slice(0, 64)
                     : Number.isFinite(row.build) ? String(row.build) : null;
@@ -1776,13 +1967,20 @@ export class CloudClient {
     }
 
     /**
-     * Projects and the start sheet are account views, so each Mac answers its own inventory.
+     * Projects and the start sheet are account views, so each machine answers its own inventory.
      *
-     * **The route table is replaced only by a complete answer.** It used to be cleared before
-     * the first Mac was asked, and it stayed empty until every Mac had answered — for ever, if
-     * one of them failed or timed out. Meanwhile the pages that called this keep the list they
-     * already have on screen, so a press on one of its rows found no route. Now the table is the
-     * list of the last read that succeeded, which is the list those pages are showing.
+     * **One machine never takes the others' Projects with it.** Every machine that implements
+     * `places` is asked on its own (`_askEach`), so one that refuses, fails or stays silent until its
+     * read timeout becomes a row of `unanswered` beside the other machines' Projects instead of the
+     * whole answer. It rejects only when every machine asked failed, with the first failure. A
+     * machine whose descriptor has not arrived is not asked while a machine that implements
+     * `places` is known, and is named in `unconfirmed`.
+     *
+     * **The route table is replaced only by answers.** It used to be cleared before the first Mac
+     * was asked, and it stayed empty until every Mac had answered — for ever, if one of them failed
+     * or timed out. Meanwhile the pages that called this keep the list they already have on screen,
+     * so a press on one of its rows found no route. Now a machine's routes are replaced when that
+     * machine answers, and kept when it could have answered and did not.
      *
      * A retained route can name a project that has since gone from its Mac. That is not a
      * guess this page makes: the route only says which Mac to ask, and that Mac answers a place
@@ -1792,53 +1990,70 @@ export class CloudClient {
      */
     places(selectedMachine) {
         var known = this._knownMachines();
-        var machines = selectedMachine === undefined || selectedMachine === null
-            ? known : [String(selectedMachine)];
-        if (selectedMachine !== undefined && selectedMachine !== null &&
-            (!selectedMachine || !known.includes(String(selectedMachine)))) {
-            return Promise.reject(cloudError("cloud_machine_unavailable",
-                "this machine has not published a current Cloud inventory"));
+        var self = this;
+        if (selectedMachine !== undefined && selectedMachine !== null) {
+            var named = String(selectedMachine);
+            if (!selectedMachine || !known.includes(named)) {
+                return Promise.reject(cloudError("cloud_machine_unavailable",
+                    "this machine has not published a current Cloud inventory"));
+            }
+            return this._placesFrom(named).then(function (answer) {
+                return self._placesAnswer([answer], function (machine) { return machine !== named; });
+            });
         }
-        if (!machines.length) {
+        if (!known.length) {
             return Promise.reject(cloudError("cloud_read_unavailable",
                 "no Mac has published an inventory to this account yet"));
         }
-        var self = this;
-        return Promise.all(machines.map(function (machine) {
-            return self._machineRequest(machine, "places", {}, "read").then(function (answer) {
-                var places = answer && Array.isArray(answer.places) ? answer.places : [];
-                var assistants = answer && Array.isArray(answer.assistants) ? answer.assistants : [];
-                return { machine: machine, places: places, assistants: assistants };
-            });
-        })).then(function (answers) {
-            var places = [];
-            var assistants = [];
-            var assistantIDs = new Set();
-            var routes = new Map();
-            answers.forEach(function (answer) {
-                answer.places.forEach(function (place) {
-                    if (!place || typeof place.id !== "string" || !place.id) return;
-                    var id = cloudPlaceID(answer.machine, place.id);
-                    routes.set(id, { machine: answer.machine, id: place.id,
-                        path: place.path || "" });
-                    places.push(Object.assign({}, place, { id: id, machine: answer.machine }));
-                });
-                answer.assistants.forEach(function (assistant) {
-                    var id = assistant && assistant.id;
-                    if (typeof id !== "string" || !id || assistantIDs.has(id)) return;
-                    assistantIDs.add(id);
-                    assistants.push(assistant);
-                });
-            });
-            if (selectedMachine === undefined || selectedMachine === null) self.placeRoutes = routes;
-            else {
-                self.placeRoutes.forEach(function (route, id) {
-                    if (route.machine === String(selectedMachine)) self.placeRoutes.delete(id);
-                });
-                routes.forEach(function (route, id) { self.placeRoutes.set(id, route); });
-            }
-            return { places: places, assistants: assistants };
+        var found = this._machinesFor("places");
+        return this._askEach(found.capable.map(function (row) { return row.id; }), function (machine) {
+            return self._placesFrom(machine);
+        }).then(function (settled) {
+            var report = self._fanOutReport(settled, found);
+            if (!report.answered.length && report.unanswered.length) throw report.unanswered[0].error;
+            var silent = new Set(report.unanswered.map(function (row) { return row.machine; })
+                .concat(report.unconfirmed));
+            var answer = self._placesAnswer(report.answered.map(function (row) { return row.value; }),
+                function (machine) { return silent.has(machine); });
+            return Object.assign(answer, { unanswered: report.unanswered, unconfirmed: report.unconfirmed });
         });
+    }
+
+    _placesFrom(machine) {
+        return this._machineRequest(machine, "places", {}, "read").then(function (answer) {
+            var places = answer && Array.isArray(answer.places) ? answer.places : [];
+            var assistants = answer && Array.isArray(answer.assistants) ? answer.assistants : [];
+            return { machine: machine, places: places, assistants: assistants };
+        });
+    }
+
+    /** The joined list. The route table becomes these answers' routes plus the old routes of every
+     *  machine `keep` names — the ones that could have answered and did not. */
+    _placesAnswer(answers, keep) {
+        var places = [];
+        var assistants = [];
+        var assistantIDs = new Set();
+        var routes = new Map();
+        answers.forEach(function (answer) {
+            answer.places.forEach(function (place) {
+                if (!place || typeof place.id !== "string" || !place.id) return;
+                var id = cloudPlaceID(answer.machine, place.id);
+                routes.set(id, { machine: answer.machine, id: place.id,
+                    path: place.path || "" });
+                places.push(Object.assign({}, place, { id: id, machine: answer.machine }));
+            });
+            answer.assistants.forEach(function (assistant) {
+                var id = assistant && assistant.id;
+                if (typeof id !== "string" || !id || assistantIDs.has(id)) return;
+                assistantIDs.add(id);
+                assistants.push(assistant);
+            });
+        });
+        this.placeRoutes.forEach(function (route, id) {
+            if (keep(route.machine) && !routes.has(id)) routes.set(id, route);
+        });
+        this.placeRoutes = routes;
+        return { places: places, assistants: assistants };
     }
 
     /** Throws; every public caller turns that into a rejection. */
@@ -1882,7 +2097,7 @@ export class CloudClient {
                 throw cloudError("cloud_machine_unavailable",
                     "this Mac has not published a current Cloud inventory");
             }
-            var route = machine || this._onlyMachine("Project worktrees");
+            var route = machine || this._accountMachine(type, { feature: "Project worktrees" });
             var timeout = type === "project-worktree-lifecycle-refresh" ? 130000 : undefined;
             return this._machineRequest(route, type, { project: project }, "read", timeout)
                 .then(function (answer) { return Object.assign({}, answer, { machine: route }); });
@@ -1896,8 +2111,14 @@ export class CloudClient {
                 throw cloudError("cloud_machine_unavailable",
                     "this Mac has not published a current Cloud inventory");
             }
-            return this._machineRequest(machine || this._onlyMachine("Project Board"), "board",
-                { project: project || "", item: item || "" }, "read");
+            var route = machine || this._accountMachine("board", { feature: "Project Board" });
+            // The answer names the machine it came from, so a Project read here without a machine —
+            // the Projects page, Settings — can route what it opens next to that same machine.
+            return Promise.resolve(this._machineRequest(route, "board", { project: project || "", item: item || "" }, "read"))
+                .then(function (answer) {
+                    return answer && typeof answer === "object" && !Array.isArray(answer)
+                        ? Object.assign({}, answer, { machine: route }) : answer;
+                });
         } catch (error) { return Promise.reject(error); }
     }
 
@@ -1907,7 +2128,7 @@ export class CloudClient {
                 throw cloudError("cloud_machine_unavailable",
                     "this Mac has not published a current Cloud inventory");
             }
-            return this._machineRequest(machine || this._onlyMachine("Project Board"),
+            return this._machineRequest(machine || this._accountMachine("board-command", { feature: "Project Board" }),
                 "board-command", { command: body }, "action");
         } catch (error) { return Promise.reject(error); }
     }
@@ -1918,7 +2139,7 @@ export class CloudClient {
                 throw cloudError("cloud_machine_unavailable",
                     "this Mac has not published a current Cloud inventory");
             }
-            return this._machineRequest(machine || this._onlyMachine("Project Timeline"), "timeline", {
+            return this._machineRequest(machine || this._accountMachine("timeline", { feature: "Project Timeline" }), "timeline", {
                 project: project || "", entry: entry || "", cursor: cursor ? String(cursor) : "",
                 environment: environment || "production", category: category || "",
                 upcoming: !!includeUpcoming
@@ -1932,7 +2153,7 @@ export class CloudClient {
                 throw cloudError("cloud_machine_unavailable",
                     "this Mac has not published a current Cloud inventory");
             }
-            return this._machineRequest(machine || this._onlyMachine("Project Timeline"),
+            return this._machineRequest(machine || this._accountMachine("timeline-command", { feature: "Project Timeline" }),
                 "timeline-command", { command: body }, "action");
         } catch (error) { return Promise.reject(error); }
     }
@@ -2261,6 +2482,10 @@ export class CloudClient {
             return Promise.reject(cloudError("cloud_read_needs_send_prompt",
                 "this device may not ask the Mac for reads"));
         }
+        // Before the waiter, the subscription and the sequence: a machine known not to implement
+        // this word is sent nothing, and the page hears so now instead of at the read timeout.
+        var unsupported = this._unsupportedRefusal(identity.machine, type);
+        if (unsupported) return Promise.reject(unsupported);
         var key = readKey(identity, answer);
         var self = this;
         return new Promise(function (resolve, reject) {
@@ -2270,7 +2495,7 @@ export class CloudClient {
                 return;
             }
             waiters = { waiting: [{ resolve: resolve, reject: reject }], timer: null, ref: null,
-                machine: identity.machine, request: extra && typeof extra.request === "string"
+                machine: identity.machine, type: type, request: extra && typeof extra.request === "string"
                     ? extra.request : null,
                 retireUncertain: !!(readOptions && readOptions.retireUncertain) };
             self.readWaiters.set(key, waiters);
@@ -2344,6 +2569,13 @@ export class CloudClient {
         if (!waiters) return;
         this.readWaiters.delete(key);
         if (waiters.timer !== null) this.clearTimeout(waiters.timer);
+        // The machine's own word that it does not know this command: later requests for the word
+        // are refused here (`_unsupportedRefusal`) and the fan-out reads leave the machine out.
+        if (error && error.code === "unknown_command" && waiters.machine && waiters.type) {
+            var lacks = this.machineLacks.get(waiters.machine) || new Set();
+            lacks.add(waiters.type);
+            this.machineLacks.set(waiters.machine, lacks);
+        }
         var ref = waiters.ref;
         if (ref) this.pendingBySequence.delete(ref.seq);
         if (error) {
@@ -2561,20 +2793,29 @@ export class CloudClient {
      * schedules and `[]` because nothing has ever said are opposite facts, and a viewer that
      * cannot tell them apart draws the empty screen for both. That is the whole defect here: a
      * person with six schedules saw none, and was told nothing.
+     *
+     * Given the command `type` that reads the field, a machine that cannot have it is left out, and
+     * `incapableOnly` says every machine this account has is such a machine — a Linux-only account
+     * has no schedules, which is a fact and not a silence.
      */
-    _orchestratorRows(name) {
+    _orchestratorRows(name, type) {
         var rows = [];
         var published = false;
         var at = 0;
         this.orchestratorSnapshots.forEach(function (snapshot, machine) {
             if (!snapshot || !Array.isArray(snapshot[name])) return;
+            if (type && this._machineImplements(machine, type) === "no") return;
             published = true;
             if (typeof snapshot.at === "number" && snapshot.at > at) at = snapshot.at;
             snapshot[name].forEach(function (row) {
                 rows.push(Object.assign({}, row, { machine: machine }));
             });
-        });
-        return { published: published, rows: rows, at: at };
+        }, this);
+        var known = type ? this._knownMachines() : [];
+        var incapableOnly = !!type && known.length > 0 && known.every(function (machine) {
+            return this._machineImplements(machine, type) === "no";
+        }, this);
+        return { published: published, rows: rows, at: at, incapableOnly: incapableOnly };
     }
 
     _allOrchestratorRows(name) { return this._orchestratorRows(name).rows; }
@@ -2591,52 +2832,56 @@ export class CloudClient {
      * such field", which means the Mac is running a build older than this one and no amount of
      * waiting will help. Neither resolves to an empty list: `net/schedules.js` renders whatever
      * it is handed, so resolving `[]` here is the page positively asserting an inventory nobody
-     * has read.
+     * has read. The one empty list it does resolve is an account whose every machine cannot have
+     * schedules at all.
      */
     schedules(options) {
         if (options && options.fresh === true) return this._freshSchedules();
-        var answer = this._orchestratorRows("schedules");
-        if (!answer.published) {
-            return Promise.reject(this.orchestratorSnapshots.size
-                ? cloudError("cloud_schedules_unpublished",
-                    "this Mac does not publish its schedules over the relay")
-                : cloudError("cloud_read_unavailable",
-                    "no orchestrator snapshot has arrived from this account yet"));
+        return this._publishedAnswer("schedules", "schedules", this._orchestratorRows("schedules", "schedules"));
+    }
+
+    /** A `_orchestratorRows` answer as `schedules()`/`snippets()` resolve it, or the refusal for none. */
+    _publishedAnswer(name, type, answer) {
+        if (answer.published || answer.incapableOnly) {
+            var out = { at: answer.at };
+            out[name] = answer.rows;
+            return Promise.resolve(out);
         }
-        return Promise.resolve({ schedules: answer.rows, at: answer.at });
+        return Promise.reject(this.orchestratorSnapshots.size
+            ? cloudError("cloud_" + name + "_unpublished", "this Mac does not publish its " + name + " over the relay")
+            : cloudError("cloud_read_unavailable", "no orchestrator snapshot has arrived from this account yet"));
     }
 
     /**
      * A retained `orch/` envelope is a fast first paint, not evidence that the list is current.
-     * The visible refresh asks every known Mac and replaces only that Mac's schedule field, so a
-     * reconnect cannot leave a truthful local list hidden behind an old empty relay snapshot.
+     * The visible refresh asks every machine that can have schedules — never a Linux executor —
+     * each on its own, and replaces only an answering machine's schedule field, so a reconnect
+     * cannot leave a truthful local list hidden behind an old empty relay snapshot and one silent
+     * machine cannot hide the others' rows. A machine that could have answered and did not keeps
+     * its retained rows and is named in `unanswered`.
      */
     _freshSchedules() {
-        var machines = this._knownMachines();
-        if (!machines.length) {
+        if (!this._knownMachines().length) {
             return Promise.reject(cloudError("cloud_read_unavailable",
                 "no Mac has published an inventory to this account yet"));
         }
         var self = this;
-        return Promise.all(machines.map(function (machine) {
+        var found = this._machinesFor("schedules");
+        return this._askEach(found.capable.map(function (row) { return row.id; }), function (machine) {
             return self._machineRequest(machine, "schedules", {}, "read").then(function (answer) {
                 var rows = answer && Array.isArray(answer.schedules) ? answer.schedules : [];
                 var at = answer && typeof answer.at === "number" ? answer.at : 0;
                 var previous = self.orchestratorSnapshots.get(machine) || {};
                 self.orchestratorSnapshots.set(machine,
                     Object.assign({}, previous, { schedules: rows, at: at || previous.at || 0 }));
-                return { machine: machine, rows: rows, at: at };
             });
-        })).then(function (answers) {
-            var schedules = [];
-            var at = 0;
-            answers.forEach(function (answer) {
-                if (answer.at > at) at = answer.at;
-                answer.rows.forEach(function (row) {
-                    schedules.push(Object.assign({}, row, { machine: answer.machine }));
+        }).then(function (settled) {
+            var report = self._fanOutReport(settled, found);
+            if (!report.answered.length && report.unanswered.length) throw report.unanswered[0].error;
+            return self._publishedAnswer("schedules", "schedules", self._orchestratorRows("schedules", "schedules"))
+                .then(function (answer) {
+                    return Object.assign(answer, { unanswered: report.unanswered, unconfirmed: report.unconfirmed });
                 });
-            });
-            return { schedules: schedules, at: at };
         });
     }
 
@@ -2650,6 +2895,15 @@ export class CloudClient {
      * because "this Mac has no snippets" and "nothing has told us" are opposite facts and the
      * sheet draws a different thing for each.
      *
+     * **The sheet's question names one machine.** Given a Session it is that Session's machine
+     * that matters — `snippetGroups` keeps only its rows — so only that machine is asked when its
+     * retained snapshot lacks the field, and only its snapshot decides "nothing has told us". On
+     * 2026-09-15 this asked every machine whose snapshot lacked the field, the enrolled Linux
+     * executor among them, which has no snippets and no reply for the word; the sheet waited on it
+     * until the read timeout. A Session on a machine that cannot have snippets is refused at once
+     * as `cloud_machine_unsupported`. With no Session it is an account-level read over every machine
+     * that can have snippets, each on its own, naming the ones that did not answer.
+     *
      * **Whole records, unfiltered, tagged with the machine that published them.** There is no
      * `?session=` here: the list rides `orch/<machine>`, which is a machine's inventory rather
      * than an answer to one session's question, so `view/snippets-data.js:snippetGroups` matches
@@ -2662,32 +2916,52 @@ export class CloudClient {
      * snapshot is not authority to choose which Mac's settings should change.
      */
     snippets(value, options) {
-        if (options && options.fresh === true) {
-            try { return this._freshSnippets([this._sessionIdentity(value).machine]); }
+        var fresh = !!(options && options.fresh === true);
+        var self = this;
+        var retained = function (machine) {
+            var snapshot = self.orchestratorSnapshots.get(machine);
+            return !!snapshot && Array.isArray(snapshot.snippets);
+        };
+        if (value !== undefined && value !== null) {
+            var machine;
+            try { machine = this._sessionIdentity(value).machine; }
             catch (error) { return Promise.reject(error); }
+            var refusal = this._unsupportedRefusal(machine, "snippets");
+            if (refusal) return Promise.reject(refusal);
+            // A reconnect first receives the relay's retained snapshot. That snapshot can predate
+            // the snippets field even when the live Mac supports it, so it is a fast first paint
+            // but not proof that the feature is absent: ask this Session's machine.
+            var ask = fresh || (!retained(machine) && this.allowWrites);
+            return (ask ? this._freshSnippets([machine]) : Promise.resolve([])).then(function (settled) {
+                if (settled.length && settled[0].error) throw settled[0].error;
+                if (!retained(machine)) {
+                    throw self.orchestratorSnapshots.has(machine)
+                        ? cloudError("cloud_snippets_unpublished", "this Mac does not publish its snippets over the relay")
+                        : cloudError("cloud_read_unavailable", "no orchestrator snapshot has arrived from this machine yet");
+                }
+                var answer = self._orchestratorRows("snippets", "snippets");
+                return { snippets: answer.rows, at: answer.at };
+            });
         }
-        var answer = this._orchestratorRows("snippets");
-        var missing = this._knownMachines().filter(function (machine) {
-            var snapshot = this.orchestratorSnapshots.get(machine);
-            return !snapshot || !Array.isArray(snapshot.snippets);
-        }, this);
-        // A reconnect first receives the relay's retained snapshot. That snapshot can predate
-        // the snippets field even when the live Mac supports it, so it is a fast first paint but
-        // not proof that the feature is absent. Ask only the Macs whose retained row is missing.
-        if (missing.length && this.allowWrites) return this._freshSnippets(missing);
-        if (!answer.published) {
-            return Promise.reject(this.orchestratorSnapshots.size
-                ? cloudError("cloud_snippets_unpublished",
-                    "this Mac does not publish its snippets over the relay")
-                : cloudError("cloud_read_unavailable",
-                    "no orchestrator snapshot has arrived from this account yet"));
-        }
-        return Promise.resolve({ snippets: answer.rows, at: answer.at });
+        var found = this._machinesFor("snippets");
+        var asking = found.capable.map(function (row) { return row.id; }).filter(function (id) {
+            return fresh || !retained(id);
+        });
+        var asked = asking.length && this.allowWrites ? this._freshSnippets(asking) : Promise.resolve([]);
+        return asked.then(function (settled) {
+            var report = self._fanOutReport(settled, found);
+            var answer = self._orchestratorRows("snippets", "snippets");
+            if (!answer.published && !answer.incapableOnly && report.unanswered.length) throw report.unanswered[0].error;
+            return self._publishedAnswer("snippets", "snippets", answer).then(function (out) {
+                return Object.assign(out, { unanswered: report.unanswered, unconfirmed: report.unconfirmed });
+            });
+        });
     }
 
+    /** Each machine's snippets on its own, stored into its snapshot; settles with every outcome. */
     _freshSnippets(machines) {
         var self = this;
-        return Promise.all(machines.map(function (machine) {
+        return this._askEach(machines, function (machine) {
             return self._machineRequest(machine, "snippets", {}, "read").then(function (answer) {
                 var rows = answer && Array.isArray(answer.snippets) ? answer.snippets : [];
                 var at = answer && typeof answer.at === "number" ? answer.at : 0;
@@ -2695,9 +2969,6 @@ export class CloudClient {
                 self.orchestratorSnapshots.set(machine,
                     Object.assign({}, previous, { snippets: rows, at: at || previous.at || 0 }));
             });
-        })).then(function () {
-            var answer = self._orchestratorRows("snippets");
-            return { snippets: answer.rows, at: answer.at };
         });
     }
 
@@ -2802,22 +3073,33 @@ export class CloudClient {
 
     key(value, answer) { return this.answer(value, answer); }
 
+    /**
+     * A push subscription belongs to one Mac's keys, so every push call picks that Mac strictly:
+     * the one machine on the account that takes push commands — a Linux executor does not — or a
+     * typed refusal. Not the freshest of two: the key, the subscription and its removal must all
+     * reach the same Mac, and freshness can change between them. A test for a Session goes to the
+     * machine that published that Session.
+     */
+    _pushMachine(type) {
+        return this._accountMachine(type, { strict: true, feature: "notifications" });
+    }
+
     pushKey() {
         try {
-            return this._machineRequest(this._onlyMachine("notifications"), "push-key", {}, "read");
+            return this._machineRequest(this._pushMachine("push-key"), "push-key", {}, "read");
         } catch (error) { return Promise.reject(error); }
     }
 
     pushSubscribe(subscription) {
         try {
-            return this._machineRequest(this._onlyMachine("notifications"), "push-subscribe",
+            return this._machineRequest(this._pushMachine("push-subscribe"), "push-subscribe",
                 { subscription: subscription }, "action");
         } catch (error) { return Promise.reject(error); }
     }
 
     pushUnsubscribe(id) {
         try {
-            return this._machineRequest(this._onlyMachine("notifications"), "push-unsubscribe",
+            return this._machineRequest(this._pushMachine("push-unsubscribe"), "push-unsubscribe",
                 { id: String(id || "") }, "action");
         } catch (error) { return Promise.reject(error); }
     }
@@ -2825,7 +3107,7 @@ export class CloudClient {
     pushTest(value) {
         try {
             var identity = value ? this._sessionIdentity(value) : null;
-            var machine = identity ? identity.machine : this._onlyMachine("notifications");
+            var machine = identity ? identity.machine : this._pushMachine("push-test");
             return this._machineRequest(machine, "push-test",
                 { target: identity ? identity.session : "" }, "action");
         } catch (error) { return Promise.reject(error); }
@@ -2918,6 +3200,8 @@ export class CloudClient {
      */
     async _publishCommand(machine, type, body, envelopeClass, pending) {
         if (!this.allowWrites) throw cloudError("cloud_read_only", "cloud writes are disabled");
+        var unsupported = this._unsupportedRefusal(machine, type);
+        if (unsupported) throw unsupported;
         if (!this.ready) throw this.closedFailure || cloudError("offline", "the cloud connection is not ready");
         if (!this.devicePrivateKey || !this.deviceID) throw cloudError("missing_device_key", "the viewer device key is unavailable");
         var machinePairing = await this._outboundMachinePairing(machine);

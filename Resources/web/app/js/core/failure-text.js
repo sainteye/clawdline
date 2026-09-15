@@ -62,6 +62,7 @@ const SENTENCES = {
     cloud_schedule_ambiguous: "webFailWhichMac",
     cloud_voice_host_ambiguous: "webFailVoiceHostAmbiguous",
     cloud_voice_host_unavailable: "webFailVoiceHostUnavailable",
+    cloud_machine_unsupported: "webFailMachineUnsupported",
     malformed_read: "webFailMismatch",
     malformed_command: "webFailMismatch",
     unknown_command: "webFailMismatch",

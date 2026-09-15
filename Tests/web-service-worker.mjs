@@ -71,7 +71,8 @@ const pushStandalone =
   "const Notification = globalThis.__pushEnv.Notification;\n" +
   "const localStorage = globalThis.__pushEnv.localStorage;\n" +
   registration
-    .replace('import { T } from "../core/i18n.js";', "const T = globalThis.__pushEnv.T;")
+    .replace('import { T, fill } from "../core/i18n.js";',
+      "const T = globalThis.__pushEnv.T;\nconst fill = globalThis.__pushEnv.fill;")
     .replace('import { els } from "../core/dom.js";', "const els = globalThis.__pushEnv.els;")
     .replace('import { toast } from "../core/util.js";', "const toast = globalThis.__pushEnv.toast;")
     .replace('import { failureSentence } from "../core/failure-text.js";',
@@ -136,6 +137,7 @@ check("the push harness replaced every import", !/^import /m.test(pushStandalone
          webNotifyHomeScreen: "Home", webNotifyOnFailed: "Failed", webNotifyOffFailed: "Failed" },
     els: elements,
     toast: () => {},
+    fill: (text, values) => String(text).replace(/\{(\w+)\}/g, (_, name) => values[name]),
     failureSentence: (error, fallback) => fallback + " (" + ((error && error.code) || "unexpected_error") + ")",
     api: {
       pushKey: () => Promise.resolve({ key: "AQ" }),

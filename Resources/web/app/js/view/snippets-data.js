@@ -491,10 +491,12 @@ export function snippetsListHTML(model, options) {
     var index = 0;
     var out = [];
 
-    // The sheet is on screen before the answer is. Nothing, rather than the empty state — "there
-    // are none" is a fact about a list that has arrived, and saying it for the half-second before
-    // one does is the page asserting something nobody has told it yet.
-    if (opts.loading) return "";
+    // The sheet is on screen before the answer is. Not the empty state — "there are none" is a
+    // fact about a list that has arrived, and saying it before one has is the page asserting
+    // something nobody has told it yet. And not nothing either: on 2026-09-15 this line returned
+    // "", the read behind it waited a minute on a machine that would never answer, and the sheet
+    // showed a title and a Close button with no word between them for the whole of that minute.
+    if (opts.loading) return '<p class="snippets-note" role="status">' + esc(T.webReading) + "</p>";
     if (opts.error) {
         return '<p class="snippets-note">' + esc(opts.error) + "</p>";
     }

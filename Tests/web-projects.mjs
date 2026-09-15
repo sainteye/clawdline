@@ -956,9 +956,9 @@ check(liveSource.includes("/v1/orchestrator/usage/project-worktrees?project="),
 const cloudSource = read("Resources/web/app/js/net/cloud-client.js");
 check(/projectWorktrees\(project\)/.test(cloudSource),
       "and the Cloud transport asks the owning Mac on its reserved machine answer channel");
-check(/api\.projectWorktreeLifecycle\(place\.boardProjectId \|\| place\.id\)/.test(mainSource),
+check(/api\.projectWorktreeLifecycle\(place\.boardProjectId \|\| place\.id, place\.machine \|\| undefined\)/.test(mainSource),
       "the Project page consumes the new lifecycle read without repurposing the legacy join");
-check(/api\.projectWorktreeLifecycleRefresh\(place\.boardProjectId \|\| place\.id\)/.test(mainSource),
+check(/api\.projectWorktreeLifecycleRefresh\(place\.boardProjectId \|\| place\.id, place\.machine \|\| undefined\)/.test(mainSource),
       "refresh is a separate explicit observation read");
 check(!read("Resources/web/app/js/view/worktrees.js").includes("cleanup/preview")
       && !read("Resources/web/app/js/view/worktrees.js").includes("cleanup/apply"),

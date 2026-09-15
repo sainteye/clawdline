@@ -74,7 +74,7 @@ assert.equal(timelineDateGroup(null, now, "zh-Hant"), "時間未知");
 const calls = [];
 const cloud = {
     _knownMachines: () => ["mac-a", "mac-b"],
-    _onlyMachine: () => { throw new Error("explicit machine must not fall back"); },
+    _accountMachine: () => { throw new Error("explicit machine must not fall back"); },
     _machineRequest: (...args) => { calls.push(args); return args; },
 };
 CloudClient.prototype.board.call(cloud, "project-one", "item-one", null, "mac-b");

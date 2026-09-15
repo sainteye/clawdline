@@ -1,4 +1,4 @@
-import { T } from "../core/i18n.js";
+import { T, fill } from "../core/i18n.js";
 import { els } from "../core/dom.js";
 import { toast } from "../core/util.js";
 import { failureSentence } from "../core/failure-text.js";
@@ -259,13 +259,20 @@ export var Push = (function () {
         }).then(function (subscription) {
             return subscription ? subscription.unsubscribe() : null;
         }).then(function () {
-            // Told, but not waited on: the subscription is already gone from this browser, and a
-            // server that never hears about it will drop it the first time it pushes to nothing.
-            return id ? api.pushUnsubscribe(id).catch(function () { return null; }) : null;
-        }).then(function () {
+            // The subscription is already gone from this browser, so notifications stop here
+            // whatever the Mac says, and a Mac that never hears about it drops it the first time it
+            // pushes to nothing. But a refusal is not a success: it used to be swallowed here, so a
+            // Mac that could not be told — an account with two Macs, a Mac offline — looked exactly
+            // like one that was. It is kept and said below.
+            return id ? api.pushUnsubscribe(id).then(function () { return null; }, function (e) { return e || {}; }) : null;
+        }).then(function (untold) {
             subscribed = false;
             remember(null);
             busy = false; draw();
+            if (untold) {
+                Diagnostics.note("push.disable.untold", { code: untold.code || "push_failed" });
+                toast(fill(T.webNotifyOffUntold, { why: failureSentence(untold, T.webRequestFailed) }), true);
+            }
         }).catch(function (e) {
             busy = false; draw();
             toast(failureSentence(e, T.webNotifyOffFailed), true);

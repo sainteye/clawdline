@@ -7,6 +7,9 @@ function words(en, zh) {
 }
 function node(id) { return document.getElementById(id); }
 var latest = null, reading = null, pending = null, bound = false, saving = false, operationError = false;
+// The machine that answered this page's own Board read. Its commands go back to that machine, so
+// on a Cloud account with a Mac and a Linux executor the toggle changes the Board it was drawn from.
+var latestMachine;
 function canManage() { return !!(latest && latest.viewer && latest.viewer.canManage === true); }
 
 export var BoardControls = {
@@ -62,6 +65,7 @@ export var BoardControls = {
         if (reading) return reading;
         this.bind();
         reading = Promise.resolve().then(function () { return api.board(); }).then(function (result) {
+            if (result && typeof result.machine === "string" && result.machine) latestMachine = result.machine;
             BoardControls.apply(result.board);
             if (!operationError && !saving && node("settings-board-status")) node("settings-board-status").textContent = "";
             return result;
@@ -84,7 +88,7 @@ export var BoardControls = {
             if (command.operation !== "set_ai_consent") return;
             pending = command; saving = true;
             BoardControls.apply(latest);
-            Promise.resolve().then(function () { return api.boardCommand(command); }).then(function (result) {
+            Promise.resolve().then(function () { return api.boardCommand(command, latestMachine); }).then(function (result) {
                 pending = null; operationError = false; BoardControls.apply(result.board);
                 node("settings-board-status").textContent = words("Saved", "已儲存");
             }).catch(function (error) {
@@ -102,7 +106,7 @@ export var BoardControls = {
             saving = true; operationError = false;
             node("settings-board-toggle").disabled = true;
             node("settings-board-status").textContent = words("Saving…", "儲存中…");
-            Promise.resolve().then(function () { return api.boardCommand(command); }).then(function (result) {
+            Promise.resolve().then(function () { return api.boardCommand(command, latestMachine); }).then(function (result) {
                 pending = null; BoardControls.apply(result.board);
                 node("settings-board-status").textContent = words("Saved", "已儲存");
             }).catch(function (error) {

@@ -585,11 +585,13 @@ var projects = bindProjectsPage({
         return typeof api.projectWorktreeLifecycle === "function"
             && typeof api.projectWorktreeLifecycleRefresh === "function";
     },
+    // A Cloud Project carries the machine its Board came from (`readProjectPlaces`); its worktrees
+    // are read there. Without one the transport picks, as it does locally.
     projectWorktreeLifecycle: function (place) {
-        return api.projectWorktreeLifecycle(place.boardProjectId || place.id);
+        return api.projectWorktreeLifecycle(place.boardProjectId || place.id, place.machine || undefined);
     },
     projectWorktreeLifecycleRefresh: function (place) {
-        return api.projectWorktreeLifecycleRefresh(place.boardProjectId || place.id);
+        return api.projectWorktreeLifecycleRefresh(place.boardProjectId || place.id, place.machine || undefined);
     },
     openWorktreeOwner: function (locator, place) {
         return boardSession.open(locator.session, {

@@ -317,6 +317,8 @@ enum RemotePage {
             "webDeviceUseForVoice": t.webDeviceUseForVoice,
             "webFailVoiceHostAmbiguous": t.webFailVoiceHostAmbiguous,
             "webFailVoiceHostUnavailable": t.webFailVoiceHostUnavailable,
+            "webFailMachineUnsupported": t.webFailMachineUnsupported,
+            "webNotifyOffUntold": t.webNotifyOffUntold,
             "webStartWith": t.webStartWith,
             "webStartEmpty": t.webStartEmpty,
             "webStartFilter": t.webStartFilter,

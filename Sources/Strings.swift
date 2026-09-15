@@ -1035,6 +1035,11 @@ protocol Copy {
     var webDeviceUseForVoice: String { get }
     var webFailVoiceHostAmbiguous: String { get }
     var webFailVoiceHostUnavailable: String { get }
+    /// A request sent nowhere because its machine does not implement it (a Linux executor asked
+    /// for snippets), and notifications turned off here while the Mac that holds the subscription
+    /// could not be told.
+    var webFailMachineUnsupported: String { get }
+    var webNotifyOffUntold: String { get }
     /// Which assistant a press should open. Only ever on screen when the Mac has more than
     /// one of them installed, which is what makes it a question worth asking.
     var webStartWith: String { get }
@@ -1953,6 +1958,8 @@ extension Copy {
     var webDeviceUseForVoice: String { "Use for voice input" }
     var webFailVoiceHostAmbiguous: String { "More than one Mac can transcribe, so nothing was sent. Choose one in Devices." }
     var webFailVoiceHostUnavailable: String { "No Mac paired with this browser can transcribe voice input." }
+    var webFailMachineUnsupported: String { "This machine does not support that, so nothing was sent." }
+    var webNotifyOffUntold: String { "Notifications are off on this device, but the Mac was not told: {why}" }
 
     // The 45 keys between these markers are the explicit temporarily-English Cloud batch.
     // Traditional Chinese overrides all 45; the other locales intentionally inherit these

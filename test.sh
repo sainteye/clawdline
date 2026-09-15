@@ -613,6 +613,12 @@ node Tests/web-start-sheet-failures.mjs
 # on screen — carry their own mutation proof. On a line of its own so `browser_contract_suites`'
 # sealed count stays the landing root's to move.
 node Tests/web-cloud-failures.mjs
+# A Mac + Linux account, with the Linux executor silent on every word but `places` and `start`:
+# each hosted-console feature answers with the Mac's data within a bound, a two-Mac account is a
+# typed refusal wherever one machine must be picked, and nothing but those two words is ever
+# published toward Linux. On a line of its own so `browser_contract_suites`' sealed count stays
+# the landing root's to move.
+node Tests/web-cloud-fleet.mjs
 # The lightbox's own zoom, beside the module it tests for the same reason `client.test.mjs` is:
 # what it holds is arithmetic rather than a page. Four screenshots reached a phone on 2026-09-05
 # and none of them could be enlarged — `index.html` turns the browser's pinch off page-wide — so

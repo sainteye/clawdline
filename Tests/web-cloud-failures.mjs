@@ -1155,8 +1155,8 @@ await check("viewer events · rows survive a reload and leave the phone only on 
 await check("viewer events · a second machine does not stop delivery, and a Mac without cloud_status is never asked", async function () {
     const withLinux = await viewerFleet();
     await fromMac(withLinux.client, withLinux.socket, "orch/linux-01", { tasks: [], machine: { platform: "linux" } });
-    assert.throws(() => withLinux.client._onlyMachine("diagnostics"), (error) => error.code === "cloud_machine_ambiguous",
-        "the fleet that breaks _onlyMachine");
+    assert.deepEqual(withLinux.client._knownMachines(), ["linux-01", "mac-01"],
+        "the two-machine fleet that used to break the single-machine picker");
     await receiveEnvelope(withLinux.client, withLinux.socket, await sealedFromMac({ ch: "s/mac-01/s1", sender: "nobody" }));
     withLinux.timers.fire();
     assert.equal((await nextCommand(withLinux.socket, "diagnostics.events")).ch, "ctl/mac-01");
@@ -1676,8 +1676,7 @@ async function voiceFleet(machines, options) {
 
 await check("voice host · a Mac + Linux account sends the recording to the Mac's ctl/ channel", async function () {
     const { client, socket } = await voiceFleet([["mac-01", "macos", true], ["linux-01", "linux", true]]);
-    assert.throws(() => client._onlyMachine("voice input"), (error) => error.code === "cloud_machine_ambiguous",
-        "the fleet that used to stop dictation");
+    assert.deepEqual(client._knownMachines(), ["linux-01", "mac-01"], "the fleet that used to stop dictation");
     assert.deepEqual(await client.voiceHost(), { machine: "mac-01", chosen: false, candidates: ["mac-01"] });
     const dictation = client.voice("AAAA", 16000);
     const sent = await nextCommand(socket, "voice");

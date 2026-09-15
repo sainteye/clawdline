@@ -326,8 +326,15 @@ for (const marker of ["data-snippet-edit", "data-snippet-delete", "data-snippet-
         "and S.write === false draws no writing control either: " + marker);
 }
 
-assert.equal(snippetsListHTML(grouped, { loading: true }), "",
-    "before the answer arrives the list is empty rather than claiming there are none");
+// Before the answer arrives the sheet says it is reading. It used to say nothing at all, and on
+// 2026-09-15 a read waiting on a machine that would never answer left a title and a Close button
+// with no word between them; the empty state would be a claim nobody has made yet.
+const loadingHTML = snippetsListHTML(grouped, { loading: true });
+assert.ok(loadingHTML.includes(T.webReading) && /role="status"/.test(loadingHTML),
+    "before the answer arrives the list says it is reading, as a status");
+assert.ok(!loadingHTML.includes(T.webSnippetsEmpty) && !loadingHTML.includes(T.webSnippetsEmptyNew)
+    && !loadingHTML.includes("data-snippet"),
+    "and neither claims there are none nor draws a row");
 assert.ok(snippetsListHTML(snippetGroups({ snippets: [] }, {}), {})
     .includes(T.webSnippetsEmpty), "an answer with no rows is the empty state");
 assert.ok(snippetsListHTML(grouped, { error: "this Mac does not publish its snippets" })

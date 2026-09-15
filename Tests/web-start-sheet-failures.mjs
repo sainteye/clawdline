@@ -324,7 +324,8 @@ await check("(b) transport: a token renewal carries the routes to the new client
 
 await check("(c) transport: a failed or unanswered read keeps every Mac's routes", async function () {
     const { client, socket, ids } = await listedClient(["mac-01", "mac-02"]);
-    // mac-01 answers, mac-02 refuses: the read fails as a whole and mac-01's routes stay too.
+    // mac-01 answers, mac-02 refuses: mac-01's Projects come back beside mac-02's named refusal —
+    // one machine no longer takes the others' list with it — and mac-02's routes stay.
     const refusedRead = client.places();
     for (const read of [await nextCommand(socket, "places"), await nextCommand(socket, "places")]) {
         await answer(client, socket, read.ch.slice("ctl/".length), read.ch === "ctl/mac-01"
@@ -332,7 +333,10 @@ await check("(c) transport: a failed or unanswered read keeps every Mac's routes
             : { read: "read:" + read.request, status: 503,
                 error: { code: "reading_busy", message: "busy" } });
     }
-    await assert.rejects(refusedRead, function (error) { return error.code === "reading_busy"; });
+    const partial = await refusedRead;
+    assert.deepEqual([partial.places.map(function (place) { return place.machine; }),
+        partial.unanswered.map(function (row) { return [row.machine, row.error.code]; })],
+    [["mac-01"], [["mac-02", "reading_busy"]]]);
     await startsOn(client, socket, ids["mac-02"], "mac-02", "after a refused read");
     await startsOn(client, socket, ids["mac-01"], "mac-01", "beside a refused read");
 
