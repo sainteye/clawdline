@@ -158,6 +158,65 @@ assert.equal(authoritativeSendTime({ at: 200 }, 100), 200,
     "a legacy server timestamp remains authoritative when accepted_at is absent");
 assert.equal(authoritativeSendTime({}, 100), 100,
     "an old server falls back to the request-start timestamp, not POST completion time");
+const linuxAcceptedMilliseconds = 1789444896123;
+const linuxAcceptedSeconds = Math.floor(linuxAcceptedMilliseconds / 1000);
+const linuxSendTime = authoritativeSendTime({
+    accepted_at: linuxAcceptedMilliseconds,
+    at: linuxAcceptedMilliseconds
+}, linuxAcceptedSeconds - 30);
+assert.equal(linuxSendTime, linuxAcceptedSeconds,
+    "a Linux action receipt normalizes epoch milliseconds to transcript seconds");
+const linuxActionReceipt = {
+    ok: true, accepted_at: linuxAcceptedMilliseconds, at: linuxAcceptedMilliseconds,
+    optimisticIdentity: { machine: "aws-machine", session: "aws-session" },
+    optimisticRequest: "1fae8cc3-0000-4000-8000-000000000000",
+    optimistic_settlement: "action_receipt"
+};
+const linuxTranscriptPayload = {
+    entries: [{ role: "assistant", text: "AWS-BROWSER-OK" }],
+    signature: "linux-terminal-screen-signature",
+    optimisticIdentity: linuxActionReceipt.optimisticIdentity
+};
+assert.deepEqual(knownOccurrences(linuxTranscriptPayload.entries), {},
+    "the Linux terminal transcript contains no invented user-role row");
+const linuxPending = {
+    role: "user", text: "AWS-BROWSER-OK", imageCount: 0, at: linuxSendTime,
+    scopeKey: "aws-machine\u0000aws-session",
+    receiptKey: "aws-machine\u0000aws-session\u0000" + linuxActionReceipt.optimisticRequest
+};
+assert.equal(matchesOptimisticRaw(
+    linuxPending, linuxTranscriptPayload.entries[0], linuxPending.scopeKey, linuxSendTime), false,
+"the real assistant-only Linux payload cannot masquerade as a matching user transcript row");
+const linuxSettled = acceptOptimisticReceipt(
+    [], linuxPending, linuxActionReceipt.optimistic_settlement);
+assert.equal(linuxSettled.settled, true,
+    "the exact successful Linux action receipt settles without a synthetic transcript match");
+assert.deepEqual(linuxSettled.entries, [],
+    "a terminal-screen transcript never inherits a permanent optimistic user row");
+const unrelatedPending = {
+    ...linuxPending, text: "another request",
+    receiptKey: "aws-machine\u0000aws-session\u0000another-request"
+};
+const replaySettlement = acceptOptimisticReceipt(
+    [unrelatedPending, linuxPending], linuxPending, linuxActionReceipt.optimistic_settlement);
+assert.deepEqual(replaySettlement.entries, [unrelatedPending],
+    "a replayed action receipt retires only its own request and preserves an adjacent send");
+assert.deepEqual(replaySettlement.retired, [linuxPending],
+    "receipt settlement identifies the exact prior pending entry it retired");
+assert.equal(acceptOptimisticReceipt([], linuxPending).inserted, true,
+    "an old executor without the typed settlement keeps transcript reconciliation");
+assert.equal(acceptOptimisticReceipt([], linuxPending, "future_mode").inserted, true,
+    "an unknown settlement mode fails closed to transcript reconciliation");
+const composerSource = readFileSync(new URL(
+    "../Resources/web/app/js/input/composer.js", import.meta.url), "utf8");
+const detailActionsSource = readFileSync(new URL(
+    "../Resources/web/app/js/input/detail-actions.js", import.meta.url), "utf8");
+assert.match(composerSource,
+    /answer && answer\.optimisticRequest,\s*answer && answer\.optimistic_settlement/,
+    "the composer forwards the settlement carried by its exact send receipt");
+assert.match(detailActionsSource,
+    /answer && answer\.optimisticRequest,\s*answer && answer\.optimistic_settlement/,
+    "session action prompts forward only their own exact send receipt settlement");
 
 const duplicate = { role: "user", text: "same", imageCount: 0, at: 300 };
 const oneOld = knownOccurrences([duplicate]);

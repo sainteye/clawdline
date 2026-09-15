@@ -209,6 +209,11 @@ struct LinuxSessionSnapshot: Codable, Equatable {
     let lastObservedAt: String?
 }
 
+struct LinuxCloudSessionIdentity: Equatable {
+    let session: TargetSession
+    let incarnation: String
+}
+
 struct LinuxResultReceipt: Codable, Equatable {
     let authority: String
     let taskID: String
@@ -226,6 +231,7 @@ protocol LinuxLifecyclePerforming: AnyObject {
     func send(commandID: String, sessionID: String, text: String) throws -> LinuxLifecycleReceipt
     func observe(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt
     func close(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt
+    func cloudSessionIdentity(sessionID: String) throws -> LinuxCloudSessionIdentity
 }
 
 extension LinuxProviderRuntime: LinuxLifecyclePerforming {}
@@ -307,6 +313,56 @@ final class LinuxDaemonIngressOwner {
                                            message: "That Linux Session is no longer present.")
         }
         return taskID
+    }
+
+    /// Resolve display metadata only while the durable create receipt and the current provider
+    /// process name the same non-reusable incarnation. tmux pane ids are reusable after close;
+    /// neither `%N`, title, cwd nor tty is authority for a later process that inherited the id.
+    func infoForCloudSession(
+        _ sessionID: String, effectAuthorization: () throws -> Bool
+    ) throws -> TargetSession {
+        lock.lock()
+        defer { lock.unlock() }
+        guard admissionOpen else {
+            throw LinuxDurableStateFailure(code: "ingress_closed",
+                                           message: "Startup reconciliation has not opened admission.")
+        }
+        guard try effectAuthorization() else {
+            throw LinuxDurableStateFailure(
+                code: "cloud_read_refused",
+                message: "The paired sender is no longer authorized for this read.")
+        }
+        let state = try authoritativeState()
+        guard let terminal = state.terminals.first(where: {
+            $0.id == sessionID && $0.state == .present
+        }), let taskID = terminal.taskID,
+              state.tasks.contains(where: { $0.id == taskID && $0.terminalID == sessionID }) else {
+            throw LinuxDurableStateFailure(code: "session_not_found",
+                                           message: "That Linux Session is no longer present.")
+        }
+        let expectedIncarnation = state.commands.lazy.compactMap { command -> String? in
+            guard command.taskID == taskID, command.terminalID == sessionID,
+                  (command.operation == LinuxIngressOperation.create.rawValue
+                    || command.operation == LinuxIngressOperation.taskCreate.rawValue),
+                  command.outcome == .succeeded,
+                  let encoded = command.responseBase64,
+                  let response = Data(base64Encoded: encoded),
+                  let decoded = try? JSONDecoder().decode(LinuxIngressResponse.self, from: response)
+            else { return nil }
+            return decoded.receipt?.terminalIncarnation
+        }.first
+        guard let expectedIncarnation else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The Linux Session predates durable process identity evidence.")
+        }
+        let current = try runtime.cloudSessionIdentity(sessionID: sessionID)
+        guard current.incarnation == expectedIncarnation else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The Linux Session process identity changed and must be reconciled.")
+        }
+        return current.session
     }
 
     /// Capture one live terminal for a paired Cloud viewer without manufacturing a durable

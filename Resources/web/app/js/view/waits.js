@@ -104,7 +104,7 @@ export var Waits = {
  * letting the next transcript fetch speak for itself.
  */
 export var Optimistic = {
-    add: function (id, text, imageCount, known, sentAt, identity, request) {
+    add: function (id, text, imageCount, known, sentAt, identity, request, settlement) {
         var scopeKey = optimisticScopeKey(identity);
         var requestKey = typeof request === "string" && request ? request : null;
         var selected = SessionSelection.resolve(id, S.sessions);
@@ -127,7 +127,16 @@ export var Optimistic = {
             scopeKey: scopeKey, receiptKey: receiptKey,
             expiresAt: localNow + OPTIMISTIC_LIFETIME_SECONDS
         };
-        var accepted = acceptOptimisticReceipt(bucket, entry);
+        var accepted = acceptOptimisticReceipt(bucket, entry, settlement);
+        if (accepted.settled) {
+            (accepted.retired || []).forEach(function (retired) {
+                if (retired.wait) retired.wait.settle();
+            });
+            if (accepted.entries.length) optimisticBySession[id] = accepted.entries;
+            else delete optimisticBySession[id];
+            if ((accepted.retired || []).length) renderList();
+            return null;
+        }
         if (!accepted.inserted) return accepted.entry;
         entry.wait = Waiting(function () { Optimistic.expire(id, entry.token); },
             OPTIMISTIC_LIFETIME_SECONDS * 1000, 0);

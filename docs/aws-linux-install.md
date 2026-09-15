@@ -361,8 +361,14 @@ The installation is accepted only when all of these are observed on the exact si
 4. `app.clawdline.com` shows the Linux/AWS machine label on its Session rows. The New Session sheet
    can select that machine and only the configured project (`reaver`). Opening an existing Linux
    Session must load `transcript` and `screen`, and sending a text-only prompt must receive the
-   correlated `action:<request>` answer. The descriptor must advertise exactly
+   correlated `action:<request>` answer whose successful body carries the exact
+   `optimistic_settlement:"action_receipt"` signal. Opening **About this Session** must receive `info.full`,
+   while its compact status hydration receives `info.summary`; both must carry the exact Session
+   id/title/assistant and only an allowlisted cwd. The descriptor must advertise exactly `info`,
    `places`, `screen`, `send`, `start`, and `transcript`; inventory presence alone is not enough.
+   Info must return `503 session_identity_incomplete` for a Session created before incarnation
+   evidence was retained, or when a reused tmux pane id no longer names the original provider
+   process. Recreate that Session; do not repair the row by copying current `%N` metadata.
 5. A hosted command creates a Claude Code or Codex Session, applies one benign change on a new
    branch, runs the repository test, and pushes that branch. The default branch is unchanged and
    the exact remote commit is recorded.
@@ -473,7 +479,7 @@ Common failure classifications:
   authoritative per-session channels; do not infer readiness from systemd alone.
 - the hosted console lists Linux Sessions but opening one shows `cloud_machine_unsupported`, or the
   composer is disabled: the installed executor is publishing inventory but its machine descriptor
-  does not advertise `transcript`, `screen`, and `send`. Install the signed release containing
+  does not advertise `info`, `transcript`, `screen`, and `send`. Install the signed release containing
   those handlers and wait for a fresh descriptor; repeatedly pairing the browser does not add
   missing server capabilities.
 - send returns success but Codex keeps the text in its composer: tmux accepted a keystroke before

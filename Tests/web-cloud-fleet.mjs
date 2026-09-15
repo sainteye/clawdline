@@ -1,12 +1,12 @@
 /**
  * A Mac + Linux account on the hosted console: every feature answers with the Mac's data within a
- * bound, and only the five commands in Linux's published browser contract are sent there.
+ * bound, and only the six commands in Linux's published browser contract are sent there.
  *
  * On 2026-09-15 the Snippets sheet opened blank on exactly this account, and the audit behind it
  * found the same shape at every site that picked or iterated machines: `_onlyMachine` refused any
  * account with two machines, and the fan-out reads asked the Linux executor for things it has no
  * handler for and then waited out its silence. The fixture here is that account with the fault
- * injected: the Linux machine answers its five commands and **never replies to anything else**,
+ * injected: the Linux machine answers its six commands and **never replies to anything else**,
  * while the Mac answers every closed command it owns.
  *
  * Every check runs and reports on its own, so the file run against a tree without the fix names
@@ -108,7 +108,7 @@ const BOUND = READ_TIMEOUT_MS + 1500;
 // is no slower, and a loaded machine (load average 15–27 on 2026-09-15) cannot end the wait before an
 // answer that needs no timeout has arrived. The checks added with the phone-heat work wait with this.
 const WAIT = 20000;
-const LINUX_ANSWERS = new Set(["places", "screen", "send", "start", "transcript"]);
+const LINUX_ANSWERS = new Set(["info", "places", "screen", "send", "start", "transcript"]);
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 /* ---- the relay, the Mac and the Linux executor ---------------------------------------------- */
@@ -915,7 +915,10 @@ await check("fleet · every public CloudClient method is bounded and only suppor
     const places = await f.client.places();
     const linuxPlace = places.places.find((place) => place.machine === "linux-01").id;
     const macPlace = places.places.find((place) => place.machine === "mac-01").id;
-    const SKIP = new Set(["events", "start", "stop", "retire", "subscribe", "whenReady", "refresh",
+    // `voice` owns a six-minute transcription deadline and has dedicated host-selection/bounded
+    // failure coverage. Calling it here with each generic argument tuple turns this read-bound
+    // enumeration into a scheduler-speed test under the full suite rather than a fleet gate.
+    const SKIP = new Set(["events", "start", "stop", "retire", "subscribe", "whenReady", "refresh", "voice",
         "forgetMachinePairingAnswer", "machineAccess", "machineDescriptor"]);
     const ARGS = [[], [linuxSession, "a1", "a2"], ["s-linux-01", "a1", "a2"], ["linux-01", { id: "t" }],
         [linuxPlace, "claude", ""], ["project-app", "item", null, "linux-01"],
@@ -923,21 +926,26 @@ await check("fleet · every public CloudClient method is bounded and only suppor
     const methods = Object.getOwnPropertyNames(CloudClient.prototype)
         .filter((name) => name !== "constructor" && !name.startsWith("_") && !SKIP.has(name));
     assert.ok(methods.length >= 45, "the enumeration reaches the prototype (" + methods.length + ")");
-    // One argument set at a time: 400 crypto round trips at once measure this machine's load, not
-    // the transport. Every command the Mac answers still has to settle inside the window, and one
-    // it does not answer inside its own read bound.
+    // One call at a time: hundreds of simultaneous WebCrypto seals measure the runner's scheduler,
+    // not whether a route has a bounded answer. Every command the Mac answers still has to settle
+    // inside the window, and one it does not answer inside its own read bound.
     const calls = [];
     const ended = [];
     for (const args of ARGS) {
-        const batch = [];
         for (const name of methods) {
             let result;
             try { result = f.client[name](...args); }
-            catch (error) { batch.push({ name, args, sync: error }); continue; }
-            batch.push({ name, args, result: outcome(result, BOUND * 3) });
+            catch (error) {
+                const call = { name, args, sync: error, ended: null };
+                calls.push(call);
+                ended.push(call);
+                continue;
+            }
+            const call = { name, args, result: outcome(result, BOUND * 3) };
+            call.ended = await call.result;
+            calls.push(call);
+            ended.push(call);
         }
-        calls.push(...batch);
-        ended.push(...await Promise.all(batch.map(async (call) => Object.assign(call, { ended: call.sync ? null : await call.result }))));
     }
     const pending = ended.filter((call) => call.ended && call.ended.state === "pending")
         .map((call) => call.name + "(" + JSON.stringify(call.args[0]) + ")");

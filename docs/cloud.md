@@ -391,16 +391,24 @@ deletion barrier for older rows. Every authenticated ready generation replays th
 set. A ten-second local observation supplies the bounded refresh after host-side create, send or
 close even when the effect did not originate in the browser.
 
-The only browser operations accepted by the Linux machine channel are the closed `places` read and
-`start` action. `start` names a configured place id, never a path; an empty assistant means
+The browser operations accepted by the Linux machine channel are the closed `info`, `places`,
+`screen`, `send`, `start`, and `transcript` set. `start` names a configured place id, never a path; an empty assistant means
 `claude`, otherwise it is `claude` or `codex`, and a nonempty model is exactly `haiku`, `sonnet` or
 `opus`. The versioned durable request carries that model through the existing serialized write
 gate and idempotency ledger. Success echoes place, bounded cwd, assistant and model; malformed,
 unknown, revoked and gate-refused requests answer the same opaque request id with a typed refusal.
 Any other word on the machine reply session is refused as `unknown_command` (400) through the same
 gates, answered on `action:<request>` as the Mac's own refusal of an unknown word is; before that
-refusal it was dropped without a reply. The descriptor advertises the two words as
-`commands: ["places", "start"]`.
+refusal it was dropped without a reply. The descriptor advertises the exact six-word set.
+For Linux `send`, only a successful body carries `optimistic_settlement:"action_receipt"`: the
+correlated action receipt settles the browser pending indicator because terminal/screen projection
+does not guarantee a later user-role transcript row. Refusals never carry that signal. `info`
+uses the Mac-compatible full/summary request and reply names but returns only truthful Linux
+metadata: the durable task-terminal edge must own the row and the durable create/`taskCreate` receipt's
+boot/PID start-token incarnation must still match the live provider process. Missing or changed
+incarnation evidence is `503 session_identity_incomplete`, never guessed from reusable `%N`, title,
+cwd or tty. Only an exact configured cwd is returned; unavailable quota, usage, Git, model and
+deploy facts are omitted or empty. A malformed Info request is `400 malformed_read`.
 
 A newly installed Linux executor has an explicit enrollment step before its first daemon start:
 run `ClawdlineLinux cloud-login --config /etc/clawdline/daemon.json` as the configured service
@@ -605,7 +613,8 @@ also where a revoked device finds out. Writes are enabled only if the row still 
 `send_prompt`.
 
 **Which machine a request goes to.** An account can hold a Mac and an enrolled Linux executor, and
-the executor answers only `places` and `start`. `CloudClient._machineImplements(machine, word)` is
+the executor answers `info`, `places`, `screen`, `send`, `start`, and `transcript`.
+`CloudClient._machineImplements(machine, word)` is
 the one answer to "can this machine answer this word" — from, strongest first, the machine's own
 `unknown_command` to that word, a descriptor `commands` list, a `linux` or other non-Mac platform,
 and evidence of a Mac (a `macos`/`darwin` descriptor, or `cloud_status`) — and every route uses it.
@@ -641,8 +650,8 @@ build, its first descriptor, or a different `commands` list:
   request id.
 
 `Tests/web-cloud-fleet.mjs` drives a Mac + Linux account with the executor silent on every other
-word: every feature answers with the Mac's data within a bound, and nothing but `places` and `start`
-is published toward Linux.
+word: Mac-only features still answer with the Mac's data within a bound, while Linux Session
+Info/transcript/screen/send and machine places/start route to the Linux executor that advertised them.
 
 **And `send_prompt` gates one read as well, which is the relay's rule rather than this app's.**
 PROTOCOL §12 says publishing to `ctl/` needs that capability *in either class*, and a read has to

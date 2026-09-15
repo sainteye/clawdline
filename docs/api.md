@@ -995,8 +995,9 @@ answer would otherwise replace the durable task, schedule and snippet snapshot. 
 `resume` use the same answer channel with `read: "action:<request>"`; the body is the local route's
 own response, including the new session id.
 
-The Linux daemon implements a deliberately smaller machine contract: `places` and `start` only.
-Its `start` body has the exact keys `type`, `session`, `request`, `place`, `assistant`, and `model`;
+The Linux daemon implements a deliberately smaller browser contract: `info`, `places`, `screen`,
+`send`, `start`, and `transcript`. Its `start` body has the exact keys `type`, `session`, `request`,
+`place`, `assistant`, and `model`;
 `session` is `__clawdline_machine__`, `place` is one published allowlist id rather than a path,
 empty `assistant` defaults to `claude`, and nonempty `model` is one of `haiku`, `sonnet`, or `opus`.
 The answer is `read:"action:<request>"`; success echoes the resulting id plus place/cwd,
@@ -1004,6 +1005,20 @@ assistant/model and tmux attachment facts, while malformed, unknown, unauthorize
 refusals carry the same correlation in a typed error. Linux Session discovery is not a machine
 read: stable rows are retained separately at `s/<machine>/<encoded-session>` and a complete-set
 marker at `s/<machine>/__clawdline_inventory_v1__` authoritatively prunes older absent rows.
+Linux `send` success alone adds `optimistic_settlement:"action_receipt"`: its terminal/screen
+projection does not promise a later user-role transcript row, so the already-correlated 200 action
+receipt is the closed settlement signal. Refusals and errors never carry that field.
+Linux `info` uses the same exact `parts:"full"|"summary"` request and `info.full`/`info.summary`
+answer names as the Mac. It first proves paired-viewer read authority and the exact durable
+task-terminal ownership edge. Because tmux `%N` identifiers are reusable, a new create or
+`taskCreate` receipt
+also retains a digest of the exact boot, PID/start-token, process group, tty and pane id; Info
+rechecks the live process under the ingress owner and answers `503 session_identity_incomplete`
+instead of trusting a missing or changed incarnation. Its payload contains the already-published
+Session id, title, assistant and an allowlisted cwd, plus explicit empty limits/models; full also
+carries empty links/deploy. It does not fabricate provider quota, usage, model, Git or deployment
+facts the headless runtime cannot observe, and it never exposes the durable task id, incarnation
+or tty. A malformed Linux Info request is the same `400 malformed_read` named below.
 
 **The key set is exact and the answer names itself.** A body with a missing, extra or wrongly typed
 field is `400 malformed_read` and never reaches a route; so is a read that arrives with class
