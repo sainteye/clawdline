@@ -1686,6 +1686,7 @@ public actor CloudTransport {
         relayBaseURL: URL,
         tokenProvider: any CloudDeviceTokenProviding,
         keyProvider: any CloudTransportKeyProviding,
+        terminalAuthorizationHandler: TerminalAuthorizationHandler? = nil,
         logger: @escaping Logger = { _ in }
     ) -> CloudTransport {
 #if os(Linux)
@@ -1696,7 +1697,9 @@ public actor CloudTransport {
         return CloudTransport(
             relayBaseURL: relayBaseURL, tokenProvider: tokenProvider,
             keyProvider: keyProvider, connector: connector,
-            replayWindow: .process, logger: logger)
+            replayWindow: .process,
+            terminalAuthorizationHandler: terminalAuthorizationHandler,
+            logger: logger)
     }
 
     init(
@@ -1715,6 +1718,7 @@ public actor CloudTransport {
         keepaliveInterval: TimeInterval = 30,
         inboundQueueLimits: CloudInboundCommandQueueLimits = CloudInboundCommandQueueLimits(),
         replayWindow: CloudInboundReplayWindow = CloudInboundReplayWindow(),
+        terminalAuthorizationHandler: TerminalAuthorizationHandler? = nil,
         logger: @escaping Logger = { _ in }
     ) {
         self.relayBaseURL = relayBaseURL
@@ -1731,6 +1735,7 @@ public actor CloudTransport {
         self.receiveTimeout = max(0.01, receiveTimeout)
         self.keepaliveInterval = min(
             max(0.01, keepaliveInterval), max(0.01, receiveTimeout / 2))
+        self.terminalAuthorizationHandler = terminalAuthorizationHandler
         self.logger = logger
         self.replayWindow = replayWindow
         let commandQueue = CloudInboundCommandQueue(limits: inboundQueueLimits)
@@ -2047,7 +2052,8 @@ public actor CloudTransport {
                 return
             } catch {
                 if state == .shutDown || Task.isCancelled { return }
-                if isTerminalAuthorizationFailure(error) {
+                let tokenExpired = isAuthenticatedTokenExpiry(error)
+                if !tokenExpired, isTerminalAuthorizationFailure(error) {
                     let terminalHandler = terminalAuthorizationHandler
                     activeSocket.close()
                     if generation == activeGeneration {
@@ -2066,6 +2072,16 @@ public actor CloudTransport {
                     connectionObserver?(.stopped(reason: failureCode(for: failure)))
                     terminalHandler?(failure)
                     return
+                }
+                if tokenExpired {
+                    // This frame can only arrive after the signed challenge completed. In the
+                    // Relay protocol an in-band `unauthorized` means that socket's device token
+                    // expired; signature and credential refusals happen during `establish`, while
+                    // revocation is `forbidden`/`revoked`. Discard the cached credential and let
+                    // the ordinary reconnect path fetch a new one. Opening 401/403 and every
+                    // revocation code remain terminal.
+                    cachedToken = nil
+                    rotatingGeneration = activeGeneration
                 }
                 if (await clock.now()).timeIntervalSince(connectedAt) >= backoffResetAfter {
                     backoff = initialBackoff
@@ -2199,6 +2215,14 @@ public actor CloudTransport {
         }
     }
 
+    private func isAuthenticatedTokenExpiry(_ error: Error) -> Bool {
+        guard case .relay(let rawCode, _) = error as? CloudTransportError else {
+            return false
+        }
+        let code = rawCode.lowercased()
+        return code == "token_expired" || code == "unauthorized"
+    }
+
     private func normalizedTerminalAuthorizationFailure(
         _ error: Error
     ) -> CloudTransportError {
@@ -2278,7 +2302,10 @@ public actor CloudTransport {
                 return
             }
             let failure = CloudTransportError.relay(frame.code, frame.message)
-            if isTerminalAuthorizationFailure(failure) { throw failure }
+            if isAuthenticatedTokenExpiry(failure)
+                || isTerminalAuthorizationFailure(failure) {
+                throw failure
+            }
             logger("CloudTransport uncorrelated relay error code="
                 + "\(Self.publishErrorCode(frame.code).rawValue)")
         default:

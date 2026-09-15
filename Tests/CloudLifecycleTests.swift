@@ -1697,7 +1697,17 @@ private final class LifecycleEffectAuthority: @unchecked Sendable {
 }
 
 func runCloudLifecycleTests(vectorsURL: URL) async throws -> Int {
-    try await CloudLifecycleTests.run(vectorsURL: vectorsURL)
+    let checks = try await CloudLifecycleTests.run(vectorsURL: vectorsURL)
+    let source = (try? String(contentsOfFile: "Sources/CloudBridgeLifecycle.swift",
+                              encoding: .utf8)) ?? ""
+    let productionOwner = "terminalAuthorizationHandler: onTerminalFailure,\n"
+        + "                    logger:"
+    guard source.contains(productionOwner) else {
+        throw CloudLifecycleTestFailure(
+            failures: ["production transport omits the lifecycle terminal owner"],
+            checks: checks + 1)
+    }
+    return checks + 1
 }
 
 func runCloudAppBridgeDurableCompositionTests() async throws -> Int {

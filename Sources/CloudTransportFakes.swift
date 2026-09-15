@@ -560,6 +560,23 @@ actor CloudLoopbackRelay {
         throw CloudLoopbackRelayError.noReadyMachine
     }
 
+    func sendError(code: String, message: String) throws {
+        let object: [String: Any] = [
+            "type": "error",
+            "code": code,
+            "message": message,
+        ]
+        if let client = clients.values.first(where: { $0.authenticated }) {
+            try sendJSON(object, to: client.wire)
+            return
+        }
+        if let client = memoryClients.values.first(where: { $0.authenticated }) {
+            try sendJSON(object, to: client.socket)
+            return
+        }
+        throw CloudLoopbackRelayError.noReadyMachine
+    }
+
     func dropConnections() {
         for client in clients.values {
             client.wire.sendClose(code: 1012, reason: "test reconnect")

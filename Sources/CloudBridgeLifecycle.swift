@@ -683,6 +683,7 @@ extension CloudBridgeLifecycle.Services {
                         onTerminalFailure: onTerminalFailure),
                     keyProvider: CloudLifecycleKeyProvider(
                         identityAuthority: identityAuthority),
+                    terminalAuthorizationHandler: onTerminalFailure,
                     logger: { Log.write("cloud: \($0)") })
             },
             // This compatibility seam owns no counter. The production bridge receives the

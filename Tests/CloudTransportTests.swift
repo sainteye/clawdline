@@ -428,6 +428,9 @@ func runCloudTransportTests() async throws -> Int {
         maximumBackoff: 0.08,
         logger: { logs.append($0) }
     )
+    let terminalAuthorization = CloudTerminalAuthorizationRecorder()
+    await transport.setTerminalAuthorizationHandler {
+        terminalAuthorization.append($0) }
     let readyGenerations = CloudTestReadyGenerations()
     let readyTask = Task {
         for await generation in transport.readyGenerations {
@@ -585,6 +588,29 @@ func runCloudTransportTests() async throws -> Int {
     checks += 1
     let refreshedTokens = await relay.observedTokens()
     try require(refreshedTokens.contains("machine-token-2"), "refresh uses a new device token")
+
+    let handshakesBeforeExpiredFrame = await relay.completedHandshakes()
+    try await relay.sendError(
+        code: "unauthorized", message: "the device token expired; reconnect")
+    try await waitUntil("an authenticated token-expiry frame reconnects", timeout: 2) {
+        let ready = await transport.currentState() == .ready
+        return await relay.completedHandshakes() > handshakesBeforeExpiredFrame && ready
+    }
+    let stateAfterExpiredFrame = await transport.currentState(),
+        fetchesAfterExpiredFrame = await tokenProvider.fetchCount()
+    try require(stateAfterExpiredFrame == .ready, "token expiry returns to ready")
+    try require(terminalAuthorization.all().isEmpty, "token expiry does not revoke the machine")
+    try require(fetchesAfterExpiredFrame >= 3, "token expiry fetches a fresh token")
+
+    let handshakesBeforeTypedExpiry = await relay.completedHandshakes()
+    try await relay.sendError(code: "token_expired", message: "device token expired")
+    try await waitUntil("a typed authenticated token-expiry frame reconnects", timeout: 2) {
+        let ready = await transport.currentState() == .ready
+        return await relay.completedHandshakes() > handshakesBeforeTypedExpiry && ready
+    }
+    let fetchesAfterTypedExpiry = await tokenProvider.fetchCount()
+    try require(fetchesAfterTypedExpiry >= 4, "typed token expiry fetches a fresh token")
+    try require(terminalAuthorization.all().isEmpty, "typed token expiry does not revoke")
 
     // The socket this transport closes for the rotation comes back through `receive` as an
     // ordinary error, so without a carried reason the rotation is logged as the relay failing.
@@ -1001,6 +1027,7 @@ private func runCloudTransportUnauthorizedUpgradeTests() async throws -> Int {
     let probe = CloudReconnectSocketProbe()
     let connector = CloudUnauthorizedReconnectConnector(probe: probe)
     let logs = CloudTestLog()
+    let terminal = CloudTerminalAuthorizationRecorder()
     let transport = CloudTransport(
         relayBaseURL: URL(string: "ws://unauthorized-reconnect.invalid/v1/connect")!,
         tokenProvider: CloudTestTokenProvider(tokens: [
@@ -1013,12 +1040,9 @@ private func runCloudTransportUnauthorizedUpgradeTests() async throws -> Int {
         connector: connector,
         initialBackoff: 0.01,
         maximumBackoff: 0.01,
+        terminalAuthorizationHandler: { error in terminal.append(error) },
         logger: { logs.append($0) }
     )
-    let terminal = CloudTerminalAuthorizationRecorder()
-    await transport.setTerminalAuthorizationHandler { error in
-        terminal.append(error)
-    }
     try await transport.connect(role: .machine)
     try await Task.sleep(nanoseconds: 200_000_000)
     let tokens = connector.observedTokens()
