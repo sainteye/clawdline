@@ -489,9 +489,10 @@ build, its first descriptor, or a different `commands` list:
   arrived is named in `unconfirmed`. The call rejects only when every machine asked failed. A caller
   never reads such a list as complete: the Projects lists (Projects, "say what to start", the
   schedule form and its history) say in one line which machine did not answer, the schedules strip
-  does not cache it, and a Board conversation whose machine did not answer fails with that
-  machine's failure rather than "the Project is not there". Rows a Mac already published stay after
-  it refuses the read that refreshes them.
+  keeps what answered and asks only the silent machines again — each on its own, at most once every
+  two minutes, and never a machine this browser is not paired with — and a Board conversation whose
+  machine did not answer fails with that machine's failure rather than "the Project is not there".
+  Rows a Mac already published stay after it refuses the read that refreshes them.
 - A machine that refuses a word it does not implement cannot know whether the page waits on
   `read:<request>` or `action:<request>`; both the Mac and the Linux executor answer `action:`, and
   a refusal — never a body — on the machine reply channel settles either spelling of the same
@@ -512,6 +513,64 @@ is told `cloud_read_needs_send_prompt` rather than left waiting; widening it is 
 **Reconnect.** `keepConnected` re-acquires the device token and restarts the socket with
 exponential backoff and jitter, and treats a refusal as terminal for the same reason the Mac
 does. Outbound sequences use the same reserve-ahead discipline as the Mac, in `localStorage`.
+
+- **No reconnect runs without a wait.** A socket that closes waits at least the initial backoff
+  (250 ms, jittered) before the next connect, and the wait doubles to 30 s. It returns to the initial
+  wait only after a connection has stayed up for 60 s, so a relay that accepts and then closes is met
+  with a growing wait rather than a loop. Sixteen consecutive attempts that never produced a stable
+  connection end in `terminal_error` with `reason: "retries_exhausted"`, and the door offers the
+  press that starts again.
+- **Relay closes are classified.** 4403 (`forbidden`, a revoked device) and 4400/4413 (this page's
+  protocol) stop at once, before or after `ready`. 4429 (`rate_limited`, `over_capacity`) waits the
+  longest backoff. Everything else retries.
+- **Renewal is timed on the relay's clock.** The relay's `ready` frame carries `connected_at` and
+  `token_expires_at`; their difference is the token's lifetime as a duration, so a phone whose clock
+  runs ahead does not renew at once. Without them the API's `expires_at` is read against this
+  device's clock. Either way the renewal never follows its connect sooner than 60 s, and the
+  renewal timer is cleared when its connection ends for any other reason.
+- **A hidden page does no periodic work.** Hidden for 60 s, the socket is retired
+  (`cloud_reconnecting` for any read still waiting) and nothing connects, renews or retries.
+  A person's own `action:` still waiting — a send, a keypress — holds the socket for up to another
+  60 s. Visible again, a `pageshow` from the back-forward cache, `online`, or `api.revalidate("visible")`
+  from `main.js` connects at once, and the relay's realignment of every retained channel brings the
+  page up to date; the Session rows the page already had are carried into the new client. A page shown
+  after a hide longer than the grace whose socket still says `ready` — a phone that froze the page
+  before its timer ran — gets a replacement socket the same way a token renewal does. While
+  `navigator.onLine` is `false` nothing connects until `online`. The schedules strip stops its minute
+  lane while hidden and reads once on return if it missed a tick.
+- **Closing the socket rather than only pausing the lanes** is deliberate: an open socket keeps
+  receiving every Mac publication, and each one is verified, decrypted and applied in the
+  background. The cost is one reconnect, with its realignment, when a page returns after more than
+  a minute away.
+
+**What a client does once, not per envelope or per read.**
+
+- A sender key the key store answered is kept for that client, and so is "no key" and a pairing
+  the store holds only part of (`machine_key_incomplete`). A verification that fails under a
+  remembered key forgets it; a pairing completed in this page (`forgetMachinePairingAnswer`)
+  forgets the negative answers; a token renewal starts a client that asks again.
+- The machine descriptor table is written to `localStorage` only when a descriptor or build changed.
+- A `t/` channel already held on the socket is not subscribed again. The relay holds at most eight
+  subscriptions per connection and refuses a larger frame whole, so a channel no read is waiting on
+  is let go once it has been idle for two minutes, or earlier when room is needed. An idle channel
+  still receives other devices' answers on it.
+- Subscribing makes the relay replay the channel's last envelope with `realign: true`. That replay
+  settles only a request it names — `read:<request>`, `action:<request>` — or `image.<id>`. A
+  replayed `transcript`, `info` or `git` answer may be minutes old and another device's, and it used
+  to settle the read that caused the subscribe before the Mac was asked.
+- `machine_offline` from the relay is remembered per machine for 5 s, doubling while it stays
+  offline, to at most 5 minutes. Within that window a read, action or fan-out read aimed at the machine
+  is refused here with the same `relay · machine_offline`, retryable, with no sequence spent and no
+  `ref`. Any live envelope from the machine, or a `delivered` ack to it, ends the window at once; a
+  realigned (retained) envelope does not.
+- A picture is kept in memory by machine and artifact id after it is read (at most 64 pictures and
+  32 MiB; a picture over 8 MiB is not kept). An id names one set of bytes for as long as it exists
+  (`SessionImageArtifactStore` mints a fresh UUID per import), so drawing a transcript again reads
+  no picture twice. Refusals are not kept.
+
+`Tests/web-cloud-boot.mjs` drives the reconnect loop with a fake clock, document and navigator.
+`Tests/web-cloud-fleet.mjs` and `Tests/web-cloud-failures.mjs` drive the client-side memory
+through the relay-in-a-box suites, and `Tests/web-schedules.mjs` drives the strip's cache and lane.
 
 **Every failure names its layer, code and ref** ([`cloud-error-transparency.md`](cloud-error-transparency.md)
 §11 is the wire contract). `net/cloud-failure.js` turns every rejection into one shape —
