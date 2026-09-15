@@ -337,11 +337,14 @@ await check("3 push · key, subscribe, unsubscribe and a test with no Session al
     const unsubscribed = await outcome(f.client.pushUnsubscribe("subscription-mac-01"), FAST);
     const tested = await outcome(f.client.pushTest(null), FAST);
     const sessionTest = await outcome(f.client.pushTest(macSession), FAST);
-    assert.deepEqual([key.state, subscribed.state, unsubscribed.state, tested.state, sessionTest.state],
-        ["resolved", "resolved", "resolved", "resolved", "resolved"],
-        [key, subscribed, unsubscribed, tested].map((row) => row.error && row.error.code).join(","));
+    const linuxSelected = await outcome(f.client.pushTest(linuxSession), FAST);
+    assert.deepEqual([key.state, subscribed.state, unsubscribed.state, tested.state, sessionTest.state, linuxSelected.state],
+        ["resolved", "resolved", "resolved", "resolved", "resolved", "resolved"],
+        [key, subscribed, unsubscribed, tested, sessionTest, linuxSelected].map((row) => row.error && row.error.code).join(","));
     assert.equal(key.value.key, "BPushKeyFrommac-01");
-    assert.deepEqual(f.typesTo("mac-01"), ["push-key", "push-subscribe", "push-unsubscribe", "push-test", "push-test"]);
+    assert.deepEqual(f.typesTo("mac-01"), ["push-key", "push-subscribe", "push-unsubscribe", "push-test", "push-test", "push-test"]);
+    assert.deepEqual(f.commands.filter((row) => row.type === "push-test").map((row) => row.command.target),
+        ["", "s-mac-01", ""], "a Linux Session selected in the list is no push destination: the test is the account's");
     onlyPlacesAndStartTo(f, "linux-01");
 });
 

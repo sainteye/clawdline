@@ -3107,6 +3107,10 @@ export class CloudClient {
     pushTest(value) {
         try {
             var identity = value ? this._sessionIdentity(value) : null;
+            // Settings passes whatever Session the list points at. One on a machine that has no
+            // push at all — a Linux executor's — cannot be a notification's destination, so the test
+            // is the account's: the push Mac, with no Session to tap back to.
+            if (identity && this._machineImplements(identity.machine, "push-test") === "no") identity = null;
             var machine = identity ? identity.machine : this._pushMachine("push-test");
             return this._machineRequest(machine, "push-test",
                 { target: identity ? identity.session : "" }, "action");
