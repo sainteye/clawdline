@@ -5,7 +5,7 @@ import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { ASK_MARK, clockOf, shortPath, tint } from "../core/util.js";
-import { assistantLogo, assistantName, drawIcon, drawSpinner, optimisticSpinners, setOptimisticSpinners, spinPhase } from "../core/pixels.js";
+import { assistantLogo, assistantName, drawIconOnce, drawSpinner, optimisticSpinners, setOptimisticSpinners, spinPhase } from "../core/pixels.js";
 import { byId, taskOfChild, taskWord } from "./derive.js";
 import { markForSession, projectLabel } from "./project-mark.js";
 import { snippetControls, snippetProjectFor } from "./snippets-data.js";
@@ -91,7 +91,7 @@ export function renderDetailHead() {
     // the case `detail.css` keeps a box for: the mark is a button now, and a button with no box
     // is a shortcut nobody can press. `markForSession` makes it rare rather than impossible —
     // a session with no `cwd` at all, and the moment before the first render, still land here.
-    var drew = drawIcon(els["detail-mark"], mark, 5);
+    var drew = drawIconOnce(els["detail-mark"], mark, 5);
     els["detail-snippets"].dataset.mark = drew ? (mark.generated ? "generated" : "registry")
         : "none";
     // **Hidden unless this page is being read on the Mac itself.**
@@ -170,9 +170,29 @@ export function renderDetailHead() {
     }
 }
 
+/**
+ * What the last full transcript draw assumed about the session's working state, which is the one
+ * input of `renderTranscript` that is not in `S.tx`: it decides whether the last run of tool calls
+ * carries the live sweep. Null whenever the last draw was not a transcript of a session.
+ */
+var renderedWorking = null;
+
+/**
+ * Whether redrawing the open transcript could change what it shows even though its entries did
+ * not. `session/open.js` asks this before redrawing an answer whose signature is unchanged; any
+ * doubt — no record, an agent on screen, another session — answers true.
+ */
+export function transcriptWorkingChanged() {
+    var selection = SessionSelection.snapshot();
+    if (!renderedWorking || S.agent || !selection.open ||
+        renderedWorking.key !== selection.open.key) return true;
+    return renderedWorking.working !== transcriptWorking();
+}
+
 export function renderTranscript() {
     var box = els.tx;
     var selection = SessionSelection.snapshot();
+    renderedWorking = null;
     // Every invocation, including a skeleton or empty state, cancels incremental work belonging
     // to the previously open session before that work can append another chunk.
     var renderTicket = ++transcriptRenderTicket;
@@ -283,7 +303,9 @@ export function renderTranscript() {
     // second time with the sweep on it, so the part of the page that is moving is the part of
     // the work that is moving. It has to be the *last* block — a run with an answer written
     // under it is finished, whatever the session is doing now.
-    if (liveRun && liveAt === blocks.length - 1 && transcriptWorking()) {
+    var working = transcriptWorking();
+    if (!S.agent) renderedWorking = { key: selection.open.key, working: working };
+    if (liveRun && liveAt === blocks.length - 1 && working) {
         blocks[liveAt].live = true;
     }
     if (S.newestFirst) blocks.reverse();
@@ -322,6 +344,7 @@ export function renderTranscript() {
             var html = chunk.map(renderBlock).join("");
             var result;
             if (placement.first) {
+                liveSweepPhase(box);
                 // Image connectors remain inert until the scheduler's meaningful-paint boundary.
                 result = replaceTranscriptContents(box, transcriptNotice + html);
             } else result = insertTranscriptContents(box, html, placement.prepend);
@@ -347,6 +370,22 @@ export function renderTranscript() {
     // order. A custom event rather than a direct call: this function is the transcript's, and
     // what somebody else needs to do afterwards is their business, not a line in here.
     document.dispatchEvent(new CustomEvent("clawdline:rendered"));
+}
+
+/** The live sweep's period in `transcript.css`, which `liveSweepPhase` keeps nodes in step with. */
+var LIVE_SWEEP_MS = 2200;
+
+/**
+ * Pick the live sweep up where it had got to rather than starting it again.
+ *
+ * Every redraw replaces the nodes, and a CSS animation on a new node starts at its beginning — so
+ * the light jumped back to the left edge each time the transcript changed. A negative delay taken
+ * from the document clock puts every new node at the phase one page-wide sweep would be at now.
+ */
+function liveSweepPhase(box) {
+    if (!box || !box.style || typeof box.style.setProperty !== "function") return;
+    var now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    box.style.setProperty("--live-sweep-delay", -Math.round(now % LIVE_SWEEP_MS) + "ms");
 }
 
 function announceMeaningfulPaint(renderTicket, entryCount, chunked) {

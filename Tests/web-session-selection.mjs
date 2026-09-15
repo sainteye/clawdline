@@ -298,7 +298,7 @@ const listSource = await readFile(
     new URL("../Resources/web/app/js/view/list.js", import.meta.url), "utf8");
 check(listSource.includes('<span class="machine"></span>'),
     "every Session row reserves a visible machine identity slot");
-check(listSource.includes("machineNode.textContent = machine.label"),
+check(listSource.includes("setText(machineNode, machine.label)"),
     "the row fills that slot from the evidence-aware machine presentation");
 
 const composerSource = await readFile(

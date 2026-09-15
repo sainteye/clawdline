@@ -41,6 +41,8 @@ const stubs = [
         "const createTieredSessionFacts = () => ({ tier: () => null, peek: () => null });"],
     ['import { SessionSelection } from "../session/selection.js";',
         "const SessionSelection = { resolve: () => null };"],
+    ['import { createVisibleInterval, pageHidden } from "../core/visibility.js";',
+        "const createVisibleInterval = () => ({ start() {}, stop() {} }); const pageHidden = () => false;"],
 ];
 let standalone = source;
 for (const [from, to] of stubs) {

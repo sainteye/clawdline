@@ -35,6 +35,10 @@ export var S = {
     conn: "connecting",     // connecting | live | retrying | offline
     retryIn: 0,             // seconds, while conn is "retrying"
     locked: false,          // the server answered 401: this browser is not a paired device
+    // Machines still sending their rows after this page (re)connected, and those whose attempt
+    // failed with a code (`CloudClient._askSessionSnapshot`). Empty on the local page. While a
+    // machine is in either, "there are no sessions" is not something the list may say.
+    sessionSync: { recovering: [], failures: [] },
 
     selectedId: null,       // the highlight in the list
     openId: null,           // whose transcript is on screen
@@ -55,8 +59,10 @@ export var S = {
     // transcript rather than in it: this pane redraws whenever the session moves, and a run
     // that closed itself under somebody who was reading it would be worse than never folding.
     expanded: {},
-    // What each session looked like last render, so a change can be noticed: the transcript
-    // is refetched when its session moves, and a row that has just stopped gets its pulse.
+    // What each session looked like when the list last took it in, so a change can be noticed:
+    // a row that has just stopped gets its pulse, and an open agent is read again when the
+    // session's agents move. Whether the open transcript is read again is not decided from this;
+    // `createTranscriptRefetchPolicy` decides that from the row's signature and state.
     seen: {}
 };
 

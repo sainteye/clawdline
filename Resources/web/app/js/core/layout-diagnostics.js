@@ -12,8 +12,10 @@ var trace = [];
 var context = null;
 var ready = false;
 var installed = false;
-var scheduled = false;
-var settleTimer = null;
+var probeFrame = false;
+var probeTimer = null;
+var probeReason = "";
+var lastProbeAt = -Infinity;
 var pending = null;
 var activeAnomaly = null;
 var last = null;
@@ -314,17 +316,56 @@ function probe(reason) {
     }
 }
 
+/**
+ * The shortest gap between two layout probes.
+ *
+ * A probe measures about nine elements and every list row and hit-tests the screen three times,
+ * and `note` is called for every stream frame, every transcript phase and every mutation of the
+ * app's attributes. It used to schedule a probe in the next frame *and* re-arm a 380 ms settle
+ * probe on each of them. Now every note is covered by one probe that runs no sooner than this
+ * after the last one — the first note after a quiet second is probed in the next frame, and the
+ * rest of a burst by one trailing probe after it — so the state after the last change is always
+ * measured, at most once a second.
+ */
+export var LAYOUT_PROBE_INTERVAL_MS = 1000;
+
+/**
+ * Whether any reader wants live probes. An incident is only ever phone-shaped — `layoutAnomaly`
+ * answers null off a phone — and the panel is the one other place a live probe is read, so a
+ * desk browser without the panel open measures nothing. The trace of notes is kept either way.
+ */
+function probesWanted() {
+    if (debugPanel) return true;
+    try {
+        return !(window.matchMedia && !window.matchMedia("(max-width: 899px)").matches);
+    } catch (e) { return true; }
+}
+
+function runProbe() {
+    lastProbeAt = clock();
+    probe(probeReason);
+    // An anomaly has to be seen twice, 300 ms apart, before it is saved. With no further note to
+    // bring a probe, the one that saw it asks for its own confirmation, still one interval later.
+    if (pending && !probeFrame && probeTimer === null) {
+        probeTimer = setTimeout(function () { probeTimer = null; runProbe(); },
+            LAYOUT_PROBE_INTERVAL_MS);
+    }
+}
+
 function schedule(reason) {
     if (!ready) return;
-    if (!scheduled) {
-        scheduled = true;
-        requestAnimationFrame(function () {
-            scheduled = false;
-            probe(reason);
-        });
+    probeReason = reason;
+    // A hidden page is not diagnosed (see `probe`); coming back is itself a note and probes then.
+    if (document.hidden || !probesWanted()) return;
+    // One probe is already owed, and it runs after this note: it covers it.
+    if (probeFrame || probeTimer !== null) return;
+    var wait = lastProbeAt + LAYOUT_PROBE_INTERVAL_MS - clock();
+    if (wait <= 0) {
+        probeFrame = true;
+        requestAnimationFrame(function () { probeFrame = false; runProbe(); });
+        return;
     }
-    clearTimeout(settleTimer);
-    settleTimer = setTimeout(function () { probe(reason + ":settled"); }, 380);
+    probeTimer = setTimeout(function () { probeTimer = null; runProbe(); }, wait);
 }
 
 function errorText(value) {

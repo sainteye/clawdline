@@ -9,6 +9,7 @@ import { ActionConfirm } from "./action-confirm.js";
 import { byId } from "../view/derive.js";
 import { SessionSelection } from "../session/selection.js";
 import { callSessionUI } from "../session/ui.js";
+import { createVisibleInterval } from "../core/visibility.js";
 
 /**
  * What one background command has printed, in the transcript's space.
@@ -159,7 +160,7 @@ export var ShellPanel = (function () {
 
     function stopBeat() {
         if (!timer) return;
-        clearInterval(timer);
+        timer.stop();
         timer = null;
     }
 
@@ -221,7 +222,9 @@ export var ShellPanel = (function () {
             els["shell-stop"].hidden = !S.write;
             load(false);
             stopBeat();
-            timer = setInterval(function () { load(true); }, beat);
+            // Paused while the page is hidden, and one read on return — see `createVisibleInterval`.
+            timer = createVisibleInterval(function () { load(true); }, beat);
+            timer.start();
             els["shell-close"].focus({ preventScroll: true });
         },
 

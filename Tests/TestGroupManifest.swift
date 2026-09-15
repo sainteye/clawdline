@@ -678,6 +678,10 @@ let expectedOrderedTestGroupTitles: [String] = [
     "host ports: W2-3 correction F3 — loadOrCreate and rotate are closed against real races",
     "host ports: W2-3 correction F1 — create/capture/reveal/interrupt on fake ports",
     "host ports: W4-1 start and menu admission are shared Application policy",
+    "Cloud Session rows skip freshness-only changes and republish the whole row when a read field moves",
+    "Cloud Session rows carry a debounced transcript signature, and local rows never do",
+    "the Cloud transcript signature watch reports current, changed and ended signatures",
+    "a reconnecting viewer's Session snapshot request re-sends every row once per window, and an incomplete scan keeps the Mac present",
 ]
 
 func validateExecutedTestGroupManifest() {

@@ -344,7 +344,7 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
 | Root Assignment 的收據比對失敗，broker 對同一個 root 把任務書打了兩次，還把活著的 root 記成 `failed/prompt_timeout` | `~/.config/clawdline/orchestrator.json` 裡記著 `inject_attempts: 2`；`Sources/Orchestrator.swift` 的 `rootAssignmentTranscriptReceipt` | 另開一件（已列給使用者） |
 | 帳本 row 要過期，必須 `retainedElapsedMilliseconds` 往前走，但沒有任何 production 呼叫會推進它 | `CloudCommandLedger.swift:772-774`；磁碟上 13 筆全部是 0 | **待驗證。** 磁碟上只有 13 筆、橫跨 48 分鐘，log 卻有 842 次 Cloud POST，看起來 store 會被重置。要先確認實務上會不會真的累積到每台 1,000 筆的上限 |
 | Onboarding 讀的是舊的 roster store，而 production 遷移完成後會刪掉它 | `Onboarding.swift:1403`、`CloudBridgeLifecycle.swift:541` | 待驗證（目前只從程式推論） |
-| relay 每條連線最多 8 個訂閱，但瀏覽器的訂閱清單只增不減 | relay README；`cloud-client.js` | 待驗證 |
+| relay 每條連線最多 8 個訂閱，但瀏覽器的訂閱清單只增不減 | relay README；`cloud-client.js` | **已處理（2026-09-15）。** 沒有讀取在等的 channel 會在下一次訂閱時放掉，永遠不超過 8 條（`_trimSubscriptions`，`docs/cloud.md`） |
 
 ## 11. 線上格式（實作兩端的唯一依據）
 
@@ -452,6 +452,16 @@ Mac 發佈的 `orch/<machine>` payload 物件多一個最上層鍵 `cloud_status
 - 升級前的拒絕改成：接受升級 → 送 `{"type":"error","code":<code>,"message":<english>}` → 以 `errors.ts` 的 `WS_CLOSE` 對應碼關閉。
   瀏覽器記下最後一個 error frame 的 `code` 與 close event 的 `code`。
 - 新增的 log 只寫 `code`、`field`、channel 種類、`seq`、device id；不寫信封內容。
+- 瀏覽器怎麼對待關閉碼（`net/cloud-boot.js` 的 `keepConnected`）：4400、4413 不再重連，顯示 `terminal_error`；
+  4403 `forbidden` 用最長的退避再試，累計三次就停（relay 的撤銷集合滿載時也回 4403，之後會恢復；真的被撤銷的
+  裝置不會再連到 relay：下一次連線先向 API 取 session，API 對撤銷裝置的 cookie 回 401，loop 停在 `sign_in`）；
+  4429 `rate_limited`／`over_capacity` 用最長的退避再試，另計 40 次的上限；其他照退避重連。這些次數都不是「連續」：
+  只有連線撐滿 60 秒，或停下的 loop 重新開始，才會歸零。次數用完後不開 socket、不設計時器，頁面回到前景或恢復連線
+  就重新開始；因 4403 停下的 loop 重新開始時只給一次嘗試，累計停下三次（中間沒有撐滿 60 秒的連線）後，頁面回來也
+  不再啟動，只有 door 的按鈕或重新載入才會再試（`MAXIMUM_FORBIDDEN_PARKS`）。
+- 瀏覽器記住 `ack status=machine_offline`：同一台機器 5 秒內（持續離線就加倍，最長 5 分鐘）再送的讀取或指令，
+  在本機就以同樣的 `relay · machine_offline` 拒絕，不花 sequence，所以沒有 `ref`。收到那台機器的即時信封，
+  或對它的 `delivered` ack，就立刻解除；realign 重播的舊信封不算。
 
 ### 11.8 Mac 的 replay 窗口
 

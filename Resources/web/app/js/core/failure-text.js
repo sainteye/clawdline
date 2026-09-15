@@ -33,6 +33,7 @@ const SENTENCES = {
     report_too_large: "webFailTooLarge",
     command_too_large: "webFailTooLarge",
     cloud_read_timeout: "webFailNoAnswer",
+    cloud_sessions_incomplete: "webFailNoAnswer",
     command_answer_undeliverable: "webFailReplyLost",
     read_answer_undeliverable: "webFailReplyLost",
     refusal_undeliverable: "webFailReplyLost",

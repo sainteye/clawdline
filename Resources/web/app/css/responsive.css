@@ -185,5 +185,5 @@
     /* A skeleton without the sheen rather than no skeleton. What it is saying — "this is on its
        way, the screen has not hung" — is exactly as useful to somebody who has asked for less
        movement, and it is the moving part they turned off, not the message. */
-    .skel .bar { animation: none; background-image: none; }
+    .skel .bar::after { animation: none; display: none; }
 }

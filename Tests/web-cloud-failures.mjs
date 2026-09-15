@@ -276,7 +276,7 @@ await check("T-B3 a non-closing relay error does not rename a later network clos
 
 // Called for their effect or read at once, never awaited by a page; called here too, and must not throw.
 const LIFECYCLE = new Set(["events", "subscribe", "stop", "retire", "forgetMachinePairingAnswer",
-    "machineAccess", "machineDescriptor"]);
+    "machineAccess", "machineDescriptor", "revalidate"]);
 // Cannot fail from a cached answer, or succeed by opening a socket; still held to "a thenable".
 const NEED_NOT_REJECT = new Set(["sessions", "tasks", "machines", "voiceHost", "start", "refresh", "whenReady"]);
 
@@ -960,7 +960,11 @@ await check("viewer events · an envelope failing validateEnvelope is stage vali
 
 await check("viewer events · a legacy pin store that rejects before the machine is bound is stage sender_key_lookup with its DOMException name", async function () {
     let storeDown = false;
+    // The earlier open is under mac-02's exact pairing. A sender key the store already answered is
+    // remembered for this client, so the pin store is asked — and can fail — only for a sender whose
+    // key this client has not yet been given.
     const { client, socket, log, errors } = await viewerFleet({ orch: false, client: { senderKeys: {},
+        machinePairings: { "mac-02": pairingFor("mac-02") },
         resolveSenderKey: (sender) => storeDown
             ? Promise.reject(Object.assign(new Error("The operation failed for reasons unrelated to the database itself"), { name: "UnknownError" }))
             : Promise.resolve(sender === DEVICE ? senderKey : null) } });
@@ -1773,6 +1777,126 @@ await check("voice host · a single-machine account is unchanged, before its des
     const unknownBeside = await voiceFleet([["mac-01", "macos", false], ["mac-new", null, true]]);
     assert.equal((await unknownBeside.client.voiceHost()).machine, "mac-01",
         "an evident Mac is preferred over a machine whose descriptor has not arrived");
+});
+
+/* ---- receive · work that does not depend on the envelope is done once ---------------------- */
+
+// Each envelope used to open IndexedDB for the same sender key (and four times for a half-written
+// pairing), and write the machine descriptor table to localStorage whether or not it changed.
+
+await check("receive · the pin store is asked once per sender, again only after a key fails to verify", async function () {
+    const asks = [];
+    const client = cloudClient({ senderKeys: {},
+        resolveSenderKey: (sender) => { asks.push(sender); return Promise.resolve(sender === DEVICE ? senderKey : null); } });
+    const socket = await ready(client);
+    for (const machine of ["mac-01", "mac-02", "mac-03"]) {
+        await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/" + machine + "/s1" }));
+    }
+    assert.equal(client.sessionSnapshots.size, 3, "every envelope was applied");
+    assert.deepEqual(asks, [DEVICE], "three machines' envelopes from one sender ask the store once");
+    const stranger = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]);
+    await receiveEnvelope(client, socket, await sealEnvelope({ ch: "s/mac-04/s1", seq: ++macSequence, ts: 1787817600000,
+        class: "stream", key_id: "ms-1", sender: DEVICE }, JSON.stringify({ session: { id: "s1" } }), masterKey, stranger.privateKey));
+    assert.equal(client.sessionSnapshots.size, 3, "an envelope the remembered key does not verify is refused");
+    await receiveEnvelope(client, socket, await sealedFromMac({ ch: "s/mac-05/s1" }));
+    assert.deepEqual(asks, [DEVICE, DEVICE], "and the store is asked again for the next one");
+    assert.equal(client.sessionSnapshots.size, 4);
+});
+
+await check("receive · a sender with no key, and a half-written pairing, are each asked once until a pairing completes", async function () {
+    const senderAsks = [];
+    const errors = [];
+    const unpaired = cloudClient({ senderKeys: {},
+        resolveSenderKey: (sender) => { senderAsks.push(sender); return Promise.resolve(null); },
+        resolveMachinePairing: () => Promise.resolve(null) });
+    unpaired.events((event) => { if (event.type === "error") errors.push(event.error.code); });
+    const socket = await ready(unpaired);
+    for (let i = 0; i < 3; i += 1) {
+        await receiveEnvelope(unpaired, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    }
+    assert.deepEqual(errors, ["machine_not_paired", "machine_not_paired", "machine_not_paired"], "the same refusal each time");
+    assert.deepEqual(senderAsks, ["linux-executor"], "the sender store is asked once");
+    unpaired.forgetMachinePairingAnswer("linux-01");
+    await receiveEnvelope(unpaired, socket, await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    assert.equal(senderAsks.length, 2, "a pairing completed in this page asks again");
+
+    const pairingAsks = [];
+    const incompleteErrors = [];
+    const incomplete = cloudClient({ senderKeys: {}, resolveSenderKey: () => Promise.resolve(senderKey),
+        resolveMachinePairing: (machine) => {
+            pairingAsks.push(machine);
+            return Promise.reject(Object.assign(new Error("This browser's pairing for the selected machine is incomplete."),
+                { code: "machine_key_incomplete" }));
+        } });
+    incomplete.events((event) => { if (event.type === "error") incompleteErrors.push(event.error.code); });
+    const incompleteSocket = await ready(incomplete);
+    for (let i = 0; i < 3; i += 1) {
+        await receiveEnvelope(incomplete, incompleteSocket, await sealedFromMac({ ch: "s/mac-02/s" + i }));
+    }
+    assert.deepEqual(incompleteErrors, ["machine_key_incomplete", "machine_key_incomplete", "machine_key_incomplete"],
+        "the same typed refusal each time");
+    assert.deepEqual(pairingAsks, ["mac-02"], "the pairing store is asked once, not four opens per envelope");
+    incomplete.forgetMachinePairingAnswer("mac-02");
+    await receiveEnvelope(incomplete, incompleteSocket, await sealedFromMac({ ch: "s/mac-02/s9" }));
+    assert.deepEqual(pairingAsks, ["mac-02", "mac-02"], "and again once a pairing for it completes here");
+
+    const flaky = [];
+    const unavailable = cloudClient({ senderKeys: {}, resolveMachinePairing: (machine) => {
+        flaky.push(machine);
+        return Promise.reject(Object.assign(new Error("The operation failed for reasons unrelated to the database itself"),
+            { name: "UnknownError" }));
+    } });
+    const flakySocket = await ready(unavailable);
+    await receiveEnvelope(unavailable, flakySocket, await sealedFromMac({ ch: "s/mac-03/s1" }));
+    await receiveEnvelope(unavailable, flakySocket, await sealedFromMac({ ch: "s/mac-03/s2" }));
+    assert.equal(flaky.length, 2, "a store that failed to answer is not remembered as an answer");
+});
+
+await check("receive · a pairing completed in another tab of this browser ends this tab's remembered \"no key\" at once", async function () {
+    FakeBroadcastChannel.rooms.clear();
+    const senderAsks = [];
+    const pairingAsks = [];
+    const errors = [];
+    const reading = cloudClient({ senderKeys: {}, BroadcastChannel: FakeBroadcastChannel, tabID: "tab-reading",
+        resolveSenderKey: (sender) => { senderAsks.push(sender); return Promise.resolve(null); },
+        resolveMachinePairing: (machine) => { pairingAsks.push(machine); return Promise.resolve(null); } });
+    reading.events((event) => { if (event.type === "error") errors.push(event.error.code); });
+    const socket = await ready(reading);
+    const fromLinux = async () => receiveEnvelope(reading, socket,
+        await sealedFromMac({ ch: "orch/linux-01", sender: "linux-executor" }, { tasks: [] }));
+    await fromLinux();
+    await fromLinux();
+    assert.deepEqual([senderAsks.length, pairingAsks.length, errors], [1, 1, ["machine_not_paired", "machine_not_paired"]],
+        "each store asked once, as before");
+    // The pairing tab's own socket is down while it pairs, so it has no open channel of its own.
+    const pairing = cloudClient({ BroadcastChannel: FakeBroadcastChannel, tabID: "tab-pairing" });
+    pairing.forgetMachinePairingAnswer("linux-01");
+    assert.equal(pairing.tabChannel, null, "and it keeps none open for saying so");
+    await fromLinux();
+    assert.deepEqual([senderAsks.length, pairingAsks.length], [2, 2],
+        "the next envelope asks both stores again, not after this tab's next renewal");
+    await fromLinux();
+    assert.deepEqual([senderAsks.length, pairingAsks.length], [2, 2], "and then remembers again");
+    reading.stop();
+});
+
+await check("receive · an unchanged machine descriptor is not written to storage again", async function () {
+    const storage = new FakeStorage();
+    const key = "clawdline.machine-descriptors.v1:" + encodeURIComponent(ACCOUNT);
+    const writes = () => storage.writes.filter((row) => row[0] === key).length;
+    const client = cloudClient({ descriptorStorage: storage });
+    const socket = await ready(client);
+    const snapshot = (name, build) => ({ tasks: [], machine: { name: name, platform: "macos" }, app: { build: build } });
+    for (let i = 0; i < 3; i += 1) await fromMac(client, socket, "orch/mac-01", snapshot("Mac", "b1"));
+    assert.equal(writes(), 1, "three identical descriptors write once");
+    await fromMac(client, socket, "orch/mac-01", snapshot("Mac Studio", "b1"));
+    await fromMac(client, socket, "orch/mac-01", snapshot("Mac Studio", "b2"));
+    assert.equal(writes(), 3, "a new name and a new build are each written");
+    await fromMac(client, socket, "orch/mac-01", { tasks: [] });
+    assert.equal(writes(), 3, "a snapshot without a descriptor keeps the remembered one without a write");
+    const reloaded = cloudClient({ descriptorStorage: storage });
+    assert.deepEqual([reloaded.machineDescriptor("mac-01").machine.name, reloaded.machineDescriptor("mac-01").build],
+        ["Mac Studio", "b2"], "and what a restarted page reads back is the latest");
 });
 
 /* ---- ends ---------------------------------------------------------------------------------- */

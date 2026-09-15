@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { esc } from "../Resources/web/app/js/core/esc.js";
 import { createSessionSelectionLifecycle } from
     "../Resources/web/app/js/session/selection.js";
+import { createVisibleInterval } from "../Resources/web/app/js/core/visibility.js";
 
 /*
  * The live screen panel, without a browser.
@@ -108,6 +109,8 @@ globalThis.api = api;
 globalThis.SessionActions = { close: function () {} };
 globalThis.SessionSelection = SessionSelection;
 globalThis.callSessionUI = function () {};
+// The real clock, over the stub timers below: what this file counts is the timers it arms.
+globalThis.createVisibleInterval = createVisibleInterval;
 globalThis.setInterval = setIntervalStub;
 globalThis.clearInterval = clearIntervalStub;
 
@@ -591,5 +594,59 @@ equal(els["screen-body"].innerHTML,
     "a real row reaches the page indented, coloured and unpadded, and in that one container");
 equal(asked.length, fetched, "and drawing it asked the Mac for nothing beyond the first fetch");
 Terminal.close(false);
+
+/* ---- a page nobody can see ------------------------------------------------
+ *
+ * Measured on 2026-09-15: a phone with the Cloud console put away was still asking its Mac for
+ * this screen once a second. Hidden means both clocks are gone — not a tick that returns early,
+ * because an armed interval still wakes the phone — and a tick already queued does no work.
+ * Coming back asks once and arms the clocks again.
+ * -------------------------------------------------------------------------- */
+
+const visibilityListeners = [];
+let clockNow = 1_000_000;
+const realDateNow = Date.now;
+Date.now = function () { return clockNow; };
+globalThis.document = {
+    hidden: false,
+    addEventListener: function (type, fn) { if (type === "visibilitychange") visibilityListeners.push(fn); },
+    removeEventListener: function (type, fn) {
+        const at = visibilityListeners.indexOf(fn);
+        if (at >= 0) visibilityListeners.splice(at, 1);
+    }
+};
+function setHidden(hidden) {
+    document.hidden = hidden;
+    visibilityListeners.slice().forEach(function (fn) { fn(); });
+}
+answer = {
+    screen: {
+        id: "%1", backend: "iterm", channel: "on-demand", revision: "h1", readable: true,
+        pending: false, text: "sampled", lines: 60, askAgainAfterMs: 1000
+    }
+};
+Terminal.open();
+await settle();
+const armedBefore = liveTimers().slice();
+equal(armedBefore.map(function (t) { return t.ms; }), [15000, 1000],
+    "an on-demand screen arms its lease and its poll while the page is visible");
+const askedBeforeHidden = asked.length;
+setHidden(true);
+equal(liveTimers().length, 0, "hiding the page takes both clocks down, not just their work");
+armedBefore.forEach(function (timer) { timer.fn(); });
+await settle();
+equal(asked.length, askedBeforeHidden, "a tick that was already queued asks the Mac for nothing");
+equal(Terminal.stateForTesting().polling, true,
+    "the panel still means to poll; only the page is away");
+clockNow += 60_000;
+setHidden(false);
+await settle();
+equal(asked.length, askedBeforeHidden + 1, "coming back asks once for the screen that was missed");
+equal(liveTimers().map(function (t) { return t.ms; }), [15000, 1000],
+    "and the same two clocks are armed again");
+Terminal.close(false);
+equal(liveTimers().length, 0, "closing still stops both");
+Date.now = realDateNow;
+delete globalThis.document;
 
 console.log("  " + String.fromCharCode(10003) + " web terminal (" + checks + " checks)");

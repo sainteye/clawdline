@@ -9,6 +9,30 @@ somebody using this** — a commit log already exists and is better at being a c
 
 ## Unreleased
 
+### Changed: the Cloud console no longer heats the phone holding it
+
+With the hosted console open, a phone grew warm while nothing was happening. The Mac sent every
+Session row again on every scan, because one timestamp inside each row moved even when nothing a
+reader sees did, and the console re-downloaded the whole open conversation whenever that row's
+status line ticked — "Working (22m 05s)" changes every scan. On one phone between midnight and two
+in the afternoon that was 472 conversation downloads, nearly half of them byte for byte the one
+before; on the Mac, about 1,800 encrypted frames an hour went out while nobody was working.
+
+A row now goes out only when something the console shows has changed, and carries a fingerprint of
+its conversation, so the console downloads a conversation again only when it really changed or the
+Session's state did, and an answer identical to what is on screen is not redrawn. A burst of rows
+is drawn once, unchanged rows are left alone, and the spinners, clocks and background checks stop
+while the page is hidden. A minute after the console goes to the background it closes its
+connection and does no work at all. Coming back reconnects at once and asks each Mac for its
+current Sessions, so a conversation that finished while the phone was in a pocket is up to date
+without waiting for it to change again — and the list says it is still loading rather than "no
+sessions" while those rows are on their way. Reconnecting waits and backs off instead of retrying in
+a tight loop, the connection renews on the relay's clock rather than the phone's, pictures already
+seen are not downloaded twice, and a Mac whose scans keep coming back incomplete no longer looks
+offline. A device allowed only to read cannot ask, so the Mac also sends every Session again every
+three minutes, about 0.6 MB an hour for ten idle Sessions: such a device says it is waiting until
+they arrive instead of showing none.
+
 ### Fixed: an open Session closed itself a second after it was opened
 
 Opening a Session — on a phone, or in the console at a desk — drew its conversation and then, a

@@ -1536,10 +1536,15 @@ assert.equal((await firstPicture).id, FIRST,
 
 // The bound, said in a code the tile can turn into a sentence. This is the whole difference
 // between "too large to send (14.2 MB)" and a broken-image icon that reads as the reader's fault.
-const oversized = imageCloud.image({ machine: "mac-01", session: "session-01" }, FIRST);
+// Each refusal below is for an id this client has never read: a picture already read is served
+// from memory (ids are immutable), so asking for FIRST again would send nothing at all.
+const OVERSIZED = "33333333-4444-4555-8666-777777777777";
+const TRUNCATED = "44444444-5555-4666-8777-888888888888";
+const MISTYPED = "55555555-6666-4777-8888-999999999999";
+const oversized = imageCloud.image({ machine: "mac-01", session: "session-01" }, OVERSIZED);
 await until(function () { return publishedReads(imageSocket).length === 3; },
     "the oversized picture request to leave");
-await answerPicture(imageCloud, imageSocket, { read: "image." + FIRST, status: 413,
+await answerPicture(imageCloud, imageSocket, { read: "image." + OVERSIZED, status: 413,
     error: { code: "image_too_large_for_cloud", message: "over one envelope",
         byte_count: 14_000_000, limit_bytes: 12_582_132 } });
 await assert.rejects(oversized, function (error) {
@@ -1548,19 +1553,19 @@ await assert.rejects(oversized, function (error) {
 
 // A truncated answer is a broken PNG, which renders as exactly the icon this path exists to
 // remove. It is refused here instead, where there is still a code to say it with.
-const truncated = imageCloud.image({ machine: "mac-01", session: "session-01" }, SECOND);
+const truncated = imageCloud.image({ machine: "mac-01", session: "session-01" }, TRUNCATED);
 await until(function () { return publishedReads(imageSocket).length === 4; },
     "the truncated picture request to leave");
-const short = pngAnswer(SECOND);
+const short = pngAnswer(TRUNCATED);
 short.body.byte_count = PNG.length + 1;
 await answerPicture(imageCloud, imageSocket, short);
 await assert.rejects(truncated, function (error) { return error.code === "bad_payload"; },
     "base64 that decodes to the wrong length is a truncated picture, not a picture");
 
-const wrongType = imageCloud.image({ machine: "mac-01", session: "session-01" }, FIRST);
+const wrongType = imageCloud.image({ machine: "mac-01", session: "session-01" }, MISTYPED);
 await until(function () { return publishedReads(imageSocket).length === 5; },
     "the wrong-media-type request to leave");
-const svg = pngAnswer(FIRST);
+const svg = pngAnswer(MISTYPED);
 svg.body.media_type = "image/svg+xml";
 await answerPicture(imageCloud, imageSocket, svg);
 await assert.rejects(wrongType, function (error) { return error.code === "bad_payload"; },

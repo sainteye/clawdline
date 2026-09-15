@@ -16,6 +16,7 @@ import { Pages } from "./core/pages.js";
 import { Diagnostics } from "./core/layout-diagnostics.js";
 import { clockOf, tint, toastFailure } from "./core/util.js";
 import { drawIcon } from "./core/pixels.js";
+import { createVisibleInterval } from "./core/visibility.js";
 import { api, useApi } from "./net/api.js";
 import { Build } from "./net/build.js";
 import "./net/fetch.js";
@@ -41,7 +42,7 @@ import { cloudOnboardingMode, cloudViewerDeviceMetadata } from "./net/cloud-onbo
 import "./door/door.js";
 import "./view/derive.js";
 import { closingKey, render, renderConn, renderList, rowNodes } from "./view/list.js";
-import { renderDetailHead, renderTranscript } from "./view/transcript.js";
+import { renderDetailHead, renderTranscript, transcriptWorkingChanged } from "./view/transcript.js";
 import { renderAgents, renderComposer, renderWaiting } from "./view/composer.js";
 import { Terminal } from "./view/terminal.js";
 import { bindProjectsPage, localProjectPlaces, readProjectPlaces } from "./view/projects.js";
@@ -63,8 +64,8 @@ import "./view/markdown.js";
 import { paintStatic } from "./view/static.js";
 import { Waits } from "./view/waits.js";
 import {
-    closeDetail, loadTranscript, observeTranscriptFileRevision, observeTranscriptRevision,
-    openSession, rearmTranscriptRevision
+    closeDetail, loadTranscript, observeTranscriptFileRevision, observeTranscriptRow,
+    openSession, rearmTranscriptRow
 } from "./session/open.js";
 import { agentRow, agentsRev, closeAgent, loadAgent, renderAgentHead, agentTokens } from "./session/agent.js";
 import { SessionSelection } from "./session/selection.js";
@@ -116,8 +117,9 @@ bindSessionUI({
     closeDetail: closeDetail,
     closeAgent: closeAgent,
     openSession: openSession,
-    observeTranscriptRevision: observeTranscriptRevision,
-    rearmTranscriptRevision: rearmTranscriptRevision,
+    observeTranscriptRow: observeTranscriptRow,
+    rearmTranscriptRow: rearmTranscriptRow,
+    transcriptWorkingChanged: transcriptWorkingChanged,
     agentRow: agentRow,
     agentsRev: agentsRev,
     loadAgent: loadAgent,
@@ -318,6 +320,9 @@ if (transportKind === "cloud") {
         }
         var cloudConnection = null;
         var startCloudViewer = function () {
+            // A loop that ran out of attempts still waits for the page to come back; the door's
+            // press replaces it rather than running beside it.
+            if (cloudConnection) cloudConnection.stop();
             cloudConnection = keepConnected(cloudSession, {
                 onState: function (update) {
                     if (update.state === "connected") {
@@ -963,12 +968,15 @@ function boot(data) {
 /**
  * Coming back to a page that was put away, and asking whether it is still telling the truth.
  *
- * **A background tab's connection is suspended, not closed**, so the page returns holding
- * whatever it was holding — and a session whose state finished moving while the page was asleep
- * has no further frame to send. The transport is fine, the stream is open, and the screen is
- * wrong. `visibilitychange` is the one moment the page knows it may have missed something, and
- * `revalidate` is the transport's answer to "is this still true"; a transport without one keeps
- * whatever it has, which is what every transport did before this existed.
+ * **The page returns holding whatever it was holding.** A phone suspends a background tab's
+ * local stream without closing it; the hosted console retires its own Cloud socket once the page
+ * has been hidden for a minute (`HIDDEN_GRACE_MS` in `keepConnected`) and keeps the rows. Either
+ * way a session whose state finished moving while the page was away has no further frame to
+ * send, and the screen is wrong. `visibilitychange` is the one moment the page knows it may have
+ * missed something, and `revalidate` is the transport's answer to "is this still true" — a fresh
+ * read locally; on Cloud, a new socket when the old one was retired or may have died unnoticed.
+ * A transport without one keeps whatever it has, which is what every transport did before this
+ * existed.
  *
  * Bound here rather than inside a transport because it is a fact about the *page* — being put
  * away and brought back — and both transports want the same thing done about it.
@@ -977,6 +985,8 @@ function watchForStaleness() {
     document.addEventListener("visibilitychange", function () {
         if (document.hidden) return;
         if (api && typeof api.revalidate === "function") api.revalidate("visible");
+        // The page's own reading of the open session, held while it was hidden.
+        StatusLine.catchUp();
     });
 }
 
@@ -1009,9 +1019,11 @@ if (window.__strings) {
 // A page left open all day: "2m ago" is only true for a minute. The timestamps are rewritten in
 // place rather than by rendering the transcript again — a re-render replaces the whole pane, and
 // the reader would find themselves back at the top of it every minute for no reason they could see.
-setInterval(function () {
+// Not while hidden, and once on return: nobody reads a relabel on a screen that is put away.
+createVisibleInterval(function () {
     var stamps = els.tx.querySelectorAll("time[data-at]");
     for (var i = 0; i < stamps.length; i++) {
-        stamps[i].textContent = clockOf(parseInt(stamps[i].getAttribute("data-at"), 10));
+        var said = clockOf(parseInt(stamps[i].getAttribute("data-at"), 10));
+        if (stamps[i].textContent !== said) stamps[i].textContent = said;
     }
-}, 60000);
+}, 60000).start();

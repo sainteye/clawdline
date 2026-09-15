@@ -397,5 +397,135 @@ assert.match(activeWarning, /Rotating immediately invalidates the old URL/i,
 assert.match(activeWarning, /Disabling cancels only work the Mac has not durably accepted/i,
     "Disable states the queued-versus-accepted consequence");
 
+/* ---- the strip's own reads: a cache that keeps what answered, a lane that sleeps when hidden --- */
+
+// Measured origin (2026-09-15): the Projects list asked of every machine every minute while any one
+// of them was offline or unpaired, and the minute lane kept running on a phone in a pocket.
+const stripModule = await import("../Resources/web/app/js/net/schedules.js");
+const stripFailures = [];
+async function stripCheck(name, run) {
+    try { await run(); }
+    catch (error) { stripFailures.push(name + "\n    " + String(error && error.message).split("\n").slice(0, 8).join("\n    ")); }
+}
+
+await stripCheck("places cache · what answered is kept; only the gap is asked, once per retry window", async function () {
+    assert.equal(typeof stripModule.createPlacesCache, "function", "net/schedules.js exports createPlacesCache");
+    let clock = 0;
+    const asked = [];
+    let gapAnswers = true;
+    const cache = stripModule.createPlacesCache({ now: () => clock, places: function (machine) {
+        asked.push(machine === undefined ? "*" : machine);
+        if (machine === "mac-02") {
+            return gapAnswers
+                ? Promise.resolve({ places: [{ id: "b", machine: "mac-02", path: "/b" }],
+                    assistants: [{ id: "claude" }, { id: "codex" }] })
+                : Promise.reject(Object.assign(new Error("busy"), { code: "reading_busy" }));
+        }
+        return Promise.resolve({ places: [{ id: "a", machine: "mac-01", path: "/a" }], assistants: [{ id: "claude" }],
+            unanswered: [{ machine: "mac-02", label: "Mac 2", error: { code: "machine_offline" } },
+                { machine: "pi", label: "Pi", error: { code: "machine_pairing_required" } }],
+            unconfirmed: [] });
+    } });
+    await cache.read();
+    clock = 60_000;
+    const kept = await cache.read();
+    assert.deepEqual(asked, ["*"], "a partial answer is kept for the next refresh");
+    assert.deepEqual(kept.places.map((place) => place.id), ["a"]);
+    gapAnswers = false;
+    clock = 120_000;
+    const stillMissing = await cache.read();
+    assert.deepEqual(asked, ["*", "mac-02"], "after the retry window only the machine that did not answer is asked");
+    assert.deepEqual(stillMissing.unanswered.map((row) => [row.machine, row.error.code]),
+        [["mac-02", "reading_busy"], ["pi", "machine_pairing_required"]], "a failed re-ask keeps its row with the newer failure");
+    clock = 180_000;
+    await cache.read();
+    assert.deepEqual(asked, ["*", "mac-02"], "and it is not asked again inside the next window");
+    gapAnswers = true;
+    clock = 240_000;
+    const merged = await cache.read();
+    assert.deepEqual(asked, ["*", "mac-02", "mac-02"]);
+    assert.deepEqual(merged.places.map((place) => place.id), ["a", "b"], "its answer is merged into what was kept");
+    assert.deepEqual(merged.assistants.map((assistant) => assistant.id), ["claude", "codex"]);
+    assert.deepEqual(merged.unanswered.map((row) => row.machine), ["pi"],
+        "a machine this browser is not paired with stays named, and is never re-asked");
+    clock = 290_000;
+    await cache.read();
+    assert.equal(asked.length, 3, "nothing left that asking could change");
+    clock = 300_000;
+    await cache.read();
+    assert.deepEqual(asked, ["*", "mac-02", "mac-02", "*"], "the whole list is read again when the cache expires");
+
+    const unconfirmed = [];
+    const never = stripModule.createPlacesCache({ now: () => 0, places: function () {
+        unconfirmed.push(1);
+        return Promise.resolve({ places: [], assistants: [], unanswered: [], unconfirmed: ["new-machine"] });
+    } });
+    await never.read();
+    await never.read();
+    assert.equal(unconfirmed.length, 2, "an answer with machines never asked is not kept");
+});
+
+await stripCheck("projects · a list naming no Project does not read the Projects list", async function () {
+    let placesAsked = 0;
+    const rowsWithout = await loadScheduleProjects([{ id: "plain", title: "No project" }], null, function () {
+        placesAsked += 1;
+        return Promise.resolve({ places: [] });
+    });
+    assert.equal(placesAsked, 0, "nothing to label, nothing asked");
+    assert.equal(rowsWithout[0].project, undefined);
+});
+
+await stripCheck("lane · the minute refresh stops while the page is hidden and catches up when it returns", async function () {
+    const { useClient } = await import("../Resources/web/app/js/net/api.js");
+    const { S } = await import("../Resources/web/app/js/core/state.js");
+    const saved = { setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval, now: Date.now,
+        addEventListener: globalThis.document.addEventListener, hidden: globalThis.document.hidden,
+        state: { arrived: S.arrived, locked: S.locked, conn: S.conn } };
+    const intervals = [];
+    const cleared = [];
+    let visibility = null;
+    let schedulesRead = 0;
+    let shift = 0;
+    try {
+        globalThis.setInterval = function (fn, ms) { intervals.push(ms); return intervals.length; };
+        globalThis.clearInterval = function (id) { cleared.push(id); };
+        Date.now = function () { return saved.now.call(Date) + shift; };
+        globalThis.document.hidden = false;
+        globalThis.document.addEventListener = function (name, fn) { if (name === "visibilitychange") visibility = fn; };
+        useClient({ schedules: function () { schedulesRead += 1; return Promise.resolve({ schedules: [], at: 1 }); } });
+        Object.assign(S, { arrived: true, locked: false, conn: "live" });
+        stripModule.Schedules.start();
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.deepEqual([schedulesRead, intervals], [1, [60000]], "a visible page reads once and starts the lane");
+        assert.equal(typeof visibility, "function", "the lane watches visibility");
+        globalThis.document.hidden = true;
+        visibility();
+        assert.deepEqual(cleared, [1], "hidden: the lane is stopped, not left ticking");
+        globalThis.document.hidden = false;
+        visibility();
+        assert.deepEqual([schedulesRead, intervals.length], [1, 2], "back within a minute: the lane restarts, nothing is read early");
+        globalThis.document.hidden = true;
+        visibility();
+        shift = 61_000;
+        globalThis.document.hidden = false;
+        visibility();
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.deepEqual([schedulesRead, intervals.length], [2, 3], "back after a missed tick: read at once, then the lane");
+    } finally {
+        globalThis.setInterval = saved.setInterval;
+        globalThis.clearInterval = saved.clearInterval;
+        Date.now = saved.now;
+        globalThis.document.addEventListener = saved.addEventListener;
+        globalThis.document.hidden = saved.hidden;
+        Object.assign(S, saved.state);
+    }
+});
+
+if (stripFailures.length) {
+    console.log("web schedule strip checks: " + stripFailures.length + " red");
+    console.log("  " + stripFailures.join("\n  "));
+    process.exit(1);
+}
+
 console.log("web schedule tests passed");
 process.exit(0);

@@ -107,6 +107,9 @@ final class CloudStatus: @unchecked Sendable {
     private var clockProvider: ClockProvider?
     private var clockSince: (detail: CloudClockGuardDetail, since: UInt64)?
     private var keyID: String?
+    /// The words the attached bridge answers that an older Mac does not (§11.4), carried in the
+    /// notice so a page learns them from the digest it already reads.
+    private var features: [String] = []
     private var rosterReadable: Bool?
     private var deviceIDs: [String] = []
     private var acceptedTotal: UInt64 = 0
@@ -159,6 +162,10 @@ final class CloudStatus: @unchecked Sendable {
 
     func setKeyID(_ keyID: String?) {
         mutate { $0.keyID = keyID }
+    }
+
+    func setFeatures(_ features: [String]) {
+        mutate(write: false) { $0.features = features }
     }
 
     func record(_ event: CloudTransportConnectionEvent) {
@@ -407,6 +414,7 @@ final class CloudStatus: @unchecked Sendable {
             "roster_readable": rosterReadable.map { $0 as Any } ?? NSNull(),
             "dropped": droppedObject(),
         ]
+        if !features.isEmpty { digest["features"] = features }
         lock.unlock()
         while true {
             digest["recent_drops"] = drops

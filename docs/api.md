@@ -1103,7 +1103,7 @@ of its own so a page can say which it hit rather than showing the same empty vie
 | `cloud_read_needs_send_prompt` | this device may read but may not publish on `ctl/`, so it cannot ask | the relay's: PROTOCOL §12 requires `send_prompt` to publish on `ctl/` in either class |
 | `malformed_read` | the request had a missing, extra or wrongly typed field, an invalid document scope/task/path, or arrived with class `dispatch` | the bridge's, before anything reaches a route |
 | `cloud_read_timeout` | nothing answered within the client's window | the client's, and the honest end of a read nobody will answer |
-| `cloud_read_busy` | the named Cloud foreground/background bridge lane is full; `lane`, `limit`, and `retry_after` describe the bound | the bridge's, returned encrypted on the exact Session channel without entering that worker |
+| `cloud_read_busy` | the named Cloud foreground/background bridge lane is full; `lane`, `limit`, and `retry_after` describe the bound — or, with layer `browser` and `lane: "subscriptions"`, all eight relay subscriptions of this socket are held by reads still waiting | the bridge's, returned encrypted on the exact Session channel without entering that worker; or the browser's, before anything is published |
 | `image_too_large_for_cloud` | this picture is over one envelope's ciphertext cap | the relay's cap, this repository's arithmetic — and the tile says it in words with the size in it |
 | `document_listing_invalid` / `document_media_type_unsupported` / `document_not_utf8` / `document_too_large` | the local answer violated the closed document boundary | the bridge's, before plaintext is put into an answer envelope |
 
@@ -6514,7 +6514,10 @@ caller rather than importing the localization owner or embedding English.
 The New Session machine watermark is the newest authenticated envelope timestamp observed for that
 machine across its orchestrator and Session row/inventory channels (with the snapshot's `at` as the
 backward-compatible initial observation). This is evidence that bytes arrived, not a presence lease:
-the Mac does not publish orchestrator heartbeats while idle. A hosted viewer auto-selects a sole
+the Mac does not publish orchestrator heartbeats while idle, and it skips Session rows whose only
+change is a freshness value, so a scan re-sends every published Session row and the inventory marker
+once three minutes have passed since the last pass that sent them all (docs/cloud.md, *Every three
+minutes the rows go out again*). A hosted viewer auto-selects a sole
 machine only while that watermark is within five minutes. Older/unknown rows say "offline or status
 out of date" and require an explicit press; the press is allowed because the authenticated opaque
 route is known, and issues the same bounded `places` probe whose typed `machine_offline` failure is

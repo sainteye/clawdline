@@ -1322,6 +1322,32 @@ public enum CloudRelayRuntimeError: Error, LocalizedError, Equatable, Sendable {
 
 #if !SWIFT_PACKAGE || !CLAWDLINE_APPLICATION_TARGET
 
+/// One published Session whose transcript signature a running Cloud bridge wants to know.
+///
+/// `binding` is the row's own spelling of what selects the transcript file — assistant, tty,
+/// conversation id and working directory. A source may use it to skip re-resolving a file whose
+/// selecting facts have not moved; it is never shown to anybody.
+struct CloudTranscriptSubject: Equatable, Sendable {
+    let sessionID: String
+    let binding: String
+}
+
+/// `signature` is the value the Mac's `transcript` read answer carries for that Session's file at
+/// the moment of the report, or nil once it is no longer known.
+typealias CloudTranscriptSignatureReport = @Sendable (_ sessionID: String, _ signature: String?)
+    -> Void
+
+/// Where a running Cloud bridge learns each published Session's transcript signature.
+///
+/// The bridge is the only demand. It names its published Sessions from inside a running
+/// publication and calls `stop` when its lifecycle ends, so a source never watches a file while
+/// Cloud is disabled or the bridge is stopped. Reports may arrive on any thread, in order, and may
+/// repeat a value the bridge already holds.
+protocol CloudTranscriptSignatureSource: AnyObject, Sendable {
+    func track(_ subjects: [CloudTranscriptSubject], report: @escaping CloudTranscriptSignatureReport)
+    func stop()
+}
+
 /// Connects the app's existing full-snapshot and HTTP-command seams to CloudTransport.
 ///
 /// Construction has no side effects. `start()` is the explicit attachment/configuration point,
@@ -1330,6 +1356,55 @@ actor CloudAppBridge {
     static let machineReplySession = "__clawdline_machine__"
     static let sessionInventoryID = "__clawdline_inventory_v1__"
     static let sessionInventoryLimit = 512
+    /// The Cloud-only row field naming the current transcript signature (docs/cloud.md).
+    static let transcriptSignatureField = "transcript_signature"
+    /// A transcript-driven republication pass runs at most once per this many milliseconds, so a
+    /// Session at most once per second however fast its transcript is written. Scan publications
+    /// are not held to it: they already follow the SessionWatch cadence.
+    static let transcriptRepublicationIntervalMilliseconds: UInt64 = 1_000
+    /// The refresh pass (docs/cloud.md, *Every three minutes the rows go out again*). The relay
+    /// keeps each channel's last envelope in memory only, loses it whenever its object is evicted
+    /// — an idle account's is, between frames — and an unchanged row is never published again. A
+    /// viewer that may not publish on `ctl/` cannot ask for the rows (`sessions.snapshot`), so once
+    /// this long has passed since the last pass that sent every row and the inventory, a scan sends
+    /// every row it would have skipped and the inventory again. That bounds how long any viewer —
+    /// read-only, holding a half-open socket, or one whose request failed — waits for the Mac's
+    /// current rows, and keeps the machine inside the console's five-minute window
+    /// (`MACHINE_INVENTORY_FRESH_MS`). Measured 2026-09-15: about 31 KB of sealed frames per pass
+    /// for ten Sessions, so about 0.63 MB an hour for an idle Mac. The background scan cadence
+    /// (20 s) and the 12–20 s Session-write latency of the 2026-09-13 calibration still land it
+    /// inside the five minutes.
+    static let sessionPresenceIntervalMilliseconds: UInt64 = 180_000
+    /// A viewer's `orchestrator` request re-sends the orchestrator snapshot — hundreds of kilobytes,
+    /// fanned out by the relay to every viewer on the account — at most once per this long after
+    /// the Mac's last `orch/` publication of any kind. A request inside it is owed: answered by the
+    /// next publication, or by a re-send once the floor has passed (`scheduleOrchestratorResend`).
+    static let orchestratorResendFloorMilliseconds: UInt64 = 60_000
+    /// Row fields that move with every SessionWatch reading whether or not anything a viewer reads
+    /// did, so they never make a row different. A row that differs elsewhere is still published
+    /// whole, these values included. Each one was checked against every reader in
+    /// `Resources/web/app/js`: none reads them (the viewer's closeability gate reads `state`,
+    /// `reasons`, `mover`, `attestation_id`, `version` and `source.freshness`, which stay).
+    static let freshnessOnlySessionRowFields: [[String]] = [
+        ["closeability", "observed_at"],
+        ["closeability", "session_generation"],
+        ["closeability", "source", "observed_at"],
+    ]
+    /// A viewer's request for this Mac's current Session rows (docs/cloud.md, *A page that
+    /// reconnects asks for the rows*). The relay keeps the last envelope of each channel in memory
+    /// only and loses it with its object, and an unchanged row is never published again, so a page
+    /// that connects after an eviction would otherwise wait for rows that may never change.
+    /// Read-level: it re-sends what every paired viewer already receives, so the remote-write
+    /// switch does not gate it.
+    static let sessionSnapshotType = "sessions.snapshot"
+    /// The words this bridge answers that an older Mac does not, advertised in `cloud_status` and
+    /// beside the Session inventory. A page sends such a word only to a Mac that listed it.
+    static let cloudFeatures: [String] = [sessionSnapshotType]
+    /// However many viewers ask, the rows go out at most once per this many milliseconds; a
+    /// request that arrives inside the window is answered by the next pass.
+    static let sessionSnapshotIntervalMilliseconds: UInt64 = 5_000
+    /// Requests one pass may owe answers to. Past it a request is refused as busy, not queued.
+    static let sessionSnapshotWaiterLimit = 64
     typealias CommandGate = @Sendable () -> Bool
     typealias CommandEffectAuthority = @Sendable (_ sender: String, _ requiresWriteGate: Bool) async
         -> CloudCommandEffectAuthorization
@@ -1426,8 +1501,40 @@ actor CloudAppBridge {
     private var starting = false
     private var running = false
     private var publishedSessionIDs = Set<String>()
+    /// What each published row was compared as (`cloudSessionRowIdentity`), not its full bytes.
     private var publishedSessionRows: [String: Data] = [:]
     private var publishedSessionInventory: Data?
+    /// The newest complete row the Mac handed over for each published Session, whether or not it
+    /// was published, and that scan's `at`/`scan`. A transcript republication sends these.
+    private var latestSessionRows: [String: [String: Any]] = [:]
+    private var latestSessionEnvelope: (at: Any, scan: [String: Any])?
+    /// When a pass last sent every published row and the inventory: a forced or refresh scan, or a
+    /// `sessions.snapshot` pass. The refresh interval is counted from here.
+    private var lastSessionRefreshAt: UInt64?
+    /// Session-channel publications run one at a time, whoever started them, so a transcript
+    /// republication can never interleave with a scan's rows or land after its tombstone.
+    private var sessionPublicationTail: Task<Void, Never>?
+    private let transcriptSignatures: (any CloudTranscriptSignatureSource)?
+    private let transcriptRepublicationIntervalMilliseconds: UInt64
+    private let waitMilliseconds: @Sendable (UInt64) async throws -> Void
+    private var knownTranscriptSignatures: [String: String] = [:]
+    private var pendingTranscriptSessions = Set<String>()
+    private var transcriptRepublicationTask: Task<Void, Never>?
+    private var lastTranscriptRepublicationAt: UInt64?
+    private var transcriptReports: AsyncStream<(String, String?)>.Continuation?
+    private var transcriptReportTask: Task<Void, Never>?
+    /// `sessions.snapshot` requests the next pass answers (and whether each also lacks the
+    /// orchestrator snapshot), the pass scheduled for them, and when the last one started (the
+    /// window is counted from there).
+    private let sessionSnapshotIntervalMilliseconds: UInt64
+    private var sessionSnapshotWaiters: [(reference: CommandReference, request: String,
+                                          orchestrator: Bool, at: UInt64)] = []
+    private var sessionSnapshotTask: Task<Void, Never>?
+    private var lastSessionSnapshotAt: UInt64?
+    /// The earliest arrival of an `orchestrator` request no `orch/` publication has answered yet,
+    /// and the re-send scheduled for it at the floor.
+    private var orchestratorOwedSince: UInt64?
+    private var orchestratorResendTask: Task<Void, Never>?
 
     init(
         transport: any CloudTransporting,
@@ -1444,8 +1551,20 @@ actor CloudAppBridge {
         refusalPublications: CloudRefusalPublicationQueue? = nil,
         durableRuntime: CloudDurableRuntime? = nil,
         status: CloudStatus? = nil,
-        noticeIntervalMilliseconds: UInt64 = 5_000
+        noticeIntervalMilliseconds: UInt64 = 5_000,
+        transcriptSignatures: (any CloudTranscriptSignatureSource)? = nil,
+        transcriptRepublicationIntervalMilliseconds: UInt64 =
+            CloudAppBridge.transcriptRepublicationIntervalMilliseconds,
+        waitMilliseconds: @escaping @Sendable (UInt64) async throws -> Void = {
+            try await Task.sleep(nanoseconds: $0 * 1_000_000)
+        },
+        sessionSnapshotIntervalMilliseconds: UInt64 =
+            CloudAppBridge.sessionSnapshotIntervalMilliseconds
     ) {
+        self.sessionSnapshotIntervalMilliseconds = sessionSnapshotIntervalMilliseconds
+        self.transcriptSignatures = transcriptSignatures
+        self.transcriptRepublicationIntervalMilliseconds = transcriptRepublicationIntervalMilliseconds
+        self.waitMilliseconds = waitMilliseconds
         self.status = status ?? CloudStatus()
         noticesEnabled = status != nil
         self.noticeIntervalMilliseconds = noticeIntervalMilliseconds
@@ -1509,6 +1628,7 @@ actor CloudAppBridge {
         await transport.setInboundDropHandler { [status] drop in status.recordDrop(drop) }
         await transport.setConnectionObserver { [status] event in status.record(event) }
         status.setKeyID(identity.keyID)
+        status.setFeatures(Self.cloudFeatures)
         if noticesEnabled {
             status.enableFileWriting()
             status.setNoticeObserver { [weak self] in
@@ -1580,6 +1700,8 @@ actor CloudAppBridge {
                 || outboundReceiptTask != nil
                 || foregroundReadTask != nil || backgroundReadTask != nil
                 || !lifecycleRefreshTasks.isEmpty || !publicationTasks.isEmpty
+                || transcriptReportTask != nil || transcriptRepublicationTask != nil
+                || sessionSnapshotTask != nil || orchestratorResendTask != nil
         else { return }
         await transport.setInboundRefusalHandler(nil)
         await transport.setInboundDropHandler(nil)
@@ -1587,6 +1709,8 @@ actor CloudAppBridge {
         if noticesEnabled { status.setNoticeObserver(nil) }
         noticeTask?.cancel()
         noticeTask = nil
+        let transcriptWork = stopTranscriptSignatures()
+        let sessionSnapshot = stopSessionSnapshots()
         lifecycleGeneration &+= 1
         starting = false
         running = false
@@ -1632,9 +1756,15 @@ actor CloudAppBridge {
         }
         await refusalPublication?.value
         for task in readTasks { await task.value }
+        for task in transcriptWork { await task.value }
+        for task in sessionSnapshot { await task.value }
         publishedSessionIDs.removeAll()
         publishedSessionRows.removeAll()
         publishedSessionInventory = nil
+        latestSessionRows.removeAll()
+        latestSessionEnvelope = nil
+        lastSessionRefreshAt = nil
+        sessionPublicationTail = nil
     }
 
     func isRunning() -> Bool { running }
@@ -1649,16 +1779,99 @@ actor CloudAppBridge {
 
     /// Accepts the exact JSON bytes produced for local SSE, then fans its complete session rows
     /// out by channel. A complete authoritative scan also sends tombstones for rows that vanished.
+    ///
+    /// A row goes out only when it differs from the last one published for that Session outside
+    /// `freshnessOnlySessionRowFields`; `transcript_signature`, added here and never present in the
+    /// local bytes, counts as a difference like any other field.
     func publishSessions(_ payload: Data, force: Bool = false,
                          publicationID: String? = nil) async throws {
         let ownedGeneration = lifecycleGeneration
-        try await runPublication { [weak self] in
+        try await runSessionPublication { [weak self] in
             guard let self else { throw CancellationError() }
             try await self.publishSessionsOwned(
                 payload, force: force, publicationID: publicationID,
                 lifecycleGeneration: ownedGeneration
             )
         }
+    }
+
+    /// The bytes a Cloud row is compared as: sorted keys, with the freshness-only fields removed.
+    static func cloudSessionRowIdentity(_ row: [String: Any]) throws -> Data {
+        func removing(_ path: ArraySlice<String>, from object: [String: Any]) -> [String: Any] {
+            guard let key = path.first else { return object }
+            var copy = object
+            if path.count == 1 {
+                copy.removeValue(forKey: key)
+            } else if let child = copy[key] as? [String: Any] {
+                copy[key] = removing(path.dropFirst(), from: child)
+            }
+            return copy
+        }
+        let stripped = freshnessOnlySessionRowFields.reduce(row) { removing($1[...], from: $0) }
+        return try JSONSerialization.data(
+            withJSONObject: stripped, options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+
+    /// The inventory marker: every published id, and beside it (never inside it, where an older
+    /// page refuses an unknown key) the words this Mac answers that an older one does not.
+    static func sessionInventory(_ ids: [String]) -> [String: Any] {
+        [
+            "inventory": ["version": 1, "sessions": ids] as [String: Any],
+            "features": cloudFeatures,
+        ]
+    }
+
+    /// The facts in a row that select its transcript file (`Transcript.record(of:)`).
+    static func transcriptBinding(_ row: [String: Any]) -> String {
+        ["assistant", "tty", "sessionId", "cwd"]
+            .map { (row[$0] as? String) ?? "-" }
+            .joined(separator: "\u{1}")
+    }
+
+    private func runSessionPublication(
+        _ work: @escaping @Sendable () async throws -> Void
+    ) async throws {
+        guard running else { throw CloudAppBridgeError.notRunning }
+        let previous = sessionPublicationTail
+        let turn = Task<Void, Error> {
+            await previous?.value
+            try await work()
+        }
+        sessionPublicationTail = Task { _ = await turn.result }
+        try await runPublication {
+            try await withTaskCancellationHandler {
+                try await turn.value
+            } onCancel: {
+                turn.cancel()
+            }
+        }
+    }
+
+    /// What `publishSessionRow` did: nothing, a row a viewer reads differently, or the same row
+    /// again because it was forced (a refresh or snapshot pass).
+    private enum SessionRowPublication { case skipped, changed, resent }
+
+    /// Publish one Session row unless everything a viewer reads is what was last published.
+    private func publishSessionRow(
+        _ session: [String: Any], id: String, force: Bool,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async throws -> SessionRowPublication {
+        guard let envelope = latestSessionEnvelope else { return .skipped }
+        var row = session
+        if let signature = knownTranscriptSignatures[id] {
+            row[Self.transcriptSignatureField] = signature
+        } else {
+            row.removeValue(forKey: Self.transcriptSignatureField)
+        }
+        let identity = try Self.cloudSessionRowIdentity(row)
+        let unchanged = publishedSessionRows[id] == identity
+        if !force, unchanged { return .skipped }
+        let full: [String: Any] = ["session": row, "at": envelope.at, "scan": envelope.scan]
+        try await publishJSON(
+            full, channel: sessionChannel(id), lifecycleGeneration: ownedGeneration
+        )
+        publishedSessionRows[id] = identity
+        return unchanged ? .resent : .changed
     }
 
     private func publishSessionsOwned(
@@ -1684,27 +1897,47 @@ actor CloudAppBridge {
         let current = Set(ids)
         var changed = 0
         var skipped = 0
+        var resent = 0
+        // Every row and the inventory go out again on a forced scan and once per refresh interval
+        // (`sessionPresenceIntervalMilliseconds`): nothing else brings a viewer that cannot ask the
+        // rows the relay lost with its object.
+        let refresh = force || lastSessionRefreshAt.map {
+            startedAt < $0 || startedAt - $0 >= Self.sessionPresenceIntervalMilliseconds
+        } ?? true
+        latestSessionEnvelope = (at, scan)
+        func count(_ outcome: SessionRowPublication) {
+            switch outcome {
+            case .skipped: skipped += 1
+            case .changed: changed += 1
+            case .resent: resent += 1
+            }
+        }
         for (session, id) in zip(sessions, ids) {
             try requireActivePublication(lifecycleGeneration: ownedGeneration)
-            let stable = try JSONSerialization.data(
-                withJSONObject: session, options: [.sortedKeys, .withoutEscapingSlashes]
-            )
-            if !force, publishedSessionRows[id] == stable {
-                skipped += 1
-                continue
+            latestSessionRows[id] = session
+            count(try await publishSessionRow(
+                session, id: id, force: refresh, lifecycleGeneration: ownedGeneration
+            ))
+        }
+        if refresh, !authoritative {
+            // An incomplete scan names only some rows; the others still published go out from the
+            // newest copy the Mac holds, so the pass is whole.
+            for id in publishedSessionIDs.subtracting(current).sorted() {
+                try requireActivePublication(lifecycleGeneration: ownedGeneration)
+                guard let session = latestSessionRows[id] else { continue }
+                count(try await publishSessionRow(
+                    session, id: id, force: true, lifecycleGeneration: ownedGeneration
+                ))
             }
-            let full: [String: Any] = ["session": session, "at": at, "scan": scan]
-            try await publishJSON(
-                full, channel: sessionChannel(id), lifecycleGeneration: ownedGeneration
-            )
-            publishedSessionRows[id] = stable
-            changed += 1
         }
 
         let removed = authoritative ? publishedSessionIDs.subtracting(current) : []
         if authoritative {
             for id in removed {
                 try requireActivePublication(lifecycleGeneration: ownedGeneration)
+                latestSessionRows[id] = nil
+                knownTranscriptSignatures[id] = nil
+                pendingTranscriptSessions.remove(id)
                 let tombstone: [String: Any] = [
                     "session": NSNull(), "deleted": true, "at": at, "scan": scan,
                 ]
@@ -1722,13 +1955,11 @@ actor CloudAppBridge {
         }
         var inventoryPublished = false
         if authoritative {
-            let inventory: [String: Any] = [
-                "inventory": ["version": 1, "sessions": current.sorted()] as [String: Any],
-            ]
+            let inventory = Self.sessionInventory(current.sorted())
             let stable = try JSONSerialization.data(
                 withJSONObject: inventory, options: [.sortedKeys, .withoutEscapingSlashes]
             )
-            if force || stable != publishedSessionInventory {
+            if refresh || stable != publishedSessionInventory {
                 try await publishJSON(
                     inventory, channel: sessionChannel(Self.sessionInventoryID),
                     lifecycleGeneration: ownedGeneration
@@ -1736,11 +1967,373 @@ actor CloudAppBridge {
                 publishedSessionInventory = stable
                 inventoryPublished = true
             }
+        } else if refresh, publishedSessionInventory != nil,
+                  publishedSessionIDs.count <= Self.sessionInventoryLimit {
+            // A Mac whose scans stay incomplete must not look stale. Every id this names has had
+            // its row published, and nothing that vanished since the last complete scan has been
+            // tombstoned yet, so this list can only keep a row a viewer holds, never drop one.
+            try await publishJSON(
+                Self.sessionInventory(publishedSessionIDs.sorted()),
+                channel: sessionChannel(Self.sessionInventoryID),
+                lifecycleGeneration: ownedGeneration
+            )
+            inventoryPublished = true
         }
+        if refresh { lastSessionRefreshAt = nowMilliseconds() }
+        trackTranscriptSignatures(lifecycleGeneration: ownedGeneration)
         diagnostic("cloud: sessions published id=\(publicationID ?? "direct") "
             + "rows=\(sessions.count) changed=\(changed) "
-            + "skipped=\(skipped) tombstones=\(removed.count) inventory=\(inventoryPublished) "
-            + "force=\(force) total_ms=\(Self.elapsedMilliseconds(from: startedAt, to: nowMilliseconds()))")
+            + "skipped=\(skipped) resent=\(resent) tombstones=\(removed.count) "
+            + "inventory=\(inventoryPublished) force=\(force) refresh=\(refresh) total_ms=\(Self.elapsedMilliseconds(from: startedAt, to: nowMilliseconds()))")
+    }
+
+    // MARK: - Transcript signatures
+
+    /// Name every published Session to the signature source, and start the one ordered consumer
+    /// of its reports the first time. Only a running publication reaches here.
+    private func trackTranscriptSignatures(lifecycleGeneration ownedGeneration: UInt64) {
+        guard let transcriptSignatures, running, lifecycleGeneration == ownedGeneration else {
+            return
+        }
+        if transcriptReports == nil {
+            // Unbounded is bounded by its producer: one report per watched Session per watch
+            // debounce, consumed with dictionary work only.
+            var made: AsyncStream<(String, String?)>.Continuation!
+            let reports = AsyncStream<(String, String?)> { made = $0 }
+            transcriptReports = made
+            transcriptReportTask = Task { [weak self] in
+                for await (sessionID, signature) in reports {
+                    guard let self else { return }
+                    await self.transcriptSignatureObserved(
+                        sessionID, signature: signature, lifecycleGeneration: ownedGeneration)
+                }
+            }
+        }
+        guard let continuation = transcriptReports else { return }
+        let subjects = publishedSessionIDs.sorted().compactMap { id in
+            latestSessionRows[id].map {
+                CloudTranscriptSubject(sessionID: id, binding: Self.transcriptBinding($0))
+            }
+        }
+        transcriptSignatures.track(subjects) { sessionID, signature in
+            continuation.yield((sessionID, signature))
+        }
+    }
+
+    private func transcriptSignatureObserved(
+        _ sessionID: String, signature: String?, lifecycleGeneration ownedGeneration: UInt64
+    ) {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        let current = signature.flatMap { $0.isEmpty ? nil : $0 }
+        guard knownTranscriptSignatures[sessionID] != current else { return }
+        knownTranscriptSignatures[sessionID] = current
+        guard latestSessionRows[sessionID] != nil else { return }
+        pendingTranscriptSessions.insert(sessionID)
+        scheduleTranscriptRepublication(lifecycleGeneration: ownedGeneration)
+    }
+
+    /// At once when the previous pass is older than the interval, otherwise when it has passed.
+    /// Everything that changes meanwhile rides that one pass.
+    private func scheduleTranscriptRepublication(lifecycleGeneration ownedGeneration: UInt64) {
+        guard running, lifecycleGeneration == ownedGeneration, transcriptRepublicationTask == nil,
+              !pendingTranscriptSessions.isEmpty else { return }
+        let interval = transcriptRepublicationIntervalMilliseconds
+        let now = nowMilliseconds()
+        let elapsed = lastTranscriptRepublicationAt.map { now >= $0 ? now - $0 : 0 }
+        let wait = elapsed.map { $0 >= interval ? 0 : interval - $0 } ?? 0
+        let waitMilliseconds = self.waitMilliseconds
+        transcriptRepublicationTask = Task { [weak self] in
+            if wait > 0 {
+                do { try await waitMilliseconds(wait) } catch { return }
+            }
+            await self?.republishTranscriptRows(lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func republishTranscriptRows(lifecycleGeneration ownedGeneration: UInt64) async {
+        transcriptRepublicationTask = nil
+        guard running, lifecycleGeneration == ownedGeneration,
+              !pendingTranscriptSessions.isEmpty else { return }
+        let sessionIDs = pendingTranscriptSessions.sorted()
+        pendingTranscriptSessions.removeAll()
+        lastTranscriptRepublicationAt = nowMilliseconds()
+        do {
+            try await runSessionPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.republishTranscriptRowsOwned(
+                    sessionIDs, lifecycleGeneration: ownedGeneration)
+            }
+        } catch {
+            if running, lifecycleGeneration == ownedGeneration {
+                diagnostic("cloud: transcript signature publication failed")
+            }
+        }
+        scheduleTranscriptRepublication(lifecycleGeneration: ownedGeneration)
+    }
+
+    private func republishTranscriptRowsOwned(
+        _ sessionIDs: [String], lifecycleGeneration ownedGeneration: UInt64
+    ) async throws {
+        var changed = 0
+        for id in sessionIDs {
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            // A tombstone or a newer scan may have run first; only a still-published row goes.
+            guard publishedSessionIDs.contains(id), let session = latestSessionRows[id] else {
+                continue
+            }
+            if try await publishSessionRow(
+                session, id: id, force: false, lifecycleGeneration: ownedGeneration
+            ) != .skipped {
+                changed += 1
+            }
+        }
+        diagnostic("cloud: transcript signatures published rows=\(sessionIDs.count) "
+            + "changed=\(changed)")
+    }
+
+    /// Tests read the demand's state rather than sleeping past it.
+    func transcriptSignatureStateForTesting()
+        -> (known: [String: String], pending: [String], scheduled: Bool) {
+        (knownTranscriptSignatures, pendingTranscriptSessions.sorted(),
+         transcriptRepublicationTask != nil)
+    }
+
+    /// End the demand: no watch outlives a stopped bridge. Returns the tasks `stop()` joins.
+    private func stopTranscriptSignatures() -> [Task<Void, Never>] {
+        transcriptSignatures?.stop()
+        transcriptReports?.finish()
+        transcriptReports = nil
+        let tasks = [transcriptReportTask, transcriptRepublicationTask].compactMap { $0 }
+        tasks.forEach { $0.cancel() }
+        transcriptReportTask = nil
+        transcriptRepublicationTask = nil
+        knownTranscriptSignatures.removeAll()
+        pendingTranscriptSessions.removeAll()
+        lastTranscriptRepublicationAt = nil
+        return tasks
+    }
+
+    // MARK: - Session snapshots for a reconnecting page
+
+    /// `sessions.snapshot` (docs/cloud.md): every current Session row and the inventory again, on
+    /// their own `s/` channels, then `read:<request>` on the machine reply channel naming the ids
+    /// that went out. Every request that arrives inside one window is answered by one pass.
+    private func serveSessionSnapshot(
+        _ body: [String: Any], inbound: CloudInboundCommand, reference: CommandReference,
+        lifecycleGeneration ownedGeneration: UInt64
+    ) async {
+        let reply = Self.readRefusalReply(type: Self.sessionSnapshotType, body: body)
+        let keys = Set(body.keys)
+        guard inbound.commandClass == .ctl,
+              keys == ["type", "session", "request"]
+                || (keys == ["type", "session", "request", "orchestrator"]
+                    && body["orchestrator"] is Bool),
+              body["session"] as? String == Self.machineReplySession,
+              let request = Self.requestName(body["request"])
+        else {
+            await refuse(
+                reference, layer: .macPreflight, status: 400, code: "malformed_read",
+                message: "This Cloud read is malformed.", replyTo: reply,
+                viaLane: true, lifecycleGeneration: ownedGeneration)
+            return
+        }
+        guard sessionSnapshotWaiters.count < Self.sessionSnapshotWaiterLimit else {
+            await refuse(
+                reference, layer: .macPreflight, status: 429, code: "cloud_read_busy",
+                message: "That Cloud read lane is full; retry shortly.",
+                extra: ["lane": Self.sessionSnapshotType, "limit": Self.sessionSnapshotWaiterLimit,
+                        "retry_after": max(1, Int(sessionSnapshotIntervalMilliseconds / 1_000))],
+                replyTo: reply, viaLane: true, lifecycleGeneration: ownedGeneration)
+            return
+        }
+        // `orchestrator`: the page has not been replayed this Mac's `orch/` snapshot either, which
+        // the relay never keeps when it is larger than its cache entry. Only then is it re-sent.
+        sessionSnapshotWaiters.append((reference, request, body["orchestrator"] as? Bool == true,
+                                       nowMilliseconds()))
+        scheduleSessionSnapshot(lifecycleGeneration: ownedGeneration)
+    }
+
+    /// At once when the last pass started longer ago than the window, otherwise when it has passed.
+    private func scheduleSessionSnapshot(lifecycleGeneration ownedGeneration: UInt64) {
+        guard running, lifecycleGeneration == ownedGeneration, sessionSnapshotTask == nil,
+              !sessionSnapshotWaiters.isEmpty else { return }
+        let interval = sessionSnapshotIntervalMilliseconds
+        let now = nowMilliseconds()
+        let elapsed = lastSessionSnapshotAt.map { now >= $0 ? now - $0 : 0 }
+        let wait = elapsed.map { $0 >= interval ? 0 : interval - $0 } ?? 0
+        let waitMilliseconds = self.waitMilliseconds
+        sessionSnapshotTask = Task { [weak self] in
+            if wait > 0 {
+                do { try await waitMilliseconds(wait) } catch { return }
+            }
+            await self?.runSessionSnapshot(lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func runSessionSnapshot(lifecycleGeneration ownedGeneration: UInt64) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        // Taken before the pass: a request that arrives while it runs may have missed a row the
+        // pass already sent, so it waits for the next one.
+        let waiters = sessionSnapshotWaiters
+        sessionSnapshotWaiters.removeAll()
+        let startedAt = nowMilliseconds()
+        lastSessionSnapshotAt = startedAt
+        let orchestrator = orchestratorResendNow(
+            asked: waiters.filter { $0.orchestrator }.map { $0.at }, at: startedAt,
+            lifecycleGeneration: ownedGeneration)
+        var failed = false
+        do {
+            try await runSessionPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.republishSessionSnapshotOwned(
+                    orchestrator: orchestrator, lifecycleGeneration: ownedGeneration)
+            }
+        } catch {
+            failed = true
+        }
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        let ids = publishedSessionIDs.sorted()
+        let complete = publishedSessionInventory != nil
+        diagnostic("cloud: session snapshot answered requests=\(waiters.count) rows=\(ids.count) "
+            + "complete=\(complete) failed=\(failed)")
+        for (waiter, request, _, _) in waiters {
+            if failed {
+                await refuse(
+                    waiter, layer: .macReply, status: 503, code: "internal",
+                    message: "This Mac could not send its Sessions; retry shortly.",
+                    replyTo: (Self.machineReplySession, "read:" + request), viaLane: false,
+                    lifecycleGeneration: ownedGeneration)
+                continue
+            }
+            commandResult(CloudCommandResult(status: 200, code: nil))
+            let payload: [String: Any] = [
+                "read": "read:" + request, "status": 200,
+                "body": ["sessions": ids, "complete": complete] as [String: Any],
+            ]
+            _ = await publishPayload(payload, session: Self.machineReplySession,
+                                     reference: waiter, lifecycleGeneration: ownedGeneration)
+        }
+        sessionSnapshotTask = nil
+        scheduleSessionSnapshot(lifecycleGeneration: ownedGeneration)
+    }
+
+    /// Runs as a Session-channel publication, so no scan row or transcript republication can
+    /// interleave with it. What goes out is what a transport-ready force sends: the last
+    /// orchestrator snapshot (descriptor, tasks, schedules, `cloud_status`) when a request said it
+    /// lacks one — that snapshot can be hundreds of kilobytes and usually rides the relay's replay —
+    /// then every row the Mac last handed over for a published Session, with its signature, and the
+    /// inventory.
+    private func republishSessionSnapshotOwned(
+        orchestrator: Bool, lifecycleGeneration ownedGeneration: UInt64
+    ) async throws {
+        if orchestrator, noticesEnabled, lastOrchestratorPayload != nil {
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            try await publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+        }
+        var rows = 0
+        for id in publishedSessionIDs.sorted() {
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            guard let session = latestSessionRows[id] else { continue }
+            if try await publishSessionRow(
+                session, id: id, force: true, lifecycleGeneration: ownedGeneration
+            ) != .skipped {
+                rows += 1
+            }
+        }
+        if publishedSessionInventory != nil,
+           publishedSessionIDs.count <= Self.sessionInventoryLimit {
+            try requireActivePublication(lifecycleGeneration: ownedGeneration)
+            try await publishJSON(
+                Self.sessionInventory(publishedSessionIDs.sorted()),
+                channel: sessionChannel(Self.sessionInventoryID),
+                lifecycleGeneration: ownedGeneration
+            )
+        }
+        // The pass sent every row and the inventory: the refresh interval starts again from here.
+        lastSessionRefreshAt = nowMilliseconds()
+        diagnostic("cloud: session snapshot published rows=\(rows) "
+            + "inventory=\(publishedSessionInventory != nil)")
+    }
+
+    /// Tests read the pass's state rather than sleeping past it.
+    func sessionSnapshotStateForTesting() -> (waiting: Int, scheduled: Bool, lastAt: UInt64?) {
+        (sessionSnapshotWaiters.count, sessionSnapshotTask != nil, lastSessionSnapshotAt)
+    }
+
+    /// Whether this pass re-sends the orchestrator snapshot for the `orchestrator` requests that
+    /// arrived at `asked`. A request that arrived before the Mac's last `orch/` publication was sent
+    /// that one live — the page asked from a ready socket — and needs nothing more. The others get it
+    /// now when that publication is older than the floor; inside the floor they are owed, and the
+    /// re-send waits for the floor unless a publication answers them first.
+    private func orchestratorResendNow(
+        asked: [UInt64], at now: UInt64, lifecycleGeneration ownedGeneration: UInt64
+    ) -> Bool {
+        guard noticesEnabled, lastOrchestratorPayload != nil else { return false }
+        let last = lastNoticeAt
+        let unanswered = asked.filter { arrived in last.map { $0 < arrived } ?? true }
+        guard let earliest = unanswered.min() else { return false }
+        if let last, now >= last, now - last < Self.orchestratorResendFloorMilliseconds {
+            orchestratorOwedSince = min(orchestratorOwedSince ?? earliest, earliest)
+            scheduleOrchestratorResend(lifecycleGeneration: ownedGeneration)
+            return false
+        }
+        orchestratorOwedSince = nil
+        return true
+    }
+
+    private func scheduleOrchestratorResend(lifecycleGeneration ownedGeneration: UInt64) {
+        guard running, lifecycleGeneration == ownedGeneration, orchestratorResendTask == nil,
+              orchestratorOwedSince != nil else { return }
+        let floor = Self.orchestratorResendFloorMilliseconds
+        let now = nowMilliseconds()
+        let wait = lastNoticeAt.map { now >= $0 && now - $0 < floor ? floor - (now - $0) : 0 } ?? 0
+        let waitMilliseconds = self.waitMilliseconds
+        orchestratorResendTask = Task { [weak self] in
+            if wait > 0 {
+                do { try await waitMilliseconds(wait) } catch { return }
+            }
+            await self?.resendOwedOrchestrator(lifecycleGeneration: ownedGeneration)
+        }
+    }
+
+    private func resendOwedOrchestrator(lifecycleGeneration ownedGeneration: UInt64) async {
+        guard running, lifecycleGeneration == ownedGeneration else { return }
+        orchestratorResendTask = nil
+        guard let owed = orchestratorOwedSince else { return }
+        orchestratorOwedSince = nil
+        // A publication since the earliest owed request reached every page that was asking.
+        if let last = lastNoticeAt, last >= owed {
+            diagnostic("cloud: owed orchestrator snapshot answered by a publication")
+            return
+        }
+        do {
+            try await runPublication { [weak self] in
+                guard let self else { throw CancellationError() }
+                try await self.publishOrchestratorWithNotice(lifecycleGeneration: ownedGeneration)
+            }
+            diagnostic("cloud: owed orchestrator snapshot re-sent")
+        } catch {
+            if running, lifecycleGeneration == ownedGeneration {
+                diagnostic("cloud: owed orchestrator snapshot failed")
+            }
+        }
+    }
+
+    /// Tests read what is owed rather than sleeping past the floor.
+    func orchestratorResendStateForTesting() -> (owedSince: UInt64?, scheduled: Bool) {
+        (orchestratorOwedSince, orchestratorResendTask != nil)
+    }
+
+    /// End the requests with the lifecycle. Returns the work `stop()` joins.
+    private func stopSessionSnapshots() -> [Task<Void, Never>] {
+        let tasks = [sessionSnapshotTask, orchestratorResendTask].compactMap { $0 }
+        tasks.forEach { $0.cancel() }
+        sessionSnapshotTask = nil
+        orchestratorResendTask = nil
+        sessionSnapshotWaiters.removeAll()
+        orchestratorOwedSince = nil
+        lastSessionSnapshotAt = nil
+        return tasks
     }
 
     /// The local SSE serializer has already made these bytes. Seal them unchanged so local and
@@ -2015,6 +2608,8 @@ actor CloudAppBridge {
         commandTask = nil
         readyTask?.cancel()
         readyTask = nil
+        _ = stopTranscriptSignatures()
+        _ = stopSessionSnapshots()
     }
 
     private func transportBecameReady(
@@ -2076,6 +2671,11 @@ actor CloudAppBridge {
         if requestedType == "cloud.status" {
             await serveCloudStatus(parsed ?? [:], inbound: inbound, reference: reference,
                                    lifecycleGeneration: ownedGeneration)
+            return
+        }
+        if requestedType == Self.sessionSnapshotType {
+            await serveSessionSnapshot(parsed ?? [:], inbound: inbound, reference: reference,
+                                       lifecycleGeneration: ownedGeneration)
             return
         }
         if let parsed, let requestedType, Self.readTypes.contains(requestedType) {
@@ -2763,7 +3363,7 @@ actor CloudAppBridge {
         let requestReads: Set<String> = [
             "document", "board", "timeline", "places", "project-worktrees",
             "project-worktree-lifecycle", "project-worktree-lifecycle-refresh", "past-sessions",
-            "schedules", "snippets", "schedule", "push-key", "cloud.status",
+            "schedules", "snippets", "schedule", "push-key", "cloud.status", sessionSnapshotType,
         ]
         guard requestReads.contains(type),
               let request = requestName(body["request"]),
@@ -3534,8 +4134,9 @@ actor CloudAppBridge {
             ? "This command is larger than this Mac accepts over Cloud."
             : "This request was not accepted because Cloud ingress is full; try again shortly."
         if let parsed, let requestedType,
-           Self.readTypes.contains(requestedType) || requestedType == "cloud.status" {
-            if requestedType == "cloud.status" {
+           Self.readTypes.contains(requestedType) || requestedType == "cloud.status"
+            || requestedType == Self.sessionSnapshotType {
+            if requestedType == "cloud.status" || requestedType == Self.sessionSnapshotType {
                 await refuse(
                     reference, layer: .macTransport, status: refusal.reason.refusalStatus,
                     code: code, message: message, detail: busyDetail,

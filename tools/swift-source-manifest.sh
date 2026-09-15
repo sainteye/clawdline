@@ -182,6 +182,7 @@ clawdline_test_sources=(
   Tests/CloudLifecycleTests.swift
   Tests/CloudOutboundSpoolTests.swift
   Tests/CloudPairingTests.swift
+  Tests/CloudSessionRowTests.swift
   Tests/CloudSettingsTests.swift
   Tests/CloudTestRunner.swift
   Tests/CloudTransparencyTests.swift
