@@ -2419,6 +2419,82 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertEqual(afterRestart.commands.first?.outcome, .interrupted)
     }
 
+    func testW43CreateBindsAnInventoryDiscoveredTerminalToItsDurableTask() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-create-terminal-link-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        let runtime = FakeLinuxLifecycleRuntime()
+        runtime.sessionID = "%5"
+        try store.save(LinuxDurableState(terminals: [
+            .init(id: "%5", taskID: nil, state: .present,
+                  lastObservedAt: "2026-09-15T00:00:00Z", evidenceDigest: nil),
+        ]))
+        let startup = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete(["%5"]), now: "2026-09-15T00:00:01Z")
+        let owner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+        owner.completeStartup(startup)
+
+        let create = LinuxIngressRequest(
+            operation: .taskCreate, commandID: "create-mobile", taskID: "mobile-task",
+            projectRoot: "/srv/reaver", assistant: .codex, taskSecret: "secret",
+            title: "Mobile AWS task", claims: [])
+        owner.faultInjection = { point in
+            if point == .afterReceiptBeforeResponse {
+                throw LinuxIngressFaultPoint.afterReceiptBeforeResponse
+            }
+        }
+        XCTAssertThrowsError(try owner.perform(create))
+        owner.faultInjection = nil
+        let replayed = try owner.perform(create)
+
+        let persisted = try XCTUnwrap(store.load().state)
+        let terminal = try XCTUnwrap(persisted.terminals.first { $0.id == "%5" })
+        let command = try XCTUnwrap(persisted.commands.first { $0.id == "create-mobile" })
+        XCTAssertEqual(terminal.taskID, "mobile-task")
+        XCTAssertEqual(terminal.state, .present)
+        XCTAssertEqual(terminal.evidenceDigest, command.evidenceDigest)
+        XCTAssertEqual(replayed.base64EncodedString(), command.responseBase64)
+        XCTAssertEqual(runtime.calls, ["create:create-mobile:codex:"])
+        XCTAssertEqual(try owner.taskIDForCloudSession("%5"), "mobile-task")
+    }
+
+    func testW43CreateRefusesToStealAnExistingTerminalOwner() throws {
+        let scratch = canonicalTemporaryDirectory()
+            .appendingPathComponent("clawdline-create-owner-conflict-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        let store = try LinuxDurableStateStore(stateDirectory: scratch.path)
+        let runtime = FakeLinuxLifecycleRuntime()
+        runtime.sessionID = "%5"
+        try store.save(LinuxDurableState(
+            terminals: [.init(id: "%5", taskID: "existing-task", state: .present,
+                              lastObservedAt: nil, evidenceDigest: "existing-evidence")],
+            tasks: [.init(id: "existing-task", terminalID: "%5", state: .working,
+                          resultDigest: nil, acknowledgedEvidence: [])]))
+        let startup = try LinuxStartupReconciler.reconcile(
+            store: store, inventory: .complete(["%5"]))
+        let owner = LinuxDaemonIngressOwner(store: store, runtime: runtime)
+        owner.completeStartup(startup)
+
+        XCTAssertThrowsError(try owner.perform(LinuxIngressRequest(
+            operation: .taskCreate, commandID: "conflicting-create", taskID: "new-task",
+            projectRoot: "/srv/reaver", assistant: .codex, taskSecret: "secret",
+            title: "Conflicting task", claims: []))) {
+            XCTAssertEqual(($0 as? LinuxDurableStateFailure)?.code,
+                           "terminal_identity_conflict")
+        }
+        let persisted = try XCTUnwrap(store.load().state)
+        XCTAssertEqual(persisted.terminals.first?.taskID, "existing-task")
+        XCTAssertEqual(persisted.terminals.first?.evidenceDigest, "existing-evidence")
+        XCTAssertNil(persisted.tasks.first { $0.id == "new-task" }?.terminalID)
+        XCTAssertEqual(persisted.commands.first { $0.id == "conflicting-create" }?.outcome,
+                       .pending)
+    }
+
     func testW42SerializedIngressSealsBeforeEffectAndPersistsBeforeResponse() throws {
         let scratch = canonicalTemporaryDirectory()
             .appendingPathComponent("clawdline-ledger-\(UUID().uuidString)")

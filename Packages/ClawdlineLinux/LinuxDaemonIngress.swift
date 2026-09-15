@@ -569,12 +569,27 @@ final class LinuxDaemonIngressOwner {
             state.tasks[taskIndex].acknowledgedEvidence.append(evidence)
         }
         if (request.operation == .create || request.operation == .taskCreate),
-           let sessionID = receipt?.sessionID,
-           !state.terminals.contains(where: { $0.id == sessionID }) {
-            state.terminals.append(.init(
-                id: sessionID, taskID: request.taskID, state: .present,
-                lastObservedAt: ISO8601DateFormatter().string(from: Date()),
-                evidenceDigest: LinuxSHA256.hex(response)))
+           let sessionID = receipt?.sessionID {
+            let evidenceDigest = LinuxSHA256.hex(response)
+            if let terminalIndex = state.terminals.firstIndex(where: { $0.id == sessionID }) {
+                let currentOwner = state.terminals[terminalIndex].taskID
+                guard currentOwner == nil || currentOwner == request.taskID else {
+                    // The terminal effect has happened, but a durable record already assigns the
+                    // returned id to another task. Keep the sealed command unresolved rather than
+                    // silently stealing that terminal or returning an untrustworthy receipt.
+                    throw LinuxDurableStateFailure(
+                        code: "terminal_identity_conflict",
+                        message: "The created Linux Session is already assigned to another task.")
+                }
+                state.terminals[terminalIndex].taskID = request.taskID
+                state.terminals[terminalIndex].state = .present
+                state.terminals[terminalIndex].lastObservedAt = now
+                state.terminals[terminalIndex].evidenceDigest = evidenceDigest
+            } else {
+                state.terminals.append(.init(
+                    id: sessionID, taskID: request.taskID, state: .present,
+                    lastObservedAt: now, evidenceDigest: evidenceDigest))
+            }
         } else if (request.operation == .close || request.operation == .taskClose),
                   let sessionID = request.sessionID,
                   let terminalIndex = state.terminals.firstIndex(where: { $0.id == sessionID }) {
