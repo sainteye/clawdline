@@ -780,8 +780,12 @@ export function keepConnected(session, options) {
     // The relay's two temporary refusals are counted apart from `failures` (`countFailure`).
     var rateRefusals = 0;
     var forbiddenRefusals = 0;
+    // Parks that 4403s caused since the last connection that stayed up `stableMs` (`parkUntilReturn`).
+    var forbiddenParks = 0;
     // Out of attempts: nothing is open and nothing is timed until the page is back (`parkUntilReturn`).
     var parked = false;
+    // Parked by 4403s `MAXIMUM_FORBIDDEN_PARKS` times: the page coming back no longer starts it.
+    var parkedForGood = false;
     var lastAttemptAt = null;
     // Hidden past the grace period: the socket is retired and nothing connects until the page is back.
     var quiesced = false;
@@ -866,9 +870,15 @@ export function keepConnected(session, options) {
      * another device holds is freed when that device's page is put away or closed — so it keeps the
      * longest wait and its own, larger bound instead of spending the one a dead network gets. 4403
      * `forbidden` is a revoked device, and also every device of an account whose revocation set the
-     * relay has saturated, which clears later and closes with the same code and words; a device that
-     * really is revoked is refused by the API's device list on the next attempt (`revoked`), so only
-     * the other kind keeps reaching the relay, and after a few tries it waits for the page instead.
+     * relay has saturated, which clears later and closes with the same code and words. A device that
+     * really is revoked does not reach the relay again: the next attempt's `connect()` asks the API
+     * for its session first (`ensureSession`), the API refuses a cookie naming a revoked device with
+     * 401, and the loop ends at `sign_in` (a revocation landing between that request and the device
+     * list or the token mint is refused there, as `revoked`). So only the other kind keeps reaching
+     * the relay, and after a few tries it waits for the page instead (`parkUntilReturn`).
+     *
+     * None of these counts means "in a row": a connection that opens and soon closes again does not
+     * clear them. Only a connection that stayed up `stableMs` does, or a parked loop starting again.
      */
     function countFailure(code) {
         if (RATE_REFUSALS.has(code)) return (rateRefusals += 1) >= MAXIMUM_RATE_REFUSALS ? rateRefusals : 0;
@@ -881,15 +891,26 @@ export function keepConnected(session, options) {
     /**
      * Out of attempts. The caller has said so (`terminal_error`, `retries_exhausted`); the loop then
      * holds no socket and no timer until the page is shown, restored from the back-forward cache or
-     * back online, and starts over with every count cleared — never sooner than `wakeSpacingMs`
+     * back online, and starts over with its counts cleared — never sooner than `wakeSpacingMs`
      * after its last attempt. The door's own press starts a new loop and stops this one. Answers
      * false when stopped.
+     *
+     * `forbidden` (the attempts ran out on 4403) is bounded across returns as well, because a 4403
+     * that no retry changes would otherwise cost a few refused attempts every time the page comes
+     * back, for ever. Such a loop starts again with one attempt, not `MAXIMUM_FORBIDDEN_REFUSALS`;
+     * and once 4403s have parked it `MAXIMUM_FORBIDDEN_PARKS` times without a connection staying up
+     * `stableMs` in between, the page coming back no longer starts it — it lets go of the page and
+     * waits only to be stopped, by the door's press or a reload. A saturated revocation set that
+     * clears is met by the next return in time, and its stable connection gives the parks back.
      */
-    async function parkUntilReturn() {
+    async function parkUntilReturn(forbidden) {
+        if (forbidden) forbiddenParks += 1;
         parked = true;
+        parkedForGood = forbidden === true && forbiddenParks >= MAXIMUM_FORBIDDEN_PARKS;
+        if (parkedForGood) { disarmGrace(); detach(); }
         await new Promise(function (resolve) {
             var off = onWake(function (reason) {
-                if (stopped || RESTART_WAKES.has(reason)) { off(); resolve(); }
+                if (stopped || (!parkedForGood && RESTART_WAKES.has(reason))) { off(); resolve(); }
             });
             if (stopped) { off(); resolve(); }
         });
@@ -897,7 +918,7 @@ export function keepConnected(session, options) {
         if (stopped) return false;
         failures = 0;
         rateRefusals = 0;
-        forbiddenRefusals = 0;
+        forbiddenRefusals = forbidden ? MAXIMUM_FORBIDDEN_REFUSALS - 1 : 0;
         backoff = initial;
         var since = lastAttemptAt === null ? wakeSpacingMs : now() - lastAttemptAt;
         if (since < wakeSpacingMs) await waitFor(wakeSpacingMs - since, function () { return false; });
@@ -1009,7 +1030,7 @@ export function keepConnected(session, options) {
      */
     function resume(reason) {
         if (stopped || ended) return false;
-        if (parked && !RESTART_WAKES.has(reason)) return false;
+        if (parked && (parkedForGood || !RESTART_WAKES.has(reason))) return false;
         if (page.hidden()) {
             // `online` while hidden: a loop that is not quiesced may re-read the network flag.
             if (!quiesced) wake(reason);
@@ -1073,10 +1094,11 @@ export function keepConnected(session, options) {
                 var exhausted = serving ? 0 : countFailure(error && error.code);
                 if (exhausted) {
                     // Stops rather than knocking every thirty seconds for ever; the door says so and
-                    // offers the press that starts again, and the page coming back starts it too.
+                    // offers the press that starts again, and the page coming back starts it too — for
+                    // 4403, only until `MAXIMUM_FORBIDDEN_PARKS` (`parkUntilReturn`).
                     onState({ state: "terminal_error", error: error, reason: "retries_exhausted",
                         attempts: exhausted });
-                    if (await parkUntilReturn()) continue;
+                    if (await parkUntilReturn(!!error && error.code === "forbidden")) continue;
                     return;
                 }
                 if (error && (RATE_REFUSALS.has(error.code) || error.code === "forbidden")) backoff = maximum;
@@ -1125,6 +1147,7 @@ export function keepConnected(session, options) {
                 failures = 0;
                 rateRefusals = 0;
                 forbiddenRefusals = 0;
+                forbiddenParks = 0;
                 backoff = initial;
             }
             if (boundary.reason === "quiesce") {
@@ -1150,7 +1173,7 @@ export function keepConnected(session, options) {
                 if (exhaustedAfter) {
                     onState({ state: "terminal_error", reason: "retries_exhausted", attempts: exhaustedAfter,
                         error: bootError(boundary.failure || "offline", "the cloud connection kept dropping") });
-                    if (await parkUntilReturn()) continue;
+                    if (await parkUntilReturn(boundary.failure === "forbidden")) continue;
                     return;
                 }
                 if (RATE_REFUSALS.has(boundary.failure) || boundary.failure === "forbidden") backoff = maximum;
@@ -1164,7 +1187,8 @@ export function keepConnected(session, options) {
     })();
     // A loop that ends on its own — pairing required, a terminal refusal — leaves no page listener or
     // grace timer behind; the next `keepConnected` a retry starts brings its own. One that ran out of
-    // attempts has not ended: it keeps its page listeners, and only those, to start again.
+    // attempts has not ended: it keeps its page listeners, and only those, to start again — unless
+    // 4403s parked it `MAXIMUM_FORBIDDEN_PARKS` times, when it lets go of those too (`parkUntilReturn`).
     function release() { ended = true; disarmGrace(); detach(); }
     loop.then(release, release);
 
@@ -1198,9 +1222,18 @@ const MAXIMUM_CONNECT_FAILURES = 16;
 const PERMANENT_RELAY_REFUSALS = new Set(["bad_request", "too_large"]);
 /** 4429: the relay asked for less; the next attempt waits the longest. */
 const RATE_REFUSALS = new Set(["rate_limited", "over_capacity"]);
-/** 4403s in a row before the loop waits for the page: a revoked device ends at the API before this. */
+/**
+ * 4403s before the loop waits for the page, counted until a connection stays up `stableMs` or the
+ * parked loop starts again. A revoked device never gets this far: its next `connect()` is refused
+ * by the API with 401 and the loop ends at `sign_in` (`countFailure`).
+ */
 const MAXIMUM_FORBIDDEN_REFUSALS = 3;
-/** 4429s in a row before the loop waits for the page: about twenty minutes at the longest wait. */
+/**
+ * Parks caused by 4403, without a connection staying up `stableMs` between them, after which the
+ * page coming back no longer starts the loop: at most 3 + 1 + 1 refused attempts (`parkUntilReturn`).
+ */
+const MAXIMUM_FORBIDDEN_PARKS = 3;
+/** 4429s before the loop waits for the page, counted the same way: about twenty minutes at the longest wait. */
 const MAXIMUM_RATE_REFUSALS = 40;
 /** What starts a loop that ran out of attempts: the page back in view, restored, or back online. */
 const RESTART_WAKES = new Set(["visible", "pageshow", "online"]);

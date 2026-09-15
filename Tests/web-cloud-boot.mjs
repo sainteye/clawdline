@@ -657,6 +657,12 @@ for (const [status, code, expected, why] of [
 
 /* ---- staying connected ---------------------------------------------------- */
 
+/** Waits for `condition()` in real time and returns the moment it holds; the ceiling only ends a red run. */
+async function eventually(condition, ceilingMs) {
+    const deadline = Date.now() + (ceilingMs || 20_000);
+    while (!condition() && Date.now() < deadline) await new Promise(function (resolve) { setTimeout(resolve, 1); });
+}
+
 function fakeClient() {
     const listeners = new Set();
     return {
@@ -728,7 +734,7 @@ function fakeClient() {
         sleep: function (ms) { sleeps.push(ms); return Promise.resolve(); },
         onState: function (update) { states.push(update.state); }
     });
-    await new Promise(function (resolve) { setTimeout(resolve, 5); });
+    await eventually(function () { return attempts >= 2 && states.length >= 2 && firstStops >= 1; });
     assert.equal(attempts, 2,
         "the viewer opens a replacement socket before its five-minute token expires");
     assert.deepEqual(states, ["connected", "connected"],
@@ -1088,6 +1094,18 @@ await lifecycleCheck("refusals · 4403 is tried again a few times at the longest
     assert.equal(revoked.connects.length, 2);
     await ended.keeper.done;
 
+    // The usual path for a device that really is revoked: the API refuses the cookie naming it
+    // (401), so the next `connect()` answers `sign_in` before any relay is asked.
+    const signInTimers = lifecycleTimers();
+    const signIn = lifecycleSession(signInTimers, function (n) {
+        return n === 1 ? refusal("forbidden") : { state: "sign_in", url: "https://api.example/v1/auth/oauth/start" };
+    });
+    const signedOut = lifecycleKeeper(signIn, signInTimers, lifecyclePage(), { maximumBackoffMs: 30_000 });
+    await signInTimers.advance(10 * 60_000);
+    assert.deepEqual(signedOut.names(), ["retrying", "sign_in"], "a revoked device ends at sign-in on the next attempt");
+    assert.equal(signIn.connects.length, 2);
+    await signedOut.keeper.done;
+
     const liveTimers = lifecycleTimers();
     const live = lifecycleSession(liveTimers);
     const closed = lifecycleKeeper(live, liveTimers, lifecyclePage(), { initialBackoffMs: 250, maximumBackoffMs: 30_000 });
@@ -1161,6 +1179,116 @@ await lifecycleCheck("refusals · a loop out of attempts holds nothing open, and
     again.keeper.stop();
     await again.keeper.done;
     assert.equal(onlinePage.listeners(), 0);
+});
+
+/** How many times a loop has run out of attempts and said so. */
+function parksOf(run) {
+    return run.states.filter(function (update) {
+        return update.state === "terminal_error" && update.reason === "retries_exhausted";
+    }).length;
+}
+
+await lifecycleCheck("refusals · a 4403 that never clears gets one attempt per return, and after three 4403 parks a return starts nothing", async function () {
+    // A shard or role the relay will never accept: without a bound, every return costs three refusals.
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    const session = lifecycleSession(timers, function (n) { return n === 1 ? null : refusal("forbidden"); });
+    const run = lifecycleKeeper(session, timers, page, { maximumBackoffMs: 30_000, stableMs: 60_000 });
+    await timers.advance(0);
+    const first = session.client;
+    first.drop("forbidden");
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 3, "three 4403s (the close and two connects), then it waits for the page");
+    assert.equal(parksOf(run), 1);
+    assert.deepEqual(timers.pending(), [], "nothing is timed while it waits");
+
+    page.hide();
+    page.show();
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 4, "shown again: one more attempt, not three");
+    assert.equal(parksOf(run), 2, "which parks it again, and says so");
+
+    page.online();
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 5, "back online: one more");
+    assert.equal(parksOf(run), 3);
+    const last = run.states.at(-1);
+    assert.deepEqual([last.state, last.reason, last.error.code], ["terminal_error", "retries_exhausted", "forbidden"],
+        "every park tells the door, the last one too");
+
+    page.hide();
+    page.show();
+    page.online();
+    page.window.fire("pageshow");
+    await timers.advance(30 * 60_000);
+    assert.equal(session.connects.length, 5, "after three 4403 parks the page coming back starts nothing");
+    for (const reason of ["visible", "pageshow", "online", "demand"]) {
+        assert.equal(first.lifecycle(reason), false, "and a read asked for `" + reason + "` hears nothing is on its way");
+    }
+    await timers.advance(30 * 60_000);
+    assert.equal(session.connects.length, 5, "nor does asking start it");
+    assert.deepEqual(timers.pending(), [], "nothing is timed");
+    assert.equal(page.listeners(), 0, "and nothing listens to the page: only the door's press or a reload tries again");
+    run.keeper.stop();
+    await run.keeper.done;
+
+    // Out of attempts for any other reason, the page coming back still starts over in full, every time.
+    const downTimers = lifecycleTimers();
+    const downPage = lifecyclePage();
+    const down = lifecycleSession(downTimers, function () { return Object.assign(new Error("offline"), { code: "offline" }); });
+    const again = lifecycleKeeper(down, downTimers, downPage, { maximumConnectFailures: 2, initialBackoffMs: 250 });
+    await downTimers.advance(60_000);
+    assert.equal(down.connects.length, 2);
+    for (let round = 1; round <= 4; round += 1) {
+        downPage.online();
+        await downTimers.advance(60_000);
+        assert.equal(down.connects.length, 2 + round * 2, "return " + round + " of a dead network gets its two attempts");
+    }
+    assert.equal(parksOf(again), 5);
+    again.keeper.stop();
+    await again.keeper.done;
+});
+
+await lifecycleCheck("refusals · a 4403 that clears is connected on the next return, and a connection that stays up gives the 4403 parks back", async function () {
+    // The relay's revocation set, saturated and then not: the same 4403, and it goes away.
+    const timers = lifecycleTimers();
+    const page = lifecyclePage();
+    let refusing = true;
+    const session = lifecycleSession(timers, function () { return refusing ? refusal("forbidden") : null; });
+    const run = lifecycleKeeper(session, timers, page, { maximumBackoffMs: 30_000, stableMs: 60_000 });
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 3);
+    page.online();
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 4);
+    assert.equal(parksOf(run), 2, "two 4403 parks: one left before a return starts nothing");
+
+    refusing = false;
+    page.hide();
+    page.show();
+    await timers.advance(0);
+    assert.equal(session.connects.length, 5, "the set has cleared: the next return connects");
+    assert.equal(run.names().at(-1), "connected");
+
+    await timers.advance(60_000);
+    refusing = true;
+    session.client.drop("forbidden");
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 8, "saturated again after a stable connection: three attempts again");
+    assert.equal(parksOf(run), 3);
+    page.online();
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 9, "and the parks are back: a return still gets its attempt");
+    page.hide();
+    page.show();
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 10, "and the next");
+    assert.equal(parksOf(run), 5);
+    page.online();
+    await timers.advance(10 * 60_000);
+    assert.equal(session.connects.length, 10, "until three 4403 parks since that connection");
+    run.keeper.stop();
+    await run.keeper.done;
 });
 
 await lifecycleCheck("hidden · past the grace the socket is retired and nothing runs; visible connects at once", async function () {
