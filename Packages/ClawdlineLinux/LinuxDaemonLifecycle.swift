@@ -1255,6 +1255,26 @@ struct LinuxDaemonHealth: Codable, Equatable {
 enum LinuxDaemonService {
     static let healthFilename = "health.json"
 
+    /// Production observation assembly, kept as one callable seam so capture failure, incomplete
+    /// inventory and duplicate tmux rows are exercised without reconstructing the daemon.
+    static func presentationObservations(
+        _ snapshot: TerminalInventory,
+        captureVisible: ([TargetSession]) throws -> [String: String]
+    ) -> [String: TerminalSessionPresentation.Observation] {
+        var unique: [TargetSession] = []
+        var seen: Set<String> = []
+        for session in snapshot.assistantSessions where seen.insert(session.id).inserted {
+            unique.append(session)
+        }
+        guard snapshot.isComplete, let screens = try? captureVisible(unique) else {
+            return unique.reduce(into: [:]) { $0[$1.id] = .unknown }
+        }
+        return unique.reduce(into: [:]) { result, session in
+            result[session.id] = TerminalSessionPresentation.observe(
+                screens[session.id], assistant: session.assistant ?? .claude)
+        }
+    }
+
     static func run(configuration: LinuxDaemonConfiguration, authorization: Data) throws -> Never {
         let runtime = try LinuxProviderRuntime.compose(configuration: configuration)
         let stateStore = try LinuxDurableStateStore(
@@ -1296,15 +1316,14 @@ enum LinuxDaemonService {
                     error: "tmux inventory was unavailable", isComplete: false)
             },
             observations: { snapshot in
-                let sessions = snapshot.assistantSessions
-                guard snapshot.isComplete,
-                      let screens = try? runtime.terminal.captureVisible(sessions) else {
-                    return Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, .unknown) })
-                }
-                return Dictionary(uniqueKeysWithValues: sessions.map { session in
-                    (session.id, TerminalSessionPresentation.observe(
-                        screens[session.id], assistant: session.assistant ?? .claude))
-                })
+                await Task.detached {
+                    presentationObservations(snapshot) { sessions in
+                        try runtime.terminal.captureVisible(sessions)
+                    }
+                }.value
+            },
+            screenCapture: { session in
+                try await Task.detached { try runtime.terminal.captureStyled(session) }.value
             },
             diagnostic: relayDiagnostic,
             stateObserver: { relayStatus.record($0) })

@@ -242,12 +242,13 @@ sudo chown -R clawdline:clawdline /var/lib/clawdline-projects/reaver
 
 The hosted Session list and detail view use a bounded tmux capture for both Codex and Claude.
 Terminal colours and safe OSC links remain available on the screen route; the row reports
-`working` plus the provider's live line, `idle`, or `unknown` when capture evidence is incomplete.
-It does not infer work from CPU usage or `pane_current_command`, and it does not infer a waiting
-question where Linux has no proved provider registry/menu signal. The current Linux transcript
-reply is control-free terminal text, not the native JSONL record under this service HOME; the
-remaining provider-specific identity and bounded-file-reader seams are recorded in the task's
-`linux-native-transcript-gap.md` artifact.
+`working` plus the provider's live line, `waiting` for a complete provider-neutral menu shape,
+`idle`, or `unknown` when capture evidence is incomplete or menu-shaped evidence is ambiguous.
+An idle row has `work_state: unknown` unless a future receipt-backed adapter proves readiness. It
+does not infer work from CPU usage or `pane_current_command`. The current Linux transcript reply is
+control-free terminal text, not the native JSONL record under this service HOME; the durable
+provider-specific identity, bounded-reader and acceptance boundary is
+[Linux native transcripts](linux-native-transcripts.md).
 
 Before the first daemon start, replace the broad template root with the exact allowlisted project
 and add the bounded AWS presentation. The temporary file is separate, 0640, root/service-group

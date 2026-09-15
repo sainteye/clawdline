@@ -743,7 +743,7 @@ enum Tmux {
     /// a captured screen is made of cells, and a control byte is not one, so nothing a program
     /// can draw collides with the marker. It wraps the id on **both** sides, so a marker line is
     /// recognised by what it opens and closes with rather than by a single leading needle.
-    static let batchedCaptureMarker = "\u{1}clawdline-pane\u{1}"
+    static let batchedCaptureMarker = TmuxBatchedCapture.marker
 
     /// Whether this is a pane id tmux handed out, and therefore a word that may be written into a
     /// command script. Closed on purpose, like ``StartPoints/sessionName(_:)``: everything asked
@@ -751,9 +751,7 @@ enum Tmux {
     /// generous about, and a batched reading is one place where a stray argument would be read as
     /// a command rather than as a target.
     static func isPaneID(_ id: String) -> Bool {
-        guard id.hasPrefix("%") else { return false }
-        let digits = id.dropFirst()
-        return !digits.isEmpty && digits.allSatisfy { ("0"..."9").contains($0) }
+        TmuxBatchedCapture.paneID(id) != nil
     }
 
     /// The commands one batched reading sends to tmux, one pane at a time down a single script.
@@ -761,12 +759,7 @@ enum Tmux {
     /// Split out from ``capture(panes:scrollback:)`` for the reason every other parser here is:
     /// it can be read, and proved, with no tmux server running.
     static func batchedCaptureScript(_ paneIDs: [String], scrollback: Int) -> String {
-        let lines = paneIDs.filter(isPaneID).flatMap { id in
-            ["display-message -p -t \(id) \"\(batchedCaptureMarker)#{pane_id}\(batchedCaptureMarker)\"",
-             captureArguments(id, scrollback: scrollback).joined(separator: " ")]
-        }
-        guard !lines.isEmpty else { return "" }
-        return lines.joined(separator: "\n") + "\n"
+        TmuxBatchedCapture.script(paneIDs, scrollback: scrollback)
     }
 
     /// One batched reading's output, split back into a screen per pane.
@@ -780,32 +773,7 @@ enum Tmux {
     /// The first section wins when an id appears twice, so a marker that somehow resolved onto a
     /// pane already read cannot overwrite that pane's real screen with an empty one.
     static func parseBatchedCapture(_ output: String) -> [String: String] {
-        var screens: [String: String] = [:]
-        var current: String?
-        var lines: [String] = []
-
-        func close() {
-            defer { current = nil; lines = [] }
-            guard let id = current, !id.isEmpty, !lines.isEmpty, screens[id] == nil else { return }
-            screens[id] = lines.joined(separator: "\n") + "\n"
-        }
-
-        var text = output
-        if text.hasSuffix("\n") { text.removeLast() }
-        let width = batchedCaptureMarker.count
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
-            // The marker wraps the id on both sides, so the length test is what keeps a bare
-            // marker — which satisfies both ends at once — from being read as a named pane.
-            if line.count >= 2 * width,
-               line.hasPrefix(batchedCaptureMarker), line.hasSuffix(batchedCaptureMarker) {
-                close()
-                current = String(line.dropFirst(width).dropLast(width))
-            } else if current != nil {
-                lines.append(line)
-            }
-        }
-        close()
-        return screens
+        TmuxBatchedCapture.parse(output)
     }
 
     /// What several panes show, keyed by pane id, in **one** tmux invocation rather than one per

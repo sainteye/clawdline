@@ -144,8 +144,9 @@ final class LinuxDurableCloudRuntime {
         presentation: LinuxRelayMachinePresentation,
         places: [LinuxRelayPlace],
         inventory: @escaping @Sendable () -> TerminalInventory,
-        observations: @escaping @Sendable (TerminalInventory)
+        observations: @escaping @Sendable (TerminalInventory) async
             -> [String: TerminalSessionPresentation.Observation] = { _ in [:] },
+        screenCapture: @escaping @Sendable (TargetSession) async throws -> String?,
         relayBaseURL: URL = URL(string: "wss://relay.clawdline.com/v1/connect")!,
         diagnostic: @escaping @Sendable (String) -> Void = { _ in },
         stateObserver: @escaping @Sendable (LinuxRelayRuntimeState) -> Void = { _ in }
@@ -172,7 +173,7 @@ final class LinuxDurableCloudRuntime {
                 }, diagnostic: diagnostic),
             ingress: ingress, commandsEnabled: commandsEnabled, diagnostic: diagnostic,
             presentation: presentation, places: places, inventory: inventory,
-            observations: observations,
+            observations: observations, screenCapture: screenCapture,
             stateObserver: stateObserver)
         return relay
     }
@@ -325,8 +326,9 @@ actor LinuxRelayRuntimeOwner {
     private let presentation: LinuxRelayMachinePresentation
     private let places: [LinuxRelayPlace]
     private let inventory: @Sendable () -> TerminalInventory
-    private let observations: @Sendable (TerminalInventory)
+    private let observations: @Sendable (TerminalInventory) async
         -> [String: TerminalSessionPresentation.Observation]
+    private let screenCapture: @Sendable (TargetSession) async throws -> String?
     private let monotonicNow: @Sendable () -> TimeInterval
     private var commandTask: Task<Void, Never>?
     private var readyTask: Task<Void, Never>?
@@ -340,6 +342,8 @@ actor LinuxRelayRuntimeOwner {
     private var lifecycleGeneration: UInt64 = 0
     private var lastInventoryDigest: String?
     private var publishedInventoryRows: [String: Data] = [:]
+    private var inventoryPublicationInFlight = false
+    private var pendingInventoryPublication: (snapshot: TerminalInventory, force: Bool)?
     private var lastDescriptorPublishedAt: TimeInterval?
 
     init(
@@ -354,8 +358,9 @@ actor LinuxRelayRuntimeOwner {
             displayName: "Clawdline Linux", provider: nil),
         places: [LinuxRelayPlace] = [],
         inventory: @escaping @Sendable () -> TerminalInventory = { TerminalInventory() },
-        observations: @escaping @Sendable (TerminalInventory)
+        observations: @escaping @Sendable (TerminalInventory) async
             -> [String: TerminalSessionPresentation.Observation] = { _ in [:] },
+        screenCapture: @escaping @Sendable (TargetSession) async throws -> String? = { _ in nil },
         stateObserver: @escaping @Sendable (LinuxRelayRuntimeState) -> Void = { _ in },
         monotonicNow: @escaping @Sendable () -> TimeInterval = {
             ProcessInfo.processInfo.systemUptime
@@ -372,6 +377,7 @@ actor LinuxRelayRuntimeOwner {
         self.places = places
         self.inventory = inventory
         self.observations = observations
+        self.screenCapture = screenCapture
         self.stateObserver = stateObserver
         self.monotonicNow = monotonicNow
     }
@@ -591,20 +597,7 @@ actor LinuxRelayRuntimeOwner {
             }
             return
         case .screen(let sessionID):
-            await performBrowserSession(
-                requestID: browserReadCommandID(inbound), sessionID: sessionID, operation: .observe,
-                text: nil, sender: inbound.sender, sequence: inbound.sequence,
-                readName: "screen"
-            ) { receipt in
-                let text = receipt.output ?? ""
-                return ["screen": [
-                    "id": sessionID, "backend": "tmux", "channel": "on-demand",
-                    "revision": LinuxSHA256.hex(Data(text.utf8)), "readable": true,
-                    "pending": false, "text": text,
-                    "lines": TerminalSessionPresentation.lineCount(text),
-                    "askAgainAfterMs": 1_000
-                ]]
-            }
+            await performBrowserScreen(sessionID: sessionID, sender: inbound.sender)
             return
         case .info(let sessionID, let parts):
             await performBrowserInfo(sessionID: sessionID, parts: parts, sender: inbound.sender)
@@ -716,6 +709,62 @@ actor LinuxRelayRuntimeOwner {
         }
     }
 
+    /// The terminal renderer is the sole styled capture consumer. Durable/native `.observe`
+    /// continues through `TerminalHost.capture` as plain text; this read revalidates viewer and
+    /// terminal incarnation on both sides of the bounded styled capture.
+    private func performBrowserScreen(sessionID: String, sender: String) async {
+        let readName = "screen"
+        let channel = "t/" + channelSegment(machine.machineID) + "/" + channelSegment(sessionID)
+        do {
+            guard try isAuthorized(sender: sender, requiresWrite: false) else {
+                throw LinuxDurableStateFailure(
+                    code: "cloud_read_refused",
+                    message: "The paired viewer is not authorized to read this Session.")
+            }
+            let authorize: () throws -> Bool = { [identityAuthority, machine] in
+                let snapshot = try identityAuthority.snapshot()
+                return snapshot.accountID == machine.accountID
+                    && snapshot.machineID == machine.machineID
+                    && snapshot.deviceID == machine.machineID
+                    && !snapshot.revokedDeviceIDs.contains(sender)
+                    && snapshot.pairedDevices.contains(where: { $0.deviceID == sender })
+            }
+            let before = try ingress.infoForCloudSession(sessionID, effectAuthorization: authorize)
+            guard let text = try await screenCapture(before) else {
+                throw LinuxDurableStateFailure(
+                    code: "session_observe_failed", message: "The PTY could not be captured.")
+            }
+            let after = try ingress.infoForCloudSession(sessionID, effectAuthorization: authorize)
+            guard before == after else {
+                throw LinuxDurableStateFailure(
+                    code: "session_identity_incomplete",
+                    message: "The Linux Session identity changed during capture.")
+            }
+            let body: [String: Any] = ["screen": [
+                "id": sessionID, "backend": "tmux", "channel": "on-demand",
+                "revision": LinuxSHA256.hex(Data(text.utf8)), "readable": true,
+                "pending": false, "text": text,
+                "lines": TerminalSessionPresentation.lineCount(text),
+                "askAgainAfterMs": 1_000,
+            ]]
+            try await outbound.enqueue(
+                try Self.json(["read": readName, "status": 200, "body": body]),
+                channel: channel, logicalID: readName)
+        } catch let failure as LinuxDurableStateFailure {
+            try? await outbound.enqueue(
+                try refusalPayload(read: readName, status: Self.status(for: failure.code),
+                                   code: failure.code, message: failure.message),
+                channel: channel, logicalID: readName)
+            diagnostic("linux cloud: Session screen refused code=\(failure.code)")
+        } catch {
+            try? await outbound.enqueue(
+                try refusalPayload(read: readName, status: 500, code: "internal_failure",
+                                   message: "The Session screen could not be read."),
+                channel: channel, logicalID: readName)
+            diagnostic("linux cloud: Session screen failed before durable response")
+        }
+    }
+
     /// Answer the hosted console's Info card without pretending the Linux daemon owns the Mac's
     /// transcript-derived usage, provider quota, Git or deploy readers. Viewer membership is
     /// checked first, then the durable task-terminal edge proves that an unrelated tmux pane in
@@ -773,27 +822,75 @@ actor LinuxRelayRuntimeOwner {
 
     func publishInventory(_ snapshot: TerminalInventory, force: Bool = false) async {
         guard state == .running, !places.isEmpty else { return }
+        if inventoryPublicationInFlight {
+            let inheritedForce = pendingInventoryPublication?.force ?? false
+            pendingInventoryPublication = (snapshot, force || inheritedForce)
+            return
+        }
+        inventoryPublicationInFlight = true
+        defer { inventoryPublicationInFlight = false }
+        var next: (snapshot: TerminalInventory, force: Bool)? = (snapshot, force)
+        while let current = next {
+            pendingInventoryPublication = nil
+            // Production supplies this async closure from a detached terminal sampler. The actor
+            // remains available to commands while tmux spends up to its three-second bound.
+            let observed = await observations(current.snapshot)
+            await publishInventory(
+                current.snapshot, observed: observed, force: current.force)
+            next = pendingInventoryPublication
+        }
+    }
+
+    private func publishInventory(
+        _ snapshot: TerminalInventory,
+        observed: [String: TerminalSessionPresentation.Observation],
+        force: Bool
+    ) async {
+        guard state == .running, !places.isEmpty else { return }
         await publishDescriptorIfDue()
-        guard snapshot.isComplete else { return }
         let allowed = Set(places.map(\.path))
-        let rows = snapshot.assistantSessions.sorted { $0.id < $1.id }
-        guard rows.count <= 512 else { return }
-        let observed = observations(snapshot)
+        var rowsByID: [String: TargetSession] = [:]
+        for row in snapshot.assistantSessions where rowsByID[row.id] == nil {
+            rowsByID[row.id] = row
+        }
+        let complete = snapshot.isComplete
+        let retainedIDs: Set<String>
+        if complete {
+            retainedIDs = Set(rowsByID.keys)
+            guard retainedIDs.count <= 512 else { return }
+        } else {
+            let union = Set(rowsByID.keys).union(publishedInventoryRows.keys)
+            // A churned partial scan can exceed the publication ceiling even though the last
+            // accepted roster did not. Preserve and downgrade that roster instead of returning
+            // early and leaving its old working/waiting claims visible.
+            retainedIDs = union.count <= 512 ? union : Set(publishedInventoryRows.keys)
+        }
         var encodedRows: [String: Data] = [:]
         do {
-            for row in rows {
-                let presentation = observed[row.id] ?? .unknown
-                var session: [String: Any] = [
-                    "id": row.id, "name": row.name, "label": row.name,
-                    "assistant": row.assistant?.rawValue ?? "", "backend": "tmux",
-                    "window": row.windowIndex, "tab": row.tabIndex,
-                    "tty": row.tty.replacingOccurrences(of: "/dev/", with: ""),
-                    "isClaude": row.isClaude,
-                    "state": presentation.state, "work_state": presentation.workState
-                ]
-                if let line = presentation.line { session["line"] = line }
-                if let cwd = row.cwd, allowed.contains(cwd) { session["cwd"] = cwd }
-                encodedRows[row.id] = try Self.json(["session": session])
+            for id in retainedIDs.sorted() {
+                let presentation = complete ? (observed[id] ?? .unknown) : .unknown
+                if let row = rowsByID[id] {
+                    var session: [String: Any] = [
+                        "id": row.id, "name": row.name, "label": row.name,
+                        "assistant": row.assistant?.rawValue ?? "", "backend": "tmux",
+                        "window": row.windowIndex, "tab": row.tabIndex,
+                        "tty": row.tty.replacingOccurrences(of: "/dev/", with: ""),
+                        "isClaude": row.isClaude,
+                        "state": presentation.state, "work_state": presentation.workState,
+                    ]
+                    if let line = presentation.line { session["line"] = line }
+                    if let cwd = row.cwd, allowed.contains(cwd) { session["cwd"] = cwd }
+                    encodedRows[id] = try Self.json(["session": session])
+                } else if let prior = publishedInventoryRows[id],
+                          var envelope = try JSONSerialization.jsonObject(with: prior)
+                            as? [String: Any],
+                          var session = envelope["session"] as? [String: Any] {
+                    session["state"] = TerminalSessionPresentation.Observation.unknown.state
+                    session["work_state"] = TerminalSessionPresentation.Observation.unknown.workState
+                    session.removeValue(forKey: "line")
+                    envelope["session"] = session
+                    encodedRows[id] = try Self.json(envelope)
+                }
             }
         } catch { diagnostic("linux cloud: inventory encoding failed"); return }
         let digest = encodedRows.keys.sorted().map { id in
@@ -1037,7 +1134,9 @@ actor LinuxRelayRuntimeOwner {
         if code.contains("unauthorized") || code.contains("refused") { return 403 }
         if code.contains("not_found") { return 404 }
         if code == "ingress_closed" || code == "inventory_incomplete"
-            || code == "session_identity_incomplete" { return 503 }
+            || code == "session_identity_incomplete" || code == "session_observe_failed" {
+            return 503
+        }
         return 400
     }
 

@@ -1319,10 +1319,11 @@ final class LinuxRuntimeContractTests: XCTestCase {
             places: [LinuxRelayPlace(id: "reaver", label: "reaver", path: project.path)],
             inventory: { inventory.get() },
             observations: { snapshot in
-                Dictionary(uniqueKeysWithValues: snapshot.assistantSessions.map { session in
-                    (session.id, session.id == "%7"
-                        ? .working("Working (12s • esc to interrupt)") : .idle)
-                })
+                snapshot.assistantSessions.reduce(into: [:]) { result, session in
+                    guard result[session.id] == nil else { return }
+                    result[session.id] = session.id == "%7"
+                        ? .working("Working (12s • esc to interrupt)") : .idle
+                }
             })
         try await relay.start()
         var initialFrames: [CloudPublishFrame] = []
@@ -1379,10 +1380,30 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertEqual(transport.writtenFrames().count, 3,
                        "an unchanged complete scan does not mint another retained publication")
         inventory.set(TerminalInventory(sessions: [], error: "tmux timed out", isComplete: false))
+        let incompleteBaseline = transport.writtenFrames().count
         await relay.publishInventory(inventory.get())
-        try await Task.sleep(nanoseconds: 20_000_000)
-        XCTAssertEqual(transport.writtenFrames().count, 3,
-                       "an incomplete scan cannot tombstone a retained session")
+        for _ in 0..<200 where transport.writtenFrames().count < incompleteBaseline + 2 {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        let incompleteFrames = try transport.writtenFrames().dropFirst(incompleteBaseline).map {
+            try JSONDecoder().decode(CloudPublishFrame.self, from: $0)
+        }
+        XCTAssertEqual(Set(incompleteFrames.map(\.envelope.ch)), Set([
+            "s/machine-linux/%257", "s/machine-linux/__clawdline_inventory_v1__",
+        ]), "an incomplete scan cannot tombstone a retained session; it republishes unknown")
+        let incompleteRow = try XCTUnwrap(incompleteFrames.first {
+            $0.envelope.ch == "s/machine-linux/%257"
+        })
+        let incompleteSession = try XCTUnwrap(
+            try plaintexts([incompleteRow]).first?["session"] as? [String: Any])
+        XCTAssertEqual(incompleteSession["state"] as? String, "unknown")
+        XCTAssertEqual(incompleteSession["work_state"] as? String, "unknown")
+        XCTAssertNil(incompleteSession["line"],
+                     "capture failure cannot leave a stale working line on the Web")
+        for frame in incompleteFrames {
+            transport.receipt(CloudOutboundTransportReceipt(
+                channel: frame.envelope.ch, sequence: Int64(frame.envelope.seq), kind: .delivered))
+        }
 
         let replacement = TargetSession(
             backend: .tmux, id: "%8", name: "Replacement", tty: "/dev/pts/8",
@@ -1415,7 +1436,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertEqual(replacementSession["label"] as? String, "Replacement")
         XCTAssertEqual(replacementSession["isClaude"] as? Bool, true)
         XCTAssertEqual(replacementSession["state"] as? String, "idle")
-        XCTAssertEqual(replacementSession["work_state"] as? String, "ready")
+        XCTAssertEqual(replacementSession["work_state"] as? String, "unknown")
         XCTAssertNil(replacementSession["line"], "idle rows never retain a stale working line")
         XCTAssertEqual(
             (try plaintexts([replacementSentinel]).first?["inventory"] as? [String: Any])?["sessions"]
@@ -1584,13 +1605,16 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let terminalInventory = LockedTerminalInventory(
             TerminalInventory(sessions: [ownedRow, unownedRow]))
         lifecycle.setInfoSession(ownedRow)
+        let styledScreen = "\u{1b}[31mscreen\u{1b}[0m\n"
+            + "\u{1b}]8;;https://example.invalid\u{07}link\u{1b}]8;;\u{07}\n"
         let relay = LinuxRelayRuntimeOwner(
             machine: CloudMachineIdentity(accountID: identity.accountID,
                                           machineID: identity.machineID),
             identityAuthority: authority, transport: transport, outbound: outbound,
             ingress: ingress, commandsEnabled: { gate.get() },
             places: [LinuxRelayPlace(id: "reaver", label: "reaver", path: project.path)],
-            inventory: { terminalInventory.get() })
+            inventory: { terminalInventory.get() },
+            screenCapture: { _ in styledScreen })
         try await relay.start()
 
         var acknowledged = 0
@@ -1642,8 +1666,6 @@ final class LinuxRuntimeContractTests: XCTestCase {
                        "the descriptor advertises exactly the words the adapter implements")
 
         let durableBeforeReads = try XCTUnwrap(ingressStore.load().state)
-        let styledScreen = "\u{1b}[31mscreen\u{1b}[0m\n"
-            + "\u{1b}]8;;https://example.invalid\u{07}link\u{1b}]8;;\u{07}\n"
         lifecycle.setObservedOutput(styledScreen)
         gate.set(false)
         try send([
@@ -2125,14 +2147,35 @@ final class LinuxRuntimeContractTests: XCTestCase {
             .working("Thinking… (1m 2s)"))
         XCTAssertEqual(
             TerminalSessionPresentation.observe("❯ ready\n", assistant: .claude), .idle)
+        XCTAssertEqual(TerminalSessionPresentation.Observation.idle.workState, "unknown",
+                       "a quiet prompt has no receipt-backed evidence that it is ready for work")
+        let claudeMenu = claude + "│ ❯ 1. Allow once │\n│   2. Deny        │\n"
+        XCTAssertEqual(
+            TerminalSessionPresentation.observe(claudeMenu, assistant: .claude), .waiting,
+            "a strong Claude menu beats a stale spinner above it")
+        let codexMenu = codex + "❯ 1. Allow once\n  2. Deny\n"
+        XCTAssertEqual(
+            TerminalSessionPresentation.observe(codexMenu, assistant: .codex), .waiting,
+            "Codex's last caret-headed numbered row beats a stale spinner")
+        let ambiguousClaudeMenu = claude + "┌────────────┐\n❯ 1. Allow once\n  2. Deny\n"
+        XCTAssertEqual(
+            TerminalSessionPresentation.observe(ambiguousClaudeMenu, assistant: .claude), .unknown,
+            "a flush-left Claude menu needs hook evidence and must not inherit a stale spinner")
         XCTAssertEqual(TerminalSessionPresentation.observe(nil, assistant: .codex), .unknown,
                        "an incomplete capture is unknown rather than confidently idle")
         XCTAssertEqual(TerminalSessionPresentation.plain(claude), "✻ Thinking… (1m 2s)\n",
                        "plain consumers receive neither SGR nor an OSC hyperlink target")
+        XCTAssertEqual(TerminalSessionPresentation.plain("first\r\nsecond\rthird"),
+                       "first\nsecond\nthird",
+                       "plain terminal text preserves CRLF and carriage-return line boundaries")
         XCTAssertEqual(TerminalSessionPresentation.plain("safe\(escape)]0;unterminated"), "safe",
                        "an unterminated OSC cannot leak its payload as prose")
+        XCTAssertNil(TerminalSessionPresentation.elapsed(in: "malformed (2x) clock"),
+                     "an unsupported elapsed unit terminates without inventing activity")
 
-        let script = LinuxTmuxTerminalHost.batchedCaptureScript(["%7", "not-a-pane", "%8"])
+        let script = LinuxTmuxTerminalHost.batchedCaptureScript([
+            "%7", "%", "%１２", "not-a-pane", "%8",
+        ])
         XCTAssertEqual(script.components(separatedBy: "capture-pane").count - 1, 2)
         XCTAssertTrue(script.contains("capture-pane -p -e -J -S -0 -t %7"),
                       "the Linux screen route retains terminal presentation escapes")
@@ -2143,6 +2186,32 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertEqual(parsed["%7"], codex)
         XCTAssertEqual(parsed["%8"], claude)
         XCTAssertNil(parsed[""], "a failed pane marker is not a blank-screen observation")
+        XCTAssertFalse(LinuxTmuxTerminalHost.captureArguments(
+            "%7", scrollback: 200, preserveStyles: false).contains("-e"),
+            "durable native observe receipts request plain tmux output")
+        XCTAssertTrue(LinuxTmuxTerminalHost.captureArguments(
+            "%7", scrollback: 200, preserveStyles: true).contains("-e"),
+            "only the browser screen capture retains terminal styles")
+
+        let duplicate = TargetSession(
+            backend: .tmux, id: "%7", name: "linked view", tty: "/dev/pts/7",
+            windowIndex: 1, tabIndex: 0, assistant: .codex, cwd: "/work")
+        let source = TargetSession(
+            backend: .tmux, id: "%7", name: "source", tty: "/dev/pts/7",
+            windowIndex: 0, tabIndex: 0, assistant: .codex, cwd: "/work")
+        let observations = LinuxDaemonService.presentationObservations(
+            TerminalInventory(sessions: [source, duplicate])) { sessions in
+                XCTAssertEqual(sessions.map(\.id), ["%7"],
+                               "linked tmux rows are captured once without duplicate-key traps")
+                return ["%7": codex]
+            }
+        XCTAssertEqual(observations, ["%7": .working("Working (12s • esc to interrupt)")])
+        let failed = LinuxDaemonService.presentationObservations(
+            TerminalInventory(sessions: [source])) { _ in
+                throw LinuxRuntimeFailure(code: .commandFailed, message: "injected capture failure")
+            }
+        XCTAssertEqual(failed, ["%7": .unknown],
+                       "the production observation assembly fails closed per pane")
     }
 
     func testDedicatedTmuxWithNoSessionsIsACompleteEmptyInventory() throws {
@@ -2251,7 +2320,7 @@ final class LinuxRuntimeContractTests: XCTestCase {
         else
           printf 'OUTSIDE-DENIED\\n'
         fi
-        printf 'READY\\n'
+        printf '\\033[31mREADY\\033[0m\\n'
         trap 'printf "INTERRUPTED\\n"' INT
         while :; do
           if IFS= read -r line; then
@@ -2327,6 +2396,15 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertTrue(observed.contains("SOCKETPAIR-READY"))
         XCTAssertTrue(observed.contains("OUTSIDE-DENIED"))
         XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
+        XCTAssertFalse(observed.contains("\u{1b}"),
+                       "native observe returns plain text even when the provider drew SGR")
+        let styledCapture = try runtime.terminal.captureVisible([
+            try XCTUnwrap(try runtime.terminal.inventory().sessions.first(where: { $0.id == pane })),
+        ])[pane]
+        XCTAssertTrue(styledCapture?.contains("READY") == true,
+                      "the production batched capture executes against the pinned real tmux on Linux")
+        XCTAssertTrue(styledCapture?.contains("\u{1b}") == true,
+                      "the screen observation path alone retains provider terminal styling")
 
         _ = try runtime.send(commandID: "send-1", sessionID: pane, text: "hello")
         for attempt in 40..<80 where !observed.contains("ECHO:hello") {

@@ -21,12 +21,6 @@ enum Activity {
             in: screen, assistant: assistant, tailLines: tailLines)
     }
 
-    /// Kept as historical documentation; matching now lives in the shared portable reader.
-    private static let spinners: Set<Character> = [
-        "✳", "✻", "✽", "✢", "✶", "✱", "✴", "·", "*",
-        "◐", "◑", "◒", "◓", "◴", "◵", "◶", "◷",
-    ]
-
     /// The live line, or nil when nothing is running.
     ///
     /// Only the tail of the screen is searched. Claude Code draws this immediately above the
@@ -39,9 +33,6 @@ enum Activity {
     }
 
     // MARK: - Codex
-
-    /// Kept as historical documentation; matching now lives in the shared portable reader.
-    private static let bullets: Set<Character> = ["•", "‣", "▪", "·", "*"]
 
     /// Codex's live line: a bullet, a word, and a clock in brackets.
     ///

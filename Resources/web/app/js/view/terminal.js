@@ -81,8 +81,9 @@ export var Terminal = (function () {
        **OSC 8 is the exception, and it is one because a status line is largely made of it.**
        Claude Code writes its links that way, and a scanner matching ESC plus one byte ate
        `ESC ]` and then printed `8;id=1q7561e;https://clawdline.com/` as words — which is what
-       this panel showed on a phone. `Sources/Ansi.swift:133` says the rule in a line: an OSC
-       string runs until BEL or ST. That is the rule here too, and the hyperlink inside it is
+       this panel showed on a phone. `TerminalSessionPresentation.plain(_:)` and
+       `Ansi.attributed(_:)` say the rule in code: an OSC string runs until BEL or ST. That is the
+       rule here too, and the hyperlink inside it is
        drawn as a link rather than swallowed with the rest.
        -------------------------------------------------------------------- */
 

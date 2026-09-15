@@ -396,21 +396,27 @@ Linux discovery uses the same retained encrypted channel grammar as the Mac. Eac
 `s/<machine>/<percent-encoded-session>` payload, and the complete-set marker is
 `s/<machine>/__clawdline_inventory_v1__`. A complete scan publishes changed rows, explicit
 `{"deleted":true}` tombstones for previously published ids that disappeared, then the authoritative
-marker; an incomplete or over-limit scan publishes nothing. Retained channels may replay in any
-order, so the browser realigns each channel independently and uses the marker sequence only as the
-deletion barrier for older rows. Every authenticated ready generation replays the complete current
-set. A ten-second local observation supplies the bounded refresh after host-side create, send or
-close even when the effect did not originate in the browser.
+marker. An incomplete scan cannot prove deletion: it retains the last roster, republishes every
+retained row as `state/work_state: unknown` without a stale activity line, and publishes the same
+roster marker. An over-limit scan is refused without constructing an oversized payload. Retained
+channels may replay in any order, so the browser realigns each channel independently and uses the
+marker sequence only as the deletion barrier for older rows. Every authenticated ready generation
+replays the complete current set. A ten-second local observation supplies the bounded refresh after
+host-side create, send or close even when the effect did not originate in the browser.
 
 Every complete Linux inventory observation captures all assistant panes through one bounded tmux
 `source-file -` call. `capture-pane -e` preserves SGR/OSC bytes for the existing safe Web terminal
 renderer, while the shared shape reader strips terminal controls before recognizing Codex or
 Claude activity. Rows publish the same `state`, optional `line`, `work_state`, `label`, `tty`, and
-`isClaude` presentation fields the hosted list/detail already consume. A missing pane answer,
-timeout, output-limit failure, or incomplete inventory is `unknown`, never idle; Linux does not
-publish `waiting` without the provider registry/menu evidence which currently exists only on the
-Mac. The Linux `transcript` reply remains a plain bounded **screen projection**, not a native
-provider transcript; `screen` is the only reply which preserves terminal styling.
+`isClaude` presentation fields the hosted list/detail already consume. A complete Claude indented
+numbered menu or Codex bottommost caret-numbered menu is sufficient screen evidence for
+`waiting/waiting_you` and is checked before stale spinner lines. Ambiguous menu shapes, a missing
+pane answer, timeout, output-limit failure, or incomplete inventory are `unknown`, never idle. A
+quiet prompt has `work_state: unknown`, not `ready`, because the screen carries no completion or
+assignment receipt. The Linux `transcript` reply remains a plain bounded **screen projection**, not
+a native provider transcript; durable native `observe` replies are plain too. `screen` is the only
+reply which preserves terminal styling. The next native JSONL adapter boundary is specified in
+[Linux native transcripts](linux-native-transcripts.md).
 
 The browser operations accepted by the Linux machine channel are the closed `info`, `places`,
 `screen`, `send`, `start`, and `transcript` set. `start` names a configured place id, never a path; an empty assistant means

@@ -1186,62 +1186,49 @@ final class LinuxTmuxTerminalHost: TerminalHost {
 
     func capture(_ session: TargetSession) throws -> String? {
         try require(session)
-        // Preserve terminal styling for the screen route. Shape readers and the temporary plain
-        // transcript projection strip controls at their own boundary instead of degrading the
-        // one capture before the safe Web terminal renderer sees it.
-        let receipt = try tmux(Self.captureArguments(session.id, scrollback: 200),
+        // Native observe receipts are durable command evidence, so they stay plain and bounded.
+        // The browser screen route uses `captureStyled` and is the only route that retains SGR/OSC.
+        let receipt = try tmux(Self.captureArguments(
+            session.id, scrollback: 200, preserveStyles: false),
                                operation: .observe)
+        return receipt.status == 0
+            ? TerminalSessionPresentation.plain(String(decoding: receipt.stdout, as: UTF8.self))
+            : nil
+    }
+
+    func captureStyled(_ session: TargetSession) throws -> String? {
+        try require(session)
+        let receipt = try tmux(Self.captureArguments(
+            session.id, scrollback: 200, preserveStyles: true), operation: .observe)
         return receipt.status == 0 ? String(decoding: receipt.stdout, as: UTF8.self) : nil
     }
 
     // MARK: - One bounded subprocess per inventory observation
 
-    static let batchedCaptureMarker = "\u{1}clawdline-pane\u{1}"
+    static let batchedCaptureMarker = TmuxBatchedCapture.marker
 
-    private static func captureArguments(_ paneID: String, scrollback: Int) -> [String] {
-        ["capture-pane", "-p", "-e", "-J", "-S", "-\(scrollback)", "-t", paneID]
+    static func captureArguments(
+        _ paneID: String, scrollback: Int, preserveStyles: Bool
+    ) -> [String] {
+        ["capture-pane", "-p"] + (preserveStyles ? ["-e"] : [])
+            + ["-J", "-S", "-\(scrollback)", "-t", paneID]
     }
 
     static func batchedCaptureScript(_ paneIDs: [String], scrollback: Int = 0) -> String {
-        let lines = paneIDs.compactMap(Self.paneID).flatMap { paneID in
-            ["display-message -p -t \(paneID) \"\(batchedCaptureMarker)#{pane_id}\(batchedCaptureMarker)\"",
-             captureArguments(paneID, scrollback: scrollback).joined(separator: " ")]
-        }
-        return lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n"
+        TmuxBatchedCapture.script(paneIDs, scrollback: scrollback)
     }
 
     static func parseBatchedCapture(_ output: String) -> [String: String] {
-        var screens: [String: String] = [:]
-        var current: String?
-        var lines: [String] = []
-
-        func close() {
-            defer { current = nil; lines = [] }
-            guard let id = current, paneID(id) != nil, !lines.isEmpty,
-                  screens[id] == nil else { return }
-            screens[id] = lines.joined(separator: "\n") + "\n"
-        }
-
-        var text = output
-        if text.hasSuffix("\n") { text.removeLast() }
-        let markerWidth = batchedCaptureMarker.count
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
-            if line.count >= 2 * markerWidth,
-               line.hasPrefix(batchedCaptureMarker), line.hasSuffix(batchedCaptureMarker) {
-                close()
-                current = String(line.dropFirst(markerWidth).dropLast(markerWidth))
-            } else if current != nil {
-                lines.append(line)
-            }
-        }
-        close()
-        return screens
+        TmuxBatchedCapture.parse(output)
     }
 
     /// Read every listed pane through one three-second, one-MiB-bounded tmux process. A missing
     /// marker or pane key is no observation for that pane; callers publish `unknown`, not idle.
     func captureVisible(_ sessions: [TargetSession]) throws -> [String: String] {
-        let paneIDs = sessions.filter { $0.backend == .tmux }.map(\.id)
+        var seen: Set<String> = []
+        let paneIDs = sessions.filter { $0.backend == .tmux }
+            .compactMap { Self.paneID($0.id) }
+            .filter { seen.insert($0).inserted }
         guard paneIDs.count <= limits.maximumInventory else {
             throw LinuxRuntimeFailure(code: .inventoryLimit,
                                       message: "The tmux observation exceeded the pane limit.")
@@ -1335,14 +1322,13 @@ final class LinuxTmuxTerminalHost: TerminalHost {
     }
 
     static func paneID(_ raw: String) -> String? {
-        guard raw.first == "%", raw.count <= 16,
-              raw.dropFirst().allSatisfy({ $0.isNumber }) else { return nil }
-        return raw
+        TmuxBatchedCapture.paneID(raw)
     }
 
     static func windowID(_ raw: String) -> String? {
-        guard raw.first == "@", raw.count <= 16,
-              raw.dropFirst().allSatisfy({ $0.isNumber }) else { return nil }
+        guard raw.first == "@", raw.count <= 16 else { return nil }
+        let digits = raw.dropFirst()
+        guard !digits.isEmpty, digits.allSatisfy({ ("0"..."9").contains($0) }) else { return nil }
         return raw
     }
 
