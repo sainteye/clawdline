@@ -147,6 +147,52 @@ The defect was that Session-list projection repeatedly fingerprinted and sorted 
 then selected one Session's obligations by walking it again. A compact rendering of that fact must
 not be described as “400 scans.”
 
+## What an open console costs the device holding it
+
+Measured on 2026-09-15 against the hosted console, the phone reading it overheated: 472 transcript
+reads in fourteen hours (38.9 MB), 223 of them byte-identical to the read before and 134 less than
+five seconds after it. The browser's own share of that — separate from the Mac's publication rate
+and the Cloud transport's socket — is held to these rules:
+
+- **A transcript is read only when it can have changed.** A Cloud row carrying
+  `transcript_signature` (equal to the `signature` of that session's transcript read answer) is
+  transcript demand when the signature or the row's `state` changes, and not when `line` or `label`
+  does. The state edge is read at once because the Mac debounces the signature and a turn that has
+  just ended is the moment a reader waits for. A row whose signature already names the transcript
+  on screen, read in the state it is in now, is settled without a read. A row without the field (an
+  older Mac, a Linux machine, the local page) reads at once on a state or label change, and a
+  `line`-only change costs at most one read per 15 seconds (`TRANSCRIPT_LINE_REREAD_MS`); a held
+  line is read when its interval is up even if nothing else arrives. The local page's
+  `transcript-revision` file events still read immediately. The policy is
+  `createTranscriptRefetchPolicy` in `session/transcript-requests.js`.
+- **An unchanged answer is not redrawn.** A transcript answer whose signature is the one on screen
+  redraws only when an optimistic echo was retired, an error line or wait has to come down, or the
+  session's working state (which decides the live sweep on the last tool run) changed.
+- **A burst of frames is one draw.** Session and orchestrator frames update state at once and draw
+  in the next animation frame, once however many arrived (`net/handlers.js`). A row whose drawn
+  inputs are unchanged is not refilled, rows already in order are not moved, and a list in which
+  nothing changed is not measured for FLIP.
+- **Layout probes are coalesced.** `Diagnostics.note` is covered by at most one probe per
+  `LAYOUT_PROBE_INTERVAL_MS` (1 s), the first note after a quiet second in the next frame and the
+  rest of a burst by one trailing probe. Probes run only where they can be read: on a phone, where
+  an incident can be recorded, or while the layout panel is open.
+- **A hidden page runs no clock that does work.** The spinner clock, the status line's minute read,
+  the transcript time relabel, the terminal lease and poll, the background-command beat and the
+  Devices reload stop their timers while the page is hidden and catch up once when it is visible
+  (`core/visibility.js`); a status-line reading that came due or a turn that ended while hidden is
+  read once on return. The spinner clock draws only canvases still in the document and not the
+  list's while a phone has the list behind a transcript. The remaining bare intervals — the voice
+  recording limit, the pairing door's countdown and the local transport's reconnect label — are
+  named in `Tests/web-transcript-requests.mjs`, which refuses any other.
+- **Infinite animations move layers.** The live-run sweep and the skeleton sheen animate
+  `transform` rather than `background-position`, and a transcript redraw sets
+  `--live-sweep-delay` so the sweep continues from its current phase instead of restarting.
+
+To measure a recurrence from the Mac's side, join `cloud: read received id=<id> read=transcript
+sender=web_<device> session=<id>` with `cloud: read routed id=<id> … bytes=<n>` in
+`~/Library/Logs/Clawdline.log` and count reads per device, identical consecutive byte counts per
+session, and the gaps between them.
+
 ## Runtime invariants
 
 Performance here is kept by structural bounds rather than by a timing threshold that happens to
