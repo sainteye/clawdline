@@ -324,8 +324,11 @@ function inspectLinuxRelayTransport(text) {
       && /onCancel:[\s\S]{0,160}promiseBox\.fail\(CancellationError\(\)\)/.test(text)
       && !/withThrowingTaskGroup\(of: CloudEstablishedTransportSocket/.test(text),
     boundedInbound: /maxAccumulatedFrameSize: 32 \* 1024 \* 1024/.test(text)
-      && /AsyncThrowingStream<String, Error>\(bufferingPolicy: \.bufferingOldest\(1\)\)/.test(text)
-      && /case \.dropped = pipe\.continuation\.yield\(text\)/.test(text)
+      && /maximumBufferedTexts: Int = 64/.test(text)
+      && /maximumBufferedBytes: Int = 32 \* 1024 \* 1024/.test(text)
+      && /buffered\.count < maximumBufferedTexts/.test(text)
+      && /bufferedBytes <= maximumBufferedBytes - bytes/.test(text)
+      && /if !pipe\.offer\(text\)/.test(text)
       && /inbound text buffer overflowed/.test(text),
     closeControl: /case \.pong:\s*break/.test(text)
       && /opcode: \.connectionClose, data: frame\.unmaskedData/.test(text)
@@ -339,8 +342,10 @@ check(Object.values(relayTransport).every(Boolean),
 for (const [name, mutation] of [
   ['boundedToken', cloudTransport.replace('maximumBytes: 64 * 1024', 'maximumBytes: Int.max')],
   ['oneShotOpen', cloudTransport.replace('private var closed = false', 'private var closed = true')],
-  ['boundedInbound', cloudTransport.replace('bufferingPolicy: .bufferingOldest(1)',
-    'bufferingPolicy: .unbounded')],
+  ['boundedInbound', cloudTransport.replace('maximumBufferedTexts: Int = 64',
+    'maximumBufferedTexts: Int = Int.max')],
+  ['boundedInbound', cloudTransport.replace('maximumBufferedBytes: Int = 32 * 1024 * 1024',
+    'maximumBufferedBytes: Int = Int.max')],
   ['closeControl', cloudTransport.replace('case .pong:', 'case .binary:')]
 ]) {
   check(inspectLinuxRelayTransport(mutation)[name] === false,
@@ -357,13 +362,16 @@ check(!/abs\(passedBudget - 9\)/.test(cloudTransportTests.replace(
 check(/testNIOOpeningOwnershipInboundBoundsAndCloseControl/.test(linuxTests)
   && /a stalled opening promise did not terminate/.test(linuxTests)
   && /EOF before upgrade completed/.test(linuxTests)
-  && /second unconsumed message fails closed/.test(linuxTests)
+  && /a bounded Relay ACK burst stays ordered and connected/.test(linuxTests)
+  && /the normal outbound window must not overflow the inbound ACK buffer/.test(linuxTests)
+  && /more than the bounded text count closes the socket/.test(linuxTests)
+  && /more than the bounded aggregate bytes closes the socket/.test(linuxTests)
   && /aggregate fragmented text beyond/.test(linuxTests)
   && /peer Close is echoed/.test(linuxTests),
   'Linux NIO timeout/EOF/burst/fragment/Pong/Close behavior fixtures must remain registered');
-check(!/second unconsumed message fails closed/.test(linuxTests.replace(
-  'second unconsumed message fails closed', 'overflow assertion removed')),
-  'removing the Linux burst-overflow assertion must make the focused fixture guard red');
+check(!/a bounded Relay ACK burst stays ordered and connected/.test(linuxTests.replace(
+  'a bounded Relay ACK burst stays ordered and connected', 'burst assertion removed')),
+  'removing the Linux ACK-burst assertion must make the focused fixture guard red');
 check(/case degraded/.test(durableCloud) && /delay = min\(30, delay \* 2\)/.test(durableCloud)
   && /case \.unauthorized/.test(durableCloud)
   && /case \.upgradeRefused\(let status\): return status == 401 \|\| status == 403/.test(durableCloud)

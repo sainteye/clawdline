@@ -1280,34 +1280,105 @@ final class CloudNIOHTTPUpgradeHandler: ChannelInboundHandler,
     }
 }
 
-private actor CloudNIOTextInbox {
-    private var iterator: AsyncThrowingStream<String, Error>.AsyncIterator
-    init(_ stream: AsyncThrowingStream<String, Error>) { iterator = stream.makeAsyncIterator() }
-    func next() async throws -> String {
-        var ownedIterator = iterator
-        let value = try await ownedIterator.next()
-        iterator = ownedIterator
-        guard let text = value else {
-            throw CloudTransportError.connectionFailed("the WebSocket closed")
+private final class CloudNIOTextInbox: @unchecked Sendable {
+    private struct BufferedText {
+        let text: String
+        let bytes: Int
+    }
+
+    private let maximumBufferedTexts: Int
+    private let maximumBufferedBytes: Int
+    private let lock = NSLock()
+    private var buffered: [BufferedText] = []
+    private var bufferedBytes = 0
+    private var waiter: CheckedContinuation<String, Error>?
+    private var terminalError: Error?
+    private var isFinished = false
+
+    init(maximumBufferedTexts: Int, maximumBufferedBytes: Int) {
+        self.maximumBufferedTexts = max(1, maximumBufferedTexts)
+        self.maximumBufferedBytes = max(1, maximumBufferedBytes)
+    }
+
+    /// Returns false only when accepting this text would exceed the bounded in-memory backlog.
+    /// A waiting receiver takes the value directly and therefore consumes no buffer budget.
+    func offer(_ text: String) -> Bool {
+        let bytes = text.utf8.count
+        var waiting: CheckedContinuation<String, Error>?
+        lock.lock()
+        guard !isFinished else { lock.unlock(); return false }
+        if let waiter {
+            waiting = waiter
+            self.waiter = nil
+        } else {
+            guard buffered.count < maximumBufferedTexts,
+                  bytes <= maximumBufferedBytes,
+                  bufferedBytes <= maximumBufferedBytes - bytes else {
+                lock.unlock()
+                return false
+            }
+            buffered.append(BufferedText(text: text, bytes: bytes))
+            bufferedBytes += bytes
         }
-        return text
+        lock.unlock()
+        waiting?.resume(returning: text)
+        return true
+    }
+
+    func finish(throwing error: Error? = nil) {
+        var waiting: CheckedContinuation<String, Error>?
+        lock.lock()
+        guard !isFinished else { lock.unlock(); return }
+        isFinished = true
+        terminalError = error
+        if buffered.isEmpty {
+            waiting = waiter
+            waiter = nil
+        }
+        lock.unlock()
+        if let waiting {
+            waiting.resume(throwing: error ?? CloudTransportError.connectionFailed(
+                "the WebSocket closed"))
+        }
+    }
+
+    func next() async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            var result: Result<String, Error>?
+            lock.lock()
+            if !buffered.isEmpty {
+                let first = buffered.removeFirst()
+                bufferedBytes -= first.bytes
+                result = .success(first.text)
+            } else if isFinished {
+                result = .failure(terminalError ?? CloudTransportError.connectionFailed(
+                    "the WebSocket closed"))
+            } else if waiter != nil {
+                result = .failure(CloudTransportError.connectionFailed(
+                    "concurrent inbound receive is unsupported"))
+            } else {
+                waiter = continuation
+            }
+            lock.unlock()
+            if let result { continuation.resume(with: result) }
+        }
     }
 }
 
 final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable {
     let channel: Channel
-    let continuation: AsyncThrowingStream<String, Error>.Continuation
     private let inbox: CloudNIOTextInbox
     private let closeLock = NSLock()
     private var didBeginClose = false
-    init(channel: Channel) {
+    init(
+        channel: Channel,
+        maximumBufferedTexts: Int = 64,
+        maximumBufferedBytes: Int = 32 * 1024 * 1024
+    ) {
         self.channel = channel
-        var continuation: AsyncThrowingStream<String, Error>.Continuation!
-        let stream = AsyncThrowingStream<String, Error>(bufferingPolicy: .bufferingOldest(1)) {
-            continuation = $0
-        }
-        self.continuation = continuation
-        inbox = CloudNIOTextInbox(stream)
+        inbox = CloudNIOTextInbox(
+            maximumBufferedTexts: maximumBufferedTexts,
+            maximumBufferedBytes: maximumBufferedBytes)
     }
     func send(text: String) async throws {
         let channel = self.channel
@@ -1318,16 +1389,18 @@ final class CloudNIOTextPipe: CloudTransportSocket, @unchecked Sendable {
         }.flatMap { $0 }.get()
     }
     func receiveText() async throws -> String { try await inbox.next() }
+    func offer(_ text: String) -> Bool { inbox.offer(text) }
+    func fail(_ error: Error) { inbox.finish(throwing: error) }
     func finishPeerClose() {
         closeLock.lock(); didBeginClose = true; closeLock.unlock()
-        continuation.finish()
+        inbox.finish()
     }
     func close() {
         closeLock.lock()
         guard !didBeginClose else { closeLock.unlock(); return }
         didBeginClose = true
         closeLock.unlock()
-        continuation.finish()
+        inbox.finish()
         let channel = self.channel
         channel.eventLoop.execute {
             let empty = channel.allocator.buffer(capacity: 0)
@@ -1352,12 +1425,11 @@ final class CloudNIOFrameHandler: ChannelInboundHandler, @unchecked Sendable {
         case .text:
             var bytes = frame.unmaskedData
             guard let text = bytes.readString(length: bytes.readableBytes) else {
-                pipe.continuation.finish(throwing: CloudTransportError.unexpectedFrame("text"))
+                pipe.fail(CloudTransportError.unexpectedFrame("text"))
                 context.close(promise: nil); return
             }
-            if case .dropped = pipe.continuation.yield(text) {
-                pipe.continuation.finish(throwing: CloudTransportError.connectionFailed(
-                    "the inbound text buffer overflowed"))
+            if !pipe.offer(text) {
+                pipe.fail(CloudTransportError.connectionFailed("the inbound text buffer overflowed"))
                 context.close(promise: nil)
             }
         case .ping:
@@ -1372,16 +1444,15 @@ final class CloudNIOFrameHandler: ChannelInboundHandler, @unchecked Sendable {
             context.writeAndFlush(NIOAny(WebSocketFrame(
                 fin: true, opcode: .connectionClose, data: frame.unmaskedData)), promise: flushed)
         default:
-            pipe.continuation.finish(throwing: CloudTransportError.unexpectedFrame(
-                String(describing: frame.opcode)))
+            pipe.fail(CloudTransportError.unexpectedFrame(String(describing: frame.opcode)))
             context.close(promise: nil)
         }
     }
     func errorCaught(context: ChannelHandlerContext, error: Error) {
-        pipe.continuation.finish(throwing: error)
+        pipe.fail(error)
         context.close(promise: nil)
     }
-    func channelInactive(context: ChannelHandlerContext) { pipe.continuation.finish() }
+    func channelInactive(context: ChannelHandlerContext) { pipe.finishPeerClose() }
 }
 #endif
 

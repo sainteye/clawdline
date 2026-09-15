@@ -469,10 +469,17 @@ final class LinuxRuntimeContractTests: XCTestCase {
             }
         }
 
-        func channelWithPipe(maximum: Int = 32 * 1024 * 1024) throws
+        func channelWithPipe(
+            maximum: Int = 32 * 1024 * 1024,
+            maximumBufferedTexts: Int = 64,
+            maximumBufferedBytes: Int = 32 * 1024 * 1024
+        ) throws
             -> (EmbeddedChannel, CloudNIOTextPipe) {
             let channel = EmbeddedChannel()
-            let pipe = CloudNIOTextPipe(channel: channel)
+            let pipe = CloudNIOTextPipe(
+                channel: channel,
+                maximumBufferedTexts: maximumBufferedTexts,
+                maximumBufferedBytes: maximumBufferedBytes)
             try channel.pipeline.syncOperations.addHandlers([
                 NIOWebSocketFrameAggregator(
                     minNonFinalFragmentSize: 1, maxAccumulatedFrameCount: 1_024,
@@ -515,22 +522,50 @@ final class LinuxRuntimeContractTests: XCTestCase {
                        "local graceful Close flushes and joins without awaiting a peer forever")
 
         let (burst, burstPipe) = try channelWithPipe()
-        _ = try burst.writeInbound(frame(.text, "first", channel: burst))
-        _ = try? burst.writeInbound(frame(.text, "second", channel: burst))
-        burst.embeddedEventLoop.run()
-        let firstBurstText = try await burstPipe.receiveText()
-        XCTAssertEqual(firstBurstText, "first",
-                       "overflow retains the oldest admitted message and never overtakes it")
-        do {
-            _ = try await burstPipe.receiveText()
-            XCTFail("inbound overflow did not become a terminal receive failure")
-        } catch let error as CloudTransportError {
-            guard case .connectionFailed = error else {
-                return XCTFail("inbound overflow returned an untyped error: \(error)")
-            }
+        let legitimateBurst = (0..<8).map { "ack-\($0)" }
+        for text in legitimateBurst {
+            _ = try? burst.writeInbound(frame(.text, text, channel: burst))
         }
-        XCTAssertFalse(burst.isActive,
-                       "a second unconsumed message fails closed instead of being dropped")
+        burst.embeddedEventLoop.run()
+        for expected in legitimateBurst {
+            XCTAssertEqual(try await burstPipe.receiveText(), expected,
+                           "a bounded Relay ACK burst stays ordered and connected")
+        }
+        XCTAssertTrue(burst.isActive,
+                      "the normal outbound window must not overflow the inbound ACK buffer")
+
+        let (countOverflow, countOverflowPipe) = try channelWithPipe(maximumBufferedTexts: 8)
+        for index in 0..<9 {
+            _ = try? countOverflow.writeInbound(frame(.text, "ack-\(index)", channel: countOverflow))
+        }
+        countOverflow.embeddedEventLoop.run()
+        XCTAssertFalse(countOverflow.isActive,
+                       "more than the bounded text count closes the socket")
+        for index in 0..<8 {
+            XCTAssertEqual(try await countOverflowPipe.receiveText(), "ack-\(index)",
+                           "count overflow drains every admitted text in order")
+        }
+        do {
+            _ = try await countOverflowPipe.receiveText()
+            XCTFail("count overflow did not become a typed terminal receive failure")
+        } catch let error as CloudTransportError {
+            XCTAssertEqual(error, .connectionFailed("the inbound text buffer overflowed"))
+        }
+
+        let (byteOverflow, byteOverflowPipe) = try channelWithPipe(maximumBufferedBytes: 8)
+        _ = try byteOverflow.writeInbound(frame(.text, "12345", channel: byteOverflow))
+        _ = try? byteOverflow.writeInbound(frame(.text, "6789", channel: byteOverflow))
+        byteOverflow.embeddedEventLoop.run()
+        XCTAssertFalse(byteOverflow.isActive,
+                       "more than the bounded aggregate bytes closes the socket")
+        XCTAssertEqual(try await byteOverflowPipe.receiveText(), "12345",
+                       "byte overflow preserves the admitted text")
+        do {
+            _ = try await byteOverflowPipe.receiveText()
+            XCTFail("byte overflow did not become a typed terminal receive failure")
+        } catch let error as CloudTransportError {
+            XCTAssertEqual(error, .connectionFailed("the inbound text buffer overflowed"))
+        }
 
         let (fragmented, _) = try channelWithPipe(maximum: 4)
         _ = try fragmented.writeInbound(frame(.text, "123", fin: false, channel: fragmented))
