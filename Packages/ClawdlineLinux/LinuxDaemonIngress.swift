@@ -288,6 +288,53 @@ final class LinuxDaemonIngressOwner {
             effectAuthorization: effectAuthorization)
     }
 
+    /// Resolve the durable task that owns one live terminal without exposing task identity to a
+    /// browser. The Relay authenticates the viewer before calling this method; the exact task id
+    /// is then fed back through `performCloud`, which rechecks authorization at the effect edge.
+    func taskIDForCloudSession(_ sessionID: String) throws -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        guard admissionOpen else {
+            throw LinuxDurableStateFailure(code: "ingress_closed",
+                                           message: "Startup reconciliation has not opened admission.")
+        }
+        let state = try authoritativeState()
+        guard let terminal = state.terminals.first(where: {
+            $0.id == sessionID && $0.state == .present
+        }), let taskID = terminal.taskID,
+              state.tasks.contains(where: { $0.id == taskID && $0.terminalID == sessionID }) else {
+            throw LinuxDurableStateFailure(code: "session_not_found",
+                                           message: "That Linux Session is no longer present.")
+        }
+        return taskID
+    }
+
+    /// Capture one live terminal for a paired Cloud viewer without manufacturing a durable
+    /// command row. Transcript/screen reads are observations, not task mutations; they still run
+    /// under the sole ingress lock and recheck viewer authority immediately before the effect.
+    func observeCloudSession(
+        _ sessionID: String, commandID: String,
+        effectAuthorization: () throws -> Bool
+    ) throws -> LinuxLifecycleReceipt {
+        lock.lock()
+        defer { lock.unlock() }
+        guard admissionOpen else {
+            throw LinuxDurableStateFailure(code: "ingress_closed",
+                                           message: "Startup reconciliation has not opened admission.")
+        }
+        guard !sessionID.isEmpty, sessionID.utf8.count <= 512,
+              !sessionID.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }),
+              SessionLaunchPolicy.opaqueCommandID(commandID) == commandID else {
+            throw LinuxDurableStateFailure(code: "invalid_ingress",
+                                           message: "The Session observation identity is malformed.")
+        }
+        guard try effectAuthorization() else {
+            throw LinuxDurableStateFailure(code: "cloud_read_refused",
+                                           message: "The paired sender is no longer authorized for this read.")
+        }
+        return try runtime.observe(commandID: commandID, sessionID: sessionID)
+    }
+
     private func perform(
         _ request: LinuxIngressRequest,
         effectAuthorization: ((_ requiresWriteGate: Bool) throws -> Bool)?
@@ -636,6 +683,14 @@ final class LinuxDaemonIngressOwner {
         guard let index = state.tasks.firstIndex(where: { $0.id == request.taskID }) else {
             throw LinuxDurableStateFailure(code: "task_unauthorized",
                                            message: "Task authentication failed.")
+        }
+        if [.send, .observe, .close].contains(request.operation) {
+            guard state.tasks[index].terminalID == request.sessionID,
+                  request.sessionID != nil else {
+                throw LinuxDurableStateFailure(
+                    code: "task_identity_mismatch",
+                    message: "The command task and Session identity no longer match.")
+            }
         }
         if [.taskMessage, .taskResult, .taskAcknowledge, .taskClose]
             .contains(request.operation) {

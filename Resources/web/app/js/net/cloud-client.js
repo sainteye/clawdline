@@ -57,12 +57,12 @@ const VOICE_HOST_CHOICE = "clawdline.voice-host.v1:";
 
 /**
  * The browser commands an enrolled Linux executor answers, and it answers nothing else:
- * `LinuxDurableCloudRuntime.swift` adapts exactly these two. A newer executor refuses any other
+ * `LinuxDurableCloudRuntime.swift` adapts exactly these five. A newer executor refuses any other
  * word as `unknown_command`; one already deployed drops it without a reply, which is why this list
  * decides before anything is sent rather than after a timeout. A descriptor that advertises its
  * own `commands` is taken at its word instead.
  */
-const LINUX_BROWSER_COMMANDS = Object.freeze(["places", "start"]);
+const LINUX_BROWSER_COMMANDS = Object.freeze(["places", "screen", "send", "start", "transcript"]);
 
 /** Commands a Mac takes only once it has shown `cloud_status.v >= 1` (§11.4). */
 const STATUS_GATED_COMMANDS = Object.freeze(["cloud.status", "diagnostics.report", VIEWER_EVENTS_COMMAND]);
@@ -73,9 +73,7 @@ const STATUS_GATED_COMMANDS = Object.freeze(["cloud.status", "diagnostics.report
  * one of the two, so for these words it is not unknown — it answers. Today that is `places` and
  * `start`.
  */
-const UNIVERSAL_COMMANDS = Object.freeze(LINUX_BROWSER_COMMANDS.filter(function (type) {
-    return STATUS_GATED_COMMANDS.indexOf(type) < 0;
-}));
+const UNIVERSAL_COMMANDS = Object.freeze(["places", "start"]);
 
 /** The refusal for a machine this browser is not paired with, said the same wherever it is raised. */
 const MACHINE_PAIRING_REQUIRED_MESSAGE = "This browser is not paired with the selected machine. "

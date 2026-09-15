@@ -1469,11 +1469,15 @@ final class LinuxRuntimeContractTests: XCTestCase {
         let ingress = LinuxDaemonIngressOwner(store: ingressStore, runtime: lifecycle)
         ingress.completeStartup(try LinuxStartupReconciler.reconcile(
             store: ingressStore, inventory: .complete([])))
+        _ = try ingress.perform(LinuxIngressRequest(
+            operation: .create, commandID: "seed-session", taskID: "browser-session-task",
+            projectRoot: project.path, assistant: .codex))
+        let gate = LockedBool(true)
         let relay = LinuxRelayRuntimeOwner(
             machine: CloudMachineIdentity(accountID: identity.accountID,
                                           machineID: identity.machineID),
             identityAuthority: authority, transport: transport, outbound: outbound,
-            ingress: ingress, commandsEnabled: { true },
+            ingress: ingress, commandsEnabled: { gate.get() },
             places: [LinuxRelayPlace(id: "reaver", label: "reaver", path: project.path)],
             inventory: { TerminalInventory(sessions: []) })
         try await relay.start()
@@ -1518,8 +1522,72 @@ final class LinuxRuntimeContractTests: XCTestCase {
             if descriptor == nil { try await Task.sleep(nanoseconds: 5_000_000) }
         }
         XCTAssertEqual(descriptor?["platform"] as? String, "linux")
-        XCTAssertEqual(descriptor?["commands"] as? [String], ["places", "start"],
+        XCTAssertEqual(descriptor?["commands"] as? [String],
+                       ["places", "screen", "send", "start", "transcript"],
                        "the descriptor advertises exactly the words the adapter implements")
+
+        let durableBeforeReads = try XCTUnwrap(ingressStore.load().state)
+        gate.set(false)
+        try send([
+            "type": "transcript", "session": lifecycle.sessionID,
+            "limit": 200, "priority": "foreground"
+        ])
+        let transcriptReply = try await reply(named: "transcript")
+        let transcript = try XCTUnwrap(transcriptReply)
+        XCTAssertEqual(transcript.frame.envelope.ch, "t/machine-linux/%25durable")
+        let transcriptBody = try XCTUnwrap(transcript.clear["body"] as? [String: Any])
+        let transcriptEntries = try XCTUnwrap(transcriptBody["entries"] as? [[String: Any]])
+        XCTAssertEqual(transcriptEntries.first?["text"] as? String, "screen")
+
+        try send(["type": "screen", "session": lifecycle.sessionID])
+        let screenReply = try await reply(named: "screen")
+        let screen = try XCTUnwrap(screenReply)
+        XCTAssertEqual((((screen.clear["body"] as? [String: Any])?["screen"]
+            as? [String: Any])?["text"] as? String), "screen")
+        XCTAssertEqual(try XCTUnwrap(ingressStore.load().state), durableBeforeReads,
+                       "screen and transcript are read-level and append no durable command rows")
+
+        try send([
+            "type": "send", "session": lifecycle.sessionID, "request": "send-disabled",
+            "text": "must not land", "images": []
+        ])
+        let disabledReply = try await reply(named: "action:send-disabled")
+        let disabled = try XCTUnwrap(disabledReply)
+        XCTAssertEqual(disabled.clear["status"] as? Int, 403)
+        XCTAssertEqual((disabled.clear["error"] as? [String: Any])?["code"] as? String,
+                       "cloud_effect_refused")
+        XCTAssertFalse(lifecycle.calls.contains(where: { $0.hasSuffix(":must not land") }))
+
+        try send([
+            "type": "send", "session": lifecycle.sessionID, "request": "send-images",
+            "text": "image", "images": ["data:image/png;base64,AA=="]
+        ])
+        let imagesReply = try await reply(named: "action:send-images")
+        let images = try XCTUnwrap(imagesReply)
+        XCTAssertEqual(images.clear["status"] as? Int, 400)
+        XCTAssertEqual((images.clear["error"] as? [String: Any])?["code"] as? String,
+                       "malformed_command")
+
+        gate.set(true)
+        let sendBody: [String: Any] = [
+            "type": "send", "session": lifecycle.sessionID, "request": "send-1",
+            "text": "hello from phone", "images": []
+        ]
+        try send(sendBody)
+        let sentReply = try await reply(named: "action:send-1")
+        let sent = try XCTUnwrap(sentReply)
+        XCTAssertEqual((sent.clear["body"] as? [String: Any])?["ok"] as? Bool, true)
+        XCTAssertTrue(lifecycle.calls.contains(where: { $0.hasSuffix(":hello from phone") }),
+                      "the authenticated browser prompt reaches the exact Linux Session")
+        let sentCallCount = lifecycle.calls.filter { $0.hasSuffix(":hello from phone") }.count
+        XCTAssertTrue(transport.deliver(CloudInboundCommand(
+            channel: "ctl/machine-linux", sequence: sequence,
+            timestamp: UInt64(Date().timeIntervalSince1970 * 1_000), sender: "viewer-linux",
+            plaintext: try JSONSerialization.data(withJSONObject: sendBody))))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertEqual(lifecycle.calls.filter { $0.hasSuffix(":hello from phone") }.count,
+                       sentCallCount, "replaying one authenticated sequence never presses Enter twice")
+        let lifecycleCallsAfterSupportedCommands = lifecycle.calls
 
         for word in ["snippets", "schedules", "push-key", "board", "voice"] {
             try send(["type": word, "session": "__clawdline_machine__", "request": word + "-1"])
@@ -1548,7 +1616,8 @@ final class LinuxRuntimeContractTests: XCTestCase {
         }
         XCTAssertEqual(quiet.map { $0.clear["read"] as? String ?? "" }, [],
                        "a body that names no well-formed machine request is answered by nobody")
-        XCTAssertTrue(lifecycle.calls.isEmpty, "no refusal reached a lifecycle effect")
+        XCTAssertEqual(lifecycle.calls, lifecycleCallsAfterSupportedCommands,
+                       "no refusal reached a lifecycle effect")
         await relay.stop()
     }
 

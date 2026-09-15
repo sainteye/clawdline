@@ -309,7 +309,7 @@ actor LinuxRelayRuntimeOwner {
     /// The machine-session words a browser may send this executor, and the only ones it answers
     /// with an effect. Published in the descriptor as `commands` so the hosted console can route
     /// by them; every other word is refused as `unknown_command` (`adaptBrowserCommand`).
-    static let browserCommandTypes = ["places", "start"]
+    static let browserCommandTypes = ["places", "screen", "send", "start", "transcript"]
 
     private let machine: CloudMachineIdentity
     private let identityAuthority: CloudExecutorIdentityAuthority
@@ -511,7 +511,7 @@ actor LinuxRelayRuntimeOwner {
                 try? await outbound.enqueue(
                     try refusalPayload(read: refusal.read, status: Self.status(for: failure.code),
                                        code: failure.code, message: failure.message),
-                    channel: machineReplyChannel(), logicalID: refusal.read)
+                    channel: refusal.channel, logicalID: refusal.read)
             }
             return
         } catch {
@@ -571,6 +571,44 @@ actor LinuxRelayRuntimeOwner {
                 diagnostic("linux cloud: command failed before durable response")
             }
             return
+        case .transcript(let sessionID):
+            await performBrowserSession(
+                requestID: browserReadCommandID(inbound), sessionID: sessionID, operation: .observe,
+                text: nil, sender: inbound.sender, sequence: inbound.sequence,
+                readName: "transcript"
+            ) { receipt in
+                let text = receipt.output ?? ""
+                return ["entries": text.isEmpty ? [] : [["role": "assistant", "text": text]],
+                        "signature": LinuxSHA256.hex(Data(text.utf8))]
+            }
+            return
+        case .screen(let sessionID):
+            await performBrowserSession(
+                requestID: browserReadCommandID(inbound), sessionID: sessionID, operation: .observe,
+                text: nil, sender: inbound.sender, sequence: inbound.sequence,
+                readName: "screen"
+            ) { receipt in
+                let text = receipt.output ?? ""
+                return ["screen": [
+                    "id": sessionID, "backend": "tmux", "channel": "on-demand",
+                    "revision": LinuxSHA256.hex(Data(text.utf8)), "readable": true,
+                    "pending": false, "text": text,
+                    "lines": text.isEmpty ? 0 : text.split(separator: "\n", omittingEmptySubsequences: false).count,
+                    "askAgainAfterMs": 1_000
+                ]]
+            }
+            return
+        case .send(let requestID, let sessionID, let text):
+            await performBrowserSession(
+                requestID: requestID, sessionID: sessionID, operation: .send,
+                text: text, sender: inbound.sender, sequence: inbound.sequence,
+                readName: "action:" + requestID
+            ) { _ in
+                let now = Int(Date().timeIntervalSince1970 * 1_000)
+                return ["ok": true, "accepted_at": now, "at": now]
+            }
+            await publishInventory(inventory(), force: true)
+            return
         case .native(let request):
             do {
                 let response = try ingress.performCloud(
@@ -602,6 +640,73 @@ actor LinuxRelayRuntimeOwner {
             }
             return
         }
+    }
+
+    private func performBrowserSession(
+        requestID: String, sessionID: String, operation: LinuxIngressOperation,
+        text: String?, sender: String, sequence: UInt64, readName: String,
+        body: (LinuxLifecycleReceipt) -> [String: Any]
+    ) async {
+        let channel = "t/" + channelSegment(machine.machineID) + "/" + channelSegment(sessionID)
+        do {
+            guard try isAuthorized(sender: sender, requiresWrite: operation == .send) else {
+                throw LinuxDurableStateFailure(
+                    code: operation == .send ? "cloud_effect_refused" : "cloud_read_refused",
+                    message: "The paired viewer is not authorized for this Session operation.")
+            }
+            let authorize: (_ requiresWrite: Bool) throws -> Bool = {
+                [identityAuthority, commandsEnabled, machine] write in
+                    let snapshot = try identityAuthority.snapshot()
+                    guard snapshot.accountID == machine.accountID,
+                          snapshot.machineID == machine.machineID,
+                          snapshot.deviceID == machine.machineID,
+                          !snapshot.revokedDeviceIDs.contains(sender),
+                          snapshot.pairedDevices.contains(where: { $0.deviceID == sender }) else {
+                        return false
+                    }
+                    return !write || commandsEnabled()
+            }
+            let receipt: LinuxLifecycleReceipt
+            if operation == .observe {
+                receipt = try ingress.observeCloudSession(
+                    sessionID, commandID: requestID,
+                    effectAuthorization: { try authorize(false) })
+            } else {
+                let taskID = try ingress.taskIDForCloudSession(sessionID)
+                let response = try ingress.performCloud(
+                    LinuxIngressRequest(
+                        operation: operation, commandID: requestID, taskID: taskID,
+                        sessionID: sessionID, text: text),
+                    sender: sender, sequence: sequence,
+                    effectAuthorization: authorize)
+                let decoded = try JSONDecoder().decode(LinuxIngressResponse.self, from: response)
+                guard let value = decoded.receipt else {
+                    throw LinuxDurableStateFailure(code: "missing_receipt",
+                                                   message: "The Session operation produced no receipt.")
+                }
+                receipt = value
+            }
+            try await outbound.enqueue(
+                try Self.json(["read": readName, "status": 200, "body": body(receipt)]),
+                channel: channel, logicalID: readName)
+        } catch let failure as LinuxDurableStateFailure {
+            try? await outbound.enqueue(
+                try refusalPayload(read: readName, status: Self.status(for: failure.code),
+                                   code: failure.code, message: failure.message),
+                channel: channel, logicalID: readName)
+            diagnostic("linux cloud: Session command refused code=\(failure.code)")
+        } catch {
+            try? await outbound.enqueue(
+                try refusalPayload(read: readName, status: 500, code: "internal_failure",
+                                   message: "The Session operation could not be completed."),
+                channel: channel, logicalID: readName)
+            diagnostic("linux cloud: Session command failed before durable response")
+        }
+    }
+
+    private func browserReadCommandID(_ inbound: CloudInboundCommand) -> String {
+        LinuxSHA256.hex(Data(
+            "browser-read:\(inbound.sender):\(inbound.channel):\(inbound.sequence)".utf8))
     }
 
     func publishInventory(_ snapshot: TerminalInventory, force: Bool = false) async {
@@ -655,6 +760,9 @@ actor LinuxRelayRuntimeOwner {
     private enum LinuxBrowserCommand {
         case places(String)
         case start(String, LinuxIngressRequest)
+        case transcript(String)
+        case screen(String)
+        case send(String, String, String)
         case native(LinuxIngressRequest)
     }
 
@@ -663,10 +771,7 @@ actor LinuxRelayRuntimeOwner {
             return .native(native)
         }
         guard let body = try JSONSerialization.jsonObject(with: inbound.plaintext) as? [String: Any],
-              let type = body["type"] as? String,
-              let request = body["request"] as? String,
-              request.utf8.count > 0, request.utf8.count <= 128,
-              SessionLaunchPolicy.opaqueCommandID(request) == request else {
+              let type = body["type"] as? String else {
             throw LinuxDurableStateFailure(code: "malformed_command", message: "Browser command is malformed.")
         }
         // A word this executor does not implement. It used to fall through to the `start` shape check
@@ -676,12 +781,47 @@ actor LinuxRelayRuntimeOwner {
             throw LinuxDurableStateFailure(code: "unknown_command",
                                            message: "This machine does not know that Cloud command.")
         }
+        if type == "transcript" {
+            guard Set(body.keys) == ["type", "session", "limit", "priority"],
+                  let session = body["session"] as? String,
+                  let limit = body["limit"] as? Int, (1...200).contains(limit),
+                  let priority = body["priority"] as? String,
+                  ["foreground", "background"].contains(priority) else {
+                throw LinuxDurableStateFailure(code: "malformed_command",
+                                               message: "Transcript command is malformed.")
+            }
+            return .transcript(session)
+        }
+        if type == "screen" {
+            guard Set(body.keys) == ["type", "session"],
+                  let session = body["session"] as? String else {
+                throw LinuxDurableStateFailure(code: "malformed_command",
+                                               message: "Screen command is malformed.")
+            }
+            return .screen(session)
+        }
+        guard let request = body["request"] as? String,
+              request.utf8.count > 0, request.utf8.count <= 128,
+              SessionLaunchPolicy.opaqueCommandID(request) == request else {
+            throw LinuxDurableStateFailure(code: "malformed_command", message: "Browser command is malformed.")
+        }
         if type == "places" {
             guard Set(body.keys) == ["type", "session", "request"],
                   body["session"] as? String == "__clawdline_machine__" else {
                 throw LinuxDurableStateFailure(code: "malformed_command", message: "Places command is malformed.")
             }
             return .places(request)
+        }
+        if type == "send" {
+            guard Set(body.keys) == ["type", "session", "request", "text", "images"],
+                  let session = body["session"] as? String,
+                  let text = body["text"] as? String,
+                  !text.isEmpty, text.utf8.count <= 65_536,
+                  let images = body["images"] as? [Any], images.isEmpty else {
+                throw LinuxDurableStateFailure(code: "malformed_command",
+                                               message: "Send command is malformed or carries unsupported images.")
+            }
+            return .send(request, session, text)
         }
         guard type == "start",
               Set(body.keys) == ["type", "session", "request", "place", "assistant", "model"],
@@ -785,13 +925,23 @@ actor LinuxRelayRuntimeOwner {
     /// because it cannot know whether the browser waits on `read:` or `action:`; that is the Mac's
     /// `commandRefusalReply` rule, and the hosted console lets a refusal settle either spelling of
     /// the same request id.
-    private func browserRefusalIdentity(_ plaintext: Data) -> (read: String, type: String)? {
+    private func browserRefusalIdentity(_ plaintext: Data)
+        -> (read: String, type: String, channel: String)? {
         guard let body = try? JSONSerialization.jsonObject(with: plaintext) as? [String: Any],
               let type = body["type"] as? String,
-              body["session"] as? String == "__clawdline_machine__",
-              let request = body["request"] as? String,
+              let session = body["session"] as? String,
+              !session.isEmpty else { return nil }
+        let channel = "t/" + channelSegment(machine.machineID) + "/" + channelSegment(session)
+        if type == "transcript" || type == "screen" {
+            return (type, type, channel)
+        }
+        guard let request = body["request"] as? String,
               SessionLaunchPolicy.opaqueCommandID(request) == request else { return nil }
-        return ((type == "places" ? "read:" : "action:") + request, type)
+        if session == "__clawdline_machine__" {
+            return ((type == "places" ? "read:" : "action:") + request, type, channel)
+        }
+        guard type == "send" else { return nil }
+        return ("action:" + request, type, channel)
     }
 
     private func refusalPayload(read: String, status: Int, code: String,

@@ -854,6 +854,8 @@ enum LinuxProviderSandbox {
 /// A tmux server on one explicit socket owns every PTY. No default socket or inherited TMUX value
 /// can redirect these calls into somebody else's server.
 final class LinuxTmuxTerminalHost: TerminalHost {
+    private static let bracketedPasteStartHex = ["1b", "5b", "32", "30", "30", "7e"]
+    private static let bracketedPasteEndHex = ["1b", "5b", "32", "30", "31", "7e"]
     let tmuxExecutable: LinuxExecutableDescriptor
     let socketPath: String
     let providerExecutables: [Assistant: LinuxExecutableDescriptor]
@@ -863,6 +865,11 @@ final class LinuxTmuxTerminalHost: TerminalHost {
     let runner: LinuxCommandRunner
     let limits: TerminalWorkLimits
     var failSubmitAfterPasteForTesting = false
+    /// tmux acknowledges a paste when it has queued bytes, before an interactive TUI has
+    /// necessarily consumed the bracketed-paste boundary. A Return queued immediately after it
+    /// can therefore be swallowed by Codex's paste handler even though both tmux commands return
+    /// zero. Give the provider one small bounded turn; tests may set this to zero.
+    var submitDelayMicroseconds: useconds_t = 100_000
 
     // tmux 3.4 renders the US control character in `-F` output as the four printable bytes
     // `\037`. Accept the raw form as well so the parser stays compatible with implementations
@@ -1054,6 +1061,31 @@ final class LinuxTmuxTerminalHost: TerminalHost {
                 sessionID: session.id, tty: session.tty)
         }
         defer { _ = try? tmux(["delete-buffer", "-b", buffer], operation: .send) }
+        let opened: LinuxCommandReceipt
+        do {
+            opened = try tmux(
+                ["send-keys", "-t", session.id, "-H"] + Self.bracketedPasteStartHex,
+                operation: .send)
+        } catch let failure as LinuxRuntimeFailure {
+            throw LinuxTerminalEffectFailure(
+                failure: failure, certainty: .unknown, checkpoint: .none,
+                sessionID: session.id, tty: session.tty)
+        }
+        guard opened.status == 0 else {
+            throw LinuxTerminalEffectFailure(
+                failure: LinuxRuntimeFailure(code: .commandFailed,
+                                             message: "The addressed tmux pane is gone."),
+                certainty: .noEffect, checkpoint: .none,
+                sessionID: session.id, tty: session.tty)
+        }
+        var pasteModeOpen = true
+        defer {
+            if pasteModeOpen {
+                _ = try? tmux(
+                    ["send-keys", "-t", session.id, "-H"] + Self.bracketedPasteEndHex,
+                    operation: .send)
+            }
+        }
         let pasted: LinuxCommandReceipt
         do {
             pasted = try tmux(["paste-buffer", "-d", "-b", buffer, "-t", session.id],
@@ -1070,7 +1102,26 @@ final class LinuxTmuxTerminalHost: TerminalHost {
                 certainty: .noEffect, checkpoint: .none,
                 sessionID: session.id, tty: session.tty)
         }
+        let closed: LinuxCommandReceipt
+        do {
+            closed = try tmux(
+                ["send-keys", "-t", session.id, "-H"] + Self.bracketedPasteEndHex,
+                operation: .send)
+        } catch let failure as LinuxRuntimeFailure {
+            throw LinuxTerminalEffectFailure(
+                failure: failure, certainty: .unknown, checkpoint: .textPasted,
+                sessionID: session.id, tty: session.tty)
+        }
+        guard closed.status == 0 else {
+            throw LinuxTerminalEffectFailure(
+                failure: LinuxRuntimeFailure(code: .commandFailed,
+                                             message: "The pasted input could not be finalized."),
+                certainty: .partial, checkpoint: .textPasted,
+                sessionID: session.id, tty: session.tty)
+        }
+        pasteModeOpen = false
         if failSubmitAfterPasteForTesting { return .pastedNotSubmitted }
+        if submitDelayMicroseconds > 0 { usleep(submitDelayMicroseconds) }
         let submitted: LinuxCommandReceipt
         do {
             submitted = try tmux(["send-keys", "-t", session.id, "Enter"], operation: .send)
@@ -1135,7 +1186,10 @@ final class LinuxTmuxTerminalHost: TerminalHost {
 
     func capture(_ session: TargetSession) throws -> String? {
         try require(session)
-        let receipt = try tmux(["capture-pane", "-p", "-e", "-t", session.id, "-S", "-200"],
+        // Cloud transcript/screen consumers need readable text, not terminal escape sequences.
+        // Join wrapped display rows while preserving real newlines; the bounded 200-line history
+        // is a screen projection, not a provider's semantic transcript.
+        let receipt = try tmux(["capture-pane", "-p", "-J", "-t", session.id, "-S", "-200"],
                                operation: .observe)
         return receipt.status == 0 ? String(decoding: receipt.stdout, as: UTF8.self) : nil
     }

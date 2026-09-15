@@ -1,12 +1,12 @@
 /**
  * A Mac + Linux account on the hosted console: every feature answers with the Mac's data within a
- * bound, and nothing but `places` and `start` is ever published toward the Linux executor.
+ * bound, and only the five commands in Linux's published browser contract are sent there.
  *
  * On 2026-09-15 the Snippets sheet opened blank on exactly this account, and the audit behind it
  * found the same shape at every site that picked or iterated machines: `_onlyMachine` refused any
  * account with two machines, and the fan-out reads asked the Linux executor for things it has no
  * handler for and then waited out its silence. The fixture here is that account with the fault
- * injected: the Linux machine answers `places` and `start` and **never replies to anything else**,
+ * injected: the Linux machine answers its five commands and **never replies to anything else**,
  * while the Mac answers every closed command it owns.
  *
  * Every check runs and reports on its own, so the file run against a tree without the fix names
@@ -104,7 +104,7 @@ const MACHINE_REPLY = "__clawdline_machine__";
 const READ_TIMEOUT_MS = 2000;
 const FAST = 600;
 const BOUND = READ_TIMEOUT_MS + 1500;
-const LINUX_ANSWERS = new Set(["places", "start"]);
+const LINUX_ANSWERS = new Set(["places", "screen", "send", "start", "transcript"]);
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 
 /* ---- the relay, the Mac and the Linux executor ---------------------------------------------- */
@@ -207,14 +207,21 @@ async function fleet(machines, options) {
         const platform = kinds.get(machine);
         if (platform === "linux") {
             if (!LINUX_ANSWERS.has(command.type)) return;
-            if (command.type === "places") {
-                await fromMachine(client, socket, "t/" + machine + "/" + MACHINE_REPLY, { read: "read:" + command.request,
-                    status: 200, body: { places: [{ id: "reaver", label: "reaver", path: "/srv/reaver" }],
-                        assistants: [{ id: "claude", label: "claude", availability: "available" }] } });
-            } else {
-                await fromMachine(client, socket, "t/" + machine + "/" + MACHINE_REPLY, { read: "action:" + command.request,
-                    status: 200, body: { ok: true, id: "linux-new", backend: "tmux" } });
-            }
+            const machineRead = "t/" + machine + "/" + MACHINE_REPLY;
+            const sessionRead = "t/" + machine + "/" + encodeURIComponent(command.session);
+            if (command.type === "places") await fromMachine(client, socket, machineRead,
+                { read: "read:" + command.request, status: 200, body: {
+                    places: [{ id: "reaver", label: "reaver", path: "/srv/reaver" }],
+                    assistants: [{ id: "claude", label: "claude", availability: "available" }] } });
+            else if (command.type === "transcript") await fromMachine(client, socket, sessionRead,
+                { read: "transcript", status: 200, body: { entries: [], signature: "linux-transcript" } });
+            else if (command.type === "screen") await fromMachine(client, socket, sessionRead,
+                { read: "screen", status: 200, body: { screen: { text: "linux screen", readable: true } } });
+            else if (command.type === "send") await fromMachine(client, socket, sessionRead,
+                { read: "action:" + command.request, status: 200, body: { ok: true } });
+            else await fromMachine(client, socket, machineRead,
+                { read: "action:" + command.request, status: 200,
+                    body: { ok: true, id: "linux-new", backend: "tmux" } });
             return;
         }
         if (options.silent && options.silent.has(machine)) return;
@@ -245,9 +252,9 @@ function outcome(promise, ms) {
         new Promise((resolve) => setTimeout(resolve, ms, { state: "pending" }))
     ]);
 }
-function onlyPlacesAndStartTo(fixture, machine) {
+function onlyLinuxCommandsTo(fixture, machine) {
     const others = fixture.typesTo(machine).filter((type) => !LINUX_ANSWERS.has(type));
-    assert.deepEqual(others, [], "nothing but places/start was published toward " + machine);
+    assert.deepEqual(others, [], "only Linux's advertised commands were published toward " + machine);
 }
 const settle = async () => { for (let i = 0; i < 6; i++) await new Promise((resolve) => setImmediate(resolve)); };
 /** Resolves when `condition()` holds or `ms` has passed, whichever is first; the caller asserts. */
@@ -272,7 +279,7 @@ await check("1 snippets · the open Mac Session's list paints at once on a Mac +
     const ended = await outcome(f.client.snippets(macSession), FAST);
     assert.equal(ended.state, "resolved", "the sheet's read did not wait on the Linux executor (" + ended.state + ")");
     assert.deepEqual(ended.value.snippets.map((row) => [row.id, row.machine]), [["mac-01-deploy", "mac-01"]]);
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 await check("1 snippets · a retained Mac snapshot without the field asks that Mac, and only that Mac", async function () {
@@ -281,7 +288,7 @@ await check("1 snippets · a retained Mac snapshot without the field asks that M
     assert.equal(ended.state, "resolved", ended.state + (ended.error ? " " + ended.error.code : ""));
     assert.deepEqual(ended.value.snippets.map((row) => row.machine), ["mac-01"]);
     assert.deepEqual(f.typesTo("mac-01"), ["snippets"]);
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 await check("1 snippets · a Linux Session's sheet is refused as unsupported at once and nothing is published", async function () {
@@ -311,7 +318,7 @@ await check("1 snippets · an account-level read keeps the answering Mac's rows 
     assert.ok(Date.now() - started < BOUND, "within the silent Mac's own bound");
     assert.deepEqual(ended.value.snippets.map((row) => row.machine), ["mac-01"]);
     assert.deepEqual(ended.value.unanswered.map((row) => [row.machine, row.error.code]), [["mac-02", "cloud_read_timeout"]]);
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 /* ---- 2 · Schedules --------------------------------------------------------------------------- */
@@ -322,7 +329,7 @@ await check("2 schedules · a visible refresh asks the Mac and never the Linux e
     assert.equal(ended.state, "resolved", ended.state + (ended.error ? " " + ended.error.code : ""));
     assert.deepEqual(ended.value.schedules.map((row) => [row.id, row.machine]), [["mac-01-morning", "mac-01"]]);
     assert.deepEqual(f.typesTo("mac-01"), ["schedules"]);
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 await check("2 schedules · a Linux-only account has no schedules to show rather than an old-Mac refusal", async function () {
@@ -331,7 +338,7 @@ await check("2 schedules · a Linux-only account has no schedules to show rather
     const fresh = await outcome(f.client.schedules({ fresh: true }), FAST);
     assert.deepEqual([retained.state, retained.value && retained.value.schedules, fresh.state, fresh.value && fresh.value.schedules],
         ["resolved", [], "resolved", []]);
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 /** The Mac answering its schedules with `project_dir`, so the strip needs no per-row detail read. */
@@ -372,7 +379,7 @@ await check("2 schedules · the strip's own refresh draws the Mac's schedules wi
             "the strip drew the Mac's one schedule within " + bound + " ms (after " + waited + " ms it showed "
             + JSON.stringify(control("schedules-count").textContent) + ")");
         assert.ok(String(control("schedule-rows").innerHTML).includes("mac-01-morning"), "and the row is the Mac's");
-        onlyPlacesAndStartTo(f, "linux-01");
+        onlyLinuxCommandsTo(f, "linux-01");
     } finally { driven.restore(); }
 });
 
@@ -393,7 +400,7 @@ await check("3 push · key, subscribe, unsubscribe and a test with no Session al
     assert.deepEqual(f.typesTo("mac-01"), ["push-key", "push-subscribe", "push-unsubscribe", "push-test", "push-test", "push-test"]);
     assert.deepEqual(f.commands.filter((row) => row.type === "push-test").map((row) => row.command.target),
         ["", "s-mac-01", ""], "a Linux Session selected in the list is no push destination: the test is the account's");
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 await check("3 push · two Macs are a typed refusal for every push call, even with one current, and nothing is published", async function () {
@@ -436,7 +443,7 @@ await check("4 diagnostics · Send to Mac reaches the Mac on a Mac + Linux accou
     const ended = await outcome(f.client.diagnosticsReport({ layout: "phone" }), FAST);
     assert.equal(ended.state, "resolved", ended.state + (ended.error ? " " + ended.error.code : ""));
     assert.equal(ended.value.path, "/tmp/mac-01-report.json");
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 await check("4 diagnostics · two current Macs are a typed refusal and publish nothing; one current Mac is chosen", async function () {
@@ -457,7 +464,7 @@ await check("5 projects · the Projects page reads the Mac's Board, and every Pr
     const ended = await outcome(readProjectPlaces(f.client), FAST);
     assert.equal(ended.state, "resolved", ended.state + (ended.error ? " " + ended.error.code : ""));
     assert.deepEqual(ended.value.places.map((place) => [place.boardProjectId, place.machine]), [["project-app", "mac-01"]]);
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 await check("5 projects · two Macs fall back to every machine's places instead of failing the page", async function () {
@@ -486,7 +493,7 @@ await check("6 settings board · the read and the toggle both reach the Mac on a
     for (let i = 0; i < 10; i++) await settle();
     assert.deepEqual(f.typesTo("mac-01"), ["board", "board-command"]);
     assert.equal(control("settings-board-status").textContent, "Saved");
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
 });
 
 /* ---- 7 · Project worktree lifecycle --------------------------------------------------------- */
@@ -497,7 +504,7 @@ await check("7 worktrees · lifecycle and refresh with no machine reach the Mac,
     const refresh = await outcome(f.client.projectWorktreeLifecycleRefresh("project-app"), FAST);
     assert.deepEqual([read.state, read.value && read.value.machine, refresh.state, refresh.value && refresh.value.machine],
         ["resolved", "mac-01", "resolved", "mac-01"]);
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
     const g = await fleet(TWO_MACS);
     const before = g.publishedCount();
     const refused = await outcome(g.client.projectWorktreeLifecycle("project-app"), FAST);
@@ -516,7 +523,7 @@ await check("8 board and timeline · opened with no machine they read the Mac; t
         [board, command, timeline, timelineCommand].map((row) => row.error && row.error.code).join(","));
     assert.equal(board.value.machine, "mac-01", "the Board answer names the machine it came from");
     assert.deepEqual(f.typesTo("mac-01"), ["board", "board-command", "timeline", "timeline-command"]);
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
     const g = await fleet(TWO_MACS);
     const before = g.publishedCount();
     const codes = [];
@@ -890,7 +897,7 @@ await check("12 places callers · every page module that reads places() without 
 
 /* ---- the whole transport against the fault -------------------------------------------------- */
 
-await check("fleet · every public CloudClient method, aimed at Linux or at the account: bounded, and only places/start reach Linux", async function () {
+await check("fleet · every public CloudClient method is bounded and only supported commands reach Linux", async function () {
     const f = await fleet(MAC_LINUX);
     const places = await f.client.places();
     const linuxPlace = places.places.find((place) => place.machine === "linux-01").id;
@@ -921,7 +928,7 @@ await check("fleet · every public CloudClient method, aimed at Linux or at the 
     }
     const pending = ended.filter((call) => call.ended && call.ended.state === "pending")
         .map((call) => call.name + "(" + JSON.stringify(call.args[0]) + ")");
-    onlyPlacesAndStartTo(f, "linux-01");
+    onlyLinuxCommandsTo(f, "linux-01");
     assert.deepEqual(pending, [], "every call settled within one read bound");
     const refusedHere = ended.filter((call) => call.ended && call.ended.state === "rejected"
         && call.ended.error && call.ended.error.code === "cloud_machine_unsupported").length;

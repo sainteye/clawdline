@@ -39,6 +39,16 @@ the sole allowlisted project is:
 The browser receives that bounded place identity, not an arbitrary filesystem picker. The provider
 may read and write only admitted roots after the Linux containment policy is installed.
 
+When the host already launches Codex inside Clawdline's outer Linux containment, pin the provider
+configuration in the service identity's private HOME, not in the project repository. On the Codex
+version used for this acceptance, `use_linux_sandbox_bwrap = false` selects Codex's Landlock backend
+instead of nesting bubblewrap inside the outer sandbox. This is a compatibility setting, not a
+request to remove containment: Clawdline's outer Landlock rules, seccomp filter and
+`no_new_privs` must remain active, and a write probe outside the admitted project must still fail.
+Do not commit the service HOME, provider login, or this machine-local choice to an open-source
+project. The public OpenAI documentation did not expose this exact setting when this runbook was
+updated; revalidate it against the installed Codex version during an upgrade.
+
 ## 2. Build on Ubuntu or in the pinned Swift image
 
 The supported source gate is:
@@ -349,7 +359,10 @@ The installation is accepted only when all of these are observed on the exact si
    do not accept an old-boot line. A cold network path can consume several bounded authentication
    attempts before becoming ready even while configured health already reports `serviceReady`.
 4. `app.clawdline.com` shows the Linux/AWS machine label on its Session rows. The New Session sheet
-   can select that machine and only the configured project (`reaver`).
+   can select that machine and only the configured project (`reaver`). Opening an existing Linux
+   Session must load `transcript` and `screen`, and sending a text-only prompt must receive the
+   correlated `action:<request>` answer. The descriptor must advertise exactly
+   `places`, `screen`, `send`, `start`, and `transcript`; inventory presence alone is not enough.
 5. A hosted command creates a Claude Code or Codex Session, applies one benign change on a new
    branch, runs the repository test, and pushes that branch. The default branch is unchanged and
    the exact remote commit is recorded.
@@ -458,6 +471,15 @@ Common failure classifications:
   do not manually kill a different pane to make reconciliation look complete.
 - daemon active but no hosted Sessions: inspect typed Relay authorization/readiness and the
   authoritative per-session channels; do not infer readiness from systemd alone.
+- the hosted console lists Linux Sessions but opening one shows `cloud_machine_unsupported`, or the
+  composer is disabled: the installed executor is publishing inventory but its machine descriptor
+  does not advertise `transcript`, `screen`, and `send`. Install the signed release containing
+  those handlers and wait for a fresh descriptor; repeatedly pairing the browser does not add
+  missing server capabilities.
+- send returns success but Codex keeps the text in its composer: tmux accepted a keystroke before
+  the provider finished consuming a raw paste. Use a release that emits explicit bracketed-paste
+  start/end bytes, waits one bounded turn, and then sends exactly one Enter. Do not use a second
+  Enter as a retry: the first may have landed and the result would be a duplicate action.
 - configured health is ready after reboot but the first Relay attempts end in
   `authentication_timeout`: keep the existing bounded reconnect policy and poll the **current
   boot** journal for a finite acceptance window. In one real EC2 reboot, three 15-second attempts
