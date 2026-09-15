@@ -5,7 +5,7 @@ import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { Pages } from "../core/pages.js";
 import { shortPath, tint } from "../core/util.js";
-import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIcon, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
+import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIconOnce, drawSpinner, setSpinners, spinPhase, spinners } from "../core/pixels.js";
 import { byId, featureRootChip, ordered, projectSessionCloseability, projectSessionWorkState, revisionOf, rowDepth, selfReportedPeerWaitCopy, sessionCloseabilityHTML, sessionCloseabilityShape, sessionStatusGlyphHTML, sessionWorkStateHTML, taskLive, taskOfChild, taskShaping, taskWord, tasksOfRoot } from "./derive.js";
 import { Optimistic, Waits, drawListSkeleton, listUnknown } from "./waits.js";
 import { suggestedReplyButtonHTML, suggestedReplyKeydown } from "./derive.js";
@@ -215,8 +215,11 @@ function renderCounts() {
             : T.webCountNone;
         bits.push('<span class="part quiet">' + esc(quiet) + "</span>");
     }
-    els.counts.innerHTML = bits.join("");
+    var html = bits.join("");
+    // Every frame of the stream reaches here, and most of them leave the counts as they were.
+    if (html !== countsHTML) { countsHTML = html; els.counts.innerHTML = html; }
 }
+var countsHTML = null;
 
 /**
  * Keep a removed row where it was visibly sitting while the live rows take their final places.
@@ -267,16 +270,38 @@ export function renderList() {
     // Nothing has ever arrived and the wait has gone on long enough to be worth drawing. No rows
     // are built: there are none to build, and the skeleton stands in for the empty state rather
     // than sitting beside it.
-    if (Waits.list.visible) { drawListSkeleton(); return; }
+    if (Waits.list.visible) {
+        // The rows behind the skeleton are not on screen, so neither are their spinners.
+        setSpinners([]);
+        drawListSkeleton();
+        return;
+    }
 
     var list = Start.arrange(ordered());
+
+    // **What actually changed**, before anything is read or written. A row whose inputs are the
+    // ones it was last drawn from is not refilled, and a list whose rows are all like that, in the
+    // order they already sit in, is not measured for FLIP either: nothing on screen can move, and
+    // the per-row rect and style reads were most of what an unchanged frame cost.
+    var fillKeys = {};
+    var changed = false;
+    list.forEach(function (s) {
+        var key = sessionSelectionKey(s);
+        var fillKey = rowFillKey(s);
+        fillKeys[key] = fillKey;
+        var existing = rowNodes[key];
+        if (!existing || fillKey === null || existing._fillKey !== fillKey) changed = true;
+    });
+    if (!changed && Object.keys(rowNodes).length !== list.length) changed = true;
+    var inOrder = rowsInOrder(list);
+    if (!inOrder) changed = true;
 
     // FLIP, first half: both where every row is visibly sitting and where layout put it before
     // the DOM is touched. The distinction matters while a previous FLIP is still running: a
     // stream frame that does not change layout must leave that animation alone, while one that
     // does change it starts again from the visible position rather than snapping to the old end.
     var before = {};
-    if (!reduced) {
+    if (!reduced && changed) {
         Object.keys(rowNodes).forEach(function (id) {
             var node = rowNodes[id];
             var box = node.getBoundingClientRect();
@@ -289,7 +314,7 @@ export function renderList() {
         });
     }
 
-    setSpinners([]);
+    setSpinners([], listSpinnersShown);
     var wanted = {};
     list.forEach(function (s) { wanted[sessionSelectionKey(s)] = true; });
 
@@ -297,9 +322,9 @@ export function renderList() {
     // order. Otherwise appendChild moves the obsolete node to an arbitrary slot, so it fades
     // from somewhere it was never seen and the live rows animate to positions that are already
     // out of date.
-    var rowsBox = !reduced ? els.rows.getBoundingClientRect() : null;
-    Object.keys(rowNodes).forEach(function (id) {
-        if (wanted[id]) return;
+    var leaving = Object.keys(rowNodes).filter(function (id) { return !wanted[id]; });
+    var rowsBox = !reduced && leaving.length ? els.rows.getBoundingClientRect() : null;
+    leaving.forEach(function (id) {
         var node = rowNodes[id];
         delete rowNodes[id];
         if (!node.parentNode) return;
@@ -319,17 +344,26 @@ export function renderList() {
                 setTimeout(function (n) { return function () { n.classList.remove("entering"); }; }(node), 300);
             }
         }
-        fillRow(node, s);
+        node._session = s;
+        if (node._fillKey !== fillKeys[key] || fillKeys[key] === null) {
+            fillRow(node, s);
+            node._fillKey = fillKeys[key];
+        } else if (node._spin) {
+            // Unchanged, and still turning: the clock needs the canvas even when the row is not
+            // redrawn. `setSpinners([])` above emptied the list this render rebuilds.
+            spinners.push(node._spin);
+        }
         // appendChild moves a node that is already here, which is what makes this a reorder
         // rather than a rebuild — the element under the pointer stays the element under the pointer.
-        els.rows.appendChild(node);
+        // A list already in this order moves nothing: a move is a DOM mutation and a layout.
+        if (!inOrder) els.rows.appendChild(node);
     });
 
     // Not a session and deliberately not in `rowNodes`: it cannot be selected, filtered or
     // counted. It lives in the same container solely so the real row replaces the same shape at
     // the top, instead of arriving as an unexplained reorder after the band has been spinning.
     var starting = Start.placeholder();
-    if (starting) els.rows.insertBefore(starting, els.rows.firstChild);
+    if (starting && els.rows.firstChild !== starting) els.rows.insertBefore(starting, els.rows.firstChild);
 
     // FLIP, second half: start each row where it used to be and let it travel to where it now is.
     //
@@ -377,8 +411,9 @@ export function renderList() {
 
     var empty = !list.length && !starting && !listUnknown();
     var homeEmpty = empty && !S.sessions.length && !S.filter;
-    els["list-empty"].className = "empty" + (homeEmpty ? " home-hero-list" : "");
-    els["list-empty"].hidden = !empty;
+    var emptyClass = "empty" + (homeEmpty ? " home-hero-list" : "");
+    if (els["list-empty"].className !== emptyClass) els["list-empty"].className = emptyClass;
+    if (els["list-empty"].hidden !== !empty) els["list-empty"].hidden = !empty;
     if (empty) {
         // Four of them, and telling them apart is the whole job: nothing matches what was typed,
         // this browser was refused, there are genuinely no sessions, or nothing has arrived yet.
@@ -392,6 +427,73 @@ export function renderList() {
                     : [T.webEmptyWaitTitle, T.webEmptyWaitHint]);
         els["list-empty"].innerHTML = "<b>" + esc(says[0]) + "</b>" + esc(says[1]);
     }
+}
+
+/** A phone reading a transcript has the list behind it, hidden, and its spinners with it. */
+function listSpinnersShown() {
+    return !(phone() && els.app.dataset.view === "detail");
+}
+
+/**
+ * Whether the live rows already sit in `list`'s order. Leaving rows and the starting placeholder
+ * share the container and are skipped; `children` rather than a sibling walk, which is what a
+ * stand-in element in a test can answer.
+ */
+function rowsInOrder(list) {
+    var at = 0;
+    var children = els.rows.children || [];
+    for (var i = 0; i < children.length; i++) {
+        var child = children[i];
+        var key = child && child.dataset && child.dataset.selectionKey;
+        if (!key || rowNodes[key] !== child) continue;
+        if (at >= list.length || sessionSelectionKey(list[at]) !== key) return false;
+        at += 1;
+    }
+    return at === list.length && list.length === Object.keys(rowNodes).length;
+}
+
+/**
+ * Everything `fillRow` draws a row from, as one string — or null, which always redraws.
+ *
+ * The row itself is in it whole, so any field the Mac sends is a reason to redraw; the rest is the
+ * page state `fillRow` reads beside it, taken as the answers it draws (the reply button, the
+ * machine label, the task chip) rather than as the state behind them, because several of those
+ * answers depend on the whole fleet or on the clock.
+ */
+function rowFillKey(s) {
+    try {
+        var identityKey = sessionSelectionKey(s);
+        var selection = SessionSelection.snapshot();
+        var closing = closingKey === identityKey;
+        var task = S.tasks.length ? taskOfChild(s.id) : null;
+        var kid = task && taskShaping(task) ? task : null;
+        var roots = S.tasks.length ? tasksOfRoot(s.id) : [];
+        var machine = machinePresentationForFleet(s, S.sessions, T);
+        return JSON.stringify([
+            s,
+            suggestedReplyButtonHTML(s, { openId: S.openId,
+                composerIdentity: S.replyComposerIdentity,
+                writable: S.write === true && S.conn === "live" && !S.agent,
+                zh: (document.documentElement.lang || "").toLowerCase().startsWith("zh") }),
+            !!selection.selected && identityKey === selection.selected.key,
+            !!selection.open && identityKey === selection.open.key,
+            closing, closing && Waits.end.visible,
+            Optimistic.entries(identityKey).length > 0,
+            coordinatorRowModel(s),
+            [machine.label, machine.id, machine.kind],
+            featureRootChip(s),
+            kid ? [kid.id, kid.title, taskLive(kid), taskWord(kid), rowDepth(s.id)] : null,
+            roots.map(function (t) { return [t.id, t.title, taskLive(t)]; }),
+            document.documentElement.lang || ""
+        ]);
+    } catch (e) {
+        return null;
+    }
+}
+
+/** A text write that happens only when the text is different. */
+function setText(el, value) {
+    if (el.textContent !== value) el.textContent = value;
 }
 
 function buildRow(s) {
@@ -532,21 +634,21 @@ function fillRow(node, s) {
 
     var mark = fillCoordinatorMark(node, s);
     if (mark) {
-        if (!drawIcon(mark, s.icon, 4)) mark.classList.add("none"); else mark.classList.remove("none");
+        if (!drawIconOnce(mark, s.icon, 4)) mark.classList.add("none"); else mark.classList.remove("none");
     }
 
     var title = node.querySelector(".title");
-    title.querySelector(".label").textContent = s.label || s.tty || s.id;
+    setText(title.querySelector(".label"), s.label || s.tty || s.id);
     // Tinted with the project's own colour, so two sessions in one project read as one project
     // before either title has been read. Waiting overrides it in CSS — that row is not about
     // which project it is.
     title.style.color = s.icon ? tint(s.icon.accent) : "";
 
-    node.querySelector(".path").textContent = shortPath(s.cwd);
-    node.querySelector(".tty").textContent = s.tty || s.backend || "";
+    setText(node.querySelector(".path"), shortPath(s.cwd));
+    setText(node.querySelector(".tty"), s.tty || s.backend || "");
     var machine = machinePresentationForFleet(s, S.sessions, T);
     var machineNode = node.querySelector(".machine");
-    machineNode.textContent = machine.label;
+    setText(machineNode, machine.label);
     machineNode.title = machine.id;
     machineNode.dataset.kind = machine.kind;
 
@@ -554,8 +656,10 @@ function fillRow(node, s) {
     // which project; this product mark answers the independent question, Claude or Codex.
     var who = node.querySelector(".who");
     who.hidden = !ASSISTANT_LOGOS[s.assistant];
-    who.innerHTML = who.hidden ? "" : assistantLogo(s.assistant) +
+    // About two kilobytes of SVG, parsed again on every write — so written only when it changes.
+    var whoHTML = who.hidden ? "" : assistantLogo(s.assistant) +
         "<span>" + esc(assistantName(s.assistant)) + "</span>";
+    if (node._whoHTML !== whoHTML) { who.innerHTML = whoHTML; node._whoHTML = whoHTML; }
 
     // How many agents this session has out. **A number and nothing else**, sitting with the path
     // and the tty rather than with the state: the state line answers "does this want me", and
@@ -764,11 +868,13 @@ function fillRow(node, s) {
             state.innerHTML = peerSaid + workSaid + shellsSaid;
         }
     }
+    node._spin = null;
     if (kind === "pending" || work.state === "working" || kind === "closing") {
-        state.querySelector(".line").textContent = pending ? T.webPending :
-            (kind === "closing" ? T.webClosing : (s.line || ""));
+        setText(state.querySelector(".line"), pending ? T.webPending :
+            (kind === "closing" ? T.webClosing : (s.line || "")));
         var canvas = state.querySelector(".spin");
         drawSpinner(canvas, spinPhase);
         spinners.push(canvas);
+        node._spin = canvas;
     }
 }

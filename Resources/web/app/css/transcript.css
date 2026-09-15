@@ -508,7 +508,17 @@
 }
 .entry.folded[data-live] .pill::after,
 .entry.toolrow[data-live] .toolline::after {
-    content: ""; position: absolute; inset: 0; pointer-events: none;
+    /* **Moved, not repainted.** The gradient used to sit still while `background-position` slid
+       it across, which the browser repaints on the main thread every frame for as long as the run
+       goes on — minutes, on a phone. Now the band is its own layer 220% as wide as the chip and
+       `transform` carries it, which the compositor does without painting; the chip's
+       `overflow: hidden` above clips it to the same crossing as before.
+
+       And it does not start again when the transcript is redrawn: `renderTranscript` sets
+       `--live-sweep-delay` to a negative offset taken from one page-wide clock, so a new node
+       picks the sweep up where the old one had got to. */
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 220%;
+    pointer-events: none; will-change: transform;
     /* Measured on the pill, which is the small case: a chip twenty pixels tall and a hundred
        and fifty wide gives the gradient very little room, so the stops are close together and
        the peak carries the whole crossing. A tool row is wider, so the same stops are spread
@@ -521,7 +531,6 @@
         rgba(217, 119, 87, 0) 30%,
         rgba(217, 119, 87, 0.20) 50%,
         rgba(217, 119, 87, 0) 70%);
-    background-size: 220% 100%;
     /* `linear`, where the Send button's identical sweep is eased. The button's easing is a press
        that starts fast and settles; this is a heartbeat, and under `--ease` it spent five sixths
        of every cycle parked off the end of the pill with one visible flick in between — which
@@ -531,7 +540,15 @@
        press that has just happened, so it is quick; this one sits under a run that can go on for
        minutes, and at a pace that fast it is something to be looked at. Two and a bit seconds is
        a pulse in the corner of the eye rather than a thing flashing. */
-    animation: sweep 2.2s linear infinite;
+    animation: live-sweep 2.2s linear infinite;
+    animation-delay: var(--live-sweep-delay, 0ms);
+}
+/* The crossing `background-position: 130% → -30%` made over a 220% gradient, as a translation of
+   a 220%-wide band: its peak travels from 46% of the chip's width before its left edge to 46%
+   past its right edge, exactly as before. */
+@keyframes live-sweep {
+    from { transform: translateX(-71%); }
+    to { transform: translateX(16%); }
 }
 /* The sweep goes and one dim accent wash stays: still visibly the live run, with nothing moving.
    Left to the blanket rule above it would freeze wherever the animation happened to be, which is
@@ -539,7 +556,7 @@
 @media (prefers-reduced-motion: reduce) {
     .entry.folded[data-live] .pill::after,
     .entry.toolrow[data-live] .toolline::after {
-        animation: none; background: rgba(217, 119, 87, 0.08);
+        animation: none; transform: none; width: 100%; background: rgba(217, 119, 87, 0.08);
     }
 }
 

@@ -5,7 +5,7 @@ import { T, fill } from "../core/i18n.js";
 import { S } from "../core/state.js";
 import { els } from "../core/dom.js";
 import { ASK_MARK, clockOf, shortPath, tint } from "../core/util.js";
-import { assistantLogo, assistantName, drawIcon, drawSpinner, optimisticSpinners, setOptimisticSpinners, spinPhase } from "../core/pixels.js";
+import { assistantLogo, assistantName, drawIconOnce, drawSpinner, optimisticSpinners, setOptimisticSpinners, spinPhase } from "../core/pixels.js";
 import { byId, taskOfChild, taskWord } from "./derive.js";
 import { markForSession, projectLabel } from "./project-mark.js";
 import { snippetControls, snippetProjectFor } from "./snippets-data.js";
@@ -91,7 +91,7 @@ export function renderDetailHead() {
     // the case `detail.css` keeps a box for: the mark is a button now, and a button with no box
     // is a shortcut nobody can press. `markForSession` makes it rare rather than impossible —
     // a session with no `cwd` at all, and the moment before the first render, still land here.
-    var drew = drawIcon(els["detail-mark"], mark, 5);
+    var drew = drawIconOnce(els["detail-mark"], mark, 5);
     els["detail-snippets"].dataset.mark = drew ? (mark.generated ? "generated" : "registry")
         : "none";
     // **Hidden unless this page is being read on the Mac itself.**
@@ -344,6 +344,7 @@ export function renderTranscript() {
             var html = chunk.map(renderBlock).join("");
             var result;
             if (placement.first) {
+                liveSweepPhase(box);
                 // Image connectors remain inert until the scheduler's meaningful-paint boundary.
                 result = replaceTranscriptContents(box, transcriptNotice + html);
             } else result = insertTranscriptContents(box, html, placement.prepend);
@@ -369,6 +370,22 @@ export function renderTranscript() {
     // order. A custom event rather than a direct call: this function is the transcript's, and
     // what somebody else needs to do afterwards is their business, not a line in here.
     document.dispatchEvent(new CustomEvent("clawdline:rendered"));
+}
+
+/** The live sweep's period in `transcript.css`, which `liveSweepPhase` keeps nodes in step with. */
+var LIVE_SWEEP_MS = 2200;
+
+/**
+ * Pick the live sweep up where it had got to rather than starting it again.
+ *
+ * Every redraw replaces the nodes, and a CSS animation on a new node starts at its beginning — so
+ * the light jumped back to the left edge each time the transcript changed. A negative delay taken
+ * from the document clock puts every new node at the phase one page-wide sweep would be at now.
+ */
+function liveSweepPhase(box) {
+    if (!box || !box.style || typeof box.style.setProperty !== "function") return;
+    var now = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    box.style.setProperty("--live-sweep-delay", -Math.round(now % LIVE_SWEEP_MS) + "ms");
 }
 
 function announceMeaningfulPaint(renderTicket, entryCount, chunked) {

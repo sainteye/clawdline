@@ -296,13 +296,20 @@
        state pasted over this one. Written as rgba because a gradient needs the alpha, and
        36,36,43 is `--line` and 45,45,54 is one step above it. */
     background-color: var(--card-hi);
+    position: relative; overflow: hidden;
+}
+/* The sheen is a band of its own, 240% of the bar, carried by `transform` — the compositor moves
+   it without a repaint, where sliding `background-position` repainted every bar every frame. The
+   translation is the crossing the old `130% → -30%` made: the peak from 62% of a bar before it to
+   62% past it. */
+.skel .bar::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 240%;
+    pointer-events: none; will-change: transform;
     background-image: linear-gradient(100deg,
         rgba(36, 36, 43, 0) 36%, rgba(45, 45, 54, 0.95) 50%, rgba(36, 36, 43, 0) 64%);
-    background-size: 240% 100%;
-    background-repeat: no-repeat;
     animation: sheen 1.5s linear infinite;
 }
-@keyframes sheen { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@keyframes sheen { from { transform: translateX(-76%); } to { transform: translateX(17.5%); } }
 
 /* The transcript's own shape, so the real entries land where the placeholder was rather than
    somewhere near it. */

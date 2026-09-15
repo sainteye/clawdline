@@ -12,6 +12,7 @@
 
 import { T } from "../core/i18n.js";
 import { machineShortID } from "../session/selection.js";
+import { whenVisible } from "../core/visibility.js";
 
 /** "host", "candidate" or "": this card's part in the transport's voice-host answer. */
 export function deviceVoiceRole(id, host) {
@@ -55,13 +56,18 @@ export function bindDevicesPage(elements, environment) {
     var generation = 0;
     var stopEvents = null;
     var settleTimer = null;
+    var reloadOwed = false;
+    var drawnSignature = null;
     var timers = {
         setTimeout: environment.setTimeout || globalThis.setTimeout.bind(globalThis),
         clearTimeout: environment.clearTimeout || globalThis.clearTimeout.bind(globalThis)
     };
 
     function node(id) { return elements[id] || null; }
-    function text(id, value) { var el = node(id); if (el) el.textContent = value || ""; }
+    function text(id, value) {
+        var el = node(id);
+        if (el && el.textContent !== (value || "")) el.textContent = value || "";
+    }
     function show(id, value) { var el = node(id); if (el) el.hidden = !value; }
 
     function labels() {
@@ -90,11 +96,17 @@ export function bindDevicesPage(elements, environment) {
     function draw(answer, host) {
         var list = node("devices-rows");
         if (!list || !list.ownerDocument) return;
-        while (list.firstChild) list.removeChild(list.firstChild);
         var machines = answer && Array.isArray(answer.machines) ? answer.machines : [];
+        var rows = machines.map(function (machine) { return deviceViewModel(machine, T, host); });
+        // Every Session and orchestrator frame reloads this page, and nearly all of them describe
+        // the same machines. The cards are rebuilt only when what they would say is different.
+        var signature = JSON.stringify(rows);
+        if (signature === drawnSignature) return;
+        drawnSignature = signature;
+        while (list.firstChild) list.removeChild(list.firstChild);
         show("devices-empty", machines.length === 0);
         text("devices-empty", machines.length ? "" : T.webStartMachineNone);
-        machines.map(function (machine) { return deviceViewModel(machine, T, host); }).forEach(function (row) {
+        rows.forEach(function (row) {
             var card = list.ownerDocument.createElement("article");
             card.className = "device-card";
             card.dataset.connection = row.connectionState;
@@ -144,11 +156,12 @@ export function bindDevicesPage(elements, environment) {
         });
     }
 
-    function load() {
+    function load(quiet) {
         var own = ++generation;
         if (settleTimer !== null) timers.clearTimeout(settleTimer);
         settleTimer = null;
-        text("devices-status", T.webLoading);
+        // An event-driven reload of a page already drawn is not a wait worth announcing.
+        if (quiet !== true || drawnSignature === null) text("devices-status", T.webLoading);
         return Promise.resolve().then(function () {
             return Promise.all([environment.machines(), voiceHost()]);
         }).then(function (answers) {
@@ -168,6 +181,19 @@ export function bindDevicesPage(elements, environment) {
         });
     }
 
+    /** One reload for a burst of events, and none while the page is hidden: it happens on return. */
+    function reloadSoon() {
+        if (reloadOwed) return;
+        reloadOwed = true;
+        Promise.resolve().then(function () {
+            whenVisible(function () {
+                if (!reloadOwed) return;
+                reloadOwed = false;
+                if (stopEvents) load(true);
+            });
+        });
+    }
+
     return {
         enter: function () {
             labels();
@@ -176,13 +202,15 @@ export function bindDevicesPage(elements, environment) {
                     var code = event && event.error && event.error.code;
                     if (event && (event.type === "orchestrator" || event.type === "sessions"
                         || event.type === "error" && (code === "machine_not_paired"
-                            || code === "machine_key_incomplete"))) load();
+                            || code === "machine_key_incomplete"))) reloadSoon();
                 });
             }
             load();
         },
         leave: function () {
             generation += 1;
+            reloadOwed = false;
+            drawnSignature = null;
             if (settleTimer !== null) timers.clearTimeout(settleTimer);
             settleTimer = null;
             if (typeof stopEvents === "function") stopEvents();

@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { esc } from "../Resources/web/app/js/core/esc.js";
 import { createSessionSelectionLifecycle } from
     "../Resources/web/app/js/session/selection.js";
+import { createVisibleInterval } from "../Resources/web/app/js/core/visibility.js";
 
 /*
  * The live screen panel, without a browser.
@@ -108,6 +109,8 @@ globalThis.api = api;
 globalThis.SessionActions = { close: function () {} };
 globalThis.SessionSelection = SessionSelection;
 globalThis.callSessionUI = function () {};
+// The real clock, over the stub timers below: what this file counts is the timers it arms.
+globalThis.createVisibleInterval = createVisibleInterval;
 globalThis.setInterval = setIntervalStub;
 globalThis.clearInterval = clearIntervalStub;
 

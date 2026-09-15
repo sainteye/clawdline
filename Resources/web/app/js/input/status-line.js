@@ -9,6 +9,7 @@ import { listUnknown } from "../view/waits.js";
 import { Diagnostics } from "../core/layout-diagnostics.js";
 import { createTieredSessionFacts } from "../session/transcript-requests.js";
 import { SessionSelection } from "../session/selection.js";
+import { createVisibleInterval, pageHidden } from "../core/visibility.js";
 
 function sessionRoute(key) {
     var entry = SessionSelection.resolve(key, S.sessions);
@@ -112,6 +113,9 @@ export var StatusLine = (function () {
     var stateSeen = "";
     var deployTicker = null;
     var deferredFor = null;
+    /// A reading that came due, or a turn that ended, while the page was hidden: "due" or "force".
+    /// Nothing is read for a page nobody can see; `catchUp` asks once when it is visible again.
+    var owed = null;
 
     function dollars(x) { return x < 0.01 ? "<$0.01" : "$" + x.toFixed(2); }
 
@@ -178,9 +182,10 @@ export var StatusLine = (function () {
 
     function syncDeployTicker(row) {
         if (row && !deployTicker) {
-            deployTicker = setInterval(function () { drawDeploy(runningDeploy(data)); }, 1000);
+            deployTicker = createVisibleInterval(function () { drawDeploy(runningDeploy(data)); }, 1000);
+            deployTicker.start();
         } else if (!row && deployTicker) {
-            clearInterval(deployTicker);
+            deployTicker.stop();
             deployTicker = null;
         }
     }
@@ -268,6 +273,7 @@ export var StatusLine = (function () {
 
     function load(force) {
         if (!forId) return;
+        owed = null;
         var id = forId, mine = ++ticket;
         nextAt = Date.now() + 60000;
         Diagnostics.note("session.extras.info.request", { force: !!force });
@@ -300,14 +306,22 @@ export var StatusLine = (function () {
                 data = id ? SessionFacts.peek(id) : null;
                 stateSeen = state;
                 nextAt = 0;
+                owed = null;
                 draw();
-                if (id && deferredFor !== id) load(false);
+                if (id && deferredFor !== id) {
+                    if (pageHidden()) owed = "due"; else load(false);
+                }
                 return;
             }
             // The completed turn is when totals and limits have most likely changed.
             var endedTurn = stateSeen === "working" && state !== "working";
             stateSeen = state;
             if (deferredFor === id) return;
+            if (pageHidden()) {
+                if (endedTurn) owed = "force";
+                else if (id && Date.now() >= nextAt && owed !== "force") owed = "due";
+                return;
+            }
             if (endedTurn) load(true);
             else if (id && Date.now() >= nextAt) load(false);
         },
@@ -321,7 +335,16 @@ export var StatusLine = (function () {
         },
         refresh: function (force) {
             if (!forId) return;
+            // The minute clock is the only unforced caller, and a hidden page reads nothing.
+            if (!force && pageHidden()) { if (Date.now() >= nextAt && !owed) owed = "due"; return; }
             if (force || Date.now() >= nextAt) load(!!force);
+        },
+        /** The page is visible again: ask once for whatever came due while it was not. */
+        catchUp: function () {
+            if (!forId || !owed || pageHidden() || deferredFor === forId) return;
+            if (owed === "force") load(true);
+            else if (Date.now() >= nextAt) load(false);
+            else owed = null;
         },
         receive: function (id, facts) {
             if (id !== forId || !facts) return;
