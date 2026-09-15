@@ -6444,8 +6444,9 @@ The New Session machine watermark is the newest authenticated envelope timestamp
 machine across its orchestrator and Session row/inventory channels (with the snapshot's `at` as the
 backward-compatible initial observation). This is evidence that bytes arrived, not a presence lease:
 the Mac does not publish orchestrator heartbeats while idle, and it skips Session rows whose only
-change is a freshness value, so an authoritative scan re-sends the Session inventory marker once
-three minutes pass without a Session-channel frame (docs/cloud.md). A hosted viewer auto-selects a sole
+change is a freshness value, so a scan re-sends every published Session row and the inventory marker
+once three minutes have passed since the last pass that sent them all (docs/cloud.md, *Every three
+minutes the rows go out again*). A hosted viewer auto-selects a sole
 machine only while that watermark is within five minutes. Older/unknown rows say "offline or status
 out of date" and require an explicit press; the press is allowed because the authenticated opaque
 route is known, and issues the same bounded `places` probe whose typed `machine_offline` failure is

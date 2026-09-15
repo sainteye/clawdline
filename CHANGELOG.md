@@ -29,7 +29,9 @@ without waiting for it to change again — and the list says it is still loading
 sessions" while those rows are on their way. Reconnecting waits and backs off instead of retrying in
 a tight loop, the connection renews on the relay's clock rather than the phone's, pictures already
 seen are not downloaded twice, and a Mac whose scans keep coming back incomplete no longer looks
-offline.
+offline. A device allowed only to read cannot ask, so the Mac also sends every Session again every
+three minutes, about 0.6 MB an hour for ten idle Sessions: such a device says it is waiting until
+they arrive instead of showing none.
 
 ### Fixed: an open Session closed itself a second after it was opened
 

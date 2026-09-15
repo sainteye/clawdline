@@ -1078,7 +1078,7 @@ await lifecycleCheck("refusals · 4403 is tried again a few times at the longest
     assert.equal(saturated.connects.length, 3);
     const last = run.states.at(-1);
     assert.deepEqual([last.state, last.reason, last.attempts, last.error.code],
-        ["terminal_error", "retries_exhausted", 3, "forbidden"], "three in a row, and the door says so");
+        ["terminal_error", "retries_exhausted", 3, "forbidden"], "three 4403s, and the door says so");
     await timers.advance(30 * 60_000);
     assert.equal(saturated.connects.length, 3, "then nothing knocks");
     assert.deepEqual(timers.pending(), [], "and nothing is timed");

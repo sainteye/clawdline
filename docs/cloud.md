@@ -134,12 +134,23 @@ this rule: 195 Session publications an hour, every one of them republishing ever
 `closeability.observed_at` is the projection's own clock. A row that does differ is still published whole, freshness values
 included. `work_since`, `agents[].at`, `shells[].at` and the coordination `createdAt` clocks are
 evidence instants that move only with what they describe, so they count like any other field.
-Because an idle Mac may now publish nothing, a scan re-sends the inventory marker once no
-Session-channel frame has gone out for three minutes; the hosted console calls a machine current
-for five minutes after its newest `s/` or `orch/` envelope. The check runs with each scan rather than
-on a timer of its own, and an incomplete scan sends it too, naming every Session whose row is still
-published — a list that can keep a viewer's row but never drop one, since nothing has been
-tombstoned since the last complete scan. The marker carries `features` beside `inventory`, never
+**Every three minutes the rows go out again.** Because an idle Mac may now publish nothing, and the
+relay forgets every row whenever its object is evicted, a scan that finds three minutes gone since
+the last pass that sent every row and the inventory — a forced scan at transport-ready, an earlier
+refresh, or a `sessions.snapshot` pass — sends every published row it would have skipped and then
+the inventory marker (`CloudAppBridge.sessionPresenceIntervalMilliseconds`). Rows that changed in
+between do not restart that clock. This is what brings the rows back to a viewer that cannot ask for
+them (a device without `send_prompt`), to one whose request failed, and to one whose renewal took
+over a socket that had stopped hearing; it also keeps the machine current, since the hosted console
+calls a machine current for five minutes after its newest `s/` or `orch/` envelope. The check runs
+with each scan rather than on a timer of its own, and an incomplete scan runs it too: it sends the
+rows it names, every other still-published row from the newest copy the Mac holds, and an inventory
+naming every Session whose row is still published — a list that can keep a viewer's row but never
+drop one, since nothing has been tombstoned since the last complete scan. Measured on this Mac on
+2026-09-15 (sealed frame sizes in `Clawdline.log`, `stage=socket_write frame_bytes`): nine rows came
+to 27,681 bytes and the inventory to 529, so about 31 KB a pass for ten Sessions — about 0.63 MB an
+hour for an idle Mac, sent once to the relay and once to each connected viewer, against about 9.4 MB
+an hour when every scan re-sent every row. The marker carries `features` beside `inventory`, never
 inside it: an older page refuses an unknown key in the inventory object.
 
 **`transcript_signature` is a Cloud-only row field.** When present it is a non-empty opaque string
@@ -171,16 +182,22 @@ viewer that connects is replayed nothing, and an unchanged row is never publishe
 Correctness does not depend on how often that happens:
 
 - **Wire.** The viewer sends `{"type":"sessions.snapshot","session":"__clawdline_machine__","request":"<id>"}`
-  on `ctl/<machine>`, with `"orchestrator": true` added when it has not been sent that machine's
-  `orch/` snapshot either. The Mac re-sends what a transport-ready force sends — every current row
-  (signature included) on its own `s/` channel and the inventory, preceded by its last `orch/`
-  snapshot with `cloud_status` when any request in the pass asked for it — then answers `read:<id>`
-  on `t/<machine>/__clawdline_machine__` with `{"sessions":[ids],"complete":bool}`. The `orch/`
-  snapshot is opt-in because it can be hundreds of kilobytes (this Mac's log on 2026-09-15 shows
-  outbound frames of about 300 and 740 KB repeated) and the relay never keeps an entry larger than
-  256 KB for replay. Everything goes through the ordinary Session-channel lane, so
-  the rows land under the sequence guards every row already has. It is read-level: the remote-write
-  switch does not gate it.
+  on `ctl/<machine>`, with `"orchestrator": true` added only when the page holds no `orch/` snapshot
+  of that machine from any of its clients — a page back from the background keeps the one it had. The
+  Mac re-sends what a transport-ready force sends — every current row (signature included) on its own
+  `s/` channel and the inventory, preceded by its last `orch/` snapshot with `cloud_status` when a
+  request in the pass asked for it and may have it now — then answers `read:<id>` on
+  `t/<machine>/__clawdline_machine__` with `{"sessions":[ids],"complete":bool}`. The `orch/` snapshot
+  is opt-in and held to a floor because it can be hundreds of kilobytes (this Mac's log on 2026-09-15
+  shows outbound frames of about 300 and 740 KB repeated), the relay never keeps an entry larger than
+  256 KB for replay, and the relay fans every `s/` and `orch/` envelope out to every viewer socket on
+  the account, phones included. So a request that arrived before the Mac's last `orch/` publication
+  of any kind was already sent that one and needs nothing; the others get it at once only when that
+  publication is more than a minute old (`CloudAppBridge.orchestratorResendFloorMilliseconds`).
+  Inside the minute the rows and the answer go out at once and the `orch/` snapshot is owed: it is
+  re-sent when the minute has passed, unless a publication in between already reached every page
+  that asked. Everything goes through the ordinary publication lanes, so the rows land under the
+  sequence guards every row already has. It is read-level: the remote-write switch does not gate it.
 - **Bound.** However many viewers ask, one Mac sends its rows at most once per five seconds
   (`CloudAppBridge.sessionSnapshotIntervalMilliseconds`); a request that arrives inside the window, or
   while a pass runs, is answered by the next pass. Sixty-four requests may wait for one pass; the next
@@ -191,10 +208,21 @@ Correctness does not depend on how often that happens:
   when its socket becomes ready without having taken over from a still-live socket (a first
   connection, a return from a quiesced page, a reconnect after a drop), or when a machine it has not
   decided for first lists the word. It lets the relay's replay land first (750 ms): a machine whose
-  inventory, every listed row and `orch/` snapshot all arrived on this socket is current and is not
-  asked at all. A token renewal is make-before-break: the new client takes over what the old socket
-  heard during the handshake and asks nothing. A device without `send_prompt` cannot publish on
-  `ctl/` and does not ask.
+  inventory and every listed row arrived on this socket, and whose `orch/` snapshot the page holds,
+  is current and is not asked at all. A token renewal is make-before-break, and it is taken as one
+  only with proof that the old socket still hears: as the new client starts connecting it sends
+  `{"type":"ping"}` on the old socket, which the relay answers with `pong` even from a hibernating
+  object, and only when the old socket has received a frame since then does the new client take
+  over what it heard during the handshake and ask nothing. A socket left half-open by a network
+  change still reads `ready` and hears nothing, so its successor recovers the rows like any
+  reconnection.
+- **A device that cannot ask waits for the refresh pass.** A device without `send_prompt` cannot
+  publish on `ctl/` at all (`relay/src/account-do.ts`). For each machine that lists the word it
+  shows the machine as sending (`scan.recovering`, never an empty account) until this socket has
+  heard that machine's inventory and a row or tombstone for every id it lists — what the Mac's pass
+  every three minutes sends — and after four minutes (`SESSION_REFRESH_WAIT_MS`: the interval, a
+  scan and slack) it has failed as `cloud_sessions_incomplete`. A renewal carries the wait over with
+  its deadline, and what the old socket heard counts.
 - **Older machines.** A Mac that lists no `features`, and a Linux executor, are never sent the word;
   the page behaves as it did before. A cached list that turns out wrong meets `unknown_command`, which
   ends the attempt quietly and is remembered like any other word the machine lacks.
@@ -203,25 +231,37 @@ Correctness does not depend on how often that happens:
   instead of "no sessions", and the open conversation is not closed by an empty frame. A retryable
   failure is asked once more after five seconds; then `scan.failures` names the machine and the code,
   which the list and its counts say in words (`core/failure-text.js`). Rows the answer named that
-  have not arrived three seconds after it are `cloud_sessions_incomplete`. A failure clears once that
-  machine's inventory is whole again.
+  have not arrived three seconds after it are `cloud_sessions_incomplete`, and so is a device that
+  cannot ask whose four-minute wait ran out. A failure clears once that machine's inventory is whole
+  again — which the next refresh pass brings.
 - **The open transcript follows.** Recovered rows reach the list like any row, so a changed
   `transcript_signature` or `state` makes exactly one transcript read and an unchanged one none.
 
-`Tests/web-cloud-fleet.mjs` (the `B1` checks) models an idle Mac behind a relay with nothing to
-replay — a cold viewer, one that never saw the Mac, a page back from quiesce after a row changed, a
-renewal, a Mac that does not answer — and `Tests/CloudSessionRowTests.swift` holds the Mac's pass,
-window and waiter bound.
+`Tests/web-cloud-fleet.mjs` (the `B1`, `F1`, `F3` and `F4` checks) models an idle Mac behind a relay
+with nothing to replay — a cold viewer, one that never saw the Mac, a page back from quiesce after a
+row changed, a renewal, a renewal over a half-open socket, a Mac that does not answer, an answer
+whose rows never arrive, a read-only device before and after the refresh pass, and a page back from
+the background that holds the `orch/` snapshot — and `Tests/CloudSessionRowTests.swift` holds the
+Mac's refresh pass, snapshot pass, window, waiter bound, the owed `orch/` re-send, a pass that waits
+out its window while a scan tombstones a row, and `stop()` in the middle of a pass.
 
 Audited against the same assumption — *the relay's replay brings a (re)connecting page up to date*:
 `s/` rows and the inventory (fixed above); the `orch/` snapshot, which carries the descriptor, task
 list, schedules, snippets and `cloud_status` and is published only when a record or a notice changes
 (re-sent by the same pass); `t/` read answers, including pictures and transcripts (not dependent:
 a replayed answer settles only the request it names, and every read is asked fresh); the Schedules
-strip and places (not dependent: the strip reads on return and places are asked). The Linux executor
-(`Packages/ClawdlineLinux/LinuxDurableCloudRuntime.swift`) has the same skip rule on rows and no
-request to recover them; its 240-second descriptor heartbeat keeps the machine current but not its
-rows. It is not changed here.
+strip and places (not dependent: the strip reads on return and places are asked).
+
+**Known limitation: a Linux executor's rows do not come back after an eviction.** This predates the
+skip rule on the Mac and is the same on `main`. The Linux executor
+(`Packages/ClawdlineLinux/LinuxDurableCloudRuntime.swift`) publishes its rows only when their digest
+changes, lists no `features`, answers no `sessions.snapshot` and has no refresh pass — both are
+Mac-only. Its 240-second descriptor heartbeat keeps the machine current but not its rows, so a viewer
+that connects after the relay lost them sees none of that machine's Sessions until one of them
+changes, and because the machine lists no `features` the page does not know to wait: its list reads
+as an ordinary one, empty if nothing else has rows (the `B1` check "…an older Mac is never asked"
+pins exactly that for a machine without `features`). Closing it needs a new executor command, the
+browser's `commands` gating for it, and its own Linux package tests.
 
 **Commands go through the door they already went through.** `RemoteServerCloudCommandRouter`
 converts a verified cloud command back into an in-process request, so authentication,
@@ -607,8 +647,10 @@ is published toward Linux.
 **And `send_prompt` gates one read as well, which is the relay's rule rather than this app's.**
 PROTOCOL §12 says publishing to `ctl/` needs that capability *in either class*, and a read has to
 ask on `ctl/` because it is the only channel a viewer may publish on at all. So a device
-downgraded to read-only can see every session row and cannot ask for the messages inside one. It
-is told `cloud_read_needs_send_prompt` rather than left waiting; widening it is a relay decision.
+downgraded to read-only can see every session row — after a reconnection, within the Mac's
+three-minute refresh pass, since it cannot ask for the rows either (*A device that cannot ask waits
+for the refresh pass*) — and cannot ask for the messages inside one. It is told
+`cloud_read_needs_send_prompt` rather than left waiting; widening it is a relay decision.
 
 **Pairing.** Covered in its own section below.
 
@@ -619,23 +661,35 @@ does. Outbound sequences use the same reserve-ahead discipline as the Mac, in `l
 - **No reconnect runs without a wait.** A socket that closes waits at least the initial backoff
   (250 ms, jittered) before the next connect, and the wait doubles to 30 s. It returns to the initial
   wait only after a connection has stayed up for 60 s, so a relay that accepts and then closes is met
-  with a growing wait rather than a loop. Sixteen consecutive attempts that never produced a stable
-  connection end in `terminal_error` with `reason: "retries_exhausted"`, and the door offers the
-  press that starts again. A loop out of attempts holds no socket and no timer, but it keeps
-  listening to the page: shown, restored from the back-forward cache or back online, it starts over
-  with every count cleared.
+  with a growing wait rather than a loop. Sixteen attempts with no connection staying up 60 s between
+  them end in `terminal_error` with `reason: "retries_exhausted"`, and the door offers the press that
+  starts again. None of these counts means "in a row": only a connection that stayed up 60 s, or a
+  parked loop starting again, clears them. A loop out of attempts holds no socket and no timer, but
+  it keeps listening to the page: shown, restored from the back-forward cache or back online, it
+  starts over with its counts cleared — except after 4403, below.
 - **Relay closes are classified.** 4400/4413 (this page's protocol) stop at once, before or after
   `ready`. 4403 (`forbidden`) is a revoked device, and also every device of an account whose
   revocation set the relay has saturated, which clears later and closes with the same code and words
-  (`relay/src/lib/entitlements.ts`); a device that really is revoked is refused by the API's device
-  list on its next attempt (`revoked`), so a 4403 waits the longest backoff and ends after three in a
-  row. 4429 (`rate_limited`, `over_capacity`) waits the longest backoff and counts against a bound of
-  its own, forty attempts, rather than the sixteen a dropping network gets. Everything else retries.
+  (`relay/src/lib/entitlements.ts`). A device that really is revoked does not reach the relay again:
+  its next attempt asks the API for its session first, the API refuses a cookie naming a revoked
+  device with 401, and the loop ends at `sign_in` (a revocation landing between that request and the
+  device list or token mint is refused there as `revoked`). So a 4403 waits the longest backoff and
+  the loop parks after three of them. Because a 4403 that no retry changes would otherwise cost three
+  refused attempts every time the page comes back, a loop parked by 4403 starts again on a return
+  with one attempt, and after three such parks with no connection staying up 60 s in between a return
+  no longer starts it at all (`MAXIMUM_FORBIDDEN_PARKS`): it lets go of the page, and only the door's
+  press or a reload tries again — at most 3 + 1 + 1 refused attempts per loop. A saturated revocation
+  set that clears is met by the next return, and a connection that stays up gives the parks back.
+  4429 (`rate_limited`, `over_capacity`) waits the longest backoff and counts against a bound of its
+  own, forty attempts, rather than the sixteen a dropping network gets. Everything else retries.
 - **Renewal is timed on the relay's clock.** The relay's `ready` frame carries `connected_at` and
   `token_expires_at`; their difference is the token's lifetime as a duration, so a phone whose clock
   runs ahead does not renew at once. Without them the API's `expires_at` is read against this
   device's clock. Either way the renewal never follows its connect sooner than 60 s, and the
-  renewal timer is cleared when its connection ends for any other reason.
+  renewal timer is cleared when its connection ends for any other reason. The replacement takes over
+  from the old socket only if that socket answers a relay ping sent as the replacement starts
+  connecting (*Who asks, and when*); one that does not is replaced all the same, and its successor
+  recovers the rows.
 - **A hidden page does no periodic work.** Hidden for 60 s, the socket is retired
   (`cloud_reconnecting` for any read still waiting) and nothing connects, renews or retries.
   A person's own `action:` still waiting — a send, a keypress — holds the socket for up to another
@@ -643,7 +697,9 @@ does. Outbound sequences use the same reserve-ahead discipline as the Mac, in `l
   from `main.js` connects at once. The Session rows the page already had are carried into the new
   client, and the relay replays whatever its memory still holds, which after an eviction is nothing:
   the new client asks each machine for its rows (*A page that reconnects asks for the rows*), so a row
-  that changed while the page was away comes back without waiting for it to change again. A page shown
+  that changed while the page was away comes back without waiting for it to change again; a device
+  that cannot ask shows the machine as sending until the Mac's next refresh pass, at most three
+  minutes away. A page shown
   after a hide longer than the grace whose socket still says `ready` — a phone that froze the page
   before its timer ran — gets a replacement socket the same way a token renewal does. Until
   `main.js` installs that replacement, the page still holds the retired client: a read or command
@@ -651,7 +707,7 @@ does. Outbound sequences use the same reserve-ahead discipline as the Mac, in `l
   on the client that resumed from it. While the page is still hidden — a notification tap posts its
   `navigate` before `focus()` shows the page — the read waits up to five seconds for the page to be
   shown, then the rest of its read bound; with no connection on its way (still hidden after that,
-  or the loop has ended) it is refused as before. A page shown after being frozen past the grace
+  the loop has ended, or 4403 parked it for good) it is refused as before. A page shown after being frozen past the grace
   replaces its socket like a renewal, but is not taken as one: nothing proves that socket heard what
   was published meanwhile, so the replacement asks for the rows and says `connecting` first. While
   `navigator.onLine` is `false` nothing connects until `online`. The schedules strip stops its minute

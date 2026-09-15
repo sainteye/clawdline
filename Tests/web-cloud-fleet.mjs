@@ -1319,6 +1319,7 @@ async function idleMacSocket(mac, reader, options) {
             sent.orchestrator.push(command.orchestrator === true);
             if (mac.silent) return;
             for (const row of mac.rows.values()) {
+                if (mac.lose === row.id) continue;
                 await fromMachine(client, socket, "s/mac-01/" + encodeURIComponent(row.id), { session: row, at: 100, scan: {} });
             }
             await fromMachine(client, socket, "s/mac-01/__clawdline_inventory_v1__",
@@ -1369,6 +1370,9 @@ await check("B1 · a viewer that has never seen the Mac asks once its snapshot s
     await fromMachine(legacy.client, legacy.socket, "orch/mac-01", { tasks: [], machine: { name: "Mac", platform: "macos" }, cloud_status: CLOUD_STATUS });
     await fromMachine(legacy.client, legacy.socket, "s/mac-01/__clawdline_inventory_v1__", { inventory: { version: 1, sessions: ["s1"] } });
     await until(() => legacy.socket.sent.some((frame) => frame.type === "publish"), 400);
+    // A Linux executor lists no `features` either, so this is also its known limitation (docs/cloud.md,
+    // *Known limitation: a Linux executor's rows do not come back after an eviction*): the page does
+    // not know to wait, and a machine whose rows the relay lost reads as having none until one changes.
     assert.equal(legacy.socket.sent.filter((frame) => frame.type === "publish").length, 0,
         "a Mac that lists no features is never sent the word");
     assert.deepEqual(older.lists.map((list) => list.scan.emptyAuthoritative), older.lists.map(() => true),
@@ -1472,6 +1476,28 @@ await check("B1 · a Mac that does not answer ends the bounded attempt in a type
     assert.ok(describeFailure({ code: "cloud_sessions_incomplete" }).known, "rows named and never received have words of their own");
     viewer.client.stop();
     assert.equal(viewer.client.sessionRecovery.size, 0, "a stopped client holds no recovery and no timer");
+});
+
+await check("B1 · rows an answer names that never arrive end the attempt as cloud_sessions_incomplete, and the next pass clears it", async function () {
+    const mac = { lose: "s2", rows: new Map([["s1", { id: "s1", state: "idle", transcript_signature: "10-1" }],
+        ["s2", { id: "s2", state: "idle", transcript_signature: "20-1" }]]) };
+    const reader = sessionReader(null);
+    const viewer = await idleMacSocket(mac, reader, { descriptorStorage: storageBox(REMEMBERED_SNAPSHOT_MAC),
+        sessionRowsGraceMs: 100 });
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.scan.failures.length; }, WAIT);
+    const failed = reader.lists[reader.lists.length - 1];
+    assert.deepEqual([failed && failed.rows, failed && failed.scan.failures, failed && failed.scan.recovering],
+        [["s1"], [{ machine: "mac-01", code: "cloud_sessions_incomplete" }], []], JSON.stringify(reader.lists));
+    assert.equal(viewer.sent.snapshots, 1, "a named row that did not come is a failure, not another request");
+    // The Mac's next pass — its refresh, every three minutes — brings the lost row and a whole inventory.
+    await fromMachine(viewer.client, viewer.socket, "s/mac-01/s2", { session: mac.rows.get("s2"), at: 100, scan: {} });
+    await fromMachine(viewer.client, viewer.socket, "s/mac-01/__clawdline_inventory_v1__",
+        { inventory: { version: 1, sessions: ["s1", "s2"] }, features: ["sessions.snapshot"] });
+    await until(() => { const last = reader.lists[reader.lists.length - 1]; return last && last.rows.length === 2 && !last.scan.failures.length; }, WAIT);
+    const cleared = reader.lists[reader.lists.length - 1];
+    assert.deepEqual([cleared && cleared.rows, cleared && cleared.scan.failures, cleared && cleared.scan.emptyAuthoritative],
+        [["s1", "s2"], [], true], "the failure clears once the machine's inventory is whole");
+    viewer.client.stop();
 });
 
 /* ---- F1 · a device that may not ask, F3 · a renewal that hears nothing, F4 · orch/ on return -- */
