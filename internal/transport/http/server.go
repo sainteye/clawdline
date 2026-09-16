@@ -227,7 +227,12 @@ func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) ListenAndServe() error {
-	addr := fmt.Sprintf("127.0.0.1:%d", s.cfg.Port)
+	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
+	if s.cfg.Host != "127.0.0.1" && s.cfg.Host != "localhost" {
+		// Said out loud, once, in the log a person reads when something is
+		// wrong: this daemon is reachable from outside this machine.
+		log.Printf("WARNING: binding to %s, which is not loopback", s.cfg.Host)
+	}
 	log.Printf("clawdline-go listening on http://%s (proxying to :%d)", addr, s.cfg.UpstreamPort)
 	srv := &http.Server{
 		Addr:              addr,

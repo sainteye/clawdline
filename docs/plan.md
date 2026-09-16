@@ -274,3 +274,28 @@ command → decider（純函式，不做 I/O）→ events
 - 整合測試用假時鐘，不等真實 deadline
 - 所有上限可注入
 - 舊 repo 的 `web-*.mjs` 可直接對新 daemon 跑（測協定形狀，不綁語言）
+
+---
+
+## P5 進度（實測）
+
+**六個平台的執行檔可從一台機器產出**，`CGO_ENABLED=0`：
+
+| 目標 | 大小 |
+|---|---|
+| darwin/arm64 | 11.0 MB |
+| darwin/amd64 | 11.6 MB |
+| linux/amd64 | 11.5 MB |
+| linux/arm64 | 10.9 MB |
+| windows/amd64 | 11.6 MB |
+| windows/arm64 | 10.8 MB |
+
+**Linux 那顆已在真的 Linux 容器裡跑起來**：`doctor` 正確解析 `/root/.config/clawdline-next`、
+SQLite 開得起來、`serve` 綁得上埠、`/v1/health` 從容器內部答得出來。
+
+過程中補上 `CLAWDLINE_NEXT_HOST`：預設仍是 loopback，因為一個握有終端機與憑證的
+daemon 不該意外變得可連。綁得更寬時會在 log 裡說一次。
+
+**尚未完成**：macOS 的 WKWebView 殼、Windows 的 WebView2 殼與系統匣、安裝檔、
+ConPTY、砍整棵行程樹的 supervisor。Windows 那幾項在這台機器上無法驗證，
+而寫沒辦法驗的程式正是這個專案一路避免的事。

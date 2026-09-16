@@ -26,15 +26,24 @@ type Config struct {
 	UpstreamPort int
 	Dir          string
 	WebRoot      string
+	// Host is what the server binds to. Loopback by default, because a daemon
+	// that owns terminals and credentials should not become reachable by
+	// accident. Binding wider is a decision somebody makes out loud.
+	Host string
 }
 
 // Load resolves the configuration from the environment, falling back to the
 // platform's ordinary location.
 func Load() Config {
+	host := "127.0.0.1"
+	if v := os.Getenv("CLAWDLINE_NEXT_HOST"); v != "" {
+		host = v
+	}
 	return Config{
 		Port:         DefaultPort,
 		UpstreamPort: DefaultUpstreamPort,
 		Dir:          Dir(),
+		Host:         host,
 	}
 }
 
