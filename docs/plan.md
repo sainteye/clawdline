@@ -296,6 +296,13 @@ SQLite 開得起來、`serve` 綁得上埠、`/v1/health` 從容器內部答得�
 過程中補上 `CLAWDLINE_NEXT_HOST`：預設仍是 loopback，因為一個握有終端機與憑證的
 daemon 不該意外變得可連。綁得更寬時會在 log 裡說一次。
 
-**尚未完成**：macOS 的 WKWebView 殼、Windows 的 WebView2 殼與系統匣、安裝檔、
-ConPTY、砍整棵行程樹的 supervisor。Windows 那幾項在這台機器上無法驗證，
-而寫沒辦法驗的程式正是這個專案一路避免的事。
+**macOS 那半完成並實測**：Swift 的 WKWebView 殼會啟動捆在 bundle 裡的 daemon
+（不是 PATH 上那顆——殼跟它不同建置的 daemon 講話，是沒人重現得了的 bug），
+載入 console 後回報 `title=clawdline, elements-with-id=469`。
+`tools/package-macos.sh` 產出 15 MB 的 `.app` 與 6.9 MB 的 `.dmg`，掛載後可執行。
+
+**process supervisor 完成並以對照組實測**：沒有行程群組時砍直接子行程留下 3 個孤兒，
+有群組時砍整個群組留下 0 個。Windows 版誠實拒絕（需要 Job Object）。
+
+**尚未完成**：Windows 的 WebView2 殼與系統匣、MSI／winget、ConPTY、Job Object。
+那幾項在這台機器上無法驗證，而寫沒辦法驗的程式正是這個專案一路避免的事。

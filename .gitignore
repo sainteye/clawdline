@@ -9,3 +9,6 @@
 
 # Editor
 .DS_Store
+
+# Release output
+/dist/
