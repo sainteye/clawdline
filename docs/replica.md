@@ -86,9 +86,28 @@
 | #16–20 | Clawdfather 皇冠與 chip、coordination-wait、交付勾 | **需要使用者決定**：資料在 Swift app 的 store，兩個 app 的 store 依設計分開。要不要讓 Go 唯讀 `~/.config/clawdline`，是架構決定 |
 | #41 | 所有 overlay（Session 資訊、開新 session、確認框、語音…） | 之後的波次 |
 
-## Reviewer 第二輪
+## Reviewer 第二輪（task 618bd064，對 HEAD `bb8a8a4`）
 
-2026-09-17 約 04:20 派出（`%840`），對 HEAD `bb8a8a4` 逐項判定第一輪 41 項，並補量抽屜各頁行為、hover／focus、窄螢幕。
+同一分頁 1022×739、dpr 2.2、兩邊 BackCompat；760 寬用同源 iframe 量。報告原文在
+`/tmp/.clawdline/618bd064-…/artifacts/report.md`。**結論仍是還不能宣稱 1:1。**
+
+第一輪 41 項：**已消失 26**、部分 4（#4、#9、#10、#22）、仍在 10（其中 7 項屬已知，非已知的 #23、#24、#40 都是 subtle）、#32 未重量。
+
+已對齊：抽屜、header、brand、清單外框、每一列、列的 hover／focus、transcript 137 則逐則相同、捲到底、詳情標頭、⋯ 選單、狀態列的模型名與花費。
+
+新發現：
+
+| # | 嚴重度 | 內容 | 處理 |
+|---|---|---|---|
+| N1 | **blocking** | 760 寬點列後看不到對話：舊版 `data-view`（手機）與 `data-pane`（桌面）是兩個屬性，新版合成一個，兩組 CSS 都不成立 | child `%841` |
+| N2 | visible | 桌面版第一份清單到達時不會自動打開第一列 | child `%841` |
+| N3 | visible | 沒開 session 時少了 home hero | child `%841` |
+| N4 | visible | 沒有 ↑↓／Enter／Escape／`/`，選取與打開綁在一起，沒有凍結排序 | child `%841` |
+| N5 | visible | `%832` 的圖示與標題色不同 | 多半與 #22 同源（舊版依 Swift store 的 task 決定），歸入等你決定的那一項 |
+| N6 | subtle | 沒有 `#page=` 路由，Dashboard 會卸載 `main#app` | child `%841` |
+| N7 | subtle | 幾個看不見的屬性 | 暫不處理 |
+
+未比對（不算通過）：排程列（新 daemon 0 筆）、unknown／waiting 列、骨架時序、失敗與斷線情境。
 
 ## 額度
 
