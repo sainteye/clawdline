@@ -99,15 +99,44 @@
 
 | # | 嚴重度 | 內容 | 處理 |
 |---|---|---|---|
-| N1 | **blocking** | 760 寬點列後看不到對話：舊版 `data-view`（手機）與 `data-pane`（桌面）是兩個屬性，新版合成一個，兩組 CSS 都不成立 | child `%841` |
-| N2 | visible | 桌面版第一份清單到達時不會自動打開第一列 | child `%841` |
-| N3 | visible | 沒開 session 時少了 home hero | child `%841` |
-| N4 | visible | 沒有 ↑↓／Enter／Escape／`/`，選取與打開綁在一起，沒有凍結排序 | child `%841` |
+| N1 | **blocking** | 760 寬點列後看不到對話：舊版 `data-view`（手機）與 `data-pane`（桌面）是兩個屬性，新版合成一個，兩組 CSS 都不成立 | ✅ `e339955` |
+| N2 | visible | 桌面版第一份清單到達時不會自動打開第一列 | ✅ `e339955` |
+| N3 | visible | 沒開 session 時少了 home hero | ✅ `e339955` |
+| N4 | visible | 沒有 ↑↓／Enter／Escape／`/`，選取與打開綁在一起，沒有凍結排序 | ✅ `e339955`、`5f442f5` |
 | N5 | visible | `%832` 的圖示與標題色不同 | 多半與 #22 同源（舊版依 Swift store 的 task 決定），歸入等你決定的那一項 |
-| N6 | subtle | 沒有 `#page=` 路由，Dashboard 會卸載 `main#app` | child `%841` |
+| N6 | subtle | 沒有 `#page=` 路由，Dashboard 會卸載 `main#app` | ✅ `e339955` |
 | N7 | subtle | 幾個看不見的屬性 | 暫不處理 |
 
 未比對（不算通過）：排程列（新 daemon 0 筆）、unknown／waiting 列、骨架時序、失敗與斷線情境。
+
+## 窄範圍 reviewer（task a5f1b0fc，對 HEAD `5f442f5`）
+
+只驗 N1–N4、N6。**結論：全部可以關閉。** 760 寬點列／返回／瀏覽器上一頁／`history.state`、桌面 ⌘J、
+自動打開、home hero（兩種寬度各 620 項，只差背景圖網址的 origin 與打包工具省略的等價漸層 stop）、
+鍵盤 class 順序、`#page=` 路由與焦點，兩邊一致。
+
+未比對（不算通過）：resize 轉換、觸控、帶 `#page=` 的冷啟動、g／G、篩選框內的 Escape、凍結排序的實際效果。
+兩邊的 `hero-orchestration-v4-task-clinic.webp` 都回 404——舊版本身的缺陷，照樣繼承。
+
+## 現在的狀態（2026-09-17 清晨）
+
+**Session 清單頁**：兩輪 reviewer 加一輪窄驗收之後，除了下面兩類，已量到的部分與舊版一致。
+
+1. **等使用者決定**：Clawdfather 皇冠與 chip、coordination-wait、交付勾（#16–20）、3 列標題（#22）、`%832` 的圖示（N5）。
+   這些資料都在 Swift app 自己的 store（`~/.config/clawdline`）。兩個 app 的 store 依計畫分開；
+   要不要讓 Go 版**唯讀**那一份，是架構決定。
+2. **沒有後端，刻意 disabled**：在 Mac 上顯示、Session 資訊、即時畫面、文件、我傳出的訊息、常用句、Git、
+   附圖、語音、⌘I 等 sheet、所有 overlay（#41）、status-line 的 ctx／files／deploy／limits、task chip 與縮排、
+   `#conn` 的版本、帶圖片標記的訊息、側欄的裝置／專案／方案／設定頁。
+
+**其他頁面**：還沒開始。
+
+## 下一步建議
+
+1. 先決定上面第 1 點。
+2. 依畫面效益補後端：Session 資訊 sheet（`#info`）、開新 session（`#start`）、確認框（`#action-confirm`）、
+   在 Mac 上顯示——這四個是詳情標頭與選單最常用的入口。
+3. 側欄頁面：用量頁的後端最接近（已有 `/v1/orchestrator/usage` 與 transcript 用量）。
 
 ## 額度
 
