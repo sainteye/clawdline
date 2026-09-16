@@ -2,12 +2,6 @@ import { useEffect, useRef, useState, type RefObject } from "react"
 import type { ScheduleRow, SessionRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
-// Not through the bridge yet: the list's order hold and the seam its release
-// redraws through. Both are the copied modules' own exports; the bridge should
-// carry them (`freezeOrder`, `thawOrder`, `bindSessionUI`) and this import then
-// goes away.
-import { freezeOrder, thawOrder } from "./legacy/js/view/derive.js"
-import { bindSessionUI } from "./legacy/js/session/ui.js"
 import { Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
 
@@ -61,7 +55,7 @@ export function SessionsPage({
 }) {
   // The copied modules read a module-level object, so it is filled before
   // anything is drawn from them, and the list's own order and filter are used.
-  L.publish(rows, openId, filter)
+  L.publish(rows, openId, filter, selected)
   const shown = L.orderedRows()
   // From the whole fleet, as `byId` looks it up: a filter that hides the open
   // row does not close it.
@@ -72,7 +66,7 @@ export function SessionsPage({
   // held is let go, and this page is that list.
   const [, redraw] = useState(0)
   useEffect(() => {
-    bindSessionUI({ renderList: () => redraw((n) => n + 1) })
+    L.bindSessionUI({ renderList: () => redraw((n) => n + 1) })
   }, [])
 
   // `Waits.list` and `listUnknown()` (`view/waits.js`). Nothing is drawn for
@@ -294,16 +288,16 @@ function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
     const scroller = scrollRef.current
     if (!scroller) return
     const touchEnd = () => {
-      setTimeout(thawOrder, 1200)
+      setTimeout(L.thawOrder, 1200)
     }
-    scroller.addEventListener("mouseenter", freezeOrder)
-    scroller.addEventListener("mouseleave", thawOrder)
-    scroller.addEventListener("touchstart", freezeOrder, { passive: true })
+    scroller.addEventListener("mouseenter", L.freezeOrder)
+    scroller.addEventListener("mouseleave", L.thawOrder)
+    scroller.addEventListener("touchstart", L.freezeOrder, { passive: true })
     scroller.addEventListener("touchend", touchEnd, { passive: true })
     return () => {
-      scroller.removeEventListener("mouseenter", freezeOrder)
-      scroller.removeEventListener("mouseleave", thawOrder)
-      scroller.removeEventListener("touchstart", freezeOrder)
+      scroller.removeEventListener("mouseenter", L.freezeOrder)
+      scroller.removeEventListener("mouseleave", L.thawOrder)
+      scroller.removeEventListener("touchstart", L.freezeOrder)
       scroller.removeEventListener("touchend", touchEnd)
     }
   }, [scrollRef])

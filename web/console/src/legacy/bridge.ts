@@ -37,7 +37,10 @@ import {
   spinPhase,
 } from "./js/core/pixels.js"
 import { LOCAL_SESSION_MACHINE, machinePresentationForFleet, sessionSelectionKey } from "./js/session/selection.js"
+import { bindSessionUI as bindSessionUIOriginal } from "./js/session/ui.js"
 import {
+  freezeOrder as freezeOrderOriginal,
+  thawOrder as thawOrderOriginal,
   ordered,
   projectSessionCloseability,
   projectSessionWorkState,
@@ -52,7 +55,12 @@ import {
  * They read a module-level object rather than taking arguments, so this is the
  * seam, and it is the only thing that writes to it.
  */
-export function publish(sessions: SessionRow[], openId: string | null, filter: string): void {
+export function publish(
+  sessions: SessionRow[],
+  openId: string | null,
+  filter: string,
+  selectedId: string | null = openId,
+): void {
   // The inferred types of the copied state object come from its initialisers —
   // `sessions: []` reads as never[] — so the seam is widened here rather than
   // by editing a file that is meant to stay identical to its source.
@@ -65,8 +73,10 @@ export function publish(sessions: SessionRow[], openId: string | null, filter: s
   state.sessions = sessions.map((s) => ({ ...s, machine: LOCAL_SESSION_MACHINE }))
   state.tasks = state.tasks ?? []
   state.arrived = true
+  // Two ids, as in the original: the highlight and the conversation on screen
+  // are separate since the keyboard can move one without the other.
   state.openId = openId
-  state.selectedId = openId
+  state.selectedId = selectedId
   state.filter = filter
 }
 
@@ -194,3 +204,11 @@ export const projectLabel = projectLabelOriginal as (key: string | undefined) =>
 export const generatedMark = generatedMarkOriginal as (key: string | undefined) => (Icon & { generated?: boolean }) | null
 /** The "my messages" copy in the page's language, from that module's own table. */
 export const userMessagesCopy = copyForUserMessages as (language: string) => { title: string } & Record<string, string>
+
+/* The list's order freeze and the render seam the copied modules call back through. */
+/** Hold the list's order while the reader's pointer is over it, as the original does. */
+export const freezeOrder = freezeOrderOriginal as () => void
+/** Release it; the copied module redraws through the seam bound below. */
+export const thawOrder = thawOrderOriginal as () => void
+/** Tell the copied modules how to redraw this page's list. */
+export const bindSessionUI = bindSessionUIOriginal as (ui: Record<string, () => void>) => void
