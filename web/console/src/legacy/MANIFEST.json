@@ -48,7 +48,9 @@
     "js/session/ui.js": "5b4ed1293afbea71",
     "js/view/derive.js": "dd4d3d923a048310",
     "js/view/markdown.js": "1d6c074ba207f3e4",
-    "js/view/board-workflow-record.js": "a6a475180fefe085"
+    "js/view/board-workflow-record.js": "a6a475180fefe085",
+    "js/view/project-mark.js": "b5459e2b72bc28b9",
+    "js/view/user-messages-data.js": "1ea5808c41a913f4"
   },
   "jsSource": "~/code/clawdline/Resources/web/app/js",
   "strings": {

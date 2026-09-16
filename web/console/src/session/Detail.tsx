@@ -445,14 +445,8 @@ function Tools({
   )
 }
 
-/* ---- Stand-ins for original functions not yet exported by legacy/bridge.ts ----
-   Each is a copy of the named original and goes away once the bridge exports it. */
-
-/** Stand-in for `atMac` in `core/env.js` (copied, not exported by the bridge). */
-function atMac(): boolean {
-  const h = location.hostname
-  return h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "[::1]"
-}
+/** The original `atMac`, from `core/env.js`. */
+const atMac = L.atMac
 
 /** The page's language as the original modules read it. */
 function pageLanguage(): string {
@@ -460,104 +454,24 @@ function pageLanguage(): string {
 }
 
 /**
- * Stand-in for `words(language).menu` in `view/documents.js` (not copied). The
- * word is that module's own table, not the catalog: there is no catalog key.
+ * Stand-in for `words(language).menu` in `view/documents.js`, which is not
+ * copied: its `words()` is not exported, so taking the word would mean taking
+ * the whole documents page. The word is that module's own table, not the
+ * catalog.
  */
 function documentsMenuWord(): string {
   return /^zh(?:-|$)/i.test(pageLanguage()) ? "文件" : "Documents"
 }
 
-/**
- * Stand-in for `copyForUserMessages(document.documentElement.lang).title` in
- * `view/user-messages-data.js` (not copied). That module's own table; the
- * catalog has no key for it.
- */
+/** `copyForUserMessages(lang).title`, from the copied `view/user-messages-data.js`. */
 function userMessagesTitle(): string {
-  const lang = (document.documentElement.lang || "").toLowerCase()
-  if (["zh-hant", "zh-tw", "zh-hk", "zh-mo"].some((p) => lang.indexOf(p) === 0)) return "我傳出的訊息"
-  if (lang.indexOf("zh") === 0) return "我发出的消息"
-  return "My messages"
+  return L.userMessagesCopy(document.documentElement.lang || "").title
 }
 
 type Mark = Icon & { generated?: boolean }
 
-/** Stand-in for `markForSession` in `view/project-mark.js` (not copied). */
+/** The original `markForSession` and `projectLabel`, from `view/project-mark.js`. */
 function markForSession(session: SessionRow | null, projectKey = ""): Mark | null {
-  if (!session) return null
-  if (session.icon && session.icon.cells && session.icon.cells.length) return session.icon
-  return generatedMark(projectKey || session.cwd)
+  return L.markForSession(session, projectKey)
 }
-
-/** Stand-in for `projectLabel` in `view/project-mark.js` (not copied). */
-function projectLabel(key: string | undefined): string {
-  const parts = String(key || "").replace(/\/+$/, "").split("/")
-  return parts[parts.length - 1] || ""
-}
-
-/** Stand-in for `generatedMark` in `view/project-mark.js` (not copied), with its helpers. */
-function generatedMark(key: string | undefined): Mark | null {
-  const ROWS = 4
-  const COLS = 7
-  const HALF = 4
-  const path = typeof key === "string" ? key.replace(/\/+$/, "") : ""
-  if (!path) return null
-  let h = 0x811c9dc5
-  for (let i = 0; i < path.length; i++) {
-    h = (h ^ path.charCodeAt(i)) >>> 0
-    h = Math.imul(h, 0x01000193) >>> 0
-  }
-  h = h >>> 0
-  const bits = h & 0xffff
-  const hue = (h >>> 16) % 360
-
-  const lit: boolean[] = []
-  let on = 0
-  for (let i = 0; i < ROWS * HALF; i++) {
-    const set = !!((bits >>> i) & 1)
-    lit.push(set)
-    if (set) on += 1
-  }
-  const step = 2 * (h % 8) + 1
-  const order: number[] = []
-  for (let j = 0; j < ROWS * HALF; j++) order.push((j * step + (h >>> 8)) % (ROWS * HALF))
-  for (let up = 0; on < 5 && up < order.length; up++) {
-    if (!lit[order[up]]) {
-      lit[order[up]] = true
-      on += 1
-    }
-  }
-  for (let down = order.length - 1; on > 12 && down >= 0; down--) {
-    if (lit[order[down]]) {
-      lit[order[down]] = false
-      on -= 1
-    }
-  }
-
-  const ink = hsl(hue, 0.52, 0.64)
-  const ground = hsl(hue, 0.34, 0.2)
-  const cells: string[][] = []
-  for (let y = 0; y < ROWS; y++) {
-    const line: string[] = []
-    for (let x = 0; x < COLS; x++) {
-      const source = x <= HALF - 1 ? x : COLS - 1 - x
-      line.push(lit[y * HALF + source] ? ink : ground)
-    }
-    cells.push(line)
-  }
-  return { accent: ink, cells, generated: true }
-}
-
-function hex2(n: number): string {
-  const s = Math.max(0, Math.min(255, Math.round(n))).toString(16)
-  return s.length < 2 ? "0" + s : s
-}
-
-function hsl(hue: number, saturation: number, lightness: number): string {
-  const h = (((hue % 360) + 360) % 360) / 60
-  const c = (1 - Math.abs(2 * lightness - 1)) * saturation
-  const x = c * (1 - Math.abs((h % 2) - 1))
-  const m = lightness - c / 2
-  const rgb =
-    h < 1 ? [c, x, 0] : h < 2 ? [x, c, 0] : h < 3 ? [0, c, x] : h < 4 ? [0, x, c] : h < 5 ? [x, 0, c] : [c, 0, x]
-  return "#" + hex2((rgb[0] + m) * 255) + hex2((rgb[1] + m) * 255) + hex2((rgb[2] + m) * 255)
-}
+const projectLabel = L.projectLabel

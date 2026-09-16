@@ -20,7 +20,9 @@ import type { Icon, SessionRow } from "@clawdline/contract"
 
 import { S } from "./js/core/state.js"
 import { T, applyStrings, fill, words } from "./js/core/i18n.js"
-import { hasKeyboard } from "./js/core/env.js"
+import { atMac as atMacOriginal, hasKeyboard } from "./js/core/env.js"
+import { generatedMark as generatedMarkOriginal, markForSession as markForSessionOriginal, projectLabel as projectLabelOriginal } from "./js/view/project-mark.js"
+import { copyForUserMessages } from "./js/view/user-messages-data.js"
 import { copyCodeBlock, inlineMd, richText } from "./js/view/markdown.js"
 import { boardWorkflowRecordHTML, parseBoardWorkflowRecord } from "./js/view/board-workflow-record.js"
 import { clockOf, shortPath, tint } from "./js/core/util.js"
@@ -182,3 +184,13 @@ export const assistantLogoHTML = (kind: string | undefined): string =>
   kind && (ASSISTANT_LOGOS as Record<string, unknown>)[kind] ? (assistantLogo(kind) as string) : ""
 /** The reader's own preference for drawing assistant marks, as the original stores it. */
 export const assistantIconsOn = (): boolean => !!(S as Record<string, unknown>).assistantIcons
+
+/* The detail head's helpers, from the copied modules. */
+/** Whether this page is being read on the Mac that serves it. */
+export const atMac = atMacOriginal as () => boolean
+/** A session's project mark, falling back to a generated one as the original does. */
+export const markForSession = markForSessionOriginal as (session: unknown, projectKey?: string) => (Icon & { generated?: boolean }) | null
+export const projectLabel = projectLabelOriginal as (key: string | undefined) => string
+export const generatedMark = generatedMarkOriginal as (key: string | undefined) => (Icon & { generated?: boolean }) | null
+/** The "my messages" copy in the page's language, from that module's own table. */
+export const userMessagesCopy = copyForUserMessages as (language: string) => { title: string } & Record<string, string>
