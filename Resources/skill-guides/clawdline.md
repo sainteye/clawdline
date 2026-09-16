@@ -222,8 +222,8 @@ will consume, and **work smaller than its own briefing**.
 
 **One task is the largest coherent, rollback-safe user outcome or architecture boundary one owner
 can carry safely.** A file, assertion, finding or small correction is not a slice. Accumulate its
-production change, tests and docs in one sustained session, then pay for one relevant focused pass
-near the end. A discovery or correction in that boundary stays in the same session.
+production change, tests and docs in one sustained session, then pay for the one test run at the
+commit or the release build. A discovery or correction in that boundary stays in the same session.
 
 **A slice big enough to dispatch is big enough to lose.** `timeout_minutes` stops at 240, an
 assistant can exhaust its quota mid-task, and a context window can fill. So a long or multi-file
@@ -331,32 +331,34 @@ re-reading 1.9M tokens of work somebody had already read.
 
 **Use independent review only when the risk earns it:** security/authentication, durable state,
 concurrency/backpressure, migrations, destructive/external effects, or broad cross-component
-semantics. Routine localized work, docs, generated data and test-only corrections use the owner's
-focused diff review.
+semantics. Routine localized work, docs, generated data and test-only corrections are read by their
+owner.
+
+**The review comes first, and it runs nothing.** Whoever reads — an independent session or the
+owner — reads for design faults before any test run exists: the gap, the wrong shape, the case
+nobody handled, the risky decision nobody stated. It does not run the suite, does not wait for one
+and is owed no test receipt. A reader is not there to execute code.
 
 **When the reviewer comes back with findings:** it writes the complete finding set down before any
 repair. The original implementer fixes the complete set in the same sustained session; the reviewer
-does not switch roles and one finding never becomes one task. Root checks the focused correction.
+does not switch roles and one finding never becomes one task. Root reads the correction itself.
 
-**For work that triggers review, one independent review per feature or batch. Count the rounds.** A *round* is one review of a
-delivery; running two complementary reviewers side by side inside a round is still one round, and
-that is not what this limits. What this limits is re-reviewing after a correction, which looks
-free — the finding set is right there, the correction is small — and is not. Measured here on one
-line today: the implementation cost $30.90 and its four review rounds cost $57.39, **1.9× the
-thing being reviewed.**
+**There is one review per delivery, and that was it.** Running two complementary reviewers side by
+side is still that one review, and that is not what this limits. What this limits is re-reviewing
+after a correction, which looks free — the finding set is right there, the correction is small —
+and is not. Measured here on one line today: the implementation cost $30.90 and its four review
+rounds cost $57.39, **1.9× the thing being reviewed.**
 
-- **Round two** only when round one found a defect *class* that will recur — the same mistake in
-  places the reviewer did not read — and not merely because a finding was fixed and you would like
-  it checked. "Did the fix work" is answered by the test that was red.
-- **Round three** only with a written reason the coordinator has seen before the dispatch. Two
-  mechanical triggers, both decidable from the correction diff alone and neither needing judgement,
-  since on that same line both correction rounds introduced new defects the next review caught:
-  **(a) the correction touches a code path `main` is also on**; **(b) the correction deleted or
-  weakened an existing assertion.** Either one, dispatch it. Neither, write the reason or stop.
-- **Beyond three, ask the user.** Blanket multi-round review has been rejected here explicitly.
+- **The correction does not go back to the reviewer.** "Did the fix work" is answered by the single
+  test run at the commit or the release build, not by a second reader.
+- **A red run buys one correction, then the same run again.** It never reopens the review. If two
+  corrections have not cleared it, stop and say so to the person waiting.
+- **A defect class that survives the correction stops the work.** Record `architecture_hold` and
+  give the boundary back to the person who asked for it. Blanket multi-round review has been
+  rejected here explicitly.
 
-Cheaper than a round, and usually the right answer: send the finding back to the session that wrote
-the code, which still has the context, and read the correction diff yourself.
+Cheaper than another reader, and usually the right answer: send the finding back to the session
+that wrote the code, which still has the context, and read the correction diff yourself.
 
 ### 2.0a Decide whether the task needs a private worktree
 
@@ -440,8 +442,8 @@ node. The root-owned graph does not.** Its final box is `root: land reviewed del
 and verify the integrated tree`. Put that box, the delivery branch, the target branch and the root
 landing owner in `plan` before dispatch. The reviewer is not a fifth worker but a reader: it reads
 what the others produced, writes down what is wrong, and does not fix anything (fixing belongs to
-the next round or to a person, and that holds even when it is sure it knows the fix — a repair
-quietly buries the judgement somebody needed to see). Five rules:
+the one correction pass or to a person, and that holds even when it is sure it knows the fix — a
+repair quietly buries the judgement somebody needed to see). Five rules:
 
 1. **It took no part in building the thing.** Self-review is measurably bad: a model judging its
    own output misses about a third of its own semantic drift, and the mechanism is structural
@@ -1235,10 +1237,11 @@ ordering step is the one that is skipped, and it is the one that prevents the me
    digest in completion. Its observed counts never rewrite source. These machine-authenticated
    hashes are caller attestations, not independent broker observation.
 
-   Verification is split by question, not repeated when ownership changes. The implementer supplies
-   one accumulated focused proof. A reviewer reads that proof and does not rerun it unless a named
-   review question lacks runtime evidence. The integrator reuses both receipts and runs only changed
-   merge seams, correction findings or dependencies before the release train's one exact full.
+   Verification is split by question, not repeated when ownership changes. A reviewer runs nothing
+   and does not rerun anything: it read the change before any test run existed, and a named review
+   question with no evidence is reported as such. The implementer's work is proved by the single run
+   at its commit. The integrator reuses that run and runs only changed merge seams, correction
+   findings or dependencies before the release train's one exact full.
    Never rerun the same tree/question/environment tuple merely to obtain a fresh green. A fully
    evidenced non-semantic runner interruption is recorded once and left for the final exact gate.
 5. **Build**, once, at the end — after the last landing, never between them. It replaces and

@@ -77,8 +77,8 @@ exact-tree integration and landing closure.
 
 **One task is the largest coherent, rollback-safe user outcome or architecture boundary that one
 owner can carry safely.** A file, test, checklist row, finding or small correction is not a slice.
-Carry related production changes, tests and docs in one sustained session, then pay for one
-accumulated focused verification near the end. Keep the implementer there until the whole unit is
+Carry related production changes, tests and docs in one sustained session, then pay for the one
+test run at the commit or the release build. Keep the implementer there until the whole unit is
 mature; discoveries and corrections stay in that session.
 
 **A slice big enough to dispatch is big enough to lose.** `timeout_minutes` stops at 240, quota can
@@ -154,9 +154,13 @@ Session default.
 
 Use an independent review node for security/authentication, durable state,
 concurrency/backpressure, migrations, destructive/external effects, or a broad cross-component
-change. Routine localized code, docs, generated data and test-only corrections use the owner's
-focused diff review. When independent review is warranted, it reads the complete feature or batch,
-never a fragment, and returns the whole finding set in one pass.
+change. Routine localized code, docs, generated data and test-only corrections are read by their
+owner. When independent review is warranted, it reads the complete feature or batch, never a
+fragment, and returns the whole finding set in one pass.
+
+**The review comes first and runs nothing.** It reads for design faults before any test run exists,
+does not wait for a suite and is owed no test receipt. One correction pass answers the whole finding
+set and does not go back to it.
 
 - **It did not help build the thing.** A model judging its own output misses about a third of its own
   semantic drift, structurally: a judge favours low-perplexity text and its own output is
@@ -169,19 +173,16 @@ never a fragment, and returns the whole finding set in one pass.
 
 **Then the original implementer fixes the complete finding set in the same sustained Session.**
 The reviewer writes the findings before any correction, but does not switch roles and implement
-them. Root checks the focused correction evidence; another reviewer is warranted only if the
-correction materially changes the design or crosses a new high-risk boundary. Never one task per
-finding.
+them. Root reads the correction itself. Never one task per finding.
 
-**When risk triggers review, use one review round per feature or batch.** Parallel complementary
-reviewers count as one round.
+**There is one review per delivery, and that was it.** Parallel complementary reviewers are still
+that one review; what is refused is re-reviewing after a correction, which looks free and is not.
 Measured on one line here: the implementation cost $30.90 and its four review rounds cost $57.39 —
 **1.9x the thing being reviewed** — and both correction rounds introduced defects the next review
 caught, so the rounds were not merely expensive, they were part of what made themselves necessary.
-Seal findings before correction; disjoint fixes remain one wave, and confirmation reruns only named
-questions. A second round needs a recurring defect class. A third needs `scope_changed`,
-`new_external_evidence`, or `systemic_pattern`. If the same class escapes again, stop at
-`architecture_hold`; do not dispatch a fourth patch.
+Seal findings before correction; disjoint fixes remain one wave. "Did the fix work" is answered by
+the single test run, not by a second reader. If the same defect class escapes that wave, stop at
+`architecture_hold` and tell the person who asked for the work; do not dispatch another patch.
 
 **A brief for work that deletes, overwrites or releases states what the decision may rest on**, not
 the shape somebody caught. Naming the shape invites the next patch to close that one spelling and
@@ -195,16 +196,17 @@ authorises a removal* — and ask, in the same task, for an audit of every site 
 question.
 
 **The landing root owns the release candidate's full suite.** Children accumulate related changes
-and use one focused proof near the end; they do not compile once per assertion, file or finding.
+and pay for one run at their commit; they do not compile once per assertion, file or finding.
 Several compatible Feature slices share one exact release candidate rather than each paying for a
 full suite. Docs-only or mechanically generated candidates that cannot affect compiled/runtime
 behavior use their relevant static checks. Until a focused Swift runner ships, an implementer may
-run one full suite only when labelled `focused_runner_unavailable`; reviewers do not repeat it.
-Root tests the exact target candidate.
+run one full suite only when labelled `focused_runner_unavailable`; reviewers run nothing at all.
+Root tests the exact target candidate. A red run buys one correction and then the same run again;
+if two corrections have not cleared it, stop and say so to the person waiting.
 Never repeat a green tree/question/environment tuple; a second run needs a typed
 `inconclusive_environment` receipt.
 
-**A child may add Swift assertions without asking anyone to maintain a total.** The focused proof
+**A child may add Swift assertions without asking anyone to maintain a total.** That single run
 records what it executed; the release-candidate run records its own observed Swift and Cloud counts.
 No count is copied back into `test.sh`, README files or governance docs, and no RESEAL measurement
 run exists. Completeness comes from the ordered group/runner/suite rosters and a unique runtime
