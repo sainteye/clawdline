@@ -23,7 +23,8 @@ import { T, applyStrings, fill, words } from "./js/core/i18n.js"
 import { hasKeyboard } from "./js/core/env.js"
 import { copyCodeBlock, inlineMd, richText } from "./js/view/markdown.js"
 import { boardWorkflowRecordHTML, parseBoardWorkflowRecord } from "./js/view/board-workflow-record.js"
-import { shortPath, tint } from "./js/core/util.js"
+import { clockOf, shortPath, tint } from "./js/core/util.js"
+import { esc } from "./js/core/esc.js"
 import {
   ASSISTANT_LOGOS,
   assistantLogo,
@@ -172,3 +173,12 @@ export const copyCode = copyCodeBlock as (text: string) => void
 /** A board-workflow record inside a message, if there is one; null otherwise. */
 export const parseWorkflowRecord = parseBoardWorkflowRecord as (text: string, role: string) => unknown
 export const workflowRecordHTML = boardWorkflowRecordHTML as (record: unknown, options?: Record<string, unknown>) => string
+
+/* Small helpers the transcript uses, from the copied modules. */
+export const escapeHTML = esc as (s: unknown) => string
+export const clock = clockOf as (unix: number) => string
+export const assistantDisplayName = assistantName as (kind: string | undefined) => string
+export const assistantLogoHTML = (kind: string | undefined): string =>
+  kind && (ASSISTANT_LOGOS as Record<string, unknown>)[kind] ? (assistantLogo(kind) as string) : ""
+/** The reader's own preference for drawing assistant marks, as the original stores it. */
+export const assistantIconsOn = (): boolean => !!(S as Record<string, unknown>).assistantIcons

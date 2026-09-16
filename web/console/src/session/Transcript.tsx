@@ -73,7 +73,7 @@ function TranscriptOf({ id }: { id: string }) {
   const who = {
     user: T.webWhoYou,
     tool: T.webWhoTool,
-    assistant: assistantName(session?.assistant),
+    assistant: L.assistantDisplayName(session?.assistant),
   }
   const toggle = (key: string) =>
     setExpanded((was) => {
@@ -146,16 +146,16 @@ function TranscriptOf({ id }: { id: string }) {
     if (record) {
       // The label is the original's own literal; the catalog has no key for it.
       body += L.workflowRecordHTML(record, {
-        escape: esc,
+        escape: L.escapeHTML,
         label: /^zh/i.test(document.documentElement.lang || "") ? "看板紀錄" : "Board record",
       })
     }
-    const mark = role === "assistant" && assistantIcons() ? logoOf(session?.assistant) : ""
+    const mark = role === "assistant" && L.assistantIconsOn() ? L.assistantLogoHTML(session?.assistant) : ""
     return (
       <div className="entry" data-role={role} key={"m:" + at}>
         <div className="who">
-          <span className="speaker" dangerouslySetInnerHTML={{ __html: mark + esc(who[role]) }} />
-          {e.at ? <time data-at={e.at}>{clockOf(e.at)}</time> : null}
+          <span className="speaker" dangerouslySetInnerHTML={{ __html: mark + L.escapeHTML(who[role]) }} />
+          {e.at ? <time data-at={e.at}>{L.clock(e.at)}</time> : null}
         </div>
         <div className="body" onClick={copyFrom} dangerouslySetInnerHTML={{ __html: body }} />
       </div>
@@ -263,49 +263,10 @@ function foldKey(run: Entry[]): string {
   return (hash >>> 0).toString(36)
 }
 
-/** `clockOf` from `core/util.js`, which the bridge does not export. */
-function clockOf(unix: number): string {
-  if (!unix) return ""
-  const d = new Date(unix * 1000)
-  const age = Date.now() / 1000 - unix
-  if (age < 60) return L.strings.webJustNow
-  if (age < 3600) return L.fillString(L.strings.webMinutesAgo, { n: Math.round(age / 60) })
-  const h = d.getHours()
-  const m = d.getMinutes()
-  return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m
-}
 
-/** `esc` from `core/esc.js`, which the bridge does not export. */
-function esc(s: unknown): string {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
-}
 
-/** `assistantName` from `core/pixels.js`, which the bridge does not export. */
-function assistantName(kind: string | undefined): string {
-  return kind === "claude" ? "claude" : kind === "codex" ? "codex" : "assistant"
-}
 
-/** `assistantLogo`, taken from the bridge's logo-plus-name markup since the bridge has no logo on its own. */
-function logoOf(kind: string | undefined): string {
-  const html = L.whoHTML(kind)
-  const cut = html.lastIndexOf("<span>")
-  return cut < 0 ? "" : html.slice(0, cut)
-}
 
-/** `S.assistantIcons`: `storedBool("clawdline.assistant-icons", true)`. */
-function assistantIcons(): boolean {
-  try {
-    const value = localStorage.getItem("clawdline.assistant-icons")
-    return value === null ? true : value === "1"
-  } catch {
-    return true
-  }
-}
 
 /** The transcript's one delegated click: the copy button inside a rendered code block. */
 function copyFrom(ev: MouseEvent<HTMLElement>) {
