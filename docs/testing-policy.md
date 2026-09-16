@@ -65,15 +65,46 @@ it actually holds. Fix it, then add **at most one** test at the narrowest seam t
 was observed. Do not answer an integration bug with a pile of unit tests around the half that was
 already right.
 
+## The order of a delivery: reviewed first, tested once
+
+This is the order for every delivery unit in this repository, and it replaces any earlier sequence
+that put a proof in front of the review or a reviewer after a correction.
+
+1. **The review comes first and runs nothing.** When the work is complete, one review reads it and
+   answers whether the design is right: the gap, the wrong shape, the case nobody handled, the risky
+   decision nobody stated. It does not run the suite, does not wait for one, and does not ask for a
+   test receipt. A reader is not there to execute code. Whether that reader is an independent session
+   or the owner reading their own diff follows the risk rule in
+   [`verification-workflow.md`](verification-workflow.md).
+2. **One correction pass answers the whole finding set,** and it does not go back to the reviewer.
+   **There is one review per delivery, and that was it.**
+3. **The tests run once, at the end** — when the work is about to be committed, or built into a
+   release. A commit runs the affected groups; a release candidate runs the full `./test.sh`. That
+   single run is the only scheduled one in the whole delivery.
+4. **A red run buys one correction, then the same run again.** It never reopens the review. If two
+   corrections have not cleared it, stop and say so to the person waiting instead of grinding on.
+
+The reason for this order: a reader finds design faults a green suite cannot, and a suite run before
+the review is a receipt for code that is about to change. The run that happens last is the only one
+whose result describes what actually ships.
+
 ## How much to run
 
-- **While working:** the tests for what you touched. Aim for under a minute.
-- **Before a commit reaches `main`:** it compiles, and the affected test groups pass.
-- **The full `./test.sh`:** once per release candidate, or once a day. Not per child, not per review
-  round, not per landing. A red full run is fixed where it is red; it does not buy a second full run.
+- **While working:** nothing scheduled. Run something when you need an answer only it can give.
+- **At the commit or the release build:** the one run above — affected groups, or the full suite for
+  a release candidate. It compiles either way.
+- **Never:** a run per file, per assertion or per finding; a run to reconfirm a green somebody else
+  already has; a run because ownership moved; a second full run for an unchanged tree.
 - **No new gate in `test.sh`** unless it tests product behavior under "Must have a test".
 - **No mutation ceremony.** A new regression test should fail on the old code; checking that once
   by reading or running it is enough. Do not add machinery to prove it.
+
+## A test is written for a regression, not for the process
+
+Before writing a test, name the regression it catches and how that regression would reach a person.
+If you cannot name one, do not write the test. Tests written to satisfy a procedure are the ones that
+later go red for reasons that have nothing to do with the product, and somebody pays for that every
+time it happens.
 
 ## Keeping it small
 

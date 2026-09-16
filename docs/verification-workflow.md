@@ -54,35 +54,39 @@ compile lock.
 
 ```text
 coherent implementation batch
-  -> one accumulated focused proof
-  -> independent review only when risk-triggered
-  -> at most one sealed correction wave + narrow confirmation
-  -> one release-candidate exact full when executable behavior can change
+  -> one review that runs nothing, reading for design faults
+  -> one sealed correction wave, which does not return to the reviewer
+  -> the single test run, at the commit or the release build
+  -> at most one correction for what that run found, then the same run again
   -> landing
   -> build/restart/smoke
 ```
 
+[`testing-policy.md`](testing-policy.md) owns this order and wins wherever this page asks for more.
+
 The unit is a rollback-safe user outcome or architecture boundary, not a file, test, checklist row
 or finding. A new regression test must be able to fail on the code it is about, checked by reading
 or running it once rather than recorded as a proof receipt; see
-[`testing-policy.md`](testing-policy.md). Independent review is required for high-risk
-boundaries (security/authentication, durable state, concurrency, migration, destructive/external
-effects, or broad cross-component semantics); routine localized/docs/generated/test-only work uses
-owner review. When present, review answers the three named axes and seals the complete finding set
-before one correction wave. Root groups compatible slices into one release candidate and alone owns
-its exact full. A candidate that cannot affect compiled/runtime behavior stops at relevant static
-checks.
+[`testing-policy.md`](testing-policy.md). An independent reader is required for high-risk boundaries
+(security/authentication, durable state, concurrency, migration, destructive/external effects, or
+broad cross-component semantics); routine localized/docs/generated/test-only work is read by its
+owner. Either way there is exactly one review, it happens before any test run, and it answers the
+three named axes and seals the complete finding set before one correction wave. Root groups
+compatible slices into one release candidate and alone owns its exact full. A candidate that cannot
+affect compiled/runtime behavior stops at relevant static checks.
 
-A third review requires `scope_changed`, `new_external_evidence`, or `systemic_pattern`. A repeated
-defect class beyond that correction seam moves to `architecture_hold` instead of a fourth patch.
+There is no second review. A defect class that survives the correction wave moves to
+`architecture_hold` and to the person who asked for the work; it does not become another review
+round or another patch.
 
-The stages above own different questions; they do not inherit one another's test list. The
-implementer owns one accumulated focused behavior proof. The reviewer normally owns no test run:
-it reads the exact diff and retained receipts, and runs something only when a named review question
-has no usable evidence. The landing root reuses both and verifies only changed merge seams,
-correction findings and changed dependencies before the release train's one exact full. Changing
-owners is not a reason to repeat a command. A tuple with the same tree, question and environment is
-reused, while a changed tree is tested only for the question the change could invalidate.
+The stages above own different questions; they do not inherit one another's test list. The reviewer
+owns no test run at all — it reads the exact diff, and a named review question without evidence is
+reported as such rather than answered by running something. The implementer's work is proved by the
+single run at the commit or release build, not by a receipt written for the reviewer. The landing
+root reuses that run and verifies only changed merge seams, correction findings and changed
+dependencies. Changing owners is not a reason to repeat a command. A tuple with the same tree,
+question and environment is reused, while a changed tree is tested only for the question the change
+could invalidate.
 
 When a focused runner ends for a known non-semantic transport condition after producing the
 required diagnostics—such as the repository's evidenced `exit 133` case—capture the bytes, tick

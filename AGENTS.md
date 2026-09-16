@@ -110,9 +110,13 @@ ask each line for both lists; never bury the user's decision in a status paragra
 
 ## Verifying your work
 
-**What deserves a test, and how much of the suite to run, is decided by
-[`docs/testing-policy.md`](docs/testing-policy.md).** Where anything below or in the documents it
-links asks for more verification than that page, that page wins.
+**What deserves a test, how much of the suite to run, and the order a delivery goes through are
+decided by [`docs/testing-policy.md`](docs/testing-policy.md).** Where anything below or in the
+documents it links asks for more verification than that page, that page wins.
+
+The order, in one line: **one review that runs nothing, one correction pass, then the single test
+run at the commit or the release build, and at most one correction after it.** The review never
+comes back a second time.
 
 Verification follows the question, not the role:
 
@@ -128,12 +132,12 @@ Verification follows the question, not the role:
   regression test must be able to fail on the old code — see *A test that cannot fail proves
   nothing* — but that is read or run once, not recorded as a receipt. A docs/static slice does not
   buy a Swift compile merely for ceremony.
-- One release candidate normally gets one exact full suite, owned by the landing root. A second
-  full requires typed `inconclusive_environment` evidence.
-- The implementer proves one accumulated focused receipt; the reviewer reads it and does not rerun
-  unless a named review question lacks evidence; the integrator consumes both receipts and tests
-  only changed seams or dependencies. Reuse the same tree/question/environment tuple. Never repeat
-  unchanged green merely because ownership moved.
+- One release candidate gets one exact full suite, owned by the landing root. A second full requires
+  typed `inconclusive_environment` evidence.
+- A reviewer runs nothing and is owed no receipt: it reads the change and answers whether the design
+  is right, before any test run exists. The implementer answers the whole sealed finding set in one
+  correction pass and does not send it back. The integrator tests only changed seams or dependencies
+  and never repeats an unchanged green because ownership moved.
 - Assert completion receipts and check counts, not only process exit. If exit 133 recurs, capture
   bytes, lines, `grep -a -c '✓'`, the last complete tick line, fatal count, and tree identity once;
   do not retry it into green.
