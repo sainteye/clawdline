@@ -69,6 +69,22 @@
 原本那個監控面板保留成側欄的一個選項（使用者 2026-09-17 同意），樣式全部限定在 `.dashboard-page` 底下，
 不會漏到復刻的頁面上。
 
+## Reviewer 第一輪（2026-09-17 03:28–03:39，task ee7741a5）
+
+同一分頁、同一視窗（1180×772，dpr 2.2，兩邊 BackCompat），34,401 個屬性逐節點比對。
+結論：**還不能宣稱 1:1**，新發現 41 項。報告原文在 `/tmp/.clawdline/ee7741a5-…/artifacts/report.md`。
+
+已經 0 差異（扣除已知）的：對話區四種訊息、composer（已開／空狀態）、一般 idle 列、working 列本體、主格線、`#conn`、status-line 空狀態。
+
+| 編號 | 問題 | 處理 |
+|---|---|---|
+| #1–3、#9、#16–17 樣式 | 只抄了 12 個 CSS，抽屜的規則在 `pages.css` | root `0b5a74f`：29 個全抄，守衛 46 檔 |
+| #4–5、#7–8、#10–15 | 抽屜項目、篩選列按鈕、清單外框、brand logo、counts、#conn title | child `%837` |
+| #25–37 | 詳情標頭（圖示大小、標題色、sub 文字、button、空狀態）與 ⋯ 選單 8 項＋Git 第二層 | child `%838` |
+| #6 | 打開 session 沒捲到底 | 併入 transcript 資料對齊 child `%836` |
+| #16–22、#38–39 | Clawdfather 皇冠與 chip、coordination-wait、交付勾、shells、標題來源、status-line 的模型名與花費 | 要改契約，等 `%836` 落地後再派 |
+| #41 | 所有 overlay（Session 資訊、開新 session、確認框、語音…） | 之後的波次 |
+
 ## 額度
 
 2026-09-17 深夜：Claude 7 天 85%、Codex 7 天 92%。所以今晚是**少量高價值**的派工，不做大量扇出。
