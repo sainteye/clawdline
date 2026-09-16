@@ -79,10 +79,11 @@
 | 編號 | 問題 | 處理 |
 |---|---|---|
 | #1–3、#9、#16–17 樣式 | 只抄了 12 個 CSS，抽屜的規則在 `pages.css` | root `0b5a74f`：29 個全抄，守衛 46 檔 |
-| #4–5、#7–8、#10–15 | 抽屜項目、篩選列按鈕、清單外框、brand logo、counts、#conn title | child `%837` |
-| #25–37 | 詳情標頭（圖示大小、標題色、sub 文字、button、空狀態）與 ⋯ 選單 8 項＋Git 第二層 | child `%838` |
-| #6 | 打開 session 沒捲到底 | 併入 transcript 資料對齊 child `%836` |
-| #16–22、#38–39 | Clawdfather 皇冠與 chip、coordination-wait、交付勾、shells、標題來源、status-line 的模型名與花費 | 要改契約，等 `%836` 落地後再派 |
+| #4–5、#7–8、#10–15、#32 | 抽屜項目、篩選列按鈕、清單外框、brand logo、counts、#conn title | child `%837` |
+| #25–37 | 詳情標頭與 ⋯ 選單 | ✅ `ca9f93a`、`f1f61f1`：三種狀態零 rect 差異 |
+| #6 與 transcript 資料 | 打開沒捲到底；工具 subject 全是「…」 | ✅ `14d93b7`：兩個 session wire 逐筆零差異，另 7 抽 6 完全相同 |
+| #21、#22、#38、#39 | 背景 shells、標題來源、status-line 模型名與花費 | child `%839` |
+| #16–20 | Clawdfather 皇冠與 chip、coordination-wait、交付勾 | **需要使用者決定**：資料在 Swift app 的 store，兩個 app 的 store 依設計分開。要不要讓 Go 唯讀 `~/.config/clawdline`，是架構決定 |
 | #41 | 所有 overlay（Session 資訊、開新 session、確認框、語音…） | 之後的波次 |
 
 ## 額度
