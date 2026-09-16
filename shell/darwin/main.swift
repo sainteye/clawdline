@@ -102,10 +102,32 @@ final class Shell: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     // The shell says what it actually loaded. A window that came up is not
     // evidence that the console is in it, and on a machine without screen
     // recording permission this is the only honest way to tell.
+    //
+    // It asks after the page has drawn, not when the document arrived. The
+    // console is rendered by script and stays hidden under `booting` until its
+    // words land, so counting at didFinish reported one element for a page that
+    // was about to have hundreds — a true number about the wrong moment.
     func webView(_ webView: WKWebView, didFinish nav: WKNavigation!) {
-        webView.evaluateJavaScript("document.querySelectorAll('[id]').length") { value, _ in
-            let nodes = (value as? Int) ?? -1
-            print("loaded: \(webView.url?.absoluteString ?? "?") title=\(webView.title ?? "?") elements-with-id=\(nodes)")
+        report(webView, attempt: 0)
+    }
+
+    private func report(_ webView: WKWebView, attempt: Int) {
+        let probe = "[document.documentElement.classList.contains('booting'), document.querySelectorAll('[id]').length, document.querySelectorAll('li.row').length]"
+        webView.evaluateJavaScript(probe) { [weak self] value, _ in
+            let parts = value as? [Any] ?? []
+            let booting = parts.first as? Bool ?? true
+            let rowsNow = parts.count > 2 ? (parts[2] as? Int ?? 0) : 0
+            // The list arrives after the words do, so a page that is showing
+            // but has no rows yet is asked again rather than reported empty.
+            if (booting || rowsNow == 0) && attempt < 40 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    self?.report(webView, attempt: attempt + 1)
+                }
+                return
+            }
+            let nodes = parts.count > 1 ? (parts[1] as? Int ?? -1) : -1
+            let rows = parts.count > 2 ? (parts[2] as? Int ?? -1) : -1
+            print("loaded: \(webView.url?.absoluteString ?? "?") title=\(webView.title ?? "?") booting=\(booting) elements-with-id=\(nodes) rows=\(rows)")
             fflush(stdout)
         }
     }
