@@ -43,28 +43,146 @@
         "totalTokens": { "description": "The sum of the rows that could be read. Rows carrying `evidence: none` contribute nothing, so this can be smaller than the truth and never larger.", "type": "integer" }
       }
     },
-    "Turn": {
-      "description": "One thing that was said. Tool calls are named rather than expanded: a panel that reproduced every payload would be the log file again.",
+    "TranscriptEntry": {
+      "description": "One thing in a conversation, in the shape the Swift app's `transcriptRows` writes it. A tool call and what the tool returned both carry `role: tool`; only the call names its tool. A call's `text` is the one line describing what it was asked to do — a command, a path, a query — which is what a folded row shows as its subject. An `AskUserQuestion` call carries its questions instead, after the U+0001 `ask` U+0001 marker.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "role", "text"],
+      "required": ["role", "text"],
       "properties": {
-        "at": { "type": "string" },
-        "role": { "type": "string" },
+        "activity": { "$ref": "#/$defs/TranscriptActivity" },
+        "at": { "description": "Unix seconds. Absent when the record carried no timestamp this reader accepts.", "type": "integer" },
+        "fileChanges": { "description": "Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent on every other entry.", "type": "array", "items": { "$ref": "#/$defs/TranscriptFileChange" } },
+        "imageCount": { "description": "Images attached to a user turn. Absent when there were none: the Swift app writes an explicit 0 on user rows, and a reader treats absence as that 0.", "type": "integer" },
+        "notice": { "$ref": "#/$defs/TranscriptNotice" },
+        "plan": { "description": "A complete Codex checklist update.", "type": "array", "items": { "$ref": "#/$defs/TranscriptPlanStep" } },
+        "role": { "description": "user, assistant, peer (another Claude Code session), message (another session through Clawdline), notice (Clawdline about a task) or tool.", "type": "string" },
+        "source": { "description": "The human-facing name of the session a peer or message row came from.", "type": "string" },
+        "sourceAssistant": { "description": "Which assistant sent a Clawdline session message.", "type": "string" },
+        "sourceMode": { "description": "How a peer or message row arrived: the peer's own mode, or `clawdline`.", "type": "string" },
         "text": { "type": "string" },
-        "tool": { "type": "string" }
+        "tool": { "description": "The tool a call used. Absent on a tool's result and on prose.", "type": "string" }
+      }
+    },
+    "TranscriptFileChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {
+        "content": { "description": "The whole file, for an addition, a deletion or a Claude `Write`.", "type": "string" },
+        "kind": { "description": "add, delete, update or write, as the record spelled it; `change` when it did not.", "type": "string" },
+        "movePath": { "type": "string" },
+        "path": { "type": "string" },
+        "unifiedDiff": { "type": "string" }
+      }
+    },
+    "TranscriptPlanStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "step"],
+      "properties": {
+        "status": { "description": "pending, inProgress or completed — Codex app-server's spelling, not the rollout's in_progress.", "type": "string" },
+        "step": { "type": "string" }
+      }
+    },
+    "TranscriptActivity": {
+      "description": "What a Codex tool item recorded about itself: `called` for an MCP call with a title, `explored` for a shell command Codex classified as reads and searches.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actions", "durationMs", "kind"],
+      "properties": {
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/TranscriptAction" } },
+        "durationMs": { "description": "How long the item took. -1 when the record did not say, which the Swift app sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as one.", "type": "integer" },
+        "kind": { "type": "string" },
+        "result": { "description": "A called tool's result text, cut at 4,000 characters.", "type": "string" },
+        "status": { "description": "inProgress, pending, completed or failed.", "type": "string" },
+        "title": { "type": "string" }
+      }
+    },
+    "TranscriptAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "command": { "type": "string" },
+        "kind": { "description": "read or search.", "type": "string" },
+        "name": { "type": "string" },
+        "path": { "type": "string" },
+        "query": { "type": "string" }
+      }
+    },
+    "TranscriptNotice": {
+      "description": "A decoded Clawdline notice without its protocol, version and body — the Swift app's `webObject`. Which fields are present depends on `kind`: task_finished, workspace_overlap, file_wait_request, file_wait_release or handoff_receipt.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "ack_path": { "type": "string" },
+        "assistant": { "type": "string" },
+        "audience": { "type": "string" },
+        "child_may_still_write": { "description": "Present only when true.", "type": "boolean" },
+        "claims_released": { "description": "Present only when true.", "type": "boolean" },
+        "commit": { "type": "string" },
+        "handoff_id": { "type": "string" },
+        "kind": { "type": "string" },
+        "note": { "type": "string" },
+        "notice_id": { "type": "string" },
+        "outstanding": { "description": "task_finished only, where the decoder requires it, so absence there means 0.", "type": "integer" },
+        "overlaps": { "type": "array", "items": { "$ref": "#/$defs/TranscriptNoticeOverlap" } },
+        "paths": { "type": "array", "items": { "type": "string" } },
+        "project_dir": { "type": "string" },
+        "reason": { "type": "string" },
+        "release_condition": { "type": "string" },
+        "repository": { "type": "string" },
+        "result_path": { "type": "string" },
+        "state": { "type": "string" },
+        "task": { "$ref": "#/$defs/TranscriptNoticeTask" },
+        "title": { "type": "string" },
+        "wait_id": { "type": "string" },
+        "waiter_session_id": { "type": "string" }
+      }
+    },
+    "TranscriptNoticeTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" }
+      }
+    },
+    "TranscriptNoticeOverlap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "task"],
+      "properties": {
+        "path": { "type": "string" },
+        "task": { "$ref": "#/$defs/TranscriptNoticeTask" }
+      }
+    },
+    "TranscriptTruncation": {
+      "description": "The newest entries were kept and older ones left out, because the whole page would have passed its byte budget.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["budgetBytes", "entriesOmittedCount", "reason"],
+      "properties": {
+        "budgetBytes": { "type": "integer" },
+        "entriesOmittedCount": { "type": "integer" },
+        "reason": { "description": "transcript_byte_budget.", "type": "string" }
       }
     },
     "TranscriptPage": {
+      "description": "`entries`, `signature` and `truncation` are the Swift app's transcript payload; `evidence`, `path` and `note` say where the reading came from.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["evidence", "id", "turns"],
+      "required": ["entries", "evidence", "id", "signature"],
       "properties": {
+        "entries": { "description": "Oldest first.", "type": "array", "items": { "$ref": "#/$defs/TranscriptEntry" } },
         "evidence": { "$ref": "common.schema.json#/$defs/Evidence" },
         "id": { "type": "string" },
         "note": { "type": "string" },
         "path": { "description": "Which file this was read from. A reading that cannot name its source is not evidence.", "type": "string" },
-        "turns": { "type": "array", "items": { "$ref": "#/$defs/Turn" } }
+        "signature": { "description": "The record's size and modification time, `<bytes>-<unix seconds>`, and empty when nothing was read. It changes whenever the entries could have.", "type": "string" },
+        "truncation": { "$ref": "#/$defs/TranscriptTruncation" }
       }
     }
   }

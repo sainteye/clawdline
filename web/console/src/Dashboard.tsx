@@ -583,8 +583,8 @@ function Transcript({ id }: { id: string }) {
   if (data.evidence === "none") return <p className="said">{data.note ?? "讀不到這個 session 的紀錄"}</p>
   return (
     <div className="transcript">
-      {data.turns.length === 0 && <p className="said">這份紀錄裡還沒有可讀的回合。</p>}
-      {data.turns.map((t, i) => (
+      {data.entries.length === 0 && <p className="said">這份紀錄裡還沒有可讀的回合。</p>}
+      {data.entries.map((t, i) => (
         <div className="turn" key={i} data-role={t.role}>
           <span className="who">{t.tool ? t.tool : t.role}</span>
           <span className="what">{t.text || <em>（工具呼叫）</em>}</span>

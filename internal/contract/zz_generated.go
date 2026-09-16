@@ -586,24 +586,169 @@ const (
 // TaskStateValues is every value the contract allows, in contract order.
 var TaskStateValues = []TaskState{TaskStateQueued, TaskStateSpawning, TaskStateBriefed, TaskStateSuccess, TaskStateFailure, TaskStateTimeout, TaskStateCancelled, TaskStateSpawnFailed}
 
+type TranscriptAction struct {
+	Command string `json:"command,omitempty"`
+
+	// read or search.
+	Kind  string `json:"kind"`
+	Name  string `json:"name,omitempty"`
+	Path  string `json:"path,omitempty"`
+	Query string `json:"query,omitempty"`
+}
+
+// What a Codex tool item recorded about itself: `called` for an MCP call with a
+// title, `explored` for a shell command Codex classified as reads and searches.
+type TranscriptActivity struct {
+	Actions []TranscriptAction `json:"actions"`
+
+	// How long the item took. -1 when the record did not say, which the Swift app
+	// sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as
+	// one.
+	DurationMs int64  `json:"durationMs"`
+	Kind       string `json:"kind"`
+
+	// A called tool's result text, cut at 4,000 characters.
+	Result string `json:"result,omitempty"`
+
+	// inProgress, pending, completed or failed.
+	Status string `json:"status,omitempty"`
+	Title  string `json:"title,omitempty"`
+}
+
+// One thing in a conversation, in the shape the Swift app's `transcriptRows`
+// writes it. A tool call and what the tool returned both carry `role: tool`;
+// only the call names its tool. A call's `text` is the one line describing what
+// it was asked to do — a command, a path, a query — which is what a folded
+// row shows as its subject. An `AskUserQuestion` call carries its questions
+// instead, after the U+0001 `ask` U+0001 marker.
+type TranscriptEntry struct {
+	Activity *TranscriptActivity `json:"activity,omitempty"`
+
+	// Unix seconds. Absent when the record carried no timestamp this reader accepts.
+	At int64 `json:"at,omitempty"`
+
+	// Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent
+	// on every other entry.
+	FileChanges []TranscriptFileChange `json:"fileChanges,omitempty"`
+
+	// Images attached to a user turn. Absent when there were none: the Swift app
+	// writes an explicit 0 on user rows, and a reader treats absence as that 0.
+	ImageCount int64             `json:"imageCount,omitempty"`
+	Notice     *TranscriptNotice `json:"notice,omitempty"`
+
+	// A complete Codex checklist update.
+	Plan []TranscriptPlanStep `json:"plan,omitempty"`
+
+	// user, assistant, peer (another Claude Code session), message (another session
+	// through Clawdline), notice (Clawdline about a task) or tool.
+	Role string `json:"role"`
+
+	// The human-facing name of the session a peer or message row came from.
+	Source string `json:"source,omitempty"`
+
+	// Which assistant sent a Clawdline session message.
+	SourceAssistant string `json:"sourceAssistant,omitempty"`
+
+	// How a peer or message row arrived: the peer's own mode, or `clawdline`.
+	SourceMode string `json:"sourceMode,omitempty"`
+	Text       string `json:"text"`
+
+	// The tool a call used. Absent on a tool's result and on prose.
+	Tool string `json:"tool,omitempty"`
+}
+
+type TranscriptFileChange struct {
+	// The whole file, for an addition, a deletion or a Claude `Write`.
+	Content string `json:"content,omitempty"`
+
+	// add, delete, update or write, as the record spelled it; `change` when it did
+	// not.
+	Kind        string `json:"kind"`
+	MovePath    string `json:"movePath,omitempty"`
+	Path        string `json:"path"`
+	UnifiedDiff string `json:"unifiedDiff,omitempty"`
+}
+
+// A decoded Clawdline notice without its protocol, version and body — the
+// Swift app's `webObject`. Which fields are present depends on `kind`:
+// task_finished, workspace_overlap, file_wait_request, file_wait_release or
+// handoff_receipt.
+type TranscriptNotice struct {
+	AckPath   string `json:"ack_path,omitempty"`
+	Assistant string `json:"assistant,omitempty"`
+	Audience  string `json:"audience,omitempty"`
+
+	// Present only when true.
+	ChildMayStillWrite bool `json:"child_may_still_write,omitempty"`
+
+	// Present only when true.
+	ClaimsReleased bool   `json:"claims_released,omitempty"`
+	Commit         string `json:"commit,omitempty"`
+	HandoffID      string `json:"handoff_id,omitempty"`
+	Kind           string `json:"kind"`
+	Note           string `json:"note,omitempty"`
+	NoticeID       string `json:"notice_id,omitempty"`
+
+	// task_finished only, where the decoder requires it, so absence there means 0.
+	Outstanding      int64                     `json:"outstanding,omitempty"`
+	Overlaps         []TranscriptNoticeOverlap `json:"overlaps,omitempty"`
+	Paths            []string                  `json:"paths,omitempty"`
+	ProjectDir       string                    `json:"project_dir,omitempty"`
+	Reason           string                    `json:"reason,omitempty"`
+	ReleaseCondition string                    `json:"release_condition,omitempty"`
+	Repository       string                    `json:"repository,omitempty"`
+	ResultPath       string                    `json:"result_path,omitempty"`
+	State            string                    `json:"state,omitempty"`
+	Task             *TranscriptNoticeTask     `json:"task,omitempty"`
+	Title            string                    `json:"title,omitempty"`
+	WaitID           string                    `json:"wait_id,omitempty"`
+	WaiterSessionID  string                    `json:"waiter_session_id,omitempty"`
+}
+
+type TranscriptNoticeOverlap struct {
+	Path string               `json:"path"`
+	Task TranscriptNoticeTask `json:"task"`
+}
+
+type TranscriptNoticeTask struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+}
+
+// `entries`, `signature` and `truncation` are the Swift app's transcript
+// payload; `evidence`, `path` and `note` say where the reading came from.
 type TranscriptPage struct {
-	Evidence Evidence `json:"evidence"`
-	ID       string   `json:"id"`
-	Note     string   `json:"note,omitempty"`
+	// Oldest first.
+	Entries  []TranscriptEntry `json:"entries"`
+	Evidence Evidence          `json:"evidence"`
+	ID       string            `json:"id"`
+	Note     string            `json:"note,omitempty"`
 
 	// Which file this was read from. A reading that cannot name its source is not
 	// evidence.
-	Path  string `json:"path,omitempty"`
-	Turns []Turn `json:"turns"`
+	Path string `json:"path,omitempty"`
+
+	// The record's size and modification time, `<bytes>-<unix seconds>`, and empty
+	// when nothing was read. It changes whenever the entries could have.
+	Signature  string                `json:"signature"`
+	Truncation *TranscriptTruncation `json:"truncation,omitempty"`
 }
 
-// One thing that was said. Tool calls are named rather than expanded: a panel
-// that reproduced every payload would be the log file again.
-type Turn struct {
-	At   string `json:"at"`
-	Role string `json:"role"`
-	Text string `json:"text"`
-	Tool string `json:"tool,omitempty"`
+type TranscriptPlanStep struct {
+	// pending, inProgress or completed — Codex app-server's spelling, not the
+	// rollout's in_progress.
+	Status string `json:"status"`
+	Step   string `json:"step"`
+}
+
+// The newest entries were kept and older ones left out, because the whole page
+// would have passed its byte budget.
+type TranscriptTruncation struct {
+	BudgetBytes         int64 `json:"budgetBytes"`
+	EntriesOmittedCount int64 `json:"entriesOmittedCount"`
+
+	// transcript_byte_budget.
+	Reason string `json:"reason"`
 }
 
 type UsageReport struct {

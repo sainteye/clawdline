@@ -632,7 +632,185 @@ export type TaskState =
 
 export const TaskStateValues: readonly TaskState[] = ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed"] as const
 
+export interface TranscriptAction {
+  command?: string
+
+  /**
+   * read or search.
+   */
+  kind: string
+  name?: string
+  path?: string
+  query?: string
+}
+
+/**
+ * What a Codex tool item recorded about itself: `called` for an MCP call with a
+ * title, `explored` for a shell command Codex classified as reads and searches.
+ */
+export interface TranscriptActivity {
+  actions: TranscriptAction[]
+
+  /**
+   * How long the item took. -1 when the record did not say, which the Swift app
+   * sends as an absent key; 0 is a real, sub-millisecond duration and is drawn as
+   * one.
+   */
+  durationMs: number
+  kind: string
+
+  /**
+   * A called tool's result text, cut at 4,000 characters.
+   */
+  result?: string
+
+  /**
+   * inProgress, pending, completed or failed.
+   */
+  status?: string
+  title?: string
+}
+
+/**
+ * One thing in a conversation, in the shape the Swift app's `transcriptRows` writes
+ * it. A tool call and what the tool returned both carry `role: tool`; only the call
+ * names its tool. A call's `text` is the one line describing what it was asked to
+ * do — a command, a path, a query — which is what a folded row shows as its
+ * subject. An `AskUserQuestion` call carries its questions instead, after the
+ * U+0001 `ask` U+0001 marker.
+ */
+export interface TranscriptEntry {
+  activity?: TranscriptActivity
+
+  /**
+   * Unix seconds. Absent when the record carried no timestamp this reader accepts.
+   */
+  at?: number
+
+  /**
+   * Exact edits: a Codex patch, or the whole file a Claude `Write` created. Absent
+   * on every other entry.
+   */
+  fileChanges?: TranscriptFileChange[]
+
+  /**
+   * Images attached to a user turn. Absent when there were none: the Swift app
+   * writes an explicit 0 on user rows, and a reader treats absence as that 0.
+   */
+  imageCount?: number
+  notice?: TranscriptNotice
+
+  /**
+   * A complete Codex checklist update.
+   */
+  plan?: TranscriptPlanStep[]
+
+  /**
+   * user, assistant, peer (another Claude Code session), message (another session
+   * through Clawdline), notice (Clawdline about a task) or tool.
+   */
+  role: string
+
+  /**
+   * The human-facing name of the session a peer or message row came from.
+   */
+  source?: string
+
+  /**
+   * Which assistant sent a Clawdline session message.
+   */
+  sourceAssistant?: string
+
+  /**
+   * How a peer or message row arrived: the peer's own mode, or `clawdline`.
+   */
+  sourceMode?: string
+  text: string
+
+  /**
+   * The tool a call used. Absent on a tool's result and on prose.
+   */
+  tool?: string
+}
+
+export interface TranscriptFileChange {
+  /**
+   * The whole file, for an addition, a deletion or a Claude `Write`.
+   */
+  content?: string
+
+  /**
+   * add, delete, update or write, as the record spelled it; `change` when it did
+   * not.
+   */
+  kind: string
+  movePath?: string
+  path: string
+  unifiedDiff?: string
+}
+
+/**
+ * A decoded Clawdline notice without its protocol, version and body — the Swift
+ * app's `webObject`. Which fields are present depends on `kind`: task_finished,
+ * workspace_overlap, file_wait_request, file_wait_release or handoff_receipt.
+ */
+export interface TranscriptNotice {
+  ack_path?: string
+  assistant?: string
+  audience?: string
+
+  /**
+   * Present only when true.
+   */
+  child_may_still_write?: boolean
+
+  /**
+   * Present only when true.
+   */
+  claims_released?: boolean
+  commit?: string
+  handoff_id?: string
+  kind: string
+  note?: string
+  notice_id?: string
+
+  /**
+   * task_finished only, where the decoder requires it, so absence there means 0.
+   */
+  outstanding?: number
+  overlaps?: TranscriptNoticeOverlap[]
+  paths?: string[]
+  project_dir?: string
+  reason?: string
+  release_condition?: string
+  repository?: string
+  result_path?: string
+  state?: string
+  task?: TranscriptNoticeTask
+  title?: string
+  wait_id?: string
+  waiter_session_id?: string
+}
+
+export interface TranscriptNoticeOverlap {
+  path: string
+  task: TranscriptNoticeTask
+}
+
+export interface TranscriptNoticeTask {
+  id: string
+  title: string
+}
+
+/**
+ * `entries`, `signature` and `truncation` are the Swift app's transcript payload;
+ * `evidence`, `path` and `note` say where the reading came from.
+ */
 export interface TranscriptPage {
+  /**
+   * Oldest first.
+   */
+  entries: TranscriptEntry[]
   evidence: Evidence
   id: string
   note?: string
@@ -642,18 +820,36 @@ export interface TranscriptPage {
    * evidence.
    */
   path?: string
-  turns: Turn[]
+
+  /**
+   * The record's size and modification time, `<bytes>-<unix seconds>`, and empty
+   * when nothing was read. It changes whenever the entries could have.
+   */
+  signature: string
+  truncation?: TranscriptTruncation
+}
+
+export interface TranscriptPlanStep {
+  /**
+   * pending, inProgress or completed — Codex app-server's spelling, not the
+   * rollout's in_progress.
+   */
+  status: string
+  step: string
 }
 
 /**
- * One thing that was said. Tool calls are named rather than expanded: a panel that
- * reproduced every payload would be the log file again.
+ * The newest entries were kept and older ones left out, because the whole page
+ * would have passed its byte budget.
  */
-export interface Turn {
-  at: string
-  role: string
-  text: string
-  tool?: string
+export interface TranscriptTruncation {
+  budgetBytes: number
+  entriesOmittedCount: number
+
+  /**
+   * transcript_byte_budget.
+   */
+  reason: string
 }
 
 export interface UsageReport {
