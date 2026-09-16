@@ -21,7 +21,6 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/app"
-	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/config"
 )
 
@@ -56,7 +55,7 @@ func New(cfg config.Config) (*Server, error) {
 		proxy: proxy,
 		inventory: app.Inventory{
 			Process:   process.New(),
-			Terminals: []ports.TerminalHost{terminal.NewTmux()},
+			Terminals: terminal.Hosts(),
 			Identity:  transcript.NewHost(),
 		},
 	}, nil
