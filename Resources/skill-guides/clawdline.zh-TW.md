@@ -197,8 +197,8 @@ context 留給別的事、或單純想在一個分頁裡看著它跑。**他說�
 ### 2.0b 一件任務該多大，小事什麼時候出去
 
 **一件任務就是同一位 owner 能安全承擔的最大完整成果或架構邊界。** 一個檔案、一條 assertion、
-一個 finding 或小修正都不算 slice。production、測試與文件由同一個 session 累積完成，接近交付時
-只付一次真正相關的 focused 驗證；同一邊界的新發現與修正都留在原 session。
+一個 finding 或小修正都不算 slice。production、測試與文件由同一個 session 累積完成，只付 commit
+或 release build 時的那一次測試；同一邊界的新發現與修正都留在原 session。
 
 **大到值得派的一片，也大到輸得起整片。** `timeout_minutes` 上限 240，助理額度可能中途耗盡，
 context 也會滿。所以會跑很久、或會動到好幾個檔的一片，要用 `isolation: "worktree"` 派出去，並且
@@ -293,25 +293,29 @@ review 派工裡有 30 次沒交出 verdict，其中一次重審花了 6.7M toke
 
 **只有風險值得時才派獨立 review：** security/authentication、durable state、concurrency/backpressure、
 migration、破壞性／外部操作，或跨元件的大範圍語意。一般局部修改、文件、generated data 與
-test-only correction 由 owner 做 focused diff review。
+test-only correction 由 owner 自己讀。
+
+**review 排在最前面，而且它什麼都不跑。** 不管讀的人是獨立 session 還是 owner，他都在任何測試
+執行之前讀，讀的是設計上的缺陷：漏掉的地方、形狀不對的地方、沒人處理的情況、沒人講出來的風險
+決定。它不跑套件、不等套件，也不該收到任何測試收據——讀的人不是來執行程式的。
 
 **reviewer 帶著 findings 回來時：** 先把完整 finding set 寫下來，原 implementer 在同一個 sustained
-session 一次修完；reviewer 不切換角色去實作，也不要一個 finding 派一件 task。root 只確認聚焦修正。
+session 一次修完；reviewer 不切換角色去實作，也不要一個 finding 派一件 task。修正的 diff 由 root
+自己讀。
 
-**風險觸發 review 的 feature 或 batch 配一次獨立複審，而且要數輪數。** 同一輪裡並排跑兩個互補的 reviewer
-還是「一輪」，那不是這條在管的；這條管的是「改完再審一次」，它看起來免費，其實不是。這裡實測過
-的一條線：實作花 $30.90，四輪複審花 $57.39，是被審那個東西的 **1.9 倍**。
+**一次交付只配一次 review，而且就這一次。** 並排跑兩個互補的 reviewer 還是同一次 review，那不是
+這條在管的；這條管的是「改完再審一次」，它看起來免費，其實不是。這裡實測過的一條線：實作花
+$30.90，四輪複審花 $57.39，是被審那個東西的 **1.9 倍**。
 
-- **第二輪**只在第一輪找到「會復發的缺陷類型」時才派——同一個錯誤還躺在 reviewer 沒讀到的地方。
-  只是想確認某條 finding 修好了，不算理由：那題由當初紅過的那個測試回答。
-- **第三輪**要有一個寫下來、而且協調者看過的理由；或是符合下面兩個機械觸發條件之一。兩個都只看
-  修正的 diff 就能判斷，不需要判斷力，而且都來自同一條線的紀錄——那兩輪修正各自帶進了下一輪
-  複審才抓到的新缺陷：**(a) 這次修正動到 `main` 也在走的程式路徑**；**(b) 這次修正刪掉或弱化了
-  既有的 assertion。** 中了就派，兩個都沒中就寫理由，不然就停。
-- **超過三輪要問使用者。** 無條件多輪複審在這台機器上是被明確否決過的。
+- **修正不回送給 reviewer。**「那個修正到底有沒有效」由 commit 或 release build 時的那一次測試
+  回答，不是再找一個讀的人。
+- **測試紅了買一次修正，然後重跑同一個 run。** 它不會因此重開 review。兩次修正還沒綠，就停下來
+  告訴正在等的人。
+- **同一類缺陷撐過那次修正就停手。** 記 `architecture_hold`，把這個邊界交回給提出需求的人。
+  無條件多輪複審在這台機器上是被明確否決過的。
 
-比再派一輪便宜、而且通常才是對的做法：把 finding 送回寫這段程式的那個 session（它還握著脈絡），
-修正的 diff 你自己讀。
+比再找一個讀的人便宜、而且通常才是對的做法：把 finding 送回寫這段程式的那個 session
+（它還握著脈絡），修正的 diff 你自己讀。
 
 ### 2.0a 決定這件任務要不要獨立 worktree
 
@@ -385,8 +389,8 @@ root（你）
 **產出是程式碼、或是有人會照著做的決定時，child graph 的最後要有一個審查節點；root-owned
 graph 不能停在那裡。** 它最後一格必須是 `root：把審過的 delivery 落到 <target>，並驗證整合後
 的 tree`。派工前就把這一格、delivery branch、target branch 與 root landing owner 寫進 `plan`。
-reviewer 不是第五個工人，是一個讀者：只讀別人的產出、只寫「哪裡有問題」，不動手修（修是下一輪
-或人的事，就算它確定知道怎麼改也一樣——順手修掉等於把人本來該看到的判斷埋了）。五條規則：
+reviewer 不是第五個工人，是一個讀者：只讀別人的產出、只寫「哪裡有問題」，不動手修（修是那一次
+修正或人的事，就算它確定知道怎麼改也一樣——順手修掉等於把人本來該看到的判斷埋了）。五條規則：
 
 1. **它沒有參與生產。** 自審是量測過的差：模型審自己的產出會漏掉約三分之一的語意漂移，
    而且機制是結構性的不是能力問題——judge 偏好低困惑度的文本，而模型自己的輸出對它自己
@@ -1089,11 +1093,11 @@ slug 唯一匹配 retained receipt 時才推導，缺失、衝突、任意路徑
    source。這些 machine-authenticated hashes 是 caller 的 attestation，不是 broker 自己重新觀測
    Git、command 或 log 的證明。
 
-   驗證要按「問題」分工，不是換一個 owner 就重跑。實作者只交一份累積式 focused proof；審查者
-   讀 diff 與這份證據，除非有一個具名審查問題缺少 runtime 證據，否則不重跑；整合者沿用兩邊
-   receipt，只驗合併後的新 seam、修正 finding 或真的改變的 dependency，最後整班 release 只付
-   一次 exact full。相同 tree／question／environment 不得只為了再拿一次綠燈而重跑。已完整留下
-   診斷的非語意 runner 中斷只記一次，剩餘問題交給最後 exact gate。
+   驗證要按「問題」分工，不是換一個 owner 就重跑。審查者什麼都不跑、也沒有東西可以重跑：它是在
+   任何測試執行之前讀那份改動的，具名審查問題若缺證據就照實寫出來。實作者的證明就是它 commit 時
+   跑的那一次；整合者沿用那一次的 receipt，只驗合併後的新 seam、修正 finding 或真的改變的
+   dependency，最後整班 release 只付一次 exact full。相同 tree／question／environment 不得只為了
+   再拿一次綠燈而重跑。已完整留下診斷的非語意 runner 中斷只記一次，剩餘問題交給最後 exact gate。
 5. **Build**，最後做一次——在最後一份落地之後，中間不要 build。它會替換並重啟使用者正在用的 app，
    所以動手前先說一聲，而且要從 HEAD 建，不是從工作樹。
 6. **恢復，並且跟每條線要「內部盤點」和「給人的收尾」。** 在任何東西重新開始之前，分開問每一條線：

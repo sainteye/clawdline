@@ -87,7 +87,8 @@ not fill every available slot merely because the slots exist.
 - Make the ordinary implementation node a coherent, rollback-safe user outcome or architecture
   boundary. A file, test, checklist row, finding or small correction is not a slice. The node should
   normally carry the production change, relevant tests/docs, one representative failure proof per
-  new defect class, and one accumulated focused verification near the end.
+  new defect class, and the single test run that [`testing-policy.md`](testing-policy.md) puts at
+  the commit or the release build.
 - Keep a live implementer on that feature until the whole slice is mature. Add closely related
   discoveries and corrections to the same session instead of opening another tab for each one.
   Tiny work that cannot justify a full briefing remains root work.
@@ -101,13 +102,16 @@ not fill every available slot merely because the slots exist.
 - Dispatch one independent reviewer after the complete delivery unit only when its risk justifies
   it: security/authentication, durable state, concurrency/backpressure, migration,
   destructive/external effects, or broad cross-component semantics. Routine localized changes,
-  docs, generated data and test-only corrections use owner review and focused checks. Never send a
-  sequence of reviewers over intermediate fragments.
+  docs, generated data and test-only corrections are read by their owner. Either way that reader
+  comes **before any test run**, runs nothing itself and is owed no test receipt; see
+  [`testing-policy.md`](testing-policy.md). Never send a sequence of reviewers over intermediate
+  fragments.
 - On `CHANGES REQUIRED`, the reviewer first writes the complete finding set. The original
   implementer then fixes the whole set in the same sustained Session; do not open one correction
-  task per finding or make the reviewer switch from judge to implementer. Root checks the focused
-  correction evidence and opens another reviewer only when the correction materially changes the
-  design or crosses a new high-risk boundary.
+  task per finding or make the reviewer switch from judge to implementer. **The correction does not
+  go back to the reviewer** — there is one review per delivery. Root reads the correction itself,
+  and a defect class that survives it stops the work and goes to the person who asked for it rather
+  than into another review.
 - **A brief for destructive work states the decision basis, not the shape that was caught.** For work
   that deletes, overwrites or releases, write what the decision may rest on — *a path is checked from
   its root as spelled before any other spelling of it*; *a process is gone only when the system
@@ -137,9 +141,9 @@ a changed scope boundary, or a user-only decision. Normal cross-session reportin
 events: ownership boundary claimed, blocker materially changed, and delivery landed. Everything
 else stays in the working Session.
 
-**Proceed means prepare.** With no declared overlap, two lines implement, review, run their focused
-proof and pass the candidate gate at the same time as each other; no declared overlap is exactly
-the evidence that they may, and holding one of them back until the other has landed buys nothing.
+**Proceed means prepare.** With no declared overlap, two lines implement, take their one review and
+pass the candidate gate at the same time as each other; no declared overlap is exactly the evidence
+that they may, and holding one of them back until the other has landed buys nothing.
 The last step is not parallel. **Updating a ref on the same repository and target branch, and
 staging or committing in the shared checkout, happen one line at a time**, because two disjoint
 file sets still share one `main` and one index: the loser of a race overwrites a branch tip it

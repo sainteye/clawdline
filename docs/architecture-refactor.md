@@ -496,8 +496,9 @@ would increase coupling.
 
 ## Phase gate
 
-Every phase records before/after commits, keeps wire/store contracts stable, does focused proof and
-one phase-end exact-tree suite, adds no dependency cycle, and can be reverted as whole commits.
+Every phase records before/after commits, keeps wire/store contracts stable, pays for one
+phase-end exact-tree suite and no run before it, adds no dependency cycle, and can be reverted as
+whole commits.
 Approve only Phases 0–1 initially. Phase 2 begins only when all of these are true on one exact
 candidate commit tree:
 

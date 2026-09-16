@@ -81,8 +81,9 @@ receipt has been verified. See `docs/landing.md`.
 
 ## Focused proof
 
-The narrowest check that can answer one implementation or review question. It belongs to the node
-that changed or inspected the behavior. See `docs/verification-workflow.md`.
+The narrowest check that can answer one implementation question, run when only running the code can
+answer it. It belongs to the node that changed the behavior; a reviewer runs none and is owed none.
+See `docs/testing-policy.md` for when a delivery's one scheduled run happens.
 
 ## Exact-tree acceptance
 
@@ -130,7 +131,10 @@ separate facts. See `docs/dispatching.md` and `docs/api.md`.
   evaluation; the topology test rejects an unmapped heading or broken owner anchor.
 - `docs/dispatching.md` — when work becomes a task and how a graph is staged.
 - `docs/landing.md` — delivery, review, pending landing, and landed obligations.
-- `docs/verification-workflow.md` — focused proof, review, correction, and exact-tree acceptance.
+- `docs/testing-policy.md` — what deserves a test, how much to run, and the order a delivery goes
+  through; it wins wherever another page asks for more verification.
+- `docs/verification-workflow.md` — review, correction, the single test run, and exact-tree
+  acceptance.
 - `docs/handoff.md` — context transfer between sessions.
 - `docs/api.md` — HTTP and JSON contracts.
 - `docs/clawdline-protocol.html` — the public visual explanation of the complete protocol.

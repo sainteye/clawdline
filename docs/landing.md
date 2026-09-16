@@ -25,14 +25,16 @@ start of every conversation, including the ones that would never land anything.
   state, not a completion phrase.
 - After the landing record is durable, reconcile the delivery checkout and worktree inventory by
   the procedure below. A correct target commit beside unexplained residue is not a closed delivery.
-- The exact integrated-tree run is normally the **only full suite in the graph**. Implementers and
-  reviewers use focused proof; confirmation reruns the questions a correction changed. Reuse a
-  receipt only when repository, tree SHA, question, command digest and environment match. A second
-  full run requires a typed inconclusive first result, not a desire to reconfirm green.
-- One independent review seals its complete finding set before correction begins. All fixes from
-  that set form one correction wave even when their write sets run in parallel. A third review
-  requires `scope_changed`, `new_external_evidence`, or `systemic_pattern`; a recurring class after
-  that is an architecture hold, not permission for an unbounded review/correction loop.
+- The exact integrated-tree run is normally the **only full suite in the graph**, and by
+  [`testing-policy.md`](testing-policy.md) it is the only scheduled run in the whole delivery: the
+  reviewer ran nothing before it, and a red result buys one correction and then the same run again.
+  Reuse a receipt only when repository, tree SHA, question, command digest and environment match. A
+  second full run requires a typed inconclusive first result, not a desire to reconfirm green.
+- The one review happens before any test run and seals its complete finding set before correction
+  begins. All fixes from that set form one correction wave even when their write sets run in
+  parallel, and that wave does not go back to the reviewer: **there is one review per delivery.**
+  A defect class that survives it is an architecture hold and goes to the person who asked for the
+  work, not a second review.
   The receipt and verdict shapes are specified in
   [`verification-workflow.md`](verification-workflow.md).
 - **HEAD must compile standing alone, and a commit is the only thing that can break that.** It
@@ -177,8 +179,8 @@ exactly the case a derived queue keeps, because their children were still workin
   before the order is set instead of after somebody has re-measured.
 - **An empty `contended_paths` is permission to prepare, not permission to commit.** Two entries
   that share no path may run side by side right up to the edge of the shared tree: isolated
-  implementation, review, the focused proof and the candidate gate all happen at the same time, and
-  waiting for the slot before starting any of them buys nothing. What stays one line at a time is
+  implementation, its one review and the candidate gate all happen at the same time, and waiting
+  for the slot before starting any of them buys nothing. What stays one line at a time is
   the last step — **updating a ref on this repository and target branch, and staging or committing
   in the shared checkout**. Disjoint file sets do not protect those: two lines can still overwrite
   each other's `main`, or carry off what the other had left in the shared index. Only work in
