@@ -92,6 +92,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/events", s.events)
 	mux.HandleFunc("/v1/next/obligations", s.obligations)
 	mux.HandleFunc("/v1/next/schedules", s.schedules)
+	mux.HandleFunc("/v1/next/coordinator", s.coordinatorRoute)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.boardWrite(w, r)
