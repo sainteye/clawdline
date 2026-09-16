@@ -436,9 +436,10 @@ Credential rotation inside the same Cloud account/device/relay identity preserve
 conversation and its in-flight effects. Exact route objects flow through terminal, Git, shell,
 snippets, sent-message and keyboard surfaces. Row actions may report typed settlement while another
 row is open, and End may use inventory disappearance as its successful evidence without tearing
-down the confirmation underneath it. Composer delivery owns only the unchanged text/attachment
-payload it submitted; the later selection epoch alone neither leaves delivered text resendable nor
-authorizes clearing a newer draft.
+down the confirmation underneath it. The composer empties at submit and no settlement path writes
+into it: a send that fails in the browser may already have been delivered, so neither a delivery
+nor a failure returns text or attachments to the box (decided 2026-09-16, replacing the earlier
+rule where delivery cleared only the byte-identical payload it had submitted).
 
 `session/ui.js` is the fail-closed dependency-inversion seam. `main.js` installs one complete frozen
 binding table; missing names and non-functions throw. The boundary guard enumerates both direct and
