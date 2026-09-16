@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react"
-import type { SessionRow } from "@clawdline/contract"
+import { useEffect, useRef, useState, type RefObject } from "react"
+import type { ScheduleRow, SessionRow } from "@clawdline/contract"
+import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
 import { Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
@@ -14,16 +15,21 @@ import { Detail } from "./session/Detail.js"
 export function SessionsPage({
   rows,
   loaded,
+  arrived,
+  live,
   emptyAuthoritative,
-  error,
   selected,
   onSelect,
   onDid,
 }: {
   rows: SessionRow[]
+  /** The first reading has been answered, with a list or with a failure. */
   loaded: boolean
+  /** A list has arrived: the original's `S.arrived`. */
+  arrived: boolean
+  /** The stream is up: the original's `S.conn === "live"`. */
+  live: boolean
   emptyAuthoritative: boolean
-  error: string | null
   selected: string | null
   onSelect: (id: string | null) => void
   onDid: () => void
@@ -36,6 +42,16 @@ export function SessionsPage({
   const open = shown.find((r) => r.id === selected) ?? null
   const T = L.strings
 
+  // `Waits.list` and `listUnknown()` (`view/waits.js`). Nothing is drawn for
+  // the first 150ms; after that a skeleton stands in for the rows, and once up
+  // it stays 320ms. The first answer settles it — a failure is an answer too,
+  // and the stream opens only after one — and until then neither the list nor
+  // the detail head has anything true to say.
+  const wait = useWait(loaded)
+  const skeleton = wait === "shown"
+  const listUnknown = !arrived && wait !== "over"
+  const drawn = skeleton ? [] : shown
+
   // Every spinner in the list, handed to the one clock that drives them all.
   // Re-registered after each render because the rows are rebuilt: a canvas that
   // has left the document must leave the list with it.
@@ -44,44 +60,441 @@ export function SessionsPage({
     L.registerSpinners([...(listRef.current?.querySelectorAll<HTMLCanvasElement>("canvas.spin") ?? [])])
   })
 
+  // The empty state, `renderList`'s tail. Four cases told apart: nothing
+  // matches what was typed, there are genuinely no sessions, or nothing has
+  // arrived yet (a stream that is not up, or a reading that did not complete).
+  // The original's fifth, a browser that was refused, has no counterpart on
+  // this daemon. What the element holds is only rewritten when it is shown, as
+  // there, so a skeleton that has been taken down is still inside it, hidden.
+  const empty = !skeleton && drawn.length === 0 && !listUnknown
+  const homeEmpty = empty && rows.length === 0 && !filter
+  const said = useRef<"skel" | [string, string] | null>(null)
+  if (skeleton) said.current = "skel"
+  else if (empty) {
+    said.current = rows.length
+      ? [L.fillString(T.webEmptyFilterTitle, { q: filter }), T.webEmptyFilterHint]
+      : live && emptyAuthoritative
+        ? [T.noSession, T.webEmptyNoneHint]
+        : [T.webEmptyWaitTitle, T.webEmptyWaitHint]
+  }
+  const emptyClass = skeleton ? "skel" : "empty" + (homeEmpty ? " home-hero-list" : "")
+
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const ptrRef = useRef<HTMLDivElement>(null)
+  const ptrWord = usePullToRefresh(scrollRef, ptrRef, onDid)
+  const schedules = useSchedules(arrived)
+
   return (
     <main className="app" id="app" data-pane={open ? "detail" : "list"}>
       <section className="pane pane-list">
         <div className="filter-row">
+          {/* Every attribute here keeps a password manager out of a box that
+              filters a list (`index.html`). Uncontrolled, because a controlled
+              input writes a `value` attribute the original does not have. */}
           <input
             id="filter"
             type="search"
+            name="q7f3"
             placeholder={T.webFilterPlaceholder}
-            aria-label={T.webFilterLabel}
             autoComplete="off"
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
-            value={filter}
+            data-1p-ignore=""
+            data-lpignore="true"
+            data-bwignore=""
+            data-form-type="other"
+            aria-label={T.webFilterLabel}
             onChange={(e) => setFilter(e.target.value)}
           />
           <span className="slash">/</span>
+          {/* Saying what to start and picking where to start it. Both lead to a
+              sheet this page does not have — the command sheet with its
+              dictation and draft, and the start sheet with its places — and
+              this daemon serves neither the draft nor the places, so both are
+              here and disabled. */}
+          <button
+            className="start"
+            id="voice-go"
+            type="button"
+            title={T.webCommand}
+            aria-label={T.webCommandLabel}
+            aria-pressed="false"
+            disabled
+          >
+            <svg className="ico ico-mic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor"></rect>
+              <path
+                d="M5.75 11.75v0.5a6.25 6.25 0 0 0 12.5 0v-0.5M12 18.5V21"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              ></path>
+            </svg>
+            <svg className="ico ico-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="7" y="7" width="10" height="10" rx="2.5" fill="currentColor"></rect>
+            </svg>
+          </button>
+          <button
+            className="start"
+            id="start-go"
+            type="button"
+            title={T.webStart}
+            aria-label={T.webStartLabel}
+            disabled
+          >
+            <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+              <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"></path>
+            </svg>
+          </button>
         </div>
-        <div className="scroller list-scroll" id="list-scroll">
-          {error && <div className="empty">{error}</div>}
-          {!loaded && <div className="empty">{T.webLoading}</div>}
-          {loaded && shown.length === 0 && (
-            // An empty list only means "nothing is running" when the reading
-            // was complete; otherwise it means the reading could not see.
-            <div className="empty">
-              {emptyAuthoritative ? T.webCountNone : T.webEmptyWaitTitle}
-            </div>
-          )}
-          <ul className="rows" id="rows" role="listbox" aria-label="Sessions" tabIndex={0} ref={listRef}>
-            {shown.map((r) => (
+        <div className="scroller list-scroll" id="list-scroll" ref={scrollRef}>
+          <div className="ptr" id="ptr" ref={ptrRef}>
+            <span id="ptr-label">{ptrWord === "release" ? T.webPullRelease : ptrWord === "busy" ? T.webPullBusy : T.webPull}</span>
+          </div>
+          <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
+            {drawn.map((r) => (
               <Row key={r.id} row={r} open={r.id === selected} onSelect={onSelect} />
             ))}
           </ul>
+          <div className={emptyClass} id="list-empty" hidden={!skeleton && !empty}>
+            {said.current === "skel" ? (
+              <ListSkeleton />
+            ) : said.current ? (
+              <>
+                <b>{said.current[0]}</b>
+                {said.current[1]}
+              </>
+            ) : null}
+          </div>
+          <Schedules list={schedules} />
+        </div>
+        {/* Whether this device is told when a session waits. It stays hidden
+            until `Push` has decided, and this daemon serves no push key or
+            subscription, so nothing decides and it stays as marked up. */}
+        <div className="notify" id="notify" hidden>
+          <button className="go" id="notify-go" type="button" hidden>
+            <svg className="bell" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+              <circle cx="8" cy="1.7" r="1" fill="currentColor"></circle>
+              <path
+                fill="currentColor"
+                d="M8 2.2a3.9 3.9 0 0 1 3.9 3.9v2.6l1.05 1.75H3.05L4.1 8.7V6.1A3.9 3.9 0 0 1 8 2.2Z"
+              ></path>
+              <path fill="currentColor" d="M6.3 11.6h3.4a1.7 1.7 0 0 1-3.4 0Z"></path>
+            </svg>
+            <span id="notify-go-label">{T.webNotifyGo}</span>
+          </button>
+          <span className="say" id="notify-say"></span>
         </div>
       </section>
 
-      <Detail row={open} onBack={() => onSelect(null)} onDid={onDid} />
+      <Detail row={open} onBack={() => onSelect(null)} onDid={onDid} listUnknown={listUnknown} />
     </main>
   )
 }
 
+/**
+ * `Waiting` (`view/waits.js`) for the one wait this page has: armed at once,
+ * shown after `showAfter`, and once shown kept for `minShown` after it settles.
+ */
+function useWait(settled: boolean, showAfter = 150, minShown = 320): "armed" | "shown" | "over" {
+  const [phase, setPhase] = useState<"armed" | "shown" | "over">(settled ? "over" : "armed")
+  const shownAt = useRef(0)
+  useEffect(() => {
+    if (phase !== "armed" || settled) return
+    const timer = setTimeout(() => {
+      shownAt.current = Date.now()
+      setPhase("shown")
+    }, showAfter)
+    return () => clearTimeout(timer)
+  }, [phase, settled, showAfter])
+  useEffect(() => {
+    if (!settled || phase === "over") return
+    const left = phase === "armed" ? 0 : minShown - (Date.now() - shownAt.current)
+    if (left <= 0) {
+      setPhase("over")
+      return
+    }
+    const timer = setTimeout(() => setPhase("over"), left)
+    return () => clearTimeout(timer)
+  }, [phase, settled, minShown])
+  return phase
+}
+
+/** `drawListSkeleton`: the rows about to arrive, at fixed widths so it never reshuffles. */
+function ListSkeleton() {
+  const widths = [
+    [64, 41],
+    [78, 52],
+    [49, 37],
+    [71, 45],
+  ]
+  return (
+    <div role="status" aria-label={L.strings.webLoading}>
+      {widths.map(([line, sub], i) => (
+        <div className="skel-row" key={i}>
+          <span className="bar mark"></span>
+          <span className="bar line" style={{ width: `${line}%` }}></span>
+          <span className="bar sub" style={{ width: `${sub}%` }}></span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Pull to refresh, phones only (`input/edges.js`): with resistance, released
+ * past 62px it reads again and holds a 34px pad until the answer is in. The
+ * original reloads the page instead when it is stale; this page has no stale
+ * notice to answer.
+ */
+function usePullToRefresh(
+  scrollRef: RefObject<HTMLDivElement | null>,
+  padRef: RefObject<HTMLDivElement | null>,
+  refresh: () => void,
+): "pull" | "release" | "busy" {
+  const [word, setWord] = useState<"pull" | "release" | "busy">("pull")
+  const refreshRef = useRef(refresh)
+  refreshRef.current = refresh
+  useEffect(() => {
+    const scroller = scrollRef.current
+    const pad = padRef.current
+    if (!scroller || !pad) return
+    const THRESHOLD = 62
+    let startY = 0
+    let pulling = false
+    let distance = 0
+    let busy = false
+    let alive = true
+    const start = (ev: TouchEvent) => {
+      if (busy || scroller.scrollTop > 0 || ev.touches.length !== 1) return
+      startY = ev.touches[0].clientY
+      pulling = true
+      distance = 0
+      pad.classList.add("dragging")
+    }
+    const move = (ev: TouchEvent) => {
+      if (!pulling) return
+      const raw = ev.touches[0].clientY - startY
+      if (raw <= 0) {
+        distance = 0
+        pad.style.height = "0px"
+        return
+      }
+      distance = Math.min(90, Math.pow(raw, 0.82))
+      pad.style.height = distance + "px"
+      setWord(distance >= THRESHOLD ? "release" : "pull")
+    }
+    const end = () => {
+      if (!pulling) return
+      pulling = false
+      pad.classList.remove("dragging")
+      if (distance >= THRESHOLD && !busy) {
+        busy = true
+        setWord("busy")
+        pad.style.height = "34px"
+        void Promise.resolve(refreshRef.current()).then(() => {
+          setTimeout(() => {
+            if (!alive) return
+            pad.style.height = "0px"
+            setWord("pull")
+            busy = false
+          }, 260)
+        })
+      } else {
+        pad.style.height = "0px"
+      }
+    }
+    scroller.addEventListener("touchstart", start, { passive: true })
+    scroller.addEventListener("touchmove", move, { passive: true })
+    scroller.addEventListener("touchend", end, { passive: true })
+    scroller.addEventListener("touchcancel", end, { passive: true })
+    return () => {
+      alive = false
+      scroller.removeEventListener("touchstart", start)
+      scroller.removeEventListener("touchmove", move)
+      scroller.removeEventListener("touchend", end)
+      scroller.removeEventListener("touchcancel", end)
+    }
+  }, [scrollRef, padRef])
+  return word
+}
+
+/**
+ * The schedule inventory, read as `net/schedules.js` reads it: not before a
+ * list has arrived, then once a minute while the page is visible, and at once
+ * on return if a minute was missed. A failed read draws nothing — the section
+ * stays absent before any answer and keeps the last truthful list after one.
+ */
+function useSchedules(arrived: boolean): ScheduleRow[] | null {
+  const [list, setList] = useState<ScheduleRow[] | null>(null)
+  useEffect(() => {
+    if (!arrived) return
+    const LANE_MS = 60000
+    let alive = true
+    let inFlight = false
+    let last = 0
+    const read = () => {
+      if (inFlight) return
+      inFlight = true
+      last = Date.now()
+      client
+        .schedules()
+        .then((d) => {
+          if (alive) setList(d.schedules ?? [])
+        })
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false
+        })
+    }
+    read()
+    let lane: ReturnType<typeof setInterval> | null = document.hidden ? null : setInterval(read, LANE_MS)
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (lane !== null) clearInterval(lane)
+        lane = null
+        return
+      }
+      if (lane !== null) return
+      lane = setInterval(read, LANE_MS)
+      if (Date.now() - last >= LANE_MS) read()
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      alive = false
+      if (lane !== null) clearInterval(lane)
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
+  }, [arrived])
+  return list
+}
+
+/**
+ * `details#schedules`, `renderSchedules` (`view/schedules.js`).
+ *
+ * Hidden until an answer lands, and then hidden only when it is empty and this
+ * browser may not write. This daemon's `/v1/health` carries no `write` flag and
+ * the composer treats the page as writable until a send is refused, so the
+ * section is shown for an empty answer as well.
+ *
+ * The `+` and each row lead to the schedule form and the run-history sheet,
+ * which this page does not have, so the `+` is disabled and a row does nothing
+ * when pressed. The rows keep the original's `role="button"` shape.
+ */
+function Schedules({ list }: { list: ScheduleRow[] | null }) {
+  const T = L.strings
+  const schedules = list ?? []
+  // "Schedules" and the list's name are English in the original's markup and
+  // nothing paints them, so they are English here.
+  return (
+    <details className="schedules" id="schedules" open hidden={list === null}>
+      <summary
+        onClick={(ev) => {
+          // The button sits inside the summary; its press must not fold the list.
+          if ((ev.target as Element).closest("#schedule-new")) ev.preventDefault()
+        }}
+      >
+        <span>Schedules</span>
+        <span className="count" id="schedules-count">
+          {schedules.length ? String(schedules.length) : ""}
+        </span>
+        <button
+          className="add"
+          id="schedule-new"
+          type="button"
+          title={T.webScheduleNew}
+          aria-label={T.webScheduleNew}
+          disabled
+        >
+          <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false">
+            <path d="M7 2.6v8.8M2.6 7h8.8" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"></path>
+          </svg>
+        </button>
+      </summary>
+      <ul className="schedule-rows" id="schedule-rows" aria-label="Scheduled tasks">
+        {schedules.map((s) => (s.unreadable ? <InvalidSchedule key={s.id} row={s} /> : <ScheduleItem key={s.id} row={s} />))}
+      </ul>
+    </details>
+  )
+}
+
+/**
+ * `validRow`. What this wire does not carry is left out rather than guessed:
+ * there is no last-run outcome (only its task id), so the result is the
+ * original's "—"; no next firing time, so the next-run line is empty rather
+ * than claiming there is none; no missed-run time; and no project record, so
+ * the project is the schedule's own directory, named by its last component as
+ * `scheduleRunsHTML` names a run's, with no mark to draw.
+ */
+function ScheduleItem({ row }: { row: ScheduleRow }) {
+  const T = L.strings
+  const parts = row.dir.split("/").filter(Boolean)
+  const label = row.dir === "/" ? "/" : (parts.pop() ?? "")
+  const project = row.dir ? { label, path: row.dir } : null
+  // `nextLine` in the original; empty because nothing here says when it fires next.
+  const nextLine: string = ""
+  return (
+    <li className="schedule-row" data-id={row.id} role="button" tabIndex={0} style={{ cursor: "pointer" }}>
+      <div className="schedule-name">
+        <span
+          className="enabled-dot"
+          data-enabled={row.enabled ? "1" : "0"}
+          role="img"
+          aria-label={row.enabled ? T.webScheduleEnabled : T.webScheduleDisabled}
+        ></span>
+        <span className="schedule-title">{row.name || "Untitled schedule"}</span>
+      </div>
+      <span className="schedule-result" data-state="none">
+        —
+      </span>
+      <div className="schedule-meta">
+        {project && (
+          <span className="schedule-project">
+            <ScheduleMark />
+            <span className="schedule-project-name" title={project.path}>
+              {project.label}
+            </span>
+          </span>
+        )}
+        {project && nextLine && (
+          <span className="schedule-meta-sep" aria-hidden="true">
+            {" · "}
+          </span>
+        )}
+        <time className="schedule-next">{nextLine}</time>
+      </div>
+    </li>
+  )
+}
+
+/** The project mark, drawn by the rows' code; with no icon it draws nothing and is marked so. */
+function ScheduleMark() {
+  const ref = useRef<HTMLCanvasElement>(null)
+  const [none, setNone] = useState(false)
+  useEffect(() => {
+    setNone(!L.paintIcon(ref.current, undefined, 3))
+  }, [])
+  return <canvas className={none ? "schedule-project-mark none" : "schedule-project-mark"} aria-hidden="true" ref={ref} />
+}
+
+/**
+ * `invalidRow`. The original names the file and the parse error; this wire has
+ * neither, so the row is named by the schedule and the error is the
+ * original's own fallback sentence (English in its source, as here).
+ */
+function InvalidSchedule({ row }: { row: ScheduleRow }) {
+  return (
+    <li className="schedule-row invalid">
+      <div className="schedule-name">
+        <span className="enabled-dot" data-enabled="invalid" role="img" aria-label="Invalid"></span>
+        <span className="schedule-title">{row.name || "Invalid schedule"}</span>
+      </div>
+      <span className="schedule-result" data-state="invalid">
+        invalid
+      </span>
+      <p className="schedule-error">The schedule could not be read.</p>
+    </li>
+  )
+}
