@@ -124,9 +124,10 @@ Verification follows the question, not the role:
   `git write-tree`.
 - Use a fresh private `TMPDIR`. `./test.sh` owns the machine-wide compile lock; exit 75 means busy,
   not a red suite. Never compile around the queue or kill a holder.
-- Accumulate related edits, run one representative red mutation per new failure class, and perform
-  the cheapest proof that answers the delivery question. A docs/static slice does not buy a Swift
-  compile merely for ceremony.
+- Accumulate related edits and perform the cheapest proof that answers the delivery question. A new
+  regression test must be able to fail on the old code — see *A test that cannot fail proves
+  nothing* — but that is read or run once, not recorded as a receipt. A docs/static slice does not
+  buy a Swift compile merely for ceremony.
 - One release candidate normally gets one exact full suite, owned by the landing root. A second
   full requires typed `inconclusive_environment` evidence.
 - The implementer proves one accumulated focused receipt; the reviewer reads it and does not rerun
@@ -173,12 +174,14 @@ count matters, inspect the source bytes or typed record and keep units attached 
 For phone/Cloud document defects, inspect the canonical stored artifact and its scoped Cloud
 identity. A pasted excerpt is a new artifact and cannot prove what the phone rendered.
 
-### A guard must be able to go red
+### A test that cannot fail proves nothing
 
-Every materially new failure class gets one representative baseline red, focused mutation, or
-failure injection. A presence-only assertion is insufficient when removing the protected behavior
-can still leave it green. See the repository guard proofs in
-[`docs/verification-workflow.md`](docs/verification-workflow.md#phase-01-repository-guards).
+A regression test must fail on the code it is about, and an assertion that stays green while the
+behavior it protects is removed is not protecting anything. Read it against the old code, or run it
+there once, and say which you did. That is the whole obligation: there are no stored red proofs, no
+mutation receipt per failure class, and no check over the checks — those cost more than they caught
+and were removed on 2026-09-15. What deserves a test at all is
+[`docs/testing-policy.md`](docs/testing-policy.md).
 
 ### Before moving a file, list what names it — that costs nothing, and testing costs four minutes
 

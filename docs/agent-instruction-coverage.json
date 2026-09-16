@@ -94,8 +94,8 @@
     {"id":"phone-evidence","root_heading":"A defect on the phone is read from a file, never from a paste","clauses":[
       {"id":"phone-defect-uses-canonical-artifact","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A defect on the phone is read from a file, never from a paste","terms":["canonical stored artifact","pasted excerpt is a new artifact"]}
     ]},
-    {"id":"guard-red","root_heading":"A guard must be able to go red","clauses":[
-      {"id":"representative-red-proof","disposition":"executable_guard","owner":"docs/verification-workflow.md","anchor":"## Phase 0–1 repository guards","terms":["mutation returned 1","guard proofs"],"guard":"Tests/agent-instruction-topology.mjs"},
+    {"id":"guard-red","root_heading":"A test that cannot fail proves nothing","clauses":[
+      {"id":"regression-test-can-fail","disposition":"remains_global","owner":"AGENTS.md","anchor":"### A test that cannot fail proves nothing","terms":["must fail on the code it is about","no stored red proofs"]},
       {"id":"false-green-rationale","disposition":"archived_incident_rationale","rationale_owner":"docs/hard-problems.md","rationale_anchor":"### What would have shown it sooner","terms":["Prove the guard red on the real subject"]}
     ]},
     {"id":"referrer-enumeration","root_heading":"Before moving a file, list what names it — that costs nothing, and testing costs four minutes","clauses":[

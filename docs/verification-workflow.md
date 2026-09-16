@@ -63,8 +63,9 @@ coherent implementation batch
 ```
 
 The unit is a rollback-safe user outcome or architecture boundary, not a file, test, checklist row
-or finding. Implementation uses one representative red/failure-injection proof per materially new
-failure class, not one compiler run per test. Independent review is required for high-risk
+or finding. A new regression test must be able to fail on the code it is about, checked by reading
+or running it once rather than recorded as a proof receipt; see
+[`testing-policy.md`](testing-policy.md). Independent review is required for high-risk
 boundaries (security/authentication, durable state, concurrency, migration, destructive/external
 effects, or broad cross-component semantics); routine localized/docs/generated/test-only work uses
 owner review. When present, review answers the three named axes and seals the complete finding set
@@ -328,7 +329,7 @@ registered group ran.
 - routine localized/docs/generated/test-only review tasks: 0;
 - risk-triggered review/correction waves: at most 1/1;
 - third reviews below 5%, all with typed reason;
-- materially new failure classes with one representative red/mutation receipt: 100%;
+- regression tests whose ability to fail on the old code was read or run once: 100%;
 - coordination messages without an observed collision, dependency, boundary change or user decision: 0;
 - code-task verification valid: 100%;
 - exact-tree first-pass rate at least 90%;
