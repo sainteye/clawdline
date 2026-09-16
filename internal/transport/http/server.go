@@ -8,6 +8,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -16,12 +17,17 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/process"
+	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
+	"github.com/sainteye/clawdline-go/internal/app"
+	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/config"
 )
 
 type Server struct {
-	cfg   config.Config
-	proxy *httputil.ReverseProxy
+	cfg       config.Config
+	proxy     *httputil.ReverseProxy
+	inventory app.Inventory
 }
 
 func New(cfg config.Config) (*Server, error) {
@@ -44,12 +50,23 @@ func New(cfg config.Config) (*Server, error) {
 			"detail":   err.Error(),
 		})
 	}
-	return &Server{cfg: cfg, proxy: proxy}, nil
+	return &Server{
+		cfg:   cfg,
+		proxy: proxy,
+		inventory: app.Inventory{
+			Process:   process.New(),
+			Terminals: []ports.TerminalHost{terminal.NewTmux()},
+		},
+	}, nil
 }
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/health", s.health)
+	// A shadow route, not the real one. It runs beside /v1/sessions so both can
+	// be read for the same machine at the same moment; the real route is taken
+	// over only once the payloads agree.
+	mux.HandleFunc("/v1/next/sessions", s.nextSessions)
 	mux.Handle("/", s.proxy)
 	return mux
 }
@@ -59,12 +76,30 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok":       true,
+		"ok":        true,
 		"served_by": "clawdline-go",
-		"port":     s.cfg.Port,
-		"upstream": s.cfg.UpstreamPort,
-		"dir":      s.cfg.Dir,
-		"at":       time.Now().Unix(),
+		"port":      s.cfg.Port,
+		"upstream":  s.cfg.UpstreamPort,
+		"dir":       s.cfg.Dir,
+		"at":        time.Now().Unix(),
+	})
+}
+
+// nextSessions publishes this daemon's own reading of the machine.
+func (s *Server) nextSessions(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	inv := s.inventory.Read(ctx)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"served_by": "clawdline-go",
+		"sessions":  inv.Sessions,
+		"scan": map[string]any{
+			"complete":   inv.Complete,
+			"provenance": inv.Provenance,
+			"notes":      inv.Notes,
+		},
+		"at": inv.ObservedAt.Unix(),
 	})
 }
 
