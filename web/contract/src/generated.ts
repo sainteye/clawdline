@@ -328,6 +328,14 @@ export interface ScheduleRow {
   lastRun: number
   lastTask: string
   name: string
+
+  /**
+   * Present and true when this schedule's stored spelling did not parse. It is
+   * switched off, and `when` carries the spelling as written rather than a parsed
+   * value — otherwise an unreadable row renders as `every 0s`, which reads like a
+   * setting somebody chose.
+   */
+  unreadable?: boolean
   when: string
 }
 

@@ -12,3 +12,8 @@
 
 # Release output
 /dist/
+
+# The console's build output and its dependencies. The source and the lockfile
+# are the record; 235 kB of hashed bundle regenerated on every build is not.
+node_modules/
+web/*/dist/

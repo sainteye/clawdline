@@ -99,8 +99,9 @@ CREATE TABLE IF NOT EXISTS schedules (
   brief     TEXT    NOT NULL,
   claims    TEXT    NOT NULL DEFAULT '[]',
   enabled   INTEGER NOT NULL DEFAULT 1,
-  last_run  INTEGER NOT NULL DEFAULT 0,
-  last_task TEXT    NOT NULL DEFAULT ''
+  last_run   INTEGER NOT NULL DEFAULT 0,
+  last_task  TEXT    NOT NULL DEFAULT '',
+  first_seen INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS coordinator (
   id              INTEGER PRIMARY KEY CHECK (id = 1),
@@ -123,6 +124,52 @@ CREATE TABLE IF NOT EXISTS board_commands (
 `
 
 // Open prepares the store under the daemon's own state root.
+// migrate adds columns that CREATE TABLE IF NOT EXISTS cannot.
+//
+// A store that already exists keeps its old shape forever under that
+// statement, so a column added later is missing exactly where it matters — on
+// the machines that have been running longest. Each step is stated as what it
+// wants rather than as a version number, so running it twice is a no-op and a
+// store can arrive here from any age.
+func migrate(db *sql.DB) error {
+	steps := []struct {
+		table, column, ddl string
+	}{
+		{"schedules", "first_seen", "ALTER TABLE schedules ADD COLUMN first_seen INTEGER NOT NULL DEFAULT 0"},
+	}
+	for _, step := range steps {
+		has, err := hasColumn(db, step.table, step.column)
+		if err != nil {
+			return err
+		}
+		if has {
+			continue
+		}
+		if _, err := db.Exec(step.ddl); err != nil {
+			return fmt.Errorf("%s.%s: %w", step.table, step.column, err)
+		}
+	}
+	return nil
+}
+
+func hasColumn(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
+}
+
 func Open(dir string) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
@@ -145,6 +192,9 @@ func Open(dir string) (*Store, error) {
 		}
 	}
 	if _, err := db.Exec(schema); err != nil {
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
 		return nil, err
 	}
 	// The directory is already 0700, but the files carry receipts and the
@@ -385,49 +435,98 @@ func (s *Store) SaveSchedule(ctx context.Context, sc schedule.Schedule) error {
 	}
 	_, err := s.db.ExecContext(ctx,
 		`INSERT OR REPLACE INTO schedules
-		 (id, name, spec, assistant, dir, brief, claims, enabled, last_run, last_task)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 (id, name, spec, assistant, dir, brief, claims, enabled, last_run, last_task, first_seen)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		sc.ID, sc.Name, sc.When.String(), sc.Assistant, sc.Dir, sc.Brief,
-		string(claims), enabled, unixOrZero(sc.LastRun), sc.LastTask)
+		string(claims), enabled, unixOrZero(sc.LastRun), sc.LastTask,
+		unixOrZero(firstSeenOrNow(sc.FirstSeen)))
 	return err
 }
 
-// Schedules returns everything stored.
+// Schedules returns everything stored, stamping anything it is seeing for the
+// first time.
+//
+// The stamp is written here rather than at save time because a row can enter
+// this store without passing through save: restored from a backup, copied from
+// another machine, or written by hand. Those are exactly the rows that used to
+// fire the instant the clock ticked, so the sighting is recorded wherever the
+// row is first read.
 func (s *Store) Schedules(ctx context.Context) ([]schedule.Schedule, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, spec, assistant, dir, brief, claims, enabled, last_run, last_task
+		`SELECT id, name, spec, assistant, dir, brief, claims, enabled, last_run, last_task, first_seen
 		 FROM schedules ORDER BY name ASC`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []schedule.Schedule{}
+	unseen := []string{}
+	now := time.Now()
 	for rows.Next() {
 		var sc schedule.Schedule
 		var spec, claims string
-		var enabled, last int64
+		var enabled, last, seen int64
 		if err := rows.Scan(&sc.ID, &sc.Name, &spec, &sc.Assistant, &sc.Dir,
-			&sc.Brief, &claims, &enabled, &last, &sc.LastTask); err != nil {
+			&sc.Brief, &claims, &enabled, &last, &sc.LastTask, &seen); err != nil {
+			rows.Close()
 			return nil, err
 		}
+		if seen > 0 {
+			sc.FirstSeen = time.Unix(seen, 0)
+		} else {
+			sc.FirstSeen = now
+			unseen = append(unseen, sc.ID)
+		}
+		sc.Spec = spec
+		if last > 0 {
+			sc.LastRun = time.Unix(last, 0)
+		}
+		_ = json.Unmarshal([]byte(claims), &sc.Claims)
+
 		when, err := schedule.ParseWhen(spec)
 		if err != nil {
 			// A schedule whose spelling we cannot read is disabled rather than
 			// guessed at: firing it on a guessed clock is worse than not
-			// firing it and saying so.
+			// firing it and saying so. It is still returned, carrying the
+			// spelling it actually has, because a row that vanishes is a row
+			// nobody can fix.
 			sc.Enabled = false
+			sc.Unreadable = true
 			out = append(out, sc)
 			continue
 		}
 		sc.When = when
 		sc.Enabled = enabled == 1
-		if last > 0 {
-			sc.LastRun = time.Unix(last, 0)
-		}
-		_ = json.Unmarshal([]byte(claims), &sc.Claims)
 		out = append(out, sc)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	// The cursor is closed before writing, because this store holds a single
+	// connection: an UPDATE issued while the rows are still open would wait for
+	// a reader that is waiting for it.
+	rows.Close()
+
+	for _, id := range unseen {
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE schedules SET first_seen = ? WHERE id = ? AND first_seen = 0`,
+			now.Unix(), id); err != nil {
+			// A sighting that could not be recorded is not fatal to reading,
+			// but it must not silently become "seen": the value returned above
+			// already says `now`, so this read will not fire it, and the next
+			// read will try to stamp it again.
+			return out, nil
+		}
+	}
+	return out, nil
+}
+
+// firstSeenOrNow stamps a schedule that arrives without a sighting.
+func firstSeenOrNow(t time.Time) time.Time {
+	if t.IsZero() {
+		return time.Now()
+	}
+	return t
 }
 
 // unixOrZero keeps a never-run schedule at 0 rather than at the Unix value of

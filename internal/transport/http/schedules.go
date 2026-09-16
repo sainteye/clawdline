@@ -33,17 +33,30 @@ func (s *Server) schedules(w http.ResponseWriter, r *http.Request) {
 	rows := make([]contract.ScheduleRow, 0, len(all))
 	for _, sc := range all {
 		rows = append(rows, contract.ScheduleRow{
-			ID:        sc.ID,
-			Name:      sc.Name,
-			When:      sc.When.String(),
-			Assistant: contract.Assistant(sc.Assistant),
-			Dir:       sc.Dir,
-			Enabled:   sc.Enabled,
-			LastRun:   lastRun(sc.LastRun),
-			LastTask:  sc.LastTask,
+			ID:         sc.ID,
+			Name:       sc.Name,
+			When:       whenText(sc),
+			Unreadable: sc.Unreadable,
+			Assistant:  contract.Assistant(sc.Assistant),
+			Dir:        sc.Dir,
+			Enabled:    sc.Enabled,
+			LastRun:    lastRun(sc.LastRun),
+			LastTask:   sc.LastTask,
 		})
 	}
 	writeJSON(w, contract.ScheduleList{Schedules: rows})
+}
+
+// whenText is what this schedule says about its own clock.
+//
+// For a schedule that parsed, that is the normalised form. For one that did
+// not, it is the spelling as stored: the parsed value is a zero, and printing a
+// zero as `every 0s` would present the failure as a setting.
+func whenText(sc schedule.Schedule) string {
+	if sc.Unreadable {
+		return sc.Spec
+	}
+	return sc.When.String()
 }
 
 // scheduleSave accepts one schedule.

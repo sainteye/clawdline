@@ -61,15 +61,35 @@ var MinInterval = time.Minute
 
 // Schedule is one stored template.
 type Schedule struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	When      When      `json:"when"`
-	Assistant string    `json:"assistant"`
-	Dir       string    `json:"dir"`
-	Brief     string    `json:"brief"`
-	Claims    []string  `json:"claims"`
-	Enabled   bool      `json:"enabled"`
-	LastRun   time.Time `json:"lastRun,omitempty"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	When When   `json:"when"`
+	// Spec is the stored spelling, kept verbatim. A schedule whose spelling
+	// could not be parsed still has to be shown as what it actually says:
+	// rendering its zero When as "every 0s" turns "we could not read this"
+	// into a value, and a value is something a person will act on.
+	Spec string `json:"spec"`
+	// Unreadable is set when Spec did not parse. Such a schedule is switched
+	// off rather than guessed at, and that has to be distinguishable from one
+	// a person switched off.
+	Unreadable bool      `json:"unreadable,omitempty"`
+	Assistant  string    `json:"assistant"`
+	Dir        string    `json:"dir"`
+	Brief      string    `json:"brief"`
+	Claims     []string  `json:"claims"`
+	Enabled    bool      `json:"enabled"`
+	LastRun    time.Time `json:"lastRun,omitempty"`
+	// FirstSeen is when this daemon first had this schedule in front of it and
+	// could have fired it.
+	//
+	// It exists because "never run" and "due now" are not the same thing, and
+	// treating them as the same opened a real assistant session twice in this
+	// project's short life. The first time the interval was three seconds and
+	// a floor fixed it. The second time the interval was an hour and perfectly
+	// legal: a row that arrived in the store with last_run at zero fired on
+	// the next tick. The rate was never the shape of the problem — the first
+	// fire was.
+	FirstSeen time.Time `json:"firstSeen,omitempty"`
 	// LastTask is the task the previous run created. A schedule does not come
 	// due again while its own last run is still working: firing on a clock
 	// while the previous turn is unfinished is how a queue becomes a pile.
@@ -78,10 +98,9 @@ type Schedule struct {
 
 // Due reports whether this schedule should fire now.
 //
-// A schedule that has never run is due immediately for an interval, because
-// the alternative is a first run that happens at an arbitrary time nobody
-// chose. A daily one is due once its minute has passed today and it has not
-// run today — which is deliberately not "within the same minute": a daemon
+// An interval schedule is due one interval after the later of its last run and
+// the moment this daemon first saw it — never on sight. A daily one is due once
+// its minute has passed today and it has not run today — which is deliberately not "within the same minute": a daemon
 // that was asleep at 09:00 should still run the 09:00 job when it wakes,
 // rather than silently skip a day.
 func (s Schedule) Due(now time.Time, lastStillRunning bool) bool {
@@ -95,10 +114,22 @@ func (s Schedule) Due(now time.Time, lastStillRunning bool) bool {
 		}
 		return !sameDay(s.LastRun, now)
 	}
-	if s.LastRun.IsZero() {
-		return true
+	// An interval counts from the later of its last run and the moment this
+	// daemon first saw it. A schedule somebody creates now first fires one
+	// interval from now, which is the time they chose; the alternative, firing
+	// at once, is not "the time nobody chose" made safe, it is every restored
+	// or copied schedule in the store firing together.
+	base := s.FirstSeen
+	if s.LastRun.After(base) {
+		base = s.LastRun
 	}
-	return now.Sub(s.LastRun) >= s.When.Every
+	if base.IsZero() {
+		// Nothing has claimed to have seen this schedule, so nothing may fire
+		// it. A caller that has not recorded a first sighting has not finished
+		// loading it, and firing on an unloaded row is how this went wrong.
+		return false
+	}
+	return now.Sub(base) >= s.When.Every
 }
 
 func sameDay(a, b time.Time) bool {

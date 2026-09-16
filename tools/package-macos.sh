@@ -20,14 +20,26 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" \
   -o "$APP/Contents/MacOS/clawdline" ./cmd/clawdline
 swiftc -O -o "$APP/Contents/MacOS/$NAME" shell/darwin/main.swift
 
-# The console travels with the app. It is read from the Swift checkout at build
-# time and copied, never linked: a bundle that depends on a directory outside
-# itself is not a bundle.
-WEB="${CLAWDLINE_WEB_SOURCE:-$HOME/code/clawdline/Resources/web}"
+# The console travels with the app, copied and never linked: a bundle that
+# depends on a directory outside itself is not a bundle.
+#
+# It is this repository's own React console now. The Swift app's console can
+# still be used by pointing CLAWDLINE_WEB_SOURCE at it, which is how the two
+# get compared on one daemon — but it is no longer what ships, because a build
+# that reaches into another checkout is a build that breaks on any machine but
+# this one.
+if [ -n "${CLAWDLINE_WEB_SOURCE:-}" ]; then
+  WEB="$CLAWDLINE_WEB_SOURCE"
+else
+  echo "building the console…"
+  ( cd web && npm install --silent && npm run build --silent )
+  WEB="web/console/dist"
+fi
 if [ -d "$WEB" ]; then
   cp -R "$WEB" "$APP/Contents/Resources/web"
 else
-  echo "warning: no console at $WEB; the app will have nothing to show" >&2
+  echo "error: no console at $WEB; refusing to ship an app with nothing to show" >&2
+  exit 1
 fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST

@@ -1,0 +1,14 @@
+{
+  "name": "clawdline-web",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": ["contract", "core", "console"],
+  "scripts": {
+    "dev": "npm run dev --workspace @clawdline/console",
+    "build": "npm run build --workspace @clawdline/console",
+    "check": "tsc --noEmit -p console"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,304 @@
+/* Tokens first, so a second front end can read the palette without reading the
+   layout. The names say what a thing means, never what colour it is: `overdue`
+   survives a redesign, `amber` does not. */
+:root {
+  --bg: #0d1013;
+  --bg-raised: #14181d;
+  --bg-sunken: #090b0e;
+  --line: #222a32;
+  --line-soft: #1a2027;
+  --text: #dfe6ee;
+  --text-dim: #8b98a6;
+  --text-faint: #5d6a78;
+
+  --accent: #5eb0ff;
+  --working: #58c98a;
+  --waiting-you: #ffb454;
+  --overdue: #ff6b6b;
+  --unknown: #9d8cff;
+  --idle: #5d6a78;
+
+  --radius: 10px;
+  --gutter: 16px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+/* ---------- header ---------- */
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 18px 0 14px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+
+.brand {
+  font-weight: 650;
+  font-size: 15px;
+  letter-spacing: 0.2px;
+}
+
+.brand .go {
+  color: var(--text-faint);
+  font: 11px/1 var(--mono);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 5px;
+  margin-left: 7px;
+  vertical-align: 1px;
+}
+
+.topbar .spacer { flex: 1 1 auto; }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 11px/1 var(--mono);
+  color: var(--text-dim);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--idle);
+  flex: none;
+}
+.dot.on { background: var(--working); box-shadow: 0 0 0 3px rgb(88 201 138 / 0.15); }
+.dot.off { background: var(--overdue); }
+.dot.unknown { background: var(--unknown); }
+
+/* ---------- layout ---------- */
+
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 20px;
+  padding: 18px 0 40px;
+  align-items: start;
+  overflow: auto;
+  flex: 1;
+}
+
+@media (max-width: 900px) {
+  .columns { grid-template-columns: minmax(0, 1fr); }
+}
+
+.panel {
+  background: var(--bg-raised);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.panel > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.35px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.panel > header .count {
+  margin-left: auto;
+  font: 11px/1 var(--mono);
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.empty {
+  padding: 16px 14px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+/* An empty list and an unread list must not look the same. */
+.empty.unread { color: var(--unknown); }
+
+/* ---------- sessions ---------- */
+
+.session {
+  display: grid;
+  grid-template-columns: 3px 1fr auto;
+  gap: 0 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.session:last-child { border-bottom: 0; }
+
+.session .bar { background: var(--idle); }
+.session[data-work="working"] .bar { background: var(--working); }
+.session[data-work="waiting_you"] .bar,
+.session[data-work="milestone_complete"] .bar { background: var(--waiting-you); }
+.session[data-work="unknown"] .bar { background: var(--unknown); }
+.session[data-work="waiting_session"] .bar,
+.session[data-work="holding"] .bar { background: var(--accent); }
+
+.session .body { padding: 11px 0 11px 2px; min-width: 0; }
+
+.session .title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.session .name {
+  font-weight: 560;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session .who {
+  font: 10px/1 var(--mono);
+  color: var(--text-faint);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 3px 4px;
+  flex: none;
+}
+
+/* No direction:rtl here. It truncates from the useful end, but it also moves
+   the leading slash of a path to the far side, so /Users/x/code/y is drawn as
+   Users/x/code/y/ — a quiet corruption of the one field a person scans for. */
+.session .meta {
+  margin-top: 4px;
+  font: 11px/1.4 var(--mono);
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session .right {
+  padding: 11px 14px 11px 0;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.work {
+  font: 11px/1 var(--mono);
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.work[data-work="working"] { color: var(--working); }
+.work[data-work="waiting_you"],
+.work[data-work="milestone_complete"] { color: var(--waiting-you); }
+.work[data-work="unknown"] { color: var(--unknown); }
+
+/* How a reading was obtained, shown because a registry fact and a screen guess
+   are not the same fact. */
+.evidence {
+  font: 10px/1 var(--mono);
+  color: var(--text-faint);
+}
+.evidence[data-e="screen"], .evidence[data-e="none"] { color: var(--unknown); }
+
+.blocked {
+  font: 10px/1 var(--mono);
+  color: var(--waiting-you);
+}
+
+/* ---------- obligations ---------- */
+
+.ob {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.ob:last-child { border-bottom: 0; }
+
+.ob .kind {
+  font: 10px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-faint);
+  width: 74px;
+  flex: none;
+}
+.ob[data-esc="aging"] .kind { color: var(--waiting-you); }
+.ob[data-esc="overdue"] .kind { color: var(--overdue); }
+
+.ob .note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ob .mover { font: 11px/1 var(--mono); color: var(--text-dim); flex: none; }
+.ob .age { font: 11px/1 var(--mono); color: var(--text-faint); flex: none; min-width: 42px; text-align: right; }
+
+/* ---------- small rows ---------- */
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.row:last-child { border-bottom: 0; }
+.row .k { font: 11px/1 var(--mono); color: var(--text-faint); flex: none; }
+.row .v { margin-left: auto; font: 11px/1 var(--mono); color: var(--text-dim); }
+.row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.row.unreadable .k { color: var(--unknown); }
+.row.unreadable code {
+  font: 11px/1 var(--mono);
+  color: var(--unknown);
+  background: var(--bg-sunken);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.refusal {
+  margin: 0;
+  padding: 12px 14px;
+  font: 12px/1.5 var(--mono);
+  color: var(--overdue);
+  background: rgb(255 107 107 / 0.06);
+  border-bottom: 1px solid var(--line-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
