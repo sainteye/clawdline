@@ -7,6 +7,22 @@
 // This module holds types only. It imports nothing, touches no DOM and no
 // React Native API, so the web console and a native app can both read it.
 
+/**
+ * What actually happened. `typed` is the strongest thing a send can claim: the
+ * bytes reached the tty. Whether the assistant took the turn is a separate fact,
+ * read from the fleet list, and this never asserts it.
+ */
+export interface ActionResult {
+  action: string
+
+  /**
+   * Present on a close that went ahead over open obligations.
+   */
+  forced?: boolean
+  id: string
+  ok: boolean
+}
+
 export type Assistant =
     "claude"
   | "codex"
@@ -53,6 +69,25 @@ export interface CloseReason {
   kind: string
   mover: Mover
   note: string
+}
+
+/**
+ * A close refused by what the session still owes. It carries the same reasons the
+ * fleet list was already showing, so the screen and the action never disagree.
+ */
+export interface CloseRefusal {
+  detail: string
+  error: string
+  reasons: CloseReason[]
+}
+
+export interface CloseRequest {
+  /**
+   * Close although something is still owed. It cannot override an unreadable
+   * obligation list: overriding a refusal is a decision, and there is nothing to
+   * decide about when the list could not be read.
+   */
+  force?: boolean
 }
 
 /**
@@ -371,6 +406,10 @@ export interface SchedulerPulse {
    */
   note?: string
   tickSeconds: number
+}
+
+export interface SendRequest {
+  text: string
 }
 
 /**

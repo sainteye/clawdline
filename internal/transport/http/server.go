@@ -27,6 +27,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/app"
+	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/config"
 	"github.com/sainteye/clawdline-go/internal/contract"
 )
@@ -37,6 +38,7 @@ type Server struct {
 	inventory  app.Inventory
 	store      *store.Store
 	dispatcher app.Dispatcher
+	terminals  []ports.TerminalHost
 	// pulse is the scheduler's own account of its last pass, read by /v1/health.
 	pulse atomic.Pointer[app.Pulse]
 	tick  time.Duration
@@ -76,6 +78,7 @@ func New(cfg config.Config) (*Server, error) {
 			Tasks:    taskdir.New(cfg.Dir),
 			Terminal: terminal.NewTmux(),
 		},
+		terminals: terminal.Hosts(),
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
@@ -93,6 +96,10 @@ func (s *Server) Handler() http.Handler {
 	// over only once the payloads agree.
 	mux.HandleFunc("/v1/next/sessions", s.nextSessions)
 	mux.HandleFunc("/v1/sessions", s.sessions)
+	// Everything under a session id is an action on that session. One handler
+	// rather than three routes, because the id is a path segment and Go's mux
+	// matches prefixes, not patterns.
+	mux.HandleFunc("/v1/sessions/", s.sessionAction)
 	mux.HandleFunc("/v1/events", s.events)
 	mux.HandleFunc("/v1/next/obligations", s.obligations)
 	mux.HandleFunc("/v1/next/schedules", s.schedules)

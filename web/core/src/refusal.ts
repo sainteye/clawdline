@@ -1,4 +1,4 @@
-import type { Refusal } from "@clawdline/contract"
+import type { CloseReason, Refusal } from "@clawdline/contract"
 
 /**
  * A refusal the daemon returned, kept whole.
@@ -12,6 +12,8 @@ export class RefusalError extends Error {
   readonly detail: string
   readonly status: number
   readonly route: string | undefined
+  /** What a blocked close is blocked by. Empty for every other refusal. */
+  readonly reasons: readonly CloseReason[]
 
   constructor(status: number, body: Refusal, route?: string) {
     super(`${body.error}: ${body.detail}`)
@@ -20,6 +22,7 @@ export class RefusalError extends Error {
     this.detail = body.detail
     this.status = status
     this.route = body.route ?? route
+    this.reasons = (body as { reasons?: CloseReason[] }).reasons ?? []
   }
 }
 

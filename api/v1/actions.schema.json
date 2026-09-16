@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "actions.schema.json",
+  "title": "Doing something to one session",
+  "description": "POST /v1/sessions/{id}/send, /interrupt and /close. Each has a precondition that is not the terminal's to check, so none of them is a thin wrapper over a keystroke.",
+  "$defs": {
+    "SendRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" }
+      }
+    },
+    "CloseRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "force": { "description": "Close although something is still owed. It cannot override an unreadable obligation list: overriding a refusal is a decision, and there is nothing to decide about when the list could not be read.", "type": "boolean" }
+      }
+    },
+    "ActionResult": {
+      "description": "What actually happened. `typed` is the strongest thing a send can claim: the bytes reached the tty. Whether the assistant took the turn is a separate fact, read from the fleet list, and this never asserts it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "id", "ok"],
+      "properties": {
+        "action": { "type": "string", "enum": ["typed", "interrupted", "closed"] },
+        "id": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "forced": { "description": "Present on a close that went ahead over open obligations.", "type": "boolean" }
+      }
+    },
+    "CloseRefusal": {
+      "description": "A close refused by what the session still owes. It carries the same reasons the fleet list was already showing, so the screen and the action never disagree.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detail", "error", "reasons"],
+      "properties": {
+        "detail": { "type": "string" },
+        "error": { "type": "string" },
+        "reasons": { "type": "array", "items": { "$ref": "sessions.schema.json#/$defs/CloseReason" } }
+      }
+    }
+  }
+}

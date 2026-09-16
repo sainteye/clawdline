@@ -1,4 +1,5 @@
 import type {
+  ActionResult,
   BoardSnapshot,
   BoardWriteResult,
   CoordinatorSnapshot,
@@ -11,7 +12,7 @@ import type {
   SessionsSnapshot,
 } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "./refusal.js"
-import { routes } from "./routes.js"
+import { routes, sessionRoutes } from "./routes.js"
 
 /**
  * What this package needs from its host. `fetch` is the whole list, and both a
@@ -66,6 +67,32 @@ export class ClawdlineClient {
   }
   strings(): Promise<Record<string, string>> {
     return this.get(routes.strings)
+  }
+
+  /**
+   * Types one line into a session and submits it.
+   *
+   * A resolved promise means the bytes reached the tty. It does not mean the
+   * assistant read them — that is a separate fact, and the fleet list is where
+   * it is answered. Nothing built on this may report it as delivery.
+   */
+  send(id: string, text: string): Promise<ActionResult> {
+    return this.post(sessionRoutes.send(id), { text })
+  }
+
+  interrupt(id: string): Promise<ActionResult> {
+    return this.post(sessionRoutes.interrupt(id), {})
+  }
+
+  /**
+   * Takes a session away.
+   *
+   * Rejects with a RefusalError carrying `close_blocked` when something is
+   * still owed; the reasons come back on the error so a caller can show them
+   * rather than only that it refused.
+   */
+  close(id: string, force = false): Promise<ActionResult> {
+    return this.post(sessionRoutes.close(id), { force })
   }
 
   saveSchedule(body: ScheduleRequest): Promise<ScheduleSaved> {

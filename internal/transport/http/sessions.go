@@ -117,37 +117,21 @@ func sessionRow(item session.Session, owed []task.Obligation, owedErr error, liv
 	}
 }
 
-// closeability says whether this session can end. It is a separate question
-// from whether it can take work, and neither may be read off the other.
+// closeability carries the domain's answer across to the wire.
 //
-// An unreadable obligation list fails the whole projection closed to `unknown`
-// rather than to `safe`, because what it casts doubt on is the completeness of
-// the list itself, not one entry in it. `safe` here is a positive claim that
-// nothing is owed, and it must never be what a failure looks like.
+// The decision is not made here. The fleet list and the close action must give
+// one answer, so they ask one function; this only renames its parts.
 func closeability(item session.Session, owed []task.Obligation, err error) contract.Closeability {
-	if err != nil {
-		return contract.Closeability{State: contract.CloseabilityStateUnknown, Reasons: []contract.CloseReason{}}
-	}
-	reasons := []contract.CloseReason{}
-	for _, o := range owed {
-		if o.Mover.Kind == task.MoverOtherSession || o.Mover.Kind == task.MoverThisSession {
-			if o.Mover.ID != item.ID {
-				continue
-			}
-		} else if o.Subject != item.ID {
-			continue
-		}
+	c := task.Closeability(item.ID, owed, err)
+	reasons := make([]contract.CloseReason, 0, len(c.Reasons))
+	for _, r := range c.Reasons {
 		reasons = append(reasons, contract.CloseReason{
-			Kind:  string(o.Kind),
-			Mover: wireMover(o.Mover),
-			Note:  o.Note,
+			Kind:  string(r.Kind),
+			Mover: wireMover(r.Mover),
+			Note:  r.Note,
 		})
 	}
-	state := contract.CloseabilityStateSafe
-	if len(reasons) > 0 {
-		state = contract.CloseabilityStateBlocked
-	}
-	return contract.Closeability{State: state, Reasons: reasons}
+	return contract.Closeability{State: contract.CloseabilityState(c.State), Reasons: reasons}
 }
 
 // wireMover is the one place a mover crosses from the domain to the wire. It is

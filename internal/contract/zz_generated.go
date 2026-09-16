@@ -11,6 +11,18 @@
 // with nothing to notice, which is the defect this package exists to remove.
 package contract
 
+// What actually happened. `typed` is the strongest thing a send can claim: the
+// bytes reached the tty. Whether the assistant took the turn is a separate
+// fact, read from the fleet list, and this never asserts it.
+type ActionResult struct {
+	Action string `json:"action"`
+
+	// Present on a close that went ahead over open obligations.
+	Forced bool   `json:"forced,omitempty"`
+	ID     string `json:"id"`
+	OK     bool   `json:"ok"`
+}
+
 type Assistant string
 
 const (
@@ -61,6 +73,22 @@ type CloseReason struct {
 	Kind  string `json:"kind"`
 	Mover Mover  `json:"mover"`
 	Note  string `json:"note"`
+}
+
+// A close refused by what the session still owes. It carries the same reasons
+// the fleet list was already showing, so the screen and the action never
+// disagree.
+type CloseRefusal struct {
+	Detail  string        `json:"detail"`
+	Error   string        `json:"error"`
+	Reasons []CloseReason `json:"reasons"`
+}
+
+type CloseRequest struct {
+	// Close although something is still owed. It cannot override an unreadable
+	// obligation list: overriding a refusal is a decision, and there is nothing to
+	// decide about when the list could not be read.
+	Force bool `json:"force,omitempty"`
 }
 
 // Whether this session can end. A separate question from whether it can take
@@ -360,6 +388,10 @@ type SchedulerPulse struct {
 	// Why a pass did nothing, when the reason was not that nothing was due.
 	Note        string `json:"note,omitempty"`
 	TickSeconds int64  `json:"tickSeconds"`
+}
+
+type SendRequest struct {
+	Text string `json:"text"`
 }
 
 // One assistant session. Fields this daemon cannot support are absent rather

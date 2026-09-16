@@ -225,6 +225,20 @@ type Change struct {
 // means the intent committed rather than that the work finished: the effects
 // those events imply run afterwards, in reactors, and report their own results
 // back as further commands.
+// Append records one thing that happened.
+//
+// It is deliberately not Commit. Commit is for a command: it carries a
+// receipt so a retry replays rather than repeats. This is for a fact that has
+// already occurred somewhere this process cannot undo — bytes typed into a
+// terminal, a session taken away — and a fact has no retry semantics. Writing
+// it through Commit would offer an idempotency this side cannot honour.
+func (s *Store) Append(ctx context.Context, e Event) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO events (at, kind, subject, payload) VALUES (?, ?, ?, ?)`,
+		time.Now().Unix(), e.Kind, e.Subject, string(e.Payload))
+	return err
+}
+
 func (s *Store) Commit(ctx context.Context, commandID string, events []Event, changes []Change) (Receipt, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

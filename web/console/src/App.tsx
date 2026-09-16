@@ -1,6 +1,7 @@
-import { useMemo } from "react"
-import { ClawdlineClient, needsYou, sortSessions } from "@clawdline/core"
+import { useCallback, useMemo, useState } from "react"
+import { ClawdlineClient, RefusalError, needsYou, sortSessions } from "@clawdline/core"
 import type {
+  CloseReason,
   Obligation,
   SchedulerPulse,
   ScheduleRow,
@@ -13,6 +14,9 @@ const client = new ClawdlineClient()
 
 export default function App() {
   const fleet = useFleet(client)
+  const refresh = useCallback(() => {
+    void fleet.refresh()
+  }, [fleet])
   const rows = fleet.snapshot ? sortSessions(fleet.snapshot.sessions) : []
   const scan = fleet.snapshot?.scan
 
@@ -47,7 +51,7 @@ export default function App() {
 
       <div className="columns">
         <div>
-          <Sessions rows={rows} fleet={fleet} />
+          <Sessions rows={rows} fleet={fleet} onDid={refresh} />
         </div>
         <div>
           <Obligations />
@@ -108,7 +112,15 @@ function Clock({ pulse }: { pulse: SchedulerPulse }) {
   )
 }
 
-function Sessions({ rows, fleet }: { rows: SessionRow[]; fleet: ReturnType<typeof useFleet> }) {
+function Sessions({
+  rows,
+  fleet,
+  onDid,
+}: {
+  rows: SessionRow[]
+  fleet: ReturnType<typeof useFleet>
+  onDid: () => void
+}) {
   const scan = fleet.snapshot?.scan
   return (
     <section className="panel">
@@ -131,25 +143,29 @@ function Sessions({ rows, fleet }: { rows: SessionRow[]; fleet: ReturnType<typeo
       {!fleet.loaded && <p className="empty">讀取中…</p>}
 
       {rows.map((r) => (
-        <Session key={r.id} row={r} />
+        <Session key={r.id} row={r} onDid={onDid} />
       ))}
     </section>
   )
 }
 
-function Session({ row }: { row: SessionRow }) {
+function Session({ row, onDid }: { row: SessionRow; onDid: () => void }) {
   const blocked = row.closeability.state === "blocked"
+  const [open, setOpen] = useState(false)
   return (
-    <article className="session" data-work={row.work_state}>
+    <article className="session" data-work={row.work_state} data-open={open || undefined}>
       <i className="bar" />
       <div className="body">
         <div className="title">
-          <span className="name">{row.label || row.cwd || row.id}</span>
+          <button className="name as-button" onClick={() => setOpen((v) => !v)}>
+            {row.label || row.cwd || row.id}
+          </button>
           <span className="who">{row.assistant ?? "?"}</span>
         </div>
         <div className="meta">
           {[home(row.cwd), row.tty, row.id, row.backend].filter(Boolean).join("  ·  ")}
         </div>
+        {open && <Controls row={row} onDid={onDid} />}
       </div>
       <div className="right">
         <span className="work" data-work={row.work_state}>
@@ -318,4 +334,110 @@ function age(seconds: number): string {
 
 function ago(unix: number): string {
   return `${age(Math.max(0, Math.floor(Date.now() / 1000) - unix))} 前`
+}
+
+/**
+ * What a person can do to one session from here.
+ *
+ * The three verbs are the ones the daemon owns, and each reports what actually
+ * happened rather than what was intended: a send says the bytes were typed, not
+ * that the assistant read them. A blocked close shows the reasons it came back
+ * with, because sending somebody to the terminal to find out why is the round
+ * trip this whole screen exists to remove.
+ */
+function Controls({ row, onDid }: { row: SessionRow; onDid: () => void }) {
+  const [text, setText] = useState("")
+  const [busy, setBusy] = useState<string | null>(null)
+  const [said, setSaid] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState<readonly CloseReason[]>([])
+  const [confirmClose, setConfirmClose] = useState(false)
+
+  const run = async (name: string, fn: () => Promise<unknown>) => {
+    setBusy(name)
+    setSaid(null)
+    setBlocked([])
+    try {
+      await fn()
+      setSaid(name === "send" ? "打進去了（不代表它讀了）" : name === "interrupt" ? "已送出中斷" : "已關閉")
+      if (name === "send") setText("")
+      onDid()
+    } catch (err) {
+      if (err instanceof RefusalError) {
+        setSaid(err.detail)
+        setBlocked(err.reasons)
+      } else {
+        setSaid(err instanceof Error ? err.message : String(err))
+      }
+    } finally {
+      setBusy(null)
+      setConfirmClose(false)
+    }
+  }
+
+  return (
+    <div className="controls" onClick={(e) => e.stopPropagation()}>
+      <form
+        className="compose"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (text.trim()) void run("send", () => client.send(row.id, text))
+        }}
+      >
+        <input
+          value={text}
+          placeholder="打一行字進去…"
+          onChange={(e) => setText(e.target.value)}
+          disabled={busy !== null}
+        />
+        <button type="submit" disabled={busy !== null || !text.trim()}>
+          送出
+        </button>
+      </form>
+
+      <div className="verbs">
+        <button
+          onClick={() => void run("interrupt", () => client.interrupt(row.id))}
+          disabled={busy !== null}
+        >
+          中斷
+        </button>
+
+        {/* Closing cannot be undone, so it takes two clicks. The second one
+            says what it will do, rather than repeating the first one's word. */}
+        {!confirmClose ? (
+          <button className="danger" onClick={() => setConfirmClose(true)} disabled={busy !== null}>
+            關閉…
+          </button>
+        ) : (
+          <>
+            <button
+              className="danger"
+              onClick={() => void run("close", () => client.close(row.id))}
+              disabled={busy !== null}
+            >
+              確定關掉 {row.id}
+            </button>
+            <button onClick={() => setConfirmClose(false)}>取消</button>
+          </>
+        )}
+
+        {blocked.length > 0 && (
+          <button
+            className="danger"
+            onClick={() => void run("close", () => client.close(row.id, true))}
+            disabled={busy !== null}
+          >
+            仍然關閉（{blocked.length} 項未了）
+          </button>
+        )}
+      </div>
+
+      {said && <p className="said">{said}</p>}
+      {blocked.map((r, i) => (
+        <p key={i} className="said blocked-reason">
+          {r.kind} · {r.mover.kind === "person" ? "你" : r.mover.id || r.mover.kind} · {r.note}
+        </p>
+      ))}
+    </div>
+  )
 }

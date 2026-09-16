@@ -302,3 +302,69 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ---------- session controls ---------- */
+
+.session .name.as-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 560;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.session .name.as-button:hover { color: var(--accent); }
+.session[data-open] { background: var(--bg-sunken); }
+.session[data-open] .name.as-button { color: var(--accent); }
+
+.controls {
+  margin: 10px 14px 2px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compose {
+  display: flex;
+  gap: 6px;
+}
+
+.compose input {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 7px 9px;
+  font: 12px/1.3 var(--mono);
+}
+.compose input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.controls button {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-dim);
+  padding: 7px 11px;
+  font: 12px/1 var(--sans);
+  cursor: pointer;
+}
+.controls button:hover:not(:disabled) { color: var(--text); border-color: var(--text-faint); }
+.controls button:disabled { opacity: 0.4; cursor: default; }
+.controls button.danger { color: var(--overdue); border-color: rgb(255 107 107 / 0.3); }
+.controls button.danger:hover:not(:disabled) { border-color: var(--overdue); }
+
+.verbs { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.said {
+  margin: 0;
+  font: 11px/1.4 var(--mono);
+  color: var(--text-faint);
+}
+.said.blocked-reason { color: var(--waiting-you); }

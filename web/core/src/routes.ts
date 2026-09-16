@@ -17,4 +17,18 @@ export const routes = {
   strings: "/v1/strings",
 } as const
 
+/**
+ * Routes that act on one session.
+ *
+ * A terminal id can contain a percent sign — tmux panes are `%195` — so it is
+ * encoded here rather than interpolated. Left raw, `%195` reaches the daemon as
+ * a control character and comes back `not_found`, which is a true answer to a
+ * question nobody asked.
+ */
+export const sessionRoutes = {
+  send: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/send`,
+  interrupt: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/interrupt`,
+  close: (id: string) => `/v1/sessions/${encodeURIComponent(id)}/close`,
+} as const
+
 export type RouteName = keyof typeof routes

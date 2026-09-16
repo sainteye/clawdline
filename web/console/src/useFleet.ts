@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
 import {
   ClawdlineClient,
   FleetStore,
@@ -13,16 +13,24 @@ import {
  * the only part of the fleet list a React Native app would have to write again,
  * and it is nine lines.
  */
-export function useFleet(client: ClawdlineClient): FleetState {
+export function useFleet(client: ClawdlineClient): FleetState & { refresh: () => void } {
   const store = useMemo(() => new FleetStore(client, nativeEventSourceTransport()), [client])
   useEffect(() => {
     void store.start()
     return () => store.stop()
   }, [store])
-  return useSyncExternalStore(
+  const state = useSyncExternalStore(
     (fn) => store.subscribe(fn),
     () => store.get(),
   )
+  // An action changes the machine, and the next stream frame may be a second
+  // away. Asking once, immediately, is what makes a button feel like it did
+  // something — and it goes through the same accept() rule, so a stale reading
+  // racing a fresh one cannot win.
+  const refresh = useCallback(() => {
+    void store.refresh()
+  }, [store])
+  return { ...state, refresh }
 }
 
 /**
