@@ -124,17 +124,32 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 // readScreen is the fallback for an assistant that keeps no live record of
 // itself. It runs only where nothing better answered, so a session that told us
 // what it is doing is never overruled by a guess about its screen.
+//
+// The live line is a different question and is read either way. A session's
+// own record can say it is working; only the screen says what it is working
+// on, and the Swift app draws that line under every working row whatever told
+// it the state. So a registry-backed session is captured too — but only while
+// it is working, which is the only time there is a line to find.
 func (in Inventory) readScreen(ctx context.Context, s session.Session) session.Session {
-	if in.Screen == nil || !s.IsAssistant() || s.Evidence == session.EvidenceRegistry {
+	if in.Screen == nil || !s.IsAssistant() {
+		return s
+	}
+	registry := s.Evidence == session.EvidenceRegistry
+	if registry && s.State != session.StateWorking {
 		return s
 	}
 	screen, ok := in.Screen.Capture(ctx, s)
 	if !ok {
 		return s
 	}
-	if state, read := session.ReadState(screen, s.Assistant); read {
-		s.State = state
-		s.Evidence = session.EvidenceScreen
+	if !registry {
+		if state, read := session.ReadState(screen, s.Assistant); read {
+			s.State = state
+			s.Evidence = session.EvidenceScreen
+		}
+	}
+	if s.State == session.StateWorking {
+		s.Line = session.WorkingLine(screen, s.Assistant, 25)
 	}
 	return s
 }

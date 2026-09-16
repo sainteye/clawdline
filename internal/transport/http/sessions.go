@@ -117,6 +117,7 @@ func sessionRow(item session.Session, owed []task.Obligation, owedErr error, liv
 		TTY:            item.TTY,
 		Assistant:      contract.Assistant(item.Assistant),
 		Label:          item.Label,
+		Line:           item.Line,
 		CWD:            item.CWD,
 		SessionID:      item.ConversationID,
 	}

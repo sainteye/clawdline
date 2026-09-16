@@ -560,6 +560,13 @@ export interface SessionRow {
   label?: string
 
   /**
+   * What a working session says it is doing, read from its screen with the
+   * assistant's own clock in it. Present only while working. The Swift app sends it
+   * under this name and the row's height depends on it.
+   */
+  line?: string
+
+  /**
    * The assistant's own conversation id, when one was recovered from its command
    * line.
    */

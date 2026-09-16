@@ -77,8 +77,11 @@ type Session struct {
 	Assistant Assistant `json:"assistant,omitempty"`
 	CWD       string    `json:"cwd,omitempty"`
 	Label     string    `json:"label,omitempty"`
-	State     State     `json:"state"`
-	Evidence  Evidence  `json:"evidence"`
+	// Line is what a working assistant says it is doing — the spinner line,
+	// with its own clock in it. Empty unless the session is working.
+	Line     string   `json:"line,omitempty"`
+	State    State    `json:"state"`
+	Evidence Evidence `json:"evidence"`
 
 	// ConversationID is the assistant's own id for this line of work. It
 	// survives a terminal restart, which a tty and a pane id do not.

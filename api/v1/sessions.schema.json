@@ -89,6 +89,7 @@
         "id": { "type": "string" },
         "isClaude": { "type": "boolean" },
         "label": { "type": "string" },
+        "line": { "description": "What a working session says it is doing, read from its screen with the assistant's own clock in it. Present only while working. The Swift app sends it under this name and the row's height depends on it.", "type": "string" },
         "sessionId": { "description": "The assistant's own conversation id, when one was recovered from its command line.", "type": "string" },
         "state": { "$ref": "common.schema.json#/$defs/SessionState" },
         "tty": { "type": "string" },

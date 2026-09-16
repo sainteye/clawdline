@@ -13,7 +13,12 @@ func ReadState(screen string, assistant Assistant) (State, bool) {
 	if strings.TrimSpace(screen) == "" {
 		return StateUnknown, false
 	}
-	lines := strings.Split(screen, "\n")
+	// A live line with the assistant's own clock in it is the strongest sign
+	// of a running turn, and it is the Swift app's definition of working.
+	if WorkingLine(screen, assistant, 25) != "" {
+		return StateWorking, true
+	}
+	lines := strings.Split(Plain(screen), "\n")
 
 	// Both assistants draw the same shape while a turn runs: a bullet, a word
 	// and a clock, with the way out named on the same line.
