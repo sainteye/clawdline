@@ -15,6 +15,7 @@ import (
 type Inventory struct {
 	Process   ports.ProcessHost
 	Terminals []ports.TerminalHost
+	Identity  ports.IdentityHost
 }
 
 // Read takes one reading of the machine from every source and merges them.
@@ -68,9 +69,42 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 
 	sort.Strings(order)
 	for _, key := range order {
-		merged.Sessions = append(merged.Sessions, byTTY[key])
+		merged.Sessions = append(merged.Sessions, in.enrich(ctx, byTTY[key]))
 	}
 	return merged
+}
+
+// enrich asks the assistant's own records about a row the machine reported.
+//
+// What comes back outranks the process reading, and the row says so: a status
+// the assistant wrote about itself is not the same kind of fact as a process
+// that merely exists, and a reader has to be able to tell them apart.
+func (in Inventory) enrich(ctx context.Context, s session.Session) session.Session {
+	if in.Identity == nil || !s.IsAssistant() {
+		return s
+	}
+	id, ok := in.Identity.ForSession(ctx, s)
+	if !ok {
+		return s
+	}
+	if id.ConversationID != "" {
+		s.ConversationID = id.ConversationID
+	}
+	if id.Label != "" {
+		s.Label = id.Label
+	}
+	if s.CWD == "" && id.CWD != "" {
+		s.CWD = id.CWD
+	}
+	if id.Pane != "" {
+		s.ID = id.Pane
+		s.Backend = session.BackendTmux
+	}
+	if id.Status != "" {
+		s.State = session.StateFromAssistantStatus(id.Status)
+		s.Evidence = session.EvidenceRegistry
+	}
+	return s
 }
 
 // richer keeps the row that carries more, field by field, rather than letting

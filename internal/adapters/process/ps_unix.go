@@ -1,13 +1,14 @@
 //go:build darwin || linux
 
 // Package process reads the process table. On Unix that is `ps`; the Windows
-// implementation lives beside this file and answers the same port.
+// implementation answers the same port beside this file.
 package process
 
 import (
 	"context"
 	"os/exec"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,13 +20,16 @@ type PS struct{}
 
 func New() *PS { return &PS{} }
 
-// Scan lists the process table once.
+// resumeID matches the conversation a session was resumed with. Both assistants
+// put it on their own command line, which makes it proof rather than inference:
+// `claude --resume <uuid>` and `codex resume <uuid>`.
+var resumeID = regexp.MustCompile(`(?:--resume|\bresume)[= ]+([0-9a-fA-F-]{8,})`)
+
+// Scan lists the process table once and keeps one session per terminal.
 //
-// The column set is deliberately free of `lstart`: its rendering follows the
-// locale, and in some locales the day field changes width, so any parser that
-// counts columns is wrong for part of every month. Here `command` is last and
-// everything before it is a single token, which needs no counting at all.
-// Child processes are pinned to LC_ALL=C for the same family of reasons.
+// The column set deliberately excludes `lstart`, whose rendering follows the
+// locale and changes width during the month, so nothing here counts columns.
+// Subprocesses are pinned to LC_ALL=C for the same family of reasons.
 func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 	inv := session.Inventory{
 		ObservedAt: time.Now(),
@@ -33,7 +37,7 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 		Complete:   true,
 	}
 
-	cmd := exec.CommandContext(ctx, "/bin/ps", "-ax", "-o", "tty=,pid=,ppid=,command=")
+	cmd := exec.CommandContext(ctx, "/bin/ps", "-ax", "-o", "tty=,pid=,pgid=,tpgid=,command=")
 	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
 	out, err := cmd.Output()
 	if err != nil {
@@ -45,37 +49,48 @@ func (p *PS) Scan(ctx context.Context) (session.Inventory, error) {
 
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 4 {
+		if len(fields) < 5 {
 			continue
 		}
-		tty, pidText := fields[0], fields[1]
-		command := strings.Join(fields[3:], " ")
+		tty, pidText, pgidText, tpgidText := fields[0], fields[1], fields[2], fields[3]
+		command := strings.Join(fields[4:], " ")
 
 		assistant := classify(command)
 		if assistant == "" || tty == "??" || tty == "-" {
 			continue
 		}
+		// One terminal runs one session, and the terminal itself says which
+		// process that is: the foreground process group is what the tty is
+		// currently attached to. Matching on the program name instead would
+		// also collect the sandbox and app-server helpers an assistant spawns
+		// beside itself — on this machine one terminal carried five processes
+		// named `codex`, only one of which was the session.
+		if pgidText != tpgidText || pgidText == "0" {
+			continue
+		}
+
 		pid, _ := strconv.Atoi(pidText)
-		inv.Sessions = append(inv.Sessions, session.Session{
+		s := session.Session{
 			ID:        tty,
 			Backend:   session.BackendITerm,
 			TTY:       tty,
 			PID:       pid,
 			Assistant: assistant,
 			State:     session.StateUnknown,
-			// A process proves something is running and nothing about what it
-			// is doing. Saying so is the point of this field.
-			Evidence: session.EvidenceProcess,
-		})
+			Evidence:  session.EvidenceProcess,
+		}
+		if m := resumeID.FindStringSubmatch(command); len(m) == 2 {
+			s.ConversationID = m[1]
+			s.Evidence = session.EvidenceProcess
+		}
+		inv.Sessions = append(inv.Sessions, s)
 	}
 	return inv, nil
 }
 
-// classify decides whether a command line is an assistant we coordinate.
-//
-// It matches the executable, never the whole line: a grep for "claude" would
-// also match a shell that merely mentions it, and an editor holding this file
-// open. That distinction has its own recorded failure in the Swift app's notes.
+// classify decides whether a command line is an assistant we coordinate. It
+// matches the executable, never the whole line: a grep for "claude" would also
+// match a shell that merely mentions it.
 func classify(command string) session.Assistant {
 	if command == "" {
 		return ""

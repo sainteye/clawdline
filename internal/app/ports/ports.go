@@ -17,6 +17,23 @@ type ProcessHost interface {
 	Scan(ctx context.Context) (session.Inventory, error)
 }
 
+// Identity is what an assistant's own records say about a running session.
+// These are better evidence than anything read off a screen, because they are
+// the assistant speaking about itself.
+type Identity struct {
+	ConversationID string
+	Pane           string
+	CWD            string
+	Label          string
+	// Status is the assistant's own word, not ours. The domain maps it.
+	Status string
+}
+
+// IdentityHost resolves a running process against the assistant's own records.
+type IdentityHost interface {
+	ForSession(ctx context.Context, s session.Session) (Identity, bool)
+}
+
 // TerminalHost enumerates and drives terminal sessions. One interface covers
 // both surfaces: a terminal somebody else opened (attached) and a pty this
 // daemon owns.

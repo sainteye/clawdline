@@ -170,6 +170,15 @@ Windows 沒有 tmux，所以 Windows 使用者只有「自己開的 session」�
 - 任務目錄從 `/tmp` 變成平台解析的 durable 路徑
 - `protocolVersion` 從顯示用變成真的能力協商
 
+### 標籤的兩層優先序（P1 觀察到）
+
+1. **Clawdline 自己保存的標題**（舊 app 存在 `config.json` 的 `session_titles[]`）
+2. 助理自己的標題：Claude 的 `ai-title`、Codex 的 `session_index.jsonl` 的 `thread_name`
+
+新 app 是全新安裝，第一層是空的，所以它顯示第二層。比對舊 app 時
+`%231` 因此不同——它接過一次 handoff，助理把自己叫作「Clawdline handoff …」，
+而舊 app 記著原本那條工作線的名字。**規則相同，覆寫資料不同。**
+
 ---
 
 ## 9. 狀態：一條事件流

@@ -47,9 +47,27 @@ const (
 	EvidenceProcess Evidence = "process"
 	// EvidenceScreen was inferred from what is drawn in the terminal.
 	EvidenceScreen Evidence = "screen"
+	// EvidenceRegistry came from the assistant's own live status file, which is
+	// the assistant speaking about itself rather than anyone observing it.
+	EvidenceRegistry Evidence = "registry"
 	// EvidenceNone means nothing supported this field.
 	EvidenceNone Evidence = "none"
 )
+
+// StateFromAssistantStatus maps an assistant's own word for what it is doing.
+// An unrecognised word is `unknown`, never `idle`: a status we cannot read has
+// told us nothing, and flattening it into "nothing is happening" is the one
+// wrong answer a fleet list must not give.
+func StateFromAssistantStatus(status string) State {
+	switch status {
+	case "busy":
+		return StateWorking
+	case "idle":
+		return StateIdle
+	default:
+		return StateUnknown
+	}
+}
 
 type Session struct {
 	ID        string    `json:"id"`
@@ -61,6 +79,10 @@ type Session struct {
 	Label     string    `json:"label,omitempty"`
 	State     State     `json:"state"`
 	Evidence  Evidence  `json:"evidence"`
+
+	// ConversationID is the assistant's own id for this line of work. It
+	// survives a terminal restart, which a tty and a pane id do not.
+	ConversationID string `json:"conversation_id,omitempty"`
 }
 
 // IsAssistant separates a Claude or Codex session from an ordinary shell.

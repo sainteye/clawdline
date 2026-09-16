@@ -19,6 +19,7 @@ import (
 
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
+	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/config"
@@ -56,6 +57,7 @@ func New(cfg config.Config) (*Server, error) {
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: []ports.TerminalHost{terminal.NewTmux()},
+			Identity:  transcript.NewHost(),
 		},
 	}, nil
 }
@@ -89,6 +91,9 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 func (s *Server) nextSessions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	if h, ok := s.inventory.Identity.(*transcript.Host); ok {
+		h.Refresh()
+	}
 	inv := s.inventory.Read(ctx)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
