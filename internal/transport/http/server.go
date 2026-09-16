@@ -11,7 +11,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -28,6 +27,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/config"
+	"github.com/sainteye/clawdline-go/internal/contract"
 )
 
 type Server struct {
@@ -37,6 +37,10 @@ type Server struct {
 	store      *store.Store
 	dispatcher app.Dispatcher
 }
+
+// servedBy names which implementation answered. It is how a reader tells the Go
+// daemon from the Swift app when both can hold the same port.
+const servedBy = "clawdline-go"
 
 func New(cfg config.Config) (*Server, error) {
 	upstream, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.UpstreamPort))
@@ -50,13 +54,8 @@ func New(cfg config.Config) (*Server, error) {
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		// A refusal has to name which hop failed. "The upstream is not running"
 		// and "this daemon is broken" are different problems for the reader.
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error":    "upstream_unreachable",
-			"upstream": upstream.String(),
-			"detail":   err.Error(),
-		})
+		writeRefusalAbout(w, http.StatusBadGateway, "upstream_unreachable", err.Error(),
+			contract.Refusal{Upstream: upstream.String()})
 	}
 	// A store that cannot be opened is a refusal at startup, not a daemon that
 	// runs without durability and discovers it later.
@@ -134,14 +133,13 @@ func (s *Server) Handler() http.Handler {
 // health is the first route this daemon owns. It answers for itself and says so,
 // so that a reader can tell which of the two daemons replied.
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok":        true,
-		"served_by": "clawdline-go",
-		"port":      s.cfg.Port,
-		"upstream":  s.cfg.UpstreamPort,
-		"dir":       s.cfg.Dir,
-		"at":        time.Now().Unix(),
+	writeJSON(w, contract.Health{
+		OK:       true,
+		ServedBy: servedBy,
+		Port:     int64(s.cfg.Port),
+		Upstream: int64(s.cfg.UpstreamPort),
+		Dir:      s.cfg.Dir,
+		At:       time.Now().Unix(),
 	})
 }
 
@@ -153,16 +151,30 @@ func (s *Server) nextSessions(w http.ResponseWriter, r *http.Request) {
 		h.Refresh()
 	}
 	inv := s.inventory.Read(ctx)
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"served_by": "clawdline-go",
-		"sessions":  inv.Sessions,
-		"scan": map[string]any{
-			"complete":   inv.Complete,
-			"provenance": inv.Provenance,
-			"notes":      inv.Notes,
+	rows := make([]contract.InventorySession, 0, len(inv.Sessions))
+	for _, item := range inv.Sessions {
+		rows = append(rows, contract.InventorySession{
+			ID:             item.ID,
+			Backend:        contract.Backend(item.Backend),
+			TTY:            item.TTY,
+			PID:            int64(item.PID),
+			Assistant:      contract.Assistant(item.Assistant),
+			CWD:            item.CWD,
+			Label:          item.Label,
+			State:          contract.SessionState(item.State),
+			Evidence:       contract.Evidence(item.Evidence),
+			ConversationID: item.ConversationID,
+		})
+	}
+	writeJSON(w, contract.Inventory{
+		ServedBy: servedBy,
+		Sessions: rows,
+		Scan: contract.InventoryScan{
+			Complete:   inv.Complete,
+			Provenance: inv.Provenance,
+			Notes:      inv.Notes,
 		},
-		"at": inv.ObservedAt.Unix(),
+		At: inv.ObservedAt.Unix(),
 	})
 }
 
@@ -217,13 +229,8 @@ func standalone() bool { return os.Getenv("CLAWDLINE_NEXT_STANDALONE") == "1" }
 // for.
 func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) {
 	log.Printf("not implemented: %s %s", r.Method, r.URL.Path)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error":  "not_implemented",
-		"route":  r.URL.Path,
-		"detail": "this daemon does not own that route yet",
-	})
+	writeRefusalAbout(w, http.StatusNotImplemented, "not_implemented",
+		"this daemon does not own that route yet", contract.Refusal{Route: r.URL.Path})
 }
 
 func (s *Server) ListenAndServe() error {

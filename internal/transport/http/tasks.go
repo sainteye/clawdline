@@ -1,8 +1,9 @@
 package http
 
 import (
-	"encoding/json"
 	"net/http"
+
+	"github.com/sainteye/clawdline-go/internal/contract"
 )
 
 // tasksRoute publishes the tasks this daemon knows about.
@@ -12,19 +13,18 @@ func (s *Server) tasksRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
 	}
-	rows := make([]map[string]any, 0, len(live))
+	rows := make([]contract.TaskRow, 0, len(live))
 	for _, t := range live {
-		rows = append(rows, map[string]any{
-			"task_id":     t.ID,
-			"assistant":   string(t.Assistant),
-			"project_dir": t.ProjectDir,
-			"claims":      t.Claims,
-			"state":       string(t.State),
-			"created_at":  t.CreatedAt.Unix(),
+		rows = append(rows, contract.TaskRow{
+			TaskID:     t.ID,
+			Assistant:  contract.Assistant(t.Assistant),
+			ProjectDir: t.ProjectDir,
+			Claims:     t.Claims,
+			State:      contract.TaskState(t.State),
+			CreatedAt:  t.CreatedAt.Unix(),
 		})
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"tasks": rows})
+	writeJSON(w, contract.TaskList{Tasks: rows})
 }
 
 // strings answers with the localisation catalog this daemon carries.
@@ -34,7 +34,9 @@ func (s *Server) tasksRoute(w http.ResponseWriter, r *http.Request) {
 // rather than a missing route that looks like a fault. Porting the catalog is
 // its own piece of work, and it is named in docs/plan.md rather than faked
 // here.
+//
+// This is the one route with no generated type, because its keys are the
+// catalog's own and a schema listing them would be the catalog.
 func (s *Server) strings(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{})
+	writeJSON(w, map[string]string{})
 }

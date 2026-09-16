@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.schema.json",
+  "title": "Shared wire vocabulary",
+  "description": "Types more than one route speaks. A word that means the same thing in two places is defined once, so the two cannot drift apart.",
+  "$defs": {
+    "Evidence": {
+      "description": "HOW a reading was obtained. Every observed field travels with one of these, because a structured event and a screen guess are different kinds of fact and a reader must be able to tell them apart.",
+      "type": "string",
+      "enum": ["structured", "transcript", "process", "screen", "registry", "none"]
+    },
+    "SessionState": {
+      "description": "What the session appears to be doing. `unknown` is a real answer and is never flattened into `idle`.",
+      "type": "string",
+      "enum": ["working", "waiting", "idle", "unknown"]
+    },
+    "Backend": {
+      "type": "string",
+      "enum": ["iterm", "tmux", "owned"]
+    },
+    "Assistant": {
+      "type": "string",
+      "enum": ["claude", "codex"]
+    },
+    "MoverKind": {
+      "description": "Who can clear an obligation. Naming the mover is what turns a stuck list into an actionable one.",
+      "type": "string",
+      "enum": ["this_session", "other_session", "person", "task", "broker"]
+    },
+    "Mover": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/MoverKind" }
+      }
+    },
+    "Refusal": {
+      "description": "Every refusal on this daemon has this shape. A caller reads `error` as the code and never parses `detail`.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detail", "error"],
+      "properties": {
+        "detail": { "type": "string" },
+        "error": { "type": "string" },
+        "route": { "type": "string" },
+        "upstream": { "type": "string" }
+      }
+    }
+  }
+}

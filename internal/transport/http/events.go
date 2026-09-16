@@ -37,12 +37,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 
 	upstream, err := s.openUpstreamEvents(r)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"error":  "upstream_unreachable",
-			"detail": err.Error(),
-		})
+		writeRefusal(w, http.StatusBadGateway, "upstream_unreachable", err.Error())
 		return
 	}
 	defer upstream.Body.Close()

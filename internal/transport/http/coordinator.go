@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/coordinator"
-	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
 // coordinatorRoute reads or moves the machine role.
@@ -23,26 +23,16 @@ func (s *Server) coordinatorRoute(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		live, sessions := s.liveness(ctx, existing)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"registered": existing != nil,
-			"record":     existing,
-			"liveness":   string(live),
-			"candidates": sessions,
+		writeJSON(w, contract.CoordinatorSnapshot{
+			Registered: existing != nil,
+			Record:     wireCoordinator(existing),
+			Liveness:   contract.Liveness(live),
+			Candidates: sessions,
 		})
 		return
 	}
 
-	var body struct {
-		Operation      string `json:"operation"`
-		Label          string `json:"label"`
-		SessionID      string `json:"sessionId"`
-		ConversationID string `json:"conversationId"`
-		Assistant      string `json:"assistant"`
-		PID            int    `json:"pid"`
-		ExpectID       string `json:"expectId"`
-		ExpectGen      int64  `json:"expectGeneration"`
-	}
+	var body contract.CoordinatorRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a coordinator command")
 		return
@@ -58,11 +48,11 @@ func (s *Server) coordinatorRoute(w http.ResponseWriter, r *http.Request) {
 			Label:          body.Label,
 			SessionID:      body.SessionID,
 			ConversationID: body.ConversationID,
-			Assistant:      body.Assistant,
-			PID:            body.PID,
+			Assistant:      string(body.Assistant),
+			PID:            int(body.PID),
 		}, live)
 	case "rebind":
-		next, err = coordinator.Rebind(existing, body.ExpectID, body.ExpectGen, candidates, live)
+		next, err = coordinator.Rebind(existing, body.ExpectID, body.ExpectGeneration, candidates, live)
 	default:
 		writeRefusal(w, http.StatusBadRequest, "bad_request", "operation must be register or rebind")
 		return
@@ -84,8 +74,33 @@ func (s *Server) coordinatorRoute(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusInternalServerError, "coordinator_store_failed", err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "record": next})
+	writeJSON(w, contract.CoordinatorResult{OK: true, Record: *wireCoordinator(&next)})
+}
+
+// wireCoordinator carries the record across to the contract.
+//
+// The timestamps become integers here, like every other time on this daemon.
+// The domain keeps time.Time because it does arithmetic on it; the wire does
+// not, and one representation of an instant is worth more than a faithful
+// mirror of an internal type.
+func wireCoordinator(rec *coordinator.Record) *contract.CoordinatorRecord {
+	if rec == nil {
+		return nil
+	}
+	out := contract.CoordinatorRecord{
+		ID:             rec.ID,
+		Label:          rec.Label,
+		SessionID:      rec.SessionID,
+		ConversationID: rec.ConversationID,
+		Assistant:      contract.Assistant(rec.Assistant),
+		PID:            int64(rec.PID),
+		RegisteredAt:   rec.RegisteredAt.Unix(),
+		Generation:     rec.Generation,
+	}
+	if !rec.ReboundAt.IsZero() {
+		out.ReboundAt = rec.ReboundAt.Unix()
+	}
+	return &out
 }
 
 // liveness asks the machine whether the bound session is still there.
@@ -117,5 +132,3 @@ func (s *Server) liveness(ctx context.Context, rec *coordinator.Record) (coordin
 	}
 	return coordinator.Offline, ids
 }
-
-var _ = session.Session{}

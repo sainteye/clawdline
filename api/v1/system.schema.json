@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "system.schema.json",
+  "title": "The daemon itself",
+  "description": "Routes that describe this process rather than the work it carries.",
+  "$defs": {
+    "Health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "dir", "ok", "port", "served_by", "upstream"],
+      "properties": {
+        "at": { "type": "integer" },
+        "dir": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "port": { "type": "integer" },
+        "served_by": { "description": "Which implementation answered. This is how a reader tells the Go daemon from the Swift app on the same port.", "type": "string" },
+        "upstream": { "type": "integer" }
+      }
+    },
+    "InventoryScan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "provenance"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "notes": { "nullable": true, "type": "array", "items": { "type": "string" } },
+        "provenance": { "type": "string" }
+      }
+    },
+    "InventorySession": {
+      "description": "A raw row of the terminal reading, before the fleet list drops the rows that are not assistants.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "evidence", "id", "state"],
+      "properties": {
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "conversation_id": { "type": "string" },
+        "cwd": { "type": "string" },
+        "evidence": { "$ref": "common.schema.json#/$defs/Evidence" },
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "pid": { "type": "integer" },
+        "state": { "$ref": "common.schema.json#/$defs/SessionState" },
+        "tty": { "type": "string" }
+      }
+    },
+    "Inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "scan", "served_by", "sessions"],
+      "properties": {
+        "at": { "type": "integer" },
+        "scan": { "$ref": "#/$defs/InventoryScan" },
+        "served_by": { "type": "string" },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/InventorySession" } }
+      }
+    }
+  }
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/board"
 )
 
@@ -17,10 +18,8 @@ func (s *Server) boardRead(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	revision, err := s.store.BoardRevision(ctx)
-	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "store_unreadable", "detail": err.Error()})
+		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
 	}
 
@@ -32,19 +31,30 @@ func (s *Server) boardRead(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"schemaVersion": 1,
-		"revision":      revision,
-		"projects":      board.DeriveProjects(cwds),
+	derived := board.DeriveProjects(cwds)
+	projects := make([]contract.Project, 0, len(derived))
+	for _, p := range derived {
+		projects = append(projects, contract.Project{
+			ID:           p.ID,
+			Name:         p.Name,
+			DisplayPath:  p.DisplayPath,
+			SessionCount: int64(p.SessionCount),
+		})
+	}
+
+	writeJSON(w, contract.BoardSnapshot{
+		SchemaVersion: 1,
+		Revision:      revision,
+		Projects:      projects,
 		// The reading this rests on says whether it was complete. A board built
 		// from a partial inventory is not a board with fewer projects, it is a
 		// board that does not know.
-		"source": map[string]any{
-			"complete":   inv.Complete,
-			"provenance": inv.Provenance,
-			"observedAt": inv.ObservedAt.Unix(),
+		Source: contract.BoardSource{
+			Complete:   inv.Complete,
+			Provenance: inv.Provenance,
+			ObservedAt: inv.ObservedAt.Unix(),
 		},
-		"at": time.Now().Unix(),
+		At: time.Now().Unix(),
 	})
 }
 
@@ -83,10 +93,7 @@ func (s *Server) boardWrite(w http.ResponseWriter, r *http.Request) {
 	}
 	if !apply {
 		// A replay. The original outcome is the answer; nothing moves.
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ok": true, "revision": revision, "replayed": true,
-		})
+		writeJSON(w, contract.BoardWriteResult{OK: true, Revision: revision, Replayed: true})
 		return
 	}
 
@@ -96,14 +103,5 @@ func (s *Server) boardWrite(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusInternalServerError, "store_unwritable", err.Error())
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"ok": true, "revision": next, "replayed": false,
-	})
-}
-
-func writeRefusal(w http.ResponseWriter, status int, code, detail string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]any{"error": code, "detail": detail})
+	writeJSON(w, contract.BoardWriteResult{OK: true, Revision: next, Replayed: false})
 }

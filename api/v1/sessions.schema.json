@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sessions.schema.json",
+  "title": "The fleet list",
+  "description": "GET /v1/sessions, and the `sessions` frame of GET /v1/events. They are the same payload because they are the same snapshot; two builders would drift and a client could not tell which one it got.",
+  "$defs": {
+    "WorkState": {
+      "description": "One projection of what this session needs, ranked so a reader can sort by it. `unknown` outranks nothing and means the inputs were incomplete.",
+      "type": "string",
+      "enum": ["ready", "working", "holding", "waiting_you", "waiting_session", "unknown", "milestone_complete", "work_complete"]
+    },
+    "CloseabilityState": {
+      "description": "`safe` is a positive claim that nothing is owed. An unreadable obligation list must produce `unknown`, never `safe`.",
+      "type": "string",
+      "enum": ["safe", "blocked", "unknown"]
+    },
+    "CloseReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "mover", "note"],
+      "properties": {
+        "kind": { "type": "string" },
+        "mover": { "$ref": "common.schema.json#/$defs/Mover" },
+        "note": { "type": "string" }
+      }
+    },
+    "Closeability": {
+      "description": "Whether this session can end. A separate question from whether it can take work, and neither may be read off the other.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reasons", "state"],
+      "properties": {
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/CloseReason" } },
+        "state": { "$ref": "#/$defs/CloseabilityState" }
+      }
+    },
+    "SessionRow": {
+      "description": "One assistant session. Fields this daemon cannot support are absent rather than invented; a reader that handles absence handles this too.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "closeability", "evidence", "id", "isClaude", "state", "work_state"],
+      "properties": {
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "closeability": { "$ref": "#/$defs/Closeability" },
+        "cwd": { "type": "string" },
+        "evidence": { "$ref": "common.schema.json#/$defs/Evidence" },
+        "id": { "type": "string" },
+        "isClaude": { "type": "boolean" },
+        "label": { "type": "string" },
+        "sessionId": { "description": "The assistant's own conversation id, when one was recovered from its command line.", "type": "string" },
+        "state": { "$ref": "common.schema.json#/$defs/SessionState" },
+        "tty": { "type": "string" },
+        "work_state": { "$ref": "#/$defs/WorkState" }
+      }
+    },
+    "ScanCompleted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "sequence"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "sequence": { "type": "integer" }
+      }
+    },
+    "Scan": {
+      "description": "What the reading behind this snapshot knows about itself. Without it an empty list cannot be told apart from a failed scan.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "completed", "emptyAuthoritative", "epoch", "generation", "provenance"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "completed": { "$ref": "#/$defs/ScanCompleted" },
+        "emptyAuthoritative": {
+          "description": "An empty list is only authoritative when the reading was complete. This is what stops a client reading a failed scan as `every session went away`.",
+          "type": "boolean"
+        },
+        "epoch": { "description": "Identifies the process. A client reconnecting to a restarted daemon uses it to tell a reset generation from one that went backwards.", "type": "integer" },
+        "generation": { "type": "integer" },
+        "provenance": { "type": "string" }
+      }
+    },
+    "SessionsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "scan", "sessions"],
+      "properties": {
+        "at": { "type": "integer" },
+        "scan": { "$ref": "#/$defs/Scan" },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/SessionRow" } }
+      }
+    }
+  }
+}

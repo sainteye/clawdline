@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
@@ -41,7 +42,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 // sessionsPayload builds the one snapshot both the route and the event stream
 // publish. They are the same payload, so they are the same code: two builders
 // would drift, and the client would have no way to tell which one it got.
-func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
+func (s *Server) sessionsPayload(ctx context.Context) contract.SessionsSnapshot {
 	if h, ok := s.inventory.Identity.(interface{ Refresh() }); ok {
 		h.Refresh()
 	}
@@ -63,7 +64,7 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 	// attribute of the session that left them running, and publishing them as
 	// rows of their own turned eight cards into eighteen, ten of which the
 	// console could only describe as unreadable.
-	rows := make([]map[string]any, 0, len(inv.Sessions))
+	rows := make([]contract.SessionRow, 0, len(inv.Sessions))
 	for _, item := range inv.Sessions {
 		if !item.IsAssistant() {
 			continue
@@ -71,21 +72,21 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 		rows = append(rows, sessionRow(item, owed, owedErr, live))
 	}
 
-	return map[string]any{
-		"sessions": rows,
-		"at":       time.Now().Unix(),
-		"scan": map[string]any{
-			"epoch":      epoch,
-			"generation": generation.Add(1),
-			"complete":   inv.Complete,
-			"provenance": inv.Provenance,
+	return contract.SessionsSnapshot{
+		At:       time.Now().Unix(),
+		Sessions: rows,
+		Scan: contract.Scan{
+			Epoch:      epoch,
+			Generation: generation.Add(1),
+			Complete:   inv.Complete,
+			Provenance: inv.Provenance,
 			// An empty list is only authoritative when the reading was
 			// complete. Saying so here is what stops a client from treating a
 			// failed scan as "every session went away".
-			"emptyAuthoritative": inv.Complete && len(rows) == 0,
-			"completed": map[string]any{
-				"sequence": generation.Load(),
-				"complete": inv.Complete,
+			EmptyAuthoritative: inv.Complete && len(rows) == 0,
+			Completed: contract.ScanCompleted{
+				Sequence: generation.Load(),
+				Complete: inv.Complete,
 			},
 		},
 	}
@@ -93,38 +94,27 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 
 // sessionRow renders one session in the shape the console reads.
 //
-// Fields this daemon cannot yet support are absent rather than invented. The
+// Fields this daemon cannot yet support are left at their zero value and the
+// contract marks them optional, so they are absent rather than invented. The
 // contract already says several of them are absent in ordinary cases, so a
-// reader that handles absence handles this too — and a guessed value would be
-// worse than a missing one.
-func sessionRow(item session.Session, owed []task.Obligation, owedErr error, live []task.Task) map[string]any {
-	row := map[string]any{
-		"id":       item.ID,
-		"backend":  string(item.Backend),
-		"state":    string(item.State),
-		"isClaude": item.Assistant == session.AssistantClaude,
+// reader that handles absence handles this too.
+func sessionRow(item session.Session, owed []task.Obligation, owedErr error, live []task.Task) contract.SessionRow {
+	return contract.SessionRow{
+		ID:       item.ID,
+		Backend:  contract.Backend(item.Backend),
+		State:    contract.SessionState(item.State),
+		IsClaude: item.Assistant == session.AssistantClaude,
 		// Not in the Swift contract: how this row's state was learned. A
 		// registry reading and a screen guess are different kinds of fact.
-		"evidence":     string(item.Evidence),
-		"work_state":   string(workState(item, owed, owedErr, live)),
-		"closeability": closeability(item, owed, owedErr),
+		Evidence:     contract.Evidence(item.Evidence),
+		WorkState:    contract.WorkState(workState(item, owed, owedErr, live)),
+		Closeability: closeability(item, owed, owedErr),
+		TTY:          item.TTY,
+		Assistant:    contract.Assistant(item.Assistant),
+		Label:        item.Label,
+		CWD:          item.CWD,
+		SessionID:    item.ConversationID,
 	}
-	if item.TTY != "" {
-		row["tty"] = item.TTY
-	}
-	if item.Assistant != "" {
-		row["assistant"] = string(item.Assistant)
-	}
-	if item.Label != "" {
-		row["label"] = item.Label
-	}
-	if item.CWD != "" {
-		row["cwd"] = item.CWD
-	}
-	if item.ConversationID != "" {
-		row["sessionId"] = item.ConversationID
-	}
-	return row
 }
 
 // closeability says whether this session can end. It is a separate question
@@ -134,11 +124,11 @@ func sessionRow(item session.Session, owed []task.Obligation, owedErr error, liv
 // rather than to `safe`, because what it casts doubt on is the completeness of
 // the list itself, not one entry in it. `safe` here is a positive claim that
 // nothing is owed, and it must never be what a failure looks like.
-func closeability(item session.Session, owed []task.Obligation, err error) map[string]any {
+func closeability(item session.Session, owed []task.Obligation, err error) contract.Closeability {
 	if err != nil {
-		return map[string]any{"state": "unknown", "reasons": []any{}}
+		return contract.Closeability{State: contract.CloseabilityStateUnknown, Reasons: []contract.CloseReason{}}
 	}
-	reasons := []map[string]any{}
+	reasons := []contract.CloseReason{}
 	for _, o := range owed {
 		if o.Mover.Kind == task.MoverOtherSession || o.Mover.Kind == task.MoverThisSession {
 			if o.Mover.ID != item.ID {
@@ -147,17 +137,25 @@ func closeability(item session.Session, owed []task.Obligation, err error) map[s
 		} else if o.Subject != item.ID {
 			continue
 		}
-		reasons = append(reasons, map[string]any{
-			"kind":  string(o.Kind),
-			"mover": map[string]any{"kind": string(o.Mover.Kind), "id": o.Mover.ID},
-			"note":  o.Note,
+		reasons = append(reasons, contract.CloseReason{
+			Kind:  string(o.Kind),
+			Mover: wireMover(o.Mover),
+			Note:  o.Note,
 		})
 	}
-	state := "safe"
+	state := contract.CloseabilityStateSafe
 	if len(reasons) > 0 {
-		state = "blocked"
+		state = contract.CloseabilityStateBlocked
 	}
-	return map[string]any{"state": state, "reasons": reasons}
+	return contract.Closeability{State: state, Reasons: reasons}
+}
+
+// wireMover is the one place a mover crosses from the domain to the wire. It is
+// a function rather than a literal in three handlers because a mover that means
+// something different in the obligation list than in a close reason is exactly
+// the drift this contract exists to prevent.
+func wireMover(m task.Mover) contract.Mover {
+	return contract.Mover{Kind: contract.MoverKind(m.Kind), ID: m.ID}
 }
 
 // workState gathers this session's axes and hands them to the projection.

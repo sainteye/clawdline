@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schedules.schema.json",
+  "title": "Schedules",
+  "description": "GET and POST /v1/schedules. A schedule dispatches work, so it declares claims like any other dispatch, and it does not come due while its own last run is still working.",
+  "$defs": {
+    "ScheduleRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "dir", "enabled", "id", "lastRun", "lastTask", "name", "when"],
+      "properties": {
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "dir": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "id": { "type": "string" },
+        "lastRun": { "description": "0 means never run, rather than the Unix value of the zero time.", "type": "integer" },
+        "lastTask": { "type": "string" },
+        "name": { "type": "string" },
+        "when": { "type": "string" }
+      }
+    },
+    "ScheduleList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schedules"],
+      "properties": {
+        "schedules": { "type": "array", "items": { "$ref": "#/$defs/ScheduleRow" } }
+      }
+    },
+    "ScheduleSaved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "ok", "when"],
+      "properties": {
+        "id": { "type": "string" },
+        "ok": { "type": "boolean" },
+        "when": { "type": "string" }
+      }
+    },
+    "ScheduleRequest": {
+      "description": "The body POST /v1/schedules accepts. `claims` absent is refused rather than read as none: a dispatch that declared nothing and a dispatch that declared an empty set are different requests.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "brief", "dir", "id", "name", "when"],
+      "properties": {
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "brief": { "type": "string" },
+        "claims": { "type": "array", "items": { "type": "string" } },
+        "dir": { "type": "string" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "when": { "type": "string" }
+      }
+    }
+  }
+}

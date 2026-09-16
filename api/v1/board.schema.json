@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "board.schema.json",
+  "title": "The board",
+  "description": "GET and POST /v1/board. Writes are compare-and-swap on `revision` with a request fingerprint: same id and same body is a replay, same id and a different body is a conflict.",
+  "$defs": {
+    "Project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayPath", "id", "name", "sessionCount"],
+      "properties": {
+        "displayPath": { "type": "string" },
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "sessionCount": { "description": "A reading, not a stored count, so it cannot drift from the thing it describes.", "type": "integer" }
+      }
+    },
+    "BoardSource": {
+      "description": "A board built from a partial inventory is not a board with fewer projects; it is a board that does not know.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "observedAt", "provenance"],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "observedAt": { "type": "integer" },
+        "provenance": { "type": "string" }
+      }
+    },
+    "BoardSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "projects", "revision", "schemaVersion", "source"],
+      "properties": {
+        "at": { "type": "integer" },
+        "projects": { "type": "array", "items": { "$ref": "#/$defs/Project" } },
+        "revision": { "type": "integer" },
+        "schemaVersion": { "type": "integer" },
+        "source": { "$ref": "#/$defs/BoardSource" }
+      }
+    },
+    "BoardWriteResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "replayed", "revision"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "replayed": { "description": "True when this request id had already been applied with the same body. The original outcome is the answer and nothing moved.", "type": "boolean" },
+        "revision": { "type": "integer" }
+      }
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "obligations.schema.json",
+  "title": "What is still owed",
+  "description": "GET /v1/obligations. The route that replaces asking: every row names who can clear it, how long it has been owed, and how loud it has become.",
+  "$defs": {
+    "Escalation": {
+      "description": "How loud an obligation has become. Escalation changes visibility, never verdict: nothing here ever declares a session dead.",
+      "type": "string",
+      "enum": ["quiet", "aging", "overdue"]
+    },
+    "ObligationKind": {
+      "type": "string",
+      "enum": ["wait", "landing", "handoff", "succession", "assignment", "deadletter", "review"]
+    },
+    "Obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["age_seconds", "escalation", "evidence", "id", "kind", "mover", "note", "opened_at", "subject"],
+      "properties": {
+        "age_seconds": { "type": "integer" },
+        "escalation": { "$ref": "#/$defs/Escalation" },
+        "evidence": { "$ref": "common.schema.json#/$defs/Evidence" },
+        "id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/ObligationKind" },
+        "mover": { "$ref": "common.schema.json#/$defs/Mover" },
+        "note": { "type": "string" },
+        "opened_at": { "type": "integer" },
+        "subject": { "type": "string" }
+      }
+    },
+    "ObligationList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "obligations", "stuck"],
+      "properties": {
+        "at": { "type": "integer" },
+        "obligations": { "type": "array", "items": { "$ref": "#/$defs/Obligation" } },
+        "stuck": { "description": "How many rows are past their overdue threshold. A count, not a verdict.", "type": "integer" }
+      }
+    }
+  }
+}

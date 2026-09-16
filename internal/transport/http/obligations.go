@@ -1,10 +1,10 @@
 package http
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
@@ -17,31 +17,29 @@ import (
 // nothing was wrong.
 func (s *Server) obligations(w http.ResponseWriter, r *http.Request) {
 	open, err := s.store.OpenObligations(r.Context())
-	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(map[string]any{"error": "store_unreadable", "detail": err.Error()})
+		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
 	}
 
 	now := time.Now()
-	rows := make([]map[string]any, 0, len(open))
+	rows := make([]contract.Obligation, 0, len(open))
 	for _, o := range open {
-		rows = append(rows, map[string]any{
-			"id":          o.ID,
-			"kind":        string(o.Kind),
-			"subject":     o.Subject,
-			"mover":       map[string]any{"kind": string(o.Mover.Kind), "id": o.Mover.ID},
-			"opened_at":   o.OpenedAt.Unix(),
-			"age_seconds": int(o.Age(now).Seconds()),
-			"escalation":  string(o.Escalate(now, task.DefaultThresholds)),
-			"evidence":    string(o.Evidence),
-			"note":        o.Note,
+		rows = append(rows, contract.Obligation{
+			ID:         o.ID,
+			Kind:       contract.ObligationKind(o.Kind),
+			Subject:    o.Subject,
+			Mover:      wireMover(o.Mover),
+			OpenedAt:   o.OpenedAt.Unix(),
+			AgeSeconds: int64(o.Age(now).Seconds()),
+			Escalation: contract.Escalation(o.Escalate(now, task.DefaultThresholds)),
+			Evidence:   contract.Evidence(o.Evidence),
+			Note:       o.Note,
 		})
 	}
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"obligations": rows,
-		"stuck":       len(task.Stuck(open, now, task.DefaultThresholds)),
-		"at":          now.Unix(),
+	writeJSON(w, contract.ObligationList{
+		Obligations: rows,
+		Stuck:       int64(len(task.Stuck(open, now, task.DefaultThresholds))),
+		At:          now.Unix(),
 	})
 }

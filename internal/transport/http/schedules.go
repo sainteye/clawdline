@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/contract"
 	"github.com/sainteye/clawdline-go/internal/domain/schedule"
 )
 
@@ -20,40 +21,7 @@ func lastRun(t time.Time) int64 {
 func (s *Server) schedules(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if r.Method == http.MethodPost {
-		var body struct {
-			ID        string   `json:"id"`
-			Name      string   `json:"name"`
-			When      string   `json:"when"`
-			Assistant string   `json:"assistant"`
-			Dir       string   `json:"dir"`
-			Brief     string   `json:"brief"`
-			Claims    []string `json:"claims"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a schedule")
-			return
-		}
-		when, err := schedule.ParseWhen(body.When)
-		if err != nil {
-			writeRefusal(w, http.StatusBadRequest, "bad_schedule", err.Error())
-			return
-		}
-		if body.Claims == nil {
-			writeRefusal(w, http.StatusUnprocessableEntity, "claims_required",
-				"a schedule dispatches work, so it declares paths like any other dispatch")
-			return
-		}
-		sc := schedule.Schedule{
-			ID: body.ID, Name: body.Name, When: when,
-			Assistant: body.Assistant, Dir: body.Dir, Brief: body.Brief,
-			Claims: body.Claims, Enabled: true,
-		}
-		if err := s.store.SaveSchedule(ctx, sc); err != nil {
-			writeRefusal(w, http.StatusInternalServerError, "store_unwritable", err.Error())
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "id": sc.ID, "when": sc.When.String()})
+		s.scheduleSave(w, r)
 		return
 	}
 
@@ -62,14 +30,52 @@ func (s *Server) schedules(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())
 		return
 	}
-	rows := make([]map[string]any, 0, len(all))
+	rows := make([]contract.ScheduleRow, 0, len(all))
 	for _, sc := range all {
-		rows = append(rows, map[string]any{
-			"id": sc.ID, "name": sc.Name, "when": sc.When.String(),
-			"assistant": sc.Assistant, "dir": sc.Dir,
-			"enabled": sc.Enabled, "lastRun": lastRun(sc.LastRun), "lastTask": sc.LastTask,
+		rows = append(rows, contract.ScheduleRow{
+			ID:        sc.ID,
+			Name:      sc.Name,
+			When:      sc.When.String(),
+			Assistant: contract.Assistant(sc.Assistant),
+			Dir:       sc.Dir,
+			Enabled:   sc.Enabled,
+			LastRun:   lastRun(sc.LastRun),
+			LastTask:  sc.LastTask,
 		})
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"schedules": rows})
+	writeJSON(w, contract.ScheduleList{Schedules: rows})
+}
+
+// scheduleSave accepts one schedule.
+//
+// The request body is a generated type too. That matters here more than
+// anywhere else on this daemon: `claims` absent and `claims` empty are
+// different requests, and a decoder that flattened them would let a schedule
+// dispatch work every minute having reserved nothing.
+func (s *Server) scheduleSave(w http.ResponseWriter, r *http.Request) {
+	var body contract.ScheduleRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeRefusal(w, http.StatusBadRequest, "bad_request", "that body is not a schedule")
+		return
+	}
+	when, err := schedule.ParseWhen(body.When)
+	if err != nil {
+		writeRefusal(w, http.StatusBadRequest, "bad_schedule", err.Error())
+		return
+	}
+	if body.Claims == nil {
+		writeRefusal(w, http.StatusUnprocessableEntity, "claims_required",
+			"a schedule dispatches work, so it declares paths like any other dispatch")
+		return
+	}
+	sc := schedule.Schedule{
+		ID: body.ID, Name: body.Name, When: when,
+		Assistant: string(body.Assistant), Dir: body.Dir, Brief: body.Brief,
+		Claims: body.Claims, Enabled: true,
+	}
+	if err := s.store.SaveSchedule(r.Context(), sc); err != nil {
+		writeRefusal(w, http.StatusInternalServerError, "store_unwritable", err.Error())
+		return
+	}
+	writeJSON(w, contract.ScheduleSaved{OK: true, ID: sc.ID, When: sc.When.String()})
 }

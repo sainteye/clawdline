@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tasks.schema.json",
+  "title": "Dispatched work",
+  "description": "GET /v1/tasks. Claims are the paths a task reserved at dispatch time; they are compared by ancestry, never by string equality.",
+  "$defs": {
+    "TaskState": {
+      "type": "string",
+      "enum": ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed"]
+    },
+    "TaskRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "claims", "created_at", "project_dir", "state", "task_id"],
+      "properties": {
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "claims": { "type": "array", "items": { "type": "string" } },
+        "created_at": { "type": "integer" },
+        "project_dir": { "type": "string" },
+        "state": { "$ref": "#/$defs/TaskState" },
+        "task_id": { "type": "string" }
+      }
+    },
+    "TaskList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tasks"],
+      "properties": {
+        "tasks": { "type": "array", "items": { "$ref": "#/$defs/TaskRow" } }
+      }
+    }
+  }
+}
