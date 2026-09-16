@@ -2,6 +2,12 @@ import { useEffect, useRef, useState, type RefObject } from "react"
 import type { ScheduleRow, SessionRow } from "@clawdline/contract"
 import { client } from "./client.js"
 import * as L from "./legacy/bridge.js"
+// Not through the bridge yet: the list's order hold and the seam its release
+// redraws through. Both are the copied modules' own exports; the bridge should
+// carry them (`freezeOrder`, `thawOrder`, `bindSessionUI`) and this import then
+// goes away.
+import { freezeOrder, thawOrder } from "./legacy/js/view/derive.js"
+import { bindSessionUI } from "./legacy/js/session/ui.js"
 import { Row } from "./session/List.js"
 import { Detail } from "./session/Detail.js"
 
@@ -18,8 +24,15 @@ export function SessionsPage({
   arrived,
   live,
   emptyAuthoritative,
+  shown: onScreen,
+  view,
+  paneOpen,
+  filter,
+  onFilter,
   selected,
-  onSelect,
+  openId,
+  onOpen,
+  onBack,
   onDid,
 }: {
   rows: SessionRow[]
@@ -30,17 +43,37 @@ export function SessionsPage({
   /** The stream is up: the original's `S.conn === "live"`. */
   live: boolean
   emptyAuthoritative: boolean
+  /** This is the page on screen. Another page hides it; nothing takes it down. */
+  shown: boolean
+  /** The phone's one screen at a time: `main#app[data-view]`. */
+  view: "list" | "detail"
+  /** The desk's second column, on or off (⌘J): `main#app[data-pane]`. */
+  paneOpen: boolean
+  filter: string
+  onFilter: (q: string) => void
+  /** The highlight in the list (`li.selected`). */
   selected: string | null
-  onSelect: (id: string | null) => void
+  /** The session in the detail pane (`li.open`). */
+  openId: string | null
+  onOpen: (id: string) => void
+  onBack: () => void
   onDid: () => void
 }) {
-  const [filter, setFilter] = useState("")
   // The copied modules read a module-level object, so it is filled before
   // anything is drawn from them, and the list's own order and filter are used.
-  L.publish(rows, selected, filter)
+  L.publish(rows, openId, filter)
   const shown = L.orderedRows()
-  const open = shown.find((r) => r.id === selected) ?? null
+  // From the whole fleet, as `byId` looks it up: a filter that hides the open
+  // row does not close it.
+  const open = rows.find((r) => r.id === openId) ?? null
   const T = L.strings
+
+  // `thawOrder` redraws the list through the session UI seam once the order it
+  // held is let go, and this page is that list.
+  const [, redraw] = useState(0)
+  useEffect(() => {
+    bindSessionUI({ renderList: () => redraw((n) => n + 1) })
+  }, [])
 
   // `Waits.list` and `listUnknown()` (`view/waits.js`). Nothing is drawn for
   // the first 150ms; after that a skeleton stands in for the rows, and once up
@@ -82,10 +115,18 @@ export function SessionsPage({
   const scrollRef = useRef<HTMLDivElement>(null)
   const ptrRef = useRef<HTMLDivElement>(null)
   const ptrWord = usePullToRefresh(scrollRef, ptrRef, onDid)
+  useOrderHold(scrollRef)
   const schedules = useSchedules(arrived)
 
   return (
-    <main className="app" id="app" data-pane={open ? "detail" : "list"}>
+    <main
+      className="app"
+      id="app"
+      data-page-view="sessions"
+      data-view={view}
+      data-pane={paneOpen ? "on" : "off"}
+      hidden={!onScreen}
+    >
       <section className="pane pane-list">
         <div className="filter-row">
           {/* Every attribute here keeps a password manager out of a box that
@@ -105,7 +146,7 @@ export function SessionsPage({
             data-bwignore=""
             data-form-type="other"
             aria-label={T.webFilterLabel}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={(e) => onFilter(e.target.value)}
           />
           <span className="slash">/</span>
           {/* Saying what to start and picking where to start it. Both lead to a
@@ -155,7 +196,7 @@ export function SessionsPage({
           </div>
           <ul className="rows" id="rows" role="listbox" aria-label={T.webListLabel} tabIndex={0} ref={listRef}>
             {drawn.map((r) => (
-              <Row key={r.id} row={r} open={r.id === selected} onSelect={onSelect} />
+              <Row key={r.id} row={r} selected={r.id === selected} open={r.id === openId} onOpen={onOpen} />
             ))}
           </ul>
           <div className={emptyClass} id="list-empty" hidden={!skeleton && !empty}>
@@ -189,7 +230,7 @@ export function SessionsPage({
         </div>
       </section>
 
-      <Detail row={open} onBack={() => onSelect(null)} onDid={onDid} listUnknown={listUnknown} />
+      <Detail row={open} onBack={onBack} onDid={onDid} listUnknown={listUnknown} />
     </main>
   )
 }
@@ -241,6 +282,31 @@ function ListSkeleton() {
       ))}
     </div>
   )
+}
+
+/**
+ * The order is held still while the pointer is inside the list, and for a
+ * moment after a finger leaves it (`input/keys.js`): a list that sorts itself
+ * can move a row out from under a press.
+ */
+function useOrderHold(scrollRef: RefObject<HTMLDivElement | null>): void {
+  useEffect(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    const touchEnd = () => {
+      setTimeout(thawOrder, 1200)
+    }
+    scroller.addEventListener("mouseenter", freezeOrder)
+    scroller.addEventListener("mouseleave", thawOrder)
+    scroller.addEventListener("touchstart", freezeOrder, { passive: true })
+    scroller.addEventListener("touchend", touchEnd, { passive: true })
+    return () => {
+      scroller.removeEventListener("mouseenter", freezeOrder)
+      scroller.removeEventListener("mouseleave", thawOrder)
+      scroller.removeEventListener("touchstart", freezeOrder)
+      scroller.removeEventListener("touchend", touchEnd)
+    }
+  }, [scrollRef])
 }
 
 /**

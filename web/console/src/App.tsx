@@ -53,15 +53,109 @@ const BRAND_MARK: Icon = {
   ),
 }
 
+/** The pages a fragment may name here: `Pages.knows`, less the ones this daemon cannot show. */
+function knows(name: string): name is Page {
+  return name === "dashboard" || PAGES.some((p) => p.id === name && p.ready)
+}
+
+/** `pageInHash` (`core/pages.js`): the page a fragment names, or null when it names none. */
+function pageInHash(hash: string): string | null {
+  const found = /(?:^|[#&])page=([^&]*)/.exec(String(hash || ""))
+  if (!found || !found[1]) return null
+  try {
+    return decodeURIComponent(found[1])
+  } catch {
+    return found[1]
+  }
+}
+
+/**
+ * `writeHash` (`main.js`): with `replaceState`, because a page is where you are
+ * and not a step you took, and the fragment is the whole of it.
+ */
+function writeHash(hash: string): void {
+  try {
+    history.replaceState(history.state, "", hash)
+  } catch {
+    location.hash = hash
+  }
+}
+
+/** `phone()` (`core/env.js`): the width the stylesheet switches at, asked each time. */
+const phone = () => window.matchMedia("(max-width: 899px)").matches
+const reduced = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+
+/** `releaseKeyboardFocus` (`core/env.js`): whatever holds the caret lets go before a phone screen is replaced. */
+function releaseKeyboardFocus(): void {
+  const el = document.activeElement as HTMLElement | null
+  if (el && el !== document.body && typeof el.blur === "function") el.blur()
+}
+
+/** `typing` (`input/keys.js`). */
+function typing(el: Element | null): el is HTMLElement {
+  return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || (el as HTMLElement).isContentEditable)
+}
+
+/** A row's node, as `rowNodes` holds it there. */
+function rowNode(id: string): HTMLElement | null {
+  for (const node of document.querySelectorAll<HTMLElement>("#rows > li.row")) {
+    if (node.dataset.id === id) return node
+  }
+  return null
+}
+
 export default function App() {
   const fleet = useFleet(client)
   const [page, setPage] = useState<Page>("sessions")
   const [menu, setMenu] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
   const [, setLoaded] = useState(0)
   const brandRef = useRef<HTMLButtonElement>(null)
   const sidebarRef = useRef<HTMLElement>(null)
   const markRef = useRef<HTMLCanvasElement>(null)
+  // A page the address asks for on arrival is reached while the body is still
+  // hidden for its words, and nothing hidden can take the keyboard; the landing
+  // waits for the words.
+  const landOnBrand = useRef(false)
+
+  // The session list's own arrangement, which the original keeps in
+  // `SessionSelection` and on `main#app`: the highlight and the open session
+  // are two things (`li.selected`, `li.open`), `data-view` is the phone's one
+  // screen at a time, and `data-pane` is the desk's second column on or off.
+  // Each is mirrored in a ref because the keyboard reads them between renders,
+  // as the original reads its state object.
+  const [selected, setSelectedState] = useState<string | null>(null)
+  const [openId, setOpenState] = useState<string | null>(null)
+  const [view, setViewState] = useState<"list" | "detail">("list")
+  const [paneOpen, setPaneState] = useState(true)
+  const [filter, setFilterState] = useState("")
+  const pageRef = useRef<Page>(page)
+  const menuRef = useRef(menu)
+  menuRef.current = menu
+  const selectedRef = useRef(selected)
+  const openRef = useRef(openId)
+  const viewRef = useRef(view)
+  const paneRef = useRef(paneOpen)
+  const filterRef = useRef(filter)
+  const setSelected = (id: string | null) => {
+    selectedRef.current = id
+    setSelectedState(id)
+  }
+  const setOpen = (id: string | null) => {
+    openRef.current = id
+    setOpenState(id)
+  }
+  const setView = (to: "list" | "detail") => {
+    viewRef.current = to
+    setViewState(to)
+  }
+  const setPane = (on: boolean) => {
+    paneRef.current = on
+    setPaneState(on)
+  }
+  const setFilter = (q: string) => {
+    filterRef.current = q
+    setFilterState(q)
+  }
 
   // The catalog, from the slot the daemon filled if it filled one, and from
   // /v1/strings if it did not. Either way the page is uncovered afterwards,
@@ -72,6 +166,10 @@ export default function App() {
     const get = async () => inline ?? (await client.strings())
     void L.loadStrings(get).finally(() => {
       document.documentElement.classList.remove("booting")
+      if (landOnBrand.current) {
+        landOnBrand.current = false
+        brandRef.current?.focus({ preventScroll: true })
+      }
       setLoaded((n) => n + 1)
     })
   }, [])
@@ -100,30 +198,272 @@ export default function App() {
     here?.focus({ preventScroll: true })
   }, [menu])
 
-  // Escape closes the drawer before anything else on the page (`input/keys.js`):
-  // it is over whatever page is showing, and one press closes one thing.
-  useEffect(() => {
-    if (!menu) return
-    const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") closeMenu()
-    }
-    document.addEventListener("keydown", onKey)
-    return () => document.removeEventListener("keydown", onKey)
-  }, [menu, closeMenu])
-
   // `Pages.go`: asking for the page already on screen does nothing at all, the
   // drawer included. A real move lands the keyboard on the wordmark (the
   // registry's `focusFallback`, since neither page here names a control of its
-  // own) and then closes the drawer behind it.
-  const go = (to: Page) => {
-    if (to === page) return
+  // own), writes the page into the address unless the address is what asked,
+  // and then closes the drawer behind it (`markSidebarPage`). The page left is
+  // hidden, not taken down: `main#app` keeps its scroll and its open session.
+  const go = (to: Page, options?: { hash?: boolean }) => {
+    if (!knows(to) || to === pageRef.current) return false
+    pageRef.current = to
     setPage(to)
-    brandRef.current?.focus({ preventScroll: true })
+    if (document.documentElement.classList.contains("booting")) landOnBrand.current = true
+    else brandRef.current?.focus({ preventScroll: true })
+    if (options?.hash !== false) writeHash("#page=" + encodeURIComponent(to))
     closeMenu()
+    return true
   }
 
+  // `Pages.bind` writes the answer on the root element, and `routeTo`
+  // (`input/route.js`) follows the address: once on arrival and on every
+  // change, without writing back the address it was just read from. A page
+  // this daemon cannot show is not a page here, as an unknown name is not one
+  // there.
+  useLayoutEffect(() => {
+    document.documentElement.setAttribute("data-page", page)
+  }, [page])
+  const goRef = useRef(go)
+  goRef.current = go
+  useEffect(() => {
+    const routeTo = () => {
+      const wanted = pageInHash(location.hash)
+      if (wanted) {
+        if (knows(wanted)) goRef.current(wanted, { hash: false })
+      } else goRef.current("sessions", { hash: false })
+    }
+    routeTo()
+    window.addEventListener("hashchange", routeTo)
+    return () => window.removeEventListener("hashchange", routeTo)
+  }, [])
+
   const rows = fleet.snapshot?.sessions ?? []
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
   const T = L.strings
+
+  // `select` (`session/agent.js`): the highlight moves, and the keyboard with it.
+  const select = (id: string) => {
+    if (!rowsRef.current.some((r) => r.id === id)) return
+    setSelected(id)
+    const node = rowNode(id)
+    if (node) {
+      node.focus({ preventScroll: true })
+      node.scrollIntoView({ block: "nearest", behavior: reduced ? "auto" : "smooth" })
+    }
+  }
+
+  // `move`: through the list as it is drawn, from the highlight, or from an
+  // end when there is none.
+  const move = (delta: number) => {
+    const list = L.orderedRows()
+    if (!list.length) return
+    const at = selectedRef.current ? list.findIndex((r) => r.id === selectedRef.current) : -1
+    const next = at < 0 ? (delta > 0 ? 0 : list.length - 1) : Math.min(list.length - 1, Math.max(0, at + delta))
+    select(list[next].id)
+  }
+
+  // The detail head says "closing" while its session is being ended, and until
+  // that settles the session is not given back or replaced (`closingSelectionKey`).
+  const closing = () => document.getElementById("detail-head")?.dataset.closing === "on"
+
+  // `openSession` (`session/open.js`). A session lives on the sessions page, so
+  // opening one means being there. On a phone it is a whole screen, with a
+  // history entry so the back gesture means what it looks like; on a desk it
+  // puts the second column back if it was put away. `keepFocus` is the first
+  // list's courtesy open, which must not take the keyboard.
+  const openSession = (id: string, keepFocus = false) => {
+    if (!rowsRef.current.some((r) => r.id === id)) return
+    if (closing() && openRef.current === id) return
+    go("sessions")
+    setSelected(id)
+    setOpen(id)
+    if (phone()) {
+      if (viewRef.current !== "detail") releaseKeyboardFocus()
+      setView("detail")
+      try {
+        history.pushState({ view: "detail", id }, "")
+      } catch {
+        /* the address stays as it was */
+      }
+    } else if (!paneRef.current) {
+      setPane(true)
+    }
+    if (!keepFocus && !phone()) rowNode(id)?.focus({ preventScroll: true })
+  }
+
+  // `closeDetail`: the session goes, the highlight stays. On a phone the list
+  // comes back and a `#session=…` or `#page=…` address goes with the detail,
+  // replaced rather than pushed so it adds no Back step.
+  const closeDetail = () => {
+    if (openRef.current && closing()) return
+    setOpen(null)
+    if (phone()) {
+      setView("list")
+      try {
+        history.replaceState({ view: "list" }, "", location.pathname + location.search)
+      } catch {
+        try {
+          location.hash = ""
+        } catch {
+          /* nothing more to do */
+        }
+      }
+    }
+  }
+
+  // What each list does to the selection (`handlers.js`'s `apply`,
+  // `SessionSelection.reconcile`): a session that went away takes its
+  // highlight and its detail with it. The first list to arrive puts the
+  // highlight on the top row; on a desk it also opens it, on a phone it does
+  // not — and not when the address asked for another page.
+  const firstList = useRef(true)
+  useEffect(() => {
+    if (selectedRef.current && !rows.some((r) => r.id === selectedRef.current)) setSelected(null)
+    if (openRef.current && !rows.some((r) => r.id === openRef.current)) closeDetail()
+    if (firstList.current && rows.length) {
+      firstList.current = false
+      if (pageRef.current === "sessions") {
+        const top = L.orderedRows()[0]
+        if (top) {
+          if (phone()) setSelected(top.id)
+          else openSession(top.id, true)
+        }
+      }
+    }
+  }, [rows])
+
+  // The phone's back gesture (`input/action-confirm.js`), and a window that
+  // changes width under an open session (`input/edges.js`).
+  const layoutRef = useRef({ closeDetail })
+  layoutRef.current = { closeDetail }
+  useEffect(() => {
+    const onPop = () => {
+      if (!phone()) return
+      if (viewRef.current === "detail") layoutRef.current.closeDetail()
+    }
+    const onResize = () => {
+      if (!phone()) setView("list")
+      else if (openRef.current) setView("detail")
+    }
+    window.addEventListener("popstate", onPop)
+    window.addEventListener("resize", onResize)
+    return () => {
+      window.removeEventListener("popstate", onPop)
+      window.removeEventListener("resize", onResize)
+    }
+  }, [])
+
+  // `input/keys.js`, one listener, in its order: one press does one thing, and
+  // a `return` here ends this listener and nothing else. The sheets it asks
+  // about first (the door, a confirmation, Info, Start, Command, the schedule
+  // form, the keyboard card) are not in this console, and neither are an
+  // agent's transcript or the pages with a step inside them; `r` and `?` have
+  // nothing to toggle here. The session menu answers its own Escape before
+  // this sees it, as `detail-actions.js` does.
+  const onKey = (ev: KeyboardEvent) => {
+    const key = ev.key
+    const meta = ev.metaKey || ev.ctrlKey
+    const rowsEl = document.getElementById("rows")
+    const filterEl = document.getElementById("filter") as HTMLInputElement | null
+
+    if (meta && (key === "k" || key === "K")) {
+      ev.preventDefault()
+      rowsEl?.focus()
+      if (!selectedRef.current) move(1)
+      else select(selectedRef.current)
+      return
+    }
+    if (meta && (key === "j" || key === "J")) {
+      ev.preventDefault()
+      if (phone()) {
+        setView(viewRef.current === "detail" ? "list" : "detail")
+        return
+      }
+      setPane(!paneRef.current)
+      return
+    }
+
+    if (key === "Escape") {
+      // The drawer is over whatever page is showing, so it goes before the page does.
+      if (menuRef.current) {
+        closeMenu()
+        return
+      }
+      if (pageRef.current !== "sessions") {
+        if (document.querySelector("dialog[open]")) return
+        go("sessions")
+        return
+      }
+      const active = document.activeElement
+      if (filterEl && active === filterEl) {
+        if (filterRef.current) {
+          filterEl.value = ""
+          setFilter("")
+        } else {
+          filterEl.blur()
+          rowsEl?.focus()
+        }
+        return
+      }
+      if (typing(active)) {
+        active.blur()
+        return
+      }
+      if (openRef.current) closeDetail()
+      return
+    }
+
+    if (typing(document.activeElement)) return
+    if (meta || ev.altKey) return
+    // The drawer is over the page, so `j` is not "move down the list behind it".
+    if (menuRef.current) return
+
+    switch (key) {
+      case "ArrowDown":
+      case "j":
+        ev.preventDefault()
+        move(1)
+        break
+      case "ArrowUp":
+      case "k":
+        ev.preventDefault()
+        move(-1)
+        break
+      case "Enter":
+        if (selectedRef.current) {
+          ev.preventDefault()
+          openSession(selectedRef.current)
+        }
+        break
+      case "/":
+        ev.preventDefault()
+        filterEl?.focus()
+        filterEl?.select()
+        break
+      case "g": {
+        ev.preventDefault()
+        const tx = document.getElementById("tx-scroll")
+        if (tx) tx.scrollTop = 0
+        break
+      }
+      case "G": {
+        ev.preventDefault()
+        const tx = document.getElementById("tx-scroll")
+        if (tx) tx.scrollTop = tx.scrollHeight
+        break
+      }
+      default:
+        break
+    }
+  }
+  const keyRef = useRef(onKey)
+  keyRef.current = onKey
+  useEffect(() => {
+    const listener = (ev: KeyboardEvent) => keyRef.current(ev)
+    document.addEventListener("keydown", listener)
+    return () => document.removeEventListener("keydown", listener)
+  }, [])
 
   return (
     <>
@@ -156,6 +496,14 @@ export default function App() {
         ref={sidebarRef}
         onClick={(ev) => {
           if (ev.target === ev.currentTarget) closeMenu()
+        }}
+        // A press on a row this daemon cannot open is not a way out of the
+        // drawer: left alone, the browser takes focus off the current row and
+        // drops it on the body, from where the keyboard has nowhere to be. A
+        // disabled button is sent pointer events and no mouse ones, so this is
+        // the press to cancel.
+        onPointerDownCapture={(ev) => {
+          if ((ev.target as Element).closest?.("button:disabled")) ev.preventDefault()
         }}
       >
         <div className="sidebar-panel" id="sidebar-panel">
@@ -191,18 +539,23 @@ export default function App() {
         </div>
       </nav>
 
-      {page === "sessions" && (
-        <SessionsPage
-          rows={rows}
-          loaded={fleet.loaded}
-          arrived={fleet.snapshot !== null}
-          live={fleet.live}
-          emptyAuthoritative={fleet.snapshot?.scan.emptyAuthoritative ?? false}
-          selected={selected}
-          onSelect={setSelected}
-          onDid={fleet.refresh}
-        />
-      )}
+      <SessionsPage
+        rows={rows}
+        loaded={fleet.loaded}
+        arrived={fleet.snapshot !== null}
+        live={fleet.live}
+        emptyAuthoritative={fleet.snapshot?.scan.emptyAuthoritative ?? false}
+        shown={page === "sessions"}
+        view={view}
+        paneOpen={paneOpen}
+        filter={filter}
+        onFilter={setFilter}
+        selected={selected}
+        openId={openId}
+        onOpen={(id) => openSession(id)}
+        onBack={closeDetail}
+        onDid={fleet.refresh}
+      />
       {page === "dashboard" && <Dashboard fleet={fleet} />}
     </>
   )

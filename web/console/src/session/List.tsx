@@ -92,30 +92,49 @@ function StateLine({ row }: { row: SessionRow }) {
   return <div className="state" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
+/**
+ * One row. The highlight and the open session are two things: arrows move
+ * `.selected` without opening anything, and a session can stay open while the
+ * highlight is elsewhere. A press opens.
+ */
 export function Row({
   row,
+  selected,
   open,
-  onSelect,
+  onOpen,
 }: {
   row: SessionRow
+  selected: boolean
   open: boolean
-  onSelect: (id: string) => void
+  onOpen: (id: string) => void
 }) {
   // From the decorated copy the copied modules hold, so the machine identity
   // the original supplies client-side is the one this reads.
   const machine = L.machineFor(row)
   const who = L.whoHTML(row.assistant)
+  // `fillRow` turns the two classes on and off on the node it already has, so
+  // they stand in the order they were last turned on: a row that was open and
+  // selected, lost the highlight and got it back reads `row open selected`.
+  // React writes `row` once and leaves the attribute to this.
+  const ref = useRef<HTMLLIElement>(null)
+  useLayoutEffect(() => {
+    const node = ref.current
+    if (!node) return
+    node.classList.toggle("selected", selected)
+    node.classList.toggle("open", open)
+  }, [selected, open])
   return (
     <li
-      className={open ? "row open selected" : "row"}
+      ref={ref}
+      className="row"
       role="option"
-      aria-selected={open}
       tabIndex={-1}
       data-id={row.id}
       data-selection-key={L.selectionKey(row)}
       data-state={row.state}
+      aria-selected={selected ? "true" : "false"}
       aria-disabled="false"
-      onClick={() => onSelect(row.id)}
+      onClick={() => onOpen(row.id)}
     >
       <span className="kid" hidden aria-hidden="true">
         └

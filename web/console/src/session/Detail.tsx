@@ -60,6 +60,12 @@ export function Detail({
 
   const snippetsSays = SNIPPETS_READABLE ? T.webSnippets : row ? projectLabel(row.cwd) : ""
 
+  // `renderTranscript`: with nothing open the pane is the home screen, and it
+  // is blank rather than that while the list is still on its way — a pane that
+  // says "pick a session" and then opens one on its own has changed its mind in
+  // front of the reader.
+  const home = !row && !listUnknown
+
   return (
     <section className="pane pane-detail" id="pane-detail">
       <div className="detail-head" id="detail-head" data-closing={ending ? "on" : "off"}>
@@ -112,14 +118,28 @@ export function Detail({
         </div>
       </div>
 
-      <div className="scroller tx-scroll" id="tx-scroll">
-        <div className="tx" id="tx">
-          {row ? <Transcript id={row.id} /> : null}
+      <div className={home ? "scroller tx-scroll home" : "scroller tx-scroll"} id="tx-scroll">
+        <div className={home ? "tx home" : "tx"} id="tx">
+          {row ? <Transcript id={row.id} /> : home ? <HomeHero /> : null}
         </div>
       </div>
 
       <Composer row={row} onDid={onDid} />
       <StatusLine row={row} />
+    </section>
+  )
+}
+
+/** The home screen `renderTranscript` writes into `#tx` when no session is open. */
+function HomeHero() {
+  const T = L.strings
+  return (
+    <section className="home-hero" aria-labelledby="home-hero-title">
+      <div className="copy">
+        <span className="rule" aria-hidden="true"></span>
+        <h1 id="home-hero-title">{T.webNoSessionOpen}</h1>
+        <p>{T.webPickSession}</p>
+      </div>
     </section>
   )
 }
