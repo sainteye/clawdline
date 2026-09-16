@@ -1,0 +1,363 @@
+/* ==========================================================================
+   The transcript pane
+   ========================================================================== */
+.pane-detail { background: #101014; }
+
+.detail-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    min-height: 50px;
+}
+.detail-head .back {
+    display: none;
+    flex: 0 0 auto;
+    color: var(--dim); font-size: 13px;
+    padding: 6px 10px 6px 4px;
+}
+.detail-head canvas { display: block; image-rendering: pixelated; flex: 0 0 auto; }
+/* **The two halves, held at the distance they had when they were one button.**
+   The mark and the name were one flex container with a 10px gap between them; split into two
+   buttons that were direct children of the header, the space between them became the header's
+   own `gap` — which `responsive.css` narrows to 8px on a phone. Two pixels, and nobody would
+   have found them by looking. So the block owns that distance itself, at every width, and the
+   header's gap goes back to meaning "between the back button and this block". */
+.detail-head .detail-identity-block {
+    display: flex; align-items: center; gap: 10px;
+    min-width: 0; flex: 1 1 auto;
+}
+.detail-head .detail-session {
+    display: flex; align-items: center; gap: 10px;
+    min-width: 0; flex: 1 1 auto;
+    padding: 4px 5px; margin: -4px -5px;
+    border-radius: 7px; text-align: left;
+}
+.detail-head .detail-session:hover:not(:disabled) { background: var(--card); }
+.detail-head .detail-session:disabled { opacity: 0.45; cursor: default; }
+
+/* The mark, which is now the snippets shortcut.
+   ---------------------------------------------------------------------------
+   **The mark is about 35×20 and a thumb is not.** Seven cells at 5px is a picture, not a
+   target, so the button carries its own padding out to 44×44 and takes every pixel of it back
+   with a matching negative margin — the trick `.detail-session` beside it already uses. The
+   margin box therefore stays exactly the size of the mark, the header does not grow, and the
+   name still sits the same 10px away from the mark it sat at when the two were one button.
+
+   `min-width`/`min-height` rather than only padding, because the padding is measured from a
+   canvas whose size is not ours to promise: `drawIcon` sets it from the icon's own cells. A
+   mark two cells narrower must not shrink the target below the floor.
+
+   The floor is also why `[data-mark="none"]` exists. `drawIcon` collapses the canvas to 0×0
+   for a session with no icon, and the header — unlike the list, which has `.row .mark.none` —
+   had no placeholder for that. `view/project-mark.js` now draws one instead of leaving a hole,
+   so this rule is the second line and not the first: it catches the moment before the first
+   render, and any session whose project path is empty. */
+.detail-head .detail-mark-go {
+    display: grid; place-items: center;
+    flex: 0 0 auto;
+    min-width: 44px; min-height: 44px;
+    padding: 12px 5px; margin: -12px -5px;
+    border-radius: 7px;
+}
+/* **A rule that sets `display` outranks the `hidden` attribute** — the same trap the header
+   itself fell into, noted further down. `renderDetailHead` hides this button when no session is
+   open, and without this line the grid above would keep an empty 44px box on screen. */
+.detail-head .detail-mark-go[hidden] { display: none; }
+.detail-head .detail-mark-go:hover:not(:disabled) { background: var(--card); }
+.detail-head .detail-mark-go:disabled { opacity: 0.45; cursor: default; }
+/* A Mac too old for the snippets routes: the mark is inert, and it is also perfectly present.
+   Fading it there would be the header claiming the project's own mark was unavailable. */
+.detail-head .detail-mark-go[data-plain="on"]:disabled { opacity: 1; }
+.detail-head .detail-mark-go[data-mark="none"] .detail-identity::after {
+    content: ""; display: block;
+    width: 16px; height: 12px; border-radius: 2px; background: #202028;
+}
+.detail-head .detail-identity { position: relative; flex: 0 0 auto; }
+.detail-head .detail-actions { position: relative; flex: 0 0 auto; }
+.detail-head .detail-identity > .clawdfather-crown {
+    position: absolute; top: -4px; left: -5px; z-index: 2;
+    width: 15px; height: 10px; pointer-events: none;
+    background: #f0c75e;
+    clip-path: polygon(0 18%, 27% 52%, 43% 0, 58% 52%, 100% 18%, 86% 100%, 14% 100%);
+    transform: rotate(-30deg); transform-origin: 50% 80%;
+    filter: drop-shadow(0 1px 0 rgba(80, 49, 10, 0.85));
+}
+.detail-head .detail-identity > .clawdfather-crown[hidden] { display: none; }
+.detail-head .detail-who {
+    min-width: 0; overflow: hidden;
+}
+/* **A rule that sets `display` outranks the `hidden` attribute.** The header above sets `flex`,
+   so without this the session's header stays on screen behind an agent's. Same trap the chip in
+   the list fell into, noted there too. */
+.detail-head[hidden] { display: none; }
+.detail-head .who { min-width: 0; flex: 1 1 auto; }
+.detail-head .name { display: block; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail-head .sub {
+    display: block;
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.detail-head .tools { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.detail-head .detail-more {
+    display: grid; place-items: center;
+    min-width: 44px; min-height: 44px; padding: 4px 7px;
+    color: var(--dim);
+}
+.detail-head .detail-more:hover:not(:disabled) { color: var(--ink); }
+.detail-head .detail-more:disabled { opacity: 0.4; cursor: default; }
+.detail-head .detail-more svg {
+    display: block; width: 18px; height: 14px; fill: currentColor;
+}
+
+/* The same pane, one of the session's agents in it.
+   ---------------------------------------------------------------------------
+   Deliberately the session header's twin: same height, same hairline, same two lines of text in
+   the same places. Following a link should change what the pane is *about* and not where
+   anything on it sits — a header that is a different height moves the first line of the
+   transcript, which is exactly the thing the reader was looking at when they clicked. */
+.agent-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px 10px 6px;
+    border-bottom: 1px solid var(--line);
+    min-height: 50px;
+}
+.agent-head[hidden] { display: none; }
+/* Always visible, unlike the list's back button — this one is the only way out of here on every
+   screen size, not just on a phone. */
+.agent-head .back {
+    flex: 0 0 auto;
+    color: var(--dim); font-size: 13px;
+    padding: 7px 9px; border-radius: 6px;
+}
+.agent-head .back:hover { background: var(--card); color: var(--ink); }
+.agent-head .who { min-width: 0; flex: 1 1 auto; overflow: hidden; }
+.agent-head .name {
+    font-size: 13.5px; color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Monospace, because what it holds is a machine's account of itself: a state, a clock, a token
+   count, a number of tools. The session's subtitle is a path and reads the same way. */
+.agent-head .sub {
+    color: var(--faint); font: 11px/1.5 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.session-actions {
+    position: absolute; z-index: 45;
+    top: calc(100% + 9px); right: -7px;
+    width: 184px;
+    padding: 5px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: #1a1a20;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.48);
+}
+.session-actions[hidden] { display: none; }
+.session-action-stage {
+    display: grid; overflow: hidden; border-radius: 7px;
+}
+.session-action-level {
+    grid-area: 1 / 1; min-width: 0;
+    transform: translateX(0); opacity: 1; visibility: visible;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear;
+    will-change: transform, opacity;
+}
+/* Both levels stay in the grid so the popover keeps one measured height while they trade
+   places. `inert` in the script makes the off-stage level unreachable; these states only draw
+   the push. Entering Git sends the main actions left and brings Git in from the right. */
+.session-action-level[data-place="left"] {
+    transform: translateX(calc(-100% - 10px)); opacity: 0; visibility: hidden;
+    pointer-events: none;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear 190ms;
+}
+.session-action-level[data-place="right"] {
+    transform: translateX(calc(100% + 10px)); opacity: 0; visibility: hidden;
+    pointer-events: none;
+    transition: transform 190ms var(--ease), opacity 150ms ease-out, visibility 0s linear 190ms;
+}
+.session-actions::before {
+    content: ""; position: absolute; top: -5px; right: 14px;
+    width: 8px; height: 8px;
+    border-left: 1px solid var(--line); border-top: 1px solid var(--line);
+    background: #1a1a20; transform: rotate(45deg);
+}
+.session-actions button {
+    position: relative; width: 100%; min-height: 38px;
+    display: flex; align-items: center;
+    padding: 7px 10px; border-radius: 7px;
+    text-align: left; color: var(--ink); font: 12.5px/1.35 var(--mono);
+}
+.session-actions button:hover:not(:disabled),
+.session-actions button:focus-visible { background: var(--card-hi); }
+.session-actions button:disabled { opacity: 0.42; cursor: default; }
+.session-actions button .next { margin-left: auto; color: var(--faint); font-size: 16px; }
+.session-actions .level-back {
+    margin-bottom: 4px; padding-bottom: 9px;
+    border-bottom: 1px solid var(--line); border-radius: 7px 7px 0 0;
+    color: var(--dim); font-family: var(--ui);
+}
+.session-actions .end {
+    margin-top: 4px; padding-top: 9px;
+    border-top: 1px solid var(--line); border-radius: 0 0 7px 7px;
+    color: #d88f7b; font-family: var(--ui);
+}
+/* A view of the open session that takes the transcript's space rather than floating over it.
+   There are two — the repository's changes, and one background command's output — and they are
+   the same piece of furniture, which is why none of this is named after either of them. The
+   header stays put; only the transcript and the things under it step aside. `data-panel` names
+   which one is up, and there is never more than one. */
+.panel-view {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
+    background: #101014;
+}
+.panel-view[hidden] { display: none; }
+.pane-detail[data-panel] > .tx-scroll,
+.pane-detail[data-panel] > .live,
+.pane-detail[data-panel] > .agents,
+.pane-detail[data-panel] > .composer { display: none; }
+.panel-view-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 9px;
+    padding: 13px 16px 12px 18px;
+    border-bottom: 1px solid var(--line);
+}
+.panel-view-head h2 {
+    min-width: 0; flex: 1 1 auto;
+    margin: 0; color: var(--ink); font-size: 14px; font-weight: 600;
+}
+.panel-view-body { flex: 1 1 auto; padding: 16px 18px 24px; }
+
+/* The live screen, and the line above it that says what kind of live it is.
+
+   **The badge is not decoration.** On tmux this panel is about four milliseconds behind the pane;
+   on iTerm2 there is no change signal at all and the same panel is a sample taken when it asks.
+   Those are different products and this is the only place the difference is visible, so it sits
+   next to the title rather than under the screen, and `data-channel` colours it: the accent for
+   the one that follows the terminal, the dim ink for the one that has to go and look. */
+.screen-channel {
+    flex: 0 0 auto;
+    color: var(--faint); font: 11px/1 var(--mono); letter-spacing: .02em;
+    white-space: nowrap;
+}
+.screen-badge[data-channel="signalled"] { color: var(--accent); }
+.screen-badge[data-channel="on-demand"] { color: var(--dim); }
+
+/* The screen itself: a grid tmux has already laid out, so it is set in the terminal's typeface at
+   the terminal's own line height — and then soft-wrapped, one element per screen row, each row
+   hanging its continuations under its own indent.
+
+   **There is one layout and no control to change it.** Every pane on the Mac this was written for
+   is 243 columns wide and a phone shows about fifty of them, so the faithful picture — the grid
+   unwrapped, scrolling sideways — is five screen-widths of dragging to read one sentence: honest,
+   and on the device this panel is actually read on, close to unusable. A switch between the two
+   would have been two renderers to keep alive for ever and one more thing for this file to
+   describe, so the second one is gone.
+
+   **What the wrapping costs, so nobody has to find out.** It is not the picture the Mac has, and
+   it drops each row's trailing padding — about seventy per cent of what arrives — so a trailing
+   run that carried a background colour loses its block, and a highlight that ran to the right
+   margin now stops at the last visible character. A row that is essentially a horizontal rule is
+   not wrapped at all but clipped, because five rows of dashes is worse than the sideways scroll it
+   replaced. That is what the panel draws, always; nothing here gives back the missing columns. */
+.screen-text {
+    margin: 0; color: var(--ink);
+    font: 11.5px/1.35 var(--mono);
+    tab-size: 8;
+}
+/* The rows do the wrapping, not the block: `overflow-wrap: anywhere` because a 243-column path
+   with no spaces in it is exactly the thing that made this necessary, and the `min-height`
+   because a blank row of the grid is still a row of the grid and an empty element has no height
+   of its own. */
+.screen-text .screen-row {
+    min-height: 1.35em;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* And the rule that is not a paragraph: clipped at the edge, with the hanging indent undone
+   because there is nothing here to hang. */
+.screen-text .screen-row.rule {
+    white-space: pre; overflow: hidden;
+    padding-left: 0; text-indent: 0;
+}
+/* A hyperlink the capture carried — an OSC 8, which is most of what a status line is made of.
+   It takes the colour the terminal gave those words rather than the browser's own: the link is a
+   property of the text and not a replacement for it, and a blue underline where tmux drew green
+   would be this panel repainting a screen it promises to mirror. The dotted underline is what is
+   left to say the words can be tapped. */
+.screen-text a { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+#screen-body { padding: 12px 14px 20px; overflow: auto; background: var(--term-bg); }
+.screen-note { color: var(--dim); font-size: 13px; }
+.screen-note.err { color: var(--bad); }
+
+/* What a background command has printed, which is bytes in the order they were written and not
+   a conversation. So: the terminal's own typeface, its own wrapping, and no attempt to make a
+   build log look like prose. */
+.shell-out {
+    margin: 0; color: var(--dim); font: 12px/1.65 var(--mono);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* Leading it, the command itself. The one thing on this screen somebody can match against what
+   they remember asking for, so it is the thing set largest — and set in the terminal's typeface,
+   because it is a line of shell and not a sentence. */
+.shell-cmd {
+    margin: 0 0 8px; color: var(--ink); font: 12.5px/1.6 var(--mono);
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+/* Under it, the two facts the bytes do not carry: what it was for, and whether anything more is
+   coming. */
+.shell-said {
+    margin: 0 0 12px; color: var(--faint); font: 11.5px/1.5 var(--mono);
+    display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+}
+.shell-said .dot {
+    flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent); opacity: 0.8;
+}
+.shell-said[data-ended="1"] .dot { background: var(--faint); opacity: 1; }
+/* Claude Code's own word for this command, kept because it is what `/bashes` and `KillShell` take
+   on the Mac — and kept quiet, because to anybody else it is nine random characters. */
+.shell-said .id { color: var(--line); }
+.git-branch {
+    margin: 0 0 12px; color: var(--dim);
+    font: 12px/1.5 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.git-files { margin: 0; padding: 0; list-style: none; }
+.git-file {
+    display: grid; grid-template-columns: 28px minmax(0, 1fr) auto;
+    gap: 9px; align-items: center;
+    min-height: 38px; padding: 7px 8px;
+    border-bottom: 1px solid var(--line);
+    font: 12px/1.4 var(--mono);
+}
+.git-file:first-child { border-top: 1px solid var(--line); }
+.git-file .mark { color: var(--accent); font-weight: 700; letter-spacing: 1px; }
+.git-file[data-kind="untracked"] .mark { color: var(--warn); }
+.git-file[data-kind="conflict"] .mark { color: var(--bad); }
+.git-file .path { min-width: 0; overflow: hidden; white-space: nowrap; color: var(--ink); }
+.git-file .stats { white-space: nowrap; color: var(--faint); }
+.git-file .stats .add { color: var(--ok); }
+.git-file .stats .del { color: #d88f7b; }
+.git-note { padding: 24px 4px; color: var(--faint); font-size: 13px; }
+.git-note.err { color: var(--bad); }
+.chip {
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 4px 9px; font-size: 11.5px; color: var(--dim);
+    background: var(--card);
+}
+.chip:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.chip:disabled { opacity: 0.4; cursor: default; }
+.chip.on { border-color: var(--accent-ed); color: var(--accent); }
+/* A chip that destroys something. The same restrained red the confirm sheet's own button takes
+   for ending a session — enough that it does not read as one more thing to press idly, not so
+   much that it competes with a session actually asking for an answer. */
+.chip.danger { border-color: #57362e; color: #e09985; }
+.chip.danger:hover:not(:disabled) { background: #2f2322; color: #f0b6a2; }
+.chip[hidden] { display: none; }
+/* An icon on each of the two buttons in the transcript header. They used to be two words in two
+   identical chips — one a sort control and one a thing that reaches out and moves a window on
+   another machine — and reading as the same kind of control is how "Reveal" came to mean nothing
+   at all to somebody. */
+.chip .ico { display: inline-block; vertical-align: -2px; width: 13px; height: 13px; margin-right: 5px; }
+.chip .ico.arrow { transition: transform 180ms var(--ease); }
+.chip.on .ico.arrow { transform: rotate(180deg); }

@@ -246,6 +246,9 @@ func goType(s *schema, optional bool) string {
 		}
 		return d.name
 	}
+	if optional && s.Ref == "" && s.Type == "string" && s.Nullable {
+		return "*string"
+	}
 	switch s.Type {
 	case "string":
 		return "string"
@@ -259,7 +262,9 @@ func goType(s *schema, optional bool) string {
 		if s.Items == nil {
 			fatal("array without items")
 		}
-		return "[]" + goType(s.Items, false)
+		// An element may itself be nullable — a pixel grid has holes in it —
+		// and that is not the same as an absent element.
+		return "[]" + goType(s.Items, s.Items.Nullable)
 	case "object":
 		fatal("inline object: give it a name under $defs")
 	}
@@ -354,6 +359,9 @@ func tsType(s *schema) string {
 			fatal("array without items")
 		}
 		inner := tsType(s.Items)
+		if s.Items.Nullable {
+			inner += " | null"
+		}
 		if strings.ContainsAny(inner, "|") {
 			return "(" + inner + ")[]"
 		}

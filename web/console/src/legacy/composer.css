@@ -1,0 +1,538 @@
+/* ==========================================================================
+   Composer — built, wired, and switched off until the server says otherwise
+   ========================================================================== */
+.composer {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--line);
+    /* No safe-area inset — nothing on this page has one; see the note on the viewport tag. And
+       the status line sits under this in any case. */
+    padding: 10px 14px;
+    background: #0d0d11;
+    /* A `<form>` carries a bottom margin of one em from the browser's own stylesheet, and one em
+       here is fourteen pixels of nothing under the composer — the band of dead space that made
+       the box look like it was floating rather than sitting where it was put. */
+    margin: 0;
+}
+.composer .box {
+    display: flex; align-items: flex-end; gap: 9px;
+    border: 1px solid var(--line); border-radius: 12px;
+    background: var(--card); padding: 8px 8px 8px 12px;
+}
+/* The message box is a `contenteditable` and not a `<textarea>`.
+   It is here to find out whether iOS still draws its form assistant — the `^ v ✓` strip over the
+   keyboard — for something that is not a form control. The arrows were ours to remove either way;
+   the tick is not, and this is the only technique that touches it. **If the tick is still there
+   on the phone this whole change is worth nothing and should go back**, which is why it is kept
+   to one element: this rule, the markup, and the handlers marked with the same note.
+   `plaintext-only` rather than bare `true`, so a paste cannot carry markup in. */
+.composer .msg {
+    flex: 1 1 auto; min-width: 0;
+    position: relative;
+    /* Growing is the element's own behaviour now — a div is as tall as what is in it — so the
+       height dance that measured `scrollHeight` after every keystroke is gone. What is left is
+       the ceiling, and the floor that keeps one line centred against the Send button beside it. */
+    max-height: 140px; min-height: 30px;
+    overflow-y: auto;
+    padding: 5px 0;
+    font-size: 14px; line-height: 1.4;
+    outline: none;
+    /* Both of these matter and neither is a default for a div: newlines have to survive, and a
+       line of shell somebody pasted has to break rather than widen the page. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+/* The placeholder, on a class rather than on `:empty`. `:empty` is true of no child nodes at all,
+   and a browser leaves a `<br>` behind when the last character is deleted — so the placeholder
+   would go away the first time somebody cleared the box by hand and never come back. The class is
+   set from what `innerText` actually says. Absolutely positioned so it cannot push the caret's
+   line down or add a pixel to the box's height. */
+.composer .msg.blank::before {
+    content: attr(data-placeholder);
+    position: absolute; left: 0; top: 5px;
+    color: var(--faint);
+    pointer-events: none;
+}
+/* Skills belong to the line being typed, so their menu sits immediately above that line rather
+   than in a sheet that covers the conversation. It is the same surface under a mouse and a
+   thumb: rows are buttons, arrows merely move the same highlight a tap chooses. */
+.composer .skill-menu {
+    max-height: min(250px, 34vh); overflow-y: auto;
+    border: 1px solid var(--line); border-radius: 11px;
+    background: var(--card);
+    padding: 5px; margin-bottom: 7px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+}
+.composer .skill-menu[hidden] { display: none; }
+.skill-option {
+    width: 100%; min-height: 40px; padding: 6px 9px;
+    display: grid; grid-template-columns: minmax(120px, auto) 1fr;
+    align-items: center; gap: 12px; border-radius: 8px;
+    text-align: left; color: var(--dim);
+}
+.skill-option:hover, .skill-option[aria-selected="true"] {
+    background: var(--accent-in); color: var(--ink);
+}
+.skill-option .command {
+    color: var(--ink); font: 12.5px/1.35 var(--mono);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.skill-option[aria-selected="true"] .command { color: var(--accent); }
+.skill-option .description {
+    min-width: 0; font-size: 11.5px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 520px) {
+    .skill-option { display: block; }
+    .skill-option .description { display: block; margin-top: 2px; }
+}
+/* What is attached, above the box, each one removable before it goes. Small: they are a
+   reminder of what you picked, not a preview worth looking at. */
+.composer .shots { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 9px; }
+.composer .shots:empty { display: none; }
+.shot {
+    position: relative; width: 62px; height: 62px;
+    border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
+    background: var(--card);
+}
+.shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.shot .drop {
+    position: absolute; top: 3px; right: 3px;
+    width: 19px; height: 19px; border-radius: 50%;
+    background: rgba(0, 0, 0, 0.66); color: #fff;
+    font-size: 13px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+.shot .drop:hover { background: rgba(0, 0, 0, 0.85); }
+.composer .attach {
+    flex: 0 0 auto;
+    width: 30px; min-height: 30px;
+    border-radius: 8px;
+    color: var(--dim); font-size: 19px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+}
+.composer .attach:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.composer .attach:disabled { opacity: 0.45; cursor: default; }
+/* Dragging a picture anywhere over the transcript is aiming at the composer. The outline is
+   inside the edge so it cannot be the thing that makes the page scroll. */
+.pane-detail.dropping { outline: 2px dashed var(--accent-ed); outline-offset: -8px; }
+
+/* The microphone — the attachment's twin in every measurement, because it is the same kind of
+   thing standing in the same row: a way of putting something into the message that is not
+   typing. Two of them is sixty pixels of the left edge on a phone, which is why neither carries
+   a word. */
+.composer .mic {
+    flex: 0 0 auto;
+    width: 30px; min-height: 30px;
+    border-radius: 8px;
+    color: var(--dim);
+    display: flex; align-items: center; justify-content: center;
+}
+.composer .mic:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); }
+.composer .mic:disabled { opacity: 0.45; cursor: default; }
+.composer .mic .ico { display: block; width: 18px; height: 18px; }
+.composer .mic .ico-stop { display: none; }
+/* **Recording: the icon becomes what the next press will do, not what the last one did.** A
+   button that still shows a microphone while it is recording is a button people press twice —
+   once to start, once to start again — and the second press is the one that loses the sentence.
+   The accent, which on this page means "you are needed", is the right loudness for the one
+   control that is currently holding a microphone open. */
+.composer[data-voice="recording"] .mic { color: var(--accent); background: var(--accent-in); }
+.composer[data-voice="recording"] .mic .ico-mic { display: none; }
+.composer[data-voice="recording"] .mic .ico-stop { display: block; }
+
+/* The row that counts.
+   ---------------------------------------------------------------------------
+   Both halves of this wait can be long: three minutes of talking, and a transcription that
+   spends its first twelve seconds reading a 600MB model off a disk. A mark that only turns
+   cannot be told apart from a hang at either length, so the seconds are the substance of this
+   row and the mark beside them is the decoration. The bar on the Mac counts for exactly the
+   same reason; see `docs/whisper.md`. */
+/* The dictation row. Not `.composer .voice` any more: the same row is built inside the
+   say-what-to-start sheet, where there is no composer above it, and a selector that named one
+   place was the reason it drew there with no styling at all. The `.mic` rules below stay where
+   they are — that button *is* the composer's. */
+.voice {
+    /* It wraps, and on a narrow phone in a long language it does. Cancel and Done are short in
+       English and neither is short everywhere — Russian spends nine characters on the first —
+       and the pair sits beside a meter and a running count. So when they will not fit they drop
+       to a line of their own and stay hard against the right edge, where a pair of buttons on
+       this page always is. */
+    display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
+    margin-bottom: 9px; padding: 6px 8px 6px 11px;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--card);
+}
+.voice[hidden] { display: none; }
+/* **A fixed basis rather than `auto`, which is what keeps the row from flickering.** Flexbox
+   decides where to break on the *unshrunk* width of each item, so with `auto` the wrap would be
+   decided by however many characters the count happens to be at that instant — and at the width
+   where that is marginal, the buttons would jump to their own line and back at the moment the
+   clock rolled from 0:09 to 0:10. The number is what the count actually needs: fifteen
+   characters of the mono face at 11.5px, which is "Listening… 2:57" at its widest. So the row
+   breaks exactly when the words would have had to, and never between one second and the next. */
+.voice .what { flex: 1 1 108px; min-width: 0; }
+.voice .said {
+    display: block;
+    color: var(--dim); font: 11.5px/1.45 var(--mono);
+    /* The digits do not change width as they run, so the Cancel button beside them does not
+       shuffle sideways once a second. */
+    font-variant-numeric: tabular-nums;
+}
+/* Nearly out of room, said while there is still something to be done about it. */
+.voice[data-near="1"] .said { color: var(--accent); }
+/* Why this particular one is taking so long. Only after eight seconds: an ordinary
+   transcription is under two, and a permanent apology for a wait that usually is not one would
+   be the page teaching its reader to expect the slow case. */
+.voice .note { display: none; }
+.voice[data-slow="1"] .note {
+    display: block; margin-top: 3px;
+    color: var(--faint); font-size: 11px; line-height: 1.4;
+}
+.voice .spin { flex: 0 0 auto; }
+/* Listening. Red is the convention and the accent is what this page has; either way it is the one
+   mark on screen that has to be visible from across a desk, because it means a microphone in the
+   room is open. It breathes rather than blinks — a blink reads as a fault. */
+.voice .dot {
+    flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent);
+    animation: breathe 1.5s var(--ease) infinite;
+    /* Only so the disc below has something to hang off. A `relative` that moves nothing. */
+    position: relative;
+}
+/* Under reduced motion the global rule stops this on its last frame, which is the dot at full
+   strength — still the loudest thing in the row, with nothing moving. */
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+/* The same dot, with what the microphone is hearing drawn *around* it rather than in it — see
+   `paint` in `voice.js`.
+
+   **The dot itself no longer changes size.** It used to be scaled from 0.8 to 2.1 straight off
+   the meter, and a solid disc that redraws its own edge sixty times a second keeps taking the
+   corner of the eye of somebody who is halfway through composing a sentence. What the dot has to
+   say is "this is listening", and that is a yes or a no — it is not a quantity, so it should not
+   look like one. The room's loudness is a quantity, so it gets the disc instead.
+
+   The breathing comes off here for the same reason it always did: two things writing to one
+   element fight, and the one that can hear the room should win. */
+.voice .dot[data-live="1"] { animation: none; }
+.voice .dot[data-live="1"] .disc {
+    /* Centred on the dot and taken out of the flow entirely, which is the whole reason the count
+       and the two ways out do not move a pixel while this swells: it is drawn over the row rather
+       than given room in it. Twenty-six rather than the thirty-six the row's height would allow:
+       the wider one was tried and read as too big — the mark beside the sentence should not be
+       the largest thing in the row, and at full voice its rim crossed both the border and the
+       first letter of the count. This one stays inside both. */
+    position: absolute;
+    left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px;
+    border-radius: 50%;
+    /* **A flat fill and a hard rim, and the alpha here is a constant.** A soft-edged glow that
+       brightened with the level was tried first, and it could not be sized by eye: light that
+       fades to nothing has no boundary, so there is no "this far" to read it against — and a fill
+       whose contrast moves as well takes away the one other thing the eye could have compared. A
+       disc with an edge that stays put says how loud the room is the way a bar chart does, by
+       being a size you can see the end of.
+
+       The accent written in its channels because a hex carries no alpha. Twenty-two percent over
+       the card is clearly there in a lit room and still reads as a mark rather than a slab; over
+       the solid accent dot underneath it is exactly the accent, so the dot keeps its own edge at
+       every size the disc takes. */
+    background: rgba(217, 119, 87, 0.22);
+    /* **Not a `box-shadow`, and not a `filter`.** Either one is a blur recomputed and repainted
+       on every frame that changes it, and this one changes on every frame there is — on a phone
+       that may be drawing 120 of them a second. A flat circle sitting on a layer of its own is
+       painted once and thereafter only scaled, which is work the compositor does without waking
+       the main thread at all. `transform` is the only property `voice.js` writes here, and that
+       is why.
+
+       `pointer-events` so that it cannot come between a thumb and anything underneath. */
+    transform-origin: 50% 50%;
+    will-change: transform;
+    pointer-events: none;
+}
+/* The ways out, together and at the far end of the row. They are one decision with two answers —
+   keep what was said, or throw it away — and a decision whose halves are at opposite ends of the
+   composer is one people only find half of. */
+.voice .acts {
+    flex: 0 0 auto; margin-left: auto;
+    display: flex; align-items: center; gap: 8px;
+}
+.voice .drop,
+.voice .go {
+    flex: 0 0 auto;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--dim);
+    font-size: 11.5px; padding: 5px 12px; min-height: 30px;
+}
+.voice .drop:hover { background: var(--card-hi); color: var(--ink); }
+/* The one that keeps the words, weighted the way this page weights the second of a pair — the
+   accent in the border and the letters, the same wash behind it that the recording microphone
+   takes. Filled like Send would make it the loudest thing in a composer whose loudest thing
+   should still be the fact that a microphone is open. */
+.voice .go {
+    border-color: var(--accent-ed); background: var(--accent-in); color: var(--accent);
+    font-weight: 600;
+}
+.voice .go:hover { background: rgba(217, 119, 87, 0.2); }
+
+.composer .send {
+    flex: 0 0 auto;
+    background: var(--accent); color: #17110e;
+    font-size: 12.5px; font-weight: 600;
+    border-radius: 8px; padding: 6px 13px;
+    min-height: 30px;                     /* the height the field above centres its line against */
+}
+.composer .send:disabled { background: #2a2a32; color: var(--faint); cursor: default; }
+/* In flight. The button keeps its colour rather than going grey — grey is "you may not", and
+   this is "it is happening" — and it breathes so that a slow connection has something on screen
+   saying so. There was nothing at all here before: on a phone over a tunnel, tapping Send and
+   watching nothing change for a second is indistinguishable from a page that is broken, and it
+   is exactly long enough to press again. */
+/* **A sweep across it, not a blink of the whole thing.**
+   The first version faded the entire button between full and half opacity once a second. It did
+   say something was happening and it said it the way a broken control does — the label goes with
+   it, so on a phone the whole button appears to flicker, and the eye reads a flicker as a fault
+   rather than as progress. Worse, the label swaps from "Send" to "Sending…" at the same moment,
+   so the button changes width mid-press and the box under it jumps. (The width is pinned in
+   `renderComposer` now; this is the other half.)
+
+   A light passing over a button that has otherwise not moved is the ordinary way to draw work in
+   flight, and it leaves the label alone at full contrast the whole time. */
+.composer[data-sending="on"] .send:disabled {
+    background: var(--accent); color: #17110e;
+    cursor: default;
+    position: relative; overflow: hidden;
+}
+.composer[data-sending="on"] .send:disabled::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg,
+        rgba(255, 255, 255, 0) 20%,
+        rgba(255, 255, 255, 0.42) 50%,
+        rgba(255, 255, 255, 0) 80%);
+    background-size: 220% 100%;
+    animation: sweep 1.15s var(--ease) infinite;
+}
+@keyframes sweep { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+/* Under reduced motion the sweep goes and the button holds one dimmer wash — still visibly a
+   different state from the one you pressed, with nothing moving. */
+@media (prefers-reduced-motion: reduce) {
+    .composer[data-sending="on"] .send:disabled::after { animation: none; opacity: 0.5; }
+}
+/* The words stay on screen and stay unsent-looking. `readonly` rather than `disabled`, which
+   would take the focus out of the box — and on a phone that closes the keyboard, so every
+   message would cost the whole keyboard dance again.
+
+   **`.msg`, not `textarea`.** This box stopped being a `<textarea>` when it became a
+   `contenteditable` div — see the note on `.composer .msg` — and the rule was left pointing at
+   the old element, so the one piece of feedback it describes has never once fired. */
+.composer[data-sending="on"] .msg { color: var(--dim); }
+.composer[data-write="off"] .box { opacity: 0.55; }
+.composer[data-closing="on"] .box { opacity: 0.55; }
+/* The session has stopped and is waiting for somebody. Above the box rather than under it: this
+   is the last thing in the conversation, and it is read on the way to the place you would type.
+
+   Loud on purpose, and the second line is the reason why. Sending from here while a menu is up
+   does not type the words — the terminal swallows them and the Return underneath confirms
+   whatever row the menu had highlighted. Somebody who does not know that is one press away from
+   answering a question they never read. */
+.composer .waiting {
+    border: 1px solid var(--accent-ed);
+    border-left: 2px solid var(--accent);
+    border-radius: 10px;
+    background: rgba(224, 139, 110, 0.06);
+    padding: 9px 11px;
+    margin-bottom: 9px;
+}
+.composer .waiting[hidden] { display: none; }
+/* **The card is capped and scrolls inside itself.** A question with a paragraph under every
+   option is taller than a phone, and a card that simply grew pushed the conversation off the top
+   and the composer off the bottom — so the two things somebody needs while deciding were the two
+   things it took away. Half the viewport, scrolled internally; `contain` keeps a flick inside the
+   card from carrying on into the page behind it once it reaches the end. */
+.composer .waiting .body {
+    max-height: 50vh; overflow-y: auto; overscroll-behavior: contain;
+    /* Room for the last option's focus ring, which a flush `overflow` would clip. */
+    padding: 1px;
+    margin: 0 -1px;
+}
+.composer .waiting .title .fold {
+    float: left; margin: -1px 7px 0 -2px; padding: 1px 6px;
+    color: var(--accent); font-size: 13px; line-height: 1.2;
+    border-radius: 6px;
+}
+.composer .waiting .title .fold:hover { background: var(--card-hi); }
+/* Nothing to switch off under reduced motion: `drawSpinner` is driven by the one interval at
+   the top, and that interval already returns without advancing when `reduced` is set — so the
+   mark is drawn once, in its first phase, and simply stays there. */
+.composer .waiting .title .dismiss {
+    float: right; margin: -2px -2px 0 8px; padding: 2px 7px;
+    color: var(--faint); font-size: 15px; line-height: 1;
+    border-radius: 6px;
+}
+.composer .waiting .title .dismiss:hover { color: var(--ink); background: var(--card-hi); }
+.composer .waiting .title {
+    color: var(--accent); font-size: 12.5px; font-weight: 600;
+    margin-bottom: 3px;
+}
+/* Which question of the set this is. Answered ones tick and recede, the current one is the only
+   thing here with full contrast, and the rest wait — so a glance answers "how much is left". */
+.composer .waiting .steps {
+    display: flex; flex-wrap: wrap; gap: 4px 6px;
+    margin: 6px 0 2px;
+}
+.composer .waiting .steps .step {
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 2px 8px; font-size: 11px; line-height: 1.4;
+    color: var(--dim); background: var(--card);
+}
+.composer .waiting .steps .step.done { opacity: 0.62; }
+/* What was picked, on the review step. Full contrast against the dimmed label it belongs to:
+   the label is context by then, and the answer is the thing being confirmed. */
+.composer .waiting .steps .step .pick {
+    color: var(--ink); margin-left: 5px;
+    padding-left: 5px; border-left: 1px solid var(--line);
+}
+.composer .waiting .steps .step.done { opacity: 1; color: var(--dim); }
+.composer .waiting .steps .step.now {
+    color: var(--ink); border-color: var(--accent, var(--ink)); background: var(--card-hi);
+}
+
+.composer .waiting .question {
+    margin: 7px 0 8px;
+    color: var(--ink); font-size: 14px; line-height: 1.5;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.composer .waiting .say { color: var(--dim); font-size: 11.5px; line-height: 1.45; }
+.composer .waiting .say + .say { margin-top: 4px; }
+.composer .waiting .say b { color: var(--ink); font-weight: 600; }
+.composer .waiting .go {
+    margin-top: 7px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--card); color: var(--dim);
+    font-size: 11.5px; padding: 4px 10px;
+}
+.composer .waiting .go:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--card-hi); color: var(--ink);
+}
+.composer .waiting .refresh-status + .go { margin-left: 6px; }
+/* Two buttons close the card now, and in the arm this one exists for they are two controls of
+   four. **What follows is measured, and this note says what was measured** — it has been wrong
+   twice already, the first time because it was estimated rather than measured and the second
+   because it was measured on the pair alone when the arm that carries this button draws
+   `[Refresh][refresh-status][Show on Mac][Live screen]`. Measured in headless Chrome against this
+   stylesheet, `tokens.css` and `base.css`, on the real ancestor chain (`.composer` padding 10/14 >
+   `.waiting` border 1+2px and padding 9/11 > `.body` padding 1px, margin 0 -1px), with the
+   fourteen shipped label sets read out of `Sources/Copy+*.swift`:
+
+     - the body is 269.0px wide inside a 320px viewport and the line its controls lay out on is
+       267.0px (309.0/307.0 at 360, 339.0/337.0 at 390);
+     - **the unread arm, four controls, status span empty:** the run needs 229.5px (Simplified
+       Chinese) to 391.9px (Russian). Six of the fourteen wrap at 320px — es, de, id, it, fr, ru;
+       five still wrap at 360px, and Russian still wraps at 390px;
+     - **the same arm while a refresh has completed**, when the status span carries its own text:
+       264.2px to 457.5px, thirteen of the fourteen wrap at 320px and Russian takes three lines;
+     - **the read-the-menu arm, where the two buttons really are alone:** 168.2px (Japanese) to
+       235.1px (French) for thirteen of them, and 301.9px for Russian, which is the only one that
+       wraps at 320px and the only one that needs 360px to sit on one line;
+     - nothing is clipped, at any of the three widths, in any of the fourteen, in either arm.
+
+   So wrapping here is the ordinary case rather than a one-language exception, which is what makes
+   the inline-block behaviour the right thing to lean on: the wrap is the browser's own, nothing is
+   ever cut off, no flex row is needed, and the 7px `margin-top` above already spaces the wrapped
+   line.
+
+   **The gap is written on the trailing edge of the first, not the leading edge of the second.**
+   Both spellings give exactly 6px while the two share a line. They differ only in the case that
+   made this a decision, and that case was measured under both: wrapped, the trailing margin leaves
+   `Live screen` 1.0px from the body's edge, flush with everything else on the card, while the same
+   6px written on the second button's leading edge instead leaves it at 7.0px — a trailing margin
+   simply disappears at the end of a line and a leading one does not. That alternative is named in
+   words rather than as a selector on purpose: `Resources/web/app/js/net/client.test.mjs` refuses
+   the adjacent-sibling rule by pattern, and the pattern cannot tell a comment from a declaration,
+   so spelling it here turns that suite red. The one control that starts a wrapped line at 7.0px
+   under either spelling is `Show on Mac`, and that is the rule above this one:
+   `.refresh-status + .go` already puts 6px on its leading edge. */
+.composer .waiting .go[data-focus] { margin-right: 6px; }
+.composer .waiting .go:disabled,
+.composer .waiting .go[aria-disabled="true"] {
+    background: var(--card); color: var(--faint); cursor: default;
+}
+.composer .waiting .refresh-status {
+    display: inline-block; min-height: 1em; margin-left: 7px;
+    color: var(--faint); font-size: 11px;
+}
+
+/* The menu itself, as things a finger can hit.
+   ---------------------------------------------------------------------------
+   This is the half that was missing. The box above it has always known a session was waiting;
+   what it could say about it was "go and find the Mac", which on a phone in another room is not
+   advice, it is a dead end. The options were being parsed on the Mac the whole time and thrown
+   away — see `SessionState.menu`.
+
+   Buttons rather than a list, and the number is the point: it is what gets sent, so it is drawn
+   as the key it is rather than as a bullet. A row that no keystroke reaches is drawn without one
+   and cannot be pressed, because a control that looks live and is not is worse than a line of
+   text. */
+.composer .menu { display: flex; flex-direction: column; gap: 6px; margin-top: 9px; }
+.composer .menu .opt {
+    display: flex; align-items: flex-start; gap: 9px; width: 100%;
+    padding: 9px 11px; text-align: left;
+    background: var(--card); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 9px;
+    font-size: 13px; line-height: 1.4;
+    /* Comfortably past the 44px a thumb wants, without setting a height that a two-line
+       option would then have to break out of. */
+    min-height: 44px;
+}
+.composer .menu .opt:hover:not(:disabled) { background: var(--card-hi); border-color: var(--accent-ed); }
+.composer .menu .opt:active:not(:disabled) { background: var(--accent-in); }
+.composer .menu .opt:disabled { cursor: default; opacity: 0.6; }
+/* The row the caret is parked on over there. Marked rather than pre-selected: it is what a bare
+   Return on the Mac would confirm, which is a fact about that screen and not a recommendation. */
+.composer .menu .opt[data-here="1"] { border-color: var(--accent-ed); background: var(--accent-in); }
+.composer .menu .opt .n {
+    flex: 0 0 auto; min-width: 18px; padding: 1px 0;
+    font: 600 11.5px/1.5 var(--mono); text-align: center;
+    color: var(--accent); opacity: 0.9;
+}
+.composer .menu .opt[data-can="0"] .n { color: var(--faint); }
+.composer .menu .opt .what { flex: 1 1 auto; min-width: 0; }
+/* A multi-select's box. Green when it is ticked, because that is the one thing on this card you
+   have to be able to read at a glance and in a hurry — the label says what the answer is, the
+   colour says whether it is in. Unticked is an empty outline rather than a grey tick: an absence
+   somebody has to look for is worse than one they cannot mistake. */
+.composer .menu .opt .tick {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; margin: 0 7px 0 0; vertical-align: -2px;
+    border: 1.5px solid var(--dim); border-radius: 4px;
+    color: transparent; font-size: 11px; font-weight: 700; line-height: 1;
+}
+.composer .menu .opt .tick[data-on="1"] {
+    border-color: var(--ok); background: var(--ok); color: #0d0d11;
+}
+/* What the answer costs you. The dialog draws a line or two under each label — which models get
+   dropped, what it spends, what it leaves behind — and "cut the slow five" does not say which
+   five. Quieter than the label, so a row still reads as one choice at a glance. */
+.composer .menu .opt .note {
+    display: block; margin-top: 3px;
+    color: var(--dim); font-size: 12.5px; line-height: 1.45;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.composer .menu .opt[disabled] .note { color: var(--faint); }
+.composer .menu .opt .here {
+    display: block; margin-top: 2px;
+    color: var(--faint); font-size: 11px; letter-spacing: 0.02em;
+}
+.composer .menu .opt[disabled] .here { color: var(--faint); }
+
+/* The button under a multi-select's rows. Set apart with a little air and a heavier label,
+   because it is not a fifth answer — the rows above it toggle, and this is the one that sends. */
+.composer .menu .opt.go-submit { margin-top: 4px; font-weight: 600; }
+.composer .menu .opt.go-submit .n { color: var(--dim); }
+
+.composer .why { color: var(--faint); font-size: 11.5px; margin-top: 7px; }
+/* Nothing to explain, no row. The line under the box now only ever says why the box will not
+   take what you type; when everything is working it says nothing, and a line that says nothing
+   should not be costing a row of a phone screen to do it. */
+.composer .why:empty { display: none; }
+.composer .why b { color: var(--dim); font-weight: 500; }
+.composer .why code { font-family: var(--mono); font-size: 11px; color: #8cbaf9; }

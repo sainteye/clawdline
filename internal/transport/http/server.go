@@ -30,6 +30,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/config"
 	"github.com/sainteye/clawdline-go/internal/contract"
+	"github.com/sainteye/clawdline-go/internal/domain/icon"
 )
 
 type Server struct {
@@ -42,6 +43,9 @@ type Server struct {
 	// ledger remembers what has already been counted, so a transcript is read
 	// once rather than once per request.
 	ledger *transcript.Ledger
+	// icons derives each project's mark by the same rules the Swift app uses,
+	// reading the same registry, so the two draw the same creature.
+	icons *icon.Registry
 	// pulse is the scheduler's own account of its last pass, read by /v1/health.
 	pulse atomic.Pointer[app.Pulse]
 	tick  time.Duration
@@ -83,6 +87,7 @@ func New(cfg config.Config) (*Server, error) {
 		},
 		terminals: terminal.Hosts(),
 		ledger:    transcript.NewLedger(),
+		icons:     icon.NewRegistry(),
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),

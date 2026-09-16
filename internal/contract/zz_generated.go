@@ -69,10 +69,24 @@ type BoardWriteResult struct {
 	Revision int64 `json:"revision"`
 }
 
+// Who clears the thing standing in the way. `self` distinguishes the session
+// that has to act from another one, which is the difference between a thing a
+// reader can do now and a thing they can only wait for.
+type CloseMover struct {
+	Kind         string `json:"kind"`
+	PersonNeeded bool   `json:"person_needed"`
+	Self         bool   `json:"self"`
+}
+
+// One thing in the way. It names the machine code, the subject it is about and
+// who moves it: a code alone says there is a problem but not which object has
+// it, and a sentence alone cannot be grepped for in a log.
 type CloseReason struct {
-	Kind  string `json:"kind"`
-	Mover Mover  `json:"mover"`
-	Note  string `json:"note"`
+	Code        string     `json:"code"`
+	Kind        string     `json:"kind"`
+	Mover       CloseMover `json:"mover"`
+	SubjectID   string     `json:"subject_id"`
+	SubjectKind string     `json:"subject_kind"`
 }
 
 // A close refused by what the session still owes. It carries the same reasons
@@ -91,11 +105,51 @@ type CloseRequest struct {
 	Force bool `json:"force,omitempty"`
 }
 
+// Where the reading came from and how old it is. `freshness` is what stops a
+// stale `safe` being read as a current one — the console refuses to call
+// anything safe unless this says `current`.
+type CloseSource struct {
+	Freshness     string `json:"freshness"`
+	MaxAgeSeconds int64  `json:"max_age_seconds"`
+	ObservedAt    int64  `json:"observed_at"`
+	Provenance    string `json:"provenance"`
+}
+
 // Whether this session can end. A separate question from whether it can take
-// work, and neither may be read off the other.
+// work, and neither may be read off the other. `safe` is a positive claim and
+// the reader enforces what it costs: no reasons, a current source, an
+// attestation id and a version, and a session that is not working, waiting or
+// unreadable. Anything short of that reads as `unknown`, which is why an
+// unreadable obligation list can never come out as safe.
 type Closeability struct {
-	Reasons []CloseReason     `json:"reasons"`
-	State   CloseabilityState `json:"state"`
+	// Absent here. The Swift app counts activity for its own caching and this daemon
+	// has no such counter; a number invented to fill the field would be a counter that
+	// never moves, which is worse than a field that is not there. Nothing in the
+	// console's projection reads it.
+	ActivityGeneration int64 `json:"activity_generation,omitempty"`
+
+	// The identifier of the reading that proves nothing is owed. Null until something
+	// attests, and a null here is exactly why a state that would otherwise be safe
+	// reads as unknown.
+	AttestationID *string    `json:"attestation_id"`
+	Mover         CloseMover `json:"mover"`
+
+	// Absent here, for the same reason as `activity_generation`.
+	ObligationGeneration int64         `json:"obligation_generation,omitempty"`
+	ObservedAt           int64         `json:"observed_at"`
+	Provenance           []string      `json:"provenance"`
+	Reasons              []CloseReason `json:"reasons"`
+
+	// Which reading of the machine this came from — the same counter the snapshot's
+	// scan carries, so a closeability and the list it arrived with can be told apart
+	// from a later pair.
+	SessionGeneration int64             `json:"session_generation,omitempty"`
+	Source            CloseSource       `json:"source"`
+	State             CloseabilityState `json:"state"`
+
+	// Which computation produced this. A reading with no version is a reading nobody
+	// can say the rules for, and the console treats it as unproven.
+	Version string `json:"version"`
 }
 
 // `safe` is a positive claim that nothing is owed. An unreadable obligation
@@ -103,13 +157,14 @@ type Closeability struct {
 type CloseabilityState string
 
 const (
-	CloseabilityStateSafe    CloseabilityState = "safe"
-	CloseabilityStateBlocked CloseabilityState = "blocked"
-	CloseabilityStateUnknown CloseabilityState = "unknown"
+	CloseabilityStateSafe             CloseabilityState = "safe"
+	CloseabilityStateBlocked          CloseabilityState = "blocked"
+	CloseabilityStateNeedsAttestation CloseabilityState = "needs_attestation"
+	CloseabilityStateUnknown          CloseabilityState = "unknown"
 )
 
 // CloseabilityStateValues is every value the contract allows, in contract order.
-var CloseabilityStateValues = []CloseabilityState{CloseabilityStateSafe, CloseabilityStateBlocked, CloseabilityStateUnknown}
+var CloseabilityStateValues = []CloseabilityState{CloseabilityStateSafe, CloseabilityStateBlocked, CloseabilityStateNeedsAttestation, CloseabilityStateUnknown}
 
 type CoordinatorRecord struct {
 	Assistant      Assistant `json:"assistant"`
@@ -218,6 +273,16 @@ type Health struct {
 	// Swift app on the same port.
 	ServedBy string `json:"served_by"`
 	Upstream int64  `json:"upstream"`
+}
+
+// A project's mark: rows of `#RRGGBB`, with null for transparent. It is derived
+// from the project path and the machine's icon registry by the same rules the
+// Swift app uses, so both apps draw the same creature — a mark somebody
+// recognises by colour and shape is not recognisable if the second app draws it
+// differently, and near-identical is worse than obviously different.
+type Icon struct {
+	Accent string      `json:"accent"`
+	Cells  [][]*string `json:"cells"`
 }
 
 type Inventory struct {
@@ -443,16 +508,18 @@ type SessionRow struct {
 	Closeability Closeability `json:"closeability"`
 	CWD          string       `json:"cwd,omitempty"`
 	Evidence     Evidence     `json:"evidence"`
+	Icon         *Icon        `json:"icon,omitempty"`
 	ID           string       `json:"id"`
 	IsClaude     bool         `json:"isClaude"`
 	Label        string       `json:"label,omitempty"`
 
 	// The assistant's own conversation id, when one was recovered from its command
 	// line.
-	SessionID string       `json:"sessionId,omitempty"`
-	State     SessionState `json:"state"`
-	TTY       string       `json:"tty,omitempty"`
-	WorkState WorkState    `json:"work_state"`
+	SessionID      string         `json:"sessionId,omitempty"`
+	State          SessionState   `json:"state"`
+	TTY            string         `json:"tty,omitempty"`
+	WorkProvenance WorkProvenance `json:"work_provenance,omitempty"`
+	WorkState      WorkState      `json:"work_state"`
 }
 
 // What the session appears to be doing. `unknown` is a real answer and is never
@@ -563,6 +630,21 @@ type UsageRow struct {
 	Note        string `json:"note,omitempty"`
 	TotalTokens int64  `json:"totalTokens"`
 }
+
+// Who decided a row's work state. `broker` means this daemon projected it from
+// what it could read; `self` means the session said so. Only `broker` is
+// produced here, because nothing yet takes a session's own word for what it
+// needs — and emitting `self` where that is untrue would make a projection
+// look like testimony.
+type WorkProvenance string
+
+const (
+	WorkProvenanceBroker WorkProvenance = "broker"
+	WorkProvenanceSelf   WorkProvenance = "self"
+)
+
+// WorkProvenanceValues is every value the contract allows, in contract order.
+var WorkProvenanceValues = []WorkProvenance{WorkProvenanceBroker, WorkProvenanceSelf}
 
 // One projection of what this session needs, ranked so a reader can sort by it.
 // `unknown` outranks nothing and means the inputs were incomplete.

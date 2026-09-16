@@ -1,0 +1,39 @@
+{
+  "copiedAt": "2026-09-17",
+  "css": {
+    "tokens.css": "e453a2104c49d3c4",
+    "base.css": "852337ea05abf62e",
+    "header.css": "df5062da1fea0354",
+    "shell.css": "ea9eecd234e735db",
+    "list.css": "ebfe70745382b822",
+    "detail.css": "2e8c57c3836c7f33",
+    "transcript.css": "851ae71f478439e5",
+    "composer.css": "247f9ead036a3f19",
+    "live.css": "1862aa2013ee6bfd",
+    "agents.css": "3c0bfcdfc431ff57",
+    "status-line.css": "2914dfe5b4fbac4e",
+    "responsive.css": "7a86722f6a7dd574"
+  },
+  "cssSource": "~/code/clawdline/Resources/web/app/css",
+  "js": {
+    "js/core/esc.js": "74964734afc56b08",
+    "js/core/i18n.js": "16c74b78f5d1851b",
+    "js/core/state.js": "71c00aefabffdb8d",
+    "js/core/dom.js": "72b6562e35b09177",
+    "js/core/util.js": "8d830d9646260e74",
+    "js/core/pixels.js": "e26afd0b16939b85",
+    "js/core/env.js": "576e3164d9fa75df",
+    "js/core/visibility.js": "a9866c5195b96016",
+    "js/core/layout-diagnostics.js": "1bcd062b7dcb1a99",
+    "js/core/failure-text.js": "837136c3c2ac44a2",
+    "js/net/cloud-failure.js": "2f2409a848a0c79b",
+    "js/session/selection.js": "8ddd312681b50047",
+    "js/session/ui.js": "5b4ed1293afbea71",
+    "js/view/derive.js": "dd4d3d923a048310"
+  },
+  "jsSource": "~/code/clawdline/Resources/web/app/js",
+  "strings": {
+    "public/strings/zh-Hant.json": "d69538841570f7f9"
+  },
+  "stringsSource": "~/code/clawdline/Resources/web/strings"
+}

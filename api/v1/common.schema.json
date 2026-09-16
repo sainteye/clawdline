@@ -36,6 +36,19 @@
         "kind": { "$ref": "#/$defs/MoverKind" }
       }
     },
+    "Icon": {
+      "description": "A project's mark: rows of `#RRGGBB`, with null for transparent. It is derived from the project path and the machine's icon registry by the same rules the Swift app uses, so both apps draw the same creature — a mark somebody recognises by colour and shape is not recognisable if the second app draws it differently, and near-identical is worse than obviously different.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accent", "cells"],
+      "properties": {
+        "accent": { "type": "string" },
+        "cells": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "string", "nullable": true } }
+        }
+      }
+    },
     "Refusal": {
       "description": "Every refusal on this daemon has this shape. A caller reads `error` as the code and never parses `detail`.",
       "type": "object",

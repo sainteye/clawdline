@@ -96,9 +96,11 @@ func writeActionRefusal(w http.ResponseWriter, err error) {
 		reasons := make([]contract.CloseReason, 0, len(ref.Reasons))
 		for _, r := range ref.Reasons {
 			reasons = append(reasons, contract.CloseReason{
-				Kind:  string(r.Kind),
-				Mover: wireMover(r.Mover),
-				Note:  r.Note,
+				Kind:        "obligation",
+				Code:        string(r.Kind),
+				SubjectID:   r.Mover.ID,
+				SubjectKind: string(r.Mover.Kind),
+				Mover:       wireCloseMover(r.Mover, ""),
 			})
 		}
 		w.Header().Set("Content-Type", "application/json")

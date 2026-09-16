@@ -1,12 +1,25 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="booting">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark light" />
-    <title>Clawdline</title>
+    <title>clawdline</title>
+    <!-- The interface's words, written in by the server rather than asked for.
+         The daemon replaces the comment below with one line setting
+         `window.__strings`, the same slot the Swift app's page uses. It was the
+         last round trip in front of the first paint and the worst-placed one:
+         nothing is drawn until the words land, so fetching them meant a beat of
+         blank for every load. Left as a comment by anything that is not the
+         daemon — the dev server, a copy opened from disk — and the console
+         falls back to fetching /v1/strings. -->
+    <!-- clawdline:strings -->
   </head>
   <body>
+    <!-- display: contents, so this is not in the layout. The stylesheet is the
+         Swift app's, where the header, the drawer and the pages are the body's
+         own flex children; a container between them and the body would make
+         every height in it mean something else. -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

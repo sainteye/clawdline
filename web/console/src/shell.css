@@ -1,0 +1,21 @@
+/* The only stylesheet here that is not a copy.
+   Two rules, both of them about being a React app inside a page that was not
+   written for one. Anything else that needs saying belongs in the copied
+   stylesheet's terms, not in a second opinion beside it. */
+
+/* React needs a container; the layout must not have one. The Swift app's
+   stylesheet makes header, drawer and page the body's own flex children, so
+   this element takes itself out of the box tree rather than becoming a box
+   nobody accounted for. */
+#root {
+  display: contents;
+}
+
+/* The page is hidden until its words arrive — the same beat of background the
+   original takes, for the same reason: a tenth of a second of English furniture
+   in front of somebody who reads none is a worse first impression than nothing.
+   The class comes off once the catalog has been applied, whatever the outcome,
+   so no path here leaves the page hidden. */
+html.booting body {
+  visibility: hidden;
+}

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -62,11 +63,42 @@ func (p *page) document(w http.ResponseWriter) {
 	}
 	html := string(body)
 	html = strings.Replace(html, "<!-- clawdline:modules -->", p.modulePreloads(), 1)
+	// The words, written in rather than asked for. Fetching them was the last
+	// round trip in front of the first paint and the worst-placed one: the page
+	// is deliberately blank until they land, so the request was a beat of
+	// nothing on every load. Left as a comment when there is no catalog, and
+	// the console falls back to the route.
+	html = strings.Replace(html, "<!-- clawdline:strings -->", p.strings(), 1)
 	// The cloud slot is left empty on purpose: this is a local console, and the
 	// declaration is what tells the client which of its three transports it is.
 	html = strings.Replace(html, "<!-- clawdline:cloud -->", "", 1)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(html))
+}
+
+// strings returns the one line that carries the catalog into the document.
+//
+// It is JSON inside a script element, so the one sequence that could end the
+// element early is escaped. Nothing else needs escaping: JSON's own encoder has
+// already dealt with quotes and backslashes, and a second pass over them would
+// corrupt the very strings it was meant to protect.
+func (p *page) strings() string {
+	body, err := os.ReadFile(filepath.Join(p.root, "strings", "zh-Hant.json"))
+	if err != nil {
+		return ""
+	}
+	var catalog map[string]any
+	if json.Unmarshal(body, &catalog) != nil {
+		return ""
+	}
+	catalog["lang"] = "zh-Hant"
+	catalog["dir"] = "ltr"
+	out, err := json.Marshal(catalog)
+	if err != nil {
+		return ""
+	}
+	return "<script>window.__strings=" +
+		strings.ReplaceAll(string(out), "</", `<\/`) + "</script>"
 }
 
 func (p *page) modulePreloads() string {
