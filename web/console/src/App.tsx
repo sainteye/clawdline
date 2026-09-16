@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import { ClawdlineClient, needsYou, sortSessions } from "@clawdline/core"
 import type {
   Obligation,
+  SchedulerPulse,
   ScheduleRow,
   SessionRow,
   TaskRow,
@@ -62,12 +63,47 @@ export default function App() {
 function Health() {
   const read = useMemo(() => () => client.health(), [])
   const { data, error } = usePoll(read, 15000)
-  if (error) return <span className="pill"><i className="dot off" />daemon unreachable</span>
+  if (error) return <span className="pill"><i className="dot off" />daemon 連不上</span>
   if (!data) return <span className="pill"><i className="dot" />…</span>
   return (
-    <span className="pill">
-      <i className="dot on" />
-      {data.served_by} :{data.port}
+    <>
+      <Clock pulse={data.scheduler} />
+      <span className="pill">
+        <i className="dot on" />
+        {data.served_by} :{data.port}
+      </span>
+    </>
+  )
+}
+
+/**
+ * Whether the clock is running.
+ *
+ * A pass that fired nothing and a scheduler that stopped are both silence, so
+ * this reports the pass rather than its effects. `due` is shown next to `fired`
+ * because a due schedule whose dispatch was refused is a thing to look at, and
+ * `fired` alone cannot show it.
+ */
+function Clock({ pulse }: { pulse: SchedulerPulse }) {
+  if (!pulse.at) {
+    return (
+      <span className="pill" title="排程器還沒巡過第一輪">
+        <i className="dot" />
+        clock 尚未巡邏
+      </span>
+    )
+  }
+  const stale = Date.now() / 1000 - pulse.at > pulse.tickSeconds * 3
+  return (
+    <span
+      className="pill"
+      title={`每 ${pulse.tickSeconds}s 巡一次，上一輪看了 ${pulse.considered} 個排程`}
+    >
+      <i className={`dot ${stale ? "unknown" : "on"}`} />
+      clock {ago(pulse.at)}
+      {pulse.due > 0 && ` · ${pulse.due} 到期`}
+      {pulse.fired > 0 && ` · ${pulse.fired} 已派`}
+      {pulse.note && ` · ${pulse.note}`}
     </span>
   )
 }

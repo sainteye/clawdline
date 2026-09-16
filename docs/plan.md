@@ -69,10 +69,15 @@ internal/
   contract/               由 schema 生成的型別（唯一真相）
 
 api/v1/*.schema.json      契約本體
-web/                      console（從舊 repo 複製）
+web/                      前端，三個 npm workspace（見 §3.1）
+  contract/               生成的 TS 型別；零 import
+  core/                   client、refusal、fleet store；無 DOM、無 React
+  console/                React DOM 的畫面
 shell/darwin|windows|linux
 docs/                     本檔與 coordination.md
-tools/                    守衛與生成腳本
+tools/
+  contract-gen/           讀 api/v1 生 Go 與 TS
+  package-macos.sh        打包
 ```
 
 **兩條硬規則**，由守衛強制：
@@ -82,6 +87,91 @@ tools/                    守衛與生成腳本
 
 Go 的 package 邊界讓這是編譯期的事，不是掃字串。舊樹的 `Orchestrator ↔ RemoteServer`
 循環相依在 Swift 的單一模組裡難以根除，正是因為缺這道邊界。
+
+---
+
+## 3.1 前端：React，以及將來的 React Native
+
+**決定（2026-09-17）**：web console 用 React 重寫；手機 app 若要做，用 React Native，
+**但兩邊不共用畫面層，只共用畫面以下的全部**。
+
+### 為什麼不是 React Native Web 一套打通
+
+看板是密集的桌面畫面——八列 session、每列四個欄位、右欄四塊面板。
+RN 的 primitive（`View` / `Text`）做這種版面要付出的代價，遠大於「手機和桌面共用一份 JSX」
+省下來的。而手機上要的本來就不是同一個版面：那邊要的是「哪幾件事需要我」，
+不是一張表。**同一份版面在兩個裝置上都只能是妥協。**
+
+### 所以切在哪裡
+
+| 層 | 內容 | 瀏覽器 | React Native |
+|---|---|---|---|
+| `web/contract` | 生成的型別 | ✓ | ✓ |
+| `web/core` | client、refusal、fleet store、排序規則 | ✓ | ✓ |
+| 畫面 | React DOM / RN | 各自寫 | 各自寫 |
+
+`core` 的硬規則：**不 import DOM，不 import React，不 import 任何 bundler 專屬語法。**
+它跟 host 要的東西只有兩樣，而且都寫在型別裡：
+
+- `fetch` — 瀏覽器和 RN 都有，所以 client 不需要平台分支
+- `StreamTransport` — **這是兩邊唯一真正不同的地方**。瀏覽器有 `EventSource`，
+  RN 沒有，RN 的替代品（fetch stream、websocket、輪詢）形狀又各不相同。
+  所以 core 只宣告形狀，由 host 供應；`nativeEventSourceTransport()` 在沒有
+  `EventSource` 時回 `undefined` 而不是丟例外，讓 host 可以在啟動時直接判斷。
+
+輪詢版的 transport 是**具名的東西，不是安靜的退路**：用輪詢餵的畫面比串流晚，
+而且會漏掉在兩次讀取之間開了又關的狀態。host 落到這條路上時應該講得出來。
+
+React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`。
+**規則住在 store 裡，不住在 hook 裡**，否則手機 app 要重寫一次
+「哪個快照可以覆蓋哪個快照」。
+
+### console 不再是借來的
+
+原本 `tools/package-macos.sh` 從 `~/code/clawdline/Resources/web` 複製 51,671 行過來。
+那讓這個 app **沒有自己的前端**，而且在這台機器以外的地方建不起來。
+現在打包會自己 build，`CLAWDLINE_WEB_SOURCE` 仍然可以指回舊的那份——
+那是拿來在同一支 daemon 上比對兩個 console 用的，不是出貨路徑。
+
+---
+
+## 3.2 排程：兩次事故的共同形狀
+
+同一件事咬了兩次，兩次都在測試中開出真的 assistant session。
+
+| | 間隔 | 觸發 | 當時的修法 |
+|---|---|---|---|
+| 第一次 | 3 秒 | 十八秒開十個 session | `MinInterval = 1m`，在 parse 時拒絕 |
+| 第二次 | 1 小時（完全合法） | store 裡一列 `last_run=0`，下一跳就開 | —— |
+
+**速率從來不是問題的形狀，第一次發射才是。**
+`Due()` 舊的寫法把「沒跑過」當成「現在就該跑」，理由是「不然第一次會在沒人選的時間跑」。
+那個理由對**一個人剛建立的排程**成立，但它分不出「剛建立」和「出現在 store 裡」——
+還原的備份、複製過來的、手寫進去的，全都會在時鐘一跳時一起發射。
+
+現在的規則：**間隔從「上次跑」與「這支 daemon 第一次看見它」兩者的較晚者起算。**
+「第一次看見」在**讀取時**蓋章而不是寫入時，因為會出事的那些列正是沒經過寫入的那些。
+
+一個人現在建立 `every 1h`，第一次跑在一小時後——那正好是他選的時間，
+比「立刻跑」更符合原本那個理由。
+
+### 這條規則有人看著它
+
+- `internal/domain/schedule/schedule_test.go`：本 repo 的第一個測試，
+  三個 case 對應事故走過的三格，換回舊行為三個都紅。
+- `/v1/health` 的 `scheduler`：**巡邏本身要可觀察**。
+  「巡過但沒派工」和「排程器停了」在外面看起來都是安靜，所以時鐘要像掃描一樣報告自己。
+  `due` 跟 `fired` 分開記，因為「沒東西到期」和「有東西到期但派工被拒」不是同一件事。
+
+### 實測（2026-09-17，兩組）
+
+| | `first_seen` | `considered` | `due` | `fired` | 新分頁 |
+|---|---|---|---|---|---|
+| 處理組 | 就是現在 | 3 | **0** | 0 | 0 |
+| 對照組 | 兩小時前 | 3 | **1** | 0 | 0 |
+
+對照組的 `fired=0` 是 dispatch 拒絕的：`workspace_busy: task task-1 already claims [Sources/]`，
+**而且是在開任何東西之前拒絕的**——順帶現場驗到了 claims 仲裁的順序。
 
 ---
 

@@ -4,15 +4,30 @@
   "title": "The daemon itself",
   "description": "Routes that describe this process rather than the work it carries.",
   "$defs": {
+    "SchedulerPulse": {
+      "description": "What the clock says about its own last pass. A pass that fired nothing and a scheduler that stopped are both silence from outside, so the clock reports itself the way a scan does.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["considered", "due", "fired", "tickSeconds"],
+      "properties": {
+        "at": { "description": "When the last pass ran. Absent means no pass has finished yet, which is the ordinary state for the first tick after startup.", "type": "integer" },
+        "considered": { "type": "integer" },
+        "due": { "description": "How many came due on this pass. Separate from `fired` because a due schedule whose dispatch was refused is not the same as nothing being due.", "type": "integer" },
+        "fired": { "type": "integer" },
+        "note": { "description": "Why a pass did nothing, when the reason was not that nothing was due.", "type": "string" },
+        "tickSeconds": { "type": "integer" }
+      }
+    },
     "Health": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["at", "dir", "ok", "port", "served_by", "upstream"],
+      "required": ["at", "dir", "ok", "port", "scheduler", "served_by", "upstream"],
       "properties": {
         "at": { "type": "integer" },
         "dir": { "type": "string" },
         "ok": { "type": "boolean" },
         "port": { "type": "integer" },
+        "scheduler": { "$ref": "#/$defs/SchedulerPulse" },
         "served_by": { "description": "Which implementation answered. This is how a reader tells the Go daemon from the Swift app on the same port.", "type": "string" },
         "upstream": { "type": "integer" }
       }

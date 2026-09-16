@@ -146,6 +146,7 @@ export interface Health {
   dir: string
   ok: boolean
   port: number
+  scheduler: SchedulerPulse
 
   /**
    * Which implementation answered. This is how a reader tells the Go daemon from
@@ -343,6 +344,33 @@ export interface ScheduleSaved {
   id: string
   ok: boolean
   when: string
+}
+
+/**
+ * What the clock says about its own last pass. A pass that fired nothing and a
+ * scheduler that stopped are both silence from outside, so the clock reports itself
+ * the way a scan does.
+ */
+export interface SchedulerPulse {
+  /**
+   * When the last pass ran. Absent means no pass has finished yet, which is the
+   * ordinary state for the first tick after startup.
+   */
+  at?: number
+  considered: number
+
+  /**
+   * How many came due on this pass. Separate from `fired` because a due schedule
+   * whose dispatch was refused is not the same as nothing being due.
+   */
+  due: number
+  fired: number
+
+  /**
+   * Why a pass did nothing, when the reason was not that nothing was due.
+   */
+  note?: string
+  tickSeconds: number
 }
 
 /**

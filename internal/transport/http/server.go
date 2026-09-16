@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
@@ -36,6 +37,9 @@ type Server struct {
 	inventory  app.Inventory
 	store      *store.Store
 	dispatcher app.Dispatcher
+	// pulse is the scheduler's own account of its last pass, read by /v1/health.
+	pulse atomic.Pointer[app.Pulse]
+	tick  time.Duration
 }
 
 // servedBy names which implementation answered. It is how a reader tells the Go
@@ -134,12 +138,13 @@ func (s *Server) Handler() http.Handler {
 // so that a reader can tell which of the two daemons replied.
 func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, contract.Health{
-		OK:       true,
-		ServedBy: servedBy,
-		Port:     int64(s.cfg.Port),
-		Upstream: int64(s.cfg.UpstreamPort),
-		Dir:      s.cfg.Dir,
-		At:       time.Now().Unix(),
+		OK:        true,
+		Scheduler: s.schedulerPulse(),
+		ServedBy:  servedBy,
+		Port:      int64(s.cfg.Port),
+		Upstream:  int64(s.cfg.UpstreamPort),
+		Dir:       s.cfg.Dir,
+		At:        time.Now().Unix(),
 	})
 }
 
@@ -188,13 +193,34 @@ func (s *Server) StartScheduler(ctx context.Context) {
 			tick = d
 		}
 	}
+	s.tick = tick
 	go app.Scheduler{
 		Store:      s.store,
 		Dispatcher: s.dispatcher,
 		Tick:       tick,
 		NewID:      newID,
+		Report:     func(p app.Pulse) { s.pulse.Store(&p) },
 	}.Run(ctx)
 	log.Printf("scheduler ticking every %s", tick)
+}
+
+// schedulerPulse is what /v1/health says about the clock.
+//
+// Before the first pass there is no `at`, and that absence is the honest
+// answer: a daemon thirty seconds old has not had a pass yet, and reporting a
+// zero timestamp would read as a pass in 1970.
+func (s *Server) schedulerPulse() contract.SchedulerPulse {
+	out := contract.SchedulerPulse{TickSeconds: int64(s.tick / time.Second)}
+	p := s.pulse.Load()
+	if p == nil {
+		return out
+	}
+	out.At = p.At.Unix()
+	out.Considered = int64(p.Considered)
+	out.Due = int64(p.Due)
+	out.Fired = int64(p.Fired)
+	out.Note = p.Note
+	return out
 }
 
 func newID() string {

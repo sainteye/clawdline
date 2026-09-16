@@ -152,10 +152,11 @@ const (
 var EvidenceValues = []Evidence{EvidenceStructured, EvidenceTranscript, EvidenceProcess, EvidenceScreen, EvidenceRegistry, EvidenceNone}
 
 type Health struct {
-	At   int64  `json:"at"`
-	Dir  string `json:"dir"`
-	OK   bool   `json:"ok"`
-	Port int64  `json:"port"`
+	At        int64          `json:"at"`
+	Dir       string         `json:"dir"`
+	OK        bool           `json:"ok"`
+	Port      int64          `json:"port"`
+	Scheduler SchedulerPulse `json:"scheduler"`
 
 	// Which implementation answered. This is how a reader tells the Go daemon from the
 	// Swift app on the same port.
@@ -340,6 +341,25 @@ type ScheduleSaved struct {
 	ID   string `json:"id"`
 	OK   bool   `json:"ok"`
 	When string `json:"when"`
+}
+
+// What the clock says about its own last pass. A pass that fired nothing and a
+// scheduler that stopped are both silence from outside, so the clock reports
+// itself the way a scan does.
+type SchedulerPulse struct {
+	// When the last pass ran. Absent means no pass has finished yet, which is the
+	// ordinary state for the first tick after startup.
+	At         int64 `json:"at,omitempty"`
+	Considered int64 `json:"considered"`
+
+	// How many came due on this pass. Separate from `fired` because a due schedule
+	// whose dispatch was refused is not the same as nothing being due.
+	Due   int64 `json:"due"`
+	Fired int64 `json:"fired"`
+
+	// Why a pass did nothing, when the reason was not that nothing was due.
+	Note        string `json:"note,omitempty"`
+	TickSeconds int64  `json:"tickSeconds"`
 }
 
 // One assistant session. Fields this daemon cannot support are absent rather
