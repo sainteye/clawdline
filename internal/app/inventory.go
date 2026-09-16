@@ -83,6 +83,7 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 	for _, key := range order {
 		row := in.enrich(ctx, byTTY[key])
 		row = in.readScreen(ctx, row)
+		row = in.readShells(ctx, row)
 		merged.Sessions = append(merged.Sessions, row)
 	}
 	return merged
@@ -93,8 +94,19 @@ func (in Inventory) Read(ctx context.Context) session.Inventory {
 // What comes back outranks the process reading, and the row says so: a status
 // the assistant wrote about itself is not the same kind of fact as a process
 // that merely exists, and a reader has to be able to tell them apart.
+//
+// An assistant's name comes from the identity source alone. What a terminal
+// reported as the row's title — a pane title, a tab name — is dropped here,
+// because the Swift app names no session from one: a title is a place a name
+// is displayed, anything in the terminal can overwrite it, and a tab renamed
+// to `Default` must not rename the row. With no identity there is no name,
+// and the console says where the session is instead.
 func (in Inventory) enrich(ctx context.Context, s session.Session) session.Session {
-	if in.Identity == nil || !s.IsAssistant() {
+	if !s.IsAssistant() {
+		return s
+	}
+	s.Label = ""
+	if in.Identity == nil {
 		return s
 	}
 	id, ok := in.Identity.ForSession(ctx, s)
@@ -104,9 +116,7 @@ func (in Inventory) enrich(ctx context.Context, s session.Session) session.Sessi
 	if id.ConversationID != "" {
 		s.ConversationID = id.ConversationID
 	}
-	if id.Label != "" {
-		s.Label = id.Label
-	}
+	s.Label = id.Label
 	if s.CWD == "" && id.CWD != "" {
 		s.CWD = id.CWD
 	}
@@ -151,6 +161,20 @@ func (in Inventory) readScreen(ctx context.Context, s session.Session) session.S
 	if s.State == session.StateWorking {
 		s.Line = session.WorkingLine(screen, s.Assistant, 25)
 	}
+	return s
+}
+
+// readShells asks what the session left running in the background, when the
+// identity source can say. It is asked of every assistant row whatever its
+// state: an idle row with a build still going is the one this exists for.
+func (in Inventory) readShells(ctx context.Context, s session.Session) session.Session {
+	h, ok := in.Identity.(interface {
+		Shells(context.Context, session.Session) []session.Shell
+	})
+	if !ok || !s.IsAssistant() {
+		return s
+	}
+	s.Shells = h.Shells(ctx, s)
 	return s
 }
 

@@ -43,6 +43,10 @@ type Server struct {
 	// ledger remembers what has already been counted, so a transcript is read
 	// once rather than once per request.
 	ledger *transcript.Ledger
+	// facts holds the model and spend read out of each record, keyed on the
+	// file's size and time, so the status line's minute-by-minute read of an
+	// unchanged session opens nothing.
+	facts *transcript.RecordFacts
 	// icons derives each project's mark by the same rules the Swift app uses,
 	// reading the same registry, so the two draw the same creature.
 	icons *icon.Registry
@@ -87,6 +91,7 @@ func New(cfg config.Config) (*Server, error) {
 		},
 		terminals: terminal.Hosts(),
 		ledger:    transcript.NewLedger(),
+		facts:     transcript.NewRecordFacts(),
 		icons:     icon.NewRegistry(),
 		inventory: app.Inventory{
 			Process:   process.New(),
@@ -105,10 +110,17 @@ func (s *Server) Handler() http.Handler {
 	// over only once the payloads agree.
 	mux.HandleFunc("/v1/next/sessions", s.nextSessions)
 	mux.HandleFunc("/v1/sessions", s.sessions)
-	// Everything under a session id is an action on that session. One handler
-	// rather than three routes, because the id is a path segment and Go's mux
-	// matches prefixes, not patterns.
-	mux.HandleFunc("/v1/sessions/", s.sessionAction)
+	// Everything under a session id is about that session: its info, which is
+	// a read, and otherwise an action on it. One handler rather than a route
+	// each, because the id is a path segment and Go's mux matches prefixes,
+	// not patterns.
+	mux.HandleFunc("/v1/sessions/", func(w http.ResponseWriter, r *http.Request) {
+		if id, ok := infoPath(r); ok {
+			s.sessionInfoRoute(w, r, id)
+			return
+		}
+		s.sessionAction(w, r)
+	})
 	mux.HandleFunc("/v1/events", s.events)
 	mux.HandleFunc("/v1/next/obligations", s.obligations)
 	mux.HandleFunc("/v1/next/schedules", s.schedules)

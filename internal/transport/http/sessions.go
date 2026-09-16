@@ -120,7 +120,27 @@ func sessionRow(item session.Session, owed []task.Obligation, owedErr error, liv
 		Line:           item.Line,
 		CWD:            item.CWD,
 		SessionID:      item.ConversationID,
+		Shells:         wireShells(item.Shells),
 	}
+}
+
+// wireShells carries a session's background commands across. None is nil, so
+// the key is absent as the Swift app leaves it.
+func wireShells(shells []session.Shell) []contract.SessionShell {
+	if len(shells) == 0 {
+		return nil
+	}
+	out := make([]contract.SessionShell, 0, len(shells))
+	for _, sh := range shells {
+		out = append(out, contract.SessionShell{
+			ID:      sh.ID,
+			At:      sh.At.Unix(),
+			Command: sh.Command,
+			What:    sh.What,
+			Doing:   sh.Doing,
+		})
+	}
+	return out
 }
 
 // closeability carries the domain's answer across to the wire, with what the

@@ -74,11 +74,10 @@ func (u Usage) Total() int64 {
 
 // ClaudePath is where Claude Code keeps one conversation's record.
 //
-// The directory name is the working directory with every separator turned into
-// a dash. That is Claude's scheme, not ours, so it is reproduced as given.
+// The directory name is the working directory as ProjectSlug spells it. That
+// is Claude's scheme, not ours, so it is reproduced as given.
 func ClaudePath(home, cwd, conversationID string) string {
-	slug := strings.ReplaceAll(cwd, string(filepath.Separator), "-")
-	return filepath.Join(home, ".claude", "projects", slug, conversationID+".jsonl")
+	return filepath.Join(home, ".claude", "projects", ProjectSlug(cwd), conversationID+".jsonl")
 }
 
 // CodexPath finds the rollout file for a thread.

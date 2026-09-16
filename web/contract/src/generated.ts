@@ -545,6 +545,81 @@ export interface SendRequest {
 }
 
 /**
+ * The facts behind the status line under an open session. This daemon serves the
+ * transcript-derived part the Swift app calls the summary; the working tree,
+ * context use, plan windows, links, permission and fast mode are not read here and
+ * their keys are absent.
+ */
+export interface SessionInfo {
+  models: SessionModel[]
+  session: SessionInfoSession
+  usage?: SessionInfoUsage
+}
+
+/**
+ * GET /v1/sessions/{id}/info. Kept off the session stream because answering reads
+ * the session's record; the console holds an answer for a minute.
+ */
+export interface SessionInfoReply {
+  info: SessionInfo
+}
+
+export interface SessionInfoSession {
+  assistant?: Assistant
+  cwd?: string
+  id: string
+
+  /**
+   * The model the session is on, as its record last named it: the newest assistant
+   * turn's model, or a `/model` switch made after it. Absent when the record says
+   * nothing.
+   */
+  model?: string
+  sessionId?: string
+
+  /**
+   * The same label the session list shows.
+   */
+  title?: string
+}
+
+/**
+ * What the conversation has spent. For Claude it is the sum of every assistant turn
+ * in the transcript and is absent when the transcript is larger than 8 MiB, because
+ * a partial sum is not a total. For Codex it is Codex's own running total.
+ */
+export interface SessionInfoUsage {
+  cacheRead: number
+  cacheWrite: number
+
+  /**
+   * US dollars. Claude Code's own session total from its status-line cache when it
+   * wrote one, otherwise these tokens at list price. Absent when neither is known,
+   * which is always the case for Codex; also absent at exactly zero.
+   */
+  costUsd?: number
+  input: number
+
+  /**
+   * The model the last counted turn named, as written.
+   */
+  model?: string
+  output: number
+  total: number
+}
+
+/**
+ * One model this session's assistant can be switched to. A session's current model
+ * is matched against `id` by prefix, so a dated id still finds its row; `name` is
+ * what a reader is shown for it.
+ */
+export interface SessionModel {
+  command: string
+  id: string
+  name: string
+}
+
+/**
  * One assistant session. Fields this daemon cannot support are absent rather than
  * invented; a reader that handles absence handles this too.
  */
@@ -557,6 +632,15 @@ export interface SessionRow {
   icon?: Icon
   id: string
   isClaude: boolean
+
+  /**
+   * What the session is called: a name typed in Clawdline, the title of the task
+   * Clawdline opened it for, the conversation's own title (`/rename`, else
+   * `aiTitle`), Codex's thread name, Claude Code's registry handle — the first
+   * that has something. Never a terminal title. This daemon keeps no typed names
+   * and no task titles, so its rows start at the conversation's own title. Absent
+   * when nothing names the session.
+   */
   label?: string
 
   /**
@@ -571,10 +655,50 @@ export interface SessionRow {
    * line.
    */
   sessionId?: string
+
+  /**
+   * The commands this session left running in the background, newest first, at most
+   * six. Absent rather than empty when there are none, as the Swift app sends it;
+   * always absent for Codex, which keeps no record of them.
+   */
+  shells?: SessionShell[]
   state: SessionState
   tty?: string
   work_provenance?: WorkProvenance
   work_state: WorkState
+}
+
+/**
+ * One background command a session started and has not finished: its output file
+ * has no ending written under it, and the session's transcript announced its id as
+ * a background command. `at` is when it last printed something.
+ */
+export interface SessionShell {
+  /**
+   * Unix seconds.
+   */
+  at: number
+
+  /**
+   * The command line that started it, on one line. Absent when the two transcript
+   * records it is joined from straddled a read.
+   */
+  command?: string
+
+  /**
+   * The last line it printed, clipped to 160 characters.
+   */
+  doing?: string
+
+  /**
+   * Claude Code's own id for it.
+   */
+  id: string
+
+  /**
+   * The description written beside the command, when there was one.
+   */
+  what?: string
 }
 
 /**

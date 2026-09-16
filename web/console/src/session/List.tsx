@@ -26,14 +26,19 @@ export function Mark({ icon, cellPx, id }: { icon: SessionRow["icon"]; cellPx: n
  * being drawn as idle — an idle row reads as finished, which is a confident
  * wrong answer about somebody's work.
  *
- * Peer waits and background shells are absent rather than empty: this daemon
- * has no reading for either, and the pieces are simply not there.
+ * Background shells go last in every branch, as `shellsSaid` does there: a
+ * session can be working on one thing with a build it started three turns ago
+ * still going, and an idle one with a build going is the row this is for.
+ *
+ * Peer waits are absent rather than empty: this daemon has no reading for
+ * them, and the piece is simply not there.
  */
 function stateHTML(row: SessionRow): string {
   const T = L.strings
   const work = L.workState(row)
   let said = L.workStateHTML(row)
   if (L.closeability(row).block) said += L.closeabilityHTML(row)
+  said += shellsHTML(row)
 
   if (work.state === "waiting_you") {
     return `<span class="wants">${L.glyphHTML("🙋", T.sessionWaiting)}</span>${said}`
@@ -45,6 +50,15 @@ function stateHTML(row: SessionRow): string {
     return `<span class="unread">${escapeText(T.webStateUnreadable)}</span>${said}`
   }
   return said
+}
+
+/** What the session left running where nobody can see it — `shellsSaid` in `list.js`. */
+function shellsHTML(row: SessionRow): string {
+  const n = row.shells?.length ?? 0
+  if (!n) return ""
+  const T = L.strings
+  const said = n === 1 ? T.sessionShellOne : L.fillString(T.sessionShellMany, { n })
+  return `<span class="shells">${L.escapeHTML(said)}</span>`
 }
 
 /** The catalog is trusted, but it goes into markup, so it is escaped anyway. */

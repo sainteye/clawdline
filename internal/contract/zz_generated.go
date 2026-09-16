@@ -500,6 +500,66 @@ type SendRequest struct {
 	Text string `json:"text"`
 }
 
+// The facts behind the status line under an open session. This daemon serves
+// the transcript-derived part the Swift app calls the summary; the working
+// tree, context use, plan windows, links, permission and fast mode are not read
+// here and their keys are absent.
+type SessionInfo struct {
+	Models  []SessionModel     `json:"models"`
+	Session SessionInfoSession `json:"session"`
+	Usage   *SessionInfoUsage  `json:"usage,omitempty"`
+}
+
+// GET /v1/sessions/{id}/info. Kept off the session stream because answering
+// reads the session's record; the console holds an answer for a minute.
+type SessionInfoReply struct {
+	Info SessionInfo `json:"info"`
+}
+
+type SessionInfoSession struct {
+	Assistant Assistant `json:"assistant,omitempty"`
+	CWD       string    `json:"cwd,omitempty"`
+	ID        string    `json:"id"`
+
+	// The model the session is on, as its record last named it: the newest assistant
+	// turn's model, or a `/model` switch made after it. Absent when the record says
+	// nothing.
+	Model     string `json:"model,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+
+	// The same label the session list shows.
+	Title string `json:"title,omitempty"`
+}
+
+// What the conversation has spent. For Claude it is the sum of every assistant
+// turn in the transcript and is absent when the transcript is larger than 8
+// MiB, because a partial sum is not a total. For Codex it is Codex's own
+// running total.
+type SessionInfoUsage struct {
+	CacheRead  int64 `json:"cacheRead"`
+	CacheWrite int64 `json:"cacheWrite"`
+
+	// US dollars. Claude Code's own session total from its status-line cache when it
+	// wrote one, otherwise these tokens at list price. Absent when neither is known,
+	// which is always the case for Codex; also absent at exactly zero.
+	CostUsd float64 `json:"costUsd,omitempty"`
+	Input   int64   `json:"input"`
+
+	// The model the last counted turn named, as written.
+	Model  string `json:"model,omitempty"`
+	Output int64  `json:"output"`
+	Total  int64  `json:"total"`
+}
+
+// One model this session's assistant can be switched to. A session's current
+// model is matched against `id` by prefix, so a dated id still finds its row;
+// `name` is what a reader is shown for it.
+type SessionModel struct {
+	Command string `json:"command"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+}
+
 // One assistant session. Fields this daemon cannot support are absent rather
 // than invented; a reader that handles absence handles this too.
 type SessionRow struct {
@@ -511,7 +571,14 @@ type SessionRow struct {
 	Icon         *Icon        `json:"icon,omitempty"`
 	ID           string       `json:"id"`
 	IsClaude     bool         `json:"isClaude"`
-	Label        string       `json:"label,omitempty"`
+
+	// What the session is called: a name typed in Clawdline, the title of the task
+	// Clawdline opened it for, the conversation's own title (`/rename`, else
+	// `aiTitle`), Codex's thread name, Claude Code's registry handle — the first
+	// that has something. Never a terminal title. This daemon keeps no typed names and
+	// no task titles, so its rows start at the conversation's own title. Absent when
+	// nothing names the session.
+	Label string `json:"label,omitempty"`
 
 	// What a working session says it is doing, read from its screen with the
 	// assistant's own clock in it. Present only while working. The Swift app sends it
@@ -520,11 +587,37 @@ type SessionRow struct {
 
 	// The assistant's own conversation id, when one was recovered from its command
 	// line.
-	SessionID      string         `json:"sessionId,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+
+	// The commands this session left running in the background, newest first, at most
+	// six. Absent rather than empty when there are none, as the Swift app sends it;
+	// always absent for Codex, which keeps no record of them.
+	Shells         []SessionShell `json:"shells,omitempty"`
 	State          SessionState   `json:"state"`
 	TTY            string         `json:"tty,omitempty"`
 	WorkProvenance WorkProvenance `json:"work_provenance,omitempty"`
 	WorkState      WorkState      `json:"work_state"`
+}
+
+// One background command a session started and has not finished: its output
+// file has no ending written under it, and the session's transcript announced
+// its id as a background command. `at` is when it last printed something.
+type SessionShell struct {
+	// Unix seconds.
+	At int64 `json:"at"`
+
+	// The command line that started it, on one line. Absent when the two transcript
+	// records it is joined from straddled a read.
+	Command string `json:"command,omitempty"`
+
+	// The last line it printed, clipped to 160 characters.
+	Doing string `json:"doing,omitempty"`
+
+	// Claude Code's own id for it.
+	ID string `json:"id"`
+
+	// The description written beside the command, when there was one.
+	What string `json:"what,omitempty"`
 }
 
 // What the session appears to be doing. `unknown` is a real answer and is never

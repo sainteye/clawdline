@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
@@ -297,4 +298,88 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// infoPath recognises GET /v1/sessions/{id}/info and returns the id, decoded.
+func infoPath(r *http.Request) (string, bool) {
+	if r.Method != http.MethodGet {
+		return "", false
+	}
+	rest, ok := strings.CutPrefix(r.URL.Path, "/v1/sessions/")
+	if !ok {
+		return "", false
+	}
+	id, ok := strings.CutSuffix(rest, "/info")
+	return id, ok && id != ""
+}
+
+// sessionInfoRoute answers the status line under an open session: which model
+// it is on and what it has spent, in the shape the Swift app's `/info` route
+// writes them.
+//
+// It follows /v1/sessions: whichever daemon answers the list answers this, so
+// an id always means the same session to both reads.
+func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id string) {
+	if !ownsSessions() {
+		s.proxy.ServeHTTP(w, r)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	item, err := s.actions().Find(ctx, id)
+	if err != nil {
+		writeActionRefusal(w, err)
+		return
+	}
+	home, _ := os.UserHomeDir()
+	info := contract.SessionInfo{
+		Session: contract.SessionInfoSession{
+			ID:        item.ID,
+			Title:     item.Label,
+			Assistant: contract.Assistant(item.Assistant),
+			SessionID: item.ConversationID,
+			CWD:       item.CWD,
+		},
+		Models: []contract.SessionModel{},
+	}
+	for _, m := range transcript.Models(home, string(item.Assistant)) {
+		info.Models = append(info.Models, contract.SessionModel{ID: m.ID, Name: m.Name, Command: m.Command})
+	}
+	// No record, or one that cannot be read, leaves the model and the usage
+	// absent: a session whose record was not found has not spent nothing.
+	if path := recordPath(item); path != "" {
+		if facts, err := s.facts.Read(path, string(item.Assistant)); err == nil {
+			info.Session.Model = facts.Model
+			info.Usage = wireSessionUsage(facts.Usage, item, home)
+		}
+	}
+	writeJSON(w, contract.SessionInfoReply{Info: info})
+}
+
+// wireSessionUsage carries a spend across, with the cost the Swift app would
+// show: Claude Code's own session total when its status line wrote one down,
+// otherwise the tokens at list price. The usage has to be there for either,
+// as it does there — a total nobody could count is not replaced by a cost.
+func wireSessionUsage(u *transcript.Summary, item session.Session, home string) *contract.SessionInfoUsage {
+	if u == nil {
+		return nil
+	}
+	out := &contract.SessionInfoUsage{
+		Input:      u.Input,
+		Output:     u.Output,
+		CacheRead:  u.CacheRead,
+		CacheWrite: u.CacheWrite,
+		Total:      u.Total,
+		Model:      u.Model,
+	}
+	cost, known := u.Cost, u.HasCost
+	if item.Assistant == session.AssistantClaude {
+		if own, ok := transcript.ClaudeSessionCost(home, item.ConversationID); ok {
+			cost, known = own, true
+		}
+	}
+	if known {
+		out.CostUsd = cost
+	}
+	return out
 }

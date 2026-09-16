@@ -86,6 +86,11 @@ type Session struct {
 	// ConversationID is the assistant's own id for this line of work. It
 	// survives a terminal restart, which a tty and a pane id do not.
 	ConversationID string `json:"conversation_id,omitempty"`
+
+	// Shells are the commands this session left running in the background,
+	// newest first. Empty for most sessions, and always for Codex, which keeps
+	// no record of them.
+	Shells []Shell `json:"shells,omitempty"`
 }
 
 // IsAssistant separates a Claude or Codex session from an ordinary shell.

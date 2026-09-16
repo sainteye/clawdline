@@ -5,11 +5,16 @@ package transcript
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // ClaudeRegistry is one row of ~/.claude/sessions/<pid>.json: Claude Code's own
@@ -62,43 +67,159 @@ func ClaudeRegistryByPID(home string) map[int]ClaudeRegistry {
 	return out
 }
 
-// ClaudeTitle reads the newest title a conversation gave itself.
-//
-// The transcript is append-only and a session retitles itself as the work
-// changes, so the last record wins. The file is read to its end rather than
-// tailed by bytes: a title is short and the cost is bounded by the transcript,
-// which this only does for sessions that are actually running.
-func ClaudeTitle(home, cwd, sessionID string) string {
-	if cwd == "" || sessionID == "" {
-		return ""
+// ProjectSlug is the folder Claude Code files a working directory's
+// transcripts under: every UTF-16 code unit that is not an ASCII letter or
+// digit becomes a dash. That is Claude's scheme, reproduced as the Swift app's
+// `TranscriptPaths.slug` reproduces it — `/a/b_c.d` is `-a-b-c-d`, and a
+// replacement of the separators alone finds nothing for either of those.
+func ProjectSlug(cwd string) string {
+	var b strings.Builder
+	b.Grow(len(cwd))
+	for _, r := range cwd {
+		if r < utf8.RuneSelf && (r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z') {
+			b.WriteRune(r)
+			continue
+		}
+		units := utf16.RuneLen(r)
+		if units < 1 {
+			units = 1
+		}
+		b.WriteString(strings.Repeat("-", units))
 	}
-	slug := strings.ReplaceAll(cwd, "/", "-")
-	path := filepath.Join(home, ".claude", "projects", slug, sessionID+".jsonl")
+	return b.String()
+}
+
+// titleTail is how much of a transcript's end the title is read from. A
+// session repeats its `aiTitle` as it goes, so the newest one is in here; a
+// `/rename` can be anywhere, which is why that one alone is also looked for
+// further back.
+const titleTail = 512_000
+
+// Titles reads what a Claude conversation calls itself, once per version of
+// its transcript.
+//
+// The fleet list asks on every reading, for every session, and the answer
+// changes only when the file does. So the answer is kept against the file's
+// size and modification time, and an unchanged transcript is not opened.
+type Titles struct {
+	mu   sync.Mutex
+	seen map[string]titleReading
+}
+
+type titleReading struct {
+	size   int64
+	mod    time.Time
+	title  string
+	custom string
+}
+
+func NewTitles() *Titles { return &Titles{seen: map[string]titleReading{}} }
+
+// Read returns the conversation's effective title — the last `customTitle` a
+// `/rename` wrote, otherwise the last `aiTitle` — and the `customTitle` on its
+// own. Both are empty for a file that cannot be read.
+//
+// A rename can sit arbitrarily far before the tail, so a file larger than the
+// tail with no rename in it is scanned once in full. After that an append that
+// stays within the tail window keeps the rename already found: anything newer
+// would be in the tail.
+func (t *Titles) Read(path string) (title, custom string) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return "", ""
+	}
+	size, mod := st.Size(), st.ModTime()
+
+	t.mu.Lock()
+	prev, had := t.seen[path]
+	t.mu.Unlock()
+	if had && prev.size == size && prev.mod.Equal(mod) {
+		return prev.title, prev.custom
+	}
+
+	data, complete, err := tailData(path, titleTail)
+	if err != nil {
+		return "", ""
+	}
+	recent := lastTitle(data, "customTitle")
+	ai := lastTitle(data, "aiTitle")
+	switch {
+	case recent != "":
+		title, custom = recent, recent
+	case had && size > prev.size && size-prev.size <= titleTail:
+		custom = prev.custom
+		title = firstNonEmpty(custom, ai)
+	case complete:
+		title = ai
+	default:
+		custom = lastTitleInFile(path, "customTitle")
+		title = firstNonEmpty(custom, ai)
+	}
+
+	t.mu.Lock()
+	t.seen[path] = titleReading{size: size, mod: mod, title: title, custom: custom}
+	t.mu.Unlock()
+	return title, custom
+}
+
+// lastTitle is the last record in data whose top-level key is a non-empty
+// string. Every line is tested for the key before anything is decoded: a title
+// is one line in hundreds.
+func lastTitle(data []byte, key string) string {
+	needle := []byte(`"` + key + `"`)
+	found := ""
+	for _, line := range bytes.Split(data, []byte{'\n'}) {
+		if !bytes.Contains(line, needle) {
+			continue
+		}
+		if v := titleIn(line, key); v != "" {
+			found = v
+		}
+	}
+	return found
+}
+
+// lastTitleInFile is lastTitle over the whole file, read forward a line at a
+// time so a transcript of tens of megabytes is never held at once.
+func lastTitleInFile(path, key string) string {
 	f, err := os.Open(path)
 	if err != nil {
 		return ""
 	}
 	defer f.Close()
-
-	title := ""
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for sc.Scan() {
-		line := sc.Bytes()
-		// Cheap reject before parsing: most records are not titles.
-		if !strings.Contains(string(line), `"ai-title"`) {
-			continue
+	needle := []byte(`"` + key + `"`)
+	found := ""
+	r := bufio.NewReaderSize(f, 256<<10)
+	for {
+		line, err := r.ReadBytes('\n')
+		if len(line) > 0 && bytes.Contains(line, needle) {
+			if v := titleIn(line, key); v != "" {
+				found = v
+			}
 		}
-		var rec struct {
-			Type    string `json:"type"`
-			AITitle string `json:"aiTitle"`
-		}
-		if json.Unmarshal(line, &rec) != nil || rec.Type != "ai-title" {
-			continue
-		}
-		if rec.AITitle != "" {
-			title = rec.AITitle
+		if err != nil {
+			return found
 		}
 	}
-	return title
+}
+
+func titleIn(line []byte, key string) string {
+	var rec map[string]json.RawMessage
+	if json.Unmarshal(line, &rec) != nil {
+		return ""
+	}
+	var v string
+	if json.Unmarshal(rec[key], &v) != nil {
+		return ""
+	}
+	return v
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

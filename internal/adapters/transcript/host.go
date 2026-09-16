@@ -14,11 +14,13 @@ type Host struct {
 
 	claude map[int]ClaudeRegistry
 	codex  map[string]string
+	titles *Titles
+	shells *Shells
 }
 
 func NewHost() *Host {
 	home, _ := os.UserHomeDir()
-	return &Host{Home: home}
+	return &Host{Home: home, titles: NewTitles(), shells: NewShells()}
 }
 
 // Refresh reads both indexes once per inventory rather than once per row.
@@ -27,6 +29,16 @@ func (h *Host) Refresh() {
 	h.codex = CodexNames(h.Home)
 }
 
+// ForSession names a session the way the Swift app's session list does — see
+// session.PreferredLabel for the order, and for why no terminal title is in it.
+//
+// The two rungs above the conversation's own title are records the Swift app
+// keeps in its own store: a name somebody typed in Clawdline, and the title of
+// the task Clawdline opened the tab for. This daemon keeps neither, so they are
+// empty here rather than read out of the other app's store. For the same
+// reason a Claude conversation has no fallback title under its own, which is
+// also why a weak `aiTitle` is never set aside here: it only gives way to a
+// fallback, and there is none.
 func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identity, bool) {
 	switch s.Assistant {
 	case session.AssistantClaude:
@@ -34,12 +46,19 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		if !ok {
 			return ports.Identity{}, false
 		}
+		title := ""
+		if r.CWD != "" && r.SessionID != "" {
+			title, _ = h.titles.Read(ClaudePath(h.Home, r.CWD, r.SessionID))
+		}
 		return ports.Identity{
 			ConversationID: r.SessionID,
 			Pane:           r.Pane(),
 			CWD:            r.CWD,
-			Label:          ClaudeTitle(h.Home, r.CWD, r.SessionID),
-			Status:         r.Status,
+			Label: session.PreferredLabel(session.LabelRungs{
+				Conversation: session.DisplayedConversationTitle(title, false, ""),
+				Handle:       r.Name,
+			}),
+			Status: r.Status,
 		}, true
 
 	case session.AssistantCodex:
@@ -52,8 +71,24 @@ func (h *Host) ForSession(ctx context.Context, s session.Session) (ports.Identit
 		}
 		return ports.Identity{
 			ConversationID: s.ConversationID,
-			Label:          h.codex[s.ConversationID],
+			Label:          session.PreferredLabel(session.LabelRungs{Thread: h.codex[s.ConversationID]}),
 		}, true
 	}
 	return ports.Identity{}, false
+}
+
+// Shells is what a Claude session left running in the background. Codex keeps
+// no such files, so it is not asked.
+func (h *Host) Shells(ctx context.Context, s session.Session) []session.Shell {
+	if s.Assistant != session.AssistantClaude || s.ConversationID == "" {
+		return nil
+	}
+	cwd := s.CWD
+	if r, ok := h.claude[s.PID]; ok && r.CWD != "" {
+		cwd = r.CWD
+	}
+	if cwd == "" {
+		return nil
+	}
+	return h.shells.Running(ClaudePath(h.Home, cwd, s.ConversationID))
 }
