@@ -1325,13 +1325,13 @@ group("verification reports are optional, bounded metadata rather than a success
         timeoutMinutes: 90, created: Date(),
         secretHash: String(repeating: "0", count: 64))
     let brief = Orchestrator.childBrief(for: briefTask)
-    check("the briefing batches verification and asks for representative failure proof",
+    check("the briefing batches verification and carries the reviewed-first, tested-once order",
           brief.contains("cheapest verification pass that materially reduces the risk")
             && brief.contains("do not pay a Swift compile for each assertion")
-            && brief.contains("representative")
-            && brief.contains("red-before-green")
-            && brief.contains("do not need a synthetic mutation")
-            && !brief.contains("one red-before-green run for every test"))
+            && brief.contains("reviewed first, tested once")
+            && brief.contains("runs nothing")
+            && brief.contains("must be able to fail on the code it is about")
+            && !brief.contains("red-before-green"))
     check("the briefing forbids ritual, unrelated and flake-hunting full runs",
           brief.contains("ritual after every small edit")
             && brief.contains("unrelated to the paths this task claimed")

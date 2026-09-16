@@ -382,14 +382,17 @@ extension Orchestrator {
 
         Do the cheapest verification pass that materially reduces the risk of the complete delivery
         unit. Accumulate related edits first, then compile and run the relevant groups once near the
-        end; do not pay a Swift compile for each assertion, file, finding or small correction. Use
-        one representative red-before-green or failure-injection proof for each materially new
-        failure class when the test could otherwise pass without the behavior. Pure prose and
-        generated-count transcription do not need a synthetic mutation. Mechanical moves and
-        test-fixture-only corrections do not need one either. Until the repository ships a
-        focused Swift runner, an implementer whose behavior cannot be exercised more narrowly may
-        use one full-suite run and record `focused_runner_unavailable`; a reviewer does not repeat
-        it.
+        end; do not pay a Swift compile for each assertion, file, finding or small correction.
+
+        **The order is reviewed first, tested once.** A review reads the work before any test run
+        exists and runs nothing; one correction pass answers its whole finding set and does not go
+        back to it. The tests run once, when the work is about to be committed or built into a
+        release, and a red run buys one correction and the same run again. A new regression test
+        must be able to fail on the code it is about — read it there, or run it there once, and
+        build no machinery to prove it. Write a test for a regression you can name, never to
+        satisfy a procedure. Until the repository ships a focused Swift runner, an implementer
+        whose behavior cannot be exercised more narrowly may use one full-suite run and record
+        `focused_runner_unavailable`.
 
         **An expensive compile goes through the machine lock, and there is exactly one slot.**
         Four `swift-frontend` processes have force-rebooted this Mac. `./test.sh` and `./build.sh`
