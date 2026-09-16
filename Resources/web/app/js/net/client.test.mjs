@@ -1147,8 +1147,10 @@ const vanished = readingCloud.transcript("session-01", null, { foreground: true 
 await until(function () { return publishedReads(readingSocket).length === 6; },
     "the vanished transcript read to leave");
 await answerRead(readingCloud, readingSocket, { read: "transcript", status: 404,
-    error: { code: "not_found", message: "No session named that" } });
-await assert.rejects(vanished, function (error) { return error.code === "not_found"; });
+    error: { code: "session_not_found", message: "No session named that" } });
+await assert.rejects(vanished, function (error) {
+    return error.code === "session_not_found" && error.status === 404;
+});
 const healedSessions = (await readingCloud.sessions()).sessions;
 assert.equal(healedSessions.some(function (row) {
     return row.identity.machine === "mac-01" && row.identity.session === "session-01";
@@ -1180,17 +1182,94 @@ readingSocket.receive({ type: "envelope", realign: true, envelope: renewedSessio
 await readingCloud.messageChain;
 readingSocket.receive({ type: "envelope", realign: true, envelope: staleNotFoundEnvelope });
 await readingCloud.messageChain;
+answerSequence = Math.max(answerSequence, 4102);
 assert.equal((await readingCloud.sessions()).sessions.some(function (row) {
     return row.identity.machine === "mac-01" && row.identity.session === "session-renewed";
 }), true, "a retained transcript not_found older than a Session row cannot prune the new process");
+
+const renewedGoodBaseline = publishedReads(readingSocket).length;
+const renewedGood = readingCloud.transcript(
+    { machine: "mac-01", session: "session-renewed" }, null, { foreground: true });
+await until(function () {
+    return publishedReads(readingSocket).length === renewedGoodBaseline + 1;
+}, "the renewed native transcript read to leave");
+const nativeRows = [
+    { role: "user", text: "native prompt" },
+    { role: "assistant", text: "native answer" }
+];
+await answerRead(readingCloud, readingSocket, { read: "transcript", status: 200,
+    body: { entries: nativeRows, signature: "native-signature" } }, "session-renewed");
+assert.deepEqual((await renewedGood).entries, nativeRows,
+    "the Cloud client keeps native provider user and assistant rows verbatim");
+
+const unavailableBaseline = publishedReads(readingSocket).length;
+const unavailable = readingCloud.transcript(
+    { machine: "mac-01", session: "session-renewed" }, null, { foreground: true });
+await until(function () {
+    return publishedReads(readingSocket).length === unavailableBaseline + 1;
+}, "the temporarily unavailable native transcript read to leave");
+await answerRead(readingCloud, readingSocket, { read: "transcript", status: 503,
+    error: { code: "transcript_unavailable", message: "Provider evidence is unavailable" } },
+"session-renewed");
+await assert.rejects(unavailable, function (error) {
+    return error.code === "transcript_unavailable" && error.status === 503;
+});
+assert.equal((await readingCloud.sessions()).sessions.some(function (row) {
+    return row.identity.machine === "mac-01" && row.identity.session === "session-renewed";
+}), true, "typed 503 keeps the durable Session row");
+assert.deepEqual(Array.from(readingCloud.transcriptSnapshots.values()).at(-1).entries, nativeRows,
+    "typed 503 keeps the last-good native transcript snapshot");
+
+const boundedBaseline = publishedReads(readingSocket).length;
+const boundedNative = readingCloud.transcript(
+    { machine: "mac-01", session: "session-renewed" }, null, { foreground: true });
+await until(function () { return publishedReads(readingSocket).length === boundedBaseline + 1; },
+    "the size-bounded native transcript read to leave");
+await answerRead(readingCloud, readingSocket, { read: "transcript", status: 413,
+    error: { code: "transcript_limit_exceeded", message: "Transcript is too large" } },
+"session-renewed");
+await assert.rejects(boundedNative, function (error) {
+    return error.code === "transcript_limit_exceeded" && error.status === 413;
+});
+assert.deepEqual(Array.from(readingCloud.transcriptSnapshots.values()).at(-1).entries, nativeRows,
+    "typed 413 keeps the last-good native transcript snapshot");
+
+const busyBaseline = publishedReads(readingSocket).length;
+const busyNative = readingCloud.transcript(
+    { machine: "mac-01", session: "session-renewed" }, null, { foreground: true });
+await until(function () { return publishedReads(readingSocket).length === busyBaseline + 1; },
+    "the busy native transcript read to leave");
+await answerRead(readingCloud, readingSocket, { read: "transcript", status: 429,
+    error: { code: "transcript_busy", message: "Reader busy", retry_after: 2 } },
+"session-renewed");
+await assert.rejects(busyNative, function (error) {
+    return error.code === "transcript_busy" && error.status === 429 && error.retryable === true &&
+        error.retryAfter === 2;
+}, "transcript_busy preserves its bounded retry hint through the Cloud sanitizer");
+assert.deepEqual(Array.from(readingCloud.transcriptSnapshots.values()).at(-1).entries, nativeRows,
+    "typed 429 keeps the last-good native transcript snapshot");
+
+const falseGoneBaseline = publishedReads(readingSocket).length;
+const falseGone = readingCloud.transcript(
+    { machine: "mac-01", session: "session-renewed" }, null, { foreground: true });
+await until(function () { return publishedReads(readingSocket).length === falseGoneBaseline + 1; },
+    "the non-404 gone-shaped reply to leave");
+await answerRead(readingCloud, readingSocket, { read: "transcript", status: 503,
+    error: { code: "session_not_found", message: "Inventory is not authoritative" } },
+"session-renewed");
+await assert.rejects(falseGone, function (error) { return error.status === 503; });
+assert.equal((await readingCloud.sessions()).sessions.some(function (row) {
+    return row.identity.machine === "mac-01" && row.identity.session === "session-renewed";
+}), true, "a gone-shaped code without typed 404 cannot prune the Session row");
 
 // The request has to be **on the wire** before the socket is stopped, and the count it waits for
 // has to be exact. Waiting for "more than before" left `_send` to throw `offline` on a socket
 // closed out from under a request that had never left — the right code for the wrong reason —
 // and this check stayed green with `_failAllReads` deleted from both `stop()` and `onclose`,
 // which is precisely the leak it exists to catch.
+const orphanBaseline = publishedReads(readingSocket).length;
 const orphaned = readingCloud.info({ machine: "mac-01", session: "session-01" });
-await until(function () { return publishedReads(readingSocket).length === 7; },
+await until(function () { return publishedReads(readingSocket).length === orphanBaseline + 1; },
     "the orphaned read to reach the wire before its socket is stopped");
 readingCloud.stop();
 await assert.rejects(orphaned, function (error) { return error.code === "offline"; },
@@ -1682,23 +1761,27 @@ await until(function () {
 }, "the Linux terminal-screen transcript read to leave");
 await answerRead(controlCloud, controlSocket, {
     read: "transcript", status: 200, body: {
-        entries: [{ role: "assistant", text: "AWS-BROWSER-OK" }],
-        signature: "linux-terminal-screen-signature"
+        entries: [
+            { role: "user", text: "AWS-BROWSER-OK" },
+            { role: "assistant", text: "Accepted by the native provider transcript." }
+        ],
+        signature: "linux-native-transcript-signature"
     }
 });
 const linuxTranscriptAnswer = await linuxTranscript;
 assert.deepEqual(linuxTranscriptAnswer.entries,
-    [{ role: "assistant", text: "AWS-BROWSER-OK" }],
-    "the real Linux transcript contract is one assistant terminal-screen row");
+    [{ role: "user", text: "AWS-BROWSER-OK" },
+        { role: "assistant", text: "Accepted by the native provider transcript." }],
+    "the Linux transcript contract preserves provider-native semantic rows");
 const linuxReceiptKey = linuxPromptAnswer.optimisticIdentity.machine + "\u0000" +
     linuxPromptAnswer.optimisticIdentity.session + "\u0000" + linuxPromptAnswer.optimisticRequest;
-const linuxAdmission = acceptOptimisticReceipt([], {
+const linuxAdmission = acceptOptimisticReceipt(linuxTranscriptAnswer.entries, {
     role: "user", text: "AWS-BROWSER-OK", receiptKey: linuxReceiptKey
 }, linuxPromptAnswer.optimistic_settlement);
 assert.equal(linuxAdmission.settled, true,
     "the end-to-end correlated action receipt does not wait for an impossible user row");
-assert.deepEqual(linuxAdmission.entries, [],
-    "the assistant-only Linux transcript receives no duplicate optimistic bubble");
+assert.deepEqual(linuxAdmission.entries, linuxTranscriptAnswer.entries,
+    "the action receipt keeps native rows and does not manufacture a duplicate user bubble");
 
 const beforeReordered = publishedReads(controlSocket).length;
 const reorderedFirst = controlCloud.send("session-01", "first accepted prompt", []);

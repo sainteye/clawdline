@@ -89,6 +89,12 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
     private var storedInfoSession: TargetSession?
     private var storedIncarnation = "incarnation-a"
     private var storedObservedOutput = "screen"
+    private var storedNativeTranscript = LinuxNativeTranscriptParse(
+        entries: [LinuxTranscriptEntry(kind: .assistant, text: "native assistant row")],
+        signature: String(repeating: "a", count: 64),
+        providerConversationID: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        decodedRowCount: 1)
+    private var storedNativeFailure: LinuxDurableStateFailure?
     var calls: [String] { callsLock.lock(); defer { callsLock.unlock() }; return storedCalls }
     var sessionID = "%durable"
 
@@ -101,6 +107,16 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
 
     func setObservedOutput(_ output: String) {
         callsLock.lock(); storedObservedOutput = output; callsLock.unlock()
+    }
+
+    func setNativeTranscript(
+        _ transcript: LinuxNativeTranscriptParse? = nil,
+        failure: LinuxDurableStateFailure? = nil
+    ) {
+        callsLock.lock()
+        if let transcript { storedNativeTranscript = transcript }
+        storedNativeFailure = failure
+        callsLock.unlock()
     }
 
     private func record(_ call: String) {
@@ -157,6 +173,17 @@ private final class FakeLinuxLifecycleRuntime: LinuxLifecyclePerforming {
                 message: "The test Session process identity is incomplete.")
         }
         return LinuxCloudSessionIdentity(session: session, incarnation: storedIncarnation)
+    }
+
+    func nativeTranscript(sessionID: String, expectedIncarnation: String,
+                          canonicalCWD: String, limit: Int) throws
+        -> LinuxNativeTranscriptParse {
+        callsLock.lock()
+        defer { callsLock.unlock() }
+        storedCalls.append(
+            "native-transcript:\(sessionID):\(expectedIncarnation):\(canonicalCWD):\(limit)")
+        if let storedNativeFailure { throw storedNativeFailure }
+        return storedNativeTranscript
     }
 
     func close(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt {
@@ -1677,8 +1704,76 @@ final class LinuxRuntimeContractTests: XCTestCase {
         XCTAssertEqual(transcript.frame.envelope.ch, "t/machine-linux/%25durable")
         let transcriptBody = try XCTUnwrap(transcript.clear["body"] as? [String: Any])
         let transcriptEntries = try XCTUnwrap(transcriptBody["entries"] as? [[String: Any]])
-        XCTAssertEqual(transcriptEntries.first?["text"] as? String, "screen\nlink\n",
-                       "the temporary transcript projection is explicit plain terminal text")
+        XCTAssertEqual(transcriptEntries.first?["text"] as? String, "native assistant row")
+        XCTAssertEqual(transcriptBody["signature"] as? String, String(repeating: "a", count: 64))
+        XCTAssertTrue(lifecycle.calls.contains(
+            "native-transcript:%durable:incarnation-a:\(project.path):200"))
+        XCTAssertFalse(lifecycle.calls.contains(where: { $0.hasPrefix("observe:") }),
+                       "transcript must not fall back to terminal capture")
+
+        for (code, status) in [
+            ("transcript_unavailable", 503),
+            ("transcript_identity_unknown", 503),
+            ("transcript_limit_exceeded", 413),
+            ("transcript_busy", 429),
+        ] {
+            lifecycle.setNativeTranscript(failure: LinuxDurableStateFailure(
+                code: code, message: "typed native transcript refusal"))
+            let baseline = try frames().count
+            try send([
+                "type": "transcript", "session": lifecycle.sessionID,
+                "limit": 17, "priority": "background",
+            ])
+            let receivedReply = try await reply(named: "transcript", after: baseline)
+            let transcriptFailureReply = try XCTUnwrap(receivedReply)
+            XCTAssertEqual(transcriptFailureReply.clear["status"] as? Int, status, code)
+            let error = try XCTUnwrap(transcriptFailureReply.clear["error"] as? [String: Any])
+            XCTAssertEqual(error["code"] as? String, code)
+            XCTAssertNil(transcriptFailureReply.clear["body"],
+                         "a typed refusal never carries partial transcript bytes")
+            if code == "transcript_busy" { XCTAssertEqual(error["retry_after"] as? Int, 2) }
+        }
+        lifecycle.setNativeTranscript(failure: LinuxDurableStateFailure(
+            code: "state_non_authoritative", message: "must not cross the public wire"))
+        let beforePrivateFailure = try frames().count
+        try send([
+            "type": "transcript", "session": lifecycle.sessionID,
+            "limit": 17, "priority": "foreground",
+        ])
+        let receivedPrivateFailure = try await reply(
+            named: "transcript", after: beforePrivateFailure)
+        let privateFailure = try XCTUnwrap(receivedPrivateFailure)
+        XCTAssertEqual(privateFailure.clear["status"] as? Int, 500)
+        let privateError = try XCTUnwrap(privateFailure.clear["error"] as? [String: Any])
+        XCTAssertEqual(privateError["code"] as? String, "internal_failure")
+        XCTAssertEqual(privateError["message"] as? String,
+                       "The Session transcript could not be read.")
+        XCTAssertFalse(String(describing: privateFailure.clear).contains("must not cross"))
+        lifecycle.setNativeTranscript()
+
+        var transcriptAuthorizationChecks = 0
+        XCTAssertThrowsError(try ingress.nativeTranscriptForCloudSession(
+            lifecycle.sessionID, limit: 17) {
+                transcriptAuthorizationChecks += 1
+                return transcriptAuthorizationChecks == 1
+            }) { error in
+                XCTAssertEqual((error as? LinuxDurableStateFailure)?.code, "cloud_read_refused")
+        }
+        XCTAssertEqual(transcriptAuthorizationChecks, 2,
+                       "viewer authority is checked again after native bytes are read")
+
+        let beforeMissingTranscript = try frames().count
+        try send([
+            "type": "transcript", "session": "%unowned",
+            "limit": 200, "priority": "foreground",
+        ])
+        let receivedMissingTranscript = try await reply(
+            named: "transcript", after: beforeMissingTranscript)
+        let missingTranscript = try XCTUnwrap(receivedMissingTranscript)
+        XCTAssertEqual(missingTranscript.clear["status"] as? Int, 404)
+        XCTAssertEqual((missingTranscript.clear["error"] as? [String: Any])?["code"] as? String,
+                       "session_not_found")
+        XCTAssertNil(missingTranscript.clear["body"])
 
         try send(["type": "screen", "session": lifecycle.sessionID])
         let screenReply = try await reply(named: "screen")

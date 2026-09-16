@@ -307,6 +307,26 @@ struct LinuxProjectRootInspector: ProjectRootInspecting {
 /// Reads Linux's stable process-start field. The token is compared again immediately before a
 /// process-group signal, so a reused PID cannot inherit the authority of the process it replaced.
 enum LinuxProcfs {
+    struct Clock: Equatable {
+        let bootTime: Date
+        let ticksPerSecond: UInt64
+
+        static func read(procRoot: String = "/proc") -> Clock? {
+            guard let stat = try? String(contentsOfFile: procRoot + "/stat", encoding: .utf8),
+                  let line = stat.split(separator: "\n").first(where: { $0.hasPrefix("btime ") }),
+                  let seconds = TimeInterval(line.dropFirst("btime ".count)),
+                  seconds > 0 else { return nil }
+            let measured = sysconf(Int32(_SC_CLK_TCK))
+            guard measured > 0 else { return nil }
+            return Clock(bootTime: Date(timeIntervalSince1970: seconds),
+                         ticksPerSecond: UInt64(measured))
+        }
+    }
+
+    /// Boot time and clock tick frequency do not change during one boot. Reading them once also
+    /// keeps a bounded procfs inventory from reopening `/proc/stat` for every PID.
+    private static let systemClock = Clock.read()
+
     struct Credentials: Equatable {
         let effectiveUID: UInt32
         let effectiveGID: UInt32
@@ -320,21 +340,37 @@ enum LinuxProcfs {
         let credentials: Credentials?
     }
 
-    static func parseStat(_ text: String, pid: pid_t) -> HostProcessIdentity? {
+    static func parseStat(_ text: String, pid: pid_t, clock: Clock?)
+        -> HostProcessIdentity? {
         guard let close = text.lastIndex(of: ")") else { return nil }
-        let fields = text[text.index(after: close)...].split(separator: " ")
+        let fields = text[text.index(after: close)...]
+            .split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
         // Suffix starts at field 3 (`state`), so pgrp is index 2 and starttime is index 19.
-        guard fields.count > 19, let group = pid_t(fields[2]), let ticks = UInt64(fields[19]) else {
+        guard fields.count > 19, let group = pid_t(fields[2]), let ticks = UInt64(fields[19]),
+              let clock, clock.ticksPerSecond > 0 else {
             return nil
         }
         return HostProcessIdentity(pid: pid,
-                                   processStart: Date(timeIntervalSince1970: TimeInterval(ticks)),
+                                   processStart: clock.bootTime.addingTimeInterval(
+                                    TimeInterval(ticks) / TimeInterval(clock.ticksPerSecond)),
                                    startToken: String(ticks), processGroupID: group)
     }
 
-    static func row(pid: pid_t) -> Row? {
+    static func parseStat(_ text: String, pid: pid_t) -> HostProcessIdentity? {
+        #if os(Linux)
+        return parseStat(text, pid: pid, clock: systemClock)
+        #else
+        // macOS focused tests exercise Linux's field parser without a procfs clock. This value
+        // preserves their token/group-only fixture while every Linux production call fails
+        // closed unless the real boot time and CLK_TCK were measured.
+        return parseStat(text, pid: pid,
+                         clock: Clock(bootTime: Date(timeIntervalSince1970: 0), ticksPerSecond: 1))
+        #endif
+    }
+
+    static func row(pid: pid_t, clock: Clock? = systemClock) -> Row? {
         guard let statText = try? String(contentsOfFile: "/proc/\(pid)/stat", encoding: .utf8),
-              let identity = parseStat(statText, pid: pid) else { return nil }
+              let identity = parseStat(statText, pid: pid, clock: clock) else { return nil }
         let cmdline = (try? Data(contentsOf: URL(fileURLWithPath: "/proc/\(pid)/cmdline"))) ?? Data()
         let arguments = String(decoding: cmdline, as: UTF8.self).split(separator: "\0").map(String.init)
         let names = arguments.prefix(4).map { URL(fileURLWithPath: $0).lastPathComponent.lowercased() }

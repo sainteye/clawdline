@@ -585,16 +585,10 @@ actor LinuxRelayRuntimeOwner {
                 diagnostic("linux cloud: command failed before durable response")
             }
             return
-        case .transcript(let sessionID):
-            await performBrowserSession(
-                requestID: browserReadCommandID(inbound), sessionID: sessionID, operation: .observe,
-                text: nil, sender: inbound.sender, sequence: inbound.sequence,
-                readName: "transcript"
-            ) { receipt in
-                let text = TerminalSessionPresentation.plain(receipt.output ?? "")
-                return ["entries": text.isEmpty ? [] : [["role": "assistant", "text": text]],
-                        "signature": LinuxSHA256.hex(Data(text.utf8))]
-            }
+        case .transcript(let sessionID, let limit, let priority):
+            await performBrowserTranscript(
+                sessionID: sessionID, limit: limit, priority: priority,
+                sender: inbound.sender)
             return
         case .screen(let sessionID):
             await performBrowserScreen(sessionID: sessionID, sender: inbound.sender)
@@ -706,6 +700,45 @@ actor LinuxRelayRuntimeOwner {
                                    message: "The Session operation could not be completed."),
                 channel: channel, logicalID: readName)
             diagnostic("linux cloud: Session command failed before durable response")
+        }
+    }
+
+    private func performBrowserTranscript(sessionID: String, limit: Int,
+                                          priority: String, sender: String) async {
+        let readName = "transcript"
+        let channel = "t/" + channelSegment(machine.machineID) + "/" + channelSegment(sessionID)
+        do {
+            guard try isAuthorized(sender: sender, requiresWrite: false) else {
+                throw LinuxDurableStateFailure(
+                    code: "cloud_read_refused",
+                    message: "The paired viewer is not authorized to read this Session.")
+            }
+            let parsed = try ingress.nativeTranscriptForCloudSession(sessionID, limit: limit) {
+                try isAuthorized(sender: sender, requiresWrite: false)
+            }
+            try await outbound.enqueue(
+                try Self.json(["read": readName, "status": 200,
+                               "body": LinuxNativeTranscriptWire.webBody(parsed)]),
+                channel: channel, logicalID: readName)
+        } catch let failure as LinuxDurableStateFailure {
+            let publicFailure = Self.publicTranscriptFailure(failure)
+            var error: [String: Any] = [
+                "code": publicFailure.code, "message": publicFailure.message,
+            ]
+            if publicFailure.code == "transcript_busy" {
+                error["retry_after"] = priority == "foreground" ? 1 : 2
+            }
+            try? await outbound.enqueue(
+                try Self.json(["read": readName, "status": publicFailure.status,
+                               "error": error]),
+                channel: channel, logicalID: readName)
+            diagnostic("linux cloud: Session transcript refused code=\(publicFailure.code)")
+        } catch {
+            try? await outbound.enqueue(
+                try refusalPayload(read: readName, status: 500, code: "internal_failure",
+                                   message: "The Session transcript could not be read."),
+                channel: channel, logicalID: readName)
+            diagnostic("linux cloud: Session transcript failed before durable response")
         }
     }
 
@@ -925,7 +958,7 @@ actor LinuxRelayRuntimeOwner {
     private enum LinuxBrowserCommand {
         case places(String)
         case start(String, LinuxIngressRequest)
-        case transcript(String)
+        case transcript(String, Int, String)
         case screen(String)
         case info(String, String)
         case send(String, String, String)
@@ -956,7 +989,7 @@ actor LinuxRelayRuntimeOwner {
                 throw LinuxDurableStateFailure(code: "malformed_read",
                                                message: "Transcript command is malformed.")
             }
-            return .transcript(session)
+            return .transcript(session, limit, priority)
         }
         if type == "screen" {
             guard Set(body.keys) == ["type", "session"],
@@ -1134,10 +1167,27 @@ actor LinuxRelayRuntimeOwner {
         if code.contains("unauthorized") || code.contains("refused") { return 403 }
         if code.contains("not_found") { return 404 }
         if code == "ingress_closed" || code == "inventory_incomplete"
-            || code == "session_identity_incomplete" || code == "session_observe_failed" {
+            || code == "session_identity_incomplete" || code == "session_observe_failed"
+            || code == "transcript_unavailable" || code == "transcript_identity_unknown" {
             return 503
         }
+        if code == "transcript_limit_exceeded" { return 413 }
+        if code == "transcript_busy" { return 429 }
         return 400
+    }
+
+    /// Only the transcript contract's documented failures may cross this boundary. Durable-state
+    /// and filesystem internals remain diagnostics; they are never reflected as raw 400 payloads.
+    private static func publicTranscriptFailure(_ failure: LinuxDurableStateFailure)
+        -> (status: Int, code: String, message: String) {
+        switch failure.code {
+        case "cloud_read_refused", "session_not_found", "session_identity_incomplete",
+             "transcript_unavailable", "transcript_identity_unknown",
+             "transcript_limit_exceeded", "transcript_busy":
+            return (status(for: failure.code), failure.code, failure.message)
+        default:
+            return (500, "internal_failure", "The Session transcript could not be read.")
+        }
     }
 
     private func machineReplyChannel() -> String {

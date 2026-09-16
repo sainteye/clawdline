@@ -32,6 +32,7 @@ export const DETAIL_FIELDS = Object.freeze({
     replay: ["highest_seq"],
     cloud_ingress_busy: ["retry_after", "lane", "limit"],
     cloud_read_busy: ["retry_after", "lane", "limit"],
+    transcript_busy: ["retry_after"],
     no_whisper: ["reason"],
     terminal_closed: ["app"],
     would_lose_work: ["lost"]
@@ -48,8 +49,8 @@ const PUBLISH_ERROR_FIELDS = ["field"];
 const RETRYABLE_CODES = new Set([
     "offline", "socket_error", "cloud_reconnecting", "cloud_starting", "token_superseded",
     "machine_offline", "cloud_read_timeout", "command_clock_uncertain", "cloud_ingress_busy",
-    "cloud_read_busy", "reading_busy", "busy", "rate_limited", "over_capacity", "going_away",
-    "handshake_timeout", "internal"
+    "cloud_read_busy", "transcript_busy", "reading_busy", "busy", "rate_limited",
+    "over_capacity", "going_away", "handshake_timeout", "internal"
 ]);
 
 /** The relay's `WS_CLOSE` table read backwards (`relay/src/errors.ts`); 4429 means either. */

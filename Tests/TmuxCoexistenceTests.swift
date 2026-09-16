@@ -72,7 +72,14 @@ func makeFakeTmux(dead: [String] = [], silent: Bool = false, hanging: Bool = fal
         awk -v dead=" $dead " '
           function alive(t) { return index(dead, " " t " ") == 0 }
           { target = ""; for (i = 1; i <= NF; i++) if ($i == "-t") target = $(i + 1) }
-          /^display-message/ { printf "%cclawdline-pane%c%s%cclawdline-pane%c\\n", 1, 1, (alive(target) ? target : ""), 1, 1 }
+          /^display-message/ {
+            format = $0
+            sub(/^[^"]*"/, "", format)
+            sub(/"$/, "", format)
+            marker = format
+            sub(/#\\{pane_id\\}.*/, "", marker)
+            printf "%s%s%s\\n", marker, (alive(target) ? target : ""), marker
+          }
           /^capture-pane/ { if (alive(target)) { printf "screen of %s\\nsecond line\\n", target } }
         ' "$dir/script"
         ;;

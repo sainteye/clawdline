@@ -1557,7 +1557,8 @@ export class CloudClient {
             if (answer.read === "transcript" && !answer.error) {
                 this.transcriptSnapshots.set(transcriptKey, answer.body);
             }
-            if (answer.read === "transcript" && answer.error && answer.error.code === "not_found") {
+            if (answer.read === "transcript" && answer.error && answer.error.status === 404 &&
+                (answer.error.code === "not_found" || answer.error.code === "session_not_found")) {
                 // A retained Session channel can realign after this answer even though its
                 // snapshot predates the process lookup that returned not_found. Remember the
                 // answer's sender sequence as an identity-scoped deletion barrier so that replay

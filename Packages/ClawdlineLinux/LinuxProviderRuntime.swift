@@ -50,14 +50,17 @@ final class LinuxProviderRuntime {
     let ports: HostPorts
     let scheduling: TerminalCommandScheduler
     let compositionReceipt: LinuxRuntimeCompositionReceipt
+    private let nativeTranscriptReader: LinuxNativeTranscriptReader?
     var failPostCreateReadinessForTesting = false
+    private let nativeTranscriptLock = NSLock()
 
     private init(layout: LinuxRuntimeLayout, projectPolicy: ProjectRootPolicy,
                  projectInspector: LinuxProjectRootInspector,
                  terminal: LinuxTmuxTerminalHost, process: LinuxProcessHost,
                  files: LinuxContainedFileSystemHost, secrets: LinuxProtectedFileSecretStore,
                  ports: HostPorts, scheduling: TerminalCommandScheduler,
-                 compositionReceipt: LinuxRuntimeCompositionReceipt) {
+                 compositionReceipt: LinuxRuntimeCompositionReceipt,
+                 nativeTranscriptReader: LinuxNativeTranscriptReader?) {
         self.layout = layout
         self.projectPolicy = projectPolicy
         self.projectInspector = projectInspector
@@ -68,6 +71,7 @@ final class LinuxProviderRuntime {
         self.ports = ports
         self.scheduling = scheduling
         self.compositionReceipt = compositionReceipt
+        self.nativeTranscriptReader = nativeTranscriptReader
     }
 
     static func compose(configuration: LinuxDaemonConfiguration,
@@ -145,9 +149,10 @@ final class LinuxProviderRuntime {
             providerEnvironment: providerEnvironment,
             hostEnvironment: hostEnvironment,
             limits: limits)
+        let supplementaryGroups = try LinuxProcfs.currentSupplementaryGroups()
         let process = LinuxProcessHost(
             serviceUID: layout.uid, serviceGID: layout.gid,
-            supplementaryGroups: try LinuxProcfs.currentSupplementaryGroups())
+            supplementaryGroups: supplementaryGroups)
         let files = LinuxContainedFileSystemHost(roots: roots)
         let secretRoot = CanonicalProjectRoot(path: layout.secrets,
                                               ownerUID: layout.uid, ownerGID: layout.gid)
@@ -169,7 +174,13 @@ final class LinuxProviderRuntime {
         return LinuxProviderRuntime(
             layout: layout, projectPolicy: rootPolicy, projectInspector: inspector,
             terminal: terminal, process: process, files: files, secrets: secrets,
-            ports: ports, scheduling: scheduling, compositionReceipt: receipt)
+            ports: ports, scheduling: scheduling, compositionReceipt: receipt,
+            nativeTranscriptReader: LinuxProcfs.Clock.read().map { clock in
+                LinuxNativeTranscriptReader(configuration: .init(
+                    providerHome: layout.home, serviceUID: layout.uid,
+                    serviceGID: layout.gid, supplementaryGroups: supplementaryGroups,
+                    clock: clock))
+            })
     }
 
     func create(commandID: String, projectRoot: String, assistant: Assistant,
@@ -458,14 +469,146 @@ final class LinuxProviderRuntime {
         let observation = try process.observeAssistant(onTTY: session.tty)
         guard observation.isComplete, observation.isPresent,
               observation.assistant == session.assistant,
+              let processIdentity = observation.processIdentity,
               let incarnation = Self.terminalIncarnation(
                 sessionID: session.id, tty: session.tty,
-                identity: observation.processIdentity) else {
+                identity: processIdentity) else {
             throw LinuxDurableStateFailure(
                 code: "session_identity_incomplete",
                 message: "The Linux Session process identity is temporarily incomplete.")
         }
-        return LinuxCloudSessionIdentity(session: session, incarnation: incarnation)
+        return LinuxCloudSessionIdentity(
+            session: session, incarnation: incarnation, processIdentity: processIdentity)
+    }
+
+    /// Read provider-owned semantic history for one exact durable terminal incarnation. This is
+    /// deliberately separate from `observe`: tmux capture is presentation (`screen`), never a
+    /// source of transcript turns.
+    func nativeTranscript(sessionID: String, expectedIncarnation: String,
+                          canonicalCWD: String, limit: Int) throws
+        -> LinuxNativeTranscriptParse {
+        guard nativeTranscriptLock.try() else {
+            throw LinuxDurableStateFailure(
+                code: "transcript_busy",
+                message: "The native transcript reader is serving another bounded read.")
+        }
+        defer { nativeTranscriptLock.unlock() }
+
+        guard let reader = nativeTranscriptReader else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The Linux Session process identity is temporarily incomplete.")
+        }
+        return try Self.nativeTranscript(
+            sessionID: sessionID, expectedIncarnation: expectedIncarnation,
+            canonicalCWD: canonicalCWD, limit: limit,
+            cloudSessionIdentity: { try self.cloudSessionIdentity(sessionID: sessionID) },
+            readNative: { assistant, process, cwd in
+                reader.read(assistant: assistant, process: process, canonicalCWD: cwd)
+            })
+    }
+
+    /// Closure form of the production native transcript seam. Tests exercise this whole read,
+    /// parser and post-identity path with synthetic procfs evidence; the instance method above
+    /// supplies the real `cloudSessionIdentity` and retained reader.
+    static func nativeTranscript(
+        sessionID: String, expectedIncarnation: String, canonicalCWD: String, limit: Int,
+        cloudSessionIdentity: () throws -> LinuxCloudSessionIdentity,
+        readNative: (Assistant, HostProcessIdentity, String) -> LinuxNativeTranscriptReadOutcome
+    ) throws -> LinuxNativeTranscriptParse {
+        let before = try cloudSessionIdentity()
+        guard let authority = Self.nativeTranscriptAuthority(
+            before, expectedIncarnation: expectedIncarnation, canonicalCWD: canonicalCWD) else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The Linux Session process identity changed before transcript read.")
+        }
+        let assistant = authority.assistant
+        let processIdentity = authority.process
+        let identity: LinuxNativeTranscriptIdentity
+        switch readNative(assistant, processIdentity, canonicalCWD) {
+        case .available(let value):
+            identity = value
+        case .unavailable:
+            throw LinuxDurableStateFailure(
+                code: "transcript_unavailable",
+                message: "The provider's native transcript is temporarily unavailable.")
+        case .unknown:
+            throw LinuxDurableStateFailure(
+                code: "transcript_identity_unknown",
+                message: "The provider's native transcript identity could not be proved.")
+        case .limit:
+            throw LinuxDurableStateFailure(
+                code: "transcript_limit_exceeded",
+                message: "The native transcript exceeded a bounded reader limit.")
+        case .busy:
+            throw LinuxDurableStateFailure(
+                code: "transcript_busy",
+                message: "The native transcript changed during the bounded read.")
+        }
+        guard identity.assistant == assistant, identity.process == processIdentity else {
+            throw LinuxDurableStateFailure(
+                code: "transcript_identity_unknown",
+                message: "The provider's native transcript identity did not match the Session.")
+        }
+
+        let evidence = LinuxNativeTranscriptEvidence(
+            assistant: assistant, conversationMode: identity.conversationMode,
+            providerConversationID: identity.sessionID,
+            terminalIncarnation: expectedIncarnation,
+            fileDevice: identity.fileDevice, fileInode: identity.fileInode,
+            fileSize: identity.fileSize,
+            fileModifiedNanoseconds: identity.fileModifiedNanoseconds,
+            suffixOffset: identity.suffixOffset)
+        let parsed: LinuxNativeTranscriptParse
+        do {
+            parsed = try LinuxNativeTranscriptWire.parse(
+                bytes: identity.bytes, evidence: evidence, limit: limit)
+        } catch let failure as LinuxNativeTranscriptWireError {
+            let message: String
+            switch failure.externalCode {
+            case "transcript_limit_exceeded":
+                message = "The native transcript exceeded a parser limit."
+            case "transcript_busy":
+                message = "The native transcript parser exceeded its bounded deadline."
+            default:
+                message = "The native transcript identity or format could not be proved."
+            }
+            throw LinuxDurableStateFailure(
+                code: failure.externalCode,
+                message: message)
+        }
+        let after = try cloudSessionIdentity()
+        guard Self.nativeTranscriptAuthorityRemainedStable(
+            before: before, after: after, expectedIncarnation: expectedIncarnation,
+            retainedProcess: processIdentity) else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The Linux Session identity changed during transcript read.")
+        }
+        return parsed
+    }
+
+    /// The exact process observation that minted the retained incarnation is also the only
+    /// process admitted to the reader. Keeping this as one value prevents an A -> B -> A race
+    /// where a second observation could select B while the pre/post incarnation checks see A.
+    static func nativeTranscriptAuthority(
+        _ identity: LinuxCloudSessionIdentity, expectedIncarnation: String,
+        canonicalCWD: String
+    ) -> (assistant: Assistant, process: HostProcessIdentity)? {
+        guard identity.incarnation == expectedIncarnation,
+              let assistant = identity.session.assistant,
+              identity.session.cwd == canonicalCWD,
+              let process = identity.processIdentity else { return nil }
+        return (assistant, process)
+    }
+
+    static func nativeTranscriptAuthorityRemainedStable(
+        before: LinuxCloudSessionIdentity, after: LinuxCloudSessionIdentity,
+        expectedIncarnation: String, retainedProcess: HostProcessIdentity
+    ) -> Bool {
+        after.incarnation == expectedIncarnation && after.session == before.session
+            && before.processIdentity == retainedProcess && after.processIdentity == retainedProcess
     }
 
     private static func terminalIncarnation(

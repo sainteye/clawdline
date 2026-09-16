@@ -212,6 +212,17 @@ struct LinuxSessionSnapshot: Codable, Equatable {
 struct LinuxCloudSessionIdentity: Equatable {
     let session: TargetSession
     let incarnation: String
+    /// Exact process observation from which `incarnation` was derived. Native transcript reads
+    /// must use these same PID/group/start-token bytes rather than performing an unbound second
+    /// observation between the durable pre- and post-checks.
+    let processIdentity: HostProcessIdentity?
+
+    init(session: TargetSession, incarnation: String,
+         processIdentity: HostProcessIdentity? = nil) {
+        self.session = session
+        self.incarnation = incarnation
+        self.processIdentity = processIdentity
+    }
 }
 
 struct LinuxResultReceipt: Codable, Equatable {
@@ -232,6 +243,20 @@ protocol LinuxLifecyclePerforming: AnyObject {
     func observe(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt
     func close(commandID: String, sessionID: String) throws -> LinuxLifecycleReceipt
     func cloudSessionIdentity(sessionID: String) throws -> LinuxCloudSessionIdentity
+    func nativeTranscript(sessionID: String, expectedIncarnation: String,
+                          canonicalCWD: String, limit: Int) throws
+        -> LinuxNativeTranscriptParse
+}
+
+extension LinuxLifecyclePerforming {
+    func nativeTranscript(sessionID: String, expectedIncarnation: String,
+                          canonicalCWD: String, limit: Int) throws
+        -> LinuxNativeTranscriptParse
+    {
+        throw LinuxDurableStateFailure(
+            code: "transcript_unavailable",
+            message: "Native transcript reading is unavailable for this runtime.")
+    }
 }
 
 extension LinuxProviderRuntime: LinuxLifecyclePerforming {}
@@ -246,6 +271,11 @@ enum LinuxIngressFaultPoint: String, Error {
 /// terminal effect dispatch and receipt persistence, so no second local ingress path can race the
 /// durable ledger. Tests inject faults only at the three named crash boundaries.
 final class LinuxDaemonIngressOwner {
+    private struct CloudSessionAuthority: Equatable {
+        let taskID: String
+        let incarnation: String
+        let projectRoot: String?
+    }
     private let store: LinuxDurableStateStore
     private let runtime: any LinuxLifecyclePerforming
     private let documents: LinuxDocumentReader
@@ -253,6 +283,7 @@ final class LinuxDaemonIngressOwner {
     /// the daemon lifetime. Local-only fixtures omit it; production composition never does.
     private let durableCloud: LinuxDurableCloudRuntime?
     private let lock = NSLock()
+    private let nativeTranscriptAdmission = NSLock()
     private var admissionOpen = false
     var faultInjection: ((LinuxIngressFaultPoint) throws -> Void)?
 
@@ -332,15 +363,78 @@ final class LinuxDaemonIngressOwner {
                 code: "cloud_read_refused",
                 message: "The paired sender is no longer authorized for this read.")
         }
-        let state = try authoritativeState()
+        let authority = try cloudSessionAuthority(sessionID, state: authoritativeState())
+        let current = try runtime.cloudSessionIdentity(sessionID: sessionID)
+        guard current.incarnation == authority.incarnation else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The Linux Session process identity changed and must be reconciled.")
+        }
+        return current.session
+    }
+
+    /// Native transcript reads are observations, but unlike screen capture their subject includes
+    /// the durable task edge and retained create incarnation. Both are rebound after the provider
+    /// read; a concurrent reader gets a typed capacity refusal instead of waiting behind it.
+    func nativeTranscriptForCloudSession(
+        _ sessionID: String, limit: Int, effectAuthorization: () throws -> Bool
+    ) throws -> LinuxNativeTranscriptParse {
+        guard nativeTranscriptAdmission.try() else {
+            throw LinuxDurableStateFailure(
+                code: "transcript_busy",
+                message: "The native transcript reader is serving another bounded read.")
+        }
+        defer { nativeTranscriptAdmission.unlock() }
+        lock.lock()
+        defer { lock.unlock() }
+        guard admissionOpen else {
+            throw LinuxDurableStateFailure(code: "ingress_closed",
+                                           message: "Startup reconciliation has not opened admission.")
+        }
+        guard (1...1_000).contains(limit), !sessionID.isEmpty,
+              sessionID.utf8.count <= 512,
+              !sessionID.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }) else {
+            throw LinuxDurableStateFailure(code: "invalid_ingress",
+                                           message: "The Session transcript identity is malformed.")
+        }
+        guard try effectAuthorization() else {
+            throw LinuxDurableStateFailure(code: "cloud_read_refused",
+                                           message: "The paired sender is no longer authorized for this read.")
+        }
+        let before = try cloudSessionAuthority(sessionID, state: authoritativeState())
+        guard let projectRoot = before.projectRoot else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The Linux Session predates durable project identity evidence.")
+        }
+        let transcript = try runtime.nativeTranscript(
+            sessionID: sessionID, expectedIncarnation: before.incarnation,
+            canonicalCWD: projectRoot, limit: limit)
+        guard try effectAuthorization() else {
+            throw LinuxDurableStateFailure(code: "cloud_read_refused",
+                                           message: "The paired sender is no longer authorized for this read.")
+        }
+        let after = try cloudSessionAuthority(sessionID, state: authoritativeState())
+        guard after == before else {
+            throw LinuxDurableStateFailure(
+                code: "session_identity_incomplete",
+                message: "The durable Linux Session identity changed during transcript read.")
+        }
+        return transcript
+    }
+
+    private func cloudSessionAuthority(_ sessionID: String, state: LinuxDurableState) throws
+        -> CloudSessionAuthority {
         guard let terminal = state.terminals.first(where: {
             $0.id == sessionID && $0.state == .present
         }), let taskID = terminal.taskID,
-              state.tasks.contains(where: { $0.id == taskID && $0.terminalID == sessionID }) else {
+              let task = state.tasks.first(where: {
+                  $0.id == taskID && $0.terminalID == sessionID
+              }) else {
             throw LinuxDurableStateFailure(code: "session_not_found",
                                            message: "That Linux Session is no longer present.")
         }
-        let expectedIncarnation = state.commands.lazy.compactMap { command -> String? in
+        let incarnation = state.commands.lazy.compactMap { command -> String? in
             guard command.taskID == taskID, command.terminalID == sessionID,
                   (command.operation == LinuxIngressOperation.create.rawValue
                     || command.operation == LinuxIngressOperation.taskCreate.rawValue),
@@ -351,18 +445,13 @@ final class LinuxDaemonIngressOwner {
             else { return nil }
             return decoded.receipt?.terminalIncarnation
         }.first
-        guard let expectedIncarnation else {
+        guard let incarnation else {
             throw LinuxDurableStateFailure(
                 code: "session_identity_incomplete",
                 message: "The Linux Session predates durable process identity evidence.")
         }
-        let current = try runtime.cloudSessionIdentity(sessionID: sessionID)
-        guard current.incarnation == expectedIncarnation else {
-            throw LinuxDurableStateFailure(
-                code: "session_identity_incomplete",
-                message: "The Linux Session process identity changed and must be reconciled.")
-        }
-        return current.session
+        return CloudSessionAuthority(
+            taskID: taskID, incarnation: incarnation, projectRoot: task.projectRoot)
     }
 
     /// Capture one live terminal for a paired Cloud viewer without manufacturing a durable
@@ -747,9 +836,10 @@ final class LinuxDaemonIngressOwner {
                 throw LinuxDurableStateFailure(code: "task_unauthorized",
                                                message: "Task authentication failed.")
             }
-            state.tasks.append(.init(id: request.taskID, terminalID: request.sessionID,
-                                     state: .queued, resultDigest: nil,
-                                     acknowledgedEvidence: []))
+            state.tasks.append(.init(
+                id: request.taskID, terminalID: request.sessionID,
+                state: .queued, resultDigest: nil, acknowledgedEvidence: [],
+                projectRoot: request.projectRoot))
         }
         guard let index = state.tasks.firstIndex(where: { $0.id == request.taskID }) else {
             throw LinuxDurableStateFailure(code: "task_unauthorized",

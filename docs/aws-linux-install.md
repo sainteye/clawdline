@@ -240,14 +240,15 @@ sudo -u clawdline env HOME=/var/lib/clawdline/home \
 sudo chown -R clawdline:clawdline /var/lib/clawdline-projects/reaver
 ```
 
-The hosted Session list and detail view use a bounded tmux capture for both Codex and Claude.
-Terminal colours and safe OSC links remain available on the screen route; the row reports
+The hosted Session list uses bounded tmux observation for live presentation state. Terminal colours
+and safe OSC links remain available only on the `screen` route; the row reports
 `working` plus the provider's live line, `waiting` for a complete provider-neutral menu shape,
 `idle`, or `unknown` when capture evidence is incomplete or menu-shaped evidence is ambiguous.
 An idle row has `work_state: unknown` unless a future receipt-backed adapter proves readiness. It
-does not infer work from CPU usage or `pane_current_command`. The current Linux transcript reply is
-control-free terminal text, not the native JSONL record under this service HOME; the durable
-provider-specific identity, bounded-reader and acceptance boundary is
+does not infer work from CPU usage or `pane_current_command`. The Linux `transcript` reply is the
+provider-native semantic JSONL record, selected under the service HOME by the durable task/session,
+terminal incarnation, process, cwd and provider-specific writer evidence. It never falls back to
+tmux output. The complete bounded-reader and signed-image acceptance boundary is
 [Linux native transcripts](linux-native-transcripts.md).
 
 Before the first daemon start, replace the broad template root with the exact allowlisted project
@@ -370,7 +371,8 @@ The installation is accepted only when all of these are observed on the exact si
    attempts before becoming ready even while configured health already reports `serviceReady`.
 4. `app.clawdline.com` shows the Linux/AWS machine label on its Session rows. The New Session sheet
    can select that machine and only the configured project (`reaver`). Opening an existing Linux
-   Session must load `transcript` and `screen`, and sending a text-only prompt must receive the
+   Session must load provider-native `transcript` rows and the independent styled `screen`, and
+   sending a text-only prompt must receive the
    correlated `action:<request>` answer whose successful body carries the exact
    `optimistic_settlement:"action_receipt"` signal. Opening **About this Session** must receive `info.full`,
    while its compact status hydration receives `info.summary`; both must carry the exact Session
@@ -379,6 +381,11 @@ The installation is accepted only when all of these are observed on the exact si
    Info must return `503 session_identity_incomplete` for a Session created before incarnation
    evidence was retained, or when a reused tmux pane id no longer names the original provider
    process. Recreate that Session; do not repair the row by copying current `%N` metadata.
+   During negative probes, 503/413/429 transcript replies must retain the last-good rows; only a
+   typed 404 `session_not_found` (or legacy `not_found`) may remove that exact Session row.
+   Also verify that an unexpected internal transcript refusal is rewritten to generic
+   `500 internal_failure`, and that an 8 MiB file of tiny JSONL rows reaches the bounded row-work
+   refusal rather than delaying other ingress work.
 5. A hosted command creates a Claude Code or Codex Session, applies one benign change on a new
    branch, runs the repository test, and pushes that branch. The default branch is unchanged and
    the exact remote commit is recorded.

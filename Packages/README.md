@@ -175,3 +175,13 @@ The operator-facing Ubuntu/AWS build, signed-package, enrollment and acceptance 
 [`docs/aws-linux-install.md`](../docs/aws-linux-install.md). In particular, the official Ubuntu
 Swift image may already own UID 1000; reuse its existing non-root identity rather than blindly
 creating another user before compilation.
+
+Linux Cloud transcript reads are provider-native, not tmux projections. The daemon binds the
+durable task-to-terminal edge and retained create incarnation to the current provider process and
+canonical project, then uses one descriptor-safe reader for Claude registry JSONL or Codex's exact
+open rollout. The same procfs process observation is retained through selection and the post-check;
+the reverse parser also bounds physical-row work and time independently of its 8 MiB byte window.
+It revalidates authorization, writer credentials and identity after the read. Styled terminal bytes stay
+on `screen`; bounded unavailable/busy replies retain the Web client's last-good transcript, and
+only an authoritative typed 404 removes a stale Session row. See
+[`docs/linux-native-transcripts.md`](../docs/linux-native-transcripts.md).
