@@ -29,6 +29,17 @@ type Identity struct {
 	Status string
 }
 
+// OpenRequest is what it takes to start a session.
+type OpenRequest struct {
+	Name    string
+	Cwd     string
+	Command string
+	// Env is what the session needs to find its own work. A child that has to
+	// parse its task directory out of prose cannot be scripted, and the first
+	// thing any child does is read that directory.
+	Env map[string]string
+}
+
 // IdentityHost resolves a running process against the assistant's own records.
 type IdentityHost interface {
 	ForSession(ctx context.Context, s session.Session) (Identity, bool)
@@ -46,6 +57,11 @@ type ScreenHost interface {
 type TerminalHost interface {
 	Inventory(ctx context.Context) (session.Inventory, error)
 	Name() string
+
+	// Open starts a new session and returns it. The caller names the command,
+	// because a machine may carry a wrapper for an assistant and this port is
+	// in no position to know.
+	Open(ctx context.Context, req OpenRequest) (session.Session, error)
 
 	// Send types one line into a session and submits it. A nil error means the
 	// bytes reached the tty — never that anything read them. Whether the

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
@@ -143,6 +144,11 @@ for (let a = 0; a < wins.length && !done; a++) {
 }
 JSON.stringify({sent: done});
 `, s.ID, text)
+}
+
+// Open is not implemented for the iTerm backend yet.
+func (i *ITerm) Open(ctx context.Context, req ports.OpenRequest) (session.Session, error) {
+	return session.Session{}, errUnsupported("open a session")
 }
 
 // Interrupt and Close are not implemented for the iTerm backend yet. They

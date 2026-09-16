@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
 )
 
@@ -139,4 +140,45 @@ func (t *Tmux) run(ctx context.Context, args ...string) error {
 		return fmt.Errorf("tmux %s refused: %s", args[0], said)
 	}
 	return nil
+}
+
+// Open starts a detached session and returns its first pane.
+//
+// Detached because a dispatched task is not something to put in front of
+// whoever happens to be at the keyboard. The pane id is read back from tmux
+// rather than derived, so the identity in the record is the one tmux will
+// answer to later.
+func (t *Tmux) Open(ctx context.Context, req ports.OpenRequest) (session.Session, error) {
+	args := []string{"new-session", "-d", "-P", "-F", "#{pane_id}"}
+	if req.Name != "" {
+		args = append(args, "-s", req.Name)
+	}
+	if req.Cwd != "" {
+		args = append(args, "-c", req.Cwd)
+	}
+	for k, v := range req.Env {
+		args = append(args, "-e", k+"="+v)
+	}
+	if req.Command != "" {
+		args = append(args, req.Command)
+	}
+	cmd := exec.CommandContext(ctx, t.Binary, args...)
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		said := strings.TrimSpace(stderr.String())
+		if said == "" {
+			said = err.Error()
+		}
+		return session.Session{}, fmt.Errorf("tmux new-session refused: %s", said)
+	}
+	return session.Session{
+		ID:       strings.TrimSpace(string(out)),
+		Backend:  session.BackendTmux,
+		CWD:      req.Cwd,
+		State:    session.StateUnknown,
+		Evidence: session.EvidenceProcess,
+	}, nil
 }
