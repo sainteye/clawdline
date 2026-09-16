@@ -332,7 +332,8 @@ registered group ran.
 - duplicate full-suite rate for an exact tuple: 0%;
 - routine localized/docs/generated/test-only review tasks: 0;
 - risk-triggered review/correction waves: at most 1/1;
-- third reviews below 5%, all with typed reason;
+- second reviews of one delivery: 0;
+- test runs scheduled before the review: 0;
 - regression tests whose ability to fail on the old code was read or run once: 100%;
 - coordination messages without an observed collision, dependency, boundary change or user decision: 0;
 - code-task verification valid: 100%;
