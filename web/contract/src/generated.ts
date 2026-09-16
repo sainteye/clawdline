@@ -65,10 +65,28 @@ export interface BoardWriteResult {
   revision: number
 }
 
-export interface CloseReason {
+/**
+ * Who clears the thing standing in the way. `self` distinguishes the session that
+ * has to act from another one, which is the difference between a thing a reader can
+ * do now and a thing they can only wait for.
+ */
+export interface CloseMover {
   kind: string
-  mover: Mover
-  note: string
+  person_needed: boolean
+  self: boolean
+}
+
+/**
+ * One thing in the way. It names the machine code, the subject it is about and who
+ * moves it: a code alone says there is a problem but not which object has it, and a
+ * sentence alone cannot be grepped for in a log.
+ */
+export interface CloseReason {
+  code: string
+  kind: string
+  mover: CloseMover
+  subject_id: string
+  subject_kind: string
 }
 
 /**
@@ -91,12 +109,64 @@ export interface CloseRequest {
 }
 
 /**
+ * Where the reading came from and how old it is. `freshness` is what stops a stale
+ * `safe` being read as a current one — the console refuses to call anything safe
+ * unless this says `current`.
+ */
+export interface CloseSource {
+  freshness: string
+  max_age_seconds: number
+  observed_at: number
+  provenance: string
+}
+
+/**
  * Whether this session can end. A separate question from whether it can take work,
- * and neither may be read off the other.
+ * and neither may be read off the other. `safe` is a positive claim and the reader
+ * enforces what it costs: no reasons, a current source, an attestation id and a
+ * version, and a session that is not working, waiting or unreadable. Anything short
+ * of that reads as `unknown`, which is why an unreadable obligation list can never
+ * come out as safe.
  */
 export interface Closeability {
+  /**
+   * Absent here. The Swift app counts activity for its own caching and this daemon
+   * has no such counter; a number invented to fill the field would be a counter
+   * that never moves, which is worse than a field that is not there. Nothing in the
+   * console's projection reads it.
+   */
+  activity_generation?: number
+
+  /**
+   * The identifier of the reading that proves nothing is owed. Null until something
+   * attests, and a null here is exactly why a state that would otherwise be safe
+   * reads as unknown.
+   */
+  attestation_id: string | null
+  mover: CloseMover
+
+  /**
+   * Absent here, for the same reason as `activity_generation`.
+   */
+  obligation_generation?: number
+  observed_at: number
+  provenance: string[]
   reasons: CloseReason[]
+
+  /**
+   * Which reading of the machine this came from — the same counter the snapshot's
+   * scan carries, so a closeability and the list it arrived with can be told apart
+   * from a later pair.
+   */
+  session_generation?: number
+  source: CloseSource
   state: CloseabilityState
+
+  /**
+   * Which computation produced this. A reading with no version is a reading nobody
+   * can say the rules for, and the console treats it as unproven.
+   */
+  version: string
 }
 
 /**
@@ -106,9 +176,10 @@ export interface Closeability {
 export type CloseabilityState =
     "safe"
   | "blocked"
+  | "needs_attestation"
   | "unknown"
 
-export const CloseabilityStateValues: readonly CloseabilityState[] = ["safe", "blocked", "unknown"] as const
+export const CloseabilityStateValues: readonly CloseabilityState[] = ["safe", "blocked", "needs_attestation", "unknown"] as const
 
 export interface CoordinatorRecord {
   assistant: Assistant
@@ -223,6 +294,18 @@ export interface Health {
    */
   served_by: string
   upstream: number
+}
+
+/**
+ * A project's mark: rows of `#RRGGBB`, with null for transparent. It is derived
+ * from the project path and the machine's icon registry by the same rules the Swift
+ * app uses, so both apps draw the same creature — a mark somebody recognises by
+ * colour and shape is not recognisable if the second app draws it differently, and
+ * near-identical is worse than obviously different.
+ */
+export interface Icon {
+  accent: string
+  cells: ((string | null)[])[]
 }
 
 export interface Inventory {
@@ -471,6 +554,7 @@ export interface SessionRow {
   closeability: Closeability
   cwd?: string
   evidence: Evidence
+  icon?: Icon
   id: string
   isClaude: boolean
   label?: string
@@ -482,6 +566,7 @@ export interface SessionRow {
   sessionId?: string
   state: SessionState
   tty?: string
+  work_provenance?: WorkProvenance
   work_state: WorkState
 }
 
@@ -600,6 +685,18 @@ export interface UsageRow {
   note?: string
   totalTokens: number
 }
+
+/**
+ * Who decided a row's work state. `broker` means this daemon projected it from what
+ * it could read; `self` means the session said so. Only `broker` is produced here,
+ * because nothing yet takes a session's own word for what it needs — and emitting
+ * `self` where that is untrue would make a projection look like testimony.
+ */
+export type WorkProvenance =
+    "broker"
+  | "self"
+
+export const WorkProvenanceValues: readonly WorkProvenance[] = ["broker", "self"] as const
 
 /**
  * One projection of what this session needs, ranked so a reader can sort by it.
