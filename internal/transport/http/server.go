@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/app"
@@ -28,6 +29,7 @@ type Server struct {
 	cfg       config.Config
 	proxy     *httputil.ReverseProxy
 	inventory app.Inventory
+	store     *store.Store
 }
 
 func New(cfg config.Config) (*Server, error) {
@@ -50,7 +52,14 @@ func New(cfg config.Config) (*Server, error) {
 			"detail":   err.Error(),
 		})
 	}
+	// A store that cannot be opened is a refusal at startup, not a daemon that
+	// runs without durability and discovers it later.
+	st, err := store.Open(cfg.Dir)
+	if err != nil {
+		return nil, fmt.Errorf("could not open the store at %s: %w", cfg.Dir, err)
+	}
 	return &Server{
+		store: st,
 		cfg:   cfg,
 		proxy: proxy,
 		inventory: app.Inventory{
@@ -71,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/next/sessions", s.nextSessions)
 	mux.HandleFunc("/v1/sessions", s.sessions)
 	mux.HandleFunc("/v1/events", s.events)
+	mux.HandleFunc("/v1/next/obligations", s.obligations)
 	mux.Handle("/", s.proxy)
 	return mux
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
 	"github.com/sainteye/clawdline-go/internal/domain/session"
@@ -62,6 +63,19 @@ func doctor() {
 	fmt.Printf("port      %d\n", cfg.Port)
 	fmt.Printf("upstream  %d\n", cfg.UpstreamPort)
 	fmt.Printf("dir       %s\n", cfg.Dir)
+
+	st, err := store.Open(cfg.Dir)
+	if err != nil {
+		fmt.Printf("store     unreadable: %v\n", err)
+		return
+	}
+	defer st.Close()
+	events, receipts, open, err := st.Counts(context.Background())
+	if err != nil {
+		fmt.Printf("store     unreadable: %v\n", err)
+		return
+	}
+	fmt.Printf("store     %d events, %d receipts, %d obligations open\n", events, receipts, open)
 }
 
 // terminalCommand drives one session from the command line. It is the same
