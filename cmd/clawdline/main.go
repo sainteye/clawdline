@@ -65,6 +65,7 @@ func serve() {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)
 	}
+	srv.StartScheduler(context.Background())
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintln(os.Stderr, "clawdline:", err)
 		os.Exit(1)

@@ -23,6 +23,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/sainteye/clawdline-go/internal/domain/schedule"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
@@ -83,6 +84,29 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state);
+CREATE TABLE IF NOT EXISTS board (
+  id       INTEGER PRIMARY KEY CHECK (id = 1),
+  revision INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO board (id, revision) VALUES (1, 0);
+CREATE TABLE IF NOT EXISTS schedules (
+  id        TEXT    PRIMARY KEY,
+  name      TEXT    NOT NULL,
+  spec      TEXT    NOT NULL,
+  assistant TEXT    NOT NULL,
+  dir       TEXT    NOT NULL,
+  brief     TEXT    NOT NULL,
+  claims    TEXT    NOT NULL DEFAULT '[]',
+  enabled   INTEGER NOT NULL DEFAULT 1,
+  last_run  INTEGER NOT NULL DEFAULT 0,
+  last_task TEXT    NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS board_commands (
+  request_id  TEXT    PRIMARY KEY,
+  fingerprint TEXT    NOT NULL,
+  revision    INTEGER NOT NULL,
+  at          INTEGER NOT NULL
+);
 `
 
 // Open prepares the store under the daemon's own state root.
@@ -275,6 +299,144 @@ func (s *Store) LiveTasks(ctx context.Context) ([]task.Task, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// BoardRevision is the number a writer must have read before it may write.
+func (s *Store) BoardRevision(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT revision FROM board WHERE id = 1`).Scan(&n)
+	return n, err
+}
+
+// BoardSeen returns the request ids already applied, with what each one asked
+// for, so a retry can be told apart from a reused name.
+func (s *Store) BoardSeen(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT request_id, fingerprint FROM board_commands`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, fp string
+		if err := rows.Scan(&id, &fp); err != nil {
+			return nil, err
+		}
+		out[id] = fp
+	}
+	return out, rows.Err()
+}
+
+// ApplyBoardCommand records a command and moves the revision, in one
+// transaction with the events it produced.
+func (s *Store) ApplyBoardCommand(ctx context.Context, requestID, fingerprint string, events []Event) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var revision int64
+	if err := tx.QueryRowContext(ctx, `SELECT revision FROM board WHERE id = 1`).Scan(&revision); err != nil {
+		return 0, err
+	}
+	revision++
+	if _, err := tx.ExecContext(ctx, `UPDATE board SET revision = ? WHERE id = 1`, revision); err != nil {
+		return 0, err
+	}
+	now := time.Now().Unix()
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO board_commands (request_id, fingerprint, revision, at) VALUES (?, ?, ?, ?)`,
+		requestID, fingerprint, revision, now); err != nil {
+		return 0, err
+	}
+	for _, e := range events {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO events (at, kind, subject, payload) VALUES (?, ?, ?, ?)`,
+			now, e.Kind, e.Subject, string(e.Payload)); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return revision, nil
+}
+
+// SaveSchedule stores or replaces one schedule.
+func (s *Store) SaveSchedule(ctx context.Context, sc schedule.Schedule) error {
+	claims, _ := json.Marshal(sc.Claims)
+	enabled := 0
+	if sc.Enabled {
+		enabled = 1
+	}
+	_, err := s.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO schedules
+		 (id, name, spec, assistant, dir, brief, claims, enabled, last_run, last_task)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sc.ID, sc.Name, sc.When.String(), sc.Assistant, sc.Dir, sc.Brief,
+		string(claims), enabled, unixOrZero(sc.LastRun), sc.LastTask)
+	return err
+}
+
+// Schedules returns everything stored.
+func (s *Store) Schedules(ctx context.Context) ([]schedule.Schedule, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, spec, assistant, dir, brief, claims, enabled, last_run, last_task
+		 FROM schedules ORDER BY name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []schedule.Schedule{}
+	for rows.Next() {
+		var sc schedule.Schedule
+		var spec, claims string
+		var enabled, last int64
+		if err := rows.Scan(&sc.ID, &sc.Name, &spec, &sc.Assistant, &sc.Dir,
+			&sc.Brief, &claims, &enabled, &last, &sc.LastTask); err != nil {
+			return nil, err
+		}
+		when, err := schedule.ParseWhen(spec)
+		if err != nil {
+			// A schedule whose spelling we cannot read is disabled rather than
+			// guessed at: firing it on a guessed clock is worse than not
+			// firing it and saying so.
+			sc.Enabled = false
+			out = append(out, sc)
+			continue
+		}
+		sc.When = when
+		sc.Enabled = enabled == 1
+		if last > 0 {
+			sc.LastRun = time.Unix(last, 0)
+		}
+		_ = json.Unmarshal([]byte(claims), &sc.Claims)
+		out = append(out, sc)
+	}
+	return out, rows.Err()
+}
+
+// unixOrZero keeps a never-run schedule at 0 rather than at the Unix value of
+// year one, which reads as a timestamp 63 billion seconds in the past.
+func unixOrZero(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.Unix()
+}
+
+// MarkScheduleTask records which task a run produced.
+func (s *Store) MarkScheduleTask(ctx context.Context, id, taskID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE schedules SET last_task = ? WHERE id = ?`, taskID, id)
+	return err
+}
+
+// MarkScheduleRun records that a schedule fired.
+func (s *Store) MarkScheduleRun(ctx context.Context, id string, at time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE schedules SET last_run = ? WHERE id = ?`, at.Unix(), id)
+	return err
 }
 
 // Counts is what `doctor` reports about the store.

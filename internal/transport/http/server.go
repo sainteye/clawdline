@@ -9,16 +9,20 @@ package http
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
+	"github.com/sainteye/clawdline-go/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/adapters/transcript"
 	"github.com/sainteye/clawdline-go/internal/app"
@@ -26,10 +30,11 @@ import (
 )
 
 type Server struct {
-	cfg       config.Config
-	proxy     *httputil.ReverseProxy
-	inventory app.Inventory
-	store     *store.Store
+	cfg        config.Config
+	proxy      *httputil.ReverseProxy
+	inventory  app.Inventory
+	store      *store.Store
+	dispatcher app.Dispatcher
 }
 
 func New(cfg config.Config) (*Server, error) {
@@ -62,6 +67,11 @@ func New(cfg config.Config) (*Server, error) {
 		store: st,
 		cfg:   cfg,
 		proxy: proxy,
+		dispatcher: app.Dispatcher{
+			Store:    st,
+			Tasks:    taskdir.New(cfg.Dir),
+			Terminal: terminal.NewTmux(),
+		},
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
@@ -81,6 +91,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/sessions", s.sessions)
 	mux.HandleFunc("/v1/events", s.events)
 	mux.HandleFunc("/v1/next/obligations", s.obligations)
+	mux.HandleFunc("/v1/next/schedules", s.schedules)
+	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			s.boardWrite(w, r)
+			return
+		}
+		s.boardRead(w, r)
+	})
 	mux.Handle("/", s.proxy)
 	return mux
 }
@@ -118,6 +136,31 @@ func (s *Server) nextSessions(w http.ResponseWriter, r *http.Request) {
 		},
 		"at": inv.ObservedAt.Unix(),
 	})
+}
+
+// StartScheduler runs the clock that fires stored templates. It is started by
+// the daemon rather than by the first request, because a schedule nobody
+// happens to visit is still due.
+func (s *Server) StartScheduler(ctx context.Context) {
+	tick := time.Minute
+	if v := os.Getenv("CLAWDLINE_NEXT_TICK"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			tick = d
+		}
+	}
+	go app.Scheduler{
+		Store:      s.store,
+		Dispatcher: s.dispatcher,
+		Tick:       tick,
+		NewID:      newID,
+	}.Run(ctx)
+	log.Printf("scheduler ticking every %s", tick)
+}
+
+func newID() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func (s *Server) ListenAndServe() error {

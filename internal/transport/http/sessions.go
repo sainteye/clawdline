@@ -51,6 +51,12 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 	// ask the same question eight times and let two rows disagree about the
 	// same moment.
 	owed, owedErr := s.store.OpenObligations(ctx)
+	live, liveErr := s.store.LiveTasks(ctx)
+	if liveErr != nil {
+		// One unreadable input makes the projection incomplete, not wrong in
+		// one place: it is carried as missing evidence rather than as zero.
+		owedErr = liveErr
+	}
 
 	// Only assistant sessions are rows. A terminal running an ordinary shell is
 	// not a session in this contract — the Swift app carries shells as an
@@ -62,7 +68,7 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 		if !item.IsAssistant() {
 			continue
 		}
-		rows = append(rows, sessionRow(item, owed, owedErr))
+		rows = append(rows, sessionRow(item, owed, owedErr, live))
 	}
 
 	return map[string]any{
@@ -91,7 +97,7 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 // contract already says several of them are absent in ordinary cases, so a
 // reader that handles absence handles this too — and a guessed value would be
 // worse than a missing one.
-func sessionRow(item session.Session, owed []task.Obligation, owedErr error) map[string]any {
+func sessionRow(item session.Session, owed []task.Obligation, owedErr error, live []task.Task) map[string]any {
 	row := map[string]any{
 		"id":       item.ID,
 		"backend":  string(item.Backend),
@@ -100,7 +106,7 @@ func sessionRow(item session.Session, owed []task.Obligation, owedErr error) map
 		// Not in the Swift contract: how this row's state was learned. A
 		// registry reading and a screen guess are different kinds of fact.
 		"evidence":     string(item.Evidence),
-		"work_state":   string(workState(item)),
+		"work_state":   string(workState(item, owed, owedErr, live)),
 		"closeability": closeability(item, owed, owedErr),
 	}
 	if item.TTY != "" {
@@ -154,20 +160,23 @@ func closeability(item session.Session, owed []task.Obligation, err error) map[s
 	return map[string]any{"state": state, "reasons": reasons}
 }
 
-// workState projects the one closed user-facing value.
-//
-// `ready` is deliberately not produced here. The contract requires positive
-// evidence for it — an assistant-free prompt or the session's own declaration —
-// and an idle assistant with neither is `unknown`, which asks nothing of the
-// reader. This daemon has no broker projection yet, so everything that would
-// need one resolves to `unknown` rather than to a flattering guess.
-func workState(item session.Session) session.State {
-	switch item.State {
-	case session.StateWorking:
-		return "working"
-	case session.StateWaiting:
-		return "waiting_you"
-	default:
-		return "unknown"
+// workState gathers this session's axes and hands them to the projection.
+func workState(item session.Session, owed []task.Obligation, owedErr error, live []task.Task) task.WorkState {
+	in := task.WorkInputs{
+		AskedOnScreen:          item.State == session.StateWaiting,
+		EvidenceMissing:        owedErr != nil || item.State == session.StateUnknown,
+		Active:                 item.State == session.StateWorking,
+		PromptWithoutAssistant: !item.IsAssistant() && item.State == session.StateIdle,
 	}
+	for _, o := range owed {
+		switch {
+		case o.Mover.Kind == task.MoverOtherSession && o.Subject == item.ID:
+			in.WaitingOnPeer = true
+		case o.Mover.Kind == task.MoverTask && o.Subject != "":
+			// A task obligation belongs to whoever dispatched it; without that
+			// link recorded yet this cannot claim the session, so it does not.
+		}
+	}
+	_ = live
+	return task.ProjectWorkState(in)
 }
