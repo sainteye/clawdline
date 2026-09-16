@@ -18,6 +18,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/adapters/process"
@@ -93,6 +94,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/next/obligations", s.obligations)
 	mux.HandleFunc("/v1/next/schedules", s.schedules)
 	mux.HandleFunc("/v1/next/coordinator", s.coordinatorRoute)
+
+	// The console asks for these by their real names. They were served under
+	// /v1/next/ while they were being proved beside the app; the shadow names
+	// stay so a reader can still compare the two, but these are the routes.
+	mux.HandleFunc("/v1/board", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			s.boardWrite(w, r)
+			return
+		}
+		s.boardRead(w, r)
+	})
+	mux.HandleFunc("/v1/orchestrator/schedules", s.schedules)
+	mux.HandleFunc("/v1/orchestrator/tasks", s.tasksRoute)
+	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.boardWrite(w, r)
@@ -100,6 +115,18 @@ func (s *Server) Handler() http.Handler {
 		}
 		s.boardRead(w, r)
 	})
+	// Standalone refuses what it has not implemented instead of borrowing it.
+	// Proxying is a scaffold, and a scaffold that never says what it is holding
+	// up cannot be removed on purpose.
+	if standalone() {
+		if root := WebRoot(); root != "" {
+			mux.Handle("/app/", newPage(root))
+			mux.Handle("/", &fallback{page: newPage(root), miss: s.notImplemented})
+			return mux
+		}
+		mux.Handle("/", http.HandlerFunc(s.notImplemented))
+		return mux
+	}
 	mux.Handle("/", s.proxy)
 	return mux
 }
@@ -162,6 +189,41 @@ func newID() string {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
+}
+
+// fallback serves the console where it can and names what it cannot, so the
+// list of unimplemented routes is produced by running the real client rather
+// than by guessing at it.
+type fallback struct {
+	page *page
+	miss http.HandlerFunc
+}
+
+func (f *fallback) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/v1/") {
+		f.miss(w, r)
+		return
+	}
+	f.page.ServeHTTP(w, r)
+}
+
+// standalone reports whether this daemon runs without the Swift app behind it.
+func standalone() bool { return os.Getenv("CLAWDLINE_NEXT_STANDALONE") == "1" }
+
+// notImplemented answers a route this daemon does not own yet, by name.
+//
+// The list of these is exactly what P4 costs, and it is measured rather than
+// estimated: run the console against a standalone daemon and read what it asks
+// for.
+func (s *Server) notImplemented(w http.ResponseWriter, r *http.Request) {
+	log.Printf("not implemented: %s %s", r.Method, r.URL.Path)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error":  "not_implemented",
+		"route":  r.URL.Path,
+		"detail": "this daemon does not own that route yet",
+	})
 }
 
 func (s *Server) ListenAndServe() error {

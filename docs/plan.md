@@ -133,7 +133,25 @@ console ──► 新 daemon (7727)
 | **P1** | `domain/session` ＋ adapters ＋ `/v1/sessions` ＋ sessions 快照 |
 | **P2** | 終端機控制：send / open / interrupt / close |
 | **P3** | `domain/task` ＋ board ＋ 排程 ＋ Clawdfather 協調（見 coordination.md） |
-| **P4** | 剪斷代理 |
+| **P4** | 剪斷代理 ✅ |
+
+### P4 達成：console 完全不需要舊 app（實測）
+
+`CLAWDLINE_NEXT_STANDALONE=1` 讓未實作的路由回 typed 的 `not_implemented` 而不是代理出去。
+把 console 載進來之後，**它自己說出還缺什麼**——只有四條：
+
+```
+GET /v1/strings
+GET /v1/board
+GET /v1/orchestrator/tasks
+GET /v1/orchestrator/schedules
+```
+
+其中三條早就實作了，只是掛在 `/v1/next/` 下面驗證用。接上真名之後，
+console 完全由新核心供應，未實作請求數為零。
+
+`/v1/strings` 回空目錄：這個 daemon 還沒有在地化目錄，console 會用它內建的英文。
+**那是看得見、說得出原因的降級，不是看起來像故障的缺口。**
 
 ### 實證：單獨接管一條路由是看不見的（P1 量到）
 
