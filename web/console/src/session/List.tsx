@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import * as L from "../legacy/bridge.js"
 
@@ -54,8 +54,20 @@ function escapeText(text: string): string {
   )
 }
 
+/**
+ * The spinner is drawn here, once, when its markup is written — not left to
+ * the clock, which does not run while the page is hidden (see
+ * `L.paintSpinner`). A layout effect, so the canvas has its size before the
+ * row is painted. React rewrites the markup only when the string changes, and
+ * only then is there a new, undrawn canvas.
+ */
 function StateLine({ row }: { row: SessionRow }) {
-  return <div className="state" dangerouslySetInnerHTML={{ __html: stateHTML(row) }} />
+  const ref = useRef<HTMLDivElement>(null)
+  const html = stateHTML(row)
+  useLayoutEffect(() => {
+    L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null)
+  }, [html])
+  return <div className="state" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 export function Row({
@@ -77,7 +89,10 @@ export function Row({
       role="option"
       aria-selected={open}
       tabIndex={-1}
+      data-id={row.id}
+      data-selection-key={L.selectionKey(row)}
       data-state={row.state}
+      aria-disabled="false"
       onClick={() => onSelect(row.id)}
     >
       <span className="kid" hidden aria-hidden="true">
@@ -101,6 +116,11 @@ export function Row({
         <span className="task-chip" hidden />
       </div>
       <StateLine row={row} />
+      {/* The phone's swipe-to-end control, in `buildRow`'s markup. Nothing here
+          reveals it yet, so it stays hidden as the original starts it. */}
+      <button className="swipe-end" type="button" hidden>
+        {L.strings.webEndSession}
+      </button>
     </li>
   )
 }

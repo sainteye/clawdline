@@ -21,8 +21,16 @@ import type { Icon, SessionRow } from "@clawdline/contract"
 import { S } from "./js/core/state.js"
 import { T, applyStrings, fill } from "./js/core/i18n.js"
 import { shortPath, tint } from "./js/core/util.js"
-import { ASSISTANT_LOGOS, assistantLogo, assistantName, drawIconOnce, setSpinners } from "./js/core/pixels.js"
-import { LOCAL_SESSION_MACHINE, machinePresentationForFleet } from "./js/session/selection.js"
+import {
+  ASSISTANT_LOGOS,
+  assistantLogo,
+  assistantName,
+  drawIconOnce,
+  drawSpinner,
+  setSpinners,
+  spinPhase,
+} from "./js/core/pixels.js"
+import { LOCAL_SESSION_MACHINE, machinePresentationForFleet, sessionSelectionKey } from "./js/session/selection.js"
 import {
   ordered,
   projectSessionCloseability,
@@ -79,6 +87,10 @@ export function glyphHTML(icon: string, copy: string): string {
 export function machineFor(row: SessionRow): { label: string; id: string; kind: string } {
   return machinePresentationForFleet(row, S.sessions, T) as { label: string; id: string; kind: string }
 }
+/** The row's `data-selection-key`, as `list.js` writes it: machine and session together. */
+export function selectionKey(row: SessionRow): string | undefined {
+  return (sessionSelectionKey(row) as string | null) ?? undefined
+}
 export function whoHTML(assistant: string | undefined): string {
   if (!assistant || !(ASSISTANT_LOGOS as Record<string, unknown>)[assistant]) return ""
   return `${assistantLogo(assistant)}<span>${assistantName(assistant)}</span>`
@@ -91,18 +103,31 @@ export function paintIcon(canvas: HTMLCanvasElement | null, icon: Icon | undefin
   return drawIconOnce(canvas, icon, cellPx) as boolean
 }
 /**
+ * Draw a spinner canvas once, now, at the phase the shared clock is on.
+ *
+ * This is what gives the canvas its size, and it cannot be left to the clock.
+ * The clock is `createVisibleInterval`, which arms no timer at all while the
+ * page is hidden, and `turnSpinners` returns before drawing anything under
+ * reduced motion. In either case a canvas that only the clock would draw keeps
+ * the 300×150 an undrawn canvas defaults to, and its row grows from 86 pixels
+ * to 219. A background tab is hidden, so that was the page as measured.
+ * `list.js` draws once when it fills the row, before it hands the canvas to the
+ * clock, and this is the same call.
+ *
+ * `spinPhase` is the clock's own index into the eight ring positions, so a row
+ * drawn between two ticks shows the position the others are in.
+ */
+export function paintSpinner(canvas: HTMLCanvasElement | null): void {
+  if (canvas) drawSpinner(canvas, spinPhase)
+}
+/**
  * Hand the list's spinner canvases to the clock that already exists.
  *
  * There is one clock for every spinner on the page, deliberately: eight
  * separate timers would drift apart and the list would look like eight machines
  * rather than one. It also stops while the page is hidden and does not replay
- * what it missed, because a spinner has nothing to catch up on.
- *
- * The first version here ran its own animation frame and passed a float where
- * the phase is an index into eight positions, so every draw threw and the
- * canvas kept the 300×150 an unsized canvas defaults to — a rectangle of
- * nothing three rows tall, which is the exact failure the original's comment
- * warns about.
+ * what it missed, because a spinner has nothing to catch up on. That is why
+ * registering a canvas does not size it: see `paintSpinner`.
  */
 export function registerSpinners(canvases: HTMLCanvasElement[]): void {
   setSpinners(canvases)
