@@ -130,6 +130,22 @@
 
 **其他頁面**：還沒開始。
 
+## macOS 原生殼
+
+webview 之外，舊 app 的原生面：
+
+| 舊版 | 規模 | 狀態 |
+|---|---|---|
+| 選單列（`main.swift` buildMenu） | 約 300 行 | child `%845` |
+| 全域熱鍵（`HotKey.swift`） | 138 行 | child `%845`：設定讀 `~/.config/clawdline-next`，不與舊 app 搶同一組 |
+| 登入時啟動（`SMAppService`） | — | child `%845`：預設關閉，測試不打開 |
+| 快捷面板（`Controller` + `Panel`） | 5,400 行 | 目前以 webview 視窗代替 |
+| 原生設定（`Settings.swift`） | 3,822 行 | 未開始 |
+| 導覽（`Onboarding.swift`） | 1,468 行 | 未開始 |
+| 瀏海島（`NotchIsland.swift`） | 1,148 行 | 裝飾，最後 |
+
+`7bbdd1a` 之後，打包出來的 app 在 WKWebView 裡實際畫出即時清單（殼回報 `booting=false elements-with-id=79 rows=11`）。
+
 ## 下一步建議
 
 1. 唯讀 Swift store（`%843` 進行中）。
