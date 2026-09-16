@@ -19,7 +19,8 @@ import type { Icon, SessionRow } from "@clawdline/contract"
    have nowhere to be fixed. */
 
 import { S } from "./js/core/state.js"
-import { T, applyStrings, fill } from "./js/core/i18n.js"
+import { T, applyStrings, fill, words } from "./js/core/i18n.js"
+import { hasKeyboard } from "./js/core/env.js"
 import { shortPath, tint } from "./js/core/util.js"
 import {
   ASSISTANT_LOGOS,
@@ -135,6 +136,10 @@ export function registerSpinners(canvases: HTMLCanvasElement[]): void {
 export const path = shortPath as (cwd: string | undefined) => string
 export const accentTint = tint as (hex: string | undefined) => string
 export const strings = T as Record<string, string>
+/** Interface copy as HTML: `*emphasis*` and `` `typed` `` only, escaped first. */
+export const wordsHTML = words as (s: string) => string
+/** Asked of the pointer each time, because a keyboard can be attached while the page is open. */
+export const keyboard = hasKeyboard as () => boolean
 export const fillString = fill as (s: string, holes: Record<string, unknown>) => string
 
 /**

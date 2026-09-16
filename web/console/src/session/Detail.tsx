@@ -6,6 +6,7 @@ import * as L from "../legacy/bridge.js"
 import { Mark } from "./List.js"
 import { Transcript } from "./Transcript.js"
 import { Composer } from "./Composer.js"
+import { StatusLine } from "./StatusLine.js"
 
 /**
  * The conversation, which is what this pane is for.
@@ -59,6 +60,7 @@ export function Detail({
       </div>
 
       <Composer row={row} onDid={onDid} />
+      <StatusLine row={row} />
     </section>
   )
 }

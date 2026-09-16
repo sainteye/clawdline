@@ -32,11 +32,9 @@ import * as L from "../legacy/bridge.js"
  * does not carry, so the box is writable until a send is refused with
  * `write_disabled` — the same correction the original makes to its own flag.
  *
- * `hasKeyboard`, `words` and `useKeyboardBar` below are the original's
- * (`core/env.js`, `core/i18n.js`, `input/edges.js`), repeated because
- * `legacy/bridge.ts` does not export them and that file belongs to another task
- * — the first two should move behind the bridge. `edges.js` itself is not among
- * the copied modules.
+ * `hasKeyboard` and `words` come from the copied modules through the bridge.
+ * `useKeyboardBar` below is still a local rendering of `input/edges.js`, which
+ * is not among the copied modules.
  */
 export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => void }) {
   const T = L.strings
@@ -60,7 +58,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
     placeholder = placeholder.replace("Claude Code", "Codex").replace("Claude", "Codex")
     if (placeholder === T.placeholder) placeholder = "Codex…"
   }
-  const keyboard = hasKeyboard()
+  const keyboard = L.keyboard()
 
   // **The width is pinned before the word changes**, as `renderComposer` does:
   // measured while the button says the shorter word and held while it says the
@@ -146,7 +144,10 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
     }
   }
 
-  const why: ReactNode = failure || (write ? (row ? "" : T.webWriteOpen) : words(T.webWriteOff))
+  // The write-off notice is the catalog's own markup, rendered by the copied
+  // `words()` exactly as the original renders it; everything else is text.
+  const whyHTML = !failure && !write ? L.wordsHTML(T.webWriteOff) : null
+  const why: ReactNode = failure || (write ? (row ? "" : T.webWriteOpen) : null)
   const pinned = sending && sendWidth.current.px ? { minWidth: `${sendWidth.current.px}px` } : undefined
 
   return (
@@ -238,7 +239,7 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
             if (e.nativeEvent.isComposing || e.keyCode === 229) return
             if (e.key !== "Enter" || e.shiftKey) return
             // On a touch screen Return is a new line and the button is how you send.
-            if (!hasKeyboard()) return
+            if (!L.keyboard()) return
             e.preventDefault()
             void submit()
           }}
@@ -257,8 +258,8 @@ export function Composer({ row, onDid }: { row: SessionRow | null; onDid: () => 
         </button>
       </div>
       <input id="pick" type="file" accept="image/*" multiple hidden tabIndex={-1} />
-      <div className="why" id="why">
-        {why}
+      <div className="why" id="why" {...(whyHTML !== null ? { dangerouslySetInnerHTML: { __html: whyHTML } } : {})}>
+        {whyHTML === null ? why : null}
       </div>
     </form>
   )
@@ -323,16 +324,3 @@ const PLAINTEXT_ONLY = (() => {
   return probe.contentEditable === "plaintext-only"
 })()
 
-/** `core/env.js` `hasKeyboard`: asked of the pointer, each time, because a keyboard can be attached while the page is open. */
-function hasKeyboard(): boolean {
-  return !!window.matchMedia?.("(hover: hover) and (pointer: fine)").matches
-}
-
-/** `core/i18n.js` `words`: `*emphasis*` and `` `typed` `` as `<b>` and `<code>`, and nothing else. */
-function words(s: string): ReactNode[] {
-  return s.split(/(\*[^*]+\*|`[^`]+`)/).map((part, i) => {
-    if (/^\*[^*]+\*$/.test(part)) return <b key={i}>{part.slice(1, -1)}</b>
-    if (/^`[^`]+`$/.test(part)) return <code key={i}>{part.slice(1, -1)}</code>
-    return part
-  })
-}
