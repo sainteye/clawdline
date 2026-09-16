@@ -368,3 +368,49 @@ body {
   color: var(--text-faint);
 }
 .said.blocked-reason { color: var(--waiting-you); }
+
+/* ---------- dispatch ---------- */
+
+.as-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: 11px/1 var(--mono);
+}
+
+.dispatch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.dispatch input,
+.dispatch textarea {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 9px;
+  font: 12px/1.45 var(--mono);
+  resize: vertical;
+  width: 100%;
+}
+.dispatch input:focus,
+.dispatch textarea:focus { outline: none; border-color: var(--accent); }
+
+.dispatch button {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text-dim);
+  padding: 8px 12px;
+  font: 12px/1 var(--sans);
+  cursor: pointer;
+}
+.dispatch button:hover:not(:disabled) { color: var(--text); border-color: var(--text-faint); }
+.dispatch button:disabled { opacity: 0.4; cursor: default; }
+.dispatch button.picked { color: var(--accent); border-color: var(--accent); }
+.dispatch .verbs button { padding: 6px 12px; }

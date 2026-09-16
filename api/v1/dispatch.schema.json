@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dispatch.schema.json",
+  "title": "Dispatching work",
+  "description": "POST /v1/orchestrator/tasks and POST /v1/orchestrator/tasks/{id}/settle. The intent is recorded durably before the session is opened, so a crash between the two leaves a task that is known and unstarted rather than one running and unrecorded.",
+  "$defs": {
+    "DispatchRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assistant", "instructions", "project_dir"],
+      "properties": {
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "claims": {
+          "description": "The paths this task intends to write, declared before it starts. Absent is refused and an empty list is accepted: `I declared none` and `I did not say` are different requests, and only one of them can be arbitrated against another root. This is a dispatch-time reservation compared between roots, not filesystem enforcement — nothing stops a child writing outside it, and pretending otherwise would be the more dangerous lie.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "instructions": { "type": "string" },
+        "project_dir": { "type": "string" },
+        "task_id": { "description": "Supply one to make the dispatch idempotent: the same id with the same body replays rather than starting a second session.", "type": "string" }
+      }
+    },
+    "DispatchResult": {
+      "description": "The intent committed. It does not say the assistant received anything — that is a later fact with its own evidence, and `replayed` is how a caller tells a fresh dispatch from one it had already made.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "replayed", "task_dir", "task_id"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "replayed": { "type": "boolean" },
+        "task_dir": { "type": "string" },
+        "task_id": { "type": "string" }
+      }
+    },
+    "SettleResult": {
+      "description": "Whether the task has written a result yet. `settled` false is not a failure; it means nothing has been written, which is the ordinary state of work still in progress.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ok", "settled", "task_id"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "settled": { "type": "boolean" },
+        "state": { "$ref": "tasks.schema.json#/$defs/TaskState" },
+        "task_id": { "type": "string" }
+      }
+    }
+  }
+}

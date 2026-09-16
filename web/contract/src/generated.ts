@@ -150,6 +150,40 @@ export interface CoordinatorSnapshot {
   registered: boolean
 }
 
+export interface DispatchRequest {
+  assistant: Assistant
+
+  /**
+   * The paths this task intends to write, declared before it starts. Absent is
+   * refused and an empty list is accepted: `I declared none` and `I did not say`
+   * are different requests, and only one of them can be arbitrated against another
+   * root. This is a dispatch-time reservation compared between roots, not
+   * filesystem enforcement — nothing stops a child writing outside it, and
+   * pretending otherwise would be the more dangerous lie.
+   */
+  claims?: string[]
+  instructions: string
+  project_dir: string
+
+  /**
+   * Supply one to make the dispatch idempotent: the same id with the same body
+   * replays rather than starting a second session.
+   */
+  task_id?: string
+}
+
+/**
+ * The intent committed. It does not say the assistant received anything — that is
+ * a later fact with its own evidence, and `replayed` is how a caller tells a fresh
+ * dispatch from one it had already made.
+ */
+export interface DispatchResult {
+  ok: boolean
+  replayed: boolean
+  task_dir: string
+  task_id: string
+}
+
 /**
  * How loud an obligation has become. Escalation changes visibility, never verdict:
  * nothing here ever declares a session dead.
@@ -452,6 +486,18 @@ export interface SessionsSnapshot {
   at: number
   scan: Scan
   sessions: SessionRow[]
+}
+
+/**
+ * Whether the task has written a result yet. `settled` false is not a failure; it
+ * means nothing has been written, which is the ordinary state of work still in
+ * progress.
+ */
+export interface SettleResult {
+  ok: boolean
+  settled: boolean
+  state?: TaskState
+  task_id: string
 }
 
 export interface TaskList {

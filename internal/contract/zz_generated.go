@@ -149,6 +149,34 @@ type CoordinatorSnapshot struct {
 	Registered bool               `json:"registered"`
 }
 
+type DispatchRequest struct {
+	Assistant Assistant `json:"assistant"`
+
+	// The paths this task intends to write, declared before it starts. Absent is
+	// refused and an empty list is accepted: `I declared none` and `I did not say` are
+	// different requests, and only one of them can be arbitrated against another root.
+	// This is a dispatch-time reservation compared between roots, not filesystem
+	// enforcement — nothing stops a child writing outside it, and pretending
+	// otherwise would be the more dangerous lie.
+	Claims       []string `json:"claims,omitempty"`
+	Instructions string   `json:"instructions"`
+	ProjectDir   string   `json:"project_dir"`
+
+	// Supply one to make the dispatch idempotent: the same id with the same body
+	// replays rather than starting a second session.
+	TaskID string `json:"task_id,omitempty"`
+}
+
+// The intent committed. It does not say the assistant received anything —
+// that is a later fact with its own evidence, and `replayed` is how a caller
+// tells a fresh dispatch from one it had already made.
+type DispatchResult struct {
+	OK       bool   `json:"ok"`
+	Replayed bool   `json:"replayed"`
+	TaskDir  string `json:"task_dir"`
+	TaskID   string `json:"task_id"`
+}
+
 // How loud an obligation has become. Escalation changes visibility, never
 // verdict: nothing here ever declares a session dead.
 type Escalation string
@@ -432,6 +460,16 @@ type SessionsSnapshot struct {
 	At       int64        `json:"at"`
 	Scan     Scan         `json:"scan"`
 	Sessions []SessionRow `json:"sessions"`
+}
+
+// Whether the task has written a result yet. `settled` false is not a failure;
+// it means nothing has been written, which is the ordinary state of work still
+// in progress.
+type SettleResult struct {
+	OK      bool      `json:"ok"`
+	Settled bool      `json:"settled"`
+	State   TaskState `json:"state,omitempty"`
+	TaskID  string    `json:"task_id"`
 }
 
 type TaskList struct {

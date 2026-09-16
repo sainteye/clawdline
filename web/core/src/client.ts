@@ -3,6 +3,8 @@ import type {
   BoardSnapshot,
   BoardWriteResult,
   CoordinatorSnapshot,
+  DispatchRequest,
+  DispatchResult,
   Health,
   Inventory,
   ObligationList,
@@ -10,6 +12,7 @@ import type {
   ScheduleRequest,
   ScheduleSaved,
   SessionsSnapshot,
+  SettleResult,
 } from "@clawdline/contract"
 import { RefusalError, TransportError, isRefusal } from "./refusal.js"
 import { routes, sessionRoutes } from "./routes.js"
@@ -93,6 +96,21 @@ export class ClawdlineClient {
    */
   close(id: string, force = false): Promise<ActionResult> {
     return this.post(sessionRoutes.close(id), { force })
+  }
+
+  /**
+   * Dispatches one task.
+   *
+   * `claims` absent and `claims: []` are different requests and this does not
+   * flatten them: an undeclared dispatch cannot be arbitrated against another
+   * root, so the daemon refuses it rather than assuming none.
+   */
+  dispatch(body: DispatchRequest): Promise<DispatchResult> {
+    return this.post(routes.tasks, body)
+  }
+
+  settle(id: string): Promise<SettleResult> {
+    return this.post(`${routes.tasks}/${encodeURIComponent(id)}/settle`, {})
   }
 
   saveSchedule(body: ScheduleRequest): Promise<ScheduleSaved> {

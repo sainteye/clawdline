@@ -38,6 +38,13 @@ func (d Dispatcher) Dispatch(ctx context.Context, t task.Task, command string) (
 		return store.Receipt{}, "", err
 	}
 	for _, other := range live {
+		// A task does not conflict with itself. Without this, re-sending a
+		// dispatch — which the receipt exists to make safe — is refused as a
+		// collision with its own earlier record, and the idempotency the
+		// contract promises never gets a chance to answer.
+		if other.ID == t.ID {
+			continue
+		}
 		if shared := task.Overlaps(t.Claims, other.Claims); len(shared) > 0 {
 			return store.Receipt{}, "", task.Refusal{
 				Code: "workspace_busy",

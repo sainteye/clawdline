@@ -54,6 +54,7 @@ export default function App() {
           <Sessions rows={rows} fleet={fleet} onDid={refresh} />
         </div>
         <div>
+          <Dispatch onDid={refresh} />
           <Obligations />
           <Tasks />
           <Schedules />
@@ -439,5 +440,99 @@ function Controls({ row, onDid }: { row: SessionRow; onDid: () => void }) {
         </p>
       ))}
     </div>
+  )
+}
+
+/**
+ * Dispatching work from the screen.
+ *
+ * Claims get a field of their own rather than being inferred from the project
+ * directory, because the daemon refuses a dispatch that declares nothing and
+ * that refusal is the point: an undeclared task cannot be arbitrated against
+ * another root. An empty box means "none", which is a declaration; there is no
+ * way from here to mean "I did not say".
+ */
+function Dispatch({ onDid }: { onDid: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [assistant, setAssistant] = useState<"claude" | "codex">("claude")
+  const [dir, setDir] = useState("")
+  const [claims, setClaims] = useState("")
+  const [brief, setBrief] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [said, setSaid] = useState<string | null>(null)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setSaid(null)
+    try {
+      const res = await client.dispatch({
+        assistant,
+        project_dir: dir,
+        instructions: brief,
+        claims: claims
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      })
+      // `replayed` is not a failure and not a second start; it means this
+      // dispatch had already been made and the original outcome is the answer.
+      setSaid(res.replayed ? `已經派過了：${res.task_id}` : `派出去了：${res.task_id}`)
+      setBrief("")
+      onDid()
+    } catch (err) {
+      setSaid(err instanceof RefusalError ? `${err.code} — ${err.detail}` : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="panel">
+      <header>
+        派工
+        <button className="count as-link" onClick={() => setOpen((v) => !v)}>
+          {open ? "收起" : "展開"}
+        </button>
+      </header>
+      {!open && <p className="empty">開一個新的 assistant session 來做一件事。</p>}
+      {open && (
+        <form className="dispatch" onSubmit={submit}>
+          <div className="verbs">
+            {(["claude", "codex"] as const).map((a) => (
+              <button
+                key={a}
+                type="button"
+                className={assistant === a ? "picked" : ""}
+                onClick={() => setAssistant(a)}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+          <input
+            value={dir}
+            placeholder="專案目錄，例如 /Users/you/code/thing"
+            onChange={(e) => setDir(e.target.value)}
+          />
+          <textarea
+            value={claims}
+            placeholder="claims：這件工作會寫到的路徑，一行一個（留空＝宣告不寫任何東西）"
+            rows={2}
+            onChange={(e) => setClaims(e.target.value)}
+          />
+          <textarea
+            value={brief}
+            placeholder="要它做什麼"
+            rows={4}
+            onChange={(e) => setBrief(e.target.value)}
+          />
+          <button type="submit" disabled={busy || !dir.trim() || !brief.trim()}>
+            {busy ? "派工中…" : "派出去"}
+          </button>
+          {said && <p className="said">{said}</p>}
+        </form>
+      )}
+    </section>
   )
 }

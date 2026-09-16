@@ -6,8 +6,8 @@ import (
 	"github.com/sainteye/clawdline-go/internal/contract"
 )
 
-// tasksRoute publishes the tasks this daemon knows about.
-func (s *Server) tasksRoute(w http.ResponseWriter, r *http.Request) {
+// tasksList publishes the tasks this daemon knows about.
+func (s *Server) tasksList(w http.ResponseWriter, r *http.Request) {
 	live, err := s.store.LiveTasks(r.Context())
 	if err != nil {
 		writeRefusal(w, http.StatusInternalServerError, "store_unreadable", err.Error())

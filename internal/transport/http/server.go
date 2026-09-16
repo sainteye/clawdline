@@ -117,6 +117,7 @@ func (s *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("/v1/orchestrator/schedules", s.schedules)
 	mux.HandleFunc("/v1/orchestrator/tasks", s.tasksRoute)
+	mux.HandleFunc("/v1/orchestrator/tasks/", s.settleRoute)
 	mux.HandleFunc("/v1/strings", s.strings)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
