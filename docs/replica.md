@@ -79,12 +79,16 @@
 | 編號 | 問題 | 處理 |
 |---|---|---|
 | #1–3、#9、#16–17 樣式 | 只抄了 12 個 CSS，抽屜的規則在 `pages.css` | root `0b5a74f`：29 個全抄，守衛 46 檔 |
-| #4–5、#7–8、#10–15、#32 | 抽屜項目、篩選列按鈕、清單外框、brand logo、counts、#conn title | child `%837` |
+| #4–5、#7–8、#10–15、#32 | 抽屜項目、篩選列按鈕、清單外框、brand logo、counts、#conn title | ✅ `2b1cfbb`：header、清單窗格對齊；其餘只剩刻意 disabled 與資料差異 |
 | #25–37 | 詳情標頭與 ⋯ 選單 | ✅ `ca9f93a`、`f1f61f1`：三種狀態零 rect 差異 |
 | #6 與 transcript 資料 | 打開沒捲到底；工具 subject 全是「…」 | ✅ `14d93b7`：兩個 session wire 逐筆零差異，另 7 抽 6 完全相同 |
-| #21、#22、#38、#39 | 背景 shells、標題來源、status-line 模型名與花費 | child `%839` |
+| #21、#22、#38、#39 | 背景 shells、標題來源、status-line 模型名與花費 | ✅ `bb8a8a4`：shells 開關實測一致；標題 10 列中 7 列一致（其餘 3 列的標題來自 Swift store）；模型名與花費同一 session 兩邊相同 |
 | #16–20 | Clawdfather 皇冠與 chip、coordination-wait、交付勾 | **需要使用者決定**：資料在 Swift app 的 store，兩個 app 的 store 依設計分開。要不要讓 Go 唯讀 `~/.config/clawdline`，是架構決定 |
 | #41 | 所有 overlay（Session 資訊、開新 session、確認框、語音…） | 之後的波次 |
+
+## Reviewer 第二輪
+
+2026-09-17 約 04:20 派出（`%840`），對 HEAD `bb8a8a4` 逐項判定第一輪 41 項，並補量抽屜各頁行為、hover／focus、窄螢幕。
 
 ## 額度
 
