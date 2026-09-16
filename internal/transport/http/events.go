@@ -13,7 +13,9 @@ import (
 
 // events serves the console's one stream.
 //
-// While the rewrite is in progress this owns half of it. The stream carries two
+// There are two ways to do that and the difference is which app is running.
+// Standing alone, this daemon publishes its own (see ownEvents). Standing in
+// front of the Swift app, it owns half of the stream and edits the rest. The stream carries two
 // whole-snapshot payloads — `sessions` and `orchestrator` — and this daemon has
 // a reading for the first and none for the second, so upstream's stream is
 // consumed frame by frame, `sessions` frames are replaced with ours, and
@@ -32,6 +34,13 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		s.proxy.ServeHTTP(w, r)
+		return
+	}
+
+	// With nothing behind this daemon there is nothing to splice into, so the
+	// stream is published rather than edited. See ownEvents for what that costs.
+	if standalone() {
+		s.ownEvents(w, r)
 		return
 	}
 
