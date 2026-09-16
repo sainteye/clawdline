@@ -37,11 +37,21 @@
 | header.top（品牌、counts、conn） | ✅ 標記與字串對齊 | root |
 | nav.sidebar（七頁＋Dashboard） | ✅ 標記對齊；未有後端的頁面 disabled | root |
 | 清單列 li.row（圖示、標題色、機器、路徑、tty、assistant logo） | ✅ 7/8 列高度相同 | root |
-| 清單列的 working 狀態（旋轉動畫） | 🔧 派工中 | child C |
+| 清單列的 working 狀態（旋轉動畫） | ✅ 8 列 × 96 項零差異（fixture） | child C `55a0f16` |
+| 清單列的進度行 `line` | ✅ 解析規則照移植，與舊版同一分頁抽出同一行 | root `25a57ae` |
 | detail-head（返回、身分、在 Mac 上顯示、⋯ 選單） | ✅ 標記與字串對齊 | root |
-| transcript（#tx） | 🔧 派工中 | child A |
-| composer（form#composer） | 🔧 派工中 | child B |
-| status-line（footer） | 🔧 派工中 | child B |
+| transcript（#tx） | 🔧 派工中（02:29 斷線，03:20 喚回） | child A |
+| composer（form#composer） | ✅ 無 session 時 17/17 元素零差異 | child B `cd9a673` |
+| status-line（footer） | ✅ 5/5 元素零差異；ctx/files/deploy/limits 沒有資料來源 | child B `cd9a673` |
+
+### 已知、刻意延後
+
+| 項目 | 為什麼延後 |
+|---|---|
+| task chip 與子任務縮排（`S.tasks`） | 舊版要 `{id,title,state,created,finishedAt,child.terminalId,root.terminalId}`；Go store 沒有 title、child 分頁、完成時間，要改 store 結構。兩個 app 的 store 刻意分開，所以這台機器上只會對 clawdline-go 自己派的任務顯示，畫面效益低 |
+| ⋯ 選單的「在 Mac 上顯示／Session 資訊／即時畫面／Git」 | 各自需要後端路由，目前 disabled 而非移除 |
+| composer 的附圖、語音、skill menu | 同上 |
+| 多個 :7727 分頁會吃滿 Chrome 對同一 host:port 的 6 條連線 | child C 觀察到一個請求排隊 95 秒。舊版架構相同，是否也會發生尚未比對 |
 
 ### 其他頁面（側欄）
 
