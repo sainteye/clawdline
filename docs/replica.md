@@ -122,9 +122,8 @@
 
 **Session 清單頁**：兩輪 reviewer 加一輪窄驗收之後，除了下面兩類，已量到的部分與舊版一致。
 
-1. **等使用者決定**：Clawdfather 皇冠與 chip、coordination-wait、交付勾（#16–20）、3 列標題（#22）、`%832` 的圖示（N5）。
-   這些資料都在 Swift app 自己的 store（`~/.config/clawdline`）。兩個 app 的 store 依計畫分開；
-   要不要讓 Go 版**唯讀**那一份，是架構決定。
+1. **使用者已決定（2026-09-17 早上）：Go 版唯讀 Swift store。** Clawdfather 皇冠與 chip、coordination-wait、
+   交付勾（#16–20）、3 列標題（#22）、`%832` 的圖示（N5）、task chip 與縮排，交給 child `%843`。規則見 `plan.md` §4。
 2. **沒有後端，刻意 disabled**：在 Mac 上顯示、Session 資訊、即時畫面、文件、我傳出的訊息、常用句、Git、
    附圖、語音、⌘I 等 sheet、所有 overlay（#41）、status-line 的 ctx／files／deploy／limits、task chip 與縮排、
    `#conn` 的版本、帶圖片標記的訊息、側欄的裝置／專案／方案／設定頁。
@@ -133,8 +132,9 @@
 
 ## 下一步建議
 
-1. 先決定上面第 1 點。
-2. 依畫面效益補後端：Session 資訊 sheet（`#info`）、開新 session（`#start`）、確認框（`#action-confirm`）、
+1. 唯讀 Swift store（`%843` 進行中）。
+2. overlay：Session 資訊、確認框、鍵盤說明（`%844` 進行中，只用現有路由）。
+3. 依畫面效益補後端：Session 資訊 sheet（`#info`）、開新 session（`#start`）、確認框（`#action-confirm`）、
    在 Mac 上顯示——這四個是詳情標頭與選單最常用的入口。
 3. 側欄頁面：用量頁的後端最接近（已有 `/v1/orchestrator/usage` 與 transcript 用量）。
 

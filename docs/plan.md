@@ -191,6 +191,22 @@ React 端要另外寫的只有 `useFleet.ts`——九行 `useSyncExternalStore`�
 另外：**第一版不安裝 Claude hook**，避免與舊 app 互相覆寫。
 `~/.claude` 與 `~/.codex` 的 transcript 兩邊都讀，那是唯讀，不衝突。
 
+### 例外：唯讀 Swift app 的 store（2026-09-17，使用者決定）
+
+分開的是**寫入**。為了讓畫面 1:1，本專案**唯讀** `~/.config/clawdline`：Clawdfather 是誰
+（`coordinator.json`）、task 列表與標題、交付紀錄、session 自報的狀態、root assignment
+（`orchestrator.json`）。這些是舊 app 自己的事實，新 app 沒有另一份來源；不讀，清單上就少了
+皇冠、task chip、協調等待與交付勾，標題也會不同。
+
+規則：
+- **只讀。** 不寫、不 rename、不建立或觸碰 `.lock`。
+- **不讀秘密。** `secrets/`、各種 token 檔、`orchestrator-archive-key`、`push.json`，以及紀錄裡的
+  `secret_hash` 一律不讀、不轉出。
+- **讀不到是「未知」，不是「空」。** 舊 app 隨時在改寫這些檔；半截的 JSON 要沿用上一次成功的讀數，
+  並依 mtime 快取（`orchestrator.json` 有 6 MB）。
+- **這是過渡。** 等本專案自己擁有派工與交付紀錄時，這條讀取要能整條拿掉；所以它是一個獨立的
+  adapter（`internal/adapters/swiftstore`），不是散在各處的路徑。
+
 ---
 
 ## 5. 代理式接管
