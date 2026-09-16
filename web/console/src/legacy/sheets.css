@@ -1,0 +1,665 @@
+/* ==========================================================================
+   Overlays — shortcuts, and the small word that says what just happened
+   ========================================================================== */
+.overlay {
+    position: fixed; inset: 0; z-index: 60;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(6, 6, 8, 0.66);
+    -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+    padding: 24px;
+    animation: fade 140ms var(--ease);
+}
+.overlay[hidden] { display: none; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.sheet {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 20px 22px; width: min(460px, 100%);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+.sheet h2 { margin: 0 0 14px 0; font-size: 14px; font-weight: 600; }
+.sheet dl { margin: 0; display: grid; grid-template-columns: 92px 1fr; gap: 9px 14px; align-items: center; }
+.sheet dt { text-align: right; }
+.sheet dd { margin: 0; color: var(--dim); font-size: 12.5px; }
+.sheet kbd {
+    font: 500 11px/1 var(--ui);
+    border: 1px solid #2c2c35; border-radius: 5px; padding: 3px 6px;
+    color: var(--ink); background: #191920;
+}
+.sheet .foot { margin-top: 16px; color: var(--faint); font-size: 11.5px; }
+/* A key named inside a sentence rather than in the column beside it — "j and k do the same".
+   The strings mark it with backticks, which everywhere else on this page means the code face;
+   here what is between them is a key, so it is drawn as one. */
+.sheet dd code { font: 500 11px/1 var(--ui); border: 1px solid #2c2c35; border-radius: 5px; padding: 2px 5px; color: var(--ink); background: #191920; }
+
+/* The settings sheet. Same furniture as the shortcuts card — one pattern for "a small thing
+   over the page" — with rows rather than a definition list. */
+.sheet .block { margin-bottom: 4px; }
+.sheet .block b { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; }
+.sheet .block .say { margin: 0 0 10px 0; color: var(--dim); font-size: 12.5px; line-height: 1.5; }
+/* A key named inside one of these sentences, drawn the way the shortcuts card draws one — the
+   strings mark it with backticks, and what is between them here is something to press. */
+.sheet .block .say code { font: 500 11px/1 var(--ui); border: 1px solid #2c2c35; border-radius: 5px; padding: 2px 5px; color: var(--ink); background: #191920; }
+/* A sheet's control row is not a session row, and it says so here rather than by being called
+   something else. `.row` is the list's class and the phone breakpoint gives it thirteen points of
+   padding and a margin — which landed on every chip row in every sheet as well, because that
+   selector is not scoped to the list. It went unnoticed while there was one such row; two of them
+   stacked is a hole in the middle of the sheet. Specificity wins this, whatever the source order,
+   so the breakpoint keeps its rule and the sheets stop paying for it. */
+.sheet .block .row {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    padding: 0; margin: 0;
+}
+.sheet .block .row .chip { padding: 7px 12px; font-size: 12.5px; }
+.sheet .assistant-icon-setting { display: inline-flex; align-items: center; gap: 7px; }
+.sheet .assistant-icon-setting .marks { display: inline-flex; align-items: center; gap: 3px; }
+/* What just happened, said where it happened rather than in a toast that has gone by the time
+   somebody looks up from their lock screen. */
+.sheet .block .said { margin: 10px 0 0 0; color: var(--accent); font-size: 12.5px; line-height: 1.5; }
+.sheet .block .said:empty { display: none; }
+.sheet .block .said.calm { color: var(--dim); }
+.sheet .foot span:empty { display: none; }
+/* The way out. Esc and a tap outside both work and neither is discoverable on a phone, which is
+   the screen this sheet is mostly opened on. */
+.sheet .chip.wide { display: block; width: 100%; margin-top: 14px; padding: 10px; text-align: center; }
+.confirm-sheet { width: min(390px, 100%); }
+/* pre-line: the close confirmation carries lost_if_closed as one line per item. */
+.confirm-sheet .say {
+    margin: 0; color: var(--dim); font-size: 13px; line-height: 1.55;
+    white-space: pre-line;
+}
+.closeability-technical {
+    margin-top: 10px; border-top: 1px solid var(--line); color: var(--dim);
+}
+.closeability-technical > summary {
+    min-height: 44px; display: flex; align-items: center; gap: 8px;
+    cursor: pointer; color: var(--dim); font-size: 12px; list-style: none;
+}
+.closeability-technical > summary::-webkit-details-marker { display: none; }
+.closeability-technical > summary::after {
+    content: "⌄"; margin-left: auto; color: var(--faint);
+    transition: transform 120ms ease, color 120ms ease;
+}
+.closeability-technical[open] > summary::after {
+    transform: rotate(180deg); color: var(--accent);
+}
+.closeability-technical > summary .help-mark {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border: 1px solid var(--line-hi); border-radius: 50%;
+    color: var(--faint); font-size: 11px; font-weight: 700;
+}
+.closeability-technical[open] > summary { color: var(--ink); }
+.closeability-technical .technical-copy {
+    margin: -2px 0 8px 26px; color: var(--faint); font-size: 11px; line-height: 1.5;
+}
+.closeability-technical .technical-copy ul { margin: 0; padding-left: 15px; }
+.closeability-technical .technical-copy li { overflow-wrap: anywhere; }
+.confirm-sheet .buttons {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px;
+}
+.confirm-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+.confirm-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
+.confirm-sheet[data-kind="end"] .confirm-go,
+.confirm-sheet[data-kind="shell-stop"] .confirm-go,
+.confirm-sheet[data-kind="schedule-delete"] .confirm-go { border-color: #57362e; color: #e09985; }
+.confirm-sheet .confirm-go .busy {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+}
+.confirm-sheet .confirm-go canvas { flex: 0 0 auto; display: block; }
+
+/* Where a new session may be started — the same furniture again, with the Mac's own list of
+   places in it. There is no path to type here and there is no route that would take one: what
+   is offered is what the Mac offered, and what goes back is the id it put on the row. */
+.sheet .find {
+    display: block; width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px;
+    padding: 7px 10px; margin-bottom: 8px;
+    font-size: 13px; color: var(--ink);
+}
+.sheet .find::placeholder { color: var(--faint); }
+.sheet .find:focus { outline: none; border-color: var(--accent-ed); background: var(--card-hi); }
+.sheet .find[hidden] { display: none; }
+.sheet .places { list-style: none; margin: 0; padding: 0; max-height: min(46vh, 340px); overflow-y: auto; }
+/* There is more below, and the row at the edge is cut in half saying so. Unfaded, that cut lands
+   flat against the button under it and reads as something that failed to draw rather than as a
+   list that goes on. The flag is set from the script — a mask that is always there would fade the
+   last row once you had scrolled to it, which is the one moment nothing is being hidden. */
+.sheet .places[data-more="1"] {
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent);
+}
+.sheet .places li { margin: 0; }
+.sheet .place {
+    display: grid;
+    /* The same fixed first column as a session row, and for the same reason: these are the same
+       marks, and a five-wide creature next to an eight-wide logo would start two titles in two
+       different places down a list that is read by its titles. */
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 1px 10px; align-items: center;
+    width: 100%; min-height: 44px;          /* a thumb's worth, on the screen this is for */
+    text-align: left;
+    padding: 8px 10px; margin-bottom: 2px;
+    border: 1px solid transparent; border-radius: 9px;
+    background: transparent; color: var(--ink);
+}
+.sheet .place:hover:not(:disabled) { background: var(--card-hi); }
+.sheet .place:active:not(:disabled) { background: var(--line); }
+.sheet .place:disabled { opacity: 0.45; cursor: default; }
+.sheet #start-machine, .sheet #start-with { align-items: center; gap: 6px; margin: 2px 0 8px 0; flex-wrap: wrap; }
+.sheet #start-machine .with-label, .sheet #start-with .with-label { font-size: 11.5px; color: var(--dim); margin-right: 2px; }
+/* Tight under the chips above it, because the two of them are one question about what the next
+   press does and a gap between them would make it look like two. */
+.sheet #start-resume { align-items: center; gap: 6px; margin: 0 0 12px 0; flex-wrap: wrap; }
+.sheet #start-resume:empty { display: none; }
+.sheet #start-clawdfather-row {
+    align-items: center; gap: 8px; margin: -4px 0 12px 0; flex-wrap: wrap;
+}
+.sheet #start-clawdfather-row[hidden] { display: none; }
+.sheet #start-clawdfather-row .clawdfather-state {
+    min-width: 0; color: var(--faint); font: 10.5px/1.35 var(--mono);
+}
+/* A tick box drawn as a chip, because a chip is what every other switch in this sheet is and a
+   native checkbox on a phone is a nine-pixel target next to a forty-four-pixel one. */
+.sheet .chip.check { padding-left: 9px; display: inline-flex; align-items: center; gap: 7px; }
+/* Box and tick are **one drawing**, on one grid.
+   They were two: a rounded pseudo-element, and a tick made from two borders of an empty box
+   turned forty-five degrees and pulled back over it by a percentage of its own size. That tick
+   is the usual CSS trick and it is subtly wrong — its two strokes are the same length and meet
+   at a right angle, where a real checkmark's do neither, and its position depends on rounding a
+   translate against a rotate. It read as leaning. In one SVG the path is the shape somebody drew,
+   at the coordinates they drew it. */
+.sheet .chip.check .tick { flex: 0 0 auto; display: block; width: 14px; height: 14px; }
+.sheet .chip.check .tick .box { fill: none; stroke: var(--line); stroke-width: 1; }
+.sheet .chip.check .tick .mark { fill: none; stroke: none; stroke-width: 2; }
+/* Ticked, and still not shouting. `.chip.on` turns a chip's border and its label the accent —
+   right for the two above it, which are a choice among options where the accent says *this one*.
+   A tick box is a switch, the box is the switch, and a second orange pill stacked under the
+   first read as two selections rather than one selection and one setting. */
+.sheet .chip.check.on { color: var(--ink); border-color: var(--line); }
+.sheet .chip.check.on .tick .box { fill: var(--accent); stroke: var(--accent); }
+.sheet .chip.check.on .tick .mark { stroke: var(--bg); }
+.sheet .chip.check:disabled { opacity: 0.45; cursor: default; }
+/* The way back, and the only thing on either screen that says which project these conversations
+   belong to. It was an arrow and four words on its own, which read as a stray control; with the
+   project's own mark and name in it, it is a heading that happens to be pressable. */
+.sheet .chip.back {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 6px 12px 6px 9px;
+    font-size: 12.5px;
+}
+.sheet .chip.back .arrow { color: var(--faint); font-size: 13px; line-height: 1; }
+.sheet .chip.back canvas { display: block; image-rendering: pixelated; opacity: 0.9; }
+.sheet .chip.back canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+.sheet .chip.back .name { font-weight: 500; }
+
+/* A recorded conversation.
+   No mark: every row in this list is the same project, so a column of identical creatures would
+   be a column of nothing — the project is named once, on the chip above.
+   The state goes to the **right of the title**, not under it. Under it, on a list where most rows
+   are open at once, "open" became a second full line of accent under every title and the screen
+   read as an alarm. In a narrow right-hand column it is a state on a row rather than a wall. */
+.sheet .place.past {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 10px;
+    align-items: baseline;
+    padding: 9px 10px;
+}
+.sheet .place.past .name {
+    grid-column: 1; grid-row: 1;
+    font-weight: 400; line-height: 1.35;
+    /* Wrapped, not cut. This is the one list on the page that is read *by* its titles and
+       searched by typing part of one, and an ellipsis hides the half somebody is looking for. */
+    white-space: normal; overflow: visible;
+}
+.sheet .place.past .where {
+    grid-column: 2; grid-row: 1;
+    justify-self: end; white-space: nowrap;
+    /* Prose, not a path: "3 minutes ago" is a sentence and the mono face spaces it like a
+       column of figures. The project screen keeps mono, where the same slot holds a path. */
+    font-family: var(--ui); font-size: 11px;
+}
+/* Open right now. Still the accent, because it is the one thing on this screen that changes what
+   pressing a row does — but a word wide rather than a line. */
+.sheet .place.past[data-live="1"] .where { color: var(--accent); }
+.sheet .place.past[data-busy="1"] .where { justify-self: end; }
+
+/* What the list could not reach, said at the end of it rather than above it: it is a fact about
+   the bottom of the list, and somebody who has scrolled that far is the person it is for. */
+.sheet .places .note {
+    display: block; padding: 11px 10px;
+    color: var(--faint); font-size: 11.5px; text-align: center;
+}
+.sheet .place canvas { grid-row: 1 / span 2; align-self: center; justify-self: start; display: block; image-rendering: pixelated; opacity: 0.9; }
+.sheet .place canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+.sheet .place .name {
+    grid-column: 2; font-size: 13.5px; font-weight: 500;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sheet .place .where {
+    grid-column: 2;
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The one being started. It keeps its place in the list rather than becoming a spinner
+   somewhere else — what was pressed is what is happening. */
+.sheet .place[data-busy="1"] { opacity: 1; border-color: var(--accent-ed); }
+.sheet .place[data-busy="1"] .where { color: var(--accent); }
+.sheet .place[data-busy="1"] .where {
+    display: flex; align-items: center; gap: 7px;
+}
+.sheet .place[data-busy="1"] .where canvas { flex: 0 0 auto; display: block; }
+
+/* The Session info card.
+   A dossier rather than a form: the complete Session title is the headline, large and allowed
+   to wrap for as many lines as it needs. Under it, sections separated by hairlines and headed
+   in small tracked capitals — the tokens as one big number with its parts in four tiles, the
+   plan's windows as bars that grow to their number, the tree as the status line's own marks,
+   and project addresses as links.
+   The card scrolls inside itself so that on a phone the buttons under it stay where a thumb is. */
+.info-sheet {
+    padding: 0; overflow: hidden; width: min(480px, 100%);
+    display: flex; flex-direction: column;
+    max-height: calc(var(--vvh) - 48px);
+}
+.info-sheet h2 {
+    margin: 0; padding: 15px 20px 0 20px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
+}
+.info-sheet .say { margin: 8px 20px 10px 20px; color: var(--dim); font-size: 12.5px; }
+.info-sheet .say[hidden] { display: none; }
+.info-sheet .facts {
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    padding: 0 20px 4px 20px;
+}
+.info-sheet .said { margin: 0; padding: 10px 20px 0 20px; color: var(--accent); font-size: 12.5px; line-height: 1.5; }
+.info-sheet .said:empty { display: none; }
+.info-sheet .said.calm { color: var(--dim); }
+.info-sheet .buttons {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 12px 20px 16px 20px; margin-top: 10px; border-top: 1px solid var(--line);
+}
+.info-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+
+/* The headline. A faint warmth behind it, in the accent, so the top of the card reads as the
+   top and not as the first of six identical rows. */
+.info-sheet .hero { position: relative; padding: 10px 0 16px 0; }
+.info-sheet .hero::before {
+    content: ""; position: absolute; left: -20px; right: -20px; top: -46px; height: 150px;
+    background: radial-gradient(58% 78% at 14% 34%, var(--accent-in), transparent 72%);
+    pointer-events: none;
+}
+.info-sheet .hero > * { position: relative; }
+.info-sheet .hero .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--dim); }
+.info-sheet .hero .who .assistant-logo { width: 14px; height: 14px; }
+.info-sheet .hero .who .dot { color: var(--line); }
+.info-sheet .hero .who .model-name { min-width: 0; font-family: var(--mono); overflow-wrap: anywhere; }
+.info-sheet .hero .title-row { display: flex; align-items: center; gap: 4px; }
+.info-sheet .hero .title-row .session-title { width: auto; flex: 1 1 auto; min-width: 0; }
+/* Read-only, so it is never disabled with the pencil, and never hover-gated: this card is mostly
+   read on a phone, where a control that appears on hover is a control that does not appear. */
+.info-sheet .hero .title-copy {
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    width: 44px; min-height: 44px; padding: 0; border: 0; background: none;
+    color: var(--faint); cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.info-sheet .hero .title-copy svg {
+    width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.4;
+}
+.info-sheet .hero .title-copy:hover, .info-sheet .hero .title-copy:focus-visible { color: var(--accent); }
+.info-sheet .hero .title-copy:active { transform: scale(0.92); }
+/* Same reason as above, for the pencil: with no pointer to hover, it was never drawn at all and
+   the one way into renaming was invisible on the device this card is opened on most. */
+@media (hover: none) {
+    .info-sheet .hero .session-title i { opacity: 0.55; }
+}
+.info-sheet .hero .session-title {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin: 1px 0 0 0;
+    padding: 6px 0; border: 0; background: none; text-align: left;
+    font: 500 22px/1.15 var(--ui); letter-spacing: -0.01em; color: var(--ink); cursor: pointer;
+    overflow-wrap: anywhere;
+}
+.info-sheet .hero .session-title span { min-width: 0; overflow-wrap: anywhere; }
+.info-sheet .hero .session-title i {
+    flex: 0 0 auto; font: 16px/1 var(--ui); color: var(--faint); opacity: 0; transition: opacity 120ms ease;
+}
+.info-sheet .hero .session-title:hover i,
+.info-sheet .hero .session-title:focus-visible i { opacity: 1; color: var(--accent); }
+.info-sheet .hero .session-title:disabled { cursor: default; opacity: 1; }
+.info-sheet .hero .session-title:disabled i { display: none; }
+.info-sheet .hero .title-editor {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px;
+    min-height: 44px; margin: 1px 0 0 0;
+}
+.info-sheet .hero .title-editor input {
+    min-width: 0; height: 44px; box-sizing: border-box; border: 1px solid var(--line);
+    border-radius: 9px; padding: 7px 10px; background: var(--bg); color: var(--ink);
+    font: 500 16px/1.2 var(--ui);
+}
+.info-sheet .hero .title-editor input:focus { border-color: var(--accent-ed); outline: none; }
+.info-sheet .hero .title-actions { display: flex; gap: 6px; }
+.info-sheet .hero .title-actions .chip { min-height: 44px; padding: 7px 10px; }
+@media (max-width: 520px) {
+    .info-sheet .hero .title-editor { grid-template-columns: 1fr; }
+    .info-sheet .hero .title-actions { justify-content: flex-end; }
+}
+.info-sheet .hero .meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12px; color: var(--faint); }
+.info-sheet .hero .meta .dot { color: var(--line); }
+.info-sheet .hero .meta .sid {
+    font: 12px var(--mono); color: var(--dim); background: none; border: 0; padding: 0; cursor: pointer;
+    border-bottom: 1px dotted var(--faint);
+}
+.info-sheet .hero .meta .sid:hover { color: var(--ink); border-bottom-color: var(--ink); }
+
+/* One section: a hairline, a heading, and whatever the section is made of. They arrive one
+   after another the first time the card is drawn, and only the first time — a refresh that
+   made everything rise again would look like the card had been closed and opened. */
+.info-sheet .sec {
+    padding: 13px 0 15px 0; border-top: 1px solid var(--line);
+    animation: info-rise 320ms var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms);
+}
+.info-sheet .facts.again .sec { animation: none; }
+@keyframes info-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.info-sheet .sec h3 {
+    margin: 0 0 10px 0; display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint);
+}
+.info-sheet .sec h3 .aside { font: 12px var(--mono); letter-spacing: 0; text-transform: none; color: var(--dim); min-width: 0; overflow-wrap: anywhere; text-align: right; }
+.info-sheet .sec h3 .aside .ab { color: var(--accent); }
+.info-sheet .sec .note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--faint); }
+
+/* The list may shorten status text; the dossier never does. Each status is also its own
+   explanation door, so the key and the delivery receipt remain two independently clickable
+   facts instead of collapsing back into one badge. */
+.info-sheet .session-statuses { display: grid; gap: 7px; }
+.info-sheet .session-status-detail {
+    min-width: 0; border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
+}
+.info-sheet .session-status-detail > summary {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+    min-height: 42px; box-sizing: border-box; padding: 9px 34px 9px 11px;
+    position: relative; cursor: pointer; list-style: none; white-space: normal;
+    font: 12px/1.45 var(--mono); color: var(--dim);
+}
+.info-sheet .session-status-detail > summary::-webkit-details-marker { display: none; }
+.info-sheet .session-status-detail > summary::after {
+    content: "⌄"; position: absolute; right: 12px; top: 50%; transform: translateY(-54%);
+    color: var(--faint); transition: transform 120ms ease, color 120ms ease;
+}
+.info-sheet .session-status-detail[open] > summary::after {
+    transform: translateY(-46%) rotate(180deg); color: var(--accent);
+}
+.info-sheet .session-status-detail > summary:hover { color: var(--ink); }
+.info-sheet .session-status-detail .status-tap {
+    flex: 0 1 auto; margin-left: auto; padding-right: 3px;
+    font: 11px/1.3 var(--ui); color: var(--faint);
+}
+.info-sheet .session-status-detail[open] > summary .status-tap { display: none; }
+.info-sheet .session-status-detail .session-work-completion,
+.info-sheet .session-status-detail .session-work-copy,
+.info-sheet .session-status-detail .session-closeability,
+.info-sheet .session-status-detail .session-status-label {
+    min-width: 0; max-width: 100%; overflow: visible; text-overflow: clip; white-space: normal;
+}
+.info-sheet .status-explanation {
+    padding: 0 11px 11px 11px; font-size: 12px; line-height: 1.55; color: var(--faint);
+}
+.info-sheet .status-explanation p { margin: 0; }
+.info-sheet .status-explanation .status-context { margin-top: 7px; color: var(--dim); }
+.info-sheet .status-explanation ul { margin: 9px 0 0 0; padding-left: 18px; }
+.info-sheet .status-explanation li { margin-top: 5px; overflow-wrap: anywhere; }
+.info-sheet .status-explanation .status-reasons { color: var(--dim); }
+.info-sheet .status-explanation .reason-count {
+    white-space: nowrap; font: 11px var(--mono); color: var(--faint);
+}
+.info-sheet .status-explanation .status-review {
+    min-height: 38px; margin-top: 12px; padding: 7px 11px;
+    border: 1px solid var(--accent-ed); border-radius: 8px;
+    background: var(--accent-in); color: var(--accent); font: 500 12px var(--ui);
+    cursor: pointer;
+}
+.info-sheet .status-explanation .status-review:hover { background: var(--card-hi); }
+.info-sheet .status-explanation .closeability-technical { margin-top: 9px; }
+.info-sheet .status-explanation .closeability-technical .technical-copy li {
+    font-family: var(--mono); color: var(--faint);
+}
+/* A door beside a fact that cannot be read: a small ring with a question mark in it, to the
+   page of the manual that says why and what to install. Drawn faint, since the sentence beside
+   it already says what it says; lit in the accent under a finger. */
+.info-sheet .sec .note .why {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; margin-left: 3px; vertical-align: -3px;
+    border: 1px solid var(--dim); border-radius: 50%;
+    font: 600 10px/1 var(--mono); color: var(--dim); text-decoration: none;
+}
+.info-sheet .sec .note .why:hover { border-color: var(--accent); color: var(--accent); }
+
+/* The models, as things a finger can hit. The one the session is on is filled in the accent;
+   one that has been asked for and not yet answered is drawn in a dashed line, which is the
+   card's way of saying "sent, not seen". A word typed instead of picked goes in the box. */
+.info-sheet .models { display: flex; flex-wrap: wrap; gap: 6px; }
+.info-sheet .models .m {
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 11px;
+    font: 12px var(--mono); color: var(--dim); background: var(--card); cursor: pointer;
+}
+.info-sheet .models .m:hover:not(:disabled) { background: var(--card-hi); color: var(--ink); border-color: #33333c; }
+.info-sheet .models .m[data-on="1"] { border-color: var(--accent-ed); background: var(--accent-in); color: var(--accent); }
+.info-sheet .models .m[data-pending="1"] { border-style: dashed; border-color: var(--accent-ed); color: var(--accent); }
+.info-sheet .models .m:disabled { cursor: default; }
+.info-sheet .models .m:disabled:not([data-on="1"]):not([data-pending="1"]) { opacity: 0.45; }
+.info-sheet .models .other { display: flex; gap: 6px; flex: 1 1 100%; margin-top: 4px; }
+.info-sheet .models .other input {
+    flex: 1 1 auto; min-width: 0; font: 12px var(--mono); color: var(--ink);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+}
+.info-sheet .models .other input::placeholder { color: var(--faint); font-family: var(--ui); }
+.info-sheet .models .other input:focus { outline: none; border-color: var(--accent-ed); }
+.info-sheet .models .other input:disabled { opacity: 0.45; }
+.info-sheet .models .other .chip { padding: 6px 12px; }
+
+/* The tokens: the total, large and light, then its four parts in tiles. */
+.info-sheet .big { display: flex; align-items: baseline; gap: 8px; margin: -2px 0 10px 0; }
+.info-sheet .big .n { font: 300 30px/1 var(--mono); letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .big .unit { font-size: 12px; color: var(--faint); }
+.info-sheet .big .cost { margin-left: auto; font: 500 13px var(--mono); color: var(--accent); }
+.info-sheet .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.info-sheet .grid .cell { min-width: 0; padding: 8px 9px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+.info-sheet .grid .cell b { display: block; font: 500 13px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .grid .cell i { display: block; margin-top: 3px; font-style: normal; font-size: 10.5px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 420px) { .info-sheet .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* A plan window: its name, a bar, the number. The bar grows to the number after the paint —
+   see `Info.draw` — and the thresholds are the status line's, so both turn amber on the same
+   day. */
+.info-sheet .win { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 3px 10px; align-items: center; margin: 7px 0; }
+.info-sheet .win .wn { font: 500 12px var(--mono); color: var(--dim); }
+.info-sheet .win .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.info-sheet .win .bar i { display: block; height: 100%; width: var(--w, 0%); border-radius: 3px; background: var(--ok); transition: width 560ms var(--ease); }
+.info-sheet .win[data-level="warn"] .bar i { background: var(--warn); }
+.info-sheet .win[data-level="bad"] .bar i { background: var(--bad); }
+.info-sheet .win .pct { min-width: 40px; text-align: right; font: 500 12px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.info-sheet .win[data-level="bad"] .pct { color: var(--bad); }
+.info-sheet .win .when { grid-column: 2 / 4; font-size: 11px; color: var(--faint); }
+
+/* The tree, in the status line's marks: `+` staged, `*` changed, `?` untracked, `!` conflict. */
+.info-sheet .marks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.info-sheet .marks .mk { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; color: var(--dim); }
+.info-sheet .marks .mk b { font: 500 13px var(--mono); color: var(--ink); }
+.info-sheet .marks .mk[data-k="staged"] b { color: var(--ok); }
+.info-sheet .marks .mk[data-k="untracked"] b { color: var(--warn); }
+.info-sheet .marks .mk[data-k="conflict"] b { color: var(--bad); }
+.info-sheet .marks .mk[data-k="clean"] b { color: var(--ok); }
+
+/* A project address: a light, a name, the state word, and where it is. Web addresses open;
+   local artifacts remain honest text because a phone cannot open a file on the Mac. */
+.info-sheet .dep-row + .dep-row { border-top: 1px solid var(--line); }
+.info-sheet .dep { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 12px; color: var(--dim); text-decoration: none; }
+.info-sheet .dep .dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.info-sheet .dep[data-state="ok"] .dot { background: var(--ok); }
+.info-sheet .dep[data-state="running"] .dot { background: var(--warn); box-shadow: 0 0 0 3px rgba(176, 138, 74, 0.22); }
+.info-sheet .dep[data-state="fail"] .dot, .info-sheet .dep[data-state="down"] .dot { background: var(--bad); }
+.info-sheet .dep .lbl { color: var(--ink); font-weight: 500; }
+.info-sheet .dep .host { margin-left: auto; min-width: 0; max-width: 55%; font: 11px var(--mono); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.info-sheet .dep-note { margin: -2px 0 7px 15px; font-size: 11px; line-height: 1.45; color: var(--faint); overflow-wrap: anywhere; }
+a.dep:hover .host { color: var(--accent); }
+
+/* Saying what to start. Wider than the others because two things have to be legible at once and
+   comparable to each other: what was heard, and the message that was written from it. The rule
+   between them is the seam — above it are the speaker's own words, below it is a machine's
+   rewrite of them, and reading the second is the entire point of the sheet. */
+.command-sheet {
+    width: min(520px, 100%);
+    /* The only sheet tall enough to need this. It stacks a title, a promise, a dictation row, two
+       textareas, a list of projects and two buttons, and measured at 518x793 it came to 817px with
+       `top: -12` — Cancel and Start below the fold of a fixed overlay that cannot be scrolled, so
+       there was no way to reach them at all. `--vvh` rather than `dvh`, which is
+       what `.info-sheet` above already uses: it is written from `visualViewport` by `core/env.js`,
+       so it shrinks when the software keyboard opens — which is exactly when this sheet has a
+       textarea focused. */
+    max-height: calc(var(--vvh) - 48px);
+    overflow-y: auto;
+}
+.command-sheet .block { display: flex; align-items: flex-start; gap: 8px; }
+.command-sheet textarea {
+    min-height: 68px; resize: vertical;
+    font-family: inherit; font-size: 13px; line-height: 1.55;
+}
+.command-sheet .redo {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    width: 34px; padding: 0; min-height: 34px;
+}
+.command-sheet .redo svg { display: block; width: 15px; height: 15px; }
+.command-sheet .redo .ico-stop { display: none; }
+.command-sheet .redo[aria-pressed="true"] { border-color: var(--accent-ed); color: var(--accent); }
+.command-sheet .redo[aria-pressed="true"] .ico-mic { display: none; }
+.command-sheet .redo[aria-pressed="true"] .ico-stop { display: block; }
+.command-sheet .draft {
+    display: block;
+    margin-top: 14px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+}
+.command-sheet .draft textarea { min-height: 88px; margin-top: 8px; margin-bottom: 0; }
+.command-sheet .draft .places { margin-top: 8px; }
+.command-sheet .voice { margin-bottom: 10px; }
+/* The child combinator is load-bearing. `.said` is also the class on the running clock inside the
+   dictation row, which is a descendant of this sheet — written as `.command-sheet .said` these
+   two rules reached it and gave the timer a 10px top margin and a flex box, which pushed it five
+   pixels below the Cancel beside it. Measured: the same markup in the composer sat dead centre. */
+.command-sheet > .said { margin-top: 10px; display: flex; align-items: center; gap: 7px; }
+.command-sheet > .said canvas { flex: 0 0 auto; display: block; }
+.command-sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.command-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+.command-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
+.command-sheet .confirm-go[disabled] { opacity: 0.5; }
+/* Last, and with the specificity spelled out, because `hidden` has to beat every rule above it.
+   The user agent's `[hidden] { display: none }` is (0,0,1) and loses to all of them: the empty
+   draft frame sat on screen from the moment the sheet opened — the exact "reads as something
+   already broken" the markup warns against — and the assistant row drew itself on a Mac with only
+   one assistant to offer. Measured before this: `#command-draft.hidden === true` with a computed
+   `display: block`. The second selector is for `.sheet .block .row`, which is (0,3,0). */
+.command-sheet [hidden] { display: none; }
+.command-sheet .block .row[hidden] { display: none; }
+
+/* Making a schedule. A form rather than a question, so it is taller than every other sheet and
+   scrolls inside itself — `--vvh` again, because a form with the keyboard up is precisely the
+   case a viewport unit gets wrong. The fields are in the order somebody thinks of them: what to
+   call it, when, where, and what to say when it gets there. */
+.schedule-sheet {
+    width: min(520px, 100%);
+    max-height: calc(var(--vvh) - 48px);
+    overflow-y: auto;
+}
+.schedule-sheet .block { display: block; margin-bottom: 13px; }
+.schedule-sheet .field-label {
+    display: block; margin-bottom: 6px;
+    color: var(--faint); font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.1em; text-transform: uppercase;
+}
+.schedule-sheet .find { margin-bottom: 0; }
+.schedule-sheet textarea {
+    min-height: 84px; resize: vertical;
+    font-family: inherit; font-size: 13px; line-height: 1.55;
+}
+/* A time is as wide as the time in it. Stretched across the sheet it reads as a text field
+   somebody forgot to fill in. */
+.schedule-sheet .time { width: auto; min-width: 118px; }
+/* The collapsed project. Reads as the field's value, not as a button that does something —
+   the chevron is the only thing saying it opens. */
+.schedule-sheet .picked {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 9px;
+    padding: 8px 10px; font-size: 13px; color: var(--ink); text-align: left;
+}
+.schedule-sheet .picked:hover { background: var(--card-hi); }
+.schedule-sheet .picked canvas { flex: 0 0 auto; display: block; image-rendering: pixelated; }
+/* The same placeholder `.sheet .place` uses, for a project that has no mark of its own. Without
+   a size here a canvas with nothing drawn in it is 300x150 — the HTML default, not zero. */
+.schedule-sheet .picked canvas.none { width: 16px; height: 12px; border-radius: 2px; background: #202028; }
+/* But no project chosen is not a project without a mark. There is nothing to stand in for, and
+   the square reads as a symbol nobody can name. */
+.schedule-sheet .picked.none canvas { display: none; }
+.schedule-sheet .picked .name {
+    flex: 0 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.schedule-sheet .picked .where {
+    flex: 1 1 auto; min-width: 0; color: var(--faint); font-size: 11.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.schedule-sheet .picked.none .name { color: var(--faint); }
+.schedule-sheet .picked .chev { flex: 0 0 auto; color: var(--faint); font-size: 11px; }
+.schedule-sheet .picked[aria-expanded="true"] .chev { color: var(--accent); }
+/* Shorter than the sheet-wide default: once it is a thing that opens, it only has to show that
+   there is more than one, not carry the whole list at once.
+
+   And it is drawn as a container rather than as more sheet — the same recessed ground as a text
+   field, with a border around it. That is what tells a finger why the page stopped moving: the
+   scrolling is happening *inside this box*, and there is more sheet below it. Without the ground
+   the list reads as the rest of the form, and a nested scroller that looks like the page is the
+   whole reason somebody thinks they have reached the bottom. */
+.schedule-sheet .places {
+    margin-top: 8px;
+    max-height: min(34vh, 260px);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 4px;
+}
+.schedule-sheet .more { margin-bottom: 4px; }
+.schedule-sheet .more > summary {
+    cursor: pointer; list-style: none;
+    padding: 7px 0; color: var(--dim); font-size: 12px;
+}
+.schedule-sheet .more > summary::-webkit-details-marker { display: none; }
+.schedule-sheet .more > summary::before { content: "\203A\00a0"; color: var(--faint); }
+.schedule-sheet .more[open] > summary::before { content: "\2304\00a0"; }
+/* Stacked, not side by side. These labels are sentences now — "if it was missed, catch up
+   within (hours)" — and two of them across a phone wrap into an unreadable pair of columns. */
+.schedule-sheet .nums { display: flex; flex-direction: column; gap: 10px; }
+.schedule-sheet .nums .num { flex: 1 1 0; min-width: 0; }
+.schedule-sheet .nums .find { width: 100%; }
+.schedule-sheet .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+.schedule-sheet .buttons .chip { min-width: 88px; padding: 8px 14px; text-align: center; }
+.schedule-sheet .confirm-go { border-color: var(--accent-ed); color: var(--accent); }
+.schedule-sheet .confirm-go[disabled] { opacity: 0.5; }
+/* Delete keeps to the opposite side of the row from Cancel/Save — `margin-right: auto` is what
+   pushes everything after it back to `flex-end` — so the one destructive control here is never
+   a finger-width away from the button that saves. Same red as the confirm sheet's own `.confirm-
+   go` for "end" and "shell-stop", because it is the same kind of press. */
+.schedule-sheet .buttons .danger { margin-right: auto; border-color: #57362e; color: #e09985; }
+/* A direct child, for the reason the command sheet learned the hard way: `.said` is also the
+   class on the dictation clock, and a descendant selector reached it and pushed it off centre. */
+.schedule-sheet > .said { margin-top: 10px; display: flex; align-items: center; gap: 7px; }
+.schedule-sheet > .said canvas { flex: 0 0 auto; display: block; }
+/* Last, and spelled out, so `hidden` beats every rule above it. */
+.schedule-sheet [hidden] { display: none; }
+.schedule-sheet .block .row[hidden] { display: none; }
+
+/* The Cloud status sheet (`input/cloud-status.js`). Taller than the other small sheets and
+   scrolling inside itself, because fifty commands are a list, and a phone is where it is read. */
+.cloud-status-sheet { max-height: calc(100dvh - 48px); overflow-y: auto; overscroll-behavior: contain; }
+.cloud-status-sheet .block { margin-bottom: 14px; }
+.cloud-status-sheet .say.mono, .cloud-status-sheet .said.mono { font-family: var(--mono); font-size: 11.5px; margin: 2px 0; word-break: break-word; }
+.cloud-status-command { padding: 7px 0; border-top: 1px solid var(--line); }
+.cloud-status-command .mono { word-break: break-all; }
+.cloud-status-command.focus { background: rgba(217, 119, 87, 0.08); box-shadow: inset 2px 0 0 var(--accent); padding-left: 8px; }

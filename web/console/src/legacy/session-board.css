@@ -1,0 +1,15 @@
+/* Optional relationship context is disclosed inside Session Info, never above the chat. */
+.session-board { margin: 0 0 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel, var(--bg)); }
+.session-board[hidden], .session-board [hidden] { display: none; }
+.session-board button { color: var(--ink); background: transparent; border: 0; min-height: 44px; padding: 10px 12px; text-align: left; font: inherit; cursor: pointer; }
+.session-board-heading { display: block; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-board-relations { max-height: min(32vh, 260px); overflow: auto; border-top: 1px solid var(--line); padding: 4px 8px 8px; }
+.session-board-relations button { display: block; width: 100%; border-radius: 8px; overflow-wrap: anywhere; }
+.session-board-relations button:hover { background: rgba(128,128,128,.12); }
+.session-board-relations p { margin: 8px 12px; color: var(--muted, var(--ink)); font-size: 13px; }
+.session-board button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.board-session-dialog { width: min(30rem, calc(100vw - 2rem)); max-height: 80dvh; overflow: auto; padding: 1.4rem; color: inherit; background: var(--bg, #161619); border: 1px solid #45454c; border-radius: 1rem; }
+.board-session-dialog::backdrop { background: #0009; }
+.board-session-dialog h2 { font-size: 1.2rem; overflow-wrap: anywhere; }
+.board-session-dialog p { line-height: 1.6; }
+.board-session-dialog button { min-height: 44px; padding: .55rem .9rem; margin: .25rem; color: inherit; background: transparent; border: 1px solid #666; border-radius: .5rem; }
