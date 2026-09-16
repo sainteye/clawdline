@@ -30,6 +30,24 @@ func (d Dispatcher) Dispatch(ctx context.Context, t task.Task, command string) (
 	if err := t.Validate(); err != nil {
 		return store.Receipt{}, "", err
 	}
+	// Arbitrate before anything is created. Two roots dispatching a correction
+	// of the same delivery six seconds apart is not hypothetical: it happened,
+	// both were isolated, and nothing refused either of them.
+	live, err := d.Store.LiveTasks(ctx)
+	if err != nil {
+		return store.Receipt{}, "", err
+	}
+	for _, other := range live {
+		if shared := task.Overlaps(t.Claims, other.Claims); len(shared) > 0 {
+			return store.Receipt{}, "", task.Refusal{
+				Code: "workspace_busy",
+				Detail: fmt.Sprintf("task %s (%s, started %s ago) already claims %v",
+					other.ID, other.Assistant,
+					time.Since(other.CreatedAt).Round(time.Second), shared),
+			}
+		}
+	}
+
 	t.State = task.StateQueued
 	t.CreatedAt = time.Now()
 
@@ -50,7 +68,7 @@ func (d Dispatcher) Dispatch(ctx context.Context, t task.Task, command string) (
 	}
 	receipt, err := d.Store.Commit(ctx, "dispatch:"+t.ID,
 		[]store.Event{{Kind: "task.queued", Subject: t.ID, Payload: payload}},
-		[]store.Change{{Open: obligation}})
+		[]store.Change{{Open: obligation}, {Task: &t}})
 	if err != nil {
 		return store.Receipt{}, "", err
 	}
@@ -94,6 +112,6 @@ func (d Dispatcher) Settle(ctx context.Context, id string) (task.State, bool, er
 	payload, _ := json.Marshal(result)
 	_, err := d.Store.Commit(ctx, "settle:"+id,
 		[]store.Event{{Kind: "task." + string(state), Subject: id, Payload: payload}},
-		[]store.Change{{Close: "task:" + id}})
+		[]store.Change{{Close: "task:" + id}, {SetTask: [2]string{id, string(state)}}})
 	return state, true, err
 }

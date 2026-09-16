@@ -16,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline-go/internal/app"
 	"github.com/sainteye/clawdline-go/internal/domain/task"
 
+	"github.com/sainteye/clawdline-go/internal/adapters/git"
 	"github.com/sainteye/clawdline-go/internal/adapters/store"
 	"github.com/sainteye/clawdline-go/internal/adapters/terminal"
 	"github.com/sainteye/clawdline-go/internal/app/ports"
@@ -39,6 +40,8 @@ func main() {
 		doctor()
 	case "dispatch":
 		dispatchCommand(os.Args[2:])
+	case "land":
+		landCommand(os.Args[2:])
 	case "settle":
 		settleCommand(os.Args[2:])
 	case "send":
@@ -119,6 +122,8 @@ func terminalCommand(op string, args []string) {
 	switch op {
 	case "dispatch":
 		dispatchCommand(os.Args[2:])
+	case "land":
+		landCommand(os.Args[2:])
 	case "settle":
 		settleCommand(os.Args[2:])
 	case "send":
@@ -227,6 +232,35 @@ func settleCommand(args []string) {
 	fmt.Printf("settled  %s\n", state)
 }
 
+func landCommand(args []string) {
+	// The id comes first because that reads naturally, and Go's flag package
+	// stops parsing at the first non-flag argument. Taking it off the front is
+	// the whole fix; leaving it there silently emptied every flag.
+	if len(args) < 1 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprintln(os.Stderr, "usage: clawdline land <task-id> --commit <sha> [--repo dir] [--branch name]")
+		os.Exit(2)
+	}
+	id := args[0]
+	fs := flag.NewFlagSet("land", flag.ExitOnError)
+	repo := fs.String("repo", ".", "the repository the work was done in")
+	commit := fs.String("commit", "", "the commit that carries the work")
+	branch := fs.String("branch", "main", "the target branch")
+	_ = fs.Parse(args[1:])
+	cfg := config.Load()
+	st, err := store.Open(cfg.Dir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline:", err)
+		os.Exit(1)
+	}
+	defer st.Close()
+	l := app.Lander{Store: st, Git: git.New()}
+	if err := l.Land(context.Background(), id, *repo, *commit, *branch); err != nil {
+		fmt.Fprintln(os.Stderr, "clawdline:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("landed   %s on %s\n", *commit, *branch)
+}
+
 func newTaskID() string {
 	b := make([]byte, 4)
 	_, _ = rand.Read(b)
@@ -234,5 +268,5 @@ func newTaskID() string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|send|interrupt|close|version>")
+	fmt.Fprintln(os.Stderr, "usage: clawdline <serve|doctor|dispatch|settle|land|send|interrupt|close|version>")
 }

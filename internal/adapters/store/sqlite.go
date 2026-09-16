@@ -74,6 +74,15 @@ CREATE TABLE IF NOT EXISTS obligations (
   closed_at  INTEGER
 );
 CREATE INDEX IF NOT EXISTS obligations_open ON obligations(closed_at, opened_at);
+CREATE TABLE IF NOT EXISTS tasks (
+  id         TEXT    PRIMARY KEY,
+  assistant  TEXT    NOT NULL,
+  project    TEXT    NOT NULL,
+  claims     TEXT    NOT NULL DEFAULT '[]',
+  state      TEXT    NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tasks_state ON tasks(state);
 `
 
 // Open prepares the store under the daemon's own state root.
@@ -113,10 +122,12 @@ func Open(dir string) (*Store, error) {
 
 func (s *Store) Close() error { return s.db.Close() }
 
-// Change is one edit to the obligation projection.
+// Change is one edit to a projection.
 type Change struct {
-	Open  *task.Obligation
-	Close string // an obligation id
+	Open    *task.Obligation
+	Close   string     // an obligation id
+	Task    *task.Task // insert or replace a task row
+	SetTask [2]string  // {id, state}
 }
 
 // Commit records events, applies the projection they imply, and writes the
@@ -172,6 +183,21 @@ func (s *Store) Commit(ctx context.Context, commandID string, events []Event, ch
 				o.OpenedAt.Unix(), string(o.Evidence), o.Note); err != nil {
 				return Receipt{}, err
 			}
+		case c.Task != nil:
+			claims, _ := json.Marshal(c.Task.Claims)
+			if _, err := tx.ExecContext(ctx,
+				`INSERT OR REPLACE INTO tasks
+				 (id, assistant, project, claims, state, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?)`,
+				c.Task.ID, string(c.Task.Assistant), c.Task.ProjectDir,
+				string(claims), string(c.Task.State), c.Task.CreatedAt.Unix()); err != nil {
+				return Receipt{}, err
+			}
+		case c.SetTask[0] != "":
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE tasks SET state = ? WHERE id = ?`, c.SetTask[1], c.SetTask[0]); err != nil {
+				return Receipt{}, err
+			}
 		case c.Close != "":
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE obligations SET closed_at = ? WHERE id = ? AND closed_at IS NULL`,
@@ -216,6 +242,37 @@ func (s *Store) OpenObligations(ctx context.Context) ([]task.Obligation, error) 
 		o.Evidence = task.Evidence(evidence)
 		o.OpenedAt = time.Unix(openedAt, 0)
 		out = append(out, o)
+	}
+	return out, rows.Err()
+}
+
+// LiveTasks returns the tasks that have not reached a terminal state.
+//
+// This is what a dispatch is arbitrated against. It reads the projection rather
+// than replaying the log, because the question — "is anybody already writing
+// there" — is about now, and a reader that has to replay history to answer it
+// will be asked to skip the replay the first time it is slow.
+func (s *Store) LiveTasks(ctx context.Context) ([]task.Task, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, assistant, project, claims, state, created_at FROM tasks
+		 WHERE state IN ('queued','spawning','briefed') ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []task.Task{}
+	for rows.Next() {
+		var t task.Task
+		var assistant, claims, state string
+		var created int64
+		if err := rows.Scan(&t.ID, &assistant, &t.ProjectDir, &claims, &state, &created); err != nil {
+			return nil, err
+		}
+		t.Assistant = task.Assistant(assistant)
+		t.State = task.State(state)
+		t.CreatedAt = time.Unix(created, 0)
+		_ = json.Unmarshal([]byte(claims), &t.Claims)
+		out = append(out, t)
 	}
 	return out, rows.Err()
 }

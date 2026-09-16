@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline-go/internal/domain/session"
+	"github.com/sainteye/clawdline-go/internal/domain/task"
 )
 
 // ownsSessions reports whether this daemon answers /v1/sessions itself.
@@ -46,6 +47,11 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 	}
 	inv := s.inventory.Read(ctx)
 
+	// One reading of what is owed, for the whole list. Asking per row would
+	// ask the same question eight times and let two rows disagree about the
+	// same moment.
+	owed, owedErr := s.store.OpenObligations(ctx)
+
 	// Only assistant sessions are rows. A terminal running an ordinary shell is
 	// not a session in this contract — the Swift app carries shells as an
 	// attribute of the session that left them running, and publishing them as
@@ -56,7 +62,7 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 		if !item.IsAssistant() {
 			continue
 		}
-		rows = append(rows, sessionRow(item))
+		rows = append(rows, sessionRow(item, owed, owedErr))
 	}
 
 	return map[string]any{
@@ -85,7 +91,7 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 // contract already says several of them are absent in ordinary cases, so a
 // reader that handles absence handles this too — and a guessed value would be
 // worse than a missing one.
-func sessionRow(item session.Session) map[string]any {
+func sessionRow(item session.Session, owed []task.Obligation, owedErr error) map[string]any {
 	row := map[string]any{
 		"id":       item.ID,
 		"backend":  string(item.Backend),
@@ -93,8 +99,9 @@ func sessionRow(item session.Session) map[string]any {
 		"isClaude": item.Assistant == session.AssistantClaude,
 		// Not in the Swift contract: how this row's state was learned. A
 		// registry reading and a screen guess are different kinds of fact.
-		"evidence":   string(item.Evidence),
-		"work_state": string(workState(item)),
+		"evidence":     string(item.Evidence),
+		"work_state":   string(workState(item)),
+		"closeability": closeability(item, owed, owedErr),
 	}
 	if item.TTY != "" {
 		row["tty"] = item.TTY
@@ -112,6 +119,39 @@ func sessionRow(item session.Session) map[string]any {
 		row["sessionId"] = item.ConversationID
 	}
 	return row
+}
+
+// closeability says whether this session can end. It is a separate question
+// from whether it can take work, and neither may be read off the other.
+//
+// An unreadable obligation list fails the whole projection closed to `unknown`
+// rather than to `safe`, because what it casts doubt on is the completeness of
+// the list itself, not one entry in it. `safe` here is a positive claim that
+// nothing is owed, and it must never be what a failure looks like.
+func closeability(item session.Session, owed []task.Obligation, err error) map[string]any {
+	if err != nil {
+		return map[string]any{"state": "unknown", "reasons": []any{}}
+	}
+	reasons := []map[string]any{}
+	for _, o := range owed {
+		if o.Mover.Kind == task.MoverOtherSession || o.Mover.Kind == task.MoverThisSession {
+			if o.Mover.ID != item.ID {
+				continue
+			}
+		} else if o.Subject != item.ID {
+			continue
+		}
+		reasons = append(reasons, map[string]any{
+			"kind":  string(o.Kind),
+			"mover": map[string]any{"kind": string(o.Mover.Kind), "id": o.Mover.ID},
+			"note":  o.Note,
+		})
+	}
+	state := "safe"
+	if len(reasons) > 0 {
+		state = "blocked"
+	}
+	return map[string]any{"state": state, "reasons": reasons}
 }
 
 // workState projects the one closed user-facing value.
