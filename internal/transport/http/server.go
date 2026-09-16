@@ -70,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	// over only once the payloads agree.
 	mux.HandleFunc("/v1/next/sessions", s.nextSessions)
 	mux.HandleFunc("/v1/sessions", s.sessions)
+	mux.HandleFunc("/v1/events", s.events)
 	mux.Handle("/", s.proxy)
 	return mux
 }

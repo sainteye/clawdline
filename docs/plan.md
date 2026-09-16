@@ -144,6 +144,15 @@ console ──► 新 daemon (7727)
 所以「整塊整塊接管」不是偏好而是**必要條件**：一份資料與送它的串流必須一起搬。
 `/v1/sessions` 與 `/v1/events` 的 `sessions` 影格是同一塊。
 
+### 接管 sessions 之後，畫面上還缺什麼（P1 實測）
+
+開啟 `CLAWDLINE_NEXT_OWN_SESSIONS=1` 後 console 由新核心供資料，八張卡正確。剩下：
+
+1. **標頭的「N 個在跑」計數消失**。`work_state` 需要 broker 投影，而契約規定
+   `ready` 要有正面證據，閒置的助理沒有就是 `unknown`。這是 P3 的工作。
+2. **`closeability` 整塊沒有**，所以列上不再出現「還有 N 項未了結」。
+3. 列上的「狀態未知」**與舊 app 相同**，不是退化。
+
 ### 已知落差：新核心的 `/v1/sessions` 沒有認證
 
 舊 app 對這條路由要求已配對的裝置，新核心目前誰都能讀。在只綁 loopback 的

@@ -33,18 +33,33 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(s.sessionsPayload(ctx))
+}
+
+// sessionsPayload builds the one snapshot both the route and the event stream
+// publish. They are the same payload, so they are the same code: two builders
+// would drift, and the client would have no way to tell which one it got.
+func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 	if h, ok := s.inventory.Identity.(interface{ Refresh() }); ok {
 		h.Refresh()
 	}
 	inv := s.inventory.Read(ctx)
 
+	// Only assistant sessions are rows. A terminal running an ordinary shell is
+	// not a session in this contract — the Swift app carries shells as an
+	// attribute of the session that left them running, and publishing them as
+	// rows of their own turned eight cards into eighteen, ten of which the
+	// console could only describe as unreadable.
 	rows := make([]map[string]any, 0, len(inv.Sessions))
 	for _, item := range inv.Sessions {
+		if !item.IsAssistant() {
+			continue
+		}
 		rows = append(rows, sessionRow(item))
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{
+	return map[string]any{
 		"sessions": rows,
 		"at":       time.Now().Unix(),
 		"scan": map[string]any{
@@ -61,7 +76,7 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 				"complete": inv.Complete,
 			},
 		},
-	})
+	}
 }
 
 // sessionRow renders one session in the shape the console reads.
