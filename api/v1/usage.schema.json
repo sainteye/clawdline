@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "usage.schema.json",
+  "title": "What sessions have spent, and what they said",
+  "description": "GET /v1/orchestrator/usage and GET /v1/transcript. Both read the assistants' own records, so both carry evidence rather than presenting a number with no source.",
+  "$defs": {
+    "ModelUsage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cacheReadTokens", "cacheWriteTokens", "inputTokens", "model", "outputTokens", "thinkingTokens"],
+      "properties": {
+        "cacheReadTokens": { "type": "integer" },
+        "cacheWriteTokens": { "type": "integer" },
+        "inputTokens": { "type": "integer" },
+        "model": { "description": "Empty where the record did not name one. Codex's cumulative total does not, and it is left blank rather than guessed from the session's current configuration, which can have changed partway through a thread.", "type": "string" },
+        "outputTokens": { "type": "integer" },
+        "thinkingTokens": { "type": "integer" }
+      }
+    },
+    "UsageRow": {
+      "description": "One session's usage, as its own transcript records it. This is what the transcript accounts for, which is a smaller claim than what the session spent: one conversation's own turns cannot see work another model did on its behalf.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "id", "models", "totalTokens"],
+      "properties": {
+        "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
+        "evidence": { "$ref": "common.schema.json#/$defs/Evidence" },
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "messages": { "description": "How many assistant turns were counted. Absent for a source that reports a cumulative total rather than per-turn figures.", "type": "integer" },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/ModelUsage" } },
+        "note": { "description": "Why a row could not be read. Present with `evidence: none`, and never alongside a number.", "type": "string" },
+        "totalTokens": { "type": "integer" }
+      }
+    },
+    "UsageReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "sessions", "totalTokens"],
+      "properties": {
+        "at": { "type": "integer" },
+        "sessions": { "type": "array", "items": { "$ref": "#/$defs/UsageRow" } },
+        "totalTokens": { "description": "The sum of the rows that could be read. Rows carrying `evidence: none` contribute nothing, so this can be smaller than the truth and never larger.", "type": "integer" }
+      }
+    },
+    "Turn": {
+      "description": "One thing that was said. Tool calls are named rather than expanded: a panel that reproduced every payload would be the log file again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "role", "text"],
+      "properties": {
+        "at": { "type": "string" },
+        "role": { "type": "string" },
+        "text": { "type": "string" },
+        "tool": { "type": "string" }
+      }
+    },
+    "TranscriptPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence", "id", "turns"],
+      "properties": {
+        "evidence": { "$ref": "common.schema.json#/$defs/Evidence" },
+        "id": { "type": "string" },
+        "note": { "type": "string" },
+        "path": { "description": "Which file this was read from. A reading that cannot name its source is not evidence.", "type": "string" },
+        "turns": { "type": "array", "items": { "$ref": "#/$defs/Turn" } }
+      }
+    }
+  }
+}

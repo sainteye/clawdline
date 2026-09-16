@@ -414,3 +414,54 @@ body {
 .dispatch button:disabled { opacity: 0.4; cursor: default; }
 .dispatch button.picked { color: var(--accent); border-color: var(--accent); }
 .dispatch .verbs button { padding: 6px 12px; }
+
+/* ---------- usage & transcript ---------- */
+
+.row .v.unread { color: var(--unknown); }
+
+.empty.footnote {
+  font-size: 11px;
+  line-height: 1.5;
+  border-top: 1px solid var(--line-soft);
+}
+
+.transcript {
+  margin-top: 4px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.turn {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.turn .who {
+  font: 10px/1.6 var(--mono);
+  color: var(--text-faint);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn[data-role="user"] .who { color: var(--accent); }
+
+.turn .what {
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+}
+.turn[data-role="user"] .what { color: var(--text); }
+.turn em { color: var(--text-faint); font-style: normal; }

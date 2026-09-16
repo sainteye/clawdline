@@ -30,6 +30,17 @@ type Inventory struct {
 // reading non-authoritative, because what it casts doubt on is whether the list
 // is complete at all — not one row in it.
 func (in Inventory) Read(ctx context.Context) session.Inventory {
+	// The identity source is refreshed here rather than by whoever calls this.
+	// It used to be the caller's job, and of the six places that read an
+	// inventory only two remembered — so the board, the coordinator, the
+	// session actions and the usage report were all reading identities from an
+	// earlier moment, which shows up as sessions that have no conversation id
+	// and therefore no record to read. A precondition that every caller must
+	// remember is a precondition that will be forgotten.
+	if h, ok := in.Identity.(interface{ Refresh() }); ok {
+		h.Refresh()
+	}
+
 	merged := session.Inventory{
 		ObservedAt: time.Now(),
 		Provenance: "merged",

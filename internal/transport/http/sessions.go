@@ -43,9 +43,6 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 // publish. They are the same payload, so they are the same code: two builders
 // would drift, and the client would have no way to tell which one it got.
 func (s *Server) sessionsPayload(ctx context.Context) contract.SessionsSnapshot {
-	if h, ok := s.inventory.Identity.(interface{ Refresh() }); ok {
-		h.Refresh()
-	}
 	inv := s.inventory.Read(ctx)
 
 	// One reading of what is owed, for the whole list. Asking per row would

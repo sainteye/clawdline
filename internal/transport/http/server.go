@@ -39,6 +39,9 @@ type Server struct {
 	store      *store.Store
 	dispatcher app.Dispatcher
 	terminals  []ports.TerminalHost
+	// ledger remembers what has already been counted, so a transcript is read
+	// once rather than once per request.
+	ledger *transcript.Ledger
 	// pulse is the scheduler's own account of its last pass, read by /v1/health.
 	pulse atomic.Pointer[app.Pulse]
 	tick  time.Duration
@@ -79,6 +82,7 @@ func New(cfg config.Config) (*Server, error) {
 			Terminal: terminal.NewTmux(),
 		},
 		terminals: terminal.Hosts(),
+		ledger:    transcript.NewLedger(),
 		inventory: app.Inventory{
 			Process:   process.New(),
 			Terminals: terminal.Hosts(),
@@ -119,6 +123,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/orchestrator/tasks", s.tasksRoute)
 	mux.HandleFunc("/v1/orchestrator/tasks/", s.settleRoute)
 	mux.HandleFunc("/v1/strings", s.strings)
+	mux.HandleFunc("/v1/orchestrator/usage", s.usageRoute)
+	mux.HandleFunc("/v1/transcript", s.transcriptRoute)
 	mux.HandleFunc("/v1/next/board", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			s.boardWrite(w, r)
@@ -160,9 +166,6 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 func (s *Server) nextSessions(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	if h, ok := s.inventory.Identity.(*transcript.Host); ok {
-		h.Refresh()
-	}
 	inv := s.inventory.Read(ctx)
 	rows := make([]contract.InventorySession, 0, len(inv.Sessions))
 	for _, item := range inv.Sessions {

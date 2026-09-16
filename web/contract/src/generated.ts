@@ -266,6 +266,21 @@ export type Liveness =
 
 export const LivenessValues: readonly Liveness[] = ["online", "offline", "unknown"] as const
 
+export interface ModelUsage {
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  inputTokens: number
+
+  /**
+   * Empty where the record did not name one. Codex's cumulative total does not, and
+   * it is left blank rather than guessed from the session's current configuration,
+   * which can have changed partway through a thread.
+   */
+  model: string
+  outputTokens: number
+  thinkingTokens: number
+}
+
 export interface Mover {
   id: string
   kind: MoverKind
@@ -524,6 +539,67 @@ export type TaskState =
   | "spawn_failed"
 
 export const TaskStateValues: readonly TaskState[] = ["queued", "spawning", "briefed", "success", "failure", "timeout", "cancelled", "spawn_failed"] as const
+
+export interface TranscriptPage {
+  evidence: Evidence
+  id: string
+  note?: string
+
+  /**
+   * Which file this was read from. A reading that cannot name its source is not
+   * evidence.
+   */
+  path?: string
+  turns: Turn[]
+}
+
+/**
+ * One thing that was said. Tool calls are named rather than expanded: a panel that
+ * reproduced every payload would be the log file again.
+ */
+export interface Turn {
+  at: string
+  role: string
+  text: string
+  tool?: string
+}
+
+export interface UsageReport {
+  at: number
+  sessions: UsageRow[]
+
+  /**
+   * The sum of the rows that could be read. Rows carrying `evidence: none`
+   * contribute nothing, so this can be smaller than the truth and never larger.
+   */
+  totalTokens: number
+}
+
+/**
+ * One session's usage, as its own transcript records it. This is what the
+ * transcript accounts for, which is a smaller claim than what the session spent:
+ * one conversation's own turns cannot see work another model did on its behalf.
+ */
+export interface UsageRow {
+  assistant?: Assistant
+  evidence: Evidence
+  id: string
+  label?: string
+
+  /**
+   * How many assistant turns were counted. Absent for a source that reports a
+   * cumulative total rather than per-turn figures.
+   */
+  messages?: number
+  models: ModelUsage[]
+
+  /**
+   * Why a row could not be read. Present with `evidence: none`, and never alongside
+   * a number.
+   */
+  note?: string
+  totalTokens: number
+}
 
 /**
  * One projection of what this session needs, ranked so a reader can sort by it.

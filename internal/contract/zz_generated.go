@@ -262,6 +262,19 @@ const (
 // LivenessValues is every value the contract allows, in contract order.
 var LivenessValues = []Liveness{LivenessOnline, LivenessOffline, LivenessUnknown}
 
+type ModelUsage struct {
+	CacheReadTokens  int64 `json:"cacheReadTokens"`
+	CacheWriteTokens int64 `json:"cacheWriteTokens"`
+	InputTokens      int64 `json:"inputTokens"`
+
+	// Empty where the record did not name one. Codex's cumulative total does not, and
+	// it is left blank rather than guessed from the session's current configuration,
+	// which can have changed partway through a thread.
+	Model          string `json:"model"`
+	OutputTokens   int64  `json:"outputTokens"`
+	ThinkingTokens int64  `json:"thinkingTokens"`
+}
+
 type Mover struct {
 	ID   string    `json:"id"`
 	Kind MoverKind `json:"kind"`
@@ -500,6 +513,56 @@ const (
 
 // TaskStateValues is every value the contract allows, in contract order.
 var TaskStateValues = []TaskState{TaskStateQueued, TaskStateSpawning, TaskStateBriefed, TaskStateSuccess, TaskStateFailure, TaskStateTimeout, TaskStateCancelled, TaskStateSpawnFailed}
+
+type TranscriptPage struct {
+	Evidence Evidence `json:"evidence"`
+	ID       string   `json:"id"`
+	Note     string   `json:"note,omitempty"`
+
+	// Which file this was read from. A reading that cannot name its source is not
+	// evidence.
+	Path  string `json:"path,omitempty"`
+	Turns []Turn `json:"turns"`
+}
+
+// One thing that was said. Tool calls are named rather than expanded: a panel
+// that reproduced every payload would be the log file again.
+type Turn struct {
+	At   string `json:"at"`
+	Role string `json:"role"`
+	Text string `json:"text"`
+	Tool string `json:"tool,omitempty"`
+}
+
+type UsageReport struct {
+	At       int64      `json:"at"`
+	Sessions []UsageRow `json:"sessions"`
+
+	// The sum of the rows that could be read. Rows carrying `evidence: none`
+	// contribute nothing, so this can be smaller than the truth and never larger.
+	TotalTokens int64 `json:"totalTokens"`
+}
+
+// One session's usage, as its own transcript records it. This is what the
+// transcript accounts for, which is a smaller claim than what the session
+// spent: one conversation's own turns cannot see work another model did on its
+// behalf.
+type UsageRow struct {
+	Assistant Assistant `json:"assistant,omitempty"`
+	Evidence  Evidence  `json:"evidence"`
+	ID        string    `json:"id"`
+	Label     string    `json:"label,omitempty"`
+
+	// How many assistant turns were counted. Absent for a source that reports a
+	// cumulative total rather than per-turn figures.
+	Messages int64        `json:"messages,omitempty"`
+	Models   []ModelUsage `json:"models"`
+
+	// Why a row could not be read. Present with `evidence: none`, and never alongside
+	// a number.
+	Note        string `json:"note,omitempty"`
+	TotalTokens int64  `json:"totalTokens"`
+}
 
 // One projection of what this session needs, ranked so a reader can sort by it.
 // `unknown` outranks nothing and means the inputs were incomplete.

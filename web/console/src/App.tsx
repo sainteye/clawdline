@@ -55,6 +55,7 @@ export default function App() {
         </div>
         <div>
           <Dispatch onDid={refresh} />
+          <Usage />
           <Obligations />
           <Tasks />
           <Schedules />
@@ -166,7 +167,12 @@ function Session({ row, onDid }: { row: SessionRow; onDid: () => void }) {
         <div className="meta">
           {[home(row.cwd), row.tty, row.id, row.backend].filter(Boolean).join("  ·  ")}
         </div>
-        {open && <Controls row={row} onDid={onDid} />}
+        {open && (
+          <>
+            <Controls row={row} onDid={onDid} />
+            <Transcript id={row.id} />
+          </>
+        )}
       </div>
       <div className="right">
         <span className="work" data-work={row.work_state}>
@@ -534,5 +540,78 @@ function Dispatch({ onDid }: { onDid: () => void }) {
         </form>
       )}
     </section>
+  )
+}
+
+/** Compact token counts. Exact numbers in the billions are unreadable. */
+function tokens(n: number): string {
+  if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`
+  if (n >= 1e3) return `${Math.round(n / 1e3)}k`
+  return String(n)
+}
+
+/**
+ * What each running session has spent, as its own transcript records it.
+ *
+ * A row that could not be read shows why and carries no number, rather than a
+ * zero: zero is a measurement, and "we could not look" is not.
+ */
+function Usage() {
+  const read = useMemo(() => () => client.usage(), [])
+  const { data, error, pending } = usePoll(read, 20000)
+  return (
+    <section className="panel">
+      <header>
+        用量<span className="count">{data ? `${tokens(data.totalTokens)} tokens` : "—"}</span>
+      </header>
+      {error && <p className="refusal">{error}</p>}
+      {pending && !data && <p className="empty">讀取中…</p>}
+      {data?.sessions.map((u) => (
+        <div className="row" key={u.id}>
+          <span className="k">{u.assistant ?? "?"}</span>
+          <span className="grow">{u.label || u.id}</span>
+          {u.evidence === "none" ? (
+            <span className="v unread" title={u.note}>
+              讀不到
+            </span>
+          ) : (
+            <span className="v">{tokens(u.totalTokens)}</span>
+          )}
+        </div>
+      ))}
+      {data && (
+        <p className="empty footnote">
+          讀的是各自 transcript 裡自己記的數字。它算得到這段對話自己的回合，算不到別的 model
+          替它做的事——所以這是下限，不是總額。
+        </p>
+      )}
+    </section>
+  )
+}
+
+/**
+ * The last few turns of one session.
+ *
+ * Tool calls are shown as their name. Reproducing every payload would put the
+ * log file on the screen, which is the thing a person opened this to avoid.
+ */
+function Transcript({ id }: { id: string }) {
+  const read = useMemo(() => () => client.transcript(id, 12), [id])
+  const { data, error, pending } = usePoll(read, 4000)
+  if (pending && !data) return <p className="said">讀取中…</p>
+  if (error) return <p className="said">{error}</p>
+  if (!data) return null
+  if (data.evidence === "none") return <p className="said">{data.note ?? "讀不到這個 session 的紀錄"}</p>
+  return (
+    <div className="transcript">
+      {data.turns.length === 0 && <p className="said">這份紀錄裡還沒有可讀的回合。</p>}
+      {data.turns.map((t, i) => (
+        <div className="turn" key={i} data-role={t.role}>
+          <span className="who">{t.tool ? t.tool : t.role}</span>
+          <span className="what">{t.text || <em>（工具呼叫）</em>}</span>
+        </div>
+      ))}
+    </div>
   )
 }
