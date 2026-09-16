@@ -1,0 +1,11 @@
+# Build output
+/bin/
+/dist/
+*.exe
+
+# Local state
+*.db
+*.sqlite3
+
+# Editor
+.DS_Store
